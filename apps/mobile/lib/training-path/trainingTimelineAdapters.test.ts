@@ -38,9 +38,9 @@ function aggregate(input: {
 const timeline = [
   {
     date: "2026-06-01",
-    completed_load_tss: 12,
-    recommended_load_tss: 50,
-    scheduled_load_tss: 40,
+    completed_common_load: 12,
+    recommended_common_load: 50,
+    scheduled_common_load: 40,
   },
 ];
 
@@ -88,7 +88,7 @@ describe("common Load daily-observation adapter", () => {
       },
     });
 
-    expect(result.timeline[0]).toMatchObject({ completed_load_tss: 20 });
+    expect(result.timeline[0]).toMatchObject({ completed_common_load: 20 });
     expect(result.completedObservationsByDate.get("2026-06-01")).toMatchObject({
       state: "observed",
       hasUnavailableCompletedActivity: false,

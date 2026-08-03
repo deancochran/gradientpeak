@@ -67,34 +67,24 @@ describe("activity effort curves", () => {
     ).toBe("review");
   });
 
-  it("excludes modeled, review, and invalid records from observed curves and bests", () => {
-    const modeled = {
+  it("excludes derived, review, and invalid records from observed curves and bests", () => {
+    const derived = {
       ...observedEffort,
       id: "historical-derived-4240",
       value: 4240,
       source: "derived",
-      method: "onboarding_modeled_curve",
+      method: "unsupported_derived_effort",
     };
     const review = { ...observedEffort, id: "review", value: 700 };
     const invalid = { ...observedEffort, id: "invalid", value: 0 };
-    const records = [observedEffort, modeled, review, invalid];
+    const records = [observedEffort, derived, review, invalid];
 
-    expect(getActivityEffortObservationStatus(modeled)).toBe("modeled");
+    expect(getActivityEffortObservationStatus(derived)).toBe("review");
     expect(getActivityEffortObservationStatus(review)).toBe("review");
     expect(getActivityEffortObservationStatus(invalid)).toBe("invalid");
     expect(buildBestActivityEffortCurve(records)).toEqual([
       { effortId: "observed", label: "1h 00m", duration: 3600, value: 300 },
     ]);
     expect(getActivityEffortCurveBest(records)?.id).toBe("observed");
-  });
-
-  it("fails closed when an onboarding modeled anchor omits its source", () => {
-    expect(
-      getActivityEffortObservationStatus({
-        ...observedEffort,
-        source: null,
-        method: "onboarding_modeled_curve",
-      }),
-    ).toBe("review");
   });
 });

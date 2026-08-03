@@ -17,7 +17,7 @@ export interface GoalTrajectoryCandidate {
   goal: NormalizedPlanningGoal;
   demand: EventDemand;
   activity_category: CanonicalActivityCategory;
-  targetCtl: number;
+  targetLongTermLoad: number;
   taperDays: number;
   taperParameter: CalculatedParameter;
 }
@@ -34,13 +34,13 @@ export interface MergedGoalTrajectory {
   goalDate: string;
   goalIds: string[];
   priorityClass: PlanningGoalPriorityClass;
-  targetCtl: number;
+  targetLongTermLoad: number;
   taperDays: number;
   taperParameter: CalculatedParameter;
   rationale_codes: string[];
   secondaryGoalDate?: string;
   secondaryGoalIds?: string[];
-  secondaryTargetCtl?: number;
+  secondaryTargetLongTermLoad?: number;
   secondaryTaperDays?: number;
   sustainedPeakFloorFraction?: number;
   localFlattenFraction?: number;
@@ -65,8 +65,8 @@ function compareCandidates(left: GoalTrajectoryCandidate, right: GoalTrajectoryC
     return right.goal.priority - left.goal.priority;
   }
 
-  if (left.targetCtl !== right.targetCtl) {
-    return right.targetCtl - left.targetCtl;
+  if (left.targetLongTermLoad !== right.targetLongTermLoad) {
+    return right.targetLongTermLoad - left.targetLongTermLoad;
   }
 
   return left.goal.id.localeCompare(right.goal.id);
@@ -119,7 +119,7 @@ export function mergeGoalTrajectories(
         goalDate: primary.goal.target_date,
         goalIds,
         priorityClass: primary.goal.priority_class,
-        targetCtl: primary.targetCtl,
+        targetLongTermLoad: primary.targetLongTermLoad,
         taperDays: primary.taperDays,
         taperParameter: primary.taperParameter,
         rationale_codes:
@@ -150,11 +150,11 @@ export function mergeGoalTrajectories(
         ...current,
         strategy: "sustained_peak",
         goalIds: [...current.goalIds, ...next.goalIds],
-        targetCtl: round(Math.max(current.targetCtl, next.targetCtl)),
+        targetLongTermLoad: round(Math.max(current.targetLongTermLoad, next.targetLongTermLoad)),
         rationale_codes: [...current.rationale_codes, "close_a_goal_sustained_peak_window_applied"],
         secondaryGoalDate: next.goalDate,
         secondaryGoalIds: next.goalIds,
-        secondaryTargetCtl: next.targetCtl,
+        secondaryTargetLongTermLoad: next.targetLongTermLoad,
         secondaryTaperDays: next.taperDays,
         sustainedPeakFloorFraction: SUSTAINED_PEAK_VALLEY_FLOOR_FRACTION,
       });

@@ -14,13 +14,13 @@ import {
   type HistoricalDailyActivityCategoryLoad,
 } from "./systemicLoad";
 
-const SYSTEMIC_CTL_TAU_DAYS = 42;
-const SYSTEMIC_ATL_TAU_DAYS = 7;
+const SYSTEMIC_LongTermLoad_TAU_DAYS = 42;
+const SYSTEMIC_RecentLoad_TAU_DAYS = 7;
 
 export interface DailyLoadState {
-  ctl: number;
-  atl: number;
-  tsb: number;
+  longTermLoad: number;
+  recentLoad: number;
+  loadBalance: number;
   systemic_load_7d: number;
   systemic_load_28d: number;
   activity_category_load_states: Partial<
@@ -33,7 +33,9 @@ export interface DailyLoadState {
 export interface BuildDailyLoadStateInput {
   dailyActivityCategoryLoads: DailyActivityCategoryLoadInput[];
   history?: HistoricalDailyActivityCategoryLoad[];
-  previousState?: Partial<Pick<DailyLoadState, "ctl" | "atl" | "activity_category_load_states">>;
+  previousState?: Partial<
+    Pick<DailyLoadState, "longTermLoad" | "recentLoad" | "activity_category_load_states">
+  >;
   activityCategoryLoadHistory?: Partial<Record<CanonicalActivityCategory, number[]>>;
 }
 
@@ -59,15 +61,15 @@ export function buildDailyLoadState(input: BuildDailyLoadStateInput): DailyLoadS
     dailyActivityCategoryLoads: input.dailyActivityCategoryLoads,
     history: input.history,
   });
-  const nextCtl = applyLoadDecay(
-    input.previousState?.ctl ?? 0,
+  const nextLongTermLoad = applyLoadDecay(
+    input.previousState?.longTermLoad ?? 0,
     systemic.daily_systemic_load,
-    SYSTEMIC_CTL_TAU_DAYS,
+    SYSTEMIC_LongTermLoad_TAU_DAYS,
   );
-  const nextAtl = applyLoadDecay(
-    input.previousState?.atl ?? 0,
+  const nextRecentLoad = applyLoadDecay(
+    input.previousState?.recentLoad ?? 0,
     systemic.daily_systemic_load,
-    SYSTEMIC_ATL_TAU_DAYS,
+    SYSTEMIC_RecentLoad_TAU_DAYS,
   );
   const activityCategoryLoadStates: Partial<
     Record<CanonicalActivityCategory, ActivityCategoryLoadState>
@@ -90,17 +92,17 @@ export function buildDailyLoadState(input: BuildDailyLoadStateInput): DailyLoadS
     });
   }
 
-  const tsb = nextCtl - nextAtl;
+  const loadBalance = nextLongTermLoad - nextRecentLoad;
   const mechanicalFatigueScore = calculateMechanicalFatigueScore({
     dailyActivityCategoryLoads: input.dailyActivityCategoryLoads,
     history: input.history,
   });
-  const readinessScore = clamp(0.5 + tsb / 50 - mechanicalFatigueScore / 250, 0, 1);
+  const readinessScore = clamp(0.5 + loadBalance / 50 - mechanicalFatigueScore / 250, 0, 1);
 
   return {
-    ctl: round(nextCtl),
-    atl: round(nextAtl),
-    tsb: round(tsb),
+    longTermLoad: round(nextLongTermLoad),
+    recentLoad: round(nextRecentLoad),
+    loadBalance: round(loadBalance),
     systemic_load_7d: systemic.systemic_load_7d,
     systemic_load_28d: systemic.systemic_load_28d,
     activity_category_load_states: activityCategoryLoadStates,

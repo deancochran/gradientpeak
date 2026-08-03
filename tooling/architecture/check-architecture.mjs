@@ -129,6 +129,33 @@ function addFinding(findings, category, path, identity, details = {}) {
   });
 }
 
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function scanForbiddenSourcePatterns(path, text, config, findings) {
+  for (const rule of config.forbiddenSourcePatterns ?? []) {
+    if (!matches(path, rule.patterns) || matches(path, rule.excludePatterns)) continue;
+    for (const term of rule.terms ?? []) {
+      const pattern = new RegExp(
+        `(^|[^A-Za-z0-9_$])(${escapeRegex(term)})(?=$|[^A-Za-z0-9_$])`,
+        "g",
+      );
+      let match = pattern.exec(text);
+      while (match) {
+        const termOffset = match.index + match[1].length;
+        const line = text.slice(0, termOffset).split("\n").length;
+        addFinding(findings, "forbidden-source-pattern", path, `${rule.id}|${term}|${line}`, {
+          id: rule.id,
+          line,
+          term,
+        });
+        match = pattern.exec(text);
+      }
+    }
+  }
+}
+
 function importsFrom(sourceFile) {
   const imports = [];
   for (const statement of sourceFile.statements) {
@@ -294,12 +321,75 @@ function normalizedMembers(members, sourceFile) {
     .join(";");
 }
 
+function unwrapExpression(expression) {
+  let current = expression;
+  while (current && (ts.isAsExpression(current) || ts.isSatisfiesExpression(current))) {
+    current = current.expression;
+  }
+  return current;
+}
+
+function schemaFieldSignature(expression, sourceFile) {
+  const node = unwrapExpression(expression);
+  if (!node) return "unknown";
+  if (ts.isCallExpression(node)) {
+    const callee = node.expression.getText(sourceFile);
+    const argumentsText = node.arguments
+      .map((argument) => argument.getText(sourceFile).replace(/\s+/g, " "))
+      .join(",");
+    return `${callee}(${argumentsText})`;
+  }
+  return node.getText(sourceFile).replace(/\s+/g, " ");
+}
+
+function discriminatedUnionStructure(initializer, sourceFile) {
+  const node = unwrapExpression(initializer);
+  if (!node || !ts.isCallExpression(node)) return undefined;
+  if (!ts.isPropertyAccessExpression(node.expression)) return undefined;
+  if (node.expression.name.text !== "discriminatedUnion" || node.arguments.length < 2)
+    return undefined;
+  const [discriminant, options] = node.arguments;
+  if (!ts.isStringLiteralLike(discriminant) || !ts.isArrayLiteralExpression(options))
+    return undefined;
+
+  const variants = options.elements.map((variant) => {
+    const variantNode = unwrapExpression(variant);
+    if (!variantNode || !ts.isCallExpression(variantNode))
+      return variant.getText(sourceFile).replace(/\s+/g, " ");
+    const objectCall = variantNode.getText(sourceFile).replace(/\s+/g, " ");
+    let call = variantNode;
+    let objectArgument;
+    while (call && ts.isCallExpression(call)) {
+      objectArgument = call.arguments.find((argument) => ts.isObjectLiteralExpression(argument));
+      if (objectArgument) break;
+      call = unwrapExpression(call.expression);
+    }
+    if (!objectArgument || !ts.isObjectLiteralExpression(objectArgument))
+      return `${objectCall}(${variantNode.arguments.map((argument) => argument.getText(sourceFile)).join(",")})`;
+    const fields = objectArgument.properties
+      .map((property) => {
+        if (ts.isSpreadAssignment(property))
+          return `...${property.expression.getText(sourceFile).replace(/\s+/g, " ")}`;
+        if (!ts.isPropertyAssignment(property)) return property.getText(sourceFile);
+        const fieldName = property.name.getText(sourceFile);
+        return `${fieldName}:${schemaFieldSignature(property.initializer, sourceFile)}`;
+      })
+      .sort()
+      .join(",");
+    return `${objectCall}{${fields}}`;
+  });
+
+  return `discriminatedUnion:${discriminant.text}[${variants.sort().join("|")}]`;
+}
+
 function structuralText(node, sourceFile, name, initializer) {
   if (ts.isInterfaceDeclaration(node))
     return sha(`object:${normalizedMembers(node.members, sourceFile)}`);
   if (ts.isTypeAliasDeclaration(node) && ts.isTypeLiteralNode(node.type)) {
     return sha(`object:${normalizedMembers(node.type.members, sourceFile)}`);
   }
+  const discriminatedUnion = discriminatedUnionStructure(initializer, sourceFile);
+  if (discriminatedUnion) return sha(discriminatedUnion);
   const literals = extractLiteralValues(initializer);
   if (literals.length) return sha(`literals:${[...new Set(literals)].sort().join("|")}`);
   const text = (initializer ?? node)
@@ -653,6 +743,7 @@ export function analyzeProject(root, config, trackedFiles) {
     const owner = ownerFor(path, config);
     if (!owner) continue;
 
+    scanForbiddenSourcePatterns(path, text, config, findings);
     if (sourceFile) scanUnsafe(path, sourceFile, findings, owner);
     const importedModules = sourceFile ? importsFrom(sourceFile) : cssImports(text);
     for (const imported of importedModules) {
@@ -1088,6 +1179,7 @@ export function canonicalPolicy(config) {
     coverage: config.coverage ?? {},
     enumParity: config.enumParity ?? [],
     exceptions: config.exceptions ?? [],
+    forbiddenSourcePatterns: config.forbiddenSourcePatterns ?? [],
     generatedOwners: config.generatedOwners ?? [],
     owners: config.owners ?? {},
     reviewedIgnores: config.reviewedIgnores ?? [],
@@ -1159,6 +1251,39 @@ export function compareMergeBaseProtection(current, previous, approved = false) 
         added: addedScanExcludes,
       }),
     );
+  }
+  const currentForbiddenRules = new Map(
+    currentPolicy.forbiddenSourcePatterns.map((entry) => [entry.id, entry]),
+  );
+  for (const previousRule of oldConfig.forbiddenSourcePatterns) {
+    const currentRule = currentForbiddenRules.get(previousRule.id);
+    if (!currentRule) {
+      findings.push(
+        policyFinding("merge-base-coverage-weakening", {
+          removedForbiddenSourcePattern: previousRule.id,
+        }),
+      );
+      continue;
+    }
+    const removedPatterns = (previousRule.patterns ?? []).filter(
+      (pattern) => !(currentRule.patterns ?? []).includes(pattern),
+    );
+    const removedTerms = (previousRule.terms ?? []).filter(
+      (term) => !(currentRule.terms ?? []).includes(term),
+    );
+    const addedExcludes = (currentRule.excludePatterns ?? []).filter(
+      (pattern) => !(previousRule.excludePatterns ?? []).includes(pattern),
+    );
+    if (removedPatterns.length || removedTerms.length || addedExcludes.length) {
+      findings.push(
+        policyFinding("merge-base-coverage-weakening", {
+          forbiddenSourcePattern: previousRule.id,
+          removedPatterns,
+          removedTerms,
+          addedExcludes,
+        }),
+      );
+    }
   }
   for (const [owner, definition] of Object.entries(oldConfig.owners)) {
     const next = currentPolicy.owners[owner];

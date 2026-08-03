@@ -2,6 +2,7 @@ import type { ActivityPlanPlanningEstimate } from "@repo/core";
 import { Form, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
+import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import { useCallback, useEffect } from "react";
 import { useWatch } from "react-hook-form";
@@ -11,6 +12,7 @@ import { type ActivityPlan, ActivityPlanCard } from "@/components/shared/Activit
 import type { ResourceMetric } from "@/components/shared/ResourceCardPrimitives";
 import { shouldUseAccessibleBuilderLayout } from "@/components/training-plan/create/responsiveLayout";
 import { TrainingPlanEventCard } from "@/components/training-plan/TrainingPlanEventCard";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import {
   BUILDER_WEEKDAY_NAMES,
   formatBuilderWeekdayWithWeek,
@@ -53,21 +55,39 @@ function getEventTitle(event: TrainingPlanBuilderSession) {
   return event.eventOverrides?.title || event.activityPlan?.name || "Unassigned activity";
 }
 
+function getEstimatedDurationSeconds(estimate?: ActivityPlanPlanningEstimate | null) {
+  return estimate?.durationEstimate.status === "exact" ||
+    estimate?.durationEstimate.status === "estimated"
+    ? estimate.durationEstimate.valueSeconds
+    : null;
+}
+
+function getQuantificationPresentation(
+  event: TrainingPlanBuilderSession,
+  estimate?: ActivityPlanPlanningEstimate | null,
+) {
+  return getActivityQuantificationPresentation(
+    estimate?.prescriptionQuantification ?? event.activityPlan?.prescriptionQuantification,
+  );
+}
+
 function getEventMeta(
   event: TrainingPlanBuilderSession,
   estimate?: ActivityPlanPlanningEstimate | null,
 ) {
-  const tss = estimate?.tss ?? event.activityPlan?.estimatedTss ?? event.intent?.targetTss ?? null;
+  const quantification = getQuantificationPresentation(event, estimate);
   const durationSeconds =
-    estimate?.durationSeconds ??
-    event.activityPlan?.estimatedDurationSeconds ??
+    getEstimatedDurationSeconds(estimate) ??
+    getActivityPlanQuantitySummary(event.activityPlan).durationSeconds ??
     event.intent?.targetDurationSeconds ??
     null;
   const minutes = durationSeconds ? Math.round(durationSeconds / 60) : null;
   return [
     event.eventOverrides?.start_time || null,
     minutes !== null ? `${minutes} min` : null,
-    tss !== null ? `${Math.round(tss)} Load` : null,
+    event.activityPlan
+      ? `${quantification.commonLoad.label} ${quantification.commonLoad.value.toLowerCase()}`
+      : null,
   ]
     .filter((part): part is string => Boolean(part))
     .join(" · ");
@@ -87,16 +107,23 @@ function getActivityMetrics(
   estimate?: ActivityPlanPlanningEstimate | null,
 ): ResourceMetric[] {
   if (!event.activityPlan) return [];
-  const tss = estimate?.tss ?? event.activityPlan.estimatedTss ?? null;
+  const quantification = getQuantificationPresentation(event, estimate);
   const durationSeconds =
-    estimate?.durationSeconds ?? event.activityPlan.estimatedDurationSeconds ?? null;
-  const intensityFactor = estimate?.intensityFactor ?? null;
+    getEstimatedDurationSeconds(estimate) ??
+    getActivityPlanQuantitySummary(event.activityPlan).durationSeconds;
   return [
-    { label: "Duration", value: formatDurationMetric(durationSeconds) },
-    { label: "Load", value: tss !== null ? `${Math.round(tss)}` : "--", tone: "primary" },
     {
-      label: "Intensity",
-      value: intensityFactor ? intensityFactor.toFixed(2) : "--",
+      label: "Duration",
+      value: durationSeconds !== null ? formatDurationMetric(durationSeconds) : "Unavailable",
+    },
+    {
+      label: quantification.commonLoad.label,
+      value: quantification.commonLoad.value,
+      tone: "primary",
+    },
+    {
+      label: quantification.normalizedIntensity.label,
+      value: quantification.normalizedIntensity.value,
       tone: "primary",
     },
   ];
@@ -304,8 +331,9 @@ export function TrainingPlanBuilderEventEditor({
         id: event.activityPlan.id,
         name: event.activityPlan.name,
         activity_category: "other" as const,
-        estimatedDuration: event.activityPlan.estimatedDurationSeconds ?? undefined,
-        estimatedTss: event.activityPlan.estimatedTss ?? undefined,
+        estimatedDuration:
+          getActivityPlanQuantitySummary(event.activityPlan).durationSeconds ?? undefined,
+        prescriptionQuantification: event.activityPlan.prescriptionQuantification,
       }
     : null;
 

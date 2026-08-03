@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { createUnavailableAthletePerformanceTargetFacts } from "../performance-model";
 import type { RecordingSessionSnapshot } from "../schemas/recording-session";
 import { PORTABLE_TIMER_RECORDING_DRAFT_SCHEMA_VERSION } from "./portable-timer-draft";
 import {
@@ -22,7 +23,8 @@ const snapshot: RecordingSessionSnapshot = {
     activityPlanId: null,
     routeId: null,
   },
-  profileSnapshot: { defaultsApplied: [] },
+  profileSnapshot: {},
+  performanceTargets: createUnavailableAthletePerformanceTargetFacts("2026-07-17T12:00:00.000Z"),
   devices: { connected: [], controllableTrainer: null, selectedSources: [] },
   capabilities: {
     canTrackLocation: false,

@@ -249,6 +249,12 @@ function speedCapability(curve: DurationAwareEffortCurve | undefined): Calculati
   });
 }
 
+function powerCapability(curve: DurationAwareEffortCurve | undefined): CalculationResult {
+  const result = curve?.threshold;
+  if (!result || result.estimate === null) return insufficient("compatible_power_curve_missing");
+  return normalizedUnit(result, "W");
+}
+
 function normalizedUnit(result: CalculationResult, unit: string): CalculationResult {
   if (result.estimate === null || result.unit === unit) return result;
   const equivalent =
@@ -373,14 +379,14 @@ function dimensionsForGoal(input: {
               uncertainty: 1,
               reasonCodes: ["goal_activity_category_incompatible_with_direct_capability"],
             })
-          : requirement.metric === "power" && hasTruncatedCoverage(input.model, "metrics")
-            ? truncatedDomain("metrics")
+          : requirement.metric === "power" && hasTruncatedCoverage(input.model, "efforts")
+            ? truncatedDomain("efforts")
             : requirement.metric === "hr" && hasTruncatedCoverage(input.model, "metrics")
               ? truncatedDomain("metrics")
               : requirement.metric === "pace" && hasTruncatedCoverage(input.model, "efforts")
                 ? truncatedDomain("efforts")
                 : requirement.metric === "power"
-                  ? input.physiology.metrics.ftp.result
+                  ? powerCapability(input.curve)
                   : requirement.metric === "hr"
                     ? input.physiology.metrics.lthr.result
                     : speedCapability(input.curve);
@@ -592,14 +598,10 @@ export function assembleWholeAthleteProjection(
     assessmentAsOf: input.model.assessmentAsOf,
     athleteId: input.model.athleteId,
     capability: {
-      ftp: input.physiology.metrics.ftp.result,
-      runningThresholdPace: input.physiology.metrics.threshold_pace_seconds_per_km.result,
-      swimmingCss: input.physiology.metrics.css_seconds_per_100m.result,
       criticalPowerWatts:
         input.criticalPower?.criticalPowerWatts ?? insufficient("critical_power_evidence_missing"),
       wPrimeJoules:
         input.criticalPower?.wPrimeJoules ?? insufficient("critical_power_evidence_missing"),
-      wattsPerKilogram: input.physiology.wattsPerKilogram,
       heartRateReserve: input.physiology.heartRateReserve,
       effortCurves: input.effortCurves.flatMap((entry) =>
         entry.effortCurve

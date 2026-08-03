@@ -1,4 +1,8 @@
-import type { CanonicalActivityCategory } from "@repo/core";
+import type {
+  ActivityPrescriptionQuantificationBundle,
+  CanonicalActivityCategory,
+  CommonLoadAggregate,
+} from "@repo/core";
 import type { inferRouterOutputs } from "@trpc/server";
 import { describe, expect, it } from "vitest";
 import type { AppRouter } from "..";
@@ -24,12 +28,13 @@ type _listActivityCategoryIsCanonical = Assert<
 >;
 type _plannedDaySummaryIsTyped = Assert<
   Equal<
-    PlannedDaySummary["summary"],
+    Omit<PlannedDaySummary, "date" | "timezone">["summary"],
     {
       eventCount: number;
       activity_categories: CanonicalActivityCategory[];
       totalDurationSeconds: number | null;
-      totalTss: number | null;
+      prescriptionQuantification: ActivityPrescriptionQuantificationBundle;
+      commonLoad: CommonLoadAggregate;
     }
   >
 >;

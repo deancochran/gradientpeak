@@ -31,7 +31,7 @@ export const runActivityCategory: ActivityCategoryRegistryEntry = {
     template: {
       avgIF: 0.8,
       avgDuration: 2700,
-      avgTSS: 55,
+      avgCommonLoad: 55,
     },
   },
 };

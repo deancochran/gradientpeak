@@ -1,3 +1,4 @@
+import type { ActivityPlanPlanningEstimate } from "@repo/core";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
@@ -29,20 +30,18 @@ function toActivityPlanFacts(activityPlan: ActivityPlanListItem): TrainingPlanAc
     name: activityPlan.name,
     published: isPublished,
     accessible: true,
-    estimatedTss: activityPlan.authoritative_metrics?.estimated_tss ?? null,
-    estimatedDurationSeconds: activityPlan.authoritative_metrics?.estimated_duration ?? null,
+    prescriptionQuantification: activityPlan.prescriptionQuantification ?? null,
   };
 }
 
 function toEstimatedActivityPlanFacts(
   activityPlan: ActivityPlanListItem,
-  estimate?: { durationSeconds: number | null; tss: number | null } | null,
+  estimate?: ActivityPlanPlanningEstimate | null,
 ): TrainingPlanActivityPlanFacts {
   return {
     ...toActivityPlanFacts(activityPlan),
-    estimatedDurationSeconds:
-      estimate?.durationSeconds ?? activityPlan.authoritative_metrics?.estimated_duration ?? null,
-    estimatedTss: estimate?.tss ?? activityPlan.authoritative_metrics?.estimated_tss ?? null,
+    prescriptionQuantification:
+      estimate?.prescriptionQuantification ?? activityPlan.prescriptionQuantification ?? null,
   };
 }
 

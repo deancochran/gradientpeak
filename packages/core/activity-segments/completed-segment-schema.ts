@@ -1,7 +1,15 @@
 import { z } from "zod";
-
+import { swimTimingResultSchema } from "../activity-analysis/swim-timing";
 import { activityArtifactSourceFormatSchema } from "../activity-artifacts/source-format";
+import { bestEffortExtractionResultSchema } from "../calculations/best-efforts";
+import {
+  aerobicDecouplingResultSchema,
+  efficiencyFactorResultSchema,
+} from "../calculations/efficiency";
+import { runningNormalizedGradedPaceResultSchema } from "../calculations/normalized-graded-pace";
+import { cyclingNormalizedPowerResultSchema } from "../calculations/normalized-power";
 import { canonicalActivityCategorySchema } from "../schemas/activity-category";
+import { storedHeartRateDurationEvidenceSchema } from "../zones/heart-rate-duration";
 
 const rawSourceStringSchema = z.string().refine(
   (value) => {
@@ -19,9 +27,9 @@ const rawSourceFields = {
 };
 
 function hasRawSourceIdentity(value: {
-  rawType?: string | number;
-  rawSport?: string | number;
-  rawSubSport?: string | number;
+  rawType?: string | number | undefined;
+  rawSport?: string | number | undefined;
+  rawSubSport?: string | number | undefined;
 }): boolean {
   return (
     value.rawType !== undefined || value.rawSport !== undefined || value.rawSubSport !== undefined
@@ -106,42 +114,9 @@ export const SEGMENT_SUMMARY_LIMITS = {
   maxHeartRateBpm: 250,
 } as const;
 
-const heartRateDistributionSchema = z
-  .object({
-    coverageSeconds: z.number().int().positive(),
-    buckets: z
-      .array(
-        z
-          .object({
-            bpm: z
-              .number()
-              .int()
-              .min(SEGMENT_SUMMARY_LIMITS.minHeartRateBpm)
-              .max(SEGMENT_SUMMARY_LIMITS.maxHeartRateBpm),
-            seconds: z.number().int().positive(),
-          })
-          .strict(),
-      )
-      .min(1)
-      .max(SEGMENT_SUMMARY_LIMITS.maxHeartRateBpm - SEGMENT_SUMMARY_LIMITS.minHeartRateBpm + 1),
-  })
-  .strict()
-  .superRefine((distribution, context) => {
-    if (new Set(distribution.buckets.map(({ bpm }) => bpm)).size !== distribution.buckets.length) {
-      context.addIssue({ code: "custom", path: ["buckets"], message: "HR buckets must be unique" });
-    }
-    const bucketSeconds = distribution.buckets.reduce((sum, bucket) => sum + bucket.seconds, 0);
-    if (bucketSeconds !== distribution.coverageSeconds) {
-      context.addIssue({
-        code: "custom",
-        path: ["coverageSeconds"],
-        message: "HR coverage must equal the sum of bucket durations",
-      });
-    }
-  });
-
 const swimSegmentSummarySchema = z
   .object({
+    timingEvidence: swimTimingResultSchema.optional(),
     poolLengthMeters: z
       .number()
       .positive()
@@ -161,7 +136,7 @@ const swimSegmentSummarySchema = z
     message: "A swim summary must contain at least one supported metric.",
   });
 
-export const segmentSummarySchema = z
+export const completedSegmentSummarySchema = z
   .object({
     version: z.literal(1),
     timing: segmentTimingSchema,
@@ -170,9 +145,9 @@ export const segmentSummarySchema = z
     descentMeters: z.number().nonnegative().optional(),
     caloriesKcal: z.number().nonnegative().optional(),
     averageHeartRateBpm: z.number().nonnegative().optional(),
-    heartRateDistribution: heartRateDistributionSchema.optional(),
+    heartRateDistribution: storedHeartRateDurationEvidenceSchema.optional(),
     averagePowerWatts: z.number().nonnegative().optional(),
-    normalizedPowerWatts: z.number().positive().optional(),
+    normalizedPowerResult: cyclingNormalizedPowerResultSchema,
     averageCadenceRpm: z
       .number()
       .nonnegative()
@@ -188,11 +163,10 @@ export const segmentSummarySchema = z
       .positive()
       .max(SEGMENT_SUMMARY_LIMITS.maxSpeedMetersPerSecond)
       .optional(),
-    normalizedGradedSpeedMetersPerSecond: z
-      .number()
-      .positive()
-      .max(SEGMENT_SUMMARY_LIMITS.maxSpeedMetersPerSecond)
-      .optional(),
+    normalizedGradedPaceResult: runningNormalizedGradedPaceResultSchema.optional(),
+    efficiencyFactorResult: efficiencyFactorResultSchema.optional(),
+    aerobicDecouplingResult: aerobicDecouplingResultSchema.optional(),
+    bestEffortExtractions: z.array(bestEffortExtractionResultSchema).max(4).optional(),
     swim: swimSegmentSummarySchema.optional(),
   })
   .strict()
@@ -211,16 +185,57 @@ export const segmentSummarySchema = z
         message: "Moving time cannot exceed active time.",
       });
     }
+    const bestEffortMetrics = summary.bestEffortExtractions?.map((extraction) => extraction.metric);
+    if (bestEffortMetrics && new Set(bestEffortMetrics).size !== bestEffortMetrics.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["bestEffortExtractions"],
+        message: "Best-effort extraction metrics must be unique within a segment summary.",
+      });
+    }
   });
 
-export type SegmentSummary = z.infer<typeof segmentSummarySchema>;
+export type CompletedSegmentSummary = z.infer<typeof completedSegmentSummarySchema>;
+
+export const activitySegmentAnalysisSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("processing"), summary: z.null() }).strict(),
+  z
+    .object({
+      status: z.literal("available"),
+      summary: completedSegmentSummarySchema,
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("failed"),
+      summary: z.null(),
+      reason: z.string().trim().min(1).max(512),
+    })
+    .strict(),
+]);
+
+export type ActivitySegmentAnalysis = z.infer<typeof activitySegmentAnalysisSchema>;
+
+export function createProcessingActivitySegmentAnalysis(): ActivitySegmentAnalysis {
+  return activitySegmentAnalysisSchema.parse({ status: "processing", summary: null });
+}
+
+export function createAnalyzedActivitySegmentAnalysis(
+  summary: CompletedSegmentSummary,
+): ActivitySegmentAnalysis {
+  return activitySegmentAnalysisSchema.parse({ status: "available", summary });
+}
+
+export function createFailedActivitySegmentAnalysis(reason: string): ActivitySegmentAnalysis {
+  return activitySegmentAnalysisSchema.parse({ status: "failed", summary: null, reason });
+}
 
 const completedSegmentBase = {
   id: z.string().uuid(),
   ordinal: z.number().int().nonnegative(),
   startOffsetMs: z.number().int().nonnegative(),
   endOffsetMs: z.number().int().positive(),
-  summary: segmentSummarySchema,
+  summary: completedSegmentSummarySchema,
 };
 
 const completedActivityRoleSegmentSchema = z

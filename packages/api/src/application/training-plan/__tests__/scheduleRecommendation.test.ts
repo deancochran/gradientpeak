@@ -7,7 +7,7 @@ const upcomingImpact = [
     title: "Tempo ride",
     scheduled_at: "2026-07-16T12:00:00.000Z",
     activity_category: "bike" as const,
-    estimated_load: 65,
+    common_load: null,
     confidence: "medium" as const,
     explanation: "Upcoming session impact.",
   },
@@ -34,7 +34,7 @@ describe("buildScheduleRecommendation", () => {
       type: "add_load",
       label: "Adjust schedule",
       description:
-        "Add about 30 TSS this week or schedule one moderate session to approach the recommended load.",
+        "Add about 30 load this week or schedule one moderate session to approach the recommended load.",
       target_date: "2026-07-13",
       target_week_start: "2026-07-13",
       target_load_delta: 30.3,

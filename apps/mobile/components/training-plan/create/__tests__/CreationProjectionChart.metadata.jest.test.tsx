@@ -112,11 +112,11 @@ const baseProjectionDiagnostics: NonNullable<ProjectionChartFixture["projection_
       volatility_penalty_weight: 0,
       churn_penalty_weight: 0,
     },
-    caps: { max_weekly_tss_ramp_pct: 0, max_ctl_ramp_per_week: 0 },
+    caps: { max_weekly_load_ramp_pct: 0, max_longTermLoad_ramp_per_week: 0 },
     search: { lookahead_weeks: 0, candidate_steps: 0 },
     curvature: { target: 0, strength: 0, weight: 0 },
   },
-  clamp_counts: { tss: 0, ctl: 0 },
+  clamp_counts: { load: 0, longTermLoad: 0 },
   objective_contributions: {
     sampled_weeks: 0,
     objective_score: 0,
@@ -147,7 +147,7 @@ const baseProjectionDiagnostics: NonNullable<ProjectionChartFixture["projection_
 };
 
 describe("CreationProjectionChart metadata", () => {
-  it("defaults to Load and Fitness with legible, effective legend targets", () => {
+  it("defaults to Common and Long-term Load with legible, effective legend targets", () => {
     renderNative(
       <CreationProjectionChart
         projectionChart={projectionFixture({
@@ -156,10 +156,10 @@ describe("CreationProjectionChart metadata", () => {
           points: [
             {
               date: "2026-07-06",
-              predicted_load_tss: 420,
-              predicted_fitness_ctl: 55,
-              predicted_fatigue_atl: 62,
-              predicted_form_tsb: -7,
+              predicted_load: 420,
+              predicted_fitness_longTermLoad: 55,
+              predicted_fatigue_recentLoad: 62,
+              predicted_form_loadBalance: -7,
               readiness_score: 74,
             },
           ],
@@ -171,14 +171,16 @@ describe("CreationProjectionChart metadata", () => {
     );
 
     const legendButtons = getHostNodes("Pressable").filter((node: ReactTestInstance) =>
-      ["Load line", "Fitness line", "Fatigue line"].includes(node.props.accessibilityLabel),
+      ["Common Load line", "Long-term Load line", "Recent Load line"].includes(
+        node.props.accessibilityLabel,
+      ),
     );
     const byLabel = (label: string) =>
       legendButtons.find((node: ReactTestInstance) => node.props.accessibilityLabel === label);
 
-    expect(byLabel("Load line")?.props.accessibilityState.selected).toBe(true);
-    expect(byLabel("Fitness line")?.props.accessibilityState.selected).toBe(true);
-    expect(byLabel("Fatigue line")?.props.accessibilityState.selected).toBe(false);
+    expect(byLabel("Common Load line")?.props.accessibilityState.selected).toBe(true);
+    expect(byLabel("Long-term Load line")?.props.accessibilityState.selected).toBe(true);
+    expect(byLabel("Recent Load line")?.props.accessibilityState.selected).toBe(false);
     expect(
       legendButtons.every((node: ReactTestInstance) => node.props.className.includes("min-h-11")),
     ).toBe(true);
@@ -193,26 +195,26 @@ describe("CreationProjectionChart metadata", () => {
           points: [
             {
               date: "2026-02-14",
-              predicted_load_tss: 420,
-              predicted_fitness_ctl: 55,
-              predicted_fatigue_atl: 62,
-              predicted_form_tsb: -7,
+              predicted_load: 420,
+              predicted_fitness_longTermLoad: 55,
+              predicted_fatigue_recentLoad: 62,
+              predicted_form_loadBalance: -7,
               readiness_score: 74,
             },
             {
               date: "2026-02-20",
-              predicted_load_tss: 430,
-              predicted_fitness_ctl: 56,
-              predicted_fatigue_atl: 63,
-              predicted_form_tsb: -7,
+              predicted_load: 430,
+              predicted_fitness_longTermLoad: 56,
+              predicted_fatigue_recentLoad: 63,
+              predicted_form_loadBalance: -7,
               readiness_score: 75,
             },
             {
               date: "2026-02-27",
-              predicted_load_tss: 440,
-              predicted_fitness_ctl: 57,
-              predicted_fatigue_atl: 64,
-              predicted_form_tsb: -7,
+              predicted_load: 440,
+              predicted_fitness_longTermLoad: 57,
+              predicted_fatigue_recentLoad: 64,
+              predicted_form_loadBalance: -7,
               readiness_score: 76,
             },
           ],
@@ -244,18 +246,18 @@ describe("CreationProjectionChart metadata", () => {
           points: [
             {
               date: "2026-07-06",
-              predicted_load_tss: 420,
-              predicted_fitness_ctl: 55,
-              predicted_fatigue_atl: 62,
-              predicted_form_tsb: -7,
+              predicted_load: 420,
+              predicted_fitness_longTermLoad: 55,
+              predicted_fatigue_recentLoad: 62,
+              predicted_form_loadBalance: -7,
               readiness_score: 74,
             },
             {
               date: "2026-07-13",
-              predicted_load_tss: 440,
-              predicted_fitness_ctl: 57,
-              predicted_fatigue_atl: 64,
-              predicted_form_tsb: -7,
+              predicted_load: 440,
+              predicted_fitness_longTermLoad: 57,
+              predicted_fatigue_recentLoad: 64,
+              predicted_form_loadBalance: -7,
               readiness_score: 76,
             },
           ],
@@ -290,10 +292,10 @@ describe("CreationProjectionChart metadata", () => {
           points: [
             {
               date: "2026-02-14",
-              predicted_load_tss: 420,
-              predicted_fitness_ctl: 55,
-              predicted_fatigue_atl: 62,
-              predicted_form_tsb: -7,
+              predicted_load: 420,
+              predicted_fitness_longTermLoad: 55,
+              predicted_fatigue_recentLoad: 62,
+              predicted_form_loadBalance: -7,
               readiness_score: 74,
             },
           ],
@@ -308,7 +310,7 @@ describe("CreationProjectionChart metadata", () => {
             goal_demand_score_0_1: 0.71,
             projection_floor_confidence: "medium",
             projection_floor_applied: true,
-            projection_floor_values: { start_ctl: 12, start_weekly_tss: 120 },
+            projection_floor_values: { start_longTermLoad: 12, start_weekly_load: 120 },
             fitness_level: "weak",
             floor_clamped_by_availability: false,
             fitness_inference_reasons: [],
@@ -333,7 +335,7 @@ describe("CreationProjectionChart metadata", () => {
     expect(textNodes.some((text: string) => text.includes("Capacity envelope:"))).toBe(false);
     expect(textNodes.some((text: string) => text.includes("limiter: ramp_limit"))).toBe(false);
     expect(textNodes).toContain("Risk score: 52%");
-    expect(textNodes).toContain("Fitness signal: 44%");
+    expect(textNodes).toContain("Load-history signal: 44%");
     expect(textNodes).toContain("Goal demand: 71%");
   });
 
@@ -346,10 +348,10 @@ describe("CreationProjectionChart metadata", () => {
           points: [
             {
               date: "2026-02-14",
-              predicted_load_tss: 420,
-              predicted_fitness_ctl: 55,
-              predicted_fatigue_atl: 62,
-              predicted_form_tsb: -7,
+              predicted_load: 420,
+              predicted_fitness_longTermLoad: 55,
+              predicted_fatigue_recentLoad: 62,
+              predicted_form_loadBalance: -7,
               readiness_score: 74,
               prediction_uncertainty: 0.22,
             },
@@ -375,10 +377,10 @@ describe("CreationProjectionChart metadata", () => {
           points: [
             {
               date: "2026-02-14",
-              predicted_load_tss: 420,
-              predicted_fitness_ctl: 55,
-              predicted_fatigue_atl: 62,
-              predicted_form_tsb: -7,
+              predicted_load: 420,
+              predicted_fitness_longTermLoad: 55,
+              predicted_fatigue_recentLoad: 62,
+              predicted_form_loadBalance: -7,
               readiness_score: 74,
             },
           ],
@@ -399,7 +401,7 @@ describe("CreationProjectionChart metadata", () => {
     const textNodes = getTextNodes();
     expect(textNodes).toContain("Training state");
     expect(textNodes).toContain(
-      "CTL/ATL describe training load and fatigue trends only; they do not determine athlete suitability.",
+      "Long-term and Recent Load describe training-state trends only; they do not determine athlete suitability.",
     );
   });
 
@@ -412,10 +414,10 @@ describe("CreationProjectionChart metadata", () => {
           points: [
             {
               date: "2026-02-14",
-              predicted_load_tss: 420,
-              predicted_fitness_ctl: 55,
-              predicted_fatigue_atl: 62,
-              predicted_form_tsb: -7,
+              predicted_load: 420,
+              predicted_fitness_longTermLoad: 55,
+              predicted_fatigue_recentLoad: 62,
+              predicted_form_loadBalance: -7,
               readiness_score: 74,
             },
           ],
@@ -426,16 +428,16 @@ describe("CreationProjectionChart metadata", () => {
             normalized_creation_config: {
               optimization_profile: "balanced",
               post_goal_recovery_days: 5,
-              max_weekly_tss_ramp_pct: 8,
-              max_ctl_ramp_per_week: 4,
+              max_weekly_load_ramp_pct: 8,
+              max_longTermLoad_ramp_per_week: 4,
               learned_ramp_rate: {
                 max_safe_ramp_rate: 40,
                 confidence: "medium",
                 source: "default",
               },
             },
-            tss_ramp_clamp_weeks: 2,
-            ctl_ramp_clamp_weeks: 1,
+            load_ramp_clamp_weeks: 2,
+            longTermLoad_ramp_clamp_weeks: 1,
             recovery_weeks: 1,
           },
           projection_diagnostics: {
@@ -443,7 +445,7 @@ describe("CreationProjectionChart metadata", () => {
             continuous_projection_diagnostics: {
               ...baseProjectionDiagnostics,
               effective_optimizer: { preparedness_weight: 15.4, risk_penalty_weight: 0.29 },
-              active_constraints: ["tss_ramp_cap_pressure"],
+              active_constraints: ["load_ramp_cap_pressure"],
               binding_constraints: ["availability_cap"],
               clamp_pressure: 0.41,
               objective_composition: { preparedness: 2.15, risk_penalty: -0.63 },
@@ -458,7 +460,7 @@ describe("CreationProjectionChart metadata", () => {
     expect(textNodes).toContain(
       "Effective optimizer: preparedness weight 15.4, risk penalty weight 0.29.",
     );
-    expect(textNodes).toContain("Active constraints: tss ramp cap pressure.");
+    expect(textNodes).toContain("Active constraints: load ramp cap pressure.");
     expect(textNodes).toContain("Binding constraints: availability cap | Clamp pressure 41%");
     expect(textNodes).toContain(
       "Objective mix: preparedness 2.15, risk penalty -0.63 | curvature 0.22.",
@@ -474,10 +476,10 @@ describe("CreationProjectionChart metadata", () => {
           points: [
             {
               date: "2026-02-14",
-              predicted_load_tss: 420,
-              predicted_fitness_ctl: 55,
-              predicted_fatigue_atl: 62,
-              predicted_form_tsb: -7,
+              predicted_load: 420,
+              predicted_fitness_longTermLoad: 55,
+              predicted_fatigue_recentLoad: 62,
+              predicted_form_loadBalance: -7,
               readiness_score: 74,
             },
           ],
@@ -488,16 +490,16 @@ describe("CreationProjectionChart metadata", () => {
             normalized_creation_config: {
               optimization_profile: "outcome_first",
               post_goal_recovery_days: 3,
-              max_weekly_tss_ramp_pct: 40,
-              max_ctl_ramp_per_week: 12,
+              max_weekly_load_ramp_pct: 40,
+              max_longTermLoad_ramp_per_week: 12,
               learned_ramp_rate: {
                 max_safe_ramp_rate: 40,
                 confidence: "medium",
                 source: "default",
               },
             },
-            tss_ramp_clamp_weeks: 4,
-            ctl_ramp_clamp_weeks: 3,
+            load_ramp_clamp_weeks: 4,
+            longTermLoad_ramp_clamp_weeks: 3,
             recovery_weeks: 1,
           },
           projection_diagnostics: {
@@ -515,11 +517,11 @@ describe("CreationProjectionChart metadata", () => {
                 volatility_penalty_weight: 0.2,
                 churn_penalty_weight: 0.16,
               },
-              caps: { max_weekly_tss_ramp_pct: 40, max_ctl_ramp_per_week: 12 },
+              caps: { max_weekly_load_ramp_pct: 40, max_longTermLoad_ramp_per_week: 12 },
               search: { lookahead_weeks: 8, candidate_steps: 15 },
               curvature: { target: 0, strength: 0, weight: 0 },
             },
-            clamp_counts: { tss: 5, ctl: 3 },
+            clamp_counts: { load: 5, longTermLoad: 3 },
             objective_contributions: {
               sampled_weeks: 8,
               objective_score: 3.14,

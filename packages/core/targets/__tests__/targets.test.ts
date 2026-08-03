@@ -38,6 +38,9 @@ describe("modern target authority", () => {
     expect(isTargetTypePermittedForActivity({ activityCategory: "run", targetType: "watts" })).toBe(
       false,
     );
+    expect(
+      isTargetTypePermittedForActivity({ activityCategory: "swim", targetType: "speed" }),
+    ).toBe(true);
   });
 
   it("is reused by schema capability exports", () => {

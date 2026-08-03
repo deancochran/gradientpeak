@@ -1,13 +1,36 @@
 import { buildSystemActivityTemplateCatalog, SYSTEM_TEMPLATES } from "@repo/core";
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations/normalized-power";
 import { TRPCError } from "@trpc/server";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import { createQueryMapDbMock, type QueryMap, type QueryResult } from "../../test/mock-query-db";
+import { createTestPerformanceModelEffortRows } from "../../test-support/performance-model";
 import { deriveProfileAwareCreationContext, trainingPlansRouter } from "../planning/training-plans";
 
 const currentLoadHistoryMock = vi.hoisted(() => vi.fn());
 const effectivePlanLoadMock = vi.hoisted(() => vi.fn());
+const normalizedPowerFixtureCache = new Map<
+  string,
+  ReturnType<typeof calculateCyclingNormalizedPower>
+>();
+
+function constantNormalizedPowerFixture(powerWatts: number, durationSeconds: number) {
+  const cacheKey = `${powerWatts}:${durationSeconds}`;
+  const cached = normalizedPowerFixtureCache.get(cacheKey);
+  if (cached) return cached;
+  const timestamps = [0];
+  let timestampSeconds = 0;
+  while (timestampSeconds < durationSeconds) {
+    timestampSeconds = Math.min(durationSeconds, timestampSeconds + 5);
+    timestamps.push(timestampSeconds);
+  }
+  const result = calculateCyclingNormalizedPower({
+    samples: timestamps.map((timestamp) => ({ timestampSeconds: timestamp, powerWatts })),
+  });
+  normalizedPowerFixtureCache.set(cacheKey, result);
+  return result;
+}
 
 vi.mock("../../application/activities/read-current-profile-common-load-history", () => ({
   readCurrentProfileCommonLoadHistory: currentLoadHistoryMock,
@@ -33,6 +56,12 @@ function currentHistoryResult(
         policyVersion: "common_load_history_v1";
         identity: {
           policyVersion: "common_load_history_v1";
+          basis: "completed_activity_history";
+          calculationIdentity: {
+            model: "gradientpeak_common_load_history";
+            version: "1";
+            asOf: string;
+          };
           planningTimezone: string;
           startDate: string;
           endDate: string;
@@ -81,6 +110,12 @@ function availableCurrentHistory(partial = false) {
     policyVersion: "common_load_history_v1",
     identity: {
       policyVersion: "common_load_history_v1",
+      basis: "completed_activity_history",
+      calculationIdentity: {
+        model: "gradientpeak_common_load_history",
+        version: "1",
+        asOf: "2026-07-23T12:00:00.000Z",
+      },
       planningTimezone: "UTC",
       startDate: "2026-04-30",
       endDate: "2026-07-22",
@@ -123,6 +158,7 @@ beforeEach(() => {
 
 const systemActivityPlanId = buildSystemActivityTemplateCatalog()[0]?.template_id;
 if (!systemActivityPlanId) throw new Error("Expected seeded system activity templates");
+const PERFORMANCE_MODEL_PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 const systemTemplateRows = SYSTEM_TEMPLATES.map((template) => ({
   gps_recording_enabled: template.gps_recording_enabled,
   id: template.id,
@@ -131,7 +167,7 @@ const systemTemplateRows = SYSTEM_TEMPLATES.map((template) => ({
   structure_hash: activityPlanStructureHash(template.structure),
 }));
 
-function createTrainingPlansCaller(results: QueryMap = {}) {
+function createTrainingPlansCaller(results: QueryMap = {}, profileId = "profile-123") {
   const activityEntries = Array.isArray(results.activities)
     ? results.activities
     : results.activities
@@ -145,6 +181,13 @@ function createTrainingPlansCaller(results: QueryMap = {}) {
     .map((activity) => {
       const activeMs = activity.active_ms;
       const movingMs = activity.moving_ms;
+      const normalizedPowerResult =
+        typeof activity.avg_power === "number"
+          ? constantNormalizedPowerFixture(
+              activity.avg_power,
+              (Number.isFinite(activeMs) ? activeMs : activity.elapsed_ms) / 1_000,
+            )
+          : calculateCyclingNormalizedPower({ samples: [] });
       return {
         id: `${activity.id}-segment`,
         activity_id: activity.id,
@@ -166,8 +209,9 @@ function createTrainingPlansCaller(results: QueryMap = {}) {
           distanceMeters: activity.distance_meters,
           averageHeartRateBpm: activity.avg_heart_rate ?? undefined,
           ...(typeof activity.avg_power === "number"
-            ? { normalizedPowerWatts: activity.avg_power }
+            ? { averagePowerWatts: activity.avg_power }
             : {}),
+          normalizedPowerResult,
         },
       };
     });
@@ -185,7 +229,7 @@ function createTrainingPlansCaller(results: QueryMap = {}) {
     db: db as any,
     session: {
       user: {
-        id: "profile-123",
+        id: profileId,
       },
     },
     headers: new Headers(),
@@ -261,7 +305,7 @@ function buildLoadActivity(id: string, startedAt: Date, normalizedPower: number 
     id,
     started_at: startedAt,
     finished_at: new Date(startedAt.getTime() + 3_600_000),
-    profile_id: "profile-123",
+    profile_id: PERFORMANCE_MODEL_PROFILE_ID,
     elapsed_ms: 3_600_000,
     active_ms: 3_600_000,
     moving_ms: 3_600_000,
@@ -280,34 +324,29 @@ function buildLoadActivity(id: string, startedAt: Date, normalizedPower: number 
   };
 }
 
-const loadEvidenceResults = {
-  profiles: { data: [{ profile_id: "profile-123", dob: null, gender: null }], error: null },
-  profile_metrics: { data: [], error: null },
-  activity_efforts: {
-    data: [
-      ...[new Date("2025-12-20T00:00:00.000Z"), new Date(Date.now() - 30 * 86_400_000)].map(
-        (recordedAt, index) => ({
-          id: `ftp-effort-${index}`,
-          profile_id: "profile-123",
-          activity_id: `threshold-activity-${index}`,
-          activity_category: "bike",
-          duration_seconds: 1200,
-          effort_type: "power",
-          recorded_at: recordedAt,
-          unit: "watts",
-          value: 250 / 0.95,
-          source: "imported",
-          method: "activity_file_best_effort",
-          provenance: {
-            activity_id: `threshold-activity-${index}`,
-            derived_from: "activity_file_stream",
-          },
+function createLoadEvidenceResults(asOf: Date): QueryMap {
+  return {
+    profiles: {
+      data: [{ profile_id: PERFORMANCE_MODEL_PROFILE_ID, dob: null, gender: null }],
+      error: null,
+    },
+    profile_metrics: { data: [], error: null },
+    activity_efforts: [
+      {
+        data: createTestPerformanceModelEffortRows({
+          athleteId: PERFORMANCE_MODEL_PROFILE_ID,
+          activityCategory: "bike",
+          target: 250,
+          evidenceIdOffset: 0,
+          asOf,
         }),
-      ),
+        error: null,
+      },
+      { data: [], error: null },
+      { data: [], error: null },
     ],
-    error: null,
-  },
-} satisfies QueryMap;
+  };
+}
 
 const AGGRESSIVE_BEHAVIOR_CONTROLS = {
   aggressiveness: 0.85,
@@ -349,8 +388,8 @@ function assertSaneProjectionDiagnostics(diagnostics: any) {
       churn_penalty_weight: expect.any(Number),
     },
     caps: {
-      max_weekly_tss_ramp_pct: expect.any(Number),
-      max_ctl_ramp_per_week: expect.any(Number),
+      max_weekly_load_ramp_pct: expect.any(Number),
+      max_longTermLoad_ramp_per_week: expect.any(Number),
     },
     search: {
       lookahead_weeks: expect.any(Number),
@@ -428,11 +467,16 @@ describe("deriveProfileAwareCreationContext", () => {
         recentEfforts: [],
       }),
     };
-    await deriveProfileAwareCreationContext({
+    const result = await deriveProfileAwareCreationContext({
       db: drizzleDb as any,
       store: store as any,
       profileId: "profile-123",
       asOfIso,
+    });
+
+    expect(result.athleteContext.performanceTargets).toMatchObject({
+      asOf: asOfIso,
+      cycling: { planningThresholdPower: { status: "unavailable", value: null } },
     });
 
     const dialect = new PgDialect();
@@ -503,15 +547,15 @@ describe("trainingPlansRouter preview bootstrap baseline fixtures", () => {
     const baseline = first.preview_snapshot_baseline!;
     expect(baseline.readiness_score).toBeGreaterThanOrEqual(0);
     expect(baseline.readiness_score).toBeLessThanOrEqual(100);
-    expect(baseline.predicted_load_tss).toBeGreaterThanOrEqual(0);
-    expect(baseline.predicted_load_tss).toBeLessThanOrEqual(10000);
-    expect(baseline.predicted_fatigue_atl).toBeGreaterThanOrEqual(0);
-    expect(baseline.predicted_fatigue_atl).toBeLessThanOrEqual(2000);
+    expect(baseline.predicted_load).toBeGreaterThanOrEqual(0);
+    expect(baseline.predicted_load).toBeLessThanOrEqual(10000);
+    expect(baseline.predicted_fatigue_recentLoad).toBeGreaterThanOrEqual(0);
+    expect(baseline.predicted_fatigue_recentLoad).toBeLessThanOrEqual(2000);
     expect(["feasible", "aggressive", "unsafe"]).toContain(baseline.feasibility_state);
-    expect(baseline.tss_ramp_clamp_weeks).toBeGreaterThanOrEqual(0);
-    expect(baseline.tss_ramp_clamp_weeks).toBeLessThanOrEqual(104);
-    expect(baseline.ctl_ramp_clamp_weeks).toBeGreaterThanOrEqual(0);
-    expect(baseline.ctl_ramp_clamp_weeks).toBeLessThanOrEqual(104);
+    expect(baseline.load_ramp_clamp_weeks).toBeGreaterThanOrEqual(0);
+    expect(baseline.load_ramp_clamp_weeks).toBeLessThanOrEqual(104);
+    expect(baseline.longTermLoad_ramp_clamp_weeks).toBeGreaterThanOrEqual(0);
+    expect(baseline.longTermLoad_ramp_clamp_weeks).toBeLessThanOrEqual(104);
   });
 });
 
@@ -752,19 +796,21 @@ describe("trainingPlansRouter plan_start_date support", () => {
           behavior_controls: AGGRESSIVE_BEHAVIOR_CONTROLS,
         },
       },
-      starting_ctl_override: 70,
+      starting_longTermLoad_override: 70,
     });
 
     const tssRequestedMax = Math.max(
       ...baseline.projection_chart.microcycles.map((microcycle) => {
-        const tss = microcycle.metadata?.tss_ramp;
-        if (!tss || tss.previous_week_tss <= 0) return 0;
-        return ((tss.requested_weekly_tss - tss.previous_week_tss) / tss.previous_week_tss) * 100;
+        const load = microcycle.metadata?.load_ramp;
+        if (!load || load.previous_week_load <= 0) return 0;
+        return (
+          ((load.requested_weekly_load - load.previous_week_load) / load.previous_week_load) * 100
+        );
       }),
     );
     const ctlRequestedMax = Math.max(
       ...baseline.projection_chart.microcycles.map(
-        (microcycle) => microcycle.metadata?.ctl_ramp.requested_ctl_ramp ?? 0,
+        (microcycle) => microcycle.metadata?.longTermLoad_ramp.requested_longTermLoad_ramp ?? 0,
       ),
     );
 
@@ -796,7 +842,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
           },
         },
       },
-      starting_ctl_override: 70,
+      starting_longTermLoad_override: 70,
     });
 
     expect(["feasible", "aggressive", "unsafe"]).toContain(nearCap.projection_feasibility.state);
@@ -868,7 +914,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
         plan_start_date: "2026-01-05",
         goals: [relaxedGoal],
       },
-      starting_ctl_override: 42,
+      starting_longTermLoad_override: 42,
       creation_input: {
         user_values: {
           optimization_profile: "balanced" as const,
@@ -948,8 +994,8 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(Object.keys(result.projection_chart)).toContain("points");
 
     const last = points.at(-1)!;
-    expect(last.predicted_load_tss).toBeGreaterThan(0);
-    expect(last.predicted_fitness_ctl).toBeGreaterThan(0);
+    expect(last.predicted_load).toBeGreaterThan(0);
+    expect(last.predicted_fitness_longTermLoad).toBeGreaterThan(0);
   });
 
   it("applies no-history projection floor metadata when user has no activity data", async () => {
@@ -969,7 +1015,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
 
     const points = result.projection_chart.points;
     expect(points.length).toBeGreaterThan(0);
-    expect(points[0]?.predicted_fitness_ctl).toBeGreaterThanOrEqual(0);
+    expect(points[0]?.predicted_fitness_longTermLoad).toBeGreaterThanOrEqual(0);
     expect(result.projection_chart.no_history).toMatchObject({
       projection_floor_applied: true,
       floor_clamped_by_availability: expect.any(Boolean),
@@ -993,9 +1039,9 @@ describe("trainingPlansRouter plan_start_date support", () => {
           execution_confidence: expect.any(Number),
         },
         projection_uncertainty: {
-          tss_low: expect.any(Number),
-          tss_likely: expect.any(Number),
-          tss_high: expect.any(Number),
+          load_low: expect.any(Number),
+          load_likely: expect.any(Number),
+          load_high: expect.any(Number),
           confidence: expect.any(Number),
         },
       },
@@ -1034,8 +1080,8 @@ describe("trainingPlansRouter plan_start_date support", () => {
     const points = result.projection_chart.points;
     expect(points.length).toBeGreaterThan(1);
 
-    const startFitness = points[0]?.predicted_fitness_ctl;
-    const endFitness = points[points.length - 1]?.predicted_fitness_ctl;
+    const startFitness = points[0]?.predicted_fitness_longTermLoad;
+    const endFitness = points[points.length - 1]?.predicted_fitness_longTermLoad;
 
     if (startFitness === undefined || endFitness === undefined) {
       throw new Error("Expected projection fitness points");
@@ -1074,7 +1120,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
     });
 
     const peakWeeklyTss = result.projection_chart.microcycles.reduce(
-      (max, week) => Math.max(max, week.planned_weekly_tss),
+      (max, week) => Math.max(max, week.planned_weekly_load),
       0,
     );
 
@@ -1191,11 +1237,11 @@ describe("trainingPlansRouter plan_start_date support", () => {
     });
     expect(
       result.projection_chart.projection_diagnostics?.effective_optimizer_config.caps
-        .max_weekly_tss_ramp_pct ?? 0,
+        .max_weekly_load_ramp_pct ?? 0,
     ).toBeLessThanOrEqual(10);
     expect(
       result.projection_chart.projection_diagnostics?.effective_optimizer_config.caps
-        .max_ctl_ramp_per_week ?? 0,
+        .max_longTermLoad_ramp_per_week ?? 0,
     ).toBeLessThanOrEqual(5);
     expect(result.projection_chart.recovery_segments.length).toBeGreaterThan(0);
     expect(result.projection_chart.microcycles.some((week) => week.metadata)).toBe(true);
@@ -1233,7 +1279,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
           behavior_controls: AGGRESSIVE_BEHAVIOR_CONTROLS,
         },
       },
-      starting_ctl_override: 70,
+      starting_longTermLoad_override: 70,
     });
 
     const result = await caller.previewCreationConfig({
@@ -1261,7 +1307,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
           behavior_controls: FRONTIER_BEHAVIOR_CONTROLS,
         },
       },
-      starting_ctl_override: 70,
+      starting_longTermLoad_override: 70,
     });
 
     expect(result.normalized_creation_config.behavior_controls).toEqual(FRONTIER_BEHAVIOR_CONTROLS);
@@ -1270,15 +1316,15 @@ describe("trainingPlansRouter plan_start_date support", () => {
     const diagnostics = result.projection_chart.projection_diagnostics;
     expect(diagnostics).toBeDefined();
     expect(diagnostics?.effective_optimizer_config.caps).toMatchObject({
-      max_weekly_tss_ramp_pct: expect.any(Number),
-      max_ctl_ramp_per_week: expect.any(Number),
+      max_weekly_load_ramp_pct: expect.any(Number),
+      max_longTermLoad_ramp_per_week: expect.any(Number),
     });
     expect(
-      diagnostics?.effective_optimizer_config.caps.max_weekly_tss_ramp_pct ?? 0,
-    ).toBeGreaterThanOrEqual(practicalCaps?.max_weekly_tss_ramp_pct ?? 0);
+      diagnostics?.effective_optimizer_config.caps.max_weekly_load_ramp_pct ?? 0,
+    ).toBeGreaterThanOrEqual(practicalCaps?.max_weekly_load_ramp_pct ?? 0);
     expect(
-      diagnostics?.effective_optimizer_config.caps.max_ctl_ramp_per_week ?? 0,
-    ).toBeGreaterThanOrEqual(practicalCaps?.max_ctl_ramp_per_week ?? 0);
+      diagnostics?.effective_optimizer_config.caps.max_longTermLoad_ramp_per_week ?? 0,
+    ).toBeGreaterThanOrEqual(practicalCaps?.max_longTermLoad_ramp_per_week ?? 0);
     expect((diagnostics?.active_constraints ?? []).length).toBeGreaterThan(0);
     expect(diagnostics?.objective_contributions).toMatchObject({
       sampled_weeks: expect.any(Number),
@@ -1328,25 +1374,25 @@ describe("trainingPlansRouter plan_start_date support", () => {
           behavior_controls: FRONTIER_BEHAVIOR_CONTROLS,
         },
       },
-      starting_ctl_override: 220,
+      starting_longTermLoad_override: 220,
     });
 
     const weeklyPeak = Math.max(
-      ...result.projection_chart.microcycles.map((cycle) => cycle.planned_weekly_tss),
+      ...result.projection_chart.microcycles.map((cycle) => cycle.planned_weekly_load),
     );
     const diagnostics = result.projection_chart.projection_diagnostics;
 
     expect(weeklyPeak).toBeGreaterThan(1500);
     expect(diagnostics?.effective_optimizer_config.caps).toMatchObject({
-      max_weekly_tss_ramp_pct: expect.any(Number),
-      max_ctl_ramp_per_week: expect.any(Number),
+      max_weekly_load_ramp_pct: expect.any(Number),
+      max_longTermLoad_ramp_per_week: expect.any(Number),
     });
     expect(
-      diagnostics?.effective_optimizer_config.caps.max_weekly_tss_ramp_pct ?? 0,
+      diagnostics?.effective_optimizer_config.caps.max_weekly_load_ramp_pct ?? 0,
     ).toBeGreaterThan(0);
-    expect(diagnostics?.effective_optimizer_config.caps.max_ctl_ramp_per_week ?? 0).toBeGreaterThan(
-      0,
-    );
+    expect(
+      diagnostics?.effective_optimizer_config.caps.max_longTermLoad_ramp_per_week ?? 0,
+    ).toBeGreaterThan(0);
     expect(result.projection_chart.no_history?.projection_floor_applied).toBe(true);
   });
 });
@@ -1367,34 +1413,36 @@ describe("trainingPlansRouter analytics endpoints", () => {
     expect(result?.currentLoadStatus).toBeNull();
   });
 
-  it("keeps unknown history unavailable while retaining partial common Load coverage for projections", async () => {
+  it("keeps unknown and partial history unavailable for current load state", async () => {
     const recent = new Date();
     recent.setUTCDate(recent.getUTCDate() - 1);
     const known = buildLoadActivity("known", recent);
     const unknown = buildLoadActivity("unknown", recent, null);
 
-    const unknownResult = await createTrainingPlansCaller({
-      ...loadEvidenceResults,
-      activities: { data: [unknown], error: null },
-      training_plans: { data: null, error: null },
-    }).getCurrentStatus();
+    const unknownResult = await createTrainingPlansCaller(
+      {
+        ...createLoadEvidenceResults(new Date()),
+        activities: { data: [unknown], error: null },
+        training_plans: { data: null, error: null },
+      },
+      PERFORMANCE_MODEL_PROFILE_ID,
+    ).getCurrentStatus();
     currentLoadHistoryMock.mockResolvedValueOnce(availableCurrentHistory(true));
-    const partialResult = await createTrainingPlansCaller({
-      ...loadEvidenceResults,
-      activities: { data: [known, unknown], error: null },
-      training_plans: { data: null, error: null },
-    }).getCurrentStatus();
+    const partialResult = await createTrainingPlansCaller(
+      {
+        ...createLoadEvidenceResults(new Date()),
+        activities: { data: [known, unknown], error: null },
+        training_plans: { data: null, error: null },
+      },
+      PERFORMANCE_MODEL_PROFILE_ID,
+    ).getCurrentStatus();
 
     expect(unknownResult?.currentLoadStatus).toBeNull();
     expect(partialResult?.loadHistory).toMatchObject({
-      status: "available",
-      coverageStatus: "partial",
+      status: "unavailable",
+      reason: "invalid_input",
     });
-    expect(partialResult?.currentLoadStatus).toMatchObject({
-      longTermLoad: expect.any(Number),
-      recentLoad: expect.any(Number),
-      loadBalance: expect.any(Number),
-    });
+    expect(partialResult?.currentLoadStatus).toBeNull();
   });
 
   it("returns current load after adequate history", async () => {
@@ -1427,12 +1475,15 @@ describe("trainingPlansRouter analytics endpoints", () => {
     const recent = new Date();
     recent.setUTCDate(recent.getUTCDate() - 7);
     const activity = buildLoadActivity("known", recent);
-    const result = await createTrainingPlansCaller({
-      ...loadEvidenceResults,
-      activities: { data: [activity], error: null },
-      events: { data: [], error: null },
-      training_plans: { data: null, error: null },
-    }).getCurrentStatus();
+    const result = await createTrainingPlansCaller(
+      {
+        ...createLoadEvidenceResults(new Date()),
+        activities: { data: [activity], error: null },
+        events: { data: [], error: null },
+        training_plans: { data: null, error: null },
+      },
+      PERFORMANCE_MODEL_PROFILE_ID,
+    ).getCurrentStatus();
 
     expect(result?.loadHistory.status).toBe("available");
     expect(result?.currentLoadStatus).toEqual({
@@ -1461,6 +1512,58 @@ describe("trainingPlansRouter analytics endpoints", () => {
     );
     expect(result).not.toHaveProperty("weekProgress");
     expect(result).not.toHaveProperty("legacyTssWeekProgress");
+  });
+
+  it("rejects incompatible Common Load identities at history and effective-plan boundaries", async () => {
+    const currentHistory = availableCurrentHistory();
+    if (currentHistory.result.status !== "available") {
+      throw new Error("Expected available history fixture");
+    }
+    currentLoadHistoryMock.mockResolvedValueOnce({
+      ...currentHistory,
+      result: {
+        ...currentHistory.result,
+        identity: {
+          ...currentHistory.result.identity,
+          commonLoad: { model: "legacy_load", version: "9" },
+        },
+      },
+    });
+    effectivePlanLoadMock.mockResolvedValueOnce({
+      status: "unavailable",
+      reason: "planning_timezone_missing",
+      model: "legacy_load",
+      version: "9",
+      sourceCounts: { activities: 0, events: 0 },
+      resolvedRange: { startDate: null, endDate: null, timezone: null },
+      sourceCoverage: { activities: null, scheduledItems: null },
+    });
+
+    const result = await createTrainingPlansCaller(
+      {
+        ...createLoadEvidenceResults(new Date()),
+        activities: { data: [], error: null },
+        events: { data: [], error: null },
+        training_plans: { data: null, error: null },
+      },
+      PERFORMANCE_MODEL_PROFILE_ID,
+    ).getCurrentStatus();
+
+    expect(result.loadHistory).toMatchObject({
+      status: "unavailable",
+      reason: "incompatible_model_version",
+      context: {
+        expectedModel: "gradientpeak_relative_load",
+        expectedVersion: "1",
+        actualModel: "legacy_load",
+        actualVersion: "9",
+      },
+    });
+    expect(result.currentLoadStatus).toBeNull();
+    expect(result.commonWeekProgress).toMatchObject({
+      status: "unavailable",
+      reason: "incompatible_common_load_identity",
+    });
   });
 
   it("returns ideal curve projection payload shape", async () => {
@@ -1528,13 +1631,16 @@ describe("trainingPlansRouter analytics endpoints", () => {
 
   it("abstains from an actual curve when any historical load is unavailable", async () => {
     const unknown = buildLoadActivity("unknown", new Date("2026-01-03T09:00:00.000Z"), null);
-    const result = await createTrainingPlansCaller({
-      ...loadEvidenceResults,
-      activities: [
-        { data: [], error: null },
-        { data: [unknown], error: null },
-      ],
-    }).getActualCurve({
+    const result = await createTrainingPlansCaller(
+      {
+        ...createLoadEvidenceResults(new Date("2026-01-03T08:00:00.000Z")),
+        activities: [
+          { data: [], error: null },
+          { data: [unknown], error: null },
+        ],
+      },
+      PERFORMANCE_MODEL_PROFILE_ID,
+    ).getActualCurve({
       start_date: "2026-01-01T00:00:00.000Z",
       end_date: "2026-01-07T00:00:00.000Z",
     });
@@ -1544,21 +1650,24 @@ describe("trainingPlansRouter analytics endpoints", () => {
 
   it("emits an actual curve with known zero rest days after adequate load history", async () => {
     const activity = buildLoadActivity("known", new Date("2026-01-03T09:00:00.000Z"));
-    const result = await createTrainingPlansCaller({
-      ...loadEvidenceResults,
-      activities: [
-        { data: [], error: null },
-        { data: [activity], error: null },
-      ],
-    }).getActualCurve({
+    const result = await createTrainingPlansCaller(
+      {
+        ...createLoadEvidenceResults(new Date("2026-01-03T08:00:00.000Z")),
+        activities: [
+          { data: [], error: null },
+          { data: [activity], error: null },
+        ],
+      },
+      PERFORMANCE_MODEL_PROFILE_ID,
+    ).getActualCurve({
       start_date: "2026-01-01T00:00:00.000Z",
       end_date: "2026-01-07T00:00:00.000Z",
     });
 
     expect(result.dataPoints).toHaveLength(7);
-    expect(result.dataPoints[2]?.ctl).toBeGreaterThan(0);
-    expect(result.dataPoints[6]?.ctl).toBeGreaterThan(0);
-    expect(result.dataPoints[6]?.atl).toBeLessThan(result.dataPoints[2]?.atl ?? 0);
+    expect(result.dataPoints[2]?.longTermLoad).toBeGreaterThan(0);
+    expect(result.dataPoints[6]?.longTermLoad).toBeGreaterThan(0);
+    expect(result.dataPoints[6]?.recentLoad).toBeLessThan(result.dataPoints[2]?.recentLoad ?? 0);
   });
 
   it("returns weekly summary rows", async () => {
@@ -1592,8 +1701,8 @@ describe("trainingPlansRouter analytics endpoints", () => {
     expect(result[0]).toMatchObject({
       weekStart: expect.any(String),
       weekEnd: expect.any(String),
-      plannedTSS: expect.any(Number),
-      completedTSS: null,
+      plannedCommonLoad: null,
+      completedCommonLoad: null,
       status: expect.any(String),
       planAlignment: {
         status: "unavailable",
@@ -1604,6 +1713,12 @@ describe("trainingPlansRouter analytics endpoints", () => {
         unverifiedSessions: 0,
       },
     });
+    expect(result[0]).not.toHaveProperty("plannedTSS");
+    expect(result[0]).not.toHaveProperty("completedTSS");
+    expect(result[0]).not.toHaveProperty("targetTSS");
+    expect(result[0]).not.toHaveProperty("tssComplete");
+    expect(result[0]).not.toHaveProperty("plannedQuantification");
+    expect(result[0]).not.toHaveProperty("completedQuantification");
   });
 
   it("uses the profile planning timezone for complete prior Sunday-Saturday weeks", async () => {
@@ -1720,7 +1835,7 @@ describe("trainingPlansRouter analytics endpoints", () => {
 
     expect(scheduledWeek).toMatchObject({
       completedActivities: 1,
-      completedTSS: null,
+      completedCommonLoad: null,
       status: "warning",
       planAlignment: {
         status: "unavailable",
@@ -1869,7 +1984,7 @@ describe("trainingPlansRouter analytics endpoints", () => {
 
     expect(scheduledWeek).toMatchObject({
       completedActivities: 0,
-      completedTSS: null,
+      completedCommonLoad: null,
       planAlignment: {
         status: "unavailable",
         completedSessions: 0,

@@ -1,4 +1,4 @@
-import type { ProfileGoal } from "@repo/core";
+import type { ActivityObservationQuantificationBundle, ProfileGoal } from "@repo/core";
 import { addDaysToDateKey } from "@/lib/calendar/dateMath";
 import { isAuthoritativeCompletedCalendarEvent } from "@/lib/calendar/eventPresentation";
 import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
@@ -12,10 +12,8 @@ export type CalendarActivity = {
   distance_meters?: number | null;
   duration_seconds?: number | null;
   derived?: {
-    common_load?: unknown;
-    stress?: {
-      common_load?: unknown;
-    } | null;
+    observationQuantification?: ActivityObservationQuantificationBundle | null;
+    [key: string]: unknown;
   } | null;
 };
 

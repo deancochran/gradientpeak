@@ -1,20 +1,19 @@
-import type { ActivityDerivedMetrics, ActivityListDerivedSummary } from "@repo/core";
+import type { ActivityDerivedMetrics, ActivityObservationQuantificationBundle } from "@repo/core";
 import type { ActivityPlanRow, ActivityRow } from "@repo/db";
-import type { SegmentDerivedSummary } from "./derived";
+import type { ActivityQuantifiedDerivedSummary, SegmentDerivedSummary } from "./derived";
 
 function toPublicSegmentLoad(summary: SegmentDerivedSummary) {
   return {
     segment_id: summary.segment_id,
     activity_category: summary.activity_category,
-    tss: summary.tss,
-    tss_identity: summary.tss_identity,
-    intensity_factor: summary.intensity_factor,
-    method: summary.method,
-    unavailable_reason: summary.unavailable_reason,
-    calibration_quality: summary.calibration_quality,
-    ...(summary.common_load !== undefined ? { common_load: summary.common_load } : {}),
+    common_load: summary.common_load,
+    observationQuantification: summary.observationQuantification,
     computed_as_of: summary.computed_as_of,
   };
+}
+
+function toPublicDerivedSummary(summary: ActivityQuantifiedDerivedSummary | null) {
+  return summary;
 }
 
 type ActivityPlanReference = Omit<ActivityPlanRow, "created_at" | "updated_at"> & {
@@ -22,12 +21,19 @@ type ActivityPlanReference = Omit<ActivityPlanRow, "created_at" | "updated_at"> 
   updated_at: string | Date;
 };
 
+type PublicActivityRow = Omit<
+  ActivityRow,
+  "normalized_graded_speed_mps" | "efficiency_factor" | "aerobic_decoupling"
+>;
+
 export function mapActivityToDerivedResponse(input: {
-  activity: ActivityRow & { likes_count: number } & {
+  activity: PublicActivityRow & { likes_count: number } & {
     activity_plans?: ActivityPlanReference | null;
   };
   has_liked: boolean;
-  derived: ActivityDerivedMetrics;
+  derived: ActivityDerivedMetrics & {
+    observationQuantification: ActivityObservationQuantificationBundle;
+  };
   segment_loads: SegmentDerivedSummary[];
 }) {
   return {
@@ -39,15 +45,15 @@ export function mapActivityToDerivedResponse(input: {
 }
 
 export function mapActivityToListDerivedResponse(input: {
-  activity: ActivityRow & { likes_count: number };
+  activity: PublicActivityRow & { likes_count: number };
   has_liked: boolean;
-  derived: ActivityListDerivedSummary | null;
+  derived: ActivityQuantifiedDerivedSummary | null;
   segment_loads: SegmentDerivedSummary[];
 }) {
   return {
     ...input.activity,
     has_liked: input.has_liked,
-    derived: input.derived,
+    derived: toPublicDerivedSummary(input.derived),
     segment_loads: input.segment_loads.map(toPublicSegmentLoad),
   };
 }

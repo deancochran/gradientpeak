@@ -25,14 +25,14 @@ describe("Goal Readiness Score - 99+ Override Removal", () => {
           phase: "build",
           start_date: "2026-03-01",
           end_date: "2026-05-10",
-          target_weekly_tss_range: { min: 350, max: 420 },
+          target_weekly_load_range: { min: 350, max: 420 },
         },
         {
           name: "Taper",
           phase: "taper",
           start_date: "2026-05-11",
           end_date: "2026-05-24",
-          target_weekly_tss_range: { min: 150, max: 200 },
+          target_weekly_load_range: { min: 150, max: 200 },
         },
       ],
       goals: [
@@ -51,9 +51,9 @@ describe("Goal Readiness Score - 99+ Override Removal", () => {
           ],
         },
       ],
-      starting_ctl: 50,
-      starting_atl: 48,
-      starting_tsb: 2,
+      starting_longTermLoad: 50,
+      starting_recentLoad: 48,
+      starting_loadBalance: 2,
     });
 
     const goalAssessment = projection.goal_assessments?.find((g) => g.goal_id === "marathon-1");
@@ -91,14 +91,14 @@ describe("Goal Readiness Score - 99+ Override Removal", () => {
           phase: "build",
           start_date: "2026-03-01",
           end_date: "2026-05-10",
-          target_weekly_tss_range: { min: 400, max: 500 },
+          target_weekly_load_range: { min: 400, max: 500 },
         },
         {
           name: "Taper",
           phase: "taper",
           start_date: "2026-05-11",
           end_date: "2026-05-24",
-          target_weekly_tss_range: { min: 150, max: 200 },
+          target_weekly_load_range: { min: 150, max: 200 },
         },
       ],
       goals: [
@@ -117,9 +117,9 @@ describe("Goal Readiness Score - 99+ Override Removal", () => {
           ],
         },
       ],
-      starting_ctl: 60,
-      starting_atl: 58,
-      starting_tsb: 2,
+      starting_longTermLoad: 60,
+      starting_recentLoad: 58,
+      starting_loadBalance: 2,
     });
 
     const goalAssessment = projection.goal_assessments?.find((g) => g.goal_id === "easy-goal");
@@ -144,14 +144,14 @@ describe("Goal Readiness Score - 99+ Override Removal", () => {
           phase: "build",
           start_date: "2026-03-01",
           end_date: "2026-05-10",
-          target_weekly_tss_range: { min: 400, max: 480 },
+          target_weekly_load_range: { min: 400, max: 480 },
         },
         {
           name: "Taper",
           phase: "taper",
           start_date: "2026-05-11",
           end_date: "2026-05-24",
-          target_weekly_tss_range: { min: 150, max: 200 },
+          target_weekly_load_range: { min: 150, max: 200 },
         },
       ],
       goals: [
@@ -170,9 +170,9 @@ describe("Goal Readiness Score - 99+ Override Removal", () => {
           ],
         },
       ],
-      starting_ctl: 55,
-      starting_atl: 53,
-      starting_tsb: 2,
+      starting_longTermLoad: 55,
+      starting_recentLoad: 53,
+      starting_loadBalance: 2,
     });
 
     const lowScenario = buildDeterministicProjectionPayload({
@@ -186,14 +186,14 @@ describe("Goal Readiness Score - 99+ Override Removal", () => {
           phase: "build",
           start_date: "2026-03-01",
           end_date: "2026-05-10",
-          target_weekly_tss_range: { min: 200, max: 280 },
+          target_weekly_load_range: { min: 200, max: 280 },
         },
         {
           name: "Taper",
           phase: "taper",
           start_date: "2026-05-11",
           end_date: "2026-05-24",
-          target_weekly_tss_range: { min: 100, max: 150 },
+          target_weekly_load_range: { min: 100, max: 150 },
         },
       ],
       goals: [
@@ -212,9 +212,9 @@ describe("Goal Readiness Score - 99+ Override Removal", () => {
           ],
         },
       ],
-      starting_ctl: 30,
-      starting_atl: 28,
-      starting_tsb: 2,
+      starting_longTermLoad: 30,
+      starting_recentLoad: 28,
+      starting_loadBalance: 2,
     });
 
     const highGoal = highScenario.goal_assessments?.find((g) => g.goal_id === "goal-high");
@@ -255,14 +255,14 @@ describe("Goal Readiness Score - 99+ Override Removal", () => {
           phase: "build",
           start_date: "2026-03-01",
           end_date: "2026-05-10",
-          target_weekly_tss_range: { min: 350, max: 420 },
+          target_weekly_load_range: { min: 350, max: 420 },
         },
         {
           name: "Taper",
           phase: "taper",
           start_date: "2026-05-11",
           end_date: "2026-05-24",
-          target_weekly_tss_range: { min: 150, max: 200 },
+          target_weekly_load_range: { min: 150, max: 200 },
         },
       ],
       goals: [
@@ -281,9 +281,9 @@ describe("Goal Readiness Score - 99+ Override Removal", () => {
           ],
         },
       ],
-      starting_ctl: 50,
-      starting_atl: 48,
-      starting_tsb: 2,
+      starting_longTermLoad: 50,
+      starting_recentLoad: 48,
+      starting_loadBalance: 2,
     });
 
     const goalAssessment = projection.goal_assessments?.find((g) => g.goal_id === "marathon-1");
@@ -315,14 +315,14 @@ describe("Goal Readiness Score - 99+ Override Removal", () => {
           phase: "build",
           start_date: "2026-03-01",
           end_date: "2026-05-10",
-          target_weekly_tss_range: { min: 300, max: 380 },
+          target_weekly_load_range: { min: 300, max: 380 },
         },
         {
           name: "Taper",
           phase: "taper",
           start_date: "2026-05-11",
           end_date: "2026-05-24",
-          target_weekly_tss_range: { min: 140, max: 190 },
+          target_weekly_load_range: { min: 140, max: 190 },
         },
       ],
       goals: [
@@ -341,9 +341,9 @@ describe("Goal Readiness Score - 99+ Override Removal", () => {
           ],
         },
       ],
-      starting_ctl: 38,
-      starting_atl: 36,
-      starting_tsb: 2,
+      starting_longTermLoad: 38,
+      starting_recentLoad: 36,
+      starting_loadBalance: 2,
     });
 
     const goalPoint = projection.points.find((point) => point.date === "2026-05-24");
@@ -369,14 +369,14 @@ describe("Goal Readiness Score - Determinism", () => {
           phase: "build" as const,
           start_date: "2026-03-01",
           end_date: "2026-05-10",
-          target_weekly_tss_range: { min: 350, max: 420 },
+          target_weekly_load_range: { min: 350, max: 420 },
         },
         {
           name: "Taper",
           phase: "taper" as const,
           start_date: "2026-05-11",
           end_date: "2026-05-24",
-          target_weekly_tss_range: { min: 150, max: 200 },
+          target_weekly_load_range: { min: 150, max: 200 },
         },
       ],
       goals: [
@@ -395,9 +395,9 @@ describe("Goal Readiness Score - Determinism", () => {
           ],
         },
       ],
-      starting_ctl: 50,
-      starting_atl: 48,
-      starting_tsb: 2,
+      starting_longTermLoad: 50,
+      starting_recentLoad: 48,
+      starting_loadBalance: 2,
     };
 
     const projection1 = buildDeterministicProjectionPayload(input);

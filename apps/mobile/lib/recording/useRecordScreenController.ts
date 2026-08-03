@@ -1,8 +1,9 @@
-import type {
-  ActivityPayload,
-  RecordingActivityCategory,
-  RecordingServiceActivityPlan,
-  RecordingState,
+import {
+  type ActivityPayload,
+  createUnavailableAthletePerformanceTargetFacts,
+  type RecordingActivityCategory,
+  type RecordingServiceActivityPlan,
+  type RecordingState,
 } from "@repo/core";
 import { useRouter } from "expo-router";
 import React from "react";
@@ -28,6 +29,7 @@ export function useRecordScreenController() {
   const navigateTo = useAppNavigate();
   const { user } = useAuth();
   const { service } = useActivityRecorderService();
+  const apiUtils = api.useUtils();
   const [isInitialized, setIsInitialized] = React.useState(false);
   const [activityQuickEditVisible, setActivityQuickEditVisible] = React.useState(false);
   const [isFinishing, setIsFinishing] = React.useState(false);
@@ -35,6 +37,7 @@ export function useRecordScreenController() {
     null,
   );
   const [pendingPlanId, setPendingPlanId] = React.useState<string | null>(null);
+  const performanceModelAsOf = React.useRef(new Date().toISOString()).current;
 
   const { sessionContract, sessionView } = useRecordingConfig(service);
   const state = service?.state ?? "pending";
@@ -50,10 +53,17 @@ export function useRecordScreenController() {
   const { allGranted: allPermissionsGranted, isLoading: permissionsLoading } =
     useAllPermissionsGranted();
 
-  const { data: zones } = api.profiles.getZones.useQuery(undefined, {
+  const { data: recordingProfile } = api.profiles.get.useQuery(undefined, {
     enabled: !!user && !!service && hasSessionAuthCredentials(),
     staleTime: 1000 * 60 * 5,
   });
+  const { data: performanceTargets } = api.profiles.getPerformanceTargets.useQuery(
+    { asOf: performanceModelAsOf },
+    {
+      enabled: !!user && !!service && hasSessionAuthCredentials(),
+      staleTime: 1000 * 60 * 5,
+    },
+  );
 
   const pendingPlanQuery = api.activityPlans.getById.useQuery(
     { id: pendingPlanId ?? "" },
@@ -93,23 +103,24 @@ export function useRecordScreenController() {
   }, [pendingPlanId, pendingPlanQuery.error]);
 
   React.useEffect(() => {
-    if (!service || !zones?.profile) return;
+    if (!service || !performanceTargets) return;
+    service.updatePerformanceTargets(performanceTargets);
+  }, [performanceTargets, service]);
 
-    const { ftp, threshold_hr, weight_kg } = zones.profile;
+  React.useEffect(() => {
+    if (!service || !recordingProfile) return;
 
-    if (ftp || threshold_hr || weight_kg) {
+    const { weight_kg } = recordingProfile;
+
+    if (weight_kg) {
       console.log("[RecordModal] Applying derived metrics:", {
-        ftp,
-        threshold_hr,
         weight_kg,
       });
       service.updateMetrics({
-        ...(ftp ? { ftp } : {}),
-        ...(threshold_hr ? { thresholdHr: threshold_hr } : {}),
-        ...(weight_kg ? { weightKg: weight_kg } : {}),
+        weightKg: weight_kg,
       });
     }
-  }, [service, zones?.profile]);
+  }, [recordingProfile, service]);
 
   React.useEffect(() => {
     console.log("[RecordModal] Permission status changed:", {
@@ -232,21 +243,31 @@ export function useRecordScreenController() {
     ],
   );
 
+  const fetchStartPerformanceTargets = React.useCallback(async () => {
+    const asOf = new Date().toISOString();
+    try {
+      return await apiUtils.profiles.getPerformanceTargets.fetch({ asOf });
+    } catch {
+      console.warn("[RecordModal] Start-time performance targets unavailable");
+      return createUnavailableAthletePerformanceTargetFacts(asOf);
+    }
+  }, [apiUtils]);
+
   const handleStart = React.useCallback(async () => {
     console.log("[RecordModal] Start clicked, checking permissions");
     console.log("[RecordModal] allPermissionsGranted:", allPermissionsGranted);
 
+    if (!service) {
+      Alert.alert("Error", "Service not initialized");
+      return;
+    }
+
     const hasRequiredPermissions = gpsRecordingEnabled
       ? allPermissionsGranted
-      : await service?.refreshAndCheckRecordingPermissions(false);
+      : await service.refreshAndCheckRecordingPermissions(false);
 
     if (!hasRequiredPermissions) {
       console.log("[RecordModal] Permissions not granted, requesting permissions");
-
-      if (!service) {
-        Alert.alert("Error", "Service not initialized");
-        return;
-      }
 
       try {
         const granted = await service.refreshAndCheckRecordingPermissions(gpsRecordingEnabled);
@@ -281,58 +302,66 @@ export function useRecordScreenController() {
       }
     }
 
-    if (service) {
-      const validation = service.validatePlanRequirements();
+    const startPerformanceTargets = await fetchStartPerformanceTargets();
+    service.updatePerformanceTargets(startPerformanceTargets);
 
-      if (validation && !validation.isValid) {
-        const metricDetails = validation.missingMetrics
-          .map((m) => `- ${m.name}\n  ${m.description}`)
-          .join("\n\n");
+    const validation = service.validatePlanRequirements(startPerformanceTargets);
 
-        Alert.alert(
-          "Profile Setup Required",
-          `This activity requires the following metrics:\n\n${metricDetails}\n\nWithout these, automatic trainer control (ERG mode) and accurate targets will not be available.\n\nSet these in Settings > Profile.`,
-          [
-            {
-              text: "Go to Profile",
-              onPress: () => {
-                navigateTo("/profile");
-              },
+    if (validation && !validation.isValid) {
+      const metricDetails = validation.missingMetrics
+        .map((m) => `- ${m.name}\n  ${m.description}`)
+        .join("\n\n");
+
+      Alert.alert(
+        "Profile Setup Required",
+        `This activity requires the following metrics:\n\n${metricDetails}\n\nWithout these, automatic trainer control (ERG mode) and accurate targets will not be available.\n\nSet these in Settings > Profile.`,
+        [
+          {
+            text: "Go to Profile",
+            onPress: () => {
+              navigateTo("/profile");
             },
-            {
-              text: "Continue Anyway",
-              style: "destructive",
-              onPress: async () => {
-                console.log("[RecordModal] User chose to continue without required metrics");
-                try {
-                  await start();
-                  console.log("[RecordModal] Recording started successfully");
-                } catch (error) {
-                  console.error("[RecordModal] Error starting recording:", error);
-                  Alert.alert("Error", "Failed to start recording. Please try again.");
-                }
-              },
+          },
+          {
+            text: "Continue Anyway",
+            style: "destructive",
+            onPress: async () => {
+              console.log("[RecordModal] User chose to continue without required metrics");
+              try {
+                await start(startPerformanceTargets);
+                console.log("[RecordModal] Recording started successfully");
+              } catch (error) {
+                console.error("[RecordModal] Error starting recording:", error);
+                Alert.alert("Error", "Failed to start recording. Please try again.");
+              }
             },
-            { text: "Cancel", style: "cancel" },
-          ],
-        );
-        return;
-      }
+          },
+          { text: "Cancel", style: "cancel" },
+        ],
+      );
+      return;
+    }
 
-      if (validation && validation.warnings.length > 0) {
-        console.log("[RecordModal] Plan validation warnings:", validation.warnings);
-      }
+    if (validation && validation.warnings.length > 0) {
+      console.log("[RecordModal] Plan validation warnings:", validation.warnings);
     }
 
     console.log("[RecordModal] Permissions granted, starting recording");
     try {
-      await start();
+      await start(startPerformanceTargets);
       console.log("[RecordModal] Recording started successfully");
     } catch (error) {
       console.error("[RecordModal] Error starting recording:", error);
       Alert.alert("Error", "Failed to start recording. Please try again.");
     }
-  }, [allPermissionsGranted, gpsRecordingEnabled, navigateTo, start, service]);
+  }, [
+    allPermissionsGranted,
+    fetchStartPerformanceTargets,
+    gpsRecordingEnabled,
+    navigateTo,
+    start,
+    service,
+  ]);
 
   const handleFinish = React.useCallback(async () => {
     if (isFinishing) return;

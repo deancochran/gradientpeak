@@ -7,6 +7,57 @@ import type {
 } from "./types";
 
 const activityPlanId = "11111111-1111-4111-8111-111111111111";
+const fixtureAsOf = "2026-01-01T12:00:00.000Z";
+const unavailableTargets = createUnavailableAthletePerformanceTargetFacts(fixtureAsOf);
+const prescriptionQuantification = estimateActivityPlanForTrainingContext({
+  asOf: fixtureAsOf,
+  performanceTargets: {
+    ...unavailableTargets,
+    cycling: {
+      planningThresholdPower: {
+        ...unavailableTargets.cycling.planningThresholdPower,
+        status: "available",
+        value: 250,
+        calculationVersion: "builder-fixture-v1",
+        sourceEvidenceIds: ["builder-fixture-threshold-power"],
+        evidenceTime: {
+          observedFrom: "2025-12-31T12:00:00.000Z",
+          observedThrough: "2025-12-31T12:00:00.000Z",
+          computedAt: fixtureAsOf,
+        },
+        confidence: "high",
+        reasons: [],
+      },
+    },
+  },
+  planId: activityPlanId,
+  structure: {
+    version: 3,
+    segments: [
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        role: "activity",
+        activity_category: "bike",
+        name: "Endurance Ride",
+        intervals: [
+          {
+            id: "33333333-3333-4333-8333-333333333333",
+            name: "Main",
+            repetitions: 1,
+            steps: [
+              {
+                id: "44444444-4444-4444-8444-444444444444",
+                name: "Ride",
+                duration: { type: "time", seconds: 3_600 },
+                targets: [{ type: "%FTP", intensity: Math.sqrt(0.48) * 100 }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+}).prescriptionQuantification;
 
 export function createTrainingPlanBuilderFixtures() {
   const emptyState: TrainingPlanBuilderState = {
@@ -22,8 +73,7 @@ export function createTrainingPlanBuilderFixtures() {
       name: "Endurance Ride",
       published: true,
       accessible: true,
-      estimatedTss: 48,
-      estimatedDurationSeconds: 3600,
+      prescriptionQuantification,
       ...overrides,
     };
   }
@@ -94,3 +144,8 @@ export function createTrainingPlanBuilderFixtures() {
     assignedSession,
   };
 }
+
+import {
+  createUnavailableAthletePerformanceTargetFacts,
+  estimateActivityPlanForTrainingContext,
+} from "@repo/core";

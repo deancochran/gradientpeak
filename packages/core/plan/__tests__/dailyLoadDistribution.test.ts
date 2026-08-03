@@ -94,7 +94,7 @@ function weeklyAllocationFor(
 }
 
 function sumRecommendedLoad(points: ReturnType<typeof buildDailyLoadDistribution>) {
-  return Math.round(points.reduce((sum, point) => sum + point.recommended_load_tss, 0) * 10) / 10;
+  return Math.round(points.reduce((sum, point) => sum + point.recommended_load, 0) * 10) / 10;
 }
 
 function profileWithSessionCount(sessionCount: number) {
@@ -114,8 +114,8 @@ describe("buildDailyLoadDistribution", () => {
       mode: "distribution",
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 210 }],
-      capacityContext: { startingCtl: 40 },
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 210 }],
+      capacityContext: { startingLongTermLoad: 40 },
     });
 
     expect(points.every((point) => point.activityCategory !== "run")).toBe(true);
@@ -129,11 +129,11 @@ describe("buildDailyLoadDistribution", () => {
       mode: "distribution",
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 210 }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 210 }],
       weeklyAllocation: weeklyAllocationFor({ run: { sessions: 3, duration: 180 } }),
     });
 
-    const trainingPoints = points.filter((point) => point.recommendedLoadTss > 0);
+    const trainingPoints = points.filter((point) => point.recommendedLoad > 0);
     expect(trainingPoints.length).toBeGreaterThan(0);
     expect(trainingPoints.every((point) => point.recommendationState === "maintenance_only")).toBe(
       true,
@@ -145,12 +145,12 @@ describe("buildDailyLoadDistribution", () => {
       mode: "distribution",
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 210 }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 210 }],
       weeklyAllocation: weeklyAllocationFor({ bike: { sessions: 3, duration: 180 } }),
-      capacityContext: { startingCtl: 40 },
+      capacityContext: { startingLongTermLoad: 40 },
     });
 
-    const trainingPoints = points.filter((point) => point.recommendedLoadTss > 0);
+    const trainingPoints = points.filter((point) => point.recommendedLoad > 0);
     expect(trainingPoints.length).toBeGreaterThan(0);
     expect(trainingPoints.every((point) => point.activityCategory === "bike")).toBe(true);
     expect(trainingPoints.every((point) => point.recommendationState === "recommendation")).toBe(
@@ -163,14 +163,14 @@ describe("buildDailyLoadDistribution", () => {
       mode: "distribution",
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 210 }],
-      plannedSessions: [{ date: "2026-01-07", activityCategory: "swim", estimatedTss: 35 }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 210 }],
+      plannedSessions: [{ date: "2026-01-07", activityCategory: "swim", estimatedCommonLoad: 35 }],
     });
 
     expect(points.find((point) => point.date === "2026-01-07")).toMatchObject({
       recommendationState: "maintenance_only",
       activityCategory: "swim",
-      recommendedLoadTss: 35,
+      recommendedLoad: 35,
     });
   });
 
@@ -179,7 +179,7 @@ describe("buildDailyLoadDistribution", () => {
       buildDailyLoadDistribution({
         startDate: "2026-01-12",
         endDate: "2026-01-05",
-        weeklyTargets: [{ weekStartDate: "2026-01-12", targetTss: 300 }],
+        weeklyTargets: [{ weekStartDate: "2026-01-12", targetLoad: 300 }],
         preferenceProfile: defaultAthletePreferenceProfile,
       }),
     ).toEqual([]);
@@ -189,11 +189,11 @@ describe("buildDailyLoadDistribution", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 300, phase: "ramp" }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 300, phase: "ramp" }],
       preferenceProfile: defaultAthletePreferenceProfile,
     });
 
-    const loads = points.map((point) => point.recommended_load_tss);
+    const loads = points.map((point) => point.recommended_load);
     expect(loads.reduce((sum, load) => sum + load, 0)).toBe(300);
     expect(loads.filter((load) => load > 0).length).toBeGreaterThanOrEqual(3);
     expect(Math.max(...loads)).toBeLessThan(300);
@@ -204,7 +204,7 @@ describe("buildDailyLoadDistribution", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 210 }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 210 }],
       preferenceProfile: {
         ...defaultAthletePreferenceProfile,
         availability: {
@@ -214,10 +214,10 @@ describe("buildDailyLoadDistribution", () => {
       },
     });
 
-    expect(points.find((point) => point.date === "2026-01-07")?.recommended_load_tss).toBe(0);
-    expect(points.find((point) => point.date === "2026-01-09")?.recommended_load_tss).toBe(0);
-    expect(points.find((point) => point.date === "2026-01-11")?.recommended_load_tss).toBe(0);
-    expect(points.reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBe(210);
+    expect(points.find((point) => point.date === "2026-01-07")?.recommended_load).toBe(0);
+    expect(points.find((point) => point.date === "2026-01-09")?.recommended_load).toBe(0);
+    expect(points.find((point) => point.date === "2026-01-11")?.recommended_load).toBe(0);
+    expect(points.reduce((sum, point) => sum + point.recommended_load, 0)).toBe(210);
   });
 
   it("prorates weekly targets across partial weeks while keeping the date range contiguous", () => {
@@ -225,8 +225,8 @@ describe("buildDailyLoadDistribution", () => {
       startDate: "2026-01-05",
       endDate: "2026-01-14",
       weeklyTargets: [
-        { weekStartDate: "2026-01-05", targetTss: 210 },
-        { weekStartDate: "2026-01-12", targetTss: 280 },
+        { weekStartDate: "2026-01-05", targetLoad: 210 },
+        { weekStartDate: "2026-01-12", targetLoad: 280 },
       ],
       preferenceProfile: defaultAthletePreferenceProfile,
     });
@@ -243,17 +243,15 @@ describe("buildDailyLoadDistribution", () => {
       "2026-01-13",
       "2026-01-14",
     ]);
-    expect(points.slice(0, 7).reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBe(
-      210,
-    );
-    expect(points.slice(7).reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBe(120);
+    expect(points.slice(0, 7).reduce((sum, point) => sum + point.recommended_load, 0)).toBe(210);
+    expect(points.slice(7).reduce((sum, point) => sum + point.recommended_load, 0)).toBe(120);
   });
 
   it("uses profile dose limits when preferences are unadjusted elsewhere", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 280 }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 280 }],
       preferenceProfile: {
         ...defaultAthletePreferenceProfile,
         dose_limits: {
@@ -264,15 +262,15 @@ describe("buildDailyLoadDistribution", () => {
       },
     });
 
-    expect(points.filter((point) => point.recommended_load_tss > 0)).toHaveLength(4);
-    expect(points.reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBe(280);
+    expect(points.filter((point) => point.recommended_load > 0)).toHaveLength(4);
+    expect(points.reduce((sum, point) => sum + point.recommended_load, 0)).toBe(280);
   });
 
   it("uses explicit scheduling constraints before profile defaults", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 200 }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 200 }],
       preferenceProfile: {
         ...defaultAthletePreferenceProfile,
         availability: {
@@ -288,22 +286,22 @@ describe("buildDailyLoadDistribution", () => {
       },
     });
 
-    expect(
-      points.find((point) => point.date === "2026-01-05")?.recommended_load_tss,
-    ).toBeGreaterThan(0);
-    expect(points.find((point) => point.date === "2026-01-06")?.recommended_load_tss).toBe(0);
-    expect(
-      points.find((point) => point.date === "2026-01-07")?.recommended_load_tss,
-    ).toBeGreaterThan(0);
-    expect(points.filter((point) => point.recommended_load_tss > 0)).toHaveLength(2);
+    expect(points.find((point) => point.date === "2026-01-05")?.recommended_load).toBeGreaterThan(
+      0,
+    );
+    expect(points.find((point) => point.date === "2026-01-06")?.recommended_load).toBe(0);
+    expect(points.find((point) => point.date === "2026-01-07")?.recommended_load).toBeGreaterThan(
+      0,
+    );
+    expect(points.filter((point) => point.recommended_load > 0)).toHaveLength(2);
   });
 
   it("anchors generated load on planned session dates", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 300 }],
-      plannedSessions: [{ date: "2026-01-11", estimatedTss: 90 }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 300 }],
+      plannedSessions: [{ date: "2026-01-11", estimatedCommonLoad: 90 }],
       schedulingConstraints: {
         preferredWeekdays: [0, 2],
         minSessionsPerWeek: 2,
@@ -312,16 +310,16 @@ describe("buildDailyLoadDistribution", () => {
     });
 
     const sunday = points.find((point) => point.date === "2026-01-11");
-    expect(sunday?.recommended_load_tss).toBeGreaterThan(0);
+    expect(sunday?.recommended_load).toBeGreaterThan(0);
     expect(sunday?.reason_codes).toContain("planned_session_date_applied");
-    expect(points.filter((point) => point.recommended_load_tss > 0)).toHaveLength(2);
+    expect(points.filter((point) => point.recommended_load > 0)).toHaveLength(2);
   });
 
   it("distributes triathlon weekly allocation across run, bike, and swim days", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 420, phase: "build" }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 420, phase: "build" }],
       weeklyAllocation: weeklyAllocationFor({
         run: { role: "primary", sessions: 2, duration: 120, exposure: "long_session" },
         bike: { role: "secondary", sessions: 2, duration: 150, exposure: "threshold_interval" },
@@ -329,7 +327,7 @@ describe("buildDailyLoadDistribution", () => {
       }),
     });
 
-    const trainingPoints = points.filter((point) => point.recommended_load_tss > 0);
+    const trainingPoints = points.filter((point) => point.recommended_load > 0);
     expect(trainingPoints).toHaveLength(5);
     expect(trainingPoints.map((point) => point.activity_category)).toEqual([
       "run",
@@ -348,7 +346,7 @@ describe("buildDailyLoadDistribution", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 300 }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 300 }],
       weeklyAllocation: weeklyAllocationFor({
         run: { role: "primary", sessions: 3, duration: 150 },
         strength: {
@@ -372,7 +370,7 @@ describe("buildDailyLoadDistribution", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 180 }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 180 }],
       weeklyAllocation: weeklyAllocationFor({
         bike: { role: "primary", sessions: 3, duration: 180 },
       }),
@@ -380,7 +378,7 @@ describe("buildDailyLoadDistribution", () => {
 
     expect(
       points
-        .filter((point) => point.recommended_load_tss > 0)
+        .filter((point) => point.recommended_load > 0)
         .every((point) => point.activity_category === "bike"),
     ).toBe(true);
     expect(sumRecommendedLoad(points)).toBe(180);
@@ -390,7 +388,7 @@ describe("buildDailyLoadDistribution", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 240 }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 240 }],
       weeklyAllocation: weeklyAllocationFor({
         run: { role: "primary", sessions: 2, duration: 120 },
         swim: { role: "secondary", sessions: 1, duration: 45 },
@@ -405,7 +403,7 @@ describe("buildDailyLoadDistribution", () => {
     });
 
     const pinned = points.find((point) => point.date === "2026-01-07");
-    expect(pinned?.recommended_load_tss).toBeGreaterThan(0);
+    expect(pinned?.recommended_load).toBeGreaterThan(0);
     expect(pinned?.activity_category).toBe("swim");
     expect(pinned?.primary_focus).toBe("recovery");
     expect(pinned?.reason_codes).toContain("planned_session_category_pin");
@@ -416,11 +414,11 @@ describe("buildDailyLoadDistribution", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 300, phase: "build" }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 300, phase: "build" }],
       preferenceProfile: profileWithSessionCount(3),
     });
 
-    const trainingPoints = points.filter((point) => point.recommended_load_tss > 0);
+    const trainingPoints = points.filter((point) => point.recommended_load > 0);
     expect(trainingPoints.map((point) => point.primary_focus)).toEqual([
       "endurance",
       "threshold",
@@ -433,12 +431,12 @@ describe("buildDailyLoadDistribution", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 180, phase: "deload" }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 180, phase: "deload" }],
       preferenceProfile: profileWithSessionCount(4),
     });
 
     const trainingFocuses = points
-      .filter((point) => point.recommended_load_tss > 0)
+      .filter((point) => point.recommended_load > 0)
       .map((point) => point.primary_focus);
     expect(trainingFocuses).toEqual(["recovery", "endurance", "mobility", "recovery"]);
     expect(trainingFocuses).not.toContain("threshold");
@@ -453,7 +451,7 @@ describe("buildDailyLoadDistribution", () => {
       weeklyTargets: [
         {
           weekStartDate: "2026-01-05",
-          targetTss: 140,
+          targetLoad: 140,
           phase: "event",
           eventDate: "2026-01-07",
         },
@@ -475,7 +473,7 @@ describe("buildDailyLoadDistribution", () => {
       weeklyTargets: [
         {
           weekStartDate: "2026-01-05",
-          targetTss: 210,
+          targetLoad: 210,
           phase: "event",
           eventDate: "2026-01-11",
           recoveryRanges: [{ startDate: "2026-01-12", endDate: "2026-01-14" }],
@@ -487,9 +485,9 @@ describe("buildDailyLoadDistribution", () => {
     expect(points.find((point) => point.date === "2026-01-11")?.primary_focus).toBe(
       "race_specific",
     );
-    expect(
-      points.find((point) => point.date === "2026-01-11")?.recommended_load_tss,
-    ).toBeGreaterThan(0);
+    expect(points.find((point) => point.date === "2026-01-11")?.recommended_load).toBeGreaterThan(
+      0,
+    );
     expect(sumRecommendedLoad(points)).toBe(210);
   });
 
@@ -500,7 +498,7 @@ describe("buildDailyLoadDistribution", () => {
       weeklyTargets: [
         {
           weekStartDate: "2026-01-05",
-          targetTss: 200,
+          targetLoad: 200,
           phase: "event",
           eventDate: "2026-01-07",
         },
@@ -523,7 +521,7 @@ describe("buildDailyLoadDistribution", () => {
       weeklyTargets: [
         {
           weekStartDate: "2026-01-12",
-          targetTss: 120,
+          targetLoad: 120,
           phase: "recovery",
           recoveryRanges: [{ startDate: "2026-01-12", endDate: "2026-01-18" }],
         },
@@ -532,7 +530,7 @@ describe("buildDailyLoadDistribution", () => {
     });
 
     const trainingFocuses = points
-      .filter((point) => point.recommended_load_tss > 0)
+      .filter((point) => point.recommended_load > 0)
       .map((point) => point.primary_focus);
     expect(trainingFocuses).toEqual(["recovery", "mobility", "recovery"]);
     expect(sumRecommendedLoad(points)).toBe(120);
@@ -542,7 +540,7 @@ describe("buildDailyLoadDistribution", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 300 }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 300 }],
       preferenceProfile: {
         ...defaultAthletePreferenceProfile,
         availability: {
@@ -562,11 +560,9 @@ describe("buildDailyLoadDistribution", () => {
       },
     });
 
-    expect(points.find((point) => point.date === "2026-01-06")?.recommended_load_tss).toBe(0);
-    expect(Math.max(...points.map((point) => point.recommended_load_tss))).toBeLessThanOrEqual(
-      40.5,
-    );
-    expect(points.reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBeLessThan(300);
+    expect(points.find((point) => point.date === "2026-01-06")?.recommended_load).toBe(0);
+    expect(Math.max(...points.map((point) => point.recommended_load))).toBeLessThanOrEqual(40.5);
+    expect(points.reduce((sum, point) => sum + point.recommended_load, 0)).toBeLessThan(300);
     expect(
       points.some((point) =>
         point.reason_codes.includes("weekly_target_under_allocated_daily_caps"),
@@ -578,7 +574,7 @@ describe("buildDailyLoadDistribution", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 250 }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 250 }],
       preferenceProfile: {
         ...defaultAthletePreferenceProfile,
         dose_limits: {
@@ -590,17 +586,15 @@ describe("buildDailyLoadDistribution", () => {
       },
     });
 
-    expect(Math.max(...points.map((point) => point.recommended_load_tss))).toBeLessThanOrEqual(
-      40.5,
-    );
-    expect(points.reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBeLessThan(250);
+    expect(Math.max(...points.map((point) => point.recommended_load))).toBeLessThanOrEqual(40.5);
+    expect(points.reduce((sum, point) => sum + point.recommended_load, 0)).toBeLessThan(250);
   });
 
   it("keeps hard rest days at zero and under-allocates instead of spilling above caps", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 400 }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 400 }],
       preferenceProfile: {
         ...defaultAthletePreferenceProfile,
         availability: {
@@ -619,20 +613,18 @@ describe("buildDailyLoadDistribution", () => {
       },
     });
 
-    expect(points.find((point) => point.date === "2026-01-06")?.recommended_load_tss).toBe(0);
-    expect(points.reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBeLessThanOrEqual(
-      60,
-    );
+    expect(points.find((point) => point.date === "2026-01-06")?.recommended_load).toBe(0);
+    expect(points.reduce((sum, point) => sum + point.recommended_load, 0)).toBeLessThanOrEqual(60);
     expect(points.find((point) => point.date === "2026-01-06")?.reason_codes).toContain(
       "hard_rest_day_cap",
     );
   });
 
-  it("caps daily load for low CTL and low readiness", () => {
+  it("caps daily load for low LongTermLoad and low readiness", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 220 }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 220 }],
       preferenceProfile: {
         ...defaultAthletePreferenceProfile,
         dose_limits: {
@@ -642,11 +634,16 @@ describe("buildDailyLoadDistribution", () => {
           max_single_session_duration_minutes: 120,
         },
       },
-      capacityContext: { startingCtl: 12, startingAtl: 20, startingTsb: -8, readinessScore: 30 },
+      capacityContext: {
+        startingLongTermLoad: 12,
+        startingRecentLoad: 20,
+        startingLoadBalance: -8,
+        readinessScore: 30,
+      },
     });
 
-    expect(Math.max(...points.map((point) => point.recommended_load_tss))).toBeLessThanOrEqual(20);
-    expect(points.reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBeLessThan(220);
+    expect(Math.max(...points.map((point) => point.recommended_load))).toBeLessThanOrEqual(20);
+    expect(points.reduce((sum, point) => sum + point.recommended_load, 0)).toBeLessThan(220);
     expect(
       points.some((point) => point.reason_codes.includes("athlete_capacity_cap_applied")),
     ).toBe(true);
@@ -656,7 +653,7 @@ describe("buildDailyLoadDistribution", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 100.1 }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 100.1 }],
       preferenceProfile: {
         ...defaultAthletePreferenceProfile,
         dose_limits: {
@@ -668,10 +665,8 @@ describe("buildDailyLoadDistribution", () => {
       },
     });
 
-    expect(Math.max(...points.map((point) => point.recommended_load_tss))).toBeLessThanOrEqual(
-      60.1,
-    );
-    expect(points.reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBeLessThanOrEqual(
+    expect(Math.max(...points.map((point) => point.recommended_load))).toBeLessThanOrEqual(60.1);
+    expect(points.reduce((sum, point) => sum + point.recommended_load, 0)).toBeLessThanOrEqual(
       100.1,
     );
   });
@@ -680,7 +675,7 @@ describe("buildDailyLoadDistribution", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 180 }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 180 }],
       preferenceProfile: {
         ...defaultAthletePreferenceProfile,
         availability: {
@@ -698,7 +693,7 @@ describe("buildDailyLoadDistribution", () => {
       },
     });
 
-    expect(points.map((point) => point.recommended_load_tss)).toEqual([0, 0, 0, 0, 0, 0, 0]);
+    expect(points.map((point) => point.recommended_load)).toEqual([0, 0, 0, 0, 0, 0, 0]);
     expect(
       points.every((point) => point.reason_codes.includes("all_training_days_unavailable")),
     ).toBe(true);
@@ -708,9 +703,9 @@ describe("buildDailyLoadDistribution", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
       endDate: "2026-01-11",
-      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 300 }],
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetLoad: 300 }],
       preferenceProfile: defaultAthletePreferenceProfile,
-      plannedSessions: [{ date: "2026-01-07", estimatedTss: 80 }],
+      plannedSessions: [{ date: "2026-01-07", estimatedCommonLoad: 80 }],
     });
 
     const plannedDay = points.find((point) => point.date === "2026-01-07");
@@ -721,7 +716,7 @@ describe("buildDailyLoadDistribution", () => {
     expect(plannedDay.reason_codes).toEqual([
       "daily_load_distribution_v1",
       "source_weekly_target",
-      "target_positive_tss",
+      "target_positive_load",
       "source_preference_profile",
       "availability_default_pattern",
       "source_planned_session_dates",
@@ -745,7 +740,7 @@ describe("buildDailyLoadDistribution", () => {
     expect(points[0]?.reason_codes).toEqual([
       "daily_load_distribution_v1",
       "source_missing_weekly_target",
-      "target_zero_tss",
+      "target_zero_load",
       "partial_week_scaled",
       "fallback_missing_preference_profile",
       "availability_default_pattern",

@@ -66,7 +66,7 @@ export type ActivityEffortPlausibilityClassification =
       heuristicCeiling: number;
     };
 
-export type ActivityEffortObservationStatus = "observed" | "modeled" | "review" | "invalid";
+export type ActivityEffortObservationStatus = "observed" | "review" | "invalid";
 
 export type ActivityEffortThresholdEvidence = "imported_activity_stream";
 
@@ -130,7 +130,7 @@ export function getActivityEffortObservationStatus(
 ): ActivityEffortObservationStatus {
   const provenance = isRecord(input.provenance) ? input.provenance : null;
   if (input.source === "derived" || input.source === "estimated") {
-    return "modeled";
+    return "review";
   }
 
   const canonical = canonicalizeActivityEffortObservation(input);
@@ -140,7 +140,7 @@ export function getActivityEffortObservationStatus(
     effortType: input.effortType,
     durationSeconds: input.durationSeconds,
     value: canonical.value,
-    context: input.context,
+    ...(input.context === undefined ? {} : { context: input.context }),
   });
   if (plausibility.classification === "hard-invalid") return "invalid";
   if (plausibility.classification === "quarantinable-implausible") return "review";

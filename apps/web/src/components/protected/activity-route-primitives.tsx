@@ -8,15 +8,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
 import { cn } from "@repo/ui/lib/cn";
 import { Heart, MapPin } from "lucide-react";
 import type { ReactNode } from "react";
 import { useViewingUserPreferredUnitSystem } from "../../hooks/use-viewing-user-preferred-unit-system";
-import {
-  formatCalibrationQuality,
-  getActivityLoadLabels,
-  getCommonLoadPresentation,
-} from "../../lib/activity-load-presentation";
+import { formatCalibrationQuality } from "../../lib/activity-load-presentation";
 import {
   buildElevationPolylinePoints,
   buildMapPolylinePoints,
@@ -226,15 +223,28 @@ function deriveCategoryLabel(categories: string[]) {
 
 export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: () => void }) {
   const { unitSystem } = useViewingUserPreferredUnitSystem();
-  const commonLoad = activity.derived?.common_load;
-  const loadLabels = getActivityLoadLabels();
-  const loadPresentation = getCommonLoadPresentation(commonLoad, {
-    hasHeartRateSummary: typeof activity.avg_heart_rate === "number" && activity.avg_heart_rate > 0,
-    segmentCommonLoads: activity.segment_loads?.map(
-      (segment: { common_load?: unknown }) => segment.common_load,
-    ),
-  });
-  const calibrationText = formatCalibrationQuality(commonLoad?.quality, activity.started_at);
+  const segmentQuantifications = activity.segment_loads?.map(
+    (segment: {
+      observationQuantification?: { members?: Array<{ commonLoad: CommonLoadResult }> };
+    }) => segment.observationQuantification,
+  );
+  const loadPresentation = getActivityQuantificationPresentation(
+    activity.derived?.observationQuantification,
+    {
+      hasHeartRateSummary:
+        typeof activity.avg_heart_rate === "number" && activity.avg_heart_rate > 0,
+    },
+  );
+  const calibrationCommonLoad =
+    segmentQuantifications?.length === 1
+      ? segmentQuantifications[0]?.members?.[0]?.commonLoad
+      : null;
+  const calibrationText = formatCalibrationQuality(
+    calibrationCommonLoad?.status === "available" || calibrationCommonLoad?.status === "partial"
+      ? calibrationCommonLoad.quality
+      : null,
+    activity.started_at,
+  );
   const categories = activity.activity_categories as string[] | undefined;
   const elapsedSeconds =
     activity.elapsed_ms != null ? Math.round(activity.elapsed_ms / 1000) : null;
@@ -268,18 +278,33 @@ export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: 
           </Button>
         </div>
         <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
-          <MetricPill label={loadLabels.load} value={loadPresentation.load} />
-          <MetricPill label={loadLabels.intensity} value={loadPresentation.intensity} />
+          <MetricPill
+            label={loadPresentation.commonLoad.label}
+            value={loadPresentation.commonLoad.value}
+          />
+          <MetricPill
+            label={loadPresentation.normalizedIntensity.label}
+            value={loadPresentation.normalizedIntensity.value}
+          />
           <MetricPill
             label="Distance"
             value={formatDistance(activity.distance_meters, unitSystem)}
           />
           <MetricPill label="Duration" value={formatDuration(elapsedSeconds)} />
         </div>
-        <p className="text-xs text-muted-foreground">{loadPresentation.explanation}</p>
-        {loadPresentation.diagnostic ? (
+        <p className="text-xs text-muted-foreground">
+          {loadPresentation.commonLoad.evidence}. {loadPresentation.commonLoad.explanation}
+        </p>
+        {loadPresentation.commonLoad.diagnostic ? (
           <p className="text-xs text-muted-foreground">
-            {loadPresentation.diagnostic.summary} {loadPresentation.diagnostic.action}
+            {loadPresentation.commonLoad.diagnostic.summary}{" "}
+            {loadPresentation.commonLoad.diagnostic.action}
+          </p>
+        ) : null}
+        {loadPresentation.nativeIntensity.status !== "unavailable" ? (
+          <p className="text-xs text-muted-foreground">
+            {loadPresentation.nativeIntensity.label}: {loadPresentation.nativeIntensity.value} ·{" "}
+            {loadPresentation.nativeIntensity.evidence}
           </p>
         ) : null}
         {calibrationText ? (
@@ -414,3 +439,5 @@ function MetricPill({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+import type { CommonLoadResult } from "@repo/core";

@@ -1,6 +1,9 @@
 import type { CompiledActivityStepOccurrence } from "../activity-plan";
+import {
+  type AthletePerformanceTargetFacts,
+  getAvailablePerformanceTargetValue,
+} from "../performance-model";
 import type {
-  RecordingProfileSnapshot,
   RecordingTrainerControlIntent,
   RecordingTrainerIntentSource,
 } from "../schemas/recording-session";
@@ -9,7 +12,8 @@ import type { ActivityTarget } from "../targets/schema";
 
 export interface ResolveActivityOccurrenceTrainerIntentsParams {
   occurrence: Pick<CompiledActivityStepOccurrence, "activity_category" | "targets">;
-  profileSnapshot?: Pick<RecordingProfileSnapshot, "ftp" | "thresholdHr">;
+  performanceTargets?: AthletePerformanceTargetFacts;
+  intensityScale?: number;
   source?: RecordingTrainerIntentSource;
 }
 
@@ -21,7 +25,9 @@ export interface PlanStepTrainerIntentResolution {
 
 function resolveTargetToIntent(
   target: ActivityTarget,
-  profileSnapshot: ResolveActivityOccurrenceTrainerIntentsParams["profileSnapshot"],
+  activityCategory: CompiledActivityStepOccurrence["activity_category"],
+  performanceTargets: AthletePerformanceTargetFacts | undefined,
+  intensityScale: number,
   source: RecordingTrainerIntentSource,
 ): {
   intent?: RecordingTrainerControlIntent;
@@ -30,7 +36,13 @@ function resolveTargetToIntent(
 } {
   switch (target.type) {
     case "%FTP": {
-      if (!profileSnapshot?.ftp) {
+      const resolved = resolvePerformanceTargetValue({
+        target,
+        activityCategory,
+        ...(performanceTargets !== undefined ? { performanceTargets } : {}),
+        intensityScale,
+      });
+      if (!resolved) {
         return { unresolved: target };
       }
 
@@ -38,7 +50,7 @@ function resolveTargetToIntent(
         intent: {
           type: "set_power",
           source,
-          watts: Math.round((target.intensity / 100) * profileSnapshot.ftp),
+          watts: resolved.value,
         },
       };
     }
@@ -68,10 +80,63 @@ function resolveTargetToIntent(
       };
     case "%ThresholdHR":
     case "%MaxHR":
+      return resolvePerformanceTargetValue({
+        target,
+        activityCategory,
+        ...(performanceTargets !== undefined ? { performanceTargets } : {}),
+        intensityScale,
+      })
+        ? { informational: target }
+        : { unresolved: target };
     case "bpm":
     case "RPE":
       return { informational: target };
   }
+}
+
+function categoryHeartRateFact(
+  facts: AthletePerformanceTargetFacts["heartRate"],
+  activityCategory: CompiledActivityStepOccurrence["activity_category"],
+  metric: "%ThresholdHR" | "%MaxHR",
+) {
+  return activityCategory === "bike" || activityCategory === "run" || activityCategory === "swim"
+    ? metric === "%ThresholdHR"
+      ? facts[activityCategory].lthr
+      : facts[activityCategory].maxHr
+    : undefined;
+}
+
+/** Resolves only model-dependent targets; absolute targets remain caller-owned values. */
+export function resolvePerformanceTargetValue(input: {
+  target: Extract<ActivityTarget, { type: "%FTP" | "%ThresholdHR" | "%MaxHR" }>;
+  activityCategory: CompiledActivityStepOccurrence["activity_category"];
+  performanceTargets?: AthletePerformanceTargetFacts;
+  intensityScale?: number;
+}): { value: number; unit: "watts" | "bpm" } | null {
+  const performanceTargets = input.performanceTargets;
+  if (!performanceTargets) return null;
+  if (input.target.type === "%FTP") {
+    if (input.activityCategory !== "bike") return null;
+    const planningThresholdPower = getAvailablePerformanceTargetValue(
+      performanceTargets.cycling.planningThresholdPower,
+    );
+    if (planningThresholdPower === null) return null;
+    const scale = input.intensityScale ?? 1;
+    if (!Number.isFinite(scale) || scale <= 0) return null;
+    return {
+      value: Math.round((input.target.intensity / 100) * planningThresholdPower * scale),
+      unit: "watts",
+    };
+  }
+  const fact = categoryHeartRateFact(
+    performanceTargets.heartRate,
+    input.activityCategory,
+    input.target.type,
+  );
+  const threshold = fact?.status === "available" ? fact.valueBpm : null;
+  return threshold === null || threshold === undefined
+    ? null
+    : { value: Math.round((input.target.intensity / 100) * threshold), unit: "bpm" };
 }
 
 /**
@@ -97,7 +162,13 @@ export function resolveActivityOccurrenceTrainerIntents(
         acc.unresolvedTargets.push(target);
         return acc;
       }
-      const resolution = resolveTargetToIntent(target, params.profileSnapshot, source);
+      const resolution = resolveTargetToIntent(
+        target,
+        params.occurrence.activity_category,
+        params.performanceTargets,
+        params.intensityScale ?? 1,
+        source,
+      );
 
       if (resolution.intent) {
         acc.intents.push(resolution.intent);

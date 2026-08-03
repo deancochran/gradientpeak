@@ -372,6 +372,9 @@ export function ScheduleActivityModal({
       enabled: visible && !!trainingPlanId && !!currentActivityPlanId,
     },
   );
+  const isWeeklyLoadUnavailable =
+    validation?.constraints.weeklyLoad.current === null ||
+    validation?.constraints.weeklyLoad.withNew === null;
 
   // Reset form when modal opens/closes
   useEffect(() => {
@@ -448,6 +451,11 @@ export function ScheduleActivityModal({
   };
 
   const onSubmit = async (data: ScheduleActivityModalFormOutput) => {
+    if (isWeeklyLoadUnavailable) {
+      const message = "Weekly Common Load is unavailable, so this schedule cannot be evaluated.";
+      setRootFormError(form, new Error(message), message);
+      return;
+    }
     if (isEditMode) {
       if (existingPlanReadOnly) return;
       if (recurringEditRequiresScope && !resolvedEditScope) {
@@ -515,6 +523,7 @@ export function ScheduleActivityModal({
     !isValidationPending &&
     !isSubmitting &&
     !existingPlanReadOnly &&
+    !isWeeklyLoadUnavailable &&
     (selectedPlanIsExecutable || preservesExistingPlan) &&
     (!recurringEditRequiresScope || !!localEditScope);
   const validationSummary = !trainingPlanId
@@ -534,26 +543,34 @@ export function ScheduleActivityModal({
             textTone: "text-muted-foreground",
           }
         : validation
-          ? validation.canSchedule && !validation.hasWarnings
+          ? isWeeklyLoadUnavailable
             ? {
-                title: "Ready to schedule",
-                detail: "This date fits cleanly within current plan limits.",
-                tone: "border-emerald-500/20 bg-emerald-500/10",
-                textTone: "text-emerald-700",
+                title: "Weekly Common Load unavailable",
+                detail:
+                  "This date cannot be evaluated against the weekly limit because comparable Common Load is unavailable.",
+                tone: "border-destructive/20 bg-destructive/10",
+                textTone: "text-destructive",
               }
-            : validation.canSchedule
+            : validation.canSchedule && !validation.hasWarnings
               ? {
-                  title: "Close to plan limits",
-                  detail: "You can schedule this, but it pushes one or more constraints.",
-                  tone: "border-amber-500/20 bg-amber-500/10",
-                  textTone: "text-amber-700",
+                  title: "Ready to schedule",
+                  detail: "This date fits cleanly within current plan limits.",
+                  tone: "border-emerald-500/20 bg-emerald-500/10",
+                  textTone: "text-emerald-700",
                 }
-              : {
-                  title: "Constraint override required",
-                  detail: "This date violates one or more training-plan limits.",
-                  tone: "border-destructive/20 bg-destructive/10",
-                  textTone: "text-destructive",
-                }
+              : validation.canSchedule
+                ? {
+                    title: "Close to plan limits",
+                    detail: "You can schedule this, but it pushes one or more constraints.",
+                    tone: "border-amber-500/20 bg-amber-500/10",
+                    textTone: "text-amber-700",
+                  }
+                : {
+                    title: "Constraint override required",
+                    detail: "This date violates one or more training-plan limits.",
+                    tone: "border-destructive/20 bg-destructive/10",
+                    textTone: "text-destructive",
+                  }
           : {
               title: "Schedule fit pending",
               detail: "Constraint details will appear once validation is ready.",

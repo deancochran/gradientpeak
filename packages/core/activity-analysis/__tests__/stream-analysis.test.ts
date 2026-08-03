@@ -223,7 +223,7 @@ describe("analyzeActivityStreams", () => {
     expect([loadAt(179.99), loadAt(180), loadAt(180.01)]).toEqual([99.989, 100, 100.011]);
   });
 
-  it("caps implausibly high heart-rate samples at the documented bound", () => {
+  it("excludes implausibly high heart-rate samples instead of capping them", () => {
     const result = analyzeActivityStreams({
       records: [
         { timestamp: 0, heartRate: 300 },
@@ -234,6 +234,14 @@ describe("analyzeActivityStreams", () => {
       maxAcceptedGapSeconds: 3600,
     });
 
-    expect(result.heart_rate_load).toMatchObject({ value: 192.901, max_heart_rate_bpm: 250 });
+    expect(result.distributions.heart_rate).toMatchObject({
+      quality: { status: "insufficient", reason: "insufficient_samples" },
+      zones: [],
+    });
+    expect(result.heart_rate_load).toMatchObject({
+      value: null,
+      reason: "insufficient_samples",
+      max_heart_rate_bpm: 250,
+    });
   });
 });

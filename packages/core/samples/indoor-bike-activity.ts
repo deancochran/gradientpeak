@@ -23,7 +23,7 @@ const createPlan = createSystemActivityPlanBuilderFactory("bike", [
 /**
  * Advanced Indoor Bike Activity - VO2 Max Intervals
  * Total time: 75 minutes
- * Estimated TSS: ~95
+ * Estimated Common Load: ~95
  */
 export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
   id: "8a1b2c3d-4e5f-4a7b-8c9d-0e1f2a3b4c5d",
@@ -89,7 +89,7 @@ export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
 /**
  * Recovery Indoor Bike Activity
  * Total time: 45 minutes
- * Estimated TSS: ~25
+ * Estimated Common Load: ~25
  */
 export const SAMPLE_RECOVERY_WORKOUT: RecordingServiceActivityPlan = {
   id: "9b2c3d4e-5f6a-4b8c-9d0e-1f2a3b4c5d6e",
@@ -121,7 +121,7 @@ export const SAMPLE_RECOVERY_WORKOUT: RecordingServiceActivityPlan = {
 /**
  * Sprint Power Development Activity
  * Total time: 50 minutes
- * Estimated TSS: ~55
+ * Estimated Common Load: ~55
  */
 export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
   id: "0c3d4e5f-6a7b-4c9d-8e1f-2a3b4c5d6e7f",

@@ -42,8 +42,8 @@ describe("preferred-unit trend presentation", () => {
 
   it("combines paginated profile history before selecting a metric", () => {
     const firstPage = Array.from({ length: 50 }, (_, index) => ({
-      id: `ftp-${index}`,
-      metric_type: "ftp",
+      id: `resting-hr-${index}`,
+      metric_type: "resting_hr",
     }));
     const pages = [
       { items: firstPage },

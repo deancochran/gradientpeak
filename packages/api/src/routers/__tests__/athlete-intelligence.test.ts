@@ -1,4 +1,7 @@
-import { athleteIntelligenceProjectionSchema } from "@repo/core";
+import {
+  athleteIntelligenceProjectionSchema,
+  createUnavailableAthletePerformanceTargetFacts,
+} from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 import type {
@@ -33,8 +36,6 @@ function projection() {
     assessmentAsOf: "2026-07-10T12:00:00.000Z",
     athleteId: OWNER_ID,
     capability: {
-      ftp: unavailable,
-      wattsPerKilogram: unavailable,
       heartRateReserve: unavailable,
       effortCurves: [],
       enduranceRecencyWeightedMinutes: unavailable,
@@ -292,6 +293,11 @@ describe("athleteIntelligenceRouter.evaluate", () => {
       metrics: [],
       activities: [],
       efforts: [],
+      performanceTargets: createUnavailableAthletePerformanceTargetFacts(
+        "2026-07-10T12:00:00.000Z",
+        OWNER_ID,
+      ),
+      completedObservationLoads: [],
       goals: [
         {
           profileId: OWNER_ID,

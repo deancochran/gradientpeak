@@ -14,7 +14,7 @@ const createPlan = createSystemActivityPlanBuilderFactory("swim", [
 /**
  * Easy Swim - Indoor Pool
  * Total distance: ~2000m
- * Estimated TSS: ~40
+ * Estimated Common Load: ~40
  */
 export const EASY_SWIM: RecordingServiceActivityPlan = {
   id: "3f6a7b8c-9d0e-4f2a-bb4c-5d6e7f8a9b0c",
@@ -46,7 +46,7 @@ export const EASY_SWIM: RecordingServiceActivityPlan = {
 /**
  * Sprint Intervals - Indoor Pool
  * Total distance: ~2500m
- * Estimated TSS: ~75
+ * Estimated Common Load: ~75
  */
 export const SPRINT_INTERVALS_SWIM: RecordingServiceActivityPlan = {
   id: "4a7b8c9d-0e1f-4a3b-8c5d-6e7f8a9b0c1d",
@@ -106,7 +106,7 @@ export const SPRINT_INTERVALS_SWIM: RecordingServiceActivityPlan = {
 /**
  * Threshold Set - Indoor Pool
  * Total distance: ~3000m
- * Estimated TSS: ~80
+ * Estimated Common Load: ~80
  */
 export const THRESHOLD_SWIM: RecordingServiceActivityPlan = {
   id: "5b8c9d0e-1f2a-4b4c-9d6e-7f8a9b0c1d2e",
@@ -149,7 +149,7 @@ export const THRESHOLD_SWIM: RecordingServiceActivityPlan = {
 /**
  * Technique Focus - Indoor Pool
  * Total distance: ~1800m
- * Estimated TSS: ~30
+ * Estimated Common Load: ~30
  */
 export const TECHNIQUE_SWIM: RecordingServiceActivityPlan = {
   id: "6c9d0e1f-2a3b-4c5d-ae7f-8a9b0c1d2e3f",
@@ -204,7 +204,7 @@ export const TECHNIQUE_SWIM: RecordingServiceActivityPlan = {
 /**
  * Endurance Set - Indoor Pool
  * Total distance: ~3500m
- * Estimated TSS: ~60
+ * Estimated Common Load: ~60
  */
 export const ENDURANCE_SWIM: RecordingServiceActivityPlan = {
   id: "7d0e1f2a-3b4c-4d6e-bf8a-9b0c1d2e3f4a",

@@ -1,7 +1,5 @@
-import {
-  deriveActivityPlanPresentation,
-  getAuthoritativeActivityPlanMetrics,
-} from "@repo/core/activity-plan";
+import { deriveActivityPlanPresentation } from "@repo/core/activity-plan";
+import type { ActivityPrescriptionQuantificationBundle } from "@repo/core/activity-quantification";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
@@ -9,9 +7,9 @@ import { Calendar } from "lucide-react-native";
 import { useMemo } from "react";
 import { View } from "react-native";
 import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
-import type { ActivityCategoryLoadMeasurement } from "./ActivityCategoryLoadBreakdown";
 import { ActivityPlanSummary } from "./ActivityPlanSummary";
 import type { EntityOwner } from "./EntityOwnerRow";
 import {
@@ -33,14 +31,7 @@ export interface ActivityPlan {
   structure_hash?: string;
   description?: string | null;
   structure?: unknown;
-  authoritative_metrics?: {
-    estimated_duration?: number | null;
-    estimated_tss?: number | null;
-    intensity_factor?: number | null;
-    estimated_distance?: number | null;
-  } | null;
-  common_load?: unknown;
-  category_loads?: readonly ActivityCategoryLoadMeasurement[];
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
   notes?: string | null;
   profile_id?: string | null;
   template_visibility?: string | null;
@@ -72,10 +63,7 @@ export interface ActivityPlanCardData {
   description?: string;
   structure?: unknown;
   estimatedDuration?: number; // in seconds
-  estimatedTss?: number;
-  intensityFactor?: number;
-  commonLoad?: unknown;
-  categoryLoads?: readonly ActivityCategoryLoadMeasurement[];
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
   estimatedDistance?: number; // meters
   notes?: string;
   createdAt?: string;
@@ -179,15 +167,11 @@ export function ActivityPlanCard({
       {isCompact ? <ResourceCategoryItems items={categoryItems} /> : null}
 
       <ActivityPlanSummary
-        activityCategory={cardData.activity_category}
-        categoryLoads={cardData.categoryLoads}
         description={cardData.description || cardData.notes || null}
         estimatedDuration={cardData.estimatedDuration}
-        estimatedTss={cardData.estimatedTss}
-        intensityFactor={cardData.intensityFactor}
-        commonLoad={cardData.commonLoad}
         owner={cardData.owner}
         presentation={presentation}
+        prescriptionQuantification={cardData.prescriptionQuantification}
         structure={cardData.structure}
         title={cardData.name}
         variant="standalone"
@@ -207,12 +191,6 @@ export function ActivityPlanCard({
         compact={isCompact}
         size={isCompact ? "small" : "medium"}
         plan={{
-          authoritative_metrics: {
-            estimated_duration: cardData.estimatedDuration,
-            estimated_tss: cardData.estimatedTss,
-            intensity_factor: cardData.intensityFactor,
-            estimated_distance: cardData.estimatedDistance,
-          },
           structure: cardData.structure,
         }}
         presentation={presentation}
@@ -242,7 +220,7 @@ function transformToCardData(
     );
   }
 
-  const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(plan);
+  const quantitySummary = getActivityPlanQuantitySummary(plan);
 
   return {
     id: plannedActivity?.id || plan.id,
@@ -250,12 +228,9 @@ function transformToCardData(
     activity_category: plan.activity_category ?? "other",
     description: plan.description || undefined,
     structure: plan.structure,
-    estimatedDuration: authoritativeMetrics.estimated_duration ?? undefined,
-    estimatedTss: authoritativeMetrics.estimated_tss ?? undefined,
-    intensityFactor: authoritativeMetrics.intensity_factor ?? undefined,
-    commonLoad: plan.common_load,
-    categoryLoads: plan.category_loads,
-    estimatedDistance: authoritativeMetrics.estimated_distance ?? undefined,
+    estimatedDuration: quantitySummary.durationSeconds ?? undefined,
+    prescriptionQuantification: plan.prescriptionQuantification,
+    estimatedDistance: quantitySummary.distanceMeters ?? undefined,
     notes: plannedActivity?.notes || plan.description || plan.notes || undefined,
     createdAt:
       plan.created_at instanceof Date

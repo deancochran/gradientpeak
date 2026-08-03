@@ -39,9 +39,9 @@ const syncNowResultSchema = z
     queued: z.boolean(),
     setupRefresh: z
       .object({
-        fieldsFilled: z.array(z.enum(["dob", "gender", "weight_kg", "ftp"])),
-        fieldsKept: z.array(z.enum(["dob", "gender", "weight_kg", "ftp"])),
-        fieldsUpdated: z.array(z.enum(["dob", "gender", "weight_kg", "ftp"])),
+        fieldsFilled: z.array(z.enum(["dob", "gender", "weight_kg"])),
+        fieldsKept: z.array(z.enum(["dob", "gender", "weight_kg"])),
+        fieldsUpdated: z.array(z.enum(["dob", "gender", "weight_kg"])),
         keptExistingValues: z.boolean(),
         status: z.enum(["succeeded", "partial", "failed"]),
       })
@@ -50,9 +50,9 @@ const syncNowResultSchema = z
   .strict();
 const refreshSetupDataResultSchema = z
   .object({
-    fieldsFilled: z.array(z.enum(["dob", "gender", "weight_kg", "ftp"])),
-    fieldsKept: z.array(z.enum(["dob", "gender", "weight_kg", "ftp"])),
-    fieldsUpdated: z.array(z.enum(["dob", "gender", "weight_kg", "ftp"])),
+    fieldsFilled: z.array(z.enum(["dob", "gender", "weight_kg"])),
+    fieldsKept: z.array(z.enum(["dob", "gender", "weight_kg"])),
+    fieldsUpdated: z.array(z.enum(["dob", "gender", "weight_kg"])),
     keptExistingValues: z.boolean(),
     provider: providerSchema,
     status: z.enum(["succeeded", "partial", "failed"]),

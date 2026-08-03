@@ -290,35 +290,6 @@ describe("activity efforts list", () => {
     expect(screen.queryByText("Speed (W)")).toBeNull();
   });
 
-  it("preserves a historical derived effort without treating it as observed", () => {
-    mockActivityEfforts = [
-      ...mockActivityEfforts,
-      {
-        id: "historical-derived-4240",
-        activity_id: null,
-        activity_category: "bike",
-        effort_type: "power",
-        recorded_at: "2025-01-01T00:00:00.000Z",
-        duration_seconds: 3600,
-        value: 4240,
-        unit: "watts",
-        source: "derived",
-        method: "onboarding_modeled_curve",
-        provenance: { observation_type: "modeled", seed_source: "onboarding" },
-      },
-    ];
-
-    renderNative(<ActivityEffortsList />);
-
-    expect(screen.getByText("Best 800 W")).toBeTruthy();
-    fireEvent.press(screen.getByTestId("activity-effort-curve-bike_power"));
-
-    expect(screen.getAllByText("Best 800 W").length).toBeGreaterThan(0);
-    expect(screen.getByText("846 W")).toBeTruthy();
-    expect(screen.getByText("4240 W")).toBeTruthy();
-    expect(screen.getByText("Modeled threshold")).toBeTruthy();
-  });
-
   it("keeps implausible raw records visible with review and invalid labels", () => {
     mockActivityEfforts = [
       ...mockActivityEfforts,

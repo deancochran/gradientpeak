@@ -1,3 +1,4 @@
+import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
@@ -34,7 +35,11 @@ jest.mock("@/components/shared/RouteCard", () => ({
 }));
 jest.mock("@/lib/activityPlanMetrics", () => ({
   __esModule: true,
-  getAuthoritativeActivityPlanMetrics: jest.fn(() => ({})),
+  getActivityPlanQuantitySummary: jest.fn(() => ({
+    commonLoad: null,
+    distanceMeters: null,
+    durationSeconds: null,
+  })),
 }));
 jest.mock("@/lib/constants/activities", () => ({
   __esModule: true,
@@ -48,7 +53,6 @@ jest.mock("@/lib/constants/activities", () => ({
 jest.mock("@/lib/estimatedMetrics", () => ({
   __esModule: true,
   formatEstimatedDurationSeconds: jest.fn(),
-  formatEstimatedTss: jest.fn(),
 }));
 jest.mock("@/lib/hooks/usePreferredUnitSystem", () => ({
   __esModule: true,
@@ -156,20 +160,23 @@ describe("ResourcePickerResultRow", () => {
   });
 
   it("maps every current query result to its canonical card presentation", () => {
+    const prescriptionQuantification = createPrescriptionQuantificationBundleFixture({
+      activityCategory: "bike",
+    });
     expect(
       mapActivityPlanToResourcePickerItem({
         id: "plan-2",
         name: "Endurance",
         activity_category: "bike",
-        common_load: { status: "unavailable" },
+        prescriptionQuantification,
         structure: { version: 3, segments: [] },
       }),
     ).toMatchObject({
       activityPlanCardData: {
         activity_category: "bike",
-        commonLoad: { status: "unavailable" },
         id: "plan-2",
         name: "Endurance",
+        prescriptionQuantification,
         structure: { version: 3, segments: [] },
       },
       presentation: "canonical",

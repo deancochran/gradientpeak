@@ -404,7 +404,6 @@ jest.mock("@/lib/api", () => ({
 jest.mock("@repo/core", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/core"),
-  estimateConservativeFTPFromWeight: jest.fn((weight?: number | null) => (weight ? 210 : null)),
   estimateMaxHRFromDOB: jest.fn((dob?: string | null) => (dob ? 185 : null)),
   formatWeightForDisplay: jest.fn((weight: number) => `${weight} kg`),
 }));
@@ -604,10 +603,8 @@ const { TrainingBaselineStep } = require("@/components/onboarding/steps");
 const { INITIAL_ONBOARDING_DATA } = require("@/components/onboarding/onboarding-data");
 const { runSocialActionsWithLimit } = require("@/components/onboarding/useOnboardingFlow");
 const {
-  estimateConservativeFTPFromWeight,
   estimateMaxHRFromDOB,
 }: {
-  estimateConservativeFTPFromWeight: jest.Mock;
   estimateMaxHRFromDOB: jest.Mock;
 } = require("@repo/core");
 
@@ -672,9 +669,6 @@ describe("onboarding screen", () => {
     acceptInviteMutationMock.mockResolvedValue({ membership: {} });
     joinOrRequestGroupMutationMock.mockResolvedValue({ outcome: "joined" });
     followProfileMutationMock.mockResolvedValue({ status: "accepted" });
-    estimateConservativeFTPFromWeight.mockImplementation((weight?: number | null) =>
-      weight ? 210 : null,
-    );
     estimateMaxHRFromDOB.mockImplementation((dob?: string | null) => (dob ? 185 : null));
     mutationOrder.length = 0;
     completeLifecycleSetupMutationMock.mockImplementation(async () => {
@@ -1945,7 +1939,6 @@ describe("onboarding screen", () => {
       <TrainingBaselineHarness
         initialData={{
           dob: "1990-01-01",
-          ftp: 210,
           max_hr: 185,
           activity_category_interests: ["cycling", "running", "swimming"],
           weight_kg: 72,
@@ -1974,7 +1967,6 @@ describe("onboarding screen", () => {
       <TrainingBaselineHarness
         initialData={{
           dob: "1990-01-01",
-          ftp: 220,
           max_hr: 190,
           activity_category_interests: ["cycling"],
           weight_kg: 72,
@@ -2154,7 +2146,6 @@ describe("onboarding screen", () => {
         dob: "1988-04-05",
         gender: "female",
         weight_kg: 64,
-        ftp: 245,
       },
       sources: {
         dob: {
@@ -2168,11 +2159,6 @@ describe("onboarding screen", () => {
           sourceRecordedAt: "2026-04-03T11:05:00.000Z",
         },
         weight_kg: {
-          provider: "wahoo",
-          label: "Wahoo",
-          sourceRecordedAt: "2026-04-03T11:05:00.000Z",
-        },
-        ftp: {
           provider: "wahoo",
           label: "Wahoo",
           sourceRecordedAt: "2026-04-03T11:05:00.000Z",

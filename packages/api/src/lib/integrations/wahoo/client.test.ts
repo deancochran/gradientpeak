@@ -331,28 +331,6 @@ describe("WahooClient", () => {
     );
   });
 
-  it("fetches power zones for onboarding enrichment", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          ftp: 248,
-          critical_power: 255,
-          zones: [{ name: "Zone 2", min: 140, max: 190 }],
-          updated_at: "2026-04-03T12:00:00.000Z",
-        }),
-        { status: 200 },
-      ),
-    );
-    const client = new WahooClient({ accessToken: "access-token" });
-
-    await expect(client.getPowerZones()).resolves.toMatchObject({ ftp: 248 });
-
-    const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("https://api.wahooligan.com/v1/power_zones");
-    expect(options.method).toBe("GET");
-    expect(options.headers).toMatchObject({ Authorization: "Bearer access-token" });
-  });
-
   it("lists Wahoo workout summaries for a bounded history window", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(

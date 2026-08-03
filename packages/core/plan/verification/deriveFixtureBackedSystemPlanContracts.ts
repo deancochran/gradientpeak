@@ -35,7 +35,7 @@ export interface FixtureBackedSystemPlanContract {
   match_type: FixtureBackedContractMatchType;
   tolerance_class: VerificationToleranceClass;
   expected_weekly_load: number;
-  current_ctl: number;
+  current_longTermLoad: number;
   start_date: string;
   end_date: string;
   preference_profile?: AthletePreferenceProfile;
@@ -72,7 +72,7 @@ function requirePlanName(planId: string): string {
 
 /**
  * Derives test-facing verification contracts from the fixture layer so scenario
- * goals, CTL, plan selection, and tolerance metadata stay aligned with the
+ * goals, LongTermLoad, plan selection, and tolerance metadata stay aligned with the
  * canonical verification catalog.
  *
  * @param overrides - Contract-only expectations layered on top of fixture truth
@@ -98,7 +98,7 @@ export function deriveFixtureBackedSystemPlanContracts(
       match_type: override.match_type,
       tolerance_class: mappingFixture.tolerance_class,
       expected_weekly_load: override.expected_weekly_load,
-      current_ctl: scenarioFixture.athlete_snapshot.starting_ctl,
+      current_longTermLoad: scenarioFixture.athlete_snapshot.starting_longTermLoad,
       start_date: scenarioFixture.projection_input.expanded_plan.start_date,
       end_date: scenarioFixture.projection_input.expanded_plan.end_date,
       preference_profile: scenarioFixture.preference_profile,

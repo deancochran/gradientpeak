@@ -1,4 +1,4 @@
-import { calculateAgeFromDOB, getBaselineProfile } from "@repo/core";
+import { calculateAgeFromDOB, getOnboardingBaselineProfile } from "@repo/core";
 import type { CompleteOnboarding } from "@repo/core/schemas/onboarding";
 import type { getRequiredDb } from "../../db";
 import {
@@ -85,22 +85,9 @@ export async function completeRequiredOnboarding(input: {
     effectiveWeight !== undefined &&
     effectiveGender !== undefined;
   const baseline = canGenerateBaseline
-    ? getBaselineProfile(
-        experience_level,
-        effectiveWeight,
-        effectiveGender,
-        ageForBaseline,
-        "other",
-      )
+    ? getOnboardingBaselineProfile(experience_level, effectiveGender, ageForBaseline)
     : null;
-  const preserveImportedFields = new Set<
-    | "weight_kg"
-    | "max_hr"
-    | "resting_hr"
-    | "ftp"
-    | "threshold_pace_seconds_per_km"
-    | "css_seconds_per_hundred_meters"
-  >();
+  const preserveImportedFields = new Set<"weight_kg" | "max_hr" | "resting_hr">();
   if (
     fieldSources?.weight_kg === "imported" &&
     input.data.weight_kg !== undefined &&
@@ -122,11 +109,7 @@ export async function completeRequiredOnboarding(input: {
       weight_kg: effectiveWeight,
       max_hr: input.data.max_hr,
       resting_hr: input.data.resting_hr,
-      lthr: input.data.lthr,
       vo2max: input.data.vo2max,
-      ftp: input.data.ftp,
-      threshold_pace_seconds_per_km: input.data.threshold_pace_seconds_per_km,
-      css_seconds_per_hundred_meters: input.data.css_seconds_per_hundred_meters,
     },
     baseline,
     { fieldSources, importedProvenance, preserveImportedFields },

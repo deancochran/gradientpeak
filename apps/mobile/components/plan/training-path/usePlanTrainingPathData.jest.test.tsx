@@ -206,10 +206,10 @@ const mockDailyTssUseQuery = jest.fn((_input?: unknown, _options?: unknown) => (
 function buildSnapshot() {
   return {
     actualCurveData: {
-      dataPoints: [{ date: "2026-04-01", ctl: 42, atl: 54 }],
+      dataPoints: [{ date: "2026-04-01", longTermLoad: 42, recentLoad: 54 }],
     },
     idealCurveData: {
-      dataPoints: [{ date: "2026-04-01", ctl: 42 }],
+      dataPoints: [{ date: "2026-04-01", longTermLoad: 42 }],
     },
     refetchAll: jest.fn(async () => undefined),
   };
@@ -412,11 +412,11 @@ jest.mock("@repo/core/training-timeline", () => ({
     endDate: string;
     startDate: string;
     timeline: Array<{
-      completed_load_tss: number;
+      completed_common_load: number;
       date: string;
-      recommended_load_tss: number;
-      scheduled_load_tss: number;
-      tentative_scheduled_load_tss?: number;
+      recommended_common_load: number;
+      scheduled_common_load: number;
+      tentative_scheduled_common_load?: number;
     }>;
   }) => ({
     startDate,
@@ -424,12 +424,12 @@ jest.mock("@repo/core/training-timeline", () => ({
     days: timeline.map((point) => ({
       date: point.date,
       load: {
-        completedTss: point.completed_load_tss,
-        plannedTss: point.scheduled_load_tss,
-        recommendedTss: point.recommended_load_tss,
-        remainingTss: point.scheduled_load_tss,
-        scheduledTss: point.scheduled_load_tss,
-        tentativeScheduledTss: point.tentative_scheduled_load_tss ?? 0,
+        completedLoad: point.completed_common_load,
+        plannedLoad: point.scheduled_common_load,
+        recommendedLoad: point.recommended_common_load,
+        remainingLoad: point.scheduled_common_load,
+        scheduledLoad: point.scheduled_common_load,
+        tentativeScheduledLoad: point.tentative_scheduled_common_load ?? 0,
       },
     })),
   }),
@@ -486,15 +486,15 @@ describe("usePlanTrainingPathData", () => {
     mockBuildTrainingPreferencesLoadTimeline.mockReturnValue([
       {
         date: "2026-04-01",
-        completed_load_tss: 0,
-        recommended_load_tss: 70,
-        scheduled_load_tss: 60,
+        completed_common_load: 0,
+        recommended_common_load: 70,
+        scheduled_common_load: 60,
       },
     ]);
     mockBuildTrainingPreferencesProjectionPreview.mockReturnValue({
       previewIdealCurve: [],
       projectionChart: {
-        daily_load_points: [{ date: "2026-04-01", recommended_load_tss: 70 }],
+        daily_load_points: [{ date: "2026-04-01", recommended_common_load: 70 }],
         points: [{ date: "2026-04-01" }],
       },
     });
@@ -543,7 +543,7 @@ describe("usePlanTrainingPathData", () => {
       expect.objectContaining({ enabled: true, placeholderData: expect.any(Function) }),
     );
     expect(result.current.dailyTrainingPathPoints).toEqual([
-      expect.objectContaining({ date: "2026-04-01", completedLoadTss: 35 }),
+      expect.objectContaining({ date: "2026-04-01", completedLoad: 35 }),
     ]);
   });
 
@@ -564,9 +564,9 @@ describe("usePlanTrainingPathData", () => {
     mockBuildTrainingPreferencesLoadTimeline.mockReturnValue([
       {
         date: "2026-04-06",
-        completed_load_tss: 0,
-        recommended_load_tss: 70,
-        scheduled_load_tss: 60,
+        completed_common_load: 0,
+        recommended_common_load: 70,
+        scheduled_common_load: 60,
       },
     ]);
     mockEffectivePlanLoadResponse = buildAvailableEffectiveLoadResponse({
@@ -598,9 +598,9 @@ describe("usePlanTrainingPathData", () => {
     ).input;
     expect(trainingPathInput).toEqual(
       expect.objectContaining({
-        fitnessHistory: [expect.objectContaining({ date: "2026-04-05", ctl: 40 })],
+        fitnessHistory: [expect.objectContaining({ date: "2026-04-05", longTermLoad: 40 })],
         projectedFitness: [
-          expect.objectContaining({ date: "2026-04-05", ctl: 40 }),
+          expect.objectContaining({ date: "2026-04-05", longTermLoad: 40 }),
           expect.objectContaining({ date: "2026-04-06" }),
         ],
       }),
@@ -624,15 +624,15 @@ describe("usePlanTrainingPathData", () => {
     mockBuildTrainingPreferencesLoadTimeline.mockReturnValue([
       {
         date: "2026-04-06",
-        completed_load_tss: 0,
-        recommended_load_tss: 1_000,
-        scheduled_load_tss: 0,
+        completed_common_load: 0,
+        recommended_common_load: 1_000,
+        scheduled_common_load: 0,
       },
       {
         date: "2026-04-07",
-        completed_load_tss: 0,
-        recommended_load_tss: 1_000,
-        scheduled_load_tss: 0,
+        completed_common_load: 0,
+        recommended_common_load: 1_000,
+        scheduled_common_load: 0,
       },
     ]);
     mockEffectivePlanLoadResponse = buildAvailableEffectiveLoadResponse({
@@ -717,9 +717,9 @@ describe("usePlanTrainingPathData", () => {
     mockBuildTrainingPreferencesLoadTimeline.mockReturnValue(
       Array.from({ length: 8 }, (_, index) => ({
         date: `2026-04-${String(index + 6).padStart(2, "0")}`,
-        completed_load_tss: 0,
-        recommended_load_tss: 0,
-        scheduled_load_tss: index === 0 ? 60 : 0,
+        completed_common_load: 0,
+        recommended_common_load: 0,
+        scheduled_common_load: index === 0 ? 60 : 0,
       })),
     );
     mockEffectivePlanLoadResponse = buildAvailableEffectiveLoadResponse({
@@ -805,15 +805,15 @@ describe("usePlanTrainingPathData", () => {
     mockBuildTrainingPreferencesLoadTimeline.mockReturnValue([
       {
         date: "2026-04-06",
-        completed_load_tss: 0,
-        recommended_load_tss: 70,
-        scheduled_load_tss: 100,
+        completed_common_load: 0,
+        recommended_common_load: 70,
+        scheduled_common_load: 100,
       },
       {
         date: "2026-04-07",
-        completed_load_tss: 0,
-        recommended_load_tss: 70,
-        scheduled_load_tss: 0,
+        completed_common_load: 0,
+        recommended_common_load: 70,
+        scheduled_common_load: 0,
       },
     ]);
     mockEffectivePlanLoadResponse = buildAvailableEffectiveLoadResponse({
@@ -1403,12 +1403,12 @@ describe("usePlanTrainingPathData", () => {
       expect.arrayContaining([
         expect.objectContaining({
           date: "2026-04-01",
-          completedLoadTss: 35,
+          completedLoad: 35,
           hasCompletedActivityWithoutLoad: true,
         }),
         expect.objectContaining({
           date: "2026-04-02",
-          completedLoadTss: 0,
+          completedLoad: 0,
           hasCompletedActivityWithoutLoad: true,
         }),
       ]),
@@ -1435,7 +1435,7 @@ describe("usePlanTrainingPathData", () => {
       expect.arrayContaining([
         expect.objectContaining({
           date: "2026-04-03",
-          completedLoadTss: 42,
+          completedLoad: 42,
           effectiveCompletedLoad: 42,
           completedObservationState: "observed",
           completedCommonLoadIdentity: mockCommonLoadIdentity,

@@ -66,8 +66,8 @@ export type TrainingPathWeekSummary = {
   effectiveTentativeLoad?: number | null;
   recommendedLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
   recommendedLoad?: number | null;
-  plannedLoad: number;
-  tentativePlannedLoad: number;
+  plannedLoad: number | null;
+  tentativePlannedLoad: number | null;
   targetLoad: number | null;
   fitness: number | null;
   targetFitness: number | null;
@@ -131,17 +131,17 @@ export type TrainingPathLoadPoint = {
   completed_common_load_identity?: CommonLoadIdentity | null;
   has_unavailable_completed_activity?: boolean;
   date: string;
-  completed_load_tss?: number | null;
-  scheduled_load_tss?: number | null;
-  tentative_scheduled_load_tss?: number | null;
-  recommended_load_tss?: number | null;
+  completed_common_load?: number | null;
+  scheduled_common_load?: number | null;
+  tentative_scheduled_common_load?: number | null;
+  recommended_common_load?: number | null;
 };
 
 export type TrainingPathFitnessPoint = {
   date: string;
-  ctl: number;
-  atl?: number | null;
-  tsb?: number | null;
+  longTermLoad: number;
+  recentLoad?: number | null;
+  loadBalance?: number | null;
 };
 
 export type TrainingPathSourceGoalMarker = {

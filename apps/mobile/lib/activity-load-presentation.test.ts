@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   formatCalibrationQuality,
-  getActivityLoadLabels,
   getCommonLoadPresentation,
   getThresholdNextAction,
 } from "./activity-load-presentation";
@@ -35,18 +34,6 @@ describe("activity load presentation", () => {
     evidenceFingerprint: "activity-run",
     computedAsOf: "2026-07-21T12:00:00.000Z",
   };
-
-  it("uses explicit modern method labels", () => {
-    expect(getActivityLoadLabels("heart_rate_threshold").load).toBe("Estimated HR Load");
-    expect(getActivityLoadLabels("critical_power_threshold")).toEqual({
-      load: "Estimated CP Load",
-      intensity: "CP IF",
-    });
-    expect(getActivityLoadLabels("power_threshold")).toEqual({
-      load: "TSS",
-      intensity: "IF",
-    });
-  });
 
   it("describes guarded Critical Power calibration distinctly", () => {
     expect(

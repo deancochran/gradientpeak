@@ -1,4 +1,7 @@
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
 
 const coreMocks = vi.hoisted(() => ({
   calculateRollingTrainingQuality: vi.fn(),
@@ -93,6 +96,7 @@ vi.mock("../../infrastructure/repositories", () => ({
                   averageSpeedMetersPerSecond: row.avg_speed_mps ?? undefined,
                   averagePowerWatts: row.avg_power ?? undefined,
                   averageHeartRateBpm: row.avg_heart_rate ?? undefined,
+                  normalizedPowerResult: unavailableNormalizedPowerResult,
                 },
               },
             ],
@@ -136,6 +140,7 @@ vi.mock("../../lib/activity-analysis", () => ({
                       averageSpeedMetersPerSecond: row.avg_speed_mps ?? undefined,
                       averagePowerWatts: row.avg_power ?? undefined,
                       averageHeartRateBpm: row.avg_heart_rate ?? undefined,
+                      normalizedPowerResult: unavailableNormalizedPowerResult,
                     },
                   },
                 ]
@@ -152,9 +157,192 @@ vi.mock("../../utils/workload", () => ({
   buildWorkloadEnvelopes: workloadMocks.buildWorkloadEnvelopes,
 }));
 
+import {
+  activityObservationQuantificationSchema,
+  createActivityQuantificationCalculationIdentity,
+  createActivityQuantificationEvidenceIdentity,
+  createCompletedActivityQuantificationSubjectIdentity,
+  createObservationQuantificationBundle,
+} from "@repo/core";
+import type { CommonLoadResult } from "@repo/core/load";
 import { trendsRouter } from "../trends";
 
 const OWNER_ID = "11111111-1111-4111-8111-111111111111";
+
+function completeCommonLoad(load: number, intensity: number) {
+  return {
+    status: "available" as const,
+    model: "gradientpeak_relative_load" as const,
+    version: "1" as const,
+    activity_category: "bike" as const,
+    method: "power_threshold" as const,
+    load,
+    intensity,
+    contributingDurationSeconds: 3600,
+    quality: {
+      source: "manual" as const,
+      observed_at: "2026-01-01T00:00:00.000Z",
+      valid_at: "2026-01-01T00:00:00.000Z",
+      confidence: "high" as const,
+      stale: false,
+      estimate: false,
+      calculation_version: "1",
+      evidence_fingerprint: "threshold-evidence",
+    },
+    thresholdEvidence: {
+      type: "ftp_watts" as const,
+      value: 250,
+      unit: "watts" as const,
+      source: "manual" as const,
+      observedAt: "2026-01-01T00:00:00.000Z",
+      validAt: "2026-01-01T00:00:00.000Z",
+      freshness: "current" as const,
+      calculationVersion: "1",
+      sourceFingerprint: "threshold-evidence",
+    },
+    evidenceFingerprint: `activity-evidence-${load}`,
+    computedAsOf: "2026-04-09T08:00:00.000Z",
+    estimated: false,
+  };
+}
+
+function unavailableCommonLoad(activityCategory: "bike" | "run" | "swim") {
+  return {
+    status: "unavailable" as const,
+    model: "gradientpeak_relative_load" as const,
+    version: "1" as const,
+    activity_category: activityCategory,
+    method: null,
+    quality: null,
+    thresholdEvidence: null,
+    evidenceFingerprint: null,
+    computedAsOf: "2026-04-09T08:00:00.000Z",
+    contributingDurationSeconds: null,
+    reason: "activity_data_missing" as const,
+  };
+}
+
+function observationQuantification(input: {
+  activityCategory: "bike" | "run" | "swim";
+  commonLoad: CommonLoadResult;
+  distanceMeters: number | null;
+  durationSeconds: number;
+  id: string;
+}) {
+  const segmentId = `${input.id}-segment`;
+  const subjectIdentity = createCompletedActivityQuantificationSubjectIdentity({
+    activityId: input.id,
+  });
+  return activityObservationQuantificationSchema.parse({
+    kind: "observation",
+    stage: "final",
+    subjectIdentity,
+    evidenceIdentity: createActivityQuantificationEvidenceIdentity({
+      evidenceType: "segment_facts",
+      sourceIds: [input.id, segmentId],
+      revisionFingerprint: `revision-${input.id}`,
+      details: { kind: "trends-router-test", id: input.id },
+    }),
+    calculationIdentity: createActivityQuantificationCalculationIdentity({
+      model: input.commonLoad.model,
+      version: input.commonLoad.version,
+      computedAt: input.commonLoad.computedAsOf,
+      calibrationEvidenceFingerprint: input.commonLoad.evidenceFingerprint,
+    }),
+    activity_category: input.activityCategory,
+    duration: {
+      elapsed: {
+        status: "available",
+        evidenceRole: "measured",
+        value: input.durationSeconds,
+        unit: "seconds",
+      },
+      active: {
+        status: "available",
+        evidenceRole: "measured",
+        value: input.durationSeconds,
+        unit: "seconds",
+      },
+      moving: {
+        status: "available",
+        evidenceRole: "measured",
+        value: input.durationSeconds,
+        unit: "seconds",
+      },
+    },
+    distance:
+      input.distanceMeters === null
+        ? {
+            status: "unavailable",
+            evidenceRole: "measured",
+            value: null,
+            unit: "meters",
+            reason: "not_observed",
+          }
+        : {
+            status: "available",
+            evidenceRole: "measured",
+            value: input.distanceMeters,
+            unit: "meters",
+          },
+    intensity: {
+      observed: {
+        status: "unavailable",
+        evidenceRole: "measured",
+        values: [],
+        reason: "not_observed",
+      },
+    },
+    completedProvenance: {
+      activityId: input.id,
+      segmentId,
+      source: "unknown",
+      artifactIdentity: null,
+      providerIdentity: null,
+      segmentRevision: null,
+      observedAt: input.commonLoad.computedAsOf,
+      computedAt: input.commonLoad.computedAsOf,
+      calculationVersion: "trends-router-test-v1",
+    },
+    commonLoad: input.commonLoad,
+  });
+}
+
+type DerivedActivityInput = {
+  segments: Array<{
+    id: string;
+    activity_category: "bike" | "run" | "swim";
+    start_offset_ms: number;
+    end_offset_ms: number;
+    summary: { distanceMeters?: number | null };
+  }>;
+};
+
+function quantifiedDerivedMap(activities: DerivedActivityInput[]) {
+  return new Map(
+    activities.flatMap((activity) =>
+      activity.segments.map((segment) => {
+        const commonLoad = unavailableCommonLoad(segment.activity_category);
+        const quantification = observationQuantification({
+          activityCategory: segment.activity_category,
+          commonLoad,
+          distanceMeters: segment.summary.distanceMeters ?? null,
+          durationSeconds: (segment.end_offset_ms - segment.start_offset_ms) / 1_000,
+          id: segment.id,
+        });
+        return [
+          segment.id,
+          {
+            common_load: commonLoad,
+            observationQuantification: createObservationQuantificationBundle({
+              members: [quantification],
+            }),
+          },
+        ] as const;
+      }),
+    ),
+  );
+}
 
 type ActivityOverrides = Partial<{
   id: string;
@@ -295,7 +483,10 @@ beforeEach(() => {
     monotony: { current: 1.4, source: "tss" },
   });
 
-  analysisMocks.buildActivityDerivedSummaryMap.mockResolvedValue(new Map());
+  analysisMocks.buildActivityDerivedSummaryMap.mockImplementation(
+    async ({ activities }: { activities: DerivedActivityInput[] }) =>
+      quantifiedDerivedMap(activities),
+  );
   analysisMocks.buildDynamicStressSeries.mockResolvedValue({
     byActivityId: new Map(),
     byDate: new Map(),
@@ -367,22 +558,25 @@ describe("trendsRouter", () => {
       groupBy: "week",
     });
 
-    expect(result.volume).toEqual({
+    expect(result.volume).toMatchObject({
       dataPoints: [
         {
           date: "2026-03-30",
+          status: "complete",
           totalDistance: 15000,
           totalTime: 5400,
           activityCount: 2,
         },
         {
           date: "2026-04-06",
+          status: "complete",
           totalDistance: 20000,
           totalTime: 5400,
           activityCount: 1,
         },
       ],
       totals: {
+        status: "complete",
         totalDistance: 35000,
         totalTime: 10800,
         totalActivities: 3,
@@ -408,16 +602,18 @@ describe("trendsRouter", () => {
       groupBy: "day",
     });
 
-    expect(result.volume).toEqual({
+    expect(result.volume).toMatchObject({
       dataPoints: [
         {
           date: "2026-04-10",
+          status: "complete",
           totalDistance: 12000,
           totalTime: 3600,
           activityCount: 1,
         },
       ],
       totals: {
+        status: "complete",
         totalDistance: 12000,
         totalTime: 3600,
         totalActivities: 1,
@@ -470,7 +666,7 @@ describe("trendsRouter", () => {
       end_date: "2026-04-30T23:59:59.000Z",
     });
 
-    expect(result.performance).toEqual({
+    expect(result.performance).toMatchObject({
       dataPoints: [
         {
           date: "2026-04-05T06:30:00.000Z",
@@ -481,6 +677,7 @@ describe("trendsRouter", () => {
           avgHeartRate: 158,
           distance: 42000,
           duration: 4500,
+          observationQuantification: { summary: { kind: "aggregate" } },
         },
       ],
     });
@@ -513,10 +710,42 @@ describe("trendsRouter", () => {
       started_at: new Date("2026-04-09T07:00:00.000Z"),
     });
 
+    const firstCommonLoad = completeCommonLoad(40, Math.sqrt(0.4));
+    const secondCommonLoad = completeCommonLoad(60, Math.sqrt(0.6));
+    const firstQuantification = observationQuantification({
+      activityCategory: "bike",
+      commonLoad: firstCommonLoad,
+      distanceMeters: firstActivity.distance_meters,
+      durationSeconds: firstActivity.duration_seconds,
+      id: firstActivity.id,
+    });
+    const secondQuantification = observationQuantification({
+      activityCategory: "bike",
+      commonLoad: secondCommonLoad,
+      distanceMeters: secondActivity.distance_meters,
+      durationSeconds: secondActivity.duration_seconds,
+      id: secondActivity.id,
+    });
     analysisMocks.buildActivityDerivedSummaryMap.mockResolvedValue(
       new Map([
-        [firstActivity.id, { intensity_factor: 0.6, tss: 40 }],
-        [secondActivity.id, { intensity_factor: 0.82, tss: 60 }],
+        [
+          firstActivity.id,
+          {
+            common_load: firstCommonLoad,
+            observationQuantification: createObservationQuantificationBundle({
+              members: [firstQuantification],
+            }),
+          },
+        ],
+        [
+          secondActivity.id,
+          {
+            common_load: secondCommonLoad,
+            observationQuantification: createObservationQuantificationBundle({
+              members: [secondQuantification],
+            }),
+          },
+        ],
       ]),
     );
 
@@ -528,16 +757,19 @@ describe("trendsRouter", () => {
       metric: "power",
     });
 
-    expect(result.zones).toEqual({
+    expect(result.zones).toMatchObject({
       weeklyData: [
         {
           weekStart: "2026-04-06",
-          totalTSS: 100,
+          status: "complete",
+          totalCommonLoad: 100,
+          coverage: { totalActivities: 2, quantifiedActivities: 2 },
+          observationQuantification: { summary: { kind: "aggregate" } },
           zones: {
             recovery: 0,
             endurance: 40,
-            tempo: 0,
-            threshold: 60,
+            tempo: 60,
+            threshold: 0,
             vo2max: 0,
             anaerobic: 0,
             neuromuscular: 0,
@@ -577,60 +809,11 @@ describe("trendsRouter", () => {
     });
   });
 
-  it("returns ranked peak performances for derived TSS values", async () => {
-    const firstActivity = createActivityRow({
-      id: "77777777-7777-4777-8777-777777777777",
-      name: "Endurance Ride",
-      started_at: new Date("2026-04-01T07:00:00.000Z"),
-    });
-    const secondActivity = createActivityRow({
-      id: "88888888-8888-4888-8888-888888888888",
-      name: "VO2 Session",
-      started_at: new Date("2026-04-02T07:00:00.000Z"),
-    });
-    const thirdActivity = createActivityRow({
-      id: "99999999-9999-4999-8999-999999999999",
-      name: "Recovery Ride",
-      started_at: new Date("2026-04-03T07:00:00.000Z"),
-    });
+  it("rejects the removed TSS peak-performance metric without an alias", async () => {
+    const { caller } = createCaller([]);
 
-    analysisMocks.buildActivityDerivedSummaryMap.mockResolvedValue(
-      new Map([
-        [firstActivity.id, { tss: 85 }],
-        [secondActivity.id, { tss: 121 }],
-        [thirdActivity.id, { tss: null }],
-      ]),
-    );
-
-    const { caller, callLog } = createCaller([[firstActivity, secondActivity, thirdActivity]]);
-
-    const result = await caller.getPeakPerformances({
-      metric: "tss",
-      limit: 2,
-    });
-
-    expect(callLog).toEqual(expect.arrayContaining(["select:0", "orderBy", "limit"]));
-    expect(result).toEqual({
-      performances: [
-        {
-          activityId: secondActivity.id,
-          activityName: "VO2 Session",
-          date: "2026-04-02T07:00:00.000Z",
-          value: 121,
-          unit: "TSS",
-          activity_category: "bike",
-          rank: 1,
-        },
-        {
-          activityId: firstActivity.id,
-          activityName: "Endurance Ride",
-          date: "2026-04-01T07:00:00.000Z",
-          value: 85,
-          unit: "TSS",
-          activity_category: "bike",
-          rank: 2,
-        },
-      ],
+    await expect(caller.getPeakPerformances({ metric: "tss" } as never)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
     });
   });
 });

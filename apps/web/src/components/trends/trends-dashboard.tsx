@@ -133,7 +133,7 @@ export function TrendsDashboard() {
   const { unitSystem } = useViewingUserPreferredUnitSystem();
   const [rangeDays, setRangeDays] = useState<(typeof RANGE_OPTIONS)[number]["days"]>(365);
   const [selectedMetric, setSelectedMetric] =
-    useState<(typeof profileMetricOptions)[number]["type"]>("ftp");
+    useState<(typeof profileMetricOptions)[number]["type"]>("weight_kg");
   const range = useMemo(() => {
     const end = new Date();
     const start = new Date(end);
@@ -197,9 +197,9 @@ export function TrendsDashboard() {
   const selectedMetricDefinition = profileMetricOptions.find(
     (metric) => metric.type === selectedMetric,
   ) ?? {
-    description: "Bike power threshold used to calibrate training load.",
-    label: "Functional threshold power",
-    type: "ftp" as const,
+    description: "Body mass trend for training context.",
+    label: "Weight",
+    type: "weight_kg" as const,
   };
   const availableLoadHistory = load.data?.status === "available" ? load.data : null;
   const commonLoadPoints = (availableLoadHistory?.points ?? []).filter(
@@ -256,7 +256,7 @@ export function TrendsDashboard() {
       <div className="grid gap-6 xl:grid-cols-2">
         {load.data?.status === "available" ? (
           <SimpleTrendChart
-            axisLabels={{ x: "Date", y: "Load" }}
+            axisLabels={{ x: "Date", y: "Common Load" }}
             description="Long-term Common Load from complete versioned history."
             emptyMessage="Complete activity history is required to build Common Load trends."
             formatValue={(value) => number(value)}

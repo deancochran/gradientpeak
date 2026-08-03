@@ -5,9 +5,11 @@ import {
   type ActivityPlanSegment,
   type ActivityPlanTargetAnchors,
   type ActivityTargetCategory,
+  type AthletePerformanceTargetFacts,
   activityPlanStructureSchema,
   calculateActivityPlanStats,
   compileActivityPlan,
+  getAvailablePerformanceTargetValue,
 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
@@ -27,7 +29,6 @@ import { APP_BOTTOM_SHEET_PRESENTATIONS, AppBottomSheet } from "@/components/sha
 import { createDefaultActivityPlanStep } from "@/lib/activityPlanDefaults";
 import { api } from "@/lib/api";
 import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";
-import { useAuth } from "@/lib/hooks/useAuth";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
 
 export type ActivityPlanComposerModeContract =
@@ -42,6 +43,21 @@ export type ActivityPlanComposerModeContract =
 
 type ActivityCategory = ActivityTargetCategory;
 const STRUCTURE_CHART_HINT_KEY = "activity-plan-structure-chart-hint-seen-v1";
+
+function activityCategoryHeartRateValue(
+  snapshot: AthletePerformanceTargetFacts | undefined,
+  metric: "lthr" | "max_hr",
+  activityCategory: ActivityTargetCategory,
+): number | undefined {
+  if (activityCategory !== "bike" && activityCategory !== "run" && activityCategory !== "swim") {
+    return undefined;
+  }
+  const fact =
+    metric === "lthr"
+      ? snapshot?.heartRate[activityCategory].lthr
+      : snapshot?.heartRate[activityCategory].maxHr;
+  return fact?.status === "available" ? fact.valueBpm : undefined;
+}
 
 const createDefaultInterval = (
   activity_category: ActivityCategory,
@@ -58,8 +74,8 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   const isEditMode = props.mode === "edit";
   const router = useRouter();
   const navigation = useNavigation();
-  const { profile } = useAuth();
   const allowNavigationRef = useRef(false);
+  const performanceModelAsOf = useRef(new Date().toISOString()).current;
 
   const [editingIntervalId, setEditingIntervalId] = useState<string | null>(null);
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
@@ -174,18 +190,29 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   const selectedActivitySegment =
     activitySegments.find((segment) => segment.id === selectedSegmentId) ?? activitySegments[0];
   const intervals = selectedActivitySegment?.intervals ?? [];
-  const maxHrMetrics = api.profileMetrics.list.useQuery({ metric_type: "max_hr", limit: 1 });
-  const maxHeartRateBpm = useMemo(
-    () => maxHrMetrics.data?.items.find((metric) => metric.metric_type === "max_hr")?.value,
-    [maxHrMetrics.data?.items],
-  );
+  const performanceTargetsQuery = api.profiles.getPerformanceTargets.useQuery({
+    asOf: performanceModelAsOf,
+  });
   const targetAnchors = useMemo<ActivityPlanTargetAnchors>(
     () => ({
-      ftpWatts: profile?.ftp,
-      maxHeartRateBpm,
-      thresholdHeartRateBpm: profile?.threshold_hr,
+      ftpWatts:
+        performanceTargetsQuery.data === undefined
+          ? undefined
+          : (getAvailablePerformanceTargetValue(
+              performanceTargetsQuery.data.cycling.planningThresholdPower,
+            ) ?? undefined),
+      maxHeartRateBpm: activityCategoryHeartRateValue(
+        performanceTargetsQuery.data,
+        "max_hr",
+        form.activityCategory,
+      ),
+      thresholdHeartRateBpm: activityCategoryHeartRateValue(
+        performanceTargetsQuery.data,
+        "lthr",
+        form.activityCategory,
+      ),
     }),
-    [maxHeartRateBpm, profile?.ftp, profile?.threshold_hr],
+    [form.activityCategory, performanceTargetsQuery.data],
   );
   const stepBeingEdited = useMemo(() => {
     if (!editingIntervalId || !editingStepId) {
@@ -199,22 +226,26 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   const structureStats = useMemo(() => {
     const parsed = activityPlanStructureSchema.safeParse(form.structure);
     if (!parsed.success) {
-      return { durationMs: 0, stepCount: 0, estimatedTSS: 0, distanceMeters: 0 };
+      return { durationMs: 0, stepCount: 0, distanceMeters: 0 };
     }
     const stats = calculateActivityPlanStats(compileActivityPlan(parsed.data), {
-      cyclingFtpWatts: profile?.ftp ?? undefined,
+      cyclingFtpWatts:
+        performanceTargetsQuery.data === undefined
+          ? undefined
+          : (getAvailablePerformanceTargetValue(
+              performanceTargetsQuery.data.cycling.planningThresholdPower,
+            ) ?? undefined),
     });
 
     return {
       durationMs: Math.round((stats.duration.exactElapsedSeconds ?? 0) * 1000),
       stepCount: stats.occurrenceCount,
-      estimatedTSS: 0,
       distanceMeters: stats.duration.activity_categories.reduce(
         (sum, item) => sum + item.distanceMeters,
         0,
       ),
     };
-  }, [form.structure, profile?.ftp]);
+  }, [form.structure, performanceTargetsQuery.data]);
 
   const selectedInterval = selectedIntervalId
     ? intervals.find((interval) => interval.id === selectedIntervalId)

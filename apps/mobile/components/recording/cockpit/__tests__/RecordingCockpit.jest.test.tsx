@@ -1,4 +1,9 @@
-import type { RecordingSessionContract } from "@repo/core";
+import {
+  calculateProvisionalRecordingMetrics,
+  createUnavailableAthletePerformanceTargetFacts,
+  type RecordingSessionContract,
+} from "@repo/core";
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { THEME } from "@repo/tailwindcss/native";
 import React, { type ComponentProps } from "react";
 import type { ReactTestInstance } from "react-test-renderer";
@@ -61,6 +66,21 @@ const mockPlanPrevious = jest.fn();
 const mockPlanSkip = jest.fn();
 const mockPlanAdvance = jest.fn();
 let mockManualAdvance = false;
+let mockCurrentTargets: Array<{
+  type: "%FTP" | "%ThresholdHR" | "%MaxHR";
+  intensity: number;
+}> = [{ type: "%FTP", intensity: 88 }];
+const mockProvisionalMetrics = calculateProvisionalRecordingMetrics({
+  config: {
+    activityCategory: "bike",
+    performanceTargets: createUnavailableAthletePerformanceTargetFacts("2026-06-01T00:00:00.000Z"),
+    recordingSessionId: "cockpit-session",
+  },
+  samples: [
+    { timestampMs: Date.parse("2026-06-01T00:00:00.000Z"), distanceMeters: 0 },
+    { timestampMs: Date.parse("2026-06-01T00:01:15.000Z"), distanceMeters: 1200 },
+  ],
+});
 
 type DeepPartial<T> = T extends readonly unknown[]
   ? T
@@ -108,7 +128,12 @@ type RecordingServiceOverrides = Omit<Partial<ActivityRecorderService>, "current
 function buildService(overrides: RecordingServiceOverrides = {}): ActivityRecorderService {
   const service: ActivityRecorderService = Object.create(ActivityRecorderService.prototype);
   const { currentRoute, ...serviceOverrides } = overrides;
+  const performanceTargets = buildPerformanceTargetFactsFixture({
+    asOf: "2026-06-01T00:00:00.000Z",
+    planningThresholdPowerWatts: 250,
+  });
   Object.assign(service, {
+    selectedActivityCategory: "bike",
     currentRoute:
       currentRoute === undefined || currentRoute === null
         ? null
@@ -130,7 +155,7 @@ function buildService(overrides: RecordingServiceOverrides = {}): ActivityRecord
         id: "00000000-0000-4000-8000-000000000002",
         name: "Tempo block",
         duration: { type: "time", seconds: 600 },
-        targets: [{ type: "%FTP", intensity: 88 }],
+        targets: mockCurrentTargets,
       },
     ],
     locationManager: {
@@ -138,8 +163,8 @@ function buildService(overrides: RecordingServiceOverrides = {}): ActivityRecord
       removeCallback: removeCallbackMock,
       getLastKnownLocation: getLastKnownLocationMock,
     },
-    getBaseFtp: () => 250,
-    getBaseThresholdHr: () => 170,
+    getIntensityScale: () => 1,
+    getPerformanceTargets: () => performanceTargets,
     getSessionView: () => ({
       overrideState: { trainerMode: "auto", preferredSources: {}, intensityScale: 1 },
       runtimeSourceState: {
@@ -297,6 +322,7 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
         segmentIndex: 0,
         role: "activity",
         category: "bike",
+        activity_category: "bike",
         intervalId: "00000000-0000-4000-8000-000000000011",
         intervalIndex: 0,
         stepId: "00000000-0000-4000-8000-000000000002",
@@ -305,7 +331,7 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
         completionPolicy: "time",
         name: "Tempo block",
         duration: { type: "time", seconds: 600 },
-        targets: [{ type: "%FTP", intensity: 88 }],
+        targets: mockCurrentTargets,
       },
       stepIndex: 1,
       stepCount: 2,
@@ -328,8 +354,7 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
       duration: 75,
       distance: 1200,
       normalizedPower: 241,
-      trainingStressScore: 12,
-      intensityFactor: 0.83,
+      provisionalMetrics: mockProvisionalMetrics,
       currentHeartRateZone: 2,
       currentPowerZone: 3,
       currentGrade: 4.2,
@@ -380,6 +405,7 @@ describe("recording cockpit", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockManualAdvance = false;
+    mockCurrentTargets = [{ type: "%FTP", intensity: 88 }];
     getLastKnownLocationMock.mockResolvedValue(null);
   });
 
@@ -680,6 +706,65 @@ describe("recording cockpit", () => {
     expect(screen.queryByLabelText("Minimize recording cards")).toBeNull();
   });
 
+  it("keeps percentage targets relative when canonical targets are unavailable", () => {
+    const unavailable = createUnavailableAthletePerformanceTargetFacts("2026-06-01T00:00:00.000Z");
+    renderNative(
+      <RecordingFloatingPanel
+        bottomObstructionHeight={80}
+        hasPlan
+        sensorCount={2}
+        service={buildService({ getPerformanceTargets: () => unavailable })}
+        sessionContract={buildContract({
+          guidance: { hasPlan: true, hasStructuredSteps: true },
+          ui: {
+            floatingPanel: {
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "metrics"],
+              forcedExpanded: false,
+              canMinimize: true,
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("10m @ 88% FTP")).toBeTruthy();
+    expect(screen.queryByText("Target 176 W")).toBeNull();
+  });
+
+  it("resolves max-HR targets from max HR rather than LTHR", () => {
+    mockCurrentTargets = [{ type: "%MaxHR", intensity: 80 }];
+    const performanceTargets = buildPerformanceTargetFactsFixture({
+      asOf: "2026-06-01T00:00:00.000Z",
+      heartRateObservedAt: "2026-05-30T00:00:00.000Z",
+      lthrBpm: { bike: 170 },
+      maxHrBpm: { bike: 190 },
+    });
+    renderNative(
+      <RecordingFloatingPanel
+        bottomObstructionHeight={80}
+        hasPlan
+        sensorCount={2}
+        service={buildService({ getPerformanceTargets: () => performanceTargets })}
+        sessionContract={buildContract({
+          guidance: { hasPlan: true, hasStructuredSteps: true },
+          ui: {
+            floatingPanel: {
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "metrics"],
+              forcedExpanded: false,
+              canMinimize: true,
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("10m @ 152 bpm")).toBeTruthy();
+    expect(screen.getByText("Target 152 bpm")).toBeTruthy();
+    expect(screen.queryByText("136 bpm")).toBeNull();
+  });
+
   it("uses the normal advance action for a manual completion occurrence", () => {
     mockManualAdvance = true;
     renderNative(
@@ -739,8 +824,9 @@ describe("recording cockpit", () => {
     expect(screen.getByText("Power Zone")).toBeTruthy();
     expect(screen.getByText("GAP")).toBeTruthy();
     expect(screen.getByText("NP")).toBeTruthy();
-    expect(screen.getByText("TSS")).toBeTruthy();
-    expect(screen.getByText("IF")).toBeTruthy();
+    expect(screen.getByText("Provisional Load")).toBeTruthy();
+    expect(screen.getByText("Normalized Intensity")).toBeTruthy();
+    expect(screen.queryByText(/TSS|\bIF\b/)).toBeNull();
     expect(screen.getByText("Grade")).toBeTruthy();
     expect(screen.getByText("VAM")).toBeTruthy();
     expect(screen.getAllByText("Z2").length).toBeGreaterThan(0);

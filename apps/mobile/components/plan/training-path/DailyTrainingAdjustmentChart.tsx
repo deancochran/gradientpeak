@@ -47,13 +47,13 @@ export type DailyTrainingAdjustmentPoint = {
   effectiveTentativeLoad?: number | null;
   recommendedLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
   recommendedLoad?: number | null;
-  plannedLoadTss?: number | null;
-  tentativePlannedLoadTss?: number | null;
-  completedLoadTss?: number | null;
-  targetLoadTss?: number | null;
-  actualOrScheduledLoadTss?: number | null;
-  loadDeltaTss?: number | null;
-  plannedDeltaTss?: number | null;
+  plannedLoad?: number | null;
+  tentativePlannedLoad?: number | null;
+  completedLoad?: number | null;
+  targetLoad?: number | null;
+  actualOrScheduledLoad?: number | null;
+  loadDelta?: number | null;
+  plannedDelta?: number | null;
   fitnessCtl?: number | null;
   targetFitnessCtl?: number | null;
   scheduledFitnessCtl?: number | null;
@@ -341,7 +341,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     <View className="gap-3" testID={testID}>
       <View className="gap-2 rounded-2xl bg-card px-2 py-3">
         <View className="flex-row items-center justify-between px-1">
-          <Text className="text-[10px] font-medium text-muted-foreground">Load</Text>
+          <Text className="text-[10px] font-medium text-muted-foreground">Common Load</Text>
           <Text className="text-[10px] font-medium text-muted-foreground">Fitness</Text>
         </View>
         <View style={{ height: chartAreaHeight }} onLayout={onChartLayout}>
@@ -480,15 +480,14 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                                 ) : null}
                                 {typeof plannedWithTentativePoint?.y === "number" &&
                                 plannedWithTentativePoint.yValue != null &&
-                                plannedWithTentativePoint.yValue > (plannedPoint?.yValue ?? 0) ? (
+                                typeof plannedPoint?.yValue === "number" &&
+                                typeof plannedPoint.y === "number" &&
+                                plannedWithTentativePoint.yValue > plannedPoint.yValue ? (
                                   <SkiaRect
                                     x={left}
                                     y={plannedWithTentativePoint.y}
                                     width={geometry.width}
-                                    height={
-                                      (plannedPoint?.y ?? chartBounds.bottom) -
-                                      plannedWithTentativePoint.y
-                                    }
+                                    height={plannedPoint.y - plannedWithTentativePoint.y}
                                     color={colors.tentative}
                                   />
                                 ) : null}

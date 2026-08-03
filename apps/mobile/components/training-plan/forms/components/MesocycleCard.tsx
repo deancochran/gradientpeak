@@ -267,20 +267,20 @@ export function MesocycleCard({ mesocycle, index, onChange, onRemove }: Mesocycl
               </View>
             </View>
 
-            {/* TSS Multiplier */}
+            {/* Load Multiplier */}
             <View className="gap-2">
               <View className="flex-row justify-between items-center">
                 <Label className="text-sm font-medium">Volume Multiplier</Label>
                 <Text className="text-sm font-semibold text-primary">
-                  {mesocycle.tss_multiplier.toFixed(1)}x
+                  {mesocycle.load_multiplier.toFixed(1)}x
                 </Text>
               </View>
               <Slider
-                value={mesocycle.tss_multiplier}
+                value={mesocycle.load_multiplier}
                 onValueChange={(value: number) =>
                   onChange({
                     ...mesocycle,
-                    tss_multiplier: Math.round(value * 10) / 10,
+                    load_multiplier: Math.round(value * 10) / 10,
                   })
                 }
                 minimumValue={0.3}

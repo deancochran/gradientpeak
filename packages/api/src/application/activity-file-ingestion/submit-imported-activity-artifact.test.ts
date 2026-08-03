@@ -184,7 +184,6 @@ describe("submitImportedActivityArtifact", () => {
         analysis: {
           efforts: [effort],
           detectedLTHR: null,
-          activityCompletedAt: completedAt,
           ingestion: {
             source: "provider_sync",
             provider: "wahoo",

@@ -9,7 +9,7 @@ export type TrainingPlanSchedulingPreviewInputSession = {
   id: string;
   label: string;
   offsetDays: number;
-  estimatedTss: number | null;
+  estimatedCommonLoad: number | null;
   intentType?: TrainingPlanSessionIntentType;
 };
 
@@ -47,7 +47,7 @@ export type DeriveTrainingPlanSchedulingPreviewInput = {
   sessions: TrainingPlanSchedulingPreviewInputSession[];
 };
 
-const HARD_SESSION_TSS = 80;
+const HARD_SESSION_COMMON_LOAD = 80;
 
 function parseDateKey(dateKey: string): Date {
   const [year, month, day] = dateKey.split("-").map(Number);
@@ -77,7 +77,8 @@ function getWeekIndex(startDate: string, date: string): number {
 
 function isHardSession(session: TrainingPlanSchedulingPreviewInputSession): boolean {
   return (
-    (session.estimatedTss ?? 0) >= HARD_SESSION_TSS ||
+    (session.estimatedCommonLoad !== null &&
+      session.estimatedCommonLoad >= HARD_SESSION_COMMON_LOAD) ||
     session.intentType === "endurance" ||
     session.intentType === "threshold"
   );

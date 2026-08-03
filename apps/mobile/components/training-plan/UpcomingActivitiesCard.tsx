@@ -1,3 +1,4 @@
+import type { ActivityPrescriptionQuantificationBundle } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
@@ -12,10 +13,7 @@ interface UpcomingActivity {
     id: string;
     name: string;
     activity_category: string;
-    authoritative_metrics?: {
-      estimated_duration?: number | null;
-      estimated_tss?: number | null;
-    } | null;
+    prescriptionQuantification: ActivityPrescriptionQuantificationBundle;
   } | null;
 }
 

@@ -34,7 +34,7 @@ test("planning.training-path and calendar.navigation expose server-composed firm
       kind: "scheduled",
     });
     expect(effectiveLoad.effective.tentativeItems).toEqual([]);
-    expect(dtoFirmItem.commonLoad).toMatchObject({ status: "available" });
+    expect(dtoFirmItem.commonLoad).toMatchObject({ status: "complete" });
     await expect(
       athletePage.getByRole("heading", { level: 2, name: /training path/i }),
     ).toBeVisible();
@@ -48,7 +48,7 @@ test("planning.training-path and calendar.navigation expose server-composed firm
       .filter({ has: athletePage.locator(`[data-scheduled-item-id="${fixture.eventId}"]`) })
       .locator(`[data-scheduled-item-id="${fixture.eventId}"]`);
     await expect(firmItemRow).toBeVisible();
-    await expect(firmItemRow.getByText(/^Load \d+$/)).toBeVisible();
+    await expect(firmItemRow.getByText(/^Common Load \d+(?:\.\d+)?$/)).toBeVisible();
     await athletePage.getByRole("tab", { name: /^tentative$/i }).press("Enter");
     await expect(
       athletePage.getByText("No tentative activities are scheduled in this window."),

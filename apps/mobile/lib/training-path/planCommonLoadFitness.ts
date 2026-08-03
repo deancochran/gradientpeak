@@ -73,9 +73,9 @@ export function buildPlanCommonLoadFitnessSeries(input: {
 
   const actualFitnessHistory = input.history.points.map((point) => ({
     date: point.date,
-    ctl: point.longTermLoad,
-    atl: point.recentLoad,
-    tsb: point.loadBalance,
+    longTermLoad: point.longTermLoad,
+    recentLoad: point.recentLoad,
+    loadBalance: point.loadBalance,
   }));
   const baseline = input.history.points.at(-1);
   if (!baseline) {
@@ -96,9 +96,9 @@ export function buildPlanCommonLoadFitnessSeries(input: {
     projection.points.length > 1
       ? projection.points.map((point) => ({
           date: point.date,
-          ctl: point.longTermLoad,
-          atl: point.recentLoad,
-          tsb: point.loadBalance,
+          longTermLoad: point.longTermLoad,
+          recentLoad: point.recentLoad,
+          loadBalance: point.loadBalance,
         }))
       : [];
   const recommendationProjection =
@@ -114,9 +114,9 @@ export function buildPlanCommonLoadFitnessSeries(input: {
     recommendationProjection && recommendationProjection.points.length > 1
       ? recommendationProjection.points.map((point) => ({
           date: point.date,
-          ctl: point.longTermLoad,
-          atl: point.recentLoad,
-          tsb: point.loadBalance,
+          longTermLoad: point.longTermLoad,
+          recentLoad: point.recentLoad,
+          loadBalance: point.loadBalance,
         }))
       : [];
 

@@ -178,9 +178,20 @@ export class TrainerControl {
 
     const resolution = resolveActivityOccurrenceTrainerIntents({
       occurrence,
-      profileSnapshot: this.deps.getSessionSnapshot()?.profileSnapshot,
+      performanceTargets: this.deps.getSessionSnapshot()?.performanceTargets,
+      intensityScale: this.deps.getSessionOverrideState().intensityScale,
       source,
     });
+
+    for (const unresolved of resolution.unresolvedTargets) {
+      this.deps.onError(`Unable to resolve activity target: ${unresolved.type}`);
+    }
+    if (resolution.intents.length === 0) {
+      if (source === "reconnect_recovery") {
+        this.recoveryState = resolution.unresolvedTargets.length > 0 ? "failed" : "recovered";
+      }
+      return;
+    }
 
     const trainer = this.requireControlReady(
       source,
@@ -191,10 +202,6 @@ export class TrainerControl {
         this.recoveryState = "failed";
       }
       return;
-    }
-
-    for (const unresolved of resolution.unresolvedTargets) {
-      this.deps.onError(`Unable to resolve activity target: ${unresolved.type}`);
     }
 
     for (const intent of resolution.intents) {

@@ -65,16 +65,16 @@ export function BaselineFitnessSection(props: BaselineFitnessSectionProps) {
         <>
           <FormIntegerStepperField
             control={control}
-            label="CTL"
+            label="Fitness"
             max={250}
             min={0}
-            name="baseline_fitness.override_ctl"
-            testId="preferences-baseline-ctl"
+            name="baseline_fitness.override_longTermLoad"
+            testId="preferences-baseline-fitness"
           />
           {manualBaselineCtlWarning ? (
             <View
               className="rounded-2xl border border-border bg-muted/20 px-3 py-2"
-              testID="preferences-baseline-ctl-warning"
+              testID="preferences-baseline-fitness-warning"
             >
               <Text className="text-xs leading-5 text-muted-foreground">
                 {manualBaselineCtlWarning}
@@ -83,11 +83,11 @@ export function BaselineFitnessSection(props: BaselineFitnessSectionProps) {
           ) : null}
           <FormIntegerStepperField
             control={control}
-            label="ATL"
+            label="Fatigue"
             max={250}
             min={0}
-            name="baseline_fitness.override_atl"
-            testId="preferences-baseline-atl"
+            name="baseline_fitness.override_recentLoad"
+            testId="preferences-baseline-fatigue"
           />
           <FormDateInputField
             clearable
@@ -111,19 +111,19 @@ export function BaselineFitnessSection(props: BaselineFitnessSectionProps) {
             <>
               <FormIntegerStepperField
                 control={control}
-                label="Max weekly TSS ramp %"
+                label="Max weekly Load ramp %"
                 max={40}
                 min={1}
-                name="baseline_fitness.max_weekly_tss_ramp_pct"
-                testId="preferences-ramp-tss-pct"
+                name="baseline_fitness.max_weekly_load_ramp_pct"
+                testId="preferences-ramp-load-pct"
               />
               <FormIntegerStepperField
                 control={control}
-                label="Max CTL ramp/week"
+                label="Max Fitness ramp/week"
                 max={12}
                 min={1}
-                name="baseline_fitness.max_ctl_ramp_per_week"
-                testId="preferences-ramp-ctl"
+                name="baseline_fitness.max_longTermLoad_ramp_per_week"
+                testId="preferences-ramp-fitness"
               />
             </>
           ) : null}

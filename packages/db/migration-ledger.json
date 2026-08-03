@@ -4,7 +4,7 @@
     {
       "version": "20260730000000",
       "name": "mvp_baseline",
-      "sha256": "282147b99d88302e614a11bd4128d7fb2f13598ab8e2873c9ad3716e6f040952",
+      "sha256": "cd642058a5f4806b815aec5046a1ee07d4440eaed789d93d58f7bccee4c8e17a",
       "executionMode": "transactional"
     }
   ]

@@ -45,12 +45,15 @@ jest.mock("@/components/shared/AppBottomSheet", () => ({
   AppBottomSheetContent: "AppBottomSheetContent",
 }));
 jest.mock("@/lib/api", () => ({
-  api: { profileMetrics: { list: { useQuery: () => ({ data: { items: [] } }) } } },
+  api: {
+    profiles: {
+      getPerformanceTargets: { useQuery: () => ({ data: undefined }) },
+    },
+  },
 }));
 jest.mock("@/lib/hooks/forms/useActivityPlanForm", () => ({
   useActivityPlanForm: () => formHookMock(),
 }));
-jest.mock("@/lib/hooks/useAuth", () => ({ useAuth: () => ({ profile: null }) }));
 jest.mock("@/lib/stores/activityPlanCreation", () => ({
   useActivityPlanCreationStore: () => ({
     addInterval: jest.fn(),

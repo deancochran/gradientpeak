@@ -15,7 +15,7 @@ const createPlan = createSystemActivityPlanBuilderFactory("strength", [
 /**
  * Upper Body Strength - Indoor
  * Total time: 45 minutes
- * Estimated TSS: ~50
+ * Estimated Common Load: ~50
  */
 export const UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
   name: "Upper Body Strength",
@@ -63,7 +63,7 @@ export const UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
 /**
  * Lower Body Strength - Indoor
  * Total time: 50 minutes
- * Estimated TSS: ~60
+ * Estimated Common Load: ~60
  */
 export const LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
   name: "Lower Body Strength",
@@ -111,7 +111,7 @@ export const LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
 /**
  * Full Body Circuit - Indoor
  * Total time: 40 minutes
- * Estimated TSS: ~65
+ * Estimated Common Load: ~65
  */
 export const FULL_BODY_CIRCUIT: RecordingServiceActivityPlan = {
   id: "aaaa1111-2222-4333-8444-555555555555",
@@ -154,7 +154,7 @@ export const FULL_BODY_CIRCUIT: RecordingServiceActivityPlan = {
 /**
  * Core and Stability - Indoor
  * Total time: 30 minutes
- * Estimated TSS: ~35
+ * Estimated Common Load: ~35
  */
 export const CORE_STABILITY: RecordingServiceActivityPlan = {
   id: "aaaa2222-3333-4444-9555-666666666666",
@@ -203,7 +203,7 @@ export const CORE_STABILITY: RecordingServiceActivityPlan = {
 /**
  * Functional Movement - Indoor
  * Total time: 35 minutes
- * Estimated TSS: ~45
+ * Estimated Common Load: ~45
  */
 export const FUNCTIONAL_MOVEMENT: RecordingServiceActivityPlan = {
   id: "aaaa3333-4444-4555-a666-777777777777",

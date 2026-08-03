@@ -1,32 +1,44 @@
 import { createHash } from "node:crypto";
-import {
-  type ActivityLength,
-  type ActivitySegment,
-  type ActivitySession,
-  type CanonicalActivityCategory,
-  canonicalActivityCategorySchema,
-  type DecodedActivityArtifact,
+import type {
+  ActivityArtifactSemantics,
+  ActivityLength,
+  ActivitySegment,
+  ActivitySession,
+  DecodedActivityArtifact,
+  SwimTimingResult,
 } from "@repo/core";
+import { calculateSwimTiming } from "@repo/core";
 import { decodedActivityArtifactSchema } from "@repo/core/activity-artifacts";
 import {
   type CompletedActivitySegmentSet,
   completedActivitySegmentSetSchema,
 } from "@repo/core/activity-segments";
-import { detectLTHR, estimateVO2Max } from "@repo/core/calculations";
-import { activitySegments, profileMetrics } from "@repo/db";
+import {
+  calculateCyclingNormalizedPower,
+  detectLactateThresholdHeartRateFromBestEfforts,
+  estimateVO2Max,
+} from "@repo/core/calculations";
+import { profileMetrics } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, lte, ne, sql } from "drizzle-orm";
+import { and, desc, eq, lte } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import { isClearedProfileOverride } from "../../utils/profile-override-observations";
 import { fetchActivityTemperature } from "../../utils/weather";
-import { calculateActivityFileStreamDerivedCalculations } from "./stream-derived-calculations";
+import type { GeneratedActivityLthrEvidence } from "../activities/reconcile-activity-evidence";
+import { calculateActivityFileHeartRateEvidence } from "./heart-rate-evidence";
 import {
+  buildActivityFileDerivedSegmentSummary,
+  calculateActivityFileStreamDerivedCalculations,
+} from "./stream-derived-calculations";
+import {
+  type ActivityFileStreamMetadata,
   type ActivityFileStreamRecord,
   buildActivityGeometry,
   collectActivityFileStreamMetadata,
 } from "./stream-metadata";
 
 type DbClient = Pick<ReturnType<typeof getRequiredDb>, "select">;
+const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
 
 export interface ParsedActivityFileForAnalysis {
   metadata: {
@@ -53,6 +65,7 @@ export interface ParsedActivityFileForAnalysis {
   sessions?: ActivitySession[] | undefined;
   lengths?: ActivityLength[] | undefined;
   decodedArtifact?: DecodedActivityArtifact | undefined;
+  semantics?: ActivityArtifactSemantics | undefined;
 }
 
 function recordsForCompletedSegment(
@@ -79,6 +92,47 @@ function recordsForCompletedSegment(
       (timestamp < endMs || (segment.endOffsetMs === parentElapsedMs && timestamp === endMs))
     );
   });
+}
+
+function inclusionTimelineForCompletedSegment(input: {
+  timestampsSeconds: readonly number[];
+  segment: CompletedActivitySegmentSet["segments"][number];
+  semantics: ActivityArtifactSemantics | undefined;
+  activityStartedAt: Date;
+}): boolean[] | undefined {
+  const semanticSegment = input.semantics?.segments[input.segment.ordinal];
+  if (
+    semanticSegment === undefined ||
+    semanticSegment.role !== input.segment.role ||
+    semanticSegment.startOffsetMs !== input.segment.startOffsetMs ||
+    semanticSegment.endOffsetMs !== input.segment.endOffsetMs ||
+    semanticSegment.pauseRanges === undefined ||
+    semanticSegment.pauseRanges.length === 0
+  ) {
+    return undefined;
+  }
+  const originMs = input.activityStartedAt.getTime();
+  const pauseRanges = semanticSegment.pauseRanges;
+  let previousAcceptedOffsetMs: number | null = null;
+  return input.timestampsSeconds.map((timestampSeconds) => {
+    const offsetMs = timestampSeconds * 1_000 - originMs;
+    if (previousAcceptedOffsetMs === null) {
+      previousAcceptedOffsetMs = offsetMs;
+      return true;
+    }
+    if (offsetMs <= previousAcceptedOffsetMs) return true;
+    const intervalStartMs = previousAcceptedOffsetMs;
+    previousAcceptedOffsetMs = offsetMs;
+    return !pauseRanges.some(
+      (pause) => offsetMs > pause.startOffsetMs && intervalStartMs < pause.endOffsetMs,
+    );
+  });
+}
+
+interface ActivitySegmentStreamEvidence {
+  records: ParsedActivityFileForAnalysis["records"];
+  metadata: ActivityFileStreamMetadata;
+  includedTimeline?: boolean[];
 }
 
 function average(values: Array<number | undefined>): number | undefined {
@@ -108,12 +162,18 @@ function poolLengthMeters(session: ActivitySession | undefined): number | undefi
   return metres !== undefined && metres <= 200 ? metres : undefined;
 }
 
+function ownedSwimLengths(
+  lengths: ActivityLength[] | undefined,
+  sessionMessageIndex: number,
+): ActivityLength[] {
+  return lengths?.filter((length) => length.sessionMessageIndex === sessionMessageIndex) ?? [];
+}
+
 function ownedActiveLengths(
   lengths: ActivityLength[] | undefined,
   sessionMessageIndex: number,
 ): ActivityLength[] | undefined {
-  if (!lengths) return undefined;
-  const owned = lengths.filter((length) => length.sessionMessageIndex === sessionMessageIndex);
+  const owned = ownedSwimLengths(lengths, sessionMessageIndex);
   if (owned.length === 0) return undefined;
   // FIT calls pool lengths "active" explicitly. Idle/rest messages are known
   // non-swimming boundaries; any other value leaves completeness unknowable.
@@ -128,6 +188,19 @@ function ownedActiveLengths(
     return undefined;
   }
   return owned.filter((length) => length.lengthType === "active");
+}
+
+function swimTimingEvidence(input: {
+  elapsedSeconds: number;
+  lengths: ActivityLength[] | undefined;
+  session: ActivitySession | undefined;
+  sessionMessageIndex: number;
+}): SwimTimingResult {
+  return calculateSwimTiming({
+    elapsedDurationSeconds: input.elapsedSeconds,
+    lengths: ownedSwimLengths(input.lengths, input.sessionMessageIndex),
+    expectedActiveLengthCount: input.session?.numActiveLengths,
+  });
 }
 
 function swimSummary(input: {
@@ -173,39 +246,6 @@ function swimSummary(input: {
   return Object.keys(swim).length > 0 ? swim : undefined;
 }
 
-function buildHeartRateDistribution(
-  records: Array<{ timestamp?: Date; heartRate?: number }>,
-): { coverageSeconds: number; buckets: Array<{ bpm: number; seconds: number }> } | undefined {
-  const secondsByBpm = new Map<number, number>();
-  for (let index = 0; index < records.length; index += 1) {
-    const record = records[index];
-    if (
-      !record?.timestamp ||
-      !record.heartRate ||
-      record.heartRate < 30 ||
-      record.heartRate > 250
-    ) {
-      continue;
-    }
-    const nextTimestamp = records[index + 1]?.timestamp;
-    if (!nextTimestamp) continue;
-    const observedSeconds = (nextTimestamp.getTime() - record.timestamp.getTime()) / 1000;
-    if (!Number.isFinite(observedSeconds) || observedSeconds <= 0) continue;
-    const seconds = Math.min(10, Math.round(observedSeconds));
-    if (seconds <= 0) continue;
-    const bpm = Math.round(record.heartRate);
-    secondsByBpm.set(bpm, (secondsByBpm.get(bpm) ?? 0) + seconds);
-  }
-  const buckets = [...secondsByBpm.entries()]
-    .sort(([left], [right]) => left - right)
-    .map(([bpm, seconds]) => ({ bpm, seconds }));
-  if (buckets.length === 0) return undefined;
-  return {
-    coverageSeconds: buckets.reduce((sum, bucket) => sum + bucket.seconds, 0),
-    buckets,
-  };
-}
-
 function toNumberOrNull(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined) return null;
   const numericValue = Number(value);
@@ -241,63 +281,6 @@ export async function getLatestProfileMetricValue(
   return row && !isClearedProfileOverride(row) ? toNumberOrNull(row.value) : null;
 }
 
-export async function getLatestActivityCategoryLthrValue(
-  db: DbClient,
-  input: {
-    profileId: string;
-    activityCategory: CanonicalActivityCategory;
-    recordedAtLte: Date;
-    excludeActivityId?: string;
-  },
-): Promise<number | null> {
-  const row = await db
-    .select({
-      referenceActivityId: profileMetrics.reference_activity_id,
-      value: profileMetrics.value,
-      source: profileMetrics.source,
-      method: profileMetrics.method,
-      provenance: profileMetrics.provenance,
-    })
-    .from(profileMetrics)
-    .innerJoin(
-      activitySegments,
-      eq(activitySegments.activity_id, profileMetrics.reference_activity_id),
-    )
-    .where(
-      and(
-        eq(profileMetrics.profile_id, input.profileId),
-        eq(profileMetrics.metric_type, "lthr"),
-        eq(profileMetrics.source, "derived"),
-        eq(profileMetrics.method, "activity_file_lthr_detection"),
-        sql`${profileMetrics.provenance} ->> 'activity_id' = cast(${profileMetrics.reference_activity_id} as text)`,
-        sql`${profileMetrics.provenance} ->> 'derived_from' = 'activity_file_stream'`,
-        eq(activitySegments.activity_category, input.activityCategory),
-        lte(profileMetrics.recorded_at, input.recordedAtLte),
-        input.excludeActivityId
-          ? ne(profileMetrics.reference_activity_id, input.excludeActivityId)
-          : undefined,
-      ),
-    )
-    .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.id))
-    .limit(1)
-    .then((rows) => rows[0] ?? null);
-
-  const provenance =
-    row?.provenance && typeof row.provenance === "object" && !Array.isArray(row.provenance)
-      ? (row.provenance as Record<string, unknown>)
-      : null;
-
-  return row &&
-    row.source === "derived" &&
-    row.method === "activity_file_lthr_detection" &&
-    provenance?.activity_id === row.referenceActivityId &&
-    provenance.derived_from === "activity_file_stream" &&
-    row.referenceActivityId !== input.excludeActivityId &&
-    !isClearedProfileOverride(row)
-    ? toNumberOrNull(row.value)
-    : null;
-}
-
 function deterministicSegmentId(
   activityId: string,
   artifactId: string | undefined,
@@ -312,23 +295,22 @@ function deterministicSegmentId(
   return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
 }
 
-function sourceIdentity(rawSport: string | number | undefined) {
-  if (rawSport === 3 || rawSport === "transition") return { role: "transition" as const };
+type SourceIdentity =
+  | { role: "activity"; activity_category: "run" | "bike" | "swim" | "strength" }
+  | { role: "transition" }
+  | { role: "unknown" };
+
+function sourceIdentity(rawSport: string | number | undefined): SourceIdentity {
+  if (rawSport === 3 || rawSport === "transition") return { role: "transition" };
   if (rawSport === 1 || rawSport === "running")
-    return { role: "activity" as const, activity_category: "run" as const };
+    return { role: "activity", activity_category: "run" };
   if (rawSport === 2 || rawSport === "cycling")
-    return { role: "activity" as const, activity_category: "bike" as const };
+    return { role: "activity", activity_category: "bike" };
   if (rawSport === 5 || rawSport === "swimming")
-    return { role: "activity" as const, activity_category: "swim" as const };
+    return { role: "activity", activity_category: "swim" };
   if (rawSport === 10 || rawSport === "training")
-    return { role: "activity" as const, activity_category: "strength" as const };
-  if (
-    (typeof rawSport === "number" && rawSport >= 0 && rawSport <= 43) ||
-    (typeof rawSport === "string" && rawSport.length > 0 && rawSport !== "unknown")
-  ) {
-    return { role: "activity" as const, activity_category: "other" as const };
-  }
-  return { role: "unknown" as const };
+    return { role: "activity", activity_category: "strength" };
+  return { role: "unknown" };
 }
 
 function boundedTimingMilliseconds(seconds: number | undefined, elapsedMs: number) {
@@ -341,6 +323,7 @@ function timingSummary(
   session: ActivitySession | undefined,
   elapsedMs: number,
   providerActiveDurationSeconds?: number | null,
+  swimTiming?: SwimTimingResult,
 ) {
   const activeMs = boundedTimingMilliseconds(session?.totalTimerTime, elapsedMs);
   const candidateMovingMs = boundedTimingMilliseconds(session?.totalMovingTime, elapsedMs);
@@ -350,6 +333,16 @@ function timingSummary(
       : undefined;
   if (activeMs !== undefined && movingMs !== undefined) {
     return { timingCoverage: "complete" as const, activeMs, movingMs };
+  }
+  if (activeMs === undefined && movingMs === undefined && swimTiming?.status === "available") {
+    const swimActiveMs = boundedTimingMilliseconds(swimTiming.activeDurationSeconds, elapsedMs);
+    if (swimActiveMs !== undefined) {
+      return {
+        timingCoverage: "complete" as const,
+        activeMs: swimActiveMs,
+        movingMs: swimActiveMs,
+      };
+    }
   }
   const providerActiveMs =
     activeMs === undefined &&
@@ -370,6 +363,16 @@ function timingSummary(
       ...(movingMs === undefined ? {} : { movingMs }),
     };
   }
+  if (swimTiming?.status === "partial" && swimTiming.activeDurationSeconds !== null) {
+    const swimActiveMs = boundedTimingMilliseconds(swimTiming.activeDurationSeconds, elapsedMs);
+    if (swimActiveMs !== undefined) {
+      return {
+        timingCoverage: "partial" as const,
+        activeMs: swimActiveMs,
+        movingMs: swimActiveMs,
+      };
+    }
+  }
   return { timingCoverage: "unavailable" as const };
 }
 
@@ -378,6 +381,7 @@ function buildCompletedSegmentSet(input: {
   artifactId?: string;
   parsedData: ParsedActivityFileForAnalysis;
   providerActiveDurationSeconds?: number | null;
+  provider?: string;
 }): CompletedActivitySegmentSet {
   const decoded = input.parsedData.decodedArtifact
     ? decodedActivityArtifactSchema.parse(input.parsedData.decodedArtifact)
@@ -463,23 +467,41 @@ function buildCompletedSegmentSet(input: {
           }
         : undefined;
       const identity = sourceIdentity(segment.rawSport ?? session?.rawSport);
+      const unsupportedProviderCategory =
+        input.provider !== undefined &&
+        segment.role === "activity" &&
+        segment.activity_category === "other" &&
+        identity.role === "unknown";
       const role =
-        segment.role === "activity" && !segment.activity_category ? identity.role : segment.role;
+        segment.role === "activity" && (!segment.activity_category || unsupportedProviderCategory)
+          ? identity.role
+          : segment.role;
       const activityCategory =
         role === "activity"
           ? (segment.activity_category ??
-            (identity.role === "activity" ? identity.activity_category : "other"))
+            (identity.role === "activity" ? identity.activity_category : undefined))
           : undefined;
       const swimSessionAverageSpeed =
         activityCategory === "swim" ? validSwimSpeed(nativeSession?.avgSpeed) : undefined;
+      const swimTiming =
+        activityCategory === "swim"
+          ? swimTimingEvidence({
+              elapsedSeconds: (endOffsetMs - startOffsetMs) / 1_000,
+              lengths: input.parsedData.lengths,
+              session: nativeSession,
+              sessionMessageIndex: segment.sessionMessageIndex,
+            })
+          : undefined;
       const summary = {
         version: 1 as const,
+        normalizedPowerResult: unavailableNormalizedPowerResult,
         timing: timingSummary(
           nativeSession,
           endOffsetMs - startOffsetMs,
           segments.length === 1 && segment.role === "activity"
             ? input.providerActiveDurationSeconds
             : undefined,
+          swimTiming,
         ),
         ...(nativeSession
           ? {
@@ -507,7 +529,7 @@ function buildCompletedSegmentSet(input: {
                 lengths: input.parsedData.lengths,
                 sessionMessageIndex: segment.sessionMessageIndex,
               });
-              return swim ? { swim } : {};
+              return { swim: { ...(swim ?? {}), timingEvidence: swimTiming } };
             })()),
       };
       return {
@@ -564,6 +586,7 @@ export async function analyzeParsedActivityFile(
     parsedData: ParsedActivityFileForAnalysis;
     artifactId?: string;
     providerActiveDurationSeconds?: number | null;
+    provider?: string;
     refreshWeather?: boolean;
   },
 ) {
@@ -582,17 +605,41 @@ export async function analyzeParsedActivityFile(
   const distance = summary.totalDistance || 0;
   const activityCompletedAt = new Date(startTime.getTime() + duration * 1000);
   const activityCompletedAtIso = activityCompletedAt.toISOString();
+  const segmentStreamEvidence = new Map<string, ActivitySegmentStreamEvidence>();
+  for (const segment of initialSegmentSet.segments) {
+    if (segment.role !== "activity") continue;
+    const segmentRecords = recordsForCompletedSegment(
+      records,
+      segment,
+      startTime,
+      initialSegmentSet.elapsedMs,
+    );
+    const metadata = collectActivityFileStreamMetadata(segmentRecords);
+    const includedTimeline = inclusionTimelineForCompletedSegment({
+      timestampsSeconds: metadata.samples.map((sample) => sample.timestampSeconds),
+      segment,
+      semantics: input.parsedData.semantics,
+      activityStartedAt: startTime,
+    });
+    segmentStreamEvidence.set(segment.id, {
+      records: segmentRecords,
+      metadata,
+      ...(includedTimeline === undefined ? {} : { includedTimeline }),
+    });
+  }
   const segmentSet = completedActivitySegmentSetSchema.parse({
     ...initialSegmentSet,
     segments: initialSegmentSet.segments.map((segment) => {
       if (segment.role !== "activity") return segment;
-      const segmentRecords = recordsForCompletedSegment(
-        records,
-        segment,
-        startTime,
-        initialSegmentSet.elapsedMs,
-      );
-      const heartRateDistribution = buildHeartRateDistribution(segmentRecords);
+      const evidence = segmentStreamEvidence.get(segment.id);
+      if (evidence === undefined) return segment;
+      const segmentRecords = evidence.records;
+      const heartRateDistribution = calculateActivityFileHeartRateEvidence({
+        samples: evidence.metadata.samples,
+        ...(evidence.includedTimeline === undefined
+          ? {}
+          : { includedTimeline: evidence.includedTimeline }),
+      });
       const recordAverageSpeed = average(segmentRecords.map((record) => record.speed));
       const preservesSwimSessionAverage =
         segment.activity_category === "swim" &&
@@ -601,10 +648,10 @@ export async function analyzeParsedActivityFile(
         ...segment,
         summary: {
           ...segment.summary,
-          ...(average(segmentRecords.map((record) => record.heartRate)) === undefined
+          ...(heartRateDistribution.timeWeightedAverageBpm === null
             ? {}
-            : { averageHeartRateBpm: average(segmentRecords.map((record) => record.heartRate)) }),
-          ...(heartRateDistribution ? { heartRateDistribution } : {}),
+            : { averageHeartRateBpm: heartRateDistribution.timeWeightedAverageBpm }),
+          heartRateDistribution,
           ...(average(segmentRecords.map((record) => record.power)) === undefined
             ? {}
             : { averagePowerWatts: average(segmentRecords.map((record) => record.power)) }),
@@ -646,52 +693,63 @@ export async function analyzeParsedActivityFile(
   const segmentAnalyses = segmentSet.segments
     .filter((segment) => segment.role === "activity")
     .map((segment) => {
-      const segmentRecords = recordsForCompletedSegment(
-        records,
-        segment,
-        startTime,
-        segmentSet.elapsedMs,
-      );
-      const segmentMetadata = collectActivityFileStreamMetadata(segmentRecords);
+      const evidence = segmentStreamEvidence.get(segment.id);
+      if (evidence === undefined) {
+        throw new Error("Activity segment stream evidence must be normalized exactly once");
+      }
       const calculation = calculateActivityFileStreamDerivedCalculations({
         activityId: input.activityId,
         profileId: input.profileId,
+        segmentId: segment.id,
+        activityStartedAt: startTime,
+        segmentStartOffsetSeconds: segment.startOffsetMs / 1_000,
+        segmentEndOffsetSeconds: segment.endOffsetMs / 1_000,
         activityCategory: segment.activity_category,
+        ...(segment.activity_category !== "swim"
+          ? {}
+          : segment.summary.swim?.poolLengthMeters !== undefined &&
+              (segment.summary.swim.timingEvidence?.status === "available" ||
+                segment.summary.swim.timingEvidence?.status === "partial")
+            ? {
+                swimmingEvidenceContext: {
+                  environment: "pool" as const,
+                  timingBasis: "pool_length_timing" as const,
+                  poolLengthMeters: segment.summary.swim.poolLengthMeters,
+                },
+              }
+            : evidence.metadata.coords.length > 0
+              ? {
+                  swimmingEvidenceContext: {
+                    environment: "open_water" as const,
+                    timingBasis: "open_water_continuous_timing" as const,
+                    poolLengthMeters: null,
+                  },
+                }
+              : {}),
         distance: segment.summary.distanceMeters ?? 0,
         duration: (segment.endOffsetMs - segment.startOffsetMs) / 1000,
-        avgHeartRate: segment.summary.averageHeartRateBpm,
-        recordedAt: new Date(startTime.getTime() + segment.endOffsetMs),
-        streamMetadata: segmentMetadata,
+        activeDuration:
+          "activeMs" in segment.summary.timing
+            ? (segment.summary.timing.activeMs ?? null) === null
+              ? null
+              : (segment.summary.timing.activeMs ?? 0) / 1000
+            : null,
+        movingDuration:
+          "movingMs" in segment.summary.timing
+            ? (segment.summary.timing.movingMs ?? null) === null
+              ? null
+              : (segment.summary.timing.movingMs ?? 0) / 1000
+            : null,
+        ...(evidence.includedTimeline === undefined
+          ? {}
+          : { includedTimeline: evidence.includedTimeline }),
+        streamMetadata: evidence.metadata,
       });
       return {
         segment,
-        segmentMetadata,
+        segmentMetadata: evidence.metadata,
         calculation,
-        efforts: calculation.effortsToInsert.map((effort) => {
-          const segmentOffsetSeconds = segment.startOffsetMs / 1000;
-          const provenance =
-            effort.provenance &&
-            typeof effort.provenance === "object" &&
-            !Array.isArray(effort.provenance)
-              ? (effort.provenance as Record<string, unknown>)
-              : {};
-          const exactStart = provenance.exact_window_start_seconds;
-          const exactEnd = provenance.exact_window_end_seconds;
-          return {
-            ...effort,
-            segment_id: segment.id,
-            start_offset: (effort.start_offset ?? 0) + segmentOffsetSeconds,
-            provenance: {
-              ...provenance,
-              ...(typeof exactStart === "number" && Number.isFinite(exactStart)
-                ? { exact_window_start_seconds: exactStart + segmentOffsetSeconds }
-                : {}),
-              ...(typeof exactEnd === "number" && Number.isFinite(exactEnd)
-                ? { exact_window_end_seconds: exactEnd + segmentOffsetSeconds }
-                : {}),
-            },
-          };
-        }),
+        efforts: calculation.effortsToInsert,
       };
     });
   const persistedSegmentSet = completedActivitySegmentSetSchema.parse({
@@ -699,17 +757,12 @@ export async function analyzeParsedActivityFile(
     segments: segmentSet.segments.map((segment) => {
       const analysis = segmentAnalyses.find((candidate) => candidate.segment.id === segment.id);
       if (!analysis) return segment;
-      const { normalizedPower, normalizedSpeed, normalizedGradedSpeed } = analysis.calculation;
       return {
         ...segment,
-        summary: {
-          ...segment.summary,
-          ...(normalizedPower ? { normalizedPowerWatts: normalizedPower } : {}),
-          ...(normalizedSpeed ? { normalizedSpeedMetersPerSecond: normalizedSpeed } : {}),
-          ...(normalizedGradedSpeed
-            ? { normalizedGradedSpeedMetersPerSecond: normalizedGradedSpeed }
-            : {}),
-        },
+        summary: buildActivityFileDerivedSegmentSummary({
+          summary: segment.summary,
+          metrics: analysis.calculation,
+        }),
       };
     }),
   });
@@ -719,9 +772,6 @@ export async function analyzeParsedActivityFile(
       ? soleActivityAnalysis.segment.summary.swim
       : undefined;
   const normalizedSpeed = soleActivityAnalysis?.calculation.normalizedSpeed ?? null;
-  const normalizedGradedSpeed = soleActivityAnalysis?.calculation.normalizedGradedSpeed ?? null;
-  const efficiencyFactor = soleActivityAnalysis?.calculation.efficiencyFactor ?? null;
-  const aerobicDecoupling = soleActivityAnalysis?.calculation.aerobicDecoupling ?? null;
   const effortsToInsert = segmentAnalyses.flatMap((analysis) => analysis.efforts);
 
   let resolvedAvgTemperature = streamMetadata.avgTemperature;
@@ -734,44 +784,48 @@ export async function analyzeParsedActivityFile(
     );
   }
 
-  const canonicalActivityCategoryResult = canonicalActivityCategorySchema.safeParse(
-    soleActivityAnalysis?.segment.activity_category,
-  );
-  const [currentActivityCategoryLthr, restingHR] = await Promise.all([
-    canonicalActivityCategoryResult.success
-      ? getLatestActivityCategoryLthrValue(db, {
-          profileId: input.profileId,
-          activityCategory: canonicalActivityCategoryResult.data,
-          recordedAtLte: activityCompletedAt,
-          excludeActivityId: input.activityId,
-        })
-      : Promise.resolve(null),
-    getLatestProfileMetricValue(db, {
-      profileId: input.profileId,
-      metricType: "resting_hr",
-      recordedAtLte: activityCompletedAt,
-    }),
-  ]);
+  const restingHR = await getLatestProfileMetricValue(db, {
+    profileId: input.profileId,
+    metricType: "resting_hr",
+    recordedAtLte: activityCompletedAt,
+  });
 
   const geometry = buildActivityGeometry(records);
-  const detectedLTHR =
-    soleActivityAnalysis && soleActivityAnalysis.segmentMetadata.hrStream.length > 0
-      ? detectLTHR(
-          soleActivityAnalysis.segmentMetadata.hrStream,
-          soleActivityAnalysis.segmentMetadata.hrTimestamps ??
-            soleActivityAnalysis.segmentMetadata.timestamps,
-        )
-      : null;
+  const heartRateBestEfforts = soleActivityAnalysis?.calculation.bestEffortExtractions.find(
+    (extraction) => extraction.metric === "heart_rate",
+  );
+  const detected =
+    heartRateBestEfforts === undefined
+      ? null
+      : detectLactateThresholdHeartRateFromBestEfforts(heartRateBestEfforts);
+  const detectedLTHR: GeneratedActivityLthrEvidence | null =
+    detected === null || soleActivityAnalysis === undefined
+      ? null
+      : {
+          valueBpm: detected.valueBpm,
+          recordedAt: new Date(detected.sourceEffort.endTimestampSeconds * 1_000),
+          calculationVersion: detected.calculationVersion,
+          provenance: {
+            activity_id: input.activityId,
+            segment_id: soleActivityAnalysis.segment.id,
+            derived_from: "activity_file_best_effort",
+            source_series: "heart_rate",
+            source_effort_calculation_version: detected.sourceEffortCalculationVersion,
+            exact_window_start_timestamp_seconds: detected.sourceEffort.startTimestampSeconds,
+            exact_window_end_timestamp_seconds: detected.sourceEffort.endTimestampSeconds,
+            duration_seconds: detected.sourceEffort.durationSeconds,
+            window_coverage: detected.sourceEffort.windowCoverage,
+            extraction_status: detected.sourceEffort.status,
+            extraction_reason:
+              detected.sourceEffort.status === "partial" ? detected.sourceEffort.reason : null,
+          },
+        };
   if (summary.maxHeartRate && restingHR) void estimateVO2Max(summary.maxHeartRate, restingHR);
 
   return {
     activityCompletedAt,
     activityCompletedAtIso,
-    detectedLTHR:
-      detectedLTHR &&
-      (currentActivityCategoryLthr === null || detectedLTHR > currentActivityCategoryLthr)
-        ? detectedLTHR
-        : null,
+    detectedLTHR,
     effortsToInsert,
     geometry,
     summaryValues: {
@@ -804,9 +858,6 @@ export async function analyzeParsedActivityFile(
         : null,
       max_speed_mps: soleActivityAnalysis ? (summary.maxSpeed ?? null) : null,
       normalized_speed_mps: normalizedSpeed || null,
-      normalized_graded_speed_mps: normalizedGradedSpeed || null,
-      efficiency_factor: efficiencyFactor || null,
-      aerobic_decoupling: aerobicDecoupling || null,
       avg_temperature: resolvedAvgTemperature ? Math.round(resolvedAvgTemperature) : null,
       pool_length_meters: soleSwimSummary?.poolLengthMeters ?? null,
       total_strokes: soleSwimSummary?.strokeCount ?? null,

@@ -18,7 +18,7 @@ import { useTheme } from "@/lib/stores/theme-store";
 
 export interface FitnessDataPoint {
   date: string;
-  ctl: number;
+  longTermLoad: number;
   atl?: number;
   tsb?: number;
 }
@@ -31,7 +31,7 @@ export interface PlanVsActualChartProps {
   timeline?: InsightTimelinePoint[];
   actualData: FitnessDataPoint[];
   projectedData: FitnessDataPoint[];
-  idealData?: Array<{ date: string; ctl: number }>;
+  idealData?: Array<{ date: string; longTermLoad: number }>;
   goalMarkers?: Array<{
     id: string;
     targetDate: string;
@@ -204,9 +204,9 @@ function aggregateTimelineByWeek(timeline: LoadChartTimelinePoint[]) {
   return aggregateTrainingLoadTimelineByWeek(timeline).map((week, index) => ({
     index,
     date: week.week_start,
-    projection: week.recommended_load_tss,
-    planned: week.scheduled_load_tss,
-    actual: week.completed_load_tss,
+    projection: week.recommended_common_load,
+    planned: week.scheduled_common_load,
+    actual: week.completed_common_load,
   }));
 }
 
@@ -277,11 +277,11 @@ function buildFallbackPoints({
 }: {
   actualData: FitnessDataPoint[];
   projectedData: FitnessDataPoint[];
-  idealData: Array<{ date: string; ctl: number }>;
+  idealData: Array<{ date: string; longTermLoad: number }>;
 }): NormalizedPoint[] {
-  const idealByDate = new Map(idealData.map((point) => [point.date, point.ctl]));
-  const projectedByDate = new Map(projectedData.map((point) => [point.date, point.ctl]));
-  const actualByDate = new Map(actualData.map((point) => [point.date, point.ctl]));
+  const idealByDate = new Map(idealData.map((point) => [point.date, point.longTermLoad]));
+  const projectedByDate = new Map(projectedData.map((point) => [point.date, point.longTermLoad]));
+  const actualByDate = new Map(actualData.map((point) => [point.date, point.longTermLoad]));
 
   const primaryDates =
     idealData.length > 0
@@ -826,7 +826,7 @@ export function FitnessFatigueFormChart({
   const framedPoints = useMemo<FitnessChartPoint[]>(() => {
     const actualPoints = actualData.map((point) => ({
       date: point.date,
-      fitness: point.ctl,
+      fitness: point.longTermLoad,
       fatigue: point.atl ?? null,
       form: point.tsb ?? null,
       projectedFitness: null as number | null,
@@ -836,7 +836,7 @@ export function FitnessFatigueFormChart({
       fitness: null as number | null,
       fatigue: null as number | null,
       form: null as number | null,
-      projectedFitness: point.ctl,
+      projectedFitness: point.longTermLoad,
     }));
     const pointsByDate = new Map<string, Omit<FitnessChartPoint, "index">>();
 

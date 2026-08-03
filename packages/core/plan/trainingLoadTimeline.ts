@@ -9,11 +9,12 @@ export type TrainingLoadSource =
 
 export type TrainingLoadTimelinePoint = {
   date: string;
-  recommended_load_tss: number;
-  scheduled_load_tss: number;
-  tentative_scheduled_load_tss: number;
-  completed_load_tss: number;
-  adherence_score?: number;
+  /** A finite nonnegative value is known; null means the dimension is unavailable. */
+  recommended_common_load: number | null;
+  scheduled_common_load: number | null;
+  tentative_scheduled_common_load: number | null;
+  completed_common_load: number | null;
+  adherence_score?: number | null;
   boundary_state?: "safe" | "caution" | "exceeded";
   boundary_reasons?: string[];
   source?: {
@@ -26,10 +27,10 @@ export type TrainingLoadTimelinePoint = {
 export const trainingLoadTimelineInputPointSchema = z
   .object({
     date: z.string(),
-    recommended_load_tss: z.number().finite().nullable().optional(),
-    scheduled_load_tss: z.number().finite().nullable().optional(),
-    tentative_scheduled_load_tss: z.number().finite().nullable().optional(),
-    completed_load_tss: z.number().finite().nullable().optional(),
+    recommended_common_load: z.number().finite().nonnegative().nullable().optional(),
+    scheduled_common_load: z.number().finite().nonnegative().nullable().optional(),
+    tentative_scheduled_common_load: z.number().finite().nonnegative().nullable().optional(),
+    completed_common_load: z.number().finite().nonnegative().nullable().optional(),
     adherence_score: z.number().finite().nullable().optional(),
     boundary_state: z.enum(["safe", "caution", "exceeded"]).optional(),
     boundary_reasons: z.array(z.string()).optional(),
@@ -54,13 +55,20 @@ export type TrainingLoadTimelineInputPoint = z.input<typeof trainingLoadTimeline
 export type TrainingLoadWeek = {
   week_start: string;
   week_end: string;
-  recommended_load_tss: number;
-  scheduled_load_tss: number;
-  completed_load_tss: number;
+  recommended_common_load: number | null;
+  scheduled_common_load: number | null;
+  completed_common_load: number | null;
 };
 
-function roundLoad(value: number | null | undefined) {
-  return Number.isFinite(value) ? Math.round(Math.max(0, value ?? 0) * 10) / 10 : 0;
+function roundLoad(value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  return Math.round(value * 10) / 10;
+}
+
+function sumAvailableLoads(values: readonly (number | null)[]): number | null {
+  if (values.some((value) => value === null)) return null;
+  const knownValues = values.filter((value): value is number => value !== null);
+  return roundLoad(knownValues.reduce((sum, value) => sum + value, 0));
 }
 
 export function addDaysDateKey(dateKey: string, days: number) {
@@ -83,10 +91,10 @@ export function normalizeTrainingLoadTimelinePoint(
   point: TrainingLoadTimelineInputPoint,
 ): TrainingLoadTimelinePoint {
   const parsed = trainingLoadTimelineInputPointSchema.parse(point);
-  const recommendedLoad = roundLoad(parsed.recommended_load_tss);
-  const scheduledLoad = roundLoad(parsed.scheduled_load_tss);
-  const tentativeScheduledLoad = roundLoad(parsed.tentative_scheduled_load_tss);
-  const completedLoad = roundLoad(parsed.completed_load_tss);
+  const recommendedLoad = roundLoad(parsed.recommended_common_load);
+  const scheduledLoad = roundLoad(parsed.scheduled_common_load);
+  const tentativeScheduledLoad = roundLoad(parsed.tentative_scheduled_common_load);
+  const completedLoad = roundLoad(parsed.completed_common_load);
   const source = parsed.source
     ? {
         ...(parsed.source.recommended === undefined
@@ -99,10 +107,10 @@ export function normalizeTrainingLoadTimelinePoint(
 
   return {
     date: parsed.date,
-    recommended_load_tss: recommendedLoad,
-    scheduled_load_tss: scheduledLoad,
-    tentative_scheduled_load_tss: tentativeScheduledLoad,
-    completed_load_tss: completedLoad,
+    recommended_common_load: recommendedLoad,
+    scheduled_common_load: scheduledLoad,
+    tentative_scheduled_common_load: tentativeScheduledLoad,
+    completed_common_load: completedLoad,
     adherence_score: roundLoad(parsed.adherence_score),
     ...(parsed.boundary_state === undefined ? {} : { boundary_state: parsed.boundary_state }),
     ...(parsed.boundary_reasons === undefined ? {} : { boundary_reasons: parsed.boundary_reasons }),
@@ -113,15 +121,22 @@ export function normalizeTrainingLoadTimelinePoint(
 export function aggregateTrainingLoadTimelineByWeek(
   timeline: TrainingLoadTimelineInputPoint[],
 ): TrainingLoadWeek[] {
-  const buckets = new Map<string, { recommended: number; scheduled: number; completed: number }>();
+  const buckets = new Map<
+    string,
+    {
+      recommended: Array<number | null>;
+      scheduled: Array<number | null>;
+      completed: Array<number | null>;
+    }
+  >();
 
   for (const rawPoint of timeline) {
     const point = normalizeTrainingLoadTimelinePoint(rawPoint);
     const weekStart = getWeekStartDateKey(point.date);
-    const bucket = buckets.get(weekStart) ?? { recommended: 0, scheduled: 0, completed: 0 };
-    bucket.recommended += point.recommended_load_tss;
-    bucket.scheduled += point.scheduled_load_tss;
-    bucket.completed += point.completed_load_tss;
+    const bucket = buckets.get(weekStart) ?? { recommended: [], scheduled: [], completed: [] };
+    bucket.recommended.push(point.recommended_common_load);
+    bucket.scheduled.push(point.scheduled_common_load);
+    bucket.completed.push(point.completed_common_load);
     buckets.set(weekStart, bucket);
   }
 
@@ -130,8 +145,8 @@ export function aggregateTrainingLoadTimelineByWeek(
     .map(([weekStart, bucket]) => ({
       week_start: weekStart,
       week_end: addDaysDateKey(weekStart, 6),
-      recommended_load_tss: roundLoad(bucket.recommended),
-      scheduled_load_tss: roundLoad(bucket.scheduled),
-      completed_load_tss: roundLoad(bucket.completed),
+      recommended_common_load: sumAvailableLoads(bucket.recommended),
+      scheduled_common_load: sumAvailableLoads(bucket.scheduled),
+      completed_common_load: sumAvailableLoads(bucket.completed),
     }));
 }

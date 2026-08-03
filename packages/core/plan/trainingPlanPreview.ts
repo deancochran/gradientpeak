@@ -38,11 +38,11 @@ export type PreviewState<TChart> = {
 
 export type PreviewReadinessSnapshot = {
   readiness_score: number;
-  predicted_load_tss: number;
-  predicted_fatigue_atl: number;
+  predicted_load: number;
+  predicted_fatigue_recentLoad: number;
   feasibility_state: ProjectionFeasibilityState;
-  tss_ramp_clamp_weeks: number;
-  ctl_ramp_clamp_weeks: number;
+  load_ramp_clamp_weeks: number;
+  longTermLoad_ramp_clamp_weeks: number;
 };
 
 export type ProjectionFeasibilityState = "feasible" | "aggressive" | "unsafe";
@@ -51,10 +51,10 @@ export type ProjectionFeasibilitySummary = {
   state: ProjectionFeasibilityState;
   reasons: string[];
   diagnostics: {
-    tss_ramp_near_cap_weeks: number;
-    ctl_ramp_near_cap_weeks: number;
-    tss_ramp_clamp_weeks: number;
-    ctl_ramp_clamp_weeks: number;
+    load_ramp_near_cap_weeks: number;
+    longTermLoad_ramp_near_cap_weeks: number;
+    load_ramp_clamp_weeks: number;
+    longTermLoad_ramp_clamp_weeks: number;
     recovery_weeks: number;
   };
 };
@@ -183,29 +183,29 @@ export function buildReadinessDeltaDiagnostics(input: {
   current: PreviewReadinessSnapshot;
 }): ReadinessDeltaDiagnostics {
   const readinessDelta = round2(input.current.readiness_score - input.previous.readiness_score);
-  const loadDelta = round2(input.current.predicted_load_tss - input.previous.predicted_load_tss);
+  const loadDelta = round2(input.current.predicted_load - input.previous.predicted_load);
   const fatigueDelta = round2(
-    input.current.predicted_fatigue_atl - input.previous.predicted_fatigue_atl,
+    input.current.predicted_fatigue_recentLoad - input.previous.predicted_fatigue_recentLoad,
   );
   const feasibilityPressurePrevious =
     toFeasibilityPressure(input.previous.feasibility_state) +
-    input.previous.tss_ramp_clamp_weeks +
-    input.previous.ctl_ramp_clamp_weeks;
+    input.previous.load_ramp_clamp_weeks +
+    input.previous.longTermLoad_ramp_clamp_weeks;
   const feasibilityPressureCurrent =
     toFeasibilityPressure(input.current.feasibility_state) +
-    input.current.tss_ramp_clamp_weeks +
-    input.current.ctl_ramp_clamp_weeks;
+    input.current.load_ramp_clamp_weeks +
+    input.current.longTermLoad_ramp_clamp_weeks;
   const feasibilityDelta = round2(feasibilityPressureCurrent - feasibilityPressurePrevious);
 
   const loadImpact = buildImpactDiagnostics({
     key: "load",
     delta: loadDelta,
-    previousValue: input.previous.predicted_load_tss,
-    currentValue: input.current.predicted_load_tss,
+    previousValue: input.previous.predicted_load,
+    currentValue: input.current.predicted_load,
     positiveEffect: "supports_readiness",
     negativeEffect: "suppresses_readiness",
     reasonCodes: [
-      "impact_load_tss_delta",
+      "impact_load_delta",
       loadDelta > 0 ? "impact_load_increased" : "impact_load_decreased",
     ],
   });
@@ -213,12 +213,12 @@ export function buildReadinessDeltaDiagnostics(input: {
   const fatigueImpact = buildImpactDiagnostics({
     key: "fatigue",
     delta: fatigueDelta,
-    previousValue: input.previous.predicted_fatigue_atl,
-    currentValue: input.current.predicted_fatigue_atl,
+    previousValue: input.previous.predicted_fatigue_recentLoad,
+    currentValue: input.current.predicted_fatigue_recentLoad,
     positiveEffect: "suppresses_readiness",
     negativeEffect: "supports_readiness",
     reasonCodes: [
-      "impact_fatigue_atl_delta",
+      "impact_fatigue_recentLoad_delta",
       fatigueDelta > 0 ? "impact_fatigue_increased" : "impact_fatigue_decreased",
     ],
   });
@@ -282,86 +282,94 @@ export function buildReadinessDeltaDiagnostics(input: {
 export function classifyProjectionFeasibility(input: {
   microcycles: Array<{
     metadata?: {
-      tss_ramp?: {
-        previous_week_tss: number;
-        requested_weekly_tss: number;
-        max_weekly_tss_ramp_pct: number;
+      load_ramp?: {
+        previous_week_load: number;
+        requested_weekly_load: number;
+        max_weekly_load_ramp_pct: number;
         clamped: boolean;
       };
-      ctl_ramp?: {
-        requested_ctl_ramp: number;
-        max_ctl_ramp_per_week: number;
+      longTermLoad_ramp?: {
+        requested_longTermLoad_ramp: number;
+        max_longTermLoad_ramp_per_week: number;
         clamped: boolean;
       };
     };
   }>;
   constraint_summary?: {
-    tss_ramp_clamp_weeks: number;
-    ctl_ramp_clamp_weeks: number;
+    load_ramp_clamp_weeks: number;
+    longTermLoad_ramp_clamp_weeks: number;
     recovery_weeks: number;
   };
   near_cap_threshold?: number;
 }): ProjectionFeasibilitySummary {
   const nearCapThreshold = input.near_cap_threshold ?? 0.9;
-  let tssNearCapWeeks = 0;
-  let ctlNearCapWeeks = 0;
+  let loadNearCapWeeks = 0;
+  let longTermLoadNearCapWeeks = 0;
 
   for (const microcycle of input.microcycles) {
-    const tssRamp = microcycle.metadata?.tss_ramp;
-    const ctlRamp = microcycle.metadata?.ctl_ramp;
-    if (!tssRamp || !ctlRamp) {
+    const loadRamp = microcycle.metadata?.load_ramp;
+    const longTermLoadRamp = microcycle.metadata?.longTermLoad_ramp;
+    if (!loadRamp || !longTermLoadRamp) {
       continue;
     }
 
-    if (!tssRamp.clamped && tssRamp.previous_week_tss > 0 && tssRamp.max_weekly_tss_ramp_pct > 0) {
+    if (
+      !loadRamp.clamped &&
+      loadRamp.previous_week_load > 0 &&
+      loadRamp.max_weekly_load_ramp_pct > 0
+    ) {
       const requestedRampPct =
-        ((tssRamp.requested_weekly_tss - tssRamp.previous_week_tss) / tssRamp.previous_week_tss) *
+        ((loadRamp.requested_weekly_load - loadRamp.previous_week_load) /
+          loadRamp.previous_week_load) *
         100;
-      if (requestedRampPct >= tssRamp.max_weekly_tss_ramp_pct * nearCapThreshold) {
-        tssNearCapWeeks += 1;
+      if (requestedRampPct >= loadRamp.max_weekly_load_ramp_pct * nearCapThreshold) {
+        loadNearCapWeeks += 1;
       }
     }
 
-    if (!ctlRamp.clamped && ctlRamp.max_ctl_ramp_per_week > 0) {
-      if (ctlRamp.requested_ctl_ramp >= ctlRamp.max_ctl_ramp_per_week * nearCapThreshold) {
-        ctlNearCapWeeks += 1;
+    if (!longTermLoadRamp.clamped && longTermLoadRamp.max_longTermLoad_ramp_per_week > 0) {
+      if (
+        longTermLoadRamp.requested_longTermLoad_ramp >=
+        longTermLoadRamp.max_longTermLoad_ramp_per_week * nearCapThreshold
+      ) {
+        longTermLoadNearCapWeeks += 1;
       }
     }
   }
 
-  const tssRampClampWeeks = input.constraint_summary?.tss_ramp_clamp_weeks ?? 0;
-  const ctlRampClampWeeks = input.constraint_summary?.ctl_ramp_clamp_weeks ?? 0;
+  const loadRampClampWeeks = input.constraint_summary?.load_ramp_clamp_weeks ?? 0;
+  const longTermLoadRampClampWeeks = input.constraint_summary?.longTermLoad_ramp_clamp_weeks ?? 0;
   const reasons: string[] = ["safety_first_best_safe_projection"];
   let state: ProjectionFeasibilityState = "feasible";
 
-  if (tssRampClampWeeks > 0) {
+  if (loadRampClampWeeks > 0) {
     state = "aggressive";
-    reasons.push("required_tss_ramp_exceeds_configured_cap");
+    reasons.push("required_load_ramp_exceeds_configured_cap");
   }
 
-  if (ctlRampClampWeeks > 0) {
+  if (longTermLoadRampClampWeeks > 0) {
     state = "aggressive";
-    reasons.push("required_ctl_ramp_exceeds_configured_cap");
+    reasons.push("required_longTermLoad_ramp_exceeds_configured_cap");
   }
 
-  if (tssNearCapWeeks > 0) {
+  if (loadNearCapWeeks > 0) {
     state = "aggressive";
-    reasons.push("required_tss_ramp_near_configured_cap");
+    reasons.push("required_load_ramp_near_configured_cap");
   }
 
-  if (ctlNearCapWeeks > 0) {
+  if (longTermLoadNearCapWeeks > 0) {
     state = "aggressive";
-    reasons.push("required_ctl_ramp_near_configured_cap");
+    reasons.push("required_longTermLoad_ramp_near_configured_cap");
   }
 
   return {
     state,
     reasons: [...new Set(reasons)],
     diagnostics: {
-      tss_ramp_near_cap_weeks: tssNearCapWeeks,
-      ctl_ramp_near_cap_weeks: ctlNearCapWeeks,
-      tss_ramp_clamp_weeks: tssRampClampWeeks,
-      ctl_ramp_clamp_weeks: ctlRampClampWeeks,
+      load_ramp_near_cap_weeks: loadNearCapWeeks,
+      longTermLoad_ramp_near_cap_weeks: longTermLoadNearCapWeeks,
+      load_ramp_clamp_weeks: loadRampClampWeeks,
+      longTermLoad_ramp_clamp_weeks: longTermLoadRampClampWeeks,
       recovery_weeks: input.constraint_summary?.recovery_weeks ?? 0,
     },
   };
@@ -371,13 +379,13 @@ export function buildPreviewReadinessSnapshot(input: {
   projectionChart: {
     points: Array<{
       readiness_score?: number;
-      predicted_load_tss: number;
-      predicted_fatigue_atl: number;
+      predicted_load: number;
+      predicted_fatigue_recentLoad: number;
     }>;
     readiness_score?: number;
     constraint_summary?: {
-      tss_ramp_clamp_weeks: number;
-      ctl_ramp_clamp_weeks: number;
+      load_ramp_clamp_weeks: number;
+      longTermLoad_ramp_clamp_weeks: number;
     };
   };
   projectionFeasibilityState: ProjectionFeasibilityState;
@@ -399,11 +407,12 @@ export function buildPreviewReadinessSnapshot(input: {
 
   return {
     readiness_score: round2(readinessScore),
-    predicted_load_tss: round2(latestPoint.predicted_load_tss),
-    predicted_fatigue_atl: round2(latestPoint.predicted_fatigue_atl),
+    predicted_load: round2(latestPoint.predicted_load),
+    predicted_fatigue_recentLoad: round2(latestPoint.predicted_fatigue_recentLoad),
     feasibility_state: input.projectionFeasibilityState,
-    tss_ramp_clamp_weeks: input.projectionChart.constraint_summary?.tss_ramp_clamp_weeks ?? 0,
-    ctl_ramp_clamp_weeks: input.projectionChart.constraint_summary?.ctl_ramp_clamp_weeks ?? 0,
+    load_ramp_clamp_weeks: input.projectionChart.constraint_summary?.load_ramp_clamp_weeks ?? 0,
+    longTermLoad_ramp_clamp_weeks:
+      input.projectionChart.constraint_summary?.longTermLoad_ramp_clamp_weeks ?? 0,
   };
 }
 

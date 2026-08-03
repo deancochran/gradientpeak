@@ -196,7 +196,7 @@ describe("TrainingPathChart interactions", () => {
     global.requestAnimationFrame = originalRequestAnimationFrame;
   });
 
-  it("uses Victory chart press state instead of touch overlays for bar selection", () => {
+  it("avoids competing Victory press gestures while horizontal scrolling is active", () => {
     renderNative(
       <TrainingPathChart
         model={model}
@@ -209,8 +209,8 @@ describe("TrainingPathChart interactions", () => {
     );
 
     const chart = getHostNode("CartesianChart");
-    expect(chart.props.chartPressState).toBeTruthy();
-    expect(chart.props.chartPressConfig?.pan?.simultaneousWithExternalGesture).toBeTruthy();
+    expect(chart.props.chartPressState).toBeUndefined();
+    expect(chart.props.chartPressConfig).toBeUndefined();
     expect(screen.queryByTestId("training-path-week-2026-04-13")).toBeNull();
   });
 
@@ -228,11 +228,11 @@ describe("TrainingPathChart interactions", () => {
 
     const adjustable = screen.getByLabelText("Weekly training path chart");
     expect(adjustable.props.accessibilityRole).toBe("adjustable");
-    expect(adjustable.props.accessibilityValue.text).toContain("Load 60");
-    expect(adjustable.props.accessibilityValue.text).toContain("Intensity 0.80");
+    expect(adjustable.props.accessibilityValue.text).toContain("Common Load 60");
+    expect(adjustable.props.accessibilityValue.text).toContain("Normalized intensity 0.80");
     expect(adjustable.props.accessibilityValue.text).not.toContain("TSS");
-    expect(adjustable.props.accessibilityValue.text).toContain("Planned load 40");
-    expect(adjustable.props.accessibilityValue.text).not.toContain("Recommended load");
+    expect(adjustable.props.accessibilityValue.text).toContain("Planned Common Load 40");
+    expect(adjustable.props.accessibilityValue.text).not.toContain("Recommended Common Load");
     expect(adjustable.props.accessibilityValue.text).toContain("Projected fitness 42");
 
     fireEvent(adjustable, "accessibilityAction", {
@@ -323,7 +323,8 @@ describe("TrainingPathChart interactions", () => {
     const legendDottedSwatch = getHostNodes("View").find(
       (view: ReactTestInstance) => view.props.style?.borderStyle === "dotted",
     );
-    if (!plannedCtlLine || !idealCtlLine) throw new Error("Expected planned and ideal CTL lines");
+    if (!plannedCtlLine || !idealCtlLine)
+      throw new Error("Expected planned and ideal Fitness lines");
 
     expect(plannedCtlLine.props.children).toBeUndefined();
     expect(idealCtlLine.props.children.type).toEqual(expect.any(Function));
@@ -332,7 +333,7 @@ describe("TrainingPathChart interactions", () => {
     expect(screen.getByText("Projected fitness")).toBeTruthy();
     expect(screen.getByText("Target fitness")).toBeTruthy();
     expect(screen.queryByText("Recommended")).toBeNull();
-    expect(screen.getByText("Completed, load unavailable")).toBeTruthy();
+    expect(screen.getByText("Completed, Common Load unavailable")).toBeTruthy();
     expect(screen.getByText("✓")).toBeTruthy();
     expect(legendDottedSwatch?.props.style).toEqual(
       expect.objectContaining({ borderStyle: "dotted" }),
@@ -404,7 +405,7 @@ describe("TrainingPathChart interactions", () => {
     );
     expect(
       screen.getByLabelText("Weekly training path chart").props.accessibilityValue.text,
-    ).toContain("Recommended load 80");
+    ).toContain("Recommended Common Load 80");
   });
 
   it("does not use zero for an unavailable weekly planned base under tentative Load", () => {

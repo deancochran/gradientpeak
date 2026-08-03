@@ -2,9 +2,9 @@ import { addDaysDateOnlyUtc, formatDateOnlyUtc, parseDateOnlyUtc } from "@repo/c
 
 type TimelineLoadPoint = {
   date: string;
-  completed_load_tss: number;
-  scheduled_load_tss: number;
-  recommended_load_tss: number;
+  completed_load: number;
+  scheduled_load: number;
+  recommended_load: number;
 };
 
 type GoalWithTargetDate = {
@@ -14,7 +14,7 @@ type GoalWithTargetDate = {
 type ProjectionMicrocycleLoadContext = {
   week_start_date: string;
   recovery_active: boolean;
-  demand_floor_tss: number | null;
+  demand_floor_load: number | null;
 };
 
 export type WeeklyLoadComparison = {
@@ -63,9 +63,9 @@ export function buildWeeklyLoadComparison(input: {
   for (const point of input.timeline) {
     const weekStart = getWeekStartDateOnly(point.date);
     const bucket = buckets.get(weekStart) ?? { actual: 0, scheduled: 0, recommended: 0, dates: [] };
-    bucket.actual += point.completed_load_tss || 0;
-    bucket.scheduled += point.scheduled_load_tss || 0;
-    bucket.recommended += point.recommended_load_tss || 0;
+    bucket.actual += point.completed_load;
+    bucket.scheduled += point.scheduled_load;
+    bucket.recommended += point.recommended_load;
     bucket.dates.push(point.date);
     buckets.set(weekStart, bucket);
   }
@@ -81,7 +81,7 @@ export function buildWeeklyLoadComparison(input: {
           actual_load: roundedLoadOrNull(bucket.actual),
           scheduled_load: roundedLoadOrNull(bucket.scheduled),
           recommended_load: roundedLoadOrNull(bucket.recommended),
-          safety_cap: microcycle?.demand_floor_tss ?? null,
+          safety_cap: microcycle?.demand_floor_load ?? null,
           is_recovery_week: microcycle?.recovery_active ?? false,
           has_goal: goalWeeks.has(weekStart),
         };

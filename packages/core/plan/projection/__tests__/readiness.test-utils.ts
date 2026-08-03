@@ -12,19 +12,19 @@ import type {
 } from "../readiness";
 
 /**
- * Creates a mock projection point with CTL/ATL/TSB values
+ * Creates a mock projection point with LongTermLoad/RecentLoad/LoadBalance values
  */
 export function createMockProjectionPoint(
   date: string,
-  ctl: number,
-  atl: number,
-  tsb: number,
+  longTermLoad: number,
+  recentLoad: number,
+  loadBalance: number,
 ): ProjectionPointReadinessInput {
   return {
     date,
-    predicted_fitness_ctl: ctl,
-    predicted_fatigue_atl: atl,
-    predicted_form_tsb: tsb,
+    predicted_fitness_longTermLoad: longTermLoad,
+    predicted_fatigue_recentLoad: recentLoad,
+    predicted_form_loadBalance: loadBalance,
   };
 }
 
@@ -145,38 +145,44 @@ export const RACE_PRESETS = {
 export function createTestScenario(config: {
   startDate: string;
   durationDays: number;
-  startingCtl: number;
-  startingAtl: number;
-  ctlProgression?: "flat" | "ramp" | "peak";
+  startingLongTermLoad: number;
+  startingRecentLoad: number;
+  longTermLoadProgression?: "flat" | "ramp" | "peak";
 }): ProjectionPointReadinessInput[] {
   const points: ProjectionPointReadinessInput[] = [];
-  const { startDate, durationDays, startingCtl, startingAtl, ctlProgression = "flat" } = config;
+  const {
+    startDate,
+    durationDays,
+    startingLongTermLoad,
+    startingRecentLoad,
+    longTermLoadProgression = "flat",
+  } = config;
 
   for (let day = 0; day < durationDays; day++) {
     const date = addDays(startDate, day);
-    let ctl = startingCtl;
-    let atl = startingAtl;
+    let longTermLoad = startingLongTermLoad;
+    let recentLoad = startingRecentLoad;
 
     // Apply progression pattern
-    if (ctlProgression === "ramp") {
-      ctl = startingCtl + (day / durationDays) * 20;
-      atl = startingAtl + (day / durationDays) * 15;
-    } else if (ctlProgression === "peak") {
+    if (longTermLoadProgression === "ramp") {
+      longTermLoad = startingLongTermLoad + (day / durationDays) * 20;
+      recentLoad = startingRecentLoad + (day / durationDays) * 15;
+    } else if (longTermLoadProgression === "peak") {
       const progress = day / durationDays;
       const peakAt = 0.8; // Peak at 80% through timeline
       if (progress < peakAt) {
-        ctl = startingCtl + (progress / peakAt) * 25;
-        atl = startingAtl + (progress / peakAt) * 20;
+        longTermLoad = startingLongTermLoad + (progress / peakAt) * 25;
+        recentLoad = startingRecentLoad + (progress / peakAt) * 20;
       } else {
         // Taper
         const taperProgress = (progress - peakAt) / (1 - peakAt);
-        ctl = startingCtl + 25 - taperProgress * 5;
-        atl = startingAtl + 20 - taperProgress * 15;
+        longTermLoad = startingLongTermLoad + 25 - taperProgress * 5;
+        recentLoad = startingRecentLoad + 20 - taperProgress * 15;
       }
     }
 
-    const tsb = ctl - atl;
-    points.push(createMockProjectionPoint(date, ctl, atl, tsb));
+    const loadBalance = longTermLoad - recentLoad;
+    points.push(createMockProjectionPoint(date, longTermLoad, recentLoad, loadBalance));
   }
 
   return points;
@@ -192,51 +198,56 @@ function addDays(dateStr: string, days: number): string {
 }
 
 /**
- * Creates a CTL/ATL state builder for more complex scenarios
+ * Creates a LongTermLoad/RecentLoad state builder for more complex scenarios
  */
-export class CtlAtlStateBuilder {
+export class LongTermLoadRecentLoadStateBuilder {
   private points: ProjectionPointReadinessInput[] = [];
   private currentDate: string;
-  private currentCtl: number;
-  private currentAtl: number;
+  private currentLongTermLoad: number;
+  private currentRecentLoad: number;
 
-  constructor(startDate: string, startingCtl: number, startingAtl: number) {
+  constructor(startDate: string, startingLongTermLoad: number, startingRecentLoad: number) {
     this.currentDate = startDate;
-    this.currentCtl = startingCtl;
-    this.currentAtl = startingAtl;
+    this.currentLongTermLoad = startingLongTermLoad;
+    this.currentRecentLoad = startingRecentLoad;
     this.addPoint();
   }
 
   private addPoint(): void {
-    const tsb = this.currentCtl - this.currentAtl;
+    const loadBalance = this.currentLongTermLoad - this.currentRecentLoad;
     this.points.push(
-      createMockProjectionPoint(this.currentDate, this.currentCtl, this.currentAtl, tsb),
+      createMockProjectionPoint(
+        this.currentDate,
+        this.currentLongTermLoad,
+        this.currentRecentLoad,
+        loadBalance,
+      ),
     );
   }
 
   /**
-   * Advance by days with optional CTL/ATL changes
+   * Advance by days with optional LongTermLoad/RecentLoad changes
    */
-  advance(days: number, ctlChange = 0, atlChange = 0): this {
+  advance(days: number, longTermLoadChange = 0, recentLoadChange = 0): this {
     for (let i = 0; i < days; i++) {
       this.currentDate = addDays(this.currentDate, 1);
-      this.currentCtl += ctlChange / days;
-      this.currentAtl += atlChange / days;
+      this.currentLongTermLoad += longTermLoadChange / days;
+      this.currentRecentLoad += recentLoadChange / days;
       this.addPoint();
     }
     return this;
   }
 
   /**
-   * Simulate a hard event (spike ATL)
+   * Simulate a hard event (spike RecentLoad)
    */
-  event(atlSpike: number): this {
-    this.currentAtl += atlSpike;
+  event(recentLoadSpike: number): this {
+    this.currentRecentLoad += recentLoadSpike;
     this.points[this.points.length - 1] = createMockProjectionPoint(
       this.currentDate,
-      this.currentCtl,
-      this.currentAtl,
-      this.currentCtl - this.currentAtl,
+      this.currentLongTermLoad,
+      this.currentRecentLoad,
+      this.currentLongTermLoad - this.currentRecentLoad,
     );
     return this;
   }

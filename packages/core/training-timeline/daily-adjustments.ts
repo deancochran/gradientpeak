@@ -2,45 +2,51 @@ import { addDaysDateKey } from "../plan/trainingLoadTimeline";
 
 export type DailyTrainingLoadAdjustment = {
   date: string;
-  plannedLoadTss: number;
-  tentativePlannedLoadTss: number;
-  completedLoadTss: number;
-  targetLoadTss: number;
-  actualOrScheduledLoadTss: number;
-  loadDeltaTss: number;
-  plannedDeltaTss: number;
+  plannedLoad: number | null;
+  tentativePlannedLoad: number | null;
+  completedLoad: number | null;
+  targetLoad: number | null;
+  actualOrScheduledLoad: number | null;
+  loadDelta: number | null;
+  plannedDelta: number | null;
 };
 
 export type DailyTrainingLoadAdjustmentInput = Partial<
-  Omit<
-    DailyTrainingLoadAdjustment,
-    "actualOrScheduledLoadTss" | "date" | "loadDeltaTss" | "plannedDeltaTss"
-  >
+  Omit<DailyTrainingLoadAdjustment, "actualOrScheduledLoad" | "date" | "loadDelta" | "plannedDelta">
 > & {
-  actualOrScheduledLoadTss?: number | null;
-  completedLoadTss?: number | null;
+  actualOrScheduledLoad?: number | null;
+  completedLoad?: number | null;
   date: string;
-  plannedLoadTss?: number | null;
-  remainingScheduledLoadTss?: number | null;
-  targetLoadTss?: number | null;
-  tentativePlannedLoadTss?: number | null;
+  plannedLoad?: number | null;
+  remainingScheduledLoad?: number | null;
+  targetLoad?: number | null;
+  tentativePlannedLoad?: number | null;
 };
 
 export type WeeklyTrainingLoadAdjustment = {
   weekStartDate: string;
   weekEndDate: string;
   points: DailyTrainingLoadAdjustment[];
-  plannedLoadTss: number;
-  tentativePlannedLoadTss: number;
-  completedLoadTss: number;
-  targetLoadTss: number;
-  actualOrScheduledLoadTss: number;
-  loadDeltaTss: number;
-  plannedDeltaTss: number;
+  plannedLoad: number | null;
+  tentativePlannedLoad: number | null;
+  completedLoad: number | null;
+  targetLoad: number | null;
+  actualOrScheduledLoad: number | null;
+  loadDelta: number | null;
+  plannedDelta: number | null;
 };
 
-function finiteNumber(value: number | null | undefined, fallback = 0) {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+function finiteNonnegativeNumber(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function deriveLoad(
+  values: readonly (number | null)[],
+  calculation: (...knownValues: number[]) => number,
+): number | null {
+  return values.some((value) => value === null)
+    ? null
+    : calculation(...values.filter((value): value is number => value !== null));
 }
 
 function dateKeyRange(startDate: string, endDate: string) {
@@ -67,28 +73,40 @@ export function normalizeDailyTrainingLoadAdjustments(input: {
 
   return dateKeyRange(input.startDate, input.endDate).map((date) => {
     const raw = pointsByDate.get(date);
-    const plannedLoadTss = finiteNumber(raw?.plannedLoadTss);
-    const tentativePlannedLoadTss = finiteNumber(raw?.tentativePlannedLoadTss);
-    const completedLoadTss = finiteNumber(raw?.completedLoadTss);
-    const targetLoadTss = finiteNumber(raw?.targetLoadTss);
-    const remainingScheduledLoadTss = finiteNumber(
-      raw?.remainingScheduledLoadTss,
-      Math.max(0, plannedLoadTss + tentativePlannedLoadTss - completedLoadTss),
-    );
-    const actualOrScheduledLoadTss = finiteNumber(
-      raw?.actualOrScheduledLoadTss,
-      completedLoadTss + remainingScheduledLoadTss,
-    );
+    const plannedLoad = finiteNonnegativeNumber(raw?.plannedLoad);
+    const tentativePlannedLoad = finiteNonnegativeNumber(raw?.tentativePlannedLoad);
+    const completedLoad = finiteNonnegativeNumber(raw?.completedLoad);
+    const targetLoad = finiteNonnegativeNumber(raw?.targetLoad);
+    const remainingScheduledLoad =
+      raw?.remainingScheduledLoad === undefined
+        ? deriveLoad(
+            [plannedLoad, tentativePlannedLoad, completedLoad],
+            (planned, tentative, completed) => Math.max(0, planned + tentative - completed),
+          )
+        : finiteNonnegativeNumber(raw.remainingScheduledLoad);
+    const actualOrScheduledLoad =
+      raw?.actualOrScheduledLoad === undefined
+        ? deriveLoad(
+            [completedLoad, remainingScheduledLoad],
+            (completed, remaining) => completed + remaining,
+          )
+        : finiteNonnegativeNumber(raw.actualOrScheduledLoad);
 
     return {
       date,
-      plannedLoadTss,
-      tentativePlannedLoadTss,
-      completedLoadTss,
-      targetLoadTss,
-      actualOrScheduledLoadTss,
-      loadDeltaTss: actualOrScheduledLoadTss - targetLoadTss,
-      plannedDeltaTss: plannedLoadTss + tentativePlannedLoadTss - targetLoadTss,
+      plannedLoad,
+      tentativePlannedLoad,
+      completedLoad,
+      targetLoad,
+      actualOrScheduledLoad,
+      loadDelta: deriveLoad(
+        [actualOrScheduledLoad, targetLoad],
+        (actual, target) => actual - target,
+      ),
+      plannedDelta: deriveLoad(
+        [plannedLoad, tentativePlannedLoad, targetLoad],
+        (planned, tentative, target) => planned + tentative - target,
+      ),
     };
   });
 }
@@ -103,24 +121,32 @@ export function aggregateDailyTrainingLoadAdjustmentsToWeeks(
     const weekEndDate = weekPoints[weekPoints.length - 1]?.date;
     if (!weekStartDate || !weekEndDate) continue;
 
-    const sum = (selector: (point: DailyTrainingLoadAdjustment) => number) =>
-      weekPoints.reduce((total, point) => total + selector(point), 0);
-    const plannedLoadTss = sum((point) => point.plannedLoadTss);
-    const tentativePlannedLoadTss = sum((point) => point.tentativePlannedLoadTss);
-    const targetLoadTss = sum((point) => point.targetLoadTss);
-    const actualOrScheduledLoadTss = sum((point) => point.actualOrScheduledLoadTss);
+    const sum = (selector: (point: DailyTrainingLoadAdjustment) => number | null) =>
+      deriveLoad(weekPoints.map(selector), (...values) =>
+        values.reduce((total, value) => total + value, 0),
+      );
+    const plannedLoad = sum((point) => point.plannedLoad);
+    const tentativePlannedLoad = sum((point) => point.tentativePlannedLoad);
+    const targetLoad = sum((point) => point.targetLoad);
+    const actualOrScheduledLoad = sum((point) => point.actualOrScheduledLoad);
 
     buckets.push({
       weekStartDate,
       weekEndDate,
       points: weekPoints,
-      plannedLoadTss,
-      tentativePlannedLoadTss,
-      completedLoadTss: sum((point) => point.completedLoadTss),
-      targetLoadTss,
-      actualOrScheduledLoadTss,
-      loadDeltaTss: actualOrScheduledLoadTss - targetLoadTss,
-      plannedDeltaTss: plannedLoadTss + tentativePlannedLoadTss - targetLoadTss,
+      plannedLoad,
+      tentativePlannedLoad,
+      completedLoad: sum((point) => point.completedLoad),
+      targetLoad,
+      actualOrScheduledLoad,
+      loadDelta: deriveLoad(
+        [actualOrScheduledLoad, targetLoad],
+        (actual, target) => actual - target,
+      ),
+      plannedDelta: deriveLoad(
+        [plannedLoad, tentativePlannedLoad, targetLoad],
+        (planned, tentative, target) => planned + tentative - target,
+      ),
     });
   }
   return buckets;

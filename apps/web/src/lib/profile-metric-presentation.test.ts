@@ -12,7 +12,7 @@ import {
 describe("profile metric presentation", () => {
   it("exposes every canonical metric exactly once in the requested groups", () => {
     expect(profileMetricGroups.map((group) => group.label)).toEqual([
-      "Load Calibration",
+      "Heart-rate calibration",
       "Supporting Physiology",
       "Recovery",
       "Body/Aerobic",
@@ -23,23 +23,8 @@ describe("profile metric presentation", () => {
     expect(hasCanonicalProfileMetricCoverage()).toBe(true);
   });
 
-  it("formats activity-category threshold paces in athlete-facing units", () => {
-    expect(
-      formatProfileMetricDisplayValue({
-        metric_type: "threshold_pace_seconds_per_km",
-        value: 270,
-      }),
-    ).toBe("4:30 /km");
-    expect(
-      formatProfileMetricDisplayValue({ metric_type: "css_seconds_per_100m", value: 95 }),
-    ).toBe("1:35 /100m");
-    expect(
-      formatProfileMetricDisplayValue({
-        metric_type: "threshold_pace_seconds_per_km",
-        preferredUnitSystem: "imperial",
-        value: 270,
-      }),
-    ).toBe("7:15 /mi");
+  it("formats canonical profile metrics in athlete-facing units", () => {
+    expect(formatProfileMetricDisplayValue({ metric_type: "lthr", value: 165 })).toBe("165 bpm");
     expect(
       formatProfileMetricDisplayValue({
         metric_type: "weight_kg",

@@ -5,8 +5,8 @@ describe("buildCompleteOnboardingInput", () => {
   it("emits an empty metadata object when no baseline sources are selected", () => {
     const result = buildCompleteOnboardingInput({
       ...INITIAL_ONBOARDING_DATA,
-      full_name: "Legacy Athlete",
-      username: "legacy-athlete",
+      full_name: "New Athlete",
+      username: "new-athlete",
     });
 
     expect(result.ok).toBe(true);
@@ -20,13 +20,11 @@ describe("buildCompleteOnboardingInput", () => {
         full_name: "Metadata Athlete",
         username: "metadata-athlete",
         dob: null,
-        ftp: 220,
         max_hr: 185,
         weight_kg: 70,
       },
       {
         dob: { kind: "cleared" },
-        ftp: { kind: "imported", label: "Wahoo" },
         max_hr: { kind: "estimated" },
         resting_hr: { kind: "cleared" },
         weight_kg: { kind: "manual" },
@@ -41,6 +39,5 @@ describe("buildCompleteOnboardingInput", () => {
       resting_hr: "cleared",
       weight_kg: "manual",
     });
-    expect(result.input).not.toHaveProperty("ftp");
   });
 });

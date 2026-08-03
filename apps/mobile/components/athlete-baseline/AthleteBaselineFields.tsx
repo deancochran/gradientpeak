@@ -11,7 +11,6 @@ import { WeightInputField } from "@repo/ui/components/weight-input-field";
 import { Check } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
 
-export type AthleteBaselineActivityCategory = "cycling" | "running" | "swimming";
 export type AthleteBaselineSourceKind = "imported" | "estimated" | "manual" | "cleared";
 
 export type AthleteBaselineFieldSource = {
@@ -27,9 +26,6 @@ export interface AthleteBaselineValue {
   weightDisplayUnit: "kg" | "lbs";
   maxHr: number | null;
   restingHr: number | null;
-  ftp: number | null;
-  thresholdPaceSecondsPerKm: number | null;
-  cssSecondsPer100m: number | null;
 }
 
 export type AthleteBaselineField = keyof AthleteBaselineValue;
@@ -47,18 +43,14 @@ export type AthleteBaselineChange = {
 export interface AthleteBaselineFieldsProps {
   value: AthleteBaselineValue;
   onChange: (change: AthleteBaselineChange) => void;
-  visibleActivityCategories: readonly AthleteBaselineActivityCategory[];
   sources?: AthleteBaselineFieldSources;
-  estimates?: Partial<Pick<AthleteBaselineValue, "maxHr" | "ftp">>;
+  estimates?: Partial<Pick<AthleteBaselineValue, "maxHr">>;
 }
 
 const metric = {
   weight: getProfileMetricDefinition("weight_kg"),
   maxHr: getProfileMetricDefinition("max_hr"),
   restingHr: getProfileMetricDefinition("resting_hr"),
-  ftp: getProfileMetricDefinition("ftp"),
-  thresholdPace: getProfileMetricDefinition("threshold_pace_seconds_per_km"),
-  css: getProfileMetricDefinition("css_seconds_per_100m"),
 };
 
 function getSourceText(field: AthleteBaselineField, source?: AthleteBaselineFieldSource) {
@@ -93,13 +85,7 @@ function MetricSourceRow({
   unit,
 }: {
   estimate?: number | null;
-  field:
-    | "weightKg"
-    | "maxHr"
-    | "restingHr"
-    | "ftp"
-    | "thresholdPaceSecondsPerKm"
-    | "cssSecondsPer100m";
+  field: "weightKg" | "maxHr" | "restingHr";
   hasValue: boolean;
   onChange: AthleteBaselineFieldsProps["onChange"];
   source?: AthleteBaselineFieldSource;

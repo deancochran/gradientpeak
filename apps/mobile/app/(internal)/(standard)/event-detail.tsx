@@ -168,21 +168,21 @@ function isAccessDeniedError(error: unknown) {
   return code === "FORBIDDEN" || code === "UNAUTHORIZED";
 }
 
-function parseSuggestionTssDelta(value: string | string[] | undefined) {
+function parseSuggestionLoadDelta(value: string | string[] | undefined) {
   const parsed = Number(readSearchParam(value));
   return Number.isFinite(parsed) ? parsed : null;
 }
 
 function buildPlanSuggestionDefaults(input: {
   type?: string;
-  tssDelta: number | null;
+  loadDelta: number | null;
   description?: string;
-}): (CreateEventDefaults & { targetTss: number | null }) | null {
-  const roundedDelta = input.tssDelta === null ? null : Math.round(input.tssDelta);
+}): CreateEventDefaults | null {
+  const roundedDelta = input.loadDelta === null ? null : Math.round(input.loadDelta);
   const absoluteDelta = roundedDelta === null ? null : Math.abs(roundedDelta);
   const targetCopy =
     absoluteDelta && absoluteDelta > 0
-      ? `Target: about ${markEstimated(`${absoluteDelta} TSS`)}.`
+      ? `Target: about ${markEstimated(`${absoluteDelta} Load`)}.`
       : null;
   const description = input.description?.trim() || null;
   const notes = [description, targetCopy, "Created from the Plan tab readiness suggestion."]
@@ -193,13 +193,12 @@ function buildPlanSuggestionDefaults(input: {
     return {
       createEventType: "planned" as CreateEventMode,
       title: absoluteDelta
-        ? `Suggested ${markEstimated(`${absoluteDelta} TSS`)} session`
+        ? `Suggested ${markEstimated(`${absoluteDelta} Load`)} session`
         : "Suggested session",
       notes,
       helperText: absoluteDelta
-        ? `Plan suggested adding about ${markEstimated(`${absoluteDelta} TSS`)}. Select or adjust the matched activity plan before creating.`
+        ? `Plan suggested adding about ${markEstimated(`${absoluteDelta} Load`)}. Select or adjust the matched activity plan before creating.`
         : "Plan suggested adding load. Select or adjust an activity plan before creating.",
-      targetTss: absoluteDelta,
     };
   }
 
@@ -209,8 +208,7 @@ function buildPlanSuggestionDefaults(input: {
       title: roundedDelta && roundedDelta < 0 ? "Reduce scheduled load" : "Plan adjustment",
       notes,
       helperText:
-        "Plan suggested a schedule adjustment. Custom events do not change training load; edit existing sessions to reduce scheduled TSS.",
-      targetTss: null,
+        "Plan suggested a schedule adjustment. Custom events do not change training load; edit existing sessions to reduce scheduled Load.",
     };
   }
 
@@ -230,9 +228,9 @@ export default function EventDetailScreen() {
     date,
     trainingPlanId,
     activityPlanId,
-    scheduleGapTssDelta,
+    scheduleGapLoadDelta,
     planSuggestionType,
-    planSuggestionTssDelta,
+    planSuggestionLoadDelta,
     planSuggestionDescription,
   } = useLocalSearchParams<{
     id?: string;
@@ -240,9 +238,9 @@ export default function EventDetailScreen() {
     date?: string;
     trainingPlanId?: string;
     activityPlanId?: string;
-    scheduleGapTssDelta?: string;
+    scheduleGapLoadDelta?: string;
     planSuggestionType?: string;
-    planSuggestionTssDelta?: string;
+    planSuggestionLoadDelta?: string;
     planSuggestionDescription?: string;
   }>();
   const eventId = typeof id === "string" ? id : "";
@@ -250,19 +248,19 @@ export default function EventDetailScreen() {
   const createDate = typeof date === "string" ? date : undefined;
   const createTrainingPlanId = typeof trainingPlanId === "string" ? trainingPlanId : undefined;
   const preselectedActivityPlanId = typeof activityPlanId === "string" ? activityPlanId : undefined;
-  const scheduleGapTss = parseSuggestionTssDelta(scheduleGapTssDelta);
+  const scheduleGapLoad = parseSuggestionLoadDelta(scheduleGapLoadDelta);
   const scheduleGapNote =
-    scheduleGapTss !== null && scheduleGapTss > 0
-      ? `Schedule gap: about ${markEstimated(`${Math.round(scheduleGapTss)} TSS`)}.`
+    scheduleGapLoad !== null && scheduleGapLoad > 0
+      ? `Schedule gap: about ${markEstimated(`${Math.round(scheduleGapLoad)} Load`)}.`
       : null;
   const planSuggestionDefaults = useMemo(
     () =>
       buildPlanSuggestionDefaults({
         type: readSearchParam(planSuggestionType),
-        tssDelta: parseSuggestionTssDelta(planSuggestionTssDelta),
+        loadDelta: parseSuggestionLoadDelta(planSuggestionLoadDelta),
         description: readSearchParam(planSuggestionDescription),
       }),
-    [planSuggestionDescription, planSuggestionTssDelta, planSuggestionType],
+    [planSuggestionDescription, planSuggestionLoadDelta, planSuggestionType],
   );
 
   const { beginRedirect, isRedirecting, redirectOnNotFound } = useDeletedDetailRedirect({

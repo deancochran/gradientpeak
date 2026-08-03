@@ -321,7 +321,7 @@ export function ConstraintsTab({
           <View className="gap-1.5 rounded-md border border-border bg-background/50 p-2">
             <Text className="text-sm">Safety caps</Text>
             <Text className="text-[11px] text-muted-foreground">
-              Weekly ramp and CTL safety caps remain enforced internally.
+              Weekly ramp and Fitness safety caps remain enforced internally.
             </Text>
           </View>
         </View>

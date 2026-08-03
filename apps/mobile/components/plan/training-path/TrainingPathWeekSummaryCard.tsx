@@ -1,7 +1,4 @@
-import {
-  deriveActivityPlanPresentation,
-  getAuthoritativeActivityPlanMetrics,
-} from "@repo/core/activity-plan";
+import { deriveActivityPlanPresentation } from "@repo/core/activity-plan";
 import { Text } from "@repo/ui/components/text";
 import { CalendarDays, Users } from "lucide-react-native";
 import { useMemo } from "react";
@@ -18,6 +15,7 @@ import {
   ResourceCardShell,
   ResourceOwnerActionRow,
 } from "@/components/shared/ResourceCardPrimitives";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import { getEventStatusLabel } from "@/lib/calendar/eventPresentation";
 import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
@@ -79,7 +77,6 @@ type ScheduledRecordPlanCardProps = {
 };
 
 type PlanWithCardMetadata = NonNullable<CalendarEvent["activity_plan"]> & {
-  common_load?: unknown;
   created_at?: string | null;
   owner?: ActivityPlanCardData["owner"];
   activity_category?: string | null;
@@ -134,12 +131,11 @@ function ScheduledRecordPlanCard({
       />
 
       <ActivityPlanSummary
-        activityCategory={activity.activity_category}
-        commonLoad={activity.commonLoad}
         description={activity.description || activity.notes || null}
         estimatedDuration={activity.estimatedDuration}
         owner={activity.owner}
         presentation={presentation}
+        prescriptionQuantification={activity.prescriptionQuantification}
         showAttribution
         structure={activity.structure}
         title={activity.name}
@@ -150,10 +146,6 @@ function ScheduledRecordPlanCard({
       <ActivityPlanContentPreview
         compact
         plan={{
-          authoritative_metrics: {
-            estimated_duration: activity.estimatedDuration,
-            estimated_distance: activity.estimatedDistance,
-          },
           structure: activity.structure,
         }}
         presentation={presentation}
@@ -174,19 +166,19 @@ function getScheduledActivityPlanCardData(event: CalendarEvent): ActivityPlanCar
     return null;
   }
 
-  const metrics = getAuthoritativeActivityPlanMetrics(plan);
+  const quantitySummary = getActivityPlanQuantitySummary(plan);
 
   return {
     id: plan.id,
     name: plan.name?.trim() || event.title?.trim() || "Scheduled activity",
     activity_category: plan.activity_category || "other",
     description: plan.description ?? event.description ?? undefined,
-    estimatedDistance: metrics.estimated_distance ?? undefined,
-    estimatedDuration: metrics.estimated_duration ?? undefined,
-    commonLoad: plan.common_load,
+    estimatedDistance: quantitySummary.distanceMeters ?? undefined,
+    estimatedDuration: quantitySummary.durationSeconds ?? undefined,
     notes: plan.notes ?? event.notes ?? undefined,
+    prescriptionQuantification: plan.prescriptionQuantification,
     scheduledDate: event.starts_at ?? event.scheduled_date ?? undefined,
-    structure: plan.structure as ActivityPlanCardData["structure"],
+    structure: plan.structure,
     createdAt: plan.created_at ?? undefined,
     updatedAt: plan.updated_at ?? undefined,
     owner: plan.owner ?? null,
@@ -203,7 +195,7 @@ function getGroupEventActivityPlanCardData(event: CalendarGroupEvent): ActivityP
     return null;
   }
 
-  const metrics = getAuthoritativeActivityPlanMetrics(plan);
+  const quantitySummary = getActivityPlanQuantitySummary(plan);
 
   return {
     id: plan.id,
@@ -214,12 +206,12 @@ function getGroupEventActivityPlanCardData(event: CalendarGroupEvent): ActivityP
       "Group activity plan",
     activity_category: plan.activity_category || "other",
     description: plan.description ?? undefined,
-    estimatedDistance: metrics.estimated_distance ?? undefined,
-    estimatedDuration: metrics.estimated_duration ?? undefined,
-    commonLoad: plan.common_load,
+    estimatedDistance: quantitySummary.distanceMeters ?? undefined,
+    estimatedDuration: quantitySummary.durationSeconds ?? undefined,
     notes: plan.notes ?? undefined,
+    prescriptionQuantification: plan.prescriptionQuantification,
     scheduledDate: event.starts_at,
-    structure: plan.structure as ActivityPlanCardData["structure"],
+    structure: plan.structure,
     createdAt: plan.created_at ?? undefined,
     updatedAt: plan.updated_at ?? undefined,
     owner: plan.owner ?? null,

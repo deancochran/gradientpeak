@@ -7,27 +7,26 @@ import { ProfileMetricForm } from "./profile-metric-form";
 afterEach(cleanup);
 
 describe("ProfileMetricForm", () => {
-  it("enters and submits swim CSS as pace per 100 metres", async () => {
+  it("enters and submits a canonical heart-rate observation", async () => {
     const onSubmit = vi.fn();
     render(
       <ProfileMetricForm
-        metricType="css_seconds_per_100m"
+        metricType="resting_hr"
         onCancel={() => undefined}
         onSubmit={onSubmit}
-        values={{ notes: "", recorded_at: "2026-07-14T12:00", value: 100 }}
+        values={{ notes: "", recorded_at: "2026-07-14T12:00", value: 60 }}
       />,
     );
 
-    expect(screen.getByLabelText("Swim CSS").getAttribute("value")).toBe("1:40");
-    expect(screen.getByText("/100m")).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("Swim CSS"), { target: { value: "1:35" } });
+    expect(screen.getByLabelText("Value (bpm)").getAttribute("value")).toBe("60");
+    fireEvent.change(screen.getByLabelText("Value (bpm)"), { target: { value: "58" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
       expect(onSubmit).toHaveBeenCalledWith(
         expect.objectContaining({
           recorded_at: "2026-07-14T12:00",
-          value: 95,
+          value: 58,
         }),
       );
     });
@@ -52,49 +51,6 @@ describe("ProfileMetricForm", () => {
     await waitFor(() => {
       expect(onSubmit).toHaveBeenCalledOnce();
       expect(onSubmit.mock.calls[0]?.[0].value).toBeCloseTo(74.98, 2);
-    });
-  });
-
-  it("round trips imperial swim pace through canonical seconds per 100 metres", async () => {
-    const onSubmit = vi.fn();
-    render(
-      <ProfileMetricForm
-        metricType="css_seconds_per_100m"
-        onCancel={() => undefined}
-        onSubmit={onSubmit}
-        unitSystem="imperial"
-        values={{ notes: "", recorded_at: "2026-07-14T12:00", value: 100 }}
-      />,
-    );
-
-    expect(screen.getByLabelText("Swim CSS").getAttribute("value")).toBe("1:31");
-    expect(screen.getByText("/100yd")).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("Swim CSS"), { target: { value: "1:30" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() => {
-      expect(onSubmit).toHaveBeenCalledOnce();
-      expect(onSubmit.mock.calls[0]?.[0].value).toBeCloseTo(98.43, 2);
-    });
-  });
-
-  it("preserves a precision-sensitive canonical swim pace when imperial display is unchanged", async () => {
-    const onSubmit = vi.fn();
-    render(
-      <ProfileMetricForm
-        metricType="css_seconds_per_100m"
-        onCancel={() => undefined}
-        onSubmit={onSubmit}
-        unitSystem="imperial"
-        values={{ notes: "", recorded_at: "2026-07-14T12:00", value: 53 }}
-      />,
-    );
-
-    expect(screen.getByLabelText("Swim CSS").getAttribute("value")).toBe("0:48");
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() => {
-      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ value: 53 }));
     });
   });
 

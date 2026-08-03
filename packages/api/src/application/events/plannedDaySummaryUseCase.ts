@@ -1,6 +1,10 @@
 import {
+  type ActivityPrescriptionQuantificationBundle,
   activityPlanStructureSchema,
-  type PlannedDaySummaryEvent,
+  bindPrescriptionQuantificationToScheduledEvent,
+  type CanonicalActivityCategory,
+  type CommonLoadAggregate,
+  createUnavailableActivityPlanPlanningEstimate,
   summarizePlannedDay,
 } from "@repo/core";
 import type { EventReadRepository, PlannedDaySummaryActivityPlanRecord } from "../../repositories";
@@ -15,10 +19,7 @@ export class PlannedDaySummaryLimitExceededError extends Error {
 }
 
 export type PlannedDaySummaryEstimatedPlan = PlannedDaySummaryActivityPlanRecord & {
-  authoritative_metrics: {
-    estimated_duration: number | null;
-    estimated_tss: number | null;
-  };
+  prescriptionQuantification: ActivityPrescriptionQuantificationBundle;
 };
 
 export type PlannedDaySummaryResult = {
@@ -29,11 +30,30 @@ export type PlannedDaySummaryResult = {
     unavailablePlanCount: number;
     unlinkedPlanCount: number;
   };
-  summary: ReturnType<typeof summarizePlannedDay>;
+  summary: {
+    eventCount: number;
+    activity_categories: CanonicalActivityCategory[];
+    totalDurationSeconds: number | null;
+    prescriptionQuantification: ActivityPrescriptionQuantificationBundle;
+    /** Thin transport projection; always identical to prescriptionQuantification.summary.commonLoad. */
+    commonLoad: CommonLoadAggregate;
+  };
 };
 
-function unavailableActivityCategory(): PlannedDaySummaryEvent["activityCategory"] {
-  return null;
+function unavailableEventQuantification(input: {
+  activityCategory?: CanonicalActivityCategory;
+  date: string;
+  eventId: string;
+  planId?: string;
+}): ActivityPrescriptionQuantificationBundle {
+  return createUnavailableActivityPlanPlanningEstimate({
+    asOf: `${input.date}T00:00:00.000Z`,
+    stage: "scheduled",
+    planId: input.planId,
+    scheduledEventId: input.eventId,
+    activityCategory: input.activityCategory,
+    reason: "source_missing",
+  }).prescriptionQuantification;
 }
 
 export async function plannedDaySummaryUseCase(input: {
@@ -71,46 +91,76 @@ export async function plannedDaySummaryUseCase(input: {
   let unavailablePlanCount = 0;
   let unlinkedPlanCount = 0;
   let unavailableEstimateCount = 0;
-  const summaryEvents: PlannedDaySummaryEvent[] = classifiedEvents.map(
-    ({ event, parsed, plan }) => {
-      if (!plan) {
-        if (event.activity_plan_id) unavailablePlanCount += 1;
-        else unlinkedPlanCount += 1;
-        unavailableEstimateCount += 1;
-        return {
-          activityCategory: unavailableActivityCategory(),
-          estimatedDurationSeconds: null,
-          estimatedTss: null,
-        };
-      }
+  const prescriptionQuantifications: ActivityPrescriptionQuantificationBundle[] = [];
+  for (const { event, parsed, plan } of classifiedEvents) {
+    if (!plan) {
+      if (event.activity_plan_id) unavailablePlanCount += 1;
+      else unlinkedPlanCount += 1;
+      unavailableEstimateCount += 1;
+      prescriptionQuantifications.push(
+        unavailableEventQuantification({
+          date: input.date,
+          eventId: event.id,
+          ...(event.activity_plan_id === null ? {} : { planId: event.activity_plan_id }),
+        }),
+      );
+      continue;
+    }
 
-      if (!parsed?.success) {
-        // The repository normally turns invalid joined plans into unavailable,
-        // but fail closed if an alternate implementation returns one.
-        unavailablePlanCount += 1;
-        unavailableEstimateCount += 1;
-        return {
-          activityCategory: unavailableActivityCategory(),
-          estimatedDurationSeconds: null,
-          estimatedTss: null,
-        };
-      }
+    if (!parsed?.success) {
+      // The repository normally turns invalid joined plans into unavailable,
+      // but fail closed if an alternate implementation returns one.
+      unavailablePlanCount += 1;
+      unavailableEstimateCount += 1;
+      prescriptionQuantifications.push(
+        unavailableEventQuantification({
+          date: input.date,
+          eventId: event.id,
+          planId: plan.id,
+        }),
+      );
+      continue;
+    }
 
-      const estimate = estimatesByPlanId.get(plan.id);
-      const estimatedDurationSeconds = estimate?.authoritative_metrics.estimated_duration ?? null;
-      const estimatedTss = estimate?.authoritative_metrics.estimated_tss ?? null;
-      if (estimatedDurationSeconds === null || estimatedTss === null) unavailableEstimateCount += 1;
-      const activitySegment = parsed.data.segments.find((segment) => segment.role === "activity");
-      return {
-        activityCategory: activitySegment?.activity_category ?? unavailableActivityCategory(),
-        estimatedDurationSeconds,
-        estimatedTss,
-      };
-    },
+    const estimate = estimatesByPlanId.get(plan.id);
+    const activitySegment = parsed.data.segments.find((segment) => segment.role === "activity");
+    const eventQuantification = estimate
+      ? bindPrescriptionQuantificationToScheduledEvent({
+          prescriptionQuantification: estimate.prescriptionQuantification,
+          eventId: event.id,
+        })
+      : unavailableEventQuantification({
+          date: input.date,
+          eventId: event.id,
+          planId: plan.id,
+          ...(activitySegment === undefined
+            ? {}
+            : { activityCategory: activitySegment.activity_category }),
+        });
+    const eventAggregate = eventQuantification.summary;
+    if (
+      eventAggregate.duration.elapsed.status === "unavailable" ||
+      eventAggregate.commonLoad.status === "unavailable"
+    ) {
+      unavailableEstimateCount += 1;
+    }
+    prescriptionQuantifications.push(eventQuantification);
+  }
+  const plannedDay = summarizePlannedDay(
+    prescriptionQuantifications.map((prescriptionQuantification) => ({
+      prescriptionQuantification,
+    })),
   );
+  const prescriptionQuantification = plannedDay.prescriptionQuantification;
 
   return {
-    summary: summarizePlannedDay(summaryEvents),
+    summary: {
+      eventCount: events.length,
+      activity_categories: plannedDay.activity_categories,
+      totalDurationSeconds: plannedDay.totalDurationSeconds,
+      prescriptionQuantification,
+      commonLoad: prescriptionQuantification.summary.commonLoad,
+    },
     source: {
       complete: true,
       eventCount: events.length,

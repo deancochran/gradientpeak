@@ -6,7 +6,7 @@ import type {
 import {
   athleteTrainingSettingsFormSchema,
   defaultAthletePreferenceProfile,
-  getManualBaselineCtlWarning,
+  getManualBaselineLongTermLoadWarning,
   toAthleteTrainingSettingsFormValues,
 } from "@repo/core/schemas/settings/profile_settings";
 import { Button } from "@repo/ui/components/button";
@@ -216,7 +216,7 @@ export function TrainingPreferencesEditor({
   });
 
   const manualBaselineCtlWarning = draft.baseline_fitness?.is_enabled
-    ? getManualBaselineCtlWarning(draft.baseline_fitness.override_ctl)
+    ? getManualBaselineLongTermLoadWarning(draft.baseline_fitness.override_longTermLoad)
     : null;
   const resolvedSheetVisible = visible ?? isSheetVisible;
   const sheetTitle = mode === "plan-local" ? "Plan preferences" : "Training preferences";

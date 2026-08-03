@@ -1,5 +1,6 @@
 import type { ParsedAthleteIntelligenceModelInput, TrainingFeasibilityInput } from "@repo/core";
 import { athleteIntelligenceModelInputSchema, type calculateTrainingFeasibility } from "@repo/core";
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import type { TRPCError } from "@trpc/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AthleteIntelligenceModelReader } from "../projection-orchestrator";
@@ -91,8 +92,8 @@ function canonicalModel(): ParsedAthleteIntelligenceModelInput {
   });
   const nullMetric = (unit: string) => measured(null, unit);
   const bikeLoadIdentity = {
-    activity_category: "bike",
-    family: "tss" as const,
+    activity_category: "all",
+    family: "common_load" as const,
     method: "normalized_power",
     version: "1",
     sourceDefinition: "first_party:ftp-300",
@@ -107,7 +108,10 @@ function canonicalModel(): ParsedAthleteIntelligenceModelInput {
     caloriesKilocalories: nullMetric("kilocalories"),
     averagePowerWatts: measured(210, "watts"),
     maximumPowerWatts: nullMetric("watts"),
-    normalizedPowerWatts: nullMetric("watts"),
+    normalizedPowerResult: {
+      result: calculateCyclingNormalizedPower({ samples: [] }),
+      evidenceSourceIds: nullMetric("watts").evidenceSourceIds,
+    },
     averageSpeedMetersPerSecond: nullMetric("meters_per_second"),
     maximumSpeedMetersPerSecond: nullMetric("meters_per_second"),
     averageHeartRateBpm: measured(145, "beats_per_minute"),
@@ -149,9 +153,9 @@ function canonicalModel(): ParsedAthleteIntelligenceModelInput {
     },
     metricEvidence: [
       {
-        metricType: "ftp",
-        role: "direct_threshold_evidence",
-        value: measured(300, "watts", "metric:ftp"),
+        metricType: "lthr",
+        role: "threshold_intensity_context",
+        value: measured(170, "beats_per_minute", "metric:lthr"),
       },
       {
         metricType: "hrv_rmssd",
@@ -273,8 +277,8 @@ function canonicalModel(): ParsedAthleteIntelligenceModelInput {
       strategy: "balanced",
       taperPreference: "standard",
       progressionPreference: "steady",
-      ctlOverride: { ...nullMetric("training_load"), identity: null },
-      atlOverride: { ...nullMetric("training_load"), identity: null },
+      longTermLoadOverride: { ...nullMetric("training_load"), identity: null },
+      recentLoadOverride: { ...nullMetric("training_load"), identity: null },
     },
     readCoverage: {
       metrics: { state: "complete", reason: null },
@@ -375,10 +379,6 @@ describe("projectAthleteIntelligence", () => {
   it("projects physiology, effort, activity, preferences, and schedule into canonical outputs", async () => {
     const baseline = await project(canonicalModel());
     const changedModel = canonicalModel();
-    const ftp = changedModel.metricEvidence.find((metric) => metric.metricType === "ftp");
-    if (!ftp) throw new Error("FTP fixture missing");
-    ftp.value.value = 340;
-    replaceEvidenceValue(changedModel, ftp.value.evidenceSourceIds[0], 340);
     const effort = first(changedModel.efforts, "Power effort");
     if (effort.kind !== "power") throw new Error("Power effort fixture has the wrong kind");
     changedModel.efforts[0] = { ...effort, powerWatts: 330 };
@@ -417,13 +417,12 @@ describe("projectAthleteIntelligence", () => {
     };
 
     const changed = await project(athleteIntelligenceModelInputSchema.parse(changedModel));
-    expect(changed.capability.ftp.estimate).toBe(340);
     expect(changed.capability.effortCurves).not.toEqual(baseline.capability.effortCurves);
     expect(changed.capability.enduranceRecencyWeightedMinutes).not.toEqual(
       baseline.capability.enduranceRecencyWeightedMinutes,
     );
     expect(changed.feasibility).not.toEqual(baseline.feasibility);
-    expect(changed.decisionGuidance).not.toEqual(baseline.decisionGuidance);
+    expect(changed.decisionGuidance).toEqual(baseline.decisionGuidance);
     expect(baseline.capability.effortCurves[0]?.highIntensity).toMatchObject({
       state: "insufficient_evidence",
       reasonCodes: ["distinct_high_intensity_requirement_missing"],
@@ -534,7 +533,6 @@ describe("projectAthleteIntelligence", () => {
   it("reports missing and incompatible evidence explicitly", async () => {
     const missing = canonicalModel();
     missing.efforts = [];
-    missing.metricEvidence = missing.metricEvidence.filter((metric) => metric.metricType !== "ftp");
     const missingProjection = await project(athleteIntelligenceModelInputSchema.parse(missing));
     expect(missingProjection.opportunities.evidence.length).toBeGreaterThan(0);
     expect(missingProjection.capability.effortCurves[0]?.threshold).toMatchObject({
@@ -544,35 +542,6 @@ describe("projectAthleteIntelligence", () => {
     expect(
       missingProjection.capability.effortCurves[0]?.threshold.reasonCodes.length,
     ).toBeGreaterThan(0);
-
-    const incompatible = canonicalModel();
-    const ftpSource = incompatible.metricEvidence.find((metric) => metric.metricType === "ftp")
-      ?.value.evidenceSourceIds[0];
-    if (!ftpSource || !incompatible.evidenceRegistry[ftpSource])
-      throw new Error("FTP evidence fixture missing");
-    incompatible.evidenceRegistry[ftpSource] = {
-      ...incompatible.evidenceRegistry[ftpSource],
-      compatibilityState: "incompatible_unit",
-    };
-    const incompatibleProjection = await project(
-      athleteIntelligenceModelInputSchema.parse(incompatible),
-    );
-    expect(incompatibleProjection.capability.ftp).toMatchObject({
-      state: "insufficient_evidence",
-      missingDataState: "partial",
-    });
-    expect(incompatibleProjection.capability.ftp.reasonCodes).toContain(
-      "invalid_or_incompatible_metric_evidence",
-    );
-    expect(incompatibleProjection.opportunities.evidence).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          goalSourceId: `goal:${goalId}:record`,
-          dimension: "threshold",
-          reasonCodes: ["decision_quality_not_recommendation_compatible"],
-        }),
-      ]),
-    );
 
     const incompatibleEffort = canonicalModel();
     for (const sourceId of first(incompatibleEffort.efforts, "Power effort").evidenceSourceIds) {
@@ -630,7 +599,6 @@ describe("projectAthleteIntelligence", () => {
 
   it("curates owner-scoped evidence, limits, coverage, and collection destinations", async () => {
     const model = canonicalModel();
-    model.metricEvidence = model.metricEvidence.filter((metric) => metric.metricType !== "ftp");
     const projection = await project(athleteIntelligenceModelInputSchema.parse(model));
 
     expect(projection.explainability.assessment).toEqual({
@@ -644,10 +612,7 @@ describe("projectAthleteIntelligence", () => {
       ]),
     );
     expect(projection.explainability.collectionPrompts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ destination: "profile_metrics" }),
-        expect.objectContaining({ destination: "activity_import" }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ destination: "activity_import" })]),
     );
     expect(projection.explainability.limits).toEqual(
       expect.arrayContaining([

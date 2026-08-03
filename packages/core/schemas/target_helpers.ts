@@ -270,51 +270,6 @@ export function getTargetGuidance(
   };
 }
 
-/**
- * Convert percentage-based targets to absolute values using profile
- */
-export function convertTargetToAbsolute(
-  target: ActivityTarget,
-  profile: { ftp?: number; threshold_hr?: number },
-): { intensity: number; unit: string; label: string } | null {
-  switch (target.type) {
-    case "%FTP":
-      if (profile.ftp) {
-        return {
-          intensity: Math.round((target.intensity / 100) * profile.ftp),
-          unit: "W",
-          label: "Power",
-        };
-      }
-      return null;
-
-    case "%ThresholdHR":
-      if (profile.threshold_hr) {
-        return {
-          intensity: Math.round((target.intensity / 100) * profile.threshold_hr),
-          unit: "bpm",
-          label: "Heart Rate",
-        };
-      }
-      return null;
-
-    case "speed":
-      return {
-        intensity: getRuntimeTargetIntensity(target),
-        unit: "m/s",
-        label: "Speed",
-      };
-
-    default:
-      // Already absolute
-      return {
-        intensity: target.intensity,
-        unit: getTargetUnit(target),
-        label: getTargetDisplayName(target.type),
-      };
-  }
-}
-
 export function formatIntensityTarget(target: ActivityTarget): string {
   switch (target.type) {
     case "%FTP":

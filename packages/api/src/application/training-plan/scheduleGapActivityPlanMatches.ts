@@ -1,8 +1,6 @@
-import {
-  type ActivityPlanMetricsLike,
-  activityPlanStructureSchema,
-  getAuthoritativeActivityPlanMetrics,
-} from "@repo/core/activity-plan";
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import type { ActivityPlanPrescriptionQuantificationBundle } from "@repo/core/activity-quantification";
+import type { CommonLoadAggregate, CommonLoadResult } from "@repo/core/load";
 import {
   type CanonicalActivityCategory,
   canonicalActivityCategorySchema,
@@ -13,16 +11,16 @@ type ScheduleGapDbClient = {
   execute: (query: string | SQLWrapper) => unknown;
 };
 
-type ActivityPlanLike = ActivityPlanMetricsLike & {
+type ActivityPlanLike = {
+  prescriptionQuantification?: ActivityPlanPrescriptionQuantificationBundle;
   id?: unknown;
   name?: unknown;
   structure?: unknown;
-  estimated_duration_seconds?: unknown;
   created_at?: unknown;
 };
 
 export type ScheduleGapActivityPlanMatchReasonCode =
-  | "near_target_tss"
+  | "near_target_load"
   | "same_activity_category"
   | "reasonable_duration"
   | "owned_plan"
@@ -32,22 +30,22 @@ export type ScheduleGapActivityPlanMatch = {
   activity_plan_id: string;
   name: string;
   activity_category: CanonicalActivityCategory;
-  estimated_tss: number | null;
+  common_load: CommonLoadResult | CommonLoadAggregate;
   estimated_duration_seconds: number | null;
   score: number;
-  target_tss_delta: number;
-  absolute_tss_gap: number | null;
+  target_load_delta: number;
+  absolute_load_gap: number | null;
   reason_codes: ScheduleGapActivityPlanMatchReasonCode[];
 };
 
 export type ScheduleGapActivityPlanMatches = {
   target_date: string;
-  target_tss_delta: number;
+  target_load_delta: number;
   matches: ScheduleGapActivityPlanMatch[];
   empty_reason:
     | "no_positive_gap"
     | "no_activity_plans"
-    | "no_estimated_tss"
+    | "no_available_common_load"
     | "low_confidence"
     | null;
 };
@@ -106,17 +104,17 @@ function readCanonicalPlanActivityCategory(
 
 export function buildScheduleGapActivityPlanMatches(input: {
   targetDate: string;
-  targetTssDelta: number | null | undefined;
+  targetLoadDelta: number | null | undefined;
   primaryActivityCategory: string | null | undefined;
   plans: ActivityPlanLike[];
   today: string;
   limit?: number;
 }): ScheduleGapActivityPlanMatches {
-  const targetTssDelta = Number(input.targetTssDelta);
-  if (!Number.isFinite(targetTssDelta) || targetTssDelta <= 0) {
+  const targetLoadDelta = Number(input.targetLoadDelta);
+  if (!Number.isFinite(targetLoadDelta) || targetLoadDelta <= 0) {
     return {
       target_date: input.targetDate,
-      target_tss_delta: 0,
+      target_load_delta: 0,
       matches: [],
       empty_reason: "no_positive_gap",
     };
@@ -125,42 +123,41 @@ export function buildScheduleGapActivityPlanMatches(input: {
   if (input.plans.length === 0) {
     return {
       target_date: input.targetDate,
-      target_tss_delta: Math.round(targetTssDelta * 10) / 10,
+      target_load_delta: Math.round(targetLoadDelta * 10) / 10,
       matches: [],
       empty_reason: "no_activity_plans",
     };
   }
 
-  const target = Math.round(targetTssDelta * 10) / 10;
+  const target = Math.round(targetLoadDelta * 10) / 10;
   const primaryActivityCategoryResult = canonicalActivityCategorySchema.safeParse(
     input.primaryActivityCategory,
   );
   const primaryActivityCategory = primaryActivityCategoryResult.success
     ? primaryActivityCategoryResult.data
     : null;
-  let hasEstimatedTss = false;
+  let hasAvailableCommonLoad = false;
   const matches = input.plans
     .map<ScheduleGapActivityPlanMatch | null>((plan) => {
       const activity_category = readCanonicalPlanActivityCategory(plan);
       if (!activity_category) return null;
-      const metrics = getAuthoritativeActivityPlanMetrics(plan);
-      const estimatedTss = readFinitePlanNumber(metrics.estimated_tss);
-      if (estimatedTss === null) return null;
-      hasEstimatedTss = true;
-
+      const commonLoad = plan.prescriptionQuantification?.summary.commonLoad;
+      if (commonLoad?.status !== "complete" && commonLoad?.status !== "partial") return null;
+      const load = readFinitePlanNumber(commonLoad.load);
+      if (load === null) return null;
+      hasAvailableCommonLoad = true;
+      const elapsed = plan.prescriptionQuantification?.summary.duration.elapsed;
       const estimatedDurationSeconds =
-        metrics.estimated_duration !== undefined
-          ? readFinitePlanNumber(metrics.estimated_duration)
-          : readFinitePlanNumber(plan.estimated_duration_seconds);
+        elapsed?.status === "complete" ? readFinitePlanNumber(elapsed.value) : null;
       if (primaryActivityCategory && activity_category !== primaryActivityCategory) {
         return null;
       }
-      const absoluteTssGap = Math.round(Math.abs(estimatedTss - target) * 10) / 10;
-      if (absoluteTssGap > Math.max(30, target * 0.5)) {
+      const absoluteLoadGap = Math.round(Math.abs(load - target) * 10) / 10;
+      if (absoluteLoadGap > Math.max(30, target * 0.5)) {
         return null;
       }
       const reasonCodes: ScheduleGapActivityPlanMatchReasonCode[] = ["owned_plan"];
-      if (absoluteTssGap <= Math.max(10, target * 0.2)) reasonCodes.push("near_target_tss");
+      if (absoluteLoadGap <= Math.max(10, target * 0.2)) reasonCodes.push("near_target_load");
       if (primaryActivityCategory && activity_category === primaryActivityCategory)
         reasonCodes.push("same_activity_category");
       if (estimatedDurationSeconds !== null) reasonCodes.push("reasonable_duration");
@@ -173,7 +170,7 @@ export function buildScheduleGapActivityPlanMatches(input: {
       const score =
         Math.round(
           (100 -
-            Math.min(60, absoluteTssGap) +
+            Math.min(60, absoluteLoadGap) +
             sameActivityCategoryBonus +
             ownedPlanBonus +
             durationAvailabilityBonus) *
@@ -184,22 +181,19 @@ export function buildScheduleGapActivityPlanMatches(input: {
         activity_plan_id: String(plan.id),
         name: String(plan.name ?? "Activity plan"),
         activity_category,
-        estimated_tss: estimatedTss,
+        common_load: commonLoad,
         estimated_duration_seconds: estimatedDurationSeconds,
         score,
-        target_tss_delta: target,
-        absolute_tss_gap: absoluteTssGap,
+        target_load_delta: target,
+        absolute_load_gap: absoluteLoadGap,
         reason_codes: reasonCodes,
       };
     })
     .filter((match): match is ScheduleGapActivityPlanMatch => match !== null)
     .sort((left, right) => {
       if (right.score !== left.score) return right.score - left.score;
-      if ((left.absolute_tss_gap ?? Infinity) !== (right.absolute_tss_gap ?? Infinity)) {
-        return (left.absolute_tss_gap ?? Infinity) - (right.absolute_tss_gap ?? Infinity);
-      }
-      if ((right.estimated_tss ?? 0) !== (left.estimated_tss ?? 0)) {
-        return (right.estimated_tss ?? 0) - (left.estimated_tss ?? 0);
+      if ((left.absolute_load_gap ?? Infinity) !== (right.absolute_load_gap ?? Infinity)) {
+        return (left.absolute_load_gap ?? Infinity) - (right.absolute_load_gap ?? Infinity);
       }
       const nameCompare = left.name.localeCompare(right.name);
       if (nameCompare !== 0) return nameCompare;
@@ -209,10 +203,14 @@ export function buildScheduleGapActivityPlanMatches(input: {
 
   return {
     target_date: input.targetDate,
-    target_tss_delta: target,
+    target_load_delta: target,
     matches,
     empty_reason:
-      matches.length > 0 ? null : hasEstimatedTss ? "low_confidence" : "no_estimated_tss",
+      matches.length > 0
+        ? null
+        : hasAvailableCommonLoad
+          ? "low_confidence"
+          : "no_available_common_load",
   };
 }
 
@@ -228,7 +226,7 @@ export function resolveScheduleGapActivityPlanMatchTarget(input: {
   ) {
     return {
       targetDate: clampDateOnOrAfter(input.scheduleRecommendation.target_date, input.today),
-      targetTssDelta: input.scheduleRecommendation.target_load_delta,
+      targetLoadDelta: input.scheduleRecommendation.target_load_delta,
     };
   }
 
@@ -242,7 +240,7 @@ export function resolveScheduleGapActivityPlanMatchTarget(input: {
   if (!gapWeek) {
     return {
       targetDate: input.scheduleRecommendation?.target_date ?? input.today,
-      targetTssDelta: null,
+      targetLoadDelta: null,
     };
   }
 
@@ -254,8 +252,10 @@ export function resolveScheduleGapActivityPlanMatchTarget(input: {
         : gapWeek.week_start,
       input.today,
     ),
-    targetTssDelta:
-      Math.round(((gapWeek.recommended_load ?? 0) - (gapWeek.scheduled_load ?? 0)) * 10) / 10,
+    targetLoadDelta:
+      gapWeek.recommended_load === null || gapWeek.scheduled_load === null
+        ? null
+        : Math.round((gapWeek.recommended_load - gapWeek.scheduled_load) * 10) / 10,
   };
 }
 

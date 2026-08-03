@@ -4,6 +4,11 @@ import {
   type CompletedActivitySegmentSet,
   completedActivitySegmentSetSchema,
 } from "@repo/core/activity-segments";
+import {
+  selectAerobicDecouplingValue,
+  selectEfficiencyFactorValue,
+  selectRunningNormalizedGradedSpeedMetersPerSecond,
+} from "@repo/core/calculations";
 import type { ActivityFileType } from "@repo/core/server/activity-files";
 import {
   activities,
@@ -18,7 +23,10 @@ import {
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import { ActivityFileIngestionClaimLostError } from "../activity-file-ingestion/ingestion-state";
-import { reconcileGeneratedActivityEvidence } from "./reconcile-activity-evidence";
+import {
+  type GeneratedActivityLthrEvidence,
+  reconcileGeneratedActivityEvidence,
+} from "./reconcile-activity-evidence";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 export type ActivitySubmissionTransaction = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
@@ -51,6 +59,8 @@ export function providerProjectionDecision(input: {
   existingDecodedVersion: string | null;
   existingMaterializerVersion: string | null;
 }): "apply" | "conflict" | "exact-redelivery" | "stale" | "unsupported-persisted-version" {
+  const existingRevision = input.existingProviderUpdatedAt?.getTime() ?? null;
+  const incomingRevision = input.incomingProviderUpdatedAt?.getTime() ?? null;
   if (
     input.existingDigest !== null &&
     (input.existingParserVersion !== SUBMISSION_PARSER_VERSION ||
@@ -60,20 +70,20 @@ export function providerProjectionDecision(input: {
     return "unsupported-persisted-version";
   }
   if (
-    input.existingProviderUpdatedAt &&
-    (!input.incomingProviderUpdatedAt ||
-      input.incomingProviderUpdatedAt < input.existingProviderUpdatedAt)
+    existingRevision !== null &&
+    (incomingRevision === null || incomingRevision < existingRevision)
   ) {
     return "stale";
   }
   if (input.existingDigest !== null && input.existingDigest !== input.incomingDigest) {
-    return input.incomingProviderUpdatedAt &&
-      input.existingProviderUpdatedAt &&
-      input.incomingProviderUpdatedAt > input.existingProviderUpdatedAt
+    return incomingRevision !== null &&
+      existingRevision !== null &&
+      incomingRevision > existingRevision
       ? "apply"
       : "conflict";
   }
-  if (input.existingDigest === input.incomingDigest) return "exact-redelivery";
+  if (input.existingDigest === input.incomingDigest && existingRevision === incomingRevision)
+    return "exact-redelivery";
   return "apply";
 }
 
@@ -192,9 +202,6 @@ export interface ActivitySubmission {
   avgSpeedMps: number | null;
   maxSpeedMps: number | null;
   normalizedSpeedMps: number | null;
-  normalizedGradedSpeedMps: number | null;
-  efficiencyFactor: number | null;
-  aerobicDecoupling: number | null;
   avgTemperature: number | null;
   poolLengthMeters?: number | null;
   totalStrokes?: number | null;
@@ -214,8 +221,7 @@ export interface ActivitySubmission {
   segmentSet?: CompletedActivitySegmentSet;
   analysis?: {
     efforts: Array<typeof activityEfforts.$inferInsert>;
-    detectedLTHR: number | null;
-    activityCompletedAt: Date;
+    detectedLTHR: GeneratedActivityLthrEvidence | null;
     ingestion?: ReadyIngestionSubmission;
   };
   composition?: ActivitySubmissionComposition;
@@ -227,17 +233,19 @@ export interface ExistingActivityEnrichmentSubmission {
   profileId: string;
   deviceManufacturer: unknown;
   deviceProduct: unknown;
-  laps?: unknown[] | null;
+  laps?: unknown[] | null | undefined;
   mapBounds?: (typeof activities.$inferInsert)["map_bounds"];
   polyline?: (typeof activities.$inferInsert)["polyline"];
-  summaryValues: Partial<typeof activities.$inferInsert> & {
+  summaryValues: Omit<
+    Partial<typeof activities.$inferInsert>,
+    "normalized_graded_speed_mps" | "efficiency_factor" | "aerobic_decoupling"
+  > & {
     activity_id?: string;
     profile_id?: string;
   };
   segmentSet?: CompletedActivitySegmentSet;
   efforts: Array<typeof activityEfforts.$inferInsert>;
-  detectedLTHR: number | null;
-  activityCompletedAt: Date;
+  detectedLTHR: GeneratedActivityLthrEvidence | null;
   activityPlanId?: string | null;
   name?: string;
   notes?: string | null;
@@ -245,6 +253,25 @@ export interface ExistingActivityEnrichmentSubmission {
   startedAt?: Date;
   finishedAt?: Date;
   ingestion?: ReadyIngestionSubmission;
+}
+
+function projectPersistedNumericalAnalysis(segmentSet: CompletedActivitySegmentSet) {
+  const activitySegments = segmentSet.segments.filter((segment) => segment.role === "activity");
+  const summary = activitySegments.length === 1 ? activitySegments[0]?.summary : undefined;
+  return {
+    normalized_graded_speed_mps:
+      summary?.normalizedGradedPaceResult === undefined
+        ? null
+        : selectRunningNormalizedGradedSpeedMetersPerSecond(summary.normalizedGradedPaceResult),
+    efficiency_factor:
+      summary?.efficiencyFactorResult === undefined
+        ? null
+        : selectEfficiencyFactorValue(summary.efficiencyFactorResult),
+    aerobic_decoupling:
+      summary?.aerobicDecouplingResult === undefined
+        ? null
+        : selectAerobicDecouplingValue(summary.aerobicDecouplingResult),
+  };
 }
 
 function stringOrNull(value: unknown) {
@@ -330,7 +357,15 @@ async function persistArtifactAndLink(
       ),
     )
     .limit(1);
-  if (existingLink?.is_current) return artifactId;
+  if (existingLink?.is_current) {
+    if (existingLink.provider_revision !== (input.providerRevision ?? null)) {
+      await tx
+        .update(activityArtifactLinks)
+        .set({ provider_revision: input.providerRevision ?? null })
+        .where(eq(activityArtifactLinks.id, existingLink.id));
+    }
+    return artifactId;
+  }
   const [latest] = await tx
     .select({ ordinal: activityArtifactLinks.ordinal })
     .from(activityArtifactLinks)
@@ -727,6 +762,7 @@ export async function submitActivity(
     if (!input.segmentSet)
       throw new Error("Activity submission requires an ordered segment manifest");
     const segmentSet = completedActivitySegmentSetSchema.parse(input.segmentSet);
+    const numericalAnalysis = projectPersistedNumericalAnalysis(segmentSet);
     const revision = (existing?.segments_revision ?? 0) + 1;
     const parserVersion = SUBMISSION_PARSER_VERSION;
     const laps =
@@ -774,6 +810,7 @@ export async function submitActivity(
         .update(activities)
         .set({
           ...safeSummaryValues,
+          ...numericalAnalysis,
           ...baseValues,
           ...(input.kind === "enrich"
             ? {}
@@ -817,9 +854,7 @@ export async function submitActivity(
         avg_speed_mps: input.avgSpeedMps,
         max_speed_mps: input.maxSpeedMps,
         normalized_speed_mps: input.normalizedSpeedMps,
-        normalized_graded_speed_mps: input.normalizedGradedSpeedMps,
-        efficiency_factor: input.efficiencyFactor,
-        aerobic_decoupling: input.aerobicDecoupling,
+        ...numericalAnalysis,
         avg_temperature: input.avgTemperature,
         pool_length_meters: input.poolLengthMeters ?? null,
         total_strokes: input.totalStrokes ?? null,
@@ -904,7 +939,6 @@ export async function submitActivity(
         profileId: input.profileId,
         efforts: assignEffortSegments(evidence.efforts, segmentSet),
         detectedLTHR: evidence.detectedLTHR,
-        activityCompletedAt: evidence.activityCompletedAt,
         now,
       });
     }

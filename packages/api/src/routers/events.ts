@@ -1485,7 +1485,8 @@ export const eventsRouter = createTRPCRouter({
       const db = getRequiredDb(ctx);
       const eventReadRepository = getEventReadRepository(ctx);
       const permissions = getContentPermissions(ctx);
-      const cutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+      // One operation instant is passed through every calibration-dependent read.
+      const asOf = new Date();
 
       if (permissions) {
         await permissions.requireRead(
@@ -1504,7 +1505,7 @@ export const eventsRouter = createTRPCRouter({
         profileId: ctx.session.user.id,
         trainingPlanId: input.training_plan_id,
         activityPlanId: input.activity_plan_id,
-        effortCutoffIso: cutoffDate,
+        asOf,
       });
 
       if (!validateInputs.trainingPlan) {
@@ -1525,7 +1526,7 @@ export const eventsRouter = createTRPCRouter({
       const activityPlan = validateInputs.activityPlan;
 
       const structure = plan.structure as {
-        target_weekly_tss_max?: number;
+        target_weekly_load_max?: number;
         target_activities_per_week?: number;
         max_consecutive_days?: number;
         min_rest_days_per_week?: number;
@@ -1562,25 +1563,34 @@ export const eventsRouter = createTRPCRouter({
         db,
         eventReadRepository,
         ctx.session.user.id,
-        { asOf: new Date() },
+        { asOf },
       );
       const currentWeekDerivedPlans = allDerivedPlans.slice(0, currentWeekPlans.length);
-      const currentWeeklyTSS = currentWeekDerivedPlans.reduce(
-        (sum, plan) => sum + (plan.authoritative_metrics.estimated_tss ?? 0),
-        0,
-      );
+      const currentWeeklyLoad = currentWeekDerivedPlans.reduce<number | null>((sum, plan) => {
+        const load = plan.common_load;
+        return sum === null || (load.status !== "available" && load.status !== "complete")
+          ? null
+          : sum + load.load;
+      }, 0);
 
       const newActivityDerivedPlan = allDerivedPlans[currentWeekPlans.length]!;
-      const newWeeklyTSS =
-        currentWeeklyTSS + (newActivityDerivedPlan.authoritative_metrics.estimated_tss ?? 0);
+      const newLoad =
+        newActivityDerivedPlan?.common_load?.status === "available" ||
+        newActivityDerivedPlan?.common_load?.status === "complete"
+          ? newActivityDerivedPlan.common_load.load
+          : null;
+      const newWeeklyLoad =
+        currentWeeklyLoad === null || newLoad === null ? null : currentWeeklyLoad + newLoad;
 
-      const maxWeeklyTSS = structure.target_weekly_tss_max || Infinity;
-      const weeklyTSSStatus =
-        newWeeklyTSS <= maxWeeklyTSS
-          ? "satisfied"
-          : newWeeklyTSS <= maxWeeklyTSS * 1.1
-            ? "warning"
-            : "violated";
+      const maxWeeklyLoad = structure.target_weekly_load_max || Infinity;
+      const weeklyLoadStatus =
+        newWeeklyLoad === null
+          ? "violated"
+          : newWeeklyLoad <= maxWeeklyLoad
+            ? "satisfied"
+            : newWeeklyLoad <= maxWeeklyLoad * 1.1
+              ? "warning"
+              : "violated";
 
       const currentActivitiesCount = plannedThisWeekMapped.length;
       const newActivitiesCount = currentActivitiesCount + 1;
@@ -1653,11 +1663,11 @@ export const eventsRouter = createTRPCRouter({
 
       return {
         constraints: {
-          weeklyTSS: {
-            status: weeklyTSSStatus as "satisfied" | "warning" | "violated",
-            current: currentWeeklyTSS,
-            withNew: newWeeklyTSS,
-            limit: maxWeeklyTSS,
+          weeklyLoad: {
+            status: weeklyLoadStatus as "satisfied" | "warning" | "violated",
+            current: currentWeeklyLoad,
+            withNew: newWeeklyLoad,
+            limit: maxWeeklyLoad,
           },
           activitiesPerWeek: {
             status: activitiesPerWeekStatus as "satisfied" | "warning" | "violated",
@@ -1679,12 +1689,12 @@ export const eventsRouter = createTRPCRouter({
           },
         },
         canSchedule:
-          weeklyTSSStatus !== "violated" &&
+          weeklyLoadStatus !== "violated" &&
           activitiesPerWeekStatus !== "violated" &&
           consecutiveDaysStatus !== "violated" &&
           restDaysStatus !== "violated",
         hasWarnings:
-          weeklyTSSStatus === "warning" ||
+          weeklyLoadStatus === "warning" ||
           activitiesPerWeekStatus === "warning" ||
           consecutiveDaysStatus === "warning" ||
           restDaysStatus === "warning",

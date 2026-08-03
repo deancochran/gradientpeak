@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import type { ComponentProps } from "react";
 import { Text, View } from "react-native";
+import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
 import { BuilderProjectionOverview } from "../BuilderProjectionOverview";
 import { BuilderStrategyComposer } from "../BuilderStrategyComposer";
 
@@ -237,10 +238,11 @@ describe("BuilderProjectionOverview", () => {
               {
                 activityPlan: {
                   accessible: true,
-                  estimatedDurationSeconds: 3600,
-                  estimatedTss: 50,
                   id: "activity-1",
                   name: "Activity",
+                  prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+                    load: 50,
+                  }),
                   published: true,
                 },
                 localId: "session-1",

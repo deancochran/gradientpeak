@@ -54,7 +54,7 @@
       "project": "apps/mobile/tsconfig.json"
     }
   ],
-  "total": 1940,
+  "total": 1937,
   "buckets": [
     {
       "flag": "exactOptionalPropertyTypes",
@@ -2455,20 +2455,6 @@
       "project": "apps/web/tsconfig.json",
       "path": "apps/web/src/components/charts/simple-trend-chart.tsx",
       "code": 2375,
-      "count": 2
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/web/tsconfig.json",
-      "path": "apps/web/src/components/protected/activity-effort-form.tsx",
-      "code": 2375,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/web/tsconfig.json",
-      "path": "apps/web/src/components/protected/activity-effort-form.tsx",
-      "code": 2379,
       "count": 2
     },
     {

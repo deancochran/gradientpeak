@@ -52,23 +52,28 @@ describe("system training plan coaching invariants", () => {
 
     for (const [weekIndex, sessions] of sessionsByWeek.entries()) {
       const knownSessions = sessions.filter(
-        (session): session is (typeof sessions)[number] & { estimated_tss: number } =>
-          session.estimated_tss !== null,
+        (session): session is (typeof sessions)[number] & { estimated_load: number } =>
+          session.estimated_load !== null,
       );
       if (knownSessions.length === 0) {
-        expect(sessions.every((session) => session.estimated_tss === null)).toBe(true);
+        expect(sessions.every((session) => session.estimated_load === null)).toBe(true);
         continue;
       }
-      const totalWeekTss = knownSessions.reduce(
-        (total, session) => total + session.estimated_tss,
+      const totalWeekLoad = knownSessions.reduce(
+        (total, session) => total + session.estimated_load,
         0,
       );
       const longSession = knownSessions
         .filter((session) => /long/i.test(session.title) || /long/i.test(session.template_name))
-        .sort((left, right) => right.estimated_tss - left.estimated_tss)[0];
+        .sort((left, right) => right.estimated_load - left.estimated_load)[0];
 
       expect(longSession, `expected long session in week ${weekIndex + 1}`).toBeDefined();
-      expect((longSession?.estimated_tss ?? 0) / totalWeekTss).toBeGreaterThanOrEqual(0.25);
+      if (!longSession) throw new Error(`Missing long session in week ${weekIndex + 1}`);
+      if (longSession.estimated_load_status === "partial") {
+        expect(longSession.common_load.status).toBe("partial");
+        continue;
+      }
+      expect(longSession.estimated_load / totalWeekLoad).toBeGreaterThanOrEqual(0.25);
     }
   });
 
@@ -80,13 +85,19 @@ describe("system training plan coaching invariants", () => {
 
     expect(penultimateWeek).toBeDefined();
     expect(raceWeek).toBeDefined();
-    if (raceWeek?.actual === null || penultimateWeek?.actual === null) {
-      expect(raceWeek?.actual).toBeNull();
-      expect(penultimateWeek?.actual).toBeNull();
+    if (
+      !raceWeek ||
+      !penultimateWeek ||
+      raceWeek?.actualStatus !== "complete" ||
+      penultimateWeek?.actualStatus !== "complete" ||
+      raceWeek.actual === null ||
+      penultimateWeek.actual === null
+    ) {
+      expect([raceWeek?.actualStatus, penultimateWeek?.actualStatus]).toContain("partial");
       return;
     }
-    expect(raceWeek!.actual).toBeLessThan(penultimateWeek!.actual);
-    expect(raceWeek!.actual).toBeLessThanOrEqual(penultimateWeek!.actual * 0.9);
+    expect(raceWeek.actual).toBeLessThan(penultimateWeek.actual);
+    expect(raceWeek.actual).toBeLessThanOrEqual(penultimateWeek.actual * 0.9);
   });
 
   it("boundary feasible bike keeps long-ride emphasis and lighter recovery weeks", () => {
@@ -109,25 +120,26 @@ describe("system training plan coaching invariants", () => {
       .sort((left, right) => left[0] - right[0])
       .map(([weekIndex, sessions]) => {
         const knownSessions = sessions.filter(
-          (session): session is (typeof sessions)[number] & { estimated_tss: number } =>
-            session.estimated_tss !== null,
+          (session): session is (typeof sessions)[number] & { estimated_load: number } =>
+            session.estimated_load !== null,
         );
         if (knownSessions.length === 0) {
-          expect(sessions.every((session) => session.estimated_tss === null)).toBe(true);
+          expect(sessions.every((session) => session.estimated_load === null)).toBe(true);
           return null;
         }
-        const totalWeekTss = knownSessions.reduce(
-          (total, session) => total + session.estimated_tss,
+        const totalWeekLoad = knownSessions.reduce(
+          (total, session) => total + session.estimated_load,
           0,
         );
         const longRide = knownSessions
           .filter((session) => /long/i.test(session.title) || /long/i.test(session.template_name))
-          .sort((left, right) => right.estimated_tss - left.estimated_tss)[0];
+          .sort((left, right) => right.estimated_load - left.estimated_load)[0];
 
         expect(longRide, `expected long ride in week ${weekIndex + 1}`).toBeDefined();
-        expect((longRide?.estimated_tss ?? 0) / totalWeekTss).toBeGreaterThanOrEqual(0.3);
+        if (!longRide) throw new Error(`Missing long ride in week ${weekIndex + 1}`);
+        expect(longRide.estimated_load / totalWeekLoad).toBeGreaterThanOrEqual(0.3);
 
-        return totalWeekTss;
+        return totalWeekLoad;
       });
 
     const knownWeeklyLoads = weeklyLoads.filter((load): load is number => load !== null);

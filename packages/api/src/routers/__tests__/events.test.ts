@@ -5,6 +5,7 @@ import {
   EventCurrentPlanUpdateConflict,
   EventPlanReplacementCompletionConflict,
 } from "../../infrastructure/repositories/drizzle-event-write-repository";
+import { getActivityPlansDerivedMetrics } from "../../utils/activity-plan-derived-metrics";
 
 const { drainDueWahooPlannedActivityJobs, enqueuePlannedActivitySyncAfterCalendarMutation } =
   vi.hoisted(() => ({
@@ -43,7 +44,6 @@ vi.mock("../../infrastructure/repositories", () => ({
     deleteEventResourceLink: vi.fn(async () => undefined),
     findWahooIntegrationByProfileId: vi.fn(async () => null),
     getPlannedEventForSync: vi.fn(async () => null),
-    getProfileSyncMetrics: vi.fn(async () => null),
     getRouteForSync: vi.fn(async () => null),
     getEventResourceLink: vi.fn(async () => null),
     listEventResourceLinks: vi.fn(async () => []),
@@ -54,21 +54,13 @@ vi.mock("../../infrastructure/repositories", () => ({
 vi.mock("../../utils/activity-plan-derived-metrics", () => ({
   getActivityPlanDerivedMetrics: vi.fn(async (plan: any) => ({
     ...plan,
-    authoritative_metrics: {
-      estimated_duration: plan.authoritative_metrics?.estimated_duration ?? 3600,
-      estimated_tss: plan.authoritative_metrics?.estimated_tss ?? 72,
-      intensity_factor: plan.authoritative_metrics?.intensity_factor ?? 0.88,
-    },
+    common_load: plan.common_load ?? { status: "available", load: 72, intensity: 0.88 },
     route: plan.route ?? null,
   })),
   getActivityPlansDerivedMetrics: vi.fn(async (plans: any[]) =>
     plans.map((plan) => ({
       ...plan,
-      authoritative_metrics: {
-        estimated_duration: plan.authoritative_metrics?.estimated_duration ?? 3600,
-        estimated_tss: plan.authoritative_metrics?.estimated_tss ?? 72,
-        intensity_factor: plan.authoritative_metrics?.intensity_factor ?? 0.88,
-      },
+      common_load: plan.common_load ?? { status: "available", load: 72, intensity: 0.88 },
       route: plan.route ?? null,
     })),
   ),
@@ -94,6 +86,42 @@ type QueryResult = {
 };
 
 type QueryMap = Record<string, QueryResult | QueryResult[]>;
+
+function constraintQueryMap(): QueryMap {
+  return {
+    training_plans: {
+      data: {
+        id: "44444444-4444-4444-8444-444444444444",
+        structure: {
+          target_weekly_load_max: 100,
+          target_activities_per_week: 7,
+          max_consecutive_days: 7,
+          min_rest_days_per_week: 0,
+        },
+      },
+      error: null,
+    },
+    activity_plans: {
+      data: {
+        id: "55555555-5555-4555-8555-555555555555",
+        activity_category: "bike",
+        structure: createActivityPlanStructure(["bike"]),
+        route_id: null,
+      },
+      error: null,
+    },
+    profiles: { data: { id: "profile-123", dob: null }, error: null },
+    activity_efforts: { data: null, error: null },
+    profile_metrics: [
+      { data: null, error: null },
+      { data: null, error: null },
+    ],
+    events: [
+      { data: [], error: null },
+      { data: [], error: null },
+    ],
+  };
+}
 
 type QueryCall = {
   table: string;
@@ -249,9 +277,6 @@ function createReadRepository(params: {
     },
     async getEstimationInputs() {
       return {
-        efforts: [],
-        metrics: [],
-        profile: null,
         routes: [],
       };
     },
@@ -844,9 +869,10 @@ describe("eventsRouter generalization", () => {
       id: "11111111-1111-4111-8111-111111111111",
       name: "Tempo Builder",
       route_id: "route-1",
-      authoritative_metrics: {
-        estimated_tss: 72,
-        intensity_factor: 0.88,
+      common_load: {
+        status: "available",
+        load: 72,
+        intensity: 0.88,
       },
       updated_at: "2026-03-01T00:00:00.000Z",
       owner: expect.objectContaining({ username: "user-prof" }),
@@ -890,9 +916,10 @@ describe("eventsRouter generalization", () => {
       id: "11111111-1111-4111-8111-111111111111",
       name: "Threshold Ride",
       route_id: "route-2",
-      authoritative_metrics: {
-        estimated_tss: 72,
-        intensity_factor: 0.88,
+      common_load: {
+        status: "available",
+        load: 72,
+        intensity: 0.88,
       },
       updated_at: "2026-03-02T00:00:00.000Z",
       owner: expect.objectContaining({ username: "user-prof" }),
@@ -2669,7 +2696,7 @@ describe("eventsRouter generalization", () => {
         data: {
           id: "44444444-4444-4444-8444-444444444444",
           structure: {
-            target_weekly_tss_max: 9999,
+            target_weekly_load_max: 9999,
             target_activities_per_week: 7,
             max_consecutive_days: 7,
             min_rest_days_per_week: 5,
@@ -2742,6 +2769,45 @@ describe("eventsRouter generalization", () => {
       withNew: 5,
       minimum: 5,
     });
+  });
+
+  it("validateConstraints schedules against a complete canonical Load", async () => {
+    const { caller } = createCaller(constraintQueryMap());
+
+    const result = await caller.validateConstraints({
+      training_plan_id: "44444444-4444-4444-8444-444444444444",
+      scheduled_date: "2026-03-11",
+      activity_plan_id: "55555555-5555-4555-8555-555555555555",
+    });
+
+    expect(result.constraints.weeklyLoad).toEqual({
+      status: "satisfied",
+      current: 0,
+      withNew: 72,
+      limit: 100,
+    });
+    expect(result.canSchedule).toBe(true);
+  });
+
+  it("validateConstraints fails closed when canonical Load is unavailable", async () => {
+    vi.mocked(getActivityPlansDerivedMetrics).mockResolvedValueOnce([
+      { common_load: { status: "unavailable", reason: "missing_threshold" } },
+    ] as never);
+    const { caller } = createCaller(constraintQueryMap());
+
+    const result = await caller.validateConstraints({
+      training_plan_id: "44444444-4444-4444-8444-444444444444",
+      scheduled_date: "2026-03-11",
+      activity_plan_id: "55555555-5555-4555-8555-555555555555",
+    });
+
+    expect(result.constraints.weeklyLoad).toEqual({
+      status: "violated",
+      current: 0,
+      withNew: null,
+      limit: 100,
+    });
+    expect(result.canSchedule).toBe(false);
   });
 
   it("reconcileHistoricalCompletions dry-run reports matches without persisting", async () => {
@@ -2944,14 +3010,19 @@ describe("eventsRouter generalization", () => {
   it("plannedDaySummary returns the profile planning timezone and canonical date boundary", async () => {
     const { caller, callLog } = createCaller({ events: { data: [], error: null } });
 
-    await expect(caller.plannedDaySummary({ date: "2026-07-27" })).resolves.toEqual({
+    const result = await caller.plannedDaySummary({ date: "2026-07-27" });
+    expect(result).toMatchObject({
       date: "2026-07-27",
       timezone: "America/New_York",
       summary: {
         eventCount: 0,
         activity_categories: [],
-        totalDurationSeconds: 0,
-        totalTss: 0,
+        totalDurationSeconds: null,
+        prescriptionQuantification: {
+          members: [],
+          summary: { kind: "aggregate", memberSubjectIdentities: [] },
+        },
+        commonLoad: { status: "unavailable", reason: "no_load_data" },
       },
       source: {
         complete: true,
@@ -2961,6 +3032,7 @@ describe("eventsRouter generalization", () => {
         unlinkedPlanCount: 0,
       },
     });
+    expect(result.summary).not.toHaveProperty("totalTss");
     expect(callLog).toContainEqual({
       table: "events",
       operation: "filter",

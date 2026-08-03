@@ -6,10 +6,10 @@ import {
 import { evaluateMpcObjective } from "../projection/mpc/objective";
 import { scoreTargetSatisfaction } from "../scoring/targetSatisfaction";
 
-function maxPlannedWeeklyTss(
+function maxPlannedWeeklyLoad(
   projection: ReturnType<typeof buildDeterministicProjectionPayload>,
 ): number {
-  return Math.max(...projection.microcycles.map((cycle) => cycle.planned_weekly_tss));
+  return Math.max(...projection.microcycles.map((cycle) => cycle.planned_weekly_load));
 }
 
 function createSeededRandom(seed: number): () => number {
@@ -60,7 +60,7 @@ describe("phase 4 property suite", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-03-01",
-          target_weekly_tss_range: { min: 220, max: 280 },
+          target_weekly_load_range: { min: 220, max: 280 },
         },
       ],
       goals: [
@@ -79,7 +79,7 @@ describe("phase 4 property suite", () => {
           ],
         },
       ],
-      starting_ctl: 34,
+      starting_longTermLoad: 34,
     };
 
     const baseline = buildDeterministicProjectionPayload(input);
@@ -146,10 +146,10 @@ describe("phase 4 property suite", () => {
           phase: "build",
           start_date: "2026-01-12",
           end_date: "2026-03-08",
-          target_weekly_tss_range: { min: 240, max: 300 },
+          target_weekly_load_range: { min: 240, max: 300 },
         },
       ],
-      starting_ctl: 36,
+      starting_longTermLoad: 36,
     };
 
     const baseline = buildDeterministicProjectionPayload({
@@ -186,7 +186,7 @@ describe("phase 4 property suite", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-03-01",
-          target_weekly_tss_range: { min: 250, max: 320 },
+          target_weekly_load_range: { min: 250, max: 320 },
         },
       ],
       goals: [
@@ -197,29 +197,29 @@ describe("phase 4 property suite", () => {
           priority: 1,
         },
       ],
-      starting_ctl: 28,
+      starting_longTermLoad: 28,
     };
 
     const lenient = buildDeterministicProjectionPayload({
       ...base,
       creation_config: {
-        max_weekly_tss_ramp_pct: 20,
-        max_ctl_ramp_per_week: 8,
+        max_weekly_load_ramp_pct: 20,
+        max_longTermLoad_ramp_per_week: 8,
       },
     });
     const strict = buildDeterministicProjectionPayload({
       ...base,
       creation_config: {
-        max_weekly_tss_ramp_pct: 4,
-        max_ctl_ramp_per_week: 1,
+        max_weekly_load_ramp_pct: 4,
+        max_longTermLoad_ramp_per_week: 1,
       },
     });
 
-    expect(maxPlannedWeeklyTss(strict)).toBeLessThanOrEqual(maxPlannedWeeklyTss(lenient));
+    expect(maxPlannedWeeklyLoad(strict)).toBeLessThanOrEqual(maxPlannedWeeklyLoad(lenient));
     expect(
-      strict.no_history.projection_feasibility?.demand_gap.unmet_weekly_tss ?? 0,
+      strict.no_history.projection_feasibility?.demand_gap.unmet_weekly_load ?? 0,
     ).toBeGreaterThanOrEqual(
-      lenient.no_history.projection_feasibility?.demand_gap.unmet_weekly_tss ?? 0,
+      lenient.no_history.projection_feasibility?.demand_gap.unmet_weekly_load ?? 0,
     );
   });
 
@@ -276,7 +276,7 @@ describe("phase 4 golden scenarios", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-04-05",
-          target_weekly_tss_range: { min: 120, max: 160 },
+          target_weekly_load_range: { min: 120, max: 160 },
         },
       ],
       goals: [
@@ -295,35 +295,35 @@ describe("phase 4 golden scenarios", () => {
           ],
         },
       ],
-      starting_ctl: 10,
+      starting_longTermLoad: 10,
     };
 
     const conservative = buildDeterministicProjectionPayload({
       ...base,
       creation_config: {
-        max_weekly_tss_ramp_pct: 4,
-        max_ctl_ramp_per_week: 1,
+        max_weekly_load_ramp_pct: 4,
+        max_longTermLoad_ramp_per_week: 1,
       },
     });
     const aggressive = buildDeterministicProjectionPayload({
       ...base,
       creation_config: {
-        max_weekly_tss_ramp_pct: 20,
-        max_ctl_ramp_per_week: 8,
+        max_weekly_load_ramp_pct: 20,
+        max_longTermLoad_ramp_per_week: 8,
       },
     });
 
     expect("mode_applied" in aggressive).toBe(false);
     expect("overrides_applied" in aggressive).toBe(false);
     expect(
-      aggressive.microcycles[0]?.metadata.tss_ramp.max_weekly_tss_ramp_pct ?? 0,
+      aggressive.microcycles[0]?.metadata.load_ramp.max_weekly_load_ramp_pct ?? 0,
     ).toBeGreaterThanOrEqual(
-      conservative.microcycles[0]?.metadata.tss_ramp.max_weekly_tss_ramp_pct ?? 0,
+      conservative.microcycles[0]?.metadata.load_ramp.max_weekly_load_ramp_pct ?? 0,
     );
     expect(
-      aggressive.microcycles[0]?.metadata.ctl_ramp.max_ctl_ramp_per_week ?? 0,
+      aggressive.microcycles[0]?.metadata.longTermLoad_ramp.max_longTermLoad_ramp_per_week ?? 0,
     ).toBeGreaterThanOrEqual(
-      conservative.microcycles[0]?.metadata.ctl_ramp.max_ctl_ramp_per_week ?? 0,
+      conservative.microcycles[0]?.metadata.longTermLoad_ramp.max_longTermLoad_ramp_per_week ?? 0,
     );
     expect(aggressive.readiness_rationale_codes).toContain(
       "readiness_penalty_capacity_envelope_outside",
@@ -349,7 +349,7 @@ describe("phase 4 golden scenarios", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-03-08",
-          target_weekly_tss_range: { min: 240, max: 300 },
+          target_weekly_load_range: { min: 240, max: 300 },
         },
       ],
       goals: [
@@ -366,7 +366,7 @@ describe("phase 4 golden scenarios", () => {
           priority: 1,
         },
       ],
-      starting_ctl: 32,
+      starting_longTermLoad: 32,
     });
 
     expect(projection.goal_assessments?.length).toBe(2);
@@ -385,7 +385,7 @@ describe("phase 4 golden scenarios", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-02-23",
-          target_weekly_tss_range: { min: 200, max: 250 },
+          target_weekly_load_range: { min: 200, max: 250 },
         },
       ],
       goals: [
@@ -408,7 +408,7 @@ describe("phase 4 golden scenarios", () => {
           ],
         },
       ],
-      starting_ctl: 26,
+      starting_longTermLoad: 26,
     };
 
     const projection = buildDeterministicProjectionPayload(input);
@@ -440,7 +440,7 @@ describe("phase 4 golden scenarios", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-01-25",
-          target_weekly_tss_range: { min: 280, max: 320 },
+          target_weekly_load_range: { min: 280, max: 320 },
         },
       ],
       goals: [
@@ -451,21 +451,21 @@ describe("phase 4 golden scenarios", () => {
           priority: 1,
         },
       ],
-      starting_ctl: 35,
+      starting_longTermLoad: 35,
     };
 
     const configA = buildDeterministicProjectionPayload({
       ...base,
       creation_config: {
-        max_weekly_tss_ramp_pct: 7,
-        max_ctl_ramp_per_week: 3,
+        max_weekly_load_ramp_pct: 7,
+        max_longTermLoad_ramp_per_week: 3,
       },
     });
     const configB = buildDeterministicProjectionPayload({
       ...base,
       creation_config: {
-        max_weekly_tss_ramp_pct: 7,
-        max_ctl_ramp_per_week: 3,
+        max_weekly_load_ramp_pct: 7,
+        max_longTermLoad_ramp_per_week: 3,
       },
     });
 
@@ -483,7 +483,7 @@ describe("phase 4 golden scenarios", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-03-02",
-          target_weekly_tss_range: { min: 140, max: 180 },
+          target_weekly_load_range: { min: 140, max: 180 },
         },
       ],
       goals: [
@@ -502,7 +502,7 @@ describe("phase 4 golden scenarios", () => {
           ],
         },
       ],
-      starting_ctl: 24,
+      starting_longTermLoad: 24,
     };
 
     const richHistory = buildDeterministicProjectionPayload({
@@ -517,7 +517,7 @@ describe("phase 4 golden scenarios", () => {
           effort_confidence_marker: "high",
           profile_metric_completeness_marker: "high",
           signal_quality: 0.92,
-          recommended_baseline_tss_range: { min: 120, max: 210 },
+          recommended_baseline_load_range: { min: 120, max: 210 },
           recommended_recent_influence_range: { min: -0.1, max: 0.2 },
           recommended_sessions_per_week_range: { min: 5, max: 7 },
           rationale_codes: ["history_rich"],
@@ -537,7 +537,7 @@ describe("phase 4 golden scenarios", () => {
           effort_confidence_marker: "low",
           profile_metric_completeness_marker: "moderate",
           signal_quality: 0.38,
-          recommended_baseline_tss_range: { min: 80, max: 170 },
+          recommended_baseline_load_range: { min: 80, max: 170 },
           recommended_recent_influence_range: { min: -0.4, max: 0.4 },
           recommended_sessions_per_week_range: { min: 3, max: 5 },
           rationale_codes: ["history_sparse"],
@@ -548,11 +548,11 @@ describe("phase 4 golden scenarios", () => {
     const richFeasibility = richHistory.no_history.projection_feasibility!;
     const sparseFeasibility = sparseHistory.no_history.projection_feasibility!;
     const richWidth =
-      (richFeasibility.projection_uncertainty?.tss_high ?? 0) -
-      (richFeasibility.projection_uncertainty?.tss_low ?? 0);
+      (richFeasibility.projection_uncertainty?.load_high ?? 0) -
+      (richFeasibility.projection_uncertainty?.load_low ?? 0);
     const sparseWidth =
-      (sparseFeasibility.projection_uncertainty?.tss_high ?? 0) -
-      (sparseFeasibility.projection_uncertainty?.tss_low ?? 0);
+      (sparseFeasibility.projection_uncertainty?.load_high ?? 0) -
+      (sparseFeasibility.projection_uncertainty?.load_low ?? 0);
 
     expect(sparseHistory.readiness_score).toBeGreaterThanOrEqual(0);
     expect(sparseHistory.readiness_confidence).toBeGreaterThanOrEqual(0);
@@ -575,7 +575,7 @@ describe("phase 5 calibration stabilization", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-04-12",
-          target_weekly_tss_range: { min: 180, max: 260 },
+          target_weekly_load_range: { min: 180, max: 260 },
         },
       ],
       goals: [
@@ -594,11 +594,11 @@ describe("phase 5 calibration stabilization", () => {
           ],
         },
       ],
-      starting_ctl: 30,
+      starting_longTermLoad: 30,
       creation_config: {
         optimization_profile: "balanced",
-        max_weekly_tss_ramp_pct: 7,
-        max_ctl_ramp_per_week: 3,
+        max_weekly_load_ramp_pct: 7,
+        max_longTermLoad_ramp_per_week: 3,
       },
       no_history_context: {
         history_availability_state: "sparse",
@@ -620,7 +620,7 @@ describe("phase 5 calibration stabilization", () => {
             version: 1,
             readiness_composite: randomSimplex4(random),
             readiness_timeline: {
-              target_tsb: randomInRange(random, -5, 20),
+              target_loadBalance: randomInRange(random, -5, 20),
               form_tolerance: randomInRange(random, 8, 40),
               fatigue_overflow_scale: randomInRange(random, 0.1, 1),
               feasibility_blend_weight: randomInRange(random, 0, 1),

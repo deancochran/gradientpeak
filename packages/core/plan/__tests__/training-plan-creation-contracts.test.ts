@@ -58,11 +58,11 @@ describe("training plan creation contracts", () => {
       creation_input: {},
       preview_baseline: {
         readiness_score: 70,
-        predicted_load_tss: 420,
-        predicted_fatigue_atl: 61,
+        predicted_load: 420,
+        predicted_fatigue_recentLoad: 61,
         feasibility_state: "aggressive",
-        tss_ramp_clamp_weeks: 1,
-        ctl_ramp_clamp_weeks: 0,
+        load_ramp_clamp_weeks: 1,
+        longTermLoad_ramp_clamp_weeks: 0,
       },
     });
 
@@ -178,8 +178,8 @@ describe("training plan creation contracts", () => {
               },
               user_values: {
                 optimization_profile: "outcome_first",
-                max_weekly_tss_ramp_pct: 8,
-                max_ctl_ramp_per_week: 3,
+                max_weekly_load_ramp_pct: 8,
+                max_longTermLoad_ramp_per_week: 3,
               },
             },
           }).success,
@@ -191,8 +191,8 @@ describe("training plan creation contracts", () => {
             minimal_plan: minimalPlan,
             creation_input: {
               user_values: {
-                max_weekly_tss_ramp_pct: 8,
-                max_ctl_ramp_per_week: 3,
+                max_weekly_load_ramp_pct: 8,
+                max_longTermLoad_ramp_per_week: 3,
               },
             },
           }).success,

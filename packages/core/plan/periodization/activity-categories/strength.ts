@@ -2,8 +2,8 @@ import type { ActivityCategoryModelConfig } from "./contracts";
 
 export const strengthActivityCategoryModelConfig: ActivityCategoryModelConfig = {
   activity_category: "strength",
-  ctl_tau_days: 42,
-  atl_tau_days: 8,
+  longTermLoad_tau_days: 42,
+  recentLoad_tau_days: 8,
   acwr_ceiling: 1.15,
   impact_factor: 0.8,
   mechanical_multiplier: 1.25,
@@ -11,5 +11,5 @@ export const strengthActivityCategoryModelConfig: ActivityCategoryModelConfig = 
     min: 3,
     max: 10,
   },
-  weekly_tss_per_hour: 50,
+  weekly_load_per_hour: 50,
 };

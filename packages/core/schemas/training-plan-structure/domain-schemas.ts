@@ -144,7 +144,7 @@ const maintenanceWeeklySessionsRangeSchema = createMinMaxRangeSchema(
   z.number().int().min(0),
 );
 
-const ctlRangeSchema = createMinMaxRangeSchema(
+const longTermLoadRangeSchema = createMinMaxRangeSchema(
   z.number().min(0).max(250),
   z.number().min(0).max(250),
 );
@@ -157,7 +157,7 @@ export const trainingBlockSchema = z.object({
   goal_ids: z.array(z.string().uuid()).default([]),
   phase: trainingPhaseEnum,
   intensity_distribution: intensityDistributionSchema.optional(),
-  target_weekly_tss_range: nonNegativeNumberRangeSchema,
+  target_weekly_load_range: nonNegativeNumberRangeSchema,
   target_sessions_per_week_range: weeklySessionsRangeSchema.optional(),
   description: z.string().max(1000).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
@@ -201,8 +201,8 @@ export const trainingConstraintsSchema = z.object({
 export type TrainingConstraints = z.infer<typeof trainingConstraintsSchema>;
 
 export const fitnessProgressionSchema = z.object({
-  starting_ctl: z.number().min(0).max(250),
-  target_ctl_at_peak: z.number().min(0).max(250).optional(),
+  starting_longTermLoad: z.number().min(0).max(250),
+  target_longTermLoad_at_peak: z.number().min(0).max(250).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -309,9 +309,9 @@ const maintenancePlanBaseShape = {
   description: z.string().max(2000).optional(),
   start_date: dateOnlySchema,
   end_date: dateOnlySchema.optional(),
-  target_ctl_range: ctlRangeSchema.optional(),
+  target_longTermLoad_range: longTermLoadRangeSchema.optional(),
   intensity_distribution: intensityDistributionSchema.optional(),
-  target_weekly_tss_range: nonNegativeNumberRangeSchema.optional(),
+  target_weekly_load_range: nonNegativeNumberRangeSchema.optional(),
   target_sessions_per_week_range: maintenanceWeeklySessionsRangeSchema.optional(),
   constraints: trainingConstraintsSchema.optional(),
   activity_distribution: activityDistributionSchema,
@@ -501,9 +501,9 @@ export const wizardGoalInputSchema = z.object({
 export type WizardGoalInput = z.infer<typeof wizardGoalInputSchema>;
 
 export const wizardFitnessInputSchema = z.object({
-  starting_ctl: z.number().min(0).max(250).optional(),
+  starting_longTermLoad: z.number().min(0).max(250).optional(),
   estimated_from_weekly_hours: z.number().min(0).max(50).optional(),
-  estimated_from_weekly_tss: z.number().min(0).max(2000).optional(),
+  estimated_from_weekly_load: z.number().min(0).max(2000).optional(),
 });
 
 export type WizardFitnessInput = z.infer<typeof wizardFitnessInputSchema>;
@@ -560,7 +560,7 @@ export const wizardMaintenanceInputSchema = z.object({
   plan_type: z.literal("maintenance"),
   name: z.string().min(1).max(255).optional(),
   start_date: dateOnlySchema,
-  target_ctl_range: z
+  target_longTermLoad_range: z
     .object({
       min: z.number().min(0).max(250),
       max: z.number().min(0).max(250),

@@ -81,16 +81,16 @@ export const previewCreationConfigInputSchema = z
   .object({
     minimal_plan: minimalTrainingPlanCreateSchema,
     creation_input: creationNormalizationInputSchema,
-    starting_ctl_override: z.number().min(0).max(250).optional(),
-    starting_atl_override: z.number().min(0).max(200).optional(),
+    starting_longTermLoad_override: z.number().min(0).max(250).optional(),
+    starting_recentLoad_override: z.number().min(0).max(200).optional(),
     preview_baseline: z
       .object({
         readiness_score: z.number().min(0).max(100).finite(),
-        predicted_load_tss: z.number().min(0).max(10000).finite(),
-        predicted_fatigue_atl: z.number().min(0).max(2000).finite(),
+        predicted_load: z.number().min(0).max(10000).finite(),
+        predicted_fatigue_recentLoad: z.number().min(0).max(2000).finite(),
         feasibility_state: z.enum(["feasible", "aggressive", "unsafe"]),
-        tss_ramp_clamp_weeks: z.number().int().min(0).max(104),
-        ctl_ramp_clamp_weeks: z.number().int().min(0).max(104),
+        load_ramp_clamp_weeks: z.number().int().min(0).max(104),
+        longTermLoad_ramp_clamp_weeks: z.number().int().min(0).max(104),
       })
       .strict()
       .optional(),

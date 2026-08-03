@@ -8,7 +8,7 @@ describe("buildAthleteIntelligenceModel", () => {
     const model = buildAthleteIntelligenceModel();
 
     expect(athleteIntelligenceModelInputSchema.safeParse(model).success).toBe(true);
-    expect(model.metricEvidence[0]?.value.evidenceSourceIds).toEqual(["metric:ftp"]);
+    expect(model.metricEvidence[0]?.value.evidenceSourceIds).toEqual(["metric:weight"]);
     expect(model.goals[0]?.goalActivityCategory).toBe("run");
     expect(model.readCoverage).toEqual({
       metrics: { state: "complete", reason: null },

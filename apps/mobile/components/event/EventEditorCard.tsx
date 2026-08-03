@@ -1,3 +1,4 @@
+import type { ActivityPrescriptionQuantificationBundle } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { DateInput } from "@repo/ui/components/date-input";
@@ -32,10 +33,7 @@ export type ActivityPlanListItem = {
   activity_category: string;
   structure?: unknown;
   description?: string | null;
-  authoritative_metrics?: {
-    estimated_duration?: number | null;
-    estimated_tss?: number | null;
-  } | null;
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
 };
 
 function toActivityPlanCardData(plan: ActivityPlanListItem): ActivityPlan {

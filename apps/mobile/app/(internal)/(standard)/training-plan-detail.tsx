@@ -1,5 +1,6 @@
 import { invalidateTrainingPlanQueries } from "@repo/api/react";
 import {
+  type ActivityPrescriptionQuantificationBundle,
   canonicalTrainingPlanStructureSchema,
   persistedTrainingPlanStructureSchema,
 } from "@repo/core";
@@ -27,7 +28,7 @@ import { TrainingPlanStructureSection } from "@/components/training-plan/Trainin
 import { TrainingPlanTemplateSchedulingDialog } from "@/components/training-plan/TrainingPlanTemplateSchedulingDialog";
 import { useTrainingPlanHeaderSocialActions } from "@/components/training-plan/useTrainingPlanHeaderSocialActions";
 import { useTrainingPlanTemplateSchedulingController } from "@/components/training-plan/useTrainingPlanTemplateSchedulingController";
-import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import {
@@ -54,11 +55,7 @@ type ActivityPlanListItem = {
   id: string;
   name: string;
   activity_category?: string | null;
-  authoritative_metrics?: {
-    estimated_tss?: number | null;
-    intensity_factor?: number | null;
-    estimated_duration?: number | null;
-  } | null;
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
   description?: string | null;
   structure?: unknown;
 };
@@ -506,17 +503,20 @@ export default function TrainingPlanOverview() {
   const weeklyLoadSummary = useMemo(
     () =>
       groupedStructureSessions.map((microcycle) => {
-        const estimatedTss = microcycle.days.reduce((weekTotal, day) => {
+        let hasUnavailableLoad = false;
+        const weeklyLoad = microcycle.days.reduce((weekTotal, day) => {
           const dayTotal = day.sessions.reduce((sessionTotal, session) => {
             if (!session.activityPlanId) {
               return sessionTotal;
             }
 
             const linkedPlan = linkedActivityPlanById.get(session.activityPlanId);
-            return (
-              sessionTotal +
-              readFiniteNumber(getAuthoritativeActivityPlanMetrics(linkedPlan).estimated_tss)
-            );
+            const load = getActivityPlanQuantitySummary(linkedPlan).commonLoad;
+            if (load === null) {
+              hasUnavailableLoad = true;
+              return sessionTotal;
+            }
+            return sessionTotal + load;
           }, 0);
 
           return weekTotal + dayTotal;
@@ -524,7 +524,7 @@ export default function TrainingPlanOverview() {
 
         return {
           microcycle: microcycle.microcycle,
-          estimatedTss,
+          weeklyLoad: hasUnavailableLoad ? null : weeklyLoad,
         };
       }),
     [groupedStructureSessions, linkedActivityPlanById],
@@ -552,13 +552,8 @@ export default function TrainingPlanOverview() {
     () =>
       uniqueLinkedActivityPlans.map((linkedPlan) => ({
         ...linkedPlan,
-        estimatedTss: Math.round(
-          readFiniteNumber(getAuthoritativeActivityPlanMetrics(linkedPlan).estimated_tss),
-        ),
-        intensityFactor:
-          readNumber(getAuthoritativeActivityPlanMetrics(linkedPlan).intensity_factor) ?? null,
         estimatedDurationMinutes: Math.round(
-          readFiniteNumber(getAuthoritativeActivityPlanMetrics(linkedPlan).estimated_duration) / 60,
+          readFiniteNumber(getActivityPlanQuantitySummary(linkedPlan).durationSeconds) / 60,
         ),
         usageCount: activityUsageCountById.get(linkedPlan.id) ?? 0,
         stepCount: countSteps(linkedPlan.structure),
@@ -566,8 +561,11 @@ export default function TrainingPlanOverview() {
       })),
     [activityUsageCountById, uniqueLinkedActivityPlans],
   );
-  const totalPlannedTss = useMemo(
-    () => weeklyLoadSummary.reduce((sum, week) => sum + week.estimatedTss, 0),
+  const totalPlannedLoad = useMemo(
+    () =>
+      weeklyLoadSummary.some((week) => week.weeklyLoad === null)
+        ? null
+        : weeklyLoadSummary.reduce((sum, week) => sum + (week.weeklyLoad ?? 0), 0),
     [weeklyLoadSummary],
   );
   const totalPlannedMinutes = useMemo(
@@ -580,9 +578,10 @@ export default function TrainingPlanOverview() {
         return (
           sum +
           readFiniteNumber(
-            getAuthoritativeActivityPlanMetrics(linkedActivityPlanById.get(session.activityPlanId))
-              .estimated_duration,
-          )
+            getActivityPlanQuantitySummary(linkedActivityPlanById.get(session.activityPlanId))
+              .durationSeconds,
+          ) /
+            60
         );
       }, 0),
     [linkedActivityPlanById, structureSessionRows],
@@ -655,7 +654,8 @@ export default function TrainingPlanOverview() {
     [selectedMicrocycleActivityCards],
   );
   const selectedMicrocycleLoad = useMemo(
-    () => weeklyLoadSummary.find((week) => week.microcycle === activeMicrocycle)?.estimatedTss ?? 0,
+    () =>
+      weeklyLoadSummary.find((week) => week.microcycle === activeMicrocycle)?.weeklyLoad ?? null,
     [activeMicrocycle, weeklyLoadSummary],
   );
 
@@ -897,13 +897,17 @@ export default function TrainingPlanOverview() {
             isCurrentScheduledPlan={isCurrentScheduledPlan}
             isLiked={headerActions.isLiked}
             likesCount={headerActions.likesCount}
-            overview={{
-              linkedActivities: linkedActivityCards.length,
-              microcycles: groupedStructureSessions.length || 0,
-              plannedTime: markEstimated(formatMinutesLabel(totalPlannedMinutes)) ?? "0 min",
-              plannedTss: Math.round(totalPlannedTss),
-              sessions: structureSessionRows.length,
-            }}
+            {...(totalPlannedLoad === null
+              ? {}
+              : {
+                  overview: {
+                    linkedActivities: linkedActivityCards.length,
+                    microcycles: groupedStructureSessions.length || 0,
+                    plannedTime: markEstimated(formatMinutesLabel(totalPlannedMinutes)) ?? "0 min",
+                    plannedLoad: Math.round(totalPlannedLoad),
+                    sessions: structureSessionRows.length,
+                  },
+                })}
             plan={plan}
           />
 
@@ -956,8 +960,12 @@ export default function TrainingPlanOverview() {
                     value={`${selectedMicrocycleActivityCards.length}`}
                   />
                   <SummaryMetricCard
-                    label="Planned TSS"
-                    value={markEstimated(`${Math.round(selectedMicrocycleLoad)}`) ?? "0"}
+                    label="Planned Load"
+                    value={
+                      selectedMicrocycleLoad === null
+                        ? "Unavailable"
+                        : (markEstimated(`${Math.round(selectedMicrocycleLoad)}`) ?? "Unavailable")
+                    }
                   />
                   <SummaryMetricCard
                     label="Planned time"

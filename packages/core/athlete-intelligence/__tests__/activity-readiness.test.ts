@@ -1,4 +1,9 @@
 import { describe, expect, it } from "vitest";
+import {
+  calculateAerobicDecoupling,
+  calculateEfficiencyFactor,
+  type EfficiencyFactorResult,
+} from "../../calculations/efficiency";
 
 import {
   ACTIVITY_READINESS_POLICY_VERSION,
@@ -8,6 +13,29 @@ import {
 } from "../policies/activity-readiness";
 
 const assessmentAt = "2026-07-10T12:00:00.000Z";
+const aerobicInput = {
+  modality: "running" as const,
+  outputUnit: "meters_per_second" as const,
+  samples: Array.from({ length: 1_201 }, (_, timestampSeconds) => ({
+    timestampSeconds,
+    output: 4,
+    heartRateBpm: 150,
+  })),
+};
+function availableAerobicResults() {
+  const efficiency = calculateEfficiencyFactor(aerobicInput);
+  const decoupling = calculateAerobicDecoupling(aerobicInput);
+  if (efficiency.status === "unavailable" || decoupling.status === "unavailable") {
+    throw new Error("Expected qualified readiness fixtures");
+  }
+  return { efficiency, decoupling };
+}
+const { efficiency: baseEfficiencyFactorResult, decoupling: baseAerobicDecouplingResult } =
+  availableAerobicResults();
+
+function efficiencyFactorResult(value: number): EfficiencyFactorResult {
+  return { ...baseEfficiencyFactorResult, value };
+}
 const runLoadIdentity = {
   activity_category: "run",
   family: "trimp" as const,
@@ -30,8 +58,8 @@ function activity(
     trainingLoadIdentity: runLoadIdentity,
     averagePowerWatts: 240,
     averageHeartRateBpm: 150,
-    efficiencyFactor: 1.6,
-    decouplingPercent: 4,
+    efficiencyFactorResult: efficiencyFactorResult(1.6),
+    aerobicDecouplingResult: { ...baseAerobicDecouplingResult, value: 0.04 },
     ...overrides,
   };
 }
@@ -174,7 +202,10 @@ describe("activity readiness v1", () => {
     const outlier = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
-      activities: [...normal, activity(25, { efficiencyFactor: 500 })],
+      activities: [
+        ...normal,
+        activity(25, { efficiencyFactorResult: efficiencyFactorResult(500) }),
+      ],
     });
 
     expect(baseline.durability.state).toBe("estimated");
@@ -274,7 +305,7 @@ describe("activity readiness v1", () => {
           lineageGroupId: "activity:bike-extra",
           activity_category: "bike",
           durationSeconds: 7_200,
-          efficiencyFactor: 4,
+          efficiencyFactorResult: efficiencyFactorResult(4),
         }),
       ],
     });
@@ -290,7 +321,7 @@ describe("activity readiness v1", () => {
     const result = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
-      activities: [2, 6, 10, 15].map((day) => activity(day, { efficiencyFactor: null })),
+      activities: [2, 6, 10, 15].map((day) => activity(day, { efficiencyFactorResult: null })),
     });
 
     expect(result.durability.state).toBe("unknown");

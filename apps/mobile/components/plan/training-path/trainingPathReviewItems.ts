@@ -1,4 +1,8 @@
-import { getAuthoritativeActivityPlanMetrics } from "@repo/core/activity-plan";
+import type {
+  ActivityObservationQuantificationBundle,
+  ActivityPrescriptionQuantificationBundle,
+} from "@repo/core";
+import { getCompleteActivityQuantificationCommonLoad } from "@/lib/activity-load-presentation";
 import { getTrainingPathDateKey } from "./trainingPathPlanningTime";
 import type { TrainingPathCompletedActivity, TrainingPathScheduledItem } from "./trainingPathTypes";
 
@@ -29,13 +33,7 @@ export type ScheduledWeekEvent = {
     structure?: unknown;
     description?: string | null;
     notes?: string | null;
-    estimated_tss?: number | null;
-    authoritative_metrics?: {
-      estimated_duration?: number | null;
-      estimated_tss?: number | null;
-      intensity_factor?: number | null;
-      estimated_distance?: number | null;
-    } | null;
+    prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
   } | null;
   owner?: ActivityOwner | null;
 };
@@ -46,10 +44,7 @@ export type CompletedWeekActivity = {
   name?: string | null;
   started_at?: string | Date | null;
   derived?: {
-    tss?: number | null;
-    stress?: {
-      tss?: number | null;
-    } | null;
+    observationQuantification?: ActivityObservationQuantificationBundle | null;
   } | null;
 };
 
@@ -81,7 +76,9 @@ function getScheduledEventTitle(event: ScheduledWeekEvent) {
 }
 
 function getScheduledEventLoad(event: ScheduledWeekEvent) {
-  return getAuthoritativeActivityPlanMetrics(event.activity_plan).estimated_tss ?? null;
+  return getCompleteActivityQuantificationCommonLoad(
+    event.activity_plan?.prescriptionQuantification,
+  );
 }
 
 export function toTrainingPathScheduledItem(
@@ -125,7 +122,7 @@ export function toTrainingPathScheduledItem(
           activity_category: event.activity_plan.activity_category ?? "other",
           description: event.activity_plan.description,
           notes: event.activity_plan.notes,
-          authoritative_metrics: event.activity_plan.authoritative_metrics,
+          prescriptionQuantification: event.activity_plan.prescriptionQuantification,
         }
       : null,
     plannedActivity: event.activity_plan?.id
@@ -139,7 +136,7 @@ export function toTrainingPathScheduledItem(
             activity_category: event.activity_plan.activity_category ?? "other",
             description: event.activity_plan.description,
             notes: event.activity_plan.notes,
-            authoritative_metrics: event.activity_plan.authoritative_metrics,
+            prescriptionQuantification: event.activity_plan.prescriptionQuantification,
           },
         }
       : null,
@@ -250,7 +247,7 @@ export function toTrainingPathCompletedActivity(
     id: activity.id,
     title: activity.name?.trim() || "Completed activity",
     date,
-    load: activity.derived?.stress?.tss ?? activity.derived?.tss ?? null,
+    load: getCompleteActivityQuantificationCommonLoad(activity.derived?.observationQuantification),
     activity: owner ? { ...activity, profile: owner } : activity,
   };
 }

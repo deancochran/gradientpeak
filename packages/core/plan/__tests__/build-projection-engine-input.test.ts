@@ -10,21 +10,21 @@ const expandedPlan = {
       phase: "base",
       start_date: "2026-02-24",
       end_date: "2026-04-05",
-      target_weekly_tss_range: { min: 260, max: 320 },
+      target_weekly_load_range: { min: 260, max: 320 },
     },
     {
       name: "Build",
       phase: "build",
       start_date: "2026-04-06",
       end_date: "2026-07-31",
-      target_weekly_tss_range: { min: 300, max: 390 },
+      target_weekly_load_range: { min: 300, max: 390 },
     },
     {
       name: "Taper",
       phase: "taper",
       start_date: "2026-08-01",
       end_date: "2026-08-14",
-      target_weekly_tss_range: { min: 180, max: 240 },
+      target_weekly_load_range: { min: 180, max: 240 },
     },
   ],
   goals: [
@@ -80,9 +80,9 @@ describe("buildProjectionEngineInput", () => {
 
     const priorInferredSnapshot = {
       mean: {
-        ctl: 48,
-        atl: 51,
-        tsb: -3,
+        longTermLoad: 48,
+        recentLoad: 51,
+        loadBalance: -3,
         slb: 37,
         durability: 58,
         readiness: 61,
@@ -106,16 +106,16 @@ describe("buildProjectionEngineInput", () => {
     const first = buildProjectionEngineInput({
       expanded_plan: expandedPlan,
       normalized_creation_config: normalizedConfig,
-      starting_ctl: 47,
-      starting_atl: 53,
+      starting_longTermLoad: 47,
+      starting_recentLoad: 53,
       prior_inferred_snapshot: priorInferredSnapshot,
     });
 
     const second = buildProjectionEngineInput({
       expanded_plan: expandedPlan,
       normalized_creation_config: normalizedConfig,
-      starting_ctl: 47,
-      starting_atl: 53,
+      starting_longTermLoad: 47,
+      starting_recentLoad: 53,
       prior_inferred_snapshot: priorInferredSnapshot,
     });
 
@@ -140,8 +140,8 @@ describe("buildProjectionEngineInput", () => {
       start_date: expandedPlan.start_date,
       end_date: expandedPlan.end_date,
     });
-    expect(first.starting_ctl).toBe(47);
-    expect(first.starting_atl).toBe(53);
+    expect(first.starting_longTermLoad).toBe(47);
+    expect(first.starting_recentLoad).toBe(53);
     expect(first.prior_inferred_snapshot).toEqual(priorInferredSnapshot);
   });
 
@@ -163,7 +163,7 @@ describe("buildProjectionEngineInput", () => {
       minSessionsPerWeek: 2,
       maxSessionsPerWeek: 3,
     };
-    const plannedSessions = [{ date: "2026-03-02", estimatedTss: 72 }];
+    const plannedSessions = [{ date: "2026-03-02", estimatedCommonLoad: 72 }];
 
     const shapedInput = buildProjectionEngineInput({
       expanded_plan: expandedPlan,

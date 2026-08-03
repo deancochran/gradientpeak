@@ -1,29 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { derivePowerCurveFromFTP, estimatePowerForDuration } from "../power-curve";
-
-describe("derivePowerCurveFromFTP", () => {
-  it("returns only a modeled 60-minute FTP threshold anchor", () => {
-    expect(derivePowerCurveFromFTP(250)).toEqual([
-      {
-        duration_seconds: 3_600,
-        effort_type: "power",
-        value: 250,
-        unit: "watts",
-        activity_category: "bike",
-      },
-    ]);
-  });
-
-  it.each([
-    0,
-    -100,
-    3_001,
-    Number.NaN,
-    Number.POSITIVE_INFINITY,
-  ])("rejects invalid FTP %s", (ftp) => {
-    expect(() => derivePowerCurveFromFTP(ftp)).toThrow("FTP must be between 1 and 3000 watts");
-  });
-});
+import { estimatePowerForDuration } from "../power-curve";
 
 describe("estimatePowerForDuration", () => {
   const observedModel = {

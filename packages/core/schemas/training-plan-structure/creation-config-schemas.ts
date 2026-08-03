@@ -124,8 +124,8 @@ export const creationBehaviorControlsSchema = z
 
 export type CreationBehaviorControls = z.infer<typeof creationBehaviorControlsSchema>;
 
-export const CREATION_MAX_WEEKLY_TSS_RAMP_PCT = 40;
-export const CREATION_MAX_CTL_RAMP_PER_WEEK = 12;
+export const CREATION_MAX_WEEKLY_COMMON_LOAD_RAMP_PCT = 40;
+export const CREATION_MAX_LongTermLoad_RAMP_PER_WEEK = 12;
 
 const calibrationBoundedNumber = (min: number, max: number) =>
   z.number().min(min).max(max).finite();
@@ -159,7 +159,7 @@ export type ReadinessCompositeCalibration = z.infer<typeof readinessCompositeCal
 
 export const readinessTimelineCalibrationSchema = z
   .object({
-    target_tsb: calibrationBoundedNumber(-5, 20).default(8),
+    target_loadBalance: calibrationBoundedNumber(-5, 20).default(8),
     form_tolerance: calibrationBoundedNumber(8, 40).default(20),
     fatigue_overflow_scale: calibrationBoundedNumber(0.1, 1).default(0.4),
     feasibility_blend_weight: calibrationBoundedNumber(0, 1).default(0),
@@ -242,7 +242,7 @@ export const trainingPlanCalibrationConfigSchema = z
       evidence_weight: 0.1,
     }),
     readiness_timeline: readinessTimelineCalibrationSchema.default({
-      target_tsb: 8,
+      target_loadBalance: 8,
       form_tolerance: 20,
       fatigue_overflow_scale: 0.4,
       feasibility_blend_weight: 0,
@@ -536,7 +536,7 @@ export const trainingPlanCreationConfigSchema = z
         evidence_weight: 0.1,
       },
       readiness_timeline: {
-        target_tsb: 8,
+        target_loadBalance: 8,
         form_tolerance: 20,
         fatigue_overflow_scale: 0.4,
         feasibility_blend_weight: 0,

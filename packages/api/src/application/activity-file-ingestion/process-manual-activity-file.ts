@@ -239,9 +239,6 @@ export async function processManualActivityFile(
       avgSpeedMps: analysis.summaryValues.avg_speed_mps,
       maxSpeedMps: analysis.summaryValues.max_speed_mps,
       normalizedSpeedMps: analysis.summaryValues.normalized_speed_mps,
-      normalizedGradedSpeedMps: analysis.summaryValues.normalized_graded_speed_mps,
-      efficiencyFactor: analysis.summaryValues.efficiency_factor,
-      aerobicDecoupling: analysis.summaryValues.aerobic_decoupling,
       avgTemperature: analysis.summaryValues.avg_temperature,
       poolLengthMeters: analysis.summaryValues.pool_length_meters,
       totalStrokes: analysis.summaryValues.total_strokes,
@@ -254,7 +251,6 @@ export async function processManualActivityFile(
       analysis: {
         efforts: analysis.effortsToInsert,
         detectedLTHR: analysis.detectedLTHR,
-        activityCompletedAt: analysis.activityCompletedAt,
         ingestion: {
           source: "manual_import",
           operationKey,

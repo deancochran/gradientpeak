@@ -2,20 +2,37 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createPrescriptionQuantificationBundleFixture } from "../../test-support/activity-quantification";
 
 import {
   formatPlannedDayActivityCategories,
-  formatPlannedDayTss,
   PlannedDaySummary,
   type WebPlannedDaySummaryData,
 } from "./planned-day-summary";
+
+function aggregateQuantification(load: number | null) {
+  return createPrescriptionQuantificationBundleFixture([
+    {
+      activityCategory: "bike",
+      durationSeconds: 2_700,
+      id: "plan-1",
+      load: load === null ? null : load / 2,
+    },
+    {
+      activityCategory: "run",
+      durationSeconds: 2_700,
+      id: "plan-2",
+      load: load === null ? null : load / 2,
+    },
+  ]);
+}
 
 const completeData: WebPlannedDaySummaryData = {
   summary: {
     eventCount: 2,
     activity_categories: ["bike", "run"],
     totalDurationSeconds: 5_400,
-    totalTss: 120,
+    prescriptionQuantification: aggregateQuantification(120),
   },
   source: {
     complete: true,
@@ -38,7 +55,11 @@ describe("PlannedDaySummary", () => {
     expect(screen.getByText("2 Events")).toBeTruthy();
     expect(screen.getByText("Bike + Run")).toBeTruthy();
     expect(screen.getByText("1h 30m")).toBeTruthy();
-    expect(screen.getByText("120 TSS")).toBeTruthy();
+    expect(screen.getByText("Common Load")).toBeTruthy();
+    expect(screen.getByText("120")).toBeTruthy();
+    expect(screen.getByText("Normalized intensity")).toBeTruthy();
+    expect(screen.getByText("0.89")).toBeTruthy();
+    expect(screen.getByText(/Derived\. Common Load is available/)).toBeTruthy();
     expect(
       screen.queryByText(/Brick|Triathlon|combined activity|transition|one session/i),
     ).toBeNull();
@@ -49,20 +70,16 @@ describe("PlannedDaySummary", () => {
     expect(formatPlannedDayActivityCategories(["bike", "run", "bike"])).not.toContain("→");
   });
 
-  it("rounds finite planned TSS to one decimal with its unit", () => {
-    expect(formatPlannedDayTss(120)).toBe("120 TSS");
-    expect(formatPlannedDayTss(120.54)).toBe("120.5 TSS");
-    expect(formatPlannedDayTss(12_345.678)).toBe("12345.7 TSS");
-    expect(formatPlannedDayTss(0)).toBe("0 TSS");
-    expect(formatPlannedDayTss(null)).toBe("Unavailable");
-  });
-
   it("makes unknown estimates and partial sources explicit", () => {
     render(
       <PlannedDaySummary
         data={{
           ...completeData,
-          summary: { ...completeData.summary, totalDurationSeconds: null, totalTss: null },
+          summary: {
+            ...completeData.summary,
+            totalDurationSeconds: null,
+            prescriptionQuantification: aggregateQuantification(null),
+          },
           source: {
             ...completeData.source,
             unavailableEstimateCount: 1,
@@ -76,7 +93,7 @@ describe("PlannedDaySummary", () => {
       />,
     );
 
-    expect(screen.getAllByText("Unavailable")).toHaveLength(2);
+    expect(screen.getAllByText("Unavailable")).toHaveLength(3);
     expect(screen.getByRole("status").textContent).toContain("Partial information");
     expect(screen.getByRole("status").textContent).toContain("linked plan is unavailable");
     expect(screen.getByRole("status").textContent).toContain("no linked plan");
@@ -103,7 +120,7 @@ describe("PlannedDaySummary", () => {
             eventCount: 0,
             activity_categories: [],
             totalDurationSeconds: 0,
-            totalTss: 0,
+            prescriptionQuantification: aggregateQuantification(null),
           },
           source: { ...completeData.source, eventCount: 0 },
         }}

@@ -1,8 +1,8 @@
 import { z } from "zod";
-import type { ActivityTssIdentity } from "../activity-analysis/contracts";
+import type { CommonLoadResult } from "./common-relative-load";
 
 export const loadFamilySchema = z.enum([
-  "tss",
+  "common_load",
   "trimp",
   "external_work_kj",
   "session_rpe",
@@ -10,33 +10,42 @@ export const loadFamilySchema = z.enum([
   "strength_exposure",
 ]);
 
-export const loadSeriesIdentitySchema = z.object({
-  activity_category: z
-    .string()
-    .trim()
-    .min(1)
-    .refine((activity_category) => activity_category !== "all", {
-      message:
-        "Load-series identity must name one activity category, not an all-category aggregate",
-    }),
-  family: loadFamilySchema,
-  method: z.string().trim().min(1),
-  version: z.string().trim().min(1),
-  sourceDefinition: z.string().trim().min(1),
-});
+export const loadSeriesIdentitySchema = z
+  .object({
+    activity_category: z.string().trim().min(1),
+    family: loadFamilySchema,
+    method: z.string().trim().min(1),
+    version: z.string().trim().min(1),
+    sourceDefinition: z.string().trim().min(1),
+  })
+  .superRefine((identity, context) => {
+    if (identity.family === "common_load" && identity.activity_category !== "all") {
+      context.addIssue({
+        code: "custom",
+        path: ["activity_category"],
+        message: "Common Load identity must use the additive all-category model family",
+      });
+    } else if (identity.family !== "common_load" && identity.activity_category === "all") {
+      context.addIssue({
+        code: "custom",
+        path: ["activity_category"],
+        message: "Only Common Load may use an all-category load-series identity",
+      });
+    }
+  });
 
 export type LoadSeriesIdentity = z.infer<typeof loadSeriesIdentitySchema>;
 
-/** Maps activity-level TSS evidence to its stable load-series identity. */
-export function loadSeriesIdentityForActivityTss(
-  identity: ActivityTssIdentity,
+/** Maps a fully available canonical Common Load result to its stable series identity. */
+export function loadSeriesIdentityForAvailableCommonLoad(
+  load: Extract<CommonLoadResult, { status: "available" }>,
 ): LoadSeriesIdentity {
   return loadSeriesIdentitySchema.parse({
-    activity_category: identity.activity_category,
-    family: "tss",
-    method: identity.method,
-    version: identity.version,
-    sourceDefinition: identity.source,
+    activity_category: "all",
+    family: "common_load",
+    method: load.model,
+    version: load.version,
+    sourceDefinition: load.model,
   });
 }
 

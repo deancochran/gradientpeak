@@ -1,6 +1,7 @@
 import {
   ACTIVITY_PLAN_COMPILER_VERSION,
   activityPlanStructureSchema,
+  athletePerformanceTargetFactsSchema,
   canonicalActivityCategorySchema,
   compileActivityPlan,
   type RecordingCheckpoint,
@@ -54,9 +55,19 @@ const unplannedRecordingCheckpointSchema = z
         ),
       })
       .strict(),
+    performanceTargets: athletePerformanceTargetFactsSchema,
     streamArtifactPaths: z.array(z.string().min(1)),
   })
-  .strict();
+  .strict()
+  .superRefine((checkpoint, context) => {
+    if (Date.parse(checkpoint.performanceTargets.asOf) > Date.parse(checkpoint.start.startedAt)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Checkpoint performance targets cannot be observed after session start",
+        path: ["performanceTargets", "asOf"],
+      });
+    }
+  });
 const plannedRecordingCheckpointSchema = recordingCheckpointSchema
   .extend({ variant: z.literal("planned") })
   .strict();

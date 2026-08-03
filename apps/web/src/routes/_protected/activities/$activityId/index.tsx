@@ -25,6 +25,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@repo/ui/components/dialog";
+import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
+import { getNormalizedPowerPresentation } from "@repo/ui/lib/normalized-power-presentation";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Loader2, Lock, Share2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -44,11 +46,7 @@ import { ActivityStreamAnalysisCard } from "../../../../components/protected/act
 import { EntityCommentsCard } from "../../../../components/protected/entity-comments-card";
 import { useAuth } from "../../../../components/providers/auth-provider";
 import { useViewingUserPreferredUnitSystem } from "../../../../hooks/use-viewing-user-preferred-unit-system";
-import {
-  formatCalibrationQuality,
-  getActivityLoadLabels,
-  getCommonLoadPresentation,
-} from "../../../../lib/activity-load-presentation";
+import { formatCalibrationQuality } from "../../../../lib/activity-load-presentation";
 import {
   deriveActivityCategoryDisplay,
   deriveActivityTimingDisplay,
@@ -109,17 +107,21 @@ function ActivityDetailPage() {
   const derived = activityQuery.data?.derived;
   const categoryDisplay = deriveActivityCategoryDisplay(activity?.segments ?? []);
   const timingDisplay = activity ? deriveActivityTimingDisplay(activity) : null;
-  const normalizedPowerWatts = useMemo(() => {
+  const normalizedPowerAnalysis = useMemo(() => {
     const activitySegments = (activity?.segments ?? []).filter(
       (segment) => segment.role === "activity",
     );
-    if (activitySegments.length !== 1) return null;
-    const summary = activitySegments[0]?.summary;
-    if (!summary || typeof summary !== "object" || Array.isArray(summary)) return null;
-    if (!("normalizedPowerWatts" in summary)) return null;
-    const value = summary.normalizedPowerWatts;
-    return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+    const segment = activitySegments.length === 1 ? activitySegments[0] : undefined;
+    return {
+      segment,
+      presentation:
+        segment?.status === "available"
+          ? getNormalizedPowerPresentation(segment.summary.normalizedPowerResult)
+          : null,
+    };
   }, [activity?.segments]);
+  const normalizedPowerPresentation = normalizedPowerAnalysis.presentation;
+  const normalizedPowerAnalysisStatus = normalizedPowerAnalysis.segment?.status;
   const currentArtifactLabel = deriveCurrentArtifactLabel(activity?.current_artifact ?? null);
   const activityStreamSegments = (activity?.segments ?? [])
     .filter((segment) => segment.role === "activity")
@@ -129,15 +131,22 @@ function ActivityDetailPage() {
     activityStreamSegments.length > 1 && primaryStreamSegment?.activity_category
       ? `Showing the first ${getActivityBadgeLabel(primaryStreamSegment.activity_category).toLowerCase()} segment from this multisport activity.`
       : undefined;
-  const commonLoad = derived?.stress.common_load;
-  const loadLabels = getActivityLoadLabels();
-  const loadPresentation = getCommonLoadPresentation(commonLoad, {
-    hasHeartRateSummary:
-      typeof activity?.avg_heart_rate === "number" && activity.avg_heart_rate > 0,
-    segmentCommonLoads: activityQuery.data?.segment_loads?.map((segment) => segment.common_load),
-  });
+  const segmentQuantifications = activityQuery.data?.segment_loads?.map(
+    (segment) => segment.observationQuantification,
+  );
+  const loadPresentation = getActivityQuantificationPresentation(
+    derived?.observationQuantification,
+    {
+      hasHeartRateSummary:
+        typeof activity?.avg_heart_rate === "number" && activity.avg_heart_rate > 0,
+    },
+  );
+  const calibrationCommonLoad =
+    segmentQuantifications?.length === 1 ? segmentQuantifications[0]?.members[0]?.commonLoad : null;
   const calibrationText = formatCalibrationQuality(
-    commonLoad && "quality" in commonLoad ? commonLoad.quality : null,
+    calibrationCommonLoad && calibrationCommonLoad.status !== "unavailable"
+      ? calibrationCommonLoad.quality
+      : null,
     activity?.started_at,
   );
   const isOwner = user?.id === activity?.profile_id;
@@ -401,8 +410,19 @@ function ActivityDetailPage() {
 
       <DetailMetricGrid
         items={[
-          { label: loadLabels.load, value: loadPresentation.load },
-          { label: loadLabels.intensity, value: loadPresentation.intensity },
+          { label: loadPresentation.commonLoad.label, value: loadPresentation.commonLoad.value },
+          {
+            label: loadPresentation.normalizedIntensity.label,
+            value: loadPresentation.normalizedIntensity.value,
+          },
+          ...(loadPresentation.nativeIntensity.status === "unavailable"
+            ? []
+            : [
+                {
+                  label: loadPresentation.nativeIntensity.label,
+                  value: loadPresentation.nativeIntensity.value,
+                },
+              ]),
           {
             label: "Distance",
             value: formatDistance(activity.distance_meters, unitSystem),
@@ -432,20 +452,40 @@ function ActivityDetailPage() {
                 : formatSpeed(activity.avg_speed_mps, unitSystem),
           },
           {
-            label: "Normalized power",
-            value: formatPower(normalizedPowerWatts),
+            label: normalizedPowerPresentation?.label ?? "Normalized power",
+            value:
+              normalizedPowerAnalysisStatus === "processing"
+                ? "Processing"
+                : normalizedPowerAnalysisStatus === "failed"
+                  ? "Analysis failed"
+                  : normalizedPowerPresentation?.status === "unavailable"
+                    ? "Unavailable"
+                    : formatPower(normalizedPowerPresentation?.valueWatts),
           },
           { label: "Started", value: formatDateTime(activity.started_at) },
         ]}
       />
-      <p className="text-sm text-muted-foreground">{loadPresentation.explanation}</p>
-      {loadPresentation.diagnostic ? (
+      <p className="text-sm text-muted-foreground">
+        {loadPresentation.commonLoad.evidence}. {loadPresentation.commonLoad.explanation}
+      </p>
+      {loadPresentation.commonLoad.diagnostic ? (
         <div className="space-y-1 text-sm text-muted-foreground">
-          <p>{loadPresentation.diagnostic.summary}</p>
-          <p>{loadPresentation.diagnostic.action}</p>
+          <p>{loadPresentation.commonLoad.diagnostic.summary}</p>
+          <p>{loadPresentation.commonLoad.diagnostic.action}</p>
         </div>
       ) : null}
       {calibrationText ? <p className="text-sm text-muted-foreground">{calibrationText}</p> : null}
+      {normalizedPowerPresentation ? (
+        <p className="text-sm text-muted-foreground">{normalizedPowerPresentation.evidence}</p>
+      ) : normalizedPowerAnalysisStatus === "processing" ? (
+        <p className="text-sm text-muted-foreground" data-testid="segment-analysis-processing">
+          Segment analysis is still processing. Normalized power will appear when it completes.
+        </p>
+      ) : normalizedPowerAnalysis.segment?.status === "failed" ? (
+        <p className="text-sm text-destructive" data-testid="segment-analysis-failed">
+          Segment analysis failed: {normalizedPowerAnalysis.segment.reason}
+        </p>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
         <EntityMapCard
@@ -541,7 +581,11 @@ function ActivityDetailPage() {
         <SessionRpeCard
           activityId={activity.id}
           effectiveSessionRpe={activity.effective_session_rpe}
-          estimatedMethod={commonLoad && "method" in commonLoad ? commonLoad.method : null}
+          estimatedMethod={
+            calibrationCommonLoad && "method" in calibrationCommonLoad
+              ? calibrationCommonLoad.method
+              : null
+          }
         />
       ) : null}
 

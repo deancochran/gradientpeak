@@ -71,7 +71,7 @@ function buildConfigFixture(): TrainingPlanConfigFormData {
         evidence_weight: 0.1,
       },
       readiness_timeline: {
-        target_tsb: 8,
+        target_loadBalance: 8,
         form_tolerance: 20,
         fatigue_overflow_scale: 0.4,
         feasibility_blend_weight: 0.15,
@@ -368,7 +368,7 @@ describe("training plan reverse adapters", () => {
 
   it("prefers metadata snapshot fields for config with deterministic fallback", () => {
     const structure = {
-      fitness_progression: { starting_ctl: 52 },
+      fitness_progression: { starting_longTermLoad: 52 },
       metadata: {
         creation_config_snapshot: {
           availability_config: {
@@ -414,7 +414,7 @@ describe("training plan reverse adapters", () => {
     const second = toTrainingPlanConfigFormDataFromStructure({ structure });
 
     expect(first).toEqual(second);
-    expect(first.startingCtlAssumption).toBe(52);
+    expect(first.startingLongTermLoadAssumption).toBe(52);
     expect(first.recentInfluenceScore).toBe(0.37);
     expect(first.optimizationProfile).toBe("outcome_first");
     expect(first.postGoalRecoveryDays).toBe(8);

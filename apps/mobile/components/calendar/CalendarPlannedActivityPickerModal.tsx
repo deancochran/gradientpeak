@@ -66,20 +66,33 @@ function sortByRecency(plans: ResourcePickerItem[]): ResourcePickerItem[] {
 
 function sortBySuggestionScore(plans: ResourcePickerItem[]): ResourcePickerItem[] {
   return [...plans].sort((left, right) => {
-    const leftEstimatedTss = left.estimatedTss ?? 0;
-    const leftEstimatedDuration = left.estimatedDuration ?? 0;
-    const rightEstimatedTss = right.estimatedTss ?? 0;
-    const rightEstimatedDuration = right.estimatedDuration ?? 0;
-    const leftScore = leftEstimatedTss + leftEstimatedDuration / 600 + (left.description ? 10 : 0);
-    const rightScore =
-      rightEstimatedTss + rightEstimatedDuration / 600 + (right.description ? 10 : 0);
+    const commonLoadComparison = compareOptionalMetricDescending(
+      left.estimatedCommonLoad,
+      right.estimatedCommonLoad,
+    );
+    if (commonLoadComparison !== 0) return commonLoadComparison;
 
-    if (rightScore !== leftScore) {
-      return rightScore - leftScore;
-    }
+    const durationComparison = compareOptionalMetricDescending(
+      left.estimatedDuration,
+      right.estimatedDuration,
+    );
+    if (durationComparison !== 0) return durationComparison;
+
+    if (Boolean(left.description) !== Boolean(right.description)) return left.description ? -1 : 1;
 
     return left.name.localeCompare(right.name);
   });
+}
+
+function compareOptionalMetricDescending(
+  left: number | null | undefined,
+  right: number | null | undefined,
+): number {
+  const leftValue = typeof left === "number" && Number.isFinite(left) ? left : null;
+  const rightValue = typeof right === "number" && Number.isFinite(right) ? right : null;
+  if (leftValue === null) return rightValue === null ? 0 : 1;
+  if (rightValue === null) return -1;
+  return rightValue - leftValue;
 }
 
 function buildBrowseSections(plans: ResourcePickerItem[]): PlanSection[] {
@@ -187,10 +200,10 @@ export function CalendarPlannedActivityPickerModal({
             ...plan,
             activity_category: plan.activityCategory ?? "other",
             created_at: plan.createdAt ?? undefined,
-            authoritative_metrics: {
-              estimated_duration: plan.estimatedDuration,
-              estimated_tss: plan.estimatedTss,
-            },
+            prescriptionQuantification:
+              "activityPlanCardData" in plan
+                ? (plan.activityPlanCardData.prescriptionQuantification ?? null)
+                : null,
             has_liked: plan.hasLiked ?? undefined,
             likes_count: plan.likesCount,
             updated_at: plan.updatedAt ?? undefined,

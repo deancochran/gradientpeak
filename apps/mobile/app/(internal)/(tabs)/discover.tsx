@@ -140,7 +140,7 @@ export default function DiscoverPage() {
   const normalizedSearchQuery = normalizeSearchValue(validatedSearchQuery);
   const safeActivityPlanSort = sanitizeSortState(
     activityPlanSort,
-    ["created_at", "estimated_duration", "estimated_tss", "intensity_factor"] as const,
+    ["created_at", "estimated_duration", "common_load", "common_intensity"] as const,
     DEFAULT_ACTIVITY_PLAN_SORT,
   );
   const safeTrainingPlanSort = sanitizeSortState(

@@ -36,7 +36,7 @@ describe("buildGoalAnchoredProjectionPlan", () => {
           },
         ],
       }),
-      startingCtl: 45,
+      startingLongTermLoad: 45,
     });
 
     const marathonTaper = plan.blocks.find(
@@ -52,8 +52,8 @@ describe("buildGoalAnchoredProjectionPlan", () => {
     expect((marathonTaper?.start_date ?? "") >= "2026-11-01").toBe(true);
     expect(marathonTaper?.end_date).toBe("2026-11-17");
     expect((marathonPeak?.end_date ?? "") < (marathonTaper?.start_date ?? "")).toBe(true);
-    expect(marathonPeak?.target_weekly_tss_range.max ?? 0).toBeGreaterThan(
-      halfPeak?.target_weekly_tss_range.max ?? 0,
+    expect(marathonPeak?.target_weekly_load_range.max ?? 0).toBeGreaterThan(
+      halfPeak?.target_weekly_load_range.max ?? 0,
     );
   });
 
@@ -170,7 +170,7 @@ describe("buildGoalAnchoredProjectionPlan", () => {
     });
     const conservative = buildGoalAnchoredProjectionPlan({
       minimalPlan,
-      startingCtl: 45,
+      startingLongTermLoad: 45,
       preferenceProfile: {
         ...defaultAthletePreferenceProfile,
         dose_limits: {
@@ -196,7 +196,7 @@ describe("buildGoalAnchoredProjectionPlan", () => {
     });
     const aggressive = buildGoalAnchoredProjectionPlan({
       minimalPlan,
-      startingCtl: 45,
+      startingLongTermLoad: 45,
       preferenceProfile: {
         ...defaultAthletePreferenceProfile,
         dose_limits: {
@@ -226,8 +226,8 @@ describe("buildGoalAnchoredProjectionPlan", () => {
     const conservativeBase = conservative.blocks.find((block) => block.phase === "base");
     const aggressiveBase = aggressive.blocks.find((block) => block.phase === "base");
 
-    expect(aggressivePeak?.target_weekly_tss_range.max ?? 0).toBeGreaterThan(
-      conservativePeak?.target_weekly_tss_range.max ?? 0,
+    expect(aggressivePeak?.target_weekly_load_range.max ?? 0).toBeGreaterThan(
+      conservativePeak?.target_weekly_load_range.max ?? 0,
     );
     expect(
       conservativeBase

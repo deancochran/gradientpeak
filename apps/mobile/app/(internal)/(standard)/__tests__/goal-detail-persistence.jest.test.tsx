@@ -128,9 +128,9 @@ jest.mock("@repo/core", () => ({
   getGoalDistanceBadge: jest.fn(() => null),
   getGoalMetricSummary: jest.fn(() => null),
   getGoalObjectiveSummary: jest.fn(() => "5K target"),
-  getManualBaselineCtlWarning: jest.fn((value: number | null | undefined) =>
+  getManualBaselineLongTermLoadWarning: jest.fn((value: number | null | undefined) =>
     typeof value === "number" && value > 120
-      ? "Manual CTL above 120 is very high and can make estimated readiness look flat or inflated without completed activity history."
+      ? "Manual Fitness above 120 is very high and can make estimated readiness look flat or inflated without completed activity history."
       : null,
   ),
   getProfileGoalLifecycleStatus: jest.fn(() => ({
@@ -203,7 +203,7 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
     profileSettings: {
       baseline_fitness: {
         is_enabled: true,
-        override_ctl: 220,
+        override_longTermLoad: 220,
       },
     },
   }),

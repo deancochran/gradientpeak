@@ -11,7 +11,6 @@
  */
 
 import { z } from "zod";
-import { PROFILE_PERFORMANCE_THRESHOLD_BOUNDS } from "../athlete-inputs/profile-metrics";
 import { ianaTimezoneSchema } from "../athlete-intelligence/planning-context";
 import { isValidDateOfBirth } from "../profile/date-of-birth";
 import { canonicalActivityCategorySchema } from "./activity-category";
@@ -21,9 +20,9 @@ import { canonicalActivityCategorySchema } from "./activity-category";
  * Determines which baseline profile to use and which UI flows to show.
  */
 export const experienceLevelSchema = z.enum([
-  "beginner", // New to activity_category, auto-apply conservative defaults
-  "intermediate", // Regular training, validate estimates
-  "advanced", // Knows metrics, manual entry
+  "beginner",
+  "intermediate",
+  "advanced",
   "skip", // Minimal setup, configure later
 ]);
 
@@ -69,9 +68,6 @@ export const onboardingBaselineFieldSourcesSchema = z
     weight_kg: onboardingBaselineFieldSourceSchema.optional(),
     max_hr: onboardingBaselineFieldSourceSchema.optional(),
     resting_hr: onboardingBaselineFieldSourceSchema.optional(),
-    ftp: onboardingBaselineFieldSourceSchema.optional(),
-    threshold_pace_seconds_per_km: onboardingBaselineFieldSourceSchema.optional(),
-    css_seconds_per_hundred_meters: onboardingBaselineFieldSourceSchema.optional(),
   })
   .strict();
 
@@ -122,7 +118,7 @@ export type OnboardingStep1 = z.infer<typeof onboardingStep1Schema>;
  * Step 2: Heart Rate Metrics (Optional)
  *
  * Heart rate data for cardiovascular fitness assessment.
- * Can be skipped for beginners (auto-estimated) or entered manually for advanced users.
+ * Can be skipped or entered manually.
  */
 export const onboardingStep2Schema = z.object({
   max_hr: z
@@ -138,63 +134,17 @@ export const onboardingStep2Schema = z.object({
     .min(30, { message: "Resting HR must be at least 30 bpm" })
     .max(120, { message: "Resting HR must be at most 120 bpm" })
     .optional(),
-
-  lthr: z
-    .number()
-    .int({ message: "LTHR must be an integer" })
-    .min(80, { message: "LTHR must be at least 80 bpm" })
-    .max(220, { message: "LTHR must be at most 220 bpm" })
-    .optional(),
 });
 
 export type OnboardingStep2 = z.infer<typeof onboardingStep2Schema>;
 
 /**
- * Step 3: Performance Metrics (Optional, ActivityCategory-Specific)
+ * Step 3: General performance context (Optional)
  *
- * ActivityCategory-specific performance data. Which fields are shown depends on selected activity_category interests:
- * - Cycling: FTP
- * - Running: Threshold pace
- * - Swimming: CSS
- * - All: VO2max
- *
- * Can be auto-estimated for beginners/intermediate or entered manually for advanced.
+ * Threshold calibration is evidence-derived outside onboarding. VO2max remains
+ * optional non-threshold context.
  */
 export const onboardingStep3Schema = z.object({
-  // Cycling: FTP (Functional Threshold Power)
-  ftp: z
-    .number()
-    .min(PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.ftpWatts.min, {
-      message: "FTP must be at least 20W",
-    })
-    .max(PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.ftpWatts.max, {
-      message: "FTP must be at most 700W",
-    })
-    .optional(),
-
-  // Running: Threshold Pace (seconds per km)
-  threshold_pace_seconds_per_km: z
-    .number()
-    .min(PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.runningThresholdPaceSecondsPerKilometer.min, {
-      message: "Threshold pace must be no faster than 2:00/km",
-    })
-    .max(PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.runningThresholdPaceSecondsPerKilometer.max, {
-      message: "Threshold pace must be no slower than 20:00/km",
-    })
-    .optional(),
-
-  // Swimming: Critical Swim Speed (seconds per 100m)
-  css_seconds_per_hundred_meters: z
-    .number()
-    .min(PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.swimCssSecondsPerHundredMeters.min, {
-      message: "CSS must be no faster than 0:45/100m",
-    })
-    .max(PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.swimCssSecondsPerHundredMeters.max, {
-      message: "CSS must be no slower than 10:00/100m",
-    })
-    .optional(),
-
-  // General: VO2max
   vo2max: z
     .number()
     .positive({ message: "VO2max must be positive" })
@@ -230,13 +180,15 @@ export type OnboardingStep3 = z.infer<typeof onboardingStep3Schema>;
  * Combines all steps into a single payload for the completeOnboarding mutation.
  * All fields except Step 1 are optional.
  */
-export const completeOnboardingSchema = z.object({
-  ...onboardingStep1Schema.shape,
-  ...onboardingStep2Schema.shape,
-  ...onboardingStep3Schema.shape,
-  intents: onboardingIntentArraySchema.default([]),
-  baseline_field_sources: onboardingBaselineFieldSourcesSchema,
-});
+export const completeOnboardingSchema = z
+  .object({
+    ...onboardingStep1Schema.shape,
+    ...onboardingStep2Schema.shape,
+    ...onboardingStep3Schema.shape,
+    intents: onboardingIntentArraySchema.default([]),
+    baseline_field_sources: onboardingBaselineFieldSourcesSchema,
+  })
+  .strict();
 
 export type CompleteOnboarding = z.infer<typeof completeOnboardingSchema>;
 
@@ -258,62 +210,6 @@ export function validateHeartRates(data: OnboardingStep2): {
         error: "Max HR must be greater than resting HR",
       };
     }
-  }
-
-  if (data.lthr && data.max_hr) {
-    if (data.lthr >= data.max_hr) {
-      return {
-        valid: false,
-        error: "LTHR must be less than max HR",
-      };
-    }
-  }
-
-  return { valid: true };
-}
-
-/**
- * Validates that at least one performance metric is provided for the given activity_category.
- */
-export function validateActivityCategoryMetrics(
-  activityCategory: OnboardingActivityCategory,
-  metrics: OnboardingStep3,
-): {
-  valid: boolean;
-  error?: string;
-} {
-  switch (activityCategory) {
-    case "bike":
-      if (!metrics.ftp) {
-        return {
-          valid: false,
-          error: "FTP is required for cycling",
-        };
-      }
-      break;
-
-    case "run":
-      if (!metrics.threshold_pace_seconds_per_km) {
-        return {
-          valid: false,
-          error: "Threshold pace is required for running",
-        };
-      }
-      break;
-
-    case "swim":
-      if (!metrics.css_seconds_per_hundred_meters) {
-        return {
-          valid: false,
-          error: "CSS is required for swimming",
-        };
-      }
-      break;
-
-    case "strength":
-    case "other":
-      // No specific requirements for "other" activity_category
-      break;
   }
 
   return { valid: true };

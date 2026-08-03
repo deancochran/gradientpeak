@@ -4,7 +4,7 @@ import type {
 } from "../../schemas/training-plan-structure";
 import {
   computeDynamicFormWeight,
-  computeOptimalTsb,
+  computeOptimalLoadBalance,
   READINESS_TIMELINE,
 } from "../calibration-constants";
 import { weightedScore } from "../scoring/weightedMean";
@@ -28,9 +28,9 @@ export type ReadinessBand = "low" | "medium" | "high";
 export type LowReadinessLimiterMode = "timeline_limited" | "capacity_limited" | "mixed_limiters";
 
 export interface ProjectionDemandGap {
-  required_weekly_tss_target: number;
-  feasible_weekly_tss_applied: number;
-  unmet_weekly_tss: number;
+  required_weekly_load_target: number;
+  feasible_weekly_load_applied: number;
+  unmet_weekly_load: number;
   unmet_ratio: number;
   is_capped_vs_infeasible: boolean;
 }
@@ -49,9 +49,9 @@ export interface ProjectionFeasibilityMetadata {
     execution_confidence: number;
   };
   projection_uncertainty?: {
-    tss_low: number;
-    tss_likely: number;
-    tss_high: number;
+    load_low: number;
+    load_likely: number;
+    load_high: number;
     confidence: number;
   };
   readiness_rationale_codes?: string[];
@@ -147,7 +147,7 @@ function resolvePrimaryGoal(
 }
 
 export function computeDurabilityScore(input: {
-  weekly_tss: number[];
+  weekly_load: number[];
   durability_penalties?: TrainingPlanCalibrationConfig["durability_penalties"];
 }): number {
   const durabilityPenalties = input.durability_penalties;
@@ -157,25 +157,26 @@ export function computeDurabilityScore(input: {
   const strainScale = durabilityPenalties?.strain_scale ?? 900;
   const deloadDebtScale = durabilityPenalties?.deload_debt_scale ?? 6;
 
-  if (input.weekly_tss.length === 0) {
+  if (input.weekly_load.length === 0) {
     return 80;
   }
 
   const mean =
-    input.weekly_tss.reduce((sum, value) => sum + Math.max(0, value), 0) / input.weekly_tss.length;
+    input.weekly_load.reduce((sum, value) => sum + Math.max(0, value), 0) /
+    input.weekly_load.length;
   const variance =
-    input.weekly_tss.reduce((sum, value) => {
+    input.weekly_load.reduce((sum, value) => {
       const delta = Math.max(0, value) - mean;
       return sum + delta * delta;
-    }, 0) / input.weekly_tss.length;
+    }, 0) / input.weekly_load.length;
   const stdDev = Math.sqrt(variance);
   const monotony = mean / Math.max(1, stdDev);
   const strain = mean * monotony;
 
   let deloadDebtWeeks = 0;
-  for (let index = 1; index < input.weekly_tss.length; index += 1) {
-    const prev = Math.max(1, input.weekly_tss[index - 1] ?? 0);
-    const curr = Math.max(0, input.weekly_tss[index] ?? 0);
+  for (let index = 1; index < input.weekly_load.length; index += 1) {
+    const prev = Math.max(1, input.weekly_load[index - 1] ?? 0);
+    const curr = Math.max(0, input.weekly_load[index] ?? 0);
     if (curr > prev * 0.96) {
       deloadDebtWeeks += 1;
     }
@@ -288,17 +289,17 @@ export function computePlanningConfidence(
 }
 
 export function blendDemandWithConfidence(input: {
-  demandFloorWeeklyTss: number | null;
-  conservativeBaselineWeeklyTss: number;
+  demandFloorWeeklyLoad: number | null;
+  conservativeBaselineWeeklyLoad: number;
   confidence: number;
 }): number | null {
-  if (input.demandFloorWeeklyTss === null) {
+  if (input.demandFloorWeeklyLoad === null) {
     return null;
   }
 
-  const baseline = Math.max(0, input.conservativeBaselineWeeklyTss);
+  const baseline = Math.max(0, input.conservativeBaselineWeeklyLoad);
   const confidence = clamp01(input.confidence);
-  return round1(baseline + (input.demandFloorWeeklyTss - baseline) * confidence);
+  return round1(baseline + (input.demandFloorWeeklyLoad - baseline) * confidence);
 }
 
 export function getDemandRhythmMultiplier(input: {
@@ -328,33 +329,34 @@ export function getDemandRhythmMultiplier(input: {
 }
 
 export function computeProjectionFeasibilityMetadata(input: {
-  requiredPeakWeeklyTssTarget: number;
-  feasiblePeakWeeklyTssApplied: number;
-  tssRampClampWeeks: number;
-  ctlRampClampWeeks: number;
+  requiredPeakWeeklyLoadTarget: number;
+  feasiblePeakWeeklyLoadApplied: number;
+  loadRampClampWeeks: number;
+  longTermLoadRampClampWeeks: number;
   confidence: number;
   projectionWeeks: number;
 }): ProjectionFeasibilityMetadata {
-  const unmetWeeklyTss = Math.max(
+  const unmetWeeklyLoad = Math.max(
     0,
-    round1(input.requiredPeakWeeklyTssTarget - input.feasiblePeakWeeklyTssApplied),
+    round1(input.requiredPeakWeeklyLoadTarget - input.feasiblePeakWeeklyLoadApplied),
   );
   const unmetRatio =
-    input.requiredPeakWeeklyTssTarget <= 0
+    input.requiredPeakWeeklyLoadTarget <= 0
       ? 0
-      : round3(unmetWeeklyTss / input.requiredPeakWeeklyTssTarget);
+      : round3(unmetWeeklyLoad / input.requiredPeakWeeklyLoadTarget);
   const clampPressure = clamp01(
-    (input.tssRampClampWeeks + input.ctlRampClampWeeks) / Math.max(1, input.projectionWeeks),
+    (input.loadRampClampWeeks + input.longTermLoadRampClampWeeks) /
+      Math.max(1, input.projectionWeeks),
   );
   const demandFulfillment =
-    input.requiredPeakWeeklyTssTarget <= 0
+    input.requiredPeakWeeklyLoadTarget <= 0
       ? 1
-      : clamp01(input.feasiblePeakWeeklyTssApplied / input.requiredPeakWeeklyTssTarget);
+      : clamp01(input.feasiblePeakWeeklyLoadApplied / input.requiredPeakWeeklyLoadTarget);
   const confidence = clamp01(input.confidence);
   const evidenceSupport = smoothstep01(confidence);
 
   // Classify demand gap type
-  const hasDemandGap = unmetWeeklyTss > 0;
+  const hasDemandGap = unmetWeeklyLoad > 0;
   const demandGapType: "ramp_capped" | "capacity_limited" | "none" = !hasDemandGap
     ? "none"
     : clampPressure > 0.05 // If there was any clamping, it's ramp-capped
@@ -369,7 +371,7 @@ export function computeProjectionFeasibilityMetadata(input: {
       clampPressure * (0.35 - rampCappedPenaltyReduction),
   );
   const intensityBalance = clamp01(
-    1 - clampPressure * 0.7 - Math.min(0.12, input.tssRampClampWeeks * 0.04),
+    1 - clampPressure * 0.7 - Math.min(0.12, input.loadRampClampWeeks * 0.04),
   );
   const specificity = clamp01(demandFulfillment * 0.85 + (1 - clampPressure) * 0.15);
   const executionConfidence = clamp01(evidenceSupport * 0.7 + (1 - clampPressure) * 0.3);
@@ -387,7 +389,7 @@ export function computeProjectionFeasibilityMetadata(input: {
 
   const highTimelinePressure =
     clampPressure >= 0.18 ||
-    (input.tssRampClampWeeks + input.ctlRampClampWeeks >= 3 && clampPressure >= 0.12);
+    (input.loadRampClampWeeks + input.longTermLoadRampClampWeeks >= 3 && clampPressure >= 0.12);
   const lowTimelinePressure =
     clampPressure <= 0.08 || (clampPressure <= 0.1 && input.projectionWeeks >= 16);
 
@@ -403,9 +405,9 @@ export function computeProjectionFeasibilityMetadata(input: {
   }
 
   const dominantLimiters: string[] = [];
-  if (unmetWeeklyTss > 0) dominantLimiters.push("required_growth_exceeds_caps");
-  if (input.tssRampClampWeeks > 0) dominantLimiters.push("tss_ramp_cap_pressure");
-  if (input.ctlRampClampWeeks > 0) dominantLimiters.push("ctl_ramp_cap_pressure");
+  if (unmetWeeklyLoad > 0) dominantLimiters.push("required_growth_exceeds_caps");
+  if (input.loadRampClampWeeks > 0) dominantLimiters.push("load_ramp_cap_pressure");
+  if (input.longTermLoadRampClampWeeks > 0) dominantLimiters.push("longTermLoad_ramp_cap_pressure");
   if (input.confidence < 0.5) dominantLimiters.push("low_evidence_confidence");
   if (lowReadinessLimiterMode === "timeline_limited") {
     dominantLimiters.push("timeline_limited_goal_too_soon");
@@ -437,14 +439,14 @@ export function computeProjectionFeasibilityMetadata(input: {
     0.28,
     Math.max(0.08, 0.06 + (1 - evidenceSupport) * 0.18 + clampPressure * 0.05),
   );
-  const likelyTss = round1(Math.max(0, input.feasiblePeakWeeklyTssApplied));
-  const uncertaintyDelta = round1(likelyTss * uncertaintyPct);
+  const likelyLoad = round1(Math.max(0, input.feasiblePeakWeeklyLoadApplied));
+  const uncertaintyDelta = round1(likelyLoad * uncertaintyPct);
 
   return {
     demand_gap: {
-      required_weekly_tss_target: round1(input.requiredPeakWeeklyTssTarget),
-      feasible_weekly_tss_applied: round1(input.feasiblePeakWeeklyTssApplied),
-      unmet_weekly_tss: unmetWeeklyTss,
+      required_weekly_load_target: round1(input.requiredPeakWeeklyLoadTarget),
+      feasible_weekly_load_applied: round1(input.feasiblePeakWeeklyLoadApplied),
+      unmet_weekly_load: unmetWeeklyLoad,
       unmet_ratio: unmetRatio,
       is_capped_vs_infeasible: demandGapType === "ramp_capped",
     },
@@ -460,9 +462,9 @@ export function computeProjectionFeasibilityMetadata(input: {
       execution_confidence: round3(executionConfidence),
     },
     projection_uncertainty: {
-      tss_low: round1(Math.max(0, likelyTss - uncertaintyDelta)),
-      tss_likely: likelyTss,
-      tss_high: round1(likelyTss + uncertaintyDelta),
+      load_low: round1(Math.max(0, likelyLoad - uncertaintyDelta)),
+      load_likely: likelyLoad,
+      load_high: round1(likelyLoad + uncertaintyDelta),
       confidence: round3(1 - uncertaintyPct),
     },
     readiness_rationale_codes: readinessRationaleCodes,
@@ -471,9 +473,9 @@ export function computeProjectionFeasibilityMetadata(input: {
 
 export interface ProjectionPointReadinessInput {
   date: string;
-  predicted_fitness_ctl: number;
-  predicted_fatigue_atl: number;
-  predicted_form_tsb: number;
+  predicted_fitness_longTermLoad: number;
+  predicted_fatigue_recentLoad: number;
+  predicted_form_loadBalance: number;
 }
 
 export interface ProjectionPointReadinessGoalInput {
@@ -503,11 +505,14 @@ export function computeProjectionPointReadinessScores(input: {
     return [];
   }
 
-  const peakProjectedCtl = Math.max(
+  const peakProjectedLongTermLoad = Math.max(
     1,
-    ...input.points.map((point) => Math.max(0, point.predicted_fitness_ctl)),
+    ...input.points.map((point) => Math.max(0, point.predicted_fitness_longTermLoad)),
   );
-  const startingProjectedCtl = Math.max(0, input.points[0]?.predicted_fitness_ctl ?? 0);
+  const startingProjectedLongTermLoad = Math.max(
+    0,
+    input.points[0]?.predicted_fitness_longTermLoad ?? 0,
+  );
   const feasibilitySignal = clamp01((input.planReadinessScore ?? 50) / 100);
 
   const goals = input.goals ?? [];
@@ -543,17 +548,17 @@ export function computeProjectionPointReadinessScores(input: {
     return nearestIndex;
   };
 
-  // Compute event-duration-aware optimal TSB
+  // Compute event-duration-aware optimal LoadBalance
   const primaryGoal = resolvePrimaryGoal(goals);
   const primaryTarget = primaryGoal?.targets?.[0];
   const eventDurationHours =
     primaryTarget?.target_type === "race_performance" && primaryTarget.target_time_s
       ? primaryTarget.target_time_s / 3600
       : undefined;
-  const targetTsb =
-    timelineCalibration?.target_tsb ??
-    computeOptimalTsb(eventDurationHours) ??
-    READINESS_TIMELINE.TARGET_TSB_DEFAULT;
+  const targetLoadBalance =
+    timelineCalibration?.target_loadBalance ??
+    computeOptimalLoadBalance(eventDurationHours) ??
+    READINESS_TIMELINE.TARGET_LoadBalance_DEFAULT;
 
   const formTolerance = timelineCalibration?.form_tolerance ?? READINESS_TIMELINE.FORM_TOLERANCE;
   const fatigueOverflowScale =
@@ -564,28 +569,30 @@ export function computeProjectionPointReadinessScores(input: {
     timelineCalibration?.feasibility_blend_weight ?? READINESS_TIMELINE.FEASIBILITY_BLEND_WEIGHT;
 
   const rawScores = input.points.map((point, _idx) => {
-    const ctl = Math.max(0, point.predicted_fitness_ctl);
-    const atl = Math.max(0, point.predicted_fatigue_atl);
-    const tsb = point.predicted_form_tsb;
+    const longTermLoad = Math.max(0, point.predicted_fitness_longTermLoad);
+    const recentLoad = Math.max(0, point.predicted_fatigue_recentLoad);
+    const loadBalance = point.predicted_form_loadBalance;
 
-    const ctlProgress = clamp01(
-      (ctl - startingProjectedCtl) / Math.max(1, peakProjectedCtl - startingProjectedCtl),
+    const longTermLoadProgress = clamp01(
+      (longTermLoad - startingProjectedLongTermLoad) /
+        Math.max(1, peakProjectedLongTermLoad - startingProjectedLongTermLoad),
     );
     const progressiveFitnessSignal = clamp01(
-      ctlProgress ** READINESS_TIMELINE.PROGRESSIVE_FITNESS_EXPONENT,
+      longTermLoadProgress ** READINESS_TIMELINE.PROGRESSIVE_FITNESS_EXPONENT,
     );
     const absoluteFitnessSignal = clamp01(
-      ctl / Math.max(1, peakProjectedCtl * READINESS_TIMELINE.PEAK_CTL_SCALING),
+      longTermLoad /
+        Math.max(1, peakProjectedLongTermLoad * READINESS_TIMELINE.PEAK_LongTermLoad_SCALING),
     );
     const fitnessSignal = clamp01(
       progressiveFitnessSignal * READINESS_TIMELINE.PROGRESSIVE_FITNESS_WEIGHT +
         absoluteFitnessSignal * READINESS_TIMELINE.ABSOLUTE_FITNESS_WEIGHT,
     );
-    const formSignal = clamp01(1 - Math.abs(tsb - targetTsb) / formTolerance);
+    const formSignal = clamp01(1 - Math.abs(loadBalance - targetLoadBalance) / formTolerance);
 
-    const fatigueOverflow = Math.max(0, atl - ctl);
+    const fatigueOverflow = Math.max(0, recentLoad - longTermLoad);
     const fatigueSignal = clamp01(
-      1 - fatigueOverflow / Math.max(1, peakProjectedCtl * fatigueOverflowScale),
+      1 - fatigueOverflow / Math.max(1, peakProjectedLongTermLoad * fatigueOverflowScale),
     );
 
     // Dynamic form weight: higher near goal, lower early in plan
@@ -634,8 +641,8 @@ export function computeProjectionPointReadinessScores(input: {
         eventGoal: {
           target_date: goal.target_date,
           targets: goal.targets,
-          projected_ctl: eventPoint.predicted_fitness_ctl,
-          projected_atl: eventPoint.predicted_fatigue_atl,
+          projected_longTermLoad: eventPoint.predicted_fitness_longTermLoad,
+          projected_recentLoad: eventPoint.predicted_fatigue_recentLoad,
           ...optionalProperty("athlete_gender", input.athlete_gender),
         },
       });
@@ -654,15 +661,15 @@ export function computeProjectionPointReadinessScores(input: {
       recovery_days_full: 7,
       recovery_days_functional: 3,
       fatigue_intensity: 75,
-      atl_spike_factor: 1.2,
+      recentLoad_spike_factor: 1.2,
     };
 
     if (primaryTarget) {
       const goalPoint = input.points[goalIndex];
       recoveryProfile = computeEventRecoveryProfile({
         target: primaryTarget,
-        projected_ctl_at_event: goalPoint?.predicted_fitness_ctl ?? 50,
-        projected_atl_at_event: goalPoint?.predicted_fatigue_atl ?? 50,
+        projected_longTermLoad_at_event: goalPoint?.predicted_fitness_longTermLoad ?? 50,
+        projected_recentLoad_at_event: goalPoint?.predicted_fatigue_recentLoad ?? 50,
         ...optionalProperty("athlete_gender", input.athlete_gender),
       });
     }

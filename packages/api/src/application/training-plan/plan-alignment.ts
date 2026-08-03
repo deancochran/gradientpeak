@@ -4,8 +4,8 @@ export type PlanAlignmentSession = {
   linkedActivityOccurrenceCount?: number;
   linkedActivityExists: boolean;
   linkedActivityProfileOwned: boolean;
-  plannedTss: number | null;
-  completedTss: number | null;
+  plannedCommonLoad: number | null;
+  completedCommonLoad: number | null;
   isFuture?: boolean;
 };
 
@@ -21,8 +21,8 @@ export type PlanAlignment = {
 export type PlanAlignmentCalculation = PlanAlignment & {
   completedActivityIds: string[];
   assessableActivityIds: string[];
-  assessedPlannedTss: number;
-  assessedCompletedTss: number;
+  assessedPlannedCommonLoad: number;
+  assessedCompletedCommonLoad: number;
 };
 
 function ratioScore(actual: number, target: number): number {
@@ -32,11 +32,11 @@ function ratioScore(actual: number, target: number): number {
   return Math.max(0, Math.min(100, Math.round(80 - (ratio - 1.2) * 50)));
 }
 
-function isUsableCompletedTss(value: number | null): value is number {
+function isUsableCompletedCommonLoad(value: number | null): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
-function isUsablePlannedTss(value: number | null): value is number {
+function isUsablePlannedCommonLoad(value: number | null): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
@@ -71,10 +71,17 @@ export function calculatePlanAlignment(sessions: PlanAlignmentSession[]): PlanAl
   );
   const assessable = completed.filter(
     (session) =>
-      isUsablePlannedTss(session.plannedTss) && isUsableCompletedTss(session.completedTss),
+      isUsablePlannedCommonLoad(session.plannedCommonLoad) &&
+      isUsableCompletedCommonLoad(session.completedCommonLoad),
   );
-  const plannedTss = assessable.reduce((sum, session) => sum + (session.plannedTss ?? 0), 0);
-  const completedTss = assessable.reduce((sum, session) => sum + (session.completedTss ?? 0), 0);
+  const plannedCommonLoad = assessable.reduce(
+    (sum, session) => sum + (session.plannedCommonLoad ?? 0),
+    0,
+  );
+  const completedCommonLoad = assessable.reduce(
+    (sum, session) => sum + (session.completedCommonLoad ?? 0),
+    0,
+  );
   const totalSessions = activeSessions.length;
   const assessableSessions = assessable.length;
 
@@ -85,7 +92,10 @@ export function calculatePlanAlignment(sessions: PlanAlignmentSession[]): PlanAl
         : assessableSessions < totalSessions
           ? "partial"
           : "available",
-    score: assessableSessions > 0 && plannedTss > 0 ? ratioScore(completedTss, plannedTss) : null,
+    score:
+      assessableSessions > 0 && plannedCommonLoad > 0
+        ? ratioScore(completedCommonLoad, plannedCommonLoad)
+        : null,
     completedSessions: completed.length,
     assessableSessions,
     totalSessions,
@@ -96,7 +106,7 @@ export function calculatePlanAlignment(sessions: PlanAlignmentSession[]): PlanAl
     assessableActivityIds: assessable.flatMap((session) =>
       hasLinkedActivityId(session) ? [session.linkedActivityId] : [],
     ),
-    assessedPlannedTss: plannedTss,
-    assessedCompletedTss: completedTss,
+    assessedPlannedCommonLoad: plannedCommonLoad,
+    assessedCompletedCommonLoad: completedCommonLoad,
   };
 }

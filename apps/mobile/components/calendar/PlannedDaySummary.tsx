@@ -1,4 +1,6 @@
+import type { ActivityPrescriptionQuantificationBundle } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
+import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
 import { useState } from "react";
 import { TouchableOpacity, View } from "react-native";
 import { announcePlannedDaySummaryRetryStatus } from "./plannedDaySummaryAccessibility";
@@ -8,7 +10,7 @@ export type MobilePlannedDaySummaryData = {
     eventCount: number;
     activity_categories: string[];
     totalDurationSeconds: number | null;
-    totalTss: number | null;
+    prescriptionQuantification: ActivityPrescriptionQuantificationBundle;
   };
   source: {
     complete: true;
@@ -30,14 +32,6 @@ function formatActivityCategory(activity_category: string) {
 /** Formats the API's stable activity_category composition without implying an activity order. */
 export function formatPlannedDayActivityCategories(activity_categories: readonly string[]) {
   return [...new Set(activity_categories)].map(formatActivityCategory).join(" + ");
-}
-
-/** Rounds finite planned TSS to one decimal place and always includes its unit. */
-export function formatPlannedDayTss(totalTss: number | null) {
-  if (totalTss === null || !Number.isFinite(totalTss)) return "Unavailable";
-
-  const rounded = Math.round(totalTss * 10) / 10;
-  return `${rounded.toFixed(1).replace(/\.0$/, "")} TSS`;
 }
 
 /** Uses the same compact duration units as the web planned-workload summary. */
@@ -69,6 +63,7 @@ function PlannedDaySummaryDetails({ data }: { data: MobilePlannedDaySummaryData 
   }
 
   const activity_categories = formatPlannedDayActivityCategories(summary.activity_categories);
+  const quantification = getActivityQuantificationPresentation(summary.prescriptionQuantification);
   return (
     <View className="gap-3">
       <View className="gap-2">
@@ -97,11 +92,22 @@ function PlannedDaySummaryDetails({ data }: { data: MobilePlannedDaySummaryData 
         </Text>
       </View>
       <View className="gap-2">
-        <Text className="text-sm text-muted-foreground">Planned TSS</Text>
+        <Text className="text-sm text-muted-foreground">{quantification.commonLoad.label}</Text>
         <Text className="text-base font-semibold text-foreground">
-          {formatPlannedDayTss(summary.totalTss)}
+          {quantification.commonLoad.value}
         </Text>
       </View>
+      <View className="gap-2">
+        <Text className="text-sm text-muted-foreground">
+          {quantification.normalizedIntensity.label}
+        </Text>
+        <Text className="text-base font-semibold text-foreground">
+          {quantification.normalizedIntensity.value}
+        </Text>
+      </View>
+      <Text className="text-xs text-muted-foreground">
+        {quantification.commonLoad.evidence}. {quantification.commonLoad.explanation}
+      </Text>
 
       {hasPartialInformation ? (
         <Text accessibilityLiveRegion="polite" className="text-sm text-muted-foreground">

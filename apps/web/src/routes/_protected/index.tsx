@@ -6,17 +6,30 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
 import { createFileRoute } from "@tanstack/react-router";
 import { Activity, CalendarDays, Target } from "lucide-react";
 import { ActivityFeed } from "../../components/feed/activity-feed";
 import { SearchLauncher } from "../../components/protected/search-launcher";
 import { useAuth } from "../../components/providers/auth-provider";
-import { getCommonLoadPresentation } from "../../lib/activity-load-presentation";
 import { api } from "../../lib/api/client";
 
 export const Route = createFileRoute("/_protected/")({
   component: DashboardPage,
 });
+
+function ScheduleQuantification({ value }: { value: unknown }) {
+  const presented = getActivityQuantificationPresentation(value);
+  return (
+    <>
+      <p>
+        {presented.commonLoad.label} {presented.commonLoad.value} ·{" "}
+        {presented.normalizedIntensity.label} {presented.normalizedIntensity.value}
+      </p>
+      <p className="text-xs">{presented.commonLoad.evidence}</p>
+    </>
+  );
+}
 
 function DashboardPage() {
   const { user } = useAuth();
@@ -144,11 +157,7 @@ function DashboardPage() {
                           ? "Duration unavailable"
                           : `${Math.round(item.estimatedDuration / 60)} min`}
                       </p>
-                      <p>
-                        {getCommonLoadPresentation(item.commonLoad).status === "unavailable"
-                          ? "Load unavailable"
-                          : `Load ${getCommonLoadPresentation(item.commonLoad).load} · Intensity ${getCommonLoadPresentation(item.commonLoad).intensity}`}
-                      </p>
+                      <ScheduleQuantification value={item.prescriptionQuantification} />
                     </div>
                   </div>
                 ))}

@@ -11,13 +11,13 @@ import {
 } from "./journey-coverage";
 
 describe("web mobile-journey coverage manifest", () => {
-  it("maps exactly the 93 canonical journeys", () => {
+  it("maps exactly the 92 canonical journeys", () => {
     const canonicalIds = mobileWebJourneyDomains
       .flatMap((domain) => domain.journeys.map((journey) => journey.id))
       .sort();
     const manifestIds = Object.keys(webJourneyCoverageManifest).sort();
 
-    expect(new Set(canonicalIds).size).toBe(93);
+    expect(new Set(canonicalIds).size).toBe(92);
     expect(manifestIds).toEqual(canonicalIds);
   });
 
@@ -54,8 +54,8 @@ describe("web mobile-journey coverage manifest", () => {
     const report = getWebJourneyRuntimeCoverageReport();
 
     expect(report.journeys).toMatchObject({
-      declared: 93,
-      denominator: 93,
+      declared: 92,
+      denominator: 92,
       percentage: 0,
       runtimeVerified: 0,
       syntaxChecked: 0,

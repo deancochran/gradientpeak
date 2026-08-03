@@ -1841,6 +1841,135 @@ export const activityEfforts = pgTable(
   ],
 );
 
+/** Qualified source protocol only; CSS remains a derived Core model output. */
+export const swimmingCssProtocolEvidence = pgTable(
+  "swimming_css_protocol_evidence",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    protocol_id: text("protocol_id").notNull(),
+    evidence_id: text("evidence_id").notNull(),
+    evidence_revision: integer("evidence_revision").notNull(),
+    profile_id: uuid("profile_id").notNull(),
+    activity_id: uuid("activity_id").notNull(),
+    source_artifact_id: uuid("source_artifact_id").notNull(),
+    source_artifact_digest: text("source_artifact_digest").notNull(),
+    observed_at: timestamp("observed_at", { withTimezone: true, mode: "date" }).notNull(),
+    protocol: text("protocol").notNull(),
+    environment: text("environment").notNull(),
+    pool_length_meters: real("pool_length_meters").notNull(),
+    timing_basis: text("timing_basis").notNull(),
+    status: text("status", { enum: ["qualified"] }).notNull(),
+    reasons: jsonb("reasons").notNull().default(sql`'[]'::jsonb`),
+    effort_400_id: uuid("effort_400_id").notNull(),
+    effort_400_evidence_revision: integer("effort_400_evidence_revision").notNull(),
+    effort_400_segment_id: uuid("effort_400_segment_id").notNull(),
+    effort_400_observed_at: timestamp("effort_400_observed_at", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+    effort_400_duration_seconds: integer("effort_400_duration_seconds").notNull(),
+    effort_400_start_offset_ms: bigint("effort_400_start_offset_ms", { mode: "number" }).notNull(),
+    effort_400_end_offset_ms: bigint("effort_400_end_offset_ms", { mode: "number" }).notNull(),
+    effort_200_id: uuid("effort_200_id").notNull(),
+    effort_200_evidence_revision: integer("effort_200_evidence_revision").notNull(),
+    effort_200_segment_id: uuid("effort_200_segment_id").notNull(),
+    effort_200_observed_at: timestamp("effort_200_observed_at", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+    effort_200_duration_seconds: integer("effort_200_duration_seconds").notNull(),
+    effort_200_start_offset_ms: bigint("effort_200_start_offset_ms", { mode: "number" }).notNull(),
+    effort_200_end_offset_ms: bigint("effort_200_end_offset_ms", { mode: "number" }).notNull(),
+    calculation_version: text("calculation_version").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.activity_id, table.profile_id],
+      foreignColumns: [activities.id, activities.profile_id],
+      name: "swimming_css_protocol_evidence_activity_profile_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.activity_id, table.source_artifact_id, table.profile_id],
+      foreignColumns: [
+        activityArtifactLinks.activity_id,
+        activityArtifactLinks.artifact_id,
+        activityArtifactLinks.profile_id,
+      ],
+      name: "swimming_css_protocol_evidence_source_link_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.effort_400_id],
+      foreignColumns: [activityEfforts.id],
+      name: "swimming_css_protocol_evidence_effort_400_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.effort_200_id],
+      foreignColumns: [activityEfforts.id],
+      name: "swimming_css_protocol_evidence_effort_200_fkey",
+    }).onDelete("cascade"),
+    unique("swimming_css_protocol_evidence_profile_protocol_id_unique").on(
+      table.profile_id,
+      table.protocol_id,
+    ),
+    unique("swimming_css_protocol_evidence_profile_activity_protocol_unique").on(
+      table.profile_id,
+      table.activity_id,
+      table.protocol,
+    ),
+    unique("swimming_css_protocol_evidence_profile_evidence_id_unique").on(
+      table.profile_id,
+      table.evidence_id,
+    ),
+    check(
+      "swimming_css_protocol_evidence_protocol_identity_check",
+      sql`${table.protocol} = 'css_400m_200m' and ${table.protocol_id} = 'css_400m_200m:' || ${table.activity_id}::text`,
+    ),
+    check(
+      "swimming_css_protocol_evidence_content_identity_check",
+      sql`${table.evidence_id} ~ '^sha256:[0-9a-f]{64}$' and ${table.source_artifact_digest} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "swimming_css_protocol_evidence_context_check",
+      sql`${table.environment} = 'pool' and ${table.timing_basis} = 'pool_length_timing' and ${table.pool_length_meters} between 10 and 100 and ${table.pool_length_meters} not in ('NaN'::real, 'Infinity'::real, '-Infinity'::real)`,
+    ),
+    check(
+      "swimming_css_protocol_evidence_status_check",
+      sql`${table.status} = 'qualified' and jsonb_typeof(${table.reasons}) = 'array' and jsonb_array_length(${table.reasons}) = 0`,
+    ),
+    check(
+      "swimming_css_protocol_evidence_revision_check",
+      sql`${table.evidence_revision} > 0 and ${table.effort_400_evidence_revision} = ${table.evidence_revision} and ${table.effort_200_evidence_revision} = ${table.evidence_revision}`,
+    ),
+    check(
+      "swimming_css_protocol_evidence_distinct_efforts_check",
+      sql`${table.effort_400_id} <> ${table.effort_200_id} and ${table.effort_400_segment_id} <> ${table.effort_200_segment_id}`,
+    ),
+    check(
+      "swimming_css_protocol_evidence_duration_check",
+      sql`${table.effort_400_duration_seconds} between 1 and 14400 and ${table.effort_200_duration_seconds} between 1 and 14400 and ${table.effort_400_duration_seconds} > 2 * ${table.effort_200_duration_seconds} and (${table.effort_400_duration_seconds} - ${table.effort_200_duration_seconds})::double precision / 2 between 45 and 600`,
+    ),
+    check(
+      "swimming_css_protocol_evidence_order_check",
+      sql`${table.effort_400_start_offset_ms} >= 0 and ${table.effort_400_end_offset_ms} > ${table.effort_400_start_offset_ms} and ${table.effort_200_start_offset_ms} >= ${table.effort_400_end_offset_ms} and ${table.effort_200_end_offset_ms} > ${table.effort_200_start_offset_ms} and ${table.effort_400_observed_at} <= ${table.effort_200_observed_at} and ${table.observed_at} = ${table.effort_200_observed_at}`,
+    ),
+    check(
+      "swimming_css_protocol_evidence_calculation_version_check",
+      sql`${table.calculation_version} = 'canonical-swim-css-protocol-evidence-v1'`,
+    ),
+    index("idx_swimming_css_protocol_evidence_profile_observed")
+      .on(table.profile_id, table.observed_at, table.id)
+      .where(sql`${table.status} = 'qualified'`),
+    index("idx_swimming_css_protocol_evidence_activity").on(table.activity_id),
+    index("idx_swimming_css_protocol_evidence_source_artifact").on(table.source_artifact_id),
+  ],
+);
+
 /** Immutable session-RPE observations; corrections append a replacement row. */
 export const activitySessionRpeEvidence = pgTable(
   "activity_session_rpe_evidence",

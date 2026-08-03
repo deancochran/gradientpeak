@@ -4,7 +4,7 @@ import { buildTrainingPathViewModel } from "./trainingPathUtils";
 describe("Training Path common Load safety", () => {
   it("does not let a legacy recommendation create or scale a common Load chart", () => {
     const model = buildTrainingPathViewModel({
-      timeline: [{ date: "2026-07-28", recommended_load_tss: 1_000 }],
+      timeline: [{ date: "2026-07-28", recommended_common_load: 1_000 }],
       fitnessHistory: [],
       projectedFitness: [],
       idealFitnessCurve: [],

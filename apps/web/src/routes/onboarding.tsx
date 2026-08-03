@@ -153,7 +153,6 @@ function OnboardingPage() {
   const importedSource = (field: keyof NonNullable<typeof imported>["sources"]) =>
     imported?.sources[field]?.label;
   const dobSource = importedSource("dob");
-  const ftpSource = importedSource("ftp");
   const genderSource = importedSource("gender");
   const weightSource = importedSource("weight_kg");
 
@@ -374,28 +373,6 @@ function OnboardingPage() {
                 label="Resting heart rate (bpm)"
                 max={120}
                 min={30}
-              />
-              <BaselineField
-                {...(imported?.values.ftp !== undefined
-                  ? { defaultValue: imported.values.ftp }
-                  : {})}
-                field="ftp"
-                label="Cycling FTP (watts)"
-                max={700}
-                min={20}
-                {...(ftpSource !== undefined ? { source: ftpSource } : {})}
-              />
-              <BaselineField
-                field="threshold_pace_seconds_per_km"
-                label="Running threshold pace (seconds/km)"
-                max={1200}
-                min={120}
-              />
-              <BaselineField
-                field="css_seconds_per_hundred_meters"
-                label="Swim CSS (seconds/100m)"
-                max={600}
-                min={45}
               />
             </section>
 

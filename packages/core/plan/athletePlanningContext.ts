@@ -1,10 +1,9 @@
 import { z } from "zod";
-import { getActivityEffortThresholdEvidence } from "../athlete-inputs/activity-effort-policy";
 import {
-  getEligibleThresholdValue,
-  resolveCanonicalThresholds,
-  type ThresholdMetricSource,
-} from "../athlete-inputs/canonical-thresholds";
+  type AthletePerformanceTargetFacts,
+  athletePerformanceTargetFactsSchema,
+  createUnavailableAthletePerformanceTargetFacts,
+} from "../performance-model";
 import { canonicalActivityCategorySchema } from "../schemas/activity-category";
 import { preferredUnitSystemSchema } from "../units";
 
@@ -17,9 +16,6 @@ const genderSchema = z.enum(["male", "female", "other", "prefer_not_to_say"]);
 export const athleteContextMetricTypeSchema = z.enum([
   "weight_kg",
   "height_cm",
-  "ftp",
-  "threshold_pace_seconds_per_km",
-  "css_seconds_per_100m",
   "resting_hr",
   "max_hr",
   "lthr",
@@ -107,15 +103,16 @@ export const athleteContextSourceSnapshotSchema = z
     activityEfforts: z.array(athleteContextActivityEffortSourceSchema).default([]),
     currentFitness: z
       .object({
-        ctl: z.number().finite().nullable().optional(),
-        atl: z.number().finite().nullable().optional(),
-        tsb: z.number().finite().nullable().optional(),
+        longTermLoad: z.number().finite().nullable().optional(),
+        recentLoad: z.number().finite().nullable().optional(),
+        loadBalance: z.number().finite().nullable().optional(),
         recorded_at: z.union([z.string(), z.date()]).nullable().optional(),
       })
       .strict()
       .nullable()
       .optional(),
     manualHeightCm: z.number().min(0).max(300).nullable().optional(),
+    performanceTargets: athletePerformanceTargetFactsSchema.optional(),
     asOf: z.union([z.string(), z.date()]).optional(),
     coverage: z
       .object({
@@ -170,17 +167,17 @@ export const athletePlanningContextSchema = z
       .strict(),
     physiology: z
       .object({
-        ftpWatts: athleteContextEvidenceValueSchema,
-        thresholdPaceSecondsPerKm: athleteContextEvidenceValueSchema,
-        cssSecondsPer100m: athleteContextEvidenceValueSchema,
+        planningThresholdPowerWatts: athleteContextEvidenceValueSchema,
+        planningThresholdPaceSecondsPerKm: athleteContextEvidenceValueSchema,
+        swimmingCssSecondsPer100m: athleteContextEvidenceValueSchema,
         restingHeartRateBpm: athleteContextEvidenceValueSchema,
         maxHeartRateBpm: athleteContextEvidenceValueSchema,
         thresholdHeartRateBpm: athleteContextEvidenceValueSchema,
         hrvRmssdMs: athleteContextEvidenceValueSchema,
         vo2Max: athleteContextEvidenceValueSchema,
-        currentFitnessCtl: athleteContextEvidenceValueSchema,
-        currentFatigueAtl: athleteContextEvidenceValueSchema,
-        currentFormTsb: athleteContextEvidenceValueSchema,
+        currentFitnessLongTermLoad: athleteContextEvidenceValueSchema,
+        currentFatigueRecentLoad: athleteContextEvidenceValueSchema,
+        currentFormLoadBalance: athleteContextEvidenceValueSchema,
       })
       .strict(),
     wellness: z
@@ -217,6 +214,7 @@ export const athletePlanningContextSchema = z
         excludedFutureEffortCount: z.number().int().min(0),
       })
       .strict(),
+    performanceTargets: athletePerformanceTargetFactsSchema,
   })
   .strict();
 
@@ -231,17 +229,17 @@ export type AthletePlanningContextFieldKey =
   | "weightKg"
   | "bmi"
   | "bodyFatPercentage"
-  | "ftpWatts"
-  | "thresholdPaceSecondsPerKm"
-  | "cssSecondsPer100m"
+  | "planningThresholdPowerWatts"
+  | "planningThresholdPaceSecondsPerKm"
+  | "swimmingCssSecondsPer100m"
   | "restingHeartRateBpm"
   | "maxHeartRateBpm"
   | "thresholdHeartRateBpm"
   | "hrvRmssdMs"
   | "vo2Max"
-  | "currentFitnessCtl"
-  | "currentFatigueAtl"
-  | "currentFormTsb"
+  | "currentFitnessLongTermLoad"
+  | "currentFatigueRecentLoad"
+  | "currentFormLoadBalance"
   | "sleepHours"
   | "hydrationLevel"
   | "stressScore"
@@ -325,23 +323,22 @@ export const ATHLETE_CONTEXT_FIELD_REGISTRY: Record<
     inputKind: "number",
     defaultUnit: "%",
   },
-  ftpWatts: {
-    label: "Bike FTP",
+  planningThresholdPowerWatts: {
+    label: "Planning threshold power",
     category: "physiology",
-    inputKind: "number",
+    inputKind: "derived",
     defaultUnit: "W",
-    requiredDefault: 200,
   },
-  thresholdPaceSecondsPerKm: {
-    label: "Running threshold pace",
+  planningThresholdPaceSecondsPerKm: {
+    label: "Planning threshold pace",
     category: "physiology",
-    inputKind: "number",
+    inputKind: "derived",
     defaultUnit: "s/km",
   },
-  cssSecondsPer100m: {
+  swimmingCssSecondsPer100m: {
     label: "Swim CSS",
     category: "physiology",
-    inputKind: "number",
+    inputKind: "derived",
     defaultUnit: "s/100m",
   },
   restingHeartRateBpm: {
@@ -356,14 +353,12 @@ export const ATHLETE_CONTEXT_FIELD_REGISTRY: Record<
     category: "physiology",
     inputKind: "number",
     defaultUnit: "bpm",
-    requiredDefault: 185,
   },
   thresholdHeartRateBpm: {
     label: "Threshold heart rate",
     category: "physiology",
     inputKind: "number",
     defaultUnit: "bpm",
-    requiredDefault: 165,
   },
   hrvRmssdMs: {
     label: "HRV RMSSD",
@@ -379,20 +374,20 @@ export const ATHLETE_CONTEXT_FIELD_REGISTRY: Record<
     defaultUnit: "ml/kg/min",
     requiredDefault: 42,
   },
-  currentFitnessCtl: {
-    label: "Long-term Load (CTL)",
+  currentFitnessLongTermLoad: {
+    label: "Long-term Load (LongTermLoad)",
     category: "physiology",
     inputKind: "number",
     defaultUnit: "Load",
   },
-  currentFatigueAtl: {
-    label: "Recent Load (ATL)",
+  currentFatigueRecentLoad: {
+    label: "Recent Load (RecentLoad)",
     category: "physiology",
     inputKind: "number",
     defaultUnit: "Load",
   },
-  currentFormTsb: {
-    label: "Load Balance (TSB)",
+  currentFormLoadBalance: {
+    label: "Load Balance (LoadBalance)",
     category: "physiology",
     inputKind: "number",
     defaultUnit: "Load",
@@ -585,11 +580,24 @@ export function createEffectiveAthleteSnapshot(
   input: z.input<typeof athleteContextSourceSnapshotSchema>,
 ): EffectiveAthleteSnapshot {
   const source = athleteContextSourceSnapshotSchema.parse(input);
-  const asOfDate = source.asOf ? new Date(source.asOf) : new Date();
+  const asOfDate = source.asOf
+    ? new Date(source.asOf)
+    : source.performanceTargets
+      ? new Date(source.performanceTargets.asOf)
+      : new Date();
   if (Number.isNaN(asOfDate.getTime())) {
     throw new Error("Effective athlete snapshot requires a valid asOf date");
   }
   const asOf = asOfDate.toISOString();
+  if (
+    source.performanceTargets &&
+    Date.parse(source.performanceTargets.asOf) !== asOfDate.getTime()
+  ) {
+    throw new Error("Effective athlete snapshot asOf must match performance targets asOf");
+  }
+  const performanceTargets = source.performanceTargets
+    ? { ...source.performanceTargets, asOf }
+    : undefined;
   const asOfTime = asOfDate.getTime();
   const profileMetricsWithValidDate = source.profileMetrics.filter((metric) =>
     Number.isFinite(new Date(metric.recorded_at).getTime()),
@@ -633,6 +641,7 @@ export function createEffectiveAthleteSnapshot(
         : source.currentFitness,
     manualHeightCm: source.manualHeightCm,
     asOf,
+    performanceTargets,
     coverage: {
       profileMetrics: source.coverage?.profileMetrics ?? "unknown",
       activityEfforts: source.coverage?.activityEfforts ?? "unknown",
@@ -678,110 +687,32 @@ function metricEvidenceValue(
   };
 }
 
-function thresholdMetricSource(source: string | null | undefined): ThresholdMetricSource {
-  if (source === "manual" || source === "provider" || source === "estimated") return source;
-  return "modeled";
+function performanceTargetEvidenceValue(
+  fact:
+    | AthletePerformanceTargetFacts["cycling"]["planningThresholdPower"]
+    | AthletePerformanceTargetFacts["running"]["planningThresholdPace"]
+    | AthletePerformanceTargetFacts["swimming"]["css"],
+) {
+  const value = fact.status === "available" ? fact.value : null;
+  return {
+    value,
+    source: value === null ? "unknown" : "activity_effort",
+    recordedAt: value === null ? null : fact.evidenceTime.observedThrough,
+    unit: fact.unit,
+    overridden: false,
+  } as z.infer<typeof athleteContextEvidenceValueSchema>;
 }
 
-function resolvedThresholdEvidenceValue(input: {
-  snapshot: AthleteContextSourceSnapshot;
-  threshold: "cycling_ftp" | "running_threshold_pace" | "swimming_css";
-  fallbackUnit: string;
-}): z.infer<typeof athleteContextEvidenceValueSchema> {
-  const metricType =
-    input.threshold === "cycling_ftp"
-      ? "ftp"
-      : input.threshold === "running_threshold_pace"
-        ? "threshold_pace_seconds_per_km"
-        : "css_seconds_per_100m";
-  const expectedUnit =
-    input.threshold === "cycling_ftp"
-      ? "W"
-      : input.threshold === "running_threshold_pace"
-        ? "seconds_per_km"
-        : "seconds_per_100m";
-  const asOf = toIsoDateTime(input.snapshot.asOf ?? new Date());
-  const resolved = resolveCanonicalThresholds({
-    now: asOf,
-    freshnessWindowMs: 90 * 24 * 60 * 60 * 1000,
-    directMetrics: input.snapshot.profileMetrics
-      .filter(
-        (metric) =>
-          metric.metric_type === metricType &&
-          (metric.unit === expectedUnit ||
-            (expectedUnit === "seconds_per_km" && metric.unit === "s/km") ||
-            (expectedUnit === "seconds_per_100m" && metric.unit === "s/100m")),
-      )
-      .map((metric) => ({
-        threshold: input.threshold,
-        value: metric.value,
-        observedAt: toIsoDateTime(metric.recorded_at),
-        source: thresholdMetricSource(metric.source),
-        ...(metric.calculation_version !== undefined
-          ? { calculationVersion: metric.calculation_version }
-          : {}),
-        locked:
-          metric.provenance?.manual_override === true ||
-          (metric.provenance?.manual_override as { locked?: boolean } | undefined)?.locked ===
-            true ||
-          metric.provenance?.locked === true,
-      })),
-    activityEfforts: input.snapshot.activityEfforts
-      .filter(
-        (effort) =>
-          (effort.activity_category === "bike" ||
-            effort.activity_category === "run" ||
-            effort.activity_category === "swim") &&
-          (effort.unit === (effort.effort_type === "power" ? "watts" : "meters_per_second") ||
-            (effort.effort_type === "power" && effort.unit === "W") ||
-            (effort.effort_type === "speed" && effort.unit === "m/s")),
-      )
-      .flatMap((effort) => {
-        const evidence = getActivityEffortThresholdEvidence({
-          activityCategory: effort.activity_category,
-          durationSeconds: effort.duration_seconds,
-          effortType: effort.effort_type,
-          unit: effort.unit,
-          value: effort.value,
-          ...(effort.activity_id !== undefined ? { activityId: effort.activity_id } : {}),
-          ...(effort.method !== undefined ? { method: effort.method } : {}),
-          ...(effort.provenance !== undefined ? { provenance: effort.provenance } : {}),
-          ...(effort.source !== undefined ? { source: effort.source } : {}),
-        });
-        return [
-          {
-            activity_category:
-              effort.activity_category === "bike"
-                ? ("bike" as const)
-                : effort.activity_category === "run"
-                  ? ("run" as const)
-                  : ("swim" as const),
-            metric: effort.effort_type,
-            value: effort.value,
-            durationSeconds: effort.duration_seconds,
-            observedAt: toIsoDateTime(effort.recorded_at),
-            observationKind:
-              effort.source === "derived" || effort.source === "estimated"
-                ? ("derived" as const)
-                : ("actual" as const),
-            ...(evidence !== null ? { evidence } : {}),
-          },
-        ];
-      }),
-  })[input.threshold];
-  const eligibleValue = getEligibleThresholdValue(resolved);
+function heartRateFactEvidenceValue(
+  fact: AthletePerformanceTargetFacts["heartRate"]["bike"]["lthr"],
+) {
   return {
-    value: eligibleValue,
-    source:
-      resolved.source === "observed_effort"
-        ? "activity_effort"
-        : resolved.source === "unknown"
-          ? "unknown"
-          : "profile_metric",
-    recordedAt: resolved.observedAt,
-    unit: eligibleValue === null ? input.fallbackUnit : resolved.unit,
-    overridden: resolved.source === "manual",
-  };
+    value: fact.status === "available" ? fact.valueBpm : null,
+    source: fact.status === "available" ? "activity_effort" : "unknown",
+    recordedAt: fact.observedAt,
+    unit: "bpm",
+    overridden: false,
+  } as z.infer<typeof athleteContextEvidenceValueSchema>;
 }
 
 function trainingStatusEvidenceValue(
@@ -818,30 +749,23 @@ export function createAthletePlanningContextFromSnapshot(
   const heightCm = manualEvidenceValue(snapshot.manualHeightCm ?? null, "cm");
   const weightKg = metricEvidenceValue(snapshot.profileMetrics, "weight_kg", "kg");
   const bmi = profileEvidenceValue(calculateBmi(heightCm.value, weightKg.value), "kg/m2");
-  const metricTypes = new Set(snapshot.profileMetrics.map((metric) => metric.metric_type));
-  const ftpWatts = resolvedThresholdEvidenceValue({
-    snapshot,
-    threshold: "cycling_ftp",
-    fallbackUnit: "W",
-  });
-  const thresholdPaceSecondsPerKm = resolvedThresholdEvidenceValue({
-    snapshot,
-    threshold: "running_threshold_pace",
-    fallbackUnit: "s/km",
-  });
-  const cssSecondsPer100m = resolvedThresholdEvidenceValue({
-    snapshot,
-    threshold: "swimming_css",
-    fallbackUnit: "s/100m",
-  });
+  const performanceTargets =
+    snapshot.performanceTargets ?? createUnavailableAthletePerformanceTargetFacts(snapshot.asOf);
+  const planningThresholdPowerWatts = performanceTargetEvidenceValue(
+    performanceTargets.cycling.planningThresholdPower,
+  );
+  const planningThresholdPaceSecondsPerKm = performanceTargetEvidenceValue(
+    performanceTargets.running.planningThresholdPace,
+  );
+  const swimmingCssSecondsPer100m = performanceTargetEvidenceValue(performanceTargets.swimming.css);
   const missingFields = [
     birthDate === null ? "dob" : null,
     heightCm.value === null ? "height_cm" : null,
     weightKg.value === null ? "weight_kg" : null,
-    ftpWatts.value === null ? "ftp" : null,
-    thresholdPaceSecondsPerKm.value === null ? "threshold_pace_seconds_per_km" : null,
-    cssSecondsPer100m.value === null ? "css_seconds_per_100m" : null,
-    !metricTypes.has("lthr") ? "lthr" : null,
+    planningThresholdPowerWatts.value === null ? "planning_threshold_power" : null,
+    planningThresholdPaceSecondsPerKm.value === null ? "planning_threshold_pace" : null,
+    swimmingCssSecondsPer100m.value === null ? "swimming_css" : null,
+    performanceTargets.heartRate.bike.lthr.valueBpm === null ? "bike_lthr" : null,
   ].filter((field): field is string => field !== null);
 
   return athletePlanningContextSchema.parse({
@@ -863,26 +787,26 @@ export function createAthletePlanningContextFromSnapshot(
       bodyFatPercentage: metricEvidenceValue(snapshot.profileMetrics, "body_fat_percentage", "%"),
     },
     physiology: {
-      ftpWatts,
-      thresholdPaceSecondsPerKm,
-      cssSecondsPer100m,
+      planningThresholdPowerWatts,
+      planningThresholdPaceSecondsPerKm,
+      swimmingCssSecondsPer100m,
       restingHeartRateBpm: metricEvidenceValue(snapshot.profileMetrics, "resting_hr", "bpm"),
       maxHeartRateBpm: metricEvidenceValue(snapshot.profileMetrics, "max_hr", "bpm"),
-      thresholdHeartRateBpm: metricEvidenceValue(snapshot.profileMetrics, "lthr", "bpm"),
+      thresholdHeartRateBpm: heartRateFactEvidenceValue(performanceTargets.heartRate.bike.lthr),
       hrvRmssdMs: metricEvidenceValue(snapshot.profileMetrics, "hrv_rmssd", "ms"),
       vo2Max: metricEvidenceValue(snapshot.profileMetrics, "vo2_max", "ml/kg/min"),
-      currentFitnessCtl: trainingStatusEvidenceValue(
-        snapshot.currentFitness?.ctl,
+      currentFitnessLongTermLoad: trainingStatusEvidenceValue(
+        snapshot.currentFitness?.longTermLoad,
         "Load",
         snapshot.currentFitness?.recorded_at ?? snapshot.asOf,
       ),
-      currentFatigueAtl: trainingStatusEvidenceValue(
-        snapshot.currentFitness?.atl,
+      currentFatigueRecentLoad: trainingStatusEvidenceValue(
+        snapshot.currentFitness?.recentLoad,
         "Load",
         snapshot.currentFitness?.recorded_at ?? snapshot.asOf,
       ),
-      currentFormTsb: trainingStatusEvidenceValue(
-        snapshot.currentFitness?.tsb,
+      currentFormLoadBalance: trainingStatusEvidenceValue(
+        snapshot.currentFitness?.loadBalance,
         "Load",
         snapshot.currentFitness?.recorded_at ?? snapshot.asOf,
       ),
@@ -894,6 +818,7 @@ export function createAthletePlanningContextFromSnapshot(
       sorenessLevel: metricEvidenceValue(snapshot.profileMetrics, "soreness_level", "scale"),
       wellnessScore: metricEvidenceValue(snapshot.profileMetrics, "wellness_score", "scale"),
     },
+    performanceTargets,
     efforts: snapshot.activityEfforts.map((effort) => ({
       activityCategory: effort.activity_category,
       effortType: effort.effort_type,
@@ -934,12 +859,14 @@ function withRecalculatedDerivedBodyValues(
         context.demographics.birthDate === null ? "dob" : null,
         context.body.heightCm.value === null ? "height_cm" : null,
         context.body.weightKg.value === null ? "weight_kg" : null,
-        context.physiology.ftpWatts.value === null ? "ftp" : null,
-        context.physiology.thresholdPaceSecondsPerKm.value === null
-          ? "threshold_pace_seconds_per_km"
+        context.physiology.planningThresholdPowerWatts.value === null
+          ? "planning_threshold_power"
           : null,
-        context.physiology.cssSecondsPer100m.value === null ? "css_seconds_per_100m" : null,
-        context.physiology.thresholdHeartRateBpm.value === null ? "lthr" : null,
+        context.physiology.planningThresholdPaceSecondsPerKm.value === null
+          ? "planning_threshold_pace"
+          : null,
+        context.physiology.swimmingCssSecondsPer100m.value === null ? "swimming_css" : null,
+        context.physiology.thresholdHeartRateBpm.value === null ? "bike_lthr" : null,
       ].filter((field): field is string => field !== null),
     },
   });
@@ -963,15 +890,21 @@ export function overrideAthletePlanningContextField(
         return { ...context, body: { ...context.body, bmi: value } };
       case "bodyFatPercentage":
         return { ...context, body: { ...context.body, bodyFatPercentage: value } };
-      case "ftpWatts":
-        return { ...context, physiology: { ...context.physiology, ftpWatts: value } };
-      case "thresholdPaceSecondsPerKm":
+      case "planningThresholdPowerWatts":
         return {
           ...context,
-          physiology: { ...context.physiology, thresholdPaceSecondsPerKm: value },
+          physiology: { ...context.physiology, planningThresholdPowerWatts: value },
         };
-      case "cssSecondsPer100m":
-        return { ...context, physiology: { ...context.physiology, cssSecondsPer100m: value } };
+      case "planningThresholdPaceSecondsPerKm":
+        return {
+          ...context,
+          physiology: { ...context.physiology, planningThresholdPaceSecondsPerKm: value },
+        };
+      case "swimmingCssSecondsPer100m":
+        return {
+          ...context,
+          physiology: { ...context.physiology, swimmingCssSecondsPer100m: value },
+        };
       case "restingHeartRateBpm":
         return { ...context, physiology: { ...context.physiology, restingHeartRateBpm: value } };
       case "maxHeartRateBpm":
@@ -982,12 +915,18 @@ export function overrideAthletePlanningContextField(
         return { ...context, physiology: { ...context.physiology, hrvRmssdMs: value } };
       case "vo2Max":
         return { ...context, physiology: { ...context.physiology, vo2Max: value } };
-      case "currentFitnessCtl":
-        return { ...context, physiology: { ...context.physiology, currentFitnessCtl: value } };
-      case "currentFatigueAtl":
-        return { ...context, physiology: { ...context.physiology, currentFatigueAtl: value } };
-      case "currentFormTsb":
-        return { ...context, physiology: { ...context.physiology, currentFormTsb: value } };
+      case "currentFitnessLongTermLoad":
+        return {
+          ...context,
+          physiology: { ...context.physiology, currentFitnessLongTermLoad: value },
+        };
+      case "currentFatigueRecentLoad":
+        return {
+          ...context,
+          physiology: { ...context.physiology, currentFatigueRecentLoad: value },
+        };
+      case "currentFormLoadBalance":
+        return { ...context, physiology: { ...context.physiology, currentFormLoadBalance: value } };
       case "sleepHours":
         return { ...context, wellness: { ...context.wellness, sleepHours: value } };
       case "hydrationLevel":
@@ -1066,12 +1005,12 @@ function getFieldValue(
       return context.body.bmi;
     case "bodyFatPercentage":
       return context.body.bodyFatPercentage;
-    case "ftpWatts":
-      return context.physiology.ftpWatts;
-    case "thresholdPaceSecondsPerKm":
-      return context.physiology.thresholdPaceSecondsPerKm;
-    case "cssSecondsPer100m":
-      return context.physiology.cssSecondsPer100m;
+    case "planningThresholdPowerWatts":
+      return context.physiology.planningThresholdPowerWatts;
+    case "planningThresholdPaceSecondsPerKm":
+      return context.physiology.planningThresholdPaceSecondsPerKm;
+    case "swimmingCssSecondsPer100m":
+      return context.physiology.swimmingCssSecondsPer100m;
     case "restingHeartRateBpm":
       return context.physiology.restingHeartRateBpm;
     case "maxHeartRateBpm":
@@ -1082,12 +1021,12 @@ function getFieldValue(
       return context.physiology.hrvRmssdMs;
     case "vo2Max":
       return context.physiology.vo2Max;
-    case "currentFitnessCtl":
-      return context.physiology.currentFitnessCtl;
-    case "currentFatigueAtl":
-      return context.physiology.currentFatigueAtl;
-    case "currentFormTsb":
-      return context.physiology.currentFormTsb;
+    case "currentFitnessLongTermLoad":
+      return context.physiology.currentFitnessLongTermLoad;
+    case "currentFatigueRecentLoad":
+      return context.physiology.currentFatigueRecentLoad;
+    case "currentFormLoadBalance":
+      return context.physiology.currentFormLoadBalance;
     case "sleepHours":
       return context.wellness.sleepHours;
     case "hydrationLevel":

@@ -44,6 +44,7 @@ import {
   providerSyncJobs,
   providerSyncState,
   providerWebhookReceipts,
+  swimmingCssProtocolEvidence,
   trainingPlans,
 } from "./tables";
 
@@ -53,6 +54,7 @@ export const profilesRelations = relations(profiles, ({ many }) => ({
   activitySegments: many(activitySegments),
   activityFileIngestions: many(activityFileIngestions),
   activitySessionRpeEvidence: many(activitySessionRpeEvidence),
+  swimmingCssProtocolEvidence: many(swimmingCssProtocolEvidence),
   activityPlans: many(activityPlans),
   activityRoutes: many(activityRoutes),
   conversationParticipants: many(conversationParticipants),
@@ -361,6 +363,7 @@ export const activitiesRelations = relations(activities, ({ one, many }) => ({
   fileIngestions: many(activityFileIngestions),
   artifactLinks: many(activityArtifactLinks),
   segments: many(activitySegments),
+  swimmingCssProtocolEvidence: many(swimmingCssProtocolEvidence),
 }));
 
 export const activityArtifactsRelations = relations(activityArtifacts, ({ one, many }) => ({
@@ -433,6 +436,34 @@ export const activityEffortsRelations = relations(activityEfforts, ({ one }) => 
     references: [activitySegments.id],
   }),
 }));
+
+export const swimmingCssProtocolEvidenceRelations = relations(
+  swimmingCssProtocolEvidence,
+  ({ one }) => ({
+    profile: one(profiles, {
+      fields: [swimmingCssProtocolEvidence.profile_id],
+      references: [profiles.id],
+    }),
+    activity: one(activities, {
+      fields: [swimmingCssProtocolEvidence.activity_id],
+      references: [activities.id],
+    }),
+    sourceArtifact: one(activityArtifacts, {
+      fields: [swimmingCssProtocolEvidence.source_artifact_id],
+      references: [activityArtifacts.id],
+    }),
+    effort400: one(activityEfforts, {
+      relationName: "swim_css_effort_400",
+      fields: [swimmingCssProtocolEvidence.effort_400_id],
+      references: [activityEfforts.id],
+    }),
+    effort200: one(activityEfforts, {
+      relationName: "swim_css_effort_200",
+      fields: [swimmingCssProtocolEvidence.effort_200_id],
+      references: [activityEfforts.id],
+    }),
+  }),
+);
 
 export const activitySessionRpeEvidenceRelations = relations(
   activitySessionRpeEvidence,
@@ -648,6 +679,7 @@ export const relationsSchema = {
   activityEffortsRelations,
   activitySessionRpeEvidenceRelations,
   activitySegmentsRelations,
+  swimmingCssProtocolEvidenceRelations,
   integrationsRelations,
   integrationCredentialsRelations,
   providerSyncJobsRelations,

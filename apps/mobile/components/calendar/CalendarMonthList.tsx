@@ -2,7 +2,7 @@ import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
 import { useEffect, useMemo, useRef } from "react";
 import { FlatList, TouchableOpacity, useWindowDimensions, View } from "react-native";
-import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
+import { getCompleteActivityQuantificationCommonLoad } from "@/lib/activity-load-presentation";
 import {
   addDaysToDateKey,
   buildMonthStartKeys,
@@ -39,19 +39,6 @@ type CalendarMonthListProps = {
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-function readMetric(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string" && value.trim().length > 0) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return null;
-}
-
 function getPlannedDaySignal(
   events: CalendarEvent[],
 ): { count: number; level: 1 | 2 | 3 | 4 } | null {
@@ -60,13 +47,17 @@ function getPlannedDaySignal(
     return null;
   }
 
-  const maxTss = plannedEvents.reduce((highest, event) => {
-    const tss =
-      readMetric(getAuthoritativeActivityPlanMetrics(event.activity_plan).estimated_tss) ?? 0;
-    return Math.max(highest, tss);
-  }, 0);
+  const knownLoads = plannedEvents
+    .map((event) =>
+      getCompleteActivityQuantificationCommonLoad(
+        event.activity_plan?.prescriptionQuantification ?? event.prescriptionQuantification,
+      ),
+    )
+    .filter((load): load is number => load !== null);
+  const maxLoad = knownLoads.length > 0 ? Math.max(...knownLoads) : null;
 
-  const level: 1 | 2 | 3 | 4 = maxTss >= 110 ? 4 : maxTss >= 80 ? 3 : maxTss >= 45 ? 2 : 1;
+  const level: 1 | 2 | 3 | 4 =
+    maxLoad === null ? 1 : maxLoad >= 110 ? 4 : maxLoad >= 80 ? 3 : maxLoad >= 45 ? 2 : 1;
 
   return { count: plannedEvents.length, level };
 }

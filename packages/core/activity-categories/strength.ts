@@ -31,7 +31,7 @@ export const strengthActivityCategory: ActivityCategoryRegistryEntry = {
     template: {
       avgIF: 0.65,
       avgDuration: 2700,
-      avgTSS: 40,
+      avgCommonLoad: 40,
     },
   },
 };

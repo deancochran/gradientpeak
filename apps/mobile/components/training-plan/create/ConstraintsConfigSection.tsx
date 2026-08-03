@@ -8,19 +8,19 @@ import { z } from "zod";
 import { ConfigNumberSliderField } from "./fields/TrainingPlanConfigSliderFields";
 
 const constraintsConfigSectionSchema = z.object({
-  startingCtlAssumption: z.number().min(0).max(250),
+  startingLongTermLoadAssumption: z.number().min(0).max(250),
   postGoalRecoveryDays: z.number().int().min(0).max(28),
 });
 
 export interface ConstraintsConfigSectionValues {
-  startingCtlAssumption?: number;
+  startingLongTermLoadAssumption?: number;
   postGoalRecoveryDays: number;
 }
 
 interface ConstraintsConfigSectionProps {
   postGoalRecoveryDays: number;
   projectionStartingCtl?: number;
-  startingCtlAssumption?: number;
+  startingLongTermLoadAssumption?: number;
   onChange: (values: ConstraintsConfigSectionValues) => void;
   onReset?: () => void;
 }
@@ -29,25 +29,27 @@ const areValuesEqual = (
   left: ConstraintsConfigSectionValues,
   right: ConstraintsConfigSectionValues,
 ) =>
-  left.startingCtlAssumption === right.startingCtlAssumption &&
+  left.startingLongTermLoadAssumption === right.startingLongTermLoadAssumption &&
   left.postGoalRecoveryDays === right.postGoalRecoveryDays;
 
 const toDefaultValues = ({
   postGoalRecoveryDays,
   projectionStartingCtl,
-  startingCtlAssumption,
+  startingLongTermLoadAssumption,
 }: Pick<
   ConstraintsConfigSectionProps,
-  "postGoalRecoveryDays" | "projectionStartingCtl" | "startingCtlAssumption"
+  "postGoalRecoveryDays" | "projectionStartingCtl" | "startingLongTermLoadAssumption"
 >): ConstraintsConfigSectionValues => ({
-  startingCtlAssumption: Number((startingCtlAssumption ?? projectionStartingCtl ?? 0).toFixed(1)),
+  startingLongTermLoadAssumption: Number(
+    (startingLongTermLoadAssumption ?? projectionStartingCtl ?? 0).toFixed(1),
+  ),
   postGoalRecoveryDays,
 });
 
 export function ConstraintsConfigSection({
   postGoalRecoveryDays,
   projectionStartingCtl,
-  startingCtlAssumption,
+  startingLongTermLoadAssumption,
   onChange,
   onReset,
 }: ConstraintsConfigSectionProps) {
@@ -56,9 +58,9 @@ export function ConstraintsConfigSection({
       toDefaultValues({
         postGoalRecoveryDays,
         projectionStartingCtl,
-        startingCtlAssumption,
+        startingLongTermLoadAssumption,
       }),
-    [postGoalRecoveryDays, projectionStartingCtl, startingCtlAssumption],
+    [postGoalRecoveryDays, projectionStartingCtl, startingLongTermLoadAssumption],
   );
 
   const form = useZodForm({
@@ -70,25 +72,26 @@ export function ConstraintsConfigSection({
 
   const watchedValues = useWatch({ control: form.control });
   const syncingFromPropsRef = useRef(false);
-  const startingCtlIsExplicitRef = useRef(startingCtlAssumption !== undefined);
+  const startingLongTermLoadIsExplicitRef = useRef(startingLongTermLoadAssumption !== undefined);
   const resolvedValues = {
-    startingCtlAssumption:
-      watchedValues?.startingCtlAssumption ?? form.getValues("startingCtlAssumption"),
+    startingLongTermLoadAssumption:
+      watchedValues?.startingLongTermLoadAssumption ??
+      form.getValues("startingLongTermLoadAssumption"),
     postGoalRecoveryDays:
       watchedValues?.postGoalRecoveryDays ?? form.getValues("postGoalRecoveryDays"),
   } satisfies ConstraintsConfigSectionValues;
 
   useEffect(() => {
     if (areValuesEqual(form.getValues(), defaultValues)) {
-      startingCtlIsExplicitRef.current = startingCtlAssumption !== undefined;
+      startingLongTermLoadIsExplicitRef.current = startingLongTermLoadAssumption !== undefined;
       syncingFromPropsRef.current = false;
       return;
     }
 
-    startingCtlIsExplicitRef.current = startingCtlAssumption !== undefined;
+    startingLongTermLoadIsExplicitRef.current = startingLongTermLoadAssumption !== undefined;
     syncingFromPropsRef.current = true;
     form.reset(defaultValues);
-  }, [defaultValues, form, startingCtlAssumption]);
+  }, [defaultValues, form, startingLongTermLoadAssumption]);
 
   useEffect(() => {
     if (syncingFromPropsRef.current) {
@@ -103,8 +106,8 @@ export function ConstraintsConfigSection({
     }
 
     onChange({
-      startingCtlAssumption: startingCtlIsExplicitRef.current
-        ? Number(resolvedValues.startingCtlAssumption.toFixed(1))
+      startingLongTermLoadAssumption: startingLongTermLoadIsExplicitRef.current
+        ? Number(resolvedValues.startingLongTermLoadAssumption.toFixed(1))
         : undefined,
       postGoalRecoveryDays: resolvedValues.postGoalRecoveryDays,
     });
@@ -121,18 +124,18 @@ export function ConstraintsConfigSection({
 
       <ConfigNumberSliderField
         control={form.control}
-        name="startingCtlAssumption"
+        name="startingLongTermLoadAssumption"
         id="starting-ctl-assumption"
-        label="Initial Long-term Load (CTL)"
+        label="Initial Fitness"
         min={0}
         max={250}
         step={0.5}
         decimals={1}
-        unitLabel="Load"
+        unitLabel="Common Load"
         helperText="Higher values raise your starting fitness line before progression is projected."
         showCurrentValueInRange={false}
         onSliderChange={() => {
-          startingCtlIsExplicitRef.current = true;
+          startingLongTermLoadIsExplicitRef.current = true;
         }}
         toFieldValue={(value) => Number(value.toFixed(1))}
       />

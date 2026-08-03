@@ -1,5 +1,5 @@
 import { addDaysDateOnlyUtc, materializePlanToEvents } from "../..";
-import { estimateActivity } from "../../estimation";
+import type { CommonLoadAggregate, CommonLoadResult } from "../../load";
 import {
   ALL_SAMPLE_PLANS,
   deriveSystemActivityTemplateActivityCategory,
@@ -10,6 +10,7 @@ import {
   type AthletePreferenceProfile,
   defaultAthletePreferenceProfile,
 } from "../../schemas/settings/profile_settings";
+import { estimateActivityPlanForTrainingContext } from "../activity-plan-planning-estimate";
 import {
   assessFeasibility,
   fromProfileGoals,
@@ -17,19 +18,21 @@ import {
   resolveConstraintProfile,
   resolveEventDemand,
 } from "../periodization";
+import { aggregateWeeklyPlannedLoad } from "../verification/aggregateWeeklyPlannedLoad";
 import {
   deriveFixtureBackedSystemPlanContracts,
   type FixtureBackedContractGoal,
 } from "../verification/deriveFixtureBackedSystemPlanContracts";
 import {
-  calculateSystemTemplateDurationSeconds,
-  validateSystemTemplateActivityPlan,
-} from "../verification/systemPlanAudit";
+  SYSTEM_PLAN_VERIFICATION_AS_OF,
+  SYSTEM_PLAN_VERIFICATION_PERFORMANCE_TARGETS,
+} from "../verification/fixtures/planning-performance-targets";
+import { validateSystemTemplateActivityPlan } from "../verification/systemPlanAudit";
 
 export type ToleranceClass = "tight" | "moderate" | "flexible";
 
 export interface ToleranceDefinition {
-  weeklyFloorTss: number;
+  weeklyFloorLoad: number;
   weeklyPct: number;
   blockPct: number;
   meanPct: number;
@@ -37,19 +40,19 @@ export interface ToleranceDefinition {
 
 export const TOLERANCE_BY_CLASS: Record<ToleranceClass, ToleranceDefinition> = {
   tight: {
-    weeklyFloorTss: 20,
+    weeklyFloorLoad: 20,
     weeklyPct: 0.08,
     blockPct: 0.08,
     meanPct: 0.08,
   },
   moderate: {
-    weeklyFloorTss: 25,
+    weeklyFloorLoad: 25,
     weeklyPct: 0.12,
     blockPct: 0.1,
     meanPct: 0.1,
   },
   flexible: {
-    weeklyFloorTss: 30,
+    weeklyFloorLoad: 30,
     weeklyPct: 0.15,
     blockPct: 0.12,
     meanPct: 0.12,
@@ -65,8 +68,8 @@ export interface SystemPlanContractScenario {
   matchType: "exact" | "crosswalk";
   toleranceClass: ToleranceClass;
   expectedWeeklyLoad: number;
-  currentCtl: number;
-  currentAtl?: number;
+  currentLongTermLoad: number;
+  currentRecentLoad?: number;
   startDate: string;
   endDate: string;
   preferenceProfile?: AthletePreferenceProfile;
@@ -77,15 +80,6 @@ export interface SystemPlanContractScenario {
 
 const planByName = new Map(ALL_SAMPLE_PLANS.map((plan) => [plan.name, plan]));
 const templateById = new Map(SYSTEM_TEMPLATES.map((template) => [template.id, template]));
-
-const estimationProfile = {
-  ftp: 255,
-  threshold_hr: 172,
-  max_hr: 190,
-  resting_hr: 56,
-  weight_kg: 71,
-  threshold_pace_seconds_per_km: 255,
-};
 
 const CONTRACT_SCENARIO_OVERRIDES = [
   {
@@ -186,7 +180,7 @@ const CONTRACT_SCENARIO_OVERRIDES = [
   },
 ] as const;
 
-const currentAtlByScenarioKey: Partial<Record<string, number>> = {
+const currentRecentLoadByScenarioKey: Partial<Record<string, number>> = {
   exact_5k_speed_block: 36,
   intermediate_rich_half: 49,
   advanced_marathon_build: 64,
@@ -206,8 +200,8 @@ export const SYSTEM_PLAN_CONTRACT_MATRIX: SystemPlanContractScenario[] =
       matchType: contract.match_type,
       toleranceClass: contract.tolerance_class,
       expectedWeeklyLoad: contract.expected_weekly_load,
-      currentCtl: contract.current_ctl,
-      currentAtl: currentAtlByScenarioKey[scenarioKey],
+      currentLongTermLoad: contract.current_longTermLoad,
+      currentRecentLoad: currentRecentLoadByScenarioKey[scenarioKey],
       startDate: contract.start_date,
       endDate: contract.end_date,
       preferenceProfile: contract.preference_profile,
@@ -252,12 +246,41 @@ export function getEnabledSystemPlanContractScenarios() {
   return SYSTEM_PLAN_CONTRACT_MATRIX.filter((scenario) => scenario.enabled);
 }
 
+function canonicalPlannedLoad(commonLoad: CommonLoadResult | CommonLoadAggregate): {
+  value: number | null;
+  status: "complete" | "partial" | "unavailable";
+} {
+  if (commonLoad.status === "unavailable") return { value: null, status: "unavailable" };
+  if (commonLoad.status === "partial") {
+    return { value: commonLoad.load, status: "partial" };
+  }
+  return { value: commonLoad.load, status: "complete" };
+}
+
+export function assertExactLaneHasCanonicalPlannedLoad(
+  sessions: ReadonlyArray<{
+    title?: string;
+    common_load: CommonLoadResult | CommonLoadAggregate;
+  }>,
+): void {
+  const unavailable = sessions.filter((session) => {
+    const load = canonicalPlannedLoad(session.common_load);
+    return load.status === "unavailable" || load.value === null;
+  });
+  if (unavailable.length > 0 || sessions.length === 0) {
+    throw new Error(
+      `Exact system-plan lane requires canonical planned Common Load for every session; unavailable: ${unavailable.map((session) => session.title ?? "untitled").join(", ") || "all"}`,
+    );
+  }
+}
+
 export function materializeSystemPlanScenario(scenario: SystemPlanContractScenario) {
   const plan = getPlanOrThrow(scenario.planName);
-  const startDate =
-    typeof (plan.structure as unknown as { start_date?: unknown }).start_date === "string"
-      ? ((plan.structure as unknown as { start_date: string }).start_date ?? scenario.startDate)
-      : scenario.startDate;
+  const configuredStartDate =
+    "start_date" in plan.structure && typeof plan.structure.start_date === "string"
+      ? plan.structure.start_date
+      : null;
+  const startDate = configuredStartDate ?? scenario.startDate;
 
   const materializedSessions = materializePlanToEvents(plan.structure, startDate, "UTC")
     .filter((event) => event.event_type === "planned")
@@ -272,36 +295,50 @@ export function materializeSystemPlanScenario(scenario: SystemPlanContractScenar
         );
       }
 
-      const estimation = estimateActivity({
-        profile: estimationProfile as never,
-        ftp: estimationProfile.ftp,
-        thresholdHr: estimationProfile.threshold_hr,
-        thresholdPaceSecondsPerKm: estimationProfile.threshold_pace_seconds_per_km,
-        activityCategory: deriveSystemActivityTemplateActivityCategory(template.structure) as never,
+      const estimation = estimateActivityPlanForTrainingContext({
         structure: validateSystemTemplateActivityPlan(template),
+        performanceTargets: SYSTEM_PLAN_VERIFICATION_PERFORMANCE_TARGETS,
+        asOf: SYSTEM_PLAN_VERIFICATION_AS_OF,
+        stage: "scheduled",
+        planId: template.id,
+        scheduledEventId: `${event.scheduled_date}:${event.title}`,
       });
+      const commonLoad = estimation.prescriptionQuantification.summary.commonLoad;
+      const canonicalLoad = canonicalPlannedLoad(commonLoad);
 
       return {
         ...event,
         template_name: template.name,
         activity_category: deriveSystemActivityTemplateActivityCategory(template.structure),
-        estimated_tss: estimation.tss,
-        estimated_duration_seconds:
-          estimation.duration ?? calculateSystemTemplateDurationSeconds(template),
+        prescriptionQuantification: estimation.prescriptionQuantification,
+        common_load: commonLoad,
+        estimated_load: canonicalLoad.value,
+        estimated_load_status: canonicalLoad.status,
+        estimated_duration_seconds: estimation.durationEstimate.valueSeconds,
       };
     });
 
+  if (scenario.matchType === "exact") {
+    assertExactLaneHasCanonicalPlannedLoad(materializedSessions);
+  }
+
   const endDate =
     materializedSessions[materializedSessions.length - 1]?.scheduled_date ?? scenario.endDate;
-  const weeklyActualLoad = aggregateWeeklyValues(
+  const weeklyActualLoad = aggregateWeeklyPlannedLoad(
     materializedSessions.map((session) => ({
-      date: session.scheduled_date,
-      value: session.estimated_tss,
+      scheduled_date: session.scheduled_date,
+      event_type: "planned",
+      estimated_load: session.estimated_load,
+      estimated_load_status: session.estimated_load_status,
+      activity_plan_id: session.activity_plan_id,
+      title: session.title,
     })),
-    startDate,
-    endDate,
-    true,
-  );
+  ).weeks.map((week) => ({
+    weekIndex: week.week_index,
+    weekStart: week.week_start_date,
+    value: week.planned_weekly_load,
+    status: week.planned_weekly_load_status ?? "unavailable",
+  }));
 
   return {
     scenario,
@@ -365,7 +402,14 @@ export function buildReferenceTrajectoryForScenario(
   endDate: string,
 ) {
   const preferenceProfile = scenario.preferenceProfile ?? defaultAthletePreferenceProfile;
-  const normalizedGoals = fromProfileGoals(scenario.goals as never);
+  const normalizedGoals = fromProfileGoals(
+    scenario.goals.map((goal) => {
+      if (goal.id === undefined || goal.targets === undefined) {
+        throw new Error(`Scenario ${scenario.key} has incomplete goal fixture evidence`);
+      }
+      return { ...goal, id: goal.id, targets: [...goal.targets] };
+    }),
+  );
   const resolvedDemands = normalizedGoals
     .map((goal) => resolveEventDemand(goal))
     .flatMap((result) => (result.status === "supported" ? [result.demand] : []));
@@ -378,7 +422,7 @@ export function buildReferenceTrajectoryForScenario(
   const endGoalDate = normalizedGoals[normalizedGoals.length - 1]?.target_date ?? endDate;
   const weeksToPeak = Math.max(1, Math.ceil(diffDays(startDate, endGoalDate) / 7));
   const feasibility = assessFeasibility({
-    currentCtl: scenario.currentCtl,
+    currentLongTermLoad: scenario.currentLongTermLoad,
     weeksToPeak,
     goals: normalizedGoals,
     resolvedDemands,
@@ -388,7 +432,7 @@ export function buildReferenceTrajectoryForScenario(
   const referenceTrajectory = generateReferenceTrajectory({
     startDate,
     endDate,
-    currentCtl: scenario.currentCtl,
+    currentLongTermLoad: scenario.currentLongTermLoad,
     goals: normalizedGoals,
     resolvedDemands,
     preferenceProfile,
@@ -406,7 +450,7 @@ export function buildReferenceTrajectoryForScenario(
     weeklyTargetLoad: aggregateWeeklyValues(
       referenceTrajectory.points.map((point) => ({
         date: point.date,
-        value: point.target_tss,
+        value: point.target_load,
       })),
       startDate,
       endDate,
@@ -429,33 +473,46 @@ export function compareScenarioToReference(scenario: SystemPlanContractScenario)
   const weeklyComparison = materialized.weeklyActualLoad.map((week, index) => {
     const target = (reference.weeklyTargetLoad[index]?.value ?? 0) * targetScale;
     const actual = week.value;
-    const absError = actual === null ? null : round1(Math.abs(actual - target));
-    const toleranceTss = round1(Math.max(tolerance.weeklyFloorTss, target * tolerance.weeklyPct));
+    const complete = week.status === "complete";
+    const absError = actual === null || !complete ? null : round1(Math.abs(actual - target));
+    const toleranceLoad = round1(Math.max(tolerance.weeklyFloorLoad, target * tolerance.weeklyPct));
 
     return {
       weekIndex: index,
       weekStart: week.weekStart,
       actual,
+      actualStatus: week.status,
       target: round1(target),
       absError,
-      toleranceTss,
-      withinTolerance: absError === null ? null : absError <= toleranceTss,
+      toleranceLoad,
+      withinTolerance: absError === null ? null : absError <= toleranceLoad,
     };
   });
   const comparedWeeks = weeklyComparison.length;
+  const blockStatus = weeklyComparison.some((week) => week.actualStatus === "unavailable")
+    ? "unavailable"
+    : weeklyComparison.some((week) => week.actualStatus === "partial")
+      ? "partial"
+      : "complete";
   const blockActual = weeklyComparison.some((week) => week.actual === null)
     ? null
-    : round1(sum(weeklyComparison.map((week) => week.actual ?? 0)));
+    : round1(sum(weeklyComparison.flatMap((week) => (week.actual === null ? [] : [week.actual]))));
   const blockTarget = round1(sum(weeklyComparison.map((week) => week.target)));
-  const blockAbsError = blockActual === null ? null : round1(Math.abs(blockActual - blockTarget));
-  const blockToleranceTss = round1(
-    Math.max(tolerance.weeklyFloorTss * comparedWeeks, blockTarget * tolerance.blockPct),
+  const blockAbsError =
+    blockActual === null || blockStatus !== "complete"
+      ? null
+      : round1(Math.abs(blockActual - blockTarget));
+  const blockToleranceLoad = round1(
+    Math.max(tolerance.weeklyFloorLoad * comparedWeeks, blockTarget * tolerance.blockPct),
   );
   const actualMean = blockActual === null ? null : round1(blockActual / comparedWeeks);
   const targetMean = round1(blockTarget / comparedWeeks);
-  const meanAbsError = actualMean === null ? null : round1(Math.abs(actualMean - targetMean));
-  const meanToleranceTss = round1(
-    Math.max(tolerance.weeklyFloorTss, targetMean * tolerance.meanPct),
+  const meanAbsError =
+    actualMean === null || blockStatus !== "complete"
+      ? null
+      : round1(Math.abs(actualMean - targetMean));
+  const meanToleranceLoad = round1(
+    Math.max(tolerance.weeklyFloorLoad, targetMean * tolerance.meanPct),
   );
 
   return {
@@ -465,12 +522,13 @@ export function compareScenarioToReference(scenario: SystemPlanContractScenario)
     reference,
     weeklyComparison,
     blockActual,
+    blockStatus,
     blockTarget,
     blockAbsError,
-    blockToleranceTss,
+    blockToleranceLoad,
     actualMean,
     targetMean,
     meanAbsError,
-    meanToleranceTss,
+    meanToleranceLoad,
   };
 }

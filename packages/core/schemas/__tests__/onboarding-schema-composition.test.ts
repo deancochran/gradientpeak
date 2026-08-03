@@ -111,9 +111,6 @@ describe("onboarding schema composition", () => {
           weight_kg: "manual",
           max_hr: "estimated",
           resting_hr: "manual",
-          ftp: "imported",
-          threshold_pace_seconds_per_km: "cleared",
-          css_seconds_per_hundred_meters: "estimated",
         },
       }).baseline_field_sources,
     ).toEqual({
@@ -122,16 +119,13 @@ describe("onboarding schema composition", () => {
       weight_kg: "manual",
       max_hr: "estimated",
       resting_hr: "manual",
-      ftp: "imported",
-      threshold_pace_seconds_per_km: "cleared",
-      css_seconds_per_hundred_meters: "estimated",
     });
 
     expect(
       completeOnboardingSchema.safeParse({
         full_name: "Metadata Athlete",
         username: "metadata-athlete",
-        baseline_field_sources: { ftp: "guessed" },
+        baseline_field_sources: { ftp: "imported" },
       }).success,
     ).toBe(false);
     expect(
@@ -139,6 +133,21 @@ describe("onboarding schema composition", () => {
         full_name: "Metadata Athlete",
         username: "metadata-athlete",
         baseline_field_sources: { vo2max: "manual" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    "lthr",
+    "ftp",
+    "threshold_pace_seconds_per_km",
+    "css_seconds_per_hundred_meters",
+  ])("rejects removed onboarding threshold field %s", (field) => {
+    expect(
+      completeOnboardingSchema.safeParse({
+        full_name: "Current Athlete",
+        username: "current-athlete",
+        [field]: 200,
       }).success,
     ).toBe(false);
   });
@@ -160,6 +169,7 @@ describe("onboarding schema composition", () => {
         full_name: "Weighted Athlete",
         username: "weighted-athlete",
         weight_kg,
+        baseline_field_sources: {},
       }).success,
     ).toBe(false);
   });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { createUnavailableAthletePerformanceTargetFacts } from "../performance-model";
 import type { RecordingSessionSnapshot } from "../schemas/recording-session";
 import {
   PORTABLE_WEB_RECORDING_SCHEMA_VERSION,
@@ -21,7 +22,8 @@ const snapshot: RecordingSessionSnapshot = {
     activityPlanId: "33333333-3333-4333-8333-333333333333",
     routeId: "44444444-4444-4444-8444-444444444444",
   },
-  profileSnapshot: { defaultsApplied: [] },
+  profileSnapshot: {},
+  performanceTargets: createUnavailableAthletePerformanceTargetFacts("2026-07-20T10:00:00.000Z"),
   devices: { connected: [], controllableTrainer: null, selectedSources: [] },
   capabilities: {
     canTrackLocation: false,

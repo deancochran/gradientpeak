@@ -29,7 +29,7 @@ CREATE TYPE "public"."integration_provider" AS ENUM('strava', 'wahoo', 'training
 CREATE TYPE "public"."integration_resource_kind" AS ENUM('event', 'activity_plan', 'activity_route', 'group_event_route_delivery', 'activity');
 CREATE TYPE "public"."like_entity_type" AS ENUM('activity', 'activity_plan', 'training_plan', 'route');
 CREATE TYPE "public"."notification_type" AS ENUM('new_message', 'coaching_invitation', 'coaching_invitation_accepted', 'coaching_invitation_declined', 'new_follower', 'follow_request', 'group_event_cancelled');
-CREATE TYPE "public"."profile_metric_type" AS ENUM('weight_kg', 'ftp', 'resting_hr', 'sleep_hours', 'hrv_rmssd', 'vo2_max', 'body_fat_percentage', 'hydration_level', 'stress_score', 'soreness_level', 'wellness_score', 'max_hr', 'lthr', 'threshold_pace_seconds_per_km', 'css_seconds_per_100m');
+CREATE TYPE "public"."profile_metric_type" AS ENUM('weight_kg', 'resting_hr', 'sleep_hours', 'hrv_rmssd', 'vo2_max', 'body_fat_percentage', 'hydration_level', 'stress_score', 'soreness_level', 'wellness_score', 'max_hr', 'lthr');
 CREATE TYPE "public"."training_effect_label" AS ENUM('recovery', 'base', 'tempo', 'threshold', 'vo2max');
 CREATE TABLE "accounts" (
 	"id" text PRIMARY KEY NOT NULL,
@@ -226,6 +226,53 @@ CREATE TABLE "activity_efforts" (
 	CONSTRAINT "activity_efforts_calculation_version_not_blank_check" CHECK ("activity_efforts"."calculation_version" is null or btrim("activity_efforts"."calculation_version") <> ''),
 	CONSTRAINT "activity_efforts_quality_score_range_check" CHECK ("activity_efforts"."quality_score" is null or ("activity_efforts"."quality_score" >= 0 and "activity_efforts"."quality_score" <= 1)),
 	CONSTRAINT "activity_efforts_provenance_object_check" CHECK ("activity_efforts"."provenance" is null or jsonb_typeof("activity_efforts"."provenance") = 'object')
+);
+
+CREATE TABLE "swimming_css_protocol_evidence" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"protocol_id" text NOT NULL,
+	"evidence_id" text NOT NULL,
+	"evidence_revision" integer NOT NULL,
+	"profile_id" uuid NOT NULL,
+	"activity_id" uuid NOT NULL,
+	"source_artifact_id" uuid NOT NULL,
+	"source_artifact_digest" text NOT NULL,
+	"observed_at" timestamp with time zone NOT NULL,
+	"protocol" text NOT NULL,
+	"environment" text NOT NULL,
+	"pool_length_meters" real NOT NULL,
+	"timing_basis" text NOT NULL,
+	"status" text NOT NULL,
+	"reasons" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"effort_400_id" uuid NOT NULL,
+	"effort_400_evidence_revision" integer NOT NULL,
+	"effort_400_segment_id" uuid NOT NULL,
+	"effort_400_observed_at" timestamp with time zone NOT NULL,
+	"effort_400_duration_seconds" integer NOT NULL,
+	"effort_400_start_offset_ms" bigint NOT NULL,
+	"effort_400_end_offset_ms" bigint NOT NULL,
+	"effort_200_id" uuid NOT NULL,
+	"effort_200_evidence_revision" integer NOT NULL,
+	"effort_200_segment_id" uuid NOT NULL,
+	"effort_200_observed_at" timestamp with time zone NOT NULL,
+	"effort_200_duration_seconds" integer NOT NULL,
+	"effort_200_start_offset_ms" bigint NOT NULL,
+	"effort_200_end_offset_ms" bigint NOT NULL,
+	"calculation_version" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "swimming_css_protocol_evidence_profile_protocol_id_unique" UNIQUE("profile_id","protocol_id"),
+	CONSTRAINT "swimming_css_protocol_evidence_profile_activity_protocol_unique" UNIQUE("profile_id","activity_id","protocol"),
+	CONSTRAINT "swimming_css_protocol_evidence_profile_evidence_id_unique" UNIQUE("profile_id","evidence_id"),
+	CONSTRAINT "swimming_css_protocol_evidence_protocol_identity_check" CHECK ("swimming_css_protocol_evidence"."protocol" = 'css_400m_200m' and "swimming_css_protocol_evidence"."protocol_id" = 'css_400m_200m:' || "swimming_css_protocol_evidence"."activity_id"::text),
+	CONSTRAINT "swimming_css_protocol_evidence_content_identity_check" CHECK ("swimming_css_protocol_evidence"."evidence_id" ~ '^sha256:[0-9a-f]{64}$' and "swimming_css_protocol_evidence"."source_artifact_digest" ~ '^[0-9a-f]{64}$'),
+	CONSTRAINT "swimming_css_protocol_evidence_context_check" CHECK ("swimming_css_protocol_evidence"."environment" = 'pool' and "swimming_css_protocol_evidence"."timing_basis" = 'pool_length_timing' and "swimming_css_protocol_evidence"."pool_length_meters" between 10 and 100 and "swimming_css_protocol_evidence"."pool_length_meters" not in ('NaN'::real, 'Infinity'::real, '-Infinity'::real)),
+	CONSTRAINT "swimming_css_protocol_evidence_status_check" CHECK ("swimming_css_protocol_evidence"."status" = 'qualified' and jsonb_typeof("swimming_css_protocol_evidence"."reasons") = 'array' and jsonb_array_length("swimming_css_protocol_evidence"."reasons") = 0),
+	CONSTRAINT "swimming_css_protocol_evidence_revision_check" CHECK ("swimming_css_protocol_evidence"."evidence_revision" > 0 and "swimming_css_protocol_evidence"."effort_400_evidence_revision" = "swimming_css_protocol_evidence"."evidence_revision" and "swimming_css_protocol_evidence"."effort_200_evidence_revision" = "swimming_css_protocol_evidence"."evidence_revision"),
+	CONSTRAINT "swimming_css_protocol_evidence_distinct_efforts_check" CHECK ("swimming_css_protocol_evidence"."effort_400_id" <> "swimming_css_protocol_evidence"."effort_200_id" and "swimming_css_protocol_evidence"."effort_400_segment_id" <> "swimming_css_protocol_evidence"."effort_200_segment_id"),
+	CONSTRAINT "swimming_css_protocol_evidence_duration_check" CHECK ("swimming_css_protocol_evidence"."effort_400_duration_seconds" between 1 and 14400 and "swimming_css_protocol_evidence"."effort_200_duration_seconds" between 1 and 14400 and "swimming_css_protocol_evidence"."effort_400_duration_seconds" > 2 * "swimming_css_protocol_evidence"."effort_200_duration_seconds" and ("swimming_css_protocol_evidence"."effort_400_duration_seconds" - "swimming_css_protocol_evidence"."effort_200_duration_seconds")::double precision / 2 between 45 and 600),
+	CONSTRAINT "swimming_css_protocol_evidence_order_check" CHECK ("swimming_css_protocol_evidence"."effort_400_start_offset_ms" >= 0 and "swimming_css_protocol_evidence"."effort_400_end_offset_ms" > "swimming_css_protocol_evidence"."effort_400_start_offset_ms" and "swimming_css_protocol_evidence"."effort_200_start_offset_ms" >= "swimming_css_protocol_evidence"."effort_400_end_offset_ms" and "swimming_css_protocol_evidence"."effort_200_end_offset_ms" > "swimming_css_protocol_evidence"."effort_200_start_offset_ms" and "swimming_css_protocol_evidence"."effort_400_observed_at" <= "swimming_css_protocol_evidence"."effort_200_observed_at" and "swimming_css_protocol_evidence"."observed_at" = "swimming_css_protocol_evidence"."effort_200_observed_at"),
+	CONSTRAINT "swimming_css_protocol_evidence_calculation_version_check" CHECK ("swimming_css_protocol_evidence"."calculation_version" = 'canonical-swim-css-protocol-evidence-v1')
 );
 
 CREATE TABLE "activity_file_ingestions" (
@@ -1097,6 +1144,10 @@ ALTER TABLE "activity_efforts" ADD CONSTRAINT "activity_efforts_profile_id_profi
 ALTER TABLE "activity_efforts" ADD CONSTRAINT "activity_efforts_activity_id_activities_id_fk" FOREIGN KEY ("activity_id") REFERENCES "public"."activities"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "activity_efforts" ADD CONSTRAINT "activity_efforts_activity_category_canonical_activity_categories_code_fk" FOREIGN KEY ("activity_category") REFERENCES "public"."canonical_activity_categories"("code") ON DELETE restrict ON UPDATE no action;
 ALTER TABLE "activity_efforts" ADD CONSTRAINT "activity_efforts_segment_activity_profile_category_fkey" FOREIGN KEY ("segment_id","activity_id","profile_id","activity_category") REFERENCES "public"."activity_segments"("id","activity_id","profile_id","activity_category") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "swimming_css_protocol_evidence" ADD CONSTRAINT "swimming_css_protocol_evidence_activity_profile_fkey" FOREIGN KEY ("activity_id","profile_id") REFERENCES "public"."activities"("id","profile_id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "swimming_css_protocol_evidence" ADD CONSTRAINT "swimming_css_protocol_evidence_source_link_fkey" FOREIGN KEY ("activity_id","source_artifact_id","profile_id") REFERENCES "public"."activity_artifact_links"("activity_id","artifact_id","profile_id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "swimming_css_protocol_evidence" ADD CONSTRAINT "swimming_css_protocol_evidence_effort_400_fkey" FOREIGN KEY ("effort_400_id") REFERENCES "public"."activity_efforts"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "swimming_css_protocol_evidence" ADD CONSTRAINT "swimming_css_protocol_evidence_effort_200_fkey" FOREIGN KEY ("effort_200_id") REFERENCES "public"."activity_efforts"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "activity_file_ingestions" ADD CONSTRAINT "activity_file_ingestions_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "activity_file_ingestions" ADD CONSTRAINT "activity_file_ingestions_integration_id_integrations_id_fk" FOREIGN KEY ("integration_id") REFERENCES "public"."integrations"("id") ON DELETE set null ON UPDATE no action;
 ALTER TABLE "activity_file_ingestions" ADD CONSTRAINT "activity_file_ingestions_activity_profile_fkey" FOREIGN KEY ("activity_id","profile_id") REFERENCES "public"."activities"("id","profile_id") ON DELETE cascade ON UPDATE no action;
@@ -1195,6 +1246,9 @@ CREATE INDEX "idx_activity_artifacts_profile" ON "activity_artifacts" USING btre
 CREATE INDEX "idx_activity_efforts_activity_id" ON "activity_efforts" USING btree ("activity_id");
 CREATE INDEX "idx_activity_efforts_segment_id" ON "activity_efforts" USING btree ("segment_id");
 CREATE INDEX "idx_activity_efforts_profile_id" ON "activity_efforts" USING btree ("profile_id");
+CREATE INDEX "idx_swimming_css_protocol_evidence_profile_observed" ON "swimming_css_protocol_evidence" USING btree ("profile_id","observed_at","id") WHERE "swimming_css_protocol_evidence"."status" = 'qualified';
+CREATE INDEX "idx_swimming_css_protocol_evidence_activity" ON "swimming_css_protocol_evidence" USING btree ("activity_id");
+CREATE INDEX "idx_swimming_css_protocol_evidence_source_artifact" ON "swimming_css_protocol_evidence" USING btree ("source_artifact_id");
 CREATE INDEX "idx_activity_file_ingestions_activity_profile" ON "activity_file_ingestions" USING btree ("activity_id","profile_id") WHERE "activity_file_ingestions"."activity_id" is not null;
 CREATE INDEX "idx_activity_file_ingestions_activity_id" ON "activity_file_ingestions" USING btree ("activity_id") WHERE "activity_file_ingestions"."activity_id" is not null;
 CREATE INDEX "idx_activity_file_ingestions_artifact_id" ON "activity_file_ingestions" USING btree ("artifact_id") WHERE "activity_file_ingestions"."artifact_id" is not null;
@@ -3056,6 +3110,8 @@ ALTER TABLE "public"."provider_webhook_receipts" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."rate_limits" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."sessions" ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE "public"."swimming_css_protocol_evidence" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."training_plans" ENABLE ROW LEVEL SECURITY;
 

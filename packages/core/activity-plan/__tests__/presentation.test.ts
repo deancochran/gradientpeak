@@ -47,10 +47,8 @@ describe("deriveActivityPlanPresentation", () => {
       ]),
     );
 
-    expect(rpe?.occurrences.map((occurrence) => occurrence.normalizedIntensity)).toEqual([
-      0.3, 0.8,
-    ]);
-    expect(threshold?.occurrences.map((occurrence) => occurrence.normalizedIntensity)).toEqual([
+    expect(rpe?.occurrences.map((occurrence) => occurrence.visualIntensity)).toEqual([0.3, 0.8]);
+    expect(threshold?.occurrences.map((occurrence) => occurrence.visualIntensity)).toEqual([
       0.75, 1,
     ]);
     expect(threshold?.activity_category).toBe("bike");
@@ -64,9 +62,7 @@ describe("deriveActivityPlanPresentation", () => {
       ]),
     );
 
-    expect(model?.occurrences.map((occurrence) => occurrence.normalizedIntensity)).toEqual([
-      0.2, 1,
-    ]);
+    expect(model?.occurrences.map((occurrence) => occurrence.visualIntensity)).toEqual([0.2, 1]);
     expect(model?.occurrences[0]?.intensityBasis).toBe("relative_within_plan");
     expect(model?.occurrences[1]?.intensityLabel).toBe("watts 300");
   });
@@ -137,7 +133,7 @@ describe("deriveActivityPlanPresentation", () => {
     expect(model?.occurrences[0]).toMatchObject({
       intensityBasis: "unavailable",
       intensityLabel: null,
-      normalizedIntensity: null,
+      visualIntensity: null,
     });
   });
 

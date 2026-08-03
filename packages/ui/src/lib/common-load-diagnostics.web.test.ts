@@ -17,7 +17,7 @@ function unavailable(
     overrides.method === "heart_rate_zones" ? "heart_rate_zones" : "run_pace_threshold";
   const activityCategory =
     overrides.activity_category ??
-    (overrides.method === "power_threshold" || overrides.method === "critical_power_threshold"
+    (overrides.method === "power_threshold"
       ? "bike"
       : overrides.method === "swim_pace_threshold"
         ? "swim"
@@ -97,11 +97,6 @@ describe("getCommonLoadDiagnostic", () => {
     ).toContain("FTP");
     expect(
       getCommonLoadDiagnostic(
-        unavailable({ reason: "threshold_missing", method: "critical_power_threshold" }),
-      ).summary,
-    ).toContain("Critical Power");
-    expect(
-      getCommonLoadDiagnostic(
         unavailable({ reason: "threshold_missing", method: "run_pace_threshold" }),
       ).summary,
     ).toContain("run threshold pace");
@@ -139,6 +134,7 @@ describe("getCommonLoadDiagnostic", () => {
     "private_data",
     "unsupported_modality",
     "intensity_out_of_range",
+    "evidence_truncated",
   ] as const)("keeps %s explicit", (reason) => {
     expect(getCommonLoadDiagnostic(unavailable({ reason }))).toMatchObject({
       summary: expect.any(String),

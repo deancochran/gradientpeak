@@ -23,18 +23,18 @@ export const trainingAdjustmentDailyPointSourceSchema = z
 export const trainingAdjustmentDailyPointSchema = z
   .object({
     date: dateOnlySchema,
-    plannedLoadTss: finiteNumberSchema.default(0),
-    tentativePlannedLoadTss: finiteNumberSchema.default(0),
-    completedLoadTss: finiteNumberSchema.default(0),
-    targetLoadTss: finiteNumberSchema.default(0),
-    actualOrScheduledLoadTss: finiteNumberSchema.default(0),
-    loadDeltaTss: finiteNumberSchema.default(0),
-    plannedDeltaTss: finiteNumberSchema.default(0),
-    fitnessCtl: finiteNumberSchema.nullable().optional(),
-    targetFitnessCtl: finiteNumberSchema.nullable().optional(),
-    scheduledFitnessCtl: finiteNumberSchema.nullable().optional(),
-    fatigueAtl: finiteNumberSchema.nullable().optional(),
-    formTsb: finiteNumberSchema.nullable().optional(),
+    plannedLoad: finiteNumberSchema.nullable(),
+    tentativePlannedLoad: finiteNumberSchema.nullable(),
+    completedLoad: finiteNumberSchema.nullable(),
+    targetLoad: finiteNumberSchema.nullable(),
+    actualOrScheduledLoad: finiteNumberSchema.nullable(),
+    loadDeltaLoad: finiteNumberSchema.nullable(),
+    plannedDeltaLoad: finiteNumberSchema.nullable(),
+    fitnessLongTermLoad: finiteNumberSchema.nullable().optional(),
+    targetFitnessLongTermLoad: finiteNumberSchema.nullable().optional(),
+    scheduledFitnessLongTermLoad: finiteNumberSchema.nullable().optional(),
+    fatigueRecentLoad: finiteNumberSchema.nullable().optional(),
+    formLoadBalance: finiteNumberSchema.nullable().optional(),
     readinessScore: finiteNumberSchema.nullable().optional(),
     annotations: z.array(trainingAdjustmentAnnotationSchema).default([]),
     source: trainingAdjustmentDailyPointSourceSchema.optional(),
@@ -60,16 +60,16 @@ type DateSourceInput =
 export type BuildTrainingAdjustmentDailySeriesInput = {
   startDate: string;
   endDate: string;
-  plannedLoadTssByDate?: DateNumberInput;
-  tentativePlannedLoadTssByDate?: DateNumberInput;
-  completedLoadTssByDate?: DateNumberInput;
-  targetLoadTssByDate?: DateNumberInput;
-  actualOrScheduledLoadTssByDate?: DateNumberInput;
-  fitnessCtlByDate?: DateNumberInput;
-  targetFitnessCtlByDate?: DateNumberInput;
-  scheduledFitnessCtlByDate?: DateNumberInput;
-  fatigueAtlByDate?: DateNumberInput;
-  formTsbByDate?: DateNumberInput;
+  plannedLoadByDate?: DateNumberInput;
+  tentativePlannedLoadByDate?: DateNumberInput;
+  completedLoadByDate?: DateNumberInput;
+  targetLoadByDate?: DateNumberInput;
+  actualOrScheduledLoadByDate?: DateNumberInput;
+  fitnessLongTermLoadByDate?: DateNumberInput;
+  targetFitnessLongTermLoadByDate?: DateNumberInput;
+  scheduledFitnessLongTermLoadByDate?: DateNumberInput;
+  fatigueRecentLoadByDate?: DateNumberInput;
+  formLoadBalanceByDate?: DateNumberInput;
   readinessScoreByDate?: DateNumberInput;
   annotationsByDate?: DateAnnotationsInput;
   sourceByDate?: DateSourceInput;
@@ -80,8 +80,14 @@ function readNumber(input: DateNumberInput | undefined, date: string): number | 
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function readLoad(input: DateNumberInput | undefined, date: string): number {
-  return readNumber(input, date) ?? 0;
+function readProvidedNumber(
+  input: DateNumberInput | undefined,
+  date: string,
+): { provided: boolean; value: number | null } {
+  const provided = isReadonlyMap(input)
+    ? input.has(date)
+    : input !== undefined && Object.hasOwn(input, date);
+  return { provided, value: readNumber(input, date) };
 }
 
 function readAnnotations(input: DateAnnotationsInput | undefined, date: string) {
@@ -95,11 +101,20 @@ function readSource(input: DateSourceInput | undefined, date: string) {
 function isReadonlyMap<Value>(
   input: Readonly<Record<string, Value>> | ReadonlyMap<string, Value> | undefined,
 ): input is ReadonlyMap<string, Value> {
-  return typeof (input as ReadonlyMap<string, Value> | undefined)?.get === "function";
+  return input !== undefined && "get" in input && typeof input.get === "function";
 }
 
 function optionalMetric(value: number | null) {
   return value === null ? undefined : value;
+}
+
+function deriveLoad(
+  values: readonly (number | null)[],
+  calculation: (...knownValues: number[]) => number,
+): number | null {
+  return values.some((value) => value === null)
+    ? null
+    : calculation(...values.filter((value): value is number => value !== null));
 }
 
 export function buildTrainingAdjustmentDailySeries(
@@ -115,27 +130,46 @@ export function buildTrainingAdjustmentDailySeries(
 
   return Array.from({ length: dayCount }, (_, dayIndex) => {
     const date = addDaysDateOnlyUtc(input.startDate, dayIndex);
-    const plannedLoadTss = readLoad(input.plannedLoadTssByDate, date);
-    const tentativePlannedLoadTss = readLoad(input.tentativePlannedLoadTssByDate, date);
-    const completedLoadTss = readLoad(input.completedLoadTssByDate, date);
-    const targetLoadTss = readLoad(input.targetLoadTssByDate, date);
-    const actualOrScheduledLoadTss =
-      readNumber(input.actualOrScheduledLoadTssByDate, date) ?? completedLoadTss + plannedLoadTss;
+    const plannedLoad = readNumber(input.plannedLoadByDate, date);
+    const tentativePlannedLoad = readNumber(input.tentativePlannedLoadByDate, date);
+    const completedLoad = readNumber(input.completedLoadByDate, date);
+    const targetLoad = readNumber(input.targetLoadByDate, date);
+    const providedActualOrScheduledLoad = readProvidedNumber(
+      input.actualOrScheduledLoadByDate,
+      date,
+    );
+    const actualOrScheduledLoad = providedActualOrScheduledLoad.provided
+      ? providedActualOrScheduledLoad.value
+      : deriveLoad(
+          [plannedLoad, tentativePlannedLoad, completedLoad],
+          (planned, tentative, completed) =>
+            completed + Math.max(0, planned + tentative - completed),
+        );
 
     return trainingAdjustmentDailyPointSchema.parse({
       date,
-      plannedLoadTss,
-      tentativePlannedLoadTss,
-      completedLoadTss,
-      targetLoadTss,
-      actualOrScheduledLoadTss,
-      loadDeltaTss: actualOrScheduledLoadTss - targetLoadTss,
-      plannedDeltaTss: plannedLoadTss + tentativePlannedLoadTss - targetLoadTss,
-      fitnessCtl: optionalMetric(readNumber(input.fitnessCtlByDate, date)),
-      targetFitnessCtl: optionalMetric(readNumber(input.targetFitnessCtlByDate, date)),
-      scheduledFitnessCtl: optionalMetric(readNumber(input.scheduledFitnessCtlByDate, date)),
-      fatigueAtl: optionalMetric(readNumber(input.fatigueAtlByDate, date)),
-      formTsb: optionalMetric(readNumber(input.formTsbByDate, date)),
+      plannedLoad,
+      tentativePlannedLoad,
+      completedLoad,
+      targetLoad,
+      actualOrScheduledLoad,
+      loadDeltaLoad: deriveLoad(
+        [actualOrScheduledLoad, targetLoad],
+        (actualOrScheduled, target) => actualOrScheduled - target,
+      ),
+      plannedDeltaLoad: deriveLoad(
+        [plannedLoad, tentativePlannedLoad, targetLoad],
+        (planned, tentative, target) => planned + tentative - target,
+      ),
+      fitnessLongTermLoad: optionalMetric(readNumber(input.fitnessLongTermLoadByDate, date)),
+      targetFitnessLongTermLoad: optionalMetric(
+        readNumber(input.targetFitnessLongTermLoadByDate, date),
+      ),
+      scheduledFitnessLongTermLoad: optionalMetric(
+        readNumber(input.scheduledFitnessLongTermLoadByDate, date),
+      ),
+      fatigueRecentLoad: optionalMetric(readNumber(input.fatigueRecentLoadByDate, date)),
+      formLoadBalance: optionalMetric(readNumber(input.formLoadBalanceByDate, date)),
       readinessScore: optionalMetric(readNumber(input.readinessScoreByDate, date)),
       annotations: readAnnotations(input.annotationsByDate, date),
       source: readSource(input.sourceByDate, date),

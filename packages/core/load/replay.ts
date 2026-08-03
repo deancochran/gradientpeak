@@ -1,74 +1,74 @@
 import type { TrainingQualityProfile } from "../calculations/training-quality";
-import { calculateATL, calculateCTL, calculateTSB } from "./progression";
+import { calculateLoadBalance, calculateLongTermLoad, calculateRecentLoad } from "./progression";
 
-export interface DatedTssEntry {
+export interface DatedLoadEntry {
   date: string;
-  tss: number;
+  load: number;
 }
 
-export interface ReplayTrainingLoadByDateInput {
-  dailyTss: DatedTssEntry[];
-  initialCTL?: number;
-  initialATL?: number;
+export interface ReplayCommonLoadFitnessByDateInput {
+  dailyLoad: DatedLoadEntry[];
+  initialLongTermLoad?: number;
+  initialRecentLoad?: number;
   userAge?: number;
   userGender?: "male" | "female" | null;
   trainingQuality?: TrainingQualityProfile;
 }
 
-export interface ReplayTrainingLoadPoint {
+export interface ReplayCommonLoadFitnessPoint {
   date: string;
-  tss: number;
-  ctl: number;
-  atl: number;
-  tsb: number;
+  load: number;
+  longTermLoad: number;
+  recentLoad: number;
+  loadBalance: number;
 }
 
-export function buildDailyTssByDateSeries(input: {
+export function buildDailyLoadByDateSeries(input: {
   startDate: string;
   endDate: string;
-  tssByDate: Map<string, number> | Record<string, number>;
-}): DatedTssEntry[] {
-  const results: DatedTssEntry[] = [];
+  loadByDate: Map<string, number> | Record<string, number>;
+}): DatedLoadEntry[] {
+  const results: DatedLoadEntry[] = [];
   const cursor = new Date(`${input.startDate}T00:00:00.000Z`);
   const end = new Date(`${input.endDate}T00:00:00.000Z`);
 
   while (cursor <= end) {
     const date = cursor.toISOString().split("T")[0]!;
-    const tss =
-      input.tssByDate instanceof Map
-        ? (input.tssByDate.get(date) ?? 0)
-        : (input.tssByDate[date] ?? 0);
-    results.push({ date, tss });
+    const load =
+      input.loadByDate instanceof Map
+        ? (input.loadByDate.get(date) ?? 0)
+        : (input.loadByDate[date] ?? 0);
+    results.push({ date, load });
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
 
   return results;
 }
 
-export function replayTrainingLoadByDate(
-  input: ReplayTrainingLoadByDateInput,
-): ReplayTrainingLoadPoint[] {
-  const results: ReplayTrainingLoadPoint[] = [];
-  let currentCTL = input.initialCTL ?? 0;
-  let currentATL = input.initialATL ?? 0;
+export function replayCommonLoadFitnessByDate(
+  input: ReplayCommonLoadFitnessByDateInput,
+): ReplayCommonLoadFitnessPoint[] {
+  const results: ReplayCommonLoadFitnessPoint[] = [];
+  let currentLongTermLoad = input.initialLongTermLoad ?? 0;
+  let currentRecentLoad = input.initialRecentLoad ?? 0;
 
-  for (const item of input.dailyTss) {
-    currentCTL = calculateCTL(currentCTL, item.tss, input.userAge);
-    currentATL = calculateATL(
-      currentATL,
-      item.tss,
+  for (const item of input.dailyLoad) {
+    currentLongTermLoad = calculateLongTermLoad(currentLongTermLoad, item.load, input.userAge);
+    currentRecentLoad = calculateRecentLoad(
+      currentRecentLoad,
+      item.load,
       input.userAge,
       input.userGender,
       input.trainingQuality,
     );
-    const tsb = calculateTSB(currentCTL, currentATL);
+    const loadBalance = calculateLoadBalance(currentLongTermLoad, currentRecentLoad);
 
     results.push({
       date: item.date,
-      tss: item.tss,
-      ctl: currentCTL,
-      atl: currentATL,
-      tsb,
+      load: item.load,
+      longTermLoad: currentLongTermLoad,
+      recentLoad: currentRecentLoad,
+      loadBalance,
     });
   }
 

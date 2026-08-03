@@ -2,6 +2,41 @@ import { compileActivityPlan, SYSTEM_TEMPLATES } from "@repo/core";
 import { describe, expect, it } from "vitest";
 import { buildUpcomingActivityImpact } from "../upcomingActivityImpact";
 
+const availableCommonLoad = {
+  status: "available" as const,
+  model: "gradientpeak_relative_load" as const,
+  version: "1" as const,
+  activity_category: "bike" as const,
+  method: "power_threshold" as const,
+  quality: {
+    source: "manual" as const,
+    observed_at: "2026-07-15T00:00:00.000Z",
+    valid_at: "2026-07-15T00:00:00.000Z",
+    confidence: "high" as const,
+    stale: false,
+    estimate: false,
+    calculation_version: "1",
+    evidence_fingerprint: "fixture",
+  },
+  thresholdEvidence: {
+    type: "ftp_watts" as const,
+    value: 250,
+    unit: "watts" as const,
+    source: "manual" as const,
+    observedAt: "2026-07-15T00:00:00.000Z",
+    validAt: "2026-07-15T00:00:00.000Z",
+    freshness: "current" as const,
+    calculationVersion: "1",
+    sourceFingerprint: "fixture",
+  },
+  evidenceFingerprint: "fixture",
+  computedAsOf: "2026-07-15T00:00:00.000Z",
+  contributingDurationSeconds: 3600,
+  load: 65,
+  intensity: 0.8,
+  estimated: true,
+};
+
 function structureForActivityCategory(activity_category: "bike") {
   const template = SYSTEM_TEMPLATES.find(
     (candidate) => compileActivityPlan(candidate.structure).activity_category === activity_category,
@@ -25,14 +60,14 @@ describe("buildUpcomingActivityImpact", () => {
           },
         },
       ],
-      estimatedTssByPlanId: new Map([["plan-1", 65]]),
+      commonLoadByPlanId: new Map([["plan-1", availableCommonLoad]]),
       today: "2026-07-15",
       horizonEnd: "2026-07-22",
       recommendedByDate: new Map([["2026-07-16", 40]]),
     });
 
     expect(impact).toMatchObject({
-      estimated_load: 65,
+      common_load: expect.objectContaining({ status: "available", load: 65 }),
       activity_category: "bike",
       confidence: "medium",
       explanation: "This session's planned load is above the recommended daily load.",
@@ -55,14 +90,14 @@ describe("buildUpcomingActivityImpact", () => {
           },
         },
       ],
-      estimatedTssByPlanId: new Map(),
+      commonLoadByPlanId: new Map(),
       today: "2026-07-15",
       horizonEnd: "2026-07-22",
       recommendedByDate: new Map([["2026-07-16", 40]]),
     });
 
     expect(impact).toMatchObject({
-      estimated_load: null,
+      common_load: null,
       confidence: "low",
       explanation:
         "Add duration and intensity to compare this session's planned load with the recommended daily load.",
@@ -81,7 +116,7 @@ describe("buildUpcomingActivityImpact", () => {
           activity_plan: { id: "plan-1", name: "Legacy plan", structure: { version: 2 } },
         },
       ],
-      estimatedTssByPlanId: new Map([["plan-1", 65]]),
+      commonLoadByPlanId: new Map([["plan-1", availableCommonLoad]]),
       today: "2026-07-15",
       horizonEnd: "2026-07-22",
       recommendedByDate: new Map([["2026-07-16", 40]]),

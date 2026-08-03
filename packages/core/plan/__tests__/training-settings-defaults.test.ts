@@ -70,7 +70,7 @@ describe("mapAthletePreferencesToCreationDefaults", () => {
     expect(mapped.behavior_controls.spike_frequency).toBeGreaterThan(0.7);
     expect(mapped.behavior_controls.recovery_priority).toBeGreaterThan(0.65);
     expect(mapped.calibration.optimizer.churn_penalty_weight).toBeGreaterThan(0.3);
-    expect(mapped.calibration.readiness_timeline.target_tsb).toBeGreaterThan(10);
+    expect(mapped.calibration.readiness_timeline.target_loadBalance).toBeGreaterThan(10);
     expect(mapped.calibration.durability_penalties.strain_scale).toBeLessThan(900);
   });
 

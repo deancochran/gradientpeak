@@ -14,7 +14,7 @@ let paramsState: {
   date?: string;
   trainingPlanId?: string;
   planSuggestionType?: string;
-  planSuggestionTssDelta?: string;
+  planSuggestionLoadDelta?: string;
   planSuggestionDescription?: string;
 } = { date: today };
 
@@ -258,8 +258,6 @@ describe("calendar day screen", () => {
           description: "Progressive tempo with a strong finish.",
           activity_category: "run",
           estimated_duration: 3600,
-          estimated_tss: 72,
-          intensity_factor: 0.88,
           route_id: "route-1",
           structure: {
             intervals: [{ repetitions: 2, steps: [{}, {}] }],
@@ -358,7 +356,7 @@ describe("calendar day screen", () => {
       date: tomorrow,
       trainingPlanId: "training-plan-1",
       planSuggestionType: "add_load",
-      planSuggestionTssDelta: "75",
+      planSuggestionLoadDelta: "75",
       planSuggestionDescription: "Add load to close the readiness gap.",
     };
 
@@ -366,7 +364,7 @@ describe("calendar day screen", () => {
 
     expect(screen.getByTestId("calendar-day-plan-suggestion")).toBeTruthy();
     expect(screen.getByText("Plan suggestion")).toBeTruthy();
-    expect(screen.getByText("Add about ~75 TSS")).toBeTruthy();
+    expect(screen.getByText("Add about ~75 Load")).toBeTruthy();
     expect(screen.getByText("Add load to close the readiness gap.")).toBeTruthy();
 
     fireEvent.press(screen.getByTestId("calendar-day-create-from-plan-suggestion"));
@@ -377,7 +375,7 @@ describe("calendar day screen", () => {
         date: tomorrow,
         trainingPlanId: "training-plan-1",
         planSuggestionType: "add_load",
-        planSuggestionTssDelta: "75",
+        planSuggestionLoadDelta: "75",
       },
     });
   });
@@ -387,13 +385,13 @@ describe("calendar day screen", () => {
       date: today,
       trainingPlanId: "training-plan-1",
       planSuggestionType: "reduce_load",
-      planSuggestionTssDelta: "-40",
+      planSuggestionLoadDelta: "-40",
       planSuggestionDescription: "Reduce load to protect readiness.",
     };
 
     renderNative(<CalendarDayScreen />);
 
-    expect(screen.getByText("Reduce about ~40 TSS")).toBeTruthy();
+    expect(screen.getByText("Reduce about ~40 Load")).toBeTruthy();
     expect(screen.getByText("Reduce load to protect readiness.")).toBeTruthy();
     expect(screen.getByText("Create adjustment note")).toBeTruthy();
     expect(screen.queryByTestId("calendar-day-reduce-load-candidates")).toBeNull();

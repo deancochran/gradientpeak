@@ -23,62 +23,62 @@ export const PHASE_CHARACTERISTICS = {
     intensity: INTENSITY_PRESETS.polarized,
     sessionsPerWeek: { min: 4, max: 6 },
     durationWeeks: { min: 4, max: 12 },
-    tssMultiplier: 1.0,
+    loadMultiplier: 1.0,
   },
   build: {
     intensity: INTENSITY_PRESETS.pyramidal,
     sessionsPerWeek: { min: 5, max: 7 },
     durationWeeks: { min: 4, max: 12 },
-    tssMultiplier: 1.2,
+    loadMultiplier: 1.2,
   },
   peak: {
     intensity: INTENSITY_PRESETS.threshold,
     sessionsPerWeek: { min: 5, max: 7 },
     durationWeeks: { min: 2, max: 4 },
-    tssMultiplier: 1.0,
+    loadMultiplier: 1.0,
   },
   taper: {
     intensity: INTENSITY_PRESETS.polarized,
     sessionsPerWeek: { min: 3, max: 5 },
     durationWeeks: { min: 1, max: 3 },
-    tssMultiplier: 0.6,
+    loadMultiplier: 0.6,
   },
   recovery: {
     intensity: { easy: 0.95, moderate: 0.05, hard: 0.0 },
     sessionsPerWeek: { min: 3, max: 5 },
     durationWeeks: { min: 1, max: 2 },
-    tssMultiplier: 0.5,
+    loadMultiplier: 0.5,
   },
   transition: {
     intensity: { easy: 0.9, moderate: 0.1, hard: 0.0 },
     sessionsPerWeek: { min: 3, max: 5 },
     durationWeeks: { min: 2, max: 4 },
-    tssMultiplier: 0.7,
+    loadMultiplier: 0.7,
   },
   maintenance: {
     intensity: INTENSITY_PRESETS.polarized,
     sessionsPerWeek: { min: 3, max: 5 },
     durationWeeks: { min: 1, max: 52 },
-    tssMultiplier: 0.8,
+    loadMultiplier: 0.8,
   },
 } as const;
 
 export const EXPERIENCE_LEVELS = {
   beginner: {
-    weeklyTSSIncreaseRate: 0.05,
-    maxWeeklyCTLIncrease: 5,
+    weeklyCommonLoadIncreaseRate: 0.05,
+    maxWeeklyLongTermLoadIncrease: 5,
     recoveryWeekFrequency: 3,
     baselineSessionsPerWeek: 4,
   },
   intermediate: {
-    weeklyTSSIncreaseRate: 0.07,
-    maxWeeklyCTLIncrease: 7,
+    weeklyCommonLoadIncreaseRate: 0.07,
+    maxWeeklyLongTermLoadIncrease: 7,
     recoveryWeekFrequency: 3,
     baselineSessionsPerWeek: 5,
   },
   advanced: {
-    weeklyTSSIncreaseRate: 0.1,
-    maxWeeklyCTLIncrease: 10,
+    weeklyCommonLoadIncreaseRate: 0.1,
+    maxWeeklyLongTermLoadIncrease: 10,
     recoveryWeekFrequency: 4,
     baselineSessionsPerWeek: 6,
   },
@@ -111,28 +111,31 @@ export function calculateWeeksUntil(dateString: string, fromDate?: string): numb
   return Math.ceil(days / 7);
 }
 
-export function estimateCTLFromWeeklyTSS(weeklyTSS: number): number {
-  return Math.round(weeklyTSS / 7);
+export function estimateLongTermLoadFromWeeklyCommonLoad(weeklyCommonLoad: number): number {
+  return Math.round(weeklyCommonLoad / 7);
 }
 
-export function estimateCTLFromWeeklyHours(weeklyHours: number, avgIntensity: number = 60): number {
-  const weeklyTSS = weeklyHours * avgIntensity;
-  return estimateCTLFromWeeklyTSS(weeklyTSS);
+export function estimateLongTermLoadFromWeeklyHours(
+  weeklyHours: number,
+  avgIntensity: number = 60,
+): number {
+  const weeklyCommonLoad = weeklyHours * avgIntensity;
+  return estimateLongTermLoadFromWeeklyCommonLoad(weeklyCommonLoad);
 }
 
-export function estimateWeeklyTSSFromCTL(ctl: number): number {
-  return Math.round(ctl * 7);
+export function estimateWeeklyLoadFromLongTermLoad(longTermLoad: number): number {
+  return Math.round(longTermLoad * 7);
 }
 
 export function resolveFitnessInput(fitness: WizardFitnessInput): number {
-  if (fitness.starting_ctl !== undefined) {
-    return fitness.starting_ctl;
+  if (fitness.starting_longTermLoad !== undefined) {
+    return fitness.starting_longTermLoad;
   }
-  if (fitness.estimated_from_weekly_tss !== undefined) {
-    return estimateCTLFromWeeklyTSS(fitness.estimated_from_weekly_tss);
+  if (fitness.estimated_from_weekly_load !== undefined) {
+    return estimateLongTermLoadFromWeeklyCommonLoad(fitness.estimated_from_weekly_load);
   }
   if (fitness.estimated_from_weekly_hours !== undefined) {
-    return estimateCTLFromWeeklyHours(fitness.estimated_from_weekly_hours);
+    return estimateLongTermLoadFromWeeklyHours(fitness.estimated_from_weekly_hours);
   }
   return 40;
 }
@@ -172,7 +175,7 @@ export const mesocycleSchema = z.object({
   phase: trainingPhaseEnum,
   duration_weeks: z.number().int().min(1).max(52),
   intensity_distribution: intensityDistributionSchema,
-  tss_multiplier: z.number().min(0.1).max(3.0),
+  load_multiplier: z.number().min(0.1).max(3.0),
 });
 
 export type Mesocycle = z.infer<typeof mesocycleSchema>;
@@ -211,14 +214,17 @@ export function validatePlanFeasibility(plan: PeriodizedPlan): {
     }
   }
 
-  if (plan.fitness_progression.target_ctl_at_peak) {
+  if (plan.fitness_progression.target_longTermLoad_at_peak) {
     const totalWeeks = calculateWeeks(plan.start_date, plan.end_date);
-    const ctlIncrease =
-      plan.fitness_progression.target_ctl_at_peak - plan.fitness_progression.starting_ctl;
-    const weeklyIncrease = ctlIncrease / totalWeeks;
+    const longTermLoadIncrease =
+      plan.fitness_progression.target_longTermLoad_at_peak -
+      plan.fitness_progression.starting_longTermLoad;
+    const weeklyIncrease = longTermLoadIncrease / totalWeeks;
 
     if (weeklyIncrease > 8) {
-      warnings.push(`CTL increase of ${weeklyIncrease.toFixed(1)} per week may be too aggressive`);
+      warnings.push(
+        `LongTermLoad increase of ${weeklyIncrease.toFixed(1)} per week may be too aggressive`,
+      );
     }
   }
 

@@ -6,7 +6,11 @@ const scheduledDate = new Date("2026-07-13T09:00:00.000Z");
 
 describe("fatigue planning language", () => {
   it("returns descriptive states and no physiological clearance language", () => {
-    const prediction = predictFatigue(500, scheduledDate, { atl: 40, ctl: 40, tsb: 0 });
+    const prediction = predictFatigue(500, scheduledDate, {
+      recentLoad: 40,
+      longTermLoad: 40,
+      loadBalance: 0,
+    });
     const userFacingText = [
       ...prediction.warnings,
       prediction.weeklyProjection.recommendation,
@@ -21,9 +25,9 @@ describe("fatigue planning language", () => {
 
   it("abstains when the fitness state is incomplete", () => {
     const prediction = predictFatigue(60, scheduledDate, {
-      atl: Number.NaN,
-      ctl: Number.NaN,
-      tsb: Number.NaN,
+      recentLoad: Number.NaN,
+      longTermLoad: Number.NaN,
+      loadBalance: Number.NaN,
     });
 
     expect(prediction.weeklyProjection.loadChangeState).toBe("insufficient_data");
@@ -33,9 +37,9 @@ describe("fatigue planning language", () => {
 
   it("propagates descriptive state and reasons through the complete weekly result", () => {
     const result = estimateWeeklyLoadComplete(scheduledDate, [], {
-      atl: Number.NaN,
-      ctl: Number.NaN,
-      tsb: Number.NaN,
+      recentLoad: Number.NaN,
+      longTermLoad: Number.NaN,
+      loadBalance: Number.NaN,
     });
 
     expect(result.loadChangeState).toBe("insufficient_data");

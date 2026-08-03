@@ -2,8 +2,8 @@ import type { CanonicalActivityCategory } from "../../../schemas/activity-catego
 
 export interface ActivityCategoryModelConfig {
   activity_category: CanonicalActivityCategory;
-  ctl_tau_days: number;
-  atl_tau_days: number;
+  longTermLoad_tau_days: number;
+  recentLoad_tau_days: number;
   acwr_ceiling: number;
   impact_factor: number;
   mechanical_multiplier: number;
@@ -11,14 +11,14 @@ export interface ActivityCategoryModelConfig {
     min: number;
     max: number;
   };
-  weekly_tss_per_hour: number;
+  weekly_load_per_hour: number;
 }
 
 export interface ActivityCategoryLoadState {
   activity_category: CanonicalActivityCategory;
-  ctl: number;
-  atl: number;
-  tsb: number;
+  longTermLoad: number;
+  recentLoad: number;
+  loadBalance: number;
   daily_load: number;
   acute_load_average_7d: number;
   chronic_load_average_28d: number;

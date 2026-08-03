@@ -152,9 +152,6 @@ export function resolveEvidenceEligibility(input: {
 }
 
 export const athleteMetricTypeSchema = z.enum([
-  "ftp",
-  "threshold_pace_seconds_per_km",
-  "css_seconds_per_100m",
   "lthr",
   "max_hr",
   "resting_hr",
@@ -169,7 +166,6 @@ export const athleteMetricTypeSchema = z.enum([
 ]);
 
 export const athleteMetricRoleSchema = z.enum([
-  "direct_threshold_evidence",
   "threshold_intensity_context",
   "heart_rate_normalization",
   "recovery_baseline_context",
@@ -185,9 +181,6 @@ export type AthleteMetricRole = z.infer<typeof athleteMetricRoleSchema>;
 
 /** Approved contextual roles only; this mapping defines no weights or generic score. */
 export const athleteMetricRoleByType = {
-  ftp: "direct_threshold_evidence",
-  threshold_pace_seconds_per_km: "direct_threshold_evidence",
-  css_seconds_per_100m: "direct_threshold_evidence",
   lthr: "threshold_intensity_context",
   max_hr: "heart_rate_normalization",
   resting_hr: "recovery_baseline_context",

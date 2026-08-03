@@ -24,8 +24,8 @@ export interface ProjectionPeriodizationPhase {
   name: string;
   start_date: string;
   end_date: string;
-  target_weekly_tss_min: number;
-  target_weekly_tss_max: number;
+  target_weekly_load_min: number;
+  target_weekly_load_max: number;
 }
 
 export type ProjectionMicrocycleWithDeterministicId = DeterministicProjectionMicrocycle & {
@@ -39,7 +39,7 @@ export interface ProjectionChartAssemblyPlan {
     name: string;
     start_date: string;
     end_date: string;
-    target_weekly_tss_range?: {
+    target_weekly_load_range?: {
       min: number;
       max: number;
     };
@@ -64,9 +64,9 @@ export interface DemandBand {
 }
 
 export interface ProjectionDemandGap {
-  required_weekly_tss_target: number;
-  feasible_weekly_tss_applied: number;
-  unmet_weekly_tss: number;
+  required_weekly_load_target: number;
+  feasible_weekly_load_applied: number;
+  unmet_weekly_load: number;
   unmet_ratio: number;
 }
 
@@ -83,9 +83,9 @@ export interface ProjectionFeasibilityMetadata {
     execution_confidence: number;
   };
   projection_uncertainty?: {
-    tss_low: number;
-    tss_likely: number;
-    tss_high: number;
+    load_low: number;
+    load_likely: number;
+    load_high: number;
     confidence: number;
   };
   readiness_rationale_codes?: string[];
@@ -94,19 +94,19 @@ export interface ProjectionFeasibilityMetadata {
 export interface NoHistoryProjectionMetadata {
   projection_floor_applied: boolean;
   projection_floor_values: {
-    start_ctl: number;
-    start_weekly_tss: number;
+    start_longTermLoad: number;
+    start_weekly_load: number;
   } | null;
   fitness_level: "weak" | "strong" | null;
   fitness_signal_0_1?: number | null;
   fitness_inference_reasons: string[];
   projection_floor_confidence: "high" | "medium" | "low" | null;
   floor_clamped_by_availability: boolean;
-  starting_ctl_for_projection?: number | null;
-  starting_weekly_tss_for_projection?: number | null;
+  starting_longTermLoad_for_projection?: number | null;
+  starting_weekly_load_for_projection?: number | null;
   goal_demand_score_0_1?: number;
   required_event_demand_range?: DemandBand | null;
-  required_peak_weekly_tss?: DemandBand | null;
+  required_peak_weekly_load?: DemandBand | null;
   demand_confidence?: DemandConfidence | null;
   projection_feasibility?: ProjectionFeasibilityMetadata | null;
   evidence_confidence?: {
@@ -127,22 +127,22 @@ export interface NoHistoryProjectionMetadata {
 
 export interface ProjectionConstraintSummary {
   normalized_creation_config: ProjectionSafetyConfig;
-  tss_ramp_clamp_weeks: number;
-  ctl_ramp_clamp_weeks: number;
+  load_ramp_clamp_weeks: number;
+  longTermLoad_ramp_clamp_weeks: number;
   recovery_weeks: number;
   starting_state?: {
-    starting_ctl: number;
-    starting_atl: number;
-    starting_tsb: number;
+    starting_longTermLoad: number;
+    starting_recentLoad: number;
+    starting_loadBalance: number;
     starting_state_is_prior: boolean;
   };
 }
 
 export interface ProjectionInferredCurrentState {
   mean: {
-    ctl: number;
-    atl: number;
-    tsb: number;
+    longTermLoad: number;
+    recentLoad: number;
+    loadBalance: number;
     slb: number;
     durability: number;
     readiness: number;
@@ -282,8 +282,8 @@ export function buildProjectionChartPayloadFromDeterministicProjection(input: {
       name: block.name,
       start_date: block.start_date,
       end_date: block.end_date,
-      target_weekly_tss_min: Math.round((block.target_weekly_tss_range?.min ?? 0) * 10) / 10,
-      target_weekly_tss_max: Math.round((block.target_weekly_tss_range?.max ?? 0) * 10) / 10,
+      target_weekly_load_min: Math.round((block.target_weekly_load_range?.min ?? 0) * 10) / 10,
+      target_weekly_load_max: Math.round((block.target_weekly_load_range?.max ?? 0) * 10) / 10,
     })),
     microcycles: deterministicProjection.microcycles.map((microcycle) => ({
       id: deterministicUuidFromSeed(

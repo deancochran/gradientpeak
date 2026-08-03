@@ -30,8 +30,8 @@ interface UseSmartSuggestionsParams {
 type SmartPlanStructure = Partial<QuickAdjustmentPlanStructure> & {
   periodization_template?:
     | (NonNullable<QuickAdjustmentPlanStructure["periodization_template"]> & {
-        starting_ctl?: number | null;
-        target_ctl?: number | null;
+        starting_longTermLoad?: number | null;
+        target_longTermLoad?: number | null;
       })
     | null;
 };
@@ -119,14 +119,14 @@ export function deriveSmartSuggestion({
 
     const timeProgress = totalDays > 0 ? (elapsedDays / totalDays) * 100 : 0;
 
-    // Calculate fitness progress (CTL toward target)
-    const startingCTL = structure.periodization_template.starting_ctl || 0;
-    const targetCTL = structure.periodization_template.target_ctl || 0;
-    const currentCTL = status.longTermLoad || 0;
+    // Calculate fitness progress (Fitness toward target)
+    const startingFitness = structure.periodization_template.starting_longTermLoad || 0;
+    const targetFitness = structure.periodization_template.target_longTermLoad || 0;
+    const currentFitness = status.longTermLoad || 0;
 
     const fitnessProgress =
-      targetCTL > startingCTL
-        ? ((currentCTL - startingCTL) / (targetCTL - startingCTL)) * 100
+      targetFitness > startingFitness
+        ? ((currentFitness - startingFitness) / (targetFitness - startingFitness)) * 100
         : 100;
 
     // If we're 75%+ through time but less than 50% fitness progress
@@ -153,7 +153,7 @@ function isQuickAdjustmentPlanStructure(
   return (
     typeof structure.min_rest_days_per_week === "number" &&
     typeof structure.target_activities_per_week === "number" &&
-    typeof structure.target_weekly_tss_max === "number" &&
-    typeof structure.target_weekly_tss_min === "number"
+    typeof structure.target_weekly_load_max === "number" &&
+    typeof structure.target_weekly_load_min === "number"
   );
 }

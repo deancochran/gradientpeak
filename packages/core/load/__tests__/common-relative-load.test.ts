@@ -4,6 +4,8 @@ import {
 } from "@repo/core";
 import { describe, expect, it } from "vitest";
 
+import { CYCLING_NUMERICAL_TRUST_FIXTURES_V1 } from "../../calculations/__tests__/fixtures/cycling-numerical-trust-v1";
+import { calculateCyclingNormalizedPower } from "../../calculations/normalized-power";
 import {
   aggregateCommonLoad,
   COMMON_RELATIVE_LOAD_MODEL,
@@ -19,7 +21,6 @@ const computedAsOf = "2026-07-21T12:00:00.000Z";
 
 const thresholdByMethod = {
   power_threshold: { type: "ftp_watts", value: 250, unit: "watts" },
-  critical_power_threshold: { type: "critical_power_watts", value: 260, unit: "watts" },
   run_pace_threshold: {
     type: "threshold_speed_mps",
     value: 4,
@@ -35,7 +36,6 @@ const thresholdByMethod = {
 
 const activityCategoryByMethod = {
   power_threshold: "bike",
-  critical_power_threshold: "bike",
   run_pace_threshold: "run",
   swim_pace_threshold: "swim",
   heart_rate_zones: "run",
@@ -169,6 +169,46 @@ describe("common relative Load activity contract and calculation", () => {
       method: "power_threshold",
       evidenceFingerprint: "activity-power_threshold",
     });
+  });
+
+  it("matches both manually declared canonical cycling NP-to-Load fixture answers", () => {
+    for (const fixture of [
+      CYCLING_NUMERICAL_TRUST_FIXTURES_V1.canonicalThresholdHour,
+      CYCLING_NUMERICAL_TRUST_FIXTURES_V1.canonicalHalfThresholdTwoHours,
+    ]) {
+      const normalizedPower = calculateCyclingNormalizedPower({ samples: fixture.samples });
+      expect(normalizedPower.status).toBe("available");
+      if (normalizedPower.status !== "available") {
+        throw new Error(fixture.rationale);
+      }
+      const result = available(
+        fixture.expected.durationSeconds,
+        normalizedPower.valueWatts / fixture.thresholdPowerWatts,
+      );
+      expect(normalizedPower.valueWatts).toBe(fixture.expected.normalizedPowerWatts);
+      expect(result).toMatchObject({
+        status: "available",
+        intensity: fixture.expected.normalizedIntensity,
+        load: fixture.expected.commonLoad,
+      });
+    }
+  });
+
+  it("scales cycling Common Load linearly with active duration", () => {
+    expect(available(1_800, 1)).toMatchObject({ load: 50, intensity: 1 });
+    expect(available(3_600, 1)).toMatchObject({ load: 100, intensity: 1 });
+    expect(available(7_200, 1)).toMatchObject({ load: 200, intensity: 1 });
+  });
+
+  it("scales cycling Common Load with normalized intensity squared", () => {
+    const half = available(3_600, 0.5);
+    const threshold = available(3_600, 1);
+    expect(half).toMatchObject({ load: 25, intensity: 0.5 });
+    expect(threshold).toMatchObject({ load: 100, intensity: 1 });
+    if (half.status !== "available" || threshold.status !== "available") {
+      throw new Error("Expected available cycling Common Load fixtures");
+    }
+    expect(threshold.load / half.load).toBe(4);
   });
 
   it("retains nullable provenance and evidence fields in partial and unavailable states", () => {
@@ -407,7 +447,6 @@ describe("common relative Load aggregation", () => {
   it("adds supported cross-category methods within model version 1", () => {
     const result = aggregateCommonLoad([
       available(3600, 1, "power_threshold"),
-      available(3600, 1, "critical_power_threshold"),
       available(3600, 1, "run_pace_threshold"),
       available(3600, 1, "swim_pace_threshold"),
       available(3600, 1, "heart_rate_zones"),
@@ -415,10 +454,10 @@ describe("common relative Load aggregation", () => {
 
     expect(result).toMatchObject({
       status: "complete",
-      load: 500,
+      load: 400,
       intensity: 1,
-      contributingActivityCount: 5,
-      totalActivityCount: 5,
+      contributingActivityCount: 4,
+      totalActivityCount: 4,
       activityCountCoverage: 1,
     });
   });
@@ -496,6 +535,20 @@ describe("common relative Load aggregation", () => {
     expect(result.knownDurationCoverage).toBe(
       result.contributingDurationSeconds / result.knownDurationSeconds,
     );
+  });
+
+  it("never promotes a partial cycling member to a complete aggregate", () => {
+    const result = aggregateCommonLoad([
+      available(3_600, 1),
+      partial({ load: 12.5, intensity: 0.5 }),
+    ]);
+
+    expect(result).toMatchObject({
+      status: "partial",
+      load: 112.5,
+      partialActivityCount: 1,
+      totalActivityCount: 2,
+    });
   });
 
   it("retains a known eligible duration denominator at zero partial coverage", () => {

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { activityPlanStructureSchema } from "../activity-plan";
+import { athletePerformanceTargetFactsSchema } from "../performance-model";
 import { canonicalActivityCategorySchema } from "./activity-category";
 import { recordingCapabilitiesSchema } from "./recording_config";
 
@@ -126,11 +127,7 @@ export const degradedModePolicySchema = z
 
 export const recordingProfileSnapshotSchema = z
   .object({
-    ftp: z.number().positive().optional(),
-    thresholdHr: z.number().positive().optional(),
-    thresholdPaceSecondsPerKm: z.number().positive().optional(),
     weightKg: z.number().positive().optional(),
-    defaultsApplied: z.array(z.string()).default([]),
   })
   .strict();
 
@@ -248,6 +245,7 @@ export const recordingSessionSnapshotSchema = z
     identity: recordingSessionIdentitySchema,
     activity: recordingSessionActivitySchema,
     profileSnapshot: recordingProfileSnapshotSchema,
+    performanceTargets: athletePerformanceTargetFactsSchema,
     devices: z
       .object({
         connected: z.array(recordingConnectedDeviceSchema).default([]),
@@ -264,7 +262,16 @@ export const recordingSessionSnapshotSchema = z
       })
       .strict(),
   })
-  .strict();
+  .strict()
+  .superRefine((snapshot, context) => {
+    if (Date.parse(snapshot.performanceTargets.asOf) > Date.parse(snapshot.identity.startedAt)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Recording performance targets cannot be observed after session start",
+        path: ["performanceTargets", "asOf"],
+      });
+    }
+  });
 
 export const recordingSessionOverrideSchema = z.discriminatedUnion("type", [
   z
@@ -395,10 +402,20 @@ export const recordingCheckpointSchema = z
         trainerMode: z.enum(["auto", "manual"]),
       })
       .strict(),
+    performanceTargets: athletePerformanceTargetFactsSchema,
     streamArtifactPaths: z.array(z.string().min(1)),
     revision: z.number().int().positive(),
   })
-  .strict();
+  .strict()
+  .superRefine((checkpoint, context) => {
+    if (Date.parse(checkpoint.performanceTargets.asOf) > Date.parse(checkpoint.timing.startedAt)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Checkpoint performance targets cannot be observed after session start",
+        path: ["performanceTargets", "asOf"],
+      });
+    }
+  });
 
 export const recordingExecutionManifestEntrySchema = recordingOccurrenceResultSchema.extend({
   timerEvents: z.array(recordingTimerEventSchema),

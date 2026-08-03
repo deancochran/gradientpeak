@@ -1,4 +1,7 @@
-import type { ActivityListDerivedSummary } from "@repo/core";
+import {
+  type ActivityObservationQuantificationBundle,
+  activityObservationQuantificationBundleSchema,
+} from "@repo/core";
 import type { publicActivityCategorySchema } from "@repo/db";
 import { z } from "zod";
 import type { ActivityAnalysisStore } from "../../repositories";
@@ -22,7 +25,7 @@ const intensityZoneSchema = z.enum([
   "anaerobic",
   "neuromuscular",
 ]);
-
+const availabilitySchema = z.enum(["complete", "partial", "unavailable"]);
 export const trendsDashboardOutputSchema = z
   .object({
     volume: z
@@ -31,17 +34,41 @@ export const trendsDashboardOutputSchema = z
           z
             .object({
               date: isoDateSchema,
+              status: availabilitySchema,
               totalDistance: z.number().finite(),
               totalTime: z.number().finite(),
               activityCount: z.number().int().nonnegative(),
+              observationQuantification: activityObservationQuantificationBundleSchema,
+            })
+            .strict(),
+        ),
+        unavailableDataPoints: z.array(
+          z
+            .object({
+              date: isoDateSchema,
+              status: z.enum(["partial", "unavailable"]),
+              activityCount: z.number().int().nonnegative(),
+              observationQuantification: activityObservationQuantificationBundleSchema.nullable(),
             })
             .strict(),
         ),
         totals: z
           .object({
+            status: availabilitySchema,
             totalDistance: z.number().finite(),
             totalTime: z.number().finite(),
             totalActivities: z.number().int().nonnegative(),
+            observationQuantification: activityObservationQuantificationBundleSchema,
+          })
+          .strict()
+          .nullable(),
+        aggregate: z
+          .object({
+            status: availabilitySchema,
+            totalDistance: z.number().finite().nullable(),
+            totalTime: z.number().finite().nullable(),
+            totalActivities: z.number().int().nonnegative(),
+            observationQuantification: activityObservationQuantificationBundleSchema.nullable(),
           })
           .strict()
           .nullable(),
@@ -58,8 +85,9 @@ export const trendsDashboardOutputSchema = z
               avgSpeed: z.number().finite().nullable(),
               avgPower: z.number().finite().nullable(),
               avgHeartRate: z.number().finite().nullable(),
-              distance: z.number().finite(),
-              duration: z.number().finite(),
+              distance: z.number().finite().nullable(),
+              duration: z.number().finite().nullable(),
+              observationQuantification: activityObservationQuantificationBundleSchema.nullable(),
             })
             .strict(),
         ),
@@ -71,8 +99,16 @@ export const trendsDashboardOutputSchema = z
           z
             .object({
               weekStart: isoDateSchema,
-              totalTSS: z.number().finite(),
+              status: availabilitySchema,
+              totalCommonLoad: z.number().finite().nullable(),
               zones: z.record(intensityZoneSchema, z.number().finite()),
+              observationQuantification: activityObservationQuantificationBundleSchema.nullable(),
+              coverage: z
+                .object({
+                  totalActivities: z.number().int().nonnegative(),
+                  quantifiedActivities: z.number().int().nonnegative(),
+                })
+                .strict(),
             })
             .strict(),
         ),
@@ -92,7 +128,12 @@ export const trendsDashboardOutputSchema = z
   .strict();
 
 type ActivityCategory = z.infer<typeof publicActivityCategorySchema>;
-type DerivedSummaryMap = Map<string, Pick<ActivityListDerivedSummary, "intensity_factor" | "tss">>;
+type DerivedSummaryMap = Map<
+  string,
+  {
+    observationQuantification: ActivityObservationQuantificationBundle;
+  }
+>;
 
 export type BuildDerivedSummaries = (input: {
   activities: TrendActivityRow[];
@@ -142,20 +183,39 @@ export async function getTrendsDashboard({
     activities.length === 0
       ? new Map()
       : await buildDerivedSummaries({ activities, profileId, store });
+  const performanceDataPoints = normalized.map((activity) => {
+    const observationQuantification = derived.get(activity.id)?.observationQuantification ?? null;
+    const quantification = observationQuantification?.summary ?? null;
+    const duration = quantification
+      ? ([
+          quantification.duration.moving,
+          quantification.duration.active,
+          quantification.duration.elapsed,
+        ].find((quantity) => quantity.status !== "unavailable")?.value ?? null)
+      : null;
+    const distance =
+      quantification?.distance.status === "available" ||
+      quantification?.distance.status === "complete" ||
+      quantification?.distance.status === "partial"
+        ? quantification.distance.value
+        : null;
+    return {
+      date: activity.started_at.toISOString(),
+      activityId: activity.id,
+      activityName: activity.name,
+      avgSpeed: activity.avg_speed_mps ?? null,
+      avgPower: activity.avg_power ?? null,
+      avgHeartRate: activity.avg_heart_rate ?? null,
+      distance,
+      duration,
+      observationQuantification,
+    };
+  });
 
   return trendsDashboardOutputSchema.parse({
-    volume: buildVolumeTrends(normalized, groupBy),
+    volume: buildVolumeTrends(normalized, groupBy, derived),
     performance: {
-      dataPoints: normalized.map((activity) => ({
-        date: activity.started_at.toISOString(),
-        activityId: activity.id,
-        activityName: activity.name,
-        avgSpeed: activity.avg_speed_mps || null,
-        avgPower: activity.avg_power || null,
-        avgHeartRate: activity.avg_heart_rate || null,
-        distance: activity.distance_meters || 0,
-        duration: activity.moving_seconds || 0,
-      })),
+      dataPoints: performanceDataPoints,
     },
     zones: buildZoneDistributionTrends(normalized, derived),
     consistency: buildConsistencyMetrics(normalized, startDate, endDate),

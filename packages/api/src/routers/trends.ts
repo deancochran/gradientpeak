@@ -1,3 +1,4 @@
+import { activityObservationQuantificationBundleSchema } from "@repo/core";
 import { activities, activitySegments, publicActivityCategorySchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -25,7 +26,6 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 const activityCategorySchema = publicActivityCategorySchema;
 const isoDatetimeSchema = z.string().datetime({ offset: true });
-const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected ISO date (YYYY-MM-DD)");
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 
 function normalizeTrendBoundary(value: string, boundary: "start" | "end") {
@@ -111,7 +111,7 @@ const dashboardSchema = dateRangeSchema
 const peakPerformancesSchema = z
   .object({
     type: activityCategorySchema.optional(),
-    metric: z.enum(["distance", "speed", "power", "duration", "tss"]),
+    metric: z.enum(["distance", "speed", "power", "duration", "common_load"]),
     limit: z.number().int().min(1).max(50).default(10),
   })
   .strict();
@@ -160,6 +160,7 @@ const peakPerformanceItemSchema = z
     unit: z.string(),
     activity_category: activityCategorySchema,
     rank: z.number().int().positive(),
+    observationQuantification: activityObservationQuantificationBundleSchema.nullable(),
   })
   .strict();
 
@@ -248,7 +249,7 @@ function createTrendsRouter(
         }
 
         const derivedMap =
-          input.metric === "tss"
+          input.metric === "common_load"
             ? await buildActivityDerivedSummaryMap({
                 store: createActivityAnalysisStore(db),
                 profileId: ctx.session.user.id,

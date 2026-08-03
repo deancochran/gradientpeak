@@ -1,4 +1,13 @@
 import {
+  calculateAerobicDecoupling,
+  calculateCyclingNormalizedPower,
+  calculateEfficiencyFactor,
+  calculateRunningNormalizedGradedPace,
+  selectAerobicDecouplingValue,
+  selectEfficiencyFactorValue,
+  selectRunningNormalizedGradedSpeedMetersPerSecond,
+} from "@repo/core/calculations";
+import {
   activities,
   activityArtifactLinks,
   activityArtifacts,
@@ -10,6 +19,7 @@ import {
 } from "@repo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { getRequiredDb } from "../../db";
+import type { GeneratedActivityLthrEvidence } from "./reconcile-activity-evidence";
 import {
   type ActivitySubmission,
   MATERIALIZER_VERSION,
@@ -100,6 +110,18 @@ describe("providerProjectionDecision", () => {
     ).toBe("apply");
   });
 
+  it("reconciles a newer provider revision even when its artifact bytes are unchanged", () => {
+    expect(
+      providerProjectionDecision({
+        ...versions,
+        existingProviderUpdatedAt: new Date("2026-07-17T12:00:00Z"),
+        incomingProviderUpdatedAt: new Date("2026-07-17T12:00:01Z"),
+        existingDigest: "a".repeat(64),
+        incomingDigest: "a".repeat(64),
+      }),
+    ).toBe("apply");
+  });
+
   it.each([
     ["parser", { existingParserVersion: "canonical-submission-v0" }],
     ["decoded contract", { existingDecodedVersion: "decoded-activity-artifact-v0" }],
@@ -132,6 +154,7 @@ describe("providerProjectionDecision", () => {
 });
 
 type DbClient = ReturnType<typeof getRequiredDb>;
+const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
 const segmentSet = {
   version: 1 as const,
   elapsedMs: 3_600_000,
@@ -143,10 +166,36 @@ const segmentSet = {
       activity_category: "bike" as const,
       startOffsetMs: 0,
       endOffsetMs: 3_600_000,
-      summary: { version: 1 as const, timing: { timingCoverage: "unavailable" as const } },
+      summary: {
+        version: 1 as const,
+        timing: { timingCoverage: "unavailable" as const },
+        normalizedPowerResult: unavailableNormalizedPowerResult,
+      },
     },
   ],
 };
+
+function detectedLthr(valueBpm: number): GeneratedActivityLthrEvidence {
+  const recordedAt = new Date("2026-01-01T11:00:00Z");
+  return {
+    valueBpm,
+    recordedAt,
+    calculationVersion: "activity-file-lthr-v1",
+    provenance: {
+      activity_id: "activity-1",
+      segment_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      derived_from: "activity_file_best_effort",
+      source_series: "heart_rate",
+      source_effort_calculation_version: "best-effort-extraction-v1",
+      exact_window_start_timestamp_seconds: recordedAt.getTime() / 1_000 - 1_200,
+      exact_window_end_timestamp_seconds: recordedAt.getTime() / 1_000,
+      duration_seconds: 1_200,
+      window_coverage: 1,
+      extraction_status: "available",
+      extraction_reason: null,
+    },
+  };
+}
 interface MockTx {
   execute(query: unknown): Promise<unknown>;
   select(): {
@@ -276,9 +325,6 @@ function createInput(): ActivitySubmission {
     avgSpeedMps: 6,
     maxSpeedMps: 12,
     normalizedSpeedMps: null,
-    normalizedGradedSpeedMps: null,
-    efficiencyFactor: null,
-    aerobicDecoupling: null,
     avgTemperature: null,
     deviceManufacturer: "Wahoo",
     deviceProduct: "ELEMNT",
@@ -318,7 +364,6 @@ describe("submitActivity", () => {
             },
           ],
           detectedLTHR: null,
-          activityCompletedAt: new Date(),
         },
       }),
     ).rejects.toThrow("exactly one bike segment without crossing boundaries");
@@ -338,7 +383,6 @@ describe("submitActivity", () => {
         summaryValues: { elapsed_ms: 3_600_000 },
         efforts: [],
         detectedLTHR: null,
-        activityCompletedAt: new Date(),
         ingestion: {
           source: "mobile_recording",
           operationKey: "recording:1",
@@ -375,10 +419,10 @@ describe("submitActivity", () => {
             recorded_at: new Date("2026-01-01T11:00:00Z"),
             unit: "watts",
             value: 250,
+            provenance: { observation_id: "effort-1" },
           },
         ],
         detectedLTHR: null,
-        activityCompletedAt: new Date("2026-01-01T11:00:00Z"),
         ingestion: {
           source: "provider_sync",
           provider: "wahoo",
@@ -424,7 +468,16 @@ describe("submitActivity", () => {
     );
   });
 
-  it("persists canonical segment summaries without a parent normalized-power projection", async () => {
+  it("persists the structured segment NP result without a parent normalized-power projection", async () => {
+    const normalizedPowerResult = calculateCyclingNormalizedPower({
+      samples: Array.from({ length: 61 }, (_, timestampSeconds) => ({
+        timestampSeconds,
+        powerWatts: 247.5,
+      })),
+    });
+    if (normalizedPowerResult.status === "unavailable") {
+      throw new Error("Expected a numeric Normalized Power fixture");
+    }
     const canonicalSegmentSet: NonNullable<ActivitySubmission["segmentSet"]> = {
       version: 1,
       elapsedMs: 3_600_000,
@@ -439,7 +492,7 @@ describe("submitActivity", () => {
           summary: {
             version: 1,
             timing: { timingCoverage: "unavailable" },
-            normalizedPowerWatts: 247.5,
+            normalizedPowerResult,
           },
         },
       ],
@@ -452,6 +505,13 @@ describe("submitActivity", () => {
     expect(
       created.insertedValues.find(({ table }) => table === activities)?.values,
     ).not.toHaveProperty("normalized_power");
+    expect(created.insertedValues.find(({ table }) => table === activitySegments)?.values).toEqual([
+      expect.objectContaining({
+        summary: expect.objectContaining({
+          normalizedPowerResult,
+        }),
+      }),
+    ]);
 
     const enriched = createDb();
     await submitActivity(enriched.db, {
@@ -464,11 +524,122 @@ describe("submitActivity", () => {
       segmentSet: canonicalSegmentSet,
       efforts: [],
       detectedLTHR: null,
-      activityCompletedAt: new Date(),
     });
     expect(
       enriched.updatedValues.find(({ table }) => table === activities)?.values,
     ).not.toHaveProperty("normalized_power");
+  });
+
+  it("persists unavailable NP reason, coverage, gap, and version without nullable watts", async () => {
+    const normalizedPowerResult = calculateCyclingNormalizedPower({
+      samples: [
+        { timestampSeconds: 0, powerWatts: 200 },
+        { timestampSeconds: 6, powerWatts: 200 },
+        ...Array.from({ length: 29 }, (_, index) => ({
+          timestampSeconds: index + 7,
+          powerWatts: 200,
+        })),
+      ],
+    });
+    if (normalizedPowerResult.status !== "unavailable") {
+      throw new Error("Expected an unavailable Normalized Power fixture");
+    }
+    const [firstSegment] = segmentSet.segments;
+    if (!firstSegment) throw new Error("Expected the canonical segment fixture");
+    const unavailableSegmentSet: NonNullable<ActivitySubmission["segmentSet"]> = {
+      ...segmentSet,
+      segments: [
+        {
+          ...firstSegment,
+          summary: {
+            version: 1,
+            timing: { timingCoverage: "unavailable" },
+            normalizedPowerResult,
+          },
+        },
+      ],
+    };
+    const created = createDb(undefined, null);
+    await submitActivity(created.db, {
+      ...createInput(),
+      segmentSet: unavailableSegmentSet,
+    });
+
+    const persisted = created.insertedValues.find(
+      ({ table }) => table === activitySegments,
+    )?.values;
+    expect(persisted).toEqual([
+      expect.objectContaining({
+        summary: expect.not.objectContaining({ normalizedPowerWatts: expect.anything() }),
+      }),
+    ]);
+    expect(persisted).toEqual([
+      expect.objectContaining({
+        summary: expect.objectContaining({
+          normalizedPowerResult: expect.objectContaining({
+            status: "unavailable",
+            reason: "insufficient_window",
+            calculationVersion: "cycling-normalized-power-v1",
+            diagnostics: expect.objectContaining({
+              sourceTimeCoverage: 29 / 35,
+              excludedGapDurationSeconds: 6,
+            }),
+          }),
+        }),
+      }),
+    ]);
+  });
+
+  it("derives retained relational projections only from structured segment results", async () => {
+    const normalizedGradedPaceResult = calculateRunningNormalizedGradedPace({
+      samples: Array.from({ length: 61 }, (_, timestampSeconds) => ({
+        timestampSeconds,
+        speedMetersPerSecond: 4,
+        elevationMeters: 100,
+      })),
+    });
+    const aerobicInput = {
+      modality: "running" as const,
+      outputUnit: "meters_per_second" as const,
+      samples: Array.from({ length: 1_201 }, (_, timestampSeconds) => ({
+        timestampSeconds,
+        output: 4,
+        heartRateBpm: 145,
+      })),
+    };
+    const efficiencyFactorResult = calculateEfficiencyFactor(aerobicInput);
+    const aerobicDecouplingResult = calculateAerobicDecoupling(aerobicInput);
+    const [firstSegment] = segmentSet.segments;
+    if (!firstSegment) throw new Error("Expected a canonical segment fixture");
+    const structuredSegmentSet: NonNullable<ActivitySubmission["segmentSet"]> = {
+      ...segmentSet,
+      segments: [
+        {
+          ...firstSegment,
+          activity_category: "run",
+          summary: {
+            ...firstSegment.summary,
+            normalizedGradedPaceResult,
+            efficiencyFactorResult,
+            aerobicDecouplingResult,
+          },
+        },
+      ],
+    };
+    const created = createDb(undefined, null);
+
+    await submitActivity(created.db, {
+      ...createInput(),
+      segmentSet: structuredSegmentSet,
+    });
+
+    expect(created.insertedValues.find(({ table }) => table === activities)?.values).toMatchObject({
+      normalized_graded_speed_mps: selectRunningNormalizedGradedSpeedMetersPerSecond(
+        normalizedGradedPaceResult,
+      ),
+      efficiency_factor: selectEfficiencyFactorValue(efficiencyFactorResult),
+      aerobic_decoupling: selectAerobicDecouplingValue(aerobicDecouplingResult),
+    });
   });
 
   it("round-trips FIT string and numeric raw sub-activity-category identity through segment insertion", async () => {
@@ -494,7 +665,11 @@ describe("submitActivity", () => {
             rawSport: 2,
             rawSubSport: "road",
           },
-          summary: { version: 1, timing: { timingCoverage: "unavailable" } },
+          summary: {
+            version: 1,
+            timing: { timingCoverage: "unavailable" },
+            normalizedPowerResult: unavailableNormalizedPowerResult,
+          },
         },
         {
           id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2",
@@ -512,7 +687,11 @@ describe("submitActivity", () => {
             rawSport: "transition",
             rawSubSport: 17,
           },
-          summary: { version: 1, timing: { timingCoverage: "unavailable" } },
+          summary: {
+            version: 1,
+            timing: { timingCoverage: "unavailable" },
+            normalizedPowerResult: unavailableNormalizedPowerResult,
+          },
         },
         {
           id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
@@ -530,7 +709,11 @@ describe("submitActivity", () => {
             rawType: "lap",
             rawSport: "running",
           },
-          summary: { version: 1, timing: { timingCoverage: "unavailable" } },
+          summary: {
+            version: 1,
+            timing: { timingCoverage: "unavailable" },
+            normalizedPowerResult: unavailableNormalizedPowerResult,
+          },
         },
       ],
     };
@@ -546,7 +729,6 @@ describe("submitActivity", () => {
       segmentSet: multisportSegmentSet,
       efforts: [],
       detectedLTHR: null,
-      activityCompletedAt: new Date("2026-01-01T11:00:00Z"),
     });
 
     expect(created.insertedValues.find(({ table }) => table === activitySegments)?.values).toEqual([
@@ -593,7 +775,7 @@ describe("submitActivity", () => {
   });
 
   it("upserts an existing activity enrichment in one transaction", async () => {
-    const { db, committed } = createDb();
+    const { db, committed, insertedValues } = createDb();
     await submitActivity(db, {
       kind: "enrich",
       segmentSet,
@@ -624,10 +806,10 @@ describe("submitActivity", () => {
           unit: "watts",
           recorded_at: new Date("2026-01-01T11:00:00Z"),
           created_at: new Date(),
+          provenance: { observation_id: "effort-1" },
         },
       ],
-      detectedLTHR: 170,
-      activityCompletedAt: new Date("2026-01-01T11:00:00Z"),
+      detectedLTHR: detectedLthr(170),
     });
     expect(committed).toEqual(
       expect.arrayContaining([
@@ -640,6 +822,17 @@ describe("submitActivity", () => {
       ]),
     );
     expect(committed).toContain(activities);
+    expect(insertedValues.find(({ table }) => table === profileMetrics)?.values).toMatchObject({
+      value: 170,
+      recorded_at: new Date("2026-01-01T11:00:00Z"),
+      calculation_version: "activity-file-lthr-v1",
+      provenance: {
+        activity_id: "activity-1",
+        segment_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        source_effort_calculation_version: "best-effort-extraction-v1",
+        window_coverage: 1,
+      },
+    });
   });
 
   it("preserves omitted laps and geometry while explicit null clears them", async () => {
@@ -654,7 +847,6 @@ describe("submitActivity", () => {
       summaryValues: {},
       efforts: [],
       detectedLTHR: null,
-      activityCompletedAt: new Date(),
     });
     const omittedSet = omitted.updatedValues.at(-1)?.values as Record<string, unknown>;
     expect(omittedSet).not.toHaveProperty("laps");
@@ -675,7 +867,6 @@ describe("submitActivity", () => {
       summaryValues: {},
       efforts: [],
       detectedLTHR: null,
-      activityCompletedAt: new Date(),
     });
     expect(cleared.updatedValues.at(-1)?.values).toMatchObject({
       laps: [],
@@ -707,7 +898,6 @@ describe("submitActivity", () => {
         },
         efforts: [],
         detectedLTHR: null,
-        activityCompletedAt: new Date(),
       }),
     ).rejects.toThrow("Activity not found for profile");
     expect(committed).toEqual([]);
@@ -745,10 +935,10 @@ describe("submitActivity", () => {
           unit: "watts",
           recorded_at: new Date(),
           created_at: new Date(),
+          provenance: { observation_id: "effort-1" },
         },
       ],
       detectedLTHR: null,
-      activityCompletedAt: new Date(),
     });
     const effortWrite = insertedValues.find(({ table }) => table === activityEfforts);
     expect(effortWrite?.values).toEqual([
@@ -788,10 +978,10 @@ describe("submitActivity", () => {
             duration_seconds: 300,
             unit: "watts",
             value: 250,
+            provenance: { observation_id: "effort-1" },
           },
         ],
         detectedLTHR: null,
-        activityCompletedAt: new Date(),
       }),
     ).rejects.toThrow("write failed");
     expect(committed).toEqual([]);

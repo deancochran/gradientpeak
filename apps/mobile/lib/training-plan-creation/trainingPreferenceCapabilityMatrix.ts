@@ -23,11 +23,11 @@ export type TrainingPreferenceCapabilityPath =
   | "goal_strategy_preferences.priority_tradeoff_preference"
   | "goal_strategy_preferences.taper_style_preference"
   | "baseline_fitness.is_enabled"
-  | "baseline_fitness.override_ctl"
-  | "baseline_fitness.override_atl"
+  | "baseline_fitness.override_longTermLoad"
+  | "baseline_fitness.override_recentLoad"
   | "baseline_fitness.override_date"
-  | "baseline_fitness.max_weekly_tss_ramp_pct"
-  | "baseline_fitness.max_ctl_ramp_per_week";
+  | "baseline_fitness.max_weekly_load_ramp_pct"
+  | "baseline_fitness.max_longTermLoad_ramp_per_week";
 
 export type TrainingPreferenceStandaloneCoverage =
   | { status: "covered"; testId: string }
@@ -69,11 +69,11 @@ export const TRAINING_PREFERENCE_SCHEMA_CAPABILITY_PATHS: TrainingPreferenceCapa
   "goal_strategy_preferences.priority_tradeoff_preference",
   "goal_strategy_preferences.taper_style_preference",
   "baseline_fitness.is_enabled",
-  "baseline_fitness.override_ctl",
-  "baseline_fitness.override_atl",
+  "baseline_fitness.override_longTermLoad",
+  "baseline_fitness.override_recentLoad",
   "baseline_fitness.override_date",
-  "baseline_fitness.max_weekly_tss_ramp_pct",
-  "baseline_fitness.max_ctl_ramp_per_week",
+  "baseline_fitness.max_weekly_load_ramp_pct",
+  "baseline_fitness.max_longTermLoad_ramp_per_week",
 ];
 
 export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability[] = [
@@ -290,18 +290,18 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
     },
   },
   {
-    path: "baseline_fitness.override_ctl",
-    label: "Manual baseline CTL",
-    standalone: { status: "covered", testId: "preferences-baseline-ctl" },
+    path: "baseline_fitness.override_longTermLoad",
+    label: "Manual baseline Fitness",
+    standalone: { status: "covered", testId: "preferences-baseline-fitness" },
     builderOverride: {
       status: "not-applicable",
       rationale: "Global athlete baseline, not plan-local.",
     },
   },
   {
-    path: "baseline_fitness.override_atl",
-    label: "Manual baseline ATL",
-    standalone: { status: "covered", testId: "preferences-baseline-atl" },
+    path: "baseline_fitness.override_recentLoad",
+    label: "Manual baseline Fatigue",
+    standalone: { status: "covered", testId: "preferences-baseline-fatigue" },
     builderOverride: {
       status: "not-applicable",
       rationale: "Global athlete baseline, not plan-local.",
@@ -317,18 +317,18 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
     },
   },
   {
-    path: "baseline_fitness.max_weekly_tss_ramp_pct",
+    path: "baseline_fitness.max_weekly_load_ramp_pct",
     label: "Max weekly Load ramp percent",
-    standalone: { status: "covered", testId: "preferences-ramp-tss-pct" },
+    standalone: { status: "covered", testId: "preferences-ramp-load-pct" },
     builderOverride: {
       status: "not-applicable",
       rationale: "Global safety calibration, not plan-local.",
     },
   },
   {
-    path: "baseline_fitness.max_ctl_ramp_per_week",
-    label: "Max CTL ramp per week",
-    standalone: { status: "covered", testId: "preferences-ramp-ctl" },
+    path: "baseline_fitness.max_longTermLoad_ramp_per_week",
+    label: "Max Fitness ramp per week",
+    standalone: { status: "covered", testId: "preferences-ramp-fitness" },
     builderOverride: {
       status: "not-applicable",
       rationale: "Global safety calibration, not plan-local.",

@@ -1,3 +1,8 @@
+import {
+  type CommonLoadResult,
+  createObservationQuantificationBundle,
+  quantifyCompletedActivityObservation,
+} from "@repo/core";
 import { activities } from "@repo/db";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
@@ -9,6 +14,16 @@ import {
 
 const dialect = new PgDialect();
 const ACTIVITY_ID = "33333333-3333-4333-8333-333333333333";
+const quality = {
+  source: "manual" as const,
+  observed_at: "2026-01-01T00:00:00.000Z",
+  valid_at: "2026-01-01T00:00:00.000Z",
+  confidence: "high" as const,
+  stale: false,
+  estimate: false,
+  calculation_version: "1",
+  evidence_fingerprint: "threshold-evidence",
+};
 
 function segment(
   ordinal: number,
@@ -48,6 +63,49 @@ function segment(
   };
 }
 
+function observation(item: ReturnType<typeof segment>, commonLoad: CommonLoadResult) {
+  return quantifyCompletedActivityObservation({
+    activityCategory: item.activity_category,
+    source: {
+      activityId: item.activity_id,
+      segmentId: item.id,
+      provider: null,
+      externalId: null,
+      artifactId: null,
+      capability: "unknown",
+      parserVersion: null,
+      decodedContractVersion: null,
+      materializerVersion: null,
+      segmentsRevision: null,
+      segmentRevision: null,
+      summaryVersion: 1,
+      sourceSessionIndex: null,
+      sourceMessageIndex: null,
+      rawType: null,
+      rawSport: null,
+      rawSubSport: null,
+    },
+    timing: {
+      coverage: "complete",
+      source: "unknown",
+      basis: "unknown",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      finishedAt: "2026-01-01T00:00:01.000Z",
+      elapsedSeconds: 1,
+      activeSeconds: 1,
+      movingSeconds: 0.9,
+    },
+    distance: { meters: 100, source: "unknown", basis: "unknown" },
+    intensity: {
+      averageHeartRateBpm: null,
+      averagePowerWatts: null,
+      averageSpeedMetersPerSecond: null,
+      normalizedSpeedMetersPerSecond: null,
+    },
+    commonLoad,
+  });
+}
+
 describe("activity discovery", () => {
   it("classifies repeated same-category activity segments as multisport in ordinal order", () => {
     expect(describeActivityComposition([segment(1, "run"), segment(0, "run")])).toEqual({
@@ -78,7 +136,7 @@ describe("activity discovery", () => {
     else expect(query).not.toContain("select count(*)");
   });
 
-  it("sums only matching-category evidence and nulls incomplete totals", () => {
+  it("does not project raw category quantities without complete canonical quantification", () => {
     const summary = summarizeMatchedCategory({
       activity_category: "run",
       segments: [
@@ -92,40 +150,57 @@ describe("activity discovery", () => {
 
     expect(summary).toMatchObject({
       segment_count: 2,
-      distance_meters: 200,
-      active_ms: 2_000,
+      distance_meters: null,
+      active_ms: null,
       moving_ms: null,
-      tss: null,
-      tss_identity: null,
+      common_load: null,
     });
   });
 
-  it("combines matching multisport TSS only for one complete compatible load stream", () => {
+  it("combines matching multisport common Load while retaining aggregate coverage", () => {
     const segments = [segment(0, "run"), segment(1, "bike"), segment(2, "run")];
-    const identity = {
-      activity_category: "run",
-      method: "run_pace_threshold",
-      source: "activity_analysis",
-      version: "1",
-      calibration: { type: "threshold_speed_mps", value: 4.2 },
-    } as const;
     const derived = [
-      { segment: segments[0]!, tss: 30, stream: "run:pace" },
-      { segment: segments[2]!, tss: 45, stream: "run:pace" },
-    ].map(({ segment: item, tss, stream }) => ({
-      activity_id: ACTIVITY_ID,
-      segment_id: item.id,
-      activity_category: "run" as const,
-      tss,
-      tss_identity: identity,
-      intensity_factor: 0.8,
-      method: "run_pace_threshold" as const,
-      unavailable_reason: null,
-      calibration_quality: null,
-      computed_as_of: "2026-01-01T00:00:00.000Z",
-      dedupe_key: item.id,
-      load_stream_key: stream,
-    }));
+      { segment: segments[0]!, load: 64 },
+      { segment: segments[2]!, load: 64 },
+    ].map(({ segment: item, load }) => {
+      const commonLoad = {
+        status: "available" as const,
+        model: "gradientpeak_relative_load" as const,
+        version: "1" as const,
+        activity_category: "run" as const,
+        method: "run_pace_threshold" as const,
+        load,
+        intensity: 0.8,
+        contributingDurationSeconds: 3600,
+        quality,
+        thresholdEvidence: {
+          type: "threshold_speed_mps" as const,
+          value: 4.2,
+          unit: "meters_per_second" as const,
+          source: "manual" as const,
+          observedAt: "2026-01-01T00:00:00.000Z",
+          validAt: "2026-01-01T00:00:00.000Z",
+          freshness: "current" as const,
+          calculationVersion: "1",
+          sourceFingerprint: "threshold-evidence",
+        },
+        evidenceFingerprint: "activity-evidence",
+        computedAsOf: "2026-01-01T00:00:00.000Z",
+        estimated: false,
+      } satisfies CommonLoadResult;
+      return {
+        activity_id: ACTIVITY_ID,
+        segment_id: item.id,
+        activity_category: "run" as const,
+        common_load: commonLoad,
+        observationQuantification: createObservationQuantificationBundle({
+          members: [observation(item, commonLoad)],
+        }),
+        computed_as_of: "2026-01-01T00:00:00.000Z",
+        dedupe_key: item.id,
+        load_stream_key: null,
+      };
+    });
 
     expect(
       summarizeMatchedCategory({
@@ -134,15 +209,42 @@ describe("activity discovery", () => {
         derivedSegments: derived,
       }),
     ).toMatchObject({
-      tss: 75,
-      tss_identity: identity,
+      common_load: {
+        status: "complete",
+        load: 128,
+        totalActivityCount: 2,
+      },
     });
     expect(
       summarizeMatchedCategory({
         segments,
         activity_category: "run",
-        derivedSegments: [{ ...derived[0]!, load_stream_key: "run:other" }, derived[1]!],
+        derivedSegments: [
+          (() => {
+            const commonLoad = {
+              status: "unavailable",
+              model: "gradientpeak_relative_load",
+              version: "1",
+              activity_category: "run",
+              method: null,
+              quality: null,
+              thresholdEvidence: null,
+              evidenceFingerprint: null,
+              computedAsOf: "2026-01-01T00:00:00.000Z",
+              contributingDurationSeconds: null,
+              reason: "threshold_missing",
+            } satisfies CommonLoadResult;
+            return {
+              ...derived[0]!,
+              common_load: commonLoad,
+              observationQuantification: createObservationQuantificationBundle({
+                members: [observation(segments[0]!, commonLoad)],
+              }),
+            };
+          })(),
+          derived[1]!,
+        ],
       }),
-    ).toMatchObject({ tss: null, tss_identity: null });
+    ).toMatchObject({ common_load: { status: "partial", load: 64, unavailableActivityCount: 1 } });
   });
 });

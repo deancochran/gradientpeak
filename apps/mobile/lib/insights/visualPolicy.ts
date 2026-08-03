@@ -77,7 +77,7 @@ const activityInsightPolicies = {
     visualType: "loadMultiLine",
     compactLayout: "visualFirst",
     rationale:
-      "Training load is modeled from completed activities and needs CTL, ATL, and TSB trajectories.",
+      "Training load is modeled from completed activities and needs Fitness, Fatigue, and Form trajectories.",
   },
   consistency: {
     source: "activityAnalysis",

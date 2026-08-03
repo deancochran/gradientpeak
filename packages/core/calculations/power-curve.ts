@@ -1,62 +1,8 @@
 /**
- * Power Curve Derivation
+ * Observed Power-Curve Projection
  *
- * Represents an FTP input without inventing unobserved sprint or W' evidence.
+ * Projects only from an accepted observed CP/reserve fit.
  */
-
-export interface DerivedEffort {
-  duration_seconds: number;
-  effort_type: "power" | "speed" | "heart_rate";
-  value: number;
-  unit: string;
-  activity_category: "bike" | "run" | "swim";
-}
-
-/**
- * Standard durations for power efforts in seconds.
- * Covers the full range from neuromuscular (5s) to FTP (60m).
- */
-export const STANDARD_POWER_DURATIONS = [
-  5, // 5 seconds (neuromuscular)
-  10, // 10 seconds (neuromuscular)
-  30, // 30 seconds (anaerobic)
-  60, // 1 minute (anaerobic)
-  180, // 3 minutes (VO2max)
-  300, // 5 minutes (VO2max)
-  600, // 10 minutes (threshold)
-  1200, // 20 minutes (threshold)
-  1800, // 30 minutes (threshold)
-  3600, // 60 minutes (FTP)
-] as const;
-
-/**
- * Represents FTP as one modeled 60-minute threshold anchor. The conventional
- * one-hour duration makes the meaning explicit while avoiding an inferred W'
- * or any fabricated short-duration points.
- *
- * @param ftp - Functional Threshold Power in watts (power sustainable for ~1 hour)
- * @returns A single modeled FTP threshold anchor
- *
- * @example
- * const ftp = 250; // watts
- * const powerCurve = derivePowerCurveFromFTP(ftp);
- * // Returns: [{ duration_seconds: 3600, value: 250, ... }]
- */
-export function derivePowerCurveFromFTP(ftp: number): DerivedEffort[] {
-  if (!Number.isFinite(ftp) || ftp < 1 || ftp > 3_000) {
-    throw new Error("FTP must be between 1 and 3000 watts");
-  }
-
-  return [
-    {
-      duration_seconds: 3_600,
-      effort_type: "power",
-      value: Math.round(ftp),
-      unit: "watts",
-      activity_category: "bike",
-    },
-  ];
-}
 
 /**
  * Predicts only within the duration span of an observed CP/W' fit. Requiring

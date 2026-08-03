@@ -10,12 +10,12 @@ import type {
   RecordingSessionSnapshot as CoreRecordingSessionSnapshot,
   RecordingSourceChangeEvent as CoreRecordingSourceChangeEvent,
   FtmsControlMode,
+  ProvisionalRecordingMetricsSnapshot,
   PublicActivityMetric,
   PublicActivityMetricDataType,
   RecordingActivityCategory,
   RecordingConfiguration,
   RecordingControlPolicy,
-  RecordingMetricsSnapshot,
   RecordingTrainerIntentSource,
   RecordingTrainerMachineType,
 } from "@repo/core";
@@ -168,11 +168,9 @@ export interface LiveMetricsState {
 
   // === Tier 2 - Live Approximations ===
   normalizedPowerEst: number; // watts (estimated)
-  intensityFactorEst: number; // decimal (0.85)
-  trainingStressScoreEst: number; // points
   variabilityIndexEst: number; // ratio
-  efficiencyFactorEst: number; // watts per bpm
-  decouplingEst: number; // percentage
+  efficiencyFactorEst: number; // modality-specific output per bpm
+  decouplingEst: number; // ratio
 
   // === Plan Adherence ===
   adherenceCurrentStep: number; // decimal (0.95)
@@ -186,11 +184,10 @@ export interface ZoneConfig {
 
 // === Profile Information ===
 export interface ProfileMetrics {
-  ftp?: number; // Functional Threshold Power
-  threshold_hr?: number; // Lactate Threshold Heart Rate
-  weight?: number; // kg
-  age?: number; // years
-  threshold_pace_seconds_per_km?: number;
+  ftpWatts?: number;
+  lthrBpm?: number;
+  thresholdPaceSecondsPerKm?: number;
+  weightKg?: number;
 }
 
 // === Update Events ===
@@ -279,8 +276,7 @@ export interface PowerMetrics {
 // === Analysis Metrics ===
 export interface AnalysisMetrics {
   normalizedPower: number;
-  intensityFactor: number;
-  tss: number;
+  provisionalCommonLoad: ProvisionalRecordingMetricsSnapshot["commonLoad"];
   variabilityIndex: number;
   efficiencyFactor: number;
   decoupling: number;
@@ -344,9 +340,8 @@ export interface MetricsSummary {
     maxHeartRate: number;
   };
   analysis: {
-    tss: number;
-    intensityFactor: number;
     normalizedPower: number;
+    provisionalCommonLoad: ProvisionalRecordingMetricsSnapshot["commonLoad"];
     adherence: number;
   };
 }
@@ -666,12 +661,10 @@ export interface SessionStats {
 
   // Advanced metrics (optional based on data availability)
   normalizedPower?: number;
-  trainingStressScore?: number;
-  intensityFactor?: number;
   variabilityIndex?: number;
   efficiencyFactor?: number;
   aerobicDecoupling?: number;
-  recordingMetrics?: RecordingMetricsSnapshot;
+  provisionalMetrics?: ProvisionalRecordingMetricsSnapshot;
 
   // Elevation metrics
   avgGrade?: number; // percentage

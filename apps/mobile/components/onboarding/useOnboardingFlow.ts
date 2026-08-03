@@ -1,6 +1,5 @@
 import {
   buildGoalCreatePayload,
-  estimateConservativeFTPFromWeight,
   estimateMaxHRFromDOB,
   getGoalDraftQualityFeedback,
   profileTrainingSettingsRecordSchema,
@@ -440,14 +439,6 @@ export function useOnboardingFlow() {
       updates.weight_kg = importedValues.values.weight_kg;
     }
 
-    if (
-      !touchedFields.has("ftp") &&
-      !clearedFields.has("ftp") &&
-      importedValues.values.ftp !== undefined
-    ) {
-      updates.ftp = importedValues.values.ftp;
-    }
-
     if (Object.keys(updates).length > 0) {
       updateData(updates, {
         source: "imported",
@@ -474,34 +465,10 @@ export function useOnboardingFlow() {
       updates.max_hr = estimatedMaxHr;
     }
 
-    const hasImportedFtp = importedValuesQuery.data?.values.ftp !== undefined;
-    const estimatedFtp = estimateConservativeFTPFromWeight(data.weight_kg);
-    if (
-      estimatedFtp &&
-      !hasImportedFtp &&
-      data.activity_category_interests.includes("cycling") &&
-      (!touchedFields.has("ftp") || fieldSources.ftp?.kind === "estimated") &&
-      fieldSources.ftp?.kind !== "cleared" &&
-      data.ftp !== estimatedFtp
-    ) {
-      updates.ftp = estimatedFtp;
-    }
-
     if (Object.keys(updates).length > 0) {
       updateData(updates, { source: "estimated" });
     }
-  }, [
-    data.dob,
-    data.ftp,
-    data.max_hr,
-    data.activity_category_interests,
-    data.weight_kg,
-    fieldSources.ftp?.kind,
-    fieldSources.max_hr?.kind,
-    importedValuesQuery.data?.values.ftp,
-    touchedFields,
-    updateData,
-  ]);
+  }, [data.dob, data.max_hr, fieldSources.max_hr?.kind, touchedFields, updateData]);
 
   useEffect(() => {
     const updates: Partial<OnboardingData> = {};

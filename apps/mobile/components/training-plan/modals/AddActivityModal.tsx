@@ -133,6 +133,9 @@ export function AddActivityModal({
 
   const canSchedule =
     selectedActivity && (validation?.canSchedule ?? false) && !scheduleMutation.isPending;
+  const isWeeklyLoadUnavailable =
+    validation?.constraints.weeklyLoad.current === null ||
+    validation?.constraints.weeklyLoad.withNew === null;
 
   const activities = activitiesData?.items ?? [];
 
@@ -250,7 +253,9 @@ export function AddActivityModal({
           {selectedActivity && (
             <Text className="text-xs text-muted-foreground text-center mt-2">
               {validation && !validation.canSchedule
-                ? "⚠️ This will override constraint violations"
+                ? isWeeklyLoadUnavailable
+                  ? "⚠️ Weekly Load could not be evaluated"
+                  : "⚠️ This will override constraint violations"
                 : validation?.hasWarnings
                   ? "⚠️ Close to constraint limits"
                   : "✓ Ready to schedule"}

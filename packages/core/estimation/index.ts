@@ -1,13 +1,12 @@
 /**
- * TSS Estimation System
+ * Ancillary Activity Estimation
  *
- * Provides dynamic, user-specific estimation of Training Stress Score (TSS)
- * and related metrics for activity planning.
- *
- * All calculations are done on-the-fly based on current user profile,
- * making plans fully shareable while maintaining personalized accuracy.
+ * This legacy surface may retain evidence-safe duration, distance, and route
+ * facts. It deliberately abstains from numeric Load and intensity; canonical
+ * Common Load is the sole authority for those values.
  */
 
+import { unavailableActivityPlanDurationEstimate } from "../duration";
 import { addDays } from "../utils/dates";
 import { estimateWeeklyLoad, predictFatigue } from "./fatigue";
 import { estimateMetrics as estimateMetricsInternal } from "./metrics";
@@ -18,27 +17,14 @@ import type {
   EstimationContext,
   EstimationResult,
   EstimationWarningHandler,
-  FatiguePrediction,
   FitnessState,
   MetricEstimations,
   PlannedActivity,
   WeeklyLoadEstimation,
 } from "./types";
 
-export * from "./baselines";
 // Re-export default estimation functions
-export {
-  estimateConservativeFTPFromWeight,
-  estimateCriticalVelocity,
-  estimateFTPFromRecentActivities,
-  estimateFTPFromWeight,
-  estimateLTHR,
-  estimateLTHRFromRecentActivities,
-  estimateMaxHR,
-  estimateMaxHRFromDOB,
-  estimateThresholdPaceFromFitnessLevel,
-  estimateThresholdPaceFromRecentRuns,
-} from "./defaults";
+export { estimateMaxHR, estimateMaxHRFromDOB } from "./defaults";
 // Re-export types
 export * from "./types";
 
@@ -70,15 +56,15 @@ const withWarnings = (result: EstimationResult, warnings: string[]): EstimationR
 };
 
 /**
- * Main estimation function - automatically selects best strategy
+ * Retain evidence-safe ancillary facts using the strongest available source.
  *
  * Strategy priority:
  * 1. Structure-based (highest accuracy) - if activity has steps
- * 2. Route-based (medium accuracy) - if route data is provided
- * 3. Template-based (lowest accuracy) - fallback using activity category defaults
+ * 2. Authored route distance - if route data is provided
+ * 3. Explicitly unavailable - no generic template assumptions
  *
  * @param context - User profile, activity details, and optional structure/route
- * @returns Estimation result with TSS, duration, IF, and metadata
+ * @returns Ancillary facts with numeric Load and intensity unavailable
  */
 export function estimateActivity(
   context: EstimationContext,
@@ -108,7 +94,7 @@ export function estimateActivity(
     try {
       return withWarnings(estimateFromRoute(context), fallbackWarnings);
     } catch (error) {
-      const message = `Route-based estimation failed, falling back to template: ${formatEstimationError(error)}`;
+      const message = `Route-based estimation failed; returning unavailable ancillary facts: ${formatEstimationError(error)}`;
       fallbackWarnings.push(message);
       onWarning?.({ error, message });
     }
@@ -119,11 +105,10 @@ export function estimateActivity(
 }
 
 /**
- * Estimate all metrics for an activity
- * Combines TSS estimation with additional metrics (calories, distance, zones)
+ * Retain all evidence-safe ancillary facts for an activity.
  *
  * @param context - User profile and activity details
- * @returns Complete estimation including TSS, metrics, and optional fatigue prediction
+ * @returns Ancillary estimation and metrics; Load and intensity remain unavailable
  */
 export function estimateActivityComplete(
   context: EstimationContext,
@@ -131,42 +116,18 @@ export function estimateActivityComplete(
 ): {
   estimation: EstimationResult;
   metrics: MetricEstimations;
-  fatigue?: FatiguePrediction;
 } {
-  // Get base TSS estimation
   const estimation = estimateActivity(context, onWarning);
-
-  // Calculate additional metrics
   const metrics = estimateMetricsInternal(estimation, context);
-
-  // Optionally predict fatigue impact
-  let fatigue: FatiguePrediction | undefined;
-  if (context.scheduledDate && context.fitnessState && estimation.tss !== null) {
-    try {
-      fatigue = predictFatigue(
-        estimation.tss,
-        context.scheduledDate,
-        context.fitnessState,
-        [], // Weekly activities can be passed from caller
-      );
-    } catch (error) {
-      onWarning?.({
-        error,
-        message: `Fatigue prediction failed: ${formatEstimationError(error)}`,
-      });
-    }
-  }
 
   return {
     estimation,
     metrics,
-    fatigue,
   };
 }
 
 /**
- * Estimate TSS for a batch of activity plans
- * Useful for displaying lists of plans with personalized TSS
+ * Retain ancillary facts for a batch of activity plans.
  *
  * @param plans - Array of activity plans with structure
  * @param context - User profile (same for all plans)
@@ -195,15 +156,15 @@ export function estimateActivityBatch(
         message: `Failed to estimate plan ${plan.id}: ${formatEstimationError(error)}`,
         planId: plan.id,
       });
-      // Set default fallback
+      const durationEstimate = unavailableActivityPlanDurationEstimate();
       results.set(plan.id, {
-        tss: 50,
-        duration: 3600,
-        intensityFactor: 0.7,
-        confidence: "low",
-        confidenceScore: 0,
-        factors: ["error-fallback"],
-        warnings: ["Estimation failed - using default values"],
+        load: null,
+        durationEstimate,
+        duration: null,
+        confidence: null,
+        confidenceScore: null,
+        factors: [],
+        warnings: ["Estimation failed; unsupported facts remain unavailable."],
       });
     }
   }
@@ -213,11 +174,11 @@ export function estimateActivityBatch(
 
 /**
  * Estimate weekly training load
- * Aggregates planned activities and projects CTL/ATL/TSB
+ * Aggregates planned activities and projects LongTermLoad/RecentLoad/LoadBalance
  *
  * @param weekStart - Start date of week (typically Monday)
  * @param plannedActivities - All activities scheduled for the week
- * @param currentState - Current fitness state (CTL/ATL/TSB)
+ * @param currentState - Current fitness state (LongTermLoad/RecentLoad/LoadBalance)
  * @returns Weekly load summary with descriptive projections
  */
 export function estimateWeeklyLoadComplete(
@@ -239,7 +200,7 @@ export function estimateWeeklyLoadComplete(
 
     return {
       date: day.date,
-      tss: day.tss,
+      load: day.load,
       activities: dayActivities,
     };
   });
@@ -253,28 +214,28 @@ export function estimateWeeklyLoadComplete(
     );
   } else if (baseEstimation.loadChangeState === "increasing") {
     recommendations.push(
-      "Projected CTL is increasing; review the planned change with athlete context",
+      "Projected LongTermLoad is increasing; review the planned change with athlete context",
     );
   }
 
-  if (baseEstimation.totalTSS < currentState.ctl * 0.7) {
+  if (baseEstimation.totalLoad < currentState.longTermLoad * 0.7) {
     recommendations.push("Consider adding volume - weekly load is below maintenance level");
   }
 
-  if (baseEstimation.totalTSS > currentState.ctl * 1.4) {
-    recommendations.push("Weekly load is above the current CTL reference");
+  if (baseEstimation.totalLoad > currentState.longTermLoad * 1.4) {
+    recommendations.push("Weekly load is above the current LongTermLoad reference");
   }
 
-  const projectedTSB = currentState.ctl - baseEstimation.projectedCTL;
+  const projectedLoadBalance = currentState.longTermLoad - baseEstimation.projectedLongTermLoad;
 
   return {
     weekStart,
     weekEnd,
-    totalTSS: baseEstimation.totalTSS,
+    totalLoad: baseEstimation.totalLoad,
     dailyBreakdown,
-    projectedCTL: baseEstimation.projectedCTL,
-    projectedATL: currentState.atl, // Would need to track ATL through week
-    projectedTSB,
+    projectedLongTermLoad: baseEstimation.projectedLongTermLoad,
+    projectedRecentLoad: currentState.recentLoad, // Would need to track RecentLoad through week
+    projectedLoadBalance,
     rampRate: baseEstimation.rampRate,
     loadChangeState: baseEstimation.loadChangeState,
     reasons: baseEstimation.reasons,
@@ -283,35 +244,10 @@ export function estimateWeeklyLoadComplete(
 }
 
 /**
- * Calculate confidence-adjusted TSS range
- * Useful for showing "Expected TSS: 60-70" to users
- *
- * @param estimation - Estimation result
- * @returns TSS range [min, max]
- */
-export function getTSSRange(estimation: EstimationResult): [number, number] | null {
-  const { tss, confidenceScore } = estimation;
-  if (tss === null) return null;
-
-  // Higher confidence = narrower range
-  // Low confidence (50): ±20%
-  // Medium confidence (75): ±10%
-  // High confidence (95): ±5%
-
-  const variability = 1 - confidenceScore / 100;
-  const range = tss * variability * 0.2;
-
-  const minTSS = Math.max(0, Math.round(tss - range));
-  const maxTSS = Math.round(tss + range);
-
-  return [minTSS, maxTSS];
-}
-
-/**
  * Helper to build estimation context from common data sources
  */
 export function buildEstimationContext(params: BuildEstimationContextParams): EstimationContext {
-  const { asOf, userProfile, fitnessState, activityPlan, route, scheduledDate, weeklyPlannedTSS } =
+  const { asOf, userProfile, fitnessState, activityPlan, route, scheduledDate, weeklyPlannedLoad } =
     params;
 
   return {
@@ -320,10 +256,9 @@ export function buildEstimationContext(params: BuildEstimationContextParams): Es
       ...userProfile,
       dob: userProfile.dob ?? null,
     },
-    ftp: userProfile.ftp ?? undefined,
-    thresholdHr: userProfile.threshold_hr ?? undefined,
+    maxHr: userProfile.max_hr ?? undefined,
+    restingHr: userProfile.resting_hr ?? undefined,
     weightKg: userProfile.weight_kg ?? undefined,
-    thresholdPaceSecondsPerKm: userProfile.threshold_pace_seconds_per_km ?? undefined,
     fitnessState,
     activityCategory: activityPlan.activity_category,
     structure: activityPlan.structure,
@@ -336,6 +271,6 @@ export function buildEstimationContext(params: BuildEstimationContextParams): Es
         }
       : undefined,
     scheduledDate,
-    weeklyPlannedTSS,
+    weeklyPlannedLoad,
   };
 }

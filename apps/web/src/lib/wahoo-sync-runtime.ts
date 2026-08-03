@@ -1,11 +1,12 @@
 import {
   createActivityImporter,
+  createAthletePerformanceModelRepository,
+  createAthletePerformanceTargetFactsReader,
   createProviderSyncRepository,
   createWahooImportActivityFileStorage,
   createWahooRepository,
   createWahooRouteStorage,
   createWahooStagingCleanupReservation,
-  enrichImportedActivityArtifact,
   getProcessProviderSyncLimiter,
   submitImportedActivityArtifact,
   WahooActivityHistoryJobService,
@@ -90,6 +91,9 @@ export function createWahooSyncRuntime() {
 
   const wahooRepository = createWahooRepository({ db });
   const providerSyncRepository = createProviderSyncRepository({ db });
+  const getPerformanceTargets = createAthletePerformanceTargetFactsReader(
+    createAthletePerformanceModelRepository(db),
+  );
   const importer = createActivityImporter({
     allowedActivityFileHosts: process.env.WAHOO_ACTIVITY_FILE_ALLOWED_HOSTS?.split(",")
       .map((host) => host.trim())
@@ -116,13 +120,7 @@ export function createWahooSyncRuntime() {
     submitActivity: (activity, parsedActivity, options) =>
       submitImportedActivityArtifact(db, {
         activity,
-        beforePersist: options.beforePersist,
-        parsedActivity,
-      }),
-    enrichActivity: (activityId, activity, parsedActivity, options) =>
-      enrichImportedActivityArtifact(db, {
-        activityId,
-        activity,
+        artifactSha256: options.artifactSha256,
         beforePersist: options.beforePersist,
         parsedActivity,
       }),
@@ -165,6 +163,7 @@ export function createWahooSyncRuntime() {
   });
 
   const syncService = new WahooSyncService({
+    getPerformanceTargets,
     repository: wahooRepository,
     storage: createSupabaseWahooRouteStorage(supabase.storage),
   });

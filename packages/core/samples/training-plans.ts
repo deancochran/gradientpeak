@@ -34,7 +34,7 @@ function buildModernCompatibleTemplateStructure(input: {
   durationWeeks: number;
   activity_categories: readonly string[];
   experienceLevel: readonly ("beginner" | "intermediate" | "advanced")[];
-  weeklyTssRange: { min: number; max: number };
+  weeklyLoadRange: { min: number; max: number };
   sessionsPerWeekTarget: number;
   minRestDaysPerWeek: number;
   maxConsecutiveDays: number;
@@ -598,7 +598,7 @@ const RAW_SAMPLE_PLANS: Array<
       durationWeeks: 12,
       activity_categories: ["run"],
       experienceLevel: ["beginner"],
-      weeklyTssRange: { min: 280, max: 420 },
+      weeklyLoadRange: { min: 280, max: 420 },
       sessionsPerWeekTarget: 4,
       minRestDaysPerWeek: 2,
       maxConsecutiveDays: 3,
@@ -620,7 +620,7 @@ const RAW_SAMPLE_PLANS: Array<
       durationWeeks: 10,
       activity_categories: ["run"],
       experienceLevel: ["intermediate"],
-      weeklyTssRange: { min: 240, max: 360 },
+      weeklyLoadRange: { min: 240, max: 360 },
       sessionsPerWeekTarget: 4,
       minRestDaysPerWeek: 2,
       maxConsecutiveDays: 3,
@@ -642,7 +642,7 @@ const RAW_SAMPLE_PLANS: Array<
       durationWeeks: 8,
       activity_categories: ["run"],
       experienceLevel: ["intermediate"],
-      weeklyTssRange: { min: 180, max: 240 },
+      weeklyLoadRange: { min: 180, max: 240 },
       sessionsPerWeekTarget: 4,
       minRestDaysPerWeek: 2,
       maxConsecutiveDays: 2,
@@ -664,7 +664,7 @@ const RAW_SAMPLE_PLANS: Array<
       durationWeeks: 12,
       activity_categories: ["bike"],
       experienceLevel: ["beginner", "intermediate"],
-      weeklyTssRange: { min: 220, max: 280 },
+      weeklyLoadRange: { min: 220, max: 280 },
       sessionsPerWeekTarget: 4,
       minRestDaysPerWeek: 2,
       maxConsecutiveDays: 3,
@@ -686,7 +686,7 @@ const RAW_SAMPLE_PLANS: Array<
       durationWeeks: 10,
       activity_categories: ["swim", "bike", "run"],
       experienceLevel: ["beginner"],
-      weeklyTssRange: { min: 260, max: 390 },
+      weeklyLoadRange: { min: 260, max: 390 },
       sessionsPerWeekTarget: 7,
       minRestDaysPerWeek: 1,
       maxConsecutiveDays: 3,
@@ -750,7 +750,7 @@ const RAW_SAMPLE_PLANS: Array<
       durationWeeks: 6,
       activity_categories: ["run", "strength", "bike"],
       experienceLevel: ["beginner", "intermediate"],
-      weeklyTssRange: { min: 180, max: 280 },
+      weeklyLoadRange: { min: 180, max: 280 },
       sessionsPerWeekTarget: 3,
       minRestDaysPerWeek: 2,
       maxConsecutiveDays: 2,

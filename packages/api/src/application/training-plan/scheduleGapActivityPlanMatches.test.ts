@@ -1,4 +1,14 @@
-import { compileActivityPlan, SYSTEM_TEMPLATES } from "@repo/core";
+import {
+  activityPrescriptionQuantificationSchema,
+  type CommonLoadResult,
+  compileActivityPlan,
+  createActivityPlanPrescriptionQuantificationBundle,
+  createActivityQuantificationCalculationIdentity,
+  createActivityQuantificationEvidenceIdentity,
+  createPlanActivityQuantificationSubjectIdentity,
+  createPlanOccurrenceActivityQuantificationSubjectIdentity,
+  SYSTEM_TEMPLATES,
+} from "@repo/core";
 import { describe, expect, it, vi } from "vitest";
 import {
   buildScheduleGapActivityPlanMatches,
@@ -11,6 +21,127 @@ function structureForActivityCategory(activity_category: "run" | "bike") {
   );
   if (!template) throw new Error(`Missing ${activity_category} system template`);
   return template.structure;
+}
+
+function availableCommonLoad(
+  load: number,
+  activity_category: "bike" | "run" = "bike",
+): CommonLoadResult {
+  const thresholdEvidence =
+    activity_category === "bike"
+      ? ({ type: "ftp_watts", value: 250, unit: "watts" } as const)
+      : ({ type: "threshold_speed_mps", value: 4, unit: "meters_per_second" } as const);
+  return {
+    status: "available",
+    model: "gradientpeak_relative_load",
+    version: "1",
+    activity_category,
+    method: activity_category === "bike" ? "power_threshold" : "run_pace_threshold",
+    load,
+    intensity: Math.sqrt(load / 100),
+    contributingDurationSeconds: 3600,
+    quality: {
+      source: "manual",
+      observed_at: "2026-07-18T00:00:00.000Z",
+      valid_at: "2026-07-18T00:00:00.000Z",
+      confidence: "high",
+      stale: false,
+      estimate: false,
+      calculation_version: "1",
+      evidence_fingerprint: "fixture",
+    },
+    thresholdEvidence: {
+      ...thresholdEvidence,
+      source: "manual",
+      observedAt: "2026-07-18T00:00:00.000Z",
+      validAt: "2026-07-18T00:00:00.000Z",
+      freshness: "current",
+      calculationVersion: "1",
+      sourceFingerprint: "fixture",
+    },
+    evidenceFingerprint: "fixture",
+    computedAsOf: "2026-07-18T00:00:00.000Z",
+    estimated: true,
+  };
+}
+
+function prescriptionQuantification(planId: string, commonLoad: CommonLoadResult) {
+  const planSubjectIdentity = createPlanActivityQuantificationSubjectIdentity({ planId });
+  const member = activityPrescriptionQuantificationSchema.parse({
+    kind: "prescription",
+    stage: "plan",
+    subjectIdentity: createPlanOccurrenceActivityQuantificationSubjectIdentity({
+      occurrenceId: `${planId}-occurrence`,
+      parentSubjectIdentity: planSubjectIdentity,
+    }),
+    evidenceIdentity: createActivityQuantificationEvidenceIdentity({
+      evidenceType: "plan_revision",
+      sourceIds: [planId],
+      revisionFingerprint: `revision-${planId}`,
+      details: { planId },
+    }),
+    calculationIdentity: createActivityQuantificationCalculationIdentity({
+      model: commonLoad.model,
+      version: commonLoad.version,
+      computedAt: commonLoad.computedAsOf,
+      calibrationEvidenceFingerprint: commonLoad.evidenceFingerprint,
+    }),
+    activity_category: commonLoad.activity_category,
+    duration: {
+      elapsed: {
+        status: "available",
+        evidenceRole: "prescribed",
+        value: 3600,
+        unit: "seconds",
+      },
+      active: {
+        status: "available",
+        evidenceRole: "prescribed",
+        value: 3600,
+        unit: "seconds",
+      },
+      moving: {
+        status: "unavailable",
+        evidenceRole: "prescribed",
+        value: null,
+        unit: "seconds",
+        reason: "not_prescribed",
+      },
+    },
+    distance: {
+      status: "unavailable",
+      evidenceRole: "prescribed",
+      value: null,
+      unit: "meters",
+      reason: "not_prescribed",
+    },
+    intensity: {
+      prescribed: {
+        status: "unavailable",
+        evidenceRole: "prescribed",
+        values: [],
+        reason: "not_authored",
+      },
+    },
+    commonLoad,
+  });
+  return createActivityPlanPrescriptionQuantificationBundle({ members: [member] });
+}
+
+function unavailableCommonLoad(): CommonLoadResult {
+  return {
+    status: "unavailable",
+    model: "gradientpeak_relative_load",
+    version: "1",
+    activity_category: "bike",
+    method: null,
+    quality: null,
+    thresholdEvidence: null,
+    evidenceFingerprint: null,
+    computedAsOf: "2026-07-18T00:00:00.000Z",
+    contributingDurationSeconds: null,
+    reason: "threshold_missing",
+  };
 }
 
 describe("schedule-gap activity plan loading", () => {
@@ -36,7 +167,7 @@ describe("schedule-gap activity plan loading", () => {
   it("does not match a plan with unavailable authoritative TSS", () => {
     const result = buildScheduleGapActivityPlanMatches({
       targetDate: "2026-07-20",
-      targetTssDelta: 70,
+      targetLoadDelta: 70,
       primaryActivityCategory: "bike",
       today: "2026-07-18",
       plans: [
@@ -44,19 +175,19 @@ describe("schedule-gap activity plan loading", () => {
           id: "plan-1",
           name: "Stale plan",
           structure: structureForActivityCategory("bike"),
-          authoritative_metrics: { estimated_tss: null },
+          prescriptionQuantification: prescriptionQuantification("plan-1", unavailableCommonLoad()),
         },
       ],
     });
 
     expect(result.matches).toEqual([]);
-    expect(result.empty_reason).toBe("no_estimated_tss");
+    expect(result.empty_reason).toBe("no_available_common_load");
   });
 
   it("distinguishes unsuitable matches from plans without estimated TSS", () => {
     const result = buildScheduleGapActivityPlanMatches({
       targetDate: "2026-07-20",
-      targetTssDelta: 70,
+      targetLoadDelta: 70,
       primaryActivityCategory: "run",
       today: "2026-07-18",
       plans: [
@@ -64,7 +195,7 @@ describe("schedule-gap activity plan loading", () => {
           id: "plan-1",
           name: "Bike plan",
           structure: structureForActivityCategory("bike"),
-          authoritative_metrics: { estimated_tss: 70 },
+          prescriptionQuantification: prescriptionQuantification("plan-1", availableCommonLoad(70)),
         },
       ],
     });
@@ -76,7 +207,7 @@ describe("schedule-gap activity plan loading", () => {
   it("derives canonical activity_category from strict plan structure", () => {
     const result = buildScheduleGapActivityPlanMatches({
       targetDate: "2026-07-20",
-      targetTssDelta: 70,
+      targetLoadDelta: 70,
       primaryActivityCategory: "run",
       today: "2026-07-18",
       plans: [
@@ -84,7 +215,10 @@ describe("schedule-gap activity plan loading", () => {
           id: "plan-1",
           name: "Tempo run",
           structure: structureForActivityCategory("run"),
-          authoritative_metrics: { estimated_tss: 70 },
+          prescriptionQuantification: prescriptionQuantification(
+            "plan-1",
+            availableCommonLoad(70, "run"),
+          ),
         },
       ],
     });

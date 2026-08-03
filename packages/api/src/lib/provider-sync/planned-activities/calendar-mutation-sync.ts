@@ -1,6 +1,7 @@
 import { activityPlanStructureSchema, getProvidersWithCapability } from "@repo/core";
 import { type DrizzleDbClient, schema } from "@repo/db";
 import { and, eq, inArray } from "drizzle-orm";
+import { createAthletePerformanceTargetFactsReader } from "../../../application/performance-model/get-athlete-performance-model-as-of";
 import type { DrizzleTransactionClient } from "../../../db";
 import {
   createIntegrationsRepositories,
@@ -8,7 +9,10 @@ import {
   createWahooRepository,
   listIntegrationsByProfileId,
 } from "../../../infrastructure/repositories";
-import type { ProviderSyncJobRecord } from "../../../repositories/provider-sync-repository";
+import {
+  createAthletePerformanceModelRepository,
+  type ProviderSyncJobRecord,
+} from "../../../repositories";
 import { PlannedActivitySyncService } from "./planned-activity-sync-service";
 import type { PlannedActivityQueueResult, PlannedActivitySyncOperation } from "./types";
 import { WahooPlannedActivityProvider } from "./wahoo-planned-workout-provider";
@@ -36,12 +40,18 @@ export function createPlannedActivitySyncServiceForDb(
 ) {
   const providerSyncRepository = createProviderSyncRepository({ db });
   const wahooRepository = createWahooRepository({ db: transaction ?? db });
+  const operationTime = new Date();
+  const getPerformanceTargets = createAthletePerformanceTargetFactsReader(
+    createAthletePerformanceModelRepository(db),
+  );
 
   return new PlannedActivitySyncService({
     adapters: {
       wahoo: new WahooPlannedActivityProvider({
         providerSyncRepository,
         wahooRepository,
+        getPerformanceTargets,
+        now: () => operationTime,
         ...(transaction
           ? {
               enqueueJob: (input) =>

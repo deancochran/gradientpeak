@@ -1,3 +1,4 @@
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import type { TrainingPlanBuilderGoalBlueprint, TrainingPlanBuilderState } from "./types";
 import { validateTrainingPlanBuilderState } from "./validation";
 
@@ -6,7 +7,7 @@ export type TrainingPlanBuilderSummary = {
   durationDays: number;
   assignedSessionCount: number;
   goalCount: number;
-  totalEstimatedTss: number;
+  totalEstimatedLoad: number;
   totalEstimatedDurationSeconds: number;
 };
 
@@ -32,12 +33,14 @@ export function selectBuilderSummary(state: TrainingPlanBuilderState): TrainingP
     durationDays: latestOffsetDays >= 0 ? latestOffsetDays + 1 : 0,
     assignedSessionCount: sessions.filter((session) => session.activityPlan !== null).length,
     goalCount: selectBuilderGoalBlueprints(state).length,
-    totalEstimatedTss: sessions.reduce(
-      (total, session) => total + (session.activityPlan?.estimatedTss ?? 0),
+    totalEstimatedLoad: sessions.reduce(
+      (total, session) =>
+        total + (getActivityPlanQuantitySummary(session.activityPlan).commonLoad ?? 0),
       0,
     ),
     totalEstimatedDurationSeconds: sessions.reduce(
-      (total, session) => total + (session.activityPlan?.estimatedDurationSeconds ?? 0),
+      (total, session) =>
+        total + (getActivityPlanQuantitySummary(session.activityPlan).durationSeconds ?? 0),
       0,
     ),
   };

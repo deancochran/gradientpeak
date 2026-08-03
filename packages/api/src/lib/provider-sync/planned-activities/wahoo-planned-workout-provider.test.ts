@@ -1,15 +1,54 @@
-import { SYSTEM_TEMPLATES } from "@repo/core";
+import {
+  type AthletePerformanceTargetFacts,
+  athletePerformanceTargetFactsSchema,
+  createUnavailableAthletePerformanceTargetFacts,
+  SYSTEM_TEMPLATES,
+} from "@repo/core";
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WahooPlannedActivityProvider } from "./wahoo-planned-workout-provider";
+
+const operationTime = new Date("2026-07-28T12:00:00.000Z");
+
+function performanceTargets(
+  overrides: Partial<AthletePerformanceTargetFacts> = {},
+): AthletePerformanceTargetFacts {
+  return athletePerformanceTargetFactsSchema.parse({
+    ...buildPerformanceTargetFactsFixture({
+      asOf: operationTime.toISOString(),
+      athleteId: "profile-1",
+      planningThresholdPowerWatts: 250,
+      lthrBpm: { bike: 170, run: 175 },
+      maxHrBpm: { bike: 190, run: 195 },
+    }),
+    ...overrides,
+  });
+}
+
+function planWithRelativeTarget(type: "%FTP" | "%ThresholdHR", activityCategory: "bike" | "run") {
+  const template = SYSTEM_TEMPLATES[0];
+  if (!template) throw new Error("Expected a system template fixture");
+  const structure = structuredClone(template.structure);
+  for (const segment of structure.segments) {
+    if (segment.role !== "activity") continue;
+    segment.activity_category = activityCategory;
+    for (const interval of segment.intervals) {
+      for (const step of interval.steps) step.targets = [{ type, intensity: 80 }];
+    }
+  }
+  return structure;
+}
 
 function providerFixture(
   overrides: {
     enqueueJob?: ReturnType<typeof vi.fn>;
     existingLink?: { externalId: string; id: string } | null;
     planStructure?: unknown;
+    now?: Date;
     routeId?: string | null;
     scope?: string;
     startsAt?: string;
+    performanceTargets?: AthletePerformanceTargetFacts;
   } = {},
 ) {
   const enqueueJob =
@@ -34,21 +73,21 @@ function providerFixture(
       startsAt: overrides.startsAt ?? "2026-07-29T12:00:00.000Z",
     }),
     getEventResourceLink: vi.fn().mockResolvedValue(overrides.existingLink ?? null),
-    getProfileSyncMetrics: vi.fn().mockResolvedValue({
-      bikePowerEfforts: [],
-      ftpMetrics: [{ observedAt: "2026-07-28T10:00:00.000Z", source: "manual", value: 250 }],
-      maxHr: 190,
-      thresholdHr: 170,
-    }),
   };
+  const getPerformanceTargets = vi
+    .fn()
+    .mockResolvedValue(overrides.performanceTargets ?? performanceTargets());
   return {
     enqueueJob,
     provider: new WahooPlannedActivityProvider({
       providerSyncRepository: providerSyncRepository as never,
       wahooRepository: wahooRepository as never,
+      getPerformanceTargets,
+      now: () => overrides.now ?? operationTime,
     }),
     providerSyncRepository,
     wahooRepository,
+    getPerformanceTargets,
   };
 }
 
@@ -59,8 +98,8 @@ describe("WahooPlannedActivityProvider", () => {
 
   it("always enqueues an eligible profile-owned bike activity with generation and lane metadata", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-28T12:00:00.000Z"));
-    const { enqueueJob, provider } = providerFixture();
+    vi.setSystemTime(operationTime);
+    const { enqueueJob, getPerformanceTargets, provider } = providerFixture();
 
     await expect(
       provider.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" }),
@@ -82,10 +121,18 @@ describe("WahooPlannedActivityProvider", () => {
       }),
     );
     expect(enqueueJob.mock.calls[0]?.[0].payload).toMatchObject({
+      performanceModelAsOf: operationTime.toISOString(),
       eventId: "event-1",
       operation: "publish",
       projectionHash: expect.any(String),
+      projectionSnapshot: expect.objectContaining({
+        plan: expect.objectContaining({ header: expect.objectContaining({ ftp: 250 }) }),
+      }),
       startsAt: "2026-07-29T12:00:00.000Z",
+    });
+    expect(getPerformanceTargets).toHaveBeenCalledWith({
+      actorProfileId: "profile-1",
+      asOf: operationTime,
     });
   });
 
@@ -98,6 +145,21 @@ describe("WahooPlannedActivityProvider", () => {
 
     expect(first.enqueueJob.mock.calls[0]?.[0].payloadHash).not.toBe(
       second.enqueueJob.mock.calls[0]?.[0].payloadHash,
+    );
+  });
+
+  it("keeps provider desired-state hashing stable when only model evaluation time changes", async () => {
+    const first = providerFixture({ now: operationTime });
+    const second = providerFixture({ now: new Date(operationTime.getTime() + 60_000) });
+
+    await first.provider.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" });
+    await second.provider.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" });
+
+    expect(first.enqueueJob.mock.calls[0]?.[0].payloadHash).toBe(
+      second.enqueueJob.mock.calls[0]?.[0].payloadHash,
+    );
+    expect(first.enqueueJob.mock.calls[0]?.[0].payload.performanceModelAsOf).not.toBe(
+      second.enqueueJob.mock.calls[0]?.[0].payload.performanceModelAsOf,
     );
   });
 
@@ -128,9 +190,11 @@ describe("WahooPlannedActivityProvider", () => {
   });
 
   it("immediately queues an eligible workout whose start time already passed", async () => {
+    const now = new Date("2026-07-29T22:00:00.000Z");
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-29T22:00:00.000Z"));
+    vi.setSystemTime(now);
     const { enqueueJob, provider } = providerFixture({
+      now,
       startsAt: "2026-07-29T06:00:00.000Z",
     });
 
@@ -154,6 +218,8 @@ describe("WahooPlannedActivityProvider", () => {
       enqueueJob: transactionEnqueue as never,
       providerSyncRepository: fixture.providerSyncRepository as never,
       wahooRepository: fixture.wahooRepository as never,
+      getPerformanceTargets: fixture.getPerformanceTargets,
+      now: () => operationTime,
     });
 
     await provider.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" });
@@ -168,6 +234,22 @@ describe("WahooPlannedActivityProvider", () => {
     await expect(
       provider.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" }),
     ).rejects.toThrow("reconnect");
+    expect(enqueueJob).not.toHaveBeenCalled();
+  });
+
+  it("fails closed before enqueue when a selected relative target is unavailable", async () => {
+    const { enqueueJob, provider } = providerFixture({
+      performanceTargets: createUnavailableAthletePerformanceTargetFacts(
+        operationTime.toISOString(),
+        "profile-1",
+      ),
+      existingLink: { externalId: "remote-1", id: "link-1" },
+      planStructure: planWithRelativeTarget("%FTP", "bike"),
+    });
+
+    await expect(
+      provider.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" }),
+    ).rejects.toThrow("performance target unavailable");
     expect(enqueueJob).not.toHaveBeenCalled();
   });
 

@@ -28,7 +28,7 @@ export const otherActivityCategory: ActivityCategoryRegistryEntry = {
     template: {
       avgIF: 0.65,
       avgDuration: 1800,
-      avgTSS: 30,
+      avgCommonLoad: 30,
     },
   },
 };

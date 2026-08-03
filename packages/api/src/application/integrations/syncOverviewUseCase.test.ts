@@ -49,8 +49,7 @@ describe("getProviderSyncOverview planned Wahoo delivery", () => {
     ]);
     mocks.findGrantByProfileIdAndProvider.mockResolvedValue({
       reconnect_required_at: null,
-      scope:
-        "workouts_read workouts_write plans_read plans_write offline_data power_zones_read user_read",
+      scope: "workouts_read workouts_write plans_read plans_write offline_data user_read",
     });
     mocks.listJobs.mockResolvedValue([]);
     mocks.listSyncStateByIntegrationIds.mockResolvedValue([]);

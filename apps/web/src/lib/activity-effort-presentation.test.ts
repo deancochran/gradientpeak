@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   type ActivityEffortPresentationRow,
   buildObservedDurationCurve,
-  buildStatusDurationCurve,
   filterEffortsByRange,
   formatActivityEffortCurveDisplayValue,
   formatActivityEffortDisplayValue,
@@ -37,8 +36,8 @@ describe("activity effort presentation", () => {
       effort({ id: "observed-best", value: 320 }),
       effort({
         duration_seconds: 300,
-        id: "modeled",
-        provenance: { observation_type: "modeled" },
+        id: "derived",
+        provenance: { observation_type: "derived" },
         source: "estimated",
         value: 500,
       }),
@@ -69,33 +68,6 @@ describe("activity effort presentation", () => {
         60,
       ).map((row) => row.id),
     ).toEqual(["newer", "older"]);
-  });
-
-  it("builds a requested evidence-status curve without mixing modeled and observed rows", () => {
-    expect(
-      buildStatusDurationCurve(
-        [
-          effort({ id: "observed", value: 350 }),
-          effort({
-            duration_seconds: 300,
-            id: "modeled-lower",
-            method: "onboarding_modeled_curve",
-            provenance: { observation_type: "modeled" },
-            source: "estimated",
-            value: 250,
-          }),
-          effort({
-            duration_seconds: 300,
-            id: "modeled-best",
-            method: "onboarding_modeled_curve",
-            provenance: { observation_type: "modeled" },
-            source: "estimated",
-            value: 275,
-          }),
-        ],
-        "modeled",
-      ),
-    ).toEqual([{ durationSeconds: 300, id: "modeled-best", label: "5m 00s", value: 275 }]);
   });
 
   it("filters by a deterministic evidence range without changing row provenance", () => {

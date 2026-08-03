@@ -1,5 +1,6 @@
 import {
   type AthleteTrainingSettings,
+  numericPlannedCommonLoad,
   resolveGoalReadinessTarget,
   resolveGoalReadinessViewModel,
 } from "@repo/core";
@@ -40,9 +41,9 @@ export type PlanWeeklyLoadBar = {
   weekStart: string;
   weekEnd: string | null;
   label: string;
-  actual: number;
-  scheduled: number;
-  recommended: number;
+  actual: number | null;
+  scheduled: number | null;
+  recommended: number | null;
   isCurrentWeek: boolean;
 };
 
@@ -70,18 +71,18 @@ export type PlanActivityMatch = {
   name: string;
   targetDate: string;
   activity_category: string;
-  estimatedTss: number | null;
+  estimatedCommonLoad: number | null;
   estimatedDurationSeconds: number | null;
   score: number;
-  targetTssDelta: number;
-  absoluteTssGap: number | null;
+  targetLoadDelta: number;
+  absoluteLoadGap: number | null;
   reasonLabels: string[];
 };
 
 export type PlanActivityMatchEmptyReason =
   | "no_positive_gap"
   | "no_activity_plans"
-  | "no_estimated_tss"
+  | "no_estimated_duration"
   | "low_confidence"
   | null;
 
@@ -114,6 +115,10 @@ export type PlanGoalOutlookCard = PlanGoalReadinessItem & {
 };
 
 const GOAL_OUTLOOK_MAX_VISIBLE = 4;
+
+function roundedFiniteOrNull(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? Math.round(value) : null;
+}
 
 type ActivePlanInput = {
   id?: string | null;
@@ -191,7 +196,7 @@ function confidenceReasonCopy(code: string) {
       return "Recent activity history is limited.";
     case "missing_scheduled_intensity":
       return "Some scheduled sessions are missing intensity detail.";
-    case "inferred_scheduled_load":
+    case "inferred_scheduled_common_load":
       return "Scheduled load is estimated from available plan details.";
     case "missing_goal_specificity":
       return "Add a dated, specific goal for a sharper forecast.";
@@ -279,10 +284,9 @@ function goalReadinessStatus(
 }
 
 export function mapUpcomingImpact(impact: UpcomingImpactInput): PlanUpcomingImpact {
-  const estimatedLoad =
-    typeof impact.estimated_load === "number" && Number.isFinite(impact.estimated_load)
-      ? impact.estimated_load
-      : null;
+  const estimatedLoad = impact.common_load
+    ? (numericPlannedCommonLoad(impact.common_load)?.load ?? null)
+    : null;
 
   return {
     id: impact.activity_plan_id,
@@ -328,7 +332,7 @@ export function usePlanDashboardViewModel({
       return {
         targetCTL: snapshot.idealCurveData.targetCTL,
         targetDate: snapshot.idealCurveData.targetDate,
-        description: `Target Long-term Load (CTL): ${snapshot.idealCurveData.targetCTL} by ${new Date(snapshot.idealCurveData.targetDate).toLocaleDateString()}`,
+        description: `Target Fitness: ${snapshot.idealCurveData.targetCTL} by ${new Date(snapshot.idealCurveData.targetDate).toLocaleDateString()}`,
       };
     }
 
@@ -609,9 +613,8 @@ export function usePlanDashboardViewModel({
     );
     const idealCurve = snapshot.idealCurveData;
     const dataPoints = idealCurve?.dataPoints ?? [];
-    const startCtl =
-      typeof idealCurve?.startCTL === "number" ? idealCurve.startCTL : (dataPoints[0]?.ctl ?? 0);
-    const targetCtl = typeof idealCurve?.targetCTL === "number" ? idealCurve.targetCTL : null;
+    const startCtl = idealCurve?.startCTL ?? dataPoints[0]?.longTermLoad ?? 0;
+    const targetCtl = idealCurve?.targetCTL ?? null;
     const lastPoint = dataPoints[dataPoints.length - 1] ?? null;
     const forecastByGoalId = new Map(
       (projectionDashboard?.goal_forecasts ?? []).map((forecast) => [
@@ -632,12 +635,12 @@ export function usePlanDashboardViewModel({
 
       let readinessPercent: number | null = forecast?.readiness_score ?? null;
       if (projectedAtGoal && typeof targetCtl === "number") {
-        const numerator = projectedAtGoal.ctl - startCtl;
+        const numerator = projectedAtGoal.longTermLoad - startCtl;
         const denominator = targetCtl - startCtl;
 
         readinessPercent ??=
           denominator === 0
-            ? projectedAtGoal.ctl >= targetCtl
+            ? projectedAtGoal.longTermLoad >= targetCtl
               ? 100
               : 0
             : Math.max(0, (numerator / denominator) * 100);
@@ -653,7 +656,7 @@ export function usePlanDashboardViewModel({
         forecast,
         readinessPercent,
         readinessTarget,
-        projectedCtl: projectedAtGoal?.ctl ?? null,
+        projectedCtl: projectedAtGoal?.longTermLoad ?? null,
         targetCtl,
         status: goalReadinessStatus(readinessPercent, forecast, readinessTarget),
       };
@@ -778,13 +781,13 @@ export function usePlanDashboardViewModel({
       }
 
       if (pointDate >= currentStart && pointDate <= currentEnd) {
-        currentActual += point.completed_load_tss || 0;
-        currentPlanned += point.scheduled_load_tss || 0;
-        currentRecommended += point.recommended_load_tss || 0;
+        currentActual += point.completed_load;
+        currentPlanned += point.scheduled_load;
+        currentRecommended += point.recommended_load;
       }
 
       if (pointDate >= previousStart && pointDate <= previousEnd) {
-        previousActual += point.completed_load_tss || 0;
+        previousActual += point.completed_load;
       }
     }
 
@@ -808,9 +811,9 @@ export function usePlanDashboardViewModel({
           weekStart: week.week_start,
           weekEnd: week.week_end ?? null,
           label: compactDateLabel(week.week_start),
-          actual: Math.round(week.actual_load ?? 0),
-          scheduled: Math.round(week.scheduled_load ?? 0),
-          recommended: Math.round(week.recommended_load ?? 0),
+          actual: roundedFiniteOrNull(week.actual_load),
+          scheduled: roundedFiniteOrNull(week.scheduled_load),
+          recommended: roundedFiniteOrNull(week.recommended_load),
           isCurrentWeek:
             todayKey >= week.week_start &&
             todayKey <= (week.week_end ?? addDays(week.week_start, 6)),
@@ -834,9 +837,9 @@ export function usePlanDashboardViewModel({
     for (const point of insightTimelinePoints) {
       const weekStart = getWeekStartDateKey(point.date);
       const bucket = buckets.get(weekStart) ?? { actual: 0, scheduled: 0, recommended: 0 };
-      bucket.actual += point.completed_load_tss || 0;
-      bucket.scheduled += point.scheduled_load_tss || 0;
-      bucket.recommended += point.recommended_load_tss || 0;
+      bucket.actual += point.completed_load;
+      bucket.scheduled += point.scheduled_load;
+      bucket.recommended += point.recommended_load;
       buckets.set(weekStart, bucket);
     }
 
@@ -865,8 +868,14 @@ export function usePlanDashboardViewModel({
 
     return {
       ...current,
-      scheduledGap: current.scheduled - current.recommended,
-      actualGap: current.actual - current.scheduled,
+      scheduledGap:
+        current.scheduled === null || current.recommended === null
+          ? null
+          : current.scheduled - current.recommended,
+      actualGap:
+        current.actual === null || current.scheduled === null
+          ? null
+          : current.actual - current.scheduled,
     };
   }, [weeklyLoadBars]);
 
@@ -915,11 +924,11 @@ export function usePlanDashboardViewModel({
       name: match.name,
       targetDate: payload.target_date,
       activity_category: match.activity_category,
-      estimatedTss: match.estimated_tss,
+      estimatedCommonLoad: numericPlannedCommonLoad(match.common_load)?.load ?? null,
       estimatedDurationSeconds: match.estimated_duration_seconds,
       score: match.score,
-      targetTssDelta: match.target_tss_delta,
-      absoluteTssGap: match.absolute_tss_gap,
+      targetLoadDelta: match.target_load_delta,
+      absoluteLoadGap: match.absolute_load_gap,
       reasonLabels: (match.reason_codes ?? [])
         .map(activityPlanMatchReasonCopy)
         .filter((value): value is NonNullable<typeof value> => value !== null)
@@ -933,7 +942,7 @@ export function usePlanDashboardViewModel({
       return {
         emptyReason: null as PlanActivityMatchEmptyReason,
         targetDate: null as string | null,
-        targetTssDelta: null as number | null,
+        targetLoadDelta: null as number | null,
         hasPositiveGap: false,
       };
     }
@@ -941,8 +950,8 @@ export function usePlanDashboardViewModel({
     return {
       emptyReason: payload.empty_reason as PlanActivityMatchEmptyReason,
       targetDate: payload.target_date ?? null,
-      targetTssDelta:
-        typeof payload.target_tss_delta === "number" ? payload.target_tss_delta : null,
+      targetLoadDelta:
+        typeof payload.target_load_delta === "number" ? payload.target_load_delta : null,
       hasPositiveGap: payload.empty_reason !== "no_positive_gap",
     };
   }, [snapshot.insightTimeline?.activity_plan_matches]);

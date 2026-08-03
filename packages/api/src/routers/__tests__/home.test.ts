@@ -1,4 +1,18 @@
-import { defaultAthletePreferenceProfile } from "@repo/core";
+import {
+  type ActivityObservationQuantification,
+  type ActivityPrescriptionQuantification,
+  activityObservationQuantificationSchema,
+  activityPrescriptionQuantificationSchema,
+  createActivityPlanPrescriptionQuantificationBundle,
+  createActivityQuantificationCalculationIdentity,
+  createActivityQuantificationEvidenceIdentity,
+  createCompletedActivityQuantificationSubjectIdentity,
+  createObservationQuantificationBundle,
+  createPlanActivityQuantificationSubjectIdentity,
+  createPlanOccurrenceActivityQuantificationSubjectIdentity,
+  defaultAthletePreferenceProfile,
+} from "@repo/core";
+import { type CommonLoadResult, calculateAvailableCommonLoad } from "@repo/core/load";
 import { schema } from "@repo/db";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -6,14 +20,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const homeMocks = vi.hoisted(() => ({
   buildDailyTssByDateSeries: vi.fn(),
   buildDynamicStressSeries: vi.fn(),
-  summarizeSegmentTss: vi.fn((summaries, activityIds) => ({
-    tss: summaries.reduce(
-      (total: number, summary: { activity_id: string; tss: number | null }) =>
-        activityIds.has(summary.activity_id) && summary.tss !== null ? total + summary.tss : total,
+  summarizeSegmentCommonLoad: vi.fn((summaries, activityIds) => ({
+    status: "complete",
+    load: summaries.reduce(
+      (total: number, summary: { activity_id: string; common_load?: { load?: number | null } }) =>
+        activityIds.has(summary.activity_id) && summary.common_load?.load !== null
+          ? total + (summary.common_load?.load ?? 0)
+          : total,
       0,
     ),
-    complete: true,
   })),
+  summarizeSegmentQuantification: vi.fn(),
   buildWorkloadEnvelopes: vi.fn(),
   calculateAge: vi.fn(),
   calculateRollingTrainingQuality: vi.fn(),
@@ -65,7 +82,8 @@ vi.mock("../../infrastructure/repositories", () => ({
 
 vi.mock("../../lib/activity-analysis", () => ({
   buildDynamicStressSeries: homeMocks.buildDynamicStressSeries,
-  summarizeSegmentTss: homeMocks.summarizeSegmentTss,
+  summarizeSegmentCommonLoad: homeMocks.summarizeSegmentCommonLoad,
+  summarizeSegmentQuantification: homeMocks.summarizeSegmentQuantification,
   loadActivitySegmentsByActivityId: homeMocks.loadActivitySegmentsByActivityId,
 }));
 
@@ -242,6 +260,161 @@ function completeCommonLoad(load: number, contributingDurationSeconds: number) {
   };
 }
 
+function availableCommonLoad(
+  load: number,
+  contributingDurationSeconds: number,
+  activityCategory: "bike" | "run" = "bike",
+) {
+  return calculateAvailableCommonLoad({
+    activity_category: activityCategory,
+    method: "heart_rate_zones",
+    intensity: Math.sqrt(load / (100 * (contributingDurationSeconds / 3600))),
+    contributingDurationSeconds,
+    quality: {
+      source: "manual",
+      observed_at: "2026-01-01T00:00:00.000Z",
+      valid_at: "2026-01-01T00:00:00.000Z",
+      confidence: "high",
+      stale: false,
+      estimate: false,
+      calculation_version: "1",
+      evidence_fingerprint: "lthr-evidence",
+    },
+    thresholdEvidence: {
+      type: "lthr_bpm",
+      value: 170,
+      unit: "beats_per_minute",
+      source: "manual",
+      observedAt: "2026-01-01T00:00:00.000Z",
+      validAt: "2026-01-01T00:00:00.000Z",
+      freshness: "current",
+      calculationVersion: "1",
+      sourceFingerprint: "lthr-evidence",
+    },
+    evidenceFingerprint: `${activityCategory}-${load}-${contributingDurationSeconds}`,
+    computedAsOf: "2026-04-03T12:00:00.000Z",
+    estimated: false,
+  });
+}
+
+function testQuantification(input: {
+  activityCategory?: "bike" | "run";
+  distanceMeters?: number;
+  durationSeconds: number;
+  id: string;
+  kind: "observation";
+  load: CommonLoadResult;
+}): ActivityObservationQuantification;
+function testQuantification(input: {
+  activityCategory?: "bike" | "run";
+  distanceMeters?: number;
+  durationSeconds: number;
+  id: string;
+  kind: "prescription";
+  load: CommonLoadResult;
+}): ActivityPrescriptionQuantification;
+function testQuantification(input: {
+  activityCategory?: "bike" | "run";
+  distanceMeters?: number;
+  durationSeconds: number;
+  id: string;
+  kind: "observation" | "prescription";
+  load: CommonLoadResult;
+}) {
+  const evidenceRole = input.kind === "observation" ? "measured" : "prescribed";
+  const segmentId = `${input.id}-segment`;
+  const subjectIdentity =
+    input.kind === "observation"
+      ? createCompletedActivityQuantificationSubjectIdentity({ activityId: input.id })
+      : createPlanOccurrenceActivityQuantificationSubjectIdentity({
+          occurrenceId: `${input.id}-occurrence`,
+          parentSubjectIdentity: createPlanActivityQuantificationSubjectIdentity({
+            planId: input.id,
+          }),
+        });
+  const shared = {
+    subjectIdentity,
+    evidenceIdentity: createActivityQuantificationEvidenceIdentity({
+      evidenceType: input.kind === "observation" ? "segment_facts" : "plan_revision",
+      sourceIds: input.kind === "observation" ? [input.id, segmentId] : [input.id],
+      revisionFingerprint: `revision-${input.id}`,
+      details: { kind: input.kind, id: input.id },
+    }),
+    calculationIdentity: createActivityQuantificationCalculationIdentity({
+      model: input.load.model,
+      version: input.load.version,
+      computedAt: input.load.computedAsOf,
+      calibrationEvidenceFingerprint: input.load.evidenceFingerprint,
+    }),
+    activity_category: input.activityCategory ?? "bike",
+    duration: {
+      elapsed: {
+        status: "available",
+        evidenceRole,
+        value: input.durationSeconds,
+        unit: "seconds",
+      },
+      active: {
+        status: "available",
+        evidenceRole,
+        value: input.durationSeconds,
+        unit: "seconds",
+      },
+      moving: {
+        status: "available",
+        evidenceRole,
+        value: input.durationSeconds,
+        unit: "seconds",
+      },
+    },
+    distance: {
+      status: "available",
+      evidenceRole,
+      value: input.distanceMeters ?? 10_000,
+      unit: "meters",
+    },
+    commonLoad: input.load,
+  };
+  return input.kind === "observation"
+    ? activityObservationQuantificationSchema.parse({
+        ...shared,
+        kind: "observation",
+        stage: "final",
+        intensity: {
+          observed: {
+            status: "unavailable",
+            evidenceRole: "measured",
+            values: [],
+            reason: "not_observed",
+          },
+        },
+        completedProvenance: {
+          activityId: input.id,
+          segmentId,
+          source: "unknown",
+          artifactIdentity: null,
+          providerIdentity: null,
+          segmentRevision: null,
+          observedAt: input.load.computedAsOf,
+          computedAt: input.load.computedAsOf,
+          calculationVersion: "home-router-test-v1",
+        },
+      })
+    : activityPrescriptionQuantificationSchema.parse({
+        ...shared,
+        kind: "prescription",
+        stage: "plan",
+        intensity: {
+          prescribed: {
+            status: "unavailable",
+            evidenceRole: "prescribed",
+            values: [],
+            reason: "not_authored",
+          },
+        },
+      });
+}
+
 function unavailableWorkload() {
   return {
     acwr: {
@@ -313,6 +486,20 @@ describe("planned Home activity rows", () => {
 
 describe("homeRouter", () => {
   beforeEach(() => {
+    homeMocks.summarizeSegmentQuantification.mockImplementation(
+      (
+        summaries: Array<{
+          activity_id: string;
+          observationQuantification: ReturnType<typeof createObservationQuantificationBundle>;
+        }>,
+        activityIds: Set<string>,
+      ) =>
+        createObservationQuantificationBundle({
+          members: summaries
+            .filter((summary) => activityIds.has(summary.activity_id))
+            .flatMap((summary) => summary.observationQuantification.members),
+        }),
+    );
     homeMocks.readCurrentProfileCommonLoadHistory.mockResolvedValue({
       computedAt: "2026-04-03T12:00:00.000Z",
       planningTimezone: "UTC",
@@ -368,15 +555,52 @@ describe("homeRouter", () => {
     homeMocks.getLoadBalanceStatus.mockReturnValue("negative_balance");
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
     homeMocks.createActivityAnalysisStore.mockReturnValue({ kind: "analysis-store" });
+    const yesterdayQuantification = testQuantification({
+      id: "activity-yesterday-segment",
+      kind: "observation",
+      load: availableCommonLoad(30, 1800),
+      durationSeconds: 1800,
+      distanceMeters: 10_000,
+    });
+    const todayQuantifications = [
+      testQuantification({
+        id: "activity-today-segment-1",
+        kind: "observation",
+        load: availableCommonLoad(20, 1800),
+        durationSeconds: 1800,
+        distanceMeters: 5000,
+      }),
+      testQuantification({
+        id: "activity-today-segment-2",
+        kind: "observation",
+        load: availableCommonLoad(30, 1800),
+        durationSeconds: 1800,
+        distanceMeters: 10_000,
+      }),
+    ];
     homeMocks.buildDynamicStressSeries.mockResolvedValue({
       byActivityId: new Map([
         [
           "activity-today",
-          { tss: 50, intensity_factor: 0.9, common_load: completeCommonLoad(50, 3600) },
+          {
+            tss: 50,
+            intensity_factor: 0.9,
+            common_load: completeCommonLoad(50, 3600),
+            observationQuantification: createObservationQuantificationBundle({
+              members: todayQuantifications,
+            }),
+          },
         ],
         [
           "activity-yesterday",
-          { tss: 30, intensity_factor: 0.82, common_load: completeCommonLoad(30, 1800) },
+          {
+            tss: 30,
+            intensity_factor: 0.82,
+            common_load: yesterdayQuantification.commonLoad,
+            observationQuantification: createObservationQuantificationBundle({
+              members: [yesterdayQuantification],
+            }),
+          },
         ],
       ]),
       byDate: new Map([
@@ -387,10 +611,27 @@ describe("homeRouter", () => {
         {
           activity_id: "activity-yesterday",
           tss: 30,
-          common_load: completeCommonLoad(30, 1800),
+          common_load: yesterdayQuantification.commonLoad,
+          observationQuantification: createObservationQuantificationBundle({
+            members: [yesterdayQuantification],
+          }),
         },
-        { activity_id: "activity-today", tss: 20, common_load: completeCommonLoad(20, 1800) },
-        { activity_id: "activity-today", tss: 30, common_load: completeCommonLoad(30, 1800) },
+        {
+          activity_id: "activity-today",
+          tss: 20,
+          common_load: todayQuantifications[0]?.commonLoad,
+          observationQuantification: createObservationQuantificationBundle({
+            members: todayQuantifications[0] ? [todayQuantifications[0]] : [],
+          }),
+        },
+        {
+          activity_id: "activity-today",
+          tss: 30,
+          common_load: todayQuantifications[1]?.commonLoad,
+          observationQuantification: createObservationQuantificationBundle({
+            members: todayQuantifications[1] ? [todayQuantifications[1]] : [],
+          }),
+        },
       ],
       complete: true,
       seriesIdentity: {
@@ -401,14 +642,27 @@ describe("homeRouter", () => {
       },
     });
     homeMocks.getActivityPlansDerivedMetrics.mockImplementation(async (plans: Array<any>) =>
-      plans.map((plan) => ({
-        ...plan,
-        authoritative_metrics: {
-          estimated_distance: plan.id === "plan-1" ? 20000 : 12000,
-          estimated_duration: plan.id === "plan-1" ? 3600 : 2400,
-          estimated_tss: plan.id === "plan-1" ? 90 : 60,
-        },
-      })),
+      plans.map((plan) => {
+        const durationSeconds = plan.id === "plan-1" ? 3600 : 2400;
+        const distanceMeters = plan.id === "plan-1" ? 20_000 : 12_000;
+        const loadValue = plan.id === "plan-1" ? 90 : 60;
+        const activityCategory = plan.id === "plan-1" ? "bike" : "run";
+        const quantification = testQuantification({
+          id: plan.id,
+          kind: "prescription",
+          load: availableCommonLoad(loadValue, durationSeconds, activityCategory),
+          durationSeconds,
+          distanceMeters,
+          activityCategory,
+        });
+        return {
+          ...plan,
+          common_load: quantification.commonLoad,
+          prescriptionQuantification: createActivityPlanPrescriptionQuantificationBundle({
+            members: [quantification],
+          }),
+        };
+      }),
     );
     homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
 
@@ -478,7 +732,6 @@ describe("homeRouter", () => {
               avg_speed_mps: 6,
               max_speed_mps: 10,
               normalized_speed_mps: 6.3,
-              normalized_graded_speed_mps: 6.4,
             },
             {
               id: "activity-today",
@@ -497,7 +750,6 @@ describe("homeRouter", () => {
               avg_speed_mps: 6.2,
               max_speed_mps: 10.4,
               normalized_speed_mps: 6.5,
-              normalized_graded_speed_mps: 6.6,
             },
           ],
         ],
@@ -553,20 +805,25 @@ describe("homeRouter", () => {
     expect(result).not.toHaveProperty("currentStatus");
     expect(result.consistency).toEqual({ streak: 2, weeklyCount: 2 });
     expect(result.weeklySummary).toMatchObject({
-      actual: { distance: 25, duration: 5400, tss: 80, tssComplete: true, count: 2 },
-      planned: { distance: 32, duration: 6000, tss: 150, count: 2 },
+      actual: { distance: 25, duration: 5400, load: 80, loadComplete: true, count: 2 },
+      planned: { distance: 32, duration: 6000, load: 150, loadComplete: true, count: 2 },
       adherence: 53,
       commonLoad: {
         actual: {
           status: "complete",
           load: 80,
-          totalActivityCount: 2,
-          contributingActivityCount: 2,
+          totalActivityCount: 3,
+          contributingActivityCount: 3,
           activityCountCoverage: 1,
         },
-        planned: { status: "unavailable", reason: "no_load_data" },
+        planned: { status: "complete", load: 150 },
       },
+      observationQuantification: { summary: { kind: "aggregate" } },
+      prescriptionQuantification: { summary: { kind: "aggregate" } },
     });
+    expect(result.weeklySummary.actual).not.toHaveProperty("tss");
+    expect(result.weeklySummary.actual).not.toHaveProperty("tssComplete");
+    expect(result.weeklySummary.planned).not.toHaveProperty("tss");
     expect(result.schedule).toEqual([
       expect.objectContaining({
         id: "planned-today",
@@ -577,8 +834,8 @@ describe("homeRouter", () => {
         activity_category: "bike",
         estimatedDuration: 3600,
         estimatedDistance: 20000,
-        load: null,
-        intensity: null,
+        load: expect.any(Number),
+        intensity: expect.any(Number),
       }),
       expect.objectContaining({
         id: "planned-tomorrow",
@@ -589,8 +846,8 @@ describe("homeRouter", () => {
         activity_category: "run",
         estimatedDuration: 2400,
         estimatedDistance: 12000,
-        load: null,
-        intensity: null,
+        load: expect.any(Number),
+        intensity: expect.any(Number),
       }),
     ]);
     expect(result.todaysActivity).toEqual(
@@ -603,8 +860,8 @@ describe("homeRouter", () => {
         activity_category: "bike",
         estimatedDuration: 3600,
         estimatedDistance: 20000,
-        load: null,
-        intensity: null,
+        load: expect.any(Number),
+        intensity: expect.any(Number),
       }),
     );
     expect(result.schedule[0]).not.toHaveProperty("activityCategory");
@@ -670,15 +927,34 @@ describe("homeRouter", () => {
     vi.setSystemTime(new Date("2026-04-03T15:30:00.000Z"));
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
     homeMocks.createActivityAnalysisStore.mockReturnValue({ kind: "analysis-store" });
+    const localQuantification = testQuantification({
+      id: "activity-local-today-segment",
+      kind: "observation",
+      load: availableCommonLoad(50, 3600),
+      durationSeconds: 3600,
+      distanceMeters: 15_000,
+    });
     homeMocks.buildDynamicStressSeries.mockResolvedValue({
       byActivityId: new Map([
-        ["activity-local-today", { tss: 50, common_load: completeCommonLoad(50, 3600) }],
+        [
+          "activity-local-today",
+          {
+            tss: 50,
+            common_load: localQuantification.commonLoad,
+            observationQuantification: createObservationQuantificationBundle({
+              members: [localQuantification],
+            }),
+          },
+        ],
       ]),
       segmentSummaries: [
         {
           activity_id: "activity-local-today",
           tss: 50,
-          common_load: completeCommonLoad(50, 3600),
+          common_load: localQuantification.commonLoad,
+          observationQuantification: createObservationQuantificationBundle({
+            members: [localQuantification],
+          }),
         },
       ],
       complete: true,
@@ -722,7 +998,6 @@ describe("homeRouter", () => {
               avg_speed_mps: 6.2,
               max_speed_mps: 10.4,
               normalized_speed_mps: 6.5,
-              normalized_graded_speed_mps: 6.6,
             },
           ],
         ],
@@ -820,14 +1095,22 @@ describe("homeRouter", () => {
       byDate: new Map([["2026-04-03", 50]]),
     });
     homeMocks.getActivityPlansDerivedMetrics.mockImplementation(async (plans: Array<any>) =>
-      plans.map((plan) => ({
-        ...plan,
-        authoritative_metrics: {
-          estimated_distance: 20000,
-          estimated_duration: 3600,
-          estimated_tss: 90,
-        },
-      })),
+      plans.map((plan) => {
+        const quantification = testQuantification({
+          id: plan.id,
+          kind: "prescription",
+          load: availableCommonLoad(90, 3600),
+          durationSeconds: 3600,
+          distanceMeters: 20_000,
+        });
+        return {
+          ...plan,
+          common_load: quantification.commonLoad,
+          prescriptionQuantification: createActivityPlanPrescriptionQuantificationBundle({
+            members: [quantification],
+          }),
+        };
+      }),
     );
     homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
 
@@ -881,7 +1164,6 @@ describe("homeRouter", () => {
               avg_speed_mps: 6.2,
               max_speed_mps: 10.4,
               normalized_speed_mps: 6.5,
-              normalized_graded_speed_mps: 6.6,
             },
           ],
         ],
@@ -909,7 +1191,7 @@ describe("homeRouter", () => {
 
     await expect(caller.getDashboard({ days: 2 })).resolves.toMatchObject({
       weeklySummary: {
-        planned: { distance: 20, duration: 3600, tss: 90 },
+        planned: { distance: 20, duration: 3600, load: 90, loadComplete: true },
       },
     });
   });

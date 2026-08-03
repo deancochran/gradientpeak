@@ -12,14 +12,14 @@ describe("planning contracts", () => {
     expect(
       plannedTrainingSessionSchema.parse({
         date: "2026-01-05",
-        estimatedTss: 72,
+        estimatedCommonLoad: 72,
         activityCategory: "run",
         primaryFocus: "threshold",
         source: "generated",
       }),
-    ).toMatchObject({ date: "2026-01-05", estimatedTss: 72 });
+    ).toMatchObject({ date: "2026-01-05", estimatedCommonLoad: 72 });
 
-    expect(() => plannedTrainingSessionSchema.parse({ estimatedTss: 72 })).toThrow();
+    expect(() => plannedTrainingSessionSchema.parse({ estimatedCommonLoad: 72 })).toThrow();
   });
 
   it("keeps daily load reason codes schema-backed", () => {
@@ -34,7 +34,7 @@ describe("planning contracts", () => {
       timeline: { start_date: "2026-01-05", end_date: "2026-01-11" },
       blocks: [{ name: "Build", phase: "build" }],
       goals: [{ name: "Race", target_date: "2026-01-11" }],
-      planned_sessions: [{ date: "2026-01-07", estimatedTss: 70 }],
+      planned_sessions: [{ date: "2026-01-07", estimatedCommonLoad: 70 }],
     });
 
     expect(input.planned_sessions?.[0]?.date).toBe("2026-01-07");
@@ -44,7 +44,7 @@ describe("planning contracts", () => {
     const points = [
       {
         date: "2026-01-05",
-        recommendedLoadTss: 80,
+        recommendedLoad: 80,
         recommendedDurationMinutes: 60,
         recommendedFatigueCost: 80,
         recommendedStrengthSets: 0,
@@ -55,7 +55,7 @@ describe("planning contracts", () => {
       },
       {
         date: "2026-01-06",
-        recommendedLoadTss: 0,
+        recommendedLoad: 0,
         recommendedDurationMinutes: 0,
         recommendedFatigueCost: 0,
         recommendedStrengthSets: 0,
@@ -72,7 +72,7 @@ describe("planning contracts", () => {
     expect(prescriptions[0]?.sessions[0]).toMatchObject({
       source: "planned_session",
       key_session: true,
-      target_load_tss: 80,
+      target_load: 80,
     });
     expect(prescriptions[1]?.sessions).toEqual([]);
     expect(diagnostics).toMatchObject({

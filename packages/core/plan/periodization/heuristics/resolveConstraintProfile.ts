@@ -24,11 +24,11 @@ export interface ConstraintProfileInput {
 export interface ResolvedConstraintProfile {
   optimization_profile: OptimizationProfile;
   activity_category: CanonicalActivityCategory;
-  effective_max_weekly_tss_ramp_pct: number;
-  effective_max_ctl_ramp_per_week: number;
+  effective_max_weekly_load_ramp_pct: number;
+  effective_max_longTermLoad_ramp_per_week: number;
   effective_acwr_ceiling: number;
   effective_post_goal_recovery_days: number;
-  effective_tsb_floor: number;
+  effective_loadBalance_floor: number;
   effective_strength_dose_multiplier: number;
   calculated_parameters: Record<string, CalculatedParameter>;
   rationale_codes: string[];
@@ -94,25 +94,25 @@ export function resolveConstraintProfile(input: ConstraintProfileInput): Resolve
     preferenceProfile.training_style.strength_integration_priority,
   );
   const weeklyRamp = Math.min(
-    defaults.max_weekly_tss_ramp_pct,
-    defaults.max_weekly_tss_ramp_pct * progressionParameter.effective,
+    defaults.max_weekly_load_ramp_pct,
+    defaults.max_weekly_load_ramp_pct * progressionParameter.effective,
   );
-  const ctlRamp = Math.min(
-    defaults.max_ctl_ramp_per_week,
-    defaults.max_ctl_ramp_per_week * progressionParameter.effective,
+  const longTermLoadRamp = Math.min(
+    defaults.max_longTermLoad_ramp_per_week,
+    defaults.max_longTermLoad_ramp_per_week * progressionParameter.effective,
   );
 
   return {
     optimization_profile: input.optimizationProfile,
     activity_category: input.activity_category,
-    effective_max_weekly_tss_ramp_pct: Math.round(weeklyRamp * 100) / 100,
-    effective_max_ctl_ramp_per_week: Math.round(ctlRamp * 100) / 100,
+    effective_max_weekly_load_ramp_pct: Math.round(weeklyRamp * 100) / 100,
+    effective_max_longTermLoad_ramp_per_week: Math.round(longTermLoadRamp * 100) / 100,
     effective_acwr_ceiling: Math.round(fatigueToleranceParameter.effective * 1000) / 1000,
     effective_post_goal_recovery_days: Math.max(
       defaults.post_goal_recovery_days,
       Math.round(preferenceProfile.recovery_preferences.post_goal_recovery_days),
     ),
-    effective_tsb_floor: -Math.round((5 + weeklyRamp / 2) * 100) / 100,
+    effective_loadBalance_floor: -Math.round((5 + weeklyRamp / 2) * 100) / 100,
     effective_strength_dose_multiplier: Math.round(strengthParameter.effective * 1000) / 1000,
     calculated_parameters: {
       progression_pace: progressionParameter,

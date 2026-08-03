@@ -1,4 +1,6 @@
+import { createUnavailableAthletePerformanceTargetFacts } from "@repo/core";
 import { BLE_SERVICE_UUIDS } from "@repo/core/constants/ble";
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ConnectedSensor } from "./sensors";
@@ -20,6 +22,76 @@ function createFtmsCandidate(overrides: Partial<ConnectedSensor> = {}): Connecte
 }
 
 describe("TrainerControl QA regressions", () => {
+  it("uses immutable eligible threshold power plus the session intensity override for ERG targets", async () => {
+    const performanceTargets = buildPerformanceTargetFactsFixture({
+      asOf: "2026-06-01T00:00:00.000Z",
+      planningThresholdPowerWatts: 250,
+    });
+    const trainer = createFtmsCandidate({
+      isControllable: true,
+      ftmsController: { hasControlPermission: () => true } as never,
+    });
+    const sensorsManager = {
+      getControllableTrainer: vi.fn(() => trainer),
+      getSelectedFTMSTrainer: vi.fn(() => trainer),
+      getConnectedSensors: vi.fn(() => [trainer]),
+      getLastTrainerCommandStatus: vi.fn(() => null),
+      setPowerTarget: vi.fn(async () => true),
+    };
+    const control = new TrainerControl({
+      sensorsManager: sensorsManager as never,
+      getCurrentReadings: () => ({}) as never,
+      getSessionOverrideState: () => ({ trainerMode: "auto", intensityScale: 0.9 }) as never,
+      getSessionSnapshot: () => ({ performanceTargets }) as never,
+      onError: vi.fn(),
+    });
+
+    await control.applyStepTargets(
+      { activity_category: "bike", targets: [{ type: "%FTP", intensity: 80 }] } as never,
+      "step_change",
+    );
+
+    expect(sensorsManager.setPowerTarget).toHaveBeenCalledWith(
+      180,
+      expect.objectContaining({ source: "step_change" }),
+    );
+  });
+
+  it("does not use the legacy profile FTP default when canonical targets are unavailable", async () => {
+    const onError = vi.fn();
+    const trainer = createFtmsCandidate({
+      isControllable: true,
+      ftmsController: { hasControlPermission: () => true } as never,
+    });
+    const sensorsManager = {
+      getControllableTrainer: vi.fn(() => trainer),
+      getSelectedFTMSTrainer: vi.fn(() => trainer),
+      getConnectedSensors: vi.fn(() => [trainer]),
+      getLastTrainerCommandStatus: vi.fn(() => null),
+      setPowerTarget: vi.fn(async () => true),
+    };
+    const control = new TrainerControl({
+      sensorsManager: sensorsManager as never,
+      getCurrentReadings: () => ({}) as never,
+      getSessionOverrideState: () => ({ trainerMode: "auto", intensityScale: 1 }) as never,
+      getSessionSnapshot: () =>
+        ({
+          performanceTargets: createUnavailableAthletePerformanceTargetFacts(
+            "2026-06-01T00:00:00.000Z",
+          ),
+        }) as never,
+      onError,
+    });
+
+    await control.applyStepTargets(
+      { activity_category: "bike", targets: [{ type: "%FTP", intensity: 80 }] } as never,
+      "step_change",
+    );
+
+    expect(sensorsManager.setPowerTarget).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith("Unable to resolve activity target: %FTP");
+  });
+
   it("reports control as eligible and rejects commands when no controllable trainer is ready", async () => {
     const onError = vi.fn();
     const onCommandStatus = vi.fn();

@@ -53,16 +53,7 @@ function stringList(data: FormData, name: string) {
     .filter((value): value is string => typeof value === "string" && value.length > 0);
 }
 
-const baselineFields = [
-  "dob",
-  "gender",
-  "weight_kg",
-  "max_hr",
-  "resting_hr",
-  "ftp",
-  "threshold_pace_seconds_per_km",
-  "css_seconds_per_hundred_meters",
-] as const;
+const baselineFields = ["dob", "gender", "weight_kg", "max_hr", "resting_hr"] as const;
 
 export type ParsedOnboardingFormData = ReturnType<typeof parseOnboardingFormData>;
 
@@ -78,9 +69,6 @@ export function parseOnboardingFormData(data: FormData) {
     weight_kg: optionalNumber(data, "weight_kg"),
     max_hr: optionalNumber(data, "max_hr"),
     resting_hr: optionalNumber(data, "resting_hr"),
-    ftp: optionalNumber(data, "ftp"),
-    threshold_pace_seconds_per_km: optionalNumber(data, "threshold_pace_seconds_per_km"),
-    css_seconds_per_hundred_meters: optionalNumber(data, "css_seconds_per_hundred_meters"),
   };
   const sources = Object.fromEntries(
     baselineFields.flatMap((field) => {

@@ -1,33 +1,29 @@
 import {
   type ActivityPlanPresentationModel,
   type ActivityPlanStructure,
+  type ActivityPrescriptionQuantificationBundle,
   deriveActivityPlanPresentation,
 } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
+import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
 import { type ReactNode, useMemo } from "react";
 import { View } from "react-native";
-import { getCommonLoadPresentation } from "@/lib/activity-load-presentation";
 import {
   formatEstimatedDurationMinutes,
   formatEstimatedDurationSeconds,
 } from "@/lib/estimatedMetrics";
-import type { ActivityCategoryLoadMeasurement } from "./ActivityCategoryLoadBreakdown";
 import { ActivityPlanAttributionRow } from "./ActivityPlanAttributionRow";
 import type { EntityOwner } from "./EntityOwnerRow";
 import { ResourceMetricsRow } from "./ResourceCardPrimitives";
 
 type ActivityPlanSummaryProps = {
-  activityCategory?: string | null;
-  categoryLoads?: readonly ActivityCategoryLoadMeasurement[];
-  commonLoad?: unknown;
   description?: string | null;
   estimatedDuration?: number | null;
   estimatedDurationMinutes?: number | null;
-  estimatedTss?: number | null;
   headerAccessory?: ReactNode;
-  intensityFactor?: number | null;
   owner?: EntityOwner | null;
   presentation?: ActivityPlanPresentationModel | null;
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
   structure?: ActivityPlanStructure | unknown;
   subtitle?: string | null;
   testID?: string;
@@ -72,17 +68,15 @@ export function formatActivityPlanDuration(params: {
 export function ActivityPlanMetricsRow({
   estimatedDuration,
   estimatedDurationMinutes,
-  commonLoad,
   presentation,
+  prescriptionQuantification,
   structure,
 }: Pick<
   ActivityPlanSummaryProps,
   | "estimatedDuration"
   | "estimatedDurationMinutes"
-  | "commonLoad"
-  | "estimatedTss"
-  | "intensityFactor"
   | "presentation"
+  | "prescriptionQuantification"
   | "structure"
 >) {
   const presentationModel = useMemo(
@@ -91,43 +85,57 @@ export function ActivityPlanMetricsRow({
   );
   const stepCount = presentationModel?.stepCount ?? 0;
   const durationLabel = formatActivityPlanDuration({ estimatedDuration, estimatedDurationMinutes });
-  const loadPresentation = getCommonLoadPresentation(commonLoad);
-  const commonLoadMetrics =
-    loadPresentation?.load && loadPresentation.intensity
-      ? [
-          {
-            label: "Load",
-            value: loadPresentation.load,
-            tone: "primary" as const,
-          },
-          {
-            label: "Intensity",
-            value: loadPresentation.intensity,
-            tone: "primary" as const,
-          },
-        ]
-      : loadPresentation?.unavailableText
-        ? [
-            {
-              label: "Load",
-              value: loadPresentation.unavailableText,
-              tone: "primary" as const,
-            },
-          ]
-        : [];
-
-  if (!durationLabel && commonLoadMetrics.length === 0 && stepCount === 0) {
-    return null;
-  }
+  const quantified = getActivityQuantificationPresentation(prescriptionQuantification);
+  const structureAuthoredValues = [
+    ...new Set(
+      (presentationModel?.occurrences ?? []).flatMap((occurrence) =>
+        occurrence.intensityLabel ? [occurrence.intensityLabel] : [],
+      ),
+    ),
+  ];
+  const prescribedIntensity =
+    quantified.nativeIntensity.status !== "unavailable"
+      ? quantified.nativeIntensity
+      : quantified.kind === "unavailable" && structureAuthoredValues.length > 0
+        ? {
+            evidence: "Prescribed",
+            label: "Prescribed intensity",
+            value: structureAuthoredValues.join(" · "),
+          }
+        : null;
 
   return (
-    <ResourceMetricsRow
-      metrics={[
-        { label: "Duration", value: durationLabel || "--" },
-        ...commonLoadMetrics,
-        { label: "Steps", value: `${stepCount}` },
-      ]}
-    />
+    <View className="gap-2">
+      <ResourceMetricsRow
+        metrics={[
+          { label: "Duration", value: durationLabel || "Unavailable" },
+          {
+            label: quantified.commonLoad.label,
+            value: quantified.commonLoad.value,
+            tone: "primary",
+          },
+          {
+            label: quantified.normalizedIntensity.label,
+            value: quantified.normalizedIntensity.value,
+            tone: "primary",
+          },
+          { label: "Steps", value: `${stepCount}` },
+        ]}
+      />
+      <Text className="px-1 text-[10px] text-muted-foreground">
+        {quantified.commonLoad.evidence}. {quantified.commonLoad.explanation}
+      </Text>
+      {quantified.commonLoad.diagnostic ? (
+        <Text className="px-1 text-[10px] text-muted-foreground">
+          {quantified.commonLoad.diagnostic.summary} {quantified.commonLoad.diagnostic.action}
+        </Text>
+      ) : null}
+      {prescribedIntensity ? (
+        <Text className="px-1 text-[10px] text-muted-foreground">
+          {prescribedIntensity.label}: {prescribedIntensity.value} · {prescribedIntensity.evidence}
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
@@ -135,12 +143,10 @@ export function ActivityPlanSummary({
   description,
   estimatedDuration,
   estimatedDurationMinutes,
-  estimatedTss,
   headerAccessory,
-  intensityFactor,
-  commonLoad,
   owner,
   presentation,
+  prescriptionQuantification,
   structure,
   subtitle,
   testID,
@@ -176,12 +182,10 @@ export function ActivityPlanSummary({
       </View>
 
       <ActivityPlanMetricsRow
-        commonLoad={commonLoad}
         estimatedDuration={estimatedDuration}
         estimatedDurationMinutes={estimatedDurationMinutes}
-        estimatedTss={estimatedTss}
-        intensityFactor={intensityFactor}
         presentation={presentation}
+        prescriptionQuantification={prescriptionQuantification}
         structure={structure}
       />
 

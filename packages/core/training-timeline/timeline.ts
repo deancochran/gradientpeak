@@ -38,16 +38,44 @@ export type BuildTrainingTimelineWindowInput = {
   dayMetadata?: Record<string, TrainingTimelineDayMetadata>;
 };
 
-function roundTss(value: number | null | undefined) {
-  return Number.isFinite(value) ? Math.round(Math.max(0, value ?? 0) * 10) / 10 : 0;
+function roundLoad(value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  return Math.round(value * 10) / 10;
 }
 
-function roundSignedTss(value: number | null | undefined) {
-  return Number.isFinite(value) ? Math.round((value ?? 0) * 10) / 10 : 0;
+function roundSignedLoad(value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  return Math.round(value * 10) / 10;
 }
 
-function sumTss(values: Array<number | null | undefined>) {
-  return roundTss(values.reduce<number>((sum, value) => sum + roundTss(value), 0));
+function sumKnownItemLoads(values: readonly (number | null | undefined)[]): number | null {
+  if (values.length === 0) return 0;
+  if (values.some((value) => value == null)) return null;
+  const knownValues = values.filter((value): value is number => typeof value === "number");
+  return roundLoad(knownValues.reduce((sum, value) => sum + value, 0));
+}
+
+function sumAvailableLoads(values: readonly (number | null)[]): number | null {
+  if (values.some((value) => value === null)) return null;
+  const knownValues = values.filter((value): value is number => value !== null);
+  return roundLoad(knownValues.reduce((sum, value) => sum + value, 0));
+}
+
+function deriveExpectedLoad(input: {
+  plannedLoad: number | null;
+  scheduledLoad: number | null;
+  tentativeScheduledLoad: number | null;
+}): number | null {
+  if (input.scheduledLoad === null || input.tentativeScheduledLoad === null) return null;
+  return input.scheduledLoad + input.tentativeScheduledLoad;
+}
+
+function hasExplicitLoad(point: TrainingTimelineLoadPoint | undefined, key: string): boolean {
+  return (
+    point !== undefined &&
+    Object.hasOwn(point, key) &&
+    point[key as keyof typeof point] !== undefined
+  );
 }
 
 function dateKeyRange(startDate: string, endDate: string) {
@@ -71,26 +99,34 @@ function bucketByDate<Item extends { date: string }>(items: Item[]) {
 }
 
 export function compareTrainingLoad(input: {
-  plannedTss?: number | null;
-  scheduledTss?: number | null;
-  tentativeScheduledTss?: number | null;
-  completedTss?: number | null;
-  recommendedTss?: number | null;
+  plannedLoad?: number | null;
+  scheduledLoad?: number | null;
+  tentativeScheduledLoad?: number | null;
+  completedLoad?: number | null;
+  recommendedLoad?: number | null;
 }): TrainingLoadComparison {
-  const plannedTss = roundTss(input.plannedTss ?? input.recommendedTss);
-  const scheduledTss = roundTss(input.scheduledTss);
-  const tentativeScheduledTss = roundTss(input.tentativeScheduledTss);
-  const completedTss = roundTss(input.completedTss);
-  const recommendedTss = input.recommendedTss == null ? null : roundTss(input.recommendedTss);
-  const expectedTss = scheduledTss + tentativeScheduledTss || plannedTss;
+  const recommendedLoad = roundLoad(input.recommendedLoad);
+  const plannedLoad = roundLoad(
+    input.plannedLoad === undefined ? input.recommendedLoad : input.plannedLoad,
+  );
+  const scheduledLoad = roundLoad(input.scheduledLoad);
+  const tentativeScheduledLoad = roundLoad(input.tentativeScheduledLoad);
+  const completedLoad = roundLoad(input.completedLoad);
+  const expectedLoad = deriveExpectedLoad({ plannedLoad, scheduledLoad, tentativeScheduledLoad });
   return trainingLoadComparisonSchema.parse({
-    plannedTss,
-    scheduledTss,
-    tentativeScheduledTss,
-    completedTss,
-    remainingTss: roundTss(Math.max(0, expectedTss - completedTss)),
-    recommendedTss,
-    deltaTss: roundSignedTss(completedTss - expectedTss),
+    plannedLoad,
+    scheduledLoad,
+    tentativeScheduledLoad,
+    completedLoad,
+    remainingLoad:
+      expectedLoad === null || completedLoad === null
+        ? null
+        : roundLoad(Math.max(0, expectedLoad - completedLoad)),
+    recommendedLoad,
+    deltaLoad:
+      expectedLoad === null || completedLoad === null
+        ? null
+        : roundSignedLoad(completedLoad - expectedLoad),
   });
 }
 
@@ -111,16 +147,20 @@ export function buildTrainingDaySummary(input: {
   const completedItems = (input.completedItems ?? []).map((item) =>
     completedTrainingItemSchema.parse(item),
   );
-  const scheduledItemLoad = sumTss(scheduledItems.map((item) => item.plannedLoadTss));
-  const completedItemLoad = sumTss(completedItems.map((item) => item.completedLoadTss));
+  const scheduledItemLoad = sumKnownItemLoads(scheduledItems.map((item) => item.plannedLoad));
+  const completedItemLoad = sumKnownItemLoads(completedItems.map((item) => item.completedLoad));
   return trainingDaySummarySchema.parse({
     date: input.date,
     load: compareTrainingLoad({
-      plannedTss: normalizedLoad.recommended_load_tss,
-      scheduledTss: normalizedLoad.scheduled_load_tss || scheduledItemLoad,
-      tentativeScheduledTss: normalizedLoad.tentative_scheduled_load_tss,
-      completedTss: normalizedLoad.completed_load_tss || completedItemLoad,
-      recommendedTss: normalizedLoad.recommended_load_tss,
+      plannedLoad: normalizedLoad.recommended_common_load,
+      scheduledLoad: hasExplicitLoad(input.loadPoint, "scheduled_common_load")
+        ? normalizedLoad.scheduled_common_load
+        : scheduledItemLoad,
+      tentativeScheduledLoad: normalizedLoad.tentative_scheduled_common_load,
+      completedLoad: hasExplicitLoad(input.loadPoint, "completed_common_load")
+        ? normalizedLoad.completed_common_load
+        : completedItemLoad,
+      recommendedLoad: normalizedLoad.recommended_common_load,
     }),
     scheduledItems,
     completedItems,
@@ -146,14 +186,18 @@ export function buildTrainingWeekSummaries(days: TrainingDaySummary[]): Training
         dayCount: weekDays.length,
         trainingDayCount: weekDays.filter(
           (day) =>
-            day.load.plannedTss > 0 || day.load.scheduledTss > 0 || day.load.completedTss > 0,
+            (day.load.plannedLoad !== null && day.load.plannedLoad > 0) ||
+            (day.load.scheduledLoad !== null && day.load.scheduledLoad > 0) ||
+            (day.load.completedLoad !== null && day.load.completedLoad > 0),
         ).length,
         load: compareTrainingLoad({
-          plannedTss: sumTss(weekDays.map((day) => day.load.plannedTss)),
-          scheduledTss: sumTss(weekDays.map((day) => day.load.scheduledTss)),
-          tentativeScheduledTss: sumTss(weekDays.map((day) => day.load.tentativeScheduledTss)),
-          completedTss: sumTss(weekDays.map((day) => day.load.completedTss)),
-          recommendedTss: sumTss(weekDays.map((day) => day.load.recommendedTss)),
+          plannedLoad: sumAvailableLoads(weekDays.map((day) => day.load.plannedLoad)),
+          scheduledLoad: sumAvailableLoads(weekDays.map((day) => day.load.scheduledLoad)),
+          tentativeScheduledLoad: sumAvailableLoads(
+            weekDays.map((day) => day.load.tentativeScheduledLoad),
+          ),
+          completedLoad: sumAvailableLoads(weekDays.map((day) => day.load.completedLoad)),
+          recommendedLoad: sumAvailableLoads(weekDays.map((day) => day.load.recommendedLoad)),
         }),
       }),
     );

@@ -1,29 +1,14 @@
-import {
-  getActivityEffortThresholdEvidence,
-  resolveCanonicalThresholds,
-  type ThresholdMetricSource,
-} from "@repo/core/athlete-inputs";
 import { formatDateOfBirth } from "@repo/core/profile";
 import { preferredUnitSystemSchema } from "@repo/core/units";
-import { activityEfforts, type PublicProfilesRow, profileMetrics, profiles } from "@repo/db";
-import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
+import { type PublicProfilesRow, profileMetrics, profiles } from "@repo/db";
+import { and, desc, eq, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { getRequiredDb } from "../../db";
 import { buildIndexPageInfo, parseIndexCursor } from "../../utils/index-cursor";
 import {
-  filterObservationsAfterLatestTombstone,
-  filterSupersededProfileOverrides,
-  isActiveManualFtpOverride,
-  isClearedProfileOverride,
-  isProfileOverrideObservation,
-  PROFILE_UPDATE_OVERRIDE_METHOD,
-} from "../../utils/profile-override-observations";
-import {
   redactPrivateProfileDetailFields,
   redactProfileListFields,
 } from "../../utils/profile-privacy";
-
-const FTP_FRESHNESS_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 
 const uuidSchema = z.string().uuid();
 const nullableAvatarUrlSchema = z.string().nullable();
@@ -121,33 +106,10 @@ export type ProfileListFilters = {
   cursor?: string;
 };
 
-function toNullableNumber(value: number | string | null | undefined) {
-  if (value === null || value === undefined) {
-    return null;
-  }
-
-  return Number(value);
-}
-
-function thresholdMetricSource(source: string | null, provenance: unknown): ThresholdMetricSource {
-  const provenanceSource =
-    provenance && typeof provenance === "object" && "source" in provenance
-      ? (provenance as { source?: unknown }).source
-      : null;
-  const candidate = source ?? provenanceSource;
-
-  if (candidate === "manual") return "manual";
-  if (candidate === "estimated") return "estimated";
-  if (candidate === "derived" || candidate === "modeled") return "modeled";
-  return "provider";
-}
-
 function serializeProfile(
   profile: ProfileBaseRow,
   performance?: {
     weight_kg: number | null;
-    threshold_hr: number | null;
-    ftp: number | null;
   },
 ) {
   return {
@@ -155,8 +117,6 @@ function serializeProfile(
     created_at: profile.created_at.toISOString(),
     updated_at: profile.updated_at.toISOString(),
     dob: profile.dob ? formatDateOfBirth(profile.dob) : null,
-    ftp: performance?.ftp ?? null,
-    threshold_hr: performance?.threshold_hr ?? null,
     weight_kg: performance?.weight_kg ?? null,
   };
 }
@@ -177,196 +137,49 @@ async function getProfileBaseById(db: DbClient, profileId: string) {
   return (profile ?? null) as ProfileBaseRow | null;
 }
 
-export async function getProfilePerformanceSnapshot(db: DbClient, profileId: string) {
-  const now = new Date();
-  const ftpCutoffDate = new Date(now.getTime() - FTP_FRESHNESS_WINDOW_MS);
-
-  const [weightMetric, lthrMetric, ftpMetrics, manualFtpEffort, best20mEfforts] = await Promise.all(
-    [
-      db
-        .select({
-          value: profileMetrics.value,
-          method: profileMetrics.method,
-          provenance: profileMetrics.provenance,
-        })
-        .from(profileMetrics)
-        .where(
-          and(
-            eq(profileMetrics.profile_id, profileId),
-            eq(profileMetrics.metric_type, "weight_kg"),
-          ),
-        )
-        .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.id))
-        .limit(1)
-        .then((rows) => rows[0] ?? null),
-      db
-        .select({
-          value: profileMetrics.value,
-          method: profileMetrics.method,
-          provenance: profileMetrics.provenance,
-        })
-        .from(profileMetrics)
-        .where(
-          and(eq(profileMetrics.profile_id, profileId), eq(profileMetrics.metric_type, "lthr")),
-        )
-        .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.id))
-        .limit(1)
-        .then((rows) => rows[0] ?? null),
-      db
-        .select({
-          value: profileMetrics.value,
-          recorded_at: profileMetrics.recorded_at,
-          source: profileMetrics.source,
-          method: profileMetrics.method,
-          provenance: profileMetrics.provenance,
-        })
-        .from(profileMetrics)
-        .where(and(eq(profileMetrics.profile_id, profileId), eq(profileMetrics.metric_type, "ftp")))
-        .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.id)),
-      db
-        .select({
-          value: activityEfforts.value,
-          unit: activityEfforts.unit,
-          recorded_at: activityEfforts.recorded_at,
-          method: activityEfforts.method,
-          provenance: activityEfforts.provenance,
-          source: activityEfforts.source,
-        })
-        .from(activityEfforts)
-        .where(
-          and(
-            eq(activityEfforts.profile_id, profileId),
-            eq(activityEfforts.activity_category, "bike"),
-            eq(activityEfforts.effort_type, "power"),
-            eq(activityEfforts.duration_seconds, 1200),
-            isNull(activityEfforts.activity_id),
-            eq(activityEfforts.method, PROFILE_UPDATE_OVERRIDE_METHOD),
-          ),
-        )
-        .orderBy(desc(activityEfforts.recorded_at), desc(activityEfforts.created_at))
-        .limit(1)
-        .then((rows) => rows[0] ?? null),
-      db
-        .select({
-          value: activityEfforts.value,
-          recorded_at: activityEfforts.recorded_at,
-          activity_id: activityEfforts.activity_id,
-          source: activityEfforts.source,
-          id: activityEfforts.id,
-          unit: activityEfforts.unit,
-          method: activityEfforts.method,
-          provenance: activityEfforts.provenance,
-        })
-        .from(activityEfforts)
-        .where(
-          and(
-            eq(activityEfforts.profile_id, profileId),
-            eq(activityEfforts.activity_category, "bike"),
-            eq(activityEfforts.effort_type, "power"),
-            eq(activityEfforts.duration_seconds, 1200),
-            gte(activityEfforts.recorded_at, ftpCutoffDate),
-          ),
-        )
-        .orderBy(desc(activityEfforts.recorded_at)),
-    ],
-  );
-
-  const cyclingFtp = resolveCanonicalThresholds({
-    now: now.toISOString(),
-    freshnessWindowMs: FTP_FRESHNESS_WINDOW_MS,
-    directMetrics: [
-      ...filterObservationsAfterLatestTombstone(ftpMetrics, () => "ftp").map((metric) => ({
-        threshold: "cycling_ftp" as const,
-        value: Number(metric.value),
-        observedAt: metric.recorded_at.toISOString(),
-        source: thresholdMetricSource(metric.source, metric.provenance),
-      })),
-      ...(manualFtpEffort &&
-      (!isProfileOverrideObservation(manualFtpEffort) ||
-        isActiveManualFtpOverride({
-          ...manualFtpEffort,
-          activity_id: null,
-          activity_category: "bike",
-          duration_seconds: 1200,
-          effort_type: "power",
-          unit: manualFtpEffort.unit,
-        }))
-        ? [
-            {
-              threshold: "cycling_ftp" as const,
-              value: Number(manualFtpEffort.value) * 0.95,
-              observedAt: manualFtpEffort.recorded_at.toISOString(),
-              source: "manual" as const,
-              locked: true,
-            },
-          ]
-        : []),
-    ],
-    activityEfforts: filterSupersededProfileOverrides(
-      best20mEfforts,
-      (effort) => `bike:power:1200:${effort.unit}`,
-    ).flatMap((effort) =>
-      isActiveManualFtpOverride({
-        ...effort,
-        activity_category: "bike",
-        duration_seconds: 1200,
-        effort_type: "power",
-      })
-        ? []
-        : [
-            {
-              activity_category: "bike" as const,
-              metric: "power" as const,
-              value: Number(effort.value),
-              durationSeconds: 1200,
-              observedAt: effort.recorded_at.toISOString(),
-              observationKind:
-                effort.activity_id !== null &&
-                effort.source !== "derived" &&
-                effort.source !== "estimated"
-                  ? ("actual" as const)
-                  : ("derived" as const),
-              evidence:
-                getActivityEffortThresholdEvidence({
-                  activityCategory: "bike",
-                  activityId: effort.activity_id,
-                  durationSeconds: 1200,
-                  effortType: "power",
-                  method: effort.method,
-                  provenance: effort.provenance,
-                  source: effort.source,
-                  unit: effort.unit,
-                  value: Number(effort.value),
-                }) ?? undefined,
-            },
-          ],
-    ),
-  }).cycling_ftp;
-
-  return {
-    ftp: cyclingFtp.value === null ? null : Math.round(cyclingFtp.value),
-    threshold_hr:
-      lthrMetric && !isClearedProfileOverride(lthrMetric)
-        ? toNullableNumber(lthrMetric.value)
-        : null,
-    weight_kg:
-      weightMetric && !isClearedProfileOverride(weightMetric)
-        ? toNullableNumber(weightMetric.value)
-        : null,
-  };
+export async function getProfileWeightKgAsOf(
+  db: DbClient,
+  profileId: string,
+  asOf = new Date(),
+): Promise<number | null> {
+  const [row] = await db
+    .select({
+      value: profileMetrics.value,
+      unit: profileMetrics.unit,
+      provenance: profileMetrics.provenance,
+    })
+    .from(profileMetrics)
+    .where(
+      and(
+        eq(profileMetrics.profile_id, profileId),
+        eq(profileMetrics.metric_type, "weight_kg"),
+        lte(profileMetrics.recorded_at, asOf),
+      ),
+    )
+    .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.id))
+    .limit(1);
+  const cleared =
+    row?.provenance !== null &&
+    typeof row?.provenance === "object" &&
+    !Array.isArray(row.provenance) &&
+    "override_state" in row.provenance &&
+    row.provenance.override_state === "cleared";
+  return row && !cleared && row.unit === "kg" && Number.isFinite(row.value) && row.value > 0
+    ? row.value
+    : null;
 }
 
 export async function getSerializedProfile(db: DbClient, profileId: string) {
   const [profile, performance] = await Promise.all([
     getProfileBaseById(db, profileId),
-    getProfilePerformanceSnapshot(db, profileId),
+    getProfileWeightKgAsOf(db, profileId),
   ]);
 
   if (!profile) {
     return null;
   }
 
-  return serializeProfile(profile, performance);
+  return serializeProfile(profile, { weight_kg: performance });
 }
 
 export async function ensureProfileExists(db: DbClient, user: SessionUser) {

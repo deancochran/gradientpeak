@@ -12,7 +12,7 @@ import type { WeeklyAllocation } from "./weeklyAllocation";
 export interface DailyLoadDistributionWeeklyTarget {
   weekStartDate: string;
   weekEndDate?: string;
-  targetTss: number;
+  targetLoad: number;
   phase?: string | null;
   eventDate?: string | null;
   recoveryRanges?: DailyFocusRecoveryRange[] | null;
@@ -20,7 +20,7 @@ export interface DailyLoadDistributionWeeklyTarget {
 
 export interface DailyLoadDistributionPoint {
   date: string;
-  recommended_load_tss: number;
+  recommended_load: number;
   primary_focus: DailyLoadRecommendationPrimaryFocus;
   activity_category: DailyLoadRecommendationActivityCategory;
   confidence: "low" | "medium" | "high";
@@ -53,9 +53,9 @@ export interface DailyLoadDistributionSchedulingConstraints {
 }
 
 export interface DailyLoadDistributionCapacityContext {
-  startingCtl?: number | null;
-  startingAtl?: number | null;
-  startingTsb?: number | null;
+  startingLongTermLoad?: number | null;
+  startingRecentLoad?: number | null;
+  startingLoadBalance?: number | null;
   readinessScore?: number | null;
 }
 
@@ -74,7 +74,7 @@ export interface BuildDailyLoadDistributionInput {
  * Builds daily recommended load points from weekly projection targets and
  * profile-derived and explicit scheduling constraints.
  *
- * The returned load values are daily TSS values suitable for day-level charts;
+ * The returned load values are daily Common Load values suitable for day-level charts;
  * weekly projection summaries should not be rendered as daily bars.
  */
 export function buildDailyLoadDistribution(
@@ -82,7 +82,7 @@ export function buildDailyLoadDistribution(
 ): DailyLoadDistributionPoint[] {
   return buildDailyLoadRecommendation({ mode: "distribution", ...input }).map((point) => ({
     date: point.date,
-    recommended_load_tss: point.recommendedLoadTss,
+    recommended_load: point.recommendedLoad,
     primary_focus: point.primaryFocus,
     activity_category: point.activityCategory,
     confidence: point.confidence,

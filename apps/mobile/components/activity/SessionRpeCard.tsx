@@ -22,15 +22,12 @@ function loadMethodLabel(method: string | null | undefined) {
       return "Session RPE estimate";
     case "power_threshold":
       return "Power threshold estimate";
-    case "critical_power_threshold":
-      return "Critical power estimate";
     case "run_pace_threshold":
       return "Run pace threshold estimate";
     case "swim_pace_threshold":
       return "Swim pace threshold estimate";
     case "heart_rate_zones":
-    case "heart_rate_threshold":
-      return "Heart-rate estimate";
+      return "Heart-rate zones estimate";
     default:
       return null;
   }

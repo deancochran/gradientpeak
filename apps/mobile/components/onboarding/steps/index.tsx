@@ -1,6 +1,5 @@
 import {
   createEmptyGoalDraft,
-  estimateConservativeFTPFromWeight,
   estimateMaxHRFromDOB,
   formatWeightForDisplay,
   getGoalDraftQualityFeedback,
@@ -483,9 +482,6 @@ export const TrainingBaselineStep = ({ data, fieldSources, updateData }: StepPro
     weightDisplayUnit: fieldSources?.weight_unit,
     maxHr: fieldSources?.max_hr,
     restingHr: fieldSources?.resting_hr,
-    ftp: fieldSources?.ftp,
-    thresholdPaceSecondsPerKm: fieldSources?.threshold_pace_seconds_per_km,
-    cssSecondsPer100m: fieldSources?.css,
   };
 
   const handleBaselineChange = (change: AthleteBaselineChange) => {
@@ -515,15 +511,6 @@ export const TrainingBaselineStep = ({ data, fieldSources, updateData }: StepPro
       case "restingHr":
         updateData({ resting_hr: change.value }, options);
         break;
-      case "ftp":
-        updateData({ ftp: change.value }, options);
-        break;
-      case "thresholdPaceSecondsPerKm":
-        updateData({ threshold_pace_seconds_per_km: change.value }, options);
-        break;
-      case "cssSecondsPer100m":
-        updateData({ css: change.value }, options);
-        break;
     }
   };
 
@@ -542,21 +529,11 @@ export const TrainingBaselineStep = ({ data, fieldSources, updateData }: StepPro
           weightDisplayUnit: data.weight_unit,
           maxHr: data.max_hr,
           restingHr: data.resting_hr,
-          ftp: data.ftp,
-          thresholdPaceSecondsPerKm: data.threshold_pace_seconds_per_km,
-          cssSecondsPer100m: data.css,
         }}
         onChange={handleBaselineChange}
-        visibleActivityCategories={data.activity_category_interests.filter(
-          (activity_category): activity_category is "cycling" | "running" | "swimming" =>
-            activity_category === "cycling" ||
-            activity_category === "running" ||
-            activity_category === "swimming",
-        )}
         sources={baselineSources}
         estimates={{
           maxHr: estimateMaxHRFromDOB(data.dob),
-          ftp: estimateConservativeFTPFromWeight(data.weight_kg),
         }}
       />
       <Text className="text-xs text-muted-foreground">
@@ -684,12 +661,6 @@ export const GoalsPreferencesStep = ({ data, updateData }: StepProps) => {
 };
 
 export const SummaryStep = ({ data }: { data: OnboardingData }) => {
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
-
   const summaryItems = [
     { label: "Full name", value: data.full_name.trim() },
     { label: "Username", value: data.username.trim() },
@@ -720,14 +691,6 @@ export const SummaryStep = ({ data }: { data: OnboardingData }) => {
     },
     { label: "Max HR", value: data.max_hr ? `${data.max_hr} bpm` : null },
     { label: "Resting HR", value: data.resting_hr ? `${data.resting_hr} bpm` : null },
-    { label: "FTP", value: data.ftp ? `${data.ftp} W` : null },
-    {
-      label: "Threshold Pace",
-      value: data.threshold_pace_seconds_per_km
-        ? `${formatDuration(data.threshold_pace_seconds_per_km)} /km`
-        : null,
-    },
-    { label: "CSS", value: data.css ? `${formatDuration(data.css)} /100m` : null },
     {
       label: "Training preferences",
       value:

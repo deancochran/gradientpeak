@@ -1,56 +1,43 @@
 /**
- * Helper functions for integrating TSS estimation into tRPC endpoints
+ * Helper functions for integrating Common Load estimation into tRPC endpoints.
  */
 
-import type { ActivityCalibrationQuality } from "@repo/core";
+import { compileActivityPlan } from "@repo/core/activity-plan";
+import type { ActivityPlanDurationEstimate } from "@repo/core/duration";
+import type { CommonLoadAggregate, CommonLoadResult } from "@repo/core/load";
 import {
-  type ActivityPlanAuthoritativeMetrics,
-  compileActivityPlan,
-} from "@repo/core/activity-plan";
+  type AthletePerformanceTargetFacts,
+  projectAthletePerformanceTargetFacts,
+} from "@repo/core/performance-model";
 import {
-  getActivityEffortThresholdEvidence,
-  getEligibleThresholdValue,
-  resolveCanonicalThresholds,
-  type ThresholdActivityEffortObservation,
-} from "@repo/core/athlete-inputs";
-import type { EstimationActivityPlanInput as CoreEstimationActivityPlanInput } from "@repo/core/estimation";
-import { buildEstimationContext, estimateActivity, estimateMetrics } from "@repo/core/estimation";
+  type ActivityPlanPlanningEstimate,
+  createUnavailableActivityPlanPlanningEstimate,
+} from "@repo/core/plan";
 import type { ActivityPlanRow } from "@repo/db";
-import { resolveActivityContextFromEvidence } from "../lib/activity-analysis/context";
+import { resolvePlannedActivityQuantification } from "../application/activity-plans/resolve-planned-common-load";
+import { getAthletePerformanceModelAsOf } from "../application/performance-model/get-athlete-performance-model-as-of";
 import type { EventReadRepository } from "../repositories";
-import {
-  isActiveManualFtpOverride,
-  resolveLatestObservationsByKey,
-} from "./profile-override-observations";
 
-export type EstimationReadStore = {
-  getEstimationInputs: EventReadRepository["getEstimationInputs"];
-};
+export type EstimationReadStore = Pick<
+  EventReadRepository,
+  "getEstimationInputs" | "readAthletePerformanceEvidenceSnapshot"
+>;
 
 export type EstimationActivityPlanInput = Pick<
   ActivityPlanRow,
   "id" | "profile_id" | "name" | "description" | "structure"
-> & {
-  [key: string]: unknown;
-};
+>;
 
 type PlannedActivityEstimationStore = EstimationReadStore & {
   getActivityPlanById(input: { activityPlanId: string }): Promise<{
     structure: unknown;
   } | null>;
-  getLatestFitnessSnapshot(profileId: string): Promise<{
-    atl: number | null;
-    ctl: number | null;
-    tsb: number | null;
-  } | null>;
 };
 
-export function toEstimationActivityPlan(input: {
-  structure: unknown;
-}): CoreEstimationActivityPlanInput {
+export function toEstimationActivityPlan(input: { structure: unknown }) {
   return {
     activity_category: compileActivityPlan(input.structure).activity_category,
-    structure: input.structure as CoreEstimationActivityPlanInput["structure"],
+    structure: input.structure,
   };
 }
 
@@ -62,22 +49,13 @@ export type ActivityPlanRouteSummary = {
 
 export type EstimationSnapshot = Readonly<{
   /**
-   * Fixes metric/effort freshness, age, and access-expiry evaluation for this request.
+   * Fixes performance-evidence freshness and access-expiry evaluation for this request.
    * Route facts are current because route history is not versioned. The snapshot is internally
    * consistent for this load; it is not a reconstruction of historical route state.
    */
   asOf: Date;
-  profile: Awaited<ReturnType<typeof getEstimationProfileInputsFromData>>;
-  thresholds: ReturnType<typeof resolveEstimationThresholds>;
-  lthrByActivityCategory: Readonly<
-    Partial<
-      Record<
-        "bike" | "run" | "swim",
-        Readonly<{ value: number; quality: ActivityCalibrationQuality }>
-      >
-    >
-  >;
-  getRoute(id: string): Readonly<Record<string, any>> | undefined;
+  performanceTargets: AthletePerformanceTargetFacts;
+  getRoute(id: string): Readonly<Record<string, unknown>> | undefined;
   getRouteSummary(id: string): Readonly<ActivityPlanRouteSummary> | undefined;
 }>;
 
@@ -114,84 +92,21 @@ function buildRouteSummary(
   };
 }
 
-function getEstimationProfileInputsFromData(
-  data: Awaited<ReturnType<EstimationReadStore["getEstimationInputs"]>>,
-  asOf: Date,
-) {
-  let weightKg: number | null = null;
-  let restingHr: number | null = null;
-  let maxHr: number | null = null;
-  const thresholds = resolveEstimationThresholds(data.efforts, data.metrics, asOf.toISOString());
-  const ftp = getEligibleThresholdValue(thresholds.cycling_ftp);
-  const runThresholdPace = getEligibleThresholdValue(thresholds.running_threshold_pace);
-  const genericLthr = resolveLatestObservationsByKey(
-    data.metrics.filter(
-      (metric) => metric.metric_type === "lthr" && metric.reference_activity_id === null,
-    ),
-    () => "lthr:generic",
-  ).get("lthr:generic");
-  const genericLthrValue = genericLthr ? Number(genericLthr.value) : null;
-  const lthr =
-    genericLthrValue !== null && Number.isFinite(genericLthrValue) && genericLthrValue > 0
-      ? genericLthrValue
-      : null;
-  for (const metric of data.metrics) {
-    if (metric.metric_type === "weight_kg" && weightKg === null) weightKg = Number(metric.value);
-    else if (metric.metric_type === "resting_hr" && restingHr === null)
-      restingHr = Number(metric.value);
-    else if (metric.metric_type === "max_hr" && maxHr === null) maxHr = Number(metric.value);
-  }
-  return {
-    ftp: ftp === null ? null : Math.round(ftp),
-    dob: data.profile?.dob ?? null,
-    max_hr: maxHr,
-    threshold_hr: lthr,
-    resting_hr: restingHr,
-    weight_kg: weightKg,
-    threshold_pace_seconds_per_km: runThresholdPace === null ? null : Math.round(runThresholdPace),
-  };
-}
-
 export async function loadEstimationSnapshot(
   store: EstimationReadStore,
   profileId: string,
   routeIds: string[],
   asOf: Date,
 ): Promise<EstimationSnapshot> {
-  const data = await store.getEstimationInputs({
-    asOfIso: asOf.toISOString(),
-    effortCutoffIso: new Date(asOf.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString(),
-    profileId,
-    routeIds: [...new Set(routeIds)],
-  });
-  const thresholds = resolveEstimationThresholds(data.efforts, data.metrics, asOf.toISOString());
-  const activityContext = resolveActivityContextFromEvidence({
-    activityTimestamp: asOf,
-    evidence: {
-      profile: {
-        dob: data.profile?.dob ? new Date(data.profile.dob) : null,
-        gender: null,
-      },
-      profileMetrics: data.metrics.map((metric) => ({
-        ...metric,
-        recorded_at: new Date(metric.recorded_at),
-      })),
-      recentEfforts: data.efforts.map((effort) => ({
-        ...effort,
-        recorded_at: new Date(effort.recorded_at),
-      })),
-    },
-  });
-  const lthrByActivityCategory = Object.fromEntries(
-    (["bike", "run", "swim"] as const).flatMap((activityCategory) => {
-      const value = activityContext.profileMetrics.lthr_by_activity_category?.[activityCategory];
-      const quality =
-        activityContext.calibrationQuality?.lthrByActivityCategory?.[activityCategory];
-      return value !== undefined && quality
-        ? [[activityCategory, Object.freeze({ value, quality })] as const]
-        : [];
+  const [data, performanceModel] = await Promise.all([
+    store.getEstimationInputs({
+      asOfIso: asOf.toISOString(),
+      profileId,
+      routeIds: [...new Set(routeIds)],
     }),
-  );
+    getAthletePerformanceModelAsOf({ athleteId: profileId, asOf }, store),
+  ]);
+  const performanceTargets = projectAthletePerformanceTargetFacts(performanceModel);
   const routes = new Map(
     data.routes.map((route) => [route.id, Object.freeze({ ...route })] as const),
   );
@@ -207,250 +122,148 @@ export async function loadEstimationSnapshot(
   );
   return Object.freeze({
     asOf: new Date(asOf),
-    profile: Object.freeze(getEstimationProfileInputsFromData(data, asOf)),
-    thresholds: Object.freeze(thresholds),
-    lthrByActivityCategory: Object.freeze(lthrByActivityCategory),
+    performanceTargets: Object.freeze(performanceTargets),
     getRoute: (id: string) => routes.get(id),
     getRouteSummary: (id: string) => routeSummaries.get(id),
   });
 }
 
-export async function getEstimationProfileInputsFromStore(
-  store: EstimationReadStore,
-  userId: string,
-  asOf = new Date(),
-) {
-  return (await loadEstimationSnapshot(store, userId, [], asOf)).profile;
-}
-
-function resolveEstimationThresholds(
-  efforts: Array<{
-    activity_id?: string | null;
-    effort_type: string;
-    duration_seconds: number;
-    value: number;
-    unit: string;
-    activity_category: string;
-    recorded_at?: string;
-    source?: string | null;
-    method?: string | null;
-    provenance?: unknown;
-  }>,
-  metrics: Array<{ metric_type: string; unit?: string; value: number; recorded_at?: string }>,
-  now: string,
-) {
-  const getEffortObservedAt = (effort: (typeof efforts)[number]) => {
-    if (!effort.recorded_at) return null;
-    const recordedAt = new Date(effort.recorded_at);
-    return Number.isNaN(recordedAt.getTime()) ? null : recordedAt.toISOString();
-  };
-
-  return resolveCanonicalThresholds({
-    now,
-    freshnessWindowMs: 90 * 24 * 60 * 60 * 1000,
-    directMetrics: [
-      ...metrics.flatMap((metric) =>
-        metric.metric_type === "ftp" && metric.unit === "W" && Number.isFinite(Number(metric.value))
-          ? [
-              {
-                threshold: "cycling_ftp" as const,
-                value: Number(metric.value),
-                observedAt: metric.recorded_at ?? now,
-                source: "provider" as const,
-              },
-            ]
-          : [],
-      ),
-      ...efforts.flatMap((effort) => {
-        const observedAt = getEffortObservedAt(effort);
-        return isActiveManualFtpOverride(effort) && observedAt
-          ? [
-              {
-                threshold: "cycling_ftp" as const,
-                value: Number(effort.value) * 0.95,
-                observedAt,
-                source: "manual" as const,
-                locked: true,
-              },
-            ]
-          : [];
-      }),
-    ],
-    activityEfforts: efforts.flatMap((effort): ThresholdActivityEffortObservation[] => {
-      if (isActiveManualFtpOverride(effort)) return [];
-      const observedAt = getEffortObservedAt(effort);
-      if (!observedAt) return [];
-      const value = normalizeThresholdEffortValue(effort.value, effort.unit);
-      if (value === null || effort.duration_seconds !== 1200) return [];
-      if (effort.activity_category === "bike" && effort.effort_type === "power") {
-        const evidence = getActivityEffortThresholdEvidence({
-          activityCategory: effort.activity_category,
-          durationSeconds: effort.duration_seconds,
-          effortType: effort.effort_type,
-          unit: effort.unit,
-          value: effort.value,
-          ...(effort.activity_id !== undefined ? { activityId: effort.activity_id } : {}),
-          ...(effort.method !== undefined ? { method: effort.method } : {}),
-          ...(effort.provenance !== undefined ? { provenance: effort.provenance } : {}),
-          ...(effort.source !== undefined ? { source: effort.source } : {}),
-        });
-        return [
-          {
-            activity_category: "bike" as const,
-            metric: "power" as const,
-            value,
-            durationSeconds: 1200,
-            observedAt,
-            observationKind: "actual" as const,
-            ...(evidence !== null ? { evidence } : {}),
-          },
-        ];
-      }
-      if (
-        effort.effort_type === "speed" &&
-        (effort.activity_category === "run" || effort.activity_category === "swim")
-      ) {
-        const evidence = getActivityEffortThresholdEvidence({
-          activityCategory: effort.activity_category,
-          durationSeconds: effort.duration_seconds,
-          effortType: effort.effort_type,
-          unit: effort.unit,
-          value: effort.value,
-          ...(effort.activity_id !== undefined ? { activityId: effort.activity_id } : {}),
-          ...(effort.method !== undefined ? { method: effort.method } : {}),
-          ...(effort.provenance !== undefined ? { provenance: effort.provenance } : {}),
-          ...(effort.source !== undefined ? { source: effort.source } : {}),
-        });
-        return [
-          {
-            activity_category: effort.activity_category,
-            metric: "speed" as const,
-            value,
-            durationSeconds: 1200,
-            observedAt,
-            observationKind: "actual" as const,
-            ...(evidence !== null ? { evidence } : {}),
-          },
-        ];
-      }
-      return [];
-    }),
-  });
-}
-
-function normalizeThresholdEffortValue(value: number, unit: string): number | null {
-  if (!Number.isFinite(value) || value <= 0) return null;
-  if (unit === "watts" || unit === "meters_per_second") return value;
-  return null;
-}
-
 /**
- * Activity plan with estimation added
+ * Shared API-facing facts derived from Core's sole duration estimator.
  */
+export type UnifiedActivityPlanEstimate = {
+  planning: ActivityPlanPlanningEstimate;
+  duration: ActivityPlanDurationEstimate;
+  estimatedDistanceMeters: number | null;
+  commonLoad: CommonLoadResult | CommonLoadAggregate;
+};
+
+export function estimateUnifiedActivityPlanFacts(input: {
+  plan: { id?: string; structure: unknown };
+  performanceTargets: AthletePerformanceTargetFacts;
+  asOf: string;
+  stage?: "template" | "plan" | "scheduled";
+  scheduledEventId?: string;
+}): UnifiedActivityPlanEstimate {
+  const planning = resolvePlannedActivityQuantification({
+    asOf: new Date(input.asOf),
+    planId: input.plan.id,
+    structure: input.plan.structure,
+    performanceTargets: input.performanceTargets,
+    stage: input.stage,
+    scheduledEventId: input.scheduledEventId,
+  });
+  const summary = planning.prescriptionQuantification.summary;
+  return {
+    planning,
+    duration: planning.durationEstimate,
+    estimatedDistanceMeters: summary.distance.status === "complete" ? summary.distance.value : null,
+    commonLoad: summary.commonLoad,
+  };
+}
+
+type PlannedCommonLoad = CommonLoadResult | CommonLoadAggregate;
+
+/** Activity plan with provenance-bearing duration and canonical Common Load. */
 export type ActivityPlanWithEstimation<
   TPlan extends EstimationActivityPlanInput = EstimationActivityPlanInput,
 > = TPlan & {
+  duration_estimate: ActivityPlanDurationEstimate;
+  prescriptionQuantification: ActivityPlanPlanningEstimate["prescriptionQuantification"];
+  common_load: PlannedCommonLoad;
   estimated_calories?: number;
   estimated_zones?: string[];
-  confidence: string;
+  confidence: Exclude<ActivityPlanDurationEstimate["confidence"], null>;
   confidence_score: number;
   estimation_status: "estimated" | "partial" | "failed";
   estimation_warnings: string[];
-  counts_toward_aggregation: boolean;
-  category_loads: Array<{
-    activity_category: NonNullable<
-      ReturnType<typeof estimateActivity>["categoryDoses"]
-    >[number]["activity_category"];
-    tss: number | null;
-    intensity_factor: number | null;
-    method: "power_threshold" | null;
-  }>;
-  authoritative_metrics: ActivityPlanAuthoritativeMetrics;
   route: ActivityPlanRouteSummary | null;
 };
 
+/** Compatibility-only ordinal projection; it never supplies independent confidence evidence. */
+function confidenceScore(confidence: ActivityPlanDurationEstimate["confidence"]): number {
+  switch (confidence) {
+    case "high":
+      return 100;
+    case "medium":
+      return 75;
+    case "low":
+      return 50;
+    case null:
+      return 0;
+  }
+}
+
 export function buildEstimatedPlan<TPlan extends EstimationActivityPlanInput>(
   plan: TPlan,
-  estimation: ReturnType<typeof estimateActivity>,
-  metrics: ReturnType<typeof estimateMetrics>,
-  options?: { route?: ActivityPlanRouteSummary | null },
+  estimate: UnifiedActivityPlanEstimate,
+  options: {
+    route?: ActivityPlanRouteSummary | null;
+  },
 ): ActivityPlanWithEstimation<TPlan> {
-  const zones: string[] = [];
-  if (estimation.estimatedPowerZones) {
-    estimation.estimatedPowerZones.forEach((secs, idx) => {
-      if (secs > 60) zones.push(`Z${idx + 1}`);
-    });
-  } else if (estimation.estimatedHRZones) {
-    estimation.estimatedHRZones.forEach((secs, idx) => {
-      if (secs > 60) zones.push(`Z${idx + 1}`);
-    });
-  }
-
-  const complete =
-    estimation.tss !== null && estimation.duration !== null && estimation.intensityFactor !== null;
+  const available = estimate.duration.status !== "unavailable";
 
   return {
     ...plan,
-    estimated_calories: metrics.calories,
-    estimated_zones: [...new Set(zones)],
-    confidence: estimation.confidence,
-    confidence_score: estimation.confidenceScore,
-    estimation_status: complete ? "estimated" : "partial",
-    estimation_warnings: estimation.warnings ?? [],
-    counts_toward_aggregation: estimation.tss !== null,
-    category_loads: (estimation.categoryDoses ?? []).map((dose) => ({
-      activity_category: dose.activity_category,
-      tss: dose.tss,
-      intensity_factor: dose.intensityFactor,
-      method: dose.tss === null ? null : "power_threshold",
-    })),
-    authoritative_metrics: {
-      estimated_tss: estimation.tss,
-      estimated_duration: estimation.duration,
-      intensity_factor: estimation.intensityFactor,
-      estimated_distance: metrics.distance ?? null,
-      provenance: {
-        estimated_tss: estimation.tss === null ? null : "estimated",
-        estimated_duration: estimation.duration === null ? null : "estimated",
-        intensity_factor: estimation.intensityFactor === null ? null : "estimated",
-        estimated_distance: metrics.distance == null ? null : "estimated",
-      },
-    },
-    route: options?.route ?? null,
+    duration_estimate: estimate.duration,
+    prescriptionQuantification: estimate.planning.prescriptionQuantification,
+    common_load: estimate.commonLoad,
+    estimated_zones: [],
+    confidence: estimate.duration.confidence ?? "low",
+    confidence_score: confidenceScore(estimate.duration.confidence),
+    estimation_status: available ? "estimated" : "partial",
+    estimation_warnings:
+      estimate.planning.warnings.length > 0
+        ? estimate.planning.warnings
+        : available
+          ? []
+          : ["Duration evidence is unavailable."],
+    route: options.route ?? null,
   };
 }
 
 export function buildFailedEstimationPlan<TPlan extends EstimationActivityPlanInput>(
   plan: TPlan,
-  options?: { route?: ActivityPlanRouteSummary | null },
+  options: {
+    asOf: Date;
+    performanceTargets?: AthletePerformanceTargetFacts;
+    route?: ActivityPlanRouteSummary | null;
+  },
 ): ActivityPlanWithEstimation<TPlan> {
+  let activityCategory: CommonLoadResult["activity_category"] = "other";
+  try {
+    activityCategory = compileActivityPlan(plan.structure).activity_category;
+  } catch {
+    // Invalid structures cannot provide an activity category at this failed boundary.
+  }
+  const planning = createUnavailableActivityPlanPlanningEstimate({
+    asOf: options.asOf.toISOString(),
+    stage: "plan",
+    planId: plan.id,
+    activityCategory,
+    reason: "invalid_data",
+  });
+  const duration = planning.durationEstimate;
+  const preservedDuration = duration.status !== "unavailable";
+  const summary = planning.prescriptionQuantification.summary;
   return {
     ...plan,
+    duration_estimate: duration,
+    prescriptionQuantification: planning.prescriptionQuantification,
+    common_load: summary.commonLoad,
     estimated_zones: [],
-    confidence: "low",
-    confidence_score: 0,
+    confidence: duration.confidence ?? "low",
+    confidence_score: confidenceScore(duration.confidence),
     estimation_status: "failed",
-    estimation_warnings: ["Estimation failed and was excluded from scheduled load."],
-    counts_toward_aggregation: false,
-    category_loads: [],
-    authoritative_metrics: {
-      estimated_tss: null,
-      estimated_duration: null,
-      intensity_factor: null,
-      estimated_distance: null,
-      provenance: {
-        estimated_tss: null,
-        estimated_duration: null,
-        intensity_factor: null,
-        estimated_distance: null,
-      },
-    },
-    route: options?.route ?? null,
+    estimation_warnings: [
+      preservedDuration ? "Estimation failed; retained duration evidence." : "Estimation failed.",
+    ],
+    route: options.route ?? null,
   };
 }
 
 /**
- * Calculate TSS and metrics for a single activity plan
+ * Calculate Common Load and metrics for a single activity plan.
  */
 export async function addEstimationToPlan<TPlan extends EstimationActivityPlanInput>(
   plan: TPlan,
@@ -459,7 +272,7 @@ export async function addEstimationToPlan<TPlan extends EstimationActivityPlanIn
   asOf = new Date(),
 ): Promise<ActivityPlanWithEstimation<TPlan>> {
   const [result] = await addEstimationToPlans([plan], estimationReader, userId, asOf);
-  return result ?? buildFailedEstimationPlan(plan);
+  return result ?? buildFailedEstimationPlan(plan, { asOf });
 }
 
 /**
@@ -467,42 +280,35 @@ export async function addEstimationToPlan<TPlan extends EstimationActivityPlanIn
  */
 export async function computePlanMetrics(
   planInput: {
-    structure: any;
+    structure: unknown;
   },
   estimationReader: EstimationReadStore,
   userId: string,
   asOf = new Date(),
 ): Promise<{
-  estimated_tss: number | null;
+  prescriptionQuantification: ActivityPlanPlanningEstimate["prescriptionQuantification"];
+  common_load: PlannedCommonLoad;
+  duration_estimate: ActivityPlanDurationEstimate;
   estimated_duration_seconds: number | null;
-  intensity_factor: number | null;
   estimated_distance_meters: number | null;
 }> {
   const snapshot = await loadEstimationSnapshot(estimationReader, userId, [], asOf);
-  const profile = snapshot.profile;
-
-  const route = undefined;
-
-  const context = buildEstimationContext({
-    asOf,
-    userProfile: profile || {},
-    activityPlan: toEstimationActivityPlan(planInput),
-    route,
+  const estimate = estimateUnifiedActivityPlanFacts({
+    plan: planInput,
+    performanceTargets: snapshot.performanceTargets,
+    asOf: asOf.toISOString(),
   });
-
-  const estimation = estimateActivity(context);
-  const metrics = estimateMetrics(estimation, context);
-
   return {
-    estimated_tss: estimation.tss,
-    estimated_duration_seconds: estimation.duration,
-    intensity_factor: estimation.intensityFactor,
-    estimated_distance_meters: metrics.distance ?? null,
+    prescriptionQuantification: estimate.planning.prescriptionQuantification,
+    common_load: estimate.commonLoad,
+    duration_estimate: estimate.duration,
+    estimated_duration_seconds: estimate.duration.valueSeconds,
+    estimated_distance_meters: estimate.estimatedDistanceMeters,
   };
 }
 
 /**
- * Calculate TSS and metrics for multiple activity plans
+ * Calculate Common Load and metrics for multiple activity plans.
  * More efficient than calling addEstimationToPlan repeatedly
  */
 export async function addEstimationToPlans<TPlan extends EstimationActivityPlanInput>(
@@ -518,47 +324,45 @@ export async function addEstimationToPlans<TPlan extends EstimationActivityPlanI
   // Collect all route IDs
   const routeIds: string[] = [];
 
-  const snapshot = await loadEstimationSnapshot(estimationReader, userId, routeIds, asOf);
-  const profile = snapshot.profile;
-
-  // Calculate estimation for each plan
+  let snapshot: EstimationSnapshot;
+  try {
+    snapshot = await loadEstimationSnapshot(estimationReader, userId, routeIds, asOf);
+  } catch {
+    console.error("Failed to load activity-plan estimation inputs.");
+    return normalizedPlans.map((plan) => buildFailedEstimationPlan(plan, { asOf, route: null }));
+  }
   const results: ActivityPlanWithEstimation<TPlan>[] = [];
-  const estimateMemo = new Map<
-    string,
-    { estimation: ReturnType<typeof estimateActivity>; metrics: ReturnType<typeof estimateMetrics> }
-  >();
+  const estimateMemo = new Map<string, UnifiedActivityPlanEstimate>();
+  const asOfIso = asOf.toISOString();
 
   for (const plan of normalizedPlans) {
-    const route = undefined;
-
     try {
-      const authoritativeRoute = undefined;
-
       const memoKey = JSON.stringify({
+        id: plan.id,
         structure: plan.structure,
-        route: authoritativeRoute,
       });
       let estimated = estimateMemo.get(memoKey);
       if (!estimated) {
-        const context = buildEstimationContext({
-          asOf,
-          userProfile: profile || {},
-          activityPlan: toEstimationActivityPlan(plan),
-          route: authoritativeRoute,
+        estimated = estimateUnifiedActivityPlanFacts({
+          plan,
+          performanceTargets: snapshot.performanceTargets,
+          asOf: asOfIso,
         });
-        const estimation = estimateActivity(context);
-        estimated = { estimation, metrics: estimateMetrics(estimation, context) };
         estimateMemo.set(memoKey, estimated);
       }
-
+      const result = buildEstimatedPlan(plan, estimated, {
+        route: null,
+      });
+      results.push(result);
+    } catch {
+      console.error(`Failed to estimate plan ${plan.id}.`);
       results.push(
-        buildEstimatedPlan(plan, estimated.estimation, estimated.metrics, {
-          route: buildRouteSummary(route),
+        buildFailedEstimationPlan(plan, {
+          asOf,
+          performanceTargets: snapshot.performanceTargets,
+          route: null,
         }),
       );
-    } catch (error) {
-      console.error(`Failed to estimate plan ${plan.id}:`, error);
-      results.push(buildFailedEstimationPlan(plan, { route: buildRouteSummary(route) }));
     }
   }
 
@@ -566,7 +370,7 @@ export async function addEstimationToPlans<TPlan extends EstimationActivityPlanI
 }
 
 /**
- * Calculate TSS for a planned activity
+ * Calculate Common Load for a planned activity.
  * Used when creating/viewing planned activities in the calendar
  */
 export async function estimatePlannedActivity(
@@ -576,10 +380,10 @@ export async function estimatePlannedActivity(
   userId: string,
   asOf = new Date(),
 ): Promise<{
-  estimated_tss: number | null;
+  prescriptionQuantification: ActivityPlanPlanningEstimate["prescriptionQuantification"];
+  common_load: PlannedCommonLoad;
+  duration_estimate: ActivityPlanDurationEstimate;
   estimated_duration: number | null;
-  estimated_calories?: number;
-  fatigueImpact?: any;
 }> {
   // Fetch activity plan
   const plan = await estimationStore.getActivityPlanById({ activityPlanId });
@@ -589,43 +393,18 @@ export async function estimatePlannedActivity(
   }
 
   const snapshot = await loadEstimationSnapshot(estimationStore, userId, [], asOf);
-  const profile = snapshot.profile;
-
-  // Fetch current fitness state
-  const fitnessData = await estimationStore.getLatestFitnessSnapshot(userId);
-
-  const route = undefined;
-
-  // Build estimation context with fitness state
-  const context = buildEstimationContext({
-    asOf,
-    userProfile: profile || {},
-    fitnessState:
-      fitnessData &&
-      fitnessData.ctl !== null &&
-      fitnessData.atl !== null &&
-      fitnessData.tsb !== null
-        ? {
-            ctl: fitnessData.ctl,
-            atl: fitnessData.atl,
-            tsb: fitnessData.tsb,
-          }
-        : undefined,
-    activityPlan: {
-      ...toEstimationActivityPlan(plan),
-    },
-    route,
-    scheduledDate,
+  const estimate = estimateUnifiedActivityPlanFacts({
+    plan: { ...plan, id: activityPlanId },
+    performanceTargets: snapshot.performanceTargets,
+    asOf: asOf.toISOString(),
+    stage: "scheduled",
+    scheduledEventId: `activity-plan-preview:${activityPlanId}:${scheduledDate.toISOString()}`,
   });
 
-  // Calculate estimation
-  const estimation = estimateActivity(context);
-  const metrics = estimateMetrics(estimation, context);
-
   return {
-    estimated_tss: estimation.tss,
-    estimated_duration: estimation.duration,
-    estimated_calories: metrics.calories,
-    fatigueImpact: estimation.fatigueImpact,
+    prescriptionQuantification: estimate.planning.prescriptionQuantification,
+    common_load: estimate.commonLoad,
+    duration_estimate: estimate.duration,
+    estimated_duration: estimate.duration.valueSeconds,
   };
 }

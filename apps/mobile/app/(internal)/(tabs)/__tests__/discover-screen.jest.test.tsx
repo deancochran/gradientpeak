@@ -514,7 +514,7 @@ describe("discover screen", () => {
     renderNative(<DiscoverScreen />);
 
     fireEvent.press(screen.getByTestId("discover-filter-button"));
-    fireEvent.changeText(screen.getByTestId("discover-filter-activityPlans-tss-min"), "50");
+    fireEvent.changeText(screen.getByTestId("discover-filter-activityPlans-common-load-min"), "50");
     expect(screen.queryByTestId("discover-filter-routes-activity_category-run")).toBeNull();
     expect(screen.queryByTestId("discover-filter-trainingPlans-activity_category-run")).toBeNull();
     fireEvent.press(screen.getByTestId("discover-filter-sort-field-created-at"));

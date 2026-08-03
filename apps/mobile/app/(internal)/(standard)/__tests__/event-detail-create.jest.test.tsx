@@ -2,6 +2,7 @@ import { act } from "@testing-library/react-native";
 import React from "react";
 import type { Control, ControllerRenderProps, FieldValues } from "react-hook-form";
 import type { ReactTestInstance } from "react-test-renderer";
+import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 import EventDetailScreen from "../event-detail";
@@ -483,14 +484,21 @@ describe("event detail create mode", () => {
             id: "plan-1",
             name: "Tempo Run",
             activity_category: "run",
-            authoritative_metrics: { estimated_duration: 3600, estimated_tss: 78 },
+            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+              durationSeconds: 3_600,
+              id: "plan-1",
+            }),
           },
           {
             activity_categories: ["bike"],
             id: "plan-2",
             name: "Recovery Ride",
             activity_category: "bike",
-            authoritative_metrics: { estimated_duration: 2400, estimated_tss: 35 },
+            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+              activityCategory: "bike",
+              durationSeconds: 2_400,
+              id: "plan-2",
+            }),
           },
         ],
       },
@@ -531,7 +539,7 @@ describe("event detail create mode", () => {
       date: "2026-03-24",
       trainingPlanId: "00000000-0000-4000-8000-000000000123",
       activityPlanId: "plan-tempo",
-      scheduleGapTssDelta: "80",
+      scheduleGapLoadDelta: "80",
     };
     mockActivityPlanGetByIdUseQuery.mockReturnValue({
       data: {
@@ -539,7 +547,10 @@ describe("event detail create mode", () => {
         id: "plan-tempo",
         name: "Tempo Run",
         activity_category: "run",
-        authoritative_metrics: { estimated_duration: 3600, estimated_tss: 78 },
+        prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+          durationSeconds: 3_600,
+          id: "plan-tempo",
+        }),
       },
       isLoading: false,
       error: null,
@@ -578,7 +589,7 @@ describe("event detail create mode", () => {
       date: "2026-03-24",
       trainingPlanId: "00000000-0000-4000-8000-000000000123",
       planSuggestionType: "add_load",
-      planSuggestionTssDelta: "75",
+      planSuggestionLoadDelta: "75",
       planSuggestionDescription: "Add load to close the readiness gap.",
     };
     mockActivityPlansListUseQuery.mockReturnValue({
@@ -589,14 +600,20 @@ describe("event detail create mode", () => {
             id: "plan-easy",
             name: "Easy Run",
             activity_category: "run",
-            authoritative_metrics: { estimated_duration: 2400, estimated_tss: 35 },
+            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+              durationSeconds: 2_400,
+              id: "plan-easy",
+            }),
           },
           {
             activity_categories: ["run"],
             id: "plan-tempo",
             name: "Tempo Run",
             activity_category: "run",
-            authoritative_metrics: { estimated_duration: 3600, estimated_tss: 72 },
+            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+              durationSeconds: 3_600,
+              id: "plan-tempo",
+            }),
           },
         ],
       },
@@ -621,7 +638,7 @@ describe("event detail create mode", () => {
       mode: "create",
       date: "2026-03-24",
       planSuggestionType: "reduce_load",
-      planSuggestionTssDelta: "-40",
+      planSuggestionLoadDelta: "-40",
       planSuggestionDescription: "Reduce load to protect readiness.",
     };
 

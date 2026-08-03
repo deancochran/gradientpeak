@@ -37,9 +37,7 @@ describe("activity plan calculations", () => {
     expect(calculateActivityPlanStats(plan)).toMatchObject({
       occurrenceCount: 1,
       duration: { exactElapsedSeconds: 3600, timedActiveSeconds: 3600 },
-      categoryDoses: [
-        { activity_category: "bike", cyclingPower: { averageFtpPercent: 80, estimatedTss: 64 } },
-      ],
+      categoryDoses: [{ activity_category: "bike", occurrenceCount: 1 }],
     });
     expect(extractActivityProfile(plan)[0]).toMatchObject({
       durationSeconds: 3600,
@@ -109,7 +107,7 @@ describe("activity plan calculations", () => {
     expect(() => compileActivityPlan(structure)).toThrow();
   });
 
-  it("sums variable-intensity cycling stress per occurrence instead of squaring mean IF", () => {
+  it("does not calculate bike-only Load or normalized intensity", () => {
     const plan = compileActivityPlan({
       version: 3,
       segments: [
@@ -143,17 +141,17 @@ describe("activity plan calculations", () => {
       ],
     });
 
-    expect(calculateActivityPlanStats(plan).categoryDoses[0]?.cyclingPower).toMatchObject({
-      averageFtpPercent: 75,
-      evidenceSeconds: 3600,
-      eligibleTimedSeconds: 3600,
-      evidenceCoverage: 1,
-      complete: true,
-      estimatedTss: 62.5,
+    const dose = calculateActivityPlanStats(plan).categoryDoses[0];
+    expect(dose).toMatchObject({
+      activity_category: "bike",
+      occurrenceCount: 2,
+      timedActiveSeconds: 3600,
     });
+    expect(dose).not.toHaveProperty("cyclingPower");
+    expect(dose).not.toHaveProperty("estimatedCommonLoad");
   });
 
-  it("marks cycling load partial when timed bike dose lacks power evidence", () => {
+  it("keeps target coverage out of the structural statistics helper", () => {
     const plan = compileActivityPlan({
       version: 3,
       segments: [
@@ -187,12 +185,12 @@ describe("activity plan calculations", () => {
       ],
     });
 
-    expect(calculateActivityPlanStats(plan).categoryDoses[0]?.cyclingPower).toMatchObject({
-      evidenceSeconds: 1800,
-      eligibleTimedSeconds: 3600,
-      evidenceCoverage: 0.5,
-      complete: false,
-      estimatedTss: 32,
+    const dose = calculateActivityPlanStats(plan).categoryDoses[0];
+    expect(dose).toMatchObject({
+      activity_category: "bike",
+      occurrenceCount: 2,
+      timedActiveSeconds: 3600,
     });
+    expect(dose).not.toHaveProperty("cyclingPower");
   });
 });

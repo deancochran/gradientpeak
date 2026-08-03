@@ -67,7 +67,7 @@ export function buildScheduleRecommendation(input: {
     return {
       type: "add_load",
       label: "Adjust schedule",
-      description: `Add about ${Math.round(loadDelta)} TSS this week or schedule one moderate session to approach the recommended load.`,
+      description: `Add about ${Math.round(loadDelta)} load this week or schedule one moderate session to approach the recommended load.`,
       target_date: targetDate,
       target_week_start: currentWeek?.week_start ?? null,
       target_load_delta: loadDelta,

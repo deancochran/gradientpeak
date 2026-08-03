@@ -13,7 +13,7 @@ import {
 } from "./resolveConstraintProfile";
 
 export interface AssessFeasibilityInput {
-  currentCtl: number;
+  currentLongTermLoad: number;
   weeksToPeak: number;
   goals: NormalizedPlanningGoal[];
   resolvedDemands: EventDemand[];
@@ -47,7 +47,7 @@ function assessAvailability(
 
   const maxSupportedWeeklyLoad =
     (maxDurationMinutes / 60) *
-    getActivityCategoryModelConfig(demand.activity_category).weekly_tss_per_hour;
+    getActivityCategoryModelConfig(demand.activity_category).weekly_load_per_hour;
 
   return maxSupportedWeeklyLoad >= demand.required_weekly_load_floor;
 }
@@ -88,18 +88,18 @@ export function resolveTrajectoryMode(
 }
 
 export function assessFeasibility(input: AssessFeasibilityInput): FeasibilityAssessmentResult {
-  const currentCtl = finiteNumber(input.currentCtl, 0);
+  const currentLongTermLoad = finiteNumber(input.currentLongTermLoad, 0);
   const primaryDemand = [...input.resolvedDemands].sort(
-    (left, right) => right.required_peak_ctl - left.required_peak_ctl,
+    (left, right) => right.required_peak_longTermLoad - left.required_peak_longTermLoad,
   )[0];
 
   if (!primaryDemand) {
     const feasibility = feasibilityAssessmentSchema.parse({
       status: "feasible",
       limiting_constraints: [],
-      required_peak_ctl: currentCtl,
-      achievable_peak_ctl: currentCtl,
-      readiness_gap_ctl: 0,
+      required_peak_longTermLoad: currentLongTermLoad,
+      achievable_peak_longTermLoad: currentLongTermLoad,
+      readiness_gap_longTermLoad: 0,
       rationale_codes: ["no_goals_capacity_bounded_baseline"],
     });
 
@@ -110,10 +110,14 @@ export function assessFeasibility(input: AssessFeasibilityInput): FeasibilityAss
     const feasibility = feasibilityAssessmentSchema.parse({
       status: "unsupported_goal_mapping",
       limiting_constraints: input.unsupportedGoalIds,
-      required_peak_ctl: finiteNumber(primaryDemand.required_peak_ctl, currentCtl),
-      achievable_peak_ctl: currentCtl,
-      readiness_gap_ctl: round(
-        finiteNumber(primaryDemand.required_peak_ctl, currentCtl) - currentCtl,
+      required_peak_longTermLoad: finiteNumber(
+        primaryDemand.required_peak_longTermLoad,
+        currentLongTermLoad,
+      ),
+      achievable_peak_longTermLoad: currentLongTermLoad,
+      readiness_gap_longTermLoad: round(
+        finiteNumber(primaryDemand.required_peak_longTermLoad, currentLongTermLoad) -
+          currentLongTermLoad,
       ),
       rationale_codes: ["unsupported_goal_mapping_detected"],
     });
@@ -132,18 +136,26 @@ export function assessFeasibility(input: AssessFeasibilityInput): FeasibilityAss
       activity_category: primaryDemand.activity_category,
     });
   const weeksToPeak = Math.max(finiteNumber(input.weeksToPeak, 1), 1);
-  const requiredPeakCtl = finiteNumber(primaryDemand.required_peak_ctl, currentCtl);
-  const maxCtlRampPerWeek = finiteNumber(constraintProfile.effective_max_ctl_ramp_per_week, 0);
-  const requiredCtlRamp = (requiredPeakCtl - currentCtl) / weeksToPeak;
-  const achievablePeakCtl = round(currentCtl + maxCtlRampPerWeek * weeksToPeak);
+  const requiredPeakLongTermLoad = finiteNumber(
+    primaryDemand.required_peak_longTermLoad,
+    currentLongTermLoad,
+  );
+  const maxLongTermLoadRampPerWeek = finiteNumber(
+    constraintProfile.effective_max_longTermLoad_ramp_per_week,
+    0,
+  );
+  const requiredLongTermLoadRamp = (requiredPeakLongTermLoad - currentLongTermLoad) / weeksToPeak;
+  const achievablePeakLongTermLoad = round(
+    currentLongTermLoad + maxLongTermLoadRampPerWeek * weeksToPeak,
+  );
   let status: FeasibilityAssessment["status"] = "feasible";
   const limitingConstraints: string[] = [];
   const rationaleCodes = [...constraintProfile.rationale_codes];
 
-  if (requiredCtlRamp > maxCtlRampPerWeek) {
+  if (requiredLongTermLoadRamp > maxLongTermLoadRampPerWeek) {
     status = "infeasible_ramp";
-    limitingConstraints.push("ctl_ramp_limit");
-    rationaleCodes.push("required_ctl_ramp_exceeds_effective_ramp_cap");
+    limitingConstraints.push("longTermLoad_ramp_limit");
+    rationaleCodes.push("required_longTermLoad_ramp_exceeds_effective_ramp_cap");
   } else if (!assessAvailability(primaryDemand, input.preferenceProfile)) {
     status = "infeasible_availability";
     limitingConstraints.push("max_weekly_duration_minutes");
@@ -171,9 +183,12 @@ export function assessFeasibility(input: AssessFeasibilityInput): FeasibilityAss
   const feasibility = feasibilityAssessmentSchema.parse({
     status,
     limiting_constraints: limitingConstraints,
-    required_peak_ctl: requiredPeakCtl,
-    achievable_peak_ctl: status === "feasible" ? requiredPeakCtl : achievablePeakCtl,
-    readiness_gap_ctl: round(Math.max(0, requiredPeakCtl - achievablePeakCtl)),
+    required_peak_longTermLoad: requiredPeakLongTermLoad,
+    achievable_peak_longTermLoad:
+      status === "feasible" ? requiredPeakLongTermLoad : achievablePeakLongTermLoad,
+    readiness_gap_longTermLoad: round(
+      Math.max(0, requiredPeakLongTermLoad - achievablePeakLongTermLoad),
+    ),
     rationale_codes: rationaleCodes,
   });
 

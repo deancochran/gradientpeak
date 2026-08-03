@@ -1,19 +1,55 @@
 import { describe, expect, it } from "vitest";
-import { detectLTHR } from "../threshold-detection";
+import { extractBestEfforts } from "../best-efforts";
+import {
+  ACTIVITY_FILE_LTHR_CALCULATION_VERSION,
+  detectLactateThresholdHeartRateFromBestEfforts,
+} from "../threshold-detection";
 
-describe("Threshold Detection", () => {
-  it("should detect LTHR from 20min effort", () => {
-    // 20 mins = 1200 seconds
-    // Create a stream with 20 mins of steady HR at 170
-    const hrStream = Array(1300).fill(140);
-    // Insert 20 mins at 170 (need > 1200s duration, so > 1200 samples if 1Hz)
-    for (let i = 50; i < 1260; i++) {
-      hrStream[i] = 170;
-    }
-    const timestamps = Array.from({ length: 1300 }, (_, i) => i);
+describe("detectLactateThresholdHeartRateFromBestEfforts", () => {
+  it("propagates the canonical exact 20-minute HR effort", () => {
+    const extraction = extractBestEfforts({
+      metric: "heart_rate",
+      samples: Array.from({ length: 1_301 }, (_, timestampSeconds) => ({
+        timestampSeconds,
+        value: timestampSeconds <= 50 ? 140 : 170,
+      })),
+      config: { durationsSeconds: [1_200] },
+    });
 
-    // LTHR = 95% of 20min avg
-    // 170 * 0.95 = 161.5 -> rounded to 162
-    expect(detectLTHR(hrStream, timestamps)).toBe(162);
+    expect(detectLactateThresholdHeartRateFromBestEfforts(extraction)).toMatchObject({
+      valueBpm: 162,
+      calculationVersion: ACTIVITY_FILE_LTHR_CALCULATION_VERSION,
+      sourceEffortCalculationVersion: extraction.calculationVersion,
+      sourceEffort: {
+        status: "available",
+        durationSeconds: 1_200,
+        startTimestampSeconds: 50,
+        endTimestampSeconds: 1_250,
+        windowCoverage: 1,
+      },
+    });
+  });
+
+  it("does not propagate an incomplete 20-minute window or a non-HR extraction", () => {
+    const incomplete = extractBestEfforts({
+      metric: "heart_rate",
+      samples: [
+        { timestampSeconds: 0, value: 170 },
+        { timestampSeconds: 600, value: 170 },
+        { timestampSeconds: 1_200, value: 170 },
+      ],
+      config: { durationsSeconds: [1_200] },
+    });
+    const power = extractBestEfforts({
+      metric: "power",
+      samples: [
+        { timestampSeconds: 0, value: 170 },
+        { timestampSeconds: 1_200, value: 170 },
+      ],
+      config: { durationsSeconds: [1_200], maxGapSeconds: 1_200 },
+    });
+
+    expect(detectLactateThresholdHeartRateFromBestEfforts(incomplete)).toBeNull();
+    expect(detectLactateThresholdHeartRateFromBestEfforts(power)).toBeNull();
   });
 });

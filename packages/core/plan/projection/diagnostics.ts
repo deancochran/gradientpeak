@@ -9,8 +9,8 @@ export interface ProjectionDiagnosticsEffectiveOptimizerConfig {
     churn_penalty_weight: number;
   };
   caps: {
-    max_weekly_tss_ramp_pct: number;
-    max_ctl_ramp_per_week: number;
+    max_weekly_load_ramp_pct: number;
+    max_longTermLoad_ramp_per_week: number;
   };
   search: {
     lookahead_weeks: number;
@@ -32,8 +32,8 @@ export interface ProjectionObjectiveContributions {
 export interface ProjectionReferenceTrackingDiagnostics {
   scored_weeks: number;
   matched_points: number;
-  ctl_mean_absolute_error: number;
-  tss_mean_absolute_error: number;
+  longTermLoad_mean_absolute_error: number;
+  load_mean_absolute_error: number;
   taper_pressure: number;
   safety_penalty: number;
 }
@@ -78,8 +78,8 @@ export function createZeroReferenceTracking(): ProjectionReferenceTrackingDiagno
   return {
     scored_weeks: 0,
     matched_points: 0,
-    ctl_mean_absolute_error: 0,
-    tss_mean_absolute_error: 0,
+    longTermLoad_mean_absolute_error: 0,
+    load_mean_absolute_error: 0,
     taper_pressure: 0,
     safety_penalty: 0,
   };
@@ -117,8 +117,9 @@ export function resolveDiagnosticsEffectiveOptimizerConfig(input: {
       churn_penalty_weight: input.effectiveControls.optimizer.churn_penalty_weight,
     },
     caps: {
-      max_weekly_tss_ramp_pct: input.effectiveControls.ramp_caps.max_weekly_tss_ramp_pct,
-      max_ctl_ramp_per_week: input.effectiveControls.ramp_caps.max_ctl_ramp_per_week,
+      max_weekly_load_ramp_pct: input.effectiveControls.ramp_caps.max_weekly_load_ramp_pct,
+      max_longTermLoad_ramp_per_week:
+        input.effectiveControls.ramp_caps.max_longTermLoad_ramp_per_week,
     },
     search: {
       lookahead_weeks:
@@ -167,8 +168,8 @@ export function parseObjectiveContributionsPayload(
     reference_tracking: {
       scored_weeks: readNumber("reference_tracking_scored_weeks"),
       matched_points: readNumber("reference_tracking_matched_points"),
-      ctl_mean_absolute_error: readNumber("reference_tracking_ctl_mae"),
-      tss_mean_absolute_error: readNumber("reference_tracking_tss_mae"),
+      longTermLoad_mean_absolute_error: readNumber("reference_tracking_longTermLoad_mae"),
+      load_mean_absolute_error: readNumber("reference_tracking_load_mae"),
       taper_pressure: readNumber("reference_tracking_taper_pressure"),
       safety_penalty: readNumber("reference_tracking_safety_penalty"),
     },
@@ -192,8 +193,9 @@ export function serializeObjectiveContributionsPayload(input: {
     weighted_term_curve: input.weighted_terms.curve,
     reference_tracking_scored_weeks: input.reference_tracking?.scored_weeks ?? 0,
     reference_tracking_matched_points: input.reference_tracking?.matched_points ?? 0,
-    reference_tracking_ctl_mae: input.reference_tracking?.ctl_mean_absolute_error ?? 0,
-    reference_tracking_tss_mae: input.reference_tracking?.tss_mean_absolute_error ?? 0,
+    reference_tracking_longTermLoad_mae:
+      input.reference_tracking?.longTermLoad_mean_absolute_error ?? 0,
+    reference_tracking_load_mae: input.reference_tracking?.load_mean_absolute_error ?? 0,
     reference_tracking_taper_pressure: input.reference_tracking?.taper_pressure ?? 0,
     reference_tracking_safety_penalty: input.reference_tracking?.safety_penalty ?? 0,
   };

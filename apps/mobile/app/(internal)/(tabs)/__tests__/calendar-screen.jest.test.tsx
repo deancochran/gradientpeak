@@ -4,6 +4,10 @@ import React from "react";
 import type { ReactTestInstance } from "react-test-renderer";
 import { create } from "zustand";
 
+import {
+  createObservationQuantificationBundleFixture,
+  createPrescriptionQuantificationBundleFixture,
+} from "@/components/shared/__tests__/activityQuantificationFixture";
 import { createHost, type HostProps } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
@@ -20,46 +24,6 @@ let mockAuthReady = true;
 const fixedNow = new Date("2026-03-23T12:00:00.000Z");
 const today = fixedNow.toISOString().slice(0, 10);
 let mockTodayKey = today;
-
-const commonLoadProvenance = {
-  model: "gradientpeak_relative_load",
-  version: "1",
-  activity_category: "run",
-  method: "run_pace_threshold",
-  quality: {
-    source: "validated_test",
-    observed_at: "2026-03-22T12:00:00.000Z",
-    confidence: "high",
-    stale: false,
-    estimate: false,
-    calculation_version: "threshold-v1",
-    evidence_fingerprint: "calendar-quality",
-  },
-  thresholdEvidence: {
-    type: "threshold_speed_mps",
-    value: 4,
-    unit: "meters_per_second",
-    source: "validated_test",
-    observedAt: "2026-03-22T12:00:00.000Z",
-    validAt: "2026-03-22T12:00:00.000Z",
-    freshness: "current",
-    calculationVersion: "threshold-v1",
-    sourceFingerprint: "calendar-threshold",
-  },
-  evidenceFingerprint: "calendar-activity",
-  computedAsOf: "2026-03-23T12:00:00.000Z",
-};
-
-function availableCommonLoad(load: number, intensity: number) {
-  return {
-    status: "available",
-    ...commonLoadProvenance,
-    load,
-    intensity,
-    contributingDurationSeconds: 3600,
-    estimated: false,
-  };
-}
 
 type CalendarStoreState = {
   hydrated: boolean;
@@ -108,8 +72,7 @@ type AuthStoreFixture = { ready: boolean; session: { user: { id: string } } };
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
-  commonLoadAggregateSchema: jest.requireActual("@repo/core").commonLoadAggregateSchema,
-  commonLoadResultSchema: jest.requireActual("@repo/core").commonLoadResultSchema,
+  ...jest.requireActual("@repo/core"),
   formatGoalTypeLabel: () => "Race Day",
   getTrainingIntensityZone: jest.requireActual("@repo/core/load").getTrainingIntensityZone,
   getGoalObjectiveSummary: () => "Run your A race",
@@ -396,12 +359,10 @@ jest.mock("@/lib/api", () => ({
                         name: "Tempo Builder",
                         description: "Progressive tempo with a strong finish.",
                         activity_category: "run",
-                        authoritative_metrics: {
-                          estimated_duration: 3600,
-                          estimated_tss: 72,
-                          intensity_factor: 0.82,
-                        },
-                        common_load: availableCommonLoad(67.24, 0.82),
+                        prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+                          durationSeconds: 3_600,
+                          load: 67.24,
+                        }),
                         structure: {
                           version: 3,
                           segments: [
@@ -537,9 +498,7 @@ jest.mock("@/lib/api", () => ({
                       comments_count: 0,
                       has_liked: false,
                       derived: {
-                        tss: 64,
-                        intensity_factor: 0.78,
-                        common_load: availableCommonLoad(64, 0.8),
+                        observationQuantification: createObservationQuantificationBundleFixture(),
                         computed_as_of: `${today}T11:45:00.000Z`,
                       },
                     },
@@ -669,15 +628,17 @@ describe("calendar day timeline screen", () => {
     expect(screen.getByText("Today")).toBeTruthy();
     expect(screen.getByTestId("calendar-goal-row-goal-1")).toBeTruthy();
     expect(screen.getByTestId("calendar-activity-row-activity-1")).toBeTruthy();
-    expect(screen.getByText("8.0 km · 45 min · Load 64 · Intensity Tempo · 0.80")).toBeTruthy();
+    expect(
+      screen.getByText("8.0 km · 45 min · Common Load 64 · Normalized intensity 0.80"),
+    ).toBeTruthy();
     expect(screen.getByTestId("calendar-event-row-event-2")).toBeTruthy();
-    expect(screen.getByText("~1h · Load 67 · Intensity Tempo · 0.82")).toBeTruthy();
+    expect(screen.getByText("~1h · Common Load 67.2 · Normalized intensity 0.82")).toBeTruthy();
     expect(screen.queryByText(/TSS|\bIF\b/)).toBeNull();
     expect(
       screen.getByTestId("calendar-activity-row-activity-1").props.accessibilityLabel,
-    ).toContain("Load 64, Intensity Tempo · 0.80");
+    ).toContain("Common Load 64, Normalized intensity 0.80");
     expect(screen.getByTestId("calendar-event-row-event-2").props.accessibilityLabel).toContain(
-      "Load 67 · Intensity Tempo · 0.82",
+      "Common Load 67.2 · Normalized intensity 0.82",
     );
     expect(screen.queryByTestId("calendar-summary-card")).toBeNull();
     expect(screen.queryByTestId("calendar-month-page-2026-03-01")).toBeNull();
@@ -851,8 +812,11 @@ describe("calendar day timeline screen", () => {
                 duration_seconds: 1800,
                 distance_meters: 9000,
                 derived: {
-                  tss: 91,
-                  intensity_factor: 0.93,
+                  observationQuantification: createObservationQuantificationBundleFixture({
+                    activityCategory: "bike",
+                    durationSeconds: 1_800,
+                    status: "unsupported",
+                  }),
                 },
               },
             ],
@@ -868,11 +832,15 @@ describe("calendar day timeline screen", () => {
 
     renderNative(<CalendarScreenWithErrorBoundary />);
 
-    expect(screen.getByText("9.0 km · 30 min · Load Unavailable")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "9.0 km · 30 min · Common Load Unavailable · Normalized intensity Unavailable",
+      ),
+    ).toBeTruthy();
     expect(screen.queryByText(/91|0\.93|TSS|\bIF\b/)).toBeNull();
     expect(
       screen.getByTestId("calendar-activity-row-activity-missing-load").props.accessibilityLabel,
-    ).toContain("Load Unavailable");
+    ).toContain("Common Load Unavailable");
   });
 
   it("marks partial completed common Load and Intensity as incomplete", () => {
@@ -888,16 +856,9 @@ describe("calendar day timeline screen", () => {
                 started_at: `${today}T13:00:00.000Z`,
                 duration_seconds: 3600,
                 derived: {
-                  common_load: {
+                  observationQuantification: createObservationQuantificationBundleFixture({
                     status: "partial",
-                    ...commonLoadProvenance,
-                    load: 32,
-                    intensity: 0.8,
-                    contributingDurationSeconds: 1800,
-                    eligibleDurationSeconds: 3600,
-                    sourceTimeCoverage: 0.5,
-                    reason: "activity_data_partial",
-                  },
+                  }),
                 },
               },
             ],
@@ -915,7 +876,7 @@ describe("calendar day timeline screen", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
     expect(
-      screen.getByText("1h · Load 32 · Incomplete · Intensity Tempo · 0.80 · Incomplete"),
+      screen.getByText("1h · Common Load 32 · Incomplete · Normalized intensity 0.80 · Incomplete"),
     ).toBeTruthy();
     expect(
       screen.getByTestId("calendar-activity-row-activity-partial-load").props.accessibilityLabel,
@@ -955,12 +916,10 @@ describe("calendar day timeline screen", () => {
             id: "group-plan-load",
             name: "Group tempo plan",
             activity_category: "run",
-            authoritative_metrics: {
-              estimated_duration: 3600,
-              estimated_tss: 99,
-              intensity_factor: 0.99,
-            },
-            common_load: availableCommonLoad(56.25, 0.75),
+            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+              durationSeconds: 3_600,
+              load: 56.25,
+            }),
           },
         ],
       },
@@ -972,12 +931,14 @@ describe("calendar day timeline screen", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
     expect(
-      screen.getByText("Tuesday crew · Group tempo plan · ~1h · Load 56 · Intensity Tempo · 0.75"),
+      screen.getByText(
+        "Tuesday crew · Group tempo plan · ~1h · Common Load 56.3 · Normalized intensity 0.75",
+      ),
     ).toBeTruthy();
     expect(screen.queryByText(/99|0\.99|TSS|\bIF\b/)).toBeNull();
     expect(
       screen.getByTestId("calendar-group-event-row-group-event-load").props.accessibilityLabel,
-    ).toContain("Load 56 · Intensity Tempo · 0.75");
+    ).toContain("Common Load 56.3 · Normalized intensity 0.75");
   });
 
   it("keeps horizontal week paging passive until a day is selected", () => {

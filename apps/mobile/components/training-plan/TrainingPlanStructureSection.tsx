@@ -1,3 +1,4 @@
+import type { ActivityPrescriptionQuantificationBundle } from "@repo/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import type React from "react";
@@ -16,10 +17,7 @@ type ActivityPlanListItem = {
   id: string;
   name: string;
   activity_category?: string | null;
-  authoritative_metrics?: {
-    estimated_tss?: number | null;
-    estimated_duration?: number | null;
-  } | null;
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
   structure?: unknown;
 };
 

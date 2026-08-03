@@ -17,21 +17,31 @@ describe("system training plan heuristic alignment", () => {
   for (const scenario of exactAlignmentScenarios) {
     it(`${scenario.key} - stays inside the exact-lane block and mean error gates`, () => {
       const comparison = compareScenarioToReference(scenario);
-      const missCount = comparison.weeklyComparison.filter((week) => !week.withinTolerance).length;
+      const missCount = comparison.weeklyComparison.filter(
+        (week) => week.withinTolerance === false,
+      ).length;
       const consecutiveMissPairs = comparison.weeklyComparison
         .slice(1)
         .filter(
           (week, index) =>
-            !week.withinTolerance && !comparison.weeklyComparison[index]?.withinTolerance,
+            week.withinTolerance === false &&
+            comparison.weeklyComparison[index]?.withinTolerance === false,
         ).length;
 
       expect(comparison.reference.feasibility.mode).toBe(scenario.expectedMode);
+      expect(comparison.weeklyComparison.every((week) => week.actual !== null)).toBe(true);
+      expect(comparison.weeklyComparison.every((week) => week.actualStatus !== "unavailable")).toBe(
+        true,
+      );
       if (comparison.blockAbsError === null || comparison.meanAbsError === null) {
-        expect(comparison.weeklyComparison.every((week) => week.actual === null)).toBe(true);
+        expect(comparison.blockStatus).toBe("partial");
+        expect(comparison.weeklyComparison.some((week) => week.actualStatus === "partial")).toBe(
+          true,
+        );
         return;
       }
-      expect(comparison.blockAbsError).toBeLessThanOrEqual(comparison.blockToleranceTss);
-      expect(comparison.meanAbsError).toBeLessThanOrEqual(comparison.meanToleranceTss);
+      expect(comparison.blockAbsError).toBeLessThanOrEqual(comparison.blockToleranceLoad);
+      expect(comparison.meanAbsError).toBeLessThanOrEqual(comparison.meanToleranceLoad);
       expect(missCount).toBeLessThanOrEqual(strictExactScenarioMissBudgets[scenario.key] ?? 1);
       expect(consecutiveMissPairs).toBeLessThanOrEqual(
         strictExactScenarioConsecutiveMissPairBudgets[scenario.key] ?? 0,
@@ -61,8 +71,8 @@ describe("system training plan feasibility and variance contracts", () => {
         (week) => week.actual === null || (week.actual >= 0 && Number.isFinite(week.actual)),
       ),
     ).toBe(true);
-    expect(constrained.blockToleranceTss).toBeGreaterThan(0);
-    expect(infeasible.blockToleranceTss).toBeGreaterThan(0);
+    expect(constrained.blockToleranceLoad).toBeGreaterThan(0);
+    expect(infeasible.blockToleranceLoad).toBeGreaterThan(0);
   });
 
   it("preserves a clear tolerance separation between tight and flexible audit lanes", () => {
@@ -74,7 +84,7 @@ describe("system training plan feasibility and variance contracts", () => {
     );
 
     expect(infeasible.reference.feasibility.mode).toBe("capacity_bounded");
-    expect(infeasible.blockToleranceTss).toBeGreaterThan(feasible.blockToleranceTss);
-    expect(infeasible.meanToleranceTss).toBeGreaterThan(feasible.meanToleranceTss);
+    expect(infeasible.blockToleranceLoad).toBeGreaterThan(feasible.blockToleranceLoad);
+    expect(infeasible.meanToleranceLoad).toBeGreaterThan(feasible.meanToleranceLoad);
   });
 });

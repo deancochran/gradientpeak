@@ -3,8 +3,6 @@ import {
   calculateCssFrom400m200mTest,
   cssTestProtocolSchema,
   cssTestTimesSchema,
-  deriveSwimPaceCurveFromCSS,
-  estimateCSSFromSwimTests,
   pacePerHundredMetersToSpeed,
   speedToPacePerHundredMeters,
 } from "../swim-pace-curve";
@@ -18,7 +16,6 @@ describe("400m/200m CSS test protocol", () => {
         { distanceMeters: 200, durationSeconds: 168, speedMetersPerSecond: 200 / 168 },
       ],
     });
-    expect(estimateCSSFromSwimTests(360, 168)).toBe(96);
   });
 
   it.each([
@@ -48,29 +45,6 @@ describe("400m/200m CSS test protocol", () => {
         time200Seconds: 168,
       }).success,
     ).toBe(false);
-  });
-});
-
-describe("deriveSwimPaceCurveFromCSS", () => {
-  it("returns only a 30-minute CSS anchor", () => {
-    expect(deriveSwimPaceCurveFromCSS(90)).toEqual([
-      {
-        duration_seconds: 1_800,
-        effort_type: "speed",
-        value: 1.11,
-        unit: "meters_per_second",
-        activity_category: "swim",
-      },
-    ]);
-  });
-
-  it.each([0, 44, 601, Number.NaN])("rejects invalid CSS %s", (css) => {
-    expect(() => deriveSwimPaceCurveFromCSS(css)).toThrow();
-  });
-
-  it("accepts every canonical onboarding/profile CSS bound", () => {
-    expect(deriveSwimPaceCurveFromCSS(45)).toHaveLength(1);
-    expect(deriveSwimPaceCurveFromCSS(600)).toHaveLength(1);
   });
 });
 

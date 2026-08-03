@@ -1,5 +1,5 @@
 type TrainingPathLoadMetricPoint = {
-  completedLoadTss?: number | null;
+  completedLoad?: number | null;
   completedLoadUnavailable?: boolean;
   hasCompletedActivityWithoutLoad?: boolean;
   hasTargetLoad?: boolean;
@@ -11,9 +11,9 @@ type TrainingPathLoadMetricPoint = {
   effectiveTentativeLoad?: number | null | undefined;
   recommendedLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable" | undefined;
   recommendedLoad?: number | null | undefined;
-  plannedLoadTss?: number | null;
-  targetLoadTss?: number | null;
-  tentativePlannedLoadTss?: number | null;
+  plannedLoad?: number | null;
+  targetLoad?: number | null;
+  tentativePlannedLoad?: number | null;
 };
 
 function formatIntensity(value: number): string {
@@ -23,7 +23,14 @@ function formatIntensity(value: number): string {
 }
 
 export type TrainingPathLoadMetric = {
-  label: "Completed" | "Intensity" | "Load" | "Planned" | "Remaining" | "Target" | "Tentative";
+  label:
+    | "Common Load"
+    | "Completed"
+    | "Normalized intensity"
+    | "Planned"
+    | "Remaining"
+    | "Target"
+    | "Tentative";
   value: string;
 };
 
@@ -39,14 +46,14 @@ export function buildTrainingPathLoadMetrics(
   if (point?.effectiveLoadStatus) {
     const incomplete = point.effectiveLoadStatus === "partial";
     metrics.push({
-      label: "Load",
+      label: "Common Load",
       value:
         point.effectiveLoadStatus === "unavailable" || point.effectiveLoad == null
           ? "Unavailable"
           : `${formatLoad(point.effectiveLoad)}${incomplete ? " incomplete" : ""}`,
     });
     metrics.push({
-      label: "Intensity",
+      label: "Normalized intensity",
       value:
         point.effectiveLoadStatus === "known_zero"
           ? "—"

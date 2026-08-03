@@ -34,7 +34,6 @@ export * from "./settings/profile_settings";
 export {
   activityPlanSpeedKphToMetersPerSecond,
   activityPlanSpeedMetersPerSecondToKph,
-  convertTargetToAbsolute,
   formatIntensityTarget,
   formatStepTargets,
   formatTargetValue,
@@ -72,7 +71,7 @@ export * from "./profile-metrics";
 export * from "./template_library";
 
 // tRPC-specific Activity Plans Schemas - use different names to avoid conflicts with supabase exports
-// Note: estimated_duration and estimated_tss are calculated server-side and NOT part of the input
+// Note: estimated_duration and estimated_load are calculated server-side and NOT part of the input
 export const activityPlanCreateSchema = activityPlanInputSchema;
 export const activityPlanUpdateSchema = activityPlanInputSchema.partial().strict();
 

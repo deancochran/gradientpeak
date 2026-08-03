@@ -20,6 +20,7 @@ import {
   isTargetTypePermittedForActivity,
   selectActivityPlanProviderTarget,
 } from "@repo/core";
+import { z } from "zod";
 import type { WahooActivityType } from "./activity-type-utils";
 import { toWahooTypes } from "./activity-type-utils";
 
@@ -27,12 +28,12 @@ export interface WahooPlanJson {
   header: {
     name: string;
     version: string;
-    description?: string;
+    description?: string | undefined;
     workout_type_family: number; // 0 = bike, 1 = run
     workout_type_location: number; // 0 = indoor, 1 = outdoor
-    ftp?: number;
-    max_hr?: number;
-    threshold_hr?: number;
+    ftp?: number | undefined;
+    max_hr?: number | undefined;
+    threshold_hr?: number | undefined;
   };
   intervals: WahooInterval[];
 }
@@ -42,15 +43,15 @@ export interface WahooInterval {
   exit_trigger_type: "time" | "distance" | "repeat";
   exit_trigger_value: number;
   intensity_type: "wu" | "active" | "tempo" | "lt" | "cd" | "recover" | "rest";
-  targets?: WahooTarget[];
-  intervals?: WahooInterval[]; // For repeats
+  targets?: WahooTarget[] | undefined;
+  intervals?: WahooInterval[] | undefined; // For repeats
 }
 
 export interface WahooTarget {
   type: "ftp" | "watts" | "hr" | "threshold_hr" | "max_hr" | "speed" | "rpm";
-  low?: number;
-  high?: number;
-  value?: number;
+  low?: number | undefined;
+  high?: number | undefined;
+  value?: number | undefined;
 }
 
 export type WahooPlanContractValidation = {
@@ -88,6 +89,50 @@ export type WahooCompatibilityResult = {
 export type WahooProjectionSnapshot = {
   plan: WahooPlanJson;
 };
+
+const wahooTargetSchema: z.ZodType<WahooTarget> = z
+  .object({
+    type: z.enum(["ftp", "watts", "hr", "threshold_hr", "max_hr", "speed", "rpm"]),
+    low: z.number().finite().optional(),
+    high: z.number().finite().optional(),
+    value: z.number().finite().optional(),
+  })
+  .strict();
+
+const wahooIntervalSchema: z.ZodType<WahooInterval> = z.lazy(() =>
+  z
+    .object({
+      name: z.string(),
+      exit_trigger_type: z.enum(["time", "distance", "repeat"]),
+      exit_trigger_value: z.number().finite(),
+      intensity_type: z.enum(["wu", "active", "tempo", "lt", "cd", "recover", "rest"]),
+      targets: z.array(wahooTargetSchema).optional(),
+      intervals: z.array(wahooIntervalSchema).optional(),
+    })
+    .strict(),
+);
+
+const wahooPlanJsonSchema: z.ZodType<WahooPlanJson> = z
+  .object({
+    header: z
+      .object({
+        name: z.string(),
+        version: z.string(),
+        description: z.string().optional(),
+        workout_type_family: z.number().int(),
+        workout_type_location: z.number().int(),
+        ftp: z.number().finite().positive().optional(),
+        max_hr: z.number().finite().positive().optional(),
+        threshold_hr: z.number().finite().positive().optional(),
+      })
+      .strict(),
+    intervals: z.array(wahooIntervalSchema),
+  })
+  .strict();
+
+export const wahooProjectionSnapshotSchema: z.ZodType<WahooProjectionSnapshot> = z
+  .object({ plan: wahooPlanJsonSchema })
+  .strict();
 
 export interface ConvertOptions {
   activityType: WahooActivityType;

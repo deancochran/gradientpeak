@@ -17,18 +17,31 @@ export interface ActivityFileStreamRecord {
   positionLong?: number;
 }
 
+/**
+ * Canonical activity-file timeline. `timestampSeconds` is absolute UTC Unix
+ * seconds. Every metric on the current sample describes the preceding interval
+ * `(previous timestamp, current timestamp]`; the first sample anchors time.
+ */
+export interface ActivityFileTimelineSample {
+  timestampSeconds: number;
+  powerWatts: number | null;
+  heartRateBpm: number | null;
+  cadenceRpm: number | null;
+  elevationMeters: number | null;
+  speedMetersPerSecond: number | null;
+}
+
+export interface ActivityFileUnpositionedValueCounts {
+  power: number;
+  heartRate: number;
+  cadence: number;
+  elevation: number;
+  speed: number;
+}
+
 export interface ActivityFileStreamMetadata {
-  powerStream: number[];
-  hrStream: number[];
-  timestamps: number[];
-  cadenceStream: number[];
-  altitudeStream: number[];
-  speedStream: number[];
-  powerTimestamps?: number[];
-  hrTimestamps?: number[];
-  cadenceTimestamps?: number[];
-  altitudeTimestamps?: number[];
-  speedTimestamps?: number[];
+  samples: ActivityFileTimelineSample[];
+  unpositionedValueCounts: ActivityFileUnpositionedValueCounts;
   coords: ActivityFileCoordinate[];
   avgTemperature: number | null;
 }
@@ -49,44 +62,38 @@ export function isValidActivityFileCoordinate(record: {
 export function collectActivityFileStreamMetadata(
   records: ActivityFileStreamRecord[],
 ): ActivityFileStreamMetadata {
-  const powerStream: number[] = [];
-  const powerTimestamps: number[] = [];
-  const hrStream: number[] = [];
-  const hrTimestamps: number[] = [];
-  const timestamps: number[] = [];
-  const cadenceStream: number[] = [];
-  const cadenceTimestamps: number[] = [];
-  const altitudeStream: number[] = [];
-  const altitudeTimestamps: number[] = [];
-  const speedStream: number[] = [];
-  const speedTimestamps: number[] = [];
+  const samples: ActivityFileTimelineSample[] = [];
+  const unpositionedValueCounts: ActivityFileUnpositionedValueCounts = {
+    power: 0,
+    heartRate: 0,
+    cadence: 0,
+    elevation: 0,
+    speed: 0,
+  };
   const coords: ActivityFileCoordinate[] = [];
   let tempSum = 0;
   let tempCount = 0;
 
   for (const record of records) {
-    const timestamp =
-      record.timestamp === undefined ? undefined : record.timestamp.getTime() / 1000;
-    if (timestamp !== undefined) timestamps.push(timestamp);
-    if (record.power !== undefined && timestamp !== undefined) {
-      powerStream.push(record.power);
-      powerTimestamps.push(timestamp);
-    }
-    if (record.heartRate !== undefined && timestamp !== undefined) {
-      hrStream.push(record.heartRate);
-      hrTimestamps.push(timestamp);
-    }
-    if (record.cadence !== undefined && timestamp !== undefined) {
-      cadenceStream.push(record.cadence);
-      cadenceTimestamps.push(timestamp);
-    }
-    if (record.altitude !== undefined && timestamp !== undefined) {
-      altitudeStream.push(record.altitude);
-      altitudeTimestamps.push(timestamp);
-    }
-    if (record.speed !== undefined && timestamp !== undefined) {
-      speedStream.push(record.speed);
-      speedTimestamps.push(timestamp);
+    if (record.timestamp === undefined) {
+      if (record.power !== undefined) unpositionedValueCounts.power += 1;
+      if (record.heartRate !== undefined) unpositionedValueCounts.heartRate += 1;
+      if (record.cadence !== undefined) unpositionedValueCounts.cadence += 1;
+      if (record.altitude !== undefined) unpositionedValueCounts.elevation += 1;
+      if (record.speed !== undefined) unpositionedValueCounts.speed += 1;
+    } else {
+      const timestampSeconds = record.timestamp.getTime() / 1_000;
+      if (!Number.isFinite(timestampSeconds)) {
+        throw new Error("Activity-file record timestamp must be a valid instant");
+      }
+      samples.push({
+        timestampSeconds,
+        powerWatts: record.power ?? null,
+        heartRateBpm: record.heartRate ?? null,
+        cadenceRpm: record.cadence ?? null,
+        elevationMeters: record.altitude ?? null,
+        speedMetersPerSecond: record.speed ?? null,
+      });
     }
     if (record.temperature !== undefined) {
       tempSum += record.temperature;
@@ -98,17 +105,8 @@ export function collectActivityFileStreamMetadata(
   }
 
   return {
-    powerStream,
-    hrStream,
-    timestamps,
-    cadenceStream,
-    altitudeStream,
-    speedStream,
-    powerTimestamps,
-    hrTimestamps,
-    cadenceTimestamps,
-    altitudeTimestamps,
-    speedTimestamps,
+    samples,
+    unpositionedValueCounts,
     coords,
     avgTemperature: tempCount > 0 ? tempSum / tempCount : null,
   };

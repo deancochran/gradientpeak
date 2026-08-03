@@ -1,39 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  deriveSpeedCurveFromThresholdPace,
-  estimateSpeedForDuration,
-  formatPace,
-  paceToSpeed,
-  parsePace,
-  SPEED_MULTIPLIERS,
-  speedToPace,
-} from "../speed-curve";
-
-describe("deriveSpeedCurveFromThresholdPace", () => {
-  it("returns only a 60-minute threshold anchor", () => {
-    expect(deriveSpeedCurveFromThresholdPace(300)).toEqual([
-      {
-        duration_seconds: 3_600,
-        effort_type: "speed",
-        value: 3.33,
-        unit: "meters_per_second",
-        activity_category: "run",
-      },
-    ]);
-  });
-
-  it("should throw error for invalid pace", () => {
-    expect(() => deriveSpeedCurveFromThresholdPace(0)).toThrow();
-    expect(() => deriveSpeedCurveFromThresholdPace(-100)).toThrow();
-    expect(() => deriveSpeedCurveFromThresholdPace(100)).toThrow(); // Too fast
-    expect(() => deriveSpeedCurveFromThresholdPace(1_201)).toThrow(); // Too slow
-  });
-
-  it("accepts every canonical onboarding/profile pace bound", () => {
-    expect(deriveSpeedCurveFromThresholdPace(120)).toHaveLength(1);
-    expect(deriveSpeedCurveFromThresholdPace(1_200)).toHaveLength(1);
-  });
-});
+import { formatPace, paceToSpeed, parsePace, speedToPace } from "../speed-curve";
 
 describe("paceToSpeed and speedToPace", () => {
   it("should convert pace to speed correctly", () => {
@@ -88,23 +54,5 @@ describe("formatPace and parsePace", () => {
     expect(() => parsePace("4")).toThrow();
     expect(() => parsePace("4:")).toThrow();
     expect(() => parsePace("4:70")).toThrow(); // Invalid seconds
-  });
-});
-
-describe("estimateSpeedForDuration", () => {
-  it("should calculate speed for specific duration", () => {
-    const thresholdPace = 300; // 5:00/km
-    const thresholdSpeed = paceToSpeed(thresholdPace);
-
-    const sprintSpeed = estimateSpeedForDuration(thresholdPace, 30);
-    expect(sprintSpeed).toBeCloseTo(thresholdSpeed * SPEED_MULTIPLIERS.sprint, 2);
-
-    const thresholdSpeed300 = estimateSpeedForDuration(thresholdPace, 600);
-    expect(thresholdSpeed300).toBeCloseTo(thresholdSpeed * SPEED_MULTIPLIERS.threshold, 2);
-  });
-
-  it("should throw error for invalid inputs", () => {
-    expect(() => estimateSpeedForDuration(0, 300)).toThrow();
-    expect(() => estimateSpeedForDuration(300, 0)).toThrow();
   });
 });

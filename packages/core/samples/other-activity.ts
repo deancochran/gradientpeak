@@ -16,7 +16,7 @@ const createPlan = createSystemActivityPlanBuilderFactory("other", [
 /**
  * Yoga Flow - Other Activity
  * Total time: 60 minutes
- * Estimated TSS: ~30
+ * Estimated Common Load: ~30
  */
 export const YOGA_FLOW: RecordingServiceActivityPlan = {
   id: "3d6e7f8a-9b0c-4d2e-bf4a-5b6c7d8e9f0a",
@@ -60,7 +60,7 @@ export const YOGA_FLOW: RecordingServiceActivityPlan = {
 /**
  * Rock Climbing - Other Activity
  * Total time: 90 minutes
- * Estimated TSS: ~70
+ * Estimated Common Load: ~70
  */
 export const ROCK_CLIMBING_SESSION: RecordingServiceActivityPlan = {
   id: "4e7f8a9b-0c1d-4e3f-8a5b-6c7d8e9f0a1b",
@@ -115,7 +115,7 @@ export const ROCK_CLIMBING_SESSION: RecordingServiceActivityPlan = {
 /**
  * Hiking Adventure - Other Activity
  * Total time: 120 minutes
- * Estimated TSS: ~60
+ * Estimated Common Load: ~60
  */
 export const HIKING_ADVENTURE: RecordingServiceActivityPlan = {
   id: "5f8a9b0c-1d2e-4f4a-9b6c-7d8e9f0a1b2c",
@@ -153,7 +153,7 @@ export const HIKING_ADVENTURE: RecordingServiceActivityPlan = {
 /**
  * CrossFit WOD - Other Activity
  * Total time: 45 minutes
- * Estimated TSS: ~80
+ * Estimated Common Load: ~80
  */
 export const CROSSFIT_WOD: RecordingServiceActivityPlan = {
   id: "6a9b0c1d-2e3f-4a5b-ac7d-8e9f0a1b2c3d",
@@ -191,7 +191,7 @@ export const CROSSFIT_WOD: RecordingServiceActivityPlan = {
 /**
  * Walking Recovery - Other Activity
  * Total time: 45 minutes
- * Estimated TSS: ~20
+ * Estimated Common Load: ~20
  */
 export const WALKING_RECOVERY: RecordingServiceActivityPlan = {
   id: "7b0c1d2e-3f4a-4b6c-bd8e-9f0a1b2c3d4e",

@@ -33,9 +33,6 @@ export const PHYSIOLOGY_METRICS_POLICY_CONSTANTS = Object.freeze({
 });
 
 const expectedUnits: Record<AthleteMetricType, string> = {
-  ftp: "watts",
-  threshold_pace_seconds_per_km: "seconds_per_km",
-  css_seconds_per_100m: "seconds_per_100m",
   lthr: "beats_per_minute",
   max_hr: "beats_per_minute",
   resting_hr: "beats_per_minute",
@@ -50,9 +47,6 @@ const expectedUnits: Record<AthleteMetricType, string> = {
 };
 
 export const PHYSIOLOGY_METRIC_TYPES = [
-  "ftp",
-  "threshold_pace_seconds_per_km",
-  "css_seconds_per_100m",
   "lthr",
   "max_hr",
   "resting_hr",
@@ -75,7 +69,6 @@ export type PhysiologyMetricEffect = Readonly<{
 export type PhysiologyMetricsPolicyResult = Readonly<{
   policyVersion: typeof PHYSIOLOGY_METRICS_POLICY_VERSION;
   metrics: Readonly<Record<AthleteMetricType, PhysiologyMetricEffect>>;
-  wattsPerKilogram: CalculationResult;
   heartRateReserve: CalculationResult;
   individualizedRatios: Readonly<
     Record<"hrvRmssd" | "sleep" | "stress" | "soreness" | "wellness", CalculationResult>
@@ -298,9 +291,6 @@ export function evaluatePhysiologyMetrics(
     }),
   });
   const metrics: Record<AthleteMetricType, PhysiologyMetricEffect> = {
-    ftp: directEffect(input, "ftp"),
-    threshold_pace_seconds_per_km: directEffect(input, "threshold_pace_seconds_per_km", "run"),
-    css_seconds_per_100m: directEffect(input, "css_seconds_per_100m", "swim"),
     lthr: directEffect(input, "lthr", targetActivityCategory),
     max_hr: directEffect(input, "max_hr"),
     resting_hr: directEffect(input, "resting_hr"),
@@ -313,25 +303,6 @@ export function evaluatePhysiologyMetrics(
     wellness_score: directEffect(input, "wellness_score"),
     age_years: directEffect(input, "age_years"),
   };
-
-  const ftp = metrics.ftp.result;
-  const weight = metrics.weight_kg.result;
-  const ftpSource = ftp.contributingSourceIds[0];
-  const weightSource = weight.contributingSourceIds[0];
-  const wattsPerKilogram =
-    ftp.estimate !== null &&
-    weight.estimate !== null &&
-    weight.estimate > 0 &&
-    ftpSource &&
-    weightSource
-      ? estimatedResult({
-          estimate: ftp.estimate / weight.estimate,
-          unit: "watts_per_kilogram",
-          uncertainty: Math.max(ftp.uncertainty, weight.uncertainty),
-          reasonCodes: ["ftp_divided_by_weight"],
-          contributingSourceIds: [ftpSource, weightSource],
-        })
-      : unavailable("ftp_and_weight_required");
 
   const maxHr = metrics.max_hr.result;
   const restingHr = metrics.resting_hr.result;
@@ -355,7 +326,6 @@ export function evaluatePhysiologyMetrics(
   return {
     policyVersion: PHYSIOLOGY_METRICS_POLICY_VERSION,
     metrics,
-    wattsPerKilogram,
     heartRateReserve,
     individualizedRatios: {
       hrvRmssd: derivedRatio(input, "hrv_rmssd"),

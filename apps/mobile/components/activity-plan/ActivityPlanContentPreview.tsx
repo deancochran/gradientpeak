@@ -13,13 +13,6 @@ import { View } from "react-native";
 import { TimelineChart } from "@/components/activity-plan/activity/TimelineChart";
 
 type ActivityPlanPreviewLike = {
-  estimated_duration_minutes?: number | null;
-  authoritative_metrics?: {
-    estimated_duration?: number | null;
-    estimated_tss?: number | null;
-    intensity_factor?: number | null;
-    estimated_distance?: number | null;
-  } | null;
   structure?: unknown;
 };
 

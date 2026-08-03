@@ -15,7 +15,7 @@ const createPlan = createSystemActivityPlanBuilderFactory("bike", [
 /**
  * Easy Endurance Ride - Outdoor
  * Total time: 60 minutes
- * Estimated TSS: ~45
+ * Estimated Common Load: ~45
  */
 export const EASY_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
   id: "8c1d2e3f-4a5b-4c7d-8e9f-0a1b2c3d4e5f",
@@ -35,7 +35,7 @@ export const EASY_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
 /**
  * Sweet Spot Outdoor Ride
  * Total time: 75 minutes
- * Estimated TSS: ~85
+ * Estimated Common Load: ~85
  */
 export const SWEET_SPOT_OUTDOOR_RIDE: RecordingServiceActivityPlan = {
   id: "9d2e3f4a-5b6c-4d8e-9f0a-1b2c3d4e5f6a",
@@ -78,7 +78,7 @@ export const SWEET_SPOT_OUTDOOR_RIDE: RecordingServiceActivityPlan = {
 /**
  * Tempo Intervals - Outdoor
  * Total time: 80 minutes
- * Estimated TSS: ~90
+ * Estimated Common Load: ~90
  */
 export const TEMPO_INTERVALS_RIDE: RecordingServiceActivityPlan = {
   id: "0e3f4a5b-6c7d-4e9f-8a1b-2c3d4e5f6a7b",
@@ -122,7 +122,7 @@ export const TEMPO_INTERVALS_RIDE: RecordingServiceActivityPlan = {
 /**
  * Climbing Intervals - Outdoor
  * Total time: 70 minutes
- * Estimated TSS: ~95
+ * Estimated Common Load: ~95
  */
 export const CLIMBING_INTERVALS_RIDE: RecordingServiceActivityPlan = {
   id: "1f4a5b6c-7d8e-4f0a-9b2c-3d4e5f6a7b8c",
@@ -165,7 +165,7 @@ export const CLIMBING_INTERVALS_RIDE: RecordingServiceActivityPlan = {
 /**
  * Group Ride Simulation - Outdoor
  * Total time: 90 minutes
- * Estimated TSS: ~80
+ * Estimated Common Load: ~80
  */
 export const GROUP_RIDE_SIMULATION: RecordingServiceActivityPlan = {
   id: "2a5b6c7d-8e9f-4a1b-ac3d-4e5f6a7b8c9d",

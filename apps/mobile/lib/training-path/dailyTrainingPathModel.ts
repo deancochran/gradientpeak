@@ -54,21 +54,21 @@ export type WeeklyTrainingAdjustmentBucket = Omit<WeeklyTrainingLoadAdjustment, 
 
 export type TrainingPathDailyLoadInput = {
   date: string;
-  completed_load_tss?: number | null;
-  scheduled_load_tss?: number | null;
-  tentative_scheduled_load_tss?: number | null;
-  recommended_load_tss?: number | null;
+  completed_common_load?: number | null;
+  scheduled_common_load?: number | null;
+  tentative_scheduled_common_load?: number | null;
+  recommended_common_load?: number | null;
 };
 
 export type TrainingPathDailyFitnessInput = {
   date: string;
-  ctl?: number | null;
-  atl?: number | null;
-  tsb?: number | null;
+  longTermLoad?: number | null;
+  recentLoad?: number | null;
+  loadBalance?: number | null;
 };
 
-function normalizeNumber(value: number | null | undefined, fallback = 0) {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+function normalizeLoad(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function formatSignedLoad(value: number) {
@@ -119,10 +119,18 @@ export function getDailyTrainingAdjustmentSummary(input: {
   return {
     date: point.date,
     point,
-    loadDeltaLabel: point.hasTargetLoad === false ? null : formatSignedLoad(point.loadDeltaTss),
+    loadDeltaLabel:
+      point.hasTargetLoad === false || point.loadDelta === null
+        ? null
+        : formatSignedLoad(point.loadDelta),
     plannedDeltaLabel:
-      point.hasTargetLoad === false ? null : formatSignedLoad(point.plannedDeltaTss),
-    loadDeltaTone: point.hasTargetLoad === false ? null : getDeltaTone(point.loadDeltaTss),
+      point.hasTargetLoad === false || point.plannedDelta === null
+        ? null
+        : formatSignedLoad(point.plannedDelta),
+    loadDeltaTone:
+      point.hasTargetLoad === false || point.loadDelta === null
+        ? null
+        : getDeltaTone(point.loadDelta),
   };
 }
 
@@ -180,22 +188,22 @@ export function buildDailyTrainingAdjustmentPointsFromTrainingPathData(input: {
       const fitness = fitnessByDate.get(date);
       const targetFitness = targetFitnessByDate.get(date);
       const scheduledFitness = scheduledFitnessByDate.get(date);
-      const plannedLoadTss = normalizeNumber(load?.scheduled_load_tss);
-      const tentativePlannedLoadTss = normalizeNumber(load?.tentative_scheduled_load_tss);
-      const completedLoadTss = normalizeNumber(load?.completed_load_tss);
-      const targetLoadTss = normalizeNumber(load?.recommended_load_tss);
+      const plannedLoad = normalizeLoad(load?.scheduled_common_load);
+      const tentativePlannedLoad = normalizeLoad(load?.tentative_scheduled_common_load);
+      const completedLoad = normalizeLoad(load?.completed_common_load);
+      const targetLoad = normalizeLoad(load?.recommended_common_load);
 
       return {
         date,
-        plannedLoadTss,
-        tentativePlannedLoadTss,
-        completedLoadTss,
-        targetLoadTss,
-        fitnessCtl: fitness?.ctl ?? null,
-        targetFitnessCtl: targetFitness?.ctl ?? null,
-        scheduledFitnessCtl: scheduledFitness?.ctl ?? null,
-        fatigueAtl: scheduledFitness?.atl ?? fitness?.atl ?? null,
-        formTsb: scheduledFitness?.tsb ?? fitness?.tsb ?? null,
+        plannedLoad,
+        tentativePlannedLoad,
+        completedLoad,
+        targetLoad,
+        fitnessCtl: fitness?.longTermLoad ?? null,
+        targetFitnessCtl: targetFitness?.longTermLoad ?? null,
+        scheduledFitnessCtl: scheduledFitness?.longTermLoad ?? null,
+        fatigueAtl: scheduledFitness?.recentLoad ?? fitness?.recentLoad ?? null,
+        formTsb: scheduledFitness?.loadBalance ?? fitness?.loadBalance ?? null,
       };
     }),
   });

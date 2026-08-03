@@ -348,7 +348,7 @@ function paceZone(ratio: number): number {
 
 /**
  * Integrates 100 * hours * (HR / LTHR)^2, so one hour exactly at LTHR is 100 load.
- * Samples above the explicit plausible-HR bound are capped rather than allowed to dominate load.
+ * Values outside the explicit qualified-HR bounds are excluded rather than capped or projected.
  */
 function calculateHeartRateLoad(input: {
   records: ActivityStreamRecord[];
@@ -367,9 +367,14 @@ function calculateHeartRateLoad(input: {
     const seconds = nextTimestamp - currentTimestamp;
     if (seconds > input.maxAcceptedGapSeconds) continue;
     const heartRate = record.heartRate ?? record.heart_rate ?? record.heart_rate_bpm;
-    if (heartRate === undefined || !Number.isFinite(heartRate) || heartRate <= 0) continue;
-    const boundedHeartRate = Math.min(heartRate, MAX_PLAUSIBLE_HEART_RATE_BPM);
-    load += (seconds / 3600) * 100 * (boundedHeartRate / input.lthr) ** 2;
+    if (
+      heartRate === undefined ||
+      !Number.isFinite(heartRate) ||
+      heartRate < 30 ||
+      heartRate > MAX_PLAUSIBLE_HEART_RATE_BPM
+    )
+      continue;
+    load += (seconds / 3600) * 100 * (heartRate / input.lthr) ** 2;
   }
   return round(load);
 }
@@ -401,7 +406,7 @@ export function analyzeActivityStreams(input: {
     zoneForRatio: heartRateZone,
     zoneCount: 5,
     activityCategoryMatches: true,
-    isValidValue: (value) => value > 0,
+    isValidValue: (value) => value >= 30 && value <= MAX_PLAUSIBLE_HEART_RATE_BPM,
   });
   const power = analyzeDistribution({
     ...common,

@@ -1,5 +1,7 @@
+import { createUnavailableAthletePerformanceTargetFacts } from "@repo/core";
 import React from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
+import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
 import { publishTrainingPlanGoalCreation } from "@/lib/training-plan-creation/goalCreationHandoff";
 import { act, fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 import { TrainingPlanBuilderScreen } from "../TrainingPlanBuilderScreen";
@@ -33,12 +35,23 @@ const activityPlan = {
   created_at: ACTIVITY_PLAN_CREATED_AT,
   template_visibility: "public",
   is_system_template: false,
-  authoritative_metrics: { estimated_tss: 42, estimated_duration: 3600 },
+  prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+    durationSeconds: 3_600,
+    id: "11111111-1111-4111-8111-111111111111",
+  }),
 };
 
 let mockPreviewCreationConfigData: unknown;
 let mockPreviewCreationConfigError: Error | null;
 let mockEditPlanError: Error | null;
+let mockPerformanceModelError: Error | null;
+const mockContextRefetch = {
+  profile: jest.fn(),
+  profileMetrics: jest.fn(),
+  activityEfforts: jest.fn(),
+  performanceTargets: jest.fn(),
+  trainingStatus: jest.fn(),
+};
 const mockMutations = {
   create: jest.fn(),
   update: jest.fn(),
@@ -437,6 +450,17 @@ jest.mock("@/lib/api", () => ({
             preferred_units: "metric",
             username: "johnapple",
           },
+          isError: false,
+          refetch: mockContextRefetch.profile,
+        }),
+      },
+      getPerformanceTargets: {
+        useQuery: () => ({
+          data: mockPerformanceModelError
+            ? undefined
+            : createUnavailableAthletePerformanceTargetFacts(FIXTURE_NOW.toISOString()),
+          isError: Boolean(mockPerformanceModelError),
+          refetch: mockContextRefetch.performanceTargets,
         }),
       },
     },
@@ -455,6 +479,8 @@ jest.mock("@/lib/api", () => ({
               },
             ],
           },
+          isError: false,
+          refetch: mockContextRefetch.profileMetrics,
         }),
       },
     },
@@ -472,6 +498,8 @@ jest.mock("@/lib/api", () => ({
               activity_id: null,
             },
           ],
+          isError: false,
+          refetch: mockContextRefetch.activityEfforts,
         }),
       },
     },
@@ -480,8 +508,15 @@ jest.mock("@/lib/api", () => ({
       update: {},
       getCurrentStatus: {
         useQuery: () => ({
-          data: { ctl: 41, atl: 50, tsb: -9 },
+          data: {
+            asOf: FIXTURE_NOW.toISOString(),
+            longTermLoad: 41,
+            recentLoad: 50,
+            loadBalance: -9,
+          },
           isLoading: false,
+          isError: false,
+          refetch: mockContextRefetch.trainingStatus,
         }),
       },
       previewCreationConfig: {
@@ -564,6 +599,8 @@ describe("TrainingPlanBuilderScreen", () => {
     mockPreviewCreationConfigData = undefined;
     mockPreviewCreationConfigError = null;
     mockEditPlanError = null;
+    mockPerformanceModelError = null;
+    for (const refetch of Object.values(mockContextRefetch)) refetch.mockReset();
     mockMutationIndex = 0;
     for (const mutation of Object.values(mockMutations)) {
       mutation.mockReset();
@@ -773,6 +810,16 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(payload.structure.goal_blueprints).toBeUndefined();
     expect(payload.structure.builder_planning_snapshot.goal_context.selected_goals).toEqual([]);
     expect(screen.getByText("Preview unavailable")).toBeTruthy();
+  });
+
+  it("surfaces performance-model context failures and retries its query", () => {
+    mockPerformanceModelError = new Error("Performance model unavailable");
+    renderNative(<TrainingPlanBuilderScreen />);
+
+    expect(screen.getByText("Athlete context unavailable")).toBeTruthy();
+    fireEvent.press(screen.getByLabelText("Retry athlete context unavailable"));
+
+    expect(mockContextRefetch.performanceTargets).toHaveBeenCalledTimes(1);
   });
 
   it("hydrates edit mode into the new builder save flow", async () => {

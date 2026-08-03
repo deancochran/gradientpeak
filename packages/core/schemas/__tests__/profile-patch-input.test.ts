@@ -45,15 +45,13 @@ describe("profilePatchInputSchema", () => {
     expect(profilePatchInputSchema.safeParse({ username: " athlete " }).success).toBe(false);
   });
 
-  it("coerces numeric strings and maps blank metrics to tombstones", () => {
-    expect(
-      profilePatchInputSchema.parse({ weight_kg: "70.5", threshold_hr: "180", ftp: "300" }),
-    ).toMatchObject({ weight_kg: 70.5, threshold_hr: 180, ftp: 300 });
-    expect(profilePatchInputSchema.parse({ weight_kg: "", threshold_hr: " ", ftp: "" })).toEqual({
-      weight_kg: null,
-      threshold_hr: null,
-      ftp: null,
-    });
+  it("coerces weight strings and maps blanks to null", () => {
+    expect(profilePatchInputSchema.parse({ weight_kg: "70.5" })).toEqual({ weight_kg: 70.5 });
+    expect(profilePatchInputSchema.parse({ weight_kg: "" })).toEqual({ weight_kg: null });
+  });
+
+  it.each(["ftp", "threshold_hr"])("rejects removed threshold field %s", (field) => {
+    expect(profilePatchInputSchema.safeParse({ [field]: 200 }).success).toBe(false);
   });
 
   it("requires DOB patches to use the date-only contract", () => {

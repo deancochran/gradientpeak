@@ -19,9 +19,6 @@ export type ProfileMetricOption = {
 };
 
 const descriptions: Record<ProfileMetricType, string> = {
-  ftp: "Bike power threshold used to calibrate training load.",
-  threshold_pace_seconds_per_km: "Sustainable running pace used for threshold and load zones.",
-  css_seconds_per_100m: "Critical swim speed expressed as pace per 100 metres.",
   lthr: "Lactate-threshold heart rate used to anchor intensity zones.",
   max_hr: "Maximum heart-rate reference for intensity zones.",
   resting_hr: "Baseline cardiovascular recovery signal.",
@@ -46,14 +43,9 @@ function option(type: ProfileMetricType): ProfileMetricOption {
 
 export const profileMetricGroups = [
   {
-    label: "Load Calibration",
-    description: "Thresholds that directly calibrate activity-category-specific training load.",
-    metrics: [
-      option("ftp"),
-      option("threshold_pace_seconds_per_km"),
-      option("css_seconds_per_100m"),
-      option("lthr"),
-    ],
+    label: "Heart-rate calibration",
+    description: "Activity-derived heart-rate evidence used to anchor intensity zones.",
+    metrics: [option("lthr")],
   },
   {
     label: "Supporting Physiology",

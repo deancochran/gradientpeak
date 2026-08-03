@@ -1,4 +1,25 @@
+import {
+  type ActivityObservationQuantification,
+  type ActivityPrescriptionQuantification,
+  activityObservationQuantificationSchema,
+  activityPrescriptionQuantificationSchema,
+  createActivityPlanPrescriptionQuantificationBundle,
+  createActivityQuantificationCalculationIdentity,
+  createActivityQuantificationEvidenceIdentity,
+  createCompletedActivityQuantificationSubjectIdentity,
+  createObservationQuantificationBundle,
+  createPlanActivityQuantificationSubjectIdentity,
+  createPlanOccurrenceActivityQuantificationSubjectIdentity,
+} from "@repo/core";
+import {
+  type CommonLoadResult,
+  calculateAvailableCommonLoad,
+  commonLoadResultSchema,
+} from "@repo/core/load";
+import { relationalSchema } from "@repo/db";
+import { drizzle } from "drizzle-orm/node-postgres";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { EventReadRepository } from "../../repositories";
 import { getEffectivePlanLoad, getEffectivePlanLoadInputSchema } from "./get-effective-plan-load";
 
 const activityAnalysis = vi.hoisted(() => ({
@@ -11,6 +32,186 @@ const activityPlanMetrics = vi.hoisted(() => ({
 
 vi.mock("../../lib/activity-analysis", () => activityAnalysis);
 vi.mock("../../utils/activity-plan-derived-metrics", () => activityPlanMetrics);
+
+function quantification(input: {
+  commonLoad: CommonLoadResult;
+  id: string;
+  kind: "observation";
+}): ActivityObservationQuantification;
+function quantification(input: {
+  commonLoad: CommonLoadResult;
+  id: string;
+  kind: "prescription";
+}): ActivityPrescriptionQuantification;
+function quantification(input: {
+  commonLoad: CommonLoadResult;
+  id: string;
+  kind: "observation" | "prescription";
+}) {
+  const durationSeconds = input.commonLoad.contributingDurationSeconds ?? 1800;
+  const segmentId = `${input.id}-segment`;
+  const subjectIdentity =
+    input.kind === "observation"
+      ? createCompletedActivityQuantificationSubjectIdentity({ activityId: input.id })
+      : createPlanOccurrenceActivityQuantificationSubjectIdentity({
+          occurrenceId: `${input.id}-occurrence`,
+          parentSubjectIdentity: createPlanActivityQuantificationSubjectIdentity({
+            planId: input.id,
+          }),
+        });
+  const shared = {
+    subjectIdentity,
+    evidenceIdentity: createActivityQuantificationEvidenceIdentity({
+      evidenceType: input.kind === "observation" ? "segment_facts" : "plan_revision",
+      sourceIds: input.kind === "observation" ? [input.id, segmentId] : [input.id],
+      revisionFingerprint: `revision-${input.id}`,
+      details: { kind: input.kind, id: input.id },
+    }),
+    calculationIdentity: createActivityQuantificationCalculationIdentity({
+      model: input.commonLoad.model,
+      version: input.commonLoad.version,
+      computedAt: input.commonLoad.computedAsOf,
+      calibrationEvidenceFingerprint: input.commonLoad.evidenceFingerprint,
+    }),
+    activity_category: input.commonLoad.activity_category,
+    duration: {
+      elapsed: {
+        status: "available",
+        evidenceRole: input.kind === "observation" ? "measured" : "prescribed",
+        value: durationSeconds,
+        unit: "seconds",
+      },
+      active: {
+        status: "available",
+        evidenceRole: input.kind === "observation" ? "measured" : "prescribed",
+        value: durationSeconds,
+        unit: "seconds",
+      },
+      moving: {
+        status: "available",
+        evidenceRole: input.kind === "observation" ? "measured" : "prescribed",
+        value: durationSeconds,
+        unit: "seconds",
+      },
+    },
+    distance: {
+      status: "unavailable",
+      evidenceRole: input.kind === "observation" ? "measured" : "prescribed",
+      value: null,
+      unit: "meters",
+      reason: input.kind === "observation" ? "not_observed" : "not_prescribed",
+    },
+    commonLoad: input.commonLoad,
+  };
+  return input.kind === "observation"
+    ? activityObservationQuantificationSchema.parse({
+        ...shared,
+        kind: "observation",
+        stage: "final",
+        intensity: {
+          observed: {
+            status: "unavailable",
+            evidenceRole: "measured",
+            values: [],
+            reason: "not_observed",
+          },
+        },
+        completedProvenance: {
+          activityId: input.id,
+          segmentId,
+          source: "unknown",
+          artifactIdentity: null,
+          providerIdentity: null,
+          segmentRevision: null,
+          observedAt: input.commonLoad.computedAsOf,
+          computedAt: input.commonLoad.computedAsOf,
+          calculationVersion: "effective-plan-load-test-v1",
+        },
+      })
+    : activityPrescriptionQuantificationSchema.parse({
+        ...shared,
+        kind: "prescription",
+        stage: "plan",
+        intensity: {
+          prescribed: {
+            status: "unavailable",
+            evidenceRole: "prescribed",
+            values: [],
+            reason: "not_authored",
+          },
+        },
+      });
+}
+
+function unavailableLoad() {
+  return commonLoadResultSchema.parse({
+    status: "unavailable",
+    model: "gradientpeak_relative_load",
+    version: "1",
+    activity_category: "bike",
+    method: null,
+    quality: null,
+    thresholdEvidence: null,
+    evidenceFingerprint: null,
+    computedAsOf: "2026-07-20T12:00:00.000Z",
+    contributingDurationSeconds: null,
+    reason: "threshold_missing",
+  });
+}
+
+function availableLoad() {
+  return calculateAvailableCommonLoad({
+    activity_category: "bike",
+    method: "power_threshold",
+    intensity: 1,
+    contributingDurationSeconds: 1800,
+    quality: {
+      source: "manual",
+      observed_at: "2026-07-01T00:00:00.000Z",
+      valid_at: "2026-07-01T00:00:00.000Z",
+      confidence: "high",
+      stale: false,
+      estimate: false,
+      calculation_version: null,
+      evidence_fingerprint: "ftp",
+    },
+    thresholdEvidence: {
+      type: "ftp_watts",
+      value: 250,
+      unit: "watts",
+      source: "manual",
+      observedAt: "2026-07-01T00:00:00.000Z",
+      validAt: "2026-07-01T00:00:00.000Z",
+      freshness: "current",
+      calculationVersion: null,
+      sourceFingerprint: "ftp",
+    },
+    evidenceFingerprint: "recommendation-plan",
+    computedAsOf: "2026-07-20T12:00:00.000Z",
+    estimated: true,
+  });
+}
+
+function effectivePlanRepository(
+  getEffectivePlanLoadInputs: EventReadRepository["getEffectivePlanLoadInputs"],
+): EventReadRepository {
+  const unexpectedCall = async () => {
+    throw new Error("Unexpected EventReadRepository call in effective Plan Load test");
+  };
+  return {
+    readAthletePerformanceEvidenceSnapshot: unexpectedCall,
+    getEffectivePlanLoadInputs,
+    countOwnedEventsInRange: unexpectedCall,
+    getOwnedEventById: unexpectedCall,
+    listCompletedActivitiesInRange: unexpectedCall,
+    listPlannedEventDatesInRange: unexpectedCall,
+    listOwnedPlannedEventsForDay: unexpectedCall,
+    getValidateConstraintsInputs: unexpectedCall,
+    getEstimationInputs: unexpectedCall,
+    getAccessibleTrainingPlanProjection: unexpectedCall,
+    listOwnedEvents: unexpectedCall,
+  };
+}
 
 describe("getEffectivePlanLoad", () => {
   beforeEach(() => {
@@ -81,24 +282,24 @@ describe("getEffectivePlanLoad", () => {
       },
     });
     activityAnalysis.loadActivitySegmentsByActivityId.mockResolvedValue(new Map());
+    const memberQuantifications = [
+      activityObservationQuantificationSchema.parse(
+        quantification({ commonLoad: unavailableLoad(), id: "segment-1", kind: "observation" }),
+      ),
+      activityObservationQuantificationSchema.parse(
+        quantification({ commonLoad: unavailableLoad(), id: "segment-2", kind: "observation" }),
+      ),
+    ];
+    const parentQuantification = createObservationQuantificationBundle({
+      members: memberQuantifications,
+    });
     activityAnalysis.buildActivityDerivedSummaries.mockResolvedValue({
       parent: new Map([
         [
           "activity-1",
           {
-            common_load: {
-              status: "unavailable",
-              model: "gradientpeak_relative_load",
-              version: "1",
-              activity_category: "bike",
-              method: null,
-              quality: null,
-              thresholdEvidence: null,
-              evidenceFingerprint: null,
-              computedAsOf: "2026-07-20T12:00:00.000Z",
-              contributingDurationSeconds: null,
-              reason: "threshold_missing",
-            },
+            common_load: parentQuantification.summary.commonLoad,
+            observationQuantification: parentQuantification,
           },
         ],
       ]),
@@ -122,11 +323,21 @@ describe("getEffectivePlanLoad", () => {
           {
             kind: "completed",
             completedActivityId: "activity-1",
-            commonLoad: { reason: "threshold_missing" },
+            commonLoad: { reason: "no_load_data" },
+            observationQuantification: {
+              summary: { kind: "aggregate" },
+            },
           },
         ],
       },
+      completedObservationQuantification: {
+        summary: { memberSubjectIdentities: expect.any(Array) },
+      },
     });
+    expect(
+      result.status === "available" &&
+        result.completedObservationQuantification?.summary.memberSubjectIdentities,
+    ).toHaveLength(2);
   });
 
   it("assigns scheduled items to their persisted scheduled date, not their event instant", async () => {
@@ -174,27 +385,218 @@ describe("getEffectivePlanLoad", () => {
     });
   });
 
+  it("queries a shifted linked completion on its actual day without reviving Load on its scheduled day", async () => {
+    const activityId = "11111111-1111-4111-8111-111111111111";
+    const eventId = "22222222-2222-4222-8222-222222222222";
+    const activityPlanId = "33333333-3333-4333-8333-333333333333";
+    const activity = {
+      id: activityId,
+      started_at: new Date("2026-07-23T12:00:00.000Z"),
+    };
+    const event = {
+      id: eventId,
+      activity_plan: { id: activityPlanId },
+      activity_plan_id: activityPlanId,
+      linked_activity_id: activityId,
+      scheduled_date: "2026-07-24",
+      status: "completed",
+    };
+    const factsForDay = (date: string, events: (typeof event)[]) => ({
+      // The repository keeps a one-day instant envelope for timezone boundaries. The application
+      // still filters this shifted activity from the scheduled day's completedActivities array.
+      activities: [activity],
+      events,
+      recommendationEvents: [],
+      recommendationSource: {
+        scheduleBatchId: null,
+        status: "complete" as const,
+        trainingPlanId: null,
+      },
+      planningTimezone: "UTC",
+      resolvedRange: { startDate: date, endDate: date },
+      sourceCounts: { activities: 1, events: events.length },
+      sourceCoverage: {
+        activities: { startDate: date, endDate: date, status: "complete" as const },
+        scheduledItems: { startDate: date, endDate: date, status: "complete" as const },
+      },
+    });
+    const getEffectivePlanLoadInputs = vi
+      .fn()
+      .mockResolvedValueOnce(factsForDay("2026-07-23", []))
+      .mockResolvedValueOnce(factsForDay("2026-07-24", [event]));
+    const repository = effectivePlanRepository(getEffectivePlanLoadInputs);
+    const completedQuantification = quantification({
+      commonLoad: availableLoad(),
+      id: activityId,
+      kind: "observation",
+    });
+    const plannedQuantification = quantification({
+      commonLoad: availableLoad(),
+      id: activityPlanId,
+      kind: "prescription",
+    });
+    activityAnalysis.loadActivitySegmentsByActivityId.mockResolvedValue(new Map());
+    activityAnalysis.buildActivityDerivedSummaries.mockResolvedValue({
+      parent: new Map([
+        [
+          activityId,
+          {
+            observationQuantification: createObservationQuantificationBundle({
+              members: [completedQuantification],
+            }),
+          },
+        ],
+      ]),
+      segments: [],
+    });
+    activityPlanMetrics.getActivityPlansDerivedMetrics.mockResolvedValue([
+      {
+        id: activityPlanId,
+        prescriptionQuantification: createActivityPlanPrescriptionQuantificationBundle({
+          members: [plannedQuantification],
+        }),
+      },
+    ]);
+    // All persistence collaborators are mocked; this inert client is constructed only to retain
+    // the production Drizzle type without an unsafe test cast and is never queried or connected.
+    const testDb = drizzle({
+      connection: "postgresql://test:test@127.0.0.1:1/unused",
+      schema: relationalSchema,
+      casing: "snake_case",
+    });
+    const commonInput = {
+      asOf: new Date("2026-07-23T18:00:00.000Z"),
+      db: testDb,
+      profileId: "profile-1",
+      repository,
+    };
+
+    const actualDay = await getEffectivePlanLoad({
+      ...commonInput,
+      request: { startDate: "2026-07-23", endDate: "2026-07-23" },
+    });
+    const scheduledDay = await getEffectivePlanLoad({
+      ...commonInput,
+      request: { startDate: "2026-07-24", endDate: "2026-07-24" },
+    });
+    await testDb.$client.end();
+
+    expect(getEffectivePlanLoadInputs).toHaveBeenNthCalledWith(1, {
+      asOf: commonInput.asOf,
+      profileId: "profile-1",
+      startDate: "2026-07-23",
+      endDate: "2026-07-23",
+    });
+    expect(getEffectivePlanLoadInputs).toHaveBeenNthCalledWith(2, {
+      asOf: commonInput.asOf,
+      profileId: "profile-1",
+      startDate: "2026-07-24",
+      endDate: "2026-07-24",
+    });
+    expect(actualDay).toMatchObject({
+      status: "available",
+      effective: {
+        firmItems: [
+          {
+            kind: "completed",
+            completedActivityId: activityId,
+            date: "2026-07-23",
+          },
+        ],
+        firm: { status: "complete", commonLoad: { load: 50, totalActivityCount: 1 } },
+      },
+    });
+    expect(scheduledDay).toMatchObject({
+      status: "available",
+      effective: { firmItems: [], firm: { status: "known_zero", load: 0 } },
+    });
+    if (
+      actualDay.status !== "available" ||
+      scheduledDay.status !== "available" ||
+      actualDay.effective.status !== "available" ||
+      scheduledDay.effective.status !== "available"
+    ) {
+      throw new Error("Expected both daily effective Plan Load queries to be available");
+    }
+    expect(actualDay.effective.firmItems.length + scheduledDay.effective.firmItems.length).toBe(1);
+  });
+
+  it("rejects a scheduled quantification with an incompatible Common Load identity", async () => {
+    const activityPlanId = "22222222-2222-4222-8222-222222222222";
+    const planQuantification = quantification({
+      commonLoad: availableLoad(),
+      id: activityPlanId,
+      kind: "prescription",
+    });
+    const planBundle = createActivityPlanPrescriptionQuantificationBundle({
+      members: [planQuantification],
+    });
+    const incompatibleQuantification = {
+      ...planBundle,
+      summary: {
+        ...planBundle.summary,
+        commonLoad: { ...planBundle.summary.commonLoad, version: "future" },
+      },
+    };
+    const getEffectivePlanLoadInputs = vi.fn().mockResolvedValue({
+      activities: [],
+      events: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          activity_plan: { id: activityPlanId },
+          activity_plan_id: activityPlanId,
+          linked_activity_id: null,
+          scheduled_date: "2026-07-21",
+          status: "scheduled",
+        },
+      ],
+      recommendationEvents: [],
+      recommendationSource: { scheduleBatchId: null, status: "complete", trainingPlanId: null },
+      planningTimezone: "UTC",
+      resolvedRange: { startDate: "2026-07-20", endDate: "2026-07-26" },
+      sourceCounts: { activities: 0, events: 1 },
+      sourceCoverage: {
+        activities: { startDate: "2026-07-20", endDate: "2026-07-26", status: "complete" },
+        scheduledItems: { startDate: "2026-07-20", endDate: "2026-07-26", status: "complete" },
+      },
+    });
+    activityAnalysis.loadActivitySegmentsByActivityId.mockResolvedValue(new Map());
+    activityAnalysis.buildActivityDerivedSummaries.mockResolvedValue({
+      parent: new Map(),
+      segments: [],
+    });
+    activityPlanMetrics.getActivityPlansDerivedMetrics.mockResolvedValue([
+      {
+        id: activityPlanId,
+        prescriptionQuantification: incompatibleQuantification,
+      },
+    ]);
+
+    const result = await getEffectivePlanLoad({
+      asOf: new Date("2026-07-20T12:00:00.000Z"),
+      db: {} as never,
+      profileId: "profile-1",
+      repository: { getEffectivePlanLoadInputs } as never,
+      request: {},
+    });
+
+    expect(result).toMatchObject({
+      status: "unavailable",
+      reason: "incompatible_common_load_identity",
+    });
+  });
+
   it("keeps a cancelled execution in the original versioned recommendation target", async () => {
     const eventId = "11111111-1111-4111-8111-111111111111";
     const activityPlanId = "22222222-2222-4222-8222-222222222222";
     const trainingPlanId = "33333333-3333-4333-8333-333333333333";
     const activityPlan = { id: activityPlanId };
-    const commonLoad = {
-      status: "complete",
-      model: "gradientpeak_relative_load",
-      version: "1",
-      load: 50,
-      intensity: 1,
-      contributingDurationSeconds: 1800,
-      knownDurationSeconds: 1800,
-      contributingActivityCount: 1,
-      partialActivityCount: 0,
-      unavailableActivityCount: 0,
-      totalActivityCount: 1,
-      activityCountCoverage: 1,
-      knownDurationCoverage: 1,
-      unknownDurationActivityCount: 0,
-    } as const;
+    const commonLoad = availableLoad();
+    const planQuantification = quantification({
+      commonLoad,
+      id: activityPlanId,
+      kind: "prescription",
+    });
     const recommendationEvent = {
       id: eventId,
       activity_plan: activityPlan,
@@ -233,7 +635,13 @@ describe("getEffectivePlanLoad", () => {
       segments: [],
     });
     activityPlanMetrics.getActivityPlansDerivedMetrics.mockResolvedValue([
-      { id: activityPlanId, common_load: commonLoad },
+      {
+        id: activityPlanId,
+        common_load: commonLoad,
+        prescriptionQuantification: createActivityPlanPrescriptionQuantificationBundle({
+          members: [planQuantification],
+        }),
+      },
     ]);
 
     const result = await getEffectivePlanLoad({

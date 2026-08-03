@@ -1,7 +1,10 @@
 import { activityPlanStructureSchema } from "@repo/core";
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { describe, expect, it } from "vitest";
 
 import { publicShareRouter } from "../public-share";
+
+const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
 
 function createCaller(rows: unknown[]) {
   const executeCalls: unknown[] = [];
@@ -69,6 +72,7 @@ describe("publicShareRouter", () => {
             summary: {
               version: 1,
               timing: { timingCoverage: "complete", activeMs: 4_400_000, movingMs: 4_300_000 },
+              normalizedPowerResult: unavailableNormalizedPowerResult,
             },
           },
         ],

@@ -1,20 +1,19 @@
-import { parseDateOfBirth, profilePatchInputSchema } from "@repo/core";
 import {
-  getActivityEffortThresholdEvidence,
-  resolveCanonicalThresholds,
-  type ThresholdActivityEffortObservation,
-} from "@repo/core/athlete-inputs";
-import { activityEfforts } from "@repo/db";
+  athletePerformanceOverviewSchema,
+  athletePerformanceTargetFactsSchema,
+  parseDateOfBirth,
+  profilePatchInputSchema,
+  projectAthletePerformanceOverview,
+  projectAthletePerformanceTargetFacts,
+} from "@repo/core";
+import { resolveProfileZones } from "@repo/core/zones";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, gte } from "drizzle-orm";
 import { z } from "zod";
-import { getProfileStats } from "../application/profiles/getProfileStats";
+import { getAthletePerformanceModelAsOf } from "../application/performance-model/get-athlete-performance-model-as-of";
 import {
   ensureProfileExists,
-  getProfilePerformanceSnapshot,
   getPublicProfileById,
   getSerializedProfile,
-  listProfiles,
 } from "../application/profiles/readProfiles";
 import {
   ProfileUpdateNotFoundError,
@@ -22,37 +21,9 @@ import {
   updateProfile,
 } from "../application/profiles/updateProfile";
 import { getRequiredDb } from "../db";
-import { createActivityAnalysisStore } from "../infrastructure/repositories/drizzle-activity-analysis-repository";
-import { resolveActivityContextAsOf } from "../lib/activity-analysis/context";
+import { createAthletePerformanceModelRepository } from "../repositories/athlete-performance-model-repository";
 import { compareAndSwapOwnedProfileMedia } from "../repositories/profile-update-repository";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { indexCursorSchema } from "../utils/index-cursor";
-import {
-  filterSupersededProfileOverrides,
-  isActiveManualFtpOverride,
-} from "../utils/profile-override-observations";
-
-const profileListFiltersSchema = z
-  .object({
-    username: z.string().optional(),
-    limit: z.number().int().min(1).max(50).default(25),
-    cursor: indexCursorSchema.optional(),
-    direction: z.enum(["forward", "backward"]).optional(),
-  })
-  .strict();
-
-const profileStatsSchema = z
-  .object({
-    period: z.number().min(1).max(365).default(30),
-  })
-  .strict();
-
-const trainingZonesUpdateSchema = z
-  .object({
-    threshold_hr: z.number().int().positive().optional(),
-    ftp: z.number().int().positive().optional(),
-  })
-  .strict();
 
 const uuidSchema = z.string().uuid();
 const nonMediaProfilePatchInputSchema = profilePatchInputSchema
@@ -66,8 +37,47 @@ const profileMediaCompareAndSwapInputSchema = z
   })
   .strict();
 const profileMediaCompareAndSwapResultSchema = z.object({ success: z.literal(true) }).strict();
+const performanceModelAsOfInputSchema = z.object({ asOf: z.string().datetime() }).strict();
 
 export const profilesRouter = createTRPCRouter({
+  getPerformanceModel: protectedProcedure
+    .input(performanceModelAsOfInputSchema)
+    .output(athletePerformanceOverviewSchema)
+    .query(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
+      const asOf = new Date(input.asOf);
+      try {
+        const model = await getAthletePerformanceModelAsOf(
+          { athleteId: ctx.session.user.id, asOf },
+          createAthletePerformanceModelRepository(db),
+        );
+        return projectAthletePerformanceOverview(model);
+      } catch {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to fetch athlete performance overview",
+        });
+      }
+    }),
+  getPerformanceTargets: protectedProcedure
+    .input(performanceModelAsOfInputSchema)
+    .output(athletePerformanceTargetFactsSchema)
+    .query(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
+      const asOf = new Date(input.asOf);
+      try {
+        const model = await getAthletePerformanceModelAsOf(
+          { athleteId: ctx.session.user.id, asOf },
+          createAthletePerformanceModelRepository(db),
+        );
+        return projectAthletePerformanceTargetFacts(model);
+      } catch {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to fetch athlete performance targets",
+        });
+      }
+    }),
   get: protectedProcedure.query(async ({ ctx }) => {
     const db = getRequiredDb(ctx);
 
@@ -77,15 +87,7 @@ export const profilesRouter = createTRPCRouter({
         email: ctx.session.user.email,
       });
 
-      const [profile, activityContext] = await Promise.all([
-        getSerializedProfile(db, ctx.session.user.id),
-        resolveActivityContextAsOf({
-          store: createActivityAnalysisStore(db),
-          profileId: ctx.session.user.id,
-          activityTimestamp: new Date(),
-          evidenceScope: "thresholds",
-        }),
-      ]);
+      const profile = await getSerializedProfile(db, ctx.session.user.id);
 
       if (!profile) {
         throw new TRPCError({
@@ -94,11 +96,7 @@ export const profilesRouter = createTRPCRouter({
         });
       }
 
-      return {
-        ...profile,
-        ftp: activityContext.profileMetrics.ftp ?? null,
-        threshold_hr: null as number | null,
-      };
+      return profile;
     } catch (error) {
       if (error instanceof TRPCError) {
         throw error;
@@ -147,13 +145,6 @@ export const profilesRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
-      if (input.ftp !== undefined || input.threshold_hr !== undefined) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Training thresholds are calculated from trusted activity evidence.",
-        });
-      }
-
       try {
         await updateProfile(db, {
           profileId: ctx.session.user.id,
@@ -172,8 +163,6 @@ export const profilesRouter = createTRPCRouter({
           planning_timezone: input.planning_timezone,
           preferred_units: input.preferred_units,
           weight_kg: input.weight_kg,
-          threshold_hr: input.threshold_hr,
-          ftp: input.ftp,
         });
 
         const profile = await getSerializedProfile(db, ctx.session.user.id);
@@ -233,225 +222,27 @@ export const profilesRouter = createTRPCRouter({
       }
     }),
 
-  getZones: protectedProcedure.query(async ({ ctx }) => {
-    const db = getRequiredDb(ctx);
+  getZones: protectedProcedure
+    .input(z.object({ asOf: z.string().datetime() }).strict())
+    .query(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
 
-    try {
-      const cutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+      try {
+        const model = await getAthletePerformanceModelAsOf(
+          { athleteId: ctx.session.user.id, asOf: new Date(input.asOf) },
+          createAthletePerformanceModelRepository(db),
+        );
+        const zones = resolveProfileZones(projectAthletePerformanceTargetFacts(model));
+        return zones;
+      } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
 
-      const [performance, thresholdEfforts, activityContext] = await Promise.all([
-        getProfilePerformanceSnapshot(db, ctx.session.user.id),
-        db
-          .select({
-            id: activityEfforts.id,
-            activity_id: activityEfforts.activity_id,
-            activity_category: activityEfforts.activity_category,
-            duration_seconds: activityEfforts.duration_seconds,
-            effort_type: activityEfforts.effort_type,
-            recorded_at: activityEfforts.recorded_at,
-            unit: activityEfforts.unit,
-            value: activityEfforts.value,
-            source: activityEfforts.source,
-            method: activityEfforts.method,
-            provenance: activityEfforts.provenance,
-          })
-          .from(activityEfforts)
-          .where(
-            and(
-              eq(activityEfforts.profile_id, ctx.session.user.id),
-              gte(activityEfforts.recorded_at, cutoffDate),
-            ),
-          )
-          .orderBy(desc(activityEfforts.recorded_at), desc(activityEfforts.id))
-          .limit(100),
-        resolveActivityContextAsOf({
-          store: createActivityAnalysisStore(db),
-          profileId: ctx.session.user.id,
-          activityTimestamp: new Date(),
-          evidenceScope: "thresholds",
-        }),
-      ]);
-
-      const threshold_hr =
-        activityContext.profileMetrics.lthr_by_activity_category?.bike ?? undefined;
-      const weight_kg = performance.weight_kg ?? undefined;
-      const currentThresholdEfforts = filterSupersededProfileOverrides(
-        thresholdEfforts,
-        (effort) =>
-          `${effort.activity_category}:${effort.effort_type}:${effort.duration_seconds}:${effort.unit}`,
-      );
-      const manualFtpEffort = currentThresholdEfforts.find(isActiveManualFtpOverride);
-      const thresholds = resolveCanonicalThresholds({
-        now: new Date().toISOString(),
-        freshnessWindowMs: 90 * 24 * 60 * 60 * 1000,
-        directMetrics: [
-          ...(performance.ftp === null
-            ? []
-            : [
-                {
-                  threshold: "cycling_ftp" as const,
-                  value: performance.ftp,
-                  observedAt: new Date().toISOString(),
-                  source: "provider" as const,
-                },
-              ]),
-          ...(manualFtpEffort
-            ? [
-                {
-                  threshold: "cycling_ftp" as const,
-                  value: Number(manualFtpEffort.value) * 0.95,
-                  observedAt: manualFtpEffort.recorded_at.toISOString(),
-                  source: "manual" as const,
-                  locked: true,
-                },
-              ]
-            : []),
-        ],
-        activityEfforts: currentThresholdEfforts.flatMap(
-          (effort): ThresholdActivityEffortObservation[] => {
-            if (isActiveManualFtpOverride(effort)) return [];
-            if (effort.duration_seconds !== 1200) return [];
-            const observedAt = effort.recorded_at.toISOString();
-            if (effort.activity_category === "bike" && effort.effort_type === "power") {
-              return [
-                {
-                  activity_category: "bike" as const,
-                  metric: "power" as const,
-                  value: Number(effort.value),
-                  durationSeconds: 1200,
-                  observedAt,
-                  observationKind:
-                    effort.activity_id !== null &&
-                    effort.source !== "derived" &&
-                    effort.source !== "estimated"
-                      ? ("actual" as const)
-                      : ("derived" as const),
-                  evidence:
-                    getActivityEffortThresholdEvidence({
-                      activityCategory: effort.activity_category,
-                      activityId: effort.activity_id,
-                      durationSeconds: effort.duration_seconds,
-                      effortType: effort.effort_type,
-                      method: effort.method,
-                      provenance: effort.provenance,
-                      source: effort.source,
-                      unit: effort.unit,
-                      value: Number(effort.value),
-                    }) ?? undefined,
-                },
-              ];
-            }
-            if (effort.activity_category === "run" && effort.effort_type === "speed") {
-              const speed = effort.unit === "meters_per_second" ? Number(effort.value) : null;
-              if (speed === null) return [];
-              return [
-                {
-                  activity_category: "run" as const,
-                  metric: "speed" as const,
-                  value: speed,
-                  durationSeconds: 1200,
-                  observedAt,
-                  observationKind: "actual" as const,
-                  evidence:
-                    getActivityEffortThresholdEvidence({
-                      activityCategory: effort.activity_category,
-                      activityId: effort.activity_id,
-                      durationSeconds: effort.duration_seconds,
-                      effortType: effort.effort_type,
-                      method: effort.method,
-                      provenance: effort.provenance,
-                      source: effort.source,
-                      unit: effort.unit,
-                      value: Number(effort.value),
-                    }) ?? undefined,
-                },
-              ];
-            }
-            return [];
-          },
-        ),
-      });
-      const ftp =
-        thresholds.cycling_ftp.value === null
-          ? undefined
-          : Math.round(thresholds.cycling_ftp.value);
-      const threshold_pace =
-        thresholds.running_threshold_pace.value === null
-          ? undefined
-          : Math.round(thresholds.running_threshold_pace.value);
-
-      const heartRateZones = threshold_hr
-        ? {
-            maxHR: Math.round(threshold_hr / 0.87),
-            zone1: {
-              min: Math.round(threshold_hr * 0.55),
-              max: Math.round(threshold_hr * 0.75),
-            },
-            zone2: {
-              min: Math.round(threshold_hr * 0.75),
-              max: Math.round(threshold_hr * 0.87),
-            },
-            zone3: {
-              min: Math.round(threshold_hr * 0.87),
-              max: Math.round(threshold_hr * 0.98),
-            },
-            zone4: {
-              min: Math.round(threshold_hr * 0.98),
-              max: Math.round(threshold_hr * 1.06),
-            },
-            zone5: {
-              min: Math.round(threshold_hr * 1.06),
-              max: Math.round(threshold_hr / 0.87),
-            },
-          }
-        : null;
-
-      const powerZones = ftp
-        ? {
-            zone1: { min: 0, max: Math.round(ftp * 0.55) },
-            zone2: {
-              min: Math.round(ftp * 0.55),
-              max: Math.round(ftp * 0.75),
-            },
-            zone3: {
-              min: Math.round(ftp * 0.75),
-              max: Math.round(ftp * 0.9),
-            },
-            zone4: {
-              min: Math.round(ftp * 0.9),
-              max: Math.round(ftp * 1.05),
-            },
-            zone5: {
-              min: Math.round(ftp * 1.05),
-              max: Math.round(ftp * 1.2),
-            },
-            zone6: {
-              min: Math.round(ftp * 1.2),
-              max: Math.round(ftp * 1.5),
-            },
-            zone7: { min: Math.round(ftp * 1.5), max: null },
-          }
-        : null;
-
-      return {
-        heartRateZones,
-        powerZones,
-        profile: {
-          threshold_hr,
-          ftp,
-          weight_kg,
-          threshold_pace,
-        },
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) {
-        throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to get training zones",
+        });
       }
-
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to get training zones",
-      });
-    }
-  }),
+    }),
 });

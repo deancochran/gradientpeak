@@ -105,7 +105,8 @@ describe("CalendarDayPage planned workload", () => {
         eventCount: 1,
         activity_categories: ["bike"],
         totalDurationSeconds: 3_600,
-        totalTss: 60,
+        quantification: {},
+        commonLoad: {},
       },
       source: {
         complete: true,

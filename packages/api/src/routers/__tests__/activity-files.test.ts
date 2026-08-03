@@ -1,3 +1,4 @@
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -71,17 +72,13 @@ const mocks = vi.hoisted(() => ({
   encodePolyline: vi.fn(),
   inferActivityFileType: vi.fn(),
   parseActivityFile: vi.fn(),
-  calculateBestEfforts: vi.fn(),
-  calculateDecouplingFromStreams: vi.fn(),
-  calculateEfficiencyFactor: vi.fn(),
   calculateGradedSpeedStream: vi.fn(),
   calculateNGP: vi.fn(),
   calculateNormalizedPower: vi.fn(),
   calculateNormalizedSpeed: vi.fn(),
-  detectLTHR: vi.fn(),
   estimateVO2Max: vi.fn(),
   createActivityAnalysisStore: vi.fn(),
-  resolveActivityContextAsOf: vi.fn(),
+  getPerformanceTargetsAsOf: vi.fn(),
   fetchActivityTemperature: vi.fn(),
   storage: {
     createBucket: vi.fn(),
@@ -116,16 +113,12 @@ vi.mock("@repo/core/server/activity-files", () => ({
   parseActivityFile: mocks.parseActivityFile,
 }));
 
-vi.mock("@repo/core/calculations", () => ({
-  calculateAerobicDecoupling: vi.fn(),
-  calculateBestEfforts: mocks.calculateBestEfforts,
-  calculateDecouplingFromStreams: mocks.calculateDecouplingFromStreams,
-  calculateEfficiencyFactor: mocks.calculateEfficiencyFactor,
+vi.mock("@repo/core/calculations", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/core/calculations")>()),
   calculateGradedSpeedStream: mocks.calculateGradedSpeedStream,
   calculateNGP: mocks.calculateNGP,
   calculateNormalizedPower: mocks.calculateNormalizedPower,
   calculateNormalizedSpeed: mocks.calculateNormalizedSpeed,
-  detectLTHR: mocks.detectLTHR,
   estimateVO2Max: mocks.estimateVO2Max,
 }));
 
@@ -166,9 +159,6 @@ vi.mock("../../infrastructure/repositories/drizzle-activity-analysis-repository"
   createActivityAnalysisStore: mocks.createActivityAnalysisStore,
 }));
 
-vi.mock("../../lib/activity-analysis/context", () => ({
-  resolveActivityContextAsOf: mocks.resolveActivityContextAsOf,
-}));
 vi.mock("../../application/activity-file-ingestion/process-manual-activity-file", () => ({
   processManualActivityFile: mocks.processManualActivityFile,
 }));
@@ -183,6 +173,7 @@ vi.mock(
   }),
 );
 
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { activities } from "@repo/db";
 import { MobileRecordingUploadError } from "../../application/activity-file-ingestion/mobile-recording-upload";
 import { activityFilesRouter } from "../activity-files";
@@ -364,47 +355,28 @@ beforeEach(() => {
     throw new Error("Unsupported activity file type");
   });
 
-  mocks.calculateBestEfforts.mockImplementation((_, timestamps: number[]) => [
-    {
-      duration: 1200,
-      value: 300,
-      startIndex: 0,
-      endIndex: 0,
-      startTimeSeconds: timestamps[0],
-      endTimeSeconds: (timestamps[0] ?? 0) + 1200,
-    },
-  ]);
-  mocks.calculateDecouplingFromStreams.mockReturnValue(0.03);
-  mocks.calculateEfficiencyFactor.mockReturnValue(1.55);
   mocks.calculateGradedSpeedStream.mockReturnValue([4.5, 4.7]);
   mocks.calculateNGP.mockReturnValue(4.6);
-  mocks.calculateNormalizedPower.mockReturnValue(250);
+  mocks.calculateNormalizedPower.mockReturnValue(calculateCyclingNormalizedPower({ samples: [] }));
   mocks.calculateNormalizedSpeed.mockReturnValue(11.1);
-  mocks.detectLTHR.mockReturnValue(175);
   mocks.estimateVO2Max.mockReturnValue(52);
   mocks.fetchActivityTemperature.mockResolvedValue(null);
-  mocks.createActivityAnalysisStore.mockImplementation((db) => ({ db }));
-  mocks.resolveActivityContextAsOf.mockResolvedValue({
-    profileMetrics: {
-      ftp: 300,
-      lthr: null,
-      lthr_by_activity_category: { bike: 180 },
-      threshold_speed_mps: null,
-      swim_threshold_speed_mps: null,
-    },
-    recentEfforts: [],
-    profile: {},
-    calibrationQuality: {
-      ftp: {
-        source: "manual",
-        observed_at: "2026-02-20T00:00:00.000Z",
-        confidence: "high",
-        stale: false,
-        estimate: false,
-        calculation_version: null,
-      },
-    },
-  });
+  mocks.getPerformanceTargetsAsOf.mockImplementation(
+    ({ asOf, profileId }: { asOf: Date; profileId: string }) =>
+      Promise.resolve(
+        buildPerformanceTargetFactsFixture({
+          asOf: asOf.toISOString(),
+          athleteId: profileId,
+          heartRateObservedAt: "2026-02-20T00:00:00.000Z",
+          lthrBpm: { bike: 180 },
+          planningThresholdPowerWatts: 300,
+        }),
+      ),
+  );
+  mocks.createActivityAnalysisStore.mockImplementation((db) => ({
+    db,
+    getPerformanceTargetsAsOf: mocks.getPerformanceTargetsAsOf,
+  }));
 });
 
 describe("activityFilesRouter", () => {
@@ -720,7 +692,6 @@ describe("activityFilesRouter", () => {
         [uploadedIngestion],
         [uploadedIngestion],
         [processingIngestion],
-        [{ value: "168" }],
         [{ value: "52" }],
         [{ id: ingestionId }],
         [],
@@ -1044,12 +1015,12 @@ describe("activityFilesRouter", () => {
           power: {
             threshold: 300,
             threshold_identity: {
-              source: "manual",
-              observed_at: "2026-02-20T00:00:00.000Z",
+              source: "modeled",
+              observed_at: "2026-02-28T10:00:00.000Z",
               confidence: "high",
               stale: false,
-              estimate: false,
-              calculation_version: null,
+              estimate: true,
+              calculation_version: "performance-target-test-fixture-v1",
             },
             time_weighted_average: 270,
             quality: { status: "sufficient", integrated_seconds: 20, coverage_ratio: 1 },
@@ -1064,12 +1035,10 @@ describe("activityFilesRouter", () => {
         },
       },
     });
-    expect(mocks.resolveActivityContextAsOf).toHaveBeenCalledWith({
-      store: { db },
+    expect(mocks.getPerformanceTargetsAsOf).toHaveBeenCalledWith({
       profileId: "11111111-1111-4111-8111-111111111111",
-      activityTimestamp: new Date("2026-03-01T10:00:00.000Z"),
-      activityId,
-      evidenceScope: "thresholds",
+      asOf: new Date("2026-03-01T10:00:00.000Z"),
+      activityIdToExclude: activityId,
     });
   });
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildTrainingAdjustmentDailySeries } from "../dailyTrainingAdjustmentSeries";
 
 describe("buildTrainingAdjustmentDailySeries", () => {
-  it("returns a contiguous daily range with zero load defaults", () => {
+  it("returns a contiguous daily range without fabricating missing load evidence", () => {
     const points = buildTrainingAdjustmentDailySeries({
       startDate: "2026-06-01",
       endDate: "2026-06-03",
@@ -10,13 +10,13 @@ describe("buildTrainingAdjustmentDailySeries", () => {
 
     expect(points.map((point) => point.date)).toEqual(["2026-06-01", "2026-06-02", "2026-06-03"]);
     expect(points[1]).toMatchObject({
-      plannedLoadTss: 0,
-      tentativePlannedLoadTss: 0,
-      completedLoadTss: 0,
-      targetLoadTss: 0,
-      actualOrScheduledLoadTss: 0,
-      loadDeltaTss: 0,
-      plannedDeltaTss: 0,
+      plannedLoad: null,
+      tentativePlannedLoad: null,
+      completedLoad: null,
+      targetLoad: null,
+      actualOrScheduledLoad: null,
+      loadDeltaLoad: null,
+      plannedDeltaLoad: null,
       annotations: [],
     });
   });
@@ -25,40 +25,73 @@ describe("buildTrainingAdjustmentDailySeries", () => {
     const points = buildTrainingAdjustmentDailySeries({
       startDate: "2026-06-01",
       endDate: "2026-06-01",
-      plannedLoadTssByDate: { "2026-06-01": 45 },
-      tentativePlannedLoadTssByDate: { "2026-06-01": 15 },
-      completedLoadTssByDate: { "2026-06-01": 30 },
-      targetLoadTssByDate: { "2026-06-01": 50 },
-      actualOrScheduledLoadTssByDate: { "2026-06-01": 55 },
+      plannedLoadByDate: { "2026-06-01": 45 },
+      tentativePlannedLoadByDate: { "2026-06-01": 15 },
+      completedLoadByDate: { "2026-06-01": 30 },
+      targetLoadByDate: { "2026-06-01": 50 },
+      actualOrScheduledLoadByDate: { "2026-06-01": 55 },
     });
 
     expect(points[0]).toMatchObject({
-      actualOrScheduledLoadTss: 55,
-      loadDeltaTss: 5,
-      plannedDeltaTss: 10,
+      actualOrScheduledLoad: 55,
+      loadDeltaLoad: 5,
+      plannedDeltaLoad: 10,
     });
   });
 
-  it("falls back to completed plus planned load when actual-or-scheduled is omitted", () => {
+  it("replaces scheduled forecast with completed load instead of double counting it", () => {
     const [point] = buildTrainingAdjustmentDailySeries({
       startDate: "2026-06-01",
       endDate: "2026-06-01",
-      completedLoadTssByDate: new Map([["2026-06-01", 20]]),
-      plannedLoadTssByDate: new Map([["2026-06-01", 35]]),
-      targetLoadTssByDate: new Map([["2026-06-01", 45]]),
+      completedLoadByDate: new Map([["2026-06-01", 20]]),
+      plannedLoadByDate: new Map([["2026-06-01", 35]]),
+      tentativePlannedLoadByDate: new Map([["2026-06-01", 0]]),
+      targetLoadByDate: new Map([["2026-06-01", 45]]),
     });
 
-    expect(point?.actualOrScheduledLoadTss).toBe(55);
-    expect(point?.loadDeltaTss).toBe(10);
+    expect(point?.actualOrScheduledLoad).toBe(35);
+    expect(point?.actualOrScheduledLoad).not.toBe(55);
+    expect(point?.loadDeltaLoad).toBe(-10);
+  });
+
+  it("keeps a partially evidenced day unavailable while retaining derivable planned delta", () => {
+    const [point] = buildTrainingAdjustmentDailySeries({
+      startDate: "2026-06-01",
+      endDate: "2026-06-01",
+      plannedLoadByDate: { "2026-06-01": 35 },
+      tentativePlannedLoadByDate: { "2026-06-01": 0 },
+      targetLoadByDate: { "2026-06-01": 45 },
+    });
+
+    expect(point).toMatchObject({
+      completedLoad: null,
+      actualOrScheduledLoad: null,
+      loadDeltaLoad: null,
+      plannedDeltaLoad: -10,
+    });
+  });
+
+  it("preserves an explicitly unavailable actual-or-scheduled value", () => {
+    const [point] = buildTrainingAdjustmentDailySeries({
+      startDate: "2026-06-01",
+      endDate: "2026-06-01",
+      plannedLoadByDate: { "2026-06-01": 35 },
+      tentativePlannedLoadByDate: { "2026-06-01": 0 },
+      completedLoadByDate: { "2026-06-01": 20 },
+      targetLoadByDate: { "2026-06-01": 45 },
+      actualOrScheduledLoadByDate: { "2026-06-01": null },
+    });
+
+    expect(point).toMatchObject({ actualOrScheduledLoad: null, loadDeltaLoad: null });
   });
 
   it("preserves optional metrics, annotations, and source metadata", () => {
     const [point] = buildTrainingAdjustmentDailySeries({
       startDate: "2026-06-01",
       endDate: "2026-06-01",
-      fitnessCtlByDate: { "2026-06-01": 71.2 },
-      fatigueAtlByDate: { "2026-06-01": 80.5 },
-      formTsbByDate: { "2026-06-01": -9.3 },
+      fitnessLongTermLoadByDate: { "2026-06-01": 71.2 },
+      fatigueRecentLoadByDate: { "2026-06-01": 80.5 },
+      formLoadBalanceByDate: { "2026-06-01": -9.3 },
       readinessScoreByDate: { "2026-06-01": 0.82 },
       annotationsByDate: {
         "2026-06-01": [{ code: "goal-week", severity: "info", message: "Goal week" }],
@@ -69,9 +102,9 @@ describe("buildTrainingAdjustmentDailySeries", () => {
     });
 
     expect(point).toMatchObject({
-      fitnessCtl: 71.2,
-      fatigueAtl: 80.5,
-      formTsb: -9.3,
+      fitnessLongTermLoad: 71.2,
+      fatigueRecentLoad: 80.5,
+      formLoadBalance: -9.3,
       readinessScore: 0.82,
       annotations: [{ code: "goal-week", severity: "info", message: "Goal week" }],
       source: { target: "goal_projection", planned: "builder", completed: "none" },

@@ -3,6 +3,7 @@ import {
   type CompletedActivitySegmentSet,
   completedActivitySegmentSetSchema,
 } from "@repo/core/activity-segments";
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { activities, activityFileIngestions, activityPlans, profiles } from "@repo/db";
 import { and, eq } from "drizzle-orm";
 import type {
@@ -30,6 +31,7 @@ import {
 } from "./submit-activity";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
+const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
 
 export type MobileRecordingSubmissionFailureCode =
   | "artifact_invalid"
@@ -90,6 +92,7 @@ function segmentSetFromExecutionManifest(input: MobileRecordingSubmissionInput) 
       endOffsetMs: new Date(last.completedAt).getTime() - parentStartMs,
       summary: {
         version: 1 as const,
+        normalizedPowerResult: unavailableNormalizedPowerResult,
         timing: {
           timingCoverage: "complete" as const,
           activeMs: Math.round(
@@ -373,9 +376,6 @@ export async function submitMobileRecording(
       avgSpeedMps: null,
       maxSpeedMps: null,
       normalizedSpeedMps: null,
-      normalizedGradedSpeedMps: null,
-      efficiencyFactor: null,
-      aerobicDecoupling: null,
       avgTemperature: submission.summary.avgTemperature ?? null,
       poolLengthMeters: submission.summary.poolLengthMeters ?? null,
       deviceManufacturer: null,
@@ -386,7 +386,6 @@ export async function submitMobileRecording(
       analysis: {
         efforts: [],
         detectedLTHR: null,
-        activityCompletedAt: new Date(submission.finishedAt),
         ingestion: {
           source: submission.source,
           operationKey,

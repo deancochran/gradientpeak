@@ -1,4 +1,5 @@
 import React from "react";
+import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 import {
   TrainingPlanBuilderEventCard,
@@ -38,10 +39,9 @@ jest.mock("@/components/training-plan/TrainingPlanEventCard", () => ({
 const session = {
   activityPlan: {
     accessible: true,
-    estimatedDurationSeconds: null,
-    estimatedTss: null,
     id: "activity-1",
     name: "Intervals",
+    prescriptionQuantification: createPrescriptionQuantificationBundleFixture(),
     published: true,
   },
   localId: "session-1",

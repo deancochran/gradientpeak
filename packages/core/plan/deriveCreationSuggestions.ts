@@ -264,7 +264,7 @@ export function deriveCreationSuggestions(
   const sessionsMax = context.recommended_sessions_per_week_range.max;
   const sessionsMidpoint = Math.max(1, (sessionsMin + sessionsMax) / 2);
   const baselineMidpoint =
-    (context.recommended_baseline_tss_range.min + context.recommended_baseline_tss_range.max) / 2;
+    (context.recommended_baseline_load_range.min + context.recommended_baseline_load_range.max) / 2;
 
   const preferredDaysFromContext = context.rationale_codes
     .filter((code) => code.startsWith("preferred_day_"))

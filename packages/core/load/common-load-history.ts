@@ -8,6 +8,9 @@ import {
 } from "./common-relative-load";
 
 export const COMMON_LOAD_HISTORY_POLICY_VERSION = "common_load_history_v1" as const;
+export const COMMON_LOAD_HISTORY_CALCULATION_MODEL = "gradientpeak_common_load_history" as const;
+export const COMMON_LOAD_HISTORY_CALCULATION_VERSION = "1" as const;
+export const COMMON_LOAD_HISTORY_BASIS = "completed_activity_history" as const;
 export const COMMON_LOAD_HISTORY_REQUIRED_DAYS = 84 as const;
 export const COMMON_LOAD_HISTORY_LONG_TERM_DAYS = 42 as const;
 export const COMMON_LOAD_HISTORY_RECENT_DAYS = 7 as const;
@@ -57,6 +60,26 @@ const planningTimezoneSchema = z
   .min(1)
   .refine(isPlanningTimezone, "Expected a supported IANA planning timezone");
 
+const historyCalculationIdentityInputSchema = z
+  .object({
+    model: z.string().trim().min(1),
+    version: z.string().trim().min(1),
+    asOf: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
+export const commonLoadHistoryCalculationIdentitySchema = z
+  .object({
+    model: z.literal(COMMON_LOAD_HISTORY_CALCULATION_MODEL),
+    version: z.literal(COMMON_LOAD_HISTORY_CALCULATION_VERSION),
+    asOf: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
+export type CommonLoadHistoryCalculationIdentity = z.infer<
+  typeof commonLoadHistoryCalculationIdentitySchema
+>;
+
 const evidenceFingerprintsSchema = z
   .array(z.string().trim().min(1))
   .min(1)
@@ -72,6 +95,7 @@ const evidenceFingerprintsSchema = z
 const observationIdentityShape = {
   model: z.string().trim().min(1),
   version: z.string().trim().min(1),
+  calculatedAsOf: z.string().datetime({ offset: true }),
   coverageStatus: z.enum(["complete", "partial"]).default("complete"),
 };
 
@@ -119,19 +143,36 @@ export type CommonLoadHistoryDayObservation = z.infer<typeof commonLoadHistoryDa
 
 export const commonLoadHistoryReplayInputSchema = z
   .object({
+    basis: z.literal(COMMON_LOAD_HISTORY_BASIS),
+    calculationIdentity: historyCalculationIdentityInputSchema,
     currentPlanningDate: calendarDateSchema,
     planningTimezone: planningTimezoneSchema,
     observations: z
       .array(commonLoadHistoryDayObservationSchema)
       .max(COMMON_LOAD_HISTORY_MAX_REPLAY_DAYS),
   })
-  .strict();
+  .strict()
+  .superRefine((input, context) => {
+    if (!isPlanningTimezone(input.planningTimezone)) return;
+    const asOf = new Date(input.calculationIdentity.asOf);
+    if (!Number.isFinite(asOf.getTime())) return;
+    if (localCalendarDate(asOf, input.planningTimezone) !== input.currentPlanningDate) {
+      context.addIssue({
+        code: "custom",
+        path: ["currentPlanningDate"],
+        message:
+          "Current planning date must be the calculation as-of date in the planning timezone",
+      });
+    }
+  });
 
 export type CommonLoadHistoryReplayInput = z.input<typeof commonLoadHistoryReplayInputSchema>;
 
 export const commonLoadHistoryIdentitySchema = z
   .object({
     policyVersion: z.literal(COMMON_LOAD_HISTORY_POLICY_VERSION),
+    basis: z.literal(COMMON_LOAD_HISTORY_BASIS),
+    calculationIdentity: commonLoadHistoryCalculationIdentitySchema,
     planningTimezone: planningTimezoneSchema,
     startDate: calendarDateSchema,
     endDate: calendarDateSchema,
@@ -150,7 +191,7 @@ export type CommonLoadHistoryIdentity = z.infer<typeof commonLoadHistoryIdentity
 export const commonLoadHistoryPointSchema = z
   .object({
     date: calendarDateSchema,
-    coverageStatus: z.enum(["complete", "partial"]),
+    coverageStatus: z.literal("complete"),
     dailyLoad: z.number().finite().nonnegative(),
     longTermLoad: z.number().finite().nonnegative(),
     recentLoad: z.number().finite().nonnegative(),
@@ -160,15 +201,15 @@ export const commonLoadHistoryPointSchema = z
 
 export const commonLoadHistoryMaturitySchema = z
   .object({
-    /** A short zero-seeded replay must not be presented as an established CTL baseline. */
-    status: z.enum(["establishing_baseline", "provisional", "mature"]),
+    /** A short zero-seeded replay must not be presented as an established LongTermLoad baseline. */
+    status: z.enum(["establishing_baseline", "mature"]),
     replayedDays: z.number().int().min(COMMON_LOAD_HISTORY_REQUIRED_DAYS),
     requiredMatureDays: z.literal(COMMON_LOAD_HISTORY_MATURE_DAYS),
     coverage: z
       .object({
         completeDays: z.number().int().nonnegative(),
-        partialDays: z.number().int().nonnegative(),
-        ratio: z.number().min(0).max(1),
+        partialDays: z.literal(0),
+        ratio: z.literal(1),
       })
       .strict(),
   })
@@ -180,19 +221,14 @@ export const commonLoadHistoryMaturitySchema = z
         message: "Maturity coverage must account for every replayed day",
       });
     }
-    const expectedRatio = maturity.coverage.completeDays / maturity.replayedDays;
-    if (Math.abs(maturity.coverage.ratio - expectedRatio) > Number.EPSILON * 8) {
+    if (maturity.coverage.completeDays !== maturity.replayedDays) {
       context.addIssue({
         code: "custom",
-        path: ["coverage", "ratio"],
-        message: "Maturity coverage ratio must use replayed days",
+        path: ["coverage", "completeDays"],
+        message: "Available maturity must cover every replayed day",
       });
     }
-    if (maturity.coverage.partialDays > 0 && maturity.status !== "provisional") {
-      context.addIssue({ code: "custom", message: "Partial history must be marked provisional" });
-    }
     if (
-      maturity.coverage.partialDays === 0 &&
       maturity.replayedDays < COMMON_LOAD_HISTORY_MATURE_DAYS &&
       maturity.status !== "establishing_baseline"
     ) {
@@ -201,11 +237,7 @@ export const commonLoadHistoryMaturitySchema = z
         message: "A zero-seeded short replay is still establishing its baseline",
       });
     }
-    if (
-      maturity.coverage.partialDays === 0 &&
-      maturity.replayedDays >= COMMON_LOAD_HISTORY_MATURE_DAYS &&
-      maturity.status !== "mature"
-    ) {
+    if (maturity.replayedDays >= COMMON_LOAD_HISTORY_MATURE_DAYS && maturity.status !== "mature") {
       context.addIssue({
         code: "custom",
         message: "Complete mature replay history must be marked mature",
@@ -278,6 +310,59 @@ const commonLoadHistoryUnavailableResultSchema = z.discriminatedUnion("reason", 
   z
     .object({
       ...unavailableResultBaseShape,
+      reason: z.literal("incompatible_history_version"),
+      context: z
+        .object({
+          expectedModel: z.literal(COMMON_LOAD_HISTORY_CALCULATION_MODEL),
+          expectedVersion: z.literal(COMMON_LOAD_HISTORY_CALCULATION_VERSION),
+          actualModel: z.string().min(1),
+          actualVersion: z.string().min(1),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...unavailableResultBaseShape,
+      reason: z.literal("incompatible_calculation_identity"),
+      context: z
+        .object({
+          date: calendarDateSchema,
+          expectedAsOf: z.string().datetime({ offset: true }),
+          actualAsOf: z.string().datetime({ offset: true }),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...unavailableResultBaseShape,
+      reason: z.literal("evidence_after_as_of"),
+      context: z
+        .object({
+          date: calendarDateSchema,
+          asOf: z.string().datetime({ offset: true }),
+          evidenceCalculatedAsOf: z.string().datetime({ offset: true }),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...unavailableResultBaseShape,
+      reason: z.literal("duplicate_observation_identity"),
+      context: z
+        .object({
+          identityKind: z.enum(["date", "evidence_fingerprint"]),
+          firstDate: calendarDateSchema,
+          duplicateDate: calendarDateSchema,
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...unavailableResultBaseShape,
       reason: z.literal("incomplete_observation"),
       context: z
         .object({
@@ -295,7 +380,7 @@ export const commonLoadHistoryResultSchema = z.union([
     .object({
       status: z.literal("available"),
       policyVersion: z.literal(COMMON_LOAD_HISTORY_POLICY_VERSION),
-      coverageStatus: z.enum(["complete", "partial"]),
+      coverageStatus: z.literal("complete"),
       maturity: commonLoadHistoryMaturitySchema,
       identity: commonLoadHistoryIdentitySchema,
       // The output remains chart-bounded even when older replay history is
@@ -315,6 +400,19 @@ function addCalendarDays(date: string, days: number): string {
   const instant = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
   instant.setUTCDate(instant.getUTCDate() + days);
   return instant.toISOString().slice(0, 10);
+}
+
+function localCalendarDate(instant: Date, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    calendar: "gregory",
+    day: "2-digit",
+    month: "2-digit",
+    numberingSystem: "latn",
+    timeZone: timezone,
+    year: "numeric",
+  }).formatToParts(instant);
+  const values = new Map(parts.map((part) => [part.type, part.value]));
+  return `${values.get("year")}-${values.get("month")}-${values.get("day")}`;
 }
 
 function unavailableResult(
@@ -349,6 +447,90 @@ export function replayCommonLoadHistory(
   const observations = [...parsed.data.observations].sort((left, right) =>
     left.date.localeCompare(right.date),
   );
+
+  if (
+    parsed.data.calculationIdentity.model !== COMMON_LOAD_HISTORY_CALCULATION_MODEL ||
+    parsed.data.calculationIdentity.version !== COMMON_LOAD_HISTORY_CALCULATION_VERSION
+  ) {
+    return unavailableResult({
+      status: "unavailable",
+      policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
+      reason: "incompatible_history_version",
+      context: {
+        expectedModel: COMMON_LOAD_HISTORY_CALCULATION_MODEL,
+        expectedVersion: COMMON_LOAD_HISTORY_CALCULATION_VERSION,
+        actualModel: parsed.data.calculationIdentity.model,
+        actualVersion: parsed.data.calculationIdentity.version,
+      },
+    });
+  }
+
+  const dateIdentity = new Map<string, string>();
+  const evidenceIdentity = new Map<string, string>();
+  for (const observation of observations) {
+    const priorDate = dateIdentity.get(observation.date);
+    if (priorDate !== undefined) {
+      return unavailableResult({
+        status: "unavailable",
+        policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
+        reason: "duplicate_observation_identity",
+        context: {
+          identityKind: "date",
+          firstDate: priorDate,
+          duplicateDate: observation.date,
+        },
+      });
+    }
+    dateIdentity.set(observation.date, observation.date);
+    for (const evidenceFingerprint of observation.evidenceFingerprints) {
+      const priorEvidenceDate = evidenceIdentity.get(evidenceFingerprint);
+      if (priorEvidenceDate !== undefined) {
+        return unavailableResult({
+          status: "unavailable",
+          policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
+          reason: "duplicate_observation_identity",
+          context: {
+            identityKind: "evidence_fingerprint",
+            firstDate: priorEvidenceDate,
+            duplicateDate: observation.date,
+          },
+        });
+      }
+      evidenceIdentity.set(evidenceFingerprint, observation.date);
+    }
+  }
+
+  const asOfMilliseconds = Date.parse(parsed.data.calculationIdentity.asOf);
+  const laterEvidence = observations.find(
+    (observation) => Date.parse(observation.calculatedAsOf) > asOfMilliseconds,
+  );
+  if (laterEvidence !== undefined) {
+    return unavailableResult({
+      status: "unavailable",
+      policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
+      reason: "evidence_after_as_of",
+      context: {
+        date: laterEvidence.date,
+        asOf: parsed.data.calculationIdentity.asOf,
+        evidenceCalculatedAsOf: laterEvidence.calculatedAsOf,
+      },
+    });
+  }
+  const incompatibleCalculation = observations.find(
+    (observation) => observation.calculatedAsOf !== parsed.data.calculationIdentity.asOf,
+  );
+  if (incompatibleCalculation !== undefined) {
+    return unavailableResult({
+      status: "unavailable",
+      policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
+      reason: "incompatible_calculation_identity",
+      context: {
+        date: incompatibleCalculation.date,
+        expectedAsOf: parsed.data.calculationIdentity.asOf,
+        actualAsOf: incompatibleCalculation.calculatedAsOf,
+      },
+    });
+  }
 
   const incompatible = observations.find(
     (observation) =>
@@ -489,6 +671,12 @@ export function replayCommonLoadHistory(
 
   const identity = {
     policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
+    basis: COMMON_LOAD_HISTORY_BASIS,
+    calculationIdentity: {
+      model: COMMON_LOAD_HISTORY_CALCULATION_MODEL,
+      version: COMMON_LOAD_HISTORY_CALCULATION_VERSION,
+      asOf: parsed.data.calculationIdentity.asOf,
+    },
     planningTimezone: parsed.data.planningTimezone,
     startDate,
     endDate,

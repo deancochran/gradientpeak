@@ -1,6 +1,10 @@
 import { getLoadBalanceStatus } from "../load/form";
-import { calculateATL, calculateCTL, calculateTSB } from "../load/progression";
-import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "../load/replay";
+import {
+  calculateLoadBalance,
+  calculateLongTermLoad,
+  calculateRecentLoad,
+} from "../load/progression";
+import { buildDailyLoadByDateSeries, replayCommonLoadFitnessByDate } from "../load/replay";
 import { addDays } from "../utils/dates";
 import type {
   FatiguePrediction,
@@ -14,54 +18,56 @@ import type {
  * Predict fatigue impact after completing a planned activity
  */
 export function predictFatigue(
-  plannedTSS: number,
+  plannedLoad: number,
   scheduledDate: Date,
   currentState: FitnessState,
   weeklyPlannedActivities: PlannedActivity[] = [],
 ): FatiguePrediction {
   // Calculate new training load after activity
-  const newATL = calculateATL(currentState.atl, plannedTSS);
-  const newCTL = calculateCTL(currentState.ctl, plannedTSS);
-  const newTSB = calculateTSB(newCTL, newATL);
+  const newRecentLoad = calculateRecentLoad(currentState.recentLoad, plannedLoad);
+  const newLongTermLoad = calculateLongTermLoad(currentState.longTermLoad, plannedLoad);
+  const newLoadBalance = calculateLoadBalance(newLongTermLoad, newRecentLoad);
 
   // Calculate weekly totals
   const weekStart = getStartOfWeek(scheduledDate);
   const weekEnd = getEndOfWeek(scheduledDate);
 
-  const weeklyTSS = weeklyPlannedActivities
+  const weeklyCommonLoad = weeklyPlannedActivities
     .filter((activity) => {
       const activityDate = new Date(activity.scheduledDate);
       return activityDate >= weekStart && activityDate <= weekEnd;
     })
-    .reduce((sum, activity) => sum + activity.estimatedTSS, 0);
+    .reduce((sum, activity) => sum + activity.estimatedCommonLoad, 0);
 
-  const totalWeeklyTSS = weeklyTSS + plannedTSS;
+  const totalWeeklyLoad = weeklyCommonLoad + plannedLoad;
 
-  // Calculate ramp rate (weekly CTL change)
-  const previousWeekCTL = currentState.ctl; // Simplified - could track historical
-  const projectedEndOfWeekCTL = projectWeekEndCTL(
-    currentState.ctl,
+  // Calculate ramp rate (weekly LongTermLoad change)
+  const previousWeekLongTermLoad = currentState.longTermLoad; // Simplified - could track historical
+  const projectedEndOfWeekLongTermLoad = projectWeekEndLongTermLoad(
+    currentState.longTermLoad,
     weeklyPlannedActivities,
-    plannedTSS,
+    plannedLoad,
     scheduledDate,
     weekEnd,
   );
-  const rampRate = projectedEndOfWeekCTL - previousWeekCTL;
+  const rampRate = projectedEndOfWeekLongTermLoad - previousWeekLongTermLoad;
 
-  const hasFitnessState = [currentState.atl, currentState.ctl, currentState.tsb].every(
-    Number.isFinite,
-  );
+  const hasFitnessState = [
+    currentState.recentLoad,
+    currentState.longTermLoad,
+    currentState.loadBalance,
+  ].every(Number.isFinite);
   const loadChangeState = classifyLoadChange(rampRate, hasFitnessState);
   const reasons = buildPlanningReasons({
     hasFitnessState,
     loadChangeState,
-    plannedTSS,
-    totalWeeklyTSS,
-    currentCTL: currentState.ctl,
+    plannedLoad,
+    totalWeeklyLoad,
+    currentLongTermLoad: currentState.longTermLoad,
   });
 
-  const loadBalanceStatus = getLoadBalanceStatus(newTSB);
-  const _formChange = getFormChange(currentState.tsb, newTSB);
+  const loadBalanceStatus = getLoadBalanceStatus(newLoadBalance);
+  const _formChange = getFormChange(currentState.loadBalance, newLoadBalance);
 
   // Generate warnings
   const warnings: string[] = [];
@@ -71,18 +77,18 @@ export function predictFatigue(
       "Training-load comparison unavailable because the current fitness state is incomplete",
     );
   } else if (loadChangeState === "increasing") {
-    warnings.push(`Projected CTL change is ${rampRate.toFixed(1)} points this week`);
+    warnings.push(`Projected LongTermLoad change is ${rampRate.toFixed(1)} points this week`);
   }
 
-  if (totalWeeklyTSS > currentState.ctl * 1.5) {
+  if (totalWeeklyLoad > currentState.longTermLoad * 1.5) {
     warnings.push(
-      `Weekly TSS (${Math.round(totalWeeklyTSS)}) significantly exceeds current fitness level (CTL: ${Math.round(currentState.ctl)})`,
+      `Weekly Common Load (${Math.round(totalWeeklyLoad)}) significantly exceeds current fitness level (LongTermLoad: ${Math.round(currentState.longTermLoad)})`,
     );
   }
 
-  if (plannedTSS > currentState.ctl * 0.8) {
+  if (plannedLoad > currentState.longTermLoad * 0.8) {
     warnings.push(
-      `This single activity (${Math.round(plannedTSS)} TSS) is very high compared to your fitness level`,
+      `This single activity (${Math.round(plannedLoad)} Common Load) is very high compared to your fitness level`,
     );
   }
 
@@ -91,14 +97,14 @@ export function predictFatigue(
 
   return {
     afterActivity: {
-      ctl: Math.round(newCTL * 10) / 10,
-      atl: Math.round(newATL * 10) / 10,
-      tsb: Math.round(newTSB * 10) / 10,
+      longTermLoad: Math.round(newLongTermLoad * 10) / 10,
+      recentLoad: Math.round(newRecentLoad * 10) / 10,
+      loadBalance: Math.round(newLoadBalance * 10) / 10,
       loadBalanceStatus,
     },
     weeklyProjection: {
-      totalTSS: Math.round(totalWeeklyTSS),
-      averageDailyTSS: Math.round((totalWeeklyTSS / 7) * 10) / 10,
+      totalLoad: Math.round(totalWeeklyLoad),
+      averageDailyLoad: Math.round((totalWeeklyLoad / 7) * 10) / 10,
       rampRate: Math.round(rampRate * 10) / 10,
       loadChangeState,
       reasons,
@@ -118,9 +124,9 @@ function classifyLoadChange(rampRate: number, hasFitnessState: boolean): LoadCha
 function buildPlanningReasons(input: {
   hasFitnessState: boolean;
   loadChangeState: LoadChangeState;
-  plannedTSS: number;
-  totalWeeklyTSS: number;
-  currentCTL: number;
+  plannedLoad: number;
+  totalWeeklyLoad: number;
+  currentLongTermLoad: number;
 }): PlanningReasonCode[] {
   if (!input.hasFitnessState) return ["MISSING_FITNESS_STATE"];
 
@@ -131,8 +137,10 @@ function buildPlanningReasons(input: {
         ? "LOAD_CHANGE_DECREASING"
         : "LOAD_CHANGE_STABLE",
   ];
-  if (input.totalWeeklyTSS > input.currentCTL * 1.5) reasons.push("WEEKLY_LOAD_ABOVE_CURRENT_CTL");
-  if (input.plannedTSS > input.currentCTL * 0.8) reasons.push("SINGLE_ACTIVITY_ABOVE_CURRENT_CTL");
+  if (input.totalWeeklyLoad > input.currentLongTermLoad * 1.5)
+    reasons.push("WEEKLY_LOAD_ABOVE_CURRENT_LongTermLoad");
+  if (input.plannedLoad > input.currentLongTermLoad * 0.8)
+    reasons.push("SINGLE_ACTIVITY_ABOVE_CURRENT_LongTermLoad");
   return reasons;
 }
 
@@ -140,14 +148,14 @@ function buildPlanningReasons(input: {
  * Determine form change direction
  */
 function getFormChange(
-  currentTSB: number,
-  newTSB: number,
+  currentLoadBalance: number,
+  newLoadBalance: number,
 ): "improving" | "maintaining" | "declining" {
-  const change = newTSB - currentTSB;
+  const change = newLoadBalance - currentLoadBalance;
 
   if (Math.abs(change) < 2) return "maintaining";
-  if (change > 0) return "improving"; // TSB increasing = getting fresher
-  return "declining"; // TSB decreasing = getting more fatigued
+  if (change > 0) return "improving"; // LoadBalance increasing = getting fresher
+  return "declining"; // LoadBalance decreasing = getting more fatigued
 }
 
 /**
@@ -160,23 +168,23 @@ function generateRecommendation(
   if (loadChangeState === "insufficient_data") {
     return "Planning comparison unavailable until a complete fitness state is provided.";
   }
-  if (reasons.includes("WEEKLY_LOAD_ABOVE_CURRENT_CTL")) {
-    return "Planned weekly load is above the current CTL reference; review the schedule and available context.";
+  if (reasons.includes("WEEKLY_LOAD_ABOVE_CURRENT_LongTermLoad")) {
+    return "Planned weekly load is above the current LongTermLoad reference; review the schedule and available context.";
   }
-  return `Projected weekly CTL is ${loadChangeState}; use this descriptive estimate with athlete context.`;
+  return `Projected weekly LongTermLoad is ${loadChangeState}; use this descriptive estimate with athlete context.`;
 }
 
 /**
- * Project CTL at end of week based on planned activities
+ * Project LongTermLoad at end of week based on planned activities
  */
-function projectWeekEndCTL(
-  currentCTL: number,
+function projectWeekEndLongTermLoad(
+  currentLongTermLoad: number,
   plannedActivities: PlannedActivity[],
-  additionalTSS: number,
+  additionalLoad: number,
   scheduledDate: Date,
   weekEnd: Date,
 ): number {
-  const tssByDate = new Map<string, number>();
+  const loadByDate = new Map<string, number>();
 
   for (const activity of plannedActivities) {
     const activityDate = new Date(activity.scheduledDate);
@@ -185,23 +193,23 @@ function projectWeekEndCTL(
     }
 
     const dateKey = activityDate.toISOString().split("T")[0]!;
-    tssByDate.set(dateKey, (tssByDate.get(dateKey) ?? 0) + activity.estimatedTSS);
+    loadByDate.set(dateKey, (loadByDate.get(dateKey) ?? 0) + activity.estimatedCommonLoad);
   }
 
   const scheduledDateKey = scheduledDate.toISOString().split("T")[0]!;
-  tssByDate.set(scheduledDateKey, (tssByDate.get(scheduledDateKey) ?? 0) + additionalTSS);
+  loadByDate.set(scheduledDateKey, (loadByDate.get(scheduledDateKey) ?? 0) + additionalLoad);
 
-  const replayed = replayTrainingLoadByDate({
-    dailyTss: buildDailyTssByDateSeries({
+  const replayed = replayCommonLoadFitnessByDate({
+    dailyLoad: buildDailyLoadByDateSeries({
       startDate: getStartOfWeek(scheduledDate).toISOString().split("T")[0]!,
       endDate: weekEnd.toISOString().split("T")[0]!,
-      tssByDate,
+      loadByDate,
     }),
-    initialCTL: currentCTL,
-    initialATL: currentCTL,
+    initialLongTermLoad: currentLongTermLoad,
+    initialRecentLoad: currentLongTermLoad,
   });
 
-  return replayed.at(-1)?.ctl ?? currentCTL;
+  return replayed.at(-1)?.longTermLoad ?? currentLongTermLoad;
 }
 
 /**
@@ -234,9 +242,9 @@ export function estimateWeeklyLoad(
   plannedActivities: PlannedActivity[],
   currentState: FitnessState,
 ): {
-  totalTSS: number;
-  dailyBreakdown: Array<{ date: Date; tss: number; count: number }>;
-  projectedCTL: number;
+  totalLoad: number;
+  dailyBreakdown: Array<{ date: Date; load: number; count: number }>;
+  projectedLongTermLoad: number;
   rampRate: number;
   loadChangeState: LoadChangeState;
   reasons: PlanningReasonCode[];
@@ -249,11 +257,11 @@ export function estimateWeeklyLoad(
     return activityDate >= weekStart && activityDate <= weekEnd;
   });
 
-  // Calculate total TSS
-  const totalTSS = weekActivities.reduce((sum, activity) => sum + activity.estimatedTSS, 0);
+  // Calculate total Common Load
+  const totalLoad = weekActivities.reduce((sum, activity) => sum + activity.estimatedCommonLoad, 0);
 
   // Create daily breakdown
-  const dailyBreakdown: Array<{ date: Date; tss: number; count: number }> = [];
+  const dailyBreakdown: Array<{ date: Date; load: number; count: number }> = [];
   for (let i = 0; i < 7; i++) {
     const date = addDays(weekStart, i);
     const dayActivities = weekActivities.filter((activity) => {
@@ -261,50 +269,52 @@ export function estimateWeeklyLoad(
       return activityDate.toDateString() === date.toDateString();
     });
 
-    const dayTSS = dayActivities.reduce((sum, activity) => sum + activity.estimatedTSS, 0);
+    const dayLoad = dayActivities.reduce((sum, activity) => sum + activity.estimatedCommonLoad, 0);
 
     dailyBreakdown.push({
       date,
-      tss: Math.round(dayTSS),
+      load: Math.round(dayLoad),
       count: dayActivities.length,
     });
   }
 
-  const tssByDate = new Map<string, number>();
+  const loadByDate = new Map<string, number>();
   for (const activity of weekActivities) {
     const dateKey = new Date(activity.scheduledDate).toISOString().split("T")[0]!;
-    tssByDate.set(dateKey, (tssByDate.get(dateKey) ?? 0) + activity.estimatedTSS);
+    loadByDate.set(dateKey, (loadByDate.get(dateKey) ?? 0) + activity.estimatedCommonLoad);
   }
 
-  const replayed = replayTrainingLoadByDate({
-    dailyTss: buildDailyTssByDateSeries({
+  const replayed = replayCommonLoadFitnessByDate({
+    dailyLoad: buildDailyLoadByDateSeries({
       startDate: weekStart.toISOString().split("T")[0]!,
       endDate: weekEnd.toISOString().split("T")[0]!,
-      tssByDate,
+      loadByDate,
     }),
-    initialCTL: currentState.ctl,
-    initialATL: currentState.atl,
+    initialLongTermLoad: currentState.longTermLoad,
+    initialRecentLoad: currentState.recentLoad,
   });
-  const projectedCTL = replayed.at(-1)?.ctl ?? currentState.ctl;
+  const projectedLongTermLoad = replayed.at(-1)?.longTermLoad ?? currentState.longTermLoad;
 
   // Calculate ramp rate
-  const rampRate = projectedCTL - currentState.ctl;
-  const hasFitnessState = [currentState.atl, currentState.ctl, currentState.tsb].every(
-    Number.isFinite,
-  );
+  const rampRate = projectedLongTermLoad - currentState.longTermLoad;
+  const hasFitnessState = [
+    currentState.recentLoad,
+    currentState.longTermLoad,
+    currentState.loadBalance,
+  ].every(Number.isFinite);
   const loadChangeState = classifyLoadChange(rampRate, hasFitnessState);
   const reasons = buildPlanningReasons({
     hasFitnessState,
     loadChangeState,
-    plannedTSS: 0,
-    totalWeeklyTSS: totalTSS,
-    currentCTL: currentState.ctl,
+    plannedLoad: 0,
+    totalWeeklyLoad: totalLoad,
+    currentLongTermLoad: currentState.longTermLoad,
   });
 
   return {
-    totalTSS: Math.round(totalTSS),
+    totalLoad: Math.round(totalLoad),
     dailyBreakdown,
-    projectedCTL: Math.round(projectedCTL * 10) / 10,
+    projectedLongTermLoad: Math.round(projectedLongTermLoad * 10) / 10,
     rampRate: Math.round(rampRate * 10) / 10,
     loadChangeState,
     reasons,

@@ -220,6 +220,47 @@ export function createProviderSyncRepository({
       });
     },
 
+    async updateRunningJobDesiredState({
+      expectedIntegrationGeneration,
+      id,
+      integrationId,
+      payload,
+      payloadHash,
+      profileId,
+      provider,
+      workerId,
+    }) {
+      const now = new Date();
+      const [updated] = await db
+        .update(schema.providerSyncJobs)
+        .set({
+          payload,
+          payload_hash: payloadHash,
+          updated_at: now,
+        })
+        .where(
+          and(
+            eq(schema.providerSyncJobs.id, id),
+            eq(schema.providerSyncJobs.integration_id, integrationId),
+            eq(schema.providerSyncJobs.integration_generation, expectedIntegrationGeneration),
+            eq(schema.providerSyncJobs.profile_id, profileId),
+            eq(schema.providerSyncJobs.provider, provider),
+            eq(schema.providerSyncJobs.status, "running"),
+            eq(schema.providerSyncJobs.locked_by, workerId),
+            gt(schema.providerSyncJobs.lock_expires_at, now),
+            sql`exists (
+              select 1 from integrations where integrations.id = ${schema.providerSyncJobs.integration_id}
+                and integrations.profile_id = ${profileId}
+                and integrations.provider = ${provider}
+                and integrations.lifecycle_status = 'active'
+                and integrations.generation = ${expectedIntegrationGeneration}
+            )`,
+          ),
+        )
+        .returning({ id: schema.providerSyncJobs.id });
+      return updated !== undefined;
+    },
+
     async getQueueTelemetry({ jobTypes, now, provider }) {
       const result = await db.execute(sql<{
         deadLetterDepth: number | string;

@@ -75,6 +75,17 @@ async function athleteProfileId(client: PoolClient) {
   return id;
 }
 
+async function deletePlanningPerformanceEvidence(
+  client: PoolClient,
+  profileId: string,
+  activityIds: readonly string[],
+) {
+  await client.query(
+    'delete from "activities" where "profile_id" = $1 and "id" = any($2::uuid[])',
+    [profileId, activityIds],
+  );
+}
+
 export async function withPlanningPathFixture(
   testInfo: TestInfo,
   run: (fixture: PlanningFixture) => Promise<void>,
@@ -86,11 +97,33 @@ export async function withPlanningPathFixture(
   const eventId = deterministicUuid(
     createHash("sha256").update(`${fixtureDigest}|event`).digest("hex"),
   );
-  const metricId = deterministicUuid(
-    createHash("sha256").update(`${fixtureDigest}|metric`).digest("hex"),
-  );
+  const performanceActivities = [0, 1].map((index) => {
+    const completedAt = new Date(Date.now() - (30 + index) * 86_400_000);
+    return {
+      activityId: deterministicUuid(
+        createHash("sha256").update(`${fixtureDigest}|performance-activity|${index}`).digest("hex"),
+      ),
+      completedAt,
+      segmentId: deterministicUuid(
+        createHash("sha256").update(`${fixtureDigest}|performance-segment|${index}`).digest("hex"),
+      ),
+      startedAt: new Date(completedAt.getTime() - 3_600_000),
+    };
+  });
+  const performanceEfforts = [
+    { activityIndex: 0, durationSeconds: 300, powerWatts: 320 },
+    { activityIndex: 1, durationSeconds: 600, powerWatts: 280 },
+    { activityIndex: 0, durationSeconds: 1_200, powerWatts: 260 },
+    { activityIndex: 1, durationSeconds: 1_800, powerWatts: 253.33333333333334 },
+  ].map((effort) => ({
+    ...effort,
+    id: deterministicUuid(
+      createHash("sha256")
+        .update(`${fixtureDigest}|performance-effort|${effort.durationSeconds}`)
+        .digest("hex"),
+    ),
+  }));
   const title = `Playwright Area 8 firm ${digest}`;
-  const metricNote = `Playwright Area 8 FTP ${digest}`;
   const today = new Date();
   const weekStart = addDays(
     new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())),
@@ -109,6 +142,7 @@ export async function withPlanningPathFixture(
   const client = await pool.connect();
   let profileId: string | undefined;
   let planningTimezone: string | null | undefined;
+  let setupTransactionOpen = false;
   try {
     profileId = await athleteProfileId(client);
     const plan = await client.query('select "id" from "activity_plans" where "id" = $1 limit 1', [
@@ -121,23 +155,110 @@ export async function withPlanningPathFixture(
         [profileId],
       )
     ).rows[0]?.planning_timezone;
+    await client.query("begin");
+    setupTransactionOpen = true;
     await client.query('delete from "events" where "id" = $1 and "profile_id" = $2', [
       eventId,
       profileId,
     ]);
-    await client.query('delete from "profile_metrics" where "id" = $1 and "profile_id" = $2', [
-      metricId,
+    await deletePlanningPerformanceEvidence(
+      client,
       profileId,
-    ]);
+      performanceActivities.map(({ activityId }) => activityId),
+    );
     await client.query('update "profiles" set "planning_timezone" = $2 where "id" = $1', [
       profileId,
       "UTC",
     ]);
-    await client.query(
-      `insert into "profile_metrics" ("id", "profile_id", "metric_type", "recorded_at", "unit", "value", "notes")
-       values ($1, $2, 'ftp', now(), 'W', 250, $3)`,
-      [metricId, profileId, metricNote],
-    );
+    for (const [index, activity] of performanceActivities.entries()) {
+      await client.query(
+        `insert into "activities" (
+          "id", "profile_id", "name", "started_at", "finished_at", "elapsed_ms",
+          "active_ms", "moving_ms", "timing_coverage", "parser_version",
+          "decoded_contract_version", "materializer_version", "segments_generated_at"
+        ) values (
+          $1::uuid, $2::uuid, $3, $4::timestamptz, $5::timestamptz, 3600000,
+          3600000, 3600000, 'complete', 'e2e-planning-v1',
+          'e2e-planning-v1', 'e2e-planning-v1', $5::timestamptz
+        )`,
+        [
+          activity.activityId,
+          profileId,
+          `Playwright planning performance evidence ${index + 1}`,
+          activity.startedAt.toISOString(),
+          activity.completedAt.toISOString(),
+        ],
+      );
+      await client.query(
+        `insert into "activity_segments" (
+          "id", "activity_id", "profile_id", "ordinal", "role", "activity_category",
+          "start_offset_ms", "end_offset_ms", "summary", "summary_version",
+          "timing_coverage", "active_ms", "moving_ms", "segment_revision",
+          "parser_version", "materializer_version"
+        ) values (
+          $1::uuid, $2::uuid, $3::uuid, 0, 'activity', 'bike',
+          0, 3600000, $4::jsonb, 1,
+          'complete', 3600000, 3600000, 1,
+          'e2e-planning-v1', 'e2e-planning-v1'
+        )`,
+        [
+          activity.segmentId,
+          activity.activityId,
+          profileId,
+          JSON.stringify({
+            version: 1,
+            timing: { timingCoverage: "complete", activeMs: 3_600_000, movingMs: 3_600_000 },
+          }),
+        ],
+      );
+    }
+    for (const effort of performanceEfforts) {
+      const activity = performanceActivities[effort.activityIndex];
+      if (!activity) throw new Error("The planning performance fixture activity is absent.");
+      const startOffsetSeconds = 3_600 - effort.durationSeconds;
+      const completedAtSeconds = activity.completedAt.getTime() / 1_000;
+      await client.query(
+        `insert into "activity_efforts" (
+          "id", "created_at", "updated_at", "profile_id", "activity_id", "segment_id",
+          "recorded_at", "activity_category", "effort_type", "duration_seconds",
+          "start_offset", "unit", "value", "source", "method", "calculation_version", "provenance"
+        ) values (
+          $1::uuid, $2::timestamptz, $2::timestamptz, $3::uuid, $4::uuid, $5::uuid,
+          $2::timestamptz, 'bike', 'power', $6, $7, 'watts', $8,
+          'imported', 'activity_file_best_effort', 'best-effort-extraction-v1', $9::jsonb
+        )`,
+        [
+          effort.id,
+          activity.completedAt.toISOString(),
+          profileId,
+          activity.activityId,
+          activity.segmentId,
+          effort.durationSeconds,
+          startOffsetSeconds,
+          effort.powerWatts,
+          JSON.stringify({
+            observation_id: effort.id,
+            activity_id: activity.activityId,
+            segment_id: activity.segmentId,
+            derived_from: "activity_file_stream",
+            source_series: "power",
+            interval_convention: "current_sample_applies_to_preceding_interval",
+            exact_window_start_timestamp_seconds: completedAtSeconds - effort.durationSeconds,
+            exact_window_end_timestamp_seconds: completedAtSeconds,
+            exact_window_start_offset_seconds: startOffsetSeconds,
+            exact_window_end_offset_seconds: 3_600,
+            duration_seconds: effort.durationSeconds,
+            contributing_duration_seconds: effort.durationSeconds,
+            window_coverage: 1,
+            source_time_coverage: 1,
+            extraction_status: "available",
+            extraction_reason: null,
+            persisted_start_offset_quantization: "floor_seconds_v1",
+            calculation_version: "best-effort-extraction-v1",
+          }),
+        ],
+      );
+    }
     const insertedEvent = await client.query<{ id: string }>(
       `insert into "events" ("id", "profile_id", "event_type", "status", "title", "all_day", "timezone", "starts_at", "ends_at", "scheduled_date", "activity_plan_id")
         values ($1, $2, 'planned', 'scheduled', $3, false, 'UTC', $4::timestamptz, $5::timestamptz, $6, $7)
@@ -157,18 +278,25 @@ export async function withPlanningPathFixture(
     if (insertedEventId !== fixture.eventId) {
       throw new Error("The Area 8 firm-event fixture returned an unexpected ID.");
     }
+    await client.query("commit");
+    setupTransactionOpen = false;
     await run(fixture);
   } finally {
+    if (setupTransactionOpen) {
+      await client.query("rollback");
+      setupTransactionOpen = false;
+    }
     try {
       if (profileId) {
         await client.query('delete from "events" where "id" = $1 and "profile_id" = $2', [
           eventId,
           profileId,
         ]);
-        await client.query('delete from "profile_metrics" where "id" = $1 and "profile_id" = $2', [
-          metricId,
+        await deletePlanningPerformanceEvidence(
+          client,
           profileId,
-        ]);
+          performanceActivities.map(({ activityId }) => activityId),
+        );
         await client.query('update "profiles" set "planning_timezone" = $2 where "id" = $1', [
           profileId,
           planningTimezone,

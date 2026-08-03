@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildDailyTrainingAdjustmentChartData,
+  buildDailyTrainingAdjustmentChartDomains,
   hasRenderableDailyTrainingAdjustmentData,
 } from "./dailyTrainingAdjustmentChartPresentation";
 
@@ -14,7 +15,7 @@ describe("daily training adjustment chart presentation", () => {
           effectiveRemainingLoad: 45,
           effectiveTentativeLoad: 10,
           hasTargetLoad: true,
-          targetLoadTss: 90,
+          targetLoad: 90,
         },
       ]),
     ).toEqual([
@@ -49,14 +50,14 @@ describe("daily training adjustment chart presentation", () => {
         {
           date: "2026-07-28",
           hasTargetLoad: false,
-          targetLoadTss: 80,
+          targetLoad: 80,
           targetFitnessCtl: 999,
         },
       ]),
     ).toBe(false);
     expect(
       buildDailyTrainingAdjustmentChartData([
-        { date: "2026-07-28", targetLoadTss: 80, targetFitnessCtl: 999 },
+        { date: "2026-07-28", targetLoad: 80, targetFitnessCtl: 999 },
       ])[0],
     ).toMatchObject({ targetLoad: null, recommendedFitness: null });
   });
@@ -68,7 +69,7 @@ describe("daily training adjustment chart presentation", () => {
           date: "2026-07-28",
           recommendedLoadStatus: "complete",
           recommendedLoad: 80,
-          targetLoadTss: 1_000,
+          targetLoad: 1_000,
         },
         {
           date: "2026-07-29",
@@ -91,14 +92,17 @@ describe("daily training adjustment chart presentation", () => {
   });
 
   it("does not use zero for an unavailable planned base when tentative Load is known", () => {
-    expect(
-      buildDailyTrainingAdjustmentChartData([
-        {
-          date: "2026-07-28",
-          effectiveRemainingLoad: null,
-          effectiveTentativeLoad: 25,
-        },
-      ])[0],
-    ).toMatchObject({ plannedLoad: null, plannedLoadWithTentative: null });
+    const chartData = buildDailyTrainingAdjustmentChartData([
+      {
+        date: "2026-07-28",
+        effectiveRemainingLoad: null,
+        effectiveTentativeLoad: 25,
+      },
+    ]);
+    expect(chartData[0]).toMatchObject({ plannedLoad: null, plannedLoadWithTentative: null });
+    expect(buildDailyTrainingAdjustmentChartDomains(chartData)).toEqual({
+      fitnessDomain: [0, 100],
+      loadDomain: [0, 100],
+    });
   });
 });

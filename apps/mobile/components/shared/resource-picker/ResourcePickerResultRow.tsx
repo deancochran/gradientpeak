@@ -1,20 +1,18 @@
+import type { ActivityPrescriptionQuantificationBundle } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Check, MapPin } from "lucide-react-native";
 import { Pressable, View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { RouteCard } from "@/components/shared/RouteCard";
-import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import { getActivityCategoryConfig } from "@/lib/constants/activities";
 import { formatDistanceMeters, formatElevationMeters } from "@/lib/display/formatters";
 import { formatEstimatedDurationSeconds } from "@/lib/estimatedMetrics";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import type { ResourcePickerItem, ResourcePickerScope } from "./resourcePickerTypes";
 
-type ActivityPlanPickerSource = NonNullable<
-  Parameters<typeof getAuthoritativeActivityPlanMetrics>[0]
-> & {
-  common_load?: unknown;
+type ActivityPlanPickerSource = {
   activity_category: string;
   structure?: unknown;
   created_at?: string | null;
@@ -24,6 +22,7 @@ type ActivityPlanPickerSource = NonNullable<
   is_system_template?: boolean | null;
   likes_count?: number | null;
   name: string;
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
   template_visibility?: string | null;
   updated_at?: string | null;
 };
@@ -72,14 +71,12 @@ export function ResourcePickerResultRow({
           activity_category: item.activityPlanCardData.activity_category,
           createdAt: item.activityPlanCardData.createdAt ?? undefined,
           description: item.activityPlanCardData.description ?? undefined,
-          commonLoad: item.activityPlanCardData.commonLoad,
           estimatedDuration: item.activityPlanCardData.estimatedDuration ?? undefined,
-          estimatedTss: item.activityPlanCardData.estimatedTss ?? undefined,
-          intensityFactor: item.activityPlanCardData.intensityFactor ?? undefined,
           has_liked: item.activityPlanCardData.hasLiked ?? undefined,
           id: item.activityPlanCardData.id,
           likes_count: item.activityPlanCardData.likesCount ?? undefined,
           name: item.activityPlanCardData.name,
+          prescriptionQuantification: item.activityPlanCardData.prescriptionQuantification,
           structure: item.activityPlanCardData.structure,
           updatedAt: item.activityPlanCardData.updatedAt ?? undefined,
         }}
@@ -182,7 +179,7 @@ export function ResourcePickerResultRow({
 export function mapActivityPlanToResourcePickerItem(
   plan: ActivityPlanPickerSource,
 ): ResourcePickerItem {
-  const metrics = getAuthoritativeActivityPlanMetrics(plan);
+  const quantitySummary = getActivityPlanQuantitySummary(plan);
   const activity_category = plan.activity_category;
   return {
     activityCategory: activity_category,
@@ -190,21 +187,18 @@ export function mapActivityPlanToResourcePickerItem(
       activity_category,
       createdAt: plan.created_at,
       description: plan.description,
-      commonLoad: plan.common_load,
-      estimatedDuration: metrics.estimated_duration,
-      estimatedTss: metrics.estimated_tss,
-      intensityFactor: metrics.intensity_factor,
+      estimatedDuration: quantitySummary.durationSeconds,
       hasLiked: plan.has_liked,
       id: plan.id,
       likesCount: plan.likes_count,
       name: plan.name,
+      prescriptionQuantification: plan.prescriptionQuantification,
       structure: plan.structure,
       updatedAt: plan.updated_at,
     },
     createdAt: plan.created_at,
     description: plan.description,
-    estimatedDuration: metrics.estimated_duration,
-    estimatedTss: metrics.estimated_tss,
+    estimatedDuration: quantitySummary.durationSeconds,
     id: plan.id,
     hasLiked: plan.has_liked,
     isPublic: plan.template_visibility === "public",

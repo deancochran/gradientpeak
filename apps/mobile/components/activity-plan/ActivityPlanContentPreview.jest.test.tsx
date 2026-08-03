@@ -72,17 +72,7 @@ describe("ActivityPlanContentPreview", () => {
 
   it("does not render an empty visual wrapper for a metrics-only plan", () => {
     renderNative(
-      <ActivityPlanContentPreview
-        plan={{
-          authoritative_metrics: {
-            estimated_duration: 3600,
-            estimated_tss: 70,
-            intensity_factor: 0.8,
-          },
-        }}
-        size="medium"
-        testIDPrefix="metrics-only-preview"
-      />,
+      <ActivityPlanContentPreview plan={{}} size="medium" testIDPrefix="metrics-only-preview" />,
     );
 
     expect(screen.queryByTestId("metrics-only-preview")).toBeNull();

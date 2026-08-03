@@ -322,10 +322,6 @@ export function composeEffectivePlanLoad(
     });
   }
 
-  const completedById = new Map(
-    parsed.completedActivities.map((activity) => [activity.completedActivityId, activity]),
-  );
-  const replacedCompletedIds = new Set(scheduledLinks.keys());
   const items: EffectiveCompositionItem[] = [];
   const tentativeItems: z.infer<typeof composedScheduledItemSchema>[] = [];
 
@@ -338,21 +334,10 @@ export function composeEffectivePlanLoad(
     ) {
       continue;
     }
-    const completed =
-      scheduled.linkedCompletedActivityId === null
-        ? undefined
-        : completedById.get(scheduled.linkedCompletedActivityId);
-    if (completed !== undefined) {
-      replacedCompletedIds.add(completed.completedActivityId);
-      items.push({
-        kind: "completed",
-        completedActivityId: completed.completedActivityId,
-        date: scheduled.scheduledDate,
-        replacedScheduledItemId: scheduled.scheduledItemId,
-        commonLoad: completed.commonLoad,
-      });
-      continue;
-    }
+    // The persisted link is replacement evidence even when the completion's actual date is
+    // outside this bounded request. Never revive planned Load merely because date filtering
+    // omitted the completed activity object; that activity is composed on its own date below.
+    if (scheduled.linkedCompletedActivityId !== null) continue;
     if (scheduled.scheduledDate < planningDate) continue;
     const composed = {
       kind: "scheduled" as const,
@@ -367,17 +352,15 @@ export function composeEffectivePlanLoad(
   for (const completed of [...parsed.completedActivities].sort((left, right) =>
     left.completedActivityId.localeCompare(right.completedActivityId),
   )) {
-    if (
-      replacedCompletedIds.has(completed.completedActivityId) ||
-      !isWithinPeriod(completed.completedDate, startDate, endDate)
-    ) {
+    if (!isWithinPeriod(completed.completedDate, startDate, endDate)) {
       continue;
     }
+    const replacedScheduledItemId = scheduledLinks.get(completed.completedActivityId)?.[0] ?? null;
     items.push({
       kind: "completed",
       completedActivityId: completed.completedActivityId,
       date: completed.completedDate,
-      replacedScheduledItemId: null,
+      replacedScheduledItemId,
       commonLoad: completed.commonLoad,
     });
   }

@@ -17,7 +17,7 @@ import {
 export type TrainingPreferencesValues = AthleteTrainingSettings | AthleteTrainingSettingsFormInput;
 
 type TrainingPlanSnapshot = ReturnType<typeof useTrainingPlanSnapshot>;
-type FitnessHistoryPoint = { date: string; ctl?: number | null };
+type FitnessHistoryPoint = { date: string; longTermLoad?: number | null };
 
 function toDateKey(value: Date) {
   return value.toISOString().split("T")[0] ?? "";
@@ -148,15 +148,15 @@ export function buildTrainingPreferencesProjectionPreview(input: {
   }
 
   const resolvedDraft = parsedDraft.data;
-  const startingCtl =
+  const startingLongTermLoad =
     resolvedDraft.baseline_fitness?.is_enabled &&
-    typeof resolvedDraft.baseline_fitness.override_ctl === "number"
-      ? resolvedDraft.baseline_fitness.override_ctl
-      : lastActualPoint?.ctl;
+    typeof resolvedDraft.baseline_fitness.override_longTermLoad === "number"
+      ? resolvedDraft.baseline_fitness.override_longTermLoad
+      : lastActualPoint?.longTermLoad;
   const startingAtl =
     resolvedDraft.baseline_fitness?.is_enabled &&
-    typeof resolvedDraft.baseline_fitness.override_atl === "number"
-      ? resolvedDraft.baseline_fitness.override_atl
+    typeof resolvedDraft.baseline_fitness.override_recentLoad === "number"
+      ? resolvedDraft.baseline_fitness.override_recentLoad
       : undefined;
 
   try {
@@ -165,7 +165,7 @@ export function buildTrainingPreferencesProjectionPreview(input: {
       creationInput: {},
       profileSettings: resolvedDraft,
       profileGoals: input.snapshot.profileGoals ?? [],
-      startingCtlOverride: startingCtl ?? undefined,
+      startingLongTermLoadOverride: startingLongTermLoad ?? undefined,
       startingAtlOverride: startingAtl,
     });
 
@@ -173,7 +173,7 @@ export function buildTrainingPreferencesProjectionPreview(input: {
       previewIdealCurve:
         preview.projectionChart.points.map((point) => ({
           date: point.date,
-          ctl: point.predicted_fitness_ctl,
+          longTermLoad: point.predicted_fitness_longTermLoad,
         })) ?? [],
       projectionChart: preview.projectionChart,
     };
@@ -200,7 +200,7 @@ export function buildTrainingPreferencesLoadTimeline(input: {
   const dailyRecommendedLoadByDate = new Map(
     (input.projectionChart?.daily_load_points ?? []).map((point) => [
       point.date,
-      point.recommended_load_tss,
+      point.recommended_load,
     ]),
   );
   const dateSource = baselineTimeline.length > 0 ? baselineTimeline : [...previewByDate.values()];
@@ -224,22 +224,18 @@ export function buildTrainingPreferencesLoadTimeline(input: {
       const previewPoint = previewByDate.get(date);
       const scheduledLoad = hasCalendarScheduleForDate(date)
         ? (scheduledLoadAggregation.scheduledLoadByDate.get(date) ?? 0)
-        : (baseline?.scheduled_load_tss ?? 0);
+        : (baseline?.scheduled_load ?? 0);
       const tentativeScheduledLoad = hasCalendarScheduleForDate(date)
         ? (scheduledLoadAggregation.tentativeScheduledLoadByDate.get(date) ?? 0)
         : 0;
 
       return normalizeTrainingLoadTimelinePoint({
         date,
-        recommended_load_tss: Math.round(
-          dailyRecommendedLoadByDate.get(date) ??
-            previewPoint?.predicted_load_tss ??
-            baseline?.recommended_load_tss ??
-            0,
-        ),
-        scheduled_load_tss: Math.round(scheduledLoad),
-        tentative_scheduled_load_tss: Math.round(tentativeScheduledLoad),
-        completed_load_tss: baseline?.completed_load_tss ?? 0,
+        recommended_common_load:
+          dailyRecommendedLoadByDate.get(date) ?? baseline?.recommended_load ?? null,
+        scheduled_common_load: scheduledLoad,
+        tentative_scheduled_common_load: tentativeScheduledLoad,
+        completed_common_load: baseline?.completed_load ?? null,
         adherence_score: baseline?.adherence_score ?? 0,
         boundary_state: baseline?.boundary_state,
         boundary_reasons: baseline?.boundary_reasons,

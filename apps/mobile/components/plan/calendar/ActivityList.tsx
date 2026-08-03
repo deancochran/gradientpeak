@@ -4,12 +4,16 @@
  * Eliminates duplication across calendar list entry points
  */
 
-import { type GroupedActivities, groupActivitiesByDate } from "@repo/core";
+import {
+  type ActivityPrescriptionQuantificationBundle,
+  type GroupedActivities,
+  groupActivitiesByDate,
+} from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
 import { View } from "react-native";
 import { ActivityPlanCard, type ActivityPlanCardData } from "@/components/shared/ActivityPlanCard";
-import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 
 export interface ActivityListProps {
   activities: PlannedActivity[];
@@ -30,13 +34,7 @@ interface GroupSectionProps {
 type PlannedActivity = {
   activity_plan?: {
     activity_category?: string | null;
-    common_load?: unknown;
-    authoritative_metrics?: {
-      estimated_distance?: number | null;
-      estimated_duration?: number | null;
-      estimated_tss?: number | null;
-      intensity_factor?: number | null;
-    } | null;
+    prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
     name?: string | null;
     structure?: unknown;
   } | null;
@@ -48,16 +46,15 @@ type PlannedActivity = {
 
 function transformToCardData(plannedActivity: PlannedActivity): ActivityPlanCardData {
   const plan = plannedActivity.activity_plan;
-  const planMetrics = getAuthoritativeActivityPlanMetrics(plan);
+  const quantitySummary = getActivityPlanQuantitySummary(plan);
   return {
     id: plannedActivity.id,
     name: plan?.name || "Unnamed Activity",
     activity_category: plan?.activity_category || "other",
     structure: plan?.structure,
-    estimatedDuration: planMetrics.estimated_duration ?? undefined,
-    estimatedTss: planMetrics.estimated_tss ?? undefined,
-    commonLoad: plan?.common_load,
-    estimatedDistance: planMetrics.estimated_distance ?? undefined,
+    estimatedDuration: quantitySummary.durationSeconds ?? undefined,
+    prescriptionQuantification: plan?.prescriptionQuantification,
+    estimatedDistance: quantitySummary.distanceMeters ?? undefined,
     notes: plannedActivity.notes ?? undefined,
     scheduledDate: plannedActivity.scheduled_date,
     isCompleted: Boolean(plannedActivity.completed_activity_id),

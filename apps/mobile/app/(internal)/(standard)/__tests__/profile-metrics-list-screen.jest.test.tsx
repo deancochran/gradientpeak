@@ -1,8 +1,11 @@
+import { buildPerformanceOverviewFixture } from "@repo/core/testing/performance-model";
 import React from "react";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
+const mockPerformanceModelRefetch = jest.fn();
+const mockPerformanceModelUseQuery = jest.fn();
 let mockDateRange = "all";
 let mockProfileMetricItems = [
   {
@@ -102,6 +105,11 @@ jest.mock("@/lib/api", () => ({
         }),
       },
     },
+    profiles: {
+      getPerformanceModel: {
+        useQuery: mockPerformanceModelUseQuery,
+      },
+    },
   },
 }));
 
@@ -136,6 +144,14 @@ describe("profile metrics list screen", () => {
 
   beforeEach(() => {
     pushMock.mockReset();
+    mockPerformanceModelRefetch.mockReset();
+    mockPerformanceModelUseQuery.mockReset();
+    mockPerformanceModelUseQuery.mockReturnValue({
+      data: buildPerformanceOverviewFixture({ asOf: "2026-07-31T12:00:00.000Z" }),
+      error: null,
+      isLoading: false,
+      refetch: mockPerformanceModelRefetch,
+    });
     mockDateRange = "all";
     mockProfileMetricItems = [
       {
@@ -171,18 +187,20 @@ describe("profile metrics list screen", () => {
     expect(screen.getByTestId("profile-metric-section-supporting_physiology")).toBeTruthy();
     expect(screen.getByTestId("profile-metric-section-recovery")).toBeTruthy();
     expect(screen.getByTestId("profile-metric-section-body_aerobic")).toBeTruthy();
-    expect(screen.getByTestId("profile-metric-type-ftp")).toBeTruthy();
-    expect(screen.getByTestId("profile-metric-type-threshold_pace_seconds_per_km")).toBeTruthy();
-    expect(screen.getByTestId("profile-metric-type-css_seconds_per_100m")).toBeTruthy();
     expect(screen.getByTestId("profile-metric-type-lthr")).toBeTruthy();
   });
 
-  it("keeps calculated CSS history read-only", () => {
+  it("loads and renders the explicit-as-of performance model summary", () => {
     renderNative(<ProfileMetricsListScreen />);
 
-    fireEvent.press(screen.getByTestId("profile-metric-type-css_seconds_per_100m"));
-    expect(screen.queryByTestId("profile-metric-css-test")).toBeNull();
-    expect(pushMock).not.toHaveBeenCalledWith("/profile-css-test");
+    expect(screen.getByTestId("performance-model-summary")).toBeTruthy();
+    expect(screen.getByTestId("performance-model-bike")).toBeTruthy();
+    expect(screen.getByTestId("performance-model-run")).toBeTruthy();
+    expect(screen.getByTestId("performance-model-swim")).toBeTruthy();
+    expect(screen.getByTestId("performance-model-item-bike_five_second_power")).toBeTruthy();
+    expect(mockPerformanceModelUseQuery).toHaveBeenCalledWith({
+      asOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    });
   });
 
   it("shows the latest value from the selected date range", () => {

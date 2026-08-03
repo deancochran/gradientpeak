@@ -3,15 +3,13 @@ export type ResourcePickerScope = "activityPlans" | "routes";
 export type ResourcePickerActivityPlanCardData = {
   activity_category: string;
   createdAt?: string | null;
-  commonLoad?: unknown;
   description?: string | null;
   estimatedDuration?: number | null;
-  estimatedTss?: number | null;
-  intensityFactor?: number | null;
   hasLiked?: boolean | null;
   id: string;
   likesCount?: number | null;
   name: string;
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
   structure?: unknown;
   updatedAt?: string | null;
 };
@@ -33,7 +31,7 @@ type ResourcePickerItemBase = {
   createdAt?: string | null;
   description?: string | null;
   estimatedDuration?: number | null;
-  estimatedTss?: number | null;
+  estimatedCommonLoad?: number | null;
   id: string;
   isPublic?: boolean | null;
   isSystem?: boolean | null;
@@ -65,3 +63,5 @@ export type ResourcePickerExternalItem = ResourcePickerItemBase & {
 };
 
 export type ResourcePickerItem = ResourcePickerCanonicalItem | ResourcePickerExternalItem;
+
+import type { ActivityPrescriptionQuantificationBundle } from "@repo/core";

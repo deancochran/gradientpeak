@@ -3,8 +3,8 @@ import type { LoadDayObservation, LoadSeries } from "../load-series";
 import { computeAcwr, computeExternalWorkKj, computeMonotony, computeTrimp } from "../workload";
 
 const identity = {
-  activity_category: "cycling",
-  family: "tss" as const,
+  activity_category: "all",
+  family: "common_load" as const,
   method: "normalized_power",
   version: "1",
   sourceDefinition: "first_party:ftp-250",

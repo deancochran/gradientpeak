@@ -17,7 +17,7 @@ describe("periodization heuristics", () => {
       activity_category: "run",
     });
 
-    expect(profile.effective_max_ctl_ramp_per_week).toBe(3);
+    expect(profile.effective_max_longTermLoad_ramp_per_week).toBe(3);
     expect(profile.calculated_parameters.systemic_fatigue_tolerance).toBeDefined();
     expect(profile.calculated_parameters.systemic_fatigue_tolerance?.rationale_codes).toContain(
       "systemic_fatigue_tolerance_preference_applied",
@@ -60,7 +60,7 @@ describe("periodization heuristics", () => {
 
     expect(result.status).toBe("supported");
     if (result.status === "supported") {
-      expect(result.demand.required_peak_ctl).toBeGreaterThan(54);
+      expect(result.demand.required_peak_longTermLoad).toBeGreaterThan(54);
       expect(result.demand.rationale_codes).toContain(
         "multi_target_demand_aggregation_max_weighted",
       );
@@ -118,7 +118,7 @@ describe("periodization heuristics", () => {
     expect(demandResult.status).toBe("supported");
     if (demandResult.status === "supported") {
       const result = assessFeasibility({
-        currentCtl: periodizationScenarioFixtures.boundaryFeasible.currentCtl,
+        currentLongTermLoad: periodizationScenarioFixtures.boundaryFeasible.currentLongTermLoad,
         weeksToPeak: periodizationScenarioFixtures.boundaryFeasible.weeksToPeak,
         goals: normalizedGoals,
         resolvedDemands: [demandResult.demand],
@@ -139,7 +139,8 @@ describe("periodization heuristics", () => {
     expect(stretchDemand.status).toBe("supported");
     if (stretchDemand.status === "supported") {
       const infeasible = assessFeasibility({
-        currentCtl: periodizationScenarioFixtures.infeasibleBeginnerStretch.currentCtl,
+        currentLongTermLoad:
+          periodizationScenarioFixtures.infeasibleBeginnerStretch.currentLongTermLoad,
         weeksToPeak: periodizationScenarioFixtures.infeasibleBeginnerStretch.weeksToPeak,
         goals: stretchGoals,
         resolvedDemands: [stretchDemand.demand],
@@ -149,11 +150,11 @@ describe("periodization heuristics", () => {
 
       expect(infeasible.feasibility.status).toBe("infeasible_ramp");
       expect(infeasible.mode).toBe("capacity_bounded");
-      expect(infeasible.feasibility.readiness_gap_ctl).toBeGreaterThan(0);
+      expect(infeasible.feasibility.readiness_gap_longTermLoad).toBeGreaterThan(0);
     }
 
     const noGoals = assessFeasibility({
-      currentCtl: periodizationScenarioFixtures.noGoals.currentCtl,
+      currentLongTermLoad: periodizationScenarioFixtures.noGoals.currentLongTermLoad,
       weeksToPeak: periodizationScenarioFixtures.noGoals.weeksToPeak,
       goals: [],
       resolvedDemands: [],
@@ -166,7 +167,7 @@ describe("periodization heuristics", () => {
 
   it("returns structured unsupported mapping feasibility diagnostics", () => {
     const unsupported = assessFeasibility({
-      currentCtl: 30,
+      currentLongTermLoad: 30,
       weeksToPeak: 4,
       goals: [],
       resolvedDemands: [
@@ -175,14 +176,14 @@ describe("periodization heuristics", () => {
           activity_category: "run",
           demand_family: "race_performance",
           demand_duration_minutes: 90,
-          required_peak_ctl: 50,
+          required_peak_longTermLoad: 50,
           required_weekly_load_floor: 350,
           target_contributions: [
             {
               target_type: "race_performance",
               weight: 1,
               weight_share: 1,
-              required_peak_ctl: 50,
+              required_peak_longTermLoad: 50,
               rationale_codes: [],
             },
           ],

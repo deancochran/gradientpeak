@@ -9,8 +9,8 @@ export type ConstraintStatus = "satisfied" | "warning" | "violated" | "not_appli
 interface ConstraintIndicatorProps {
   label: string;
   status: ConstraintStatus;
-  currentValue?: number | string;
-  newValue?: number | string;
+  currentValue?: number | string | null;
+  newValue?: number | string | null;
   limit?: number | string;
   unit?: string;
   description?: string;
@@ -30,12 +30,12 @@ interface ConstraintIndicatorProps {
  *
  * @example
  * <ConstraintIndicator
- *   label="Weekly TSS"
+ *   label="Weekly Load"
  *   status="warning"
  *   currentValue={250}
  *   newValue={280}
  *   limit={300}
- *   unit="TSS"
+ *   unit="Common Load"
  * />
  */
 export function ConstraintIndicator({
@@ -93,7 +93,10 @@ export function ConstraintIndicator({
     }
   };
 
-  const formatValue = (value: number | string | undefined): string => {
+  const valuesUnavailable = currentValue === null || newValue === null;
+
+  const formatValue = (value: number | string | null | undefined): string => {
+    if (value === null) return "Unavailable";
     if (value === undefined) return "—";
     return typeof value === "number" ? Math.round(value).toString() : value;
   };
@@ -137,7 +140,11 @@ export function ConstraintIndicator({
         <Text className="mt-2 text-xs text-yellow-700 ml-9">⚠️ Close to limit</Text>
       )}
       {status === "violated" && (
-        <Text className="mt-2 text-xs text-red-700 ml-9">❌ Exceeds recommended limit</Text>
+        <Text className="mt-2 text-xs text-red-700 ml-9">
+          {valuesUnavailable
+            ? "❌ Common Load unavailable; this constraint cannot be evaluated"
+            : "❌ Exceeds recommended limit"}
+        </Text>
       )}
     </View>
   );

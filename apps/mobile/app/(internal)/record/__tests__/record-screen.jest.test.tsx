@@ -1,3 +1,4 @@
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import React from "react";
 import { Alert } from "react-native";
 import { createButtonComponent, createHost } from "../../../../test/mock-components";
@@ -10,6 +11,14 @@ const pauseMock = jest.fn();
 const resumeMock = jest.fn();
 const finishMock = jest.fn(async () => undefined);
 const requestPermissionMock = jest.fn(async () => true);
+const mockPerformanceTargets = buildPerformanceTargetFactsFixture({
+  asOf: "2026-06-01T00:00:00.000Z",
+});
+const mockGetPerformanceTargetsQuery = jest.fn(() => ({ data: mockPerformanceTargets }));
+const mockFetchPerformanceTargets = jest.fn(async ({ asOf }: { asOf: string }) =>
+  buildPerformanceTargetFactsFixture({ asOf }),
+);
+const mockGetProfileQuery = jest.fn(() => ({ data: { weight_kg: 72 } }));
 let mockRecordingLifecycle: "idle" | "setup" | "active" = "idle";
 
 type PlanValidation = {
@@ -31,7 +40,7 @@ type CockpitProps = {
   onLap: () => void;
   onFinish: () => void;
 };
-type AlertButtonFixture = { text?: string; onPress?: () => void };
+type AlertButtonFixture = { text?: string; onPress?: () => void | Promise<void> };
 
 const service = {
   currentRoute: null,
@@ -40,6 +49,7 @@ const service = {
   prepareRouteAttachment: jest.fn(),
   selectActivityFromPayload: jest.fn(),
   updateMetrics: jest.fn(),
+  updatePerformanceTargets: jest.fn(),
   refreshAndCheckAllPermissions: jest.fn(async () => true),
   refreshAndCheckRecordingPermissions: jest.fn(async () => true),
   validatePlanRequirements: jest.fn<PlanValidation, []>(() => ({ isValid: true, warnings: [] })),
@@ -215,15 +225,21 @@ jest.mock("@/lib/stores/activitySelectionStore", () => ({
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
-    useUtils: () => ({ routes: { invalidate: jest.fn() } }),
+    useUtils: () => ({
+      profiles: { getPerformanceTargets: { fetch: mockFetchPerformanceTargets } },
+      routes: { invalidate: jest.fn() },
+    }),
     activityPlans: {
       getById: {
         useQuery: () => ({ data: null }),
       },
     },
     profiles: {
-      getZones: {
-        useQuery: () => ({ data: { profile: null } }),
+      get: {
+        useQuery: mockGetProfileQuery,
+      },
+      getPerformanceTargets: {
+        useQuery: mockGetPerformanceTargetsQuery,
       },
     },
     routes: {
@@ -271,6 +287,9 @@ describe("record screen", () => {
     service.refreshAndCheckAllPermissions.mockResolvedValue(true);
     service.refreshAndCheckRecordingPermissions.mockResolvedValue(true);
     service.validatePlanRequirements.mockReturnValue({ isValid: true, warnings: [] });
+    mockFetchPerformanceTargets.mockImplementation(async ({ asOf }: { asOf: string }) =>
+      buildPerformanceTargetFactsFixture({ asOf }),
+    );
     activitySelectionStoreMock.peekSelection.mockReturnValue({
       activity_category: "bike",
       gpsRecordingEnabled: false,
@@ -288,6 +307,112 @@ describe("record screen", () => {
       );
     });
     expect(activitySelectionStoreMock.consumeSelection).toHaveBeenCalled();
+  });
+
+  it("hydrates owner-only performance targets at one explicit recording operation timestamp", async () => {
+    renderNative(<RecordScreen />);
+
+    await waitFor(() => {
+      expect(service.updatePerformanceTargets).toHaveBeenCalledWith(mockPerformanceTargets);
+    });
+    expect(mockGetPerformanceTargetsQuery).toHaveBeenCalledWith(
+      { asOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) },
+      expect.objectContaining({ enabled: true }),
+    );
+  });
+
+  it("hydrates only non-target recording profile data from the profile projection", async () => {
+    renderNative(<RecordScreen />);
+
+    await waitFor(() => {
+      expect(service.updateMetrics).toHaveBeenCalledWith({ weightKg: 72 });
+    });
+    expect(service.updateMetrics).not.toHaveBeenCalledWith(
+      expect.objectContaining({ ftp: expect.any(Number) }),
+    );
+    expect(service.updateMetrics).not.toHaveBeenCalledWith(
+      expect.objectContaining({ thresholdHr: expect.any(Number) }),
+    );
+    expect(service.updateMetrics).not.toHaveBeenCalledWith(
+      expect.objectContaining({ thresholdPaceSecondsPerKm: expect.any(Number) }),
+    );
+  });
+
+  it("refreshes performance targets at the start operation before recording", async () => {
+    renderNative(<RecordScreen />);
+    fireEvent.press(await screen.findByText("Start"));
+
+    await waitFor(() => {
+      expect(startMock).toHaveBeenCalled();
+    });
+    expect(mockFetchPerformanceTargets).toHaveBeenCalledWith({
+      asOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    });
+    expect(service.updatePerformanceTargets).toHaveBeenLastCalledWith(
+      expect.objectContaining({ asOf: mockFetchPerformanceTargets.mock.calls[0]?.[0].asOf }),
+    );
+    expect(startMock).toHaveBeenCalledWith(
+      expect.objectContaining({ asOf: mockFetchPerformanceTargets.mock.calls[0]?.[0].asOf }),
+    );
+    expect(service.updatePerformanceTargets.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      startMock.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+  });
+
+  it("stages explicit unavailable targets when the start-time query fails", async () => {
+    mockFetchPerformanceTargets.mockRejectedValueOnce(new Error("offline"));
+    renderNative(<RecordScreen />);
+    fireEvent.press(await screen.findByText("Start"));
+
+    await waitFor(() => {
+      expect(startMock).toHaveBeenCalled();
+    });
+    expect(service.updatePerformanceTargets).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        asOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        cycling: expect.objectContaining({
+          planningThresholdPower: expect.objectContaining({
+            status: "unavailable",
+            value: null,
+          }),
+        }),
+      }),
+    );
+    expect(startMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cycling: expect.objectContaining({
+          planningThresholdPower: expect.objectContaining({ status: "unavailable" }),
+        }),
+      }),
+    );
+  });
+
+  it("uses the validated start targets unchanged when continuing after a validation dialog", async () => {
+    const initialTargets = buildPerformanceTargetFactsFixture({
+      asOf: "2026-07-31T01:00:00.000Z",
+    });
+    mockFetchPerformanceTargets.mockResolvedValueOnce(initialTargets);
+    service.validatePlanRequirements.mockReturnValue({
+      isValid: false,
+      missingMetrics: [{ name: "FTP", description: "Needed for ERG targets." }],
+      warnings: [],
+    });
+    renderNative(<RecordScreen />);
+    fireEvent.press(await screen.findByText("Start"));
+
+    await waitFor(() => {
+      expect(Alert.alert).toHaveBeenCalledWith(
+        "Profile Setup Required",
+        expect.any(String),
+        expect.any(Array),
+      );
+    });
+    const alertButtons = (Alert.alert as jest.Mock).mock.calls.at(-1)?.[2] as AlertButtonFixture[];
+    await alertButtons.find((button) => button.text === "Continue Anyway")?.onPress?.();
+
+    expect(mockFetchPerformanceTargets).toHaveBeenCalledTimes(1);
+    expect(service.updatePerformanceTargets).toHaveBeenLastCalledWith(initialTargets);
+    expect(startMock).toHaveBeenCalledWith(initialTargets);
   });
 
   it("initializes explicit route launches without waiting for route geometry", async () => {

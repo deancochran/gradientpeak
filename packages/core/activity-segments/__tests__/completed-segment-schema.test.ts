@@ -1,16 +1,35 @@
 import { describe, expect, it } from "vitest";
-
+import { AEROBIC_NUMERICAL_TRUST_FIXTURES_V1 } from "../../calculations/__tests__/fixtures/aerobic-numerical-trust-v1";
+import { RUNNING_NUMERICAL_TRUST_FIXTURES_V1 } from "../../calculations/__tests__/fixtures/running-numerical-trust-v1";
+import { extractBestEfforts } from "../../calculations/best-efforts";
 import {
+  calculateAerobicDecoupling,
+  calculateEfficiencyFactor,
+  selectAerobicDecouplingValue,
+  selectEfficiencyFactorValue,
+} from "../../calculations/efficiency";
+import {
+  calculateRunningNormalizedGradedPace,
+  selectRunningNormalizedGradedSpeedMetersPerSecond,
+} from "../../calculations/normalized-graded-pace";
+import { calculateCyclingNormalizedPower } from "../../calculations/normalized-power";
+import {
+  activitySegmentAnalysisSchema,
   completedActivitySegmentSetSchema,
+  completedSegmentSummarySchema,
+  createAnalyzedActivitySegmentAnalysis,
+  createFailedActivitySegmentAnalysis,
+  createProcessingActivitySegmentAnalysis,
   rawOnlySegmentSourceReferenceSchema,
   SEGMENT_SUMMARY_LIMITS,
-  segmentSummarySchema,
 } from "../completed-segment-schema";
 
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
+const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
 const completeSummary = (activeMs: number, movingMs = activeMs) => ({
   version: 1 as const,
   timing: { timingCoverage: "complete" as const, activeMs, movingMs },
+  normalizedPowerResult: unavailableNormalizedPowerResult,
 });
 
 describe("completed activity segment contract", () => {
@@ -82,7 +101,11 @@ describe("completed activity segment contract", () => {
           role: "unknown",
           startOffsetMs: 0,
           endOffsetMs: 1_000,
-          summary: { version: 1, timing: { timingCoverage: "unavailable" } },
+          summary: {
+            version: 1,
+            timing: { timingCoverage: "unavailable" },
+            normalizedPowerResult: unavailableNormalizedPowerResult,
+          },
           source: { kind: "raw" },
         },
       ],
@@ -183,29 +206,39 @@ describe("completed activity segment contract", () => {
 
   it("requires partial timing evidence", () => {
     expect(
-      segmentSummarySchema.safeParse({
+      completedSegmentSummarySchema.safeParse({
         version: 1,
         timing: { timingCoverage: "partial" },
+        normalizedPowerResult: unavailableNormalizedPowerResult,
       }).success,
     ).toBe(false);
     expect(
-      segmentSummarySchema.safeParse({
+      completedSegmentSummarySchema.safeParse({
         version: 1,
         timing: { timingCoverage: "partial", movingMs: 10 },
+        normalizedPowerResult: unavailableNormalizedPowerResult,
       }).success,
     ).toBe(true);
   });
 
   it("accepts canonical cadence, speed, and bounded swim metrics", () => {
+    const normalizedPowerResult = calculateCyclingNormalizedPower({
+      samples: Array.from({ length: 61 }, (_, timestampSeconds) => ({
+        timestampSeconds,
+        powerWatts: 250,
+      })),
+    });
+    if (normalizedPowerResult.status === "unavailable") {
+      throw new Error("Expected a numeric Normalized Power fixture");
+    }
     expect(
-      segmentSummarySchema.safeParse({
+      completedSegmentSummarySchema.safeParse({
         version: 1,
         timing: { timingCoverage: "unavailable" },
         averageCadenceRpm: 90,
         averageSpeedMetersPerSecond: 5.2,
-        normalizedPowerWatts: 250,
+        normalizedPowerResult,
         normalizedSpeedMetersPerSecond: 5.4,
-        normalizedGradedSpeedMetersPerSecond: 5.5,
         swim: {
           poolLengthMeters: 25,
           lengthCount: 40,
@@ -216,9 +249,10 @@ describe("completed activity segment contract", () => {
       }).success,
     ).toBe(true);
     expect(
-      segmentSummarySchema.safeParse({
+      completedSegmentSummarySchema.safeParse({
         version: 1,
         timing: { timingCoverage: "unavailable" },
+        normalizedPowerResult: unavailableNormalizedPowerResult,
         averageCadenceRpm: SEGMENT_SUMMARY_LIMITS.maxCadenceRpm + 1,
         averageSpeedMetersPerSecond: SEGMENT_SUMMARY_LIMITS.maxSpeedMetersPerSecond + 1,
         normalizedSpeedMetersPerSecond: SEGMENT_SUMMARY_LIMITS.maxSpeedMetersPerSecond + 1,
@@ -226,10 +260,168 @@ describe("completed activity segment contract", () => {
       }).success,
     ).toBe(false);
     expect(
-      segmentSummarySchema.safeParse({
+      completedSegmentSummarySchema.safeParse({
         version: 1,
         timing: { timingCoverage: "unavailable" },
+        normalizedPowerResult: unavailableNormalizedPowerResult,
         swim: {},
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires and preserves structured Normalized Power evidence independently of watts", () => {
+    const unavailable = calculateCyclingNormalizedPower({ samples: [] });
+    expect(
+      completedSegmentSummarySchema.parse({
+        version: 1,
+        timing: { timingCoverage: "unavailable" },
+        normalizedPowerResult: unavailable,
+      }),
+    ).toMatchObject({
+      normalizedPowerResult: {
+        status: "unavailable",
+        reason: "no_samples",
+        calculationVersion: "cycling-normalized-power-v1",
+        diagnostics: { sourceTimeCoverage: 0, excludedGapDurationSeconds: 0 },
+      },
+    });
+    expect(
+      completedSegmentSummarySchema.safeParse({
+        version: 1,
+        timing: { timingCoverage: "unavailable" },
+        normalizedPowerWatts: 250,
+        normalizedPowerResult: unavailable,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps running NGP only in its versioned evidence result", () => {
+    const ngp = calculateRunningNormalizedGradedPace({
+      samples: RUNNING_NUMERICAL_TRUST_FIXTURES_V1.flat.samples,
+    });
+    if (ngp.status === "unavailable") throw new Error("Expected fixture NGP");
+    const summary = {
+      version: 1 as const,
+      timing: { timingCoverage: "complete" as const, activeMs: 60_000, movingMs: 60_000 },
+      normalizedPowerResult: unavailableNormalizedPowerResult,
+      normalizedGradedPaceResult: ngp,
+    };
+
+    expect(completedSegmentSummarySchema.safeParse(summary).success).toBe(true);
+    expect(selectRunningNormalizedGradedSpeedMetersPerSecond(ngp)).toBe(ngp.valueMetersPerSecond);
+    expect(
+      completedSegmentSummarySchema.safeParse({
+        ...summary,
+        normalizedGradedSpeedMetersPerSecond: ngp.valueMetersPerSecond + 0.1,
+      }).success,
+    ).toBe(false);
+    expect(
+      completedSegmentSummarySchema.safeParse({
+        ...summary,
+        normalizedGradedPaceResult: calculateRunningNormalizedGradedPace({ samples: [] }),
+      }).success,
+    ).toBe(true);
+  });
+
+  it("couples aerobic scalars to structured results and preserves valid zero drift", () => {
+    const availableInput = AEROBIC_NUMERICAL_TRUST_FIXTURES_V1.validZeroDrift.input;
+    const efficiencyFactorResult = calculateEfficiencyFactor(availableInput);
+    const aerobicDecouplingResult = calculateAerobicDecoupling(availableInput);
+    if (
+      efficiencyFactorResult.status === "unavailable" ||
+      aerobicDecouplingResult.status === "unavailable"
+    ) {
+      throw new Error("Expected qualified aerobic fixture results");
+    }
+    const summary = {
+      version: 1 as const,
+      timing: {
+        timingCoverage: "complete" as const,
+        activeMs: 1_200_000,
+        movingMs: 1_200_000,
+      },
+      normalizedPowerResult: unavailableNormalizedPowerResult,
+      efficiencyFactorResult,
+      aerobicDecouplingResult,
+    };
+
+    expect(aerobicDecouplingResult.value).toBe(0);
+    expect(completedSegmentSummarySchema.safeParse(summary).success).toBe(true);
+    expect(selectEfficiencyFactorValue(efficiencyFactorResult)).toBe(efficiencyFactorResult.value);
+    expect(selectAerobicDecouplingValue(aerobicDecouplingResult)).toBe(0);
+
+    const unavailableDecoupling = calculateAerobicDecoupling(
+      AEROBIC_NUMERICAL_TRUST_FIXTURES_V1.missingHeartRate.input,
+    );
+    expect(
+      completedSegmentSummarySchema.safeParse({
+        version: 1,
+        timing: { timingCoverage: "unavailable" },
+        normalizedPowerResult: unavailableNormalizedPowerResult,
+        aerobicDecouplingResult: unavailableDecoupling,
+      }).success,
+    ).toBe(true);
+    expect(
+      completedSegmentSummarySchema.safeParse({
+        version: 1,
+        timing: { timingCoverage: "unavailable" },
+        normalizedPowerResult: unavailableNormalizedPowerResult,
+        aerobicDecoupling: 0,
+        aerobicDecouplingResult: unavailableDecoupling,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("retains versioned partial and unavailable best-effort evidence by metric", () => {
+    const power = extractBestEfforts({
+      metric: "power",
+      samples: [
+        { timestampSeconds: 0, value: 100 },
+        { timestampSeconds: 1, value: 100 },
+        { timestampSeconds: 2, value: null },
+        { timestampSeconds: 3, value: 200 },
+        { timestampSeconds: 4, value: 200 },
+      ],
+      config: { durationsSeconds: [2, 3] },
+    });
+    const parsed = completedSegmentSummarySchema.parse({
+      ...completeSummary(4_000),
+      bestEffortExtractions: [power],
+    });
+
+    expect(parsed.bestEffortExtractions?.[0]?.results).toEqual([
+      expect.objectContaining({ status: "partial", durationSeconds: 2, windowCoverage: 1 }),
+      {
+        status: "unavailable",
+        reason: "insufficient_contiguous_coverage",
+        durationSeconds: 3,
+        value: null,
+      },
+    ]);
+    expect(
+      completedSegmentSummarySchema.safeParse({
+        ...completeSummary(4_000),
+        bestEffortExtractions: [power, power],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("models processing, analyzed, and failed segment analysis without optional summaries", () => {
+    const summary = completedSegmentSummarySchema.parse(completeSummary(1_000));
+    const processing = createProcessingActivitySegmentAnalysis();
+    const analyzed = createAnalyzedActivitySegmentAnalysis(summary);
+    const failed = createFailedActivitySegmentAnalysis("analysis_failed");
+
+    expect(processing).toEqual({ status: "processing", summary: null });
+    expect(analyzed).toEqual({ status: "available", summary });
+    expect(failed).toEqual({ status: "failed", summary: null, reason: "analysis_failed" });
+    expect(
+      activitySegmentAnalysisSchema.safeParse({ status: "available", summary: null }).success,
+    ).toBe(false);
+    expect(
+      activitySegmentAnalysisSchema.safeParse({
+        status: "available",
+        summary: { version: 1, timing: { timingCoverage: "unavailable" } },
       }).success,
     ).toBe(false);
   });

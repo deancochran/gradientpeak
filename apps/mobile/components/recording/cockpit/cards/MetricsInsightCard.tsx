@@ -1,7 +1,7 @@
+import { resolvePerformanceTargetValue } from "@repo/core";
 import type { ActivityTarget } from "@repo/core/schemas";
 import React from "react";
 import { View } from "react-native";
-import { formatEstimatedIntensityFactor, formatEstimatedTss } from "@/lib/estimatedMetrics";
 import { formatSeconds } from "./format";
 import { MetricTile } from "./MetricTile";
 import type { InsightCardProps } from "./types";
@@ -29,8 +29,8 @@ type MetricKey =
   | "avg_cadence"
   | "avg_speed"
   | "normalized_power"
-  | "training_stress_score"
-  | "intensity_factor";
+  | "provisional_common_load"
+  | "normalized_intensity";
 type MetricTone = "neutral" | "good" | "warn" | "danger";
 
 interface MetricInsight {
@@ -176,8 +176,8 @@ function getMetricOrder(targets: ActivityTarget[] | undefined, emphasized: Metri
     "power",
     "power_zone",
     "normalized_power",
-    "training_stress_score",
-    "intensity_factor",
+    "provisional_common_load",
+    "normalized_intensity",
     "lap_time",
     "pace",
     "gap",
@@ -284,17 +284,20 @@ function getMetricValue(
       return hasNumber(stats.normalizedPower)
         ? { value: `${Math.round(stats.normalizedPower)}`, unit: "W" }
         : null;
-    case "training_stress_score":
-      return hasNumber(stats.trainingStressScore)
-        ? {
-            value: formatEstimatedTss(stats.trainingStressScore, { includeUnit: false }) ?? "--",
-            unit: null,
-          }
+    case "provisional_common_load": {
+      const commonLoad = stats.provisionalMetrics?.commonLoad;
+      return commonLoad && commonLoad.status !== "unavailable" && commonLoad.load !== null
+        ? { value: commonLoad.load.toFixed(0), unit: null }
         : null;
-    case "intensity_factor":
-      return hasNumber(stats.intensityFactor)
-        ? { value: formatEstimatedIntensityFactor(stats.intensityFactor) ?? "--", unit: null }
+    }
+    case "normalized_intensity": {
+      const commonLoad = stats.provisionalMetrics?.commonLoad;
+      const normalizedIntensity =
+        commonLoad && commonLoad.status !== "unavailable" ? commonLoad.intensity : null;
+      return hasNumber(normalizedIntensity)
+        ? { value: normalizedIntensity.toFixed(2), unit: null }
         : null;
+    }
   }
 }
 
@@ -335,7 +338,7 @@ function getMetricUnit(key: MetricKey) {
   }
 }
 
-function hasNumber(value: number | undefined): value is number {
+function hasNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
@@ -352,22 +355,36 @@ function getTargetValues(
   service: InsightCardProps["service"],
 ) {
   const values: Partial<Record<MetricKey, { label: string; value: number }>> = {};
-  const ftp = service?.getBaseFtp?.() ?? 200;
-  const maxHr = service?.getBaseThresholdHr?.() ?? 160;
-  const thresholdHr = service?.getBaseThresholdHr?.() ?? 160;
 
   for (const target of targets ?? []) {
     if (target.type === "%FTP") {
-      const value = Math.round((target.intensity / 100) * ftp);
-      values.power = { label: `${value} W`, value };
+      const performanceTargets = service?.getPerformanceTargets();
+      const intensityScale = service?.getIntensityScale();
+      const resolved = resolvePerformanceTargetValue({
+        target,
+        activityCategory: service?.selectedActivityCategory ?? "other",
+        ...(performanceTargets !== undefined ? { performanceTargets } : {}),
+        ...(intensityScale !== undefined ? { intensityScale } : {}),
+      });
+      if (resolved) values.power = { label: `${resolved.value} W`, value: resolved.value };
     } else if (target.type === "watts") {
       values.power = { label: `${Math.round(target.intensity)} W`, value: target.intensity };
     } else if (target.type === "%MaxHR") {
-      const value = Math.round((target.intensity / 100) * maxHr);
-      values.heart_rate = { label: `${value} bpm`, value };
+      const performanceTargets = service?.getPerformanceTargets();
+      const resolved = resolvePerformanceTargetValue({
+        target,
+        activityCategory: service?.selectedActivityCategory ?? "other",
+        ...(performanceTargets !== undefined ? { performanceTargets } : {}),
+      });
+      if (resolved) values.heart_rate = { label: `${resolved.value} bpm`, value: resolved.value };
     } else if (target.type === "%ThresholdHR") {
-      const value = Math.round((target.intensity / 100) * thresholdHr);
-      values.heart_rate = { label: `${value} bpm`, value };
+      const performanceTargets = service?.getPerformanceTargets();
+      const resolved = resolvePerformanceTargetValue({
+        target,
+        activityCategory: service?.selectedActivityCategory ?? "other",
+        ...(performanceTargets !== undefined ? { performanceTargets } : {}),
+      });
+      if (resolved) values.heart_rate = { label: `${resolved.value} bpm`, value: resolved.value };
     } else if (target.type === "bpm") {
       values.heart_rate = { label: `${Math.round(target.intensity)} bpm`, value: target.intensity };
     } else if (target.type === "cadence") {
@@ -403,8 +420,8 @@ function getMetricLabel(key: MetricKey) {
   if (key === "avg_cadence") return "Avg Cadence";
   if (key === "avg_speed") return "Avg Speed";
   if (key === "normalized_power") return "NP";
-  if (key === "training_stress_score") return "TSS";
-  if (key === "intensity_factor") return "IF";
+  if (key === "provisional_common_load") return "Provisional Load";
+  if (key === "normalized_intensity") return "Normalized Intensity";
   return key.charAt(0).toUpperCase() + key.slice(1);
 }
 

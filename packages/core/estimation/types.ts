@@ -1,3 +1,4 @@
+import type { ActivityPlanDurationEstimate } from "../duration";
 import type { LoadBalanceStatus } from "../load/form";
 import type { ProfileWithDob } from "../profile";
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
@@ -7,9 +8,9 @@ import type { CanonicalActivityCategory } from "../schemas/activity-category";
 // ==============================
 
 export interface FitnessState {
-  ctl: number; // Chronic Training Load (42-day fitness)
-  atl: number; // Acute Training Load (7-day fatigue)
-  tsb: number; // Training Stress Balance (form)
+  longTermLoad: number; // 42-day fitness response
+  recentLoad: number; // 7-day fatigue response
+  loadBalance: number; // fitness minus fatigue
   lastActivityDate?: Date;
 }
 
@@ -30,15 +31,12 @@ export interface EstimationContext {
   // User profile data
   profile: ProfileWithDob;
 
-  // Performance metrics (from profile_performance_metric_logs)
-  ftp?: number | null; // Functional Threshold Power (watts)
-  thresholdHr?: number | null; // Threshold Heart Rate (bpm)
+  // Non-threshold heart-rate context selected for this estimate.
+  maxHr?: number | null;
+  restingHr?: number | null;
 
   // Profile metrics (from profile_metric_logs)
   weightKg?: number | null; // Weight in kilograms
-
-  // Running performance anchors
-  thresholdPaceSecondsPerKm?: number | null;
 
   // Current fitness state
   fitnessState?: FitnessState;
@@ -54,7 +52,7 @@ export interface EstimationContext {
 
   // Scheduling context
   scheduledDate?: Date;
-  weeklyPlannedTSS?: number; // TSS already planned for the week
+  weeklyPlannedLoad?: number; // Common Load already planned for the week
 }
 
 export type EstimationWarningHandler = (warning: {
@@ -70,13 +68,10 @@ export interface ActivityPlanEstimationInput {
 }
 
 export interface EstimationProfileInput {
-  ftp?: number | null;
-  threshold_hr?: number | null;
   max_hr?: number | null;
   resting_hr?: number | null;
   weight_kg?: number | null;
   dob?: string | null;
-  threshold_pace_seconds_per_km?: number | null;
 }
 
 export interface EstimationActivityPlanInput {
@@ -98,7 +93,7 @@ export interface BuildEstimationContextParams {
   activityPlan: EstimationActivityPlanInput;
   route?: EstimationRouteInput;
   scheduledDate?: Date;
-  weeklyPlannedTSS?: number;
+  weeklyPlannedLoad?: number;
 }
 
 // ==============================
@@ -108,11 +103,15 @@ export interface BuildEstimationContextParams {
 export type ConfidenceLevel = "high" | "medium" | "low";
 
 export interface EstimationResult {
-  // Primary metrics
-  tss: number | null;
-  /** Exact elapsed seconds, or null when the prescription is distance/open/otherwise partial. */
+  /**
+   * Deprecated compatibility slot. Exported estimators always return null;
+   * callers must use canonical Common Load for a numeric observation.
+   */
+  load: number | null;
+  /** Sole provenance-bearing duration authority for this result. */
+  durationEstimate: ActivityPlanDurationEstimate;
+  /** Compatibility projection of `durationEstimate.valueSeconds`. */
   duration: number | null;
-  intensityFactor: number | null;
 
   categoryDoses?: Array<{
     activity_category: CanonicalActivityCategory;
@@ -120,35 +119,16 @@ export interface EstimationResult {
     distanceMeters: number;
     repetitionCount: number;
     openOccurrenceCount: number;
-    tss: number | null;
-    intensityFactor: number | null;
-    cyclingPowerEvidenceCoverage: number | null;
+    load: null;
   }>;
 
-  // Secondary metrics
-  estimatedCalories?: number;
   estimatedDistance?: number; // meters
-  estimatedWork?: number; // kJ (for power-based)
-
-  // Zone predictions
-  estimatedHRZones?: number[]; // [z1, z2, z3, z4, z5] seconds
-  estimatedPowerZones?: number[]; // [z1-z7] seconds
-
-  // Fatigue impact
-  fatigueImpact?: FatigueImpact;
 
   // Estimation metadata
-  confidence: ConfidenceLevel;
-  confidenceScore: number; // 0-100
+  confidence: ConfidenceLevel | null;
+  confidenceScore: number | null; // 0-100 when supported by evidence
   factors: string[]; // What influenced the estimate
-  warnings?: string[]; // e.g., "Missing FTP, using default"
-}
-
-export interface FatigueImpact {
-  projectedATL: number; // After this activity
-  projectedCTL: number; // After this activity
-  projectedTSB: number; // After this activity
-  formChange: "improving" | "maintaining" | "declining";
+  warnings?: string[];
 }
 
 // ==============================
@@ -162,21 +142,21 @@ export type PlanningReasonCode =
   | "LOAD_CHANGE_DECREASING"
   | "LOAD_CHANGE_STABLE"
   | "LOAD_CHANGE_INCREASING"
-  | "WEEKLY_LOAD_ABOVE_CURRENT_CTL"
-  | "SINGLE_ACTIVITY_ABOVE_CURRENT_CTL";
+  | "WEEKLY_LOAD_ABOVE_CURRENT_LongTermLoad"
+  | "SINGLE_ACTIVITY_ABOVE_CURRENT_LongTermLoad";
 
 export interface FatiguePrediction {
   afterActivity: {
-    ctl: number;
-    atl: number;
-    tsb: number;
+    longTermLoad: number;
+    recentLoad: number;
+    loadBalance: number;
     loadBalanceStatus: LoadBalanceStatus;
   };
 
   weeklyProjection: {
-    totalTSS: number;
-    averageDailyTSS: number;
-    rampRate: number; // Weekly CTL change
+    totalLoad: number;
+    averageDailyLoad: number;
+    rampRate: number; // Weekly LongTermLoad change
     loadChangeState: LoadChangeState;
     reasons: PlanningReasonCode[];
     recommendation: string;
@@ -190,13 +170,9 @@ export interface FatiguePrediction {
 // ==============================
 
 export interface MetricEstimations {
-  calories?: number;
   distance?: number; // meters
   elevationGain?: number; // meters
-  avgPower?: number; // watts
-  avgHeartRate?: number; // bpm
   avgSpeed?: number; // m/s
-  movingTime?: number; // seconds (< duration)
 }
 
 // ==============================
@@ -206,22 +182,22 @@ export interface MetricEstimations {
 export interface PlannedActivity {
   id: string;
   scheduledDate: Date;
-  estimatedTSS: number;
+  estimatedCommonLoad: number;
   name: string;
 }
 
 export interface WeeklyLoadEstimation {
   weekStart: Date;
   weekEnd: Date;
-  totalTSS: number;
+  totalLoad: number;
   dailyBreakdown: Array<{
     date: Date;
-    tss: number;
+    load: number;
     activities: PlannedActivity[];
   }>;
-  projectedCTL: number;
-  projectedATL: number;
-  projectedTSB: number;
+  projectedLongTermLoad: number;
+  projectedRecentLoad: number;
+  projectedLoadBalance: number;
   rampRate: number;
   loadChangeState: LoadChangeState;
   reasons: PlanningReasonCode[];

@@ -1,3 +1,4 @@
+import { createObservationQuantificationBundle } from "@repo/core";
 import {
   aggregateCommonLoad,
   aggregateCommonLoadEnvelopes,
@@ -18,11 +19,13 @@ import {
 } from "../../lib/activity-analysis";
 
 export const dailyCommonLoadActivityLimit = 10_000;
+export const DAILY_COMMON_LOAD_TIMEZONE_ROLE = "viewer_projection" as const;
 type Db = ReturnType<typeof getRequiredDb>;
 
 export type DailyCommonLoadObservationsInput = {
   start_date: string;
   end_date: string;
+  /** Viewer-selected projection only; canonical history reads the profile planning timezone. */
   timezone: string;
 };
 
@@ -71,20 +74,29 @@ export function aggregateDailyCommonLoadObservations(input: {
       summary,
     ]);
   }
+  if (input.segmentSummaries.length > 0) {
+    createObservationQuantificationBundle({
+      members: input.segmentSummaries.flatMap(
+        (summary) => summary.observationQuantification.members,
+      ),
+    });
+  }
   const aggregatesByDate = new Map<string, CommonLoadAggregate[]>();
   for (const activity of input.activities) {
     const date = dateByActivityId.get(activity.id);
     if (!date || date < input.startDate || date > input.endDate) continue;
-    const results = (summariesByActivityId.get(activity.id) ?? []).flatMap((summary) => {
-      const parsed = commonLoadResultSchema.safeParse(summary.common_load);
-      return parsed.success ? [parsed.data] : [];
-    });
+    const observations = (summariesByActivityId.get(activity.id) ?? []).flatMap(
+      (summary) => summary.observationQuantification.members,
+    );
     // An activity with no common-model segment result is explicitly unavailable,
     // while retaining its count in day-level coverage.
-    const activityAggregate = aggregateCommonLoad(
-      results.length > 0
-        ? results
-        : [
+    const activityAggregate =
+      observations.length > 0
+        ? createObservationQuantificationBundle({
+            members: observations,
+            summaryScope: "components",
+          }).summary.commonLoad
+        : aggregateCommonLoad([
             commonLoadResultSchema.parse({
               status: "unavailable",
               model: COMMON_RELATIVE_LOAD_MODEL,
@@ -98,8 +110,7 @@ export function aggregateDailyCommonLoadObservations(input: {
               contributingDurationSeconds: null,
               reason: "activity_data_missing",
             }),
-          ],
-    );
+          ]);
     aggregatesByDate.set(date, [...(aggregatesByDate.get(date) ?? []), activityAggregate]);
   }
   return [...aggregatesByDate]
@@ -145,7 +156,9 @@ export async function getDailyCommonLoadObservations(input: {
   });
   return {
     ...input.range,
-    day_policy: "activity_started_at_in_requested_timezone" as const,
+    timezone_role: DAILY_COMMON_LOAD_TIMEZONE_ROLE,
+    canonical_history_eligible: false as const,
+    day_policy: "activity_started_at_in_viewer_timezone" as const,
     observations: aggregateDailyCommonLoadObservations({
       activities: activityRows,
       segmentSummaries,

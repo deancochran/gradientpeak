@@ -14,8 +14,8 @@ describe("projection effective controls mapping", () => {
   it("keeps aggressiveness mapping monotonic for preparedness/search while ramp caps stay invariant", () => {
     const normalizedConfig = normalizeProjectionSafetyConfig({
       optimization_profile: "balanced",
-      max_weekly_tss_ramp_pct: 7,
-      max_ctl_ramp_per_week: 3,
+      max_weekly_load_ramp_pct: 7,
+      max_longTermLoad_ramp_per_week: 3,
     });
 
     const lowAggressiveness = resolveEffectiveProjectionControls({
@@ -42,21 +42,21 @@ describe("projection effective controls mapping", () => {
     expect(highAggressiveness.optimizer.candidate_steps).toBeGreaterThanOrEqual(
       lowAggressiveness.optimizer.candidate_steps,
     );
-    expect(highAggressiveness.ramp_caps.max_weekly_tss_ramp_pct).toBe(
-      lowAggressiveness.ramp_caps.max_weekly_tss_ramp_pct,
+    expect(highAggressiveness.ramp_caps.max_weekly_load_ramp_pct).toBe(
+      lowAggressiveness.ramp_caps.max_weekly_load_ramp_pct,
     );
-    expect(highAggressiveness.ramp_caps.max_ctl_ramp_per_week).toBe(
-      lowAggressiveness.ramp_caps.max_ctl_ramp_per_week,
+    expect(highAggressiveness.ramp_caps.max_longTermLoad_ramp_per_week).toBe(
+      lowAggressiveness.ramp_caps.max_longTermLoad_ramp_per_week,
     );
-    expect(highAggressiveness.ramp_caps.max_weekly_tss_ramp_pct).toBe(7);
-    expect(highAggressiveness.ramp_caps.max_ctl_ramp_per_week).toBe(3);
+    expect(highAggressiveness.ramp_caps.max_weekly_load_ramp_pct).toBe(7);
+    expect(highAggressiveness.ramp_caps.max_longTermLoad_ramp_per_week).toBe(3);
   });
 
   it("keeps variability mapping monotonic for volatility/churn penalty relaxation", () => {
     const normalizedConfig = normalizeProjectionSafetyConfig({
       optimization_profile: "balanced",
-      max_weekly_tss_ramp_pct: 7,
-      max_ctl_ramp_per_week: 3,
+      max_weekly_load_ramp_pct: 7,
+      max_longTermLoad_ramp_per_week: 3,
     });
 
     const lowVariability = resolveEffectiveProjectionControls({
@@ -80,14 +80,14 @@ describe("projection effective controls mapping", () => {
     expect(highVariability.optimizer.churn_penalty_weight).toBeLessThan(
       lowVariability.optimizer.churn_penalty_weight,
     );
-    expect(highVariability.ramp_caps.max_weekly_tss_ramp_pct).toBe(
-      lowVariability.ramp_caps.max_weekly_tss_ramp_pct,
+    expect(highVariability.ramp_caps.max_weekly_load_ramp_pct).toBe(
+      lowVariability.ramp_caps.max_weekly_load_ramp_pct,
     );
-    expect(highVariability.ramp_caps.max_ctl_ramp_per_week).toBe(
-      lowVariability.ramp_caps.max_ctl_ramp_per_week,
+    expect(highVariability.ramp_caps.max_longTermLoad_ramp_per_week).toBe(
+      lowVariability.ramp_caps.max_longTermLoad_ramp_per_week,
     );
-    expect(highVariability.ramp_caps.max_weekly_tss_ramp_pct).toBe(7);
-    expect(highVariability.ramp_caps.max_ctl_ramp_per_week).toBe(3);
+    expect(highVariability.ramp_caps.max_weekly_load_ramp_pct).toBe(7);
+    expect(highVariability.ramp_caps.max_longTermLoad_ramp_per_week).toBe(3);
   });
 
   it("keeps hard ramp bounds and profile/schema search bounds enforced", () => {
@@ -96,8 +96,8 @@ describe("projection effective controls mapping", () => {
     const constrained = resolveEffectiveProjectionControls({
       normalized_config: normalizeProjectionSafetyConfig({
         optimization_profile: "outcome_first",
-        max_weekly_tss_ramp_pct: 20,
-        max_ctl_ramp_per_week: 8,
+        max_weekly_load_ramp_pct: 20,
+        max_longTermLoad_ramp_per_week: 8,
       }),
       calibration: trainingPlanCalibrationConfigSchema.parse({
         optimizer: {
@@ -112,10 +112,10 @@ describe("projection effective controls mapping", () => {
       },
     });
 
-    expect(constrained.ramp_caps.max_weekly_tss_ramp_pct).toBeLessThanOrEqual(40);
-    expect(constrained.ramp_caps.max_weekly_tss_ramp_pct).toBeGreaterThanOrEqual(0);
-    expect(constrained.ramp_caps.max_ctl_ramp_per_week).toBeLessThanOrEqual(12);
-    expect(constrained.ramp_caps.max_ctl_ramp_per_week).toBeGreaterThanOrEqual(0);
+    expect(constrained.ramp_caps.max_weekly_load_ramp_pct).toBeLessThanOrEqual(40);
+    expect(constrained.ramp_caps.max_weekly_load_ramp_pct).toBeGreaterThanOrEqual(0);
+    expect(constrained.ramp_caps.max_longTermLoad_ramp_per_week).toBeLessThanOrEqual(12);
+    expect(constrained.ramp_caps.max_longTermLoad_ramp_per_week).toBeGreaterThanOrEqual(0);
     expect(constrained.optimizer.lookahead_weeks).toBeLessThanOrEqual(
       outcomeBounds.lookahead_weeks.max,
     );
@@ -134,8 +134,8 @@ describe("projection effective controls mapping", () => {
     const input = {
       normalized_config: normalizeProjectionSafetyConfig({
         optimization_profile: "balanced",
-        max_weekly_tss_ramp_pct: 7,
-        max_ctl_ramp_per_week: 3,
+        max_weekly_load_ramp_pct: 7,
+        max_longTermLoad_ramp_per_week: 3,
       }),
       calibration,
       behavior_controls: {
@@ -158,8 +158,8 @@ describe("projection effective controls mapping", () => {
     const widened = resolveEffectiveProjectionControls({
       normalized_config: normalizeProjectionSafetyConfig({
         optimization_profile: "outcome_first",
-        max_weekly_tss_ramp_pct: 40,
-        max_ctl_ramp_per_week: 12,
+        max_weekly_load_ramp_pct: 40,
+        max_longTermLoad_ramp_per_week: 12,
       }),
       calibration,
       behavior_controls: {
@@ -169,10 +169,10 @@ describe("projection effective controls mapping", () => {
       },
     });
 
-    expect(widened.ramp_caps.max_weekly_tss_ramp_pct).toBeGreaterThan(20);
-    expect(widened.ramp_caps.max_ctl_ramp_per_week).toBeGreaterThan(8);
-    expect(widened.ramp_caps.max_weekly_tss_ramp_pct).toBeLessThanOrEqual(40);
-    expect(widened.ramp_caps.max_ctl_ramp_per_week).toBeLessThanOrEqual(12);
+    expect(widened.ramp_caps.max_weekly_load_ramp_pct).toBeGreaterThan(20);
+    expect(widened.ramp_caps.max_longTermLoad_ramp_per_week).toBeGreaterThan(8);
+    expect(widened.ramp_caps.max_weekly_load_ramp_pct).toBeLessThanOrEqual(40);
+    expect(widened.ramp_caps.max_longTermLoad_ramp_per_week).toBeLessThanOrEqual(12);
   });
 });
 
@@ -181,8 +181,8 @@ describe("curvature controls", () => {
     const mapped = resolveEffectiveProjectionControls({
       normalized_config: normalizeProjectionSafetyConfig({
         optimization_profile: "balanced",
-        max_weekly_tss_ramp_pct: 7,
-        max_ctl_ramp_per_week: 3,
+        max_weekly_load_ramp_pct: 7,
+        max_longTermLoad_ramp_per_week: 3,
       }),
       calibration,
       behavior_controls: {
@@ -203,21 +203,21 @@ describe("curvature controls", () => {
     );
 
     const positivePenalty = computeCurvaturePenalty({
-      previous_week_tss: 200,
+      previous_week_load: 200,
       weekly_actions: weeklyActions,
       envelopes,
       curvature: 1,
       scale_reference: 240,
     });
     const neutralPenalty = computeCurvaturePenalty({
-      previous_week_tss: 200,
+      previous_week_load: 200,
       weekly_actions: weeklyActions,
       envelopes,
       curvature: 0,
       scale_reference: 240,
     });
     const negativePenalty = computeCurvaturePenalty({
-      previous_week_tss: 200,
+      previous_week_load: 200,
       weekly_actions: weeklyActions,
       envelopes,
       curvature: -1,

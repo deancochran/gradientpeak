@@ -386,6 +386,8 @@ describe("Wahoo repository activity persistence boundary", () => {
     expect(selected?.activityFilePath).toBe(schema.activityArtifacts.path);
     expect(selected?.activityFileSize).toBe(schema.activityArtifacts.byte_size);
     expect(selected?.artifactId).toBe(schema.activityArtifacts.id);
+    expect(selected?.artifactSha256).toBe(schema.activityArtifacts.digest);
+    expect(selected?.providerRevision).toBe(schema.activityArtifactLinks.provider_revision);
     expect(selected?.segmentsRevision).toBe(schema.activities.segments_revision);
     expect(result).toEqual(row);
   });

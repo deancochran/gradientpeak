@@ -18,12 +18,8 @@ const projection = () => ({
   assessmentAsOf: "2026-07-10T12:00:00.000Z",
   athleteId: "athlete-1",
   capability: {
-    ftp: unavailable,
-    runningThresholdPace: unavailable,
-    swimmingCss: unavailable,
     criticalPowerWatts: unavailable,
     wPrimeJoules: unavailable,
-    wattsPerKilogram: unavailable,
     heartRateReserve: unavailable,
     effortCurves: [],
     enduranceRecencyWeightedMinutes: unavailable,
@@ -66,7 +62,7 @@ const projection = () => ({
 describe("athlete intelligence projection contract", () => {
   it("is the single physical/per-goal contract without generic score or probability", () => {
     const parsed = athleteIntelligenceProjectionSchema.parse(projection());
-    expect(parsed.capability).toHaveProperty("ftp");
+    expect(parsed.capability).toHaveProperty("effortCurves");
     expect(parsed.readiness).toEqual(projection().readiness);
     expect(Array.isArray(parsed.goalCoverage)).toBe(true);
     expect("score" in parsed).toBe(false);
@@ -77,7 +73,7 @@ describe("athlete intelligence projection contract", () => {
     expect(
       athleteIntelligenceProjectionSchema.safeParse({
         ...projection(),
-        capability: { ...projection().capability, ftp: 300 },
+        capability: { ...projection().capability, heartRateReserve: 300 },
       }).success,
     ).toBe(false);
     expect(

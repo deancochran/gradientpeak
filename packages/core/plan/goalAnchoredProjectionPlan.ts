@@ -23,8 +23,8 @@ export type GoalAnchoredProjectionPlan = {
   start_date: string;
   end_date: string;
   fitness_progression: {
-    starting_ctl: number;
-    target_ctl_at_peak?: number;
+    starting_longTermLoad: number;
+    target_longTermLoad_at_peak?: number;
   };
   activity_distribution: Record<string, { target_percentage: number }>;
   blocks: Array<{
@@ -34,7 +34,7 @@ export type GoalAnchoredProjectionPlan = {
     start_date: string;
     end_date: string;
     goal_ids: string[];
-    target_weekly_tss_range: { min: number; max: number };
+    target_weekly_load_range: { min: number; max: number };
     target_sessions_per_week_range: { min: number; max: number };
   }>;
   goals: GoalAnchoredProjectionGoal[];
@@ -42,7 +42,7 @@ export type GoalAnchoredProjectionPlan = {
 
 export interface BuildGoalAnchoredProjectionPlanInput {
   minimalPlan: MinimalTrainingPlanCreate;
-  startingCtl?: number;
+  startingLongTermLoad?: number;
   preferenceProfile?: AthletePreferenceProfile;
 }
 
@@ -51,7 +51,7 @@ type GoalWindow = {
   goals: GoalAnchoredProjectionGoal[];
   priority: number;
   priorityClass: "A" | "B" | "C";
-  peakWeeklyTss: number;
+  peakWeeklyLoad: number;
   taperDays: number;
   recoveryDays: number;
   tuning: PlannerPreferenceTuning;
@@ -189,7 +189,7 @@ function buildActivityDistribution(
 
 function resolveGoalWindows(input: {
   goals: GoalAnchoredProjectionGoal[];
-  startingCtl: number;
+  startingLongTermLoad: number;
   preferenceProfile: AthletePreferenceProfile;
   applyDoseLimitCaps: boolean;
 }): GoalWindow[] {
@@ -223,8 +223,8 @@ function resolveGoalWindows(input: {
         input.preferenceProfile,
         input.applyDoseLimitCaps,
       );
-      const baselineWeeklyTss = Math.max(140, input.startingCtl * 7);
-      const demandPeakWeeklyTss = demands.reduce((max, demand) => {
+      const baselineWeeklyLoad = Math.max(140, input.startingLongTermLoad * 7);
+      const demandPeakWeeklyLoad = demands.reduce((max, demand) => {
         const priorityScale =
           0.5 +
           priorityProgress * 0.15 +
@@ -232,11 +232,11 @@ function resolveGoalWindows(input: {
           (tuning.progressionPace - 0.5) * 0.12;
         return Math.max(max, demand.required_weekly_load_floor * priorityScale);
       }, 0);
-      const uncappedPeakWeeklyTss = round(Math.max(baselineWeeklyTss, demandPeakWeeklyTss));
-      const peakWeeklyTss =
+      const uncappedPeakWeeklyLoad = round(Math.max(baselineWeeklyLoad, demandPeakWeeklyLoad));
+      const peakWeeklyLoad =
         tuning.weeklyLoadCap === null
-          ? uncappedPeakWeeklyTss
-          : round(Math.min(uncappedPeakWeeklyTss, tuning.weeklyLoadCap));
+          ? uncappedPeakWeeklyLoad
+          : round(Math.min(uncappedPeakWeeklyLoad, tuning.weeklyLoadCap));
       const primaryDemand = demands.sort(
         (left, right) => right.required_weekly_load_floor - left.required_weekly_load_floor,
       )[0];
@@ -277,7 +277,7 @@ function resolveGoalWindows(input: {
         }),
         priority,
         priorityClass: resolvePriorityClass(priority),
-        peakWeeklyTss,
+        peakWeeklyLoad,
         taperDays,
         recoveryDays,
         tuning,
@@ -291,7 +291,7 @@ function pushBlock(input: {
   phase: ProjectionBlockPhase;
   startDate: string;
   endDate: string;
-  peakWeeklyTss: number;
+  peakWeeklyLoad: number;
   tuning?: PlannerPreferenceTuning;
   goalIds?: string[];
 }) {
@@ -300,9 +300,9 @@ function pushBlock(input: {
   }
 
   const phaseLoadMultiplier = input.tuning?.phaseMultipliers ?? fallbackPhaseLoadMultiplier;
-  const targetWeeklyTss = Math.max(
+  const targetWeeklyLoad = Math.max(
     60,
-    Math.round(input.peakWeeklyTss * phaseLoadMultiplier[input.phase]),
+    Math.round(input.peakWeeklyLoad * phaseLoadMultiplier[input.phase]),
   );
   input.blocks.push({
     name: input.name,
@@ -310,9 +310,9 @@ function pushBlock(input: {
     start_date: input.startDate,
     end_date: input.endDate,
     goal_ids: input.goalIds ?? [],
-    target_weekly_tss_range: {
-      min: Math.max(60, Math.round(targetWeeklyTss * 0.88)),
-      max: Math.max(90, Math.round(targetWeeklyTss * 1.12)),
+    target_weekly_load_range: {
+      min: Math.max(60, Math.round(targetWeeklyLoad * 0.88)),
+      max: Math.max(90, Math.round(targetWeeklyLoad * 1.12)),
     },
     target_sessions_per_week_range:
       input.phase === "taper" || input.phase === "recovery"
@@ -375,7 +375,7 @@ function pushPreparationBlocks(input: {
       phase: phase.phase,
       startDate: phaseStart,
       endDate: phaseEnd <= input.endDate ? phaseEnd : input.endDate,
-      peakWeeklyTss: input.window.peakWeeklyTss,
+      peakWeeklyLoad: input.window.peakWeeklyLoad,
       tuning: input.window.tuning,
       goalIds: phase.phase === "peak" ? input.window.goals.map((goal) => goal.id) : [],
     });
@@ -405,7 +405,7 @@ export function buildGoalAnchoredProjectionPlan(
     goals: input.minimalPlan.goals,
     plan_start_date: input.minimalPlan.plan_start_date ?? formatDateOnlyUtc(new Date()),
   });
-  const startingCtl = input.startingCtl ?? 45;
+  const startingLongTermLoad = input.startingLongTermLoad ?? 45;
   const preferenceProfile = input.preferenceProfile ?? defaultAthletePreferenceProfile;
   const goals = input.minimalPlan.goals
     .map((goal, index) => ({
@@ -417,7 +417,7 @@ export function buildGoalAnchoredProjectionPlan(
     .sort((left, right) => left.target_date.localeCompare(right.target_date));
   const windows = resolveGoalWindows({
     goals,
-    startingCtl,
+    startingLongTermLoad,
     preferenceProfile,
     applyDoseLimitCaps: input.preferenceProfile !== undefined,
   });
@@ -459,7 +459,7 @@ export function buildGoalAnchoredProjectionPlan(
       phase: "taper",
       startDate: taperStart > cursorDate ? taperStart : cursorDate,
       endDate: window.date,
-      peakWeeklyTss: window.peakWeeklyTss,
+      peakWeeklyLoad: window.peakWeeklyLoad,
       tuning: window.tuning,
       goalIds: window.goals.map((goal) => goal.id),
     });
@@ -474,7 +474,7 @@ export function buildGoalAnchoredProjectionPlan(
         phase: "recovery",
         startDate: recoveryStart,
         endDate: recoveryEnd <= timelineEndDate ? recoveryEnd : timelineEndDate,
-        peakWeeklyTss: window.peakWeeklyTss,
+        peakWeeklyLoad: window.peakWeeklyLoad,
         tuning: window.tuning,
         goalIds: window.goals.map((goal) => goal.id),
       });
@@ -483,13 +483,13 @@ export function buildGoalAnchoredProjectionPlan(
   }
 
   const blocks = withDeterministicBlockIds(pendingBlocks, timeline.start_date, timelineEndDate);
-  const peakTargetCtl =
+  const peakTargetLongTermLoad =
     blocks.length > 0
       ? Math.round(
           Math.max(
             ...blocks.map(
               (block) =>
-                (block.target_weekly_tss_range.min + block.target_weekly_tss_range.max) / 14,
+                (block.target_weekly_load_range.min + block.target_weekly_load_range.max) / 14,
             ),
           ),
         )
@@ -501,8 +501,10 @@ export function buildGoalAnchoredProjectionPlan(
     start_date: timeline.start_date,
     end_date: timelineEndDate,
     fitness_progression: {
-      starting_ctl: startingCtl,
-      ...(typeof peakTargetCtl === "number" ? { target_ctl_at_peak: peakTargetCtl } : {}),
+      starting_longTermLoad: startingLongTermLoad,
+      ...(typeof peakTargetLongTermLoad === "number"
+        ? { target_longTermLoad_at_peak: peakTargetLongTermLoad }
+        : {}),
     },
     activity_distribution: buildActivityDistribution(goals),
     blocks,

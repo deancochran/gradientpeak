@@ -110,7 +110,7 @@ const createDefaultConfigState = (): TrainingPlanConfigFormData => ({
     recovery_priority: 0.6,
     starting_fitness_confidence: 0.6,
   },
-  startingCtlAssumption: undefined,
+  startingLongTermLoadAssumption: undefined,
   startingFatigueState: undefined,
   calibration: trainingPlanCalibrationConfigSchema.parse({}),
   calibrationCompositeLocks: {
@@ -332,9 +332,9 @@ export function toTrainingPlanConfigFormDataFromStructure(input: {
       (creationConfigSnapshot?.calibration_composite_locks as
         | TrainingPlanConfigFormData["calibrationCompositeLocks"]
         | undefined) ?? defaults.calibrationCompositeLocks,
-    startingCtlAssumption:
-      asNumber(asRecord(parsedStructure.fitness_progression)?.starting_ctl) ??
-      defaults.startingCtlAssumption,
+    startingLongTermLoadAssumption:
+      asNumber(asRecord(parsedStructure.fitness_progression)?.starting_longTermLoad) ??
+      defaults.startingLongTermLoadAssumption,
     calibration: trainingPlanCalibrationConfigSchema.parse(
       calibrationSnapshot ?? creationConfigSnapshot?.calibration ?? {},
     ),

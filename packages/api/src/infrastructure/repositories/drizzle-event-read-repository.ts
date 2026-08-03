@@ -23,11 +23,8 @@ import {
 } from "../../application/training-plan/current-planning-week";
 import { toActivityPlanExecutionDto } from "../../dto/activity-plan";
 import type { EventReadRepository } from "../../repositories";
-import {
-  filterSupersededProfileOverrides,
-  isClearedProfileOverride,
-  resolveLatestObservationsByKey,
-} from "../../utils/profile-override-observations";
+import { createAthletePerformanceModelRepository } from "../../repositories/athlete-performance-model-repository";
+import { isClearedProfileOverride } from "../../utils/profile-override-observations";
 
 type EventReadDb = {
   execute: unknown;
@@ -164,8 +161,11 @@ export function createEventReadRepository(
   dbInput: EventReadDb | { db: EventReadDb },
 ): EventReadRepository {
   const db = resolveDb(dbInput) as DrizzleDbClient;
+  const performanceModelRepository = createAthletePerformanceModelRepository(db);
 
   return {
+    readAthletePerformanceEvidenceSnapshot: (input) =>
+      performanceModelRepository.readAthletePerformanceEvidenceSnapshot(input),
     async getEffectivePlanLoadInputs({
       asOf,
       endDate: requestedEndDate,
@@ -483,7 +483,7 @@ export function createEventReadRepository(
     },
 
     async getValidateConstraintsInputs({ activityPlanId, profileId, trainingPlanId }) {
-      const [trainingPlan, activityPlan, profile, lthrMetric, weightMetric] = await Promise.all([
+      const [trainingPlan, activityPlan, profile, weightMetric] = await Promise.all([
         db
           .select({
             id: schema.trainingPlans.id,
@@ -524,22 +524,6 @@ export function createEventReadRepository(
           .where(
             and(
               eq(schema.profileMetrics.profile_id, profileId),
-              eq(schema.profileMetrics.metric_type, "lthr"),
-            ),
-          )
-          .orderBy(desc(schema.profileMetrics.recorded_at), desc(schema.profileMetrics.id))
-          .limit(1)
-          .then((rows) => rows[0] ?? null),
-        db
-          .select({
-            value: schema.profileMetrics.value,
-            method: schema.profileMetrics.method,
-            provenance: schema.profileMetrics.provenance,
-          })
-          .from(schema.profileMetrics)
-          .where(
-            and(
-              eq(schema.profileMetrics.profile_id, profileId),
               eq(schema.profileMetrics.metric_type, "weight_kg"),
             ),
           )
@@ -556,12 +540,6 @@ export function createEventReadRepository(
               dob: profile.dob ? profile.dob.toISOString() : null,
             }
           : null,
-        lthrMetric:
-          lthrMetric && !isClearedProfileOverride(lthrMetric)
-            ? {
-                value: lthrMetric.value,
-              }
-            : null,
         weightMetric:
           weightMetric && !isClearedProfileOverride(weightMetric)
             ? {
@@ -571,87 +549,11 @@ export function createEventReadRepository(
       };
     },
 
-    async getEstimationInputs({ asOfIso, effortCutoffIso, profileId, routeIds }) {
+    async getEstimationInputs({ asOfIso, profileId, routeIds }) {
       const asOf = new Date(asOfIso);
-      const [profile, efforts, metrics, routes] = await Promise.all([
-        db
-          .select({ dob: schema.profiles.dob })
-          .from(schema.profiles)
-          .where(eq(schema.profiles.id, profileId))
-          .limit(1)
-          .then((rows) => rows[0] ?? null),
-        db
-          .select({
-            id: schema.activityEfforts.id,
-            activity_id: schema.activityEfforts.activity_id,
-            effort_type: schema.activityEfforts.effort_type,
-            duration_seconds: schema.activityEfforts.duration_seconds,
-            value: schema.activityEfforts.value,
-            unit: schema.activityEfforts.unit,
-            activity_category: schema.activityEfforts.activity_category,
-            recorded_at: schema.activityEfforts.recorded_at,
-            source: schema.activityEfforts.source,
-            method: schema.activityEfforts.method,
-            calculation_version: schema.activityEfforts.calculation_version,
-            quality_score: schema.activityEfforts.quality_score,
-            provenance: schema.activityEfforts.provenance,
-          })
-          .from(schema.activityEfforts)
-          .where(
-            and(
-              eq(schema.activityEfforts.profile_id, profileId),
-              gte(schema.activityEfforts.recorded_at, new Date(effortCutoffIso)),
-              lte(schema.activityEfforts.recorded_at, asOf),
-              inArray(schema.activityEfforts.effort_type, ["power", "speed"]),
-            ),
-          )
-          .orderBy(desc(schema.activityEfforts.recorded_at))
-          .limit(300),
-        db
-          .select({
-            id: schema.profileMetrics.id,
-            metric_type: schema.profileMetrics.metric_type,
-            unit: schema.profileMetrics.unit,
-            value: schema.profileMetrics.value,
-            recorded_at: schema.profileMetrics.recorded_at,
-            source: schema.profileMetrics.source,
-            method: schema.profileMetrics.method,
-            calculation_version: schema.profileMetrics.calculation_version,
-            quality_score: schema.profileMetrics.quality_score,
-            provenance: schema.profileMetrics.provenance,
-            reference_activity_id: schema.profileMetrics.reference_activity_id,
-            reference_activity_category: sql<string | null>`case
-              when ${schema.profileMetrics.metric_type} = 'lthr'
-                and ${schema.profileMetrics.reference_activity_id} is not null
-              then (
-                select case
-                  when count(*) = 1 then min(reference_segment.activity_category)
-                  else null
-                end
-                from activity_segments as reference_segment
-                where reference_segment.activity_id = ${schema.profileMetrics.reference_activity_id}
-                  and reference_segment.role = 'activity'
-              )
-              else null
-            end`,
-          })
-          .from(schema.profileMetrics)
-          .where(
-            and(
-              eq(schema.profileMetrics.profile_id, profileId),
-              lte(schema.profileMetrics.recorded_at, asOf),
-              inArray(schema.profileMetrics.metric_type, [
-                "weight_kg",
-                "ftp",
-                "resting_hr",
-                "max_hr",
-                "lthr",
-              ]),
-            ),
-          )
-          .orderBy(desc(schema.profileMetrics.recorded_at), desc(schema.profileMetrics.id)),
+      const routes =
         routeIds.length > 0
-          ? db
+          ? await db
               .select({
                 id: schema.activityRoutes.id,
                 distance_meters: schema.activityRoutes.total_distance,
@@ -668,8 +570,8 @@ export function createEventReadRepository(
                     eq(schema.activityRoutes.is_public, true),
                     eq(schema.activityRoutes.is_system_template, true),
                     sql`exists (
-                      select 1
-                      from content_access_grants
+                       select 1
+                       from content_access_grants
                       where content_access_grants.content_type = 'activity_route'
                         and content_access_grants.content_id = ${schema.activityRoutes.id}
                         and content_access_grants.grantee_profile_id = ${profileId}::uuid
@@ -680,50 +582,9 @@ export function createEventReadRepository(
                   ),
                 ),
               )
-          : Promise.resolve([]),
-      ]);
+          : [];
 
       return {
-        profile: profile
-          ? {
-              dob: profile.dob ? profile.dob.toISOString() : null,
-            }
-          : null,
-        efforts: filterSupersededProfileOverrides(
-          efforts,
-          (effort) =>
-            `${effort.activity_category}:${effort.effort_type}:${effort.duration_seconds}:${effort.unit}`,
-        ).map((effort) => ({
-          ...effort,
-          recorded_at: effort.recorded_at.toISOString(),
-        })),
-        metrics: [
-          ...resolveLatestObservationsByKey(
-            metrics.filter((metric) => metric.metric_type !== "lthr"),
-            (metric) => metric.metric_type,
-          ).values(),
-          ...metrics.filter((metric) => metric.metric_type === "lthr"),
-        ]
-          .filter((metric) => metric !== null)
-          .map((metric) => ({
-            id: metric.id,
-            metric_type: metric.metric_type as
-              | "weight_kg"
-              | "ftp"
-              | "resting_hr"
-              | "max_hr"
-              | "lthr",
-            unit: metric.unit,
-            value: metric.value,
-            recorded_at: metric.recorded_at.toISOString(),
-            source: metric.source,
-            method: metric.method,
-            calculation_version: metric.calculation_version,
-            quality_score: metric.quality_score,
-            provenance: metric.provenance,
-            reference_activity_id: metric.reference_activity_id,
-            reference_activity_category: metric.reference_activity_category,
-          })),
         routes: routes.map((route) => ({
           ...route,
           updated_at: route.updated_at.toISOString(),

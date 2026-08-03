@@ -14,7 +14,6 @@ import {
   FormWeightInputField,
 } from "@repo/ui/components/form";
 import { Label } from "@repo/ui/components/label";
-import { PaceSecondsField } from "@repo/ui/components/pace-seconds-field";
 import {
   NativeSelectScrollView,
   Select,
@@ -70,35 +69,6 @@ function MetricValueField({
 }) {
   const descriptor = profileMetricToInputDescriptor(getProfileMetricDefinition(metricType));
   const description = `Enter ${descriptor.label.toLowerCase()} between ${descriptor.min} and ${descriptor.max}${descriptor.unit !== "scale" ? ` ${descriptor.unit}` : ""}.`;
-
-  if (metricType === "threshold_pace_seconds_per_km" || metricType === "css_seconds_per_100m") {
-    const unitLabel = metricType === "threshold_pace_seconds_per_km" ? "/km" : "/100m";
-    return (
-      <Controller
-        control={control}
-        name="value"
-        render={({ field, fieldState }) => (
-          <PaceSecondsField
-            error={fieldState.error?.message}
-            formControl={control}
-            helperText={
-              metricType === "threshold_pace_seconds_per_km"
-                ? "Enter pace between 2:00 and 20:00."
-                : "Enter pace between 0:45 and 10:00."
-            }
-            id="profile-metric-value"
-            label={descriptor.label}
-            onBlur={field.onBlur}
-            onChangeSeconds={field.onChange}
-            required
-            testId="profile-metric-value"
-            unitLabel={unitLabel}
-            valueSeconds={typeof field.value === "number" ? field.value : null}
-          />
-        )}
-      />
-    );
-  }
 
   if (descriptor.inputKind === "weight") {
     return (

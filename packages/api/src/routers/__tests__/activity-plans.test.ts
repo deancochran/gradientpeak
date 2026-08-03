@@ -7,12 +7,7 @@ const { estimationState, plannedActivitySyncState } = vi.hoisted(() => ({
   estimationState: {
     getActivityPlanDerivedMetrics: vi.fn(async (plan: any) => ({
       ...plan,
-      authoritative_metrics: {
-        estimated_tss: 88,
-        estimated_duration: 3600,
-        estimated_distance: 12000,
-        intensity_factor: 0.82,
-      },
+      common_load: { status: "available", load: 88, intensity: 0.82 },
       confidence: "moderate",
       confidence_score: 82,
       estimate_source: "cache",
@@ -22,12 +17,7 @@ const { estimationState, plannedActivitySyncState } = vi.hoisted(() => ({
     getActivityPlansDerivedMetrics: vi.fn(async (plans: any[]) =>
       plans.map((plan) => ({
         ...plan,
-        authoritative_metrics: {
-          estimated_tss: 88,
-          estimated_duration: 3600,
-          estimated_distance: 12000,
-          intensity_factor: 0.82,
-        },
+        common_load: { status: "available", load: 88, intensity: 0.82 },
         confidence: "moderate",
         confidence_score: 82,
         estimate_source: "cache",
@@ -35,11 +25,7 @@ const { estimationState, plannedActivitySyncState } = vi.hoisted(() => ({
         estimator_version: "2026-05-estimated-provenance-v1",
       })),
     ),
-    computePlanMetrics: vi.fn(async () => ({
-      estimated_tss: 88,
-      estimated_duration_seconds: 3600,
-      estimated_distance_meters: 12000,
-    })),
+    computePlanMetrics: vi.fn(async () => ({})),
     createEventReadRepository: vi.fn(() => ({ kind: "event-read-repository" })),
   },
   plannedActivitySyncState: {
@@ -351,8 +337,9 @@ describe("activityPlansRouter", () => {
         avatar_url: "https://example.com/avatar.png",
       },
       visibility: "private",
-      authoritative_metrics: {
-        estimated_tss: 88,
+      common_load: {
+        status: "available",
+        load: 88,
       },
     });
     expect(result.nextCursor).toBe(`${firstPlan.created_at.toISOString()}_${firstPlan.id}`);

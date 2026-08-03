@@ -42,7 +42,7 @@ export function TrainingPlanNoPlanEmptyState({
             <View className="flex-1">
               <Text className="font-semibold mb-1">Review Load History</Text>
               <Text className="text-sm text-muted-foreground">
-                View Long-term Load (CTL) and Recent Load (ATL) averages, plus Load Balance (TSB).
+                View Long-term Load and Recent Load averages, plus Load Balance.
               </Text>
             </View>
           </View>

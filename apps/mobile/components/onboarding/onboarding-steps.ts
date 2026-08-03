@@ -39,14 +39,7 @@ export function getOnboardingSteps(options: {
         (data.weight_kg === null || isProfileMetricValueWithinRange("weight_kg", data.weight_kg)) &&
         (data.max_hr === null || isProfileMetricValueWithinRange("max_hr", data.max_hr)) &&
         (data.resting_hr === null ||
-          isProfileMetricValueWithinRange("resting_hr", data.resting_hr)) &&
-        (data.ftp === null || isProfileMetricValueWithinRange("ftp", data.ftp)) &&
-        (data.threshold_pace_seconds_per_km === null ||
-          isProfileMetricValueWithinRange(
-            "threshold_pace_seconds_per_km",
-            data.threshold_pace_seconds_per_km,
-          )) &&
-        (data.css === null || isProfileMetricValueWithinRange("css_seconds_per_100m", data.css)),
+          isProfileMetricValueWithinRange("resting_hr", data.resting_hr)),
     },
     {
       id: "goals_preferences",

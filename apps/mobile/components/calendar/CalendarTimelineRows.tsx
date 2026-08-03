@@ -1,13 +1,13 @@
 import { formatGoalTypeLabel, getGoalObjectiveSummary, type ProfileGoal } from "@repo/core";
-import { getAuthoritativeActivityPlanMetrics } from "@repo/core/activity-plan";
 import type { PreferredUnitSystem } from "@repo/core/units";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
+import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
 import { differenceInCalendarDays, format } from "date-fns";
 import { Target, Users } from "lucide-react-native";
 import { memo } from "react";
 import { TouchableOpacity, View } from "react-native";
-import { getCommonLoadPresentation } from "@/lib/activity-load-presentation";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import { parseDateKey } from "@/lib/calendar/dateMath";
 import {
   getPlannedRecordingState,
@@ -93,18 +93,15 @@ function formatDuration(seconds: number | null) {
   return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
 }
 
-function getCommonLoadMetricLabels(value: unknown, unavailableByDefault: boolean) {
-  const presentation = getCommonLoadPresentation(value);
-  const availableLabels = [
-    presentation?.load ? `Load ${presentation.load}` : null,
-    presentation?.intensity ? `Intensity ${presentation.intensity}` : null,
-  ].filter((label): label is string => label !== null);
-  if (availableLabels.length > 0) return availableLabels;
-  if (presentation?.unavailableText) {
-    return [`Load ${presentation.unavailableText}`];
-  }
-
-  return unavailableByDefault && presentation?.status !== "unavailable" ? ["Load Unavailable"] : [];
+function getQuantificationMetricLabels(value: unknown) {
+  const presentation = getActivityQuantificationPresentation(value);
+  const commonLoadSuffix = presentation.commonLoad.status === "partial" ? " · Incomplete" : "";
+  const normalizedIntensitySuffix =
+    presentation.normalizedIntensity.status === "partial" ? " · Incomplete" : "";
+  return [
+    `${presentation.commonLoad.label} ${presentation.commonLoad.value}${commonLoadSuffix}`,
+    `${presentation.normalizedIntensity.label} ${presentation.normalizedIntensity.value}${normalizedIntensitySuffix}`,
+  ];
 }
 
 function getCompletedActivityMetricLabels(
@@ -116,9 +113,9 @@ function getCompletedActivityMetricLabels(
     preferredUnitSystem,
   });
   const duration = formatDuration(activity.duration_seconds ?? null);
-  const commonLoad = activity.derived?.common_load ?? activity.derived?.stress?.common_load;
+  const quantification = activity.derived?.observationQuantification;
 
-  return [distance, duration, ...getCommonLoadMetricLabels(commonLoad, true)].filter(
+  return [distance, duration, ...getQuantificationMetricLabels(quantification)].filter(
     (label): label is string => Boolean(label),
   );
 }
@@ -237,13 +234,12 @@ function getActivityPlanMetricLabels(event: CalendarEvent) {
     return [];
   }
 
-  const metrics = getAuthoritativeActivityPlanMetrics(plan);
-  const duration = readMetric(metrics.estimated_duration);
-  const commonLoad = plan.common_load ?? event.common_load;
+  const duration = readMetric(getActivityPlanQuantitySummary(plan).durationSeconds);
+  const quantification = plan.prescriptionQuantification ?? event.prescriptionQuantification;
 
   return [
     formatEstimatedDurationSeconds(duration),
-    ...getCommonLoadMetricLabels(commonLoad, true),
+    ...getQuantificationMetricLabels(quantification),
   ].filter((label): label is string => Boolean(label));
 }
 

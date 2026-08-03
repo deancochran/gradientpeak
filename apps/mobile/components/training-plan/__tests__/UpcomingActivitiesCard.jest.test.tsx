@@ -1,3 +1,4 @@
+import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
 import { createHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 import { UpcomingActivitiesCard } from "../UpcomingActivitiesCard";
@@ -17,6 +18,7 @@ jest.mock("react-native", () => ({
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
+  ...jest.requireActual("@repo/core"),
   formatDurationSec: jest.fn(() => "60 min"),
 }));
 
@@ -81,10 +83,7 @@ describe("UpcomingActivitiesCard", () => {
               id: "activity-plan-1",
               name: "Tempo Builder",
               activity_category: "run",
-              authoritative_metrics: {
-                estimated_duration: 3600,
-                estimated_tss: 72,
-              },
+              prescriptionQuantification: createPrescriptionQuantificationBundleFixture(),
             },
           },
         ]}

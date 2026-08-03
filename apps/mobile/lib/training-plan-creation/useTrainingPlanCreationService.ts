@@ -15,6 +15,11 @@ import {
   toTrainingPlanUpdatePayload,
 } from "./mappers";
 import {
+  type MobilePlanningTargetHydrationSource,
+  resolveMobilePlanningPerformanceTargets,
+  shouldReplaceMobilePlanningAthleteContext,
+} from "./performance-targets";
+import {
   deriveTrainingPlanCreationSession,
   deriveTrainingPlanReadinessPresentation,
 } from "./planning-session-engine";
@@ -99,10 +104,11 @@ export function useTrainingPlanCreationService({
   const [state, dispatch] = useReducer(trainingPlanBuilderReducer, undefined, () =>
     createDefaultTrainingPlanBuilderState(),
   );
-  const hasHydratedAthleteContextRef = useRef(false);
+  const hydratedAthleteContextSourceRef = useRef<MobilePlanningTargetHydrationSource | null>(null);
   const hydratedEditPlanIdRef = useRef<string | null>(null);
   const {
     profileQuery,
+    performanceTargetsQuery,
     profileMetricsQuery,
     activityEffortsQuery,
     currentTrainingStatusQuery,
@@ -126,12 +132,27 @@ export function useTrainingPlanCreationService({
   useEffect(() => {
     if (
       isEditMode ||
-      hasHydratedAthleteContextRef.current ||
       !profileQuery.data ||
       !profileMetricsQuery.data ||
       !activityEffortsQuery.data ||
       !currentTrainingStatusQuery.data ||
-      currentTrainingStatusQuery.isLoading
+      currentTrainingStatusQuery.isLoading ||
+      (!performanceTargetsQuery.data && !performanceTargetsQuery.isError)
+    ) {
+      return;
+    }
+
+    const operationAsOf =
+      performanceTargetsQuery.data?.asOf ?? currentTrainingStatusQuery.data.asOf;
+    const hydrationSource = performanceTargetsQuery.data ? "canonical" : "unavailable";
+    const hydratedSource = hydratedAthleteContextSourceRef.current;
+    // Hydrate once, except that a canonical recovery may replace the fail-closed fallback.
+    // Ordinary refetches must not erase builder-owned athlete-context edits.
+    if (
+      !shouldReplaceMobilePlanningAthleteContext({
+        hydratedSource,
+        nextSource: hydrationSource,
+      })
     ) {
       return;
     }
@@ -139,7 +160,11 @@ export function useTrainingPlanCreationService({
     dispatch({
       type: "athleteContext.replace",
       athleteContext: createAthletePlanningContextFromSnapshot({
-        asOf: currentTrainingStatusQuery.data.asOf,
+        asOf: operationAsOf,
+        performanceTargets: resolveMobilePlanningPerformanceTargets({
+          snapshot: performanceTargetsQuery.data,
+          fallbackAsOf: operationAsOf,
+        }),
         profile: {
           dob: profileQuery.data.dob,
           gender:
@@ -184,20 +209,22 @@ export function useTrainingPlanCreationService({
           })),
         currentFitness: currentTrainingStatusQuery.data?.currentLoadStatus
           ? {
-              ctl: currentTrainingStatusQuery.data.currentLoadStatus.longTermLoad,
-              atl: currentTrainingStatusQuery.data.currentLoadStatus.recentLoad,
-              tsb: currentTrainingStatusQuery.data.currentLoadStatus.loadBalance,
+              longTermLoad: currentTrainingStatusQuery.data.currentLoadStatus.longTermLoad,
+              recentLoad: currentTrainingStatusQuery.data.currentLoadStatus.recentLoad,
+              loadBalance: currentTrainingStatusQuery.data.currentLoadStatus.loadBalance,
               recorded_at: currentTrainingStatusQuery.data.currentLoadStatus.recordedAt,
             }
           : null,
       }),
     });
-    hasHydratedAthleteContextRef.current = true;
+    hydratedAthleteContextSourceRef.current = hydrationSource;
   }, [
     activityEffortsQuery.data,
     currentTrainingStatusQuery.data,
     currentTrainingStatusQuery.isLoading,
     isEditMode,
+    performanceTargetsQuery.data,
+    performanceTargetsQuery.isError,
     profileMetricsQuery.data,
     profileQuery.data,
   ]);
@@ -471,6 +498,7 @@ export function useTrainingPlanCreationService({
     },
     queries: {
       profile: profileQuery,
+      performanceTargets: performanceTargetsQuery,
       profileMetrics: profileMetricsQuery,
       activityEfforts: activityEffortsQuery,
       profileGoals: profileGoalsQuery,

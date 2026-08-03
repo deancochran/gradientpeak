@@ -231,7 +231,6 @@ export const webJourneyCoverageManifest = {
   // Metrics, efforts, and trends
   "metrics.library-crud": entry(direct("profile.metrics_list"), direct("profile.metric_detail")),
   "metrics.override": entry(direct("profile.metrics_list"), direct("profile.metric_detail")),
-  "metrics.css": entry(direct("profile.metric_detail")),
   "efforts.curves": entry(direct("activity_efforts.list"), direct("activity_efforts.detail")),
   "efforts.lifecycle": entry(direct("activity_efforts.list"), direct("activity_efforts.detail")),
   "trends.analytics": entry(

@@ -1,5 +1,6 @@
 // apps/mobile/app/(internal)/(tabs)/plan/training-plan/modals/components/ActivitySelector.tsx
 
+import type { ActivityPrescriptionQuantificationBundle } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { CircleCheck } from "lucide-react-native";
@@ -14,10 +15,7 @@ export interface ActivityOption {
   name: string;
   activity_category: string;
   structure?: unknown;
-  authoritative_metrics?: {
-    estimated_duration?: number | null;
-    estimated_tss?: number | null;
-  } | null;
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
   description?: string | null;
 }
 

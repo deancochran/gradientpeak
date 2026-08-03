@@ -1,4 +1,7 @@
+import type { AthletePerformanceModelSnapshot, AthletePerformanceTargetFacts } from "@repo/core";
 import type { ActivityEffortRow, ProfileMetricRow, ProfileRow } from "@repo/db";
+
+export const ACTIVITY_ANALYSIS_CONTEXT_EVIDENCE_REQUEST_LIMIT = 525;
 
 export type ActivityAnalysisProfileSnapshot = Pick<ProfileRow, "dob" | "gender">;
 export type ActivityAnalysisMetricSnapshot = Omit<
@@ -35,17 +38,44 @@ export type ActivityAnalysisContextSnapshot = {
   profile: ActivityAnalysisProfileSnapshot;
   profileMetrics: ActivityAnalysisMetricSnapshot[];
   recentEfforts: ActivityAnalysisEffortSnapshot[];
+  /** The set-based calibration read hit its sentinel; no calibration may be selected from it. */
+  calibrationTruncated?: boolean;
+};
+
+export type ActivityAnalysisContextEvidenceRequest = {
+  asOf: Date;
+  effortLookbackAsOf?: Date;
+  profileId: string;
+  activityIdToExclude?: string;
 };
 
 export interface ActivityAnalysisStore {
+  getPerformanceModelAsOf?(input: {
+    asOf: Date;
+    profileId: string;
+    activityIdToExclude?: string;
+  }): Promise<AthletePerformanceModelSnapshot>;
+  getPerformanceTargetsAsOf?(input: {
+    asOf: Date;
+    profileId: string;
+    activityIdToExclude?: string;
+  }): Promise<AthletePerformanceTargetFacts>;
+  getPerformanceTargetsForRequests?(input: {
+    requests: Array<{
+      asOf: Date;
+      profileId: string;
+      activityIdToExclude?: string;
+    }>;
+  }): Promise<AthletePerformanceTargetFacts[]>;
   getContextSnapshot(input: {
     asOf: Date;
     effortLookbackAsOf?: Date;
     profileId: string;
+    activityIdToExclude?: string;
     evidenceScope?: "thresholds";
   }): Promise<ActivityAnalysisContextSnapshot>;
   loadContextEvidence?(input: {
-    requests: Array<{ asOf: Date; effortLookbackAsOf?: Date; profileId: string }>;
+    requests: ActivityAnalysisContextEvidenceRequest[];
     evidenceScope?: "thresholds";
   }): Promise<Map<string, ActivityAnalysisContextSnapshot>>;
 }

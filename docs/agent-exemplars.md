@@ -29,7 +29,7 @@ This catalog maps recurring task shapes to current production patterns. It is no
 | Protected route boundary | Resolve session/gating in the route boundary, not after rendering a page. | [Protected route](../apps/web/src/routes/_protected.tsx) |
 | Query-backed route lifecycle | Prevent failed data from rendering as an empty state. | [Recording route list](../apps/web/src/routes/_protected/record/route/index.tsx) |
 | Accessible web form field | Use stable IDs and connect label, description, error, and invalid state. | [Web form registry](../packages/ui/src/registry/web/form.tsx) |
-| Shared semantic field form | Use React Hook Form/Zod with shared wrappers and root error handling. | [Activity-effort form](../apps/web/src/components/protected/activity-effort-form.tsx) |
+| Shared semantic field form | Use React Hook Form/Zod with shared wrappers and root error handling. | [Activity import form](../apps/web/src/components/protected/activity-import-form.tsx) |
 
 ## Before copying an exemplar
 

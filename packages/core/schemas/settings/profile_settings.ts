@@ -10,18 +10,20 @@ import {
 const capabilityBoundedNumber = z.number().min(0).max(1);
 const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
 
-export const manualBaselineCtlWarningThreshold = 120;
+export const manualBaselineLongTermLoadWarningThreshold = 120;
 
-export function getManualBaselineCtlWarning(overrideCtl: number | null | undefined): string | null {
-  if (typeof overrideCtl !== "number" || !Number.isFinite(overrideCtl)) {
+export function getManualBaselineLongTermLoadWarning(
+  overrideLongTermLoad: number | null | undefined,
+): string | null {
+  if (typeof overrideLongTermLoad !== "number" || !Number.isFinite(overrideLongTermLoad)) {
     return null;
   }
 
-  if (overrideCtl <= manualBaselineCtlWarningThreshold) {
+  if (overrideLongTermLoad <= manualBaselineLongTermLoadWarningThreshold) {
     return null;
   }
 
-  return `Manual CTL above ${manualBaselineCtlWarningThreshold} is very high and can make estimated readiness look flat or inflated without completed activity history.`;
+  return `Manual Fitness above ${manualBaselineLongTermLoadWarningThreshold} is very high and can make estimated readiness look flat or inflated without completed activity history.`;
 }
 
 function normalizeDateOnlyToUtcDateTime(value: string | undefined) {
@@ -226,13 +228,13 @@ export const athletePreferenceGoalStrategySchema = z
 export const athletePreferenceBaselineSchema = z
   .object({
     is_enabled: z.boolean().default(false),
-    override_ctl: z.number().min(0).max(250).optional(),
-    override_atl: z.number().min(0).max(250).optional(),
+    override_longTermLoad: z.number().min(0).max(250).optional(),
+    override_recentLoad: z.number().min(0).max(250).optional(),
     override_date: z.string().datetime().optional(),
     // Ramp rate overrides - applied when baseline fitness is enabled
     // These allow advanced athletes to override the default safety caps
-    max_weekly_tss_ramp_pct: z.number().min(0).max(40).optional(),
-    max_ctl_ramp_per_week: z.number().min(0).max(12).optional(),
+    max_weekly_load_ramp_pct: z.number().min(0).max(40).optional(),
+    max_longTermLoad_ramp_per_week: z.number().min(0).max(12).optional(),
   })
   .strict();
 
@@ -261,16 +263,16 @@ export const athletePreferenceProfileSchema = z
 const athletePreferenceBaselineFormInputSchema = z
   .object({
     is_enabled: z.boolean().default(false),
-    override_ctl: z.number().min(0).max(250).optional(),
-    override_atl: z.number().min(0).max(250).optional(),
+    override_longTermLoad: z.number().min(0).max(250).optional(),
+    override_recentLoad: z.number().min(0).max(250).optional(),
     override_date: z
       .union([
         z.string().regex(dateOnlyPattern, "Date must use YYYY-MM-DD format"),
         z.string().datetime(),
       ])
       .optional(),
-    max_weekly_tss_ramp_pct: z.number().min(0).max(40).optional(),
-    max_ctl_ramp_per_week: z.number().min(0).max(12).optional(),
+    max_weekly_load_ramp_pct: z.number().min(0).max(40).optional(),
+    max_longTermLoad_ramp_per_week: z.number().min(0).max(12).optional(),
   })
   .strict();
 
@@ -367,8 +369,8 @@ export const defaultAthletePreferenceProfile = athletePreferenceProfileSchema.pa
   },
   baseline_fitness: {
     is_enabled: false,
-    max_weekly_tss_ramp_pct: 10, // Default: outcome_first profile
-    max_ctl_ramp_per_week: 5,
+    max_weekly_load_ramp_pct: 10, // Default: outcome_first profile
+    max_longTermLoad_ramp_per_week: 5,
   },
 });
 

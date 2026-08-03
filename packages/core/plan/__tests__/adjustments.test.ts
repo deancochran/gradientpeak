@@ -14,8 +14,8 @@ const baseStructure = {
     target_date: "2026-04-01",
   },
   target_activities_per_week: 5,
-  target_weekly_tss_max: 420,
-  target_weekly_tss_min: 320,
+  target_weekly_load_max: 420,
+  target_weekly_load_min: 320,
 };
 
 describe("plan adjustments", () => {
@@ -26,8 +26,8 @@ describe("plan adjustments", () => {
         target_date: "2026-04-01",
       },
       target_activities_per_week: 4,
-      target_weekly_tss_max: 336,
-      target_weekly_tss_min: 256,
+      target_weekly_load_max: 336,
+      target_weekly_load_min: 256,
     });
   });
 
@@ -46,7 +46,7 @@ describe("plan adjustments", () => {
 });
 
 describe("recording validation", () => {
-  it("warns when plan targets require missing threshold metrics", () => {
+  it("fails closed when plan targets require an unavailable performance target", () => {
     const result = validatePlanRequirements(
       {
         activity_activity_category: "bike",
@@ -81,6 +81,10 @@ describe("recording validation", () => {
       {},
     );
 
-    expect(result.warnings.some((warning) => warning.startsWith("Using default FTP ("))).toBe(true);
+    expect(result).toMatchObject({
+      isValid: false,
+      warnings: [],
+      missingMetrics: [{ name: "planning threshold power" }],
+    });
   });
 });

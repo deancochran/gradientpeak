@@ -185,7 +185,7 @@ describe("TrainingPathLoadChartSection", () => {
 
     fireEvent.press(helpButton);
     expect(screen.getByTestId("training-path-legend-modal")).toBeTruthy();
-    expect(screen.getByText("Completed, load unavailable")).toBeTruthy();
+    expect(screen.getByText("Completed, Common Load unavailable")).toBeTruthy();
     expect(screen.getByText("✓")).toBeTruthy();
     expect(screen.getByText("Actual fitness")).toBeTruthy();
     expect(screen.getByText("Projected fitness")).toBeTruthy();
@@ -209,7 +209,7 @@ describe("TrainingPathLoadChartSection", () => {
       />,
     );
 
-    expect(screen.getByText("Completed, load unavailable")).toBeTruthy();
+    expect(screen.getByText("Completed, Common Load unavailable")).toBeTruthy();
     expect(screen.getByText("✓")).toBeTruthy();
   });
 });

@@ -26,6 +26,7 @@ export type PlannedCommonLoadDose = {
   quality: ActivityCalibrationQuality | null;
   thresholdEvidence: CommonThresholdEvidence | null;
   evidenceFingerprint: string | null;
+  calibrationUnavailableReason?: "threshold_missing" | "stale_threshold" | "evidence_truncated";
 };
 
 export type PlannedCommonLoadEnvelope = {
@@ -77,7 +78,7 @@ function intensityForDose(dose: PlannedCommonLoadDose): number | null {
 }
 
 /**
- * Converts exact timed prescription doses into the common model without reading legacy TSS/IF.
+ * Converts exact timed prescription doses into the common model without reading legacy Common Load/IF.
  * Callers must include every active dose; unsupported, untimed, or unevidenced doses remain explicit.
  */
 export function adaptPlannedCommonLoadDoses(input: {
@@ -99,10 +100,12 @@ export function adaptPlannedCommonLoadDoses(input: {
     ) {
       return unavailable(dose, input.computedAsOf, "duration_missing");
     }
+    if (dose.target === null) return unavailable(dose, input.computedAsOf, "activity_data_missing");
+    if (dose.calibrationUnavailableReason)
+      return unavailable(dose, input.computedAsOf, dose.calibrationUnavailableReason);
     if (dose.method === null || dose.thresholdEvidence === null) {
       return unavailable(dose, input.computedAsOf, "threshold_missing");
     }
-    if (dose.target === null) return unavailable(dose, input.computedAsOf, "activity_data_missing");
     if (
       dose.quality === null ||
       dose.evidenceFingerprint === null ||
@@ -137,4 +140,10 @@ export function adaptPlannedCommonLoadDoses(input: {
     });
   });
   return { doses, aggregate: aggregateCommonLoad(doses) };
+}
+
+export function numericPlannedCommonLoad(value: CommonLoadResult | CommonLoadAggregate) {
+  return value.status === "available" || value.status === "complete"
+    ? { load: value.load, intensity: value.intensity }
+    : null;
 }

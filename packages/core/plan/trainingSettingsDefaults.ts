@@ -113,7 +113,7 @@ export function mapAthletePreferencesToCreationDefaults(
       },
       readiness_timeline: {
         ...baseline.calibration.readiness_timeline,
-        target_tsb: round3(lerp(4, 14, taperStyle)),
+        target_loadBalance: round3(lerp(4, 14, taperStyle)),
         fatigue_overflow_scale: round3(lerp(0.22, 0.72, systemicFatigueTolerance)),
         max_step_delta: Math.round(lerp(5, 16, churnTolerance)),
       },

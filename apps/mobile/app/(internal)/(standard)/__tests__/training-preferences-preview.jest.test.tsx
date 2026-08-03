@@ -88,8 +88,8 @@ const settingsFixture = {
   },
   baseline_fitness: {
     is_enabled: false,
-    max_weekly_tss_ramp_pct: 10,
-    max_ctl_ramp_per_week: 5,
+    max_weekly_load_ramp_pct: 10,
+    max_longTermLoad_ramp_per_week: 5,
   },
 };
 
@@ -120,43 +120,43 @@ let snapshotState = {
   },
   actualCurveData: {
     dataPoints: [
-      { date: "2026-05-01", ctl: 40 },
-      { date: "2026-05-02", ctl: 41 },
+      { date: "2026-05-01", longTermLoad: 40 },
+      { date: "2026-05-02", longTermLoad: 41 },
     ],
   },
   insightTimeline: {
     timeline: [
       {
         date: "2026-05-01",
-        recommended_load_tss: 45,
-        scheduled_load_tss: 42,
-        tentative_scheduled_load_tss: 0,
-        completed_load_tss: 40,
+        recommended_common_load: 45,
+        scheduled_common_load: 42,
+        tentative_scheduled_common_load: 0,
+        completed_common_load: 40,
         adherence_score: 90,
       },
       {
         date: "2026-05-02",
-        recommended_load_tss: 50,
-        scheduled_load_tss: 44,
-        tentative_scheduled_load_tss: 0,
-        completed_load_tss: 38,
+        recommended_common_load: 50,
+        scheduled_common_load: 44,
+        tentative_scheduled_common_load: 0,
+        completed_common_load: 38,
         adherence_score: 82,
       },
       {
         date: "2026-05-03",
-        recommended_load_tss: 55,
-        scheduled_load_tss: 46,
-        tentative_scheduled_load_tss: 0,
-        completed_load_tss: 0,
+        recommended_common_load: 55,
+        scheduled_common_load: 46,
+        tentative_scheduled_common_load: 0,
+        completed_common_load: 0,
         adherence_score: 0,
       },
     ],
   },
   idealCurveData: {
     dataPoints: [
-      { date: "2026-05-01", ctl: 40 },
-      { date: "2026-05-02", ctl: 42 },
-      { date: "2026-05-03", ctl: 44 },
+      { date: "2026-05-01", longTermLoad: 40 },
+      { date: "2026-05-02", longTermLoad: 42 },
+      { date: "2026-05-03", longTermLoad: 44 },
     ],
     targetCTL: 60,
     targetDate: "2026-07-01",
@@ -220,19 +220,23 @@ jest.mock("@/lib/training-plan-form/localPreview", () => ({
 
     return {
       projectionChart: {
-        points: [
-          { date: "2026-05-01", predicted_fitness_ctl: 40, predicted_load_tss: 42 },
-          { date: "2026-05-02", predicted_fitness_ctl: 42, predicted_load_tss: 44 },
-          { date: "2026-05-03", predicted_fitness_ctl: finalCtl, predicted_load_tss: finalLoad },
+        display_points: [
+          { date: "2026-05-01", predicted_fitness_longTermLoad: 40, predicted_load: 42 },
+          { date: "2026-05-02", predicted_fitness_longTermLoad: 42, predicted_load: 44 },
+          {
+            date: "2026-05-03",
+            predicted_fitness_longTermLoad: finalCtl,
+            predicted_load: finalLoad,
+          },
         ],
       },
       previewSnapshotBaseline: {
         readiness_score: 72,
-        predicted_load_tss: 310,
-        predicted_fatigue_atl: 47,
+        predicted_load: 310,
+        predicted_fatigue_recentLoad: 47,
         feasibility_state: "feasible",
-        tss_ramp_clamp_weeks: 0,
-        ctl_ramp_clamp_weeks: 0,
+        load_ramp_clamp_weeks: 0,
+        longTermLoad_ramp_clamp_weeks: 0,
       },
     };
   },
@@ -364,15 +368,15 @@ describe("training preferences editor", () => {
       },
       actualCurveData: {
         dataPoints: [
-          { date: "2026-05-01", ctl: 40 },
-          { date: "2026-05-02", ctl: 41 },
+          { date: "2026-05-01", longTermLoad: 40 },
+          { date: "2026-05-02", longTermLoad: 41 },
         ],
       },
       idealCurveData: {
         dataPoints: [
-          { date: "2026-05-01", ctl: 40 },
-          { date: "2026-05-02", ctl: 42 },
-          { date: "2026-05-03", ctl: 44 },
+          { date: "2026-05-01", longTermLoad: 40 },
+          { date: "2026-05-02", longTermLoad: 42 },
+          { date: "2026-05-03", longTermLoad: 44 },
         ],
         targetCTL: 60,
         targetDate: "2026-07-01",
@@ -381,26 +385,26 @@ describe("training preferences editor", () => {
         timeline: [
           {
             date: "2026-05-01",
-            recommended_load_tss: 45,
-            scheduled_load_tss: 42,
-            tentative_scheduled_load_tss: 0,
-            completed_load_tss: 40,
+            recommended_common_load: 45,
+            scheduled_common_load: 42,
+            tentative_scheduled_common_load: 0,
+            completed_common_load: 40,
             adherence_score: 90,
           },
           {
             date: "2026-05-02",
-            recommended_load_tss: 50,
-            scheduled_load_tss: 44,
-            tentative_scheduled_load_tss: 0,
-            completed_load_tss: 38,
+            recommended_common_load: 50,
+            scheduled_common_load: 44,
+            tentative_scheduled_common_load: 0,
+            completed_common_load: 38,
             adherence_score: 82,
           },
           {
             date: "2026-05-03",
-            recommended_load_tss: 55,
-            scheduled_load_tss: 46,
-            tentative_scheduled_load_tss: 0,
-            completed_load_tss: 0,
+            recommended_common_load: 55,
+            scheduled_common_load: 46,
+            tentative_scheduled_common_load: 0,
+            completed_common_load: 0,
             adherence_score: 0,
           },
         ],
@@ -646,7 +650,7 @@ describe("training preferences editor", () => {
     });
   });
 
-  it("warns when manual baseline CTL is likely to distort estimated readiness", () => {
+  it("warns when manual baseline Fitness is likely to distort estimated readiness", () => {
     renderPreferences();
 
     act(() => {
@@ -658,12 +662,12 @@ describe("training preferences editor", () => {
     });
 
     act(() => {
-      screen.getByTestId("preferences-baseline-ctl").props.onChange(220);
+      screen.getByTestId("preferences-baseline-fitness").props.onChange(220);
     });
 
-    expect(screen.getByTestId("preferences-baseline-ctl-warning")).toBeTruthy();
+    expect(screen.getByTestId("preferences-baseline-fitness-warning")).toBeTruthy();
     expect(getTextValues()).toContain(
-      "Manual CTL above 120 is very high and can make estimated readiness look flat or inflated without completed activity history.",
+      "Manual Fitness above 120 is very high and can make estimated readiness look flat or inflated without completed activity history.",
     );
   });
 });

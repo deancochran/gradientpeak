@@ -1,4 +1,5 @@
 import { keepPreviousData, skipToken } from "@tanstack/react-query";
+import { useRef } from "react";
 import { api } from "@/lib/api";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
@@ -17,12 +18,17 @@ export function useTrainingPlanCreationQueries({
   planId,
 }: UseTrainingPlanCreationServiceOptions) {
   const utils = api.useUtils();
+  const performanceModelAsOf = useRef(new Date().toISOString()).current;
   const isEditMode = mode === "edit" && !!planId;
   const shouldLoadCreateContext = mode === "create";
 
   const profileQuery = api.profiles.get.useQuery(undefined, {
     enabled: shouldLoadCreateContext,
   });
+  const performanceTargetsQuery = api.profiles.getPerformanceTargets.useQuery(
+    { asOf: performanceModelAsOf },
+    { enabled: shouldLoadCreateContext },
+  );
   const profileMetricsQuery = api.profileMetrics.list.useQuery(
     { limit: 50 },
     { enabled: shouldLoadCreateContext },
@@ -94,6 +100,7 @@ export function useTrainingPlanCreationQueries({
   });
   return {
     profileQuery,
+    performanceTargetsQuery,
     profileMetricsQuery,
     activityEffortsQuery,
     currentTrainingStatusQuery,

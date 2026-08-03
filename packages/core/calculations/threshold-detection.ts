@@ -1,46 +1,41 @@
-import { calculateBestEffort } from "./best-efforts";
+import { z } from "zod";
+import {
+  type BestEffortExtractionResult,
+  bestEffortNumericDurationResultSchema,
+} from "./best-efforts";
 
-/**
- * Lactate Threshold Heart Rate (LTHR) Detection
- *
- * Detects LTHR based on sustained high-intensity efforts.
- *
- * Algorithm:
- * 1. Find the best 20-minute average heart rate.
- * 2. Estimate LTHR as 95% of the 20-minute max average heart rate.
- * 3. Alternatively, if a 30-minute effort is available, use the average HR of the last 20 minutes.
- *    (For simplicity, we'll stick to the 95% of 20-minute max rule for now).
- */
+export const ACTIVITY_FILE_LTHR_CALCULATION_VERSION = "activity-file-lthr-v1";
+export const LTHR_SOURCE_EFFORT_DURATION_SECONDS = 1_200;
 
-/**
- * Detects LTHR from a heart rate stream.
- *
- * @param hrStream - Array of heart rate values (bpm).
- * @param timestamps - Array of timestamps (seconds).
- * @returns Detected LTHR (bpm) or null if insufficient data.
- */
-export function detectLTHR(hrStream: number[], timestamps: number[]): number | null {
-  if (!hrStream || !timestamps || hrStream.length === 0) {
-    return null;
-  }
+export const detectedLactateThresholdHeartRateSchema = z
+  .object({
+    valueBpm: z.number().int().positive(),
+    calculationVersion: z.literal(ACTIVITY_FILE_LTHR_CALCULATION_VERSION),
+    sourceEffortCalculationVersion: z.string().trim().min(1),
+    sourceEffort: bestEffortNumericDurationResultSchema.refine(
+      (effort) => effort.durationSeconds === LTHR_SOURCE_EFFORT_DURATION_SECONDS,
+      { message: "LTHR requires an available or partial 20-minute best effort" },
+    ),
+  })
+  .strict();
 
-  // Check if we have at least 20 minutes of data
-  const totalDuration = timestamps[timestamps.length - 1]! - timestamps[0]!;
-  if (totalDuration < 1200) {
-    // 20 minutes = 1200 seconds
-    return null;
-  }
+export type DetectedLactateThresholdHeartRate = z.infer<
+  typeof detectedLactateThresholdHeartRateSchema
+>;
 
-  // Calculate best 20-minute effort
-  const best20MinEffort = calculateBestEffort(hrStream, timestamps, 1200);
-
-  if (!best20MinEffort) {
-    return null;
-  }
-
-  // Estimate LTHR as 95% of the 20-minute max average HR
-  // This is a standard field test estimation (Joe Friel).
-  const estimatedLTHR = best20MinEffort.value * 0.95;
-
-  return Math.round(estimatedLTHR);
+/** Derives the automatic LTHR observation from the canonical HR extraction. */
+export function detectLactateThresholdHeartRateFromBestEfforts(
+  extraction: BestEffortExtractionResult,
+): DetectedLactateThresholdHeartRate | null {
+  if (extraction.metric !== "heart_rate" || extraction.unit !== "bpm") return null;
+  const sourceEffort = extraction.results.find(
+    (effort) => effort.durationSeconds === LTHR_SOURCE_EFFORT_DURATION_SECONDS,
+  );
+  if (sourceEffort === undefined || sourceEffort.status === "unavailable") return null;
+  return detectedLactateThresholdHeartRateSchema.parse({
+    valueBpm: Math.round(sourceEffort.value * 0.95),
+    calculationVersion: ACTIVITY_FILE_LTHR_CALCULATION_VERSION,
+    sourceEffortCalculationVersion: extraction.calculationVersion,
+    sourceEffort,
+  });
 }

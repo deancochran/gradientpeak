@@ -5,14 +5,15 @@
  */
 
 import {
-  type ActivityCalibrationQuality,
   type ActivitySegment,
   type ActivitySession,
   type ActivityStreamThresholdIdentity,
+  type AthletePerformanceTargetFacts,
   activityStreamAnalysisSchema,
   analyzeActivityStreams,
   canonicalActivityCategorySchema,
   contentVisibilitySchema,
+  getAvailablePerformanceTargetValue,
 } from "@repo/core";
 import {
   activityArtifactSemanticsSchema,
@@ -52,7 +53,6 @@ import {
 } from "../contracts/recording-submission";
 import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories/drizzle-activity-analysis-repository";
-import { resolveActivityContextAsOf } from "../lib/activity-analysis/context";
 import { logger } from "../lib/logger";
 import { getActivityArtifactStorageService, getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -68,18 +68,36 @@ const activityFileTypeSchema = z.enum(["fit", "gpx", "tcx"]);
 
 const ACTIVITY_FILE_NAME_PATTERN = /^[^/\\\0]+$/;
 
-function toStreamThresholdIdentity(
-  quality: ActivityCalibrationQuality | null | undefined,
+function toStreamTargetIdentity(
+  fact:
+    | AthletePerformanceTargetFacts["cycling"]["planningThresholdPower"]
+    | AthletePerformanceTargetFacts["running"]["planningThresholdPace"]
+    | AthletePerformanceTargetFacts["swimming"]["css"],
 ): ActivityStreamThresholdIdentity | null {
-  if (!quality) return null;
+  if (fact.status !== "available" || fact.evidenceTime.observedThrough === null) return null;
   return {
-    source: quality.source,
-    observed_at: quality.observed_at,
-    confidence: quality.confidence,
-    stale: quality.stale,
-    estimate: quality.estimate,
-    calculation_version: quality.calculation_version ?? null,
+    source: "modeled",
+    observed_at: fact.evidenceTime.observedThrough,
+    confidence: fact.confidence,
+    stale: false,
+    estimate: true,
+    calculation_version: fact.calculationVersion,
   };
+}
+
+function toStreamHeartRateIdentity(
+  fact: AthletePerformanceTargetFacts["heartRate"]["bike"]["lthr"],
+): ActivityStreamThresholdIdentity | null {
+  return fact.status === "available"
+    ? {
+        source: "observed_effort",
+        observed_at: fact.observedAt,
+        confidence: "high",
+        stale: false,
+        estimate: false,
+        calculation_version: fact.calculationVersion,
+      }
+    : null;
 }
 
 const activityFileNameSchema = z
@@ -493,6 +511,7 @@ function toParsedActivityFileForAnalysis(
     ...(parsedData.decodedArtifact === undefined
       ? {}
       : { decodedArtifact: parsedData.decodedArtifact }),
+    ...(parsedData.semantics === undefined ? {} : { semantics: parsedData.semantics }),
   };
 }
 
@@ -602,7 +621,6 @@ async function upsertExistingActivityFileEnrichment(
     segmentSet: enrichment.segmentSet,
     efforts: enrichment.effortsToInsert,
     detectedLTHR: enrichment.detectedLTHR,
-    activityCompletedAt: enrichment.activityCompletedAt,
     startedAt: enrichment.startedAt,
     finishedAt: enrichment.activityCompletedAt,
     ingestion: {
@@ -1023,46 +1041,57 @@ export const activityFilesRouter = createTRPCRouter({
         }
 
         const activity_category = canonicalActivityCategorySchema.parse(access.activityCategory);
-        const context = await resolveActivityContextAsOf({
-          store: createActivityAnalysisStore(db),
+        const activityStart = access.parentStartedAt;
+        const store = createActivityAnalysisStore(db);
+        if (!store.getPerformanceTargetsAsOf) {
+          throw new Error("Canonical performance-model reader is unavailable");
+        }
+        const performanceTargets = await store.getPerformanceTargetsAsOf({
           profileId: userId,
-          activityTimestamp: parsedData.metadata.startTime,
-          activityId,
-          evidenceScope: "thresholds",
+          asOf: activityStart,
+          activityIdToExclude: activityId,
         });
+        const activityCategoryHeartRate =
+          activity_category === "bike" ||
+          activity_category === "run" ||
+          activity_category === "swim"
+            ? performanceTargets.heartRate[activity_category]
+            : null;
         const activityCategoryLthr =
-          context.profileMetrics.lthr_by_activity_category?.[activity_category] ??
-          context.profileMetrics.lthr;
+          activityCategoryHeartRate?.lthr.status === "available"
+            ? activityCategoryHeartRate.lthr.valueBpm
+            : null;
+        const planningThresholdPower = getAvailablePerformanceTargetValue(
+          performanceTargets.cycling.planningThresholdPower,
+        );
+        const planningThresholdPace = getAvailablePerformanceTargetValue(
+          performanceTargets.running.planningThresholdPace,
+        );
+        const swimmingCss = getAvailablePerformanceTargetValue(performanceTargets.swimming.css);
         const analysis = analyzeActivityStreams({
           records: scopedRecords,
           activity_category,
           thresholds: {
-            ...(activityCategoryLthr === undefined
+            ...(activityCategoryLthr === null
               ? {}
               : { lthrByActivityCategory: { [activity_category]: activityCategoryLthr } }),
-            ...(context.profileMetrics.ftp === undefined
+            ...(planningThresholdPower === null ? {} : { ftpWatts: planningThresholdPower }),
+            ...(planningThresholdPace === null
               ? {}
-              : { ftpWatts: context.profileMetrics.ftp }),
-            ...(context.profileMetrics.threshold_speed_mps === undefined
-              ? {}
-              : { runThresholdSpeedMps: context.profileMetrics.threshold_speed_mps }),
-            ...(context.profileMetrics.swim_threshold_speed_mps === undefined
-              ? {}
-              : { swimThresholdSpeedMps: context.profileMetrics.swim_threshold_speed_mps }),
+              : { runThresholdSpeedMps: 1_000 / planningThresholdPace }),
+            ...(swimmingCss === null ? {} : { swimThresholdSpeedMps: 100 / swimmingCss }),
             identities: {
               lthrByActivityCategory: {
-                [activity_category]: toStreamThresholdIdentity(
-                  context.calibrationQuality?.lthrByActivityCategory?.[activity_category] ??
-                    context.calibrationQuality?.lthr,
-                ),
+                [activity_category]:
+                  activityCategoryHeartRate === null
+                    ? null
+                    : toStreamHeartRateIdentity(activityCategoryHeartRate.lthr),
               },
-              ftpWatts: toStreamThresholdIdentity(context.calibrationQuality?.ftp),
-              runThresholdSpeedMps: toStreamThresholdIdentity(
-                context.calibrationQuality?.runThreshold,
+              ftpWatts: toStreamTargetIdentity(performanceTargets.cycling.planningThresholdPower),
+              runThresholdSpeedMps: toStreamTargetIdentity(
+                performanceTargets.running.planningThresholdPace,
               ),
-              swimThresholdSpeedMps: toStreamThresholdIdentity(
-                context.calibrationQuality?.swimThreshold,
-              ),
+              swimThresholdSpeedMps: toStreamTargetIdentity(performanceTargets.swimming.css),
             },
           },
         });

@@ -1,3 +1,9 @@
+import {
+  type AerobicDecouplingResult,
+  type EfficiencyFactorResult,
+  selectAerobicDecouplingValue,
+  selectEfficiencyFactorValue,
+} from "../../calculations/efficiency";
 import { type LoadSeriesIdentity, sameLoadSeriesIdentity } from "../../load/load-series";
 import type { CanonicalActivityCategory } from "../../schemas/activity-category";
 import {
@@ -35,8 +41,8 @@ export interface ActivityHistoryObservation {
   trainingLoadIdentity?: LoadSeriesIdentity | null;
   averagePowerWatts?: number | null;
   averageHeartRateBpm?: number | null;
-  efficiencyFactor?: number | null;
-  decouplingPercent?: number | null;
+  efficiencyFactorResult?: EfficiencyFactorResult | null;
+  aerobicDecouplingResult?: AerobicDecouplingResult | null;
   /** One eligibility record may gate every numeric field on this activity. */
   eligibility?: ActivityEvidenceInput;
   /** Field records override the activity record, preserving the supplied raw values. */
@@ -48,8 +54,8 @@ export type ActivityEvidenceField =
   | "trainingLoad"
   | "averagePowerWatts"
   | "averageHeartRateBpm"
-  | "efficiencyFactor"
-  | "decouplingPercent";
+  | "efficiencyFactorResult"
+  | "aerobicDecouplingResult";
 
 export type ActivityEvidenceInput = Omit<
   FieldEvidenceEligibilityInput,
@@ -198,8 +204,8 @@ export function calculateActivityReadiness(
       "trainingLoad",
       "averagePowerWatts",
       "averageHeartRateBpm",
-      "efficiencyFactor",
-      "decouplingPercent",
+      "efficiencyFactorResult",
+      "aerobicDecouplingResult",
     ] as const) {
       const eligibility = fieldEligibility(
         activity.evidence?.[field] ?? activity.eligibility,
@@ -220,8 +226,12 @@ export function calculateActivityReadiness(
       [
         activity.durationSeconds,
         activity.trainingLoad,
-        activity.efficiencyFactor,
-        activity.decouplingPercent,
+        activity.efficiencyFactorResult == null
+          ? null
+          : selectEfficiencyFactorValue(activity.efficiencyFactorResult),
+        activity.aerobicDecouplingResult == null
+          ? null
+          : selectAerobicDecouplingValue(activity.aerobicDecouplingResult),
         activity.averagePowerWatts,
         activity.averageHeartRateBpm,
       ].filter((value) => value !== null && value !== undefined && Number.isFinite(value)).length,
@@ -292,7 +302,9 @@ export function calculateActivityReadiness(
     .filter(({ activity }) => activity.activity_category === input.targetActivityCategory)
     .map(({ activity, ageDays }) => {
       const efficiency =
-        activity.efficiencyFactor ??
+        (activity.efficiencyFactorResult == null
+          ? null
+          : selectEfficiencyFactorValue(activity.efficiencyFactorResult)) ??
         (activity.activity_category === "bike" &&
         activity.averagePowerWatts !== null &&
         activity.averagePowerWatts !== undefined &&
@@ -302,13 +314,16 @@ export function calculateActivityReadiness(
         activity.averageHeartRateBpm > 0
           ? activity.averagePowerWatts / activity.averageHeartRateBpm
           : null);
-      const decoupling = activity.decouplingPercent;
+      const decoupling =
+        activity.aerobicDecouplingResult == null
+          ? null
+          : selectAerobicDecouplingValue(activity.aerobicDecouplingResult);
       return {
         activity,
         ageDays,
         value:
           efficiency !== null && efficiency !== undefined && efficiency > 0
-            ? efficiency / (1 + Math.max(0, decoupling ?? 0) / 100)
+            ? efficiency / (1 + Math.max(0, decoupling ?? 0))
             : null,
       };
     })

@@ -9,9 +9,9 @@ import { createTrainingPlanRepository } from "../drizzle-training-plan-repositor
 function createSnapshot(overrides: Partial<InferredStateSnapshot> = {}): InferredStateSnapshot {
   return {
     mean: {
-      ctl: 64,
-      atl: 71,
-      tsb: -7,
+      longTermLoad: 64,
+      recentLoad: 71,
+      loadBalance: -7,
       slb: 58,
       durability: 73,
       readiness: 66,

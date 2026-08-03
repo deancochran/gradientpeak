@@ -204,7 +204,10 @@ function ActivityPlanDetailPage() {
   }
 
   if (!plan) return null;
-  const metrics = getActivityPlanMetricSummary(plan.authoritative_metrics, plan.common_load);
+  const metrics = getActivityPlanMetricSummary({
+    prescriptionQuantification: plan.prescriptionQuantification,
+    structure: plan.structure,
+  });
 
   return (
     <div className="container mx-auto max-w-5xl space-y-6 py-4">

@@ -59,7 +59,7 @@ function createBlock(
     phase,
     start_date: startDate,
     end_date: endDate,
-    target_weekly_tss_range: { min, max },
+    target_weekly_load_range: { min, max },
   };
 }
 
@@ -79,7 +79,7 @@ function createContextSummary(
     history_availability_state: historyAvailabilityState,
     ...markers,
     signal_quality: signalQuality,
-    recommended_baseline_tss_range: baselineRange,
+    recommended_baseline_load_range: baselineRange,
     recommended_recent_influence_range: { min: -0.25, max: 0.25 },
     recommended_sessions_per_week_range: sessionsPerWeekRange,
     rationale_codes: rationaleCodes,
@@ -149,7 +149,7 @@ const beginnerNoHistory5kProjection: BuildProjectionEngineInputShape = {
     ],
   },
   normalized_creation_config: createProjectionConfig("balanced", 6),
-  starting_ctl: 10,
+  starting_longTermLoad: 10,
   no_history_context: {
     history_availability_state: "none",
     goal_tier: "medium",
@@ -200,7 +200,7 @@ const exact5kSpeedBlockProjection: BuildProjectionEngineInputShape = {
     ],
   },
   normalized_creation_config: createProjectionConfig("outcome_first", 6),
-  starting_ctl: 34,
+  starting_longTermLoad: 34,
   no_history_context: {
     history_availability_state: "rich",
     goal_tier: "high",
@@ -253,7 +253,7 @@ const recreationalSparse10kProjection: BuildProjectionEngineInputShape = {
     ],
   },
   normalized_creation_config: createProjectionConfig("balanced", 7),
-  starting_ctl: 18,
+  starting_longTermLoad: 18,
   no_history_context: {
     history_availability_state: "sparse",
     goal_tier: "medium",
@@ -312,7 +312,7 @@ const intermediateRichHalfProjection: BuildProjectionEngineInputShape = {
     ],
   },
   normalized_creation_config: createProjectionConfig("balanced", 7),
-  starting_ctl: 42,
+  starting_longTermLoad: 42,
   no_history_context: {
     history_availability_state: "rich",
     goal_tier: "high",
@@ -362,7 +362,7 @@ const advancedMarathonBuildProjection: BuildProjectionEngineInputShape = {
     ],
   },
   normalized_creation_config: createProjectionConfig("outcome_first", 8),
-  starting_ctl: 60,
+  starting_longTermLoad: 60,
   no_history_context: {
     history_availability_state: "rich",
     goal_tier: "high",
@@ -412,7 +412,7 @@ const boundaryFeasibleBikeProjection: BuildProjectionEngineInputShape = {
     ],
   },
   normalized_creation_config: createProjectionConfig("balanced", 7),
-  starting_ctl: 45,
+  starting_longTermLoad: 45,
   no_history_context: {
     history_availability_state: "rich",
     goal_tier: "medium",
@@ -471,7 +471,7 @@ const lowAvailabilityHighAmbitionProjection: BuildProjectionEngineInputShape = {
     ],
   },
   normalized_creation_config: createProjectionConfig("sustainable", 8),
-  starting_ctl: 24,
+  starting_longTermLoad: 24,
   no_history_context: {
     history_availability_state: "sparse",
     goal_tier: "high",
@@ -531,7 +531,7 @@ const infeasibleStretchGoalProjection: BuildProjectionEngineInputShape = {
     ],
   },
   normalized_creation_config: createProjectionConfig("sustainable", 8),
-  starting_ctl: 12,
+  starting_longTermLoad: 12,
   no_history_context: {
     history_availability_state: "none",
     goal_tier: "high",
@@ -582,7 +582,7 @@ const mastersConservativeProfileProjection: BuildProjectionEngineInputShape = {
     ],
   },
   normalized_creation_config: createProjectionConfig("sustainable", 8),
-  starting_ctl: 26,
+  starting_longTermLoad: 26,
   no_history_context: {
     history_availability_state: "sparse",
     goal_tier: "medium",
@@ -646,7 +646,7 @@ const bRaceBeforeARaceProjection: BuildProjectionEngineInputShape = {
     ],
   },
   normalized_creation_config: createProjectionConfig("balanced", 7),
-  starting_ctl: 36,
+  starting_longTermLoad: 36,
   no_history_context: {
     history_availability_state: "rich",
     goal_tier: "high",
@@ -698,7 +698,7 @@ const twoCloseAGoalsProjection: BuildProjectionEngineInputShape = {
     ],
   },
   normalized_creation_config: createProjectionConfig("balanced", 6),
-  starting_ctl: 45,
+  starting_longTermLoad: 45,
   no_history_context: {
     history_availability_state: "rich",
     goal_tier: "high",
@@ -750,7 +750,7 @@ const sameDayABPriorityProjection: BuildProjectionEngineInputShape = {
     ],
   },
   normalized_creation_config: createProjectionConfig("balanced", 6),
-  starting_ctl: 30,
+  starting_longTermLoad: 30,
   no_history_context: {
     history_availability_state: "sparse",
     goal_tier: "medium",
@@ -790,7 +790,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     heuristic_mode: "target_seeking",
     athlete_snapshot: {
       history_availability_state: "none",
-      starting_ctl: 10,
+      starting_longTermLoad: 10,
       availability_days_per_week: 3,
       max_single_session_duration_minutes: 90,
     },
@@ -803,7 +803,12 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     projection_input: beginnerNoHistory5kProjection,
     audit: {
       fixture_precision: "exact",
-      exact_fields: ["projection_input", "goal_dates", "starting_ctl", "availability_context"],
+      exact_fields: [
+        "projection_input",
+        "goal_dates",
+        "starting_longTermLoad",
+        "availability_context",
+      ],
       audit_fields: [],
       limitations: [],
     },
@@ -819,7 +824,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     heuristic_mode: "target_seeking",
     athlete_snapshot: {
       history_availability_state: "rich",
-      starting_ctl: 34,
+      starting_longTermLoad: 34,
       availability_days_per_week: 5,
       max_single_session_duration_minutes: 95,
     },
@@ -832,7 +837,12 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     projection_input: exact5kSpeedBlockProjection,
     audit: {
       fixture_precision: "exact",
-      exact_fields: ["projection_input", "goal_dates", "starting_ctl", "availability_context"],
+      exact_fields: [
+        "projection_input",
+        "goal_dates",
+        "starting_longTermLoad",
+        "availability_context",
+      ],
       audit_fields: [],
       limitations: [],
     },
@@ -848,7 +858,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     heuristic_mode: "target_seeking",
     athlete_snapshot: {
       history_availability_state: "sparse",
-      starting_ctl: 18,
+      starting_longTermLoad: 18,
       availability_days_per_week: 4,
       max_single_session_duration_minutes: 105,
     },
@@ -861,7 +871,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     projection_input: recreationalSparse10kProjection,
     audit: {
       fixture_precision: "exact",
-      exact_fields: ["projection_input", "goal_dates", "starting_ctl"],
+      exact_fields: ["projection_input", "goal_dates", "starting_longTermLoad"],
       audit_fields: [],
       limitations: [],
     },
@@ -876,7 +886,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     heuristic_mode: "target_seeking",
     athlete_snapshot: {
       history_availability_state: "rich",
-      starting_ctl: 42,
+      starting_longTermLoad: 42,
       availability_days_per_week: 5,
     },
     expected_plan_traits: [
@@ -888,7 +898,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     projection_input: intermediateRichHalfProjection,
     audit: {
       fixture_precision: "exact",
-      exact_fields: ["projection_input", "goal_dates", "starting_ctl"],
+      exact_fields: ["projection_input", "goal_dates", "starting_longTermLoad"],
       audit_fields: [],
       limitations: [],
     },
@@ -904,7 +914,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     heuristic_mode: "target_seeking",
     athlete_snapshot: {
       history_availability_state: "rich",
-      starting_ctl: 60,
+      starting_longTermLoad: 60,
       availability_days_per_week: 6,
     },
     expected_plan_traits: [
@@ -916,7 +926,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     projection_input: advancedMarathonBuildProjection,
     audit: {
       fixture_precision: "exact",
-      exact_fields: ["projection_input", "goal_dates", "starting_ctl"],
+      exact_fields: ["projection_input", "goal_dates", "starting_longTermLoad"],
       audit_fields: [],
       limitations: [],
     },
@@ -932,7 +942,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     heuristic_mode: "target_seeking",
     athlete_snapshot: {
       history_availability_state: "rich",
-      starting_ctl: 45,
+      starting_longTermLoad: 45,
       availability_days_per_week: 4,
       max_single_session_duration_minutes: 180,
     },
@@ -945,7 +955,12 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     projection_input: boundaryFeasibleBikeProjection,
     audit: {
       fixture_precision: "exact",
-      exact_fields: ["projection_input", "goal_dates", "starting_ctl", "availability_context"],
+      exact_fields: [
+        "projection_input",
+        "goal_dates",
+        "starting_longTermLoad",
+        "availability_context",
+      ],
       audit_fields: [],
       limitations: [],
     },
@@ -960,7 +975,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     heuristic_mode: "constraint_compromise",
     athlete_snapshot: {
       history_availability_state: "sparse",
-      starting_ctl: 24,
+      starting_longTermLoad: 24,
       availability_days_per_week: 3,
       max_single_session_duration_minutes: 150,
       hard_rest_days: ["monday", "friday"],
@@ -974,7 +989,12 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     projection_input: lowAvailabilityHighAmbitionProjection,
     audit: {
       fixture_precision: "exact",
-      exact_fields: ["projection_input", "goal_dates", "starting_ctl", "availability_context"],
+      exact_fields: [
+        "projection_input",
+        "goal_dates",
+        "starting_longTermLoad",
+        "availability_context",
+      ],
       audit_fields: [],
       limitations: [],
     },
@@ -989,7 +1009,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     heuristic_mode: "capacity_bounded",
     athlete_snapshot: {
       history_availability_state: "none",
-      starting_ctl: 12,
+      starting_longTermLoad: 12,
       availability_days_per_week: 4,
       max_single_session_duration_minutes: 120,
     },
@@ -1002,7 +1022,12 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     projection_input: infeasibleStretchGoalProjection,
     audit: {
       fixture_precision: "exact",
-      exact_fields: ["projection_input", "goal_dates", "starting_ctl", "availability_context"],
+      exact_fields: [
+        "projection_input",
+        "goal_dates",
+        "starting_longTermLoad",
+        "availability_context",
+      ],
       audit_fields: [],
       limitations: [],
     },
@@ -1018,7 +1043,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     heuristic_mode: "constraint_compromise",
     athlete_snapshot: {
       history_availability_state: "sparse",
-      starting_ctl: 26,
+      starting_longTermLoad: 26,
       availability_days_per_week: 4,
       max_single_session_duration_minutes: 90,
       hard_rest_days: ["monday", "friday"],
@@ -1037,7 +1062,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
       exact_fields: [
         "projection_input",
         "goal_dates",
-        "starting_ctl",
+        "starting_longTermLoad",
         "availability_context",
         "age",
       ],
@@ -1056,7 +1081,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     heuristic_mode: "priority_sensitive",
     athlete_snapshot: {
       history_availability_state: "rich",
-      starting_ctl: 36,
+      starting_longTermLoad: 36,
       availability_days_per_week: 5,
     },
     expected_plan_traits: [
@@ -1068,7 +1093,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     projection_input: bRaceBeforeARaceProjection,
     audit: {
       fixture_precision: "exact",
-      exact_fields: ["projection_input", "goal_dates", "starting_ctl"],
+      exact_fields: ["projection_input", "goal_dates", "starting_longTermLoad"],
       audit_fields: [],
       limitations: [],
     },
@@ -1083,7 +1108,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     heuristic_mode: "priority_sensitive",
     athlete_snapshot: {
       history_availability_state: "rich",
-      starting_ctl: 45,
+      starting_longTermLoad: 45,
       availability_days_per_week: 5,
     },
     expected_plan_traits: [
@@ -1095,7 +1120,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     projection_input: twoCloseAGoalsProjection,
     audit: {
       fixture_precision: "exact",
-      exact_fields: ["projection_input", "goal_dates", "starting_ctl"],
+      exact_fields: ["projection_input", "goal_dates", "starting_longTermLoad"],
       audit_fields: [],
       limitations: [],
     },
@@ -1110,7 +1135,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     heuristic_mode: "priority_sensitive",
     athlete_snapshot: {
       history_availability_state: "sparse",
-      starting_ctl: 30,
+      starting_longTermLoad: 30,
       availability_days_per_week: 4,
     },
     expected_plan_traits: [
@@ -1122,7 +1147,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     projection_input: sameDayABPriorityProjection,
     audit: {
       fixture_precision: "exact",
-      exact_fields: ["projection_input", "goal_dates", "starting_ctl"],
+      exact_fields: ["projection_input", "goal_dates", "starting_longTermLoad"],
       audit_fields: [],
       limitations: [],
     },

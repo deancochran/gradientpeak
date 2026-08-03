@@ -1,4 +1,5 @@
 import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import type { CommonLoadAggregate, CommonLoadResult } from "@repo/core/load";
 import type { CanonicalActivityCategory } from "@repo/core/schemas/activity-category";
 
 export type UpcomingActivityImpact = {
@@ -6,7 +7,7 @@ export type UpcomingActivityImpact = {
   title: string;
   scheduled_at: string;
   activity_category: CanonicalActivityCategory;
-  estimated_load: number | null;
+  common_load: CommonLoadResult | CommonLoadAggregate | null;
   confidence: "high" | "medium" | "low";
   explanation: string;
 };
@@ -35,7 +36,7 @@ function readCanonicalPlanActivityCategory(plan: unknown): CanonicalActivityCate
 
 export function buildUpcomingActivityImpact(input: {
   plannedActivities: PlannedActivityImpactInput[];
-  estimatedTssByPlanId: Map<unknown, unknown>;
+  commonLoadByPlanId: Map<unknown, CommonLoadResult | CommonLoadAggregate>;
   today: string;
   horizonEnd: string;
   recommendedByDate: Map<string, number>;
@@ -54,11 +55,13 @@ export function buildUpcomingActivityImpact(input: {
       if (!activity_category) return [];
       const planId = plan.id ?? planned.id ?? planned.starts_at;
       const scheduledDate = planned.scheduled_date;
-      const estimatedLoadRaw = plan.id ? Number(input.estimatedTssByPlanId.get(plan.id) || 0) : 0;
-      const estimatedLoad =
-        Number.isFinite(estimatedLoadRaw) && estimatedLoadRaw > 0 ? estimatedLoadRaw : null;
-      const recommendedLoad = input.recommendedByDate.get(scheduledDate) ?? 0;
-      const loadDelta = estimatedLoad === null ? null : estimatedLoad - recommendedLoad;
+      const common_load = plan.id ? (input.commonLoadByPlanId.get(plan.id) ?? null) : null;
+      const load =
+        common_load?.status === "available" || common_load?.status === "complete"
+          ? common_load.load
+          : null;
+      const recommendedLoad = input.recommendedByDate.get(scheduledDate) ?? null;
+      const loadDelta = load === null || recommendedLoad === null ? null : load - recommendedLoad;
       const title = plan.name ?? plan.title ?? planned.title ?? "Scheduled session";
 
       return [
@@ -67,10 +70,10 @@ export function buildUpcomingActivityImpact(input: {
           title: String(title),
           scheduled_at: String(planned.starts_at ?? `${scheduledDate}T00:00:00.000Z`),
           activity_category,
-          estimated_load: estimatedLoad === null ? null : Math.round(estimatedLoad * 10) / 10,
-          confidence: estimatedLoad === null ? "low" : "medium",
+          common_load,
+          confidence: load === null ? "low" : "medium",
           explanation:
-            estimatedLoad === null
+            load === null
               ? "Add duration and intensity to compare this session's planned load with the recommended daily load."
               : loadDelta !== null && loadDelta > 15
                 ? "This session's planned load is above the recommended daily load."

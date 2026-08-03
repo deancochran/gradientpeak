@@ -41,12 +41,8 @@ const effortCapabilitySchema = z
 
 export const capabilityProjectionSchema = z
   .object({
-    ftp: boundedResultSchema,
-    runningThresholdPace: boundedResultSchema.default(unavailableCapabilityDefault),
-    swimmingCss: boundedResultSchema.default(unavailableCapabilityDefault),
     criticalPowerWatts: boundedResultSchema.default(unavailableCapabilityDefault),
     wPrimeJoules: boundedResultSchema.default(unavailableCapabilityDefault),
-    wattsPerKilogram: boundedResultSchema,
     heartRateReserve: boundedResultSchema,
     effortCurves: z.array(effortCapabilitySchema).max(32),
     enduranceRecencyWeightedMinutes: boundedResultSchema,

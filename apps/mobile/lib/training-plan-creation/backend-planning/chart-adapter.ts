@@ -81,15 +81,15 @@ function mapBackendProjectionChartToTrainingPathChart(
 
 type BackendProjectionPoint = {
   date: string;
-  predicted_load_tss: number;
-  predicted_fitness_ctl: number;
-  predicted_fatigue_atl: number;
-  predicted_form_tsb: number;
+  predicted_load: number;
+  predicted_fitness_longTermLoad: number;
+  predicted_fatigue_recentLoad: number;
+  predicted_form_loadBalance: number;
 };
 
 type BackendDailyLoadPoint = {
   date: string;
-  recommended_load_tss: number;
+  recommended_common_load: number;
 };
 
 function isBackendProjectionPoint(value: unknown): value is BackendProjectionPoint {
@@ -97,10 +97,10 @@ function isBackendProjectionPoint(value: unknown): value is BackendProjectionPoi
   const point = value as Record<string, unknown>;
   return (
     typeof point.date === "string" &&
-    typeof point.predicted_load_tss === "number" &&
-    typeof point.predicted_fitness_ctl === "number" &&
-    typeof point.predicted_fatigue_atl === "number" &&
-    typeof point.predicted_form_tsb === "number"
+    typeof point.predicted_load === "number" &&
+    typeof point.predicted_fitness_longTermLoad === "number" &&
+    typeof point.predicted_fatigue_recentLoad === "number" &&
+    typeof point.predicted_form_loadBalance === "number"
   );
 }
 
@@ -126,7 +126,7 @@ function aggregateBackendPointsToWeeks(
         localChart.weeks.find((week) => week.weekStart === weekStart) ?? localChart.weeks[index];
       const plannedLoad = sortedPoints.reduce(
         (total, point) =>
-          total + (Number.isFinite(point.predicted_load_tss) ? point.predicted_load_tss : 0),
+          total + (Number.isFinite(point.predicted_load) ? point.predicted_load : 0),
         0,
       );
       return {
@@ -137,11 +137,11 @@ function aggregateBackendPointsToWeeks(
         plannedLoad,
         tentativePlannedLoad: null,
         targetLoad: localWeek?.targetLoad ?? null,
-        fitness: finalPoint.predicted_fitness_ctl,
-        scheduledFitness: finalPoint.predicted_fitness_ctl,
-        targetFitness: localWeek?.targetFitness ?? finalPoint.predicted_fitness_ctl,
-        fatigue: finalPoint.predicted_fatigue_atl,
-        form: finalPoint.predicted_form_tsb,
+        fitness: finalPoint.predicted_fitness_longTermLoad,
+        scheduledFitness: finalPoint.predicted_fitness_longTermLoad,
+        targetFitness: localWeek?.targetFitness ?? finalPoint.predicted_fitness_longTermLoad,
+        fatigue: finalPoint.predicted_fatigue_recentLoad,
+        form: finalPoint.predicted_form_loadBalance,
         riskZone: null,
         isCurrent: localWeek?.isCurrent ?? false,
         isSelected: localWeek?.isSelected ?? index === 0,
@@ -152,7 +152,7 @@ function aggregateBackendPointsToWeeks(
 function isBackendDailyLoadPoint(value: unknown): value is BackendDailyLoadPoint {
   if (!value || typeof value !== "object") return false;
   const point = value as Record<string, unknown>;
-  return typeof point.date === "string" && typeof point.recommended_load_tss === "number";
+  return typeof point.date === "string" && typeof point.recommended_common_load === "number";
 }
 
 function mapBackendDailyLoadPoints(
@@ -173,21 +173,28 @@ function mapBackendDailyLoadPoints(
   return localChart.dailyPoints.map((localPoint) => {
     const projectionPoint = projectionByDate.get(localPoint.date);
     const recommendation = recommendationByDate.get(localPoint.date);
-    const targetLoadTss = recommendation
-      ? Math.round(recommendation.recommended_load_tss)
-      : localPoint.targetLoadTss;
+    const targetLoad = recommendation
+      ? Math.round(recommendation.recommended_common_load)
+      : localPoint.targetLoad;
     return {
       ...localPoint,
-      targetLoadTss,
-      loadDeltaTss: localPoint.actualOrScheduledLoadTss - targetLoadTss,
-      plannedDeltaTss:
-        localPoint.plannedLoadTss + localPoint.tentativePlannedLoadTss - targetLoadTss,
+      targetLoad,
+      loadDelta:
+        localPoint.actualOrScheduledLoad === null || targetLoad === null
+          ? null
+          : localPoint.actualOrScheduledLoad - targetLoad,
+      plannedDelta:
+        localPoint.plannedLoad === null ||
+        localPoint.tentativePlannedLoad === null ||
+        targetLoad === null
+          ? null
+          : localPoint.plannedLoad + localPoint.tentativePlannedLoad - targetLoad,
       scheduledFitnessCtl:
-        projectionPoint?.predicted_fitness_ctl ?? localPoint.scheduledFitnessCtl ?? null,
+        projectionPoint?.predicted_fitness_longTermLoad ?? localPoint.scheduledFitnessCtl ?? null,
       targetFitnessCtl:
-        localPoint.targetFitnessCtl ?? projectionPoint?.predicted_fitness_ctl ?? null,
-      fatigueAtl: projectionPoint?.predicted_fatigue_atl ?? localPoint.fatigueAtl ?? null,
-      formTsb: projectionPoint?.predicted_form_tsb ?? localPoint.formTsb ?? null,
+        localPoint.targetFitnessCtl ?? projectionPoint?.predicted_fitness_longTermLoad ?? null,
+      fatigueAtl: projectionPoint?.predicted_fatigue_recentLoad ?? localPoint.fatigueAtl ?? null,
+      formTsb: projectionPoint?.predicted_form_loadBalance ?? localPoint.formTsb ?? null,
     };
   });
 }

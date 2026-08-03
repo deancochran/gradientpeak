@@ -30,7 +30,7 @@ export interface TrainingPlanSessionIntent {
   type: TrainingPlanSessionIntentType;
   driver: TrainingPlanStructureDriver;
   targetDurationSeconds?: number;
-  targetTss?: number;
+  targetLoad?: number;
 }
 
 export interface TrainingPlanStructureProvenanceRow {
@@ -241,7 +241,8 @@ function buildTrainingPlanStructureProvenance({
       attribute: "starter-values",
       source: baseDriver === "starter-frequency" ? "default" : "derived",
       label: "Session defaults",
-      value: baseDriver === "consistency-frequency" ? "45 TSS / 45m" : "60 TSS / 60m",
+      value:
+        baseDriver === "consistency-frequency" ? "45 Common Load / 45m" : "60 Common Load / 60m",
       explanation:
         baseDriver === "consistency-frequency"
           ? "General sessions use lighter defaults when a consistency frequency goal drives the plan."
@@ -320,13 +321,13 @@ export function deriveTrainingPlanStructureProposal(
                 type: "endurance" as const,
                 driver: drivers.at(-1) ?? baseDriver,
                 targetDurationSeconds: 5400,
-                targetTss: 90,
+                targetLoad: 90,
               }
             : {
                 type: hasConsistencyFrequency ? ("general" as const) : ("general" as const),
                 driver: baseDriver,
                 targetDurationSeconds: hasConsistencyFrequency ? 2700 : 3600,
-                targetTss: hasConsistencyFrequency ? 45 : 60,
+                targetLoad: hasConsistencyFrequency ? 45 : 60,
               },
         };
       }),

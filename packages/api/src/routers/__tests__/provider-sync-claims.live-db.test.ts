@@ -110,6 +110,67 @@ afterAll(async () => {
 });
 
 describe("provider sync PostgreSQL claims", () => {
+  it("atomically advances desired state only for the current leased worker", async () => {
+    const owner = await seedOwner();
+    const repository = createProviderSyncRepository({ db });
+    const workerId = `worker:${randomUUID()}`;
+    const jobId = await seedRunningJob({
+      integrationId: owner.integrationId,
+      lockExpiresAt: new Date(Date.now() + 60_000),
+      profileId: owner.profileId,
+      workerId,
+    });
+    const latestPayload = {
+      eventId: randomUUID(),
+      operation: "publish",
+      projectionHash: "latest-projection",
+      projectionSnapshot: { plan: { header: { ftp: 275 }, intervals: [] } },
+    };
+
+    await expect(
+      repository.updateRunningJobDesiredState({
+        expectedIntegrationGeneration: 1,
+        id: jobId,
+        integrationId: owner.integrationId,
+        payload: latestPayload,
+        payloadHash: "latest-payload-hash",
+        profileId: owner.profileId,
+        provider: "wahoo",
+        workerId,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      db.select().from(providerSyncJobs).where(eq(providerSyncJobs.id, jobId)),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        payload: latestPayload,
+        payload_hash: "latest-payload-hash",
+        status: "running",
+      }),
+    ]);
+
+    await expect(
+      repository.updateRunningJobDesiredState({
+        expectedIntegrationGeneration: 1,
+        id: jobId,
+        integrationId: owner.integrationId,
+        payload: { ...latestPayload, projectionHash: "unowned-change" },
+        payloadHash: "unowned-payload-hash",
+        profileId: owner.profileId,
+        provider: "wahoo",
+        workerId: `other:${randomUUID()}`,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      db.select().from(providerSyncJobs).where(eq(providerSyncJobs.id, jobId)),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        payload: latestPayload,
+        payload_hash: "latest-payload-hash",
+      }),
+    ]);
+  });
+
   it.each([
     ["expired lease", -60_000, false],
     ["wrong ownership", 60_000, true],

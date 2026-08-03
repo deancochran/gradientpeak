@@ -120,8 +120,7 @@ describe("syncIntegrationNow", () => {
     vi.setSystemTime(new Date("2026-07-28T15:00:00.000Z"));
     mocks.findGrantByProfileIdAndProvider.mockResolvedValue({
       expires_at: null,
-      scope:
-        "workouts_read workouts_write plans_read plans_write offline_data power_zones_read user_read",
+      scope: "workouts_read workouts_write plans_read plans_write offline_data user_read",
     });
     const limit = vi.fn().mockResolvedValue([{ id: "event-1" }]);
     const orderBy = vi.fn(() => ({ limit }));

@@ -18,13 +18,13 @@ const asOf = "2026-07-10T11:00:00.000Z";
 function evidence(overrides: Record<string, unknown> = {}) {
   return evidenceItemSchema.parse({
     athleteId: "athlete-1",
-    sourceId: "metric:external:ftp:2026-07-10",
-    lineageGroupId: "metric:ftp-history",
+    sourceId: "effort:external:power:2026-07-10",
+    lineageGroupId: "activity:power-history",
     observedAt,
     rawObservation: { value: 250, unit: "W" },
     activity_category: "bike",
     modality: "power",
-    sourceType: "profile_metric",
+    sourceType: "activity_effort",
     qualityState: "known",
     validityState: "valid",
     compatibilityState: "compatible",
@@ -50,13 +50,13 @@ describe("evidence contracts", () => {
     expect(
       evidenceItemSchema.safeParse({
         athleteId: "athlete-1",
-        sourceId: "metric:external:ftp:2026-07-10",
-        lineageGroupId: "metric:ftp-history",
+        sourceId: "effort:external:power:2026-07-10",
+        lineageGroupId: "activity:power-history",
         observedAt,
         rawObservation: { value: 250, unit: "W" },
         activity_category: "cycling",
         modality: "power",
-        sourceType: "profile_metric",
+        sourceType: "activity_effort",
         qualityState: "known",
         validityState: "valid",
         compatibilityState: "compatible",
@@ -167,9 +167,6 @@ describe("evidence contracts", () => {
 describe("athlete metric roles", () => {
   it("maps every approved metric to its exact approved role", () => {
     expect(athleteMetricRoleByType).toEqual({
-      ftp: "direct_threshold_evidence",
-      threshold_pace_seconds_per_km: "direct_threshold_evidence",
-      css_seconds_per_100m: "direct_threshold_evidence",
       lthr: "threshold_intensity_context",
       max_hr: "heart_rate_normalization",
       resting_hr: "recovery_baseline_context",

@@ -32,7 +32,6 @@ vi.mock("../../infrastructure/repositories", () => ({
     deleteEventResourceLink: vi.fn(async () => undefined),
     findWahooIntegrationByProfileId: vi.fn(async () => null),
     getPlannedEventForSync: vi.fn(async () => null),
-    getProfileSyncMetrics: vi.fn(async () => null),
     getRouteForSync: vi.fn(async () => null),
     getEventResourceLink: vi.fn(async () => null),
     listEventResourceLinks: vi.fn(async () => []),
@@ -110,9 +109,6 @@ function createEventsCaller(results: Record<string, QueryResult>) {
     insert: createDrizzleInsertMock(),
     readRepository: {
       getEstimationInputs: vi.fn(async () => ({
-        efforts: [],
-        metrics: [],
-        profile: results.profiles?.data ?? null,
         routes: [],
       })),
       getValidateConstraintsInputs: vi.fn(async () => ({

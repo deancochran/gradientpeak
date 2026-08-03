@@ -1,15 +1,19 @@
 import { createHash } from "node:crypto";
 import {
-  aggregateCommonLoad,
+  type ActivityObservationQuantificationBundle,
+  createObservationQuantificationBundle,
+} from "@repo/core";
+import {
   aggregateCommonLoadEnvelopes,
+  COMMON_LOAD_HISTORY_BASIS,
+  COMMON_LOAD_HISTORY_CALCULATION_MODEL,
+  COMMON_LOAD_HISTORY_CALCULATION_VERSION,
   COMMON_LOAD_HISTORY_MATURE_DAYS,
   COMMON_LOAD_HISTORY_REQUIRED_DAYS,
   COMMON_RELATIVE_LOAD_MODEL,
   COMMON_RELATIVE_LOAD_VERSION,
   type CommonLoadHistoryDayObservation,
   type CommonLoadHistoryResult,
-  type CommonLoadResult,
-  commonLoadResultSchema,
   replayCommonLoadHistory,
 } from "@repo/core/load";
 import { scheduledDateTimeToIsoInstant } from "@repo/core/utils/schedule-date";
@@ -28,11 +32,20 @@ export const commonLoadHistoryActivityLimit = 10_000;
 
 type Db = ReturnType<typeof getRequiredDb>;
 type ActivityIdentity = { id: string; started_at: Date };
-type ActivityContribution = { result: CommonLoadResult; fingerprint: string };
+type ActivityContribution = {
+  observationQuantification: ActivityObservationQuantificationBundle;
+  fingerprint: string;
+};
 
 async function hasCompleteActivitySourceCoverage(
   db: Parameters<Parameters<Db["transaction"]>[0]>[0],
-  input: { endDate: string; planningTimezone: string; profileId: string; startDate: string },
+  input: {
+    asOf: Date;
+    endDate: string;
+    planningTimezone: string;
+    profileId: string;
+    startDate: string;
+  },
 ): Promise<boolean> {
   const integrationRows = await db
     .select({ id: integrations.id, provider: integrations.provider })
@@ -64,6 +77,7 @@ async function hasCompleteActivitySourceCoverage(
       ),
     );
   const byIntegration = new Map(syncRows.map((row) => [row.integrationId, row]));
+  const asOfMilliseconds = input.asOf.getTime();
   const requiredStart = Date.parse(
     scheduledDateTimeToIsoInstant({
       scheduledDate: input.startDate,
@@ -84,25 +98,32 @@ async function hasCompleteActivitySourceCoverage(
     const metadata = sync?.metadata;
     const coverage =
       metadata && typeof metadata === "object" && !Array.isArray(metadata)
-        ? (metadata as Record<string, unknown>).activityHistoryCoverage
+        ? Reflect.get(metadata, "activityHistoryCoverage")
         : null;
     const record =
-      coverage && typeof coverage === "object" && !Array.isArray(coverage)
-        ? (coverage as Record<string, unknown>)
-        : null;
-    const coverageStart = typeof record?.start === "string" ? Date.parse(record.start) : Number.NaN;
-    const coverageEnd = typeof record?.end === "string" ? Date.parse(record.end) : Number.NaN;
+      coverage && typeof coverage === "object" && !Array.isArray(coverage) ? coverage : null;
+    const coverageStartValue = record === null ? null : Reflect.get(record, "start");
+    const coverageEndValue = record === null ? null : Reflect.get(record, "end");
+    const coverageStart =
+      typeof coverageStartValue === "string" ? Date.parse(coverageStartValue) : Number.NaN;
+    const coverageEnd =
+      typeof coverageEndValue === "string" ? Date.parse(coverageEndValue) : Number.NaN;
     return (
       sync !== undefined &&
       sync.lastSucceededAt !== null &&
+      sync.lastSucceededAt.getTime() <= asOfMilliseconds &&
       // An old successful read cannot remain complete merely because its metadata
       // claimed a future boundary. Coverage must be refreshed through this window.
       sync.lastSucceededAt.getTime() >= requiredEnd &&
       sync.highWatermark !== null &&
+      sync.highWatermark.getTime() <= asOfMilliseconds &&
       sync.consecutiveFailures === 0 &&
-      (sync.lastFailedAt === null || sync.lastSucceededAt >= sync.lastFailedAt) &&
+      (sync.lastFailedAt === null ||
+        (sync.lastFailedAt.getTime() <= asOfMilliseconds &&
+          sync.lastSucceededAt >= sync.lastFailedAt)) &&
       Number.isFinite(coverageStart) &&
       Number.isFinite(coverageEnd) &&
+      coverageEnd <= asOfMilliseconds &&
       coverageStart <= requiredStart &&
       coverageEnd >= requiredEnd &&
       sync.highWatermark.getTime() >= requiredEnd
@@ -144,10 +165,18 @@ function datesForWindow(
 }
 
 function unavailableWindow(input: {
+  asOf: Date;
   currentPlanningDate: string;
   planningTimezone: string;
 }): CommonLoadHistoryResult {
+  const calculatedAsOf = input.asOf.toISOString();
   return replayCommonLoadHistory({
+    basis: COMMON_LOAD_HISTORY_BASIS,
+    calculationIdentity: {
+      model: COMMON_LOAD_HISTORY_CALCULATION_MODEL,
+      version: COMMON_LOAD_HISTORY_CALCULATION_VERSION,
+      asOf: calculatedAsOf,
+    },
     currentPlanningDate: input.currentPlanningDate,
     planningTimezone: input.planningTimezone,
     observations: datesForWindow(input.currentPlanningDate).map((date) => ({
@@ -155,6 +184,7 @@ function unavailableWindow(input: {
       date,
       model: COMMON_RELATIVE_LOAD_MODEL,
       version: COMMON_RELATIVE_LOAD_VERSION,
+      calculatedAsOf,
       reason: "source_incomplete" as const,
       evidenceFingerprints: [],
     })),
@@ -163,40 +193,39 @@ function unavailableWindow(input: {
 
 function parseActivitySegments(
   summaries: readonly SegmentDerivedSummary[],
-): ActivityContribution[] | null {
-  const results = summaries.map((summary) => commonLoadResultSchema.safeParse(summary.common_load));
-  if (results.length === 0 || results.some((result) => !result.success)) return null;
-  const commonResults = results.flatMap((result) => (result.success ? [result.data] : []));
-  if (commonResults.some((result) => result.status === "unavailable")) return null;
-  return commonResults.map((result, index) => {
-    const summary = summaries[index];
-    if (
-      !summary ||
-      result.status === "unavailable" ||
-      (result.status === "partial" && result.load === null)
-    ) {
-      throw new Error("Validated common Load segment contribution expected");
-    }
-    return {
-      result,
-      fingerprint: fingerprint([
-        "segment-contribution",
-        summary.activity_id,
-        summary.segment_id,
-        result.model,
-        result.version,
-        String(result.load),
-        String(result.intensity),
-        String(result.contributingDurationSeconds),
-        result.evidenceFingerprint ?? "partial-without-activity-evidence",
-        result.thresholdEvidence?.sourceFingerprint ?? "partial-without-threshold-evidence",
-      ]),
-    };
+  calculationAsOf: string,
+): ActivityContribution | null {
+  if (summaries.length === 0) return null;
+  const observationQuantification = createObservationQuantificationBundle({
+    members: summaries.flatMap((summary) => summary.observationQuantification.members),
+    summaryScope: "components",
   });
+  const aggregate = observationQuantification.summary;
+  const calculationCutoff = Date.parse(calculationAsOf);
+  if (
+    aggregate.commonLoad.status !== "complete" ||
+    observationQuantification.members.some((member) => {
+      const computedAt = member.calculationIdentity.computedAt;
+      return computedAt === null || Date.parse(computedAt) > calculationCutoff;
+    })
+  ) {
+    return null;
+  }
+  return {
+    observationQuantification,
+    fingerprint: fingerprint([
+      "activity-contribution",
+      aggregate.subjectIdentity.fingerprint,
+      aggregate.evidenceIdentity.fingerprint,
+      aggregate.calculationIdentity.fingerprint,
+    ]),
+  };
 }
 
 export function buildCommonLoadHistoryObservations(input: {
   activities: ActivityIdentity[];
+  calculatedAsOf: string;
+  evidenceScopeFingerprint: string;
   segmentSummaries: SegmentDerivedSummary[];
   currentPlanningDate: string;
   planningTimezone: string;
@@ -211,13 +240,18 @@ export function buildCommonLoadHistoryObservations(input: {
   const summariesByActivity = new Map<string, SegmentDerivedSummary[]>();
   const coverageStatus = input.coverageStatus ?? "complete";
   for (const summary of input.segmentSummaries) {
-    summariesByActivity.set(summary.activity_id, [
-      ...(summariesByActivity.get(summary.activity_id) ?? []),
-      summary,
-    ]);
+    summariesByActivity.set(
+      summary.activity_id,
+      [...(summariesByActivity.get(summary.activity_id) ?? []), summary].sort((left, right) =>
+        left.segment_id.localeCompare(right.segment_id),
+      ),
+    );
   }
   const activitiesByDate = new Map<string, ActivityIdentity[]>();
-  for (const activity of input.activities) {
+  for (const activity of [...input.activities].sort(
+    (left, right) =>
+      left.started_at.getTime() - right.started_at.getTime() || left.id.localeCompare(right.id),
+  )) {
     const date = localDate(activity.started_at, input.planningTimezone);
     if (date < startDate || date > endDate) continue;
     activitiesByDate.set(date, [...(activitiesByDate.get(date) ?? []), activity]);
@@ -231,13 +265,16 @@ export function buildCommonLoadHistoryObservations(input: {
         date,
         model: COMMON_RELATIVE_LOAD_MODEL,
         version: COMMON_RELATIVE_LOAD_VERSION,
+        calculatedAsOf: input.calculatedAsOf,
         coverageStatus,
-        evidenceFingerprints: [fingerprint(["complete-bounded-read", date])],
+        evidenceFingerprints: [
+          fingerprint(["complete-bounded-read", input.evidenceScopeFingerprint, date]),
+        ],
       };
     }
 
     const activitySegmentResults = dailyActivities.map((activity) =>
-      parseActivitySegments(summariesByActivity.get(activity.id) ?? []),
+      parseActivitySegments(summariesByActivity.get(activity.id) ?? [], input.calculatedAsOf),
     );
     if (activitySegmentResults.some((result) => result === null)) {
       return {
@@ -245,34 +282,37 @@ export function buildCommonLoadHistoryObservations(input: {
         date,
         model: COMMON_RELATIVE_LOAD_MODEL,
         version: COMMON_RELATIVE_LOAD_VERSION,
+        calculatedAsOf: input.calculatedAsOf,
         coverageStatus,
         reason: "common_load_unavailable",
         evidenceFingerprints: [],
       };
     }
-    const parentAggregates = activitySegmentResults.map((contributions) =>
-      aggregateCommonLoad((contributions ?? []).map((contribution) => contribution.result)),
+    const quantifiedContributions = activitySegmentResults.flatMap((contribution) =>
+      contribution === null ? [] : [contribution],
     );
-    const aggregate = aggregateCommonLoadEnvelopes(parentAggregates);
+    createObservationQuantificationBundle({
+      members: quantifiedContributions.flatMap(
+        (contribution) => contribution.observationQuantification.members,
+      ),
+    });
+    const aggregate = aggregateCommonLoadEnvelopes(
+      quantifiedContributions.map(
+        (contribution) => contribution.observationQuantification.summary.commonLoad,
+      ),
+    );
     if (aggregate.status === "unavailable") {
       return {
         state: "unavailable",
         date,
         model: COMMON_RELATIVE_LOAD_MODEL,
         version: COMMON_RELATIVE_LOAD_VERSION,
+        calculatedAsOf: input.calculatedAsOf,
         reason: "common_load_unavailable",
         coverageStatus,
-        evidenceFingerprints: activitySegmentResults.flatMap((contributions, index) => {
-          const activity = dailyActivities[index];
-          if (!activity || contributions === null) return [];
-          return [
-            fingerprint([
-              "activity-contribution",
-              activity.id,
-              ...contributions.map((contribution) => contribution.fingerprint).sort(),
-            ]),
-          ];
-        }),
+        evidenceFingerprints: quantifiedContributions
+          .map((contribution) => contribution.fingerprint)
+          .sort(),
       };
     }
     return {
@@ -280,36 +320,39 @@ export function buildCommonLoadHistoryObservations(input: {
       date,
       model: COMMON_RELATIVE_LOAD_MODEL,
       version: COMMON_RELATIVE_LOAD_VERSION,
+      calculatedAsOf: input.calculatedAsOf,
       coverageStatus,
       aggregate: {
         ...aggregate,
       },
-      evidenceFingerprints: activitySegmentResults.flatMap((contributions, index) => {
-        const activity = dailyActivities[index];
-        if (!activity || contributions === null) return [];
-        return [
-          fingerprint([
-            "activity-contribution",
-            activity.id,
-            ...contributions.map((contribution) => contribution.fingerprint).sort(),
-          ]),
-        ];
-      }),
+      evidenceFingerprints: quantifiedContributions
+        .map((contribution) => contribution.fingerprint)
+        .sort(),
     };
   });
 }
 
 export async function getCommonLoadHistory(input: {
+  asOf: Date;
   db: Db;
   profileId: string;
   currentPlanningDate: string;
   planningTimezone: string;
 }): Promise<CommonLoadHistoryResult> {
+  const calculatedAsOf = input.asOf.toISOString();
   // Read the full maturity horizon; Core returns only the latest 84 chart points.
   const dates = datesForWindow(input.currentPlanningDate, COMMON_LOAD_HISTORY_MATURE_DAYS);
   const startDate = dates[0];
   const endDate = dates.at(-1);
   if (!startDate || !endDate) return unavailableWindow(input);
+  const evidenceScopeFingerprint = fingerprint([
+    "completed-activity-history-scope",
+    input.profileId,
+    input.planningTimezone,
+    startDate,
+    endDate,
+    calculatedAsOf,
+  ]);
 
   const envelopeStart = new Date(`${startDate}T00:00:00.000Z`);
   envelopeStart.setUTCDate(envelopeStart.getUTCDate() - 1);
@@ -320,6 +363,7 @@ export async function getCommonLoadHistory(input: {
     return await input.db.transaction(
       async (tx) => {
         const sourceCoverageComplete = await hasCompleteActivitySourceCoverage(tx, {
+          asOf: input.asOf,
           endDate,
           planningTimezone: input.planningTimezone,
           profileId: input.profileId,
@@ -334,6 +378,7 @@ export async function getCommonLoadHistory(input: {
               eq(activities.profile_id, input.profileId),
               gte(activities.started_at, envelopeStart),
               lt(activities.started_at, envelopeEnd),
+              lt(activities.started_at, input.asOf),
             ),
           )
           .orderBy(asc(activities.started_at), asc(activities.id))
@@ -342,7 +387,7 @@ export async function getCommonLoadHistory(input: {
 
         const windowActivityRows = activityRows.filter((activity) => {
           const date = localDate(activity.started_at, input.planningTimezone);
-          return date >= startDate && date <= endDate;
+          return activity.started_at < input.asOf && date >= startDate && date <= endDate;
         });
 
         const segments = await loadActivitySegmentsByActivityId(
@@ -357,14 +402,23 @@ export async function getCommonLoadHistory(input: {
           store: createActivityAnalysisStore(tx),
           profileId: input.profileId,
           activities: activitiesWithSegments,
+          computedAsOf: input.asOf,
         });
         return replayCommonLoadHistory({
+          basis: COMMON_LOAD_HISTORY_BASIS,
+          calculationIdentity: {
+            model: COMMON_LOAD_HISTORY_CALCULATION_MODEL,
+            version: COMMON_LOAD_HISTORY_CALCULATION_VERSION,
+            asOf: calculatedAsOf,
+          },
           currentPlanningDate: input.currentPlanningDate,
           planningTimezone: input.planningTimezone,
           observations: buildCommonLoadHistoryObservations({
             activities: windowActivityRows,
+            calculatedAsOf,
             segmentSummaries,
             currentPlanningDate: input.currentPlanningDate,
+            evidenceScopeFingerprint,
             planningTimezone: input.planningTimezone,
             coverageStatus: "complete",
             replayDays: COMMON_LOAD_HISTORY_MATURE_DAYS,

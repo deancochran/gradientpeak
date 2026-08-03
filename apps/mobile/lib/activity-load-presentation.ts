@@ -1,10 +1,13 @@
 import {
+  activityQuantificationBundleSchema,
+  activityQuantificationSchema,
+  aggregateActivityQuantificationSchema,
   type CommonLoadAggregate,
   type CommonLoadResult,
   commonLoadAggregateSchema,
   commonLoadResultSchema,
 } from "@repo/core";
-import { getTrainingIntensityZone } from "@repo/core/load";
+import { getTrainingIntensityZone } from "@repo/core/zones";
 import {
   type CommonLoadDiagnostic,
   type CommonLoadDiagnosticContext,
@@ -24,20 +27,50 @@ type CalibrationQuality = {
   observed_at: string | null;
   stale: boolean;
   estimate: boolean;
-  calculation_version?: string | null;
+  calculation_version?: string | null | undefined;
 };
 
-export function getActivityLoadLabels(method?: string | null) {
-  if (method === "heart_rate_threshold") {
-    return { load: "Estimated HR Load", intensity: "HR IF" };
+/** Returns a numeric Load only when the envelope is complete and authoritative. */
+export function getCompleteCommonLoad(value: unknown): number | null {
+  const result = commonLoadResultSchema.safeParse(value);
+  if (result.success) {
+    return result.data.status === "available" ? result.data.load : null;
   }
-  if (method === "run_pace_threshold") return { load: "rTSS", intensity: "Run IF" };
-  if (method === "swim_pace_threshold") return { load: "sTSS", intensity: "Swim IF" };
-  if (method === "power_threshold") return { load: "TSS", intensity: "IF" };
-  if (method === "critical_power_threshold") {
-    return { load: "Estimated CP Load", intensity: "CP IF" };
+
+  const aggregate = commonLoadAggregateSchema.safeParse(value);
+  return aggregate.success && aggregate.data.status === "complete" ? aggregate.data.load : null;
+}
+
+/** Returns Common Load only from a complete canonical activity quantification. */
+export function getCompleteActivityQuantificationCommonLoad(value: unknown): number | null {
+  const bundle = activityQuantificationBundleSchema.safeParse(value);
+  if (bundle.success) {
+    return bundle.data.summary.commonLoad.status === "complete"
+      ? bundle.data.summary.commonLoad.load
+      : null;
   }
-  return { load: "Load", intensity: "Intensity" };
+  const item = activityQuantificationSchema.safeParse(value);
+  if (item.success) {
+    return item.data.commonLoad.status === "available" ? item.data.commonLoad.load : null;
+  }
+
+  const aggregate = aggregateActivityQuantificationSchema.safeParse(value);
+  return aggregate.success && aggregate.data.commonLoad.status === "complete"
+    ? aggregate.data.commonLoad.load
+    : null;
+}
+
+/** Returns intensity only when its Common Load envelope is complete and authoritative. */
+export function getCompleteCommonLoadIntensity(value: unknown): number | null {
+  const result = commonLoadResultSchema.safeParse(value);
+  if (result.success) {
+    return result.data.status === "available" ? result.data.intensity : null;
+  }
+
+  const aggregate = commonLoadAggregateSchema.safeParse(value);
+  return aggregate.success && aggregate.data.status === "complete"
+    ? aggregate.data.intensity
+    : null;
 }
 
 const intensityLabels = {

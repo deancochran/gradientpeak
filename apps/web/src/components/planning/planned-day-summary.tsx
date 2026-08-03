@@ -1,6 +1,10 @@
-import type { CanonicalActivityCategory } from "@repo/core";
+import type {
+  ActivityPrescriptionQuantificationBundle,
+  CanonicalActivityCategory,
+} from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardDescription, CardHeader } from "@repo/ui/components/card";
+import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
 import { useRef, useState } from "react";
 
 import { formatDuration } from "../../lib/activity-route-helpers";
@@ -10,7 +14,7 @@ export type WebPlannedDaySummaryData = {
     eventCount: number;
     activity_categories: CanonicalActivityCategory[];
     totalDurationSeconds: number | null;
-    totalTss: number | null;
+    prescriptionQuantification: ActivityPrescriptionQuantificationBundle;
   };
   source: {
     complete: true;
@@ -29,14 +33,6 @@ export function formatPlannedDayActivityCategories(
   activity_categories: readonly CanonicalActivityCategory[],
 ) {
   return [...new Set(activity_categories)].map(formatActivityCategory).join(" + ");
-}
-
-/** Rounds finite planned TSS to one decimal place and always includes its unit. */
-export function formatPlannedDayTss(totalTss: number | null) {
-  if (totalTss === null || !Number.isFinite(totalTss)) return "Unavailable";
-
-  const rounded = Math.round(totalTss * 10) / 10;
-  return `${rounded.toFixed(1).replace(/\.0$/, "")} TSS`;
 }
 
 function pluralize(count: number, singular: string, plural = `${singular}s`) {
@@ -115,6 +111,7 @@ export function PlannedDaySummary({
 
 function PlannedDaySummaryDetails({ data }: { data: WebPlannedDaySummaryData }) {
   const { source, summary } = data;
+  const quantification = getActivityQuantificationPresentation(summary.prescriptionQuantification);
   const hasPartialInformation =
     source.unavailableEstimateCount > 0 ||
     source.unavailablePlanCount > 0 ||
@@ -148,10 +145,18 @@ function PlannedDaySummaryDetails({ data }: { data: WebPlannedDaySummaryData }) 
           </dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Planned TSS</dt>
-          <dd className="font-medium">{formatPlannedDayTss(summary.totalTss)}</dd>
+          <dt className="text-muted-foreground">{quantification.commonLoad.label}</dt>
+          <dd className="font-medium">{quantification.commonLoad.value}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">{quantification.normalizedIntensity.label}</dt>
+          <dd className="font-medium">{quantification.normalizedIntensity.value}</dd>
         </div>
       </dl>
+
+      <p className="text-sm text-muted-foreground">
+        {quantification.commonLoad.evidence}. {quantification.commonLoad.explanation}
+      </p>
 
       {hasPartialInformation ? (
         <p className="rounded-lg border p-3 text-sm" role="status">

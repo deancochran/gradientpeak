@@ -104,7 +104,7 @@ describe("effective Plan Load composition", () => {
     expect(composeFromRoot).toBe(composeEffectivePlanLoad);
   });
 
-  it("replaces one linked scheduled item with its completed activity exactly once", () => {
+  it("suppresses one linked scheduled item and keeps its completion on the actual date", () => {
     const result = composed(
       composeEffectivePlanLoad(
         input({
@@ -128,7 +128,7 @@ describe("effective Plan Load composition", () => {
       expect.objectContaining({
         kind: "completed",
         completedActivityId: "activity-1",
-        date: "2026-07-22",
+        date: "2026-07-21",
         replacedScheduledItemId: "plan-1",
       }),
     ]);
@@ -229,7 +229,7 @@ describe("effective Plan Load composition", () => {
     });
   });
 
-  it("assigns a linked completion only to its scheduled day across day compositions", () => {
+  it("suppresses linked planned Load across daily ranges and counts completion on its actual day", () => {
     const scheduledItems = [
       scheduled("plan-1", "2026-07-22", available(3600, 1), {
         linkedCompletedActivityId: "activity-1",
@@ -251,14 +251,23 @@ describe("effective Plan Load composition", () => {
         }),
       );
 
-    expect(day("2026-07-21").aggregate).toEqual({
+    expect(day("2026-07-21").items).toEqual([
+      expect.objectContaining({
+        kind: "completed",
+        completedActivityId: "activity-1",
+        date: "2026-07-21",
+        replacedScheduledItemId: "plan-1",
+      }),
+    ]);
+    expect(day("2026-07-21").aggregate).toMatchObject({
+      status: "complete",
+      commonLoad: { load: 50, totalActivityCount: 1 },
+    });
+    expect(day("2026-07-22").items).toEqual([]);
+    expect(day("2026-07-22").aggregate).toEqual({
       status: "known_zero",
       load: 0,
       intensity: null,
-    });
-    expect(day("2026-07-22").aggregate).toMatchObject({
-      status: "complete",
-      commonLoad: { load: 50, totalActivityCount: 1 },
     });
   });
 

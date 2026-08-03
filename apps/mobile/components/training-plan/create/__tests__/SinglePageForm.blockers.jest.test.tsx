@@ -217,11 +217,11 @@ const baseProjectionDiagnostics: NonNullable<ProjectionChartFixture["projection_
       volatility_penalty_weight: 0,
       churn_penalty_weight: 0,
     },
-    caps: { max_weekly_tss_ramp_pct: 0, max_ctl_ramp_per_week: 0 },
+    caps: { max_weekly_load_ramp_pct: 0, max_longTermLoad_ramp_per_week: 0 },
     search: { lookahead_weeks: 0, candidate_steps: 0 },
     curvature: { target: 0, strength: 0, weight: 0 },
   },
-  clamp_counts: { tss: 0, ctl: 0 },
+  clamp_counts: { load: 0, longTermLoad: 0 },
   objective_contributions: {
     sampled_weeks: 0,
     objective_score: 0,
@@ -327,7 +327,7 @@ const baseConfigData = {
       evidence_weight: 0.1,
     },
     readiness_timeline: {
-      target_tsb: 8,
+      target_loadBalance: 8,
       form_tolerance: 20,
       fatigue_overflow_scale: 0.4,
       feasibility_blend_weight: 0.15,
@@ -586,16 +586,16 @@ describe("SinglePageForm blocker surfacing", () => {
 
     fireEvent.press(rendered.getByLabelText("Limits tab"));
 
-    const startingCtlSlider = findMockNodes(rendered, "NumberSliderInput").find(
+    const startingLongTermLoadSlider = findMockNodes(rendered, "NumberSliderInput").find(
       (node: ReactTestInstance) => node.props.id === "starting-ctl-assumption",
     );
 
-    fireEvent(requireNode(startingCtlSlider), "onChange", 47.5);
+    fireEvent(requireNode(startingLongTermLoadSlider), "onChange", 47.5);
 
     await waitFor(() => {
       expect(onConfigChange).toHaveBeenCalledWith(
         expect.objectContaining({
-          startingCtlAssumption: 47.5,
+          startingLongTermLoadAssumption: 47.5,
           postGoalRecoveryDays: baseConfigData.postGoalRecoveryDays,
         }),
       );
@@ -623,14 +623,14 @@ describe("SinglePageForm blocker surfacing", () => {
     await waitFor(() => {
       expect(onConfigChange).toHaveBeenCalledWith(
         expect.objectContaining({
-          startingCtlAssumption: baseConfigData.startingCtlAssumption,
+          startingLongTermLoadAssumption: baseConfigData.startingLongTermLoadAssumption,
           postGoalRecoveryDays: 9,
         }),
       );
     });
   });
 
-  it("does not promote projected CTL into an explicit override when only recovery days change", async () => {
+  it("does not promote projected Fitness into an explicit override when only recovery days change", async () => {
     const onConfigChange = jest.fn();
 
     const rendered = renderSinglePageForm({
@@ -649,17 +649,17 @@ describe("SinglePageForm blocker surfacing", () => {
           normalized_creation_config: {
             optimization_profile: "balanced",
             post_goal_recovery_days: 5,
-            max_weekly_tss_ramp_pct: 8,
-            max_ctl_ramp_per_week: 4,
+            max_weekly_load_ramp_pct: 8,
+            max_longTermLoad_ramp_per_week: 4,
             learned_ramp_rate: { max_safe_ramp_rate: 40, confidence: "medium", source: "default" },
           },
-          tss_ramp_clamp_weeks: 0,
-          ctl_ramp_clamp_weeks: 0,
+          load_ramp_clamp_weeks: 0,
+          longTermLoad_ramp_clamp_weeks: 0,
           recovery_weeks: 0,
           starting_state: {
-            starting_ctl: 33,
-            starting_atl: 30,
-            starting_tsb: 3,
+            starting_longTermLoad: 33,
+            starting_recentLoad: 30,
+            starting_loadBalance: 3,
             starting_state_is_prior: true,
           },
         },
@@ -677,7 +677,7 @@ describe("SinglePageForm blocker surfacing", () => {
     await waitFor(() => {
       expect(onConfigChange).toHaveBeenCalledWith(
         expect.objectContaining({
-          startingCtlAssumption: undefined,
+          startingLongTermLoadAssumption: undefined,
           postGoalRecoveryDays: 7,
         }),
       );
@@ -691,20 +691,20 @@ describe("SinglePageForm blocker surfacing", () => {
       <ConstraintsConfigSection
         postGoalRecoveryDays={5}
         projectionStartingCtl={20}
-        startingCtlAssumption={20}
+        startingLongTermLoadAssumption={20}
         onChange={onChange}
       />,
     );
 
-    const startingCtlSlider = findMockNodes(rendered, "NumberSliderInput").find(
+    const startingLongTermLoadSlider = findMockNodes(rendered, "NumberSliderInput").find(
       (node: ReactTestInstance) => node.props.id === "starting-ctl-assumption",
     );
 
-    fireEvent(requireNode(startingCtlSlider), "onChange", 47.5);
+    fireEvent(requireNode(startingLongTermLoadSlider), "onChange", 47.5);
 
     await waitFor(() => {
       expect(onChange).toHaveBeenCalledWith({
-        startingCtlAssumption: 47.5,
+        startingLongTermLoadAssumption: 47.5,
         postGoalRecoveryDays: 5,
       });
     });
@@ -715,7 +715,7 @@ describe("SinglePageForm blocker surfacing", () => {
       <ConstraintsConfigSection
         postGoalRecoveryDays={5}
         projectionStartingCtl={12}
-        startingCtlAssumption={12}
+        startingLongTermLoadAssumption={12}
         onChange={onChange}
       />,
     );
@@ -966,7 +966,7 @@ describe("SinglePageForm blocker surfacing", () => {
       onConfigChange: jest.fn(),
       blockingIssues: [
         {
-          code: "required_tss_ramp_exceeds_cap",
+          code: "required_load_ramp_exceeds_cap",
           message: "Required weekly load exceeds cap",
           suggestions: ["Lower target ramp"],
         },
@@ -1107,7 +1107,7 @@ describe("SinglePageForm blocker surfacing", () => {
         onConfigChange={jest.fn()}
         blockingIssues={[
           {
-            code: "required_tss_ramp_exceeds_cap",
+            code: "required_load_ramp_exceeds_cap",
             message: "Required weekly load exceeds cap",
             suggestions: ["Lower target ramp"],
           },
@@ -1226,7 +1226,7 @@ describe("SinglePageForm blocker surfacing", () => {
                 preparedness_weight: 17.2,
                 risk_penalty_weight: 0.31,
               },
-              active_constraints: ["tss_ramp_cap_pressure"],
+              active_constraints: ["load_ramp_cap_pressure"],
               binding_constraints: ["availability_cap"],
               clamp_pressure: 0.38,
               objective_composition: {
@@ -1251,7 +1251,7 @@ describe("SinglePageForm blocker surfacing", () => {
         text.includes("Effective optimizer: preparedness weight 17.2"),
       ),
     ).toBe(true);
-    expect(textNodes).toContain("Active constraints: tss ramp cap pressure.");
+    expect(textNodes).toContain("Active constraints: load ramp cap pressure.");
     expect(
       textNodes.some((text: string) =>
         text.includes("Binding constraints: availability cap | clamp pressure 38%"),
@@ -1306,8 +1306,8 @@ describe("SinglePageForm blocker surfacing", () => {
                 churn_penalty_weight: 0.18,
               },
               caps: {
-                max_weekly_tss_ramp_pct: 40,
-                max_ctl_ramp_per_week: 12,
+                max_weekly_load_ramp_pct: 40,
+                max_longTermLoad_ramp_per_week: 12,
               },
               search: {
                 lookahead_weeks: 8,
@@ -1320,8 +1320,8 @@ describe("SinglePageForm blocker surfacing", () => {
               },
             },
             clamp_counts: {
-              tss: 4,
-              ctl: 2,
+              load: 4,
+              longTermLoad: 2,
             },
             objective_contributions: {
               sampled_weeks: 6,

@@ -28,4 +28,7 @@ For dead letters, inspect the authenticated internal diagnostics surface, correc
 
 ## Local verification
 
-Run one authenticated drain with `pnpm dev:wahoo-drain:once`, or run the direct worker with `pnpm dev:wahoo-drain:direct`. Confirm aggregate telemetry and that a second drain does not repeat completed provider effects. Do not paste bearer tokens, raw payloads, or record identifiers into tickets or logs.
+Run one authenticated drain with `pnpm --filter web dev:wahoo-drain:once`, or run the direct
+worker with `pnpm --filter web dev:wahoo-drain:direct`. Confirm aggregate telemetry and that a
+second drain does not repeat completed provider effects. Do not paste bearer tokens, raw payloads,
+or record identifiers into tickets or logs.

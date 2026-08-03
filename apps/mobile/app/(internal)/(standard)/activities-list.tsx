@@ -150,42 +150,17 @@ function ActivitiesScreen() {
         onRetry={refetch}
         refreshing={refreshing}
         renderItem={(activity) => {
-          const { derived, ingestion, ...activityWithoutDerivedOrIngestion } = activity;
-          const { calibration_quality: calibrationQuality, ...derivedWithoutCalibrationQuality } =
-            derived ?? {};
-          const { last_error_message: lastErrorMessage, ...ingestionWithoutLastErrorMessage } =
-            ingestion ?? {};
-
           return (
             <ActivityCard
               activity={{
-                ...activityWithoutDerivedOrIngestion,
-                ...(ingestion === undefined
-                  ? {}
-                  : {
-                      ingestion:
-                        ingestion === null
-                          ? null
-                          : {
-                              ...ingestionWithoutLastErrorMessage,
-                              ...(lastErrorMessage === undefined
-                                ? {}
-                                : { last_error_message: lastErrorMessage }),
-                            },
-                    }),
-                ...(derived === undefined
-                  ? {}
-                  : {
-                      derived:
-                        derived === null
-                          ? null
-                          : {
-                              ...derivedWithoutCalibrationQuality,
-                              ...(calibrationQuality === undefined
-                                ? {}
-                                : { calibration_quality: calibrationQuality }),
-                            },
-                    }),
+                ...activity,
+                ingestion:
+                  activity.ingestion === null || activity.ingestion === undefined
+                    ? null
+                    : {
+                        status: activity.ingestion.status,
+                        last_error_message: activity.ingestion.last_error_message ?? null,
+                      },
               }}
               dateMode="absolute"
               onPress={() => handleActivityPress(activity.id)}

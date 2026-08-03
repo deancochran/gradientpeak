@@ -1,22 +1,29 @@
-import { calculateActivityPlanStats, deriveActivityPlanPresentation } from "@repo/core";
+import {
+  type ActivityObservationQuantificationBundle,
+  type ActivityPrescriptionQuantificationBundle,
+  calculateActivityPlanStats,
+  deriveActivityPlanPresentation,
+} from "@repo/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
+import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";
 import { TimelineChart } from "@/components/activity-plan/activity/TimelineChart";
-import { getCommonLoadPresentation } from "@/lib/activity-load-presentation";
 import { markEstimated } from "@/lib/estimatedMetrics";
 
 interface ActivityPlanData {
   id: string;
   name: string;
   structure: unknown;
-  common_load?: unknown;
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
+  [key: string]: unknown;
 }
 
 interface ActivityMetrics {
   duration: number; // seconds
-  common_load?: unknown;
+  observationQuantification?: ActivityObservationQuantificationBundle | null;
+  [key: string]: unknown;
 }
 
 interface ActivityPlanComparisonProps {
@@ -59,8 +66,10 @@ export function ActivityPlanComparison({
   const estimatedDuration = planComparison.duration;
 
   const actualDuration = actualMetrics.duration;
-  const actualLoad = getCommonLoadPresentation(actualMetrics.common_load);
-  const plannedLoad = getCommonLoadPresentation(activityPlan.common_load);
+  const actualLoad = getActivityQuantificationPresentation(actualMetrics.observationQuantification);
+  const plannedLoad = getActivityQuantificationPresentation(
+    activityPlan.prescriptionQuantification,
+  );
 
   // Calculate variances
   const durationVariance =
@@ -96,37 +105,35 @@ export function ActivityPlanComparison({
             )}
           </View>
 
-          {(actualLoad?.load || actualLoad?.unavailableText || plannedLoad?.load) && (
-            <View className="flex-1 p-3 bg-muted rounded-lg">
-              <Text className="text-xs text-muted-foreground uppercase mb-1">Load</Text>
-              <Text className="text-lg font-bold">
-                {actualLoad?.load ?? actualLoad?.unavailableText ?? "--"}
+          <View className="flex-1 p-3 bg-muted rounded-lg">
+            <Text className="text-xs text-muted-foreground uppercase mb-1">
+              {actualLoad.commonLoad.label}
+            </Text>
+            <Text className="text-lg font-bold">{actualLoad.commonLoad.value}</Text>
+            {plannedLoad.commonLoad.status !== "unavailable" ? (
+              <Text className="text-xs text-muted-foreground mt-1">
+                Plan: {markEstimated(plannedLoad.commonLoad.value)}
               </Text>
-              {plannedLoad?.load && (
-                <Text className="text-xs text-muted-foreground mt-1">
-                  Plan: {markEstimated(plannedLoad.load)}
-                </Text>
-              )}
-            </View>
-          )}
+            ) : null}
+          </View>
 
-          {(actualLoad?.intensity || plannedLoad?.intensity) && (
-            <View className="flex-1 p-3 bg-muted rounded-lg">
-              <Text className="text-xs text-muted-foreground uppercase mb-1">Intensity</Text>
-              <Text className="text-lg font-bold">{actualLoad?.intensity ?? "--"}</Text>
-              {plannedLoad?.intensity && (
-                <Text className="text-xs text-muted-foreground mt-1">
-                  Plan: {markEstimated(plannedLoad.intensity)}
-                </Text>
-              )}
-            </View>
-          )}
+          <View className="flex-1 p-3 bg-muted rounded-lg">
+            <Text className="text-xs text-muted-foreground uppercase mb-1">
+              {actualLoad.normalizedIntensity.label}
+            </Text>
+            <Text className="text-lg font-bold">{actualLoad.normalizedIntensity.value}</Text>
+            {plannedLoad.normalizedIntensity.status !== "unavailable" ? (
+              <Text className="text-xs text-muted-foreground mt-1">
+                Plan: {markEstimated(plannedLoad.normalizedIntensity.value)}
+              </Text>
+            ) : null}
+          </View>
         </View>
 
         {/* Timeline Chart */}
         {!compact && Boolean(activityPlan.structure) && (
           <View>
-            <Text className="text-sm font-medium mb-2">Planned Intensity</Text>
+            <Text className="text-sm font-medium mb-2">Prescribed intensity</Text>
             <TimelineChart presentation={presentation} height={100} compact={true} />
           </View>
         )}

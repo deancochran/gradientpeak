@@ -10,6 +10,8 @@ export const FEATURE_ROOTS = [
 ];
 
 export const FEATURE_MARKER = ".feature-id";
+export const FEATURE_MANIFEST_DIRECTORY = "tooling/testing/features";
+const FEATURE_MANIFEST_VERSION = 1;
 const FEATURE_MARKER_ROOTS = ["apps", "packages"];
 const FEATURE_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -180,12 +182,152 @@ function canonicalFeatureIdFromPath(relativePath) {
   return mobile?.[1] ?? null;
 }
 
+function manifestFeatureIdFromPath(relativePath) {
+  const normalized = toPosix(relativePath);
+  const match = normalized.match(/^tooling\/testing\/features\/([^/]+)\.json$/);
+  return match?.[1] ?? null;
+}
+
 function validateFeatureId(featureId) {
   if (!FEATURE_ID_PATTERN.test(featureId)) {
     throw new Error(
       `Invalid feature id "${featureId}"; use lowercase letters and numbers separated by single hyphens.`,
     );
   }
+}
+
+function hasExactKeys(value, expectedKeys) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const actualKeys = Object.keys(value).sort();
+  const sortedExpectedKeys = [...expectedKeys].sort();
+  return (
+    actualKeys.length === sortedExpectedKeys.length &&
+    actualKeys.every((key, index) => key === sortedExpectedKeys[index])
+  );
+}
+
+function isSortedUniqueStrings(values) {
+  return (
+    Array.isArray(values) &&
+    values.every(
+      (value, index) =>
+        typeof value === "string" &&
+        value.length > 0 &&
+        (index === 0 || values[index - 1].localeCompare(value) < 0),
+    )
+  );
+}
+
+function validateManifestTestPath(testPath, manifestPath) {
+  const normalized = path.posix.normalize(testPath);
+  if (
+    testPath.includes("\\") ||
+    path.posix.isAbsolute(testPath) ||
+    normalized !== testPath ||
+    normalized === "." ||
+    normalized.startsWith("../")
+  ) {
+    throw new Error(
+      `Feature manifest ${manifestPath} contains a non-canonical repository test path: ${testPath}`,
+    );
+  }
+  if (classifyTest(testPath) === null) {
+    throw new Error(
+      `Feature manifest ${manifestPath} lists a path that is not a conventionally named test: ${testPath}`,
+    );
+  }
+}
+
+export async function readFeatureManifest(root, featureId, resolvedRoot) {
+  validateFeatureId(featureId);
+  const manifestPath = `${FEATURE_MANIFEST_DIRECTORY}/${featureId}.json`;
+  const absolutePath = path.join(root, manifestPath);
+  const kind = await pathKind(absolutePath);
+  if (kind === "missing") return null;
+  if (kind !== "file" || !(await isContainedFile(root, manifestPath, resolvedRoot))) {
+    throw new Error(`Feature manifest must be a regular file: ${manifestPath}`);
+  }
+
+  let contents;
+  try {
+    contents = new TextDecoder("utf-8", { fatal: true }).decode(await readFile(absolutePath));
+  } catch {
+    throw new Error(`Feature manifest must contain valid UTF-8 text: ${manifestPath}`);
+  }
+
+  let manifest;
+  try {
+    manifest = JSON.parse(contents);
+  } catch (error) {
+    throw new Error(`Invalid feature manifest JSON in ${manifestPath}: ${error.message}`);
+  }
+  if (!hasExactKeys(manifest, ["version", "id", "capsules"])) {
+    throw new Error(
+      `Invalid feature manifest shape in ${manifestPath}; expected only version, id, and capsules.`,
+    );
+  }
+  if (manifest.version !== FEATURE_MANIFEST_VERSION || manifest.id !== featureId) {
+    throw new Error(
+      `Feature manifest ${manifestPath} must declare version ${FEATURE_MANIFEST_VERSION} and id "${featureId}".`,
+    );
+  }
+  if (!Array.isArray(manifest.capsules) || manifest.capsules.length === 0) {
+    throw new Error(`Feature manifest ${manifestPath} must declare at least one coverage capsule.`);
+  }
+
+  const capsuleIds = manifest.capsules.map((capsule) => capsule?.id);
+  if (!isSortedUniqueStrings(capsuleIds)) {
+    throw new Error(
+      `Feature manifest ${manifestPath} capsule ids must be nonempty, unique, and sorted.`,
+    );
+  }
+
+  const knownOwners = new Set(Object.values(OWNERS).map((owner) => owner.filter));
+  const seenTests = new Set();
+  for (const capsule of manifest.capsules) {
+    if (!hasExactKeys(capsule, ["id", "owner", "tests"])) {
+      throw new Error(
+        `Invalid capsule shape in ${manifestPath}; expected only id, owner, and tests.`,
+      );
+    }
+    validateFeatureId(capsule.id);
+    if (typeof capsule.owner !== "string" || !knownOwners.has(capsule.owner)) {
+      throw new Error(`Feature manifest ${manifestPath} has unknown owner: ${capsule.owner}`);
+    }
+    if (!isSortedUniqueStrings(capsule.tests) || capsule.tests.length === 0) {
+      throw new Error(
+        `Feature manifest ${manifestPath} capsule "${capsule.id}" tests must be nonempty, unique, and sorted.`,
+      );
+    }
+    for (const testPath of capsule.tests) {
+      validateManifestTestPath(testPath, manifestPath);
+      if (seenTests.has(testPath)) {
+        throw new Error(
+          `Feature manifest ${manifestPath} lists a test more than once: ${testPath}`,
+        );
+      }
+      seenTests.add(testPath);
+      if (ownerFor(testPath).filter !== capsule.owner) {
+        throw new Error(
+          `Feature manifest ${manifestPath} assigns ${testPath} to ${capsule.owner}, but its package owner is ${ownerFor(testPath).filter ?? "root"}.`,
+        );
+      }
+      if (!(await isContainedFile(root, testPath, resolvedRoot))) {
+        throw new Error(`Feature manifest ${manifestPath} lists a missing test: ${testPath}`);
+      }
+    }
+  }
+
+  return {
+    path: manifestPath,
+    id: featureId,
+    capsules: manifest.capsules.map((capsule) => ({
+      id: capsule.id,
+      owner: capsule.owner,
+      tests: [...capsule.tests],
+    })),
+    tests: [...seenTests].sort(),
+  };
 }
 
 async function readFeatureMarker(root, markerPath, resolvedRoot) {
@@ -279,7 +421,11 @@ function markerFeatureIdFromPath(relativePath, markers) {
 }
 
 function featureIdFromPath(relativePath, markers) {
-  return markerFeatureIdFromPath(relativePath, markers) ?? canonicalFeatureIdFromPath(relativePath);
+  return (
+    manifestFeatureIdFromPath(relativePath) ??
+    markerFeatureIdFromPath(relativePath, markers) ??
+    canonicalFeatureIdFromPath(relativePath)
+  );
 }
 
 function emptyFeatureMarkers() {
@@ -304,6 +450,8 @@ async function discoverFeature(root, featureId, markers) {
   validateFeatureId(featureId);
   const resolvedRoot = await realpath(root);
   const candidates = [];
+  const manifest = await readFeatureManifest(root, featureId, resolvedRoot);
+  if (manifest) candidates.push(manifest.path, ...manifest.tests);
   for (const featureRoot of FEATURE_ROOTS) {
     candidates.push(...(await walkFiles(root, `${featureRoot}/${featureId}`, resolvedRoot)));
   }
@@ -553,12 +701,28 @@ export async function createPlan({
   }
 
   const files = [...new Set(discovered)].sort();
+  const featureManifests = [];
+  const manifestFeatureByTestPath = new Map();
+  for (const featureId of [...featureIds].sort()) {
+    const manifest = await readFeatureManifest(resolvedRoot, featureId);
+    if (!manifest) continue;
+    featureManifests.push(manifest);
+    for (const testPath of manifest.tests) {
+      const existingFeatureId = manifestFeatureByTestPath.get(testPath);
+      if (existingFeatureId && existingFeatureId !== featureId) {
+        throw new Error(
+          `Feature manifests "${existingFeatureId}" and "${featureId}" both own ${testPath}.`,
+        );
+      }
+      manifestFeatureByTestPath.set(testPath, featureId);
+    }
+  }
   const intentFiles = files.filter((file) => file.endsWith("/feature.contract.ts"));
   const tests = files
     .map((file) => ({
       kind: classifyTest(file),
       path: file,
-      featureId: featureIdFromPath(file, markers),
+      featureId: manifestFeatureByTestPath.get(file) ?? featureIdFromPath(file, markers),
     }))
     .filter((test) => test.kind)
     .sort((left, right) => left.path.localeCompare(right.path));
@@ -591,6 +755,7 @@ export async function createPlan({
   return {
     selector,
     featureIds: [...featureIds].sort(),
+    featureManifests,
     intentFiles,
     files,
     tests,
@@ -604,8 +769,14 @@ export function formatPlan(plan) {
   const lines = [
     "Filesystem test plan",
     `Features: ${plan.featureIds.length ? plan.featureIds.join(", ") : "(none)"}`,
+    `Feature manifests: ${plan.featureManifests.length}`,
     `Tests: ${plan.tests.length}`,
   ];
+  for (const manifest of plan.featureManifests) {
+    lines.push(
+      `  ${manifest.path}: ${manifest.capsules.length} capsules, ${manifest.tests.length} tests`,
+    );
+  }
   if (plan.tests.length === 0) lines.push("No tests selected.");
   const byKind = new Map();
   for (const test of plan.tests) byKind.set(test.kind, (byKind.get(test.kind) ?? 0) + 1);

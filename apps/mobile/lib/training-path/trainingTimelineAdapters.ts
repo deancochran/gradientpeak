@@ -56,15 +56,15 @@ export type CompletedCommonLoadObservationMerge = {
   timeline: Array<
     Omit<
       TrainingPathDailyLoadInput,
-      | "completed_load_tss"
-      | "recommended_load_tss"
-      | "scheduled_load_tss"
-      | "tentative_scheduled_load_tss"
+      | "completed_common_load"
+      | "recommended_common_load"
+      | "scheduled_common_load"
+      | "tentative_scheduled_common_load"
     > & {
-      completed_load_tss: number;
-      recommended_load_tss: number;
-      scheduled_load_tss: number;
-      tentative_scheduled_load_tss?: number;
+      completed_common_load: number;
+      recommended_common_load: number;
+      scheduled_common_load: number;
+      tentative_scheduled_common_load?: number;
     }
   >;
 };
@@ -75,23 +75,25 @@ function normalizeCompletedLoadTimeline(
   return points
     .map((point) => ({
       ...point,
-      completed_load_tss:
-        typeof point.completed_load_tss === "number" && Number.isFinite(point.completed_load_tss)
-          ? point.completed_load_tss
+      completed_common_load:
+        typeof point.completed_common_load === "number" &&
+        Number.isFinite(point.completed_common_load)
+          ? point.completed_common_load
           : 0,
-      recommended_load_tss:
-        typeof point.recommended_load_tss === "number" &&
-        Number.isFinite(point.recommended_load_tss)
-          ? point.recommended_load_tss
+      recommended_common_load:
+        typeof point.recommended_common_load === "number" &&
+        Number.isFinite(point.recommended_common_load)
+          ? point.recommended_common_load
           : 0,
-      scheduled_load_tss:
-        typeof point.scheduled_load_tss === "number" && Number.isFinite(point.scheduled_load_tss)
-          ? point.scheduled_load_tss
+      scheduled_common_load:
+        typeof point.scheduled_common_load === "number" &&
+        Number.isFinite(point.scheduled_common_load)
+          ? point.scheduled_common_load
           : 0,
-      tentative_scheduled_load_tss:
-        typeof point.tentative_scheduled_load_tss === "number" &&
-        Number.isFinite(point.tentative_scheduled_load_tss)
-          ? point.tentative_scheduled_load_tss
+      tentative_scheduled_common_load:
+        typeof point.tentative_scheduled_common_load === "number" &&
+        Number.isFinite(point.tentative_scheduled_common_load)
+          ? point.tentative_scheduled_common_load
           : undefined,
     }))
     .sort((left, right) => left.date.localeCompare(right.date));
@@ -121,7 +123,7 @@ export function mergeCompletedCommonLoadObservations(input: {
     });
     const existing = timelineByDate.get(date);
     if (existing) {
-      timelineByDate.set(date, { ...existing, completed_load_tss: 0 });
+      timelineByDate.set(date, { ...existing, completed_common_load: 0 });
     }
   }
 
@@ -137,7 +139,7 @@ export function mergeCompletedCommonLoadObservations(input: {
       });
       const existing = timelineByDate.get(date);
       if (existing) {
-        timelineByDate.set(date, { ...existing, completed_load_tss: 0 });
+        timelineByDate.set(date, { ...existing, completed_common_load: 0 });
       }
     }
 
@@ -161,13 +163,13 @@ export function mergeCompletedCommonLoadObservations(input: {
         });
       const completedLoad =
         knownAggregate && identitiesCompatible
-          ? (existingObserved ? (existing.completed_load_tss ?? 0) : 0) + aggregate.load
+          ? (existingObserved ? (existing.completed_common_load ?? 0) : 0) + aggregate.load
           : existingObserved
-            ? (existing.completed_load_tss ?? 0)
+            ? (existing.completed_common_load ?? 0)
             : 0;
       timelineByDate.set(observation.date, {
         ...existing,
-        completed_load_tss: completedLoad,
+        completed_common_load: completedLoad,
       });
       completedObservationsByDate.set(observation.date, {
         hasUnavailableCompletedActivity:
@@ -227,16 +229,16 @@ export function buildDailyTrainingAdjustmentPointsFromTimelineWindow(input: {
         hasCompletedActivityWithoutLoad:
           completedObservation?.hasUnavailableCompletedActivity === true,
         hasTargetLoad: input.targetLoadDates?.has(day.date) === true,
-        plannedLoadTss: day.load.scheduledTss,
-        tentativePlannedLoadTss: day.load.tentativeScheduledTss,
-        completedLoadTss: day.load.completedTss,
-        remainingScheduledLoadTss: day.load.remainingTss,
-        targetLoadTss: day.load.recommendedTss ?? day.load.plannedTss,
-        fitnessCtl: fitness?.ctl ?? null,
-        targetFitnessCtl: targetFitness?.ctl ?? null,
-        scheduledFitnessCtl: scheduledFitness?.ctl ?? null,
-        fatigueAtl: scheduledFitness?.atl ?? fitness?.atl ?? null,
-        formTsb: scheduledFitness?.tsb ?? fitness?.tsb ?? null,
+        plannedLoad: day.load.scheduledLoad,
+        tentativePlannedLoad: day.load.tentativeScheduledLoad,
+        completedLoad: day.load.completedLoad,
+        remainingScheduledLoadTss: day.load.remainingLoad,
+        targetLoad: day.load.recommendedLoad ?? day.load.plannedLoad,
+        fitnessCtl: fitness?.longTermLoad ?? null,
+        targetFitnessCtl: targetFitness?.longTermLoad ?? null,
+        scheduledFitnessCtl: scheduledFitness?.longTermLoad ?? null,
+        fatigueAtl: scheduledFitness?.recentLoad ?? fitness?.recentLoad ?? null,
+        formTsb: scheduledFitness?.loadBalance ?? fitness?.loadBalance ?? null,
       };
     }),
   });

@@ -1,21 +1,17 @@
+import type {
+  ActivityObservationQuantificationBundle,
+  ActivityPrescriptionQuantificationBundle,
+} from "@repo/core";
+import { toDateKey } from "@/lib/calendar/dateMath";
+
 export interface CalendarEventActivityPlan {
-  common_load?: unknown;
   id?: string | null;
   name?: string | null;
   description?: string | null;
   notes?: string | null;
   activity_category?: string | null;
-  authoritative_metrics?: {
-    estimated_duration?: number | null;
-    estimated_tss?: number | null;
-    intensity_factor?: number | null;
-    estimated_distance?: number | null;
-  } | null;
-  estimated_duration?: number | null;
-  estimated_tss?: number | null;
-  intensity_factor?: number | null;
-  estimated_distance?: number | null;
   structure?: unknown;
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
 }
 
 export interface CalendarEventOwner {
@@ -25,7 +21,6 @@ export interface CalendarEventOwner {
 }
 
 export interface CalendarEvent {
-  common_load?: unknown;
   id: string;
   event_type?: string | null;
   title?: string | null;
@@ -46,6 +41,8 @@ export interface CalendarEvent {
   owner?: CalendarEventOwner | null;
   activity_plan?: CalendarEventActivityPlan | null;
   route_id?: string | null;
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
+  observationQuantification?: ActivityObservationQuantificationBundle | null;
 }
 
 export type CalendarEventsByDate = Map<string, CalendarEvent[]>;
@@ -115,5 +112,3 @@ export function getMonthDensity(eventsByDate: CalendarEventsByDate, dateKey: str
   return (eventsByDate.get(dateKey) ?? []).filter((event) => event.event_type !== "rest_day")
     .length;
 }
-
-import { toDateKey } from "@/lib/calendar/dateMath";

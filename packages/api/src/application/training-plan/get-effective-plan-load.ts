@@ -1,9 +1,20 @@
 import {
+  type ActivityObservationQuantificationBundle,
+  type ActivityPlanPrescriptionQuantificationBundle,
+  type ActivityPrescriptionQuantificationBundle,
+  activityObservationQuantificationBundleSchema,
+  activityPlanPrescriptionQuantificationBundleSchema,
+  activityPrescriptionQuantificationBundleSchema,
+  bindPrescriptionQuantificationToScheduledEvent,
+  createObservationQuantificationBundle,
+  createPrescriptionQuantificationBundle,
+  createUnavailableActivityPlanPlanningEstimate,
+} from "@repo/core";
+import {
   aggregateCommonLoadEnvelopes,
   buildCommonLoadRecommendation,
   COMMON_RELATIVE_LOAD_MODEL,
   COMMON_RELATIVE_LOAD_VERSION,
-  type CommonLoadAggregate,
   type CommonLoadResult,
   commonLoadAggregateSchema,
   commonLoadRecommendationSchema,
@@ -57,6 +68,22 @@ const sourceCoverageSchema = z
       .nullable(),
   })
   .strict();
+const quantificationIdentityProbeSchema = z
+  .object({
+    summary: z
+      .object({
+        commonLoad: z.object({ model: z.string(), version: z.string() }).passthrough(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+const unavailableReasonSchema = z.enum([
+  "planning_timezone_missing",
+  "planning_timezone_invalid",
+  "missing_quantification",
+  "invalid_quantification",
+  "incompatible_common_load_identity",
+]);
 
 export const getEffectivePlanLoadInputSchema = z
   .object({
@@ -88,6 +115,9 @@ const availableSchema = z
     completed: commonLoadAggregateSchema,
     remaining: commonLoadAggregateSchema,
     tentative: commonLoadAggregateSchema,
+    completedObservationQuantification: activityObservationQuantificationBundleSchema.nullable(),
+    remainingPrescriptionQuantification: activityPrescriptionQuantificationBundleSchema.nullable(),
+    tentativePrescriptionQuantification: activityPrescriptionQuantificationBundleSchema.nullable(),
     effective: effectivePlanCompositionDtoSchema,
     model: z.literal(COMMON_RELATIVE_LOAD_MODEL),
     version: z.literal(COMMON_RELATIVE_LOAD_VERSION),
@@ -99,7 +129,7 @@ const availableSchema = z
 const unavailableSchema = z
   .object({
     status: z.literal("unavailable"),
-    reason: z.enum(["planning_timezone_missing", "planning_timezone_invalid"]),
+    reason: unavailableReasonSchema,
     model: z.literal(COMMON_RELATIVE_LOAD_MODEL),
     version: z.literal(COMMON_RELATIVE_LOAD_VERSION),
     sourceCounts: sourceCountsSchema,
@@ -133,6 +163,35 @@ function unavailableActivityLoad(asOf: string): CommonLoadResult {
   });
 }
 
+type QuantificationUnavailableReason =
+  | "missing_quantification"
+  | "invalid_quantification"
+  | "incompatible_common_load_identity";
+type ParsedQuantification<T> =
+  | { status: "available"; value: T }
+  | { status: "unavailable"; reason: QuantificationUnavailableReason };
+
+function parseQuantificationBundle<TSchema extends z.ZodType>(
+  value: unknown,
+  schema: TSchema,
+): ParsedQuantification<z.output<TSchema>> {
+  if (value === null || value === undefined) {
+    return { status: "unavailable", reason: "missing_quantification" };
+  }
+  const identity = quantificationIdentityProbeSchema.safeParse(value);
+  if (
+    identity.success &&
+    (identity.data.summary.commonLoad.model !== COMMON_RELATIVE_LOAD_MODEL ||
+      identity.data.summary.commonLoad.version !== COMMON_RELATIVE_LOAD_VERSION)
+  ) {
+    return { status: "unavailable", reason: "incompatible_common_load_identity" };
+  }
+  const parsed = schema.safeParse(value);
+  return parsed.success
+    ? { status: "available", value: parsed.data }
+    : { status: "unavailable", reason: "invalid_quantification" };
+}
+
 /**
  * The sole authorized effective Plan Load composition. Events, completions, links and timezone
  * are profile-owned reads; callers may only mark already-loaded scheduled IDs as tentative.
@@ -153,42 +212,28 @@ export async function getEffectivePlanLoad(input: {
       ? { startDate: request.startDate, endDate: request.endDate }
       : {}),
   });
-  if (!facts.planningTimezone) {
-    return unavailableSchema.parse({
+  const unavailable = (reason: z.infer<typeof unavailableReasonSchema>) =>
+    unavailableSchema.parse({
       status: "unavailable",
-      reason: "planning_timezone_missing",
+      reason,
       model: COMMON_RELATIVE_LOAD_MODEL,
       version: COMMON_RELATIVE_LOAD_VERSION,
       sourceCounts: facts.sourceCounts,
       resolvedRange: { ...facts.resolvedRange, timezone: facts.planningTimezone },
       sourceCoverage: facts.sourceCoverage,
     });
+  if (!facts.planningTimezone) {
+    return unavailable("planning_timezone_missing");
   }
   const planningTimezone = facts.planningTimezone;
   try {
     Intl.DateTimeFormat("en-US", { timeZone: planningTimezone }).format();
   } catch {
-    return unavailableSchema.parse({
-      status: "unavailable",
-      reason: "planning_timezone_invalid",
-      model: COMMON_RELATIVE_LOAD_MODEL,
-      version: COMMON_RELATIVE_LOAD_VERSION,
-      sourceCounts: facts.sourceCounts,
-      resolvedRange: { ...facts.resolvedRange, timezone: facts.planningTimezone },
-      sourceCoverage: facts.sourceCoverage,
-    });
+    return unavailable("planning_timezone_invalid");
   }
   const { endDate, startDate } = facts.resolvedRange;
   if (!startDate || !endDate) {
-    return unavailableSchema.parse({
-      status: "unavailable",
-      reason: "planning_timezone_invalid",
-      model: COMMON_RELATIVE_LOAD_MODEL,
-      version: COMMON_RELATIVE_LOAD_VERSION,
-      sourceCounts: facts.sourceCounts,
-      resolvedRange: { ...facts.resolvedRange, timezone: facts.planningTimezone },
-      sourceCoverage: facts.sourceCoverage,
-    });
+    return unavailable("planning_timezone_invalid");
   }
 
   const segments = await loadActivitySegmentsByActivityId(
@@ -203,13 +248,14 @@ export async function getEffectivePlanLoad(input: {
       segments: segments.get(activity.id) ?? [],
     })),
   });
-  const loadByActivity = new Map<string, CommonLoadResult | CommonLoadAggregate>();
+  const completedQuantificationById = new Map<string, ActivityObservationQuantificationBundle>();
   for (const [activityId, summary] of summaries.parent) {
-    // Parent summaries aggregate all represented segments, preserving one completion per activity.
-    const parsed = z
-      .union([commonLoadResultSchema, commonLoadAggregateSchema])
-      .safeParse(summary.common_load);
-    if (parsed.success) loadByActivity.set(activityId, parsed.data);
+    const parsed = parseQuantificationBundle(
+      summary.observationQuantification,
+      activityObservationQuantificationBundleSchema,
+    );
+    if (parsed.status === "unavailable") return unavailable(parsed.reason);
+    completedQuantificationById.set(activityId, parsed.value);
   }
   const activityPlansById = new Map(
     [...facts.events, ...facts.recommendationEvents].flatMap((event) =>
@@ -223,31 +269,58 @@ export async function getEffectivePlanLoad(input: {
     input.profileId,
     { asOf },
   );
-  const plannedLoadById = new Map(plans.map((plan) => [plan.id, plan.common_load]));
+  const plannedQuantificationById = new Map<string, ActivityPlanPrescriptionQuantificationBundle>();
+  for (const plan of plans) {
+    const parsed = parseQuantificationBundle(
+      plan.prescriptionQuantification,
+      activityPlanPrescriptionQuantificationBundleSchema,
+    );
+    if (parsed.status === "unavailable") return unavailable(parsed.reason);
+    plannedQuantificationById.set(plan.id, parsed.value);
+  }
   const tentativeIds = new Set(request.tentativeScheduledItemIds ?? []);
-  const completedActivities = facts.activities
-    .filter((activity) => {
-      const date = localDate(activity.started_at, planningTimezone);
-      return date >= startDate && date <= endDate;
-    })
-    .map((activity) => ({
+  const activitiesInRange = facts.activities.filter((activity) => {
+    const date = localDate(activity.started_at, planningTimezone);
+    return date >= startDate && date <= endDate;
+  });
+  if (activitiesInRange.some((activity) => !completedQuantificationById.has(activity.id))) {
+    return unavailable("missing_quantification");
+  }
+  const completedActivities = activitiesInRange.map((activity) => {
+    const source = completedQuantificationById.get(activity.id);
+    if (!source) throw new Error("Validated completed quantification was not retained");
+    return {
       completedActivityId: activity.id,
       completedDate: localDate(activity.started_at, planningTimezone),
-      commonLoad: loadByActivity.get(activity.id) ?? unavailableActivityLoad(asOf.toISOString()),
-    }));
-  const scheduledItems = facts.events.map((event) => ({
-    scheduledItemId: event.id,
-    scheduledDate: event.scheduled_date,
-    status:
-      event.status === "cancelled" || (event.status === "completed" && !event.linked_activity_id)
-        ? ("cancelled" as const)
-        : ("active" as const),
-    tentative: tentativeIds.has(event.id),
-    linkedCompletedActivityId: event.linked_activity_id,
-    commonLoad:
-      plannedLoadById.get(event.activity_plan_id ?? "") ??
-      unavailableActivityLoad(asOf.toISOString()),
-  }));
+      observationQuantification: source,
+    };
+  });
+  const scheduledItems = facts.events.map((event) => {
+    const planned = plannedQuantificationById.get(event.activity_plan_id ?? "");
+    const source =
+      planned === undefined
+        ? createUnavailableActivityPlanPlanningEstimate({
+            asOf: asOf.toISOString(),
+            stage: "scheduled",
+            ...(event.activity_plan_id ? { planId: event.activity_plan_id } : {}),
+            scheduledEventId: event.id,
+          }).prescriptionQuantification
+        : bindPrescriptionQuantificationToScheduledEvent({
+            prescriptionQuantification: planned,
+            eventId: event.id,
+          });
+    return {
+      scheduledItemId: event.id,
+      scheduledDate: event.scheduled_date,
+      status:
+        event.status === "cancelled" || (event.status === "completed" && !event.linked_activity_id)
+          ? ("cancelled" as const)
+          : ("active" as const),
+      tentative: tentativeIds.has(event.id),
+      linkedCompletedActivityId: event.linked_activity_id,
+      prescriptionQuantification: source,
+    };
+  });
   const composition = composeEffectivePlanDto({
     scheduledItems,
     completedActivities,
@@ -305,6 +378,38 @@ export async function getEffectivePlanLoad(input: {
     composition.status === "available"
       ? aggregateCommonLoadEnvelopes(composition.tentativeItems.map((item) => item.commonLoad))
       : compositionUnavailable;
+  const completedMembers =
+    composition.status === "available"
+      ? composition.firmItems.flatMap((item) =>
+          item.kind === "completed" ? item.observationQuantification.members : [],
+        )
+      : [];
+  const remainingMembers =
+    composition.status === "available"
+      ? composition.firmItems.flatMap((item) =>
+          item.kind === "scheduled" && item.date >= composition.planningDate
+            ? item.prescriptionQuantification.members
+            : [],
+        )
+      : [];
+  const tentativeMembers =
+    composition.status === "available"
+      ? composition.tentativeItems.flatMap((item) =>
+          item.kind === "scheduled" ? item.prescriptionQuantification.members : [],
+        )
+      : [];
+  const completedObservationQuantification =
+    completedMembers.length === 0
+      ? null
+      : createObservationQuantificationBundle({ members: completedMembers });
+  const remainingPrescriptionQuantification =
+    remainingMembers.length === 0
+      ? null
+      : createPrescriptionQuantificationBundle({ members: remainingMembers });
+  const tentativePrescriptionQuantification =
+    tentativeMembers.length === 0
+      ? null
+      : createPrescriptionQuantificationBundle({ members: tentativeMembers });
   const recommendation = buildCommonLoadRecommendation({
     computedAsOf: asOf.toISOString(),
     planningTimezone,
@@ -320,7 +425,7 @@ export async function getEffectivePlanLoad(input: {
         ? localDate(new Date(event.original_starts_at), planningTimezone)
         : event.scheduled_date,
       commonLoad:
-        plannedLoadById.get(event.activity_plan_id ?? "") ??
+        plannedQuantificationById.get(event.activity_plan_id ?? "")?.summary.commonLoad ??
         unavailableActivityLoad(asOf.toISOString()),
     })),
   });
@@ -329,6 +434,9 @@ export async function getEffectivePlanLoad(input: {
     completed,
     remaining,
     tentative,
+    completedObservationQuantification,
+    remainingPrescriptionQuantification,
+    tentativePrescriptionQuantification,
     recommendation,
     effective: composition,
     model: COMMON_RELATIVE_LOAD_MODEL,

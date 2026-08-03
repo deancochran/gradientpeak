@@ -152,6 +152,7 @@ export async function submitImportedActivityArtifact(
       parsedData: input.parsedActivity,
       artifactId,
       providerActiveDurationSeconds: input.activity.providerActiveDurationSeconds,
+      provider: input.activity.provider,
     });
     const summary = analysis.summaryValues;
     const contentVisibility =
@@ -183,9 +184,6 @@ export async function submitImportedActivityArtifact(
       avgSpeedMps: valueOrNull(summary.avg_speed_mps),
       maxSpeedMps: valueOrNull(summary.max_speed_mps),
       normalizedSpeedMps: valueOrNull(summary.normalized_speed_mps),
-      normalizedGradedSpeedMps: valueOrNull(summary.normalized_graded_speed_mps),
-      efficiencyFactor: valueOrNull(summary.efficiency_factor),
-      aerobicDecoupling: valueOrNull(summary.aerobic_decoupling),
       avgTemperature: valueOrNull(summary.avg_temperature),
       poolLengthMeters: valueOrNull(summary.pool_length_meters),
       totalStrokes: valueOrNull(summary.total_strokes),
@@ -205,7 +203,6 @@ export async function submitImportedActivityArtifact(
       analysis: {
         efforts: analysis.effortsToInsert,
         detectedLTHR: analysis.detectedLTHR,
-        activityCompletedAt: analysis.activityCompletedAt,
         ingestion: {
           source: "provider_sync",
           provider: input.activity.provider,

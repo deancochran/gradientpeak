@@ -1,5 +1,4 @@
 import type {
-  ActivityEffortRow,
   ActivityPlanRow,
   ActivityRouteRow,
   ActivityRow,
@@ -7,6 +6,7 @@ import type {
   ProfileMetricRow,
   TrainingPlanRow,
 } from "@repo/db";
+import type { AthletePerformanceModelRepository } from "./athlete-performance-model-repository";
 import type { EventCompletionEventRecord } from "./event-completion-repository";
 
 export interface EventListOwnedInput {
@@ -84,43 +84,6 @@ type ConstraintActivityPlan = Pick<
 >;
 type ProfileMetricValue = Pick<ProfileMetricRow, "value">;
 type ConstraintTrainingPlan = Pick<TrainingPlanRow, "id" | "structure">;
-type EstimationEffort = Omit<
-  Pick<
-    ActivityEffortRow,
-    | "activity_category"
-    | "activity_id"
-    | "calculation_version"
-    | "duration_seconds"
-    | "effort_type"
-    | "id"
-    | "method"
-    | "provenance"
-    | "quality_score"
-    | "recorded_at"
-    | "source"
-    | "unit"
-    | "value"
-  >,
-  "recorded_at"
-> & {
-  recorded_at: string;
-};
-type EstimationProfileMetric = Pick<
-  ProfileMetricRow,
-  | "id"
-  | "calculation_version"
-  | "method"
-  | "metric_type"
-  | "provenance"
-  | "quality_score"
-  | "reference_activity_id"
-  | "source"
-  | "unit"
-  | "value"
-> & {
-  recorded_at: string;
-  reference_activity_category: string | null;
-};
 type EstimationRoute = {
   id: ActivityRouteRow["id"];
   distance_meters: number | null;
@@ -152,7 +115,7 @@ type ProjectionPlannedActivity = Pick<EventRow, "training_plan_id"> & {
 };
 type ProjectionTrainingPlan = Pick<TrainingPlanRow, "id" | "structure">;
 
-export interface EventReadRepository {
+export interface EventReadRepository extends AthletePerformanceModelRepository {
   /** Profile-owned facts for the server-side effective Plan Load projection. */
   getEffectivePlanLoadInputs(input: {
     asOf: Date;
@@ -200,29 +163,24 @@ export interface EventReadRepository {
   ): Promise<PlannedDaySummaryEventRecord[]>;
   getValidateConstraintsInputs(input: {
     activityPlanId: string;
-    effortCutoffIso: string;
+    asOf: Date;
     profileId: string;
     trainingPlanId: string;
   }): Promise<{
     activityPlan: ConstraintActivityPlan | null;
-    lthrMetric: ProfileMetricValue | null;
     profile: SerializedProfileDob | null;
     trainingPlan: ConstraintTrainingPlan | null;
     weightMetric: ProfileMetricValue | null;
   }>;
   getEstimationInputs(input: {
     /**
-     * Stable request instant for metric/effort freshness and access-expiry evaluation.
+     * Stable request instant for access-expiry evaluation.
      * Route rows are current facts: routes have no historical versions to reconstruct at asOf.
      */
     asOfIso: string;
-    effortCutoffIso: string;
     profileId: string;
     routeIds: string[];
   }): Promise<{
-    efforts: EstimationEffort[];
-    metrics: EstimationProfileMetric[];
-    profile: SerializedProfileDob | null;
     routes: EstimationRoute[];
   }>;
   getAccessibleTrainingPlanProjection(input: {

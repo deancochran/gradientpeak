@@ -1,5 +1,13 @@
 import { z } from "zod";
 import {
+  type RunningNormalizedGradedPaceResult,
+  selectRunningNormalizedGradedSpeedMetersPerSecond,
+} from "../calculations/normalized-graded-pace";
+import {
+  type CyclingNormalizedPowerResult,
+  selectCyclingNormalizedPowerWatts,
+} from "../calculations/normalized-power";
+import {
   COMMON_RELATIVE_LOAD_MODEL,
   COMMON_RELATIVE_LOAD_VERSION,
   type CommonLoadMethod,
@@ -10,49 +18,38 @@ import {
   commonThresholdEvidenceSchema,
 } from "../load/common-relative-load";
 import { calculateHeartRateZoneStress } from "../load/heart-rate-zone-stress";
-import { calculateTrainingTSS, getTrainingIntensityZone } from "../load/tss";
+import {
+  type AthletePerformanceTargetFacts,
+  getAvailablePerformanceTargetValue,
+} from "../performance-model";
 import {
   type CanonicalActivityCategory,
   canonicalActivityCategoryValues,
 } from "../schemas/activity-category";
+import {
+  type StoredHeartRateDurationEvidence,
+  storedHeartRateDurationEvidenceSchema,
+} from "../zones/heart-rate-duration";
 import { calculateHRZoneDistribution } from "../zones/hr";
+import { getTrainingIntensityZone } from "../zones/intensity";
 import { calculatePowerZoneDistribution } from "../zones/power";
-import { type ActivityTssMethod, completedActivityCalculationPolicy } from "./calculation-policy";
+import {
+  type ActivityThresholdMethod,
+  completedActivityCalculationPolicy,
+} from "./calculation-policy";
 import {
   type ActivityCalibrationQuality,
   activityCalibrationQualitySchema,
 } from "./calibration-quality";
-import type {
-  ActivityDerivedMetrics,
-  ActivityStressUnavailableReason,
-  ActivityZoneEntry,
-  CurrentActivityTssIdentity,
-} from "./contracts";
+import type { ActivityDerivedMetrics, ActivityZoneEntry } from "./contracts";
 import type { AggregatedStream } from "./stream-contract";
 
 export type ActivityAnalysisContext = {
   profileMetrics: {
-    ftp?: number | null;
-    cycling_power_watts?: number | null;
-    cycling_power_method?: "power_threshold" | "critical_power_threshold" | null;
-    lthr?: number | null;
-    lthr_by_activity_category?: Partial<Record<CanonicalActivityCategory, number | null>> | null;
-    max_hr?: number | null;
     resting_hr?: number | null;
     weight_kg?: number | null;
-    threshold_speed_mps?: number | null;
-    swim_threshold_speed_mps?: number | null;
   };
-  calibrationQuality?: {
-    ftp?: ActivityCalibrationQuality | null;
-    cyclingPower?: ActivityCalibrationQuality | null;
-    runThreshold?: ActivityCalibrationQuality | null;
-    swimThreshold?: ActivityCalibrationQuality | null;
-    lthr?: ActivityCalibrationQuality | null;
-    lthrByActivityCategory?: Partial<
-      Record<CanonicalActivityCategory, ActivityCalibrationQuality | null>
-    > | null;
-  };
+  performanceTargets?: AthletePerformanceTargetFacts | null;
   recentEfforts: Array<{
     recorded_at: string;
     effort_type: "power" | "speed";
@@ -73,7 +70,9 @@ export type ActivitySummaryForAnalysis = {
   started_at: string;
   finished_at: string;
   duration_seconds: number;
+  elapsed_seconds?: number | null;
   moving_seconds?: number | null;
+  timing_coverage?: "complete" | "partial" | "unavailable";
   distance_meters?: number | null;
   avg_heart_rate?: number | null;
   max_heart_rate?: number | null;
@@ -81,9 +80,9 @@ export type ActivitySummaryForAnalysis = {
   max_power?: number | null;
   avg_speed_mps?: number | null;
   max_speed_mps?: number | null;
-  normalized_power?: number | null;
+  normalized_power_result: CyclingNormalizedPowerResult;
   normalized_speed_mps?: number | null;
-  normalized_graded_speed_mps?: number | null;
+  normalized_graded_pace_result?: RunningNormalizedGradedPaceResult | null;
 };
 
 export type ActivityAnalysisStreams = {
@@ -92,39 +91,9 @@ export type ActivityAnalysisStreams = {
   speed?: AggregatedStream | null;
 };
 
-export const activityHeartRateDistributionSchema = z
-  .object({
-    coverageSeconds: z.number().int().positive(),
-    buckets: z
-      .array(
-        z
-          .object({
-            bpm: z.number().int().min(30).max(250),
-            seconds: z.number().int().positive(),
-          })
-          .strict(),
-      )
-      .min(1)
-      .max(221),
-  })
-  .strict()
-  .superRefine((distribution, context) => {
-    if (new Set(distribution.buckets.map(({ bpm }) => bpm)).size !== distribution.buckets.length) {
-      context.addIssue({ code: "custom", path: ["buckets"], message: "HR buckets must be unique" });
-    }
-    if (
-      distribution.buckets.reduce((sum, bucket) => sum + bucket.seconds, 0) !==
-      distribution.coverageSeconds
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["coverageSeconds"],
-        message: "HR coverage must equal the sum of bucket durations",
-      });
-    }
-  });
+export const activityHeartRateDistributionSchema = storedHeartRateDurationEvidenceSchema;
 
-export type ActivityHeartRateDistribution = z.infer<typeof activityHeartRateDistributionSchema>;
+export type ActivityHeartRateDistribution = StoredHeartRateDurationEvidence;
 
 type AnalyzeActivityDerivedMetricsInput = {
   activity: ActivitySummaryForAnalysis;
@@ -153,10 +122,6 @@ const POWER_ZONE_LABELS = [
   "Zone 7 (Neuromuscular)",
 ] as const;
 
-function roundToTwoDecimals(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
 function toZoneEntries(
   values: Record<string, number | undefined>,
   labels: readonly string[],
@@ -172,17 +137,15 @@ function toZoneEntries(
 
 function resolveIntensityFactor(input: {
   normalizedPower?: number | null;
-  avgPower?: number | null;
   ftp?: number | null;
 }): number | null {
-  const { normalizedPower, avgPower, ftp } = input;
+  const { normalizedPower, ftp } = input;
   if (!ftp) return null;
-  const referencePower = [normalizedPower, avgPower].find(
-    (value): value is number => value != null && Number.isFinite(value) && value > 0,
-  );
-  if (referencePower === undefined) return null;
+  if (normalizedPower == null || !Number.isFinite(normalizedPower) || normalizedPower < 0) {
+    return null;
+  }
 
-  return referencePower / ftp;
+  return normalizedPower / ftp;
 }
 
 function resolveHeartRateThresholdIntensityFactor(input: {
@@ -209,7 +172,7 @@ function resolvePaceIntensityFactor(input: {
   }
 
   const referenceSpeed = [normalizedGradedSpeed, normalizedSpeed, avgSpeed].find(
-    (value): value is number => value != null && Number.isFinite(value) && value > 0,
+    (value): value is number => value != null && Number.isFinite(value) && value >= 0,
   );
   if (referenceSpeed === undefined) {
     return null;
@@ -218,40 +181,76 @@ function resolvePaceIntensityFactor(input: {
   return referenceSpeed / thresholdSpeedMps;
 }
 
-type ResolvedTssMethod = {
-  method: ActivityTssMethod;
+type ResolvedCommonLoadMethod = {
+  method: ActivityThresholdMethod;
   intensityFactor: number;
   rawIntensityFactor: number;
-  calibration: CurrentActivityTssIdentity["calibration"];
+  calibration: Pick<CommonThresholdEvidence, "type" | "value">;
   calibrationQuality: ActivityCalibrationQuality | null;
 };
 
-type TssMethodResolution =
-  | { status: "resolved"; value: ResolvedTssMethod }
+type CommonLoadMethodResolution =
+  | { status: "resolved"; value: ResolvedCommonLoadMethod }
   | { status: "invalid_data" | "activity_data_missing" | "threshold_missing" };
 
-type DirectTssSelection = {
+type DirectCommonLoadSelection = {
   attempted: boolean;
   failedMethod: CommonLoadMethod | null;
-  reason: ActivityStressUnavailableReason;
-  resolved: ResolvedTssMethod | null;
+  reason: Extract<CommonLoadResult, { status: "unavailable" }>["reason"];
+  resolved: ResolvedCommonLoadMethod | null;
 };
 
-function resolveLthrCalibration(
+function performanceTargetQuality(
+  fact:
+    | AthletePerformanceTargetFacts["cycling"]["planningThresholdPower"]
+    | AthletePerformanceTargetFacts["running"]["planningThresholdPace"]
+    | AthletePerformanceTargetFacts["swimming"]["css"],
+): ActivityCalibrationQuality | null {
+  if (
+    fact.status !== "available" ||
+    fact.sourceEvidenceIds.length === 0 ||
+    fact.evidenceTime.observedThrough === null
+  )
+    return null;
+  return {
+    source: "modeled",
+    observed_at: fact.evidenceTime.observedThrough,
+    valid_at: fact.evidenceTime.computedAt,
+    confidence: fact.confidence,
+    stale: false,
+    estimate: true,
+    calculation_version: fact.calculationVersion,
+    evidence_fingerprint: fact.sourceEvidenceIds.join(":"),
+  };
+}
+
+function heartRateFactQuality(
+  fact: AthletePerformanceTargetFacts["heartRate"]["bike"]["lthr"] | undefined,
+): ActivityCalibrationQuality | null {
+  if (fact?.status !== "available") return null;
+  return {
+    source: "observed_effort",
+    observed_at: fact.observedAt,
+    valid_at: fact.observedAt,
+    confidence: "high",
+    stale: false,
+    estimate: false,
+    calculation_version: fact.calculationVersion,
+    evidence_fingerprint: fact.sourceEvidenceId,
+  };
+}
+
+function resolveLthrPerformanceTarget(
   context: ActivityAnalysisContext,
   activity_category: CanonicalActivityCategory,
 ): { value: number | null; quality: ActivityCalibrationQuality | null } {
-  const activityCategorySpecificValue =
-    context.profileMetrics.lthr_by_activity_category?.[activity_category];
-  if (activityCategorySpecificValue != null) {
-    return {
-      value: activityCategorySpecificValue,
-      quality: context.calibrationQuality?.lthrByActivityCategory?.[activity_category] ?? null,
-    };
+  if (activity_category !== "bike" && activity_category !== "run" && activity_category !== "swim") {
+    return { value: null, quality: null };
   }
+  const fact = context.performanceTargets?.heartRate[activity_category].lthr;
   return {
-    value: context.profileMetrics.lthr ?? null,
-    quality: context.calibrationQuality?.lthr ?? null,
+    value: fact?.status === "available" ? fact.valueBpm : null,
+    quality: heartRateFactQuality(fact),
   };
 }
 
@@ -272,7 +271,7 @@ function unresolvedMethod(input: {
   threshold: number | null | undefined;
   thresholdIsInvalid: boolean;
   measurement: { value: number | null; hasInvalid: boolean };
-}): Exclude<TssMethodResolution, { status: "resolved" }> | null {
+}): Exclude<CommonLoadMethodResolution, { status: "resolved" }> | null {
   const { threshold, thresholdIsInvalid, measurement } = input;
   if (thresholdIsInvalid || (measurement.value === null && measurement.hasInvalid)) {
     return { status: "invalid_data" };
@@ -282,93 +281,59 @@ function unresolvedMethod(input: {
   return null;
 }
 
-function resolveTssMethod(input: {
-  method: ActivityTssMethod;
+function resolveCommonLoadMethod(input: {
+  method: ActivityThresholdMethod;
   activity_category: CanonicalActivityCategory;
   activity: ActivitySummaryForAnalysis;
   context: ActivityAnalysisContext;
-}): TssMethodResolution {
+}): CommonLoadMethodResolution {
   const { method, activity_category, activity, context } = input;
-  const { profileMetrics } = context;
+  const performanceTargets = context.performanceTargets;
 
   switch (method) {
     case "power_threshold": {
-      const usesCyclingPower = profileMetrics.cycling_power_method === "power_threshold";
-      const ftp = usesCyclingPower
-        ? (profileMetrics.cycling_power_watts ?? null)
-        : (profileMetrics.ftp ?? null);
-      const calibrationQuality = usesCyclingPower
-        ? (context.calibrationQuality?.cyclingPower ?? null)
-        : (context.calibrationQuality?.ftp ?? null);
+      const fact = performanceTargets?.cycling.planningThresholdPower;
+      const planningThresholdPower = fact ? getAvailablePerformanceTargetValue(fact) : null;
+      const calibrationQuality = fact && performanceTargets ? performanceTargetQuality(fact) : null;
       const measurement = resolveMeasurement(
-        [activity.normalized_power, activity.avg_power],
-        isInvalidPositiveValue,
+        [selectCyclingNormalizedPowerWatts(activity.normalized_power_result)],
+        isInvalidNonnegativeValue,
       );
       const unavailable = unresolvedMethod({
-        threshold: ftp,
-        thresholdIsInvalid: isInvalidPositiveValue(ftp),
+        threshold: planningThresholdPower,
+        thresholdIsInvalid: isInvalidPositiveValue(planningThresholdPower),
         measurement,
       });
       if (unavailable) return unavailable;
       const intensityFactor = resolveIntensityFactor({
         normalizedPower: measurement.value,
-        ftp,
+        ftp: planningThresholdPower,
       });
-      return intensityFactor !== null && typeof ftp === "number"
+      return intensityFactor !== null && typeof planningThresholdPower === "number"
         ? {
             status: "resolved",
             value: {
               method,
               intensityFactor: Math.max(0, Math.min(1.5, intensityFactor)),
               rawIntensityFactor: intensityFactor,
-              calibration: { type: "ftp_watts", value: ftp },
+              calibration: { type: "ftp_watts", value: planningThresholdPower },
               calibrationQuality,
             },
           }
         : { status: "invalid_data" };
     }
-    case "critical_power_threshold": {
-      const criticalPower =
-        profileMetrics.cycling_power_method === "critical_power_threshold"
-          ? (profileMetrics.cycling_power_watts ?? null)
-          : null;
-      const measurement = resolveMeasurement(
-        [activity.normalized_power, activity.avg_power],
-        isInvalidPositiveValue,
-      );
-      const unavailable = unresolvedMethod({
-        threshold: criticalPower,
-        thresholdIsInvalid: isInvalidPositiveValue(criticalPower),
-        measurement,
-      });
-      if (unavailable) return unavailable;
-      const intensityFactor = resolveIntensityFactor({
-        normalizedPower: measurement.value,
-        ftp: criticalPower,
-      });
-      return intensityFactor !== null && typeof criticalPower === "number"
-        ? {
-            status: "resolved",
-            value: {
-              method,
-              intensityFactor: Math.max(0, Math.min(1.5, intensityFactor)),
-              rawIntensityFactor: intensityFactor,
-              calibration: { type: "critical_power_watts", value: criticalPower },
-              calibrationQuality: context.calibrationQuality?.cyclingPower ?? null,
-            },
-          }
-        : { status: "invalid_data" };
-    }
     case "run_pace_threshold": {
-      const thresholdSpeedMps = profileMetrics.threshold_speed_mps ?? null;
-      const measurement = resolveMeasurement(
-        [
-          activity.normalized_graded_speed_mps,
-          activity.normalized_speed_mps,
-          activity.avg_speed_mps,
-        ],
-        isInvalidPositiveValue,
-      );
+      const fact = performanceTargets?.running.planningThresholdPace;
+      const pace = fact ? getAvailablePerformanceTargetValue(fact) : null;
+      const thresholdSpeedMps = pace === null ? null : 1_000 / pace;
+      const normalizedGradedPaceResult = activity.normalized_graded_pace_result;
+      const measurement =
+        normalizedGradedPaceResult === undefined || normalizedGradedPaceResult === null
+          ? { value: null, hasInvalid: false }
+          : resolveMeasurement(
+              [selectRunningNormalizedGradedSpeedMetersPerSecond(normalizedGradedPaceResult)],
+              isInvalidNonnegativeValue,
+            );
       const unavailable = unresolvedMethod({
         threshold: thresholdSpeedMps,
         thresholdIsInvalid: isInvalidPositiveValue(thresholdSpeedMps),
@@ -390,13 +355,16 @@ function resolveTssMethod(input: {
                 type: "threshold_speed_mps",
                 value: thresholdSpeedMps,
               },
-              calibrationQuality: context.calibrationQuality?.runThreshold ?? null,
+              calibrationQuality:
+                fact && performanceTargets ? performanceTargetQuality(fact) : null,
             },
           }
         : { status: "invalid_data" };
     }
     case "swim_pace_threshold": {
-      const thresholdSpeedMps = profileMetrics.swim_threshold_speed_mps ?? null;
+      const fact = performanceTargets?.swimming.css;
+      const pace = fact ? getAvailablePerformanceTargetValue(fact) : null;
+      const thresholdSpeedMps = pace === null ? null : 100 / pace;
       // Normalized swim speed is not yet validated strongly enough to reduce intensity.
       // Conservatively use the greater valid value so it cannot understate average-speed load.
       const swimSpeeds = [activity.normalized_speed_mps, activity.avg_speed_mps].filter(
@@ -429,13 +397,14 @@ function resolveTssMethod(input: {
                 type: "swim_threshold_speed_mps",
                 value: thresholdSpeedMps,
               },
-              calibrationQuality: context.calibrationQuality?.swimThreshold ?? null,
+              calibrationQuality:
+                fact && performanceTargets ? performanceTargetQuality(fact) : null,
             },
           }
         : { status: "invalid_data" };
     }
     case "heart_rate_threshold": {
-      const lthrCalibration = resolveLthrCalibration(context, activity_category);
+      const lthrCalibration = resolveLthrPerformanceTarget(context, activity_category);
       const lthr = lthrCalibration.value;
       const measurement = resolveMeasurement([activity.avg_heart_rate], isInvalidHeartRate);
       const unavailable = unresolvedMethod({
@@ -468,6 +437,10 @@ function isInvalidPositiveValue(value: number | null | undefined): boolean {
   return value != null && (!Number.isFinite(value) || value <= 0);
 }
 
+function isInvalidNonnegativeValue(value: number | null | undefined): boolean {
+  return value != null && (!Number.isFinite(value) || value < 0);
+}
+
 function isInvalidHeartRate(value: number | null | undefined): boolean {
   return value != null && (!Number.isFinite(value) || value < 30 || value > 250);
 }
@@ -477,6 +450,7 @@ function isInvalidLthr(value: number | null | undefined): boolean {
 }
 
 function resolveEligibleDurationSeconds(activity: ActivitySummaryForAnalysis): number | null {
+  if (activity.type === "swim" && activity.timing_coverage === "unavailable") return null;
   const movingSeconds = activity.moving_seconds;
   if (movingSeconds == null) return activity.duration_seconds;
   return Number.isFinite(movingSeconds) &&
@@ -486,83 +460,33 @@ function resolveEligibleDurationSeconds(activity: ActivitySummaryForAnalysis): n
     : null;
 }
 
-function resolveTssSelection(input: {
-  activity: ActivitySummaryForAnalysis;
-  context: ActivityAnalysisContext;
-  activity_category: CanonicalActivityCategory | undefined;
-}): { resolved: ResolvedTssMethod | null; reason: ActivityStressUnavailableReason } {
-  const { activity, context, activity_category } = input;
-  if (!Number.isFinite(activity.duration_seconds) || activity.duration_seconds <= 0) {
-    return { resolved: null, reason: "invalid_data" };
-  }
-
-  if (!activity_category) {
-    const suppliedMeasurements = [
-      activity.normalized_power,
-      activity.avg_power,
-      activity.normalized_graded_speed_mps,
-      activity.normalized_speed_mps,
-      activity.avg_speed_mps,
-    ];
-    return {
-      resolved: null,
-      reason:
-        suppliedMeasurements.some(isInvalidPositiveValue) ||
-        isInvalidHeartRate(activity.avg_heart_rate)
-          ? "invalid_data"
-          : "activity_data_missing",
-    };
-  }
-
-  const policyMethods = completedActivityCalculationPolicy[activity_category].tssMethods;
-  const methods =
-    activity_category === "bike" && context.profileMetrics.cycling_power_method
-      ? ([context.profileMetrics.cycling_power_method, "heart_rate_threshold"] as const)
-      : policyMethods;
-  const resolutions = methods.map((method) =>
-    resolveTssMethod({ method, activity_category, activity, context }),
-  );
-  const resolved = resolutions.find(
-    (resolution): resolution is Extract<TssMethodResolution, { status: "resolved" }> =>
-      resolution.status === "resolved",
-  );
-  if (resolved) return { resolved: resolved.value, reason: "threshold_missing" };
-  if (resolutions.some((resolution) => resolution.status === "invalid_data")) {
-    return { resolved: null, reason: "invalid_data" };
-  }
-  if (resolutions.some((resolution) => resolution.status === "activity_data_missing")) {
-    return { resolved: null, reason: "activity_data_missing" };
-  }
-  return { resolved: null, reason: "threshold_missing" };
-}
-
-function resolveDirectTssSelection(input: {
+function resolveDirectCommonLoadSelection(input: {
   activity: ActivitySummaryForAnalysis;
   context: ActivityAnalysisContext;
   activity_category: Extract<CanonicalActivityCategory, "bike" | "run" | "swim">;
-}): DirectTssSelection {
+}): DirectCommonLoadSelection {
   const { activity, context, activity_category } = input;
-  const policyMethods = completedActivityCalculationPolicy[activity_category].tssMethods.filter(
-    (method): method is Exclude<ActivityTssMethod, "heart_rate_threshold"> =>
+  const policyMethods = completedActivityCalculationPolicy[
+    activity_category
+  ].thresholdMethods.filter(
+    (method): method is Exclude<ActivityThresholdMethod, "heart_rate_threshold"> =>
       method !== "heart_rate_threshold",
   );
-  const methods =
-    activity_category === "bike" && context.profileMetrics.cycling_power_method
-      ? [context.profileMetrics.cycling_power_method]
-      : policyMethods;
+  const methods = policyMethods;
   const attempted =
     activity_category === "bike"
-      ? activity.normalized_power != null || activity.avg_power != null
+      ? selectCyclingNormalizedPowerWatts(activity.normalized_power_result) !== null ||
+        activity.avg_power != null
       : activity_category === "run"
-        ? activity.normalized_graded_speed_mps != null ||
+        ? activity.normalized_graded_pace_result != null ||
           activity.normalized_speed_mps != null ||
           activity.avg_speed_mps != null
         : activity.normalized_speed_mps != null || activity.avg_speed_mps != null;
   const resolutions = methods.map((method) =>
-    resolveTssMethod({ method, activity_category, activity, context }),
+    resolveCommonLoadMethod({ method, activity_category, activity, context }),
   );
   const resolved = resolutions.find(
-    (resolution): resolution is Extract<TssMethodResolution, { status: "resolved" }> =>
+    (resolution): resolution is Extract<CommonLoadMethodResolution, { status: "resolved" }> =>
       resolution.status === "resolved",
   );
   if (resolved) {
@@ -666,7 +590,7 @@ function unavailableCommonLoad(input: {
 
 function completeCommonProvenance(input: {
   quality: ActivityCalibrationQuality | null;
-  calibration: CurrentActivityTssIdentity["calibration"];
+  calibration: Pick<CommonThresholdEvidence, "type" | "value">;
   computedAsOf: string;
 }): CompleteCommonProvenance | null {
   const qualityResult = activityCalibrationQualitySchema.safeParse(input.quality);
@@ -687,7 +611,7 @@ function completeCommonProvenance(input: {
   }
 
   const unit =
-    input.calibration.type === "ftp_watts" || input.calibration.type === "critical_power_watts"
+    input.calibration.type === "ftp_watts"
       ? "watts"
       : input.calibration.type === "lthr_bpm"
         ? "beats_per_minute"
@@ -712,15 +636,124 @@ function completeCommonProvenance(input: {
   };
 }
 
-function directCommonMethod(method: ActivityTssMethod): CommonLoadMethod | null {
+function directCommonMethod(method: ActivityThresholdMethod): CommonLoadMethod | null {
   return method === "heart_rate_threshold" ? null : method;
 }
 
+type DirectCommonLoadDurationEvidence =
+  | { status: "complete"; contributingDurationSeconds: number }
+  | {
+      status: "partial";
+      contributingDurationSeconds: number;
+      eligibleDurationSeconds: number;
+      sourceTimeCoverage: number;
+      reason: "activity_data_partial" | "duration_partial";
+    }
+  | { status: "invalid" };
+
+function nearlyEqualDuration(left: number, right: number): boolean {
+  const tolerance = Number.EPSILON * Math.max(1, Math.abs(left), Math.abs(right)) * 16;
+  return Math.abs(left - right) <= tolerance;
+}
+
+function resolveDirectCommonLoadDurationEvidence(input: {
+  activity: ActivitySummaryForAnalysis;
+  durationSeconds: number;
+  method: CommonLoadMethod;
+}): DirectCommonLoadDurationEvidence {
+  if (input.method === "swim_pace_threshold" && input.activity.timing_coverage === "partial") {
+    return {
+      status: "partial",
+      contributingDurationSeconds: input.durationSeconds,
+      eligibleDurationSeconds: input.durationSeconds,
+      sourceTimeCoverage: 1,
+      reason: "duration_partial",
+    };
+  }
+  if (input.method === "run_pace_threshold") {
+    const normalizedGradedPaceResult = input.activity.normalized_graded_pace_result;
+    if (normalizedGradedPaceResult === null || normalizedGradedPaceResult === undefined) {
+      return { status: "invalid" };
+    }
+    if (selectRunningNormalizedGradedSpeedMetersPerSecond(normalizedGradedPaceResult) === null) {
+      return { status: "invalid" };
+    }
+    const diagnosticDuration = normalizedGradedPaceResult.diagnostics.contributingDurationSeconds;
+    if (
+      !Number.isFinite(diagnosticDuration) ||
+      diagnosticDuration <= 0 ||
+      (diagnosticDuration > input.durationSeconds &&
+        !nearlyEqualDuration(diagnosticDuration, input.durationSeconds))
+    ) {
+      return { status: "invalid" };
+    }
+    const contributingDurationSeconds = nearlyEqualDuration(
+      diagnosticDuration,
+      input.durationSeconds,
+    )
+      ? input.durationSeconds
+      : diagnosticDuration;
+    if (
+      normalizedGradedPaceResult.status === "partial" ||
+      !nearlyEqualDuration(contributingDurationSeconds, input.durationSeconds)
+    ) {
+      return {
+        status: "partial",
+        contributingDurationSeconds,
+        eligibleDurationSeconds: input.durationSeconds,
+        sourceTimeCoverage: contributingDurationSeconds / input.durationSeconds,
+        reason:
+          normalizedGradedPaceResult.status === "partial"
+            ? "activity_data_partial"
+            : "duration_partial",
+      };
+    }
+    return { status: "complete", contributingDurationSeconds };
+  }
+  if (input.method !== "power_threshold") {
+    return { status: "complete", contributingDurationSeconds: input.durationSeconds };
+  }
+
+  const normalizedPowerResult = input.activity.normalized_power_result;
+  if (selectCyclingNormalizedPowerWatts(normalizedPowerResult) === null) {
+    return { status: "invalid" };
+  }
+
+  const diagnosticDuration = normalizedPowerResult.diagnostics.contributingDurationSeconds;
+  if (
+    !Number.isFinite(diagnosticDuration) ||
+    diagnosticDuration <= 0 ||
+    (diagnosticDuration > input.durationSeconds &&
+      !nearlyEqualDuration(diagnosticDuration, input.durationSeconds))
+  ) {
+    return { status: "invalid" };
+  }
+  const contributingDurationSeconds = nearlyEqualDuration(diagnosticDuration, input.durationSeconds)
+    ? input.durationSeconds
+    : diagnosticDuration;
+  const sourceTimeCoverage = contributingDurationSeconds / input.durationSeconds;
+  if (
+    normalizedPowerResult.status === "partial" ||
+    !nearlyEqualDuration(contributingDurationSeconds, input.durationSeconds)
+  ) {
+    return {
+      status: "partial",
+      contributingDurationSeconds,
+      eligibleDurationSeconds: input.durationSeconds,
+      sourceTimeCoverage,
+      reason:
+        normalizedPowerResult.status === "partial" ? "activity_data_partial" : "duration_partial",
+    };
+  }
+  return { status: "complete", contributingDurationSeconds };
+}
+
 function resolveDirectCommonLoad(input: {
+  activity: ActivitySummaryForAnalysis;
   activity_category: CanonicalActivityCategory;
   durationSeconds: number;
   computedAsOf: string;
-  resolved: ResolvedTssMethod;
+  resolved: ResolvedCommonLoadMethod;
   evidenceFingerprint: string;
 }): CommonLoadResult {
   const method = directCommonMethod(input.resolved.method);
@@ -767,13 +800,38 @@ function resolveDirectCommonLoad(input: {
     });
   }
 
-  return calculateAvailableCommonLoad({
+  const durationEvidence = resolveDirectCommonLoadDurationEvidence({
+    activity: input.activity,
+    durationSeconds: input.durationSeconds,
+    method,
+  });
+  if (durationEvidence.status === "invalid") {
+    return unavailableCommonLoad({
+      activity_category: input.activity_category,
+      computedAsOf: input.computedAsOf,
+      contributingDurationSeconds: null,
+      reason: "invalid_data",
+    });
+  }
+
+  const calculated = calculateAvailableCommonLoad({
     activity_category: input.activity_category,
     method,
     intensity: input.resolved.rawIntensityFactor,
-    contributingDurationSeconds: input.durationSeconds,
+    contributingDurationSeconds: durationEvidence.contributingDurationSeconds,
     ...provenance,
     estimated: provenance.quality.estimate,
+  });
+  if (durationEvidence.status === "complete" || calculated.status !== "available") {
+    return calculated;
+  }
+  const { estimated: _estimated, status: _status, ...retained } = calculated;
+  return commonLoadResultSchema.parse({
+    status: "partial",
+    ...retained,
+    eligibleDurationSeconds: durationEvidence.eligibleDurationSeconds,
+    sourceTimeCoverage: durationEvidence.sourceTimeCoverage,
+    reason: durationEvidence.reason,
   });
 }
 
@@ -786,7 +844,7 @@ function resolveHeartRateCommonLoad(input: {
   distribution: ActivityHeartRateDistribution | null | undefined;
   evidenceFingerprint: string;
 }): CommonLoadResult {
-  const method = "heart_rate_zones" as const;
+  const method: CommonLoadMethod = "heart_rate_zones";
   if (isInvalidLthr(input.lthr)) {
     return unavailableCommonLoad({
       activity_category: input.activity_category,
@@ -839,10 +897,7 @@ function resolveHeartRateCommonLoad(input: {
     });
   }
   const distributionResult = activityHeartRateDistributionSchema.safeParse(input.distribution);
-  if (
-    !distributionResult.success ||
-    distributionResult.data.coverageSeconds > input.durationSeconds
-  ) {
+  if (!distributionResult.success) {
     return unavailableCommonLoad({
       activity_category: input.activity_category,
       computedAsOf: input.computedAsOf,
@@ -852,47 +907,47 @@ function resolveHeartRateCommonLoad(input: {
       provenance,
     });
   }
-  const distribution = distributionResult.data;
-  const sourceTimeCoverage = distribution.coverageSeconds / input.durationSeconds;
-  if (sourceTimeCoverage < 0.5) {
-    return unavailableCommonLoad({
-      activity_category: input.activity_category,
-      computedAsOf: input.computedAsOf,
-      contributingDurationSeconds: distribution.coverageSeconds,
-      eligibleDurationSeconds: input.durationSeconds,
-      sourceTimeCoverage,
-      reason: "insufficient_coverage",
-      method,
-      provenance,
-    });
-  }
   const zoneStress = calculateHeartRateZoneStress({
     durationSeconds: input.durationSeconds,
     lthrBpm: input.lthr,
-    distribution,
+    distribution: distributionResult.data,
   });
-  if (!zoneStress) {
+  if (zoneStress.status === "unavailable") {
+    const reason: Extract<CommonLoadResult, { status: "unavailable" }>["reason"] =
+      zoneStress.reason === "insufficient_coverage"
+        ? "insufficient_coverage"
+        : zoneStress.reason === "activity_data_missing"
+          ? "activity_data_missing"
+          : zoneStress.reason === "intensity_out_of_range"
+            ? "intensity_out_of_range"
+            : "invalid_data";
     return unavailableCommonLoad({
       activity_category: input.activity_category,
       computedAsOf: input.computedAsOf,
-      contributingDurationSeconds: distribution.coverageSeconds,
-      reason: "invalid_data",
+      contributingDurationSeconds:
+        zoneStress.contributingDurationSeconds > 0 ? zoneStress.contributingDurationSeconds : null,
+      ...(reason === "insufficient_coverage"
+        ? {
+            eligibleDurationSeconds: zoneStress.eligibleDurationSeconds,
+            sourceTimeCoverage: zoneStress.coverageRatio,
+          }
+        : {}),
+      reason,
       method,
       provenance,
     });
   }
-  if (distribution.coverageSeconds === input.durationSeconds) {
+  if (zoneStress.status === "available") {
     return calculateAvailableCommonLoad({
       activity_category: input.activity_category,
       method,
       intensity: zoneStress.rawEquivalentIntensityFactor,
-      contributingDurationSeconds: distribution.coverageSeconds,
+      contributingDurationSeconds: zoneStress.contributingDurationSeconds,
       ...provenance,
       estimated: provenance.quality.estimate,
     });
   }
 
-  const intensity = zoneStress.rawEquivalentIntensityFactor;
   return commonLoadResultSchema.parse({
     status: "partial",
     model: COMMON_RELATIVE_LOAD_MODEL,
@@ -903,12 +958,12 @@ function resolveHeartRateCommonLoad(input: {
     thresholdEvidence: provenance.thresholdEvidence,
     evidenceFingerprint: provenance.evidenceFingerprint,
     computedAsOf: input.computedAsOf,
-    load: zoneStress.rawTss,
-    intensity,
-    contributingDurationSeconds: distribution.coverageSeconds,
-    eligibleDurationSeconds: input.durationSeconds,
-    sourceTimeCoverage,
-    reason: "duration_partial",
+    load: zoneStress.rawLoad,
+    intensity: zoneStress.rawEquivalentIntensityFactor,
+    contributingDurationSeconds: zoneStress.contributingDurationSeconds,
+    eligibleDurationSeconds: zoneStress.eligibleDurationSeconds,
+    sourceTimeCoverage: zoneStress.coverageRatio,
+    reason: "activity_data_partial",
   });
 }
 
@@ -917,44 +972,35 @@ export function analyzeActivityDerivedMetrics(
 ): ActivityDerivedMetrics {
   const { activity, context, streams, heartRateDistribution } = input;
   const computedAsOf = input.computedAsOf ?? activity.started_at;
-  const ftp = context.profileMetrics.ftp ?? null;
-  const lthr = context.profileMetrics.lthr ?? null;
-  const maxHr = context.profileMetrics.max_hr ?? null;
   const restingHr = context.profileMetrics.resting_hr ?? null;
   const activity_category = canonicalActivityCategoryValues.find(
     (candidate) => candidate === activity.type,
   ) as CanonicalActivityCategory | undefined;
-  const selection = resolveTssSelection({ activity, context, activity_category });
-  const resolvedMethod = selection.resolved;
-  const fullPrecisionIntensityFactor = resolvedMethod?.intensityFactor ?? null;
-  const intensityFactor =
-    fullPrecisionIntensityFactor === null ? null : roundToTwoDecimals(fullPrecisionIntensityFactor);
-  const tssIdentity: CurrentActivityTssIdentity | null =
-    activity_category && resolvedMethod
-      ? {
-          activity_category,
-          method: resolvedMethod.method,
-          source: "activity_analysis",
-          version: "1",
-          calibration: resolvedMethod.calibration,
-        }
-      : null;
-
-  const tss =
-    fullPrecisionIntensityFactor !== null
-      ? Math.round(calculateTrainingTSS(activity.duration_seconds, fullPrecisionIntensityFactor))
-      : null;
-
   const commonActivityCategory = activity_category ?? "other";
+  const planningThresholdPower = context.performanceTargets
+    ? getAvailablePerformanceTargetValue(context.performanceTargets.cycling.planningThresholdPower)
+    : null;
+  const categoryHeartRateFacts =
+    activity_category === "bike" || activity_category === "run" || activity_category === "swim"
+      ? context.performanceTargets?.heartRate[activity_category]
+      : undefined;
+  const lthr =
+    categoryHeartRateFacts?.lthr.status === "available"
+      ? categoryHeartRateFacts.lthr.valueBpm
+      : null;
+  const maxHr =
+    categoryHeartRateFacts?.maxHr.status === "available"
+      ? categoryHeartRateFacts.maxHr.valueBpm
+      : null;
   const hasValidDuration =
     Number.isFinite(activity.duration_seconds) && activity.duration_seconds > 0;
   const eligibleDurationSeconds = resolveEligibleDurationSeconds(activity);
   const lthrCalibration = activity_category
-    ? resolveLthrCalibration(context, activity_category)
+    ? resolveLthrPerformanceTarget(context, activity_category)
     : null;
   const directSelection =
     activity_category === "run" || activity_category === "bike" || activity_category === "swim"
-      ? resolveDirectTssSelection({ activity, context, activity_category })
+      ? resolveDirectCommonLoadSelection({ activity, context, activity_category })
       : null;
   const directCommonLoad: CommonLoadResult | null =
     hasValidDuration && directSelection?.attempted
@@ -964,9 +1010,13 @@ export function analyzeActivityDerivedMetrics(
               activity_category: commonActivityCategory,
               computedAsOf,
               contributingDurationSeconds: null,
-              reason: "invalid_data",
+              reason:
+                activity.type === "swim" && activity.timing_coverage !== "complete"
+                  ? "duration_missing"
+                  : "invalid_data",
             })
           : resolveDirectCommonLoad({
+              activity,
               activity_category: commonActivityCategory,
               durationSeconds: eligibleDurationSeconds,
               computedAsOf,
@@ -976,9 +1026,9 @@ export function analyzeActivityDerivedMetrics(
                 activity_category,
                 directSelection.resolved.method,
                 activity.duration_seconds,
-                activity.normalized_power ?? null,
+                activity.normalized_power_result,
                 activity.avg_power ?? null,
-                activity.normalized_graded_speed_mps ?? null,
+                activity.normalized_graded_pace_result ?? null,
                 activity.normalized_speed_mps ?? null,
                 activity.avg_speed_mps ?? null,
                 directSelection.resolved.calibrationQuality?.evidence_fingerprint ?? null,
@@ -1029,7 +1079,9 @@ export function analyzeActivityDerivedMetrics(
                 lthrCalibration?.quality?.evidence_fingerprint ?? null,
               ])}`,
             });
-            return directCommonLoad !== null && heartRateCommonLoad.status === "unavailable"
+            return directCommonLoad !== null &&
+              heartRateCommonLoad.status === "unavailable" &&
+              heartRateCommonLoad.quality === null
               ? directCommonLoad
               : heartRateCommonLoad;
           })();
@@ -1041,27 +1093,33 @@ export function analyzeActivityDerivedMetrics(
     restingHr,
   });
 
-  const hrZones = toZoneEntries(
-    calculateHRZoneDistribution(streams?.heart_rate ?? undefined, lthr),
-    HR_ZONE_LABELS,
-  );
+  const heartRateZoneDuration = calculateHRZoneDistribution(streams?.heart_rate ?? undefined, lthr);
+  const hrZones =
+    heartRateZoneDuration.status === "unavailable"
+      ? []
+      : heartRateZoneDuration.zoneSeconds
+          .map((seconds, index) => ({
+            zone: index + 1,
+            seconds: Math.max(0, Math.round(seconds)),
+            label: HR_ZONE_LABELS[index] ?? `Zone ${index + 1}`,
+          }))
+          .filter((entry) => entry.seconds > 0);
   const powerZones = toZoneEntries(
-    calculatePowerZoneDistribution(streams?.power ?? undefined, ftp),
+    calculatePowerZoneDistribution(streams?.power ?? undefined, planningThresholdPower),
     POWER_ZONE_LABELS,
   );
 
+  const trainingEffect =
+    commonLoad.status === "available" || commonLoad.status === "partial"
+      ? resolveTrainingEffect(commonLoad.intensity)
+      : null;
+
   return {
     stress: {
-      tss,
-      tss_identity: tssIdentity,
-      intensity_factor: intensityFactor,
-      method: resolvedMethod?.method ?? null,
-      unavailable_reason: resolvedMethod ? null : selection.reason,
-      calibration_quality: resolvedMethod?.calibrationQuality ?? null,
       common_load: commonLoad,
       trimp,
       trimp_source: trimp !== null ? "hr" : null,
-      training_effect: resolveTrainingEffect(intensityFactor),
+      training_effect: trainingEffect,
     },
     zones: {
       hr: hrZones,

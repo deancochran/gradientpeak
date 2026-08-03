@@ -1,8 +1,8 @@
+import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
 import { act, fireEvent, renderNative, screen } from "../../../test/render-native";
 import {
   formatPlannedDayActivityCategories,
   formatPlannedDayDuration,
-  formatPlannedDayTss,
   type MobilePlannedDaySummaryData,
   PlannedDaySummary,
 } from "../PlannedDaySummary";
@@ -12,6 +12,15 @@ jest.mock("../plannedDaySummaryAccessibility", () => ({
   __esModule: true,
   announcePlannedDaySummaryRetryStatus: jest.fn(),
 }));
+
+function aggregateQuantification(load: number | null) {
+  return createPrescriptionQuantificationBundleFixture({
+    activityCategory: "bike",
+    durationSeconds: 5_400,
+    load: load ?? 64,
+    status: load === null ? "threshold_missing" : "available",
+  });
+}
 
 const data: MobilePlannedDaySummaryData = {
   source: {
@@ -25,7 +34,7 @@ const data: MobilePlannedDaySummaryData = {
     eventCount: 2,
     activity_categories: ["bike", "run"],
     totalDurationSeconds: 5_400,
-    totalTss: 87.25,
+    prescriptionQuantification: aggregateQuantification(87.25),
   },
 };
 
@@ -38,7 +47,11 @@ describe("PlannedDaySummary", () => {
     expect(screen.getByText("2 Events")).toBeTruthy();
     expect(screen.getByText("Bike + Run")).toBeTruthy();
     expect(screen.getByText("1h 30m")).toBeTruthy();
-    expect(screen.getByText("87.3 TSS")).toBeTruthy();
+    expect(screen.getByText("Common Load")).toBeTruthy();
+    expect(screen.getByText("87.3")).toBeTruthy();
+    expect(screen.getByText("Normalized intensity")).toBeTruthy();
+    expect(screen.getByText("0.76")).toBeTruthy();
+    expect(screen.getByText(/Derived\. Common Load is available/)).toBeTruthy();
     expect(screen.getByLabelText("Bike plus Run")).toBeTruthy();
     expect(
       screen.getByText(/Scheduled\/completed planned workload; cancelled excluded/),
@@ -60,13 +73,7 @@ describe("PlannedDaySummary", () => {
     ).toBeNull();
   });
 
-  it("formats finite fractional TSS and marks null or nonfinite values unavailable", () => {
-    expect(formatPlannedDayTss(42.04)).toBe("42 TSS");
-    expect(formatPlannedDayTss(42.06)).toBe("42.1 TSS");
-    expect(formatPlannedDayTss(null)).toBe("Unavailable");
-    expect(formatPlannedDayTss(Number.NaN)).toBe("Unavailable");
-    expect(formatPlannedDayTss(Number.POSITIVE_INFINITY)).toBe("Unavailable");
-    expect(formatPlannedDayTss(Number.NEGATIVE_INFINITY)).toBe("Unavailable");
+  it("formats duration without turning unavailable values into zero", () => {
     expect(formatPlannedDayDuration(5_400)).toBe("1h 30m");
     expect(formatPlannedDayDuration(90)).toBe("1m 30s");
     expect(formatPlannedDayDuration(Number.NaN)).toBe("Unavailable");
@@ -145,7 +152,7 @@ describe("PlannedDaySummary", () => {
           summary: {
             ...data.summary,
             totalDurationSeconds: null,
-            totalTss: null,
+            prescriptionQuantification: aggregateQuantification(null),
           },
         }}
         error={false}
@@ -155,7 +162,7 @@ describe("PlannedDaySummary", () => {
     );
     expect(screen.getByText(/Partial information:/)).toBeTruthy();
     expect(screen.getByText(/unavailable planned estimates/)).toBeTruthy();
-    expect(screen.getAllByText("Unavailable")).toHaveLength(2);
+    expect(screen.getAllByText("Unavailable")).toHaveLength(3);
 
     rerender(
       <PlannedDaySummary

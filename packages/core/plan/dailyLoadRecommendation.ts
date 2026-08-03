@@ -60,9 +60,9 @@ export interface DailyLoadRecommendationSchedulingConstraints {
 }
 
 export interface DailyLoadRecommendationCapacityContext {
-  startingCtl?: number | null;
-  startingAtl?: number | null;
-  startingTsb?: number | null;
+  startingLongTermLoad?: number | null;
+  startingRecentLoad?: number | null;
+  startingLoadBalance?: number | null;
   readinessScore?: number | null;
 }
 
@@ -71,7 +71,7 @@ export interface DailyLoadRecommendationWeeklyTarget {
   weekStartDate?: string;
   startDate?: string;
   endDate?: string;
-  targetTss?: number | null;
+  targetLoad?: number | null;
   targetDurationMinutes?: number | null;
   targetFatigueCost?: number | null;
   targetStrengthSets?: number | null;
@@ -83,7 +83,7 @@ export interface DailyLoadRecommendationWeeklyTarget {
 export interface DailyLoadRecommendationSession {
   date?: string | null;
   offsetDays?: number | null;
-  estimatedTss?: number | null;
+  estimatedCommonLoad?: number | null;
   estimatedDurationMinutes?: number | null;
   estimatedFatigueCost?: number | null;
   estimatedStrengthSets?: number | null;
@@ -94,7 +94,7 @@ export interface DailyLoadRecommendationSession {
 
 export interface DailyLoadRecommendationActualOrScheduledPoint {
   date: string;
-  tss?: number | null;
+  load?: number | null;
 }
 
 export type DailyLoadRecommendationDisposition =
@@ -104,7 +104,7 @@ export type DailyLoadRecommendationDisposition =
   | "abstain";
 
 export interface DailyLoadRecommendationActionableValues {
-  recommendedLoadTss: number;
+  recommendedLoad: number;
   recommendedDurationMinutes: number;
   recommendedFatigueCost: number;
   recommendedStrengthSets: number;
@@ -115,15 +115,15 @@ export interface DailyLoadRecommendationPoint {
   recommendationState: "recommendation" | "maintenance_only" | "clarification_required" | "abstain";
   recommendationDisposition: DailyLoadRecommendationDisposition;
   actionableRecommendation: DailyLoadRecommendationActionableValues | null;
-  recommendedLoadTss: number;
+  recommendedLoad: number;
   recommendedDurationMinutes: number;
   recommendedFatigueCost: number;
   recommendedStrengthSets: number;
   primaryFocus: DailyLoadRecommendationPrimaryFocus;
   activityCategory: DailyLoadRecommendationActivityCategory;
-  scheduledLoadTss: number;
-  completedLoadTss: number;
-  loadDeltaTss: number;
+  scheduledLoad: number;
+  completedLoad: number;
+  loadDeltaLoad: number;
   confidence: "low" | "medium" | "high";
   confidence_score?: number;
   reasonCodes: string[];
@@ -188,7 +188,7 @@ const UTC_WEEKDAY_NAMES = [
 ] as const;
 
 const DEFAULT_WEEKLY_SESSION_COUNT = 3;
-const TSS_EPSILON = 0.000001;
+const COMMON_LOAD_EPSILON = 0.000001;
 
 type DailyLoadConfidenceBucket = DailyLoadRecommendationPoint["confidence"];
 
@@ -207,7 +207,7 @@ type WeeklyAllocationCategory = NonNullable<
 interface PlannedSessionAssignment {
   activityCategory?: DailyLoadRecommendationActivityCategory;
   primaryFocus?: DailyLoadRecommendationPrimaryFocus;
-  estimatedTss?: number;
+  estimatedCommonLoad?: number;
   estimatedDurationMinutes?: number;
 }
 
@@ -255,10 +255,10 @@ function orderedReasonCodes(reasons: string[]): string[] {
 
 function confidenceScoreForRecommendedDay(input: {
   hasWeeklyTarget: boolean;
-  weekTargetTss: number;
+  weekTargetLoad: number;
   isPartialWeek: boolean;
   hasSession: boolean;
-  hasEstimatedSessionTss: boolean;
+  hasEstimatedSessionLoad: boolean;
   hasExplicitSessionFocus: boolean;
   hasExplicitSessionCategory: boolean;
   hasPreferredWeekdays: boolean;
@@ -270,16 +270,16 @@ function confidenceScoreForRecommendedDay(input: {
 }): number {
   let score = 20;
   if (input.hasWeeklyTarget) score += 25;
-  if (input.weekTargetTss > 0) score += 10;
+  if (input.weekTargetLoad > 0) score += 10;
   if (input.hasSession) score += 20;
-  if (input.hasEstimatedSessionTss) score += 10;
+  if (input.hasEstimatedSessionLoad) score += 10;
   if (input.hasExplicitSessionFocus) score += 5;
   if (input.hasExplicitSessionCategory) score += 5;
   if (input.hasPreferredWeekdays) score += 15;
   if (input.hasScheduledLoad) score += 5;
   if (input.hasCompletedLoad) score += 5;
   if (!input.hasWeeklyTarget) score -= 15;
-  if (input.weekTargetTss <= 0) score -= 20;
+  if (input.weekTargetLoad <= 0) score -= 20;
   if (input.usedDefaultWeekdayFallback) score -= 10;
   if (input.isPartialWeek) score -= 5;
   if (input.isHardRestDay) score -= 5;
@@ -289,10 +289,10 @@ function confidenceScoreForRecommendedDay(input: {
 
 function reasonCodesForRecommendedDay(input: {
   hasWeeklyTarget: boolean;
-  weekTargetTss: number;
+  weekTargetLoad: number;
   isPartialWeek: boolean;
   hasSession: boolean;
-  hasEstimatedSessionTss: boolean;
+  hasEstimatedSessionLoad: boolean;
   hasExplicitSessionFocus: boolean;
   hasExplicitSessionCategory: boolean;
   hasPreferredWeekdays: boolean;
@@ -305,10 +305,10 @@ function reasonCodesForRecommendedDay(input: {
   return orderedReasonCodes([
     "daily_recommended_load_v1",
     input.hasWeeklyTarget ? "source_weekly_target" : "source_missing_weekly_target",
-    input.weekTargetTss <= 0 ? "target_zero_tss" : "target_positive_tss",
+    input.weekTargetLoad <= 0 ? "target_zero_load" : "target_positive_load",
     ...(input.isPartialWeek ? ["partial_week_scaled"] : []),
     input.hasSession ? "source_planned_session" : "fallback_no_planned_session",
-    ...(input.hasEstimatedSessionTss ? ["planned_session_estimated_tss"] : []),
+    ...(input.hasEstimatedSessionLoad ? ["planned_session_estimated_load"] : []),
     ...(input.hasExplicitSessionFocus ? ["planned_session_explicit_focus"] : []),
     ...(input.hasExplicitSessionCategory ? ["planned_session_explicit_activity"] : []),
     input.hasPreferredWeekdays
@@ -324,7 +324,7 @@ function reasonCodesForRecommendedDay(input: {
 
 function confidenceScoreForDistributionPoint(input: {
   hasWeeklyTarget: boolean;
-  weeklyTss: number;
+  weeklyLoad: number;
   isPartialWeek: boolean;
   hasPreferenceProfile: boolean;
   hasAvailabilityWindows: boolean;
@@ -336,7 +336,7 @@ function confidenceScoreForDistributionPoint(input: {
 }): number {
   let score = 20;
   if (input.hasWeeklyTarget) score += 25;
-  if (input.weeklyTss > 0) score += 10;
+  if (input.weeklyLoad > 0) score += 10;
   if (input.hasPreferenceProfile) score += 20;
   if (input.hasExplicitSchedulingConstraints) score += 15;
   if (input.hasAvailabilityWindows) score += 10;
@@ -344,7 +344,7 @@ function confidenceScoreForDistributionPoint(input: {
   if (input.selectedHasPlannedSession) score += 5;
   if (input.hasWeeklyAllocation) score += 5;
   if (!input.hasWeeklyTarget) score -= 15;
-  if (input.weeklyTss <= 0) score -= 20;
+  if (input.weeklyLoad <= 0) score -= 20;
   if (input.isPartialWeek) score -= 5;
   if (input.isRestDay && !input.hasPlannedSessions) score -= 5;
   return clamp(score, 0, 100);
@@ -435,10 +435,10 @@ function focusFromSession(
   if (intent.includes("tempo")) return "tempo";
   if (intent.includes("vo2")) return "vo2";
   if (intent.includes("strength")) return "strength_endurance";
-  const tss = toFinitePositive(session.estimatedTss);
-  if (tss >= 110) return "long_endurance";
-  if (tss >= 75) return "threshold";
-  if (tss >= 40) return "endurance";
+  const load = toFinitePositive(session.estimatedCommonLoad);
+  if (load >= 110) return "long_endurance";
+  if (load >= 75) return "threshold";
+  if (load >= 40) return "endurance";
   return "recovery";
 }
 
@@ -497,7 +497,7 @@ function distributionWeightForFocus(focus: DailyLoadRecommendationPrimaryFocus):
   }
 }
 
-function tssPerMinuteForFocus(focus: DailyLoadRecommendationPrimaryFocus): number {
+function loadPerMinuteForFocus(focus: DailyLoadRecommendationPrimaryFocus): number {
   switch (focus) {
     case "threshold":
     case "tempo":
@@ -522,9 +522,9 @@ function resolveCapacityMultiplier(
   context: DailyLoadRecommendationCapacityContext | null | undefined,
 ) {
   const readiness = finitePositive(context?.readinessScore);
-  const tsb =
-    typeof context?.startingTsb === "number" && Number.isFinite(context.startingTsb)
-      ? context.startingTsb
+  const loadBalance =
+    typeof context?.startingLoadBalance === "number" && Number.isFinite(context.startingLoadBalance)
+      ? context.startingLoadBalance
       : null;
   let multiplier = 1;
 
@@ -534,9 +534,9 @@ function resolveCapacityMultiplier(
     else if (readiness > 80) multiplier *= 1.1;
   }
 
-  if (tsb !== null) {
-    if (tsb < -25) multiplier *= 0.75;
-    else if (tsb < -10) multiplier *= 0.9;
+  if (loadBalance !== null) {
+    if (loadBalance < -25) multiplier *= 0.75;
+    else if (loadBalance < -10) multiplier *= 0.9;
   }
 
   return clamp(multiplier, 0.5, 1.15);
@@ -545,14 +545,14 @@ function resolveCapacityMultiplier(
 function resolveAthleteCapacityCap(
   context: DailyLoadRecommendationCapacityContext | null | undefined,
 ): number | null {
-  const ctl = finitePositive(context?.startingCtl);
-  if (ctl === null) return null;
-  const lowFitnessCap = ctl < 35 ? ctl * 1.25 + 10 : ctl * 1.6 + 15;
+  const longTermLoad = finitePositive(context?.startingLongTermLoad);
+  if (longTermLoad === null) return null;
+  const lowFitnessCap = longTermLoad < 35 ? longTermLoad * 1.25 + 10 : longTermLoad * 1.6 + 15;
   return Math.max(20, lowFitnessCap * resolveCapacityMultiplier(context));
 }
 
 function floor1(value: number): number {
-  return Math.floor((value + TSS_EPSILON) * 10) / 10;
+  return Math.floor((value + COMMON_LOAD_EPSILON) * 10) / 10;
 }
 
 function allocateWithCaps(total: number, weights: number[], caps: number[]) {
@@ -611,9 +611,9 @@ function allocateWithCaps(total: number, weights: number[], caps: number[]) {
     ) - rounded.reduce((sum, value) => sum + value, 0),
   );
 
-  while (remainingRounding >= 0.1 - TSS_EPSILON) {
+  while (remainingRounding >= 0.1 - COMMON_LOAD_EPSILON) {
     const nextIndex = rounded.findIndex(
-      (value, index) => value + 0.1 <= floor1(safeCaps[index] ?? 0) + TSS_EPSILON,
+      (value, index) => value + 0.1 <= floor1(safeCaps[index] ?? 0) + COMMON_LOAD_EPSILON,
     );
     if (nextIndex < 0) break;
     rounded[nextIndex] = round1((rounded[nextIndex] ?? 0) + 0.1);
@@ -626,7 +626,7 @@ function allocateWithCaps(total: number, weights: number[], caps: number[]) {
 function buildLoadMap(points: DailyLoadRecommendationActualOrScheduledPoint[] | null | undefined) {
   const map = new Map<string, number>();
   for (const point of points ?? []) {
-    map.set(point.date, round1((map.get(point.date) ?? 0) + toFinitePositive(point.tss)));
+    map.set(point.date, round1((map.get(point.date) ?? 0) + toFinitePositive(point.load)));
   }
   return map;
 }
@@ -725,7 +725,8 @@ function buildPlannedSessionByDate(input: BuildDailyLoadDistributionRecommendati
     byDate.set(date, {
       activityCategory: existing.activityCategory ?? activityCategory ?? undefined,
       primaryFocus: existing.primaryFocus ?? session.primaryFocus ?? undefined,
-      estimatedTss: (existing.estimatedTss ?? 0) + toFinitePositive(session.estimatedTss),
+      estimatedCommonLoad:
+        (existing.estimatedCommonLoad ?? 0) + toFinitePositive(session.estimatedCommonLoad),
       estimatedDurationMinutes:
         (existing.estimatedDurationMinutes ?? 0) +
         toFinitePositive(session.estimatedDurationMinutes),
@@ -975,13 +976,13 @@ function buildRecommendedLoadPoints(
       weekStartDate,
     });
     const partialWeekScale = daysInWeek / 7;
-    const weekTargetTss = toFinitePositive(weeklyTarget?.targetTss) * partialWeekScale;
+    const weekTargetLoad = toFinitePositive(weeklyTarget?.targetLoad) * partialWeekScale;
     const weekTargetDuration =
       toFinitePositive(weeklyTarget?.targetDurationMinutes) * partialWeekScale;
     const explicitWeekTargetFatigue = toFinitePositive(weeklyTarget?.targetFatigueCost);
     const weekTargetFatigue = explicitWeekTargetFatigue
       ? explicitWeekTargetFatigue * partialWeekScale
-      : weekTargetTss;
+      : weekTargetLoad;
     const weekTargetStrengthSets =
       toFinitePositive(weeklyTarget?.targetStrengthSets) * partialWeekScale;
     const candidateWeekdays = new Set<number>();
@@ -1012,12 +1013,12 @@ function buildRecommendedLoadPoints(
         : activeWeekdays.includes(dayOffset)
           ? fallbackFocusForWeekday(dayOffset, activeWeekdays)
           : "rest";
-      const estimatedSessionTss = sessions.reduce(
-        (sum, session) => sum + toFinitePositive(session.estimatedTss),
+      const estimatedSessionLoad = sessions.reduce(
+        (sum, session) => sum + toFinitePositive(session.estimatedCommonLoad),
         0,
       );
       const sessionWeightBoost =
-        estimatedSessionTss > 0 ? Math.min(2.5, estimatedSessionTss / 55) : 1;
+        estimatedSessionLoad > 0 ? Math.min(2.5, estimatedSessionLoad / 55) : 1;
       const weight = focus === "rest" ? 0 : recommendedWeightForFocus(focus) * sessionWeightBoost;
       const activityCategory =
         sessions.find((session) => session.activityCategory)?.activityCategory ??
@@ -1027,8 +1028,8 @@ function buildRecommendedLoadPoints(
       return { date, dayOffset, focus, activityCategory, weight };
     });
 
-    const tss = allocateTotal(
-      weekTargetTss,
+    const load = allocateTotal(
+      weekTargetLoad,
       rows.map((row) => row.weight),
     );
     const duration = allocateTotal(
@@ -1048,8 +1049,8 @@ function buildRecommendedLoadPoints(
       const hasExplicitActivityCategory = sessions.some((session) =>
         Boolean(session.activityCategory),
       );
-      const boundedSessionTss = sessions.reduce(
-        (sum, session) => sum + toFinitePositive(session.estimatedTss),
+      const boundedSessionLoad = sessions.reduce(
+        (sum, session) => sum + toFinitePositive(session.estimatedCommonLoad),
         0,
       );
       const boundedSessionDuration = sessions.reduce(
@@ -1061,20 +1062,20 @@ function buildRecommendedLoadPoints(
           ? "abstain"
           : !hasExplicitActivityCategory
             ? "clarification_required"
-            : boundedSessionTss > 0 || boundedSessionDuration > 0
+            : boundedSessionLoad > 0 || boundedSessionDuration > 0
               ? "maintenance_only"
               : "abstain";
       const maintenanceCap =
-        boundedSessionTss > 0 ? boundedSessionTss : boundedSessionDuration * 0.75;
-      const recommendedLoadTss =
+        boundedSessionLoad > 0 ? boundedSessionLoad : boundedSessionDuration * 0.75;
+      const recommendedLoad =
         recommendationState === "maintenance_only"
-          ? round1(Math.min(tss[index] ?? 0, maintenanceCap))
-          : round1(tss[index] ?? 0);
-      const completedLoadTss = round1(completedByDate.get(row.date) ?? 0);
-      const scheduledLoadTss = round1(scheduledByDate.get(row.date) ?? 0);
+          ? round1(Math.min(load[index] ?? 0, maintenanceCap))
+          : round1(load[index] ?? 0);
+      const completedLoad = round1(completedByDate.get(row.date) ?? 0);
+      const scheduledLoad = round1(scheduledByDate.get(row.date) ?? 0);
       const hasSession = sessions.length > 0;
-      const hasEstimatedSessionTss = sessions.some(
-        (session) => toFinitePositive(session.estimatedTss) > 0,
+      const hasEstimatedSessionLoad = sessions.some(
+        (session) => toFinitePositive(session.estimatedCommonLoad) > 0,
       );
       const hasExplicitSessionFocus = sessions.some((session) => Boolean(session.primaryFocus));
       const hasExplicitSessionCategory = sessions.some((session) =>
@@ -1082,17 +1083,17 @@ function buildRecommendedLoadPoints(
       );
       const confidenceScore = confidenceScoreForRecommendedDay({
         hasWeeklyTarget: Boolean(weeklyTarget),
-        weekTargetTss,
+        weekTargetLoad,
         isPartialWeek: daysInWeek < 7,
         hasSession,
-        hasEstimatedSessionTss,
+        hasEstimatedSessionLoad,
         hasExplicitSessionFocus,
         hasExplicitSessionCategory,
         hasPreferredWeekdays: preferredWeekdays.size > 0,
         usedDefaultWeekdayFallback,
         isHardRestDay: hardRestDays.has(row.dayOffset),
-        hasScheduledLoad: scheduledLoadTss > 0,
-        hasCompletedLoad: completedLoadTss > 0,
+        hasScheduledLoad: scheduledLoad > 0,
+        hasCompletedLoad: completedLoad > 0,
         isRestDay: row.focus === "rest",
       });
       results.push({
@@ -1104,7 +1105,7 @@ function buildRecommendedLoadPoints(
           ["recommendation", "maintenance_only"] as readonly string[]
         ).includes(recommendationState)
           ? {
-              recommendedLoadTss,
+              recommendedLoad,
               recommendedDurationMinutes:
                 recommendationState === "maintenance_only" && boundedSessionDuration > 0
                   ? round1(Math.min(duration[index] ?? 0, boundedSessionDuration))
@@ -1116,7 +1117,7 @@ function buildRecommendedLoadPoints(
               recommendedStrengthSets: round1(strengthSets[index] ?? 0),
             }
           : null,
-        recommendedLoadTss,
+        recommendedLoad,
         recommendedDurationMinutes:
           recommendationState === "maintenance_only" && boundedSessionDuration > 0
             ? round1(Math.min(duration[index] ?? 0, boundedSessionDuration))
@@ -1128,24 +1129,24 @@ function buildRecommendedLoadPoints(
         recommendedStrengthSets: round1(strengthSets[index] ?? 0),
         primaryFocus: row.focus,
         activityCategory: row.activityCategory,
-        scheduledLoadTss,
-        completedLoadTss,
-        loadDeltaTss: round1(completedLoadTss - recommendedLoadTss),
+        scheduledLoad,
+        completedLoad,
+        loadDeltaLoad: round1(completedLoad - recommendedLoad),
         confidence: confidenceBucketForScore(confidenceScore),
         confidence_score: confidenceScore,
         reasonCodes: reasonCodesForRecommendedDay({
           hasWeeklyTarget: Boolean(weeklyTarget),
-          weekTargetTss,
+          weekTargetLoad,
           isPartialWeek: daysInWeek < 7,
           hasSession,
-          hasEstimatedSessionTss,
+          hasEstimatedSessionLoad,
           hasExplicitSessionFocus,
           hasExplicitSessionCategory,
           hasPreferredWeekdays: preferredWeekdays.size > 0,
           usedDefaultWeekdayFallback,
           isHardRestDay: hardRestDays.has(row.dayOffset),
-          hasScheduledLoad: scheduledLoadTss > 0,
-          hasCompletedLoad: completedLoadTss > 0,
+          hasScheduledLoad: scheduledLoad > 0,
+          hasCompletedLoad: completedLoad > 0,
           isRestDay: row.focus === "rest",
         }),
       });
@@ -1183,7 +1184,7 @@ function buildDistributionPoints(
       target?.eventDate && target.eventDate >= weekStartDate && target.eventDate <= weekEndDate
         ? target.eventDate
         : null;
-    const weeklyTss = Math.max(0, target?.targetTss ?? 0) * (daysInWeek / 7);
+    const weeklyLoad = Math.max(0, target?.targetLoad ?? 0) * (daysInWeek / 7);
     const candidates = Array.from({ length: daysInWeek }, (_, dayOffset) => {
       const date = addDaysDateOnlyUtc(weekStartDate, dayOffset);
       const day = weekdayNameForDate(date);
@@ -1247,7 +1248,7 @@ function buildDistributionPoints(
         if (!hasExplicitActivityCategory) return "clarification_required";
         if (hasExplicitAllocation && athleteCapacityCap !== null) return "recommendation";
         const hasBoundedContext =
-          (planned?.estimatedTss ?? 0) > 0 ||
+          (planned?.estimatedCommonLoad ?? 0) > 0 ||
           (planned?.estimatedDurationMinutes ?? 0) > 0 ||
           hasExplicitAllocation;
         return hasBoundedContext ? "maintenance_only" : "abstain";
@@ -1257,40 +1258,40 @@ function buildDistributionPoints(
     const caps = trainingDates.map((trainingDate, index) => {
       const focus = focuses[index] ?? "recovery";
       const recommendationState = recommendationStates[index] ?? "abstain";
-      const shareTssCap = weeklyTss * shareCap;
-      const availabilityTssCap = hasAvailabilityWindows
-        ? trainingDate.availabilityMinutes * tssPerMinuteForFocus(focus)
+      const shareLoadCap = weeklyLoad * shareCap;
+      const availabilityLoadCap = hasAvailabilityWindows
+        ? trainingDate.availabilityMinutes * loadPerMinuteForFocus(focus)
         : Number.POSITIVE_INFINITY;
       const maxSingleSessionMinutes = finitePositive(
         input.preferenceProfile?.dose_limits.max_single_session_duration_minutes,
       );
-      const maxSingleSessionTssCap =
+      const maxSingleSessionLoadCap =
         maxSingleSessionMinutes === null
           ? Number.POSITIVE_INFINITY
-          : maxSingleSessionMinutes * tssPerMinuteForFocus(focus);
+          : maxSingleSessionMinutes * loadPerMinuteForFocus(focus);
       const planned = plannedSessionByDate.get(trainingDate.date);
-      const maintenanceTssCap =
+      const maintenanceLoadCap =
         recommendationState === "maintenance_only"
-          ? (finitePositive(planned?.estimatedTss) ??
+          ? (finitePositive(planned?.estimatedCommonLoad) ??
             (finitePositive(planned?.estimatedDurationMinutes) !== null
               ? (finitePositive(planned?.estimatedDurationMinutes) ?? 0) *
-                tssPerMinuteForFocus(focus)
+                loadPerMinuteForFocus(focus)
               : Number.POSITIVE_INFINITY))
           : Number.POSITIVE_INFINITY;
-      const capacityTssCap = athleteCapacityCap ?? Number.POSITIVE_INFINITY;
+      const capacityLoadCap = athleteCapacityCap ?? Number.POSITIVE_INFINITY;
       return Math.max(
         0,
         Math.min(
-          shareTssCap,
-          availabilityTssCap,
-          maxSingleSessionTssCap,
-          capacityTssCap,
-          maintenanceTssCap,
+          shareLoadCap,
+          availabilityLoadCap,
+          maxSingleSessionLoadCap,
+          capacityLoadCap,
+          maintenanceLoadCap,
         ),
       );
     });
     const allocations = allocateWithCaps(
-      weeklyTss,
+      weeklyLoad,
       focuses.map(
         (focus, index) =>
           distributionWeightForFocus(focus) *
@@ -1298,8 +1299,8 @@ function buildDistributionPoints(
       ),
       caps,
     );
-    const allocatedWeeklyTss = round1(allocations.reduce((sum, load) => sum + load, 0));
-    const weeklyUnderAllocated = allocatedWeeklyTss + TSS_EPSILON < round1(weeklyTss);
+    const allocatedWeeklyLoad = round1(allocations.reduce((sum, load) => sum + load, 0));
+    const weeklyUnderAllocated = allocatedWeeklyLoad + COMMON_LOAD_EPSILON < round1(weeklyLoad);
 
     for (let dayOffset = 0; dayOffset < daysInWeek; dayOffset += 1) {
       const date = addDaysDateOnlyUtc(weekStartDate, dayOffset);
@@ -1308,8 +1309,7 @@ function buildDistributionPoints(
       const focus = selectedIndex === undefined ? "rest" : (focuses[selectedIndex] ?? "recovery");
       const assignment =
         selectedIndex === undefined ? null : (categoryAssignments[selectedIndex] ?? null);
-      const recommendedLoadTss =
-        selectedIndex === undefined ? 0 : (allocations[selectedIndex] ?? 0);
+      const recommendedLoad = selectedIndex === undefined ? 0 : (allocations[selectedIndex] ?? 0);
       const cap =
         selectedIndex === undefined ? 0 : (caps[selectedIndex] ?? Number.POSITIVE_INFINITY);
       const capReasonCodes: string[] = [];
@@ -1325,7 +1325,7 @@ function buildDistributionPoints(
         capReasonCodes.push("max_single_session_duration_cap_applied");
       if (selectedIndex !== undefined && athleteCapacityCap !== null)
         capReasonCodes.push("athlete_capacity_cap_applied");
-      if (selectedIndex !== undefined && cap <= recommendedLoadTss + TSS_EPSILON)
+      if (selectedIndex !== undefined && cap <= recommendedLoad + COMMON_LOAD_EPSILON)
         capReasonCodes.push("daily_cap_binding");
       if (weeklyUnderAllocated) capReasonCodes.push("weekly_target_under_allocated_daily_caps");
       if (input.preferenceProfile && candidates.length === 0)
@@ -1338,7 +1338,7 @@ function buildDistributionPoints(
       const selectedHasPlannedSession = sessionDates.has(date);
       const confidenceScore = confidenceScoreForDistributionPoint({
         hasWeeklyTarget: Boolean(target),
-        weeklyTss,
+        weeklyLoad,
         isPartialWeek: daysInWeek < 7,
         hasPreferenceProfile: Boolean(input.preferenceProfile),
         hasAvailabilityWindows,
@@ -1362,13 +1362,13 @@ function buildDistributionPoints(
           ["recommendation", "maintenance_only"] as readonly string[]
         ).includes(recommendationState)
           ? {
-              recommendedLoadTss,
+              recommendedLoad,
               recommendedDurationMinutes: 0,
               recommendedFatigueCost: 0,
               recommendedStrengthSets: 0,
             }
           : null,
-        recommendedLoadTss,
+        recommendedLoad,
         recommendedDurationMinutes: 0,
         recommendedFatigueCost: 0,
         recommendedStrengthSets: 0,
@@ -1379,15 +1379,15 @@ function buildDistributionPoints(
             : (plannedSessionByDate.get(date)?.activityCategory ??
               assignment?.budget.activityCategory ??
               primaryActivityCategory(input.weeklyAllocation)),
-        scheduledLoadTss: 0,
-        completedLoadTss: 0,
-        loadDeltaTss: round1(0 - recommendedLoadTss),
+        scheduledLoad: 0,
+        completedLoad: 0,
+        loadDeltaLoad: round1(0 - recommendedLoad),
         confidence: confidenceBucketForScore(confidenceScore),
         confidence_score: confidenceScore,
         reasonCodes: orderedReasonCodes([
           "daily_load_distribution_v1",
           target ? "source_weekly_target" : "source_missing_weekly_target",
-          weeklyTss <= 0 ? "target_zero_tss" : "target_positive_tss",
+          weeklyLoad <= 0 ? "target_zero_load" : "target_positive_load",
           ...(daysInWeek < 7 ? ["partial_week_scaled"] : []),
           input.preferenceProfile
             ? "source_preference_profile"

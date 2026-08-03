@@ -1,19 +1,20 @@
 import {
+  activityObservationQuantificationBundleSchema,
+  activityPlanPrescriptionQuantificationBundleSchema,
   activityPlanStructureSchema,
+  activityPrescriptionQuantificationBundleSchema,
   addDaysDateOnlyUtc,
+  bindPrescriptionQuantificationToScheduledEvent,
   calculateRollingTrainingQuality,
   canonicalActivityCategorySchema,
   canonicalTrainingPlanStructureSchema,
+  createPrescriptionQuantificationBundle,
+  createUnavailableActivityPlanPlanningEstimate,
   getLoadBalanceStatus,
   loadCoverageSchema,
   loadSeriesIdentitySchema,
 } from "@repo/core";
 import {
-  type ActivityPlanMetricsLike,
-  getAuthoritativeActivityPlanMetrics,
-} from "@repo/core/activity-plan";
-import {
-  aggregateCommonLoadEnvelopes,
   commonLoadAggregateSchema,
   commonLoadHistoryResultSchema,
   commonLoadResultSchema,
@@ -24,7 +25,10 @@ import { schema, type TrainingPlanRow } from "@repo/db";
 import { and, asc, eq, gte, isNotNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { readCurrentProfileCommonLoadHistory } from "../application/activities/read-current-profile-common-load-history";
-import { loadPlannedActivitiesWithEstimations } from "../application/home/plannedActivities";
+import {
+  loadPlannedActivitiesWithEstimations,
+  type PlannedActivityWithEstimation,
+} from "../application/home/plannedActivities";
 import { getEffectivePlanLoad } from "../application/training-plan";
 import {
   getCurrentPlanningWeek,
@@ -38,21 +42,37 @@ import {
 import {
   buildDynamicStressSeries,
   loadActivitySegmentsByActivityId,
-  summarizeSegmentTss,
+  summarizeSegmentQuantification,
 } from "../lib/activity-analysis";
 import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildWorkloadEnvelopes } from "../utils/workload";
 
-function readActivityPlanMetrics(plan: unknown) {
-  return getAuthoritativeActivityPlanMetrics(plan as ActivityPlanMetricsLike | null | undefined);
+function unavailableScheduledQuantification(
+  item: Pick<PlannedActivityWithEstimation, "id" | "scheduled_date">,
+  asOf: Date,
+) {
+  return createUnavailableActivityPlanPlanningEstimate({
+    asOf: asOf.toISOString(),
+    stage: "scheduled",
+    scheduledEventId: item.id,
+    reason: "source_missing",
+  }).prescriptionQuantification;
 }
 
-function readCommonLoadEnvelope(value: unknown) {
-  const result = commonLoadResultSchema.safeParse(value);
-  if (result.success) return result.data;
-  const aggregate = commonLoadAggregateSchema.safeParse(value);
-  return aggregate.success ? aggregate.data : null;
+function scheduledQuantificationSource(item: PlannedActivityWithEstimation, asOf: Date) {
+  const prescriptionQuantification = item.activity_plan?.prescriptionQuantification;
+  if (!prescriptionQuantification || prescriptionQuantification.members.length === 0) {
+    return unavailableScheduledQuantification(item, asOf);
+  }
+  return bindPrescriptionQuantificationToScheduledEvent({
+    prescriptionQuantification,
+    eventId: item.id,
+  });
+}
+
+function scheduledQuantification(item: PlannedActivityWithEstimation, asOf: Date) {
+  return scheduledQuantificationSource(item, asOf);
 }
 
 export function getPlanCategoryComposition(structure: unknown) {
@@ -106,7 +126,7 @@ const workloadEnvelopeSchema = z
     status: z.enum(["insufficient_history", "provisional", "stable"]),
     coverageDays: z.number().int().nonnegative(),
     requiredDays: z.number().int().positive(),
-    source: z.enum(["trimp", "tss", "mixed", "none"]),
+    source: z.enum(["common_load", "none"]),
     reasonCode: z.string().optional(),
     identity: loadSeriesIdentitySchema.optional(),
     coverage: loadCoverageSchema.optional(),
@@ -124,6 +144,7 @@ const scheduleItemSchema = z
     activity_category: canonicalActivityCategorySchema.nullable(),
     estimatedDuration: z.number().nullable(),
     estimatedDistance: z.number().nullable(),
+    prescriptionQuantification: activityPlanPrescriptionQuantificationBundleSchema,
     commonLoad: z.union([commonLoadResultSchema, commonLoadAggregateSchema]),
     load: z.number().nullable(),
     intensity: z.number().nullable(),
@@ -154,7 +175,7 @@ const dashboardResponseSchema = z
     trainingLoadState: z
       .object({
         status: z.enum(["available", "unavailable"]),
-        reason: z.enum(["complete_identified_series", "mixed_or_incomplete_tss_series"]),
+        reason: z.enum(["complete_common_load_series", "incomplete_common_load_series"]),
       })
       .strict(),
     workload: z
@@ -177,20 +198,23 @@ const dashboardResponseSchema = z
             planned: commonLoadAggregateSchema,
           })
           .strict(),
+        observationQuantification: activityObservationQuantificationBundleSchema,
+        prescriptionQuantification: activityPrescriptionQuantificationBundleSchema,
         actual: z
           .object({
-            distance: z.number(),
-            duration: z.number(),
-            tss: z.number(),
-            tssComplete: z.boolean(),
+            distance: z.number().nullable(),
+            duration: z.number().nullable(),
+            load: z.number().nullable(),
+            loadComplete: z.boolean(),
             count: z.number(),
           })
           .strict(),
         planned: z
           .object({
-            distance: z.number(),
-            duration: z.number(),
-            tss: z.number(),
+            distance: z.number().nullable(),
+            duration: z.number().nullable(),
+            load: z.number().nullable(),
+            loadComplete: z.boolean(),
             count: z.number(),
           })
           .strict(),
@@ -241,7 +265,7 @@ const dashboardResponseSchema = z
 
 /**
  * Projects the common Load state from the server-owned effective plan composition.
- * This deliberately has no estimated-TSS fallback: an unavailable plan composition
+ * This deliberately has no estimated-load fallback: an unavailable plan composition
  * means that the dashboard must abstain instead of inventing zero load.
  */
 export function projectCommonLoad(input: {
@@ -298,7 +322,6 @@ const dashboardActivitySchema = z
     avg_speed_mps: z.number().nullable(),
     max_speed_mps: z.number().nullable(),
     normalized_speed_mps: z.number().nullable(),
-    normalized_graded_speed_mps: z.number().nullable(),
   })
   .strict();
 
@@ -324,7 +347,6 @@ async function listDashboardActivitiesInRange(
       avg_speed_mps: schema.activities.avg_speed_mps,
       max_speed_mps: schema.activities.max_speed_mps,
       normalized_speed_mps: schema.activities.normalized_speed_mps,
-      normalized_graded_speed_mps: schema.activities.normalized_graded_speed_mps,
     })
     .from(schema.activities)
     .where(
@@ -508,20 +530,23 @@ export const homeRouter = createTRPCRouter({
       const {
         byActivityId: derivedActivityMap,
         segmentSummaries = [],
-        complete: hasCompleteTssSeries = false,
+        complete: hasCompleteCommonLoadSeries = false,
         seriesIdentity = null,
       } = dynamicStressSeries as typeof dynamicStressSeries & {
         complete?: boolean;
         seriesIdentity?: unknown;
       };
+      const activityStartedAtById = new Map(
+        activities.map((activity) => [activity.id, activity.started_at.toISOString()]),
+      );
 
       const rollingTrainingQuality =
         featureFlags.personalizationTrainingQuality && activities.length > 0
           ? calculateRollingTrainingQuality(
-              activities.map((activity) => ({
-                started_at: activity.started_at.toISOString(),
-                tss: derivedActivityMap.get(activity.id)?.tss ?? null,
-                intensity_factor: derivedActivityMap.get(activity.id)?.intensity_factor ?? null,
+              segmentSummaries.map((summary) => ({
+                started_at:
+                  activityStartedAtById.get(summary.activity_id) ?? summary.computed_as_of,
+                common_load: summary.observationQuantification.members[0]?.commonLoad ?? null,
               })),
             )
           : undefined;
@@ -583,20 +608,24 @@ export const homeRouter = createTRPCRouter({
         );
         return activityDate >= currentWeek.startDate && activityDate <= currentWeek.endDate;
       });
-      const weeklyActualLoad = summarizeSegmentTss(
+      const weeklyActualQuantification = summarizeSegmentQuantification(
         segmentSummaries,
         new Set(weeklyActuals.map((activity) => activity.id)),
       );
+      const weeklyActualSummary = weeklyActualQuantification.summary;
+      const weeklyActualLoad = weeklyActualSummary.commonLoad;
 
       const weeklyActualStats = {
         distance:
-          weeklyActuals.reduce((sum, activity) => sum + (activity.distance_meters || 0), 0) / 1000,
-        duration: weeklyActuals.reduce(
-          (sum, activity) => sum + (activity.active_ms ?? 0) / 1000,
-          0,
-        ),
-        tss: Math.round(weeklyActualLoad.tss),
-        tssComplete: weeklyActualLoad.complete,
+          weeklyActualSummary.distance.value === null
+            ? null
+            : weeklyActualSummary.distance.value / 1000,
+        duration: weeklyActualSummary.duration.active.value,
+        load:
+          weeklyActualLoad.status === "complete" || weeklyActualLoad.status === "partial"
+            ? Math.round(weeklyActualLoad.load)
+            : null,
+        loadComplete: weeklyActualLoad.status === "complete",
         count: weeklyActuals.length,
       };
 
@@ -604,29 +633,28 @@ export const homeRouter = createTRPCRouter({
       const startOfWeekStr = currentWeek.startDate;
       const endOfWeekStr = currentWeek.endDate;
 
-      const weeklyPlanned = activitiesWithEstimations.filter((pa: any) => {
-        const scheduledDate = pa.scheduled_date?.split("T")[0];
-        if (!scheduledDate) return false;
-
-        return scheduledDate >= startOfWeekStr && scheduledDate <= endOfWeekStr;
+      const weeklyPlanned = activitiesWithEstimations.filter(
+        (plannedActivity) =>
+          plannedActivity.scheduled_date >= startOfWeekStr &&
+          plannedActivity.scheduled_date <= endOfWeekStr,
+      );
+      const weeklyPlannedQuantification = createPrescriptionQuantificationBundle({
+        members: weeklyPlanned.flatMap(
+          (plannedActivity) => scheduledQuantification(plannedActivity, now).members,
+        ),
       });
+      const weeklyPlannedSummary = weeklyPlannedQuantification.summary;
+      const weeklyPlannedLoad = weeklyPlannedSummary.commonLoad;
 
       const weeklyPlannedStats = {
         distance:
-          weeklyPlanned.reduce(
-            (sum, pa) => sum + (readActivityPlanMetrics(pa.activity_plan).estimated_distance ?? 0),
-            0,
-          ) / 1000,
-        duration: weeklyPlanned.reduce(
-          (sum, pa) => sum + (readActivityPlanMetrics(pa.activity_plan).estimated_duration ?? 0),
-          0,
-        ),
-        tss: Math.round(
-          weeklyPlanned.reduce(
-            (sum, pa) => sum + (readActivityPlanMetrics(pa.activity_plan).estimated_tss ?? 0),
-            0,
-          ),
-        ),
+          weeklyPlannedSummary.distance.value === null
+            ? null
+            : weeklyPlannedSummary.distance.value / 1000,
+        duration: weeklyPlannedSummary.duration.elapsed.value,
+        load:
+          weeklyPlannedLoad.status === "unavailable" ? null : Math.round(weeklyPlannedLoad.load),
+        loadComplete: weeklyPlannedLoad.status === "complete",
         count: weeklyPlanned.length,
       };
 
@@ -640,8 +668,8 @@ export const homeRouter = createTRPCRouter({
       const workload = buildWorkloadEnvelopes(
         activities.map((activity) => ({
           started_at: activity.started_at.toISOString(),
-          tss: derivedActivityMap.get(activity.id)?.tss ?? null,
-          tss_identity: derivedActivityMap.get(activity.id)?.tss_identity ?? null,
+          observationQuantification:
+            derivedActivityMap.get(activity.id)?.observationQuantification ?? null,
         })),
         workloadWindowStart,
         today,
@@ -667,48 +695,30 @@ export const homeRouter = createTRPCRouter({
       const scheduleEndStr = scheduleEndDate;
 
       const schedule = activitiesWithEstimations
-        .filter((pa: any) => {
-          const scheduledDate = pa.scheduled_date?.split("T")[0];
-          if (!scheduledDate) return false;
-
+        .filter((plannedActivity) => {
+          const scheduledDate = plannedActivity.scheduled_date;
           // Include today + future using stable date-only comparisons.
           return scheduledDate >= todayStr && scheduledDate < scheduleEndStr;
         })
-        .map((pa: any) => {
-          const metrics = readActivityPlanMetrics(pa.activity_plan);
-          const commonLoad =
-            readCommonLoadEnvelope(pa.activity_plan?.common_load) ??
-            commonLoadResultSchema.parse({
-              status: "unavailable",
-              model: "gradientpeak_relative_load",
-              version: "1",
-              activity_category: "other",
-              method: null,
-              quality: null,
-              thresholdEvidence: null,
-              evidenceFingerprint: null,
-              computedAsOf: new Date().toISOString(),
-              contributingDurationSeconds: metrics.estimated_duration ?? null,
-              reason: "activity_data_missing",
-            });
+        .map((plannedActivity) => {
+          const prescriptionQuantification = scheduledQuantification(plannedActivity, now);
+          const quantification = prescriptionQuantification.summary;
+          const commonLoad = quantification.commonLoad;
           const commonValue =
-            commonLoad.status === "available" ||
-            commonLoad.status === "complete" ||
-            commonLoad.status === "partial"
-              ? commonLoad
-              : null;
-          const execution = pa.activity_plan
-            ? { activity_category: pa.activity_plan.activity_category }
+            commonLoad.status === "complete" || commonLoad.status === "partial" ? commonLoad : null;
+          const execution = plannedActivity.activity_plan
+            ? { activity_category: plannedActivity.activity_plan.activity_category }
             : null;
           return {
-            id: pa.id,
-            date: pa.scheduled_date,
-            isToday: pa.scheduled_date?.startsWith(todayStr) || false,
-            isCompleted: completedActivityMap.get(pa.id) || false,
-            activityName: pa.activity_plan?.name || "Activity",
+            id: plannedActivity.id,
+            date: plannedActivity.scheduled_date,
+            isToday: plannedActivity.scheduled_date === todayStr,
+            isCompleted: completedActivityMap.get(plannedActivity.id) || false,
+            activityName: plannedActivity.activity_plan?.name || "Activity",
             ...getScheduleExecutionPresentation(execution),
-            estimatedDuration: metrics.estimated_duration ?? null,
-            estimatedDistance: metrics.estimated_distance ?? null,
+            estimatedDuration: quantification.duration.elapsed.value,
+            estimatedDistance: quantification.distance.value,
+            prescriptionQuantification,
             commonLoad,
             load: commonValue && "load" in commonValue ? commonValue.load : null,
             intensity: commonValue && "intensity" in commonValue ? commonValue.intensity : null,
@@ -753,49 +763,15 @@ export const homeRouter = createTRPCRouter({
 
       // --- 12. Calculate Plan Adherence ---
       const adherence =
-        weeklyActualStats.tssComplete && weeklyPlannedStats.tss > 0
-          ? Math.round((weeklyActualStats.tss / weeklyPlannedStats.tss) * 100)
+        weeklyActualStats.loadComplete &&
+        weeklyActualStats.load !== null &&
+        weeklyPlannedStats.load !== null &&
+        weeklyPlannedStats.loadComplete &&
+        weeklyPlannedStats.load > 0
+          ? Math.round((weeklyActualStats.load / weeklyPlannedStats.load) * 100)
           : null;
-      const weeklyActivityIds = new Set(
-        activities
-          .filter((activity) => {
-            const activityDate = getScheduledDateKey(
-              activity.started_at.toISOString(),
-              planningTimezone,
-            );
-            return activityDate >= currentWeek.startDate && activityDate <= currentWeek.endDate;
-          })
-          .map((activity) => activity.id),
-      );
-      const unavailableWeeklyEnvelope = () =>
-        commonLoadResultSchema.parse({
-          status: "unavailable",
-          model: "gradientpeak_relative_load",
-          version: "1",
-          activity_category: "other",
-          method: null,
-          quality: null,
-          thresholdEvidence: null,
-          evidenceFingerprint: null,
-          computedAsOf: new Date().toISOString(),
-          contributingDurationSeconds: null,
-          reason: "activity_data_missing",
-        });
-      const weeklyActualCommonLoad = aggregateCommonLoadEnvelopes(
-        [...weeklyActivityIds].map(
-          (activityId) =>
-            readCommonLoadEnvelope(derivedActivityMap.get(activityId)?.common_load) ??
-            unavailableWeeklyEnvelope(),
-        ),
-      );
-      const weeklyPlannedCommonLoad = aggregateCommonLoadEnvelopes(
-        weeklyPlanned.map((plannedActivity) => {
-          const envelope = readCommonLoadEnvelope(
-            (plannedActivity.activity_plan as { common_load?: unknown } | null)?.common_load,
-          );
-          return envelope ?? unavailableWeeklyEnvelope();
-        }),
-      );
+      const weeklyActualCommonLoad = weeklyActualSummary.commonLoad;
+      const weeklyPlannedCommonLoad = weeklyPlannedSummary.commonLoad;
 
       return dashboardResponseSchema.parse({
         activePlan: plan
@@ -817,11 +793,11 @@ export const homeRouter = createTRPCRouter({
                 coverageStatus: availableCommonLoadHistory.coverageStatus,
               },
         trainingLoadState: {
-          status: hasCompleteTssSeries && seriesIdentity ? "available" : "unavailable",
+          status: hasCompleteCommonLoadSeries && seriesIdentity ? "available" : "unavailable",
           reason:
-            hasCompleteTssSeries && seriesIdentity
-              ? "complete_identified_series"
-              : "mixed_or_incomplete_tss_series",
+            hasCompleteCommonLoadSeries && seriesIdentity
+              ? "complete_common_load_series"
+              : "incomplete_common_load_series",
         },
         workload,
         consistency: {
@@ -833,6 +809,8 @@ export const homeRouter = createTRPCRouter({
             actual: weeklyActualCommonLoad,
             planned: weeklyPlannedCommonLoad,
           },
+          observationQuantification: weeklyActualQuantification,
+          prescriptionQuantification: weeklyPlannedQuantification,
           actual: weeklyActualStats,
           planned: weeklyPlannedStats,
           adherence, // Percentage

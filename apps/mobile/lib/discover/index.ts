@@ -1,3 +1,5 @@
+import type { ActivityPrescriptionQuantificationBundle } from "@repo/core";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import type { GroupListItem } from "@/lib/groups";
 
 export const SEARCH_QUERY_MAX_LENGTH = 80;
@@ -39,8 +41,8 @@ export type SortDirection = "asc" | "desc";
 export type ActivityPlanSortField =
   | "created_at"
   | "estimated_duration"
-  | "estimated_tss"
-  | "intensity_factor";
+  | "common_load"
+  | "common_intensity";
 export type RouteSortField = "created_at" | "distance" | "ascent";
 export type TrainingPlanSortField = "created_at" | "duration_weeks" | "sessions_per_week";
 export type GroupSortField = "created_at";
@@ -48,12 +50,12 @@ export type ProfileSortField = "created_at" | "username";
 
 export type ActivityPlanFilters = {
   categoryIds: DiscoverCategoryId[];
-  minTss: number | null;
-  maxTss: number | null;
+  minCommonLoad: number | null;
+  maxCommonLoad: number | null;
   minDurationMinutes: number | null;
   maxDurationMinutes: number | null;
-  minIf: number | null;
-  maxIf: number | null;
+  minCommonIntensity: number | null;
+  maxCommonIntensity: number | null;
 };
 
 export type TrainingPlanFilters = {
@@ -85,11 +87,7 @@ export type DiscoverActivityPlanItem = {
   structure?: unknown;
   created_at?: string;
   updated_at?: string;
-  authoritative_metrics?: {
-    estimated_duration?: number | null;
-    estimated_tss?: number | null;
-    intensity_factor?: number | null;
-  } | null;
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
 };
 
 export type DiscoverTrainingPlanItem = {
@@ -148,12 +146,12 @@ export type DiscoverFeedItem =
 
 export const DEFAULT_ACTIVITY_PLAN_FILTERS: ActivityPlanFilters = {
   categoryIds: [],
-  minTss: null,
-  maxTss: null,
+  minCommonLoad: null,
+  maxCommonLoad: null,
   minDurationMinutes: null,
   maxDurationMinutes: null,
-  minIf: null,
-  maxIf: null,
+  minCommonIntensity: null,
+  maxCommonIntensity: null,
 };
 
 export const DEFAULT_TRAINING_PLAN_FILTERS: TrainingPlanFilters = {
@@ -200,12 +198,12 @@ export const DEFAULT_PROFILE_SORT: SortState<ProfileSortField> = {
 export function hasActivityPlanFilters(filters: ActivityPlanFilters) {
   return Boolean(
     filters.categoryIds.length > 0 ||
-      filters.minTss !== null ||
-      filters.maxTss !== null ||
+      filters.minCommonLoad !== null ||
+      filters.maxCommonLoad !== null ||
       filters.minDurationMinutes !== null ||
       filters.maxDurationMinutes !== null ||
-      filters.minIf !== null ||
-      filters.maxIf !== null,
+      filters.minCommonIntensity !== null ||
+      filters.maxCommonIntensity !== null,
   );
 }
 
@@ -409,8 +407,12 @@ export function getRangeValidationMessage(
 export function getActivityPlanFilterErrors(filters: ActivityPlanFilters) {
   return [
     getRangeValidationMessage("Duration", filters.minDurationMinutes, filters.maxDurationMinutes),
-    getRangeValidationMessage("TSS", filters.minTss, filters.maxTss),
-    getRangeValidationMessage("IF", filters.minIf, filters.maxIf),
+    getRangeValidationMessage("Common Load", filters.minCommonLoad, filters.maxCommonLoad),
+    getRangeValidationMessage(
+      "Common intensity",
+      filters.minCommonIntensity,
+      filters.maxCommonIntensity,
+    ),
   ].filter((value): value is string => Boolean(value));
 }
 
@@ -432,12 +434,11 @@ export function matchesActivityPlanDerivedFilters(
   item: DiscoverActivityPlanItem,
   filters: ActivityPlanFilters,
 ) {
-  const metrics = item.authoritative_metrics;
+  const quantities = getActivityPlanQuantitySummary(item);
   const durationMinutes =
-    typeof metrics?.estimated_duration === "number" ? metrics.estimated_duration / 60 : null;
-  const estimatedTss = typeof metrics?.estimated_tss === "number" ? metrics.estimated_tss : null;
-  const intensityFactor =
-    typeof metrics?.intensity_factor === "number" ? metrics.intensity_factor : null;
+    typeof quantities.durationSeconds === "number" ? quantities.durationSeconds / 60 : null;
+  const commonLoad = quantities.commonLoad;
+  const commonIntensity = quantities.commonIntensity;
 
   if (
     filters.categoryIds.length > 0 &&
@@ -460,19 +461,31 @@ export function matchesActivityPlanDerivedFilters(
     return false;
   }
 
-  if (filters.minTss !== null && (estimatedTss === null || estimatedTss < filters.minTss)) {
+  if (
+    filters.minCommonLoad !== null &&
+    (commonLoad === null || commonLoad < filters.minCommonLoad)
+  ) {
     return false;
   }
 
-  if (filters.maxTss !== null && (estimatedTss === null || estimatedTss > filters.maxTss)) {
+  if (
+    filters.maxCommonLoad !== null &&
+    (commonLoad === null || commonLoad > filters.maxCommonLoad)
+  ) {
     return false;
   }
 
-  if (filters.minIf !== null && (intensityFactor === null || intensityFactor < filters.minIf)) {
+  if (
+    filters.minCommonIntensity !== null &&
+    (commonIntensity === null || commonIntensity < filters.minCommonIntensity)
+  ) {
     return false;
   }
 
-  if (filters.maxIf !== null && (intensityFactor === null || intensityFactor > filters.maxIf)) {
+  if (
+    filters.maxCommonIntensity !== null &&
+    (commonIntensity === null || commonIntensity > filters.maxCommonIntensity)
+  ) {
     return false;
   }
 
@@ -628,24 +641,28 @@ export function buildDiscoverFeedItems({
       left.type === "activityPlans" &&
       right.type === "activityPlans"
     ) {
-      const leftMetrics = left.item.authoritative_metrics;
-      const rightMetrics = right.item.authoritative_metrics;
+      const leftQuantities = getActivityPlanQuantitySummary(left.item);
+      const rightQuantities = getActivityPlanQuantitySummary(right.item);
+      const leftCommonLoad = leftQuantities.commonLoad;
+      const rightCommonLoad = rightQuantities.commonLoad;
+      const leftCommonIntensity = leftQuantities.commonIntensity;
+      const rightCommonIntensity = rightQuantities.commonIntensity;
       const metricDelta =
         currentSort.field === "estimated_duration"
           ? currentSort.direction === "desc"
-            ? (rightMetrics?.estimated_duration ?? -1) - (leftMetrics?.estimated_duration ?? -1)
-            : (leftMetrics?.estimated_duration ?? Number.MAX_SAFE_INTEGER) -
-              (rightMetrics?.estimated_duration ?? Number.MAX_SAFE_INTEGER)
-          : currentSort.field === "estimated_tss"
+            ? (rightQuantities.durationSeconds ?? -1) - (leftQuantities.durationSeconds ?? -1)
+            : (leftQuantities.durationSeconds ?? Number.MAX_SAFE_INTEGER) -
+              (rightQuantities.durationSeconds ?? Number.MAX_SAFE_INTEGER)
+          : currentSort.field === "common_load"
             ? currentSort.direction === "desc"
-              ? (rightMetrics?.estimated_tss ?? -1) - (leftMetrics?.estimated_tss ?? -1)
-              : (leftMetrics?.estimated_tss ?? Number.MAX_SAFE_INTEGER) -
-                (rightMetrics?.estimated_tss ?? Number.MAX_SAFE_INTEGER)
-            : currentSort.field === "intensity_factor"
+              ? (rightCommonLoad ?? -1) - (leftCommonLoad ?? -1)
+              : (leftCommonLoad ?? Number.MAX_SAFE_INTEGER) -
+                (rightCommonLoad ?? Number.MAX_SAFE_INTEGER)
+            : currentSort.field === "common_intensity"
               ? currentSort.direction === "desc"
-                ? (rightMetrics?.intensity_factor ?? -1) - (leftMetrics?.intensity_factor ?? -1)
-                : (leftMetrics?.intensity_factor ?? Number.MAX_SAFE_INTEGER) -
-                  (rightMetrics?.intensity_factor ?? Number.MAX_SAFE_INTEGER)
+                ? (rightCommonIntensity ?? -1) - (leftCommonIntensity ?? -1)
+                : (leftCommonIntensity ?? Number.MAX_SAFE_INTEGER) -
+                  (rightCommonIntensity ?? Number.MAX_SAFE_INTEGER)
               : 0;
 
       if (metricDelta !== 0) {

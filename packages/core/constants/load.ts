@@ -1,14 +1,14 @@
-export const TSS_CONSTANTS = {
+export const COMMON_LOAD_CONSTANTS = {
   LOAD_MODEL_VERSION: 2,
   EXPONENTIAL_CONVENTION: "one_minus_exp_negative_inverse_time_constant",
-  CTL_TIME_CONSTANT: 42,
-  ATL_TIME_CONSTANT: 7,
-  CTL_ALPHA: 1 - Math.exp(-1 / 42),
-  ATL_ALPHA: 1 - Math.exp(-1 / 7),
-  BASE_TSS_MULTIPLIER: 100,
+  LongTermLoad_TIME_CONSTANT: 42,
+  RecentLoad_TIME_CONSTANT: 7,
+  LongTermLoad_ALPHA: 1 - Math.exp(-1 / 42),
+  RecentLoad_ALPHA: 1 - Math.exp(-1 / 7),
+  BASE_COMMON_LOAD_MULTIPLIER: 100,
 } as const;
 
-export const TSB_THRESHOLDS = {
+export const LoadBalance_THRESHOLDS = {
   OPTIMAL: 10,
   GOOD: -10,
   TIRED: -30,

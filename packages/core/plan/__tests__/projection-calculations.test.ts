@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateCTL } from "../../load/progression";
+import { calculateLongTermLoad } from "../../load/progression";
 import { defaultAthletePreferenceProfile } from "../../schemas/settings/profile_settings";
 import { buildDeterministicProjectionPayload } from "../projection/engine";
 import {
@@ -31,7 +31,7 @@ describe("projection calculations", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-01-25",
-          target_weekly_tss_range: { min: 280, max: 320 },
+          target_weekly_load_range: { min: 280, max: 320 },
         },
       ],
       goals: [
@@ -42,7 +42,7 @@ describe("projection calculations", () => {
           priority: 1,
         },
       ],
-      starting_ctl: 35,
+      starting_longTermLoad: 35,
     };
 
     expect(buildDeterministicProjectionPayload(input)).toMatchObject({
@@ -63,7 +63,7 @@ describe("projection calculations", () => {
           phase: "build",
           start_date: "2026-04-06",
           end_date: "2026-04-27",
-          target_weekly_tss_range: { min: 360, max: 400 },
+          target_weekly_load_range: { min: 360, max: 400 },
         },
       ],
       goals: [
@@ -82,7 +82,7 @@ describe("projection calculations", () => {
           ],
         },
       ],
-      starting_ctl: 48,
+      starting_longTermLoad: 48,
     });
 
     expect(projection).toMatchObject({
@@ -108,7 +108,7 @@ describe("projection calculations", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-01-11",
-          target_weekly_tss_range: { min: 260, max: 300 },
+          target_weekly_load_range: { min: 260, max: 300 },
         },
       ],
       goals: [
@@ -119,20 +119,20 @@ describe("projection calculations", () => {
           priority: 1,
         },
       ],
-      starting_ctl: 35,
+      starting_longTermLoad: 35,
       scheduling_constraints: {
         preferredWeekdays: [0, 2],
         minSessionsPerWeek: 2,
         maxSessionsPerWeek: 2,
       },
-      planned_sessions: [{ date: "2026-01-11", estimatedTss: 90 }],
+      planned_sessions: [{ date: "2026-01-11", estimatedCommonLoad: 90 }],
     });
 
     const dailyLoadPoints = projection.daily_load_points ?? [];
     expect(
-      dailyLoadPoints.find((point) => point.date === "2026-01-11")?.recommended_load_tss,
+      dailyLoadPoints.find((point) => point.date === "2026-01-11")?.recommended_load,
     ).toBeGreaterThan(0);
-    expect(dailyLoadPoints.filter((point) => point.recommended_load_tss > 0)).toHaveLength(2);
+    expect(dailyLoadPoints.filter((point) => point.recommended_load > 0)).toHaveLength(2);
   });
 
   it("surfaces named weekly load resolution terms without changing selected load", () => {
@@ -147,7 +147,7 @@ describe("projection calculations", () => {
           phase: "build",
           start_date: "2026-04-06",
           end_date: "2026-04-27",
-          target_weekly_tss_range: { min: 360, max: 400 },
+          target_weekly_load_range: { min: 360, max: 400 },
         },
       ],
       goals: [
@@ -166,7 +166,7 @@ describe("projection calculations", () => {
           ],
         },
       ],
-      starting_ctl: 48,
+      starting_longTermLoad: 48,
     });
 
     const firstWeek = projection.microcycles[0];
@@ -177,10 +177,10 @@ describe("projection calculations", () => {
 
     expect(firstWeek.metadata.load_resolution).toMatchObject({
       week_start_date: firstWeek.week_start_date,
-      baseline_tss: firstWeek.metadata.tss_ramp.rolling_base_weekly_tss,
-      recovery_adjusted_tss: firstWeek.metadata.tss_ramp.raw_requested_weekly_tss,
-      preference_adjusted_tss: firstWeek.metadata.tss_ramp.requested_weekly_tss,
-      final_weekly_tss: firstWeek.planned_weekly_tss,
+      baseline_load: firstWeek.metadata.load_ramp.rolling_base_weekly_load,
+      recovery_adjusted_load: firstWeek.metadata.load_ramp.raw_requested_weekly_load,
+      preference_adjusted_load: firstWeek.metadata.load_ramp.requested_weekly_load,
+      final_weekly_load: firstWeek.planned_weekly_load,
     });
     expect(firstWeek.metadata.load_resolution.rationale_codes).toContain(
       "rolling_base_prior_week_primary",
@@ -199,7 +199,7 @@ describe("projection calculations", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-01-14",
-          target_weekly_tss_range: { min: 280, max: 280 },
+          target_weekly_load_range: { min: 280, max: 280 },
         },
       ],
       goals: [
@@ -210,8 +210,8 @@ describe("projection calculations", () => {
           priority: 6,
         },
       ],
-      starting_ctl: 35,
-      disable_weekly_tss_optimizer: true,
+      starting_longTermLoad: 35,
+      disable_weekly_load_optimizer: true,
     });
 
     const dailyLoadPoints = projection.daily_load_points ?? [];
@@ -228,25 +228,25 @@ describe("projection calculations", () => {
       "2026-01-13",
       "2026-01-14",
     ]);
-    expect(dailyLoadPoints.every((point) => point.recommended_load_tss >= 0)).toBe(true);
+    expect(dailyLoadPoints.every((point) => point.recommended_load >= 0)).toBe(true);
     expect(new Set(dailyLoadPoints.map((point) => point.date)).size).toBe(dailyLoadPoints.length);
 
     const firstWeekLoad = dailyLoadPoints
       .slice(0, 7)
-      .reduce((sum, point) => sum + point.recommended_load_tss, 0);
+      .reduce((sum, point) => sum + point.recommended_load, 0);
     const partialWeekLoad = dailyLoadPoints
       .slice(7)
-      .reduce((sum, point) => sum + point.recommended_load_tss, 0);
-    expect(firstWeekLoad).toBeCloseTo(projection.microcycles[0]?.planned_weekly_tss ?? 0, 1);
+      .reduce((sum, point) => sum + point.recommended_load, 0);
+    expect(firstWeekLoad).toBeCloseTo(projection.microcycles[0]?.planned_weekly_load ?? 0, 1);
     expect(partialWeekLoad).toBeCloseTo(
-      ((projection.microcycles[1]?.planned_weekly_tss ?? 0) * 3) / 7,
+      ((projection.microcycles[1]?.planned_weekly_load ?? 0) * 3) / 7,
       1,
     );
   });
 
-  it("prorates partial projection weeks when simulating CTL", () => {
-    const startingCtl = 50;
-    const weeklyTss = 700;
+  it("prorates partial projection weeks when simulating LongTermLoad", () => {
+    const startingLongTermLoad = 50;
+    const weeklyLoad = 700;
     const projection = buildDeterministicProjectionPayload({
       timeline: {
         start_date: "2026-01-05",
@@ -258,7 +258,7 @@ describe("projection calculations", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-01-07",
-          target_weekly_tss_range: { min: weeklyTss, max: weeklyTss },
+          target_weekly_load_range: { min: weeklyLoad, max: weeklyLoad },
         },
       ],
       goals: [
@@ -269,20 +269,22 @@ describe("projection calculations", () => {
           priority: 5,
         },
       ],
-      starting_ctl: startingCtl,
-      starting_atl: startingCtl,
-      disable_weekly_tss_optimizer: true,
+      starting_longTermLoad: startingLongTermLoad,
+      starting_recentLoad: startingLongTermLoad,
+      disable_weekly_load_optimizer: true,
     });
 
-    const appliedWeeklyTss = projection.microcycles[0]?.planned_weekly_tss ?? 0;
-    const expectedCtl = [0, 1, 2].reduce(
-      (ctl) => calculateCTL(ctl, appliedWeeklyTss / 7),
-      startingCtl,
+    const appliedWeeklyLoad = projection.microcycles[0]?.planned_weekly_load ?? 0;
+    const expectedLongTermLoad = [0, 1, 2].reduce(
+      (longTermLoad) => calculateLongTermLoad(longTermLoad, appliedWeeklyLoad / 7),
+      startingLongTermLoad,
     );
 
     expect(projection.microcycles).toHaveLength(1);
-    expect(appliedWeeklyTss).toBeGreaterThan(0);
-    expect(projection.microcycles[0]?.projected_ctl).toBe(Math.round(expectedCtl * 10) / 10);
+    expect(appliedWeeklyLoad).toBeGreaterThan(0);
+    expect(projection.microcycles[0]?.projected_longTermLoad).toBe(
+      Math.round(expectedLongTermLoad * 10) / 10,
+    );
   });
 
   it("surfaces precomputed reference context when goals are valid", () => {
@@ -297,7 +299,7 @@ describe("projection calculations", () => {
           phase: "build",
           start_date: "2026-04-06",
           end_date: "2026-04-27",
-          target_weekly_tss_range: { min: 380, max: 430 },
+          target_weekly_load_range: { min: 380, max: 430 },
         },
       ],
       goals: [
@@ -316,7 +318,7 @@ describe("projection calculations", () => {
           ],
         },
       ],
-      starting_ctl: 52,
+      starting_longTermLoad: 52,
       preference_profile: defaultAthletePreferenceProfile,
     });
 
@@ -341,7 +343,7 @@ describe("projection calculations", () => {
             phase: "build",
             start_date: "2026-04-06",
             end_date: "2026-04-27",
-            target_weekly_tss_range: { min: 380, max: 430 },
+            target_weekly_load_range: { min: 380, max: 430 },
           },
         ],
         goals: [
@@ -360,7 +362,7 @@ describe("projection calculations", () => {
             ],
           },
         ],
-        starting_ctl: 52,
+        starting_longTermLoad: 52,
       });
 
     expect(buildProjection).not.toThrow();
@@ -384,10 +386,10 @@ describe("projection calculations", () => {
           phase: "build",
           start_date: "2026-04-06",
           end_date: "2026-04-27",
-          target_weekly_tss_range: { min: 420, max: 460 },
+          target_weekly_load_range: { min: 420, max: 460 },
         },
       ],
-      starting_ctl: 52,
+      starting_longTermLoad: 52,
       preference_profile: defaultAthletePreferenceProfile,
     };
 
@@ -437,38 +439,38 @@ describe("projection calculations", () => {
     expect(
       tracked.projection_diagnostics?.reference_tracking?.taper_pressure ?? 0,
     ).toBeGreaterThanOrEqual(0);
-    expect(Number.isFinite(tracked.microcycles[0]?.planned_weekly_tss ?? NaN)).toBe(true);
-    expect(Number.isFinite(localIdTracked.microcycles[0]?.planned_weekly_tss ?? NaN)).toBe(true);
+    expect(Number.isFinite(tracked.microcycles[0]?.planned_weekly_load ?? NaN)).toBe(true);
+    expect(Number.isFinite(localIdTracked.microcycles[0]?.planned_weekly_load ?? NaN)).toBe(true);
   });
 
-  it("blends block target range and baseline weekly TSS", () => {
-    const weeklyTss = weeklyLoadFromBlockAndBaseline(
+  it("blends block target range and baseline weekly Common Load", () => {
+    const weeklyLoad = weeklyLoadFromBlockAndBaseline(
       {
-        target_weekly_tss_range: { min: 280, max: 320 },
+        target_weekly_load_range: { min: 280, max: 320 },
       },
       200,
     );
 
-    expect(weeklyTss).toBe(240);
+    expect(weeklyLoad).toBe(240);
   });
 
-  it("uses baseline weekly TSS when block has no target range", () => {
+  it("uses baseline weekly Common Load when block has no target range", () => {
     expect(weeklyLoadFromBlockAndBaseline(undefined, 187.34)).toBe(187.3);
   });
 
   it("uses prior state and demand context in rolling weekly composition", () => {
-    const weeklyTss = weeklyLoadFromBlockAndBaseline(
+    const weeklyLoad = weeklyLoadFromBlockAndBaseline(
       {
-        target_weekly_tss_range: { min: 260, max: 300 },
+        target_weekly_load_range: { min: 260, max: 300 },
       },
       200,
       {
-        previous_week_tss: 320,
-        demand_floor_weekly_tss: 360,
+        previous_week_load: 320,
+        demand_floor_weekly_load: 360,
       },
     );
 
-    expect(weeklyTss).toBe(316);
+    expect(weeklyLoad).toBe(316);
   });
 
   it("classifies event week when goal lands inside week", () => {
@@ -559,7 +561,7 @@ describe("projection calculations", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-02-01",
-          target_weekly_tss_range: { min: 280, max: 280 },
+          target_weekly_load_range: { min: 280, max: 280 },
         },
       ],
       goals: [
@@ -570,11 +572,11 @@ describe("projection calculations", () => {
           priority: 1,
         },
       ],
-      starting_ctl: 40,
+      starting_longTermLoad: 40,
     });
 
-    const week3 = projection.microcycles[2]?.planned_weekly_tss ?? 0;
-    const week4 = projection.microcycles[3]?.planned_weekly_tss ?? 0;
+    const week3 = projection.microcycles[2]?.planned_weekly_load ?? 0;
+    const week4 = projection.microcycles[3]?.planned_weekly_load ?? 0;
     expect(week4).toBeGreaterThan(0);
     expect(Math.abs(week4 - week3)).toBeLessThanOrEqual(Math.max(15, week3 * 0.1));
   });
@@ -591,7 +593,7 @@ describe("projection calculations", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-02-08",
-          target_weekly_tss_range: { min: 300, max: 300 },
+          target_weekly_load_range: { min: 300, max: 300 },
         },
       ],
       goals: [
@@ -602,14 +604,14 @@ describe("projection calculations", () => {
           priority: 2,
         },
       ],
-      starting_ctl: 42,
+      starting_longTermLoad: 42,
       creation_config: {
         optimization_profile: "balanced",
       },
-      disable_weekly_tss_optimizer: true,
+      disable_weekly_load_optimizer: true,
     });
 
-    const weekLoads = projection.microcycles.slice(0, 4).map((cycle) => cycle.planned_weekly_tss);
+    const weekLoads = projection.microcycles.slice(0, 4).map((cycle) => cycle.planned_weekly_load);
 
     expect(new Set(weekLoads).size).toBeGreaterThan(1);
     expect(weekLoads[2] ?? 0).toBeGreaterThan(weekLoads[1] ?? 0);
@@ -618,7 +620,7 @@ describe("projection calculations", () => {
 });
 
 describe("deterministic projection goal conflict weighting", () => {
-  it("reduces weekly TSS more when the conflicting high-priority goal is more urgent", () => {
+  it("reduces weekly Common Load more when the conflicting high-priority goal is more urgent", () => {
     const highPriorityUrgent = buildDeterministicProjectionPayload({
       timeline: {
         start_date: "2026-03-02",
@@ -630,7 +632,7 @@ describe("deterministic projection goal conflict weighting", () => {
           phase: "build",
           start_date: "2026-03-02",
           end_date: "2026-03-08",
-          target_weekly_tss_range: { min: 200, max: 200 },
+          target_weekly_load_range: { min: 200, max: 200 },
         },
       ],
       goals: [
@@ -647,12 +649,12 @@ describe("deterministic projection goal conflict weighting", () => {
           priority: 0,
         },
       ],
-      starting_ctl: 28,
+      starting_longTermLoad: 28,
       creation_config: {
         optimization_profile: "balanced",
         post_goal_recovery_days: 0,
-        max_weekly_tss_ramp_pct: 20,
-        max_ctl_ramp_per_week: 8,
+        max_weekly_load_ramp_pct: 20,
+        max_longTermLoad_ramp_per_week: 8,
       },
     });
 
@@ -667,7 +669,7 @@ describe("deterministic projection goal conflict weighting", () => {
           phase: "build",
           start_date: "2026-03-02",
           end_date: "2026-03-08",
-          target_weekly_tss_range: { min: 200, max: 200 },
+          target_weekly_load_range: { min: 200, max: 200 },
         },
       ],
       goals: [
@@ -684,17 +686,17 @@ describe("deterministic projection goal conflict weighting", () => {
           priority: 10,
         },
       ],
-      starting_ctl: 28,
+      starting_longTermLoad: 28,
       creation_config: {
         optimization_profile: "balanced",
         post_goal_recovery_days: 0,
-        max_weekly_tss_ramp_pct: 20,
-        max_ctl_ramp_per_week: 8,
+        max_weekly_load_ramp_pct: 20,
+        max_longTermLoad_ramp_per_week: 8,
       },
     });
 
-    expect(highPriorityUrgent.microcycles[0]?.planned_weekly_tss).toBeLessThanOrEqual(
-      lowPriorityUrgent.microcycles[0]?.planned_weekly_tss ?? 0,
+    expect(highPriorityUrgent.microcycles[0]?.planned_weekly_load).toBeLessThanOrEqual(
+      lowPriorityUrgent.microcycles[0]?.planned_weekly_load ?? 0,
     );
   });
 });
@@ -711,7 +713,7 @@ describe("deterministic inferred current state", () => {
         phase: "build",
         start_date: "2026-03-02",
         end_date: "2026-03-23",
-        target_weekly_tss_range: { min: 200, max: 240 },
+        target_weekly_load_range: { min: 200, max: 240 },
       },
     ],
     goals: [
@@ -722,16 +724,16 @@ describe("deterministic inferred current state", () => {
         priority: 2,
       },
     ],
-    starting_ctl: 32,
-    starting_atl: 35,
+    starting_longTermLoad: 32,
+    starting_recentLoad: 35,
   };
 
   it("emits inferred_current_state with bootstrap metadata", () => {
     const projection = buildDeterministicProjectionPayload(baseInput);
 
     expect(projection.inferred_current_state.as_of).toBe("2026-03-02T00:00:00.000Z");
-    expect(projection.inferred_current_state.mean.ctl).toBeGreaterThanOrEqual(0);
-    expect(projection.inferred_current_state.mean.atl).toBeGreaterThanOrEqual(0);
+    expect(projection.inferred_current_state.mean.longTermLoad).toBeGreaterThanOrEqual(0);
+    expect(projection.inferred_current_state.mean.recentLoad).toBeGreaterThanOrEqual(0);
     expect(projection.inferred_current_state.uncertainty.state_variance).toBeGreaterThanOrEqual(0);
     expect(projection.inferred_current_state.uncertainty.state_variance).toBeLessThanOrEqual(1);
     expect(projection.inferred_current_state.evidence_quality.score).toBeGreaterThanOrEqual(0);
@@ -745,9 +747,9 @@ describe("deterministic inferred current state", () => {
   it("reuses prior inferred snapshot deterministically", () => {
     const priorSnapshot = {
       mean: {
-        ctl: 60,
-        atl: 55,
-        tsb: 5,
+        longTermLoad: 60,
+        recentLoad: 55,
+        loadBalance: 5,
         slb: 0.92,
         durability: 72,
         readiness: 70,
@@ -779,16 +781,16 @@ describe("deterministic inferred current state", () => {
 
     expect(first.inferred_current_state).toEqual(second.inferred_current_state);
     expect(first.constraint_summary.starting_state.starting_state_is_prior).toBe(true);
-    expect(first.constraint_summary.starting_state.starting_ctl).toBeGreaterThan(
-      baseInput.starting_ctl ?? 0,
+    expect(first.constraint_summary.starting_state.starting_longTermLoad).toBeGreaterThan(
+      baseInput.starting_longTermLoad ?? 0,
     );
-    expect(first.constraint_summary.starting_state.starting_ctl).toBe(
-      first.inferred_current_state.mean.ctl,
+    expect(first.constraint_summary.starting_state.starting_longTermLoad).toBe(
+      first.inferred_current_state.mean.longTermLoad,
     );
   });
 });
 
-describe("deterministic weekly TSS optimizer", () => {
+describe("deterministic weekly Common Load optimizer", () => {
   const optimizerFixture: Parameters<typeof buildDeterministicProjectionPayload>[0] = {
     timeline: {
       start_date: "2026-01-05",
@@ -800,7 +802,7 @@ describe("deterministic weekly TSS optimizer", () => {
         phase: "build",
         start_date: "2026-01-05",
         end_date: "2026-02-08",
-        target_weekly_tss_range: { min: 320, max: 360 },
+        target_weekly_load_range: { min: 320, max: 360 },
       },
     ],
     goals: [
@@ -811,12 +813,12 @@ describe("deterministic weekly TSS optimizer", () => {
         priority: 1,
       },
     ],
-    starting_ctl: 44,
+    starting_longTermLoad: 44,
     creation_config: {
       optimization_profile: "outcome_first",
       post_goal_recovery_days: 0,
-      max_weekly_tss_ramp_pct: 16,
-      max_ctl_ramp_per_week: 8,
+      max_weekly_load_ramp_pct: 16,
+      max_longTermLoad_ramp_per_week: 8,
     },
   };
 
@@ -860,11 +862,11 @@ describe("deterministic weekly TSS optimizer", () => {
     const optimized = buildDeterministicProjectionPayload(optimizerFixture);
     const naive = buildDeterministicProjectionPayload({
       ...optimizerFixture,
-      disable_weekly_tss_optimizer: true,
+      disable_weekly_load_optimizer: true,
     });
 
     const hasDecisionDiff = optimized.microcycles.some(
-      (cycle, index) => cycle.planned_weekly_tss !== naive.microcycles[index]?.planned_weekly_tss,
+      (cycle, index) => cycle.planned_weekly_load !== naive.microcycles[index]?.planned_weekly_load,
     );
 
     if (hasDecisionDiff) {
@@ -878,7 +880,7 @@ describe("deterministic weekly TSS optimizer", () => {
     const optimized = buildDeterministicProjectionPayload(optimizerFixture);
     const naive = buildDeterministicProjectionPayload({
       ...optimizerFixture,
-      disable_weekly_tss_optimizer: true,
+      disable_weekly_load_optimizer: true,
     });
 
     expect(weightedGoalReadiness(optimized)).toBeGreaterThanOrEqual(weightedGoalReadiness(naive));
@@ -888,24 +890,25 @@ describe("deterministic weekly TSS optimizer", () => {
     const optimized = buildDeterministicProjectionPayload(optimizerFixture);
     const baseline = buildDeterministicProjectionPayload({
       ...optimizerFixture,
-      disable_weekly_tss_optimizer: true,
+      disable_weekly_load_optimizer: true,
     });
 
     expect(optimized.readiness_score).toBeGreaterThanOrEqual(baseline.readiness_score);
     expect(
       optimized.microcycles.every((cycle) => {
-        const tssRamp = cycle.metadata.tss_ramp;
-        const ctlRamp = cycle.metadata.ctl_ramp;
+        const loadRamp = cycle.metadata.load_ramp;
+        const longTermLoadRamp = cycle.metadata.longTermLoad_ramp;
         const requestedRampPct =
-          tssRamp.previous_week_tss <= 0
+          loadRamp.previous_week_load <= 0
             ? 0
-            : ((tssRamp.applied_weekly_tss - tssRamp.previous_week_tss) /
-                tssRamp.previous_week_tss) *
+            : ((loadRamp.applied_weekly_load - loadRamp.previous_week_load) /
+                loadRamp.previous_week_load) *
               100;
 
         return (
-          requestedRampPct <= tssRamp.max_weekly_tss_ramp_pct + 0.001 &&
-          ctlRamp.applied_ctl_ramp <= ctlRamp.max_ctl_ramp_per_week + 0.001
+          requestedRampPct <= loadRamp.max_weekly_load_ramp_pct + 0.001 &&
+          longTermLoadRamp.applied_longTermLoad_ramp <=
+            longTermLoadRamp.max_longTermLoad_ramp_per_week + 0.001
         );
       }),
     ).toBe(true);
@@ -965,7 +968,7 @@ describe("no-history anchor orchestration", () => {
         effort_confidence_marker: "high",
         profile_metric_completeness_marker: "high",
         signal_quality: 0.95,
-        recommended_baseline_tss_range: { min: 120, max: 280 },
+        recommended_baseline_load_range: { min: 120, max: 280 },
         recommended_recent_influence_range: { min: -0.2, max: 0.3 },
         recommended_sessions_per_week_range: { min: 4, max: 6 },
         rationale_codes: ["history_sparse"],
@@ -990,7 +993,7 @@ describe("no-history anchor orchestration", () => {
         effort_confidence_marker: "high",
         profile_metric_completeness_marker: "high",
         signal_quality: 0.95,
-        recommended_baseline_tss_range: { min: 180, max: 320 },
+        recommended_baseline_load_range: { min: 180, max: 320 },
         recommended_recent_influence_range: { min: -0.1, max: 0.2 },
         recommended_sessions_per_week_range: { min: 5, max: 7 },
         rationale_codes: ["history_rich"],
@@ -1014,7 +1017,7 @@ describe("no-history anchor orchestration", () => {
         effort_confidence_marker: "high",
         profile_metric_completeness_marker: "high",
         signal_quality: 0.95,
-        recommended_baseline_tss_range: { min: 180, max: 320 },
+        recommended_baseline_load_range: { min: 180, max: 320 },
         recommended_recent_influence_range: { min: -0.1, max: 0.2 },
         recommended_sessions_per_week_range: { min: 5, max: 7 },
         rationale_codes: ["history_stale"],
@@ -1043,14 +1046,14 @@ describe("no-history anchor orchestration", () => {
         effort_confidence_marker: "low",
         profile_metric_completeness_marker: "low",
         signal_quality: 0.05,
-        recommended_baseline_tss_range: { min: 30, max: 60 },
+        recommended_baseline_load_range: { min: 30, max: 60 },
         recommended_recent_influence_range: { min: -0.5, max: 0.5 },
         recommended_sessions_per_week_range: { min: 3, max: 5 },
         rationale_codes: ["history_none"],
       },
     });
 
-    expect(anchor.required_peak_weekly_tss?.target ?? 0).toBeGreaterThan(450);
+    expect(anchor.required_peak_weekly_load?.target ?? 0).toBeGreaterThan(450);
     expect(anchor.evidence_confidence?.score ?? 0).toBeGreaterThanOrEqual(0.75);
     expect(anchor.fitness_inference_reasons).toContain("demand_model_dynamic_continuous_v1");
     expect(anchor.fitness_inference_reasons).toContain("race_performance_target_with_pace");
@@ -1114,7 +1117,9 @@ describe("no-history anchor orchestration", () => {
       ],
     });
 
-    expect(bike.required_peak_weekly_tss.target).toBeLessThan(run.required_peak_weekly_tss.target);
+    expect(bike.required_peak_weekly_load.target).toBeLessThan(
+      run.required_peak_weekly_load.target,
+    );
     expect(bike.rationale_codes).toContain("race_performance_activity_category_bike");
     expect(run.rationale_codes).toContain("race_performance_activity_category_run");
   });
@@ -1167,8 +1172,8 @@ describe("no-history anchor orchestration", () => {
     const low = deriveNoHistoryProjectionFloor("low", "weak", 0.2);
     const high = deriveNoHistoryProjectionFloor("high", "weak", 0.9);
 
-    expect(high.start_ctl_floor).toBeGreaterThan(low.start_ctl_floor);
-    expect(high.start_weekly_tss_floor).toBe(Math.round(high.start_ctl_floor * 7));
+    expect(high.start_longTermLoad_floor).toBeGreaterThan(low.start_longTermLoad_floor);
+    expect(high.start_weekly_load_floor).toBe(Math.round(high.start_longTermLoad_floor * 7));
   });
 
   it("clamps no-history floor by availability and returns clamp flag", () => {
@@ -1203,8 +1208,8 @@ describe("no-history anchor orchestration", () => {
 
     expect(clamped.floor_clamped_by_availability).toBe(true);
     expect(clamped.reasons).toContain("floor_clamped_by_availability");
-    expect(clamped.start_weekly_tss).toBe(Math.round(clamped.start_ctl * 7));
-    expect(clamped.start_weekly_tss).toBeLessThan(floor.start_weekly_tss_floor);
+    expect(clamped.start_weekly_load).toBe(Math.round(clamped.start_longTermLoad * 7));
+    expect(clamped.start_weekly_load).toBeLessThan(floor.start_weekly_load_floor);
   });
 
   it("accepts scalar intensity model endpoints without legacy buckets", () => {
@@ -1231,7 +1236,7 @@ describe("no-history anchor orchestration", () => {
       },
     );
 
-    expect(clamped.start_weekly_tss).toBeGreaterThanOrEqual(0);
+    expect(clamped.start_weekly_load).toBeGreaterThanOrEqual(0);
     expect(clamped.assumed_intensity_model_version).toBe("scalar-intensity-v1");
   });
 
@@ -1243,7 +1248,7 @@ describe("no-history anchor orchestration", () => {
         effort_confidence_marker: "low",
         profile_metric_completeness_marker: "moderate",
         signal_quality: 0.55,
-        recommended_baseline_tss_range: { min: 30, max: 80 },
+        recommended_baseline_load_range: { min: 30, max: 80 },
         recommended_recent_influence_range: { min: -0.4, max: 0.4 },
         recommended_sessions_per_week_range: { min: 3, max: 4 },
         rationale_codes: ["history_none", "profile_metrics_moderate"],
@@ -1267,7 +1272,7 @@ describe("no-history anchor orchestration", () => {
         effort_confidence_marker: "low",
         profile_metric_completeness_marker: "moderate",
         signal_quality: 0.55,
-        recommended_baseline_tss_range: { min: 30, max: 80 },
+        recommended_baseline_load_range: { min: 30, max: 80 },
         recommended_recent_influence_range: { min: -0.4, max: 0.4 },
         recommended_sessions_per_week_range: { min: 3, max: 4 },
         rationale_codes: ["history_none"],
@@ -1277,35 +1282,37 @@ describe("no-history anchor orchestration", () => {
     expect(resolved.fitness_level).toBe("weak");
     expect(resolved.fitness_signal_0_1 ?? 1).toBeLessThan(0.62);
     expect(resolved.fitness_inference_reasons).toContain("availability_missing_skip_floor_clamp");
-    expect(resolved.starting_ctl_for_projection).toBe(18);
-    expect(resolved.fitness_inference_reasons).toContain("starting_ctl_defaulted_shared_prior");
+    expect(resolved.starting_longTermLoad_for_projection).toBe(18);
+    expect(resolved.fitness_inference_reasons).toContain(
+      "starting_longTermLoad_defaulted_shared_prior",
+    );
   });
 
-  it("supports no-history starting ctl override when explicitly provided", () => {
+  it("supports no-history starting longTermLoad override when explicitly provided", () => {
     const resolved = resolveNoHistoryAnchor({
       history_availability_state: "none",
       goal_tier: "medium",
       weeks_to_event: 12,
-      starting_ctl_override: 18,
+      starting_longTermLoad_override: 18,
       context_summary: {
         history_availability_state: "none",
         recent_consistency_marker: "moderate",
         effort_confidence_marker: "low",
         profile_metric_completeness_marker: "moderate",
         signal_quality: 0.5,
-        recommended_baseline_tss_range: { min: 30, max: 90 },
+        recommended_baseline_load_range: { min: 30, max: 90 },
         recommended_recent_influence_range: { min: -0.4, max: 0.4 },
         recommended_sessions_per_week_range: { min: 3, max: 5 },
         rationale_codes: ["history_none"],
       },
     });
 
-    expect(resolved.starting_ctl_for_projection).toBe(18);
-    expect(resolved.starting_weekly_tss_for_projection).toBe(126);
-    expect(resolved.fitness_inference_reasons).toContain("starting_ctl_override_applied");
+    expect(resolved.starting_longTermLoad_for_projection).toBe(18);
+    expect(resolved.starting_weekly_load_for_projection).toBe(126);
+    expect(resolved.fitness_inference_reasons).toContain("starting_longTermLoad_override_applied");
   });
 
-  it("caps youth no-history demand using the age-safe ctl ceiling", () => {
+  it("caps youth no-history demand using the age-safe longTermLoad ceiling", () => {
     const resolved = resolveNoHistoryAnchor({
       history_availability_state: "none",
       age: 14,
@@ -1324,14 +1331,14 @@ describe("no-history anchor orchestration", () => {
         effort_confidence_marker: "low",
         profile_metric_completeness_marker: "low",
         signal_quality: 0.2,
-        recommended_baseline_tss_range: { min: 60, max: 120 },
+        recommended_baseline_load_range: { min: 60, max: 120 },
         recommended_recent_influence_range: { min: -0.4, max: 0.2 },
         recommended_sessions_per_week_range: { min: 3, max: 4 },
         rationale_codes: ["history_none"],
       },
     });
 
-    expect(resolved.starting_ctl_for_projection).toBeLessThan(18);
+    expect(resolved.starting_longTermLoad_for_projection).toBeLessThan(18);
     expect(resolved.required_event_demand_range?.target ?? 0).toBeLessThanOrEqual(90);
   });
 
@@ -1397,7 +1404,7 @@ describe("no-history anchor orchestration", () => {
         effort_confidence_marker: "low",
         profile_metric_completeness_marker: "moderate",
         signal_quality: 0.5,
-        recommended_baseline_tss_range: { min: 30, max: 90 },
+        recommended_baseline_load_range: { min: 30, max: 90 },
         recommended_recent_influence_range: { min: -0.4, max: 0.4 },
         recommended_sessions_per_week_range: { min: 3, max: 5 },
         rationale_codes: ["history_none"],
@@ -1420,7 +1427,7 @@ describe("no-history anchor orchestration", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-01-25",
-          target_weekly_tss_range: { min: 90, max: 110 },
+          target_weekly_load_range: { min: 90, max: 110 },
         },
       ],
       goals: [
@@ -1431,12 +1438,12 @@ describe("no-history anchor orchestration", () => {
           priority: 1,
         },
       ],
-      starting_ctl: 12,
+      starting_longTermLoad: 12,
       creation_config: {
         optimization_profile: "balanced",
         post_goal_recovery_days: 5,
-        max_weekly_tss_ramp_pct: 20,
-        max_ctl_ramp_per_week: 8,
+        max_weekly_load_ramp_pct: 20,
+        max_longTermLoad_ramp_per_week: 8,
       },
       no_history_context: {
         history_availability_state: "none",
@@ -1448,7 +1455,7 @@ describe("no-history anchor orchestration", () => {
           effort_confidence_marker: "low",
           profile_metric_completeness_marker: "moderate",
           signal_quality: 0.55,
-          recommended_baseline_tss_range: { min: 30, max: 90 },
+          recommended_baseline_load_range: { min: 30, max: 90 },
           recommended_recent_influence_range: { min: -0.4, max: 0.4 },
           recommended_sessions_per_week_range: { min: 3, max: 5 },
           rationale_codes: ["history_none"],
@@ -1457,17 +1464,17 @@ describe("no-history anchor orchestration", () => {
     });
 
     expect(projection.no_history.projection_floor_applied).toBe(true);
-    expect(projection.no_history.projection_floor_values?.start_weekly_tss).toBeGreaterThanOrEqual(
+    expect(projection.no_history.projection_floor_values?.start_weekly_load).toBeGreaterThanOrEqual(
       140,
     );
     expect(projection.no_history.evidence_confidence).toBeTruthy();
     expect(projection.no_history.projection_feasibility).toBeTruthy();
-    expect(projection.constraint_summary.starting_state.starting_ctl).toBe(18);
+    expect(projection.constraint_summary.starting_state.starting_longTermLoad).toBe(18);
     expect(
       projection.microcycles
         .slice(0, 6)
         .some((cycle) =>
-          Number.isFinite(cycle.metadata.tss_ramp.demand_band_minimum_weekly_tss ?? Number.NaN),
+          Number.isFinite(cycle.metadata.load_ramp.demand_band_minimum_weekly_load ?? Number.NaN),
         ),
     ).toBe(true);
   });
@@ -1484,7 +1491,7 @@ describe("no-history anchor orchestration", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-01-25",
-          target_weekly_tss_range: { min: 40, max: 60 },
+          target_weekly_load_range: { min: 40, max: 60 },
         },
       ],
       goals: [
@@ -1495,11 +1502,11 @@ describe("no-history anchor orchestration", () => {
           priority: 1,
         },
       ],
-      starting_ctl: 12,
+      starting_longTermLoad: 12,
       creation_config: {
         optimization_profile: "balanced",
-        max_weekly_tss_ramp_pct: 500,
-        max_ctl_ramp_per_week: 20,
+        max_weekly_load_ramp_pct: 500,
+        max_longTermLoad_ramp_per_week: 20,
       },
       no_history_context: {
         history_availability_state: "none",
@@ -1511,7 +1518,7 @@ describe("no-history anchor orchestration", () => {
           effort_confidence_marker: "low",
           profile_metric_completeness_marker: "moderate",
           signal_quality: 0.55,
-          recommended_baseline_tss_range: { min: 30, max: 90 },
+          recommended_baseline_load_range: { min: 30, max: 90 },
           recommended_recent_influence_range: { min: -0.4, max: 0.4 },
           recommended_sessions_per_week_range: { min: 3, max: 5 },
           rationale_codes: ["history_none"],
@@ -1520,12 +1527,12 @@ describe("no-history anchor orchestration", () => {
     });
 
     const flooredWeek = projection.microcycles.find(
-      (cycle) => cycle.metadata.tss_ramp.floor_override_applied,
+      (cycle) => cycle.metadata.load_ramp.floor_override_applied,
     );
 
     expect(flooredWeek).toBeDefined();
-    expect(flooredWeek?.metadata.tss_ramp.requested_weekly_tss).toBeGreaterThanOrEqual(
-      flooredWeek?.metadata.tss_ramp.demand_band_minimum_weekly_tss ?? Number.POSITIVE_INFINITY,
+    expect(flooredWeek?.metadata.load_ramp.requested_weekly_load).toBeGreaterThanOrEqual(
+      flooredWeek?.metadata.load_ramp.demand_band_minimum_weekly_load ?? Number.POSITIVE_INFINITY,
     );
     expect(flooredWeek?.metadata.load_resolution.constraints).toContain(
       "demand_floor_above_requested_load",
@@ -1544,7 +1551,7 @@ describe("no-history anchor orchestration", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-03-01",
-          target_weekly_tss_range: { min: 90, max: 120 },
+          target_weekly_load_range: { min: 90, max: 120 },
         },
       ],
       goals: [
@@ -1568,7 +1575,7 @@ describe("no-history anchor orchestration", () => {
           effort_confidence_marker: "low",
           profile_metric_completeness_marker: "moderate",
           signal_quality: 0.55,
-          recommended_baseline_tss_range: { min: 30, max: 90 },
+          recommended_baseline_load_range: { min: 30, max: 90 },
           recommended_recent_influence_range: { min: -0.4, max: 0.4 },
           recommended_sessions_per_week_range: { min: 3, max: 5 },
           rationale_codes: ["history_none"],
@@ -1602,15 +1609,15 @@ describe("no-history anchor orchestration", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-03-01",
-          target_weekly_tss_range: { min: 120, max: 140 },
+          target_weekly_load_range: { min: 120, max: 140 },
         },
       ],
       goals: [{ id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 }],
-      starting_ctl: 8,
+      starting_longTermLoad: 8,
       creation_config: {
         optimization_profile: "sustainable",
-        max_weekly_tss_ramp_pct: 20,
-        max_ctl_ramp_per_week: 8,
+        max_weekly_load_ramp_pct: 20,
+        max_longTermLoad_ramp_per_week: 8,
       },
       no_history_context: {
         history_availability_state: "none",
@@ -1622,7 +1629,7 @@ describe("no-history anchor orchestration", () => {
           effort_confidence_marker: "low",
           profile_metric_completeness_marker: "low",
           signal_quality: 0.1,
-          recommended_baseline_tss_range: { min: 30, max: 90 },
+          recommended_baseline_load_range: { min: 30, max: 90 },
           recommended_recent_influence_range: { min: -0.5, max: 0.5 },
           recommended_sessions_per_week_range: { min: 3, max: 4 },
           rationale_codes: ["history_none"],
@@ -1638,15 +1645,15 @@ describe("no-history anchor orchestration", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-03-01",
-          target_weekly_tss_range: { min: 120, max: 140 },
+          target_weekly_load_range: { min: 120, max: 140 },
         },
       ],
       goals: [{ id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 }],
-      starting_ctl: 8,
+      starting_longTermLoad: 8,
       creation_config: {
         optimization_profile: "sustainable",
-        max_weekly_tss_ramp_pct: 3,
-        max_ctl_ramp_per_week: 0.5,
+        max_weekly_load_ramp_pct: 3,
+        max_longTermLoad_ramp_per_week: 0.5,
       },
       no_history_context: {
         history_availability_state: "none",
@@ -1658,7 +1665,7 @@ describe("no-history anchor orchestration", () => {
           effort_confidence_marker: "low",
           profile_metric_completeness_marker: "low",
           signal_quality: 0.1,
-          recommended_baseline_tss_range: { min: 30, max: 90 },
+          recommended_baseline_load_range: { min: 30, max: 90 },
           recommended_recent_influence_range: { min: -0.5, max: 0.5 },
           recommended_sessions_per_week_range: { min: 3, max: 4 },
           rationale_codes: ["history_none"],
@@ -1669,12 +1676,13 @@ describe("no-history anchor orchestration", () => {
     const lenientFeasibility = lenient.no_history.projection_feasibility!;
     const constrainedFeasibility = constrained.no_history.projection_feasibility!;
 
-    expect(constrainedFeasibility.demand_gap.unmet_weekly_tss).toBeGreaterThanOrEqual(
-      lenientFeasibility.demand_gap.unmet_weekly_tss,
+    expect(constrainedFeasibility.demand_gap.unmet_weekly_load).toBeGreaterThanOrEqual(
+      lenientFeasibility.demand_gap.unmet_weekly_load,
     );
     expect(
       constrained.microcycles.every(
-        (week, index) => week.planned_weekly_tss <= lenient.microcycles[index]!.planned_weekly_tss,
+        (week, index) =>
+          week.planned_weekly_load <= lenient.microcycles[index]!.planned_weekly_load,
       ),
     ).toBe(true);
     expect(constrainedFeasibility.readiness_score).toBeGreaterThanOrEqual(0);
@@ -1690,7 +1698,7 @@ describe("no-history anchor orchestration", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-02-02",
-          target_weekly_tss_range: { min: 240, max: 320 },
+          target_weekly_load_range: { min: 240, max: 320 },
         },
       ],
       goals: [
@@ -1701,11 +1709,11 @@ describe("no-history anchor orchestration", () => {
           priority: 1,
         },
       ],
-      starting_ctl: 10,
+      starting_longTermLoad: 10,
       creation_config: {
         optimization_profile: "outcome_first",
-        max_weekly_tss_ramp_pct: 4,
-        max_ctl_ramp_per_week: 0.75,
+        max_weekly_load_ramp_pct: 4,
+        max_longTermLoad_ramp_per_week: 0.75,
       },
       no_history_context: {
         history_availability_state: "none",
@@ -1717,7 +1725,7 @@ describe("no-history anchor orchestration", () => {
           effort_confidence_marker: "low",
           profile_metric_completeness_marker: "low",
           signal_quality: 0.15,
-          recommended_baseline_tss_range: { min: 25, max: 70 },
+          recommended_baseline_load_range: { min: 25, max: 70 },
           recommended_recent_influence_range: { min: -0.5, max: 0.3 },
           recommended_sessions_per_week_range: { min: 2, max: 4 },
           rationale_codes: ["history_none"],
@@ -1741,7 +1749,7 @@ describe("no-history anchor orchestration", () => {
           phase: "base",
           start_date: "2026-01-05",
           end_date: "2026-12-28",
-          target_weekly_tss_range: { min: 35, max: 55 },
+          target_weekly_load_range: { min: 35, max: 55 },
         },
       ],
       goals: [
@@ -1752,11 +1760,11 @@ describe("no-history anchor orchestration", () => {
           priority: 1,
         },
       ],
-      starting_ctl: 8,
+      starting_longTermLoad: 8,
       creation_config: {
         optimization_profile: "sustainable",
-        max_weekly_tss_ramp_pct: 30,
-        max_ctl_ramp_per_week: 8,
+        max_weekly_load_ramp_pct: 30,
+        max_longTermLoad_ramp_per_week: 8,
       },
       no_history_context: {
         history_availability_state: "none",
@@ -1768,7 +1776,7 @@ describe("no-history anchor orchestration", () => {
           effort_confidence_marker: "low",
           profile_metric_completeness_marker: "low",
           signal_quality: 0.12,
-          recommended_baseline_tss_range: { min: 20, max: 55 },
+          recommended_baseline_load_range: { min: 20, max: 55 },
           recommended_recent_influence_range: { min: -0.5, max: 0.2 },
           recommended_sessions_per_week_range: { min: 2, max: 3 },
           rationale_codes: ["history_none", "availability_training_days_2"],
@@ -1781,7 +1789,7 @@ describe("no-history anchor orchestration", () => {
     expect(["capacity_limited", "timeline_limited"]).toContain(
       feasibility?.low_readiness_limiter_mode,
     );
-    expect(feasibility?.demand_gap.unmet_weekly_tss ?? 0).toBeGreaterThan(0);
+    expect(feasibility?.demand_gap.unmet_weekly_load ?? 0).toBeGreaterThan(0);
     expect(projection.readiness_rationale_codes).toContain(
       `readiness_limiter_${feasibility?.low_readiness_limiter_mode}`,
     );
@@ -1796,7 +1804,7 @@ describe("no-history anchor orchestration", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-03-01",
-          target_weekly_tss_range: { min: 120, max: 150 },
+          target_weekly_load_range: { min: 120, max: 150 },
         },
       ],
       goals: [{ id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 }],
@@ -1810,7 +1818,7 @@ describe("no-history anchor orchestration", () => {
           effort_confidence_marker: "high",
           profile_metric_completeness_marker: "high",
           signal_quality: 0.95,
-          recommended_baseline_tss_range: { min: 80, max: 160 },
+          recommended_baseline_load_range: { min: 80, max: 160 },
           recommended_recent_influence_range: { min: -0.1, max: 0.2 },
           recommended_sessions_per_week_range: { min: 5, max: 7 },
           rationale_codes: ["history_rich"],
@@ -1826,7 +1834,7 @@ describe("no-history anchor orchestration", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-03-01",
-          target_weekly_tss_range: { min: 120, max: 150 },
+          target_weekly_load_range: { min: 120, max: 150 },
         },
       ],
       goals: [{ id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 }],
@@ -1840,7 +1848,7 @@ describe("no-history anchor orchestration", () => {
           effort_confidence_marker: "low",
           profile_metric_completeness_marker: "low",
           signal_quality: 0.05,
-          recommended_baseline_tss_range: { min: 30, max: 90 },
+          recommended_baseline_load_range: { min: 30, max: 90 },
           recommended_recent_influence_range: { min: -0.5, max: 0.5 },
           recommended_sessions_per_week_range: { min: 3, max: 4 },
           rationale_codes: ["history_none"],
@@ -1851,9 +1859,9 @@ describe("no-history anchor orchestration", () => {
     const high = highConfidence.no_history.projection_feasibility!;
     const low = lowConfidence.no_history.projection_feasibility!;
     const highWidth =
-      (high.projection_uncertainty?.tss_high ?? 0) - (high.projection_uncertainty?.tss_low ?? 0);
+      (high.projection_uncertainty?.load_high ?? 0) - (high.projection_uncertainty?.load_low ?? 0);
     const lowWidth =
-      (low.projection_uncertainty?.tss_high ?? 0) - (low.projection_uncertainty?.tss_low ?? 0);
+      (low.projection_uncertainty?.load_high ?? 0) - (low.projection_uncertainty?.load_low ?? 0);
 
     expect(Math.abs((high.readiness_score ?? 0) - (low.readiness_score ?? 0))).toBeLessThanOrEqual(
       4,
@@ -1861,7 +1869,7 @@ describe("no-history anchor orchestration", () => {
     expect(lowWidth).toBeGreaterThan(highWidth);
   });
 
-  it("prefers CTL-derived seed and carries forward prior-state context", () => {
+  it("prefers LongTermLoad-derived seed and carries forward prior-state context", () => {
     const projection = buildDeterministicProjectionPayload({
       timeline: {
         start_date: "2026-01-05",
@@ -1873,7 +1881,7 @@ describe("no-history anchor orchestration", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-02-01",
-          target_weekly_tss_range: { min: 120, max: 150 },
+          target_weekly_load_range: { min: 120, max: 150 },
         },
       ],
       goals: [
@@ -1884,7 +1892,7 @@ describe("no-history anchor orchestration", () => {
           priority: 1,
         },
       ],
-      starting_ctl: 30,
+      starting_longTermLoad: 30,
       creation_config: {
         optimization_profile: "balanced",
       },
@@ -1893,15 +1901,15 @@ describe("no-history anchor orchestration", () => {
     const week1 = projection.microcycles[0]!;
     const week2 = projection.microcycles[1]!;
 
-    expect(week1.metadata.tss_ramp.seed_source).toBe("starting_ctl");
-    expect(week1.metadata.tss_ramp.seed_weekly_tss).toBe(210);
-    expect(week2.metadata.tss_ramp.rolling_base_components.previous_week_tss).toBe(
-      week1.planned_weekly_tss,
+    expect(week1.metadata.load_ramp.seed_source).toBe("starting_longTermLoad");
+    expect(week1.metadata.load_ramp.seed_weekly_load).toBe(210);
+    expect(week2.metadata.load_ramp.rolling_base_components.previous_week_load).toBe(
+      week1.planned_weekly_load,
     );
-    expect(week2.metadata.tss_ramp.rolling_base_components.previous_week_tss).not.toBe(80);
+    expect(week2.metadata.load_ramp.rolling_base_components.previous_week_load).not.toBe(80);
   });
 
-  it("falls back to dynamic seed when CTL is unavailable", () => {
+  it("falls back to dynamic seed when LongTermLoad is unavailable", () => {
     const projection = buildDeterministicProjectionPayload({
       timeline: {
         start_date: "2026-01-05",
@@ -1913,7 +1921,7 @@ describe("no-history anchor orchestration", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-01-12",
-          target_weekly_tss_range: { min: 120, max: 150 },
+          target_weekly_load_range: { min: 120, max: 150 },
         },
       ],
       goals: [
@@ -1929,8 +1937,8 @@ describe("no-history anchor orchestration", () => {
       },
     });
 
-    expect(projection.microcycles[0]?.metadata.tss_ramp.seed_source).toBe("dynamic_seed");
-    expect(projection.microcycles[0]?.metadata.tss_ramp.seed_weekly_tss).toBe(135);
+    expect(projection.microcycles[0]?.metadata.load_ramp.seed_source).toBe("dynamic_seed");
+    expect(projection.microcycles[0]?.metadata.load_ramp.seed_weekly_load).toBe(135);
   });
 });
 
@@ -1947,7 +1955,7 @@ describe("phase 1 scoring integration", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-02-02",
-          target_weekly_tss_range: { min: 220, max: 260 },
+          target_weekly_load_range: { min: 220, max: 260 },
         },
       ],
       goals: [
@@ -1966,7 +1974,7 @@ describe("phase 1 scoring integration", () => {
           ],
         },
       ],
-      starting_ctl: 40,
+      starting_longTermLoad: 40,
       creation_config: {
         optimization_profile: "balanced",
       },
@@ -1994,7 +2002,7 @@ describe("phase 1 scoring integration", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-03-01",
-          target_weekly_tss_range: { min: 260, max: 320 },
+          target_weekly_load_range: { min: 260, max: 320 },
         },
       ],
       goals: [
@@ -2005,11 +2013,11 @@ describe("phase 1 scoring integration", () => {
           priority: 1,
         },
       ],
-      starting_ctl: 35,
+      starting_longTermLoad: 35,
       creation_config: {
         optimization_profile: "outcome_first",
-        max_weekly_tss_ramp_pct: 20,
-        max_ctl_ramp_per_week: 8,
+        max_weekly_load_ramp_pct: 20,
+        max_longTermLoad_ramp_per_week: 8,
       },
     });
 
@@ -2032,7 +2040,7 @@ describe("phase 1 scoring integration", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-03-01",
-          target_weekly_tss_range: { min: 260, max: 320 },
+          target_weekly_load_range: { min: 260, max: 320 },
         },
       ],
       goals: [
@@ -2049,11 +2057,11 @@ describe("phase 1 scoring integration", () => {
           priority: 3,
         },
       ],
-      starting_ctl: 35,
+      starting_longTermLoad: 35,
       creation_config: {
         optimization_profile: "outcome_first",
-        max_weekly_tss_ramp_pct: 20,
-        max_ctl_ramp_per_week: 8,
+        max_weekly_load_ramp_pct: 20,
+        max_longTermLoad_ramp_per_week: 8,
       },
     });
 
@@ -2096,7 +2104,7 @@ describe("phase 1 scoring integration", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-03-16",
-          target_weekly_tss_range: { min: 220, max: 260 },
+          target_weekly_load_range: { min: 220, max: 260 },
         },
       ],
       goals: [
@@ -2115,7 +2123,7 @@ describe("phase 1 scoring integration", () => {
           ],
         },
       ],
-      starting_ctl: 42,
+      starting_longTermLoad: 42,
       creation_config: {
         behavior_controls: {
           aggressiveness: 0.1,
@@ -2149,7 +2157,7 @@ describe("phase 1 scoring integration", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-02-16",
-          target_weekly_tss_range: { min: 80, max: 120 },
+          target_weekly_load_range: { min: 80, max: 120 },
         },
       ],
       goals: [
@@ -2178,7 +2186,7 @@ describe("phase 1 scoring integration", () => {
           effort_confidence_marker: "low",
           profile_metric_completeness_marker: "low",
           signal_quality: 0.08,
-          recommended_baseline_tss_range: { min: 20, max: 50 },
+          recommended_baseline_load_range: { min: 20, max: 50 },
           recommended_recent_influence_range: { min: -0.5, max: 0.4 },
           recommended_sessions_per_week_range: { min: 2, max: 4 },
           rationale_codes: ["history_none"],
@@ -2207,7 +2215,7 @@ describe("phase 1 scoring integration", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-03-16",
-          target_weekly_tss_range: { min: 240, max: 280 },
+          target_weekly_load_range: { min: 240, max: 280 },
         },
       ],
       goals: [
@@ -2240,7 +2248,7 @@ describe("phase 1 scoring integration", () => {
           ],
         },
       ],
-      starting_ctl: 38,
+      starting_longTermLoad: 38,
       preference_profile: defaultAthletePreferenceProfile,
       training_prescription: resolveTrainingPrescription({
         goals: [
@@ -2294,7 +2302,7 @@ describe("phase 1 scoring integration", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("derives dose duration from endurance TSS math", () => {
+  it("derives dose duration from endurance Common Load math", () => {
     const projection = buildDeterministicProjectionPayload({
       timeline: {
         start_date: "2026-01-05",
@@ -2306,13 +2314,13 @@ describe("phase 1 scoring integration", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-01-25",
-          target_weekly_tss_range: { min: 300, max: 300 },
+          target_weekly_load_range: { min: 300, max: 300 },
         },
       ],
       goals: [{ id: "goal-1", name: "Goal", target_date: "2026-01-25", priority: 1 }],
-      starting_ctl: 42,
-      starting_atl: 42,
-      disable_weekly_tss_optimizer: true,
+      starting_longTermLoad: 42,
+      starting_recentLoad: 42,
+      disable_weekly_load_optimizer: true,
     });
 
     const load = projection.dose_recommendation?.recommended_weekly_load ?? 0;
@@ -2334,7 +2342,7 @@ describe("phase 1 scoring integration", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-03-22",
-          target_weekly_tss_range: { min: 180, max: 220 },
+          target_weekly_load_range: { min: 180, max: 220 },
         },
       ],
       goals: [
@@ -2367,7 +2375,7 @@ describe("phase 1 scoring integration", () => {
           ],
         },
       ],
-      starting_ctl: 26,
+      starting_longTermLoad: 26,
     });
 
     const near = projection.goal_assessments?.find((goal) => goal.goal_id === "goal-near");
@@ -2397,7 +2405,7 @@ describe("phase 2 mpc integration diagnostics", () => {
         phase: "build",
         start_date: "2026-01-05",
         end_date: "2026-02-16",
-        target_weekly_tss_range: { min: 260, max: 320 },
+        target_weekly_load_range: { min: 260, max: 320 },
       },
     ],
     goals: [
@@ -2408,11 +2416,11 @@ describe("phase 2 mpc integration diagnostics", () => {
         priority: 1,
       },
     ],
-    starting_ctl: 34,
+    starting_longTermLoad: 34,
     creation_config: {
       optimization_profile: "balanced",
-      max_weekly_tss_ramp_pct: 7,
-      max_ctl_ramp_per_week: 3,
+      max_weekly_load_ramp_pct: 7,
+      max_longTermLoad_ramp_per_week: 3,
     },
   };
 
@@ -2447,8 +2455,8 @@ describe("phase 2 mpc integration diagnostics", () => {
         churn_penalty_weight: expect.any(Number),
       },
       caps: {
-        max_weekly_tss_ramp_pct: expect.any(Number),
-        max_ctl_ramp_per_week: expect.any(Number),
+        max_weekly_load_ramp_pct: expect.any(Number),
+        max_longTermLoad_ramp_per_week: expect.any(Number),
       },
       search: {
         lookahead_weeks: expect.any(Number),
@@ -2461,8 +2469,8 @@ describe("phase 2 mpc integration diagnostics", () => {
       },
     });
     expect(diagnostics?.clamp_counts).toMatchObject({
-      tss: expect.any(Number),
-      ctl: expect.any(Number),
+      load: expect.any(Number),
+      longTermLoad: expect.any(Number),
     });
     expect(diagnostics?.objective_contributions).toMatchObject({
       sampled_weeks: expect.any(Number),
@@ -2499,11 +2507,11 @@ describe("phase 2 mpc integration diagnostics", () => {
   it("uses deterministic cap-only fallback when optimizer is disabled", () => {
     const first = buildDeterministicProjectionPayload({
       ...phase2Fixture,
-      disable_weekly_tss_optimizer: true,
+      disable_weekly_load_optimizer: true,
     });
     const second = buildDeterministicProjectionPayload({
       ...phase2Fixture,
-      disable_weekly_tss_optimizer: true,
+      disable_weekly_load_optimizer: true,
     });
 
     expect(first.projection_diagnostics).toEqual(second.projection_diagnostics);
@@ -2526,39 +2534,43 @@ describe("phase 2 mpc integration diagnostics", () => {
       ...phase2Fixture,
       creation_config: {
         optimization_profile: "balanced",
-        max_weekly_tss_ramp_pct: 4,
-        max_ctl_ramp_per_week: 1,
+        max_weekly_load_ramp_pct: 4,
+        max_longTermLoad_ramp_per_week: 1,
       },
     });
     const lenientProjection = buildDeterministicProjectionPayload({
       ...phase2Fixture,
       creation_config: {
         optimization_profile: "balanced",
-        max_weekly_tss_ramp_pct: 20,
-        max_ctl_ramp_per_week: 8,
+        max_weekly_load_ramp_pct: 20,
+        max_longTermLoad_ramp_per_week: 8,
       },
     });
 
-    expect(strictProjection.microcycles[0]?.metadata.tss_ramp.max_weekly_tss_ramp_pct).toBeLessThan(
-      lenientProjection.microcycles[0]?.metadata.tss_ramp.max_weekly_tss_ramp_pct ??
-        Number.POSITIVE_INFINITY,
-    );
-    expect(strictProjection.microcycles[0]?.metadata.ctl_ramp.max_ctl_ramp_per_week).toBeLessThan(
-      lenientProjection.microcycles[0]?.metadata.ctl_ramp.max_ctl_ramp_per_week ??
+    expect(
+      strictProjection.microcycles[0]?.metadata.load_ramp.max_weekly_load_ramp_pct,
+    ).toBeLessThan(
+      lenientProjection.microcycles[0]?.metadata.load_ramp.max_weekly_load_ramp_pct ??
         Number.POSITIVE_INFINITY,
     );
     expect(
-      strictProjection.microcycles[0]?.metadata.tss_ramp.max_weekly_tss_ramp_pct,
+      strictProjection.microcycles[0]?.metadata.longTermLoad_ramp.max_longTermLoad_ramp_per_week,
+    ).toBeLessThan(
+      lenientProjection.microcycles[0]?.metadata.longTermLoad_ramp.max_longTermLoad_ramp_per_week ??
+        Number.POSITIVE_INFINITY,
+    );
+    expect(
+      strictProjection.microcycles[0]?.metadata.load_ramp.max_weekly_load_ramp_pct,
     ).toBeGreaterThanOrEqual(0);
     expect(
-      lenientProjection.microcycles[0]?.metadata.tss_ramp.max_weekly_tss_ramp_pct,
+      lenientProjection.microcycles[0]?.metadata.load_ramp.max_weekly_load_ramp_pct,
     ).toBeLessThanOrEqual(40);
     expect(strictProjection.projection_diagnostics?.active_constraints).toContain(
       "invariant_numeric_bounds_enforced",
     );
     expect(strictProjection.projection_diagnostics?.clamp_counts).toEqual({
-      tss: strictProjection.constraint_summary.tss_ramp_clamp_weeks,
-      ctl: strictProjection.constraint_summary.ctl_ramp_clamp_weeks,
+      load: strictProjection.constraint_summary.load_ramp_clamp_weeks,
+      longTermLoad: strictProjection.constraint_summary.longTermLoad_ramp_clamp_weeks,
     });
   });
 
@@ -2567,33 +2579,41 @@ describe("phase 2 mpc integration diagnostics", () => {
       ...phase2Fixture,
       creation_config: {
         optimization_profile: "sustainable",
-        max_weekly_tss_ramp_pct: 7,
-        max_ctl_ramp_per_week: 3,
+        max_weekly_load_ramp_pct: 7,
+        max_longTermLoad_ramp_per_week: 3,
       },
     });
     const outcomeFirstControls = buildDeterministicProjectionPayload({
       ...phase2Fixture,
       creation_config: {
         optimization_profile: "outcome_first",
-        max_weekly_tss_ramp_pct: 7,
-        max_ctl_ramp_per_week: 3,
+        max_weekly_load_ramp_pct: 7,
+        max_longTermLoad_ramp_per_week: 3,
       },
     });
 
-    expect(outcomeFirstControls.microcycles[0]?.metadata.tss_ramp.max_weekly_tss_ramp_pct).toBe(
-      sustainableControls.microcycles[0]?.metadata.tss_ramp.max_weekly_tss_ramp_pct,
+    expect(outcomeFirstControls.microcycles[0]?.metadata.load_ramp.max_weekly_load_ramp_pct).toBe(
+      sustainableControls.microcycles[0]?.metadata.load_ramp.max_weekly_load_ramp_pct,
     );
-    expect(outcomeFirstControls.microcycles[0]?.metadata.ctl_ramp.max_ctl_ramp_per_week).toBe(
-      sustainableControls.microcycles[0]?.metadata.ctl_ramp.max_ctl_ramp_per_week,
+    expect(
+      outcomeFirstControls.microcycles[0]?.metadata.longTermLoad_ramp
+        .max_longTermLoad_ramp_per_week,
+    ).toBe(
+      sustainableControls.microcycles[0]?.metadata.longTermLoad_ramp.max_longTermLoad_ramp_per_week,
     );
-    expect(outcomeFirstControls.microcycles[0]?.metadata.tss_ramp.max_weekly_tss_ramp_pct).toBe(7);
-    expect(outcomeFirstControls.microcycles[0]?.metadata.ctl_ramp.max_ctl_ramp_per_week).toBe(3);
+    expect(outcomeFirstControls.microcycles[0]?.metadata.load_ramp.max_weekly_load_ramp_pct).toBe(
+      7,
+    );
+    expect(
+      outcomeFirstControls.microcycles[0]?.metadata.longTermLoad_ramp
+        .max_longTermLoad_ramp_per_week,
+    ).toBe(3);
   });
 
   it("applies a bounded direct aggressiveness effect to weekly load signals", () => {
     const lowAggressiveness = buildDeterministicProjectionPayload({
       ...phase2Fixture,
-      disable_weekly_tss_optimizer: true,
+      disable_weekly_load_optimizer: true,
       creation_config: {
         ...phase2Fixture.creation_config,
         behavior_controls: {
@@ -2609,7 +2629,7 @@ describe("phase 2 mpc integration diagnostics", () => {
     });
     const highAggressiveness = buildDeterministicProjectionPayload({
       ...phase2Fixture,
-      disable_weekly_tss_optimizer: true,
+      disable_weekly_load_optimizer: true,
       creation_config: {
         ...phase2Fixture.creation_config,
         behavior_controls: {
@@ -2625,10 +2645,10 @@ describe("phase 2 mpc integration diagnostics", () => {
     });
 
     const lowRequested = lowAggressiveness.microcycles.map(
-      (cycle) => cycle.metadata?.tss_ramp.raw_requested_weekly_tss ?? 0,
+      (cycle) => cycle.metadata?.load_ramp.raw_requested_weekly_load ?? 0,
     );
     const highRequested = highAggressiveness.microcycles.map(
-      (cycle) => cycle.metadata?.tss_ramp.raw_requested_weekly_tss ?? 0,
+      (cycle) => cycle.metadata?.load_ramp.raw_requested_weekly_load ?? 0,
     );
 
     expect(highRequested).toHaveLength(lowRequested.length);
@@ -2643,16 +2663,16 @@ describe("phase 2 mpc integration diagnostics", () => {
       ...phase2Fixture,
       creation_config: {
         ...phase2Fixture.creation_config,
-        max_weekly_tss_ramp_pct: 20,
-        max_ctl_ramp_per_week: 8,
+        max_weekly_load_ramp_pct: 20,
+        max_longTermLoad_ramp_per_week: 8,
       },
     });
     const theoreticalFrontier = buildDeterministicProjectionPayload({
       ...phase2Fixture,
       creation_config: {
         ...phase2Fixture.creation_config,
-        max_weekly_tss_ramp_pct: 40,
-        max_ctl_ramp_per_week: 12,
+        max_weekly_load_ramp_pct: 40,
+        max_longTermLoad_ramp_per_week: 12,
       },
     });
 
@@ -2660,20 +2680,20 @@ describe("phase 2 mpc integration diagnostics", () => {
     const frontierCaps =
       theoreticalFrontier.projection_diagnostics?.effective_optimizer_config.caps;
 
-    expect(frontierCaps?.max_weekly_tss_ramp_pct ?? 0).toBeGreaterThan(20);
-    expect(frontierCaps?.max_ctl_ramp_per_week ?? 0).toBeGreaterThan(8);
-    expect(frontierCaps?.max_weekly_tss_ramp_pct ?? 0).toBeGreaterThanOrEqual(
-      practicalCaps?.max_weekly_tss_ramp_pct ?? 0,
+    expect(frontierCaps?.max_weekly_load_ramp_pct ?? 0).toBeGreaterThan(20);
+    expect(frontierCaps?.max_longTermLoad_ramp_per_week ?? 0).toBeGreaterThan(8);
+    expect(frontierCaps?.max_weekly_load_ramp_pct ?? 0).toBeGreaterThanOrEqual(
+      practicalCaps?.max_weekly_load_ramp_pct ?? 0,
     );
-    expect(frontierCaps?.max_ctl_ramp_per_week ?? 0).toBeGreaterThanOrEqual(
-      practicalCaps?.max_ctl_ramp_per_week ?? 0,
+    expect(frontierCaps?.max_longTermLoad_ramp_per_week ?? 0).toBeGreaterThanOrEqual(
+      practicalCaps?.max_longTermLoad_ramp_per_week ?? 0,
     );
 
     const practicalUpperBand = Math.max(
-      ...practicalCeiling.microcycles.map((cycle) => cycle.planned_weekly_tss),
+      ...practicalCeiling.microcycles.map((cycle) => cycle.planned_weekly_load),
     );
     const frontierUpperBand = Math.max(
-      ...theoreticalFrontier.microcycles.map((cycle) => cycle.planned_weekly_tss),
+      ...theoreticalFrontier.microcycles.map((cycle) => cycle.planned_weekly_load),
     );
 
     expect(frontierUpperBand).toBeGreaterThanOrEqual(practicalUpperBand);
@@ -2731,18 +2751,20 @@ describe("phase 5 benchmark and theoretical frontier validation", () => {
       blocks: [
         {
           ...buildBlockBase,
-          target_weekly_tss_range: { min: 820, max: 1040 },
+          target_weekly_load_range: { min: 820, max: 1040 },
         },
       ],
-      starting_ctl: 95,
+      starting_longTermLoad: 95,
       creation_config: {
         optimization_profile: "balanced",
-        max_weekly_tss_ramp_pct: 20,
-        max_ctl_ramp_per_week: 8,
+        max_weekly_load_ramp_pct: 20,
+        max_longTermLoad_ramp_per_week: 8,
       },
     });
 
-    const weeklyPeak = Math.max(...projection.microcycles.map((cycle) => cycle.planned_weekly_tss));
+    const weeklyPeak = Math.max(
+      ...projection.microcycles.map((cycle) => cycle.planned_weekly_load),
+    );
 
     expect(weeklyPeak).toBeGreaterThanOrEqual(800);
     expect(weeklyPeak).toBeLessThanOrEqual(1200);
@@ -2754,18 +2776,20 @@ describe("phase 5 benchmark and theoretical frontier validation", () => {
       blocks: [
         {
           ...buildBlockBase,
-          target_weekly_tss_range: { min: 1550, max: 2250 },
+          target_weekly_load_range: { min: 1550, max: 2250 },
         },
       ],
-      starting_ctl: 150,
+      starting_longTermLoad: 150,
       creation_config: {
         optimization_profile: "outcome_first",
-        max_weekly_tss_ramp_pct: 40,
-        max_ctl_ramp_per_week: 12,
+        max_weekly_load_ramp_pct: 40,
+        max_longTermLoad_ramp_per_week: 12,
       },
     });
 
-    const weeklyPeak = Math.max(...projection.microcycles.map((cycle) => cycle.planned_weekly_tss));
+    const weeklyPeak = Math.max(
+      ...projection.microcycles.map((cycle) => cycle.planned_weekly_load),
+    );
 
     expect(weeklyPeak).toBeGreaterThanOrEqual(1500);
   });
@@ -2776,32 +2800,32 @@ describe("phase 5 benchmark and theoretical frontier validation", () => {
       blocks: [
         {
           ...buildBlockBase,
-          target_weekly_tss_range: { min: 2300, max: 3200 },
+          target_weekly_load_range: { min: 2300, max: 3200 },
         },
       ],
-      starting_ctl: 190,
+      starting_longTermLoad: 190,
       creation_config: {
         optimization_profile: "outcome_first",
-        max_weekly_tss_ramp_pct: 40,
-        max_ctl_ramp_per_week: 12,
+        max_weekly_load_ramp_pct: 40,
+        max_longTermLoad_ramp_per_week: 12,
       },
     };
 
     const first = buildDeterministicProjectionPayload(theoreticalInput);
     const second = buildDeterministicProjectionPayload(theoreticalInput);
-    const weeklyPeak = Math.max(...first.microcycles.map((cycle) => cycle.planned_weekly_tss));
+    const weeklyPeak = Math.max(...first.microcycles.map((cycle) => cycle.planned_weekly_load));
 
     expect(weeklyPeak).toBeGreaterThan(2200);
-    expect(first.microcycles.map((cycle) => cycle.planned_weekly_tss)).toEqual(
-      second.microcycles.map((cycle) => cycle.planned_weekly_tss),
+    expect(first.microcycles.map((cycle) => cycle.planned_weekly_load)).toEqual(
+      second.microcycles.map((cycle) => cycle.planned_weekly_load),
     );
-    expect(first.microcycles.map((cycle) => cycle.projected_ctl)).toEqual(
-      second.microcycles.map((cycle) => cycle.projected_ctl),
+    expect(first.microcycles.map((cycle) => cycle.projected_longTermLoad)).toEqual(
+      second.microcycles.map((cycle) => cycle.projected_longTermLoad),
     );
 
     for (const cycle of first.microcycles) {
-      expect(Number.isFinite(cycle.planned_weekly_tss)).toBe(true);
-      expect(Number.isFinite(cycle.projected_ctl)).toBe(true);
+      expect(Number.isFinite(cycle.planned_weekly_load)).toBe(true);
+      expect(Number.isFinite(cycle.projected_longTermLoad)).toBe(true);
     }
   });
 
@@ -2845,14 +2869,14 @@ describe("phase 5 benchmark and theoretical frontier validation", () => {
             phase: "build",
             start_date: "2026-01-05",
             end_date: "2027-12-10",
-            target_weekly_tss_range: { min: 1800, max: 2600 },
+            target_weekly_load_range: { min: 1800, max: 2600 },
           },
           {
             name: "Race taper",
             phase: "taper",
             start_date: "2027-12-11",
             end_date: "2028-01-07",
-            target_weekly_tss_range: { min: 50, max: 120 },
+            target_weekly_load_range: { min: 50, max: 120 },
           },
         ],
         goals: [
@@ -2871,13 +2895,13 @@ describe("phase 5 benchmark and theoretical frontier validation", () => {
             ],
           },
         ],
-        starting_ctl: 240,
-        starting_atl: 120,
-        starting_tsb: 120,
+        starting_longTermLoad: 240,
+        starting_recentLoad: 120,
+        starting_loadBalance: 120,
         creation_config: {
           optimization_profile: "outcome_first",
-          max_weekly_tss_ramp_pct: 40,
-          max_ctl_ramp_per_week: 12,
+          max_weekly_load_ramp_pct: 40,
+          max_longTermLoad_ramp_per_week: 12,
         },
       });
 
@@ -2908,14 +2932,14 @@ describe("phase 5 benchmark and theoretical frontier validation", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2027-12-10",
-          target_weekly_tss_range: { min: 1800, max: 2600 },
+          target_weekly_load_range: { min: 1800, max: 2600 },
         },
         {
           name: "Race taper",
           phase: "taper",
           start_date: "2027-12-11",
           end_date: "2028-01-07",
-          target_weekly_tss_range: { min: 50, max: 120 },
+          target_weekly_load_range: { min: 50, max: 120 },
         },
       ],
       goals: [
@@ -2934,11 +2958,11 @@ describe("phase 5 benchmark and theoretical frontier validation", () => {
           ],
         },
       ],
-      starting_ctl: 250,
+      starting_longTermLoad: 250,
       creation_config: {
         optimization_profile: "outcome_first",
-        max_weekly_tss_ramp_pct: 40,
-        max_ctl_ramp_per_week: 12,
+        max_weekly_load_ramp_pct: 40,
+        max_longTermLoad_ramp_per_week: 12,
       },
     });
 

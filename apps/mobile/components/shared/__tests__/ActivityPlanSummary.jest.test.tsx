@@ -1,6 +1,7 @@
 import { createHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
 import { ActivityPlanSummary } from "../ActivityPlanSummary";
+import { createPrescriptionQuantificationBundleFixture } from "./activityQuantificationFixture";
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -19,73 +20,46 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
 }));
 
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
-const commonLoadProvenance = {
-  model: "gradientpeak_relative_load" as const,
-  version: "1" as const,
-  activity_category: "run" as const,
-  method: "run_pace_threshold" as const,
-  quality: {
-    source: "validated_test" as const,
-    observed_at: "2026-07-20T12:00:00.000Z",
-    confidence: "high" as const,
-    stale: false,
-    estimate: false,
-    calculation_version: "threshold-v1",
-    evidence_fingerprint: "quality-run",
-  },
-  thresholdEvidence: {
-    type: "threshold_speed_mps" as const,
-    value: 4,
-    unit: "meters_per_second" as const,
-    source: "validated_test" as const,
-    observedAt: "2026-07-20T12:00:00.000Z",
-    validAt: "2026-07-20T12:00:00.000Z",
-    freshness: "current" as const,
-    calculationVersion: "threshold-v1",
-    sourceFingerprint: "threshold-run",
-  },
-  evidenceFingerprint: "activity-run",
-  computedAsOf: "2026-07-21T12:00:00.000Z",
+const structure = {
+  version: 3,
+  segments: [
+    {
+      id: id(4),
+      role: "rest",
+      name: "Prepare",
+      duration: { type: "time", seconds: 60 },
+    },
+    {
+      id: id(1),
+      role: "activity",
+      activity_category: "run",
+      name: "Run",
+      intervals: [
+        {
+          id: id(2),
+          name: "Work",
+          repetitions: 2,
+          steps: [
+            {
+              id: id(3),
+              name: "Tempo",
+              duration: { type: "time", seconds: 450 },
+              targets: [{ type: "RPE", intensity: 6 }],
+            },
+          ],
+        },
+      ],
+    },
+  ],
 };
 
 describe("ActivityPlanSummary", () => {
-  it("labels expanded activity steps as plan volume", () => {
+  it("keeps prescribed structure intensity when canonical normalized values are unavailable", () => {
     renderNative(
       <ActivityPlanSummary
         estimatedDuration={900}
         showAttribution={false}
-        structure={{
-          version: 3,
-          segments: [
-            {
-              id: id(4),
-              role: "rest",
-              name: "Prepare",
-              duration: { type: "time", seconds: 60 },
-            },
-            {
-              id: id(1),
-              role: "activity",
-              activity_category: "run",
-              name: "Run",
-              intervals: [
-                {
-                  id: id(2),
-                  name: "Work",
-                  repetitions: 2,
-                  steps: [
-                    {
-                      id: id(3),
-                      name: "Tempo",
-                      duration: { type: "time", seconds: 450 },
-                      targets: [{ type: "RPE", intensity: 6 }],
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        }}
+        structure={structure}
         title="Tempo repeats"
       />,
     );
@@ -93,130 +67,87 @@ describe("ActivityPlanSummary", () => {
     expect(screen.getByText("Duration")).toBeTruthy();
     expect(screen.getByText("Steps")).toBeTruthy();
     expect(screen.getByText("3")).toBeTruthy();
+    expect(screen.getByText("Common Load")).toBeTruthy();
+    expect(screen.getByText("Normalized intensity")).toBeTruthy();
+    expect(screen.getAllByText("Unavailable")).toHaveLength(2);
+    expect(screen.getByText("Prescribed intensity: RPE 6 · Prescribed")).toBeTruthy();
   });
 
-  it("ignores compatibility TSS and IF when common Load is unavailable", () => {
+  it("shows canonical prescribed Common Load, normalized intensity, method, and evidence", () => {
     renderNative(
       <ActivityPlanSummary
-        activityCategory="run"
-        estimatedTss={100}
-        intensityFactor={0.9}
-        showAttribution={false}
-        structure={null}
-        title="Brick session"
-      />,
-    );
-
-    expect(screen.queryByText("TSS")).toBeNull();
-    expect(screen.queryByText("Intensity")).toBeNull();
-    expect(screen.queryByText("0")).toBeNull();
-  });
-
-  it("shows available common Load and qualitative Intensity", () => {
-    renderNative(
-      <ActivityPlanSummary
-        commonLoad={{
-          status: "available",
-          ...commonLoadProvenance,
-          load: 64,
-          intensity: 0.8,
-          contributingDurationSeconds: 3600,
-          estimated: false,
-        }}
+        prescriptionQuantification={createPrescriptionQuantificationBundleFixture()}
         showAttribution={false}
         title="Tempo run"
       />,
     );
 
-    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Common Load")).toBeTruthy();
     expect(screen.getByText("64")).toBeTruthy();
-    expect(screen.getByText("Intensity")).toBeTruthy();
-    expect(screen.getByText("Tempo · 0.80")).toBeTruthy();
-    expect(screen.queryByText(/TSS|IF/)).toBeNull();
+    expect(screen.getByText("Normalized intensity")).toBeTruthy();
+    expect(screen.getByText("0.80")).toBeTruthy();
+    expect(
+      screen.getByText("Derived. Common Load is available using Run pace threshold."),
+    ).toBeTruthy();
+    expect(screen.getByText("Prescribed intensity: RPE 7/10 · Prescribed")).toBeTruthy();
   });
 
-  it("marks partial common Load incomplete", () => {
+  it("distinguishes calibrated prescribed evidence from an estimated prescription", () => {
     renderNative(
       <ActivityPlanSummary
-        commonLoad={{
+        prescriptionQuantification={createPrescriptionQuantificationBundleFixture({
+          estimated: false,
+        })}
+        showAttribution={false}
+        title="Calibrated run"
+      />,
+    );
+
+    expect(
+      screen.getByText("Derived. Common Load is available using Run pace threshold."),
+    ).toBeTruthy();
+    expect(screen.getByText("Prescribed intensity: RPE 7/10 · Prescribed")).toBeTruthy();
+  });
+
+  it("marks partial canonical evidence without substituting zero", () => {
+    renderNative(
+      <ActivityPlanSummary
+        prescriptionQuantification={createPrescriptionQuantificationBundleFixture({
           status: "partial",
-          ...commonLoadProvenance,
-          load: 32,
-          intensity: 0.8,
-          contributingDurationSeconds: 1800,
-          eligibleDurationSeconds: 3600,
-          sourceTimeCoverage: 0.5,
-          reason: "activity_data_partial",
-        }}
+        })}
         showAttribution={false}
         title="Partial tempo run"
       />,
     );
 
-    expect(screen.getByText("32 · Incomplete")).toBeTruthy();
-    expect(screen.getByText("Tempo · 0.80 · Incomplete")).toBeTruthy();
+    expect(screen.getByText("32")).toBeTruthy();
+    expect(screen.getByText("0.80")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Derived · Partial. Common Load is partial using Run pace threshold; missing evidence is not treated as zero.",
+      ),
+    ).toBeTruthy();
   });
 
-  it("shows private planned Load without falling back to compatibility metrics", () => {
-    renderNative(
+  it("keeps private quantification unavailable and emits no retired metric labels", () => {
+    const rendered = renderNative(
       <ActivityPlanSummary
-        commonLoad={{
-          status: "unavailable",
-          model: "gradientpeak_relative_load",
-          version: "1",
-          activity_category: "other",
-          method: null,
-          quality: null,
-          thresholdEvidence: null,
-          evidenceFingerprint: null,
-          computedAsOf: "2026-07-21T12:00:00.000Z",
-          contributingDurationSeconds: null,
-          reason: "private_data",
-        }}
-        estimatedTss={100}
-        intensityFactor={0.9}
+        prescriptionQuantification={createPrescriptionQuantificationBundleFixture({
+          status: "private",
+        })}
         showAttribution={false}
         title="Private plan"
       />,
     );
 
-    expect(screen.getByText("Load")).toBeTruthy();
-    expect(screen.getByText("Private")).toBeTruthy();
-    expect(screen.queryByText(/TSS|IF/)).toBeNull();
-  });
-
-  it("shows an incomplete state when partial common Load has no numeric values", () => {
-    const {
-      method: _method,
-      quality: _quality,
-      thresholdEvidence: _thresholdEvidence,
-      evidenceFingerprint: _evidenceFingerprint,
-      ...provenanceWithoutEvidence
-    } = commonLoadProvenance;
-
-    renderNative(
-      <ActivityPlanSummary
-        commonLoad={{
-          status: "partial",
-          ...provenanceWithoutEvidence,
-          method: null,
-          quality: null,
-          thresholdEvidence: null,
-          evidenceFingerprint: null,
-          load: null,
-          intensity: null,
-          contributingDurationSeconds: 0,
-          eligibleDurationSeconds: 3600,
-          sourceTimeCoverage: 0,
-          reason: "insufficient_coverage",
-        }}
-        showAttribution={false}
-        title="Incomplete run"
-      />,
+    expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
+    expect(
+      screen.getByText(
+        "Required activity data is private. Allow access to the required activity data.",
+      ),
+    ).toBeTruthy();
+    expect(JSON.stringify(rendered.toJSON())).not.toMatch(
+      /TSS|\bIF\b|intensityFactor|category_load/,
     );
-
-    expect(screen.getByText("Load")).toBeTruthy();
-    expect(screen.getByText("Incomplete")).toBeTruthy();
-    expect(screen.queryByText("Intensity")).toBeNull();
   });
 });

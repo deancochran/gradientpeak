@@ -5,7 +5,7 @@ import {
 } from "../activity-categories";
 import type { DailyActivityCategoryLoadInput } from "./systemicLoad";
 
-const DEFAULT_CTL_TAU_DAYS = 42;
+const DEFAULT_LongTermLoad_TAU_DAYS = 42;
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
@@ -33,20 +33,20 @@ export function applyLoadDecay(
 export function advanceActivityCategoryLoadState(input: {
   activity_category: CanonicalActivityCategory;
   dailyLoad: number;
-  previousState?: Pick<ActivityCategoryLoadState, "ctl" | "atl">;
+  previousState?: Pick<ActivityCategoryLoadState, "longTermLoad" | "recentLoad">;
   recentLoads?: number[];
 }): ActivityCategoryLoadState {
   const config = getActivityCategoryModelConfig(input.activity_category);
   const loadSeries = [...(input.recentLoads ?? []), input.dailyLoad];
-  const nextCtl = applyLoadDecay(
-    input.previousState?.ctl ?? 0,
+  const nextLongTermLoad = applyLoadDecay(
+    input.previousState?.longTermLoad ?? 0,
     input.dailyLoad,
-    config.ctl_tau_days || DEFAULT_CTL_TAU_DAYS,
+    config.longTermLoad_tau_days || DEFAULT_LongTermLoad_TAU_DAYS,
   );
-  const nextAtl = applyLoadDecay(
-    input.previousState?.atl ?? 0,
+  const nextRecentLoad = applyLoadDecay(
+    input.previousState?.recentLoad ?? 0,
     input.dailyLoad,
-    config.atl_tau_days,
+    config.recentLoad_tau_days,
   );
   const acuteLoadAverage = averageWindow(loadSeries, 7);
   const chronicLoadAverage = averageWindow(loadSeries, 28);
@@ -59,9 +59,9 @@ export function advanceActivityCategoryLoadState(input: {
 
   return {
     activity_category: input.activity_category,
-    ctl: round(nextCtl),
-    atl: round(nextAtl),
-    tsb: round(nextCtl - nextAtl),
+    longTermLoad: round(nextLongTermLoad),
+    recentLoad: round(nextRecentLoad),
+    loadBalance: round(nextLongTermLoad - nextRecentLoad),
     daily_load: round(input.dailyLoad),
     acute_load_average_7d: round(acuteLoadAverage),
     chronic_load_average_28d: round(chronicLoadAverage),

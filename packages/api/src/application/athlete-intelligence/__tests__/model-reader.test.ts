@@ -1,4 +1,13 @@
-import { athleteIntelligenceModelInputSchema } from "@repo/core";
+import {
+  athleteIntelligenceModelInputSchema,
+  calculateAvailableCommonLoad,
+  loadSeriesIdentityForAvailableCommonLoad,
+} from "@repo/core";
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
+import {
+  buildPerformanceModelSnapshotFixture,
+  buildPerformanceTargetFactsFixture,
+} from "@repo/core/testing/performance-model";
 import { activityEfforts } from "@repo/db";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -19,6 +28,80 @@ import {
 const asOf = new Date("2026-06-01T12:00:00.000Z");
 const profileId = "athlete-a";
 const pgDialect = new PgDialect();
+
+function normalizedPowerResult(valueWatts: number) {
+  const result = calculateCyclingNormalizedPower({
+    samples: Array.from({ length: 61 }, (_, timestampSeconds) => ({
+      timestampSeconds,
+      powerWatts: valueWatts,
+    })),
+  });
+  if (result.status === "unavailable") {
+    throw new Error("Expected a numeric Normalized Power fixture");
+  }
+  return result;
+}
+
+function completedObservationLoad(value = 83.07244466414016, activityId = "activity-1") {
+  const commonLoad = calculateAvailableCommonLoad({
+    activity_category: "bike",
+    method: "power_threshold",
+    intensity: Math.sqrt(value / 100),
+    contributingDurationSeconds: 3600,
+    quality: {
+      source: "validated_test",
+      observed_at: "2026-05-30T00:00:00.000Z",
+      valid_at: "2026-05-30T00:00:00.000Z",
+      confidence: "high",
+      stale: false,
+      estimate: false,
+      calculation_version: "best-effort-extraction-v1",
+      evidence_fingerprint: "calibration-effort",
+    },
+    thresholdEvidence: {
+      type: "ftp_watts",
+      value: 237.5,
+      unit: "watts",
+      source: "validated_test",
+      observedAt: "2026-05-30T00:00:00.000Z",
+      validAt: "2026-05-30T00:00:00.000Z",
+      freshness: "current",
+      calculationVersion: "best-effort-extraction-v1",
+      sourceFingerprint: "calibration-effort",
+    },
+    evidenceFingerprint: `${activityId}-load-evidence`,
+    computedAsOf: asOf.toISOString(),
+    estimated: false,
+  });
+  if (commonLoad.status !== "available") {
+    throw new Error("Expected an available canonical completed-observation fixture");
+  }
+  return {
+    activityId,
+    commonLoad,
+    loadSeriesIdentity: loadSeriesIdentityForAvailableCommonLoad(commonLoad),
+  };
+}
+
+function unavailableCompletedObservationLoad(activityId = "activity-1") {
+  return {
+    activityId,
+    commonLoad: {
+      status: "unavailable" as const,
+      model: "gradientpeak_relative_load" as const,
+      version: "1" as const,
+      activity_category: "bike" as const,
+      method: null,
+      quality: null,
+      thresholdEvidence: null,
+      evidenceFingerprint: null,
+      computedAsOf: asOf.toISOString(),
+      contributingDurationSeconds: null,
+      reason: "threshold_missing" as const,
+    },
+    loadSeriesIdentity: null,
+  };
+}
 
 interface CapturedSelect {
   fields: unknown;
@@ -92,7 +175,8 @@ function createFluentReadDb(results: readonly unknown[][]) {
       return query;
     },
   };
-  return { db, selects };
+  const transaction = async <T>(operation: (tx: typeof db) => Promise<T>) => operation(db);
+  return { db: { ...db, transaction }, selects };
 }
 
 function querySql(fragment: unknown) {
@@ -101,7 +185,6 @@ function querySql(fragment: unknown) {
 
 function rows(): AthleteIntelligenceRows {
   const metricNames = [
-    "ftp",
     "lthr",
     "max_hr",
     "resting_hr",
@@ -114,7 +197,6 @@ function rows(): AthleteIntelligenceRows {
     "wellness_score",
   ];
   const units: Record<string, string> = {
-    ftp: "W",
     lthr: "bpm",
     max_hr: "beats per minute",
     resting_hr: "bpm",
@@ -146,33 +228,12 @@ function rows(): AthleteIntelligenceRows {
         createdAt: new Date("2026-05-30T00:00:00.000Z"),
         updatedAt: new Date("2026-05-30T00:00:00.000Z"),
       })),
-      {
-        profileId,
-        id: "older-ftp",
-        referenceActivityId: null,
-        type: "ftp",
-        value: 100,
-        unit: "watts",
-        recordedAt: new Date("2026-05-01T00:00:00.000Z"),
-        createdAt: new Date("2026-05-01T00:00:00.000Z"),
-        updatedAt: new Date("2026-05-01T00:00:00.000Z"),
-      },
-      {
-        profileId,
-        id: "future-ftp",
-        referenceActivityId: null,
-        type: "ftp",
-        value: 999,
-        unit: "watts",
-        recordedAt: new Date("2026-06-02T00:00:00.000Z"),
-        createdAt: new Date("2026-06-02T00:00:00.000Z"),
-        updatedAt: new Date("2026-06-02T00:00:00.000Z"),
-      },
     ],
     activities: [
       {
         profileId,
         id: "activity-1",
+        parentActivityId: "parent-activity-1",
         activityPlanId: "plan-1",
         routeId: "route-1",
         type: "Cycling",
@@ -188,7 +249,7 @@ function rows(): AthleteIntelligenceRows {
         maximumHeartRate: 180,
         averagePower: 200,
         maximumPower: 500,
-        normalizedPower: 220,
+        normalizedPowerResult: normalizedPowerResult(220),
         averageCadence: 88,
         maximumCadence: 110,
         averageSpeed: 8.33,
@@ -281,10 +342,24 @@ function rows(): AthleteIntelligenceRows {
         },
         adaptation_preferences: {},
         goal_strategy_preferences: { target_surplus_preference: 0.2, taper_style_preference: 0.7 },
-        baseline_fitness: { is_enabled: true, override_ctl: 55, override_atl: 65 },
+        baseline_fitness: {
+          is_enabled: true,
+          override_longTermLoad: 55,
+          override_recentLoad: 65,
+        },
       },
       updatedAt: new Date("2026-05-20T00:00:00.000Z"),
     },
+    performanceTargets: buildPerformanceTargetFactsFixture({
+      athleteId: profileId,
+      asOf: asOf.toISOString(),
+      planningThresholdPowerWatts: 237.5,
+    }),
+    performanceModel: buildPerformanceModelSnapshotFixture({
+      athleteId: profileId,
+      asOf: asOf.toISOString(),
+    }),
+    completedObservationLoads: [completedObservationLoad()],
     schedule: [
       {
         profileId,
@@ -320,11 +395,15 @@ function first<T>(items: readonly T[]): T {
 
 describe("materializeAthleteIntelligenceModelInput", () => {
   it("enforces source-side profile, as-of, ordering, and bounded-read limits without writes", async () => {
+    const boundedActivities = Array.from({ length: modelReaderBounds.activities }, () => ({
+      startedAt: asOf,
+      normalizedPowerResult: calculateCyclingNormalizedPower({ samples: [] }),
+    }));
     const { db, selects } = createFluentReadDb([
       [], // selected goal
       [], // profile
       [], // metrics
-      [], // activities
+      boundedActivities, // activities
       [], // efforts
       [], // training settings
       [], // nonrecurring schedule
@@ -342,9 +421,9 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       bounds: modelReaderBounds,
     });
 
-    expect(Object.keys(db)).toEqual(["select"]);
-    expect(selects).toHaveLength(8);
-    for (const read of selects) {
+    expect(Object.keys(db)).toEqual(["select", "transaction"]);
+    expect(selects).toHaveLength(18);
+    for (const read of selects.slice(0, 8)) {
       const query = querySql(read?.where);
       expect(query.params).toContain(profileId);
       expect(query.params.some((value) => Date.parse(String(value)) === asOf.getTime())).toBe(true);
@@ -371,11 +450,11 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       'and ("activity_efforts"."updated_at" is null or "activity_efforts"."updated_at" <= $4)',
     );
     const normalizedPowerSql = querySql(
-      (selects[3]?.fields as { normalizedPower: SQL }).normalizedPower,
+      (selects[3]?.fields as { normalizedPowerResult: SQL }).normalizedPowerResult,
     ).sql;
     expect(normalizedPowerSql).toContain('"activity_segments"."summary"');
-    expect(normalizedPowerSql).toContain("normalizedPowerWatts");
-    expect(normalizedPowerSql).toContain("::double precision");
+    expect(normalizedPowerSql).toContain("normalizedPowerResult");
+    expect(normalizedPowerSql).not.toContain("::double precision");
     expect(normalizedPowerSql).not.toContain('"activities"."normalized_power"');
     expect(selects[6]).toMatchObject({
       limit: modelReaderBounds.schedule + 1,
@@ -386,14 +465,15 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       offset: 0,
       orderBy: [expect.anything(), expect.anything()],
     });
+    // The canonical model reads three duration lanes, one CSS protocol lane, and six HR lanes.
+    expect(selects.slice(8)).toHaveLength(10);
   });
 
   it("propagates bounded source coverage into the canonical model contract", async () => {
     const boundedMetricRows = Array.from({ length: modelReaderBounds.metrics + 1 }, () => ({}));
-    const boundedActivityRows = Array.from(
-      { length: modelReaderBounds.activities + 1 },
-      () => ({}),
-    );
+    const boundedActivityRows = Array.from({ length: modelReaderBounds.activities + 1 }, () => ({
+      normalizedPowerResult: calculateCyclingNormalizedPower({ samples: [] }),
+    }));
     const boundedEffortRows = Array.from({ length: modelReaderBounds.efforts + 1 }, () => ({}));
     const { db } = createFluentReadDb([
       [],
@@ -530,10 +610,11 @@ describe("materializeAthleteIntelligenceModelInput", () => {
 
   it("scopes and bounds the port request before materializing canonical, fully evidenced data", async () => {
     let request: Parameters<AthleteIntelligenceDataSource["read"]>[0] | undefined;
+    const value = rows();
     const dataSource: AthleteIntelligenceDataSource = {
       read: async (input) => {
         request = input;
-        return rows();
+        return value;
       },
     };
     const result = await materializeAthleteIntelligenceModelInput({ dataSource, profileId, asOf });
@@ -542,10 +623,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     expect(request?.activityFrom.toISOString()).toBe("2025-12-03T12:00:00.000Z");
     expect(request?.goalId).toBe("goal-1");
     expect(result.athleteId).toBe(profileId);
-    expect(result.metricEvidence).toHaveLength(12); // eleven stored types plus derived age
-    expect(result.metricEvidence.find((metric) => metric.metricType === "ftp")?.value.value).toBe(
-      1,
-    );
+    expect(result.metricEvidence).toHaveLength(9); // contextual metrics and age only
     expect(
       result.metricEvidence.find((metric) => metric.metricType === "weight_kg")?.value.value,
     ).toBeCloseTo(99.7903, 3);
@@ -559,14 +637,16 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       temperature: "fahrenheit",
     });
     expect(result.activities[0]).toMatchObject({ athleteId: profileId, activity_category: "bike" });
+    const projectedLoad = value.completedObservationLoads[0]?.commonLoad;
+    if (projectedLoad?.status !== "available") {
+      throw new Error("Expected an available canonical completed-observation fixture");
+    }
     expect(result.activities[0]?.metrics.trainingLoad).toMatchObject({
-      value: 225,
+      value: projectedLoad.load,
       identity: {
-        family: "tss",
-        method: "power_threshold",
-        sourceDefinition: "activity_analysis",
-        activity_category: "bike",
-        version: "1",
+        activity_category: "all",
+        family: "common_load",
+        method: "gradientpeak_relative_load",
       },
     });
     expect(result.efforts).toEqual(
@@ -590,7 +670,10 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     expect(result.trainingContext.activityCategoryDoseLimits[0]?.maximumSessionsPerWeek.value).toBe(
       4,
     );
-    expect(result.trainingContext.ctlOverride).toMatchObject({ value: null, identity: null });
+    expect(result.trainingContext.longTermLoadOverride).toMatchObject({
+      value: null,
+      identity: null,
+    });
     expect(result.plannedSchedule[0]?.startAt).toBe("2026-06-10T10:00:00.000Z");
     expect(result.readCoverage).toEqual({
       metrics: { state: "complete", reason: null },
@@ -607,23 +690,14 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     ).toBe(true);
   });
 
-  it("uses segment-row normalized power for intelligence output and load", async () => {
+  it("uses canonical completed-observation Load without recalculating from segment metrics", async () => {
     const withSegmentNormalizedPower = (normalizedPower: number) => {
       const value = rows();
       value.efforts = [];
-      value.metrics = value.metrics.filter((metric) => metric.type !== "ftp");
-      value.metrics.push({
-        profileId,
-        id: "segment-load-ftp",
-        referenceActivityId: null,
-        type: "ftp",
-        value: 250,
-        unit: "watts",
-        recordedAt: new Date("2026-05-31T00:00:00.000Z"),
-        createdAt: new Date("2026-05-31T00:00:00.000Z"),
-        updatedAt: new Date("2026-05-31T00:00:00.000Z"),
-      });
-      value.activities[0] = { ...first(value.activities), normalizedPower };
+      value.activities[0] = {
+        ...first(value.activities),
+        normalizedPowerResult: normalizedPowerResult(normalizedPower),
+      };
       return value;
     };
     const baseline = await materializeAthleteIntelligenceModelInput({
@@ -639,137 +713,34 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       asOf,
     });
 
-    expect(result.activities[0]?.metrics.normalizedPowerWatts.value).toBe(300);
-    expect(result.activities[0]?.metrics.trainingLoad.value).not.toBe(
-      baseline.activities[0]?.metrics.trainingLoad.value,
+    expect(result.activities[0]?.metrics.normalizedPowerResult.result.valueWatts).toBe(300);
+    expect(result.activities[0]?.metrics.trainingLoad).toEqual(
+      baseline.activities[0]?.metrics.trainingLoad,
     );
   });
 
-  it("materializes canonical running threshold pace and swimming CSS metrics with activity-category scope", async () => {
-    const sourceRows = rows();
-    sourceRows.metrics.push(
-      {
-        profileId,
-        id: "metric-run-threshold",
-        referenceActivityId: null,
-        type: "threshold_pace_seconds_per_km",
-        value: 270,
-        unit: "s/km",
-        recordedAt: new Date("2026-05-31T00:00:00.000Z"),
-        createdAt: new Date("2026-05-31T00:00:00.000Z"),
-        updatedAt: new Date("2026-05-31T00:00:00.000Z"),
-      },
-      {
-        profileId,
-        id: "metric-swim-css",
-        referenceActivityId: null,
-        type: "css_seconds_per_100m",
-        value: 95,
-        unit: "s/100m",
-        recordedAt: new Date("2026-05-31T00:00:00.000Z"),
-        createdAt: new Date("2026-05-31T00:00:00.000Z"),
-        updatedAt: new Date("2026-05-31T00:00:00.000Z"),
-      },
-    );
-    const dataSource: AthleteIntelligenceDataSource = { read: async () => sourceRows };
-
-    const result = await materializeAthleteIntelligenceModelInput({ dataSource, profileId, asOf });
-    const run = result.metricEvidence.find(
-      (metric) => metric.metricType === "threshold_pace_seconds_per_km",
-    );
-    const swim = result.metricEvidence.find(
-      (metric) => metric.metricType === "css_seconds_per_100m",
-    );
-
-    expect(run?.value).toMatchObject({ value: 270, unit: "seconds_per_km" });
-    expect(swim?.value).toMatchObject({ value: 95, unit: "seconds_per_100m" });
-    expect(result.evidenceRegistry[run?.value.evidenceSourceIds[0] ?? ""]?.activity_category).toBe(
-      "run",
-    );
-    expect(result.evidenceRegistry[swim?.value.evidenceSourceIds[0] ?? ""]?.activity_category).toBe(
-      "swim",
-    );
-  });
-
-  it("maps the current test-sourced threshold to validated test evidence", async () => {
-    const sourceRows = rows();
-    sourceRows.metrics = sourceRows.metrics.filter((metric) => metric.type !== "ftp");
-    sourceRows.metrics.push(
-      {
-        profileId,
-        id: "provider-ftp",
-        referenceActivityId: null,
-        type: "ftp",
-        value: 250,
-        unit: "W",
-        recordedAt: new Date("2026-05-30T00:00:00.000Z"),
-        createdAt: new Date("2026-05-30T00:00:00.000Z"),
-        updatedAt: new Date("2026-05-30T00:00:00.000Z"),
-        source: "provider",
-      },
-      {
-        profileId,
-        id: "test-ftp",
-        referenceActivityId: null,
-        type: "ftp",
-        value: 260,
-        unit: "W",
-        recordedAt: new Date("2026-05-31T00:00:00.000Z"),
-        createdAt: new Date("2026-05-31T00:00:00.000Z"),
-        updatedAt: new Date("2026-05-31T00:00:00.000Z"),
-        source: "test",
-      },
-    );
-
-    const result = await materializeAthleteIntelligenceModelInput({
-      dataSource: readRows(sourceRows),
-      profileId,
-      asOf,
+  it("keeps modeled performance targets out of contextual metric evidence", async () => {
+    const baselineRows = rows();
+    const modeledRows = rows();
+    modeledRows.performanceTargets = buildPerformanceTargetFactsFixture({
+      athleteId: profileId,
+      asOf: asOf.toISOString(),
+      planningThresholdPowerWatts: 237.5,
+      planningThresholdPaceSecondsPerKm: 270,
+      swimmingCssSecondsPer100m: 95,
     });
-
-    expect(result.metricEvidence.find((metric) => metric.metricType === "ftp")?.value.value).toBe(
-      260,
-    );
-  });
-
-  it("omits stale threshold metrics from canonical athlete evidence", async () => {
-    const sourceRows = rows();
-    sourceRows.metrics = sourceRows.metrics.filter(
-      (metric) =>
-        !["ftp", "threshold_pace_seconds_per_km", "css_seconds_per_100m"].includes(metric.type),
-    );
-    for (const [type, value, unit] of [
-      ["ftp", 250, "W"],
-      ["threshold_pace_seconds_per_km", 270, "s/km"],
-      ["css_seconds_per_100m", 95, "s/100m"],
-    ] as const) {
-      sourceRows.metrics.push({
-        profileId,
-        id: `stale-${type}`,
-        referenceActivityId: null,
-        type,
-        value,
-        unit,
-        recordedAt: new Date("2025-01-01T00:00:00.000Z"),
-        createdAt: new Date("2025-01-01T00:00:00.000Z"),
-        updatedAt: new Date("2025-01-01T00:00:00.000Z"),
-        source: "provider",
-      });
-    }
-
-    const result = await materializeAthleteIntelligenceModelInput({
-      dataSource: readRows(sourceRows),
-      profileId,
-      asOf,
-    });
-
-    expect(
-      result.metricEvidence.some((metric) =>
-        ["ftp", "threshold_pace_seconds_per_km", "css_seconds_per_100m"].includes(
-          metric.metricType,
-        ),
+    const [baseline, modeled] = await Promise.all(
+      [baselineRows, modeledRows].map((sourceRows) =>
+        materializeAthleteIntelligenceModelInput({
+          dataSource: readRows(sourceRows),
+          profileId,
+          asOf,
+        }),
       ),
-    ).toBe(false);
+    );
+    if (!baseline || !modeled) throw new Error("Expected both model fixtures");
+
+    expect(modeled.metricEvidence).toEqual(baseline.metricEvidence);
   });
 
   it("preserves exact fractional effort boundaries from ingestion provenance", async () => {
@@ -779,8 +750,8 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     effort.provenance = {
       activity_id: "activity-1",
       derived_from: "activity_file_stream",
-      exact_window_start_seconds: 600.5,
-      exact_window_end_seconds: 900.5,
+      exact_window_start_offset_seconds: 600.5,
+      exact_window_end_offset_seconds: 900.5,
     };
     effort.source = "imported";
     effort.method = "activity_file_best_effort";
@@ -807,8 +778,8 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     effort.provenance = {
       activity_id: "activity-1",
       derived_from: "activity_file_stream",
-      exact_window_start_seconds: 600.5,
-      exact_window_end_seconds: 901,
+      exact_window_start_offset_seconds: 600.5,
+      exact_window_end_offset_seconds: 901,
     };
 
     const result = await materializeAthleteIntelligenceModelInput({
@@ -833,8 +804,8 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     effort.provenance = {
       activity_id: "other-activity",
       derived_from: "activity_file_stream",
-      exact_window_start_seconds: 600.5,
-      exact_window_end_seconds: 900.5,
+      exact_window_start_offset_seconds: 600.5,
+      exact_window_end_offset_seconds: 900.5,
     };
 
     const result = await materializeAthleteIntelligenceModelInput({
@@ -848,9 +819,12 @@ describe("materializeAthleteIntelligenceModelInput", () => {
 
   it("keeps activity training load unknown when no compatible dynamic method is available", async () => {
     const value = rows();
-    value.metrics = value.metrics.filter(
-      (metric) => metric.type !== "ftp" && metric.type !== "lthr",
-    );
+    value.metrics = value.metrics.filter((metric) => metric.type !== "lthr");
+    value.performanceTargets = buildPerformanceTargetFactsFixture({
+      athleteId: profileId,
+      asOf: asOf.toISOString(),
+    });
+    value.completedObservationLoads = [unavailableCompletedObservationLoad()];
     const result = await materializeAthleteIntelligenceModelInput({
       dataSource: readRows(value),
       profileId,
@@ -863,28 +837,99 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     });
   });
 
-  it("excludes modeled onboarding curves from observed efforts", async () => {
+  it("preserves unavailable Load from an already self-excluded canonical target read", async () => {
     const value = rows();
-    value.efforts = [
-      {
-        ...first(value.efforts),
-        id: "modeled-effort",
-        source: "estimated",
-        method: "onboarding_modeled_curve",
-        provenance: { observation_type: "modeled" },
-      },
-    ];
+    value.activities[0] = {
+      ...first(value.activities),
+      id: "segment-1",
+      parentActivityId: "parent-1",
+    };
+    value.performanceTargets = buildPerformanceTargetFactsFixture({
+      athleteId: profileId,
+      asOf: asOf.toISOString(),
+    });
+    value.completedObservationLoads = [unavailableCompletedObservationLoad("segment-1")];
+
     const result = await materializeAthleteIntelligenceModelInput({
       dataSource: readRows(value),
       profileId,
       asOf,
     });
 
-    expect(result.efforts).toEqual([]);
-    expect(result.evidenceRegistry["effort:modeled-effort:value-modeled"]).toMatchObject({
-      validityState: "unknown",
-      rawObservation: { value: 350, unit: "watts" },
+    expect(result.activities[0]?.metrics.trainingLoad).toMatchObject({
+      value: null,
+      identity: null,
     });
+  });
+
+  it.each([
+    "future",
+    "stale",
+    "missing",
+    "truncated",
+  ] as const)("keeps %s target evidence unavailable rather than coercing training load to zero", async (state) => {
+    const value = rows();
+    value.performanceTargets = buildPerformanceTargetFactsFixture({
+      athleteId: profileId,
+      asOf: asOf.toISOString(),
+    });
+    value.performanceTargets.cycling.planningThresholdPower.reasons = [
+      state === "truncated" ? "evidence_read_truncated" : `${state}_evidence`,
+    ];
+    value.completedObservationLoads = [unavailableCompletedObservationLoad()];
+
+    const result = await materializeAthleteIntelligenceModelInput({
+      dataSource: readRows(value),
+      profileId,
+      asOf,
+    });
+
+    expect(result.activities[0]?.metrics.trainingLoad).toMatchObject({
+      value: null,
+      identity: null,
+    });
+    expect(result.activities[0]?.metrics.trainingLoad.value).not.toBe(0);
+  });
+
+  it("preserves canonical completed-observation projection parity without a second Load calculation", async () => {
+    const lower = rows();
+    const higher = rows();
+    higher.performanceTargets = buildPerformanceTargetFactsFixture({
+      athleteId: profileId,
+      asOf: asOf.toISOString(),
+      planningThresholdPowerWatts: 285,
+      calculationVersion: "higher-performance-target-v1",
+    });
+    higher.completedObservationLoads = [completedObservationLoad(91)];
+    const results = await Promise.all(
+      [lower, higher].map((value) =>
+        materializeAthleteIntelligenceModelInput({ dataSource: readRows(value), profileId, asOf }),
+      ),
+    );
+    const [lowerResult, higherResult] = results;
+    if (!lowerResult || !higherResult) throw new Error("Expected both deterministic results");
+
+    const lowerLoad = lowerResult.activities[0]?.metrics.trainingLoad;
+    const higherLoad = higherResult.activities[0]?.metrics.trainingLoad;
+    const lowerProjected = lower.completedObservationLoads[0]?.commonLoad;
+    const higherProjected = higher.completedObservationLoads[0]?.commonLoad;
+    if (lowerProjected?.status !== "available" || higherProjected?.status !== "available") {
+      throw new Error("Expected available canonical completed-observation fixtures");
+    }
+    expect(lowerLoad?.identity).toMatchObject({ family: "common_load" });
+    expect(higherLoad?.identity).toMatchObject({ family: "common_load" });
+    expect(lowerLoad?.value).toBe(lowerProjected.load);
+    expect(higherLoad?.value).toBe(higherProjected.load);
+    expect(higherResult.metricEvidence).toEqual(lowerResult.metricEvidence);
+  });
+
+  it("rejects duplicate canonical completed-observation delivery before readiness", async () => {
+    const value = rows();
+    value.completedObservationLoads = [completedObservationLoad(), completedObservationLoad()];
+
+    await expect(
+      materializeAthleteIntelligenceModelInput({ dataSource: readRows(value), profileId, asOf }),
+    ).rejects.toThrow(/completed-observation delivery duplicated activity-1/);
   });
 
   it("preserves reference-activity category across current LTHR observations", async () => {
@@ -909,6 +954,12 @@ describe("materializeAthleteIntelligenceModelInput", () => {
         recordedAt: new Date("2026-05-29T00:00:00.000Z"),
       },
     );
+    value.performanceTargets = buildPerformanceTargetFactsFixture({
+      athleteId: profileId,
+      asOf: asOf.toISOString(),
+      planningThresholdPowerWatts: 237.5,
+      lthrBpm: { run: 168, bike: 178 },
+    });
     const result = await materializeAthleteIntelligenceModelInput({
       dataSource: readRows(value),
       profileId,
@@ -916,7 +967,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     });
     const lthrEvidence = result.metricEvidence.filter((metric) => metric.metricType === "lthr");
 
-    expect(lthrEvidence).toHaveLength(3);
+    expect(lthrEvidence).toHaveLength(2);
     expect(
       lthrEvidence.map((metric) => {
         const evidenceId = first(metric.value.evidenceSourceIds);
@@ -1002,15 +1053,15 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     );
   });
 
-  it("selects the deterministic latest metric and includes all eleven stored supported types", async () => {
+  it("selects deterministic latest contextual metrics", async () => {
     const value = rows();
     value.metrics.push({
       profileId,
-      id: "metric-ftp-z",
+      id: "metric-weight-z",
       referenceActivityId: null,
-      type: "ftp",
-      value: 444,
-      unit: "watts",
+      type: "weight_kg",
+      value: 80,
+      unit: "kg",
       recordedAt: new Date("2026-05-30T00:00:00.000Z"),
       createdAt: new Date("2026-05-30T00:00:00.000Z"),
       updatedAt: new Date("2026-05-30T00:00:00.000Z"),
@@ -1023,10 +1074,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     const stored = result.metricEvidence.filter((metric) => metric.metricType !== "age_years");
     expect(stored.map((metric) => metric.metricType).sort()).toEqual(
       [
-        "ftp",
         "hrv_rmssd",
-        "lthr",
-        "max_hr",
         "resting_hr",
         "sleep_hours",
         "soreness_level",
@@ -1036,9 +1084,9 @@ describe("materializeAthleteIntelligenceModelInput", () => {
         "wellness_score",
       ].sort(),
     );
-    expect(result.metricEvidence.find((metric) => metric.metricType === "ftp")?.value.value).toBe(
-      444,
-    );
+    expect(
+      result.metricEvidence.find((metric) => metric.metricType === "weight_kg")?.value.value,
+    ).toBe(80);
   });
 
   it("rejects unknown persisted effort units and retains their raw evidence", async () => {
@@ -1079,8 +1127,14 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       maximumSessionsPerWeek: { value: 4 },
     });
     expect(result.trainingContext.fatigueTolerance.value).toBe(0.3);
-    expect(result.trainingContext.ctlOverride).toMatchObject({ value: null, identity: null });
-    expect(result.trainingContext.atlOverride).toMatchObject({ value: null, identity: null });
+    expect(result.trainingContext.longTermLoadOverride).toMatchObject({
+      value: null,
+      identity: null,
+    });
+    expect(result.trainingContext.recentLoadOverride).toMatchObject({
+      value: null,
+      identity: null,
+    });
     expect(result.trainingContext.strategy).toBeNull();
   });
 
@@ -1553,7 +1607,13 @@ describe("materializeAthleteIntelligenceModelInput", () => {
 
   it("excludes mutable metric, activity, and effort rows inserted or updated after asOf", async () => {
     const value = rows();
-    value.metrics[0] = { ...first(value.metrics), updatedAt: new Date("2026-06-02T00:00:00.000Z") };
+    const weightIndex = value.metrics.findIndex((metric) => metric.type === "weight_kg");
+    const weightMetric = value.metrics[weightIndex];
+    if (weightMetric === undefined) throw new Error("Expected weight fixture");
+    value.metrics[weightIndex] = {
+      ...weightMetric,
+      updatedAt: new Date("2026-06-02T00:00:00.000Z"),
+    };
     value.activities[0] = {
       ...first(value.activities),
       createdAt: new Date("2026-06-02T00:00:00.000Z"),
@@ -1564,7 +1624,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       profileId,
       asOf,
     });
-    expect(result.metricEvidence.some((item) => item.metricType === "ftp")).toBe(true); // older observable FTP remains
+    expect(result.metricEvidence.some((item) => item.metricType === "weight_kg")).toBe(false);
     expect(result.activities).toEqual([]);
     expect(result.efforts).toEqual([]);
   });

@@ -259,6 +259,9 @@ describe("activity submission queue runner", () => {
       summary: { distanceMeters: 25000, calories: 500 },
       source: "mobile_recording",
     });
+    expect(
+      JSON.stringify(vi.mocked(deps.createFromRecordingSummary).mock.calls[0]?.[0]),
+    ).not.toMatch(/commonLoad|normalizedIntensity|trainingStressScore|intensityFactor|"tss"/i);
     expect(deps.beginMobileRecordingUpload).toHaveBeenCalledWith({
       recordingSessionId: "recording-session-1",
       byteSize: 1024,

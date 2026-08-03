@@ -27,7 +27,7 @@ type CalibrationQuality = {
 };
 
 export function getActivityLoadLabels() {
-  return { load: "Load", intensity: "Intensity" };
+  return { load: "Common Load", intensity: "Normalized intensity" };
 }
 
 export type WebCommonLoadPresentation = {
@@ -44,8 +44,9 @@ const unavailableReasons: Record<
 > = {
   activity_data_missing: "required activity data is missing",
   duration_missing: "eligible duration is missing",
+  evidence_truncated: "the bounded calibration evidence read was incomplete",
   insufficient_coverage: "activity data coverage is insufficient",
-  intensity_out_of_range: "the calculated Intensity is outside the supported range",
+  intensity_out_of_range: "the calculated normalized intensity is outside the supported range",
   invalid_data: "the available activity data is invalid",
   private_data: "the required activity data is private",
   stale_threshold: "the applicable threshold is stale",
@@ -66,7 +67,8 @@ export function getCommonLoadPresentation(
           status: aggregate.data.status,
           load: "Unavailable",
           intensity: "Unavailable",
-          explanation: "Common Load and Intensity are unavailable for this activity aggregate.",
+          explanation:
+            "Common Load and normalized intensity are unavailable for this activity aggregate.",
           diagnostic: getAggregateCommonLoadDiagnostic(context),
         };
       }
@@ -75,7 +77,7 @@ export function getCommonLoadPresentation(
         status: aggregate.data.status,
         load: Math.round(aggregate.data.load).toString(),
         intensity: aggregate.data.intensity.toFixed(2),
-        explanation: `${coverage}common Load and Intensity aggregated across this activity's segments.`,
+        explanation: `${coverage}Common Load and normalized intensity aggregated across this activity's segments.`,
         diagnostic: null,
       };
     }
@@ -84,7 +86,7 @@ export function getCommonLoadPresentation(
       load: "Unavailable",
       intensity: "Unavailable",
       explanation:
-        "Common Load and Intensity are unavailable because no current result was provided.",
+        "Common Load and normalized intensity are unavailable because no current result was provided.",
       diagnostic: null,
     };
   }
@@ -95,7 +97,8 @@ export function getCommonLoadPresentation(
       status: result.status,
       load: Math.round(result.load).toString(),
       intensity: result.intensity.toFixed(2),
-      explanation: "Complete common Load and Intensity from this activity's eligible duration.",
+      explanation:
+        "Complete Common Load and normalized intensity from this activity's eligible duration.",
       diagnostic: null,
     };
   }
@@ -105,7 +108,7 @@ export function getCommonLoadPresentation(
       status: result.status,
       load: result.load === null ? "Unavailable" : Math.round(result.load).toString(),
       intensity: result.intensity === null ? "Unavailable" : result.intensity.toFixed(2),
-      explanation: `Partial common Load and Intensity: ${coverage}% of eligible duration contributed.`,
+      explanation: `Partial Common Load and normalized intensity: ${coverage}% of eligible duration contributed.`,
       diagnostic: null,
     };
   }
@@ -113,7 +116,7 @@ export function getCommonLoadPresentation(
     status: result.status,
     load: "Unavailable",
     intensity: "Unavailable",
-    explanation: `Common Load and Intensity are unavailable because ${unavailableReasons[result.reason]}.`,
+    explanation: `Common Load and normalized intensity are unavailable because ${unavailableReasons[result.reason]}.`,
     diagnostic: getCommonLoadDiagnostic(result, context),
   };
 }

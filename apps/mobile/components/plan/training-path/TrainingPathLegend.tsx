@@ -31,7 +31,7 @@ export function TrainingPathLegend({
     target: isDark ? "rgba(148, 163, 184, 0.34)" : "rgba(100, 116, 139, 0.24)",
   };
   const unavailableItem = {
-    label: "Completed, load unavailable",
+    label: "Completed, Common Load unavailable",
     color: colors.completed,
     shape: "check",
   };

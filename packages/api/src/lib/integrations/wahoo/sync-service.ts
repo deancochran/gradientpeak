@@ -6,17 +6,14 @@
 import { createHash } from "node:crypto";
 import {
   type ActivityPlanStructure,
+  type AthletePerformanceTargetFacts,
   activityPlanStructureSchema,
   compileActivityPlan,
+  getAvailablePerformanceTargetValue,
 } from "@repo/core";
-import {
-  type ActivityEffortThresholdEvidence,
-  getEligibleThresholdValue,
-  resolveCanonicalThresholds,
-  type ThresholdMetricSource,
-} from "@repo/core/athlete-inputs";
 import { encodeRouteCourseFit } from "@repo/core/server";
 import type { PublicActivityCategory } from "@repo/db";
+import type { AthletePerformanceTargetFactsReader } from "../../../application/performance-model/get-athlete-performance-model-as-of";
 import { logger } from "../../logger";
 import { hashPlannedActivityPayload } from "../../provider-sync/planned-activities/planned-activity-hash";
 import { parseStoredRouteFile } from "../../routes/route-file-helpers";
@@ -49,6 +46,7 @@ import {
   convertToWahooPlan,
   getWahooProjectionSnapshot,
   validateWahooCompatibility,
+  type WahooProjectionSnapshot,
 } from "./plan-converter";
 import {
   hasWahooPlannedActivityScopes,
@@ -65,8 +63,6 @@ import {
 import { getWahooGroupEventRouteDeliveryExternalId } from "./route-delivery-identity";
 
 type SyncAction = "created" | "updated" | "recreated" | "no_change";
-
-const FTP_FRESHNESS_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 
 type WahooEventResourceProviderMetadata = {
   wahoo?: {
@@ -179,7 +175,6 @@ interface WahooRepository {
     routeId: string | null;
     startsAt: string;
   } | null>;
-  getProfileSyncMetrics(profileId: string): Promise<WahooSyncProfileMetrics | null>;
   getOwnedRouteForMirror(input: { profileId: string; routeId: string }): Promise<{
     description: string | null;
     filePath: string;
@@ -298,6 +293,12 @@ type WahooProviderEffectExecution = {
   signal?: AbortSignal;
 };
 
+export type WahooDesiredProjectionRefresh = {
+  performanceModelAsOf: string;
+  projectionHash: string;
+  projectionSnapshot: WahooProjectionSnapshot;
+};
+
 type WahooActivityPlan = {
   description: string | null;
   id: string;
@@ -327,23 +328,6 @@ type WahooPlannedEvent = {
   routeId: string | null;
 };
 
-type WahooSyncProfileMetrics = {
-  bikePowerEfforts: Array<{
-    observationKind: "actual" | "derived";
-    observedAt: string;
-    value: number;
-    evidence?: ActivityEffortThresholdEvidence;
-  }>;
-  ftpMetrics: Array<{
-    observedAt: string;
-    source: ThresholdMetricSource;
-    value: number;
-  }>;
-  maxHr: number | null;
-  thresholdHr: number | null;
-  thresholdHrByActivityCategory?: Partial<Record<"bike" | "run" | "swim", number>>;
-};
-
 function normalizeActivityPlanRelation(
   relation: WahooActivityPlanRelation,
 ): WahooActivityPlan | null {
@@ -364,33 +348,27 @@ function normalizeActivityPlanRelation(
 }
 
 export function resolveWahooSyncMetrics(
-  profile: WahooSyncProfileMetrics | null,
+  performanceTargets: AthletePerformanceTargetFacts,
   activityCategory: PublicActivityCategory,
 ) {
-  if (!profile) return null;
-
-  const ftp = resolveCanonicalThresholds({
-    now: new Date().toISOString(),
-    freshnessWindowMs: FTP_FRESHNESS_WINDOW_MS,
-    directMetrics: profile.ftpMetrics.map((metric) => ({
-      threshold: "cycling_ftp" as const,
-      ...metric,
-    })),
-    activityEfforts: profile.bikePowerEfforts.map((effort) => ({
-      activity_category: "bike" as const,
-      metric: "power" as const,
-      durationSeconds: 1200,
-      ...effort,
-    })),
-  }).cycling_ftp;
+  const sport =
+    activityCategory === "bike" || activityCategory === "run" || activityCategory === "swim"
+      ? activityCategory
+      : null;
 
   return {
-    ftp: getEligibleThresholdValue(ftp),
-    maxHr: profile.maxHr,
+    ftp:
+      sport === "bike"
+        ? getAvailablePerformanceTargetValue(performanceTargets.cycling.planningThresholdPower)
+        : null,
+    maxHr:
+      sport && performanceTargets.heartRate[sport].maxHr.status === "available"
+        ? performanceTargets.heartRate[sport].maxHr.valueBpm
+        : null,
     thresholdHr:
-      (activityCategory === "bike" || activityCategory === "run" || activityCategory === "swim"
-        ? profile.thresholdHrByActivityCategory?.[activityCategory]
-        : null) ?? profile.thresholdHr,
+      sport && performanceTargets.heartRate[sport].lthr.status === "available"
+        ? performanceTargets.heartRate[sport].lthr.valueBpm
+        : null,
   };
 }
 
@@ -423,6 +401,7 @@ export type SyncFailureCategory = "eligibility" | "integration" | "provider";
 export type SyncFailureCode =
   | "authorization_reset_required"
   | "missing_metric"
+  | "missing_performance_model_context"
   | "unsupported_target"
   | "unsupported_segment"
   | "unsupported_sport"
@@ -578,6 +557,7 @@ export class WahooSyncService {
   constructor(
     private readonly deps: {
       activateAccessToken?: (accessToken: string) => Promise<void>;
+      getPerformanceTargets: AthletePerformanceTargetFactsReader;
       repository: WahooRepository;
       storage: WahooSyncStorage;
       wahooClientFactory?: typeof createWahooClient;
@@ -1641,11 +1621,14 @@ export class WahooSyncService {
     eventId: string,
     profileId: string,
     execution?: {
+      performanceModelAsOf?: string;
       expectedProjectionHash?: string;
       expectedStartsAt?: string;
       expectedIntegrationGeneration?: number;
       integrationId?: string;
+      queuedProjectionSnapshot?: WahooProjectionSnapshot;
       signal?: AbortSignal;
+      updateDesiredProjection?: (input: WahooDesiredProjectionRefresh) => Promise<boolean>;
     },
   ): Promise<SyncResult> {
     try {
@@ -1756,9 +1739,20 @@ export class WahooSyncService {
         };
       }
 
-      // 2. Fetch user's profile for FTP and threshold HR
+      const performanceModelAsOf = execution?.performanceModelAsOf;
+      if (!performanceModelAsOf || Number.isNaN(Date.parse(performanceModelAsOf))) {
+        return createSyncFailure({
+          category: "eligibility",
+          code: "missing_performance_model_context",
+          error: "Wahoo planned-activity sync requires an explicit performance-model timestamp.",
+          retryable: false,
+        });
+      }
       const profile = resolveWahooSyncMetrics(
-        await this.repository.getProfileSyncMetrics(profileId),
+        await this.deps.getPerformanceTargets({
+          actorProfileId: profileId,
+          asOf: new Date(performanceModelAsOf),
+        }),
         compiled.activity_category,
       );
 
@@ -1816,41 +1810,54 @@ export class WahooSyncService {
         }),
       );
       if (!validation.compatible) {
-        const issue = validation.issues[0];
-        return rejectOrUnsync(
-          createSyncFailure({
-            category: "eligibility",
-            code: issue?.code ?? "invalid_plan",
-            error: issue?.message ?? "Activity plan structure is not compatible with Wahoo",
-            retryable: false,
-            warnings: validation.warnings,
-          }),
+        const missingCalibrationIssue = validation.issues.find(
+          (candidate) => candidate.code === "missing_metric",
         );
+        const issue = missingCalibrationIssue ?? validation.issues[0];
+        const failure = createSyncFailure({
+          category: "eligibility",
+          code: issue?.code ?? "invalid_plan",
+          error: issue?.message ?? "Activity plan structure is not compatible with Wahoo",
+          retryable: false,
+          warnings: validation.warnings,
+        });
+        return missingCalibrationIssue ? failure : rejectOrUnsync(failure);
       }
+      const projectionSnapshot = getWahooProjectionSnapshot(
+        structure,
+        buildWahooConvertOptions({
+          activityType,
+          description: activityPlan.description ?? undefined,
+          hasRoute: Boolean(planned.routeId),
+          metrics: profile,
+          name: activityPlan.name,
+        }),
+      );
       const projectionHash = hashPlannedActivityPayload({
-        projectionSnapshot: getWahooProjectionSnapshot(
-          structure,
-          buildWahooConvertOptions({
-            activityType,
-            description: activityPlan.description ?? undefined,
-            hasRoute: Boolean(planned.routeId),
-            metrics: profile,
-            name: activityPlan.name,
-          }),
-        ),
+        projectionSnapshot,
         sourcePlanId: activityPlan.id,
         sourceRouteId: planned.routeId,
       });
+      const queuedProjectionHash = execution?.queuedProjectionSnapshot
+        ? hashPlannedActivityPayload({
+            projectionSnapshot: execution.queuedProjectionSnapshot,
+            sourcePlanId: activityPlan.id,
+            sourceRouteId: planned.routeId,
+          })
+        : null;
       if (
         execution?.expectedProjectionHash &&
-        execution.expectedProjectionHash !== projectionHash
+        (execution.expectedProjectionHash !== projectionHash ||
+          queuedProjectionHash !== execution.expectedProjectionHash)
       ) {
-        return {
-          success: true,
-          action: "no_change",
-          terminalOutcome: "superseded",
-          warnings: ["Queued Wahoo projection was superseded before execution."],
-        };
+        const desiredStateUpdated = await execution.updateDesiredProjection?.({
+          performanceModelAsOf,
+          projectionHash,
+          projectionSnapshot,
+        });
+        if (!desiredStateUpdated) {
+          throw new Error("Wahoo latest-target desired state could not be fenced");
+        }
       }
       const syncWarnings = [...validation.warnings];
 

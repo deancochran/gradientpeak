@@ -58,7 +58,7 @@ export interface BuilderProfileMetricsValues {
   thresholdHeartRateBpm?: string;
   bikeFtpWatts?: string;
   runThresholdPaceMinPerKm?: string;
-  startingCtl?: string;
+  startingLongTermLoad?: string;
   fatigueState?: BuilderFatigueState;
 }
 

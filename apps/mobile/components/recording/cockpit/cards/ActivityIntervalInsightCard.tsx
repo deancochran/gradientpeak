@@ -1,3 +1,4 @@
+import { resolvePerformanceTargetValue } from "@repo/core";
 import {
   type ActivityTarget,
   formatIntensityTarget,
@@ -259,15 +260,21 @@ function buildTargetMetricCard(
 ): TargetMetricCard | null {
   switch (target.type) {
     case "%FTP": {
-      const ftp = service?.getBaseFtp?.();
-      const targetValue = ftp ? Math.round((target.intensity / 100) * ftp) : null;
+      const performanceTargets = service?.getPerformanceTargets();
+      const intensityScale = service?.getIntensityScale();
+      const targetValue = resolvePerformanceTargetValue({
+        target,
+        activityCategory: service?.selectedActivityCategory ?? "other",
+        ...(performanceTargets !== undefined ? { performanceTargets } : {}),
+        ...(intensityScale !== undefined ? { intensityScale } : {}),
+      })?.value;
       const current = readings.power ?? null;
 
       return {
         key: `power-${index}`,
         label: "Power",
         target: targetValue ? `${targetValue} W` : formatIntensityTarget(target),
-        tone: getTargetTone(current, targetValue),
+        tone: getTargetTone(current, targetValue ?? null),
         unit: "W",
         value: current ? `${Math.round(current)}` : "--",
       };
@@ -284,29 +291,37 @@ function buildTargetMetricCard(
       };
     }
     case "%ThresholdHR": {
-      const thresholdHr = service?.getBaseThresholdHr?.();
-      const targetValue = thresholdHr ? Math.round((target.intensity / 100) * thresholdHr) : null;
+      const performanceTargets = service?.getPerformanceTargets();
+      const targetValue = resolvePerformanceTargetValue({
+        target,
+        activityCategory: service?.selectedActivityCategory ?? "other",
+        ...(performanceTargets !== undefined ? { performanceTargets } : {}),
+      })?.value;
       const current = readings.heartRate ?? null;
 
       return {
         key: `heart-rate-${index}`,
         label: "HR",
         target: targetValue ? `${targetValue} bpm` : formatIntensityTarget(target),
-        tone: getTargetTone(current, targetValue),
+        tone: getTargetTone(current, targetValue ?? null),
         unit: "bpm",
         value: current ? `${Math.round(current)}` : "--",
       };
     }
     case "%MaxHR": {
-      const maxHr = service?.getBaseThresholdHr?.();
-      const targetValue = maxHr ? Math.round((target.intensity / 100) * maxHr) : null;
+      const performanceTargets = service?.getPerformanceTargets();
+      const targetValue = resolvePerformanceTargetValue({
+        target,
+        activityCategory: service?.selectedActivityCategory ?? "other",
+        ...(performanceTargets !== undefined ? { performanceTargets } : {}),
+      })?.value;
       const current = readings.heartRate ?? null;
 
       return {
         key: `heart-rate-${index}`,
         label: "HR",
         target: targetValue ? `${targetValue} bpm` : formatIntensityTarget(target),
-        tone: getTargetTone(current, targetValue),
+        tone: getTargetTone(current, targetValue ?? null),
         unit: "bpm",
         value: current ? `${Math.round(current)}` : "--",
       };
@@ -408,25 +423,48 @@ function formatCompactStepDescription(
     return duration;
   }
 
-  const targets = step.targets.map((target) => resolveReadableTarget(target, service)).join(", ");
+  const targets = step.targets
+    .map((target) => resolveReadableTarget(target, step.activity_category ?? "other", service))
+    .join(", ");
 
   return `${duration} @ ${targets}`;
 }
 
-function resolveReadableTarget(target: ActivityTarget, service: InsightCardProps["service"]) {
+function resolveReadableTarget(
+  target: ActivityTarget,
+  activityCategory: NonNullable<RecordingPlanOccurrence["activity_category"]>,
+  service: InsightCardProps["service"],
+) {
   switch (target.type) {
     case "%FTP": {
-      const ftp = service?.getBaseFtp?.();
-      if (!ftp) return formatIntensityTarget(target);
-      return `${Math.round((target.intensity / 100) * ftp)}W`;
+      const performanceTargets = service?.getPerformanceTargets();
+      const intensityScale = service?.getIntensityScale();
+      const resolved = resolvePerformanceTargetValue({
+        target,
+        activityCategory,
+        ...(performanceTargets !== undefined ? { performanceTargets } : {}),
+        ...(intensityScale !== undefined ? { intensityScale } : {}),
+      });
+      return resolved ? `${resolved.value}W` : formatIntensityTarget(target);
     }
     case "%ThresholdHR": {
-      const thresholdHr = service?.getBaseThresholdHr?.();
-      if (!thresholdHr) return formatIntensityTarget(target);
-      return `${Math.round((target.intensity / 100) * thresholdHr)} bpm`;
+      const performanceTargets = service?.getPerformanceTargets();
+      const resolved = resolvePerformanceTargetValue({
+        target,
+        activityCategory,
+        ...(performanceTargets !== undefined ? { performanceTargets } : {}),
+      });
+      return resolved ? `${resolved.value} bpm` : formatIntensityTarget(target);
     }
-    case "%MaxHR":
-      return formatIntensityTarget(target);
+    case "%MaxHR": {
+      const performanceTargets = service?.getPerformanceTargets();
+      const resolved = resolvePerformanceTargetValue({
+        target,
+        activityCategory,
+        ...(performanceTargets !== undefined ? { performanceTargets } : {}),
+      });
+      return resolved ? `${resolved.value} bpm` : formatIntensityTarget(target);
+    }
     case "watts":
       return `${Math.round(target.intensity)}W`;
     case "bpm":

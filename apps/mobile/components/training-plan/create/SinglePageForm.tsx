@@ -91,7 +91,7 @@ export interface TrainingPlanConfigFormData {
   optimizationProfile: "outcome_first" | "balanced" | "sustainable";
   postGoalRecoveryDays: number;
   behaviorControls: CreationBehaviorControls;
-  startingCtlAssumption?: number;
+  startingLongTermLoadAssumption?: number;
   startingFatigueState?: "fresh" | "normal" | "fatigued";
   calibration: TrainingPlanCalibrationConfig;
   calibrationCompositeLocks: CompositeWeightLocks;
@@ -316,7 +316,8 @@ const resolveProjectionReviewDiagnostics = (
     readNumber(objectiveContributions?.sampledWeeks);
   const derivedClampPressure =
     clampCounts && sampledWeeks && sampledWeeks > 0
-      ? ((readNumber(clampCounts.tss) ?? 0) + (readNumber(clampCounts.ctl) ?? 0)) / sampledWeeks
+      ? ((readNumber(clampCounts.load) ?? 0) + (readNumber(clampCounts.longTermLoad) ?? 0)) /
+        sampledWeeks
       : undefined;
 
   return {
@@ -1056,13 +1057,13 @@ export function SinglePageForm({
             {activeTab === "constraints" && (
               <ConstraintsConfigSection
                 postGoalRecoveryDays={configData.postGoalRecoveryDays}
-                projectionStartingCtl={projectionStartingState?.starting_ctl}
-                startingCtlAssumption={configData.startingCtlAssumption}
+                projectionStartingCtl={projectionStartingState?.starting_longTermLoad}
+                startingLongTermLoadAssumption={configData.startingLongTermLoadAssumption}
                 onChange={(values) => {
                   onConfigChange({
                     ...configData,
                     postGoalRecoveryDays: values.postGoalRecoveryDays,
-                    startingCtlAssumption: values.startingCtlAssumption,
+                    startingLongTermLoadAssumption: values.startingLongTermLoadAssumption,
                   });
                 }}
                 onReset={onResetLimits}

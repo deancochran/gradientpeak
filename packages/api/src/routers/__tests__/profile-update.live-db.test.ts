@@ -146,7 +146,7 @@ describe("atomic profile update against PostgreSQL", () => {
       { ftp: "" },
       { ftp: null },
     ]) {
-      await expect(caller.update(input as never)).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(caller.update(input as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
     }
     expect(await manualMetrics(profileId, "lthr")).toEqual([]);
     expect(
@@ -300,41 +300,36 @@ describe("atomic profile update against PostgreSQL", () => {
     const sharedEvidence = batchEvidence?.get(profileId);
     expect(sharedEvidence).toBeDefined();
     if (!sharedEvidence) throw new Error("Expected batched profile evidence");
-    expect(await getSerializedProfile(db, profileId)).toMatchObject({
-      weight_kg: 71,
-      threshold_hr: null,
-      ftp: null,
+    const serializedProfile = await getSerializedProfile(db, profileId);
+    expect(serializedProfile).toMatchObject({ weight_kg: 71 });
+    expect(serializedProfile).not.toHaveProperty("threshold_hr");
+    expect(serializedProfile).not.toHaveProperty("ftp");
+    const afterClearContext = await resolveActivityContextAsOf({
+      store: analysisStore,
+      profileId,
+      activityTimestamp: afterClear,
     });
-    await expect(
-      resolveActivityContextAsOf({
-        store: analysisStore,
-        profileId,
-        activityTimestamp: afterClear,
-      }),
-    ).resolves.toMatchObject({
-      profileMetrics: { weight_kg: null, ftp: null },
-    });
+    expect(afterClearContext).toMatchObject({ profileMetrics: { weight_kg: null } });
+    expect(afterClearContext.profileMetrics).not.toHaveProperty("ftp");
     await expect(
       resolveActivityContextAsOf({
         store: analysisStore,
         profileId,
         activityTimestamp: beforeClear,
       }),
-    ).resolves.toMatchObject({
-      profileMetrics: { weight_kg: 69, ftp: null },
-    });
+    ).resolves.toMatchObject({ profileMetrics: { weight_kg: 69 } });
     expect(
       resolveActivityContextFromEvidence({
         evidence: sharedEvidence,
         activityTimestamp: beforeClear,
       }).profileMetrics,
-    ).toMatchObject({ weight_kg: 69, ftp: null });
+    ).toMatchObject({ weight_kg: 69 });
     expect(
       resolveActivityContextFromEvidence({
         evidence: sharedEvidence,
         activityTimestamp: afterClear,
       }).profileMetrics,
-    ).toMatchObject({ weight_kg: null, ftp: null });
+    ).toMatchObject({ weight_kg: null });
 
     await expect(
       resolveActivityContextAsOf({
@@ -342,34 +337,19 @@ describe("atomic profile update against PostgreSQL", () => {
         profileId,
         activityTimestamp: afterReactivation,
       }),
-    ).resolves.toMatchObject({
-      profileMetrics: { weight_kg: 71, ftp: null },
-    });
+    ).resolves.toMatchObject({ profileMetrics: { weight_kg: 71 } });
     expect(
       resolveActivityContextFromEvidence({
         evidence: sharedEvidence,
         activityTimestamp: afterReactivation,
       }).profileMetrics,
-    ).toMatchObject({ weight_kg: 71, ftp: null });
+    ).toMatchObject({ weight_kg: 71 });
 
-    const [profileBeforeRejectedThresholds] = await db
-      .select()
-      .from(profiles)
-      .where(eq(profiles.id, profileId));
-    await expect(updateProfile(db, { profileId, bio: "rejected", ftp: 300 })).rejects.toThrow(
-      "Training thresholds are calculated from trusted activity evidence.",
-    );
-    await expect(
-      updateProfile(db, { profileId, bio: "rejected", threshold_hr: 180 }),
-    ).rejects.toThrow("Training thresholds are calculated from trusted activity evidence.");
     expect(await manualMetrics(profileId, "weight_kg")).toEqual(reactivatedHistory);
     expect(await manualMetrics(profileId, "lthr")).toEqual([]);
     expect(
       await db.select().from(activityEfforts).where(eq(activityEfforts.profile_id, profileId)),
     ).toEqual([]);
-    expect(await db.select().from(profiles).where(eq(profiles.id, profileId))).toEqual([
-      profileBeforeRejectedThresholds,
-    ]);
   });
 
   it("rolls profile fields back when metric synchronization fails", async () => {

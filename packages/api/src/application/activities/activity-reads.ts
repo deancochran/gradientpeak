@@ -1,6 +1,16 @@
 import {
   type ActivityDerivedMetrics,
-  type ActivityListDerivedSummary,
+  activityObservationQuantificationSchema,
+  COMMON_RELATIVE_LOAD_MODEL,
+  COMMON_RELATIVE_LOAD_VERSION,
+  commonLoadResultSchema,
+  createActivityQuantificationCalculationIdentity,
+  createActivityQuantificationEvidenceIdentity,
+  createAnalyzedActivitySegmentAnalysis,
+  createCompletedActivityQuantificationSubjectIdentity,
+  createObservationQuantificationBundle,
+  fingerprintActivityQuantification,
+  observedActivityIntensitySchema,
   parseActivityLapRecords,
 } from "@repo/core";
 import {
@@ -15,6 +25,8 @@ import { and, asc, count, desc, eq, gte, ilike, lt, lte, or, sql } from "drizzle
 import type { getRequiredDb } from "../../db";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
 import {
+  type ActivityQuantifiedDerivedSummary,
+  type ActivitySegmentDomainReadRow,
   type ActivitySegmentReadRow,
   buildActivityDerivedSummaries,
   loadActivitySegmentsByActivityId,
@@ -44,23 +56,133 @@ export type ActivityListQueryInput = {
   search?: string;
   date_from?: string;
   date_to?: string;
-  sort_by: "date" | "distance" | "duration" | "tss";
+  sort_by: "date" | "distance" | "duration" | "common_load";
   sort_order: "asc" | "desc";
 };
 
-const tssSortBatchSize = 200;
-export const tssSortMaximumHistory = 10_000;
+const commonLoadSortBatchSize = 200;
+export const commonLoadSortMaximumHistory = 10_000;
 
 type ActivityRow = typeof activities.$inferSelect;
 type ActivityReadRow = ActivityRow & {
-  segments: ActivitySegmentReadRow[];
+  segments: ActivitySegmentDomainReadRow[];
 };
+
+function unavailableSharedActivityQuantification(
+  activity: ActivityReadRow,
+  reason: "private_data" | "source_missing",
+) {
+  const activityCategory =
+    activity.segments.find(
+      (segment) => segment.role === "activity" && segment.activity_category !== null,
+    )?.activity_category ?? "other";
+  const computedAsOf = activity.started_at.toISOString();
+  const commonLoad = commonLoadResultSchema.parse({
+    status: "unavailable",
+    model: COMMON_RELATIVE_LOAD_MODEL,
+    version: COMMON_RELATIVE_LOAD_VERSION,
+    activity_category: activityCategory,
+    method: null,
+    quality: null,
+    thresholdEvidence: null,
+    evidenceFingerprint: null,
+    computedAsOf,
+    contributingDurationSeconds: null,
+    reason: reason === "private_data" ? "private_data" : "activity_data_missing",
+  });
+  const subjectIdentity = createCompletedActivityQuantificationSubjectIdentity({
+    activityId: activity.id,
+  });
+  const evidenceFacts = {
+    purpose: "shared-activity-unavailable-observation",
+    activityId: activity.id,
+    reason,
+  };
+  const observedIntensity = observedActivityIntensitySchema.parse({
+    status: "unavailable",
+    evidenceRole: "measured",
+    values: [],
+    reason,
+  });
+  const segmentId =
+    activity.segments.find((segment) => segment.role === "activity")?.id ?? activity.id;
+  const observation = activityObservationQuantificationSchema.parse({
+    kind: "observation",
+    stage: "final",
+    subjectIdentity,
+    evidenceIdentity: createActivityQuantificationEvidenceIdentity({
+      evidenceType: "segment_facts",
+      sourceIds: [activity.id, segmentId],
+      revisionFingerprint: fingerprintActivityQuantification(evidenceFacts),
+      details: evidenceFacts,
+    }),
+    calculationIdentity: createActivityQuantificationCalculationIdentity({
+      model: commonLoad.model,
+      version: commonLoad.version,
+      computedAt: commonLoad.computedAsOf,
+      calibrationEvidenceFingerprint: commonLoad.evidenceFingerprint,
+    }),
+    activity_category: activityCategory,
+    duration: {
+      elapsed: {
+        status: "unavailable",
+        evidenceRole: "measured",
+        value: null,
+        unit: "seconds",
+        reason,
+      },
+      active: {
+        status: "unavailable",
+        evidenceRole: "measured",
+        value: null,
+        unit: "seconds",
+        reason,
+      },
+      moving: {
+        status: "unavailable",
+        evidenceRole: "measured",
+        value: null,
+        unit: "seconds",
+        reason,
+      },
+    },
+    distance: {
+      status: "unavailable",
+      evidenceRole: "measured",
+      value: null,
+      unit: "meters",
+      reason,
+    },
+    intensity: {
+      observed: observedIntensity,
+    },
+    completedProvenance: {
+      activityId: activity.id,
+      segmentId,
+      source: "unknown",
+      artifactIdentity: null,
+      providerIdentity: null,
+      segmentRevision: null,
+      observedAt: activity.finished_at.toISOString(),
+      computedAt: computedAsOf,
+      calculationVersion: "shared-activity-unavailable-v1",
+    },
+    commonLoad,
+  });
+  return createObservationQuantificationBundle({ members: [observation] });
+}
 
 function decorateActivity(
   activity: ActivityReadRow,
   matchedCategorySummary: MatchedCategorySummary | null = null,
 ) {
-  const { segments: _segments, ...publicActivity } = activity;
+  const {
+    segments: _segments,
+    normalized_graded_speed_mps: _normalizedGradedSpeedMetersPerSecond,
+    efficiency_factor: _efficiencyFactor,
+    aerobic_decoupling: _aerobicDecoupling,
+    ...publicActivity
+  } = activity;
   return {
     ...publicActivity,
     ...describeActivityComposition(activity.segments),
@@ -70,22 +192,26 @@ function decorateActivity(
 
 type ActivityMetricCandidate = {
   activity: ActivityReadRow;
-  derived: ActivityListDerivedSummary | null;
+  derived: ActivityQuantifiedDerivedSummary | null;
   matchedCategorySummary: MatchedCategorySummary | null;
 };
 
 function compareMetricCandidates(
   a: ActivityMetricCandidate,
   b: ActivityMetricCandidate,
-  sortBy: "distance" | "duration" | "tss",
+  sortBy: "distance" | "duration" | "common_load",
   sortOrder: ActivityListQueryInput["sort_order"],
 ) {
   const aValue = a.matchedCategorySummary
     ? matchedCategorySortValue(a.matchedCategorySummary, sortBy)
-    : (a.derived?.tss ?? null);
+    : a.derived?.common_load && "load" in a.derived.common_load
+      ? a.derived.common_load.load
+      : null;
   const bValue = b.matchedCategorySummary
     ? matchedCategorySortValue(b.matchedCategorySummary, sortBy)
-    : (b.derived?.tss ?? null);
+    : b.derived?.common_load && "load" in b.derived.common_load
+      ? b.derived.common_load.load
+      : null;
   if (aValue !== bValue) {
     if (aValue === null) return 1;
     if (bValue === null) return -1;
@@ -132,7 +258,7 @@ export async function listActivitiesForProfile({
   const distance = sql<number>`${activities.distance_meters}`;
   const duration = sql<number>`coalesce(${activities.active_ms}, ${activities.elapsed_ms})`;
   const requiresBoundedMetricScan =
-    input.sort_by === "tss" ||
+    input.sort_by === "common_load" ||
     (input.activity_category !== undefined &&
       (input.sort_by === "distance" || input.sort_by === "duration"));
   if (requiresBoundedMetricScan) {
@@ -143,16 +269,16 @@ export async function listActivitiesForProfile({
         const snapshotDb = tx as unknown as Db;
         const totalRows = await tx.select({ total: count() }).from(activities).where(whereClause);
         const total = Number(totalRows[0]?.total ?? 0);
-        // Exact sorting by dynamically derived TSS is necessarily O(N). The explicit ceiling
+        // Exact sorting by dynamically derived Common Load is necessarily O(N). The explicit ceiling
         // bounds request memory/CPU while keeping the existing index cursor and global ordering
         // contract truthful. Callers above the ceiling must narrow the activity filters.
-        if (total > tssSortMaximumHistory) {
+        if (total > commonLoadSortMaximumHistory) {
           throw new TRPCError({
             code: "BAD_REQUEST",
             message:
-              input.sort_by === "tss"
-                ? `TSS sorting supports at most ${tssSortMaximumHistory} matching activities; narrow the activity filters.`
-                : `ActivityCategory metric sorting supports at most ${tssSortMaximumHistory} matching activities; narrow the activity filters.`,
+              input.sort_by === "common_load"
+                ? `Common Load sorting supports at most ${commonLoadSortMaximumHistory} matching activities; narrow the activity filters.`
+                : `ActivityCategory metric sorting supports at most ${commonLoadSortMaximumHistory} matching activities; narrow the activity filters.`,
           });
         }
 
@@ -179,7 +305,7 @@ export async function listActivitiesForProfile({
             .from(activities)
             .where(scanWhere)
             .orderBy(desc(activities.started_at), desc(activities.id))
-            .limit(Math.min(tssSortBatchSize, total - candidates.length))) as ActivityRow[];
+            .limit(Math.min(commonLoadSortBatchSize, total - candidates.length))) as ActivityRow[];
           if (batch.length === 0) break;
 
           const normalizedBatch = batch.map(normalizeActivityLaps);
@@ -195,7 +321,7 @@ export async function listActivitiesForProfile({
             })),
           );
           const lastActivity = normalizedBatch.at(-1);
-          if (!lastActivity || batch.length < tssSortBatchSize) break;
+          if (!lastActivity || batch.length < commonLoadSortBatchSize) break;
           scanCursor = {
             id: lastActivity.id,
             started_at: lastActivity.started_at,
@@ -234,7 +360,7 @@ export async function listActivitiesForProfile({
             compareMetricCandidates(
               a,
               b,
-              input.sort_by as "distance" | "duration" | "tss",
+              input.sort_by as "distance" | "duration" | "common_load",
               input.sort_order,
             ),
           )
@@ -457,20 +583,22 @@ export async function getActivityByIdForViewer({
     ...normalizedActivity,
     segments: segments.get(normalizedActivity.id) ?? [],
   };
-  const derived: ActivityDerivedMetrics = {
+  const sharedQuantification = unavailableSharedActivityQuantification(
+    activity,
+    activity.profile_id === viewerId ? "source_missing" : "private_data",
+  );
+  const derived: ActivityDerivedMetrics & {
+    observationQuantification: typeof sharedQuantification;
+  } = {
     stress: {
-      tss: null,
-      tss_identity: null,
-      intensity_factor: null,
-      method: null,
-      unavailable_reason:
-        activity.profile_id === viewerId ? "activity_data_missing" : "private_data",
+      common_load: sharedQuantification.summary.commonLoad,
       trimp: null,
       trimp_source: null,
       training_effect: null,
     },
     zones: { hr: [], power: [] },
     computed_as_of: activity.started_at.toISOString(),
+    observationQuantification: sharedQuantification,
   };
   const ownedAnalysis =
     activity.profile_id === viewerId
@@ -481,7 +609,9 @@ export async function getActivityByIdForViewer({
         })
       : null;
   const parentDerived = ownedAnalysis?.parent.get(activity.id);
-  const resolvedDerived: ActivityDerivedMetrics = parentDerived
+  const resolvedDerived: ActivityDerivedMetrics & {
+    observationQuantification: typeof sharedQuantification;
+  } = parentDerived
     ? {
         stress: {
           ...parentDerived,
@@ -491,6 +621,7 @@ export async function getActivityByIdForViewer({
         },
         zones: { hr: [], power: [] },
         computed_as_of: parentDerived.computed_as_of,
+        observationQuantification: parentDerived.observationQuantification,
       }
     : derived;
   // Session RPE is deliberately owner-only even when the activity itself is
@@ -530,7 +661,10 @@ export async function getActivityByIdForViewer({
     ...response,
     activity: {
       ...response.activity,
-      segments: activity.segments,
+      segments: activity.segments.map((segment) => ({
+        ...segment,
+        ...createAnalyzedActivitySegmentAnalysis(segment.summary),
+      })),
       current_artifact: currentArtifact,
       ingestion: ingestion ?? null,
       effective_session_rpe: effectiveSessionRpe

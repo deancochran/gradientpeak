@@ -9,7 +9,10 @@ import {
 
 describe("activity load presentation", () => {
   it("uses common Load and Intensity labels for every calculation method", () => {
-    expect(getActivityLoadLabels()).toEqual({ load: "Load", intensity: "Intensity" });
+    expect(getActivityLoadLabels()).toEqual({
+      load: "Common Load",
+      intensity: "Normalized intensity",
+    });
   });
 
   it("distinguishes complete, partial, and unavailable common Load", () => {
@@ -57,7 +60,7 @@ describe("activity load presentation", () => {
       load: "64",
       intensity: "0.80",
     });
-    expect(getCommonLoadPresentation(partial).explanation).toContain("Partial common Load");
+    expect(getCommonLoadPresentation(partial).explanation).toContain("Partial Common Load");
     expect(getCommonLoadPresentation({ status: "unavailable" }).explanation).toContain(
       "no current result",
     );

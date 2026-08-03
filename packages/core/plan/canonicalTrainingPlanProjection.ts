@@ -21,7 +21,7 @@ export type CanonicalTrainingPlanResolutionManifestEntry = {
   offset_days: number;
   activity_category: DailyLoadDistributionPoint["activity_category"];
   focus: DailyLoadRecommendationPrimaryFocus;
-  recommended_load_tss: number;
+  recommended_load: number;
   phase: string | null;
   selected_activity_plan_id: string;
   selected_template_signature: string;
@@ -31,7 +31,7 @@ export type CanonicalTrainingPlanResolutionFailure = {
   date: string;
   activity_category: DailyLoadDistributionPoint["activity_category"];
   focus: DailyLoadRecommendationPrimaryFocus;
-  recommended_load_tss: number;
+  recommended_load: number;
   phase: string | null;
   reason: "missing_exact_activity_category_focus_coverage" | "no_positive_training_days";
 };
@@ -181,7 +181,7 @@ export function projectCanonicalTrainingPlan(input: {
   candidates: NormalizedSystemActivityTemplateCatalogEntry[];
 }): ProjectCanonicalTrainingPlanResult {
   const points = input.dailyLoadPoints
-    .filter((point) => point.recommended_load_tss > 0 && point.primary_focus !== "rest")
+    .filter((point) => point.recommended_load > 0 && point.primary_focus !== "rest")
     .sort((left, right) => left.date.localeCompare(right.date));
   const resolutionManifest: CanonicalTrainingPlanResolutionManifestEntry[] = [];
   const unresolved: CanonicalTrainingPlanResolutionFailure[] = [];
@@ -195,7 +195,7 @@ export function projectCanonicalTrainingPlan(input: {
     );
     const selected = rankCandidates({
       candidates: compatible,
-      load: point.recommended_load_tss,
+      load: point.recommended_load,
       phase,
     })[0];
     if (!selected) {
@@ -203,7 +203,7 @@ export function projectCanonicalTrainingPlan(input: {
         date: point.date,
         activity_category: point.activity_category,
         focus: point.primary_focus,
-        recommended_load_tss: point.recommended_load_tss,
+        recommended_load: point.recommended_load,
         phase,
         reason: "missing_exact_activity_category_focus_coverage",
       });
@@ -214,7 +214,7 @@ export function projectCanonicalTrainingPlan(input: {
       offset_days: diffDateOnlyUtcDays(input.projection.start_date, point.date),
       activity_category: point.activity_category,
       focus: point.primary_focus,
-      recommended_load_tss: point.recommended_load_tss,
+      recommended_load: point.recommended_load,
       phase,
       selected_activity_plan_id: selected.template_id,
       selected_template_signature: selected.structure_signature,
@@ -244,7 +244,7 @@ export function projectCanonicalTrainingPlan(input: {
                 date: input.projection.start_date,
                 activity_category: "other",
                 focus: "rest",
-                recommended_load_tss: 0,
+                recommended_load: 0,
                 phase: null,
                 reason: "no_positive_training_days",
               },

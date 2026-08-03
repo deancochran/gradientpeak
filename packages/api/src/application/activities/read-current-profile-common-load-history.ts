@@ -31,7 +31,8 @@ export async function readCurrentProfileCommonLoadHistory(input: {
   profileId: string;
   now?: Date;
 }): Promise<CurrentProfileCommonLoadHistory> {
-  const computedAt = (input.now ?? new Date()).toISOString();
+  const asOf = input.now ?? new Date();
+  const computedAt = asOf.toISOString();
   const [profile] = await input.db
     .select({ planningTimezone: profiles.planning_timezone })
     .from(profiles)
@@ -52,6 +53,7 @@ export async function readCurrentProfileCommonLoadHistory(input: {
     planningTimezone,
     currentPlanningDate,
     result: await getCommonLoadHistory({
+      asOf,
       db: input.db,
       profileId: input.profileId,
       currentPlanningDate,

@@ -31,7 +31,7 @@ export const swimActivityCategory: ActivityCategoryRegistryEntry = {
     template: {
       avgIF: 0.7,
       avgDuration: 2400,
-      avgTSS: 45,
+      avgCommonLoad: 45,
     },
   },
 };

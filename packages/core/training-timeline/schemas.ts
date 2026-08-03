@@ -21,11 +21,7 @@ export const scheduledTrainingItemSchema = z
     date: z.string(),
     title: z.string(),
     activityCategory: z.string().nullable().optional(),
-    /**
-     * Source-specific planned TSS. This legacy planning projection must not
-     * receive a Common Load value; Common Load is carried by effective-composition.
-     */
-    plannedLoadTss: z.number().finite().nonnegative().nullable().optional(),
+    plannedLoad: z.number().finite().nonnegative().nullable().optional(),
     status: scheduledTrainingItemStatusSchema.default("planned"),
   })
   .strict();
@@ -37,8 +33,7 @@ export const completedTrainingItemSchema = z
     date: z.string(),
     title: z.string(),
     activityCategory: z.string().nullable().optional(),
-    /** Source-specific completed TSS; never a storage field for Common Load. */
-    completedLoadTss: z.number().finite().nonnegative().nullable().optional(),
+    completedLoad: z.number().finite().nonnegative().nullable().optional(),
   })
   .strict();
 
@@ -59,15 +54,13 @@ export const trainingTimelineConfidenceSchema = z
 
 export const trainingLoadComparisonSchema = z
   .object({
-    // These are deliberately source-specific TSS projection fields. The
-    // Common Load read model is effective-composition and uses `commonLoad`.
-    plannedTss: z.number().finite().nonnegative(),
-    scheduledTss: z.number().finite().nonnegative(),
-    tentativeScheduledTss: z.number().finite().nonnegative(),
-    completedTss: z.number().finite().nonnegative(),
-    remainingTss: z.number().finite(),
-    recommendedTss: z.number().finite().nonnegative().nullable(),
-    deltaTss: z.number().finite(),
+    plannedLoad: z.number().finite().nonnegative().nullable(),
+    scheduledLoad: z.number().finite().nonnegative().nullable(),
+    tentativeScheduledLoad: z.number().finite().nonnegative().nullable(),
+    completedLoad: z.number().finite().nonnegative().nullable(),
+    remainingLoad: z.number().finite().nonnegative().nullable(),
+    recommendedLoad: z.number().finite().nonnegative().nullable(),
+    deltaLoad: z.number().finite().nullable(),
   })
   .strict();
 

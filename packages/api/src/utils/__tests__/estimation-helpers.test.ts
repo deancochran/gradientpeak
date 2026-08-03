@@ -1,61 +1,35 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("@repo/core/estimation", async () => {
-  const actual =
-    await vi.importActual<typeof import("@repo/core/estimation")>("@repo/core/estimation");
-
-  return {
-    ...actual,
-    estimateActivity: vi.fn((context: any) => {
-      if (context.structure?.shouldThrow) {
-        throw new Error("estimation failed");
-      }
-      if (context.structure?.segments?.[0]?.name === "Partial") {
-        return {
-          tss: null,
-          duration: null,
-          intensityFactor: null,
-          estimatedDistance: 5000,
-          confidence: "low",
-          confidenceScore: 40,
-          factors: ["partial"],
-          warnings: ["Partial evidence"],
-        };
-      }
-
-      const distanceMeters = context.route?.distanceMeters ?? 0;
-
-      return {
-        tss: distanceMeters > 0 ? Math.round(distanceMeters / 1000) : 42,
-        duration: distanceMeters > 0 ? Math.round(distanceMeters / 10) : 1800,
-        intensityFactor: 0.82,
-        confidence: "moderate",
-        confidenceScore: 82,
-        estimatedPowerZones: [0, 61, 61, 20],
-        factors: [],
-        warnings: [],
-      };
-    }),
-    estimateMetrics: vi.fn((_estimation: any, context: any) => ({
-      calories: 450,
-      distance: context.route?.distanceMeters ?? 0,
-    })),
-  };
-});
-
-import * as estimationCore from "@repo/core/estimation";
+import { createTestPerformanceModelRepository } from "../../test-support/performance-model";
 import {
   addEstimationToPlan,
   addEstimationToPlans,
   computePlanMetrics,
-  getEstimationProfileInputsFromStore,
+  type EstimationReadStore,
+  estimatePlannedActivity,
   toEstimationActivityPlan,
 } from "../estimation-helpers";
+
+type EstimationInputs = Awaited<ReturnType<EstimationReadStore["getEstimationInputs"]>>;
+type EstimationRoute = EstimationInputs["routes"][number];
+type TestEstimationRoute = Omit<EstimationRoute, "updated_at"> & { updated_at?: string };
+const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 
 function activityPlanStructure(
   activity_category: "bike" | "run" = "bike",
   metadata: Record<string, unknown> = {},
 ) {
+  const targetType =
+    typeof metadata.targetType === "string"
+      ? metadata.targetType
+      : activity_category === "bike"
+        ? "%FTP"
+        : "%MaxHR";
+  const targetIntensity =
+    typeof metadata.targetIntensity === "number"
+      ? metadata.targetIntensity
+      : activity_category === "bike"
+        ? 75
+        : 70;
   return {
     version: 3,
     segments: [
@@ -73,11 +47,10 @@ function activityPlanStructure(
               {
                 id: "44444444-4444-4444-8444-444444444444",
                 name: "Step",
-                duration: { type: "time", seconds: 1800 },
-                targets:
-                  activity_category === "bike"
-                    ? [{ type: "%FTP", intensity: 75 }]
-                    : [{ type: "%MaxHR", intensity: 70 }],
+                duration: metadata.open
+                  ? { type: "untilFinished" }
+                  : { type: "time", seconds: 1800 },
+                targets: [{ type: targetType, intensity: targetIntensity }],
               },
             ],
           },
@@ -88,49 +61,29 @@ function activityPlanStructure(
   };
 }
 
-function createStoreReader(routeFixtures: Record<string, Record<string, unknown>>) {
+function createStoreReader(routeFixtures: Record<string, TestEstimationRoute>) {
+  const getEstimationInputs = vi.fn(
+    async ({
+      routeIds,
+    }: Parameters<EstimationReadStore["getEstimationInputs"]>[0]): Promise<EstimationInputs> => ({
+      routes: routeIds.flatMap((routeId) => {
+        const route = routeFixtures[routeId];
+        return route
+          ? [{ ...route, updated_at: route.updated_at ?? "2026-07-01T00:00:00.000Z" }]
+          : [];
+      }),
+    }),
+  );
+  const performanceRepository = createTestPerformanceModelRepository({
+    cyclingPlanningThresholdPowerWatts: 238,
+  });
+  const readAthletePerformanceEvidenceSnapshot = vi.fn(
+    performanceRepository.readAthletePerformanceEvidenceSnapshot,
+  );
   return {
-    getEstimationInputs: vi.fn(async ({ routeIds }: { routeIds: string[] }) => ({
-      profile: { dob: "1990-01-01" },
-      efforts: [
-        {
-          effort_type: "power" as const,
-          activity_category: "bike" as const,
-          duration_seconds: 1200,
-          value: 250,
-          unit: "watts",
-          recorded_at: "2026-07-01T00:00:00.000Z",
-          activity_id: "00000000-0000-4000-8000-000000000103",
-          source: "imported",
-          method: "activity_file_best_effort",
-          provenance: {
-            activity_id: "00000000-0000-4000-8000-000000000103",
-            derived_from: "activity_file_stream",
-          },
-        },
-        {
-          effort_type: "speed" as const,
-          activity_category: "run" as const,
-          duration_seconds: 1200,
-          value: 15 / 3.6,
-          unit: "meters_per_second",
-          recorded_at: "2026-07-01T00:00:00.000Z",
-          activity_id: "00000000-0000-4000-8000-000000000104",
-          source: "imported",
-          method: "activity_file_best_effort",
-          provenance: {
-            activity_id: "00000000-0000-4000-8000-000000000104",
-            derived_from: "activity_file_stream",
-          },
-        },
-      ],
-      metrics: [
-        { metric_type: "weight_kg", value: 72 },
-        { metric_type: "resting_hr", value: 48 },
-      ],
-      routes: routeIds.map((routeId) => routeFixtures[routeId]).filter(Boolean),
-    })),
-  };
+    getEstimationInputs,
+    readAthletePerformanceEvidenceSnapshot,
+  } satisfies EstimationReadStore;
 }
 
 afterEach(() => {
@@ -143,93 +96,6 @@ describe("estimation-helpers", () => {
     expect(toEstimationActivityPlan({ structure: activityPlanStructure("run") })).toMatchObject({
       activity_category: "run",
     });
-  });
-
-  it("uses a direct FTP seed when eligible activity effort is unavailable", async () => {
-    const asOf = new Date("2026-07-20T12:00:00.000Z");
-    const inputs = await getEstimationProfileInputsFromStore(
-      {
-        getEstimationInputs: vi.fn(async () => ({
-          profile: { dob: null },
-          efforts: [],
-          metrics: [{ metric_type: "ftp", unit: "W", value: 271, recorded_at: asOf.toISOString() }],
-          routes: [],
-        })),
-      } as any,
-      "profile-1",
-      asOf,
-    );
-
-    expect(inputs.ftp).toBe(271);
-  });
-
-  it("uses the effort observation time instead of request time for freshness", async () => {
-    const inputs = await getEstimationProfileInputsFromStore(
-      {
-        getEstimationInputs: vi.fn(async () => ({
-          profile: { dob: null },
-          efforts: [
-            {
-              activity_id: "activity-1",
-              effort_type: "power",
-              activity_category: "bike",
-              duration_seconds: 1200,
-              value: 300,
-              unit: "watts",
-              recorded_at: "2026-01-01T00:00:00.000Z",
-              source: "imported",
-              method: "activity_file_best_effort",
-              provenance: {
-                activity_id: "activity-1",
-                derived_from: "activity_file_stream",
-              },
-            },
-          ],
-          metrics: [],
-          routes: [],
-        })),
-      } as any,
-      "profile-1",
-      new Date("2026-07-01T00:00:00.000Z"),
-    );
-
-    expect(inputs.ftp).toBeNull();
-  });
-
-  it.each([
-    undefined,
-    "not-a-date",
-  ])("does not trust activity effort with invalid recorded_at %s", async (recordedAt) => {
-    const inputs = await getEstimationProfileInputsFromStore(
-      {
-        getEstimationInputs: vi.fn(async () => ({
-          profile: { dob: null },
-          efforts: [
-            {
-              activity_id: "activity-1",
-              effort_type: "power",
-              activity_category: "bike",
-              duration_seconds: 1200,
-              value: 300,
-              unit: "watts",
-              recorded_at: recordedAt,
-              source: "imported",
-              method: "activity_file_best_effort",
-              provenance: {
-                activity_id: "activity-1",
-                derived_from: "activity_file_stream",
-              },
-            },
-          ],
-          metrics: [],
-          routes: [],
-        })),
-      } as any,
-      "profile-1",
-      new Date("2026-07-01T00:00:00.000Z"),
-    );
-
-    expect(inputs.ftp).toBeNull();
   });
 
   it("adds estimation for a single plan from the store-backed reader without plan route lookup", async () => {
@@ -245,40 +111,40 @@ describe("estimation-helpers", () => {
     const result = await addEstimationToPlan(
       {
         id: "plan-1",
-        profile_id: "profile-1",
+        profile_id: PROFILE_ID,
         name: "Long ride",
         description: "",
         structure: activityPlanStructure(),
       },
-      estimationReader as any,
-      "profile-1",
+      estimationReader,
+      PROFILE_ID,
     );
 
     expect(estimationReader.getEstimationInputs).toHaveBeenCalledTimes(1);
     expect(estimationReader.getEstimationInputs).toHaveBeenCalledWith(
-      expect.objectContaining({ profileId: "profile-1", routeIds: [] }),
-    );
-    expect(vi.mocked(estimationCore.estimateActivity).mock.calls[0]?.[0]).toEqual(
-      expect.objectContaining({
-        ftp: 238,
-      }),
+      expect.objectContaining({ profileId: PROFILE_ID, routeIds: [] }),
     );
     expect(result).toEqual(
       expect.objectContaining({
-        estimated_calories: 450,
-        estimated_zones: ["Z2", "Z3"],
-        confidence: "moderate",
-        confidence_score: 82,
-        authoritative_metrics: expect.objectContaining({
-          estimated_tss: 42,
-          estimated_duration: 1800,
-          intensity_factor: 0.82,
-          estimated_distance: 0,
-          provenance: expect.objectContaining({
-            estimated_tss: "estimated",
-            estimated_duration: "estimated",
-            intensity_factor: "estimated",
-            estimated_distance: "estimated",
+        duration_estimate: {
+          valueSeconds: 1800,
+          status: "exact",
+          basis: "compiled_time",
+          confidence: "high",
+        },
+        common_load: expect.objectContaining({
+          status: "complete",
+          load: 28.125,
+          intensity: 0.75,
+        }),
+        estimated_zones: [],
+        confidence: "high",
+        confidence_score: 100,
+        prescriptionQuantification: expect.objectContaining({
+          summary: expect.objectContaining({
+            duration: expect.objectContaining({
+              elapsed: expect.objectContaining({ status: "complete", value: 1800 }),
+            }),
           }),
         }),
         route: null,
@@ -308,7 +174,7 @@ describe("estimation-helpers", () => {
         null,
         {
           id: "plan-1",
-          profile_id: "profile-1",
+          profile_id: PROFILE_ID,
           name: "Route one",
           description: "",
           structure: activityPlanStructure(),
@@ -316,21 +182,21 @@ describe("estimation-helpers", () => {
         undefined,
         {
           id: "plan-2",
-          profile_id: "profile-1",
+          profile_id: PROFILE_ID,
           name: "Route one again",
           description: "",
           structure: activityPlanStructure(),
         },
         {
           id: "plan-3",
-          profile_id: "profile-1",
+          profile_id: PROFILE_ID,
           name: "Broken plan",
           description: "",
           structure: activityPlanStructure("bike", { shouldThrow: true }),
         },
       ],
-      estimationReader as any,
-      "profile-1",
+      estimationReader,
+      PROFILE_ID,
     );
 
     expect(result).toHaveLength(3);
@@ -341,13 +207,19 @@ describe("estimation-helpers", () => {
     expect(result[0]).toEqual(
       expect.objectContaining({
         id: "plan-1",
-        authoritative_metrics: expect.objectContaining({ estimated_distance: 0 }),
+        duration_estimate: expect.objectContaining({ status: "exact", valueSeconds: 1800 }),
+        prescriptionQuantification: expect.objectContaining({
+          summary: expect.objectContaining({ lifecycle: "prescription" }),
+        }),
       }),
     );
     expect(result[1]).toEqual(
       expect.objectContaining({
         id: "plan-2",
-        authoritative_metrics: expect.objectContaining({ estimated_distance: 0 }),
+        duration_estimate: expect.objectContaining({ status: "exact", valueSeconds: 1800 }),
+        prescriptionQuantification: expect.objectContaining({
+          summary: expect.objectContaining({ lifecycle: "prescription" }),
+        }),
       }),
     );
     expect(result[2]).toEqual(
@@ -357,11 +229,14 @@ describe("estimation-helpers", () => {
         confidence: "low",
         confidence_score: 0,
         estimation_status: "failed",
-        counts_toward_aggregation: false,
-        authoritative_metrics: expect.objectContaining({
-          estimated_tss: null,
-          estimated_duration: null,
-          intensity_factor: null,
+        duration_estimate: expect.objectContaining({
+          status: "unavailable",
+          basis: null,
+          valueSeconds: null,
+        }),
+        common_load: expect.objectContaining({ status: "unavailable" }),
+        prescriptionQuantification: expect.objectContaining({
+          summary: expect.objectContaining({ lifecycle: "prescription" }),
         }),
       }),
     );
@@ -382,46 +257,137 @@ describe("estimation-helpers", () => {
       {
         structure: activityPlanStructure(),
       },
-      estimationReader as any,
-      "profile-1",
-    );
-
-    expect(result).toEqual({
-      estimated_tss: 42,
-      estimated_duration_seconds: 1800,
-      intensity_factor: 0.82,
-      estimated_distance_meters: 0,
-    });
-  });
-
-  it("preserves unknown evidence as null and excludes partial plans from aggregation", async () => {
-    const result = await addEstimationToPlan(
-      {
-        id: "plan-partial",
-        profile_id: "profile-1",
-        name: "Distance plan",
-        description: "",
-        structure: activityPlanStructure("run", { partial: true }),
-      },
-      createStoreReader({}) as any,
-      "profile-1",
+      estimationReader,
+      PROFILE_ID,
     );
 
     expect(result).toMatchObject({
-      estimation_status: "partial",
-      counts_toward_aggregation: false,
-      authoritative_metrics: {
-        estimated_tss: null,
-        estimated_duration: null,
-        intensity_factor: null,
-        provenance: {
-          estimated_tss: null,
-          estimated_duration: null,
-          intensity_factor: null,
-          estimated_distance: "estimated",
+      common_load: { status: "complete", load: 28.125, intensity: 0.75 },
+      duration_estimate: {
+        valueSeconds: 1800,
+        status: "exact",
+        basis: "compiled_time",
+        confidence: "high",
+      },
+      estimated_duration_seconds: 1800,
+      estimated_distance_meters: null,
+    });
+    expect(result).not.toHaveProperty("estimated_tss");
+    expect(result).not.toHaveProperty("intensity_factor");
+  });
+
+  it("rejects an out-of-range canonical intensity across every production estimation API", async () => {
+    const structure = activityPlanStructure("bike", { targetIntensity: 160 });
+    const reader = createStoreReader({});
+    const plannedStore = {
+      ...reader,
+      getActivityPlanById: vi.fn(async () => ({ structure })),
+      getLatestFitnessSnapshot: vi.fn(async () => null),
+    };
+
+    const [computed, [batched], planned] = await Promise.all([
+      computePlanMetrics({ structure }, reader, PROFILE_ID),
+      addEstimationToPlans(
+        [
+          {
+            id: "plan-out-of-range",
+            profile_id: PROFILE_ID,
+            name: "Out of range",
+            description: null,
+            structure,
+          },
+        ],
+        reader,
+        PROFILE_ID,
+      ),
+      estimatePlannedActivity(
+        "plan-out-of-range",
+        new Date("2026-07-21T08:00:00.000Z"),
+        plannedStore,
+        PROFILE_ID,
+      ),
+    ]);
+
+    expect(computed.prescriptionQuantification.members[0]?.commonLoad).toMatchObject({
+      status: "unavailable",
+      reason: "intensity_out_of_range",
+    });
+    expect(batched?.prescriptionQuantification.members[0]?.commonLoad).toMatchObject({
+      status: "unavailable",
+      reason: "intensity_out_of_range",
+    });
+    expect(planned.prescriptionQuantification.members[0]?.commonLoad).toMatchObject({
+      status: "unavailable",
+      reason: "intensity_out_of_range",
+    });
+    expect(planned.prescriptionQuantification).toMatchObject({
+      members: [
+        {
+          kind: "prescription",
+          stage: "scheduled",
+          duration: {
+            elapsed: { status: "available" },
+            active: { status: "available" },
+          },
+          distance: { status: "unavailable" },
+          intensity: { prescribed: { status: "available" } },
+          commonLoad: { status: "unavailable", reason: "intensity_out_of_range" },
         },
+      ],
+      summary: {
+        commonLoad: { status: "unavailable" },
       },
     });
+    expect(computed.duration_estimate.status).toBe("exact");
+  });
+
+  it("uses the canonical planning threshold for explicit watts and percent targets", async () => {
+    const wattsStructure = activityPlanStructure("bike", {
+      targetType: "watts",
+      targetIntensity: 250,
+    });
+    const percentStructure = activityPlanStructure("bike", {
+      targetType: "%FTP",
+      targetIntensity: 100,
+    });
+    const reader = createStoreReader({});
+    const plannedStore = {
+      ...reader,
+      getActivityPlanById: vi.fn(async () => ({ structure: wattsStructure })),
+      getLatestFitnessSnapshot: vi.fn(async () => null),
+    };
+
+    const [computed, [batched], planned, percent] = await Promise.all([
+      computePlanMetrics({ structure: wattsStructure }, reader, PROFILE_ID),
+      addEstimationToPlans(
+        [
+          {
+            id: "plan-cp",
+            profile_id: PROFILE_ID,
+            name: "CP watts",
+            description: null,
+            structure: wattsStructure,
+          },
+        ],
+        reader,
+        PROFILE_ID,
+      ),
+      estimatePlannedActivity(
+        "plan-cp",
+        new Date("2026-07-21T08:00:00.000Z"),
+        plannedStore,
+        PROFILE_ID,
+      ),
+      computePlanMetrics({ structure: percentStructure }, reader, PROFILE_ID),
+    ]);
+
+    expect(computed.common_load).toMatchObject({ status: "complete" });
+    expect(batched?.duration_estimate).toMatchObject({
+      basis: "compiled_time",
+      valueSeconds: 1800,
+    });
+    expect(planned.common_load).toMatchObject({ status: "complete" });
+    expect(percent.common_load).toMatchObject({ status: "complete", load: 50 });
   });
 
   it("does not treat route distance as authoritative when structure is present", async () => {
@@ -438,18 +404,16 @@ describe("estimation-helpers", () => {
       {
         structure: activityPlanStructure(),
       },
-      estimationReader as any,
-      "profile-1",
+      estimationReader,
+      PROFILE_ID,
     );
 
-    expect(result).toEqual({
-      estimated_tss: 42,
+    expect(result).toMatchObject({
+      common_load: { status: "complete", load: 28.125 },
+      duration_estimate: { status: "exact", basis: "compiled_time", valueSeconds: 1800 },
       estimated_duration_seconds: 1800,
-      intensity_factor: 0.82,
-      estimated_distance_meters: 0,
+      estimated_distance_meters: null,
     });
-    expect(vi.mocked(estimationCore.estimateActivity).mock.calls.at(-1)?.[0]).toEqual(
-      expect.not.objectContaining({ route: expect.anything() }),
-    );
+    expect(result).not.toHaveProperty("route");
   });
 });

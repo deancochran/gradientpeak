@@ -50,8 +50,8 @@ export function BuilderLoadProjectionSummary({
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1 gap-0.5">
           <Text className="text-sm leading-5 text-foreground">
-            Aim for {recommendedLoad.label} ({recommendedLoad.rangeMinTss}-
-            {recommendedLoad.rangeMaxTss} Load/wk).
+            Aim for {recommendedLoad.label} ({recommendedLoad.rangeMinLoad}-
+            {recommendedLoad.rangeMaxLoad} Load/wk).
           </Text>
         </View>
         <Text
@@ -65,7 +65,7 @@ export function BuilderLoadProjectionSummary({
       </View>
 
       <View className="flex-row gap-2">
-        <SummaryValue label="Planned" value={`${recommendedLoad.plannedAverageTss} Load/wk`} />
+        <SummaryValue label="Planned" value={`${recommendedLoad.plannedAverageLoad} Load/wk`} />
         <SummaryValue
           label={recommendedLoad.sourceLabel}
           value={recommendedLoad.loadDeltaLabel ?? "Goal based"}
@@ -104,16 +104,14 @@ function getFitnessProjection(model: BuilderLoadProjectionSummaryModel) {
   }
 
   const weekCount = model.timelineWeeks.length;
-  const baseline = model.currentBaseline.ctl;
+  const baseline = model.currentBaseline.longTermLoad;
   const plannedFitness = Math.round(projection.scheduledFitness);
   const targetFitness =
     projection.targetFitness !== null ? Math.round(projection.targetFitness) : null;
-  const startText = baseline !== null ? ` from Long-term Load (CTL) ${Math.round(baseline)}` : "";
+  const startText = baseline !== null ? ` from Fitness ${Math.round(baseline)}` : "";
   const targetText =
-    targetFitness !== null
-      ? `; the recommended path trends toward Long-term Load (CTL) ${targetFitness}`
-      : "";
+    targetFitness !== null ? `; the recommended path trends toward Fitness ${targetFitness}` : "";
   const timelineText = weekCount > 1 ? ` by week ${weekCount}` : "";
 
-  return `Projected fitness reaches Long-term Load (CTL) ${plannedFitness}${timelineText}${startText}${targetText}.`;
+  return `Projected fitness reaches Fitness ${plannedFitness}${timelineText}${startText}${targetText}.`;
 }

@@ -1,4 +1,8 @@
-import { commonLoadAggregateSchema, commonLoadResultSchema } from "@repo/core";
+import {
+  activityPrescriptionQuantificationBundleSchema,
+  deriveActivityPlanPresentation,
+} from "@repo/core";
+import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
 import { formatDuration } from "./activity-route-helpers";
 
 export function describeTrainingPlanSessions(structure: unknown) {
@@ -9,42 +13,61 @@ export function describeTrainingPlanSessions(structure: unknown) {
   return `${sessions.length} session${sessions.length === 1 ? "" : "s"}`;
 }
 
-type ActivityPlanMetrics = {
-  estimated_distance?: number | null;
-  estimated_duration?: number | null;
+type ActivityPlanMetricSummaryInput = {
+  prescriptionQuantification?: unknown;
+  structure?: unknown;
 };
 
-export function getActivityPlanMetricSummary(
-  metrics: ActivityPlanMetrics | null | undefined,
-  commonLoad: unknown,
-) {
+export function getActivityPlanMetricSummary({
+  prescriptionQuantification,
+  structure,
+}: ActivityPlanMetricSummaryInput) {
   const summary: string[] = [];
-  const result = commonLoadResultSchema.safeParse(commonLoad);
-  const aggregate = commonLoadAggregateSchema.safeParse(commonLoad);
-  const parsed = result.success ? result.data : aggregate.success ? aggregate.data : null;
-  if (!parsed || parsed.status === "unavailable") {
-    summary.push("Load unavailable", "Intensity unavailable");
-    appendPlanDimensions(summary, metrics);
-    return summary;
+  const presented = getActivityQuantificationPresentation(prescriptionQuantification);
+  summary.push(formatQuantificationMetric(presented.commonLoad));
+  summary.push(formatQuantificationMetric(presented.normalizedIntensity));
+
+  if (presented.nativeIntensity.status !== "unavailable") {
+    summary.push(
+      `${presented.nativeIntensity.label} ${presented.nativeIntensity.value} · ${presented.nativeIntensity.evidence}`,
+    );
+  } else if (presented.kind === "unavailable") {
+    const authoredTargets = [
+      ...new Set(
+        (deriveActivityPlanPresentation(structure)?.occurrences ?? []).flatMap((occurrence) =>
+          occurrence.intensityLabel ? [occurrence.intensityLabel] : [],
+        ),
+      ),
+    ];
+    if (authoredTargets.length > 0) {
+      summary.push(`Prescribed intensity ${authoredTargets.join(" · ")} · Prescribed`);
+    }
   }
-  if (parsed.load === null || parsed.intensity === null) {
-    summary.push("Load unavailable (partial data)", "Intensity unavailable (partial data)");
-    appendPlanDimensions(summary, metrics);
-    return summary;
-  }
-  const suffix = parsed.status === "partial" ? " (partial data)" : "";
-  summary.push(`Load ${Math.round(parsed.load)}${suffix}`);
-  summary.push(`Intensity ${parsed.intensity.toFixed(2)}${suffix}`);
-  appendPlanDimensions(summary, metrics);
+  appendPlanDimensions(summary, prescriptionQuantification);
   return summary;
 }
 
-function appendPlanDimensions(summary: string[], metrics: ActivityPlanMetrics | null | undefined) {
-  if (metrics && isPositiveFinite(metrics.estimated_duration)) {
-    summary.push(formatDuration(metrics.estimated_duration));
+function formatQuantificationMetric(metric: {
+  evidence: string;
+  label: string;
+  status: string;
+  value: string;
+}) {
+  const value = metric.status === "unavailable" ? "unavailable" : metric.value;
+  const evidence = metric.evidence === "Unavailable" ? "" : ` · ${metric.evidence}`;
+  return `${metric.label} ${value}${evidence}`;
+}
+
+function appendPlanDimensions(summary: string[], value: unknown) {
+  const parsed = activityPrescriptionQuantificationBundleSchema.safeParse(value);
+  if (!parsed.success) return;
+  const elapsed = parsed.data.summary.duration.elapsed;
+  const distance = parsed.data.summary.distance;
+  if (elapsed.status !== "unavailable" && isPositiveFinite(elapsed.value)) {
+    summary.push(formatDuration(elapsed.value));
   }
-  if (metrics && isPositiveFinite(metrics.estimated_distance)) {
-    summary.push(`${(metrics.estimated_distance / 1_000).toFixed(1)} km`);
+  if (distance.status !== "unavailable" && isPositiveFinite(distance.value)) {
+    summary.push(`${(distance.value / 1_000).toFixed(1)} km`);
   }
 }
 

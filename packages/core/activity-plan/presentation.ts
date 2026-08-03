@@ -17,7 +17,7 @@ export type ActivityPlanPresentationOccurrence = {
   intensityBasis: ActivityPlanIntensityBasis;
   intensityLabel: string | null;
   intervalId: string | null;
-  normalizedIntensity: number | null;
+  visualIntensity: number | null;
   occurrenceId: string;
   role: "activity" | "rest";
 };
@@ -95,17 +95,17 @@ function normalizeTarget(
   ranges: ReadonlyMap<string, TargetRange>,
 ): Pick<
   ActivityPlanPresentationOccurrence,
-  "intensityBasis" | "intensityLabel" | "normalizedIntensity"
+  "intensityBasis" | "intensityLabel" | "visualIntensity"
 > {
   if (!target) {
-    return { intensityBasis: "unavailable", intensityLabel: null, normalizedIntensity: null };
+    return { intensityBasis: "unavailable", intensityLabel: null, visualIntensity: null };
   }
 
   if (target.type === "RPE") {
     return {
       intensityBasis: "perceived_effort",
       intensityLabel: formatTarget(target),
-      normalizedIntensity: clampUnitInterval(target.intensity / 10),
+      visualIntensity: clampUnitInterval(target.intensity / 10),
     };
   }
 
@@ -113,7 +113,7 @@ function normalizeTarget(
     return {
       intensityBasis: "threshold_percent",
       intensityLabel: formatTarget(target),
-      normalizedIntensity: clampUnitInterval(target.intensity / 100),
+      visualIntensity: clampUnitInterval(target.intensity / 100),
     };
   }
 
@@ -122,7 +122,7 @@ function normalizeTarget(
     return {
       intensityBasis: "unavailable",
       intensityLabel: formatTarget(target),
-      normalizedIntensity: null,
+      visualIntensity: null,
     };
   }
 
@@ -133,7 +133,7 @@ function normalizeTarget(
   return {
     intensityBasis: "relative_within_plan",
     intensityLabel: formatTarget(target),
-    normalizedIntensity: 0.2 + clampUnitInterval(relativePosition) * 0.8,
+    visualIntensity: 0.2 + clampUnitInterval(relativePosition) * 0.8,
   };
 }
 

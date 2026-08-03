@@ -1,14 +1,16 @@
-import { decodePolyline } from "@repo/core";
+import {
+  type ActivityObservationQuantificationBundle,
+  activityObservationQuantificationBundleSchema,
+  decodePolyline,
+} from "@repo/core";
 import { formatDurationSec } from "@repo/core/utils/dates";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
+import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
 import { MessageCircle, Route } from "lucide-react-native";
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";
-import {
-  formatCalibrationQuality,
-  getCommonLoadPresentation,
-} from "@/lib/activity-load-presentation";
+import { formatCalibrationQuality } from "@/lib/activity-load-presentation";
 import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
 import { formatDistanceMeters } from "@/lib/display/formatters";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
@@ -53,49 +55,20 @@ export type ActivityCardActivity = {
   comments_count?: number | null;
   has_liked?: boolean | null;
   derived?: {
-    common_load?: unknown;
-    tss?: number | null;
-    intensity_factor?: number | null;
-    method?: string | null;
-    unavailable_reason?: string | null;
-    calibration_quality?: CalibrationQuality | null;
-    stress?: {
-      common_load?: unknown;
-      tss?: number | null;
-      intensity_factor?: number | null;
-      method?: string | null;
-      unavailable_reason?: string | null;
-      calibration_quality?: CalibrationQuality | null;
-    } | null;
+    observationQuantification?: ActivityObservationQuantificationBundle | null;
+    [key: string]: unknown;
   } | null;
   segment_loads?: Array<{
     segment_id: string;
     activity_category: string;
-    tss?: number | null;
-    intensity_factor?: number | null;
-    method?: string | null;
-    unavailable_reason?: string | null;
-    common_load?: unknown;
+    observationQuantification?: ActivityObservationQuantificationBundle | null;
+    [key: string]: unknown;
   }>;
   ingestion?: {
     status?: string | null;
     last_error_message?: string | null;
   } | null;
   profile?: ActivityCardOwner | null;
-};
-
-type CalibrationQuality = {
-  source:
-    | "manual"
-    | "validated_test"
-    | "observed_effort"
-    | "provider"
-    | "modeled"
-    | "estimated"
-    | "unknown";
-  observed_at: string | null;
-  stale: boolean;
-  estimate: boolean;
 };
 
 export type ActivityCardOwner = {
@@ -157,25 +130,19 @@ function getActivityCategories(activity: ActivityCardActivity): string[] {
   return [...new Set(categories?.length ? categories : ["other"])];
 }
 
-function getLoadPresentation(activity: ActivityCardActivity) {
-  return getCommonLoadPresentation(
-    activity.derived?.common_load ?? activity.derived?.stress?.common_load,
-    {
-      hasHeartRateSummary:
-        typeof activity.avg_heart_rate === "number" && activity.avg_heart_rate > 0,
-      segmentCommonLoads: activity.segment_loads?.map((segment) => segment.common_load),
-    },
-  );
+function getQuantificationPresentation(activity: ActivityCardActivity) {
+  return getActivityQuantificationPresentation(activity.derived?.observationQuantification, {
+    hasHeartRateSummary: typeof activity.avg_heart_rate === "number" && activity.avg_heart_rate > 0,
+  });
 }
 
 function getCalibrationText(activity: ActivityCardActivity): string | null {
-  const quality =
-    activity.derived?.calibration_quality ?? activity.derived?.stress?.calibration_quality ?? null;
-  if (quality) return formatCalibrationQuality(quality, activity.started_at);
-  if (activity.derived?.common_load ?? activity.derived?.stress?.common_load) return null;
-  const unavailableReason =
-    activity.derived?.unavailable_reason ?? activity.derived?.stress?.unavailable_reason ?? null;
-  return unavailableReason === "threshold_missing" ? "A required threshold is missing." : null;
+  const parsed = activityObservationQuantificationBundleSchema.safeParse(
+    activity.derived?.observationQuantification,
+  );
+  const commonLoad = parsed.success ? parsed.data.members[0]?.commonLoad : null;
+  if (!commonLoad || commonLoad.status === "unavailable") return null;
+  return formatCalibrationQuality(commonLoad.quality, activity.started_at);
 }
 
 function getIngestionStatusText(activity: ActivityCardActivity): string | null {
@@ -195,7 +162,7 @@ function ActivityMetricsRow({
   compact: boolean;
 }) {
   const preferredUnitSystem = usePreferredUnitSystem();
-  const loadPresentation = getLoadPresentation(activity);
+  const quantification = getQuantificationPresentation(activity);
   const metrics: ResourceMetric[] = [];
 
   if (typeof activity.distance_meters === "number" && activity.distance_meters > 0) {
@@ -215,24 +182,16 @@ function ActivityMetricsRow({
     metrics.push({ label: "Active", value: formatDurationSec(activeSeconds) });
   }
 
-  if (loadPresentation?.load && loadPresentation.intensity) {
-    metrics.push({
-      label: "Load",
-      value: loadPresentation.load,
-      tone: "primary",
-    });
-    metrics.push({
-      label: "Intensity",
-      value: loadPresentation.intensity,
-      tone: "primary",
-    });
-  } else {
-    metrics.push({
-      label: "Load",
-      value: loadPresentation?.unavailableText ?? "Unavailable",
-      tone: "primary",
-    });
-  }
+  metrics.push({
+    label: quantification.commonLoad.label,
+    value: quantification.commonLoad.value,
+    tone: "primary",
+  });
+  metrics.push({
+    label: quantification.normalizedIntensity.label,
+    value: quantification.normalizedIntensity.value,
+    tone: "primary",
+  });
 
   if (metrics.length === 0) {
     return null;
@@ -310,15 +269,14 @@ export function ActivityCard({
   const routeCoordinates = decodedPolylineCoordinates;
   const ingestionStatusText = getIngestionStatusText(activity);
   const calibrationText = getCalibrationText(activity);
-  const loadPresentation = getLoadPresentation(activity);
-  const loadCoverageMessage =
-    loadPresentation?.status === "partial"
-      ? "Load is incomplete because some activity evidence is missing. Open to review details."
-      : loadPresentation?.diagnostic
-        ? `${loadPresentation.diagnostic.summary} ${loadPresentation.diagnostic.action}`
-        : loadPresentation?.status === "unavailable"
-          ? "Load is unavailable until compatible activity evidence is available. Open to review details."
-          : null;
+  const quantification = getQuantificationPresentation(activity);
+  const loadCoverageMessage = quantification.commonLoad.diagnostic
+    ? `${quantification.commonLoad.diagnostic.summary} ${quantification.commonLoad.diagnostic.action}`
+    : quantification.commonLoad.status === "partial"
+      ? "Common Load is partial because some activity evidence is missing. Open to review details."
+      : quantification.commonLoad.status === "unavailable"
+        ? "Common Load is unavailable until compatible activity evidence is available. Open to review details."
+        : null;
   const hasCommentAction = Boolean(onCommentPress);
   const hasFooterAccessory = Boolean(footerAccessory);
   const hasHeaderAccessory = Boolean(headerAccessory);
@@ -380,6 +338,17 @@ export function ActivityCard({
       />
 
       <ActivityMetricsRow activity={activity} compact={false} />
+
+      <Text className="text-xs text-muted-foreground">
+        {quantification.commonLoad.evidence}. {quantification.commonLoad.explanation}
+      </Text>
+
+      {quantification.nativeIntensity.status !== "unavailable" ? (
+        <Text className="text-xs text-muted-foreground">
+          {quantification.nativeIntensity.label}: {quantification.nativeIntensity.value} ·{" "}
+          {quantification.nativeIntensity.evidence}
+        </Text>
+      ) : null}
 
       {loadCoverageMessage ? (
         <Text className="text-xs text-muted-foreground">{loadCoverageMessage}</Text>

@@ -11,9 +11,9 @@ function createDeps(): any {
       },
       contextSummary: {},
       loadBootstrapState: {
-        starting_ctl: 42,
-        starting_atl: 38,
-        starting_tsb: 4,
+        starting_longTermLoad: 42,
+        starting_recentLoad: 38,
+        starting_loadBalance: 4,
         confidence: {
           confidence: 0.71,
           history_state: "sparse",
@@ -42,10 +42,10 @@ function createDeps(): any {
         points: [
           {
             date: "2026-03-15",
-            predicted_load_tss: 430,
-            predicted_fitness_ctl: 59,
-            predicted_fatigue_atl: 64,
-            predicted_form_tsb: -5,
+            predicted_load: 430,
+            predicted_fitness_longTermLoad: 59,
+            predicted_fatigue_recentLoad: 64,
+            predicted_form_loadBalance: -5,
             readiness_score: 69,
           },
         ],
@@ -56,24 +56,24 @@ function createDeps(): any {
           normalized_creation_config: {
             optimization_profile: "balanced",
             post_goal_recovery_days: 5,
-            max_weekly_tss_ramp_pct: 7,
-            max_ctl_ramp_per_week: 3,
+            max_weekly_load_ramp_pct: 7,
+            max_longTermLoad_ramp_per_week: 3,
           },
-          tss_ramp_clamp_weeks: 1,
-          ctl_ramp_clamp_weeks: 0,
+          load_ramp_clamp_weeks: 1,
+          longTermLoad_ramp_clamp_weeks: 0,
           recovery_weeks: 0,
           starting_state: {
-            starting_ctl: 42,
-            starting_atl: 38,
-            starting_tsb: 4,
+            starting_longTermLoad: 42,
+            starting_recentLoad: 38,
+            starting_loadBalance: 4,
             starting_state_is_prior: false,
           },
         },
         inferred_current_state: {
           mean: {
-            ctl: 44,
-            atl: 39,
-            tsb: 5,
+            longTermLoad: 44,
+            recentLoad: 39,
+            loadBalance: 5,
             slb: 58,
             durability: 62,
             readiness: 68,
@@ -96,7 +96,7 @@ function createDeps(): any {
       },
       projectionFeasibility: {
         state: "aggressive" as const,
-        reasons: ["required_tss_ramp_near_configured_cap"],
+        reasons: ["required_load_ramp_near_configured_cap"],
       },
     })),
     buildCreationPreviewSnapshotToken: vi.fn(() => "preview-token"),
@@ -125,11 +125,11 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
         creation_input: {},
         preview_baseline: {
           readiness_score: 72,
-          predicted_load_tss: 410,
-          predicted_fatigue_atl: 58,
+          predicted_load: 410,
+          predicted_fatigue_recentLoad: 58,
           feasibility_state: "feasible",
-          tss_ramp_clamp_weeks: 0,
-          ctl_ramp_clamp_weeks: 0,
+          load_ramp_clamp_weeks: 0,
+          longTermLoad_ramp_clamp_weeks: 0,
         },
       },
       deps,
@@ -138,9 +138,9 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
     expect(deps.buildCreationProjectionArtifacts).toHaveBeenCalledWith(
       expect.objectContaining({
         loadBootstrapState: expect.objectContaining({
-          starting_ctl: 42,
-          starting_atl: 38,
-          starting_tsb: 4,
+          starting_longTermLoad: 42,
+          starting_recentLoad: 38,
+          starting_loadBalance: 4,
         }),
       }),
     );
@@ -151,11 +151,11 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
     expect(result.readiness_delta_diagnostics?.impacts.feasibility.key).toBe("feasibility");
     expect(result.preview_snapshot_baseline).toEqual({
       readiness_score: 69,
-      predicted_load_tss: 430,
-      predicted_fatigue_atl: 64,
+      predicted_load: 430,
+      predicted_fatigue_recentLoad: 64,
       feasibility_state: "aggressive",
-      tss_ramp_clamp_weeks: 1,
-      ctl_ramp_clamp_weeks: 0,
+      load_ramp_clamp_weeks: 1,
+      longTermLoad_ramp_clamp_weeks: 0,
     });
     expect(result.override_audit.request.requested).toBe(false);
     expect(result.override_audit.effective.enabled).toBe(false);
@@ -166,9 +166,9 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
     const repository = {
       getPriorInferredStateSnapshot: vi.fn(async () => ({
         mean: {
-          ctl: 40,
-          atl: 37,
-          tsb: 3,
+          longTermLoad: 40,
+          recentLoad: 37,
+          loadBalance: 3,
           slb: 55,
           durability: 59,
           readiness: 64,
@@ -209,13 +209,13 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
     expect(deps.buildCreationProjectionArtifacts).toHaveBeenCalledWith(
       expect.objectContaining({
         priorInferredSnapshot: expect.objectContaining({
-          mean: expect.objectContaining({ ctl: 40 }),
+          mean: expect.objectContaining({ longTermLoad: 40 }),
         }),
       }),
     );
     expect(result.projection_chart.inferred_current_state).toEqual(
       expect.objectContaining({
-        mean: expect.objectContaining({ ctl: 44 }),
+        mean: expect.objectContaining({ longTermLoad: 44 }),
       }),
     );
     expect(repository.persistInferredStateSnapshot).not.toHaveBeenCalled();
@@ -245,11 +245,11 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
     const deps = createDeps();
     deps.deriveProjectionDrivenConflicts = vi.fn(() => [
       {
-        code: "required_tss_ramp_exceeds_cap",
+        code: "required_load_ramp_exceeds_cap",
         severity: "blocking",
         message: "Required ramp exceeds cap",
-        field_paths: ["max_weekly_tss_ramp_pct"],
-        suggestions: ["Increase max_weekly_tss_ramp_pct"],
+        field_paths: ["max_weekly_load_ramp_pct"],
+        suggestions: ["Increase max_weekly_load_ramp_pct"],
       },
     ]);
 
@@ -269,7 +269,7 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
     expect(result.conflicts.is_blocking).toBe(true);
     expect(result.conflicts.items[0]?.severity).toBe("blocking");
     expect(result.override_audit.effective.unresolved_blocking_conflict_codes).toContain(
-      "required_tss_ramp_exceeds_cap",
+      "required_load_ramp_exceeds_cap",
     );
   });
 

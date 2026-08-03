@@ -51,7 +51,10 @@ export function BuilderActivityAssignmentSheetContent({
   const activityPlanItemsWithEstimates = useMemo(
     () =>
       activityPlanItems.map((activityPlan) =>
-        withEstimateMetrics(activityPlan, activityPlanEstimateById.get(activityPlan.id) ?? null),
+        withEstimateQuantification(
+          activityPlan,
+          activityPlanEstimateById.get(activityPlan.id) ?? null,
+        ),
       ),
     [activityPlanEstimateById, activityPlanItems],
   );
@@ -122,21 +125,14 @@ export function BuilderActivityAssignmentSheetHeader({
   );
 }
 
-function withEstimateMetrics(
+function withEstimateQuantification(
   activityPlan: ActivityPlan,
   estimate: ActivityPlanPlanningEstimate | null,
 ): ActivityPlan {
   if (!estimate) return activityPlan;
   return {
     ...activityPlan,
-    authoritative_metrics: {
-      ...activityPlan.authoritative_metrics,
-      estimated_duration:
-        estimate.durationSeconds ?? activityPlan.authoritative_metrics?.estimated_duration ?? null,
-      estimated_tss: estimate.tss ?? activityPlan.authoritative_metrics?.estimated_tss ?? null,
-      intensity_factor:
-        estimate.intensityFactor ?? activityPlan.authoritative_metrics?.intensity_factor ?? null,
-    },
+    prescriptionQuantification: estimate.prescriptionQuantification,
   };
 }
 

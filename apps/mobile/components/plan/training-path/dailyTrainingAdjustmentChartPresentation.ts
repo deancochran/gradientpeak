@@ -48,10 +48,6 @@ function valueOrNull(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function valueOrZero(value: number | null | undefined) {
-  return valueOrNull(value) ?? 0;
-}
-
 function positiveValue(value: number | null | undefined) {
   const finiteValue = valueOrNull(value);
   return finiteValue !== null && finiteValue > 0;
@@ -102,17 +98,17 @@ export function buildDailyTrainingAdjustmentAccessibilityValue(
   const incomplete = point.effectiveLoadStatus === "partial" ? " incomplete" : "";
   const load =
     point.effectiveLoadStatus === "unavailable" || point.effectiveLoad == null
-      ? "Load unavailable"
-      : `Load ${Math.round(point.effectiveLoad)}${incomplete}`;
+      ? "Common Load unavailable"
+      : `Common Load ${Math.round(point.effectiveLoad)}${incomplete}`;
   const intensity =
     point.effectiveLoadStatus === "known_zero"
-      ? "Intensity not applicable"
+      ? "Normalized intensity not applicable"
       : point.effectiveIntensity == null
-        ? "Intensity unavailable"
-        : `Intensity ${point.effectiveIntensity.toFixed(2)}${incomplete}`;
-  const completedLoad = formatMetric("Completed load", point.effectiveCompletedLoad);
-  const plannedLoad = formatMetric("Planned load", point.effectiveRemainingLoad);
-  const tentativeLoad = formatMetric("Tentative load", point.effectiveTentativeLoad);
+        ? "Normalized intensity unavailable"
+        : `Normalized intensity ${point.effectiveIntensity.toFixed(2)}${incomplete}`;
+  const completedLoad = formatMetric("Completed Common Load", point.effectiveCompletedLoad);
+  const plannedLoad = formatMetric("Planned Common Load", point.effectiveRemainingLoad);
+  const tentativeLoad = formatMetric("Tentative Common Load", point.effectiveTentativeLoad);
   const actualFitness = formatMetric("Actual fitness", point.fitnessCtl);
   const projectedFitness = formatMetric("Projected fitness", point.scheduledFitnessCtl);
   const targetFitness = hasCompleteRecommendation(point)
@@ -120,11 +116,11 @@ export function buildDailyTrainingAdjustmentAccessibilityValue(
     : null;
   const recommendedLoad = point.recommendedLoadStatus
     ? point.recommendedLoadStatus === "unavailable" || point.recommendedLoad == null
-      ? "Recommended load unavailable"
-      : `Recommended load ${Math.round(point.recommendedLoad)}${point.recommendedLoadStatus === "partial" ? " incomplete" : ""}`
+      ? "Recommended Common Load unavailable"
+      : `Recommended Common Load ${Math.round(point.recommendedLoad)}${point.recommendedLoadStatus === "partial" ? " incomplete" : ""}`
     : null;
   const completedState = hasCompletedActivityWithoutLoad(point)
-    ? "Completed activity, load unavailable"
+    ? "Completed activity, Common Load unavailable"
     : null;
 
   return [
@@ -185,6 +181,27 @@ export function buildDailyTrainingAdjustmentChartData(points: DailyTrainingAdjus
   });
 }
 
+export function buildDailyTrainingAdjustmentChartDomains(
+  chartData: readonly DailyTrainingAdjustmentChartDatum[],
+) {
+  const loadValues = chartData
+    .flatMap((point) => [
+      point.completedLoad,
+      point.plannedLoad,
+      point.plannedLoadWithTentative,
+      point.targetLoad,
+    ])
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  const fitnessValues = chartData
+    .flatMap((point) => [point.actualFitness, point.projectedFitness, point.recommendedFitness])
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+
+  return {
+    loadDomain: expandDomain(loadValues, [0, 100], 0.1),
+    fitnessDomain: expandDomain(fitnessValues, [0, 100], 0.12),
+  };
+}
+
 export function useDailyTrainingAdjustmentChartPresentation({
   formatDateLabel,
   points,
@@ -194,33 +211,8 @@ export function useDailyTrainingAdjustmentChartPresentation({
 }) {
   const chartData = useMemo(() => buildDailyTrainingAdjustmentChartData(points), [points]);
 
-  const loadDomain = useMemo(
-    () =>
-      expandDomain(
-        chartData.flatMap((point) => [
-          valueOrZero(point.completedLoad as number | null),
-          valueOrZero(point.plannedLoad as number | null),
-          valueOrZero(point.plannedLoadWithTentative as number | null),
-          valueOrZero(point.targetLoad as number | null),
-        ]),
-        [0, 100],
-        0.1,
-      ),
-    [chartData],
-  );
-  const fitnessDomain = useMemo(
-    () =>
-      expandDomain(
-        chartData
-          .flatMap((point) => [
-            valueOrNull(point.actualFitness as number | null),
-            valueOrNull(point.projectedFitness as number | null),
-            valueOrNull(point.recommendedFitness as number | null),
-          ])
-          .filter((value): value is number => value !== null),
-        [0, 100],
-        0.12,
-      ),
+  const { fitnessDomain, loadDomain } = useMemo(
+    () => buildDailyTrainingAdjustmentChartDomains(chartData),
     [chartData],
   );
   const labels = useMemo(

@@ -72,24 +72,24 @@ describe("DailyTrainingAdjustmentChart", () => {
         points={[
           {
             date: "2026-06-01",
-            completedLoadTss: 0,
+            completedLoad: 0,
             hasCompletedActivityWithoutLoad: true,
-            targetLoadTss: 40,
+            targetLoad: 40,
           },
           {
             date: "2026-06-02",
-            completedLoadTss: 42,
+            completedLoad: 42,
             hasCompletedActivityWithoutLoad: true,
-            targetLoadTss: 40,
+            targetLoad: 40,
           },
           {
             date: "2026-06-03",
-            completedLoadTss: 0,
-            targetLoadTss: 40,
+            completedLoad: 0,
+            targetLoad: 40,
           },
           {
             date: "2026-06-04",
-            targetLoadTss: 40,
+            targetLoad: 40,
           },
         ]}
       />,
@@ -175,11 +175,11 @@ describe("DailyTrainingAdjustmentChart", () => {
         selectedDate="2026-06-02"
         points={[
           {
-            actualOrScheduledLoadTss: 35,
+            actualOrScheduledLoad: 35,
             date: "2026-06-02",
             hasTargetLoad: false,
-            plannedLoadTss: 35,
-            targetLoadTss: 0,
+            plannedLoad: 35,
+            targetLoad: 0,
           },
         ]}
       />,
@@ -200,7 +200,7 @@ describe("DailyTrainingAdjustmentChart", () => {
             effectiveLoad: 65,
             recommendedLoadStatus: "complete",
             recommendedLoad: 80,
-            targetLoadTss: 1_000,
+            targetLoad: 1_000,
           },
         ]}
       />,
@@ -258,9 +258,9 @@ describe("DailyTrainingAdjustmentChart", () => {
       <DailyTrainingAdjustmentChart
         onSelectedDateChange={onSelectedDateChange}
         points={[
-          { date: "2026-06-01", targetLoadTss: 40, actualOrScheduledLoadTss: 35 },
-          { date: "2026-06-02", targetLoadTss: 50, actualOrScheduledLoadTss: 65 },
-          { date: "2026-06-03", targetLoadTss: 50, actualOrScheduledLoadTss: 30 },
+          { date: "2026-06-01", targetLoad: 40, actualOrScheduledLoad: 35 },
+          { date: "2026-06-02", targetLoad: 50, actualOrScheduledLoad: 65 },
+          { date: "2026-06-03", targetLoad: 50, actualOrScheduledLoad: 30 },
         ]}
       />,
     );
@@ -277,9 +277,9 @@ describe("DailyTrainingAdjustmentChart", () => {
     render(
       <DailyTrainingAdjustmentChart
         points={[
-          { date: "2026-06-01", targetLoadTss: 40, actualOrScheduledLoadTss: 35 },
-          { date: "2026-06-02", targetLoadTss: 50, actualOrScheduledLoadTss: 65 },
-          { date: "2026-06-03", targetLoadTss: 50, actualOrScheduledLoadTss: 30 },
+          { date: "2026-06-01", targetLoad: 40, actualOrScheduledLoad: 35 },
+          { date: "2026-06-02", targetLoad: 50, actualOrScheduledLoad: 65 },
+          { date: "2026-06-03", targetLoad: 50, actualOrScheduledLoad: 30 },
         ]}
       />,
     );
@@ -331,9 +331,9 @@ describe("DailyTrainingAdjustmentChart", () => {
       <DailyTrainingAdjustmentChart
         onSelectedDateChange={onSelectedDateChange}
         points={[
-          { date: "2026-06-01", targetLoadTss: 40 },
-          { date: "2026-06-02", targetLoadTss: 50 },
-          { date: "2026-06-03", targetLoadTss: 60 },
+          { date: "2026-06-01", targetLoad: 40 },
+          { date: "2026-06-02", targetLoad: 50 },
+          { date: "2026-06-03", targetLoad: 60 },
         ]}
       />,
     );
@@ -361,9 +361,9 @@ describe("DailyTrainingAdjustmentChart", () => {
       <DailyTrainingAdjustmentChart
         onSelectedDateChange={onSelectedDateChange}
         points={[
-          { date: "2026-06-01", targetLoadTss: 40 },
-          { date: "2026-06-02", targetLoadTss: 50 },
-          { date: "2026-06-03", targetLoadTss: 60 },
+          { date: "2026-06-01", targetLoad: 40 },
+          { date: "2026-06-02", targetLoad: 50 },
+          { date: "2026-06-03", targetLoad: 60 },
         ]}
       />,
     );
@@ -391,9 +391,9 @@ describe("DailyTrainingAdjustmentChart", () => {
       <DailyTrainingAdjustmentChart
         onSelectedDateChange={onSelectedDateChange}
         points={[
-          { date: "2026-06-01", targetLoadTss: 40, actualOrScheduledLoadTss: 35 },
-          { date: "2026-06-02", targetLoadTss: 50, actualOrScheduledLoadTss: 65 },
-          { date: "2026-06-03", targetLoadTss: 50, actualOrScheduledLoadTss: 30 },
+          { date: "2026-06-01", targetLoad: 40, actualOrScheduledLoad: 35 },
+          { date: "2026-06-02", targetLoad: 50, actualOrScheduledLoad: 65 },
+          { date: "2026-06-03", targetLoad: 50, actualOrScheduledLoad: 30 },
         ]}
       />,
     );
@@ -415,9 +415,9 @@ describe("DailyTrainingAdjustmentChart", () => {
   it("keeps a controlled local commit selected until the parent acknowledges it", () => {
     const onSelectedDateChange = jest.fn();
     const points = [
-      { date: "2026-06-01", targetLoadTss: 40 },
-      { date: "2026-06-02", targetLoadTss: 50 },
-      { date: "2026-06-03", targetLoadTss: 60 },
+      { date: "2026-06-01", targetLoad: 40 },
+      { date: "2026-06-02", targetLoad: 50 },
+      { date: "2026-06-03", targetLoad: 60 },
     ];
     const { rerender } = render(
       <DailyTrainingAdjustmentChart
@@ -477,7 +477,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     const adjustable = screen.getByLabelText("Daily training adjustment chart");
     expect(adjustable.props.accessibilityRole).toBe("adjustable");
     expect(adjustable.props.accessibilityValue).toEqual({
-      text: "Selected date 2026-06-02. Load 50. Intensity 0.75",
+      text: "Selected date 2026-06-02. Common Load 50. Normalized intensity 0.75",
     });
     expect(adjustable.props.accessibilityHint).toBe("Adjust to select the next or previous date");
 
@@ -517,13 +517,13 @@ describe("DailyTrainingAdjustmentChart", () => {
     ).toEqual({
       text: [
         "Selected date 2026-06-02",
-        "Load 40 incomplete",
-        "Intensity 0.70 incomplete",
-        "Completed load 15",
-        "Completed activity, load unavailable",
-        "Planned load 25",
-        "Tentative load 5",
-        "Recommended load 80",
+        "Common Load 40 incomplete",
+        "Normalized intensity 0.70 incomplete",
+        "Completed Common Load 15",
+        "Completed activity, Common Load unavailable",
+        "Planned Common Load 25",
+        "Tentative Common Load 5",
+        "Recommended Common Load 80",
         "Actual fitness 31",
         "Projected fitness 33",
         "Target fitness 35",
@@ -548,7 +548,7 @@ describe("DailyTrainingAdjustmentChart", () => {
         onScrollNearStart={onScrollNearStart}
         points={Array.from({ length: 40 }, (_, index) => ({
           date: `2026-06-${String(index + 1).padStart(2, "0")}`,
-          targetLoadTss: 50,
+          targetLoad: 50,
         }))}
         selectedDate="2026-06-15"
       />,
@@ -566,7 +566,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     const buildPoints = (length: number) =>
       Array.from({ length }, (_, index) => ({
         date: `2026-06-${String(index + 1).padStart(2, "0")}`,
-        targetLoadTss: 50,
+        targetLoad: 50,
       }));
 
     const { rerender } = render(
@@ -596,7 +596,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     const buildPoints = (startDay: number, endDay: number) =>
       Array.from({ length: endDay - startDay + 1 }, (_, index) => ({
         date: `2026-06-${String(startDay + index).padStart(2, "0")}`,
-        targetLoadTss: 50,
+        targetLoad: 50,
       }));
 
     const { rerender } = render(
@@ -639,7 +639,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     const buildPoints = (startDay: number, endDay: number) =>
       Array.from({ length: endDay - startDay + 1 }, (_, index) => ({
         date: `2026-06-${String(startDay + index).padStart(2, "0")}`,
-        targetLoadTss: 50,
+        targetLoad: 50,
       }));
     const { rerender } = render(
       <DailyTrainingAdjustmentChart

@@ -27,7 +27,7 @@ const snapshotMocks = {
     refetch: refetchPlan,
   })) as jest.Mock,
   getStatusQuery: jest.fn(() => ({
-    data: { ctl: 44 },
+    data: { longTermLoad: 44 },
     isLoading: false,
     isError: false,
     error: null,

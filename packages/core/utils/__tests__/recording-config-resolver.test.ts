@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createUnavailableAthletePerformanceTargetFacts } from "../../performance-model";
 import type { RecordingConfigInput } from "../../schemas/recording_config";
 import type {
   RecordingLaunchIntent,
@@ -702,9 +703,10 @@ describe("RecordingConfigResolver", () => {
         activityPlanId: "550e8400-e29b-41d4-a716-446655440000",
         routeId: null,
       },
-      profileSnapshot: {
-        defaultsApplied: [],
-      },
+      profileSnapshot: {},
+      performanceTargets: createUnavailableAthletePerformanceTargetFacts(
+        "2026-03-20T10:00:00.000Z",
+      ),
       devices: {
         connected: [
           {

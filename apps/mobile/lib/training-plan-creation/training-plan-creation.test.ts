@@ -5,7 +5,10 @@ import {
   selectAthletePlanningContextFields,
   trainingPlanCreateInputSchema,
 } from "@repo/core";
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { describe, expect, it } from "vitest";
+import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import { scoreActivityPlanFit } from "./activity-plan-fit";
 import { deriveActivityPlanPickerState } from "./activity-plan-picker";
 import {
@@ -36,10 +39,7 @@ import {
 } from "./modules";
 import { createTrainingPlanPlanningContext } from "./planning-context";
 import { createTrainingPlanProjectionFacade } from "./planning-session";
-import {
-  deriveTrainingPlanCreationSession,
-  deriveTrainingPlanReadinessPresentation,
-} from "./planning-session-engine";
+import { deriveTrainingPlanReadinessPresentation } from "./planning-session-engine";
 import {
   applyTrainingPlanConstraintPreset,
   applyTrainingPlanPreferenceFieldOverride,
@@ -75,8 +75,16 @@ describe("training plan creation domain", () => {
   });
 
   it("initializes athlete planning context from relevant active profile data only", () => {
+    const asOf = "2026-06-16T00:00:00.000Z";
+    const performanceTargets = buildPerformanceTargetFactsFixture({
+      asOf,
+      planningThresholdPowerWatts: 270.75,
+      heartRateObservedAt: "2026-04-01T00:00:00.000Z",
+      lthrBpm: { bike: 169 },
+    });
     const context = createAthletePlanningContextFromSnapshot({
-      asOf: "2026-06-16T00:00:00.000Z",
+      asOf,
+      performanceTargets,
       profile: {
         dob: "1998-06-01T00:00:00.000Z",
         gender: "male",
@@ -96,12 +104,6 @@ describe("training plan creation domain", () => {
           value: 72,
           unit: "kg",
           recorded_at: "2026-06-01T00:00:00.000Z",
-        },
-        {
-          metric_type: "ftp",
-          value: 265,
-          unit: "W",
-          recorded_at: "2026-05-01T00:00:00.000Z",
         },
         {
           metric_type: "lthr",
@@ -128,9 +130,9 @@ describe("training plan creation domain", () => {
         },
       ],
       currentFitness: {
-        ctl: 41.2,
-        atl: 49.8,
-        tsb: -8.6,
+        longTermLoad: 41.2,
+        recentLoad: 49.8,
+        loadBalance: -8.6,
         recorded_at: "2026-06-15T00:00:00.000Z",
       },
     });
@@ -152,20 +154,20 @@ describe("training plan creation domain", () => {
       unit: "kg",
     });
     expect(context.body.bmi.value).toBe(22.7);
-    expect(context.physiology.ftpWatts.value).toBe(270.75);
+    expect(context.physiology.planningThresholdPowerWatts.value).toBe(270.75);
     expect(context.physiology.thresholdHeartRateBpm.value).toBe(169);
-    expect(context.physiology.currentFitnessCtl).toMatchObject({
+    expect(context.physiology.currentFitnessLongTermLoad).toMatchObject({
       value: 41.2,
       source: "training_status",
       unit: "Load",
     });
-    expect(context.physiology.currentFatigueAtl.value).toBe(49.8);
-    expect(context.physiology.currentFormTsb.value).toBe(-8.6);
+    expect(context.physiology.currentFatigueRecentLoad.value).toBe(49.8);
+    expect(context.physiology.currentFormLoadBalance.value).toBe(-8.6);
     expect(context.efforts).toHaveLength(1);
     expect(context.evidence).toMatchObject({
-      metricCount: 4,
+      metricCount: 3,
       effortCount: 1,
-      missingFields: ["threshold_pace_seconds_per_km", "css_seconds_per_100m"],
+      missingFields: ["planning_threshold_pace", "swimming_css"],
     });
     expect(JSON.stringify(context)).not.toContain("username");
     expect(JSON.stringify(context)).not.toContain("followers");
@@ -182,7 +184,13 @@ describe("training plan creation domain", () => {
     expect(context.demographics.ageYears.value).toBeNull();
     expect(context.body.bmi.value).toBeNull();
     expect(context.evidence.missingFields).toEqual(
-      expect.arrayContaining(["dob", "height_cm", "weight_kg", "ftp", "lthr"]),
+      expect.arrayContaining([
+        "dob",
+        "height_cm",
+        "weight_kg",
+        "planning_threshold_power",
+        "bike_lthr",
+      ]),
     );
   });
 
@@ -202,11 +210,11 @@ describe("training plan creation domain", () => {
     });
     const withFitnessOverride = trainingPlanBuilderReducer(withoutWeight, {
       type: "athleteContext.fieldOverride",
-      override: { key: "currentFitnessCtl", value: 52, unit: "CTL" },
+      override: { key: "currentFitnessLongTermLoad", value: 52, unit: "CTL" },
     });
     const withoutFitnessOverride = trainingPlanBuilderReducer(withFitnessOverride, {
       type: "athleteContext.fieldRemove",
-      fieldKey: "currentFitnessCtl",
+      fieldKey: "currentFitnessLongTermLoad",
     });
 
     expect(withWeight.athleteContext.body.heightCm).toMatchObject({
@@ -221,12 +229,14 @@ describe("training plan creation domain", () => {
     expect(withoutWeight.athleteContext.evidence.missingFields).toEqual(
       expect.arrayContaining(["weight_kg"]),
     );
-    expect(withFitnessOverride.athleteContext.physiology.currentFitnessCtl).toMatchObject({
+    expect(withFitnessOverride.athleteContext.physiology.currentFitnessLongTermLoad).toMatchObject({
       value: 52,
       source: "manual_override",
       overridden: true,
     });
-    expect(withoutFitnessOverride.athleteContext.physiology.currentFitnessCtl.value).toBeNull();
+    expect(
+      withoutFitnessOverride.athleteContext.physiology.currentFitnessLongTermLoad.value,
+    ).toBeNull();
   });
 
   it("adds and removes activity effort evidence inside builder state", () => {
@@ -333,8 +343,12 @@ describe("training plan creation domain", () => {
               name: "Threshold ride",
               published: true,
               accessible: true,
-              estimatedTss: 95,
-              estimatedDurationSeconds: 3600,
+              prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+                activityCategory: "bike",
+                durationSeconds: 3_600,
+                id: "11111111-1111-4111-8111-111111111111",
+                load: 95,
+              }),
             },
           },
           {
@@ -345,8 +359,11 @@ describe("training plan creation domain", () => {
               name: "Long run",
               published: true,
               accessible: true,
-              estimatedTss: 100,
-              estimatedDurationSeconds: 5400,
+              prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+                durationSeconds: 5_400,
+                id: "22222222-2222-4222-8222-222222222222",
+                load: 100,
+              }),
             },
           },
         ],
@@ -555,7 +572,7 @@ describe("training plan creation domain", () => {
         type: "endurance",
         driver: "completion-duration",
         targetDurationSeconds: 5400,
-        targetTss: 90,
+        targetLoad: 90,
       },
     });
 
@@ -570,13 +587,22 @@ describe("training plan creation domain", () => {
               id: "short",
               name: "Alpha short recovery",
               created_at: "2026-01-03T00:00:00.000Z",
-              authoritative_metrics: { estimated_duration: 1800, estimated_tss: 30 },
+              prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+                durationSeconds: 1_800,
+                id: "short",
+                load: 25,
+              }),
             },
             {
               id: "long",
               name: "Zulu endurance ride",
               created_at: "2026-01-01T00:00:00.000Z",
-              authoritative_metrics: { estimated_duration: 5400, estimated_tss: 90 },
+              prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+                activityCategory: "bike",
+                durationSeconds: 5_400,
+                id: "long",
+                load: 90,
+              }),
             },
           ],
         },
@@ -586,7 +612,7 @@ describe("training plan creation domain", () => {
     expect(
       scoreActivityPlanFit({
         intent: undefined,
-        estimatedTss: 90,
+        estimatedCommonLoad: 90,
         estimatedDurationSeconds: 5400,
       }),
     ).toBeNull();
@@ -596,9 +622,9 @@ describe("training plan creation domain", () => {
           type: "recovery",
           driver: "starter-frequency",
           targetDurationSeconds: 1800,
-          targetTss: 30,
+          targetLoad: 30,
         },
-        estimatedTss: 25,
+        estimatedCommonLoad: 25,
         estimatedDurationSeconds: 1800,
       }),
     ).toMatchObject({ label: "Best fit", reason: "Matches duration and load" });
@@ -610,12 +636,16 @@ describe("training plan creation domain", () => {
     expect(pickerState.activityPlanFitById.get("short")?.score ?? 0).toBeLessThan(60);
   });
 
-  it("recomputes assigned session projection metrics from current athlete context estimates", () => {
+  it("preserves assigned canonical estimates when athlete context cannot replace them", () => {
     const fixtures = createTrainingPlanBuilderFixtures();
     const assignedActivityPlan = fixtures.activityPlan({
       id: "bike-plan",
-      estimatedDurationSeconds: 3600,
-      estimatedTss: 100,
+      prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+        activityCategory: "bike",
+        durationSeconds: 3_600,
+        id: "bike-plan",
+        load: 100,
+      }),
     });
     const baseState = {
       ...fixtures.readyState,
@@ -633,7 +663,7 @@ describe("training plan creation domain", () => {
         id: "bike-plan",
         name: "Tempo ride",
         activity_category: "bike",
-        authoritative_metrics: { estimated_duration: 3600, estimated_tss: 100 },
+        prescriptionQuantification: assignedActivityPlan.prescriptionQuantification,
         structure: {
           version: 3,
           segments: [
@@ -662,30 +692,30 @@ describe("training plan creation domain", () => {
         },
       },
     };
-    const fastState = {
+    const firstState = {
       ...baseState,
       athleteContext: createAthletePlanningContextFromSnapshot({
         profile: null,
         profileMetrics: [
           {
-            metric_type: "ftp",
-            value: 250,
-            unit: "W",
+            metric_type: "weight_kg",
+            value: 70,
+            unit: "kg",
             recorded_at: "2026-01-01T00:00:00.000Z",
           },
         ],
         activityEfforts: [],
       }),
     };
-    const slowState = {
+    const secondState = {
       ...baseState,
       athleteContext: createAthletePlanningContextFromSnapshot({
         profile: null,
         profileMetrics: [
           {
-            metric_type: "ftp",
-            value: 200,
-            unit: "W",
+            metric_type: "weight_kg",
+            value: 80,
+            unit: "kg",
             recorded_at: "2026-01-02T00:00:00.000Z",
           },
         ],
@@ -693,24 +723,28 @@ describe("training plan creation domain", () => {
       }),
     };
 
-    const fastProjection = deriveTrainingPlanLocalProjection(fastState, activityPlansById);
-    const slowProjection = deriveTrainingPlanLocalProjection(slowState, activityPlansById);
+    const firstProjection = deriveTrainingPlanLocalProjection(firstState, activityPlansById);
+    const secondProjection = deriveTrainingPlanLocalProjection(secondState, activityPlansById);
 
-    expect(baseState.structure.sessions[0]?.activityPlan?.estimatedTss).toBe(100);
     expect(
-      fastProjection.planningProjection.estimatedContext.sessions[0]?.activityPlan
-        ?.estimatedDurationSeconds,
+      getActivityPlanQuantitySummary(baseState.structure.sessions[0]?.activityPlan).commonLoad,
+    ).toBe(100);
+    expect(
+      getActivityPlanQuantitySummary(
+        firstProjection.planningProjection.estimatedContext.sessions[0]?.activityPlan,
+      ).durationSeconds,
     ).toBe(3600);
     expect(
-      slowProjection.planningProjection.estimatedContext.sessions[0]?.activityPlan
-        ?.estimatedDurationSeconds,
+      getActivityPlanQuantitySummary(
+        secondProjection.planningProjection.estimatedContext.sessions[0]?.activityPlan,
+      ).durationSeconds,
     ).toBe(3600);
-    expect(fastProjection.creationPreview.totalEstimatedTss).toBe(
-      slowProjection.creationPreview.totalEstimatedTss,
+    expect(firstProjection.creationPreview.totalEstimatedLoad).toBe(
+      secondProjection.creationPreview.totalEstimatedLoad,
     );
-    expect(fastProjection.creationPreview.totalEstimatedTss).not.toBe(100);
-    expect(slowProjection.builderViewModel.dailyTrainingPathChart.weeks[0]?.plannedLoad).toBe(
-      fastProjection.builderViewModel.dailyTrainingPathChart.weeks[0]?.plannedLoad ?? 0,
+    expect(firstProjection.creationPreview.totalEstimatedLoad).toBe(100);
+    expect(secondProjection.builderViewModel.dailyTrainingPathChart.weeks[0]?.plannedLoad).toBe(
+      firstProjection.builderViewModel.dailyTrainingPathChart.weeks[0]?.plannedLoad ?? 0,
     );
   });
 
@@ -997,7 +1031,7 @@ describe("training plan creation domain", () => {
       projection_chart: {
         readiness_score: 72,
         readiness_confidence: 0.84,
-        points: [{ date: "2026-01-01", ctl: 42 }],
+        points: [{ date: "2026-01-01", longTermLoad: 42 }],
       },
       preview_snapshot: { version: "creation_preview_v2", token: "token-1" },
     });
@@ -1055,26 +1089,26 @@ describe("training plan creation domain", () => {
         points: [
           {
             date: "2026-01-05",
-            predicted_load_tss: 40,
-            predicted_fitness_ctl: 42,
-            predicted_fatigue_atl: 48,
-            predicted_form_tsb: -6,
+            predicted_load: 40,
+            predicted_fitness_longTermLoad: 42,
+            predicted_fatigue_recentLoad: 48,
+            predicted_form_loadBalance: -6,
             readiness_score: 70,
           },
           {
             date: "2026-01-06",
-            predicted_load_tss: 50,
-            predicted_fitness_ctl: 43,
-            predicted_fatigue_atl: 51,
-            predicted_form_tsb: -8,
+            predicted_load: 50,
+            predicted_fitness_longTermLoad: 43,
+            predicted_fatigue_recentLoad: 51,
+            predicted_form_loadBalance: -8,
             readiness_score: 72,
           },
           {
             date: "2026-01-12",
-            predicted_load_tss: 60,
-            predicted_fitness_ctl: 44,
-            predicted_fatigue_atl: 52,
-            predicted_form_tsb: -8,
+            predicted_load: 60,
+            predicted_fitness_longTermLoad: 44,
+            predicted_fatigue_recentLoad: 52,
+            predicted_form_loadBalance: -8,
             readiness_score: 73,
           },
         ],
@@ -1148,10 +1182,10 @@ describe("training plan creation domain", () => {
         points: [
           {
             date: "2026-01-05",
-            predicted_load_tss: 40,
-            predicted_fitness_ctl: 42,
-            predicted_fatigue_atl: 47,
-            predicted_form_tsb: -5,
+            predicted_load: 40,
+            predicted_fitness_longTermLoad: 42,
+            predicted_fatigue_recentLoad: 47,
+            predicted_form_loadBalance: -5,
             readiness_score: 80,
           },
         ],
@@ -1259,13 +1293,13 @@ describe("training plan creation domain", () => {
       canOverride: false,
       canRemove: false,
     });
-    expect(fields.find((field) => field.key === "ftpWatts")).toMatchObject({
+    expect(fields.find((field) => field.key === "planningThresholdPowerWatts")).toMatchObject({
       visible: false,
       required: false,
     });
   });
 
-  it("shows required missing athlete context fields with default values and override affordance", () => {
+  it("shows required missing athlete context fields without threshold defaults", () => {
     const context = createAthletePlanningContextFromSnapshot({
       profile: { dob: null, gender: null, preferred_units: null },
       profileMetrics: [],
@@ -1273,7 +1307,7 @@ describe("training plan creation domain", () => {
     });
     const fields = selectAthletePlanningContextFields(context, {
       weightKg: { reason: "Needed to estimate load and power-to-weight demand." },
-      ftpWatts: { reason: "Needed for bike intensity calculations." },
+      planningThresholdPowerWatts: { reason: "Needed for bike intensity calculations." },
     });
 
     expect(fields.find((field) => field.key === "weightKg")).toMatchObject({
@@ -1284,12 +1318,12 @@ describe("training plan creation domain", () => {
       canRemove: false,
       value: { value: 75, source: "default", unit: "kg" },
     });
-    expect(fields.find((field) => field.key === "ftpWatts")).toMatchObject({
+    expect(fields.find((field) => field.key === "planningThresholdPowerWatts")).toMatchObject({
       visible: true,
       required: true,
       canOverride: true,
       canRemove: false,
-      value: { value: 200, source: "default", unit: "W" },
+      value: { value: null, source: "unknown", unit: "watts" },
     });
   });
 
@@ -1680,27 +1714,27 @@ describe("training plan creation domain", () => {
         {
           offsetDays: 0,
           assigned: true,
-          estimatedTss: 120,
+          estimatedCommonLoad: 120,
           estimatedDurationSeconds: 3600,
         },
         {
           offsetDays: 1,
           assigned: false,
-          estimatedTss: null,
+          estimatedCommonLoad: null,
           estimatedDurationSeconds: null,
         },
         {
           offsetDays: 7,
           assigned: true,
-          intent: { type: "endurance", targetDurationSeconds: 5400, targetTss: 90 },
-          estimatedTss: 240,
+          intent: { type: "endurance", targetDurationSeconds: 5400, targetLoad: 90 },
+          estimatedCommonLoad: 240,
           estimatedDurationSeconds: 7200,
         },
         {
           offsetDays: 8,
           assigned: true,
-          intent: { type: "endurance", targetDurationSeconds: 5400, targetTss: 90 },
-          estimatedTss: 30,
+          intent: { type: "endurance", targetDurationSeconds: 5400, targetLoad: 90 },
+          estimatedCommonLoad: 30,
           estimatedDurationSeconds: 1800,
         },
       ],
@@ -1713,7 +1747,9 @@ describe("training plan creation domain", () => {
         endOffsetDays: 6,
         sessionCount: 2,
         assignedSessionCount: 1,
-        estimatedTss: 120,
+        commonLoadStatus: "partial",
+        durationStatus: "partial",
+        estimatedCommonLoad: 120,
         estimatedDurationSeconds: 3600,
       },
       {
@@ -1722,18 +1758,17 @@ describe("training plan creation domain", () => {
         endOffsetDays: 13,
         sessionCount: 2,
         assignedSessionCount: 2,
-        estimatedTss: 270,
+        commonLoadStatus: "complete",
+        durationStatus: "complete",
+        estimatedCommonLoad: 270,
         estimatedDurationSeconds: 9000,
       },
     ]);
-    expect(preview.checks.map((check) => check.code)).toEqual(
-      expect.arrayContaining([
-        "unassigned_sessions",
-        "large_weekly_tss_ramp",
-        "intent_mismatch",
-        "hard_session_spacing",
-      ]),
+    const checkCodes = preview.checks.map((check) => check.code);
+    expect(checkCodes).toEqual(
+      expect.arrayContaining(["unassigned_sessions", "intent_mismatch", "hard_session_spacing"]),
     );
+    expect(checkCodes).not.toContain("large_weekly_load_ramp");
     expect(fixtures.readyState.structure.sessions).toHaveLength(1);
   });
 
@@ -1936,10 +1971,6 @@ describe("training plan creation domain", () => {
           id: "22222222-2222-4222-8222-222222222222",
           name: "Tempo intervals",
           template_visibility: "public",
-          authoritative_metrics: {
-            estimated_tss: 76,
-            estimated_duration: 3600,
-          },
         },
       ],
     });
@@ -1961,7 +1992,7 @@ describe("training plan creation domain", () => {
       activityPlan: {
         id: "22222222-2222-4222-8222-222222222222",
         name: "Tempo intervals",
-        estimatedTss: 76,
+        prescriptionQuantification: null,
       },
       eventOverrides: { title: "Tempo", start_time: "07:15" },
     });
@@ -2119,14 +2150,14 @@ describe("training plan creation domain", () => {
         ...fixtures.readyState.athleteContext,
         physiology: {
           ...fixtures.readyState.athleteContext.physiology,
-          currentFitnessCtl: {
+          currentFitnessLongTermLoad: {
             value: 41,
             source: "training_status" as const,
             recordedAt: "2026-01-04T00:00:00.000Z",
             unit: "CTL",
             overridden: false,
           },
-          currentFatigueAtl: {
+          currentFatigueRecentLoad: {
             value: 50,
             source: "training_status" as const,
             recordedAt: "2026-01-04T00:00:00.000Z",
@@ -2147,28 +2178,37 @@ describe("training plan creation domain", () => {
             localId: "session-1",
             offsetDays: 0,
             activityPlan: fixtures.activityPlan({
-              estimatedTss: 80,
-              estimatedDurationSeconds: 3600,
+              prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+                durationSeconds: 3_600,
+                id: "builder-session-1",
+                load: 80,
+              }),
             }),
           }),
           fixtures.assignedSession({
             localId: "session-2",
             offsetDays: 2,
             activityPlan: fixtures.activityPlan({
-              estimatedTss: 40,
-              estimatedDurationSeconds: 1800,
+              prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+                durationSeconds: 1_800,
+                id: "builder-session-2",
+                load: 40,
+              }),
             }),
           }),
         ],
       },
     };
     const creationPreview = deriveTrainingPlanCreationPreview({
-      sessions: state.structure.sessions.map((session) => ({
-        offsetDays: session.offsetDays,
-        assigned: session.activityPlan !== null,
-        estimatedTss: session.activityPlan?.estimatedTss ?? null,
-        estimatedDurationSeconds: session.activityPlan?.estimatedDurationSeconds ?? null,
-      })),
+      sessions: state.structure.sessions.map((session) => {
+        const quantity = getActivityPlanQuantitySummary(session.activityPlan);
+        return {
+          offsetDays: session.offsetDays,
+          assigned: session.activityPlan !== null,
+          estimatedCommonLoad: quantity.commonLoad,
+          estimatedDurationSeconds: quantity.durationSeconds,
+        };
+      }),
     });
 
     const viewModel = deriveBuilderPlanCreationViewModel({ creationPreview, state });
@@ -2181,7 +2221,7 @@ describe("training plan creation domain", () => {
     expect(viewModel.durationDays).toBe(6);
     expect(viewModel.assignedSessionCount).toBe(2);
     expect(viewModel.goalCount).toBe(1);
-    expect(viewModel.totalEstimatedTss).toBe(120);
+    expect(viewModel.totalEstimatedLoad).toBe(120);
     expect(viewModel.totalEstimatedDurationSeconds).toBe(5400);
     expect(viewModel.nextBestAction).toMatchObject({
       text: "Assign a activity for Week 1 · Saturday.",
@@ -2192,36 +2232,36 @@ describe("training plan creation domain", () => {
       "assign-session",
     );
     expect(viewModel.planningBriefRows.map((row) => row.value)).toEqual([
-      "Long-term Load (CTL) 41",
+      "Fitness 41",
       "1 goal",
       "4 weeks · 3 sessions/week",
       "Reusable Week/Day plan · 2 preferred days",
     ]);
     expect(viewModel.sessionCanvasRows.map((row) => row.heightPercent)).toEqual([100, 50, 24]);
     expect(viewModel.recommendedLoad).toMatchObject({
-      weeklyTss: 290,
-      rangeMinTss: 250,
-      rangeMaxTss: 330,
-      plannedAverageTss: 120,
+      weeklyLoad: 290,
+      rangeMinLoad: 250,
+      rangeMaxLoad: 330,
+      plannedAverageLoad: 120,
       status: "below",
     });
     expect(viewModel.weeklyCanvasRows[0]).toMatchObject({
       assignedSessionCount: 2,
       estimatedDurationSeconds: 5400,
-      estimatedTss: 120,
-      recommendedTssMarkerPercent: 41,
+      estimatedCommonLoad: 120,
+      recommendedLoadMarkerPercent: 41,
       sessionCount: 3,
       targetDeltaLabel: "130 under",
-      tssBarPercent: 17,
+      loadBarPercent: 17,
       weekIndex: 0,
     });
     expect(viewModel.timelineWeeks[0]).toMatchObject({
       label: "Week 1",
       phaseLabel: "Base",
-      estimatedTss: 120,
+      estimatedCommonLoad: 120,
       plannedLoadPercent: 17,
       recommendedLoadPercent: 41,
-      recommendedTss: 290,
+      recommendedLoad: 290,
       targetDeltaLabel: "130 under",
     });
     expect(viewModel.timelineWeeks[0]?.sessions.map((session) => session.dayIndex)).toEqual([
@@ -2237,16 +2277,16 @@ describe("training plan creation domain", () => {
     expect(
       viewModel.dailyTrainingPathChart.dailyPoints.slice(0, 7).map((point) => ({
         date: point.date,
-        targetLoadTss: point.targetLoadTss,
+        targetLoad: point.targetLoad,
       })),
     ).toEqual([
-      { date: "2026-01-05", targetLoadTss: 80 },
-      { date: "2026-01-06", targetLoadTss: 0 },
-      { date: "2026-01-07", targetLoadTss: 35 },
-      { date: "2026-01-08", targetLoadTss: 0 },
-      { date: "2026-01-09", targetLoadTss: 0 },
-      { date: "2026-01-10", targetLoadTss: 0 },
-      { date: "2026-01-11", targetLoadTss: 0 },
+      { date: "2026-01-05", targetLoad: 80 },
+      { date: "2026-01-06", targetLoad: 0 },
+      { date: "2026-01-07", targetLoad: 35 },
+      { date: "2026-01-08", targetLoad: 0 },
+      { date: "2026-01-09", targetLoad: 0 },
+      { date: "2026-01-10", targetLoad: 0 },
+      { date: "2026-01-11", targetLoad: 0 },
     ]);
     expect(viewModel.dailyTrainingPathChart.weeks[0]?.scheduledFitness ?? 0).toBeGreaterThan(30);
     expect(viewModel.dailyTrainingPathChart.weeks[0]?.targetFitness ?? 0).toBeGreaterThan(30);
@@ -2257,9 +2297,9 @@ describe("training plan creation domain", () => {
     const viewModel = deriveBuilderPlanCreationViewModel({ state: fixtures.readyState });
 
     expect(viewModel.currentBaseline).toMatchObject({
-      ctl: null,
-      atl: null,
-      tsb: null,
+      longTermLoad: null,
+      recentLoad: null,
+      loadBalance: null,
       summaryLabel: "Fitness calibration needed",
     });
     expect(viewModel.currentBaseline.detail).toContain("calculated Load");
@@ -2294,18 +2334,21 @@ describe("training plan creation domain", () => {
       },
     };
     const creationPreview = deriveTrainingPlanCreationPreview({
-      sessions: state.structure.sessions.map((session) => ({
-        offsetDays: session.offsetDays,
-        assigned: session.activityPlan !== null,
-        estimatedTss: session.activityPlan?.estimatedTss ?? null,
-        estimatedDurationSeconds: session.activityPlan?.estimatedDurationSeconds ?? null,
-      })),
+      sessions: state.structure.sessions.map((session) => {
+        const quantity = getActivityPlanQuantitySummary(session.activityPlan);
+        return {
+          offsetDays: session.offsetDays,
+          assigned: session.activityPlan !== null,
+          estimatedCommonLoad: quantity.commonLoad,
+          estimatedDurationSeconds: quantity.durationSeconds,
+        };
+      }),
     });
 
     const viewModel = deriveBuilderPlanCreationViewModel({ creationPreview, state });
 
     expect(
-      viewModel.dailyTrainingPathChart.dailyPoints.every((point) => point.targetLoadTss === 0),
+      viewModel.dailyTrainingPathChart.dailyPoints.every((point) => point.targetLoad === 0),
     ).toBe(true);
     expect(viewModel.dailyTrainingPathChart.weeks.every((week) => week.targetLoad === 0)).toBe(
       true,

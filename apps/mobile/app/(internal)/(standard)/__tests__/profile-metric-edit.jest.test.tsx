@@ -156,7 +156,7 @@ describe("profile metric semantic pace entry", () => {
       "grouped by category",
     );
     for (const category of [
-      "Load Calibration",
+      "Heart-rate calibration",
       "Supporting Physiology",
       "Recovery",
       "Body & Aerobic",
@@ -169,15 +169,14 @@ describe("profile metric semantic pace entry", () => {
       const option = screen.getByTestId(`profile-metric-type-${metricType}`);
       expect(option.props.children).toBe(getProfileMetricDefinition(metricType).label);
     }
-    expect(screen.queryByTestId("profile-metric-type-ftp")).toBeNull();
     expect(screen.queryByTestId("profile-metric-type-lthr")).toBeNull();
   });
 
   it("shows an existing threshold as read-only", async () => {
     routeId = "metric-1";
     metric = {
-      metric_type: "ftp",
-      value: 275,
+      metric_type: "lthr",
+      value: 168,
       recorded_at: "2026-07-01T08:30:00.000Z",
       notes: null,
     };

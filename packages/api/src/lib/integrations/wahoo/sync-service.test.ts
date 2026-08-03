@@ -1,6 +1,13 @@
 import * as core from "@repo/core";
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { describe, expect, it, vi } from "vitest";
-import { decideRouteOnlyWahooConvergence, WahooSyncService } from "./sync-service";
+import { hashPlannedActivityPayload } from "../../provider-sync/planned-activities/planned-activity-hash";
+import { getWahooProjectionSnapshot } from "./plan-converter";
+import {
+  decideRouteOnlyWahooConvergence,
+  resolveWahooSyncMetrics,
+  WahooSyncService,
+} from "./sync-service";
 
 const integration = {
   accessToken: "access-token",
@@ -15,6 +22,37 @@ const integration = {
   scope:
     "plans_read plans_write workouts_read workouts_write routes_read routes_write offline_data",
 };
+
+const performanceModelAsOf = "2026-07-28T12:00:00.000Z";
+
+function performanceTargets(
+  overrides: Partial<core.AthletePerformanceTargetFacts> = {},
+): core.AthletePerformanceTargetFacts {
+  return core.athletePerformanceTargetFactsSchema.parse({
+    ...buildPerformanceTargetFactsFixture({
+      asOf: performanceModelAsOf,
+      athleteId: integration.profileId,
+      planningThresholdPowerWatts: 250,
+      lthrBpm: { bike: 170, run: 175 },
+      maxHrBpm: { bike: 190, run: 195 },
+    }),
+    ...overrides,
+  });
+}
+
+function planWithRelativeTarget(type: "%FTP" | "%ThresholdHR", activityCategory: "bike" | "run") {
+  const template = core.SYSTEM_TEMPLATES[0];
+  if (!template) throw new Error("Expected a system template fixture");
+  const structure = structuredClone(template.structure);
+  for (const segment of structure.segments) {
+    if (segment.role !== "activity") continue;
+    segment.activity_category = activityCategory;
+    for (const interval of segment.intervals) {
+      for (const step of interval.steps) step.targets = [{ type, intensity: 80 }];
+    }
+  }
+  return structure;
+}
 
 function remoteWorkout(overrides: Record<string, unknown> = {}) {
   return {
@@ -57,6 +95,7 @@ function remoteRoute(overrides: Record<string, unknown> = {}) {
 function syncFixture(
   input: {
     existingLink?: Record<string, unknown> | null;
+    performanceTargets?: core.AthletePerformanceTargetFacts;
     planStructure?: unknown;
     repository?: Record<string, unknown>;
     routeContent?: string | null;
@@ -106,12 +145,6 @@ function syncFixture(
       routeId: input.routeId ?? null,
       startsAt: "2026-07-29T12:00:00.000Z",
     }),
-    getProfileSyncMetrics: vi.fn().mockResolvedValue({
-      bikePowerEfforts: [],
-      ftpMetrics: [{ observedAt: "2026-07-28T10:00:00.000Z", source: "manual", value: 250 }],
-      maxHr: 190,
-      thresholdHr: 170,
-    }),
     getOwnedRouteForMirror: vi.fn().mockResolvedValue({
       description: "Ridge loop",
       filePath: "profile-1/route-1.gpx",
@@ -155,7 +188,11 @@ function syncFixture(
     updateRoute: vi.fn().mockResolvedValue(remoteRoute()),
     ...input.wahooClient,
   };
+  const getPerformanceTargets = vi
+    .fn()
+    .mockResolvedValue(input.performanceTargets ?? performanceTargets());
   const service = new WahooSyncService({
+    getPerformanceTargets,
     repository: repository as never,
     storage: {
       downloadRouteGpx: vi
@@ -169,13 +206,40 @@ function syncFixture(
     wahooClientFactory: () => wahooClient as never,
   });
   const execution = {
+    performanceModelAsOf,
     expectedIntegrationGeneration: 3,
     expectedStartsAt: "2026-07-29T12:00:00.000Z",
     integrationId: "integration-1",
     signal: new AbortController().signal,
   };
-  return { execution, repository, service, wahooClient };
+  return { execution, getPerformanceTargets, repository, service, wahooClient };
 }
+
+describe("resolveWahooSyncMetrics", () => {
+  it("maps only available activity-category-matching canonical target facts", () => {
+    const targets = performanceTargets();
+
+    expect(resolveWahooSyncMetrics(targets, "bike")).toEqual({
+      ftp: 250,
+      maxHr: 190,
+      thresholdHr: 170,
+    });
+    expect(resolveWahooSyncMetrics(targets, "run")).toEqual({
+      ftp: null,
+      maxHr: 195,
+      thresholdHr: 175,
+    });
+    expect(
+      resolveWahooSyncMetrics(
+        core.createUnavailableAthletePerformanceTargetFacts(
+          performanceModelAsOf,
+          integration.profileId,
+        ),
+        "bike",
+      ),
+    ).toEqual({ ftp: null, maxHr: null, thresholdHr: null });
+  });
+});
 
 describe("WahooSyncService group event route delivery", () => {
   const deliveryExecution = {
@@ -341,6 +405,7 @@ describe("WahooSyncService planned-activity validation", () => {
       })),
     };
     const service = new WahooSyncService({
+      getPerformanceTargets: vi.fn().mockResolvedValue(performanceTargets()),
       repository: repository as never,
       storage: { downloadRouteGpx: vi.fn() },
     });
@@ -382,7 +447,7 @@ describe("route-only Wahoo convergence decision", () => {
 
 describe("WahooSyncService planned-activity reconciliation", () => {
   it("creates one Wahoo planned-activity resource and a generation-guarded local link", async () => {
-    const { execution, repository, service, wahooClient } = syncFixture();
+    const { execution, getPerformanceTargets, repository, service, wahooClient } = syncFixture();
 
     await expect(service.syncEvent("event-1", "profile-1", execution)).resolves.toMatchObject({
       action: "created",
@@ -391,6 +456,10 @@ describe("WahooSyncService planned-activity reconciliation", () => {
     });
 
     expect(wahooClient.createWorkout).toHaveBeenCalledTimes(1);
+    expect(getPerformanceTargets).toHaveBeenCalledWith({
+      actorProfileId: "profile-1",
+      asOf: new Date(performanceModelAsOf),
+    });
     expect(wahooClient.createWorkout).toHaveBeenCalledWith(
       expect.objectContaining({ externalId: "event-1", planId: 42 }),
       execution.signal,
@@ -404,6 +473,105 @@ describe("WahooSyncService planned-activity reconciliation", () => {
         profileId: "profile-1",
       }),
     );
+  });
+
+  it("publishes the latest threshold after atomically advancing stale queued desired state", async () => {
+    const planStructure = planWithRelativeTarget("%FTP", "bike");
+    const queuedProjectionSnapshot = getWahooProjectionSnapshot(planStructure, {
+      activityType: "bike",
+      description: "Bike session",
+      ftp: 250,
+      hasRoute: false,
+      max_hr: 190,
+      name: "Tempo Intervals",
+      threshold_hr: 170,
+    });
+    const queuedProjectionHash = hashPlannedActivityPayload({
+      projectionSnapshot: queuedProjectionSnapshot,
+      sourcePlanId: "plan-1",
+      sourceRouteId: null,
+    });
+    const latestTargets = buildPerformanceTargetFactsFixture({
+      asOf: performanceModelAsOf,
+      athleteId: integration.profileId,
+      planningThresholdPowerWatts: 275,
+      lthrBpm: { bike: 170 },
+      maxHrBpm: { bike: 190 },
+    });
+    const { execution, service, wahooClient } = syncFixture({
+      performanceTargets: latestTargets,
+      planStructure,
+    });
+    const updateDesiredProjection = vi.fn().mockResolvedValue(true);
+
+    const result = await service.syncEvent("event-1", "profile-1", {
+      ...execution,
+      expectedProjectionHash: queuedProjectionHash,
+      queuedProjectionSnapshot,
+      updateDesiredProjection,
+    });
+
+    expect(result).toMatchObject({ action: "created", success: true });
+    expect(result).not.toHaveProperty("terminalOutcome", "superseded");
+    expect(updateDesiredProjection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        performanceModelAsOf,
+        projectionHash: expect.not.stringMatching(new RegExp(`^${queuedProjectionHash}$`)),
+        projectionSnapshot: expect.objectContaining({
+          plan: expect.objectContaining({
+            header: expect.objectContaining({ ftp: 275 }),
+          }),
+        }),
+      }),
+    );
+    expect(wahooClient.createWorkout).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not unsync an existing planned activity when required target facts are unavailable", async () => {
+    const { execution, repository, service, wahooClient } = syncFixture({
+      performanceTargets: core.createUnavailableAthletePerformanceTargetFacts(
+        performanceModelAsOf,
+        integration.profileId,
+      ),
+      existingLink: { externalId: "99", id: "link-1" },
+      planStructure: planWithRelativeTarget("%FTP", "bike"),
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1", execution)).resolves.toMatchObject({
+      failureCode: "missing_metric",
+      failureCategory: "eligibility",
+      success: false,
+    });
+    expect(wahooClient.deleteWorkout).not.toHaveBeenCalled();
+    expect(repository.deleteEventResourceLink).not.toHaveBeenCalled();
+    expect(wahooClient.createPlan).not.toHaveBeenCalled();
+  });
+
+  it("prioritizes no-effect target failure when compatibility has mixed issues", async () => {
+    const planStructure = planWithRelativeTarget("%FTP", "bike");
+    const firstActivity = planStructure.segments.find((segment) => segment.role === "activity");
+    const firstStep = firstActivity?.intervals[0]?.steps[0];
+    if (!firstStep) throw new Error("Expected an activity step fixture");
+    firstStep.targets = [
+      { type: "RPE", intensity: 4 },
+      { type: "%FTP", intensity: 80 },
+    ];
+    const { execution, repository, service, wahooClient } = syncFixture({
+      performanceTargets: core.createUnavailableAthletePerformanceTargetFacts(
+        performanceModelAsOf,
+        integration.profileId,
+      ),
+      existingLink: { externalId: "99", id: "link-1" },
+      planStructure,
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1", execution)).resolves.toMatchObject({
+      failureCode: "missing_metric",
+      failureCategory: "eligibility",
+      success: false,
+    });
+    expect(wahooClient.deleteWorkout).not.toHaveBeenCalled();
+    expect(repository.deleteEventResourceLink).not.toHaveBeenCalled();
   });
 
   it("terminalizes a queued publish whose scheduled time was superseded", async () => {

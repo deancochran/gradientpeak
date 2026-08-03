@@ -167,13 +167,6 @@ export type WahooWorkoutSummaryListInput = {
   startDate: string;
 };
 
-export interface WahooPowerZones {
-  ftp?: number | null;
-  critical_power?: number | null;
-  zones?: unknown;
-  updated_at?: string | null;
-}
-
 export interface WahooTokenRefreshResult {
   accessToken: string;
   expiresAt: string | null;
@@ -460,15 +453,6 @@ export class WahooClient {
    */
   async getUserProfile(): Promise<WahooUser> {
     return await this.makeRequest<WahooUser>("/v1/user", {
-      method: "GET",
-    });
-  }
-
-  /**
-   * Fetch Wahoo power zones for onboarding FTP enrichment.
-   */
-  async getPowerZones(): Promise<WahooPowerZones> {
-    return await this.makeRequest<WahooPowerZones>("/v1/power_zones", {
       method: "GET",
     });
   }

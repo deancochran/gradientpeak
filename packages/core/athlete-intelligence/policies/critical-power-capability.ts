@@ -1,20 +1,12 @@
-import {
-  evaluateCriticalPower,
-  type ObservedCriticalPowerEffort,
-} from "../../calculations/critical-power";
 import type { CanonicalActivityCategory } from "../../schemas/activity-category";
 import {
   type CalculationResult,
   estimatedResult,
   unavailableResult,
 } from "../calculation-result-contracts";
-import { resolveEvidenceEligibility } from "../evidence-contracts";
-import type {
-  EffortObservationInput,
-  ParsedAthleteIntelligenceModelInput,
-} from "../model-input-contracts";
+import type { ParsedAthleteIntelligenceModelInput } from "../model-input-contracts";
 
-export const CRITICAL_POWER_CAPABILITY_POLICY_VERSION = "critical-power-capability-v1" as const;
+export const CRITICAL_POWER_CAPABILITY_POLICY_VERSION = "critical-power-capability-v2" as const;
 
 export type CriticalPowerCapability = Readonly<{
   policyVersion: typeof CRITICAL_POWER_CAPABILITY_POLICY_VERSION;
@@ -40,86 +32,16 @@ const unavailable = (
     contributingSourceIds,
   });
 
-function observedPowerEffort(
-  model: Pick<ParsedAthleteIntelligenceModelInput, "assessmentAsOf" | "evidenceRegistry">,
-  effort: EffortObservationInput,
-): { effort: ObservedCriticalPowerEffort; sourceIds: string[] } | null {
-  if (effort.activity_category !== "bike" || effort.kind !== "power") return null;
-  const eligibleSources = effort.evidenceSourceIds.flatMap((sourceId) => {
-    const source = model.evidenceRegistry[sourceId];
-    if (!source || source.modality !== "value") return [];
-    const eligibility = resolveEvidenceEligibility({
-      evidence: source,
-      asOf: model.assessmentAsOf,
-    });
-    return eligibility.eligible &&
-      eligibility.evidence.sourceType === "activity_effort" &&
-      eligibility.evidence.activity_category === "bike" &&
-      eligibility.evidence.rawObservation.value === effort.powerWatts &&
-      eligibility.evidence.rawObservation.unit === "watts"
-      ? [sourceId]
-      : [];
-  });
-  if (eligibleSources.length === 0) return null;
-
-  const activityId = effort.lineageGroupId;
-  return {
-    effort: {
-      activity_category: "bike",
-      effort_type: "power",
-      duration_seconds: effort.durationSeconds,
-      value: effort.powerWatts,
-      unit: "watts",
-      recorded_at: effort.observedAt,
-      activity_id: activityId,
-      source: "imported",
-      method: "activity_file_best_effort",
-      provenance: { activity_id: activityId, derived_from: "activity_file_stream" },
-    },
-    sourceIds: eligibleSources,
-  };
+function confidenceUncertainty(confidence: "high" | "medium" | "low" | "unavailable"): number {
+  if (confidence === "high") return 0.1;
+  if (confidence === "medium") return 0.35;
+  if (confidence === "low") return 0.65;
+  return 1;
 }
 
-type AdaptedPowerEffort = NonNullable<ReturnType<typeof observedPowerEffort>>;
-
-function isPreferredCanonicalEffort(
-  candidate: AdaptedPowerEffort,
-  current: AdaptedPowerEffort,
-): boolean {
-  if (candidate.effort.value !== current.effort.value) {
-    return candidate.effort.value > current.effort.value;
-  }
-  if (candidate.effort.recorded_at !== current.effort.recorded_at) {
-    return candidate.effort.recorded_at > current.effort.recorded_at;
-  }
-  if (candidate.effort.activity_id !== current.effort.activity_id) {
-    return (candidate.effort.activity_id ?? "") < (current.effort.activity_id ?? "");
-  }
-  return (
-    [...candidate.sourceIds].sort().join("\u0000") < [...current.sourceIds].sort().join("\u0000")
-  );
-}
-
-/** Selects one strongest trusted observation per canonical duration without losing its activity lineage. */
-function selectCanonicalPowerEfforts(efforts: readonly AdaptedPowerEffort[]): AdaptedPowerEffort[] {
-  const selected = new Map<number, AdaptedPowerEffort>();
-  for (const candidate of efforts) {
-    const current = selected.get(candidate.effort.duration_seconds);
-    if (!current || isPreferredCanonicalEffort(candidate, current)) {
-      selected.set(candidate.effort.duration_seconds, candidate);
-    }
-  }
-  return [...selected.values()].sort(
-    (left, right) => left.effort.duration_seconds - right.effort.duration_seconds,
-  );
-}
-
-/** Adapts already-materialized, observed effort evidence into guarded CP/W′ capability outputs. */
+/** Projects CP and reserve exclusively from the canonical as-of cycling performance model. */
 export function calculateCriticalPowerCapability(input: {
-  model: Pick<
-    ParsedAthleteIntelligenceModelInput,
-    "assessmentAsOf" | "efforts" | "evidenceRegistry" | "readCoverage"
-  >;
+  model: Pick<ParsedAthleteIntelligenceModelInput, "performanceModel">;
   targetActivityCategory?: CanonicalActivityCategory | null;
 }): CriticalPowerCapability {
   if (
@@ -134,8 +56,10 @@ export function calculateCriticalPowerCapability(input: {
       wPrimeJoules: result,
     };
   }
-  if (input.model.readCoverage?.efforts.state === "truncated") {
-    const result = unavailable("insufficient_evidence", "efforts_read_truncated");
+
+  const cycling = input.model.performanceModel?.categories.bike.parameters;
+  if (cycling === undefined) {
+    const result = unavailable("insufficient_evidence", "canonical_performance_model_unavailable");
     return {
       policyVersion: CRITICAL_POWER_CAPABILITY_POLICY_VERSION,
       criticalPowerWatts: result,
@@ -143,17 +67,26 @@ export function calculateCriticalPowerCapability(input: {
     };
   }
 
-  const adapted = input.model.efforts.flatMap((effort) => {
-    const observed = observedPowerEffort(input.model, effort);
-    return observed ? [observed] : [];
-  });
-  const selected = selectCanonicalPowerEfforts(adapted);
-  const sourceIds = [...new Set(selected.flatMap((item) => item.sourceIds))];
-  const evaluation = evaluateCriticalPower(selected.map((item) => item.effort));
-  if (evaluation.status === "abstained") {
+  const criticalPower = cycling.criticalPower;
+  const reserve = cycling.anaerobicReserve;
+  const sourceIds = [
+    ...new Set(
+      [...criticalPower.sourceEvidenceIds, ...reserve.sourceEvidenceIds].map(
+        (evidenceId) => `effort:${evidenceId}:value`,
+      ),
+    ),
+  ];
+  if (
+    criticalPower.status !== "available" ||
+    criticalPower.value === null ||
+    reserve.status !== "available" ||
+    reserve.value === null ||
+    sourceIds.length === 0
+  ) {
+    const reasonCodes = [...new Set([...criticalPower.reasons, ...reserve.reasons])];
     const result = unavailable(
       "insufficient_evidence",
-      `critical_power_${evaluation.reason.replaceAll("-", "_")}`,
+      reasonCodes[0] ?? "canonical_critical_power_unavailable",
       sourceIds,
     );
     return {
@@ -163,7 +96,6 @@ export function calculateCriticalPowerCapability(input: {
     };
   }
 
-  const uncertainty = Math.min(1, Math.max(0, 1 - evaluation.model.rSquared));
   const firstSourceId = sourceIds[0];
   if (firstSourceId === undefined) {
     const result = unavailable("insufficient_evidence", "critical_power_evidence_missing");
@@ -174,19 +106,22 @@ export function calculateCriticalPowerCapability(input: {
     };
   }
   const common = {
-    uncertainty,
-    reasonCodes: ["observed_critical_power_curve_fit"],
+    uncertainty: Math.max(
+      confidenceUncertainty(criticalPower.confidence),
+      confidenceUncertainty(reserve.confidence),
+    ),
+    reasonCodes: ["canonical_cycling_duration_performance_model"],
     contributingSourceIds: [firstSourceId, ...sourceIds.slice(1)] as [string, ...string[]],
   } as const;
   return {
     policyVersion: CRITICAL_POWER_CAPABILITY_POLICY_VERSION,
     criticalPowerWatts: estimatedResult({
-      estimate: evaluation.model.cp,
+      estimate: criticalPower.value.watts,
       unit: "watts",
       ...common,
     }),
     wPrimeJoules: estimatedResult({
-      estimate: evaluation.model.wPrime,
+      estimate: reserve.value.joules,
       unit: "joules",
       ...common,
     }),

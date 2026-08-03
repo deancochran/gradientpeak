@@ -1,5 +1,9 @@
-import type { ActivityListDerivedSummary } from "@repo/core";
-import { getTrainingIntensityZone } from "@repo/core/load";
+import {
+  type ActivityObservationQuantification,
+  type ActivityObservationQuantificationBundle,
+  createObservationQuantificationBundle,
+} from "@repo/core";
+import { getTrainingIntensityZone } from "@repo/core/zones";
 
 export type ZoneDistributionActivityRow = {
   id: string;
@@ -18,9 +22,16 @@ export type IntensityZone =
 export type ZoneDistributionTrendsResult = {
   weeklyData: Array<{
     weekStart: string;
-    totalTSS: number;
+    status: "complete" | "partial" | "unavailable";
+    totalCommonLoad: number | null;
     zones: Record<IntensityZone, number>;
+    observationQuantification: ActivityObservationQuantificationBundle | null;
+    coverage: { totalActivities: number; quantifiedActivities: number };
   }>;
+};
+
+export type ZoneDistributionDerivedSummary = {
+  observationQuantification: ActivityObservationQuantificationBundle;
 };
 
 const emptyZoneDistribution = (): Record<IntensityZone, number> => ({
@@ -45,7 +56,7 @@ function getWeekStartKey(value: Date) {
 
 export function buildZoneDistributionTrends(
   activityRows: ZoneDistributionActivityRow[],
-  derivedMap: Map<string, Pick<ActivityListDerivedSummary, "intensity_factor" | "tss">>,
+  derivedMap: Map<string, ZoneDistributionDerivedSummary>,
 ): ZoneDistributionTrendsResult {
   if (activityRows.length === 0) {
     return { weeklyData: [] };
@@ -55,49 +66,76 @@ export function buildZoneDistributionTrends(
     string,
     {
       weekStart: string;
-      totalTSS: number;
-      zones: Record<IntensityZone, number>;
+      totalActivities: number;
+      quantifiedActivities: number;
+      members: ActivityObservationQuantification[];
     }
   >();
 
   for (const activity of activityRows) {
     const derived = derivedMap.get(activity.id);
-    const intensityFactor = derived?.intensity_factor ?? null;
-    const tss = derived?.tss ?? null;
-
-    if (!intensityFactor || !tss) continue;
-
     const weekKey = getWeekStartKey(new Date(activity.started_at));
 
     let week = weeklyData.get(weekKey);
     if (!week) {
       week = {
         weekStart: weekKey,
-        totalTSS: 0,
-        zones: emptyZoneDistribution(),
+        totalActivities: 0,
+        quantifiedActivities: 0,
+        members: [],
       };
       weeklyData.set(weekKey, week);
     }
-
-    const zone = getTrainingIntensityZone(intensityFactor) as IntensityZone;
-    week.zones[zone] += tss;
-    week.totalTSS += tss;
+    week.totalActivities += 1;
+    if (!derived || derived.observationQuantification.members.length === 0) continue;
+    week.quantifiedActivities += 1;
+    week.members.push(...derived.observationQuantification.members);
   }
 
   const weeklyDataArray = Array.from(weeklyData.values()).map((week) => {
     const zones = emptyZoneDistribution();
+    const observationQuantification =
+      week.members.length === 0
+        ? null
+        : createObservationQuantificationBundle({ members: week.members });
+    const quantification = observationQuantification?.summary ?? null;
+    const totalCommonLoad =
+      !quantification || quantification.commonLoad.status === "unavailable"
+        ? null
+        : quantification.commonLoad.load;
+    const zoneLoads = emptyZoneDistribution();
+    for (const member of week.members) {
+      const commonLoad = member.commonLoad;
+      const intensity = commonLoad.status === "unavailable" ? null : commonLoad.intensity;
+      if (commonLoad.status === "unavailable" || commonLoad.load === null || intensity === null)
+        continue;
+      const zone = getTrainingIntensityZone(intensity) as IntensityZone;
+      zoneLoads[zone] += commonLoad.load;
+    }
 
-    if (week.totalTSS > 0) {
-      for (const zone in week.zones) {
+    if (totalCommonLoad !== null && totalCommonLoad > 0) {
+      for (const zone in zoneLoads) {
         const zoneKey = zone as IntensityZone;
-        zones[zoneKey] = Math.round((week.zones[zoneKey] / week.totalTSS) * 1000) / 10;
+        zones[zoneKey] = Math.round((zoneLoads[zoneKey] / totalCommonLoad) * 1000) / 10;
       }
     }
 
     return {
       weekStart: week.weekStart,
-      totalTSS: Math.round(week.totalTSS),
+      status:
+        totalCommonLoad === null
+          ? ("unavailable" as const)
+          : week.quantifiedActivities < week.totalActivities ||
+              quantification?.commonLoad.status === "partial"
+            ? ("partial" as const)
+            : ("complete" as const),
+      totalCommonLoad: totalCommonLoad === null ? null : Math.round(totalCommonLoad),
       zones,
+      observationQuantification,
+      coverage: {
+        totalActivities: week.totalActivities,
+        quantifiedActivities: week.quantifiedActivities,
+      },
     };
   });
 

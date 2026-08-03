@@ -37,7 +37,7 @@ describe("deriveTrainingPlanStructureProposal", () => {
         expect.objectContaining({
           attribute: "starter-values",
           source: "derived",
-          value: "45 TSS / 45m",
+          value: "45 Common Load / 45m",
           driver: "consistency-frequency",
         }),
       ]),
@@ -74,7 +74,7 @@ describe("deriveTrainingPlanStructureProposal", () => {
         expect.objectContaining({
           attribute: "starter-values",
           source: "default",
-          value: "60 TSS / 60m",
+          value: "60 Common Load / 60m",
         }),
         expect.objectContaining({
           attribute: "endurance-anchor",

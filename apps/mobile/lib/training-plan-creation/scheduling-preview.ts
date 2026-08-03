@@ -3,6 +3,7 @@ import {
   diffDateOnlyUtcDays,
   type TrainingPlanSchedulingPreview,
 } from "@repo/core";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import { getBuilderWeekdayIndex } from "./formatters";
 import type { TrainingPlanBuilderState } from "./types";
 
@@ -23,7 +24,7 @@ export function deriveTrainingPlanSchedulingPreview(
       id: session.localId,
       label: sessionLabel(session),
       offsetDays: session.offsetDays,
-      estimatedTss: session.activityPlan?.estimatedTss ?? null,
+      estimatedCommonLoad: getActivityPlanQuantitySummary(session.activityPlan).commonLoad,
       intentType: session.intent?.type,
     })),
   });

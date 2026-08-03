@@ -13,7 +13,7 @@ export const mobileCardFixtures = {
     has_liked: false,
     notes: "Controlled tempo with a progressive finish.",
     polyline: "_p~iF~ps|U_ulLnnqC_mqNvxq`@",
-    derived: { tss: 74, intensity_factor: 0.84, method: "modeled" },
+    derived: { observationQuantification: null },
   },
   activityPlan: {
     id: "fixture-activity-plan",
@@ -21,11 +21,7 @@ export const mobileCardFixtures = {
     description: "Warm up, build through three efforts, and finish easy.",
     activity_category: "run",
     created_at: "2026-07-19T12:00:00.000Z",
-    authoritative_metrics: {
-      estimated_duration: 3_600,
-      estimated_tss: 72,
-      intensity_factor: 0.82,
-    },
+    prescriptionQuantification: null,
     structure: {
       version: 3,
       segments: [
@@ -161,7 +157,7 @@ export const mobileCardFixtures = {
   },
   calendarEvent: {
     activity_plan: {
-      authoritative_metrics: { estimated_duration: 3_600, estimated_tss: 72 },
+      prescriptionQuantification: null,
       id: "fixture-activity-plan",
       name: "Progressive tempo builder",
       activity_category: "run",

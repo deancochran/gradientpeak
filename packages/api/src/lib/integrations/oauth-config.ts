@@ -48,8 +48,6 @@ const providerOAuthRegistry = {
     scopes: [
       "email",
       "user_write",
-      "power_zones_read",
-      "power_zones_write",
       "workouts_read",
       "workouts_write",
       "plans_read",

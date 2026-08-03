@@ -14,46 +14,37 @@
 
 export * from "./activity-plan-calculations";
 // Onboarding & Performance Estimation Functions
+export * from "./athlete-inputs/calculation-trust";
 export {
   calculateAge as calculateAgeFromDOB,
-  getBaselineProfile,
-  mergeWithBaseline,
+  getOnboardingBaselineProfile,
 } from "./calculations/baseline-profiles";
 export {
   calculateHRReserve,
   calculateTargetHR,
   calculateVO2MaxFromHR,
-  estimateLTHR,
   estimateMaxHRFromAge,
 } from "./calculations/heart-rate";
+export { estimatePowerForDuration } from "./calculations/power-curve";
 export {
-  estimateCSSFromGender,
-  estimateFTPFromWeight,
-  estimateThresholdPaceFromGender,
-} from "./calculations/performance-estimates";
-export {
-  derivePowerCurveFromFTP,
-  estimatePowerForDuration,
-} from "./calculations/power-curve";
-export {
-  deriveSpeedCurveFromThresholdPace,
   paceToSpeed,
   parsePace,
   speedToPace,
 } from "./calculations/speed-curve";
 export type {
+  CssCalculationResult,
   CssTestObservationInput,
   CssTestProtocolInput,
   CssTestProtocolResult,
   CssTestTimesInput,
 } from "./calculations/swim-pace-curve";
 export {
+  CSS_CALCULATION_VERSION,
   CSS_TEST_PROTOCOL,
   calculateCssFrom400m200mTest,
   cssTestProtocolSchema,
   cssTestTimesSchema,
-  deriveSwimPaceCurveFromCSS,
-  estimateCSSFromSwimTests,
+  evaluateCssFrom400m200mTest,
   pacePerHundredMetersToSpeed,
   speedToPacePerHundredMeters,
 } from "./calculations/swim-pace-curve";
@@ -70,35 +61,21 @@ export * from "./activity-artifacts"; // Thin decoded source-artifact contracts
 export * from "./activity-categories"; // Canonical activity_category registry and heuristics
 export * from "./activity-files"; // Runtime-neutral activity file ingestion contracts
 export * from "./activity-plan"; // Strict activity-plan contracts and compiler
+export * from "./activity-quantification"; // Canonical prescription/observation quantification contracts
 export * from "./activity-segments"; // Completed activity segment contracts
-export {
-  type ActivityEffortObservationKind,
-  type CanonicalThresholdType,
-  canonicalThresholdTypes,
-  type DirectThresholdMetricObservation,
-  getEligibleThresholdValue,
-  type ResolveCanonicalThresholdsInput,
-  type ResolvedCanonicalThreshold,
-  resolveCanonicalThresholds,
-  type ThresholdActivityEffortObservation,
-  type ThresholdConfidence,
-  type ThresholdEligibilityReason,
-  type ThresholdMetricSource,
-} from "./athlete-inputs/canonical-thresholds";
+export * from "./athlete-capabilities"; // Evidence-qualified continuous capabilities and limiters
 export * from "./athlete-intelligence"; // Deterministic athlete intelligence contracts and evaluation
 export * from "./bluetooth"; // Canonical BLE parsers
-export * from "./calculations/critical-power";
 // Performance curves (power, pace, HR)
 export * from "./calculations/curves";
 // ============================================================================
 // Performance Metrics Calculations
-// Multi-modal TSS calculations (power, heart rate, pace)
-export * from "./calculations/defaults";
 export * from "./calculations/duration";
 export * from "./calculations/training-quality";
 export * from "./calculations/workload";
 export * from "./coaching"; // Shared coaching roster adapters
 export * from "./contracts"; // Shared API contracts
+export * from "./cycling-performance"; // Evidence-first cycling duration-performance model
 // Heart rate test detection
 export * from "./detection/hr-tests";
 // Running test detection
@@ -111,29 +88,32 @@ export * from "./detection/power-tests";
 export * from "./duration"; // Canonical duration helpers
 // Root names retain their canonical date-only and activity-plan meanings.
 export { formatDuration } from "./duration/format";
-export * from "./estimation"; // TSS estimation system
+export * from "./duration-performance"; // Evidence-first cross-category duration/session performance
+export * from "./estimation"; // Ancillary estimates and explicit-Load projections
 export * from "./goals"; // Goal draft/payload helpers
 export * from "./groups"; // Group contracts, permissions, and display state
 export * from "./integrations"; // Provider capability registry and sync action helpers
 export * from "./load"; // Canonical load-domain helpers
-export { getTrainingIntensityZone } from "./load/tss";
 export * from "./messaging"; // Shared messaging adapters
 export * from "./notifications"; // Shared notification normalization helpers
 export * from "./organizations"; // Organization authorization contracts
 export * from "./parity"; // Product parity registry and contracts
+export * from "./performance-model"; // Canonical as-of category models and narrow target facts
 export * from "./plan"; // Training plan normalization/expansion helpers
 export * from "./profile"; // Shared profile contracts and adapters
 export type {
-  ActivityCategory as RecordingMetricsActivityCategory,
+  ProvisionalCommonLoadMethod,
+  ProvisionalRecordingMetricsAccumulator,
+  ProvisionalRecordingMetricsSnapshot,
   RecordingMetricSample,
-  RecordingMetricsAccumulator,
+  RecordingMetricsActivityCategory,
   RecordingMetricsConfig,
-  RecordingMetricsSnapshot,
-  TrainingStressScoreMethod,
 } from "./recording-metrics";
 export {
-  calculateRecordingMetrics,
-  createRecordingMetricsAccumulator,
+  calculateProvisionalCommonLoad,
+  calculateProvisionalRecordingMetrics,
+  createProvisionalRecordingMetricsAccumulator,
+  provisionalRecordingMetricsSnapshotSchema,
 } from "./recording-metrics"; // Live/replay recording metrics accumulator
 export * from "./recurrence"; // Supported recurrence semantics and deterministic serialization
 export * from "./route-files"; // Route upload formats, limits, schemas, and filename helpers
@@ -157,7 +137,7 @@ export * from "./zones"; // Canonical zones and threshold metadata
 // Namespace Exports - For organized imports
 // ============================================================================
 // Allows consumers to import as: import { Calculations } from '@repo/core'
-// and use as: Calculations.calculateTSS(...)
+// and use as: Calculations.calculateTrainingEffect(...)
 
 export * as ActivityCategories from "./activity-categories";
 export * as AthleteInputs from "./athlete-inputs";

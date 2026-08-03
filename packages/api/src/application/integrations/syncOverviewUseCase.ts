@@ -273,7 +273,7 @@ function getAllowedActions(input: {
       return grantedScopes.has("workouts_read") && grantedScopes.has("offline_data");
     }
     if (input.provider === "wahoo" && action === "refresh_setup_data") {
-      return grantedScopes.has("user_read") && grantedScopes.has("power_zones_read");
+      return grantedScopes.has("user_read");
     }
     return false;
   });

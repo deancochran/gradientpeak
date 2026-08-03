@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
 import {
   buildTrainingPathEventReviewItems,
   buildTrainingPathScheduledReviewItems,
@@ -61,7 +62,7 @@ describe("buildTrainingPathEventReviewItems", () => {
 });
 
 describe("buildTrainingPathScheduledReviewItems", () => {
-  it("does not restore stale load after an authoritative null", () => {
+  it("does not infer load when canonical prescription evidence is absent", () => {
     const items = buildTrainingPathScheduledReviewItems({
       planningTimezone: "America/Los_Angeles",
       groupEvents: [],
@@ -73,8 +74,6 @@ describe("buildTrainingPathScheduledReviewItems", () => {
           activity_plan: {
             id: "activity-plan-1",
             name: "Stale plan",
-            estimated_tss: 65,
-            authoritative_metrics: { estimated_tss: null },
           },
         },
       ],
@@ -104,7 +103,11 @@ describe("buildTrainingPathScheduledReviewItems", () => {
             id: "activity-plan-1",
             name: "Tempo Builder",
             activity_category: "bike",
-            authoritative_metrics: { estimated_tss: 65 },
+            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+              activityCategory: "bike",
+              estimated: false,
+              load: 65,
+            }),
           },
         },
       ],
@@ -154,7 +157,10 @@ describe("buildTrainingPathScheduledReviewItems", () => {
             id: "activity-plan-1",
             name: "Tempo Builder",
             activity_category: "run",
-            authoritative_metrics: { estimated_tss: 65 },
+            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+              estimated: false,
+              load: 65,
+            }),
           },
         },
       ],

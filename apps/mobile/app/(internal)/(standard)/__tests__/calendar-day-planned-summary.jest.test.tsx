@@ -1,5 +1,6 @@
 import React from "react";
 import { announcePlannedDaySummaryRetryStatus } from "@/components/calendar/plannedDaySummaryAccessibility";
+import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
 import { createHost } from "../../../../test/mock-components";
 import { act, fireEvent, renderNative, screen } from "../../../../test/render-native";
 
@@ -144,7 +145,10 @@ function configureQueries(
             eventCount: 1,
             activity_categories: ["bike"],
             totalDurationSeconds: 3_600,
-            totalTss: 50,
+            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+              activityCategory: "bike",
+              load: 50,
+            }),
           },
         },
     isError: Boolean(input.summaryError),
@@ -210,7 +214,7 @@ describe("calendar day planned summary boundary", () => {
   it("does not show prior-day totals while the next day summary is loading", () => {
     configureQueries();
     const rendered = renderNative(<CalendarDayScreen />);
-    expect(screen.getByText("50 TSS")).toBeTruthy();
+    expect(screen.getByText("50")).toBeTruthy();
 
     routeDate = "2026-07-28";
     plannedDaySummaryUseQueryMock.mockImplementation(() => ({
@@ -227,7 +231,10 @@ describe("calendar day planned summary boundary", () => {
           eventCount: 1,
           activity_categories: ["bike"],
           totalDurationSeconds: 3_600,
-          totalTss: 50,
+          prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+            activityCategory: "bike",
+            load: 50,
+          }),
         },
       },
       isError: false,
@@ -235,7 +242,7 @@ describe("calendar day planned summary boundary", () => {
       refetch: summaryRefetchMock,
     }));
     rendered.rerender(<CalendarDayScreen />);
-    expect(screen.queryByText("50 TSS")).toBeNull();
+    expect(screen.queryByText("50")).toBeNull();
     expect(screen.getByText("Loading planned workload...")).toBeTruthy();
 
     plannedDaySummaryUseQueryMock.mockImplementation(() => ({
@@ -252,7 +259,9 @@ describe("calendar day planned summary boundary", () => {
           eventCount: 1,
           activity_categories: ["run"],
           totalDurationSeconds: 1_800,
-          totalTss: 75,
+          prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+            load: 75,
+          }),
         },
       },
       isError: false,
@@ -260,7 +269,7 @@ describe("calendar day planned summary boundary", () => {
       refetch: summaryRefetchMock,
     }));
     rendered.rerender(<CalendarDayScreen />);
-    expect(screen.getByText("75 TSS")).toBeTruthy();
+    expect(screen.getByText("75")).toBeTruthy();
   });
 
   it("makes the localized agenda retry semantic, announced, and re-enabled after deferred success and failure", async () => {

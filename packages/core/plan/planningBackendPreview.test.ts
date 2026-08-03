@@ -13,7 +13,12 @@ function createContext(overrides: Partial<PlanningContext> = {}): PlanningContex
       profile: null,
       profileMetrics: [],
       activityEfforts: [],
-      currentFitness: { ctl: 42, atl: 48, tsb: -6, recorded_at: "2026-01-01T00:00:00.000Z" },
+      currentFitness: {
+        longTermLoad: 42,
+        recentLoad: 48,
+        loadBalance: -6,
+        recorded_at: "2026-01-01T00:00:00.000Z",
+      },
     }),
     goals: [
       {
@@ -88,8 +93,8 @@ describe("planningBackendPreview", () => {
           },
         },
       },
-      starting_ctl_override: 42,
-      starting_atl_override: 48,
+      starting_longTermLoad_override: 42,
+      starting_recentLoad_override: 48,
       post_create_behavior: { autonomous_mutation_enabled: false },
     });
   });

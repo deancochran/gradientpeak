@@ -1,214 +1,609 @@
 import { randomUUID } from "node:crypto";
 import {
+  type CanonicalActivityCategory,
+  SWIMMING_CSS_SOURCE_EFFORT_CALCULATION_VERSION,
+  SWIMMING_CSS_SOURCE_EFFORT_METHOD,
+  swimmingCssProtocolIdForActivity,
+} from "@repo/core";
+import {
+  type CompletedSegmentSummary,
+  completedSegmentSummarySchema,
+} from "@repo/core/activity-segments";
+import {
   classifyActivityEffortPlausibility,
   isSupportedActivityEffortCombination,
 } from "@repo/core/athlete-inputs";
 import {
-  calculateBestEfforts,
-  calculateDecouplingFromStreams,
+  type AerobicAnalysisInput,
+  type AerobicDecouplingResult,
+  type BestEffortDurationResult,
+  type BestEffortExtractionResult,
+  type BestEffortMetric,
+  type CyclingNormalizedPowerResult,
+  calculateAerobicDecoupling,
+  calculateCyclingNormalizedPower,
   calculateEfficiencyFactor,
-  calculateGradedSpeedStream,
-  calculateNGP,
-  calculateNormalizedPower,
+  calculateGradeAdjustedSpeedSeries,
   calculateNormalizedSpeed,
+  calculateRunningNormalizedGradedPace,
+  type EfficiencyFactorResult,
+  extractBestEfforts,
+  type RunningNormalizedGradedPaceResult,
+  type RunningNormalizedGradedPaceSample,
 } from "@repo/core/calculations";
 import type { activityEfforts } from "@repo/db";
-import type { ActivityFileStreamMetadata } from "./stream-metadata";
+import type { ActivityFileStreamMetadata, ActivityFileTimelineSample } from "./stream-metadata";
 
-type DerivedStreamMetadata = Pick<
-  ActivityFileStreamMetadata,
-  "powerStream" | "hrStream" | "timestamps" | "altitudeStream" | "speedStream"
-> &
-  Partial<
-    Pick<
-      ActivityFileStreamMetadata,
-      "powerTimestamps" | "hrTimestamps" | "altitudeTimestamps" | "speedTimestamps"
-    >
-  >;
+type NumericBestEffortResult = Extract<
+  BestEffortDurationResult,
+  { status: "available" | "partial" }
+>;
+
+const TIMESTAMP_COMPARISON_EPSILON_SECONDS = 0.000_001;
 
 export interface ActivityFileStreamDerivedMetricsInput {
-  activityCategory: string;
+  activityCategory: CanonicalActivityCategory;
   distance: number;
   duration: number;
-  avgHeartRate?: number | null;
-  streamMetadata: DerivedStreamMetadata;
+  activeDuration?: number | null;
+  movingDuration?: number | null;
+  includedTimeline?: readonly boolean[];
+  streamMetadata: ActivityFileStreamMetadata;
 }
 
 export interface ActivityFileStreamDerivedCalculationsInput
   extends ActivityFileStreamDerivedMetricsInput {
   activityId: string;
   profileId: string;
-  recordedAt: Date;
+  segmentId: string;
+  activityStartedAt: Date;
+  segmentStartOffsetSeconds: number;
+  segmentEndOffsetSeconds: number;
+  swimmingEvidenceContext?:
+    | {
+        environment: "pool";
+        timingBasis: "pool_length_timing";
+        poolLengthMeters: number;
+      }
+    | {
+        environment: "open_water";
+        timingBasis: "open_water_continuous_timing";
+        poolLengthMeters: null;
+      };
 }
 
 export interface ActivityFileStreamDerivedMetrics {
-  normalizedPower: number | undefined;
+  normalizedPowerResult: CyclingNormalizedPowerResult;
   normalizedSpeed: number;
-  normalizedGradedSpeed: number | null;
-  efficiencyFactor: number | null;
-  aerobicDecoupling: number | null;
+  normalizedSpeedDurationBasis: "moving" | "active" | "elapsed";
+  normalizedSpeedDurationSeconds: number;
+  normalizedGradedPaceResult: RunningNormalizedGradedPaceResult | null;
+  efficiencyFactorResult: EfficiencyFactorResult;
+  aerobicDecouplingResult: AerobicDecouplingResult;
+  bestEffortExtractions: BestEffortExtractionResult[];
 }
 
 export interface ActivityFileStreamDerivedCalculations extends ActivityFileStreamDerivedMetrics {
   effortsToInsert: Array<typeof activityEfforts.$inferInsert>;
 }
 
-function resolveMetricTimestamps(
-  stream: number[],
-  explicitTimestamps: number[] | undefined,
-  fallbackTimestamps: number[],
-): number[] {
-  if (explicitTimestamps !== undefined) {
-    return explicitTimestamps.length === stream.length ? explicitTimestamps : [];
-  }
-  return fallbackTimestamps;
+export function buildActivityFileDerivedSegmentSummary(input: {
+  summary: CompletedSegmentSummary;
+  metrics: ActivityFileStreamDerivedMetrics;
+}): CompletedSegmentSummary {
+  const {
+    normalizedPowerResult: _previousNormalizedPowerResult,
+    normalizedGradedPaceResult: _previousNormalizedGradedPaceResult,
+    efficiencyFactorResult: _previousEfficiencyFactorResult,
+    aerobicDecouplingResult: _previousAerobicDecouplingResult,
+    bestEffortExtractions: _previousBestEffortExtractions,
+    ...summary
+  } = input.summary;
+  return completedSegmentSummarySchema.parse({
+    ...summary,
+    normalizedPowerResult: input.metrics.normalizedPowerResult,
+    ...(input.metrics.normalizedSpeed
+      ? { normalizedSpeedMetersPerSecond: input.metrics.normalizedSpeed }
+      : {}),
+    ...(input.metrics.normalizedGradedPaceResult === null
+      ? {}
+      : {
+          normalizedGradedPaceResult: input.metrics.normalizedGradedPaceResult,
+        }),
+    efficiencyFactorResult: input.metrics.efficiencyFactorResult,
+    aerobicDecouplingResult: input.metrics.aerobicDecouplingResult,
+    bestEffortExtractions: input.metrics.bestEffortExtractions,
+  });
 }
 
-function alignStreams(
-  primaryValues: number[],
-  primaryTimestamps: number[],
-  secondaryValues: number[],
-  secondaryTimestamps: number[],
-): { primaryValues: number[]; secondaryValues: number[]; timestamps: number[] } {
+function assertIncludedTimeline(
+  samples: readonly ActivityFileTimelineSample[],
+  includedTimeline: readonly boolean[] | undefined,
+): void {
+  if (includedTimeline !== undefined && includedTimeline.length !== samples.length) {
+    throw new Error("Activity-file inclusion flags must align with the canonical timeline");
+  }
+}
+
+function inclusionAt(
+  includedTimeline: readonly boolean[] | undefined,
+  index: number,
+): { included?: boolean } {
+  const included = includedTimeline?.[index];
+  return included === undefined ? {} : { included };
+}
+
+function buildRunningSamples(
+  metadata: ActivityFileStreamMetadata,
+  includedTimeline: readonly boolean[] | undefined,
+): RunningNormalizedGradedPaceSample[] {
+  assertIncludedTimeline(metadata.samples, includedTimeline);
+  return metadata.samples.map((sample, index) => ({
+    timestampSeconds: sample.timestampSeconds,
+    speedMetersPerSecond: sample.speedMetersPerSecond,
+    elevationMeters: sample.elevationMeters,
+    ...inclusionAt(includedTimeline, index),
+  }));
+}
+
+function extractMetricBestEfforts(input: {
+  metric: BestEffortMetric;
+  samples: readonly ActivityFileTimelineSample[];
+  includedTimeline: readonly boolean[] | undefined;
+  valueFor: (sample: ActivityFileTimelineSample) => number | null;
+  unpositionedValueCount: number;
+}): BestEffortExtractionResult {
+  return extractBestEfforts({
+    metric: input.metric,
+    samples: input.samples.map((sample, index) => ({
+      timestampSeconds: sample.timestampSeconds,
+      value: input.valueFor(sample),
+      ...inclusionAt(input.includedTimeline, index),
+    })),
+    config: { unpositionedValueCount: input.unpositionedValueCount },
+  });
+}
+
+function calculateBestEffortExtractions(input: {
+  activityCategory: CanonicalActivityCategory;
+  metadata: ActivityFileStreamMetadata;
+  includedTimeline: readonly boolean[] | undefined;
+  gradeAdjustedSpeed: readonly { timestampSeconds: number; value: number | null }[];
+}): BestEffortExtractionResult[] {
+  const { activityCategory, metadata, includedTimeline } = input;
+  const extractions: BestEffortExtractionResult[] = [];
+  if (activityCategory === "bike") {
+    extractions.push(
+      extractMetricBestEfforts({
+        metric: "power",
+        samples: metadata.samples,
+        includedTimeline,
+        valueFor: (sample) => sample.powerWatts,
+        unpositionedValueCount: metadata.unpositionedValueCounts.power,
+      }),
+    );
+  }
+  if (activityCategory === "run" || activityCategory === "swim") {
+    extractions.push(
+      extractMetricBestEfforts({
+        metric: "speed",
+        samples: metadata.samples,
+        includedTimeline,
+        valueFor: (sample) => sample.speedMetersPerSecond,
+        unpositionedValueCount: metadata.unpositionedValueCounts.speed,
+      }),
+    );
+  }
+  if (activityCategory === "run") {
+    if (input.gradeAdjustedSpeed.length !== metadata.samples.length) {
+      throw new Error("Grade-adjusted speed must align with the canonical activity-file timeline");
+    }
+    extractions.push(
+      extractBestEfforts({
+        metric: "grade_adjusted_speed",
+        samples: input.gradeAdjustedSpeed.map((sample, index) => ({
+          timestampSeconds: sample.timestampSeconds,
+          value: sample.value,
+          ...inclusionAt(includedTimeline, index),
+        })),
+        config: {
+          unpositionedValueCount:
+            metadata.unpositionedValueCounts.speed + metadata.unpositionedValueCounts.elevation,
+        },
+      }),
+    );
+  }
   if (
-    primaryValues.length !== primaryTimestamps.length ||
-    secondaryValues.length !== secondaryTimestamps.length
+    isSupportedActivityEffortCombination({
+      activityCategory,
+      effortType: "heart_rate",
+    })
   ) {
-    return { primaryValues: [], secondaryValues: [], timestamps: [] };
+    extractions.push(
+      extractMetricBestEfforts({
+        metric: "heart_rate",
+        samples: metadata.samples,
+        includedTimeline,
+        valueFor: (sample) => sample.heartRateBpm,
+        unpositionedValueCount: metadata.unpositionedValueCounts.heartRate,
+      }),
+    );
   }
-
-  const secondaryByTimestamp = new Map<number, number>();
-  for (let index = 0; index < secondaryTimestamps.length; index++) {
-    const timestamp = secondaryTimestamps[index];
-    const value = secondaryValues[index];
-    if (timestamp !== undefined && value !== undefined) secondaryByTimestamp.set(timestamp, value);
-  }
-  const alignedPrimary: number[] = [];
-  const alignedSecondary: number[] = [];
-  const timestamps: number[] = [];
-
-  for (let index = 0; index < primaryValues.length; index++) {
-    const timestamp = primaryTimestamps[index];
-    const primaryValue = primaryValues[index];
-    if (timestamp === undefined || primaryValue === undefined) continue;
-    const secondaryValue = secondaryByTimestamp.get(timestamp);
-    if (secondaryValue === undefined) continue;
-    alignedPrimary.push(primaryValue);
-    alignedSecondary.push(secondaryValue);
-    timestamps.push(timestamp);
-  }
-
-  return { primaryValues: alignedPrimary, secondaryValues: alignedSecondary, timestamps };
+  return extractions;
 }
 
-function buildGradedSpeedStream(
-  streamMetadata: Pick<
-    DerivedStreamMetadata,
-    "timestamps" | "altitudeStream" | "speedStream" | "altitudeTimestamps" | "speedTimestamps"
-  >,
-): { values: number[]; timestamps: number[] } {
-  const speedTimestamps = resolveMetricTimestamps(
-    streamMetadata.speedStream,
-    streamMetadata.speedTimestamps,
-    streamMetadata.timestamps,
-  );
-  const altitudeTimestamps = resolveMetricTimestamps(
-    streamMetadata.altitudeStream,
-    streamMetadata.altitudeTimestamps,
-    streamMetadata.timestamps,
-  );
-  const aligned = alignStreams(
-    streamMetadata.speedStream,
-    speedTimestamps,
-    streamMetadata.altitudeStream,
-    altitudeTimestamps,
-  );
-
+function buildAerobicAnalysisInput(input: {
+  modality: "cycling" | "running";
+  outputUnit: "watts" | "meters_per_second";
+  metadata: ActivityFileStreamMetadata;
+  outputValues: readonly (number | null)[];
+  includedTimeline: readonly boolean[] | undefined;
+}): AerobicAnalysisInput {
+  if (input.outputValues.length !== input.metadata.samples.length) {
+    throw new Error("Aerobic output values must align with the canonical timeline");
+  }
+  assertIncludedTimeline(input.metadata.samples, input.includedTimeline);
   return {
-    values: calculateGradedSpeedStream(
-      aligned.primaryValues,
-      aligned.secondaryValues,
-      aligned.timestamps,
-    ),
-    timestamps: aligned.timestamps,
+    modality: input.modality,
+    outputUnit: input.outputUnit,
+    samples: input.metadata.samples.map((sample, index) => {
+      const output = input.outputValues[index];
+      if (output === undefined) {
+        throw new Error("Aerobic output timeline must not contain sparse entries");
+      }
+      return {
+        timestampSeconds: sample.timestampSeconds,
+        output,
+        heartRateBpm: sample.heartRateBpm,
+        ...inclusionAt(input.includedTimeline, index),
+      };
+    }),
+  };
+}
+
+function resolveNormalizedSpeedDuration(input: ActivityFileStreamDerivedMetricsInput): {
+  basis: "moving" | "active" | "elapsed";
+  seconds: number;
+} {
+  if (
+    input.movingDuration !== undefined &&
+    input.movingDuration !== null &&
+    Number.isFinite(input.movingDuration) &&
+    input.movingDuration >= 0
+  ) {
+    return { basis: "moving", seconds: input.movingDuration };
+  }
+  if (
+    input.activeDuration !== undefined &&
+    input.activeDuration !== null &&
+    Number.isFinite(input.activeDuration) &&
+    input.activeDuration >= 0
+  ) {
+    return { basis: "active", seconds: input.activeDuration };
+  }
+  return {
+    basis: "elapsed",
+    seconds: Number.isFinite(input.duration) && input.duration >= 0 ? input.duration : 0,
   };
 }
 
 export function calculateActivityFileStreamDerivedMetrics(
   input: ActivityFileStreamDerivedMetricsInput,
 ): ActivityFileStreamDerivedMetrics {
-  const { powerStream, hrStream, timestamps, altitudeStream, speedStream } = input.streamMetadata;
-  const powerTimestamps = resolveMetricTimestamps(
-    powerStream,
-    input.streamMetadata.powerTimestamps,
-    timestamps,
-  );
-  const hrTimestamps = resolveMetricTimestamps(
-    hrStream,
-    input.streamMetadata.hrTimestamps,
-    timestamps,
-  );
-  const speedTimestamps = resolveMetricTimestamps(
-    speedStream,
-    input.streamMetadata.speedTimestamps,
-    timestamps,
-  );
-  const normalizedPower =
-    powerStream.length > 0 ? calculateNormalizedPower(powerStream) : undefined;
-  const normalizedSpeed = calculateNormalizedSpeed(input.distance, input.duration);
+  const { samples } = input.streamMetadata;
+  assertIncludedTimeline(samples, input.includedTimeline);
+  const normalizedPowerResult = calculateCyclingNormalizedPower({
+    samples: samples.map((sample, index) => ({
+      timestampSeconds: sample.timestampSeconds,
+      powerWatts: sample.powerWatts,
+      ...inclusionAt(input.includedTimeline, index),
+    })),
+  });
+  const normalizedSpeedDuration = resolveNormalizedSpeedDuration(input);
+  const normalizedSpeed = calculateNormalizedSpeed(input.distance, normalizedSpeedDuration.seconds);
 
-  let normalizedGradedSpeed: number | null = null;
-  let gradedSpeedStream: { values: number[]; timestamps: number[] } | null = null;
-  if (input.activityCategory === "run" && speedStream.length > 0 && altitudeStream.length > 0) {
-    gradedSpeedStream = buildGradedSpeedStream(input.streamMetadata);
-    if (gradedSpeedStream.values.length > 0) {
-      normalizedGradedSpeed = calculateNGP(gradedSpeedStream.values);
-    }
+  let normalizedGradedPaceResult: RunningNormalizedGradedPaceResult | null = null;
+  let gradeAdjustedSpeed: Array<{ timestampSeconds: number; value: number | null }> = [];
+  if (input.activityCategory === "run") {
+    const runningSamples = buildRunningSamples(input.streamMetadata, input.includedTimeline);
+    normalizedGradedPaceResult = calculateRunningNormalizedGradedPace({
+      samples: runningSamples,
+    });
+    gradeAdjustedSpeed = calculateGradeAdjustedSpeedSeries({
+      timestampsSeconds: runningSamples.map((sample) => sample.timestampSeconds),
+      speedMetersPerSecond: runningSamples.map((sample) => sample.speedMetersPerSecond),
+      elevationMeters: runningSamples.map((sample) => sample.elevationMeters),
+      includedStream: runningSamples.map((sample) => sample.included !== false),
+    }).map((sample) => ({
+      timestampSeconds: sample.timestampSeconds,
+      value: sample.value,
+    }));
   }
 
-  let efficiencyFactor: number | null = null;
-  if (input.avgHeartRate && input.avgHeartRate > 0) {
-    if (input.activityCategory === "bike" && normalizedPower) {
-      efficiencyFactor = calculateEfficiencyFactor(normalizedPower, input.avgHeartRate);
-    } else if (input.activityCategory === "run" && normalizedGradedSpeed) {
-      efficiencyFactor = calculateEfficiencyFactor(normalizedGradedSpeed, input.avgHeartRate);
-    }
-  }
-
-  let aerobicDecoupling: number | null = null;
-  if (powerStream.length > 0 && hrStream.length > 0) {
-    const aligned = alignStreams(powerStream, powerTimestamps, hrStream, hrTimestamps);
-    aerobicDecoupling = calculateDecouplingFromStreams(
-      aligned.primaryValues,
-      aligned.secondaryValues,
-      aligned.timestamps,
-      calculateNormalizedPower,
-    );
-  } else if (input.activityCategory === "run" && speedStream.length > 0 && hrStream.length > 0) {
-    const runPowerStream = gradedSpeedStream ?? {
-      values: speedStream,
-      timestamps: speedTimestamps,
-    };
-    const aligned = alignStreams(
-      runPowerStream.values,
-      runPowerStream.timestamps,
-      hrStream,
-      hrTimestamps,
-    );
-    aerobicDecoupling = calculateDecouplingFromStreams(
-      aligned.primaryValues,
-      aligned.secondaryValues,
-      aligned.timestamps,
-      calculateNGP,
-    );
+  let aerobicAnalysisInput: AerobicAnalysisInput = {
+    modality: "unsupported",
+    outputUnit: "unsupported",
+    samples: [],
+  };
+  if (input.activityCategory === "bike") {
+    aerobicAnalysisInput = buildAerobicAnalysisInput({
+      modality: "cycling",
+      outputUnit: "watts",
+      metadata: input.streamMetadata,
+      outputValues: samples.map((sample) => sample.powerWatts),
+      includedTimeline: input.includedTimeline,
+    });
+  } else if (input.activityCategory === "run") {
+    aerobicAnalysisInput = buildAerobicAnalysisInput({
+      modality: "running",
+      outputUnit: "meters_per_second",
+      metadata: input.streamMetadata,
+      outputValues: gradeAdjustedSpeed.map((sample) => sample.value),
+      includedTimeline: input.includedTimeline,
+    });
   }
 
   return {
-    normalizedPower,
+    normalizedPowerResult,
     normalizedSpeed,
-    normalizedGradedSpeed,
-    efficiencyFactor,
-    aerobicDecoupling,
+    normalizedSpeedDurationBasis: normalizedSpeedDuration.basis,
+    normalizedSpeedDurationSeconds: normalizedSpeedDuration.seconds,
+    normalizedGradedPaceResult,
+    efficiencyFactorResult: calculateEfficiencyFactor(aerobicAnalysisInput),
+    aerobicDecouplingResult: calculateAerobicDecoupling(aerobicAnalysisInput),
+    bestEffortExtractions: calculateBestEffortExtractions({
+      activityCategory: input.activityCategory,
+      metadata: input.streamMetadata,
+      includedTimeline: input.includedTimeline,
+      gradeAdjustedSpeed,
+    }),
+  };
+}
+
+function extractionForMetric(
+  extractions: readonly BestEffortExtractionResult[],
+  metric: BestEffortMetric,
+): BestEffortExtractionResult | null {
+  return extractions.find((extraction) => extraction.metric === metric) ?? null;
+}
+
+function numericEffort(
+  extraction: BestEffortExtractionResult | null,
+  durationSeconds: number,
+): NumericBestEffortResult | null {
+  const result = extraction?.results.find(
+    (candidate) => candidate.durationSeconds === durationSeconds,
+  );
+  return result === undefined || result.status === "unavailable" ? null : result;
+}
+
+function selectedEffortEvidence(input: {
+  activityCategory: CanonicalActivityCategory;
+  extractions: readonly BestEffortExtractionResult[];
+}): Array<{ extraction: BestEffortExtractionResult; result: NumericBestEffortResult }> {
+  const selected: Array<{
+    extraction: BestEffortExtractionResult;
+    result: NumericBestEffortResult;
+  }> = [];
+  const addAllNumeric = (metric: BestEffortMetric): void => {
+    const extraction = extractionForMetric(input.extractions, metric);
+    if (extraction === null) return;
+    for (const result of extraction.results) {
+      if (result.status !== "unavailable") selected.push({ extraction, result });
+    }
+  };
+
+  if (input.activityCategory === "bike") addAllNumeric("power");
+  if (input.activityCategory === "swim") addAllNumeric("speed");
+  if (input.activityCategory === "run") {
+    const raw = extractionForMetric(input.extractions, "speed");
+    const graded = extractionForMetric(input.extractions, "grade_adjusted_speed");
+    if (raw !== null) {
+      for (const rawResult of raw.results) {
+        const gradedResult = numericEffort(graded, rawResult.durationSeconds);
+        if (graded !== null && gradedResult !== null) {
+          selected.push({ extraction: graded, result: gradedResult });
+        } else if (rawResult.status !== "unavailable") {
+          selected.push({ extraction: raw, result: rawResult });
+        }
+      }
+    }
+  }
+  addAllNumeric("heart_rate");
+  return selected;
+}
+
+function effortTypeForMetric(metric: BestEffortMetric): "power" | "speed" | "heart_rate" {
+  switch (metric) {
+    case "power":
+      return "power";
+    case "speed":
+    case "grade_adjusted_speed":
+      return "speed";
+    case "heart_rate":
+      return "heart_rate";
+  }
+}
+
+function buildActivityFileBestEffortRow(
+  input: ActivityFileStreamDerivedCalculationsInput,
+  extraction: BestEffortExtractionResult,
+  effort: NumericBestEffortResult,
+): typeof activityEfforts.$inferInsert {
+  const activityStartedAtSeconds = input.activityStartedAt.getTime() / 1_000;
+  if (!Number.isFinite(activityStartedAtSeconds)) {
+    throw new Error("Activity start must be a valid instant for best-effort provenance");
+  }
+  const activityStartOffsetSeconds = effort.startTimestampSeconds - activityStartedAtSeconds;
+  const activityEndOffsetSeconds = effort.endTimestampSeconds - activityStartedAtSeconds;
+  if (
+    activityStartOffsetSeconds + TIMESTAMP_COMPARISON_EPSILON_SECONDS <
+      input.segmentStartOffsetSeconds ||
+    activityEndOffsetSeconds > input.segmentEndOffsetSeconds + TIMESTAMP_COMPARISON_EPSILON_SECONDS
+  ) {
+    throw new Error("Best-effort window must remain within its owning activity segment");
+  }
+  const effortType = effortTypeForMetric(extraction.metric);
+  const id = randomUUID();
+  const sourceSeries =
+    extraction.metric === "speed"
+      ? input.activityCategory === "run"
+        ? "raw_speed"
+        : input.activityCategory === "swim"
+          ? "swim_speed"
+          : extraction.metric
+      : extraction.metric;
+  return {
+    id,
+    created_at: new Date(),
+    updated_at: new Date(),
+    activity_id: input.activityId,
+    segment_id: input.segmentId,
+    profile_id: input.profileId,
+    recorded_at: new Date(effort.endTimestampSeconds * 1_000),
+    activity_category: input.activityCategory,
+    effort_type: effortType,
+    duration_seconds: effort.durationSeconds,
+    start_offset: Math.floor(activityStartOffsetSeconds + TIMESTAMP_COMPARISON_EPSILON_SECONDS),
+    unit: extraction.unit,
+    value: effort.value,
+    source: "imported",
+    method: "activity_file_best_effort",
+    calculation_version: extraction.calculationVersion,
+    provenance: {
+      observation_id: id,
+      activity_id: input.activityId,
+      segment_id: input.segmentId,
+      derived_from: "activity_file_stream",
+      source_series: sourceSeries,
+      interval_convention: extraction.intervalConvention,
+      exact_window_start_timestamp_seconds: effort.startTimestampSeconds,
+      exact_window_end_timestamp_seconds: effort.endTimestampSeconds,
+      exact_window_start_offset_seconds: activityStartOffsetSeconds,
+      exact_window_end_offset_seconds: activityEndOffsetSeconds,
+      duration_seconds: effort.durationSeconds,
+      contributing_duration_seconds: effort.contributingDurationSeconds,
+      window_coverage: effort.windowCoverage,
+      source_time_coverage: extraction.diagnostics.sourceTimeCoverage,
+      extraction_status: effort.status,
+      extraction_reason: effort.status === "partial" ? effort.reason : null,
+      persisted_start_offset_quantization: "floor_seconds_v1",
+      calculation_version: extraction.calculationVersion,
+      ...(input.activityCategory === "swim" && input.swimmingEvidenceContext
+        ? {
+            swimming_environment: input.swimmingEvidenceContext.environment,
+            timing_basis: input.swimmingEvidenceContext.timingBasis,
+            pool_length_meters: input.swimmingEvidenceContext.poolLengthMeters,
+          }
+        : {}),
+    },
+  };
+}
+
+function buildActivityFileBestEffortRows(
+  input: ActivityFileStreamDerivedCalculationsInput,
+  extractions: readonly BestEffortExtractionResult[],
+): Array<typeof activityEfforts.$inferInsert> {
+  return selectedEffortEvidence({
+    activityCategory: input.activityCategory,
+    extractions,
+  })
+    .filter(({ extraction, result }) => {
+      const effortType = effortTypeForMetric(extraction.metric);
+      if (
+        input.activityCategory === "swim" &&
+        effortType === "speed" &&
+        input.swimmingEvidenceContext === undefined
+      ) {
+        // Retain the decoded stream/extraction in the segment summary, but do not
+        // promote speed into canonical performance evidence without an explicit
+        // pool-timing or open-water timing identity.
+        return false;
+      }
+      return (
+        isSupportedActivityEffortCombination({
+          activityCategory: input.activityCategory,
+          effortType,
+        }) &&
+        classifyActivityEffortPlausibility({
+          activityCategory: input.activityCategory,
+          effortType,
+          durationSeconds: result.durationSeconds,
+          value: result.value,
+        }).classification !== "hard-invalid"
+      );
+    })
+    .map(({ extraction, result }) => buildActivityFileBestEffortRow(input, extraction, result));
+}
+
+function buildActivityFileSwimDistanceEffortRow(
+  input: ActivityFileStreamDerivedCalculationsInput,
+): typeof activityEfforts.$inferInsert | null {
+  if (
+    input.activityCategory !== "swim" ||
+    (input.distance !== 400 && input.distance !== 200) ||
+    input.activeDuration === null ||
+    input.activeDuration === undefined ||
+    !Number.isInteger(input.activeDuration) ||
+    input.activeDuration <= 0 ||
+    input.activeDuration > 14_400
+  ) {
+    return null;
+  }
+  const speedMetersPerSecond = input.distance / input.activeDuration;
+  if (
+    classifyActivityEffortPlausibility({
+      activityCategory: "swim",
+      effortType: "speed",
+      durationSeconds: input.activeDuration,
+      value: speedMetersPerSecond,
+    }).classification === "hard-invalid"
+  ) {
+    return null;
+  }
+  const id = randomUUID();
+  const activityStartedAtSeconds = input.activityStartedAt.getTime() / 1_000;
+  if (!Number.isFinite(activityStartedAtSeconds)) {
+    throw new Error("Activity start must be a valid instant for swim-distance provenance");
+  }
+  const context = input.swimmingEvidenceContext;
+  return {
+    id,
+    created_at: new Date(),
+    updated_at: new Date(),
+    activity_id: input.activityId,
+    segment_id: input.segmentId,
+    profile_id: input.profileId,
+    recorded_at: new Date((activityStartedAtSeconds + input.segmentEndOffsetSeconds) * 1_000),
+    activity_category: "swim",
+    effort_type: "speed",
+    duration_seconds: input.activeDuration,
+    distance_meters: input.distance,
+    start_offset: Math.floor(
+      input.segmentStartOffsetSeconds + TIMESTAMP_COMPARISON_EPSILON_SECONDS,
+    ),
+    unit: "meters_per_second",
+    value: speedMetersPerSecond,
+    source: "imported",
+    method: SWIMMING_CSS_SOURCE_EFFORT_METHOD,
+    calculation_version: SWIMMING_CSS_SOURCE_EFFORT_CALCULATION_VERSION,
+    provenance: {
+      observation_id: id,
+      protocol_id: swimmingCssProtocolIdForActivity(input.activityId),
+      protocol: "css_400m_200m",
+      activity_id: input.activityId,
+      segment_id: input.segmentId,
+      derived_from: "activity_file_swim_segment",
+      source_series: "swim_distance",
+      distance_meters: input.distance,
+      active_duration_seconds: input.activeDuration,
+      segment_start_offset_ms: Math.round(input.segmentStartOffsetSeconds * 1_000),
+      segment_end_offset_ms: Math.round(input.segmentEndOffsetSeconds * 1_000),
+      environment: context?.environment ?? "unresolved",
+      timing_basis: context?.timingBasis ?? "unresolved",
+      pool_length_meters: context?.poolLengthMeters ?? null,
+      calculation_version: SWIMMING_CSS_SOURCE_EFFORT_CALCULATION_VERSION,
+    },
   };
 }
 
@@ -216,169 +611,12 @@ export function calculateActivityFileStreamDerivedCalculations(
   input: ActivityFileStreamDerivedCalculationsInput,
 ): ActivityFileStreamDerivedCalculations {
   const metrics = calculateActivityFileStreamDerivedMetrics(input);
-
+  const swimDistanceEffort = buildActivityFileSwimDistanceEffortRow(input);
   return {
     ...metrics,
-    effortsToInsert: buildActivityFileBestEffortRows({
-      activityId: input.activityId,
-      profileId: input.profileId,
-      activityCategory: input.activityCategory,
-      recordedAt: input.recordedAt,
-      normalizedGradedSpeed: metrics.normalizedGradedSpeed,
-      streamMetadata: input.streamMetadata,
-    }),
-  };
-}
-
-export function buildActivityFileBestEffortRows(input: {
-  activityId: string;
-  profileId: string;
-  activityCategory: string;
-  recordedAt: Date;
-  normalizedGradedSpeed: number | null;
-  streamMetadata: Pick<
-    DerivedStreamMetadata,
-    | "powerStream"
-    | "timestamps"
-    | "altitudeStream"
-    | "speedStream"
-    | "powerTimestamps"
-    | "altitudeTimestamps"
-    | "speedTimestamps"
-  > &
-    Partial<Pick<DerivedStreamMetadata, "hrStream" | "hrTimestamps">>;
-}): Array<typeof activityEfforts.$inferInsert> {
-  const { powerStream, timestamps, speedStream } = input.streamMetadata;
-  const powerTimestamps = resolveMetricTimestamps(
-    powerStream,
-    input.streamMetadata.powerTimestamps,
-    timestamps,
-  );
-  const speedTimestamps = resolveMetricTimestamps(
-    speedStream,
-    input.streamMetadata.speedTimestamps,
-    timestamps,
-  );
-  const heartRateStream = input.streamMetadata.hrStream ?? [];
-  const hrTimestamps = resolveMetricTimestamps(
-    heartRateStream,
-    input.streamMetadata.hrTimestamps,
-    timestamps,
-  );
-  const effortsToInsert: Array<typeof activityEfforts.$inferInsert> = [];
-
-  if (
-    powerStream.length > 0 &&
-    isSupportedActivityEffortCombination({
-      activityCategory: input.activityCategory,
-      effortType: "power",
-    })
-  ) {
-    for (const effort of calculateBestEfforts(powerStream, powerTimestamps)) {
-      effortsToInsert.push(buildActivityFileBestEffortRow(input, effort, "power", "watts"));
-    }
-  }
-
-  if (
-    speedStream.length > 0 &&
-    (input.activityCategory === "run" || input.activityCategory === "swim")
-  ) {
-    const streamToUse =
-      input.activityCategory === "run" && input.normalizedGradedSpeed
-        ? buildGradedSpeedStream(input.streamMetadata)
-        : { values: speedStream, timestamps: speedTimestamps };
-    for (const effort of calculateBestEfforts(streamToUse.values, streamToUse.timestamps)) {
-      effortsToInsert.push(
-        buildActivityFileBestEffortRow(input, effort, "speed", "meters_per_second"),
-      );
-    }
-  }
-
-  if (
-    heartRateStream.length > 0 &&
-    isSupportedActivityEffortCombination({
-      activityCategory: input.activityCategory,
-      effortType: "heart_rate",
-    })
-  ) {
-    for (const effort of calculateBestEfforts(heartRateStream, hrTimestamps).filter((candidate) =>
-      isBoundedHeartRateEffort(candidate, hrTimestamps),
-    )) {
-      effortsToInsert.push(buildActivityFileBestEffortRow(input, effort, "heart_rate", "bpm"));
-    }
-  }
-
-  return effortsToInsert.filter(
-    (effort) =>
-      classifyActivityEffortPlausibility({
-        activityCategory: effort.activity_category,
-        effortType: effort.effort_type,
-        durationSeconds: effort.duration_seconds,
-        value: effort.value,
-      }).classification !== "hard-invalid",
-  );
-}
-
-function isBoundedHeartRateEffort(
-  effort: { duration: number; startIndex: number; endIndex: number },
-  timestamps: readonly number[],
-): boolean {
-  const windowTimestamps = timestamps.slice(effort.startIndex, effort.endIndex + 1);
-  const start = windowTimestamps[0];
-  const end = windowTimestamps.at(-1);
-  if (start === undefined || end === undefined || end - start > effort.duration + 1) return false;
-  if (windowTimestamps.length < Math.floor(effort.duration * 0.9)) return false;
-  return windowTimestamps.every((timestamp, index) => {
-    if (index === 0) return true;
-    const interval = timestamp - (windowTimestamps[index - 1] ?? timestamp);
-    return interval > 0 && interval <= 2;
-  });
-}
-
-function buildActivityFileBestEffortRow(
-  input: {
-    activityId: string;
-    profileId: string;
-    activityCategory: string;
-    recordedAt: Date;
-    streamMetadata: Pick<ActivityFileStreamMetadata, "timestamps">;
-  },
-  effort: ReturnType<typeof calculateBestEfforts>[number],
-  effortType: "power" | "speed" | "heart_rate",
-  unit: "watts" | "meters_per_second" | "bpm",
-): typeof activityEfforts.$inferInsert {
-  const { timestamps } = input.streamMetadata;
-  const streamStartedAt = timestamps[0];
-  const exactStartOffsetSeconds =
-    streamStartedAt === undefined ? null : effort.startTimeSeconds - streamStartedAt;
-  const exactEndOffsetSeconds =
-    streamStartedAt === undefined ? null : effort.endTimeSeconds - streamStartedAt;
-
-  return {
-    id: randomUUID(),
-    created_at: new Date(),
-    updated_at: new Date(),
-    activity_id: input.activityId,
-    profile_id: input.profileId,
-    recorded_at: input.recordedAt,
-    activity_category:
-      input.activityCategory as typeof activityEfforts.$inferInsert.activity_category,
-    effort_type: effortType,
-    duration_seconds: effort.duration,
-    // The persistence column is whole seconds. Floor avoids claiming the window starts after its
-    // exact boundary; provenance retains the calculation-grade fractional boundaries.
-    start_offset: exactStartOffsetSeconds === null ? null : Math.floor(exactStartOffsetSeconds),
-    unit,
-    value: effort.value,
-    source: "imported",
-    method: "activity_file_best_effort",
-    calculation_version: "activity-file-best-effort-v1",
-    provenance: {
-      activity_id: input.activityId,
-      derived_from: "activity_file_stream",
-      exact_window_start_seconds: exactStartOffsetSeconds,
-      exact_window_end_seconds: exactEndOffsetSeconds,
-      persisted_start_offset_quantization: "floor_seconds_v1",
-    },
+    effortsToInsert: [
+      ...buildActivityFileBestEffortRows(input, metrics.bestEffortExtractions),
+      ...(swimDistanceEffort === null ? [] : [swimDistanceEffort]),
+    ],
   };
 }

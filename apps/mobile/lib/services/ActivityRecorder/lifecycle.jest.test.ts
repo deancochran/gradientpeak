@@ -123,10 +123,13 @@ jest.mock("./trainerControl", () => ({
   inferTrainerMachineType: jest.fn(),
 }));
 
+import { createUnavailableAthletePerformanceTargetFacts } from "@repo/core";
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { rebaseRetainedFitRecordDistances } from "./fitRecordWriter";
 import { ActivityRecorderService } from "./index";
 import { compileRecordingPlan, createFreeRecordingExecutionPlan } from "./plan";
 import { PlanExecution } from "./planExecution";
+import type { RecordingSessionArtifact } from "./types";
 
 const mockFitFiles = new Map<string, Uint8Array>();
 jest.mock("expo-file-system", () => ({
@@ -186,6 +189,18 @@ const streamBufferMocks = jest.requireMock("./StreamBuffer") as {
   StreamBuffer: { deleteDurableDirectories: jest.Mock };
 };
 
+function createPerformanceTargets(
+  values = { power: 250, bikeLthr: 160, runLthr: 170, runPace: 300 },
+) {
+  const asOf = "2026-07-31T00:00:00.000Z";
+  return buildPerformanceTargetFactsFixture({
+    asOf,
+    planningThresholdPowerWatts: values.power,
+    planningThresholdPaceSecondsPerKm: values.runPace,
+    lthrBpm: { bike: values.bikeLthr, run: values.runLthr },
+  });
+}
+
 function createService() {
   const service = Object.create(ActivityRecorderService.prototype) as ActivityRecorderService;
   // biome-ignore lint/suspicious/noExplicitAny: lifecycle tests need controlled access to private service state.
@@ -193,6 +208,9 @@ function createService() {
   const snapshot = {
     identity: { sessionId: "session-1", startedAt: new Date(1_000).toISOString() },
     activity: { activity_category: "run", gpsMode: "off", eventId: null },
+    performanceTargets: createUnavailableAthletePerformanceTargetFacts(
+      new Date(1_000).toISOString(),
+    ),
   };
 
   Object.assign(mutable, {
@@ -223,10 +241,12 @@ function createService() {
       setLifecycle: jest.fn(),
       updateOverrideState: jest.fn(),
       setRuntimeSourceState: jest.fn(),
+      hasLockedSnapshot: jest.fn(() => false),
     },
     liveMetricsManager: {
       setGpsRecordingEnabled: jest.fn(),
       setActivityCategory: jest.fn(),
+      updatePerformanceTargets: jest.fn(),
       bindEvidenceSession: jest.fn(),
       startRecording: jest.fn(async () => undefined),
       finishRecording: jest.fn(async () => undefined),
@@ -452,6 +472,72 @@ describe("ActivityRecorderService lifecycle", () => {
     jest.restoreAllMocks();
   });
 
+  it("uses matching canonical targets without mutating an active session snapshot", () => {
+    const { service, mutable } = createService();
+    const performanceTargets = createPerformanceTargets();
+    mutable.getSessionSnapshot.mockReturnValue(null);
+
+    mutable.selectedActivityCategory = "run";
+    service.updatePerformanceTargets(performanceTargets);
+    expect(mutable.liveMetricsManager.updatePerformanceTargets).toHaveBeenLastCalledWith(
+      performanceTargets,
+    );
+
+    mutable.syncGpsTrackingForCurrentState = jest.fn(async () => undefined);
+    service.updateActivityConfiguration("bike", false);
+    expect(mutable.liveMetricsManager.setActivityCategory).toHaveBeenLastCalledWith("bike");
+    expect(mutable.liveMetricsManager.updatePerformanceTargets).toHaveBeenLastCalledWith(
+      performanceTargets,
+    );
+
+    mutable.getSessionSnapshot.mockReturnValue({ performanceTargets });
+    service.updatePerformanceTargets(
+      createPerformanceTargets({ power: 300, bikeLthr: 180, runLthr: 190, runPace: 280 }),
+    );
+    expect(mutable.liveMetricsManager.updatePerformanceTargets).toHaveBeenLastCalledWith(
+      performanceTargets,
+    );
+    expect(mutable.performanceTargets.cycling.planningThresholdPower.value).toBe(300);
+  });
+
+  it("atomically captures start-supplied targets despite concurrent preview hydration", async () => {
+    const { service, mutable } = createService();
+    const startPerformanceTargets = createPerformanceTargets();
+    const delayedPreview = createPerformanceTargets({
+      power: 300,
+      bikeLthr: 180,
+      runLthr: 190,
+      runPace: 280,
+    });
+    let resolvePermission: ((granted: boolean) => void) | undefined;
+    mockPermissionCheck.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolvePermission = resolve;
+        }),
+    );
+    mutable.getSessionSnapshot.mockReturnValue(null);
+    mutable.buildSessionSnapshot = jest.fn((startedAt: string, performanceTargets: unknown) => ({
+      identity: { sessionId: "atomic-session", startedAt },
+      activity: { activity_category: "run", gpsMode: "off", eventId: null },
+      performanceTargets,
+    }));
+
+    const startPromise = service.startRecording(startPerformanceTargets);
+    await Promise.resolve();
+    service.updatePerformanceTargets(delayedPreview);
+    if (!resolvePermission) throw new Error("Recording permission check did not start");
+    resolvePermission(true);
+    await startPromise;
+
+    expect(mutable.sessionController.resetForNewSession).toHaveBeenCalledWith(
+      expect.objectContaining({ performanceTargets: startPerformanceTargets }),
+    );
+    expect(mutable.liveMetricsManager.updatePerformanceTargets).toHaveBeenLastCalledWith(
+      startPerformanceTargets,
+    );
+  });
+
   it("rejects direct mixed-activity_category plan selection before mutating setup state", () => {
     const { service, mutable } = createService();
     mutable.hasConfiguredSetup = false;
@@ -497,10 +583,15 @@ describe("ActivityRecorderService lifecycle", () => {
     const loaded = await checkpointStorageMocks.loadAndClaimRecordingCheckpoint("profile-1");
     expect(loaded.status).toBe("recovered");
     if (loaded.status !== "recovered") throw new Error("expected persisted recovery");
+    expect(loaded.checkpoint.performanceTargets).toMatchObject({
+      asOf: new Date(1_000).toISOString(),
+      cycling: { planningThresholdPower: { status: "unavailable", value: null } },
+    });
 
     const recovered = createService();
     recovered.mutable.planExecution = new PlanExecution();
     await recovered.service.stageRecoveredCheckpoint(loaded.checkpoint);
+    expect(recovered.mutable.performanceTargets).toEqual(loaded.checkpoint.performanceTargets);
     const recoveredPlan = recovered.mutable._plan;
     const recoveredCategory = recovered.mutable.selectedActivityCategory;
     recovered.mutable.planExecution.loadPlan = jest.fn();
@@ -1352,7 +1443,9 @@ describe("ActivityRecorderService lifecycle", () => {
     jest.useRealTimers();
 
     const artifact = (
-      mockCommitFinalizedArtifactAndHandoff.mock.calls.at(-1)?.[0] as { artifact: any }
+      mockCommitFinalizedArtifactAndHandoff.mock.calls.at(-1)?.[0] as {
+        artifact: RecordingSessionArtifact;
+      }
     ).artifact;
     expect(artifact.executionManifest).toMatchObject({
       compilerVersion: compiled.compilerVersion,
@@ -1383,6 +1476,16 @@ describe("ActivityRecorderService lifecycle", () => {
     });
     expect(mutable._plan).toBeUndefined();
     expect(artifact.snapshot.activity.activityPlanId).toBeUndefined();
+    expect(artifact.snapshot.performanceTargets).toEqual(
+      mutable.getSessionSnapshot().performanceTargets,
+    );
+    expect(artifact.finalStats).toEqual({
+      durationSeconds: 180,
+      movingSeconds: 150,
+      distanceMeters: 725.5,
+      calories: 5,
+    });
+    expect(artifact).not.toHaveProperty("provisionalMetrics");
   });
 
   it("routes only activity occurrence records to the encoder around internal and trailing rest", async () => {
@@ -1753,7 +1856,10 @@ describe("ActivityRecorderService lifecycle", () => {
       100,
     );
     expect(mutable.liveMetricsManager.stageRecoveredRecording).toHaveBeenCalledWith(
-      expect.objectContaining({ replay: streamBufferMocks.__replay }),
+      expect.objectContaining({
+        sessionId: checkpoint.sessionId,
+        replay: streamBufferMocks.__replay,
+      }),
     );
 
     await service.resumeRecoveredRecording();
@@ -1795,6 +1901,9 @@ describe("ActivityRecorderService lifecycle", () => {
       draft: { activity_category: "run" as const, gpsMode: "off" as const },
       summary: { elapsedSeconds: 1, movingSeconds: 1, distanceMeters: 0 },
       executionState: { timerEvents: [] },
+      performanceTargets: createUnavailableAthletePerformanceTargetFacts(
+        "2026-01-01T10:00:00.000Z",
+      ),
       streamArtifactPaths: ["/streams"],
     };
 

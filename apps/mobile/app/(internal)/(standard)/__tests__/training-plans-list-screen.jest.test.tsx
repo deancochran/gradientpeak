@@ -14,8 +14,8 @@ const plansState = [
     sessions_per_week_target: 5,
     durationWeeks: { recommended: 16 },
     structure: {
-      target_weekly_tss_min: 420,
-      target_weekly_tss_max: 520,
+      target_weekly_load_min: 420,
+      target_weekly_load_max: 520,
       min_rest_days_per_week: 2,
       periodization_template: {
         target_date: "2026-09-21",

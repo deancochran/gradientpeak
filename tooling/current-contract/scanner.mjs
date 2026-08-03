@@ -955,6 +955,64 @@ const deletedFiles = [
 
 const pathScopedRetiredSymbolChecks = [
   {
+    paths: ["packages/core/activity-segments/completed-segment-schema.ts"],
+    patterns: [
+      [/\b(?:segmentSummarySchema|SegmentSummary)\b/, "removed segment summary compatibility name"],
+      [
+        /\b(?:normalizedPowerWatts|normalizedGradedSpeedMetersPerSecond|efficiencyFactor|aerobicDecoupling)\s*(?:\?|:)/,
+        "removed completed-segment scalar compatibility field",
+      ],
+    ],
+  },
+  {
+    paths: ["packages/core/recording-metrics/contracts.ts"],
+    patterns: [
+      [
+        /\b(?:normalizedPowerWatts|normalizedGradedSpeedMetersPerSecond|efficiencyFactor|aerobicDecoupling)\s*(?:\?|:)/,
+        "removed provisional-metrics scalar compatibility field",
+      ],
+    ],
+  },
+  {
+    paths: [
+      "packages/core/activity-analysis/stress.ts",
+      "packages/core/activity-analysis/observation-quantification.ts",
+    ],
+    patterns: [
+      [
+        /\b(?:normalized_power|normalized_graded_speed_mps|normalizedPowerWatts|normalizedGradedSpeedMetersPerSecond|efficiencyFactor|aerobicDecoupling)\s*(?:\?|:)/,
+        "removed activity-analysis scalar compatibility field",
+      ],
+    ],
+  },
+  {
+    paths: ["packages/core/athlete-intelligence/model-input-contracts.ts"],
+    patterns: [
+      [/\bnormalizedPowerWatts\s*(?:\?|:)/, "removed athlete-model Normalized Power scalar field"],
+    ],
+  },
+  {
+    paths: [
+      "packages/api/src/application/activity-file-ingestion/stream-derived-calculations.ts",
+      "packages/api/src/application/activity-file-ingestion/analyze-parsed-activity-file.ts",
+    ],
+    patterns: [
+      [
+        /\b(?:normalizedPower|normalizedGradedSpeed|efficiencyFactor|aerobicDecoupling|normalized_graded_speed_mps|efficiency_factor|aerobic_decoupling)\s*(?:\?|:)/,
+        "removed ingestion scalar compatibility field",
+      ],
+    ],
+  },
+  {
+    paths: ["packages/api/src/application/activities/submit-activity.ts"],
+    patterns: [
+      [
+        /\b(?:normalizedGradedSpeedMps|efficiencyFactor|aerobicDecoupling)\s*(?:\?|:)/,
+        "removed activity-submission scalar compatibility field",
+      ],
+    ],
+  },
+  {
     directory: "packages/core/calculations",
     patterns: [[/\bestimateWPrime\b/, "removed demographic W′ estimate API"]],
   },

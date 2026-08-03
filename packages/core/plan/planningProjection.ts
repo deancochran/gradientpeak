@@ -1,3 +1,8 @@
+import {
+  type AthleteCapabilityPlanningProjectionInput,
+  projectAthleteCapabilitiesForPlanning,
+} from "../athlete-capabilities/planning";
+import { numericPlannedCommonLoad } from "../load";
 import type { PlanningContext } from "./planningContext";
 import {
   mapPlanningPreferencesToCreationConstraints,
@@ -16,12 +21,14 @@ import { deriveTrainingPlanSchedulingPreview } from "./trainingPlanSchedulingPre
 export type PlanningProjectionInput = {
   context: PlanningContext;
   activityPlansById?: Record<string, EstimateablePlanningActivityPlan | undefined>;
+  capabilityPlanning?: AthleteCapabilityPlanningProjectionInput;
 };
 
 export type PlanningProjection = ReturnType<typeof derivePlanningProjection>;
 
 export function derivePlanningProjection({
   activityPlansById = {},
+  capabilityPlanning,
   context,
 }: PlanningProjectionInput) {
   const estimatedSessions = deriveEstimatedPlannedTrainingSessions({
@@ -42,11 +49,11 @@ export function derivePlanningProjection({
         ? {
             type: session.intent.type,
             targetDurationSeconds: session.intent.targetDurationSeconds,
-            targetTss: session.intent.targetTss,
+            targetLoad: session.intent.targetLoad,
           }
         : undefined,
-      estimatedTss: session.activityPlan?.estimatedTss ?? null,
-      estimatedDurationSeconds: session.activityPlan?.estimatedDurationSeconds ?? null,
+      estimatedCommonLoad: plannedCommonLoad(session),
+      estimatedDurationSeconds: plannedDurationSeconds(session),
     })),
   });
   const schedulingPreview = deriveTrainingPlanSchedulingPreview({
@@ -57,7 +64,7 @@ export function derivePlanningProjection({
       id: session.localId,
       label: formatPlanningSessionLabel(session),
       offsetDays: session.offsetDays,
-      estimatedTss: session.activityPlan?.estimatedTss ?? null,
+      estimatedCommonLoad: plannedCommonLoad(session),
       intentType: session.intent?.type,
     })),
   });
@@ -74,7 +81,22 @@ export function derivePlanningProjection({
     creationPreview,
     schedulingPreview,
     creationConstraints,
+    ...(capabilityPlanning === undefined
+      ? {}
+      : {
+          capabilityProjection: projectAthleteCapabilitiesForPlanning(capabilityPlanning),
+        }),
   };
+}
+
+function plannedCommonLoad(session: PlannedTrainingSession): number | null {
+  const commonLoad = session.activityPlan?.prescriptionQuantification?.summary.commonLoad;
+  return commonLoad === undefined ? null : (numericPlannedCommonLoad(commonLoad)?.load ?? null);
+}
+
+function plannedDurationSeconds(session: PlannedTrainingSession): number | null {
+  const elapsed = session.activityPlan?.prescriptionQuantification?.summary.duration.elapsed;
+  return !elapsed || elapsed.status === "unavailable" ? null : elapsed.value;
 }
 
 function toPlannedSessionWithEstimatedFacts(

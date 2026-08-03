@@ -6,7 +6,6 @@ import { CartesianChart, StackedBar } from "victory-native";
 
 export interface ZoneDistributionWeekData {
   weekStart: string;
-  totalTSS: number;
   zones: {
     recovery: number; // percentage
     endurance: number;

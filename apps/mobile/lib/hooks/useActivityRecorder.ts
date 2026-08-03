@@ -5,7 +5,12 @@
  *
  */
 
-import type { ActivityPayload, MetricFamily, RecordingActivityCategory } from "@repo/core";
+import type {
+  ActivityPayload,
+  AthletePerformanceTargetFacts,
+  MetricFamily,
+  RecordingActivityCategory,
+} from "@repo/core";
 import { useCallback, useEffect, useState } from "react";
 import type { Device } from "react-native-ble-plx";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
@@ -18,7 +23,7 @@ import type { RecordingSessionView } from "@/lib/services/ActivityRecorder/types
 
 export interface RecordingCommands {
   // Recording controls
-  start: () => Promise<void>;
+  start: (performanceTargets?: AthletePerformanceTargetFacts) => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
   finish: () => Promise<void>;
@@ -68,10 +73,13 @@ export function useKnownSensors(service: ActivityRecorderService | null): Persis
 
 export function useRecordingCommands(service: ActivityRecorderService | null): RecordingCommands {
   // Recording controls
-  const start = useCallback(async () => {
-    if (!service) return;
-    await service.startRecording();
-  }, [service]);
+  const start = useCallback(
+    async (performanceTargets?: AthletePerformanceTargetFacts) => {
+      if (!service) return;
+      await service.startRecording(performanceTargets);
+    },
+    [service],
+  );
 
   const pause = useCallback(async () => {
     if (!service) return;

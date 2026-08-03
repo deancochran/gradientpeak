@@ -194,7 +194,7 @@ describe("activity effort plausibility policy", () => {
     });
   });
 
-  it("uses one provenance policy for manual, modeled, and imported observations", () => {
+  it("uses one provenance policy for manual, derived, and imported observations", () => {
     const base = {
       activityCategory: "bike" as const,
       effortType: "power" as const,
@@ -213,16 +213,8 @@ describe("activity effort plausibility policy", () => {
       getActivityEffortObservationStatus({
         ...base,
         source: "derived",
-        method: "onboarding_modeled_curve",
-        provenance: { seed_source: "onboarding" },
-      }),
-    ).toBe("modeled");
-    expect(
-      getActivityEffortObservationStatus({
-        ...base,
-        source: null,
-        method: "onboarding_modeled_curve",
-        provenance: { observation_type: "modeled" },
+        method: "unsupported_derived_effort",
+        provenance: { observation_type: "derived" },
       }),
     ).toBe("review");
     expect(
@@ -230,7 +222,7 @@ describe("activity effort plausibility policy", () => {
         ...base,
         value: 0,
         source: null,
-        method: "onboarding_modeled_curve",
+        method: "unsupported_effort",
       }),
     ).toBe("invalid");
     expect(

@@ -49,11 +49,17 @@ export function mapPlanningContextToPreviewCreationConfigInput(
     creation_input: {
       user_values: Object.keys(constraints).length > 0 ? { constraints } : undefined,
     },
-    ...(context.athleteContext.physiology.currentFitnessCtl.value !== null
-      ? { starting_ctl_override: context.athleteContext.physiology.currentFitnessCtl.value }
+    ...(context.athleteContext.physiology.currentFitnessLongTermLoad.value !== null
+      ? {
+          starting_longTermLoad_override:
+            context.athleteContext.physiology.currentFitnessLongTermLoad.value,
+        }
       : {}),
-    ...(context.athleteContext.physiology.currentFatigueAtl.value !== null
-      ? { starting_atl_override: context.athleteContext.physiology.currentFatigueAtl.value }
+    ...(context.athleteContext.physiology.currentFatigueRecentLoad.value !== null
+      ? {
+          starting_recentLoad_override:
+            context.athleteContext.physiology.currentFatigueRecentLoad.value,
+        }
       : {}),
     post_create_behavior: { autonomous_mutation_enabled: false },
   });
@@ -244,10 +250,10 @@ export function createPlanningContextFingerprint(context: PlanningContext) {
         session.offsetDays,
         session.intent?.type ?? "none",
         session.intent?.targetDurationSeconds ?? "none",
-        session.intent?.targetTss ?? "none",
+        session.intent?.targetLoad ?? "none",
         session.activityPlan?.id ?? "unassigned",
-        session.activityPlan?.estimatedTss ?? "none",
-        session.activityPlan?.estimatedDurationSeconds ?? "none",
+        session.activityPlan?.prescriptionQuantification?.summary.calculationIdentity.fingerprint ??
+          "none",
       ].join(":"),
     )
     .join("|");
@@ -268,10 +274,10 @@ export function createPlanningContextFingerprint(context: PlanningContext) {
   return JSON.stringify({
     anchorDate: context.anchorDate,
     athlete: {
-      ctl: context.athleteContext.physiology.currentFitnessCtl.value,
-      atl: context.athleteContext.physiology.currentFatigueAtl.value,
-      tsb: context.athleteContext.physiology.currentFormTsb.value,
-      ftp: context.athleteContext.physiology.ftpWatts.value,
+      longTermLoad: context.athleteContext.physiology.currentFitnessLongTermLoad.value,
+      recentLoad: context.athleteContext.physiology.currentFatigueRecentLoad.value,
+      loadBalance: context.athleteContext.physiology.currentFormLoadBalance.value,
+      ftp: context.athleteContext.physiology.planningThresholdPowerWatts.value,
       thresholdHr: context.athleteContext.physiology.thresholdHeartRateBpm.value,
       weight: context.athleteContext.body.weightKg.value,
     },

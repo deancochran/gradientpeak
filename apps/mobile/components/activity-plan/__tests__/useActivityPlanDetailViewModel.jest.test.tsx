@@ -1,10 +1,5 @@
 import { renderHook } from "@testing-library/react-native";
-
-jest.mock("@repo/core", () => ({
-  __esModule: true,
-  ...jest.requireActual("@repo/core"),
-  estimateActivity: jest.fn(() => ({ duration: 3600, tss: 42.4, intensityFactor: 0.83 })),
-}));
+import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
 
 jest.mock("@/lib/utils/durationConversion", () => ({
   __esModule: true,
@@ -34,12 +29,10 @@ describe("useActivityPlanDetailViewModel", () => {
             id: "planned-plan",
             activity_category: "run",
             profile_id: "profile-1",
-            estimated_tss: 30,
-            authoritative_metrics: {
-              estimated_duration: 3600,
-              estimated_tss: 42,
-              intensity_factor: 0.83,
-            },
+            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+              durationSeconds: 3_600,
+              id: "planned-plan",
+            }),
             structure: {
               version: 3,
               segments: [
@@ -79,8 +72,6 @@ describe("useActivityPlanDetailViewModel", () => {
 
     expect(result.current.activityPlan.id).toBe("planned-plan");
     expect(result.current.durationLabel).toBe("60m");
-    expect(result.current.tss).toBe(42);
-    expect(result.current.intensityFactor).toBe(0.83);
     expect(result.current.steps).toHaveLength(2);
     expect(result.current.detailBadges).toEqual(["run", "Scheduled"]);
   });

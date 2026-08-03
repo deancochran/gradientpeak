@@ -1,3 +1,7 @@
+import {
+  createObservationQuantificationBundle,
+  quantifyCompletedActivityObservation,
+} from "@repo/core";
 import { type CommonLoadResult, commonLoadHistoryResultSchema } from "@repo/core/load";
 import { getTableName } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -26,6 +30,9 @@ import {
 
 const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 const CURRENT_DATE = "2026-07-21";
+const CALCULATED_AS_OF = "2026-07-21T12:00:00.000Z";
+const AS_OF = new Date(CALCULATED_AS_OF);
+const EVIDENCE_SCOPE_FINGERPRINT = "common-load-history-test-scope";
 const quality = {
   source: "manual",
   observed_at: "2026-01-01T00:00:00.000Z",
@@ -65,6 +72,7 @@ function availableLoad(
     load?: number;
     duration?: number;
     fingerprint?: string;
+    computedAsOf?: string;
   } = {},
 ): CommonLoadResult {
   const duration = input.duration ?? 3600;
@@ -99,7 +107,7 @@ function availableLoad(
       sourceFingerprint: "threshold-evidence",
     },
     evidenceFingerprint: input.fingerprint ?? `${activity_category}-activity-evidence`,
-    computedAsOf: "2026-07-20T12:00:00.000Z",
+    computedAsOf: input.computedAsOf ?? "2026-07-20T12:00:00.000Z",
     estimated: false,
   };
 }
@@ -138,17 +146,54 @@ function summary(
   segmentId: string,
   commonLoad: CommonLoadResult,
 ): SegmentDerivedSummary {
+  const quantification = quantifyCompletedActivityObservation({
+    activityCategory: commonLoad.activity_category,
+    source: {
+      activityId,
+      segmentId,
+      provider: null,
+      externalId: null,
+      artifactId: null,
+      capability: "unknown",
+      parserVersion: null,
+      decodedContractVersion: null,
+      materializerVersion: null,
+      segmentsRevision: null,
+      segmentRevision: null,
+      summaryVersion: 1,
+      sourceSessionIndex: null,
+      sourceMessageIndex: null,
+      rawType: null,
+      rawSport: null,
+      rawSubSport: null,
+    },
+    timing: {
+      coverage: "complete",
+      source: "unknown",
+      basis: "unknown",
+      startedAt: "2026-07-20T12:00:00.000Z",
+      finishedAt: "2026-07-20T13:00:00.000Z",
+      elapsedSeconds: 3600,
+      activeSeconds: 3600,
+      movingSeconds: 3600,
+    },
+    distance: { meters: null, source: "unknown", basis: "unknown" },
+    intensity: {
+      averageHeartRateBpm: null,
+      averagePowerWatts: null,
+      averageSpeedMetersPerSecond: null,
+      normalizedSpeedMetersPerSecond: null,
+    },
+    commonLoad,
+  });
   return {
     activity_id: activityId,
     segment_id: segmentId,
     activity_category: commonLoad.activity_category,
-    tss: null,
-    tss_identity: null,
-    intensity_factor: null,
-    method: null,
-    unavailable_reason: null,
-    calibration_quality: null,
     common_load: commonLoad,
+    observationQuantification: createObservationQuantificationBundle({
+      members: [quantification],
+    }),
     computed_as_of: "2026-07-20T12:00:00.000Z",
     dedupe_key: `segment-${segmentId}`,
     load_stream_key: null,
@@ -210,6 +255,7 @@ describe("common Load history", () => {
   it("does not treat the absence of a history source as known-zero evidence", async () => {
     const { db } = createDb([]);
     const result = await getCommonLoadHistory({
+      asOf: AS_OF,
       db: db as never,
       profileId: PROFILE_ID,
       currentPlanningDate: CURRENT_DATE,
@@ -230,6 +276,7 @@ describe("common Load history", () => {
       syncRows: [],
     });
     const result = await getCommonLoadHistory({
+      asOf: AS_OF,
       db: db as never,
       profileId: PROFILE_ID,
       currentPlanningDate: CURRENT_DATE,
@@ -246,17 +293,21 @@ describe("common Load history", () => {
 
   it("accepts an up-to-date successful historical provider sync as complete source coverage", async () => {
     const { db } = createDb([], undefined, completeSourceCoverage());
-    const result = await getCommonLoadHistory({
+    const request = {
+      asOf: AS_OF,
       db: db as never,
       profileId: PROFILE_ID,
       currentPlanningDate: CURRENT_DATE,
       planningTimezone: "UTC",
-    });
+    };
+    const result = await getCommonLoadHistory(request);
+    const repeated = await getCommonLoadHistory(request);
 
     expect(result.status).toBe("available");
     if (result.status !== "available") throw new Error("Expected available history");
     expect(result.maturity).toMatchObject({ status: "mature", replayedDays: 168 });
     expect(result.points).toHaveLength(84);
+    expect(repeated).toEqual(result);
   });
 
   it("abstains when stale coverage has a current high-watermark", async () => {
@@ -281,6 +332,7 @@ describe("common Load history", () => {
 
     await expect(
       getCommonLoadHistory({
+        asOf: AS_OF,
         db: db as never,
         profileId: PROFILE_ID,
         currentPlanningDate: CURRENT_DATE,
@@ -312,6 +364,7 @@ describe("common Load history", () => {
 
     await expect(
       getCommonLoadHistory({
+        asOf: AS_OF,
         db: db as never,
         profileId: PROFILE_ID,
         currentPlanningDate: CURRENT_DATE,
@@ -326,6 +379,7 @@ describe("common Load history", () => {
       syncRows: [],
     });
     const result = await getCommonLoadHistory({
+      asOf: AS_OF,
       db: db as never,
       profileId: PROFILE_ID,
       currentPlanningDate: CURRENT_DATE,
@@ -356,6 +410,7 @@ describe("common Load history", () => {
       ],
     });
     const result = await getCommonLoadHistory({
+      asOf: AS_OF,
       db: db as never,
       profileId: PROFILE_ID,
       currentPlanningDate: CURRENT_DATE,
@@ -386,6 +441,7 @@ describe("common Load history", () => {
       ],
     });
     const result = await getCommonLoadHistory({
+      asOf: AS_OF,
       db: db as never,
       profileId: PROFILE_ID,
       currentPlanningDate: CURRENT_DATE,
@@ -397,6 +453,8 @@ describe("common Load history", () => {
 
   it("aggregates cross-category activities on one observed day", () => {
     const observations = buildCommonLoadHistoryObservations({
+      calculatedAsOf: CALCULATED_AS_OF,
+      evidenceScopeFingerprint: EVIDENCE_SCOPE_FINGERPRINT,
       activities: [
         { id: "bike", started_at: new Date("2026-07-20T08:00:00.000Z") },
         { id: "run", started_at: new Date("2026-07-20T12:00:00.000Z") },
@@ -422,6 +480,8 @@ describe("common Load history", () => {
       { id: "private-activity-b", started_at: new Date("2026-07-20T12:00:00.000Z") },
     ];
     const observations = buildCommonLoadHistoryObservations({
+      calculatedAsOf: CALCULATED_AS_OF,
+      evidenceScopeFingerprint: EVIDENCE_SCOPE_FINGERPRINT,
       activities,
       segmentSummaries: [
         summary("private-activity-a", "private-segment-a", availableLoad()),
@@ -436,6 +496,8 @@ describe("common Load history", () => {
     expect(day.evidenceFingerprints.join(" ")).not.toMatch(/private-(activity|segment)/);
 
     const activityFingerprintChanged = buildCommonLoadHistoryObservations({
+      calculatedAsOf: CALCULATED_AS_OF,
+      evidenceScopeFingerprint: EVIDENCE_SCOPE_FINGERPRINT,
       activities,
       segmentSummaries: [
         summary(
@@ -457,6 +519,8 @@ describe("common Load history", () => {
       throw new Error("Threshold evidence expected");
     }
     const changedThreshold = buildCommonLoadHistoryObservations({
+      calculatedAsOf: CALCULATED_AS_OF,
+      evidenceScopeFingerprint: EVIDENCE_SCOPE_FINGERPRINT,
       activities,
       segmentSummaries: [
         summary("private-activity-a", "private-segment-a", {
@@ -476,6 +540,8 @@ describe("common Load history", () => {
 
   it("groups cross-category segments into one multisport activity before daily aggregation", () => {
     const observations = buildCommonLoadHistoryObservations({
+      calculatedAsOf: CALCULATED_AS_OF,
+      evidenceScopeFingerprint: EVIDENCE_SCOPE_FINGERPRINT,
       activities: [{ id: "multi", started_at: new Date("2026-07-20T08:00:00.000Z") }],
       segmentSummaries: [
         summary("multi", "one", availableLoad({ load: 32, duration: 1800, fingerprint: "one" })),
@@ -500,6 +566,48 @@ describe("common Load history", () => {
     });
   });
 
+  it("canonicalizes activity and segment ordering before daily aggregation", () => {
+    const activities = [
+      { id: "bike", started_at: new Date("2026-07-20T08:00:00.000Z") },
+      { id: "run", started_at: new Date("2026-07-20T12:00:00.000Z") },
+    ];
+    const summaries = [
+      summary("bike", "bike-1", availableLoad({ activity_category: "bike", load: 64 })),
+      summary("run", "run-1", availableLoad({ activity_category: "run", load: 36 })),
+    ];
+    const build = (activityInput: typeof activities, summaryInput: typeof summaries) =>
+      buildCommonLoadHistoryObservations({
+        activities: activityInput,
+        calculatedAsOf: CALCULATED_AS_OF,
+        currentPlanningDate: CURRENT_DATE,
+        evidenceScopeFingerprint: EVIDENCE_SCOPE_FINGERPRINT,
+        planningTimezone: "UTC",
+        segmentSummaries: summaryInput,
+      });
+
+    expect(build(activities, summaries)).toEqual(
+      build([...activities].reverse(), [...summaries].reverse()),
+    );
+  });
+
+  it("excludes a contribution calculated after the historical as-of instant", () => {
+    const observations = buildCommonLoadHistoryObservations({
+      activities: [{ id: "later", started_at: new Date("2026-07-20T08:00:00.000Z") }],
+      calculatedAsOf: CALCULATED_AS_OF,
+      currentPlanningDate: CURRENT_DATE,
+      evidenceScopeFingerprint: EVIDENCE_SCOPE_FINGERPRINT,
+      planningTimezone: "UTC",
+      segmentSummaries: [
+        summary("later", "later-1", availableLoad({ computedAsOf: "2026-07-21T12:00:00.001Z" })),
+      ],
+    });
+
+    expect(observations.at(-1)).toMatchObject({
+      state: "unavailable",
+      reason: "common_load_unavailable",
+    });
+  });
+
   it.each([
     ["partial", partialLoad()],
     ["unavailable", unavailableLoad()],
@@ -510,6 +618,7 @@ describe("common Load history", () => {
       summary("incomplete", "incomplete-1", load),
     ]);
     const result = await getCommonLoadHistory({
+      asOf: AS_OF,
       db: db as never,
       profileId: PROFILE_ID,
       currentPlanningDate: CURRENT_DATE,
@@ -519,23 +628,77 @@ describe("common Load history", () => {
     expect(result).toMatchObject({ status: "unavailable", reason: "incomplete_observation" });
   });
 
-  it("assigns dates in the requested planning timezone and excludes the current day", () => {
+  it("uses the athlete planning timezone at the UTC boundary and excludes the current day", () => {
+    const activities = [
+      { id: "previous", started_at: new Date("2026-07-20T00:30:00.000Z") },
+      { id: "current", started_at: new Date("2026-07-21T18:00:00.000Z") },
+    ];
+    const segmentSummaries = [
+      summary("previous", "previous-1", availableLoad()),
+      summary("current", "current-1", availableLoad()),
+    ];
     const observations = buildCommonLoadHistoryObservations({
-      activities: [
-        { id: "previous", started_at: new Date("2026-07-20T00:30:00.000Z") },
-        { id: "current", started_at: new Date("2026-07-21T18:00:00.000Z") },
-      ],
-      segmentSummaries: [
-        summary("previous", "previous-1", availableLoad()),
-        summary("current", "current-1", availableLoad()),
-      ],
+      calculatedAsOf: CALCULATED_AS_OF,
+      evidenceScopeFingerprint: EVIDENCE_SCOPE_FINGERPRINT,
+      activities,
+      segmentSummaries,
       currentPlanningDate: CURRENT_DATE,
       planningTimezone: "America/Los_Angeles",
+    });
+    const utc = buildCommonLoadHistoryObservations({
+      activities,
+      calculatedAsOf: CALCULATED_AS_OF,
+      currentPlanningDate: CURRENT_DATE,
+      evidenceScopeFingerprint: EVIDENCE_SCOPE_FINGERPRINT,
+      planningTimezone: "UTC",
+      segmentSummaries,
     });
 
     expect(observations.find((day) => day.date === "2026-07-19")?.state).toBe("observed");
     expect(observations.find((day) => day.date === "2026-07-20")?.state).toBe("known_zero");
+    expect(utc.find((day) => day.date === "2026-07-20")?.state).toBe("observed");
     expect(observations.some((day) => day.date === CURRENT_DATE)).toBe(false);
+  });
+
+  it.each([
+    {
+      label: "spring-forward gap",
+      currentPlanningDate: "2026-03-09",
+      calculatedAsOf: "2026-03-09T12:00:00.000Z",
+      instants: ["2026-03-08T09:30:00.000Z", "2026-03-08T10:30:00.000Z"],
+      expectedDate: "2026-03-08",
+    },
+    {
+      label: "fall-back repeated hour",
+      currentPlanningDate: "2026-11-02",
+      calculatedAsOf: "2026-11-02T12:00:00.000Z",
+      instants: ["2026-11-01T08:30:00.000Z", "2026-11-01T09:30:00.000Z"],
+      expectedDate: "2026-11-01",
+    },
+  ])("groups both sides of the $label into one profile-local day", (fixture) => {
+    const activities = fixture.instants.map((instant, index) => ({
+      id: `dst-${index}`,
+      started_at: new Date(instant),
+    }));
+    const observations = buildCommonLoadHistoryObservations({
+      activities,
+      calculatedAsOf: fixture.calculatedAsOf,
+      currentPlanningDate: fixture.currentPlanningDate,
+      evidenceScopeFingerprint: EVIDENCE_SCOPE_FINGERPRINT,
+      planningTimezone: "America/Los_Angeles",
+      segmentSummaries: activities.map((activity, index) =>
+        summary(
+          activity.id,
+          `dst-segment-${index}`,
+          availableLoad({ computedAsOf: fixture.calculatedAsOf }),
+        ),
+      ),
+    });
+
+    expect(observations.find((day) => day.date === fixture.expectedDate)).toMatchObject({
+      state: "observed",
+      aggregate: { status: "complete", load: 128, totalActivityCount: 2 },
+    });
   });
 
   it("returns unavailable on query failure or limit truncation", async () => {
@@ -547,6 +710,7 @@ describe("common Load history", () => {
       })),
     );
     const request = {
+      asOf: AS_OF,
       profileId: PROFILE_ID,
       currentPlanningDate: CURRENT_DATE,
       planningTimezone: "UTC",
@@ -564,6 +728,7 @@ describe("common Load history", () => {
   it("scopes the bounded read to the authenticated profile without exposing its ID", async () => {
     const { db, getWhereClause } = createDb([], undefined, completeSourceCoverage());
     const result = await getCommonLoadHistory({
+      asOf: AS_OF,
       db: db as never,
       profileId: PROFILE_ID,
       currentPlanningDate: CURRENT_DATE,

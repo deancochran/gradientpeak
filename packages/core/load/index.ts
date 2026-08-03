@@ -9,5 +9,4 @@ export * from "./planned-common-load";
 export * from "./progression";
 export * from "./ramp";
 export * from "./replay";
-export * from "./tss";
 export * from "./workload";

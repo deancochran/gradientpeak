@@ -1,32 +1,28 @@
 import { describe, expect, it } from "vitest";
 
+import { createUnavailableActivityPlanPlanningEstimate } from "./activity-plan-planning-estimate";
 import { summarizePlannedDay } from "./planned-day-summary";
 
 describe("summarizePlannedDay", () => {
-  it("preserves stable display composition and unknown estimates without inferring a combined activity", () => {
-    expect(
-      summarizePlannedDay([
-        {
-          activityCategory: "bike",
-          estimatedDurationSeconds: 3600,
-          estimatedTss: 80,
-        },
-        {
-          activityCategory: "run",
-          estimatedDurationSeconds: null,
-          estimatedTss: null,
-        },
-        {
-          activityCategory: "swim",
-          estimatedDurationSeconds: 1200,
-          estimatedTss: 20,
-        },
-      ]),
-    ).toEqual({
+  it("derives one canonical bundle while preserving unavailable totals", () => {
+    const prescriptionQuantification = (activityCategory: "bike" | "run" | "swim") =>
+      createUnavailableActivityPlanPlanningEstimate({
+        asOf: "2026-07-31T12:00:00.000Z",
+        activityCategory,
+        planId: `plan-${activityCategory}`,
+      }).prescriptionQuantification;
+    const result = summarizePlannedDay([
+      { prescriptionQuantification: prescriptionQuantification("bike") },
+      { prescriptionQuantification: prescriptionQuantification("run") },
+      { prescriptionQuantification: prescriptionQuantification("swim") },
+    ]);
+
+    expect(result).toMatchObject({
       eventCount: 3,
       activity_categories: ["bike", "run", "swim"],
       totalDurationSeconds: null,
-      totalTss: null,
+      totalLoad: null,
     });
+    expect(result.prescriptionQuantification.members).toHaveLength(3);
   });
 });

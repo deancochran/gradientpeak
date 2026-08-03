@@ -3,7 +3,7 @@ import { type CommonLoadResult, commonLoadResultSchema } from "@repo/core/load";
 type UnavailableCommonLoad = Extract<CommonLoadResult, { status: "unavailable" }>;
 
 export type CommonLoadDiagnosticContext = {
-  hasHeartRateSummary?: boolean | null;
+  hasHeartRateSummary?: boolean | null | undefined;
   segmentCommonLoads?: readonly unknown[] | undefined;
 };
 
@@ -19,8 +19,6 @@ function thresholdLabel(method: UnavailableCommonLoad["method"]): string {
       return "activity-category-specific LTHR";
     case "power_threshold":
       return "FTP";
-    case "critical_power_threshold":
-      return "Critical Power";
     case "run_pace_threshold":
       return "run threshold pace";
     case "swim_pace_threshold":
@@ -37,8 +35,6 @@ function thresholdAction(method: UnavailableCommonLoad["method"], stale: boolean
       return `${verb} a current activity-category-specific LTHR.`;
     case "power_threshold":
       return `${verb} a current FTP measurement.`;
-    case "critical_power_threshold":
-      return `${verb} a current Critical Power measurement.`;
     case "run_pace_threshold":
       return `${verb} a current run threshold pace.`;
     case "swim_pace_threshold":
@@ -73,6 +69,12 @@ export function getCommonLoadDiagnostic(
       return {
         summary: `${threshold} is stale for this activity.`,
         action: thresholdAction(result.method, true),
+        coveragePercent: null,
+      };
+    case "evidence_truncated":
+      return {
+        summary: `${threshold} evidence may be incomplete for this activity.`,
+        action: "Refresh performance calibration before calculating Load.",
         coveragePercent: null,
       };
     case "activity_data_missing":

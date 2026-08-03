@@ -1,10 +1,22 @@
+import {
+  activityObservationQuantificationSchema,
+  aggregateCommonLoad,
+  COMMON_RELATIVE_LOAD_MODEL,
+  COMMON_RELATIVE_LOAD_VERSION,
+  type CommonLoadResult,
+  calculateAvailableCommonLoad,
+  commonLoadResultSchema,
+  createActivityQuantificationCalculationIdentity,
+  createActivityQuantificationEvidenceIdentity,
+  createCompletedActivityQuantificationSubjectIdentity,
+  createObservationQuantificationBundle,
+} from "@repo/core";
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("node:crypto", () => ({
-  createHash: () => ({
-    update: () => ({ digest: () => "1".repeat(64) }),
-  }),
+vi.mock("node:crypto", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:crypto")>()),
   randomUUID: () => "33333333-3333-4333-8333-333333333333",
 }));
 
@@ -82,6 +94,7 @@ const ACTIVITY_ID_3 = "55555555-5555-4555-8555-555555555555";
 const EVENT_ID = "66666666-6666-4666-8666-666666666666";
 const PLAN_ID = "77777777-7777-4777-8777-777777777777";
 const SEGMENT_ID = "99999999-9999-4999-8999-999999999999";
+const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
 const ACCEPTED_ARTIFACT = {
   sha256: "a".repeat(64),
   byteSize: 123456,
@@ -111,6 +124,7 @@ function singleSegmentSet(activity_category: "run" | "bike" | "swim", elapsedMs 
             activeMs: elapsedMs,
             movingMs: elapsedMs - 100_000,
           },
+          normalizedPowerResult: unavailableNormalizedPowerResult,
         },
       },
     ],
@@ -181,20 +195,205 @@ function recordingCreateInput(profileId = OWNER_ID) {
     summary: { distanceMeters: 10000 },
   };
 }
-const RUN_TSS_IDENTITY = {
-  activity_category: "run",
-  method: "run_pace_threshold",
-  source: "activity_analysis",
-  version: "1",
-  calibration: { type: "threshold_speed_mps", value: 4.2 },
-} as const;
-const BIKE_TSS_IDENTITY = {
-  activity_category: "bike",
-  method: "power_threshold",
-  source: "activity_analysis",
-  version: "1",
-  calibration: { type: "ftp_watts", value: 250 },
-} as const;
+function availableCommonLoad(load: number, activityCategory: "run" | "bike" = "run") {
+  const contributingDurationSeconds = Math.max(3600, Math.ceil(load / 225) * 3600);
+  const intensity = Math.sqrt((load * 3600) / (100 * contributingDurationSeconds));
+  if (activityCategory === "bike") {
+    return calculateAvailableCommonLoad({
+      activity_category: "bike",
+      method: "power_threshold",
+      quality: {
+        source: "validated_test",
+        observed_at: "2026-01-01T00:00:00.000Z",
+        confidence: "high",
+        stale: false,
+        estimate: false,
+        calculation_version: "test-v1",
+        evidence_fingerprint: "bike-quality",
+      },
+      thresholdEvidence: {
+        type: "ftp_watts",
+        value: 250,
+        unit: "watts",
+        source: "validated_test",
+        observedAt: "2026-01-01T00:00:00.000Z",
+        validAt: "2026-01-01T00:00:00.000Z",
+        freshness: "current",
+        calculationVersion: "test-v1",
+        sourceFingerprint: "bike-threshold",
+      },
+      evidenceFingerprint: "bike-activity",
+      computedAsOf: "2026-01-10T09:00:00.000Z",
+      estimated: false,
+      contributingDurationSeconds,
+      intensity,
+    });
+  }
+
+  return calculateAvailableCommonLoad({
+    activity_category: "run",
+    method: "run_pace_threshold",
+    quality: {
+      source: "validated_test",
+      observed_at: "2026-01-01T00:00:00.000Z",
+      confidence: "high",
+      stale: false,
+      estimate: false,
+      calculation_version: "test-v1",
+      evidence_fingerprint: "run-quality",
+    },
+    thresholdEvidence: {
+      type: "threshold_speed_mps",
+      value: 4.2,
+      unit: "meters_per_second",
+      source: "validated_test",
+      observedAt: "2026-01-01T00:00:00.000Z",
+      validAt: "2026-01-01T00:00:00.000Z",
+      freshness: "current",
+      calculationVersion: "test-v1",
+      sourceFingerprint: "run-threshold",
+    },
+    evidenceFingerprint: "run-activity",
+    computedAsOf: "2026-01-10T09:00:00.000Z",
+    estimated: false,
+    contributingDurationSeconds,
+    intensity,
+  });
+}
+
+function unavailableCommonLoad(reason: "private_data" | "threshold_missing" = "private_data") {
+  return commonLoadResultSchema.parse({
+    status: "unavailable",
+    model: COMMON_RELATIVE_LOAD_MODEL,
+    version: COMMON_RELATIVE_LOAD_VERSION,
+    activity_category: "run",
+    method: null,
+    quality: null,
+    thresholdEvidence: null,
+    evidenceFingerprint: null,
+    computedAsOf: "2026-01-10T09:00:00.000Z",
+    contributingDurationSeconds: null,
+    reason,
+  });
+}
+
+function observationQuantification(
+  id: string,
+  commonLoad: CommonLoadResult,
+  distanceMeters = 100,
+  activeSeconds = commonLoad.contributingDurationSeconds ?? 3600,
+  movingSeconds = activeSeconds,
+) {
+  const segmentId = `${id}-segment`;
+  const subjectIdentity = createCompletedActivityQuantificationSubjectIdentity({ activityId: id });
+  return activityObservationQuantificationSchema.parse({
+    kind: "observation",
+    stage: "final",
+    subjectIdentity,
+    evidenceIdentity: createActivityQuantificationEvidenceIdentity({
+      evidenceType: "segment_facts",
+      sourceIds: [id, segmentId],
+      revisionFingerprint: `revision-${id}`,
+      details: { kind: "activities-router-test", id },
+    }),
+    calculationIdentity: createActivityQuantificationCalculationIdentity({
+      model: commonLoad.model,
+      version: commonLoad.version,
+      computedAt: commonLoad.computedAsOf,
+      calibrationEvidenceFingerprint: commonLoad.evidenceFingerprint,
+    }),
+    activity_category: commonLoad.activity_category,
+    duration: {
+      elapsed: {
+        status: "available",
+        evidenceRole: "measured",
+        value: activeSeconds,
+        unit: "seconds",
+      },
+      active: {
+        status: "available",
+        evidenceRole: "measured",
+        value: activeSeconds,
+        unit: "seconds",
+      },
+      moving: {
+        status: "available",
+        evidenceRole: "measured",
+        value: movingSeconds,
+        unit: "seconds",
+      },
+    },
+    distance: {
+      status: "available",
+      evidenceRole: "measured",
+      value: distanceMeters,
+      unit: "meters",
+    },
+    intensity: {
+      observed: {
+        status: "unavailable",
+        evidenceRole: "measured",
+        values: [],
+        reason: "not_observed",
+      },
+    },
+    completedProvenance: {
+      activityId: id,
+      segmentId,
+      source: "unknown",
+      artifactIdentity: null,
+      providerIdentity: null,
+      segmentRevision: null,
+      observedAt: commonLoad.computedAsOf,
+      computedAt: commonLoad.computedAsOf,
+      calculationVersion: "activities-router-test-v1",
+    },
+    commonLoad,
+  });
+}
+
+function parentDerivedSummary(
+  id: string,
+  commonLoad: CommonLoadResult,
+  computedAsOf = "2026-01-10T09:00:00.000Z",
+) {
+  const member = observationQuantification(`${id}-segment`, commonLoad);
+  const observationBundle = createObservationQuantificationBundle({ members: [member] });
+  return {
+    common_load: observationBundle.summary.commonLoad,
+    computed_as_of: computedAsOf,
+    observationQuantification: observationBundle,
+  };
+}
+
+function segmentDerivedSummary(input: {
+  activityId: string;
+  segmentId: string;
+  commonLoad: CommonLoadResult;
+  distanceMeters?: number;
+  activeSeconds?: number;
+  movingSeconds?: number;
+}) {
+  const quantification = observationQuantification(
+    input.segmentId,
+    input.commonLoad,
+    input.distanceMeters,
+    input.activeSeconds,
+    input.movingSeconds,
+  );
+  return {
+    activity_id: input.activityId,
+    segment_id: input.segmentId,
+    activity_category: input.commonLoad.activity_category,
+    common_load: input.commonLoad,
+    observationQuantification: createObservationQuantificationBundle({
+      members: [quantification],
+    }),
+    computed_as_of: "2026-01-10T09:00:00.000Z",
+    dedupe_key: input.segmentId,
+    load_stream_key: `${input.commonLoad.activity_category}:test`,
+  };
+}
 const activityCategories = new Map<string, "bike" | "run" | "swim">();
 
 function buildActivityRow(overrides: Record<string, unknown> = {}) {
@@ -252,6 +451,16 @@ function buildActivityRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function publicActivityRow(row: ReturnType<typeof buildActivityRow>) {
+  const {
+    normalized_graded_speed_mps: _normalizedGradedSpeedMetersPerSecond,
+    efficiency_factor: _efficiencyFactor,
+    aerobic_decoupling: _aerobicDecoupling,
+    ...current
+  } = row;
+  return current;
+}
+
 function buildSegmentReadRow(
   activityId: string,
   ordinal: number,
@@ -286,6 +495,7 @@ function buildSegmentReadRow(
         movingMs: 900,
       },
       distanceMeters: 100,
+      normalizedPowerResult: unavailableNormalizedPowerResult,
     },
     ...overrides,
   };
@@ -490,16 +700,16 @@ function createDbMock(options: {
   insertedRowsByTable?: Record<string, unknown[]>;
   updatedRows?: any[];
   transactionError?: Error;
-  onTssScanBatch?: (batchNumber: number) => void;
+  onCommonLoadScanBatch?: (batchNumber: number) => void;
 }) {
   const insertValues = vi.fn();
   const deleteWhere = vi.fn(() => Promise.resolve());
   const offset = vi.fn();
   const selectWhere = vi.fn();
-  const tssLimit = vi.fn();
+  const commonLoadLimit = vi.fn();
   let transactionActivityRows: any[] | undefined;
-  let tssScanIndex = 0;
-  let tssScanBatchNumber = 0;
+  let commonLoadScanIndex = 0;
+  let commonLoadScanBatchNumber = 0;
   const limit = vi.fn((limitValue: number) => {
     const limitedRows = (options.activityRows ?? []).slice(0, limitValue);
     return {
@@ -516,14 +726,16 @@ function createDbMock(options: {
   const orderBy = vi.fn((...args: unknown[]) => {
     if (transactionActivityRows !== undefined && args.length === 2) {
       return {
-        limit: tssLimit.mockImplementation((limitValue: number) => {
-          const rows = [...(transactionActivityRows ?? options.activityRows ?? [])].sort(
-            (a, b) => b.started_at.getTime() - a.started_at.getTime() || b.id.localeCompare(a.id),
-          );
-          const batch = rows.slice(tssScanIndex, tssScanIndex + limitValue);
-          tssScanIndex += batch.length;
-          tssScanBatchNumber += 1;
-          options.onTssScanBatch?.(tssScanBatchNumber);
+        limit: commonLoadLimit.mockImplementation((limitValue: number) => {
+          const rows =
+            transactionActivityRows ??
+            [...(options.activityRows ?? [])].sort(
+              (a, b) => b.started_at.getTime() - a.started_at.getTime() || b.id.localeCompare(a.id),
+            );
+          const batch = rows.slice(commonLoadScanIndex, commonLoadScanIndex + limitValue);
+          commonLoadScanIndex += batch.length;
+          commonLoadScanBatchNumber += 1;
+          options.onCommonLoadScanBatch?.(commonLoadScanBatchNumber);
           return Promise.resolve(batch);
         }),
       };
@@ -654,9 +866,11 @@ function createDbMock(options: {
     transaction: vi.fn(
       async (callback: (tx: unknown) => unknown, _config?: Record<string, unknown>) => {
         if (options.transactionError) throw options.transactionError;
-        transactionActivityRows = [...(options.activityRows ?? [])];
-        tssScanIndex = 0;
-        tssScanBatchNumber = 0;
+        transactionActivityRows = [...(options.activityRows ?? [])].sort(
+          (a, b) => b.started_at.getTime() - a.started_at.getTime() || b.id.localeCompare(a.id),
+        );
+        commonLoadScanIndex = 0;
+        commonLoadScanBatchNumber = 0;
         try {
           return await callback(db);
         } finally {
@@ -703,7 +917,7 @@ function createDbMock(options: {
       offset,
       orderBy,
       selectWhere,
-      tssLimit,
+      commonLoadLimit,
       insertValues,
     },
   };
@@ -731,11 +945,7 @@ beforeEach(() => {
   mockActivityAnalysis.resolveActivityContextAsOf.mockResolvedValue({});
   mockActivityAnalysis.analyzeActivityDerivedMetrics.mockReturnValue({
     stress: {
-      tss: 50,
-      tss_identity: RUN_TSS_IDENTITY,
-      intensity_factor: 0.8,
-      method: "run_pace_threshold",
-      unavailable_reason: null,
+      common_load: availableCommonLoad(50),
       trimp: null,
     },
     zones: { hr: [], power: [] },
@@ -778,6 +988,7 @@ describe("activitiesRouter", () => {
         store: { kind: "activity-analysis-store" },
         profileId: OWNER_ID,
         activities: [],
+        computedAsOf: new Date("2026-07-21T16:00:00.000Z"),
       });
 
       const unauthenticatedCaller = activitiesRouter.createCaller({
@@ -825,15 +1036,30 @@ describe("activitiesRouter", () => {
     }
   });
 
+  it("rejects a viewer timezone even when its calendar date matches the profile date", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-21T16:00:00.000Z"));
+    try {
+      await expect(
+        createCaller(createDbMock({})).commonLoadHistory({
+          current_planning_date: "2026-07-21",
+          planning_timezone: "UTC",
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("lists paginated owned activities with like and derived summaries", async () => {
     const rows = [buildActivityRow()];
-    const derived = {
-      tss: 72,
-      tss_identity: RUN_TSS_IDENTITY,
-      intensity_factor: 0.81,
-      method: "run_pace_threshold" as const,
-      unavailable_reason: null,
-      computed_as_of: "2026-01-10T09:00:00.000Z",
+    const firstRow = rows[0];
+    if (!firstRow) throw new Error("Expected an activity row fixture");
+    const derived = parentDerivedSummary(ACTIVITY_ID, availableCommonLoad(72));
+    const publicDerived = {
+      common_load: derived.common_load,
+      computed_as_of: derived.computed_as_of,
+      observationQuantification: derived.observationQuantification,
     };
     const db = createDbMock({
       activityRows: rows,
@@ -852,11 +1078,11 @@ describe("activitiesRouter", () => {
 
     expect(result.items).toEqual([
       {
-        ...rows[0],
+        ...publicActivityRow(firstRow),
         laps: [],
         likes_count: 3,
         has_liked: true,
-        derived,
+        derived: publicDerived,
         segment_loads: [],
         activity_kind: "single",
         activity_segment_count: 1,
@@ -906,19 +1132,16 @@ describe("activitiesRouter", () => {
       new Map([[ACTIVITY_ID, segments]]),
     );
     mockActivityAnalysis.buildActivitySegmentDerivedSummaries.mockResolvedValue(
-      segments.slice(1).map((segment, index) => ({
-        activity_id: ACTIVITY_ID,
-        segment_id: segment.id,
-        activity_category: "run",
-        tss: index === 0 ? 20 : 30,
-        tss_identity: RUN_TSS_IDENTITY,
-        intensity_factor: 0.8,
-        method: "run_pace_threshold",
-        unavailable_reason: null,
-        computed_as_of: "2026-01-10T09:00:00.000Z",
-        dedupe_key: segment.id,
-        load_stream_key: "run:pace",
-      })),
+      segments.slice(1).map((segment, index) =>
+        segmentDerivedSummary({
+          activityId: ACTIVITY_ID,
+          segmentId: segment.id,
+          commonLoad: availableCommonLoad(index === 0 ? 20 : 30),
+          distanceMeters: index === 0 ? 500 : 700,
+          activeSeconds: index === 0 ? 2 : 3,
+          movingSeconds: index === 0 ? 1.8 : 2.7,
+        }),
+      ),
     );
     const db = createDbMock({ activityRows: [activity], totalRows: [{ total: 1 }] });
 
@@ -936,21 +1159,18 @@ describe("activitiesRouter", () => {
         distance_meters: 1_200,
         active_ms: 5_000,
         moving_ms: 4_500,
-        tss: 50,
-        tss_identity: RUN_TSS_IDENTITY,
+        common_load: expect.objectContaining({ status: "complete", load: expect.closeTo(50) }),
       },
       segment_loads: [
         expect.objectContaining({
           segment_id: segments[1]?.id,
           activity_category: "run",
-          tss: 20,
-          intensity_factor: 0.8,
+          common_load: expect.objectContaining({ status: "available", load: expect.closeTo(20) }),
         }),
         expect.objectContaining({
           segment_id: segments[2]?.id,
           activity_category: "run",
-          tss: 30,
-          intensity_factor: 0.8,
+          common_load: expect.objectContaining({ status: "available", load: expect.closeTo(30) }),
         }),
       ],
     });
@@ -963,7 +1183,7 @@ describe("activitiesRouter", () => {
   it.each([
     { sort_by: "distance" as const, expected: [ACTIVITY_ID_2, ACTIVITY_ID, ACTIVITY_ID_3] },
     { sort_by: "duration" as const, expected: [ACTIVITY_ID_2, ACTIVITY_ID, ACTIVITY_ID_3] },
-    { sort_by: "tss" as const, expected: [ACTIVITY_ID, ACTIVITY_ID_2, ACTIVITY_ID_3] },
+    { sort_by: "common_load" as const, expected: [ACTIVITY_ID, ACTIVITY_ID_2, ACTIVITY_ID_3] },
   ])("sorts $sort_by by matched-activity_category values with nulls last", async ({
     sort_by,
     expected,
@@ -1021,30 +1241,22 @@ describe("activitiesRouter", () => {
         ),
     );
     mockActivityAnalysis.buildActivitySegmentDerivedSummaries.mockResolvedValue([
-      {
-        activity_id: ACTIVITY_ID,
-        segment_id: segmentByActivityId.get(ACTIVITY_ID)![0]!.id,
-        activity_category: "run",
-        tss: 30,
-        tss_identity: RUN_TSS_IDENTITY,
-        intensity_factor: 0.8,
-        method: "run_pace_threshold",
-        unavailable_reason: null,
-        computed_as_of: "2026-01-10T09:00:00.000Z",
-        load_stream_key: "run:pace",
-      },
-      {
-        activity_id: ACTIVITY_ID_2,
-        segment_id: segmentByActivityId.get(ACTIVITY_ID_2)![0]!.id,
-        activity_category: "run",
-        tss: 10,
-        tss_identity: RUN_TSS_IDENTITY,
-        intensity_factor: 0.7,
-        method: "run_pace_threshold",
-        unavailable_reason: null,
-        computed_as_of: "2026-01-10T09:00:00.000Z",
-        load_stream_key: "run:pace",
-      },
+      segmentDerivedSummary({
+        activityId: ACTIVITY_ID,
+        segmentId: segmentByActivityId.get(ACTIVITY_ID)![0]!.id,
+        commonLoad: availableCommonLoad(30),
+        distanceMeters: 100,
+        activeSeconds: 1,
+        movingSeconds: 0.9,
+      }),
+      segmentDerivedSummary({
+        activityId: ACTIVITY_ID_2,
+        segmentId: segmentByActivityId.get(ACTIVITY_ID_2)![0]!.id,
+        commonLoad: availableCommonLoad(10),
+        distanceMeters: 200,
+        activeSeconds: 2,
+        movingSeconds: 1.8,
+      }),
     ]);
     const db = createDbMock({ activityRows: rows, totalRows: [{ total: rows.length }] });
 
@@ -1059,7 +1271,7 @@ describe("activitiesRouter", () => {
     expect(result.items.at(-1)?.matched_category_summary).toMatchObject({
       distance_meters: null,
       active_ms: null,
-      tss: null,
+      common_load: null,
     });
     expect(db.transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: "repeatable read",
@@ -1144,7 +1356,7 @@ describe("activitiesRouter", () => {
     );
   });
 
-  it("sorts paginated results by derived tss before slicing", async () => {
+  it("sorts paginated results by derived common_load before slicing", async () => {
     const rows = [
       buildActivityRow({
         id: ACTIVITY_ID,
@@ -1173,50 +1385,9 @@ describe("activitiesRouter", () => {
 
     mockActivityAnalysis.buildActivityDerivedSummaryMap.mockResolvedValue(
       new Map([
-        [
-          ACTIVITY_ID,
-          {
-            tss: 20,
-            tss_identity: RUN_TSS_IDENTITY,
-            intensity_factor: 0.65,
-            method: "run_pace_threshold",
-            unavailable_reason: null,
-            computed_as_of: "2026-01-12T09:00:00.000Z",
-          },
-        ],
-        [
-          ACTIVITY_ID_2,
-          {
-            tss: 95,
-            tss_identity: BIKE_TSS_IDENTITY,
-            intensity_factor: 0.92,
-            method: "power_threshold",
-            unavailable_reason: null,
-            computed_as_of: "2026-01-11T10:00:00.000Z",
-          },
-        ],
-        [
-          ACTIVITY_ID_3,
-          {
-            tss: 60,
-            tss_identity: RUN_TSS_IDENTITY,
-            intensity_factor: 0.78,
-            method: "run_pace_threshold",
-            unavailable_reason: null,
-            computed_as_of: "2026-01-10T09:00:00.000Z",
-          },
-        ],
-        [
-          ACTIVITY_ID,
-          {
-            tss: 20,
-            tss_identity: RUN_TSS_IDENTITY,
-            intensity_factor: 0.65,
-            method: "run_pace_threshold",
-            unavailable_reason: null,
-            computed_as_of: "2026-01-12T09:00:00.000Z",
-          },
-        ],
+        [ACTIVITY_ID, parentDerivedSummary(ACTIVITY_ID, availableCommonLoad(20))],
+        [ACTIVITY_ID_2, parentDerivedSummary(ACTIVITY_ID_2, availableCommonLoad(95, "bike"))],
+        [ACTIVITY_ID_3, parentDerivedSummary(ACTIVITY_ID_3, availableCommonLoad(60))],
       ]),
     );
 
@@ -1224,7 +1395,7 @@ describe("activitiesRouter", () => {
     const result = await caller.listPaginated({
       limit: 2,
       cursor: "index:1",
-      sort_by: "tss",
+      sort_by: "common_load",
       sort_order: "desc",
     });
 
@@ -1232,14 +1403,14 @@ describe("activitiesRouter", () => {
     expect(result.hasMore).toBe(false);
     expect(result.nextCursor).toBeUndefined();
     expect(result.items.map((item: any) => item.id)).toEqual([ACTIVITY_ID_3, ACTIVITY_ID]);
-    expect(db.__spies.tssLimit).toHaveBeenCalledWith(3);
+    expect(db.__spies.commonLoadLimit).toHaveBeenCalledWith(3);
     expect(db.transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: "repeatable read",
       accessMode: "read only",
     });
   });
 
-  it("deep-pages globally sorted TSS with keyset scan plans, bounded query counts, and stable ties", async () => {
+  it("deep-pages globally sorted common_load with keyset scan plans, bounded query counts, and stable ties", async () => {
     const rows = Array.from({ length: 5_000 }, (_, index) =>
       buildActivityRow({
         id: `00000000-0000-4000-8000-${index.toString().padStart(12, "0")}`,
@@ -1248,33 +1419,59 @@ describe("activitiesRouter", () => {
         finished_at: new Date(Date.UTC(2025, 0, 1) + index * 1000 + 500),
       }),
     );
-    const tssById = new Map(
+    const commonLoadById = new Map(
       rows.map((row, index) => [row.id, index < 5 ? null : Math.floor(index / 2)]),
+    );
+    const commonLoadResultById = new Map(
+      rows.map((row) => {
+        const commonLoad = commonLoadById.get(row.id);
+        return [
+          row.id,
+          commonLoad === null || commonLoad === undefined
+            ? unavailableCommonLoad("threshold_missing")
+            : availableCommonLoad(commonLoad),
+        ] as const;
+      }),
+    );
+    const commonLoadAggregateById = new Map(
+      rows.map((row) => {
+        const commonLoad = commonLoadResultById.get(row.id);
+        return [
+          row.id,
+          aggregateCommonLoad([commonLoad ?? unavailableCommonLoad("threshold_missing")]),
+        ];
+      }),
+    );
+    // Keep the benchmark focused on bounded scan/sort behavior. Canonical quantification
+    // parsing is covered separately and must not be repeated 15,000 times inside the timer.
+    const derivedSummaryById = new Map(
+      rows.map((row) => [
+        row.id,
+        parentDerivedSummary(
+          row.id,
+          commonLoadResultById.get(row.id) ?? unavailableCommonLoad("threshold_missing"),
+          "2026-01-01T00:00:00.000Z",
+        ),
+      ]),
     );
     mockActivityAnalysis.buildActivityDerivedSummaryMap.mockImplementation(
       async ({ activities: batch }: { activities: Array<{ id: string }> }) =>
-        new Map(
-          batch.map((activity) => [
-            activity.id,
-            {
-              tss: tssById.get(activity.id) ?? null,
-              tss_identity: tssById.get(activity.id) == null ? null : RUN_TSS_IDENTITY,
-              intensity_factor: tssById.get(activity.id) == null ? null : 0.8,
-              method: tssById.get(activity.id) == null ? null : "run_pace_threshold",
-              unavailable_reason: tssById.get(activity.id) == null ? "threshold_missing" : null,
-              computed_as_of: "2026-01-01T00:00:00.000Z",
-            },
-          ]),
-        ),
+        new Map(batch.map((activity) => [activity.id, derivedSummaryById.get(activity.id)])),
     );
     const expected = (sortOrder: "asc" | "desc") =>
       rows
-        .map((activity) => ({ activity, tss: tssById.get(activity.id) ?? null }))
+        .map((activity) => {
+          const commonLoad = commonLoadAggregateById.get(activity.id);
+          return {
+            activity,
+            commonLoad: commonLoad?.status === "unavailable" ? null : (commonLoad?.load ?? null),
+          };
+        })
         .sort((a, b) => {
-          if (a.tss !== b.tss) {
-            if (a.tss === null) return 1;
-            if (b.tss === null) return -1;
-            return sortOrder === "asc" ? a.tss - b.tss : b.tss - a.tss;
+          if (a.commonLoad !== b.commonLoad) {
+            if (a.commonLoad === null) return 1;
+            if (b.commonLoad === null) return -1;
+            return sortOrder === "asc" ? a.commonLoad - b.commonLoad : b.commonLoad - a.commonLoad;
           }
           return (
             b.activity.started_at.getTime() - a.activity.started_at.getTime() ||
@@ -1290,14 +1487,17 @@ describe("activitiesRouter", () => {
       { offset: 4_975, limit: 15, sortOrder: "desc" as const },
     ]) {
       const db = createDbMock({ activityRows: rows, totalRows: [{ total: rows.length }] });
-      const benchmarkStart = performance.now();
+      // CPU time keeps this regression budget stable when the workspace test runner
+      // schedules other package suites concurrently on the same host.
+      const benchmarkStart = process.threadCpuUsage();
       const result = await createCaller(db).listPaginated({
         limit: testCase.limit,
         cursor: `index:${testCase.offset}`,
-        sort_by: "tss",
+        sort_by: "common_load",
         sort_order: testCase.sortOrder,
       });
-      benchmarkSamples.push(performance.now() - benchmarkStart);
+      const elapsedCpu = process.threadCpuUsage(benchmarkStart);
+      benchmarkSamples.push((elapsedCpu.user + elapsedCpu.system) / 1_000);
 
       expect(result.items.map((item) => item.id)).toEqual(
         expected(testCase.sortOrder).slice(testCase.offset, testCase.offset + testCase.limit),
@@ -1310,8 +1510,8 @@ describe("activitiesRouter", () => {
           : undefined,
       );
       expect(db.__spies.offset).not.toHaveBeenCalled();
-      expect(db.__spies.tssLimit).toHaveBeenCalledTimes(25);
-      expect(db.__spies.tssLimit.mock.calls.every(([value]) => value === 200)).toBe(true);
+      expect(db.__spies.commonLoadLimit).toHaveBeenCalledTimes(25);
+      expect(db.__spies.commonLoadLimit.mock.calls.every(([value]) => value === 200)).toBe(true);
       expect(db.__spies.orderBy).toHaveBeenCalledTimes(25);
       const orderSql = db.__spies.orderBy.mock.calls[0]?.map(toSql).join(" ") ?? "";
       expect(orderSql).toContain('"activities"."started_at" desc');
@@ -1324,10 +1524,12 @@ describe("activitiesRouter", () => {
     benchmarkSamples.sort((a, b) => a - b);
     const p95 = benchmarkSamples[Math.ceil(benchmarkSamples.length * 0.95) - 1] ?? 0;
     expect(mockActivityAnalysis.buildActivityDerivedSummaryMap).toHaveBeenCalledTimes(3);
-    expect(p95, `5,000-row deep TSS pagination p95=${p95.toFixed(2)}ms`).toBeLessThan(750);
-  });
+    expect(p95, `5,000-row deep common_load pagination CPU p95=${p95.toFixed(2)}ms`).toBeLessThan(
+      750,
+    );
+  }, 15_000);
 
-  it("keeps an internal TSS scan on one snapshot when an activity is inserted concurrently", async () => {
+  it("keeps an internal common_load scan on one snapshot when an activity is inserted concurrently", async () => {
     const rows = Array.from({ length: 401 }, (_, index) =>
       buildActivityRow({
         id: `00000000-0000-4000-8000-${index.toString().padStart(12, "0")}`,
@@ -1343,7 +1545,7 @@ describe("activitiesRouter", () => {
     const db = createDbMock({
       activityRows: rows,
       totalRows: [{ total: rows.length }],
-      onTssScanBatch: (batchNumber) => {
+      onCommonLoadScanBatch: (batchNumber) => {
         if (batchNumber === 1) rows.push(concurrentlyInserted);
       },
     });
@@ -1352,14 +1554,11 @@ describe("activitiesRouter", () => {
         new Map(
           candidates.map((activity, index) => [
             activity.id,
-            {
-              tss: index,
-              tss_identity: RUN_TSS_IDENTITY,
-              intensity_factor: 0.8,
-              method: "run_pace_threshold",
-              unavailable_reason: null,
-              computed_as_of: "2026-01-01T00:00:00.000Z",
-            },
+            parentDerivedSummary(
+              activity.id,
+              availableCommonLoad(index),
+              "2026-01-01T00:00:00.000Z",
+            ),
           ]),
         ),
     );
@@ -1367,7 +1566,7 @@ describe("activitiesRouter", () => {
     const result = await createCaller(db).listPaginated({
       limit: 50,
       cursor: "index:350",
-      sort_by: "tss",
+      sort_by: "common_load",
       sort_order: "asc",
     });
 
@@ -1377,22 +1576,22 @@ describe("activitiesRouter", () => {
     expect(new Set(derivedCandidates.map(({ id }) => id)).size).toBe(401);
     expect(derivedCandidates.map(({ id }) => id)).not.toContain(concurrentlyInserted.id);
     expect(result.total).toBe(401);
-    expect(db.__spies.tssLimit).toHaveBeenCalledTimes(3);
+    expect(db.__spies.commonLoadLimit).toHaveBeenCalledTimes(3);
     expect(db.transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: "repeatable read",
       accessMode: "read only",
     });
   });
 
-  it("rejects unbounded exact TSS sorts above the documented history ceiling", async () => {
+  it("rejects unbounded exact common_load sorts above the documented history ceiling", async () => {
     const db = createDbMock({ totalRows: [{ total: 10_001 }] });
 
     await expect(
-      createCaller(db).listPaginated({ sort_by: "tss", sort_order: "desc" }),
+      createCaller(db).listPaginated({ sort_by: "common_load", sort_order: "desc" }),
     ).rejects.toMatchObject({
       code: "BAD_REQUEST",
       message:
-        "TSS sorting supports at most 10000 matching activities; narrow the activity filters.",
+        "Common Load sorting supports at most 10000 matching activities; narrow the activity filters.",
     });
     expect(db.__spies.orderBy).not.toHaveBeenCalled();
     expect(mockActivityAnalysis.buildActivityDerivedSummaryMap).not.toHaveBeenCalled();
@@ -1457,7 +1656,7 @@ describe("activitiesRouter", () => {
       summary: { distanceMeters: 50000 },
     });
 
-    expect(result).toEqual(createdActivity);
+    expect(result).toEqual(publicActivityRow(createdActivity));
     expect(db.select).toHaveBeenCalled();
     expect(db.transaction).toHaveBeenCalledTimes(1);
   });
@@ -1514,7 +1713,7 @@ describe("activitiesRouter", () => {
         acceptedArtifact: ACCEPTED_ARTIFACT,
         summary: { distanceMeters: 1000 },
       }),
-    ).resolves.toEqual(createdActivity);
+    ).resolves.toEqual(publicActivityRow(createdActivity));
   });
 
   it("rejects native submission when accepted artifact bytes cannot be verified", async () => {
@@ -1837,20 +2036,6 @@ describe("activitiesRouter", () => {
       max_heart_rate: 175,
     });
     const activityPlan = buildActivityPlanRow();
-    const privateDerived = {
-      stress: {
-        tss: null,
-        tss_identity: null,
-        intensity_factor: null,
-        method: null,
-        unavailable_reason: "private_data" as const,
-        trimp: null,
-        trimp_source: null,
-        training_effect: null,
-      },
-      zones: { hr: [], power: [] },
-      computed_as_of: activity.started_at.toISOString(),
-    };
     const db = createDbMock({
       queryActivitiesFindFirst: [
         {
@@ -1887,7 +2072,7 @@ describe("activitiesRouter", () => {
 
     expect(result).toEqual({
       activity: {
-        ...activity,
+        ...publicActivityRow(activity),
         laps: [],
         likes_count: 5,
         activity_plans: null,
@@ -1901,7 +2086,32 @@ describe("activitiesRouter", () => {
         effective_session_rpe: null,
       },
       has_liked: true,
-      derived: privateDerived,
+      derived: expect.objectContaining({
+        stress: expect.objectContaining({
+          common_load: expect.objectContaining({
+            status: "unavailable",
+            model: COMMON_RELATIVE_LOAD_MODEL,
+            version: COMMON_RELATIVE_LOAD_VERSION,
+            reason: "no_load_data",
+            totalActivityCount: 1,
+            unavailableActivityCount: 1,
+          }),
+          trimp: null,
+          trimp_source: null,
+          training_effect: null,
+        }),
+        zones: { hr: [], power: [] },
+        computed_as_of: activity.started_at.toISOString(),
+        observationQuantification: expect.objectContaining({
+          summary: expect.objectContaining({
+            kind: "aggregate",
+            duration: expect.objectContaining({
+              elapsed: expect.objectContaining({ status: "unavailable" }),
+            }),
+            distance: expect.objectContaining({ status: "unavailable" }),
+          }),
+        }),
+      }),
       segment_loads: [],
     });
     expect(mockActivityAnalysis.resolveActivityContextAsOf).not.toHaveBeenCalled();
@@ -1962,7 +2172,9 @@ describe("activitiesRouter", () => {
 
     const result = await createCaller(db).getById({ id: ACTIVITY_ID });
 
-    expect(result.activity.segments).toEqual(segments);
+    expect(result.activity.segments).toEqual(
+      segments.map((segment) => ({ ...segment, status: "available" })),
+    );
     expect(result.activity.segments.map((segment) => segment.ordinal)).toEqual([0, 1, 2]);
     expect(
       result.activity.segments.map((segment) => ({
@@ -2031,6 +2243,19 @@ describe("activitiesRouter", () => {
   });
 
   it("uses canonical parent detail values and preserves lap order", async () => {
+    const normalizedPowerResult = calculateCyclingNormalizedPower({
+      samples: [
+        { timestampSeconds: 0, powerWatts: 200 },
+        { timestampSeconds: 6, powerWatts: 200 },
+        ...Array.from({ length: 29 }, (_, index) => ({
+          timestampSeconds: index + 7,
+          powerWatts: 200,
+        })),
+      ],
+    });
+    if (normalizedPowerResult.status !== "unavailable") {
+      throw new Error("Expected an unavailable Normalized Power fixture");
+    }
     const activity = buildActivityRow({
       id: ACTIVITY_ID,
       profile_id: OWNER_ID,
@@ -2048,7 +2273,7 @@ describe("activitiesRouter", () => {
       summary: {
         version: 1,
         timing: { timingCoverage: "complete", activeMs: 1_000, movingMs: 900 },
-        normalizedPowerWatts: 247.5,
+        normalizedPowerResult,
       },
     });
     mockActivityAnalysis.loadActivitySegmentsByActivityId.mockResolvedValue(
@@ -2112,7 +2337,20 @@ describe("activitiesRouter", () => {
         availability: "accepted",
       }),
     });
-    expect(result.activity.segments).toEqual([canonicalSegment]);
+    expect(result.activity.segments).toEqual([{ ...canonicalSegment, status: "available" }]);
+    const [projectedSegment] = result.activity.segments;
+    expect(projectedSegment?.status).toBe("available");
+    if (!projectedSegment || projectedSegment.status !== "available") {
+      throw new Error("Expected an available segment analysis");
+    }
+    expect(projectedSegment.summary.normalizedPowerResult).toEqual(normalizedPowerResult);
+    expect(projectedSegment.summary).not.toHaveProperty("normalizedPowerWatts");
+    expect(projectedSegment.summary.normalizedPowerResult).toMatchObject({
+      status: "unavailable",
+      reason: "insufficient_window",
+      calculationVersion: "cycling-normalized-power-v1",
+      diagnostics: { sourceTimeCoverage: 29 / 35, excludedGapDurationSeconds: 6 },
+    });
     expect(result.activity).toMatchObject({
       activity_kind: "single",
       activity_segment_count: 1,
@@ -2139,7 +2377,7 @@ describe("activitiesRouter", () => {
       notes: "Felt strong",
     });
 
-    expect(result).toEqual(updated);
+    expect(result).toEqual(publicActivityRow(updated));
     expect(db.update).toHaveBeenCalledTimes(1);
   });
 

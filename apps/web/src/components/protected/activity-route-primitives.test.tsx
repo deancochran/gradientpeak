@@ -2,6 +2,7 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createActivityQuantificationBundle } from "../../test-support/activity-quantification";
 
 import { ActivityCategoryBadges } from "../activity-category-presentation";
 import {
@@ -19,34 +20,15 @@ vi.mock("../../hooks/use-viewing-user-preferred-unit-system", () => ({
 afterEach(() => cleanup());
 
 describe("ActivityListCard", () => {
-  const unavailableHeartRateLoad = {
-    status: "unavailable",
-    model: "gradientpeak_relative_load",
-    version: "1",
-    activity_category: "run",
+  const unavailableHeartRateQuantification = createActivityQuantificationBundle({
+    activityCategory: "run",
+    id: "activity-run",
+    kind: "observation",
+    load: null,
     method: "heart_rate_zones",
-    quality: null,
-    thresholdEvidence: null,
-    evidenceFingerprint: null,
-    computedAsOf: "2026-07-21T12:00:00.000Z",
-    contributingDurationSeconds: null,
-    reason: "threshold_missing",
-  } as const;
-  const unavailableAggregate = {
-    status: "unavailable",
-    model: "gradientpeak_relative_load",
-    version: "1",
-    contributingDurationSeconds: 0,
-    knownDurationSeconds: 3_600,
-    contributingActivityCount: 0,
-    partialActivityCount: 0,
-    unavailableActivityCount: 1,
-    totalActivityCount: 1,
-    activityCountCoverage: 0,
-    knownDurationCoverage: 0,
-    unknownDurationActivityCount: 0,
-    reason: "no_load_data",
-  } as const;
+    nativeIntensity: null,
+    unavailableReason: "threshold_missing",
+  });
 
   it("renders modern activity DTO category and elapsed fields", () => {
     render(
@@ -79,10 +61,10 @@ describe("ActivityListCard", () => {
     expect(screen.getByText("Run • Ride")).toBeTruthy();
     expect(screen.getByText("Run, Ride")).toBeTruthy();
     expect(screen.getByText("1h 30m")).toBeTruthy();
-    expect(screen.getByText("Load")).toBeTruthy();
-    expect(screen.getByText("Intensity")).toBeTruthy();
+    expect(screen.getByText("Common Load")).toBeTruthy();
+    expect(screen.getByText("Normalized intensity")).toBeTruthy();
     expect(screen.getAllByText("Unavailable")).toHaveLength(2);
-    expect(screen.getByText(/no current result was provided/i)).toBeTruthy();
+    expect(screen.getByText(/no canonical activity quantification was provided/i)).toBeTruthy();
     expect(screen.getByTestId("activity-card-11111111-1111-4111-8111-111111111111")).toBeTruthy();
     expect(
       screen.getByTestId("activity-card-11111111-1111-4111-8111-111111111111-open"),
@@ -98,8 +80,8 @@ describe("ActivityListCard", () => {
           activity_categories: ["run"],
           elapsed_ms: 3_600_000,
           avg_heart_rate: 150,
-          derived: { common_load: unavailableAggregate },
-          segment_loads: [{ common_load: unavailableHeartRateLoad }],
+          derived: { observationQuantification: unavailableHeartRateQuantification },
+          segment_loads: [{ observationQuantification: unavailableHeartRateQuantification }],
         }}
         onOpen={() => undefined}
       />,

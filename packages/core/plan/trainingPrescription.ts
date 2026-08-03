@@ -62,7 +62,7 @@ export const prescriptionActivityRoleSchema = z.enum([
 
 export const prescriptionVolumeUnitSchema = z.enum([
   "minutes",
-  "tss",
+  "load",
   "sets",
   "reps",
   "distance_m",

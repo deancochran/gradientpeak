@@ -48,6 +48,12 @@ const artifact = {
       },
     ],
   },
+  provisionalMetrics: {
+    stage: "provisional",
+    authority: "live_recording_only",
+    commonLoad: { status: "partial", load: 12, intensity: 0.8 },
+    normalizedIntensity: { status: "partial", value: 0.8 },
+  },
 } as unknown as RecordingSessionArtifact;
 
 describe("finalized artifact queue handoff", () => {
@@ -89,6 +95,29 @@ describe("finalized artifact queue handoff", () => {
     expect(resumed.id).toBe(first.id);
     expect(mocks.handoff).toHaveBeenCalledTimes(1);
     expect(mocks.clearCheckpoint).toHaveBeenCalledWith(artifact.sessionId);
+  });
+
+  it("persists only recording source facts and never promotes provisional live output", async () => {
+    const handoff = await ensureFinalizedArtifactQueueHandoff(artifact);
+    if (!handoff) throw new Error("Expected a durable queue handoff");
+
+    expect(handoff.draft).toEqual({
+      recordingSessionId: artifact.sessionId,
+      profileId: artifact.profileId,
+      startedAt: artifact.snapshot.identity.startedAt,
+      finishedAt: artifact.completedAt,
+      name: "run activity",
+      activity_category: "run",
+      durationSeconds: 60,
+      movingSeconds: 55,
+      distanceMeters: 200,
+      calories: null,
+      activityPlanId: null,
+    });
+    expect(handoff).not.toHaveProperty("provisionalMetrics");
+    expect(handoff.draft).not.toHaveProperty("commonLoad");
+    expect(handoff.draft).not.toHaveProperty("normalizedIntensity");
+    expect(JSON.stringify(handoff)).not.toMatch(/trainingStressScore|intensityFactor|"tss"/i);
   });
 
   it.each([

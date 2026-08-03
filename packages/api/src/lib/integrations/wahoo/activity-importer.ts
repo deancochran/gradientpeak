@@ -3,6 +3,7 @@
  * Processes webhook events and imports completed activities from Wahoo
  */
 
+import { createHash } from "node:crypto";
 import type { StandardActivity } from "@repo/core";
 import { parseActivityFile } from "@repo/core/server/activity-files";
 import {
@@ -14,6 +15,7 @@ import { logger } from "../../logger";
 import {
   buildImportedActivityCreateInput,
   type ImportedActivityCreateInput,
+  resolveImportedActivityRequiredMetrics,
 } from "../../provider-sync/imported-activity";
 import type { WahooStagingCleanupReservation } from "../../provider-sync/wahoo-staging-cleanup";
 import type { WahooActivityType } from "./activity-type-utils";
@@ -30,6 +32,8 @@ interface WahooRepository {
     activityFilePath: string | null;
     activityFileSize: number | null;
     artifactId: string | null;
+    artifactSha256: string | null;
+    providerRevision: string | null;
     analysisReady: boolean;
     materializerVersion: string | null;
     segmentsRevision: number;
@@ -45,6 +49,8 @@ interface WahooRepository {
     activityFilePath: string | null;
     activityFileSize: number | null;
     artifactId: string | null;
+    artifactSha256: string | null;
+    providerRevision: string | null;
     analysisReady: boolean;
     materializerVersion: string | null;
     segmentsRevision: number;
@@ -170,6 +176,37 @@ async function readBoundedBody(response: Response): Promise<Uint8Array> {
   return bytes;
 }
 
+function activityFileSha256(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function providerRevision(summary: WahooWorkoutSummary): string | null {
+  const value = summary.updated_at ?? summary.created_at ?? null;
+  if (value === null) return null;
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) throw new Error("Wahoo activity revision is invalid");
+  return new Date(timestamp).toISOString();
+}
+
+function isExactRedelivery(input: {
+  existing: {
+    activityFileSize: number | null;
+    analysisReady: boolean;
+    artifactSha256: string | null;
+    providerRevision: string | null;
+  };
+  incomingFileSize: number;
+  incomingSha256: string;
+  incomingProviderRevision: string | null;
+}): boolean {
+  return (
+    input.existing.analysisReady &&
+    input.existing.providerRevision === input.incomingProviderRevision &&
+    input.existing.artifactSha256 === input.incomingSha256 &&
+    input.existing.activityFileSize === input.incomingFileSize
+  );
+}
+
 function isExpectedProviderUniqueViolation(error: unknown): boolean {
   let candidate: unknown = error;
   for (let depth = 0; depth < 3 && candidate && typeof candidate === "object"; depth += 1) {
@@ -227,13 +264,10 @@ export class WahooActivityImporter {
       submitActivity(
         input: ImportedActivityCreateInput,
         parsedActivity: StandardActivity,
-        options: { beforePersist: (tx: ActivitySubmissionTransaction) => Promise<void> },
-      ): Promise<{ id: string }>;
-      enrichActivity(
-        activityId: string,
-        input: ImportedActivityCreateInput,
-        parsedActivity: StandardActivity,
-        options: { beforePersist: (tx: ActivitySubmissionTransaction) => Promise<void> },
+        options: {
+          artifactSha256: string;
+          beforePersist: (tx: ActivitySubmissionTransaction) => Promise<void>;
+        },
       ): Promise<{ id: string }>;
       generationGuard(
         tx: ActivitySubmissionTransaction,
@@ -280,6 +314,7 @@ export class WahooActivityImporter {
       ) {
         return { success: false, error: "Wahoo integration generation is inactive" };
       }
+      const incomingProviderRevision = providerRevision(summary);
       const beforePersist = (tx: ActivitySubmissionTransaction) =>
         this.deps.generationGuard(tx, {
           integrationGeneration: options.integrationGeneration,
@@ -314,20 +349,6 @@ export class WahooActivityImporter {
           failureReason: "unsupported_persisted_version",
         };
       }
-      if (existing?.analysisReady) {
-        logger.info("Wahoo activity import skipped", {
-          operation: "import_activity",
-          outcome: "duplicate",
-          provider: "wahoo",
-        });
-        return {
-          success: true,
-          skipped: true,
-          reason: "Activity already imported",
-          activityId: existing.activityId,
-        };
-      }
-
       const existingImport = await this.deps.repository.findImportedActivityByProviderExternalId({
         externalId: summary.id.toString(),
         provider: "wahoo",
@@ -348,30 +369,6 @@ export class WahooActivityImporter {
             failureReason: "unsupported_persisted_version",
           };
         }
-        if (existingImport.analysisReady) {
-          options.signal?.throwIfAborted();
-          await this.deps.repository.createImportedActivityResourceLink({
-            activityId: existingImport.activityId,
-            externalId: summary.id.toString(),
-            integrationId: integration.integrationId,
-            integrationGeneration: options.integrationGeneration,
-            profileId: integration.profileId,
-            provider: "wahoo",
-            providerUpdatedAt: summary.updated_at ?? summary.created_at ?? null,
-          });
-
-          logger.info("Wahoo activity import skipped", {
-            operation: "import_activity",
-            outcome: "duplicate",
-            provider: "wahoo",
-          });
-          return {
-            success: true,
-            skipped: true,
-            reason: "Activity already imported",
-            activityId: existingImport.activityId,
-          };
-        }
       }
 
       const repairCandidate =
@@ -383,6 +380,8 @@ export class WahooActivityImporter {
               activityFilePath: existing.activityFilePath,
               activityFileSize: existing.activityFileSize,
               artifactId: existing.artifactId,
+              artifactSha256: existing.artifactSha256,
+              providerRevision: existing.providerRevision,
               analysisReady: existing.analysisReady,
               materializerVersion: existing.materializerVersion,
               segmentsRevision: existing.segmentsRevision,
@@ -414,13 +413,16 @@ export class WahooActivityImporter {
       stage = "load_artifact";
       await assertGenerationActive();
       const storedActivityFile =
-        repairCandidate?.activityFilePath && this.deps.activityFileStorage.readActivityFile
+        repairCandidate?.analysisReady === false &&
+        repairCandidate.activityFilePath &&
+        this.deps.activityFileStorage.readActivityFile
           ? await this.deps.activityFileStorage.readActivityFile(repairCandidate.activityFilePath)
           : null;
       const activityFile = storedActivityFile
         ? {
             bytes: storedActivityFile.bytes,
             path: repairCandidate?.activityFilePath ?? "",
+            sha256: activityFileSha256(storedActivityFile.bytes),
             size: storedActivityFile.size,
           }
         : await this.downloadAndStoreActivityFile(
@@ -440,6 +442,40 @@ export class WahooActivityImporter {
         return {
           success: false,
           error: "Wahoo activity file could not be imported",
+        };
+      }
+
+      if (
+        repairCandidate &&
+        isExactRedelivery({
+          existing: repairCandidate,
+          incomingFileSize: activityFile.size,
+          incomingSha256: activityFile.sha256,
+          incomingProviderRevision,
+        })
+      ) {
+        if (!existing) {
+          options.signal?.throwIfAborted();
+          await this.deps.repository.createImportedActivityResourceLink({
+            activityId: repairCandidate.activityId,
+            externalId: summary.id.toString(),
+            integrationId: integration.integrationId,
+            integrationGeneration: options.integrationGeneration,
+            profileId: integration.profileId,
+            provider: "wahoo",
+            providerUpdatedAt: incomingProviderRevision,
+          });
+        }
+        logger.info("Wahoo activity import skipped", {
+          operation: "import_activity",
+          outcome: "exact_redelivery",
+          provider: "wahoo",
+        });
+        return {
+          success: true,
+          skipped: true,
+          reason: "Activity already imported",
+          activityId: repairCandidate.activityId,
         };
       }
 
@@ -465,6 +501,20 @@ export class WahooActivityImporter {
 
       const resolvedCategory = this.resolveActivityType(summary, parsedActivity);
       stage = "build_activity";
+      const resolvedMetrics = resolveImportedActivityRequiredMetrics({
+        fileDistanceMeters: parsedActivity.summary.totalDistance,
+        fileDurationSeconds: parsedActivity.summary.totalTime,
+        providerDistanceMeters: summary.distance_accum,
+        providerDurationSeconds: summary.duration_total_accum,
+      });
+      const parsedActivityForAnalysis: StandardActivity = {
+        ...parsedActivity,
+        summary: {
+          ...parsedActivity.summary,
+          totalDistance: resolvedMetrics.distanceMeters,
+          totalTime: resolvedMetrics.durationSeconds,
+        },
+      };
       const activity = buildImportedActivityCreateInput({
         activityFile: {
           path: activityFile.path,
@@ -483,14 +533,14 @@ export class WahooActivityImporter {
           elevationGainMeters: summary.ascent_accum,
           providerActiveDurationSeconds: summary.duration_active_accum,
           normalizedPower: summary.power_bike_np_last,
-          providerUpdatedAt: summary.updated_at ?? summary.created_at ?? null,
+          providerUpdatedAt: incomingProviderRevision,
           startedAt: this.calculateStartTime(summary),
         },
         integrationId: integration.integrationId,
         integrationGeneration: options.integrationGeneration,
         profileId: integration.profileId,
         provider: "wahoo" as const,
-        parsedActivity,
+        parsedActivity: parsedActivityForAnalysis,
         title: `${resolvedCategory} Activity`,
         type: resolvedCategory,
       });
@@ -500,13 +550,14 @@ export class WahooActivityImporter {
       stage = "persist_activity";
       try {
         options.signal?.throwIfAborted();
+        newActivity = await this.deps.submitActivity(activity, parsedActivityForAnalysis, {
+          artifactSha256: activityFile.sha256,
+          beforePersist,
+        });
         if (repairCandidate) {
-          newActivity = await this.deps.enrichActivity(
-            repairCandidate.activityId,
-            activity,
-            parsedActivity,
-            { beforePersist },
-          );
+          if (newActivity.id !== repairCandidate.activityId) {
+            throw new Error("Provider activity identity resolved to a different canonical parent");
+          }
           await this.deps.repository.createImportedActivityResourceLink({
             activityId: repairCandidate.activityId,
             externalId: summary.id.toString(),
@@ -514,10 +565,8 @@ export class WahooActivityImporter {
             integrationGeneration: options.integrationGeneration,
             profileId: integration.profileId,
             provider: "wahoo",
-            providerUpdatedAt: summary.updated_at ?? summary.created_at ?? null,
+            providerUpdatedAt: incomingProviderRevision,
           });
-        } else {
-          newActivity = await this.deps.submitActivity(activity, parsedActivity, { beforePersist });
         }
       } catch (insertError) {
         if (insertError instanceof UnsupportedPersistedActivityVersionError) {
@@ -546,13 +595,15 @@ export class WahooActivityImporter {
             provider: "wahoo",
           });
         if (concurrentImport?.profileId === integration.profileId) {
-          if (!concurrentImport.analysisReady) {
-            const repaired = await this.deps.enrichActivity(
-              concurrentImport.activityId,
-              activity,
-              parsedActivity,
-              { beforePersist },
-            );
+          if (
+            isExactRedelivery({
+              existing: concurrentImport,
+              incomingFileSize: activityFile.size,
+              incomingSha256: activityFile.sha256,
+              incomingProviderRevision,
+            })
+          ) {
+            options.signal?.throwIfAborted();
             await this.deps.repository.createImportedActivityResourceLink({
               activityId: concurrentImport.activityId,
               externalId: summary.id.toString(),
@@ -560,26 +611,21 @@ export class WahooActivityImporter {
               integrationGeneration: options.integrationGeneration,
               profileId: integration.profileId,
               provider: "wahoo",
-              providerUpdatedAt: summary.updated_at ?? summary.created_at ?? null,
+              providerUpdatedAt: incomingProviderRevision,
             });
-            return { success: true, activityId: repaired.id };
+            return {
+              success: true,
+              skipped: true,
+              reason: "Activity already imported",
+              activityId: concurrentImport.activityId,
+            };
           }
-          options.signal?.throwIfAborted();
-          await this.deps.repository.createImportedActivityResourceLink({
-            activityId: concurrentImport.activityId,
-            externalId: summary.id.toString(),
-            integrationId: integration.integrationId,
-            integrationGeneration: options.integrationGeneration,
-            profileId: integration.profileId,
+          logger.warn(WAHOO_ACTIVITY_IMPORT_FAILURE_MESSAGES.persist_activity, {
+            operation: "persist_activity",
+            outcome: "concurrent_revision_requires_retry",
             provider: "wahoo",
-            providerUpdatedAt: summary.updated_at ?? summary.created_at ?? null,
           });
-          return {
-            success: true,
-            skipped: true,
-            reason: "Activity already imported",
-            activityId: concurrentImport.activityId,
-          };
+          return { success: false, error: "Wahoo activity persistence failed" };
         }
         if (concurrentImport) {
           return {
@@ -692,7 +738,7 @@ export class WahooActivityImporter {
     signal?: AbortSignal,
     assertGenerationActive?: () => Promise<void>,
     onStageOwned?: (path: string) => void,
-  ): Promise<{ bytes: Uint8Array; path: string; size: number } | null> {
+  ): Promise<{ bytes: Uint8Array; path: string; sha256: string; size: number } | null> {
     if (!url) {
       return null;
     }
@@ -789,7 +835,12 @@ export class WahooActivityImporter {
         return null;
       }
 
-      return { bytes, path: stagingReservation.path, size: bytes.byteLength };
+      return {
+        bytes,
+        path: stagingReservation.path,
+        sha256: activityFileSha256(bytes),
+        size: bytes.byteLength,
+      };
     } catch (error) {
       if (signal?.aborted) throw error;
       logger.warn("Wahoo activity file processing failed", {
@@ -844,13 +895,10 @@ export function createActivityImporter(deps: {
   submitActivity(
     input: ImportedActivityCreateInput,
     parsedActivity: StandardActivity,
-    options: { beforePersist: (tx: ActivitySubmissionTransaction) => Promise<void> },
-  ): Promise<{ id: string }>;
-  enrichActivity(
-    activityId: string,
-    input: ImportedActivityCreateInput,
-    parsedActivity: StandardActivity,
-    options: { beforePersist: (tx: ActivitySubmissionTransaction) => Promise<void> },
+    options: {
+      artifactSha256: string;
+      beforePersist: (tx: ActivitySubmissionTransaction) => Promise<void>;
+    },
   ): Promise<{ id: string }>;
   generationGuard(
     tx: ActivitySubmissionTransaction,

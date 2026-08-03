@@ -1,5 +1,7 @@
 import { z } from "zod";
+import { cyclingNormalizedPowerResultSchema } from "../calculations/normalized-power";
 import { loadSeriesIdentitySchema, sameLoadSeriesIdentity } from "../load/load-series";
+import { athletePerformanceModelSnapshotSchema } from "../performance-model";
 import { canonicalActivityCategorySchema } from "../schemas/activity-category";
 import { canonicalGoalObjectiveSchema } from "../schemas/goals/profile_goals";
 import {
@@ -77,6 +79,9 @@ const evidencedValue = <T extends z.ZodTypeAny>(value: T, unit: string) =>
     })
     .strict();
 
+const evidencedResult = <T extends z.ZodTypeAny>(result: T) =>
+  z.object({ result, evidenceSourceIds: evidenceSourceIdsSchema }).strict();
+
 export const preferredUnitsSchema = z
   .object({
     distance: z.enum(["kilometers", "miles"]).nullable(),
@@ -128,7 +133,7 @@ export const activityMetricsSchema = z
     caloriesKilocalories: evidencedValue(nullableNonnegativeNumberSchema, "kilocalories"),
     averagePowerWatts: evidencedValue(nullableNonnegativeNumberSchema, "watts"),
     maximumPowerWatts: evidencedValue(nullableNonnegativeNumberSchema, "watts"),
-    normalizedPowerWatts: evidencedValue(nullableNonnegativeNumberSchema, "watts"),
+    normalizedPowerResult: evidencedResult(cyclingNormalizedPowerResultSchema),
     averageSpeedMetersPerSecond: evidencedValue(
       nullableNonnegativeNumberSchema,
       "meters_per_second",
@@ -189,7 +194,11 @@ export const activityObservationInputSchema = z
   .strict()
   .superRefine((activity, context) => {
     const identity = activity.metrics.trainingLoad.identity;
-    if (identity != null && identity.activity_category !== activity.activity_category) {
+    if (
+      identity != null &&
+      !(identity.family === "common_load" && identity.activity_category === "all") &&
+      identity.activity_category !== activity.activity_category
+    ) {
       context.addIssue({
         code: "custom",
         path: ["metrics", "trainingLoad", "identity", "activity_category"],
@@ -303,24 +312,25 @@ export const trainingContextInputSchema = z
     strategy: z.enum(["conservative", "balanced", "aggressive"]).nullable(),
     taperPreference: z.enum(["none", "short", "standard", "extended"]).nullable(),
     progressionPreference: z.enum(["steady", "step", "adaptive"]).nullable(),
-    ctlOverride: identifiedLoadValueSchema("training_load"),
-    atlOverride: identifiedLoadValueSchema("training_load"),
+    longTermLoadOverride: identifiedLoadValueSchema("training_load"),
+    recentLoadOverride: identifiedLoadValueSchema("training_load"),
   })
   .strict()
   .superRefine((trainingContext, context) => {
-    const ctl = trainingContext.ctlOverride;
-    const atl = trainingContext.atlOverride;
+    const longTermLoad = trainingContext.longTermLoadOverride;
+    const recentLoad = trainingContext.recentLoadOverride;
     if (
-      ctl.value !== null &&
-      atl.value !== null &&
-      ctl.identity != null &&
-      atl.identity != null &&
-      !sameLoadSeriesIdentity(ctl.identity, atl.identity)
+      longTermLoad.value !== null &&
+      recentLoad.value !== null &&
+      longTermLoad.identity != null &&
+      recentLoad.identity != null &&
+      !sameLoadSeriesIdentity(longTermLoad.identity, recentLoad.identity)
     ) {
       context.addIssue({
         code: "custom",
-        path: ["atlOverride", "identity"],
-        message: "CTL and ATL overrides must use the same exact load-series identity",
+        path: ["recentLoadOverride", "identity"],
+        message:
+          "LongTermLoad and RecentLoad overrides must use the same exact load-series identity",
       });
     }
   });
@@ -370,6 +380,8 @@ export const athleteIntelligenceModelInputSchema = z
     contractVersion: z.string().min(1).max(32),
     assessmentAsOf: dateTimeSchema,
     athleteId: z.string().min(1),
+    /** Canonical as-of performance authority used by capability policies. */
+    performanceModel: athletePerformanceModelSnapshotSchema.optional(),
     /** IANA zone in which planning dates, availability, and constraints are evaluated. */
     planningTimezone: z.string().trim().min(1).max(64).nullable().optional(),
     evidenceRegistry: z
@@ -422,6 +434,17 @@ export const athleteIntelligenceModelInputSchema = z
       });
     if (Object.values(input.evidenceRegistry).some((item) => item.athleteId !== input.athleteId))
       context.addIssue({ code: "custom", message: "Evidence must belong to the assessed athlete" });
+    if (
+      input.performanceModel !== undefined &&
+      (input.performanceModel.athleteId !== input.athleteId ||
+        input.performanceModel.asOf !== input.assessmentAsOf)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Performance model must match the assessed athlete and instant",
+        path: ["performanceModel"],
+      });
+    }
     const athleteOwned = [
       input.physiology,
       input.trainingContext,

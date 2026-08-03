@@ -1,8 +1,10 @@
 import {
   type ActivityPlanPlanningEstimate,
+  type ActivityPrescriptionQuantificationBundle,
   type AthletePlanningContext,
   estimatePlanningActivityPlanForAthlete,
 } from "@repo/core";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import { type ActivityPlanFitSummary, scoreActivityPlanFit } from "./activity-plan-fit";
 import type { UseTrainingPlanCreationServiceOptions } from "./service-types";
 import type { TrainingPlanBuilderSession } from "./types";
@@ -15,11 +17,7 @@ export type ActivityPlanPickerItem = {
   id: string;
   name: string;
   created_at?: string | null;
-  authoritative_metrics?: {
-    estimated_tss?: number | null;
-    estimated_duration?: number | null;
-    intensity_factor?: number | null;
-  } | null;
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
   activity_category?: string | null;
   structure?: unknown;
 };
@@ -57,8 +55,8 @@ export function deriveActivityPlanPickerState<TItem extends ActivityPlanPickerIt
     items.flatMap((item) => {
       const fit = scoreActivityPlanFit({
         intent: selectedSession?.intent,
-        estimatedTss: item.authoritative_metrics?.estimated_tss ?? null,
-        estimatedDurationSeconds: item.authoritative_metrics?.estimated_duration ?? null,
+        estimatedCommonLoad: getActivityPlanQuantitySummary(item).commonLoad,
+        estimatedDurationSeconds: getActivityPlanQuantitySummary(item).durationSeconds,
       });
       return fit ? [[item.id, fit] as const] : [];
     }),

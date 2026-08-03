@@ -9,7 +9,7 @@ function buildContext(overrides: Partial<CreationContextSummary> = {}): Creation
     effort_confidence_marker: "moderate",
     profile_metric_completeness_marker: "moderate",
     signal_quality: 0.55,
-    recommended_baseline_tss_range: { min: 60, max: 140 },
+    recommended_baseline_load_range: { min: 60, max: 140 },
     recommended_recent_influence_range: { min: 0.2, max: 0.7 },
     recommended_sessions_per_week_range: { min: 3, max: 5 },
     rationale_codes: ["fixture"],
@@ -107,7 +107,7 @@ describe("deriveCreationSuggestions behavior control heuristics", () => {
       context: buildContext({
         history_availability_state: "rich",
         signal_quality: 0.82,
-        recommended_baseline_tss_range: { min: 360, max: 520 },
+        recommended_baseline_load_range: { min: 360, max: 520 },
         recommended_sessions_per_week_range: { min: 5, max: 6 },
         rationale_codes: ["history_rich", "preferred_day_tuesday", "preferred_day_thursday"],
       }),

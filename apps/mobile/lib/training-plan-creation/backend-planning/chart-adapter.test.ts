@@ -8,13 +8,13 @@ function buildLocalChart(): BuilderDailyTrainingPathChartViewModel {
     dailyPoints: [
       {
         date: "2026-01-05",
-        plannedLoadTss: 20,
-        tentativePlannedLoadTss: 0,
-        completedLoadTss: 0,
-        targetLoadTss: 300,
-        actualOrScheduledLoadTss: 20,
-        loadDeltaTss: -280,
-        plannedDeltaTss: -280,
+        plannedLoad: 20,
+        tentativePlannedLoad: 0,
+        completedLoad: 0,
+        targetLoad: 300,
+        actualOrScheduledLoad: 20,
+        loadDelta: -280,
+        plannedDelta: -280,
         fitnessCtl: null,
         scheduledFitnessCtl: null,
         targetFitnessCtl: null,
@@ -25,13 +25,13 @@ function buildLocalChart(): BuilderDailyTrainingPathChartViewModel {
       },
       {
         date: "2026-01-06",
-        plannedLoadTss: 30,
-        tentativePlannedLoadTss: 5,
-        completedLoadTss: 25,
-        targetLoadTss: 40,
-        actualOrScheduledLoadTss: 25,
-        loadDeltaTss: -15,
-        plannedDeltaTss: -5,
+        plannedLoad: 30,
+        tentativePlannedLoad: 5,
+        completedLoad: 25,
+        targetLoad: 40,
+        actualOrScheduledLoad: 25,
+        loadDelta: -15,
+        plannedDelta: -5,
         fitnessCtl: null,
         scheduledFitnessCtl: null,
         targetFitnessCtl: null,
@@ -84,13 +84,13 @@ describe("deriveTrainingPathChartFromActiveProjection", () => {
           points: [
             {
               date: "2026-01-05",
-              predicted_load_tss: 300,
-              predicted_fitness_ctl: 40,
-              predicted_fatigue_atl: 45,
-              predicted_form_tsb: -5,
+              predicted_load: 300,
+              predicted_fitness_longTermLoad: 40,
+              predicted_fatigue_recentLoad: 45,
+              predicted_form_loadBalance: -5,
             },
           ],
-          daily_load_points: [{ date: "2026-01-05", recommended_load_tss: 72 }],
+          daily_load_points: [{ date: "2026-01-05", recommended_common_load: 72 }],
         },
         previewSnapshotToken: null,
       } satisfies ActiveTrainingPlanProjection,
@@ -98,15 +98,15 @@ describe("deriveTrainingPathChartFromActiveProjection", () => {
     });
 
     expect(result.source).toBe("backend");
-    expect(result.chart.dailyPoints[0]?.targetLoadTss).toBe(72);
-    expect(result.chart.dailyPoints[0]?.loadDeltaTss).toBe(-52);
+    expect(result.chart.dailyPoints[0]?.targetLoad).toBe(72);
+    expect(result.chart.dailyPoints[0]?.loadDelta).toBe(-52);
     expect(result.chart.dailyPoints).toHaveLength(2);
     expect(result.chart.dailyPoints[1]).toMatchObject({
       date: "2026-01-06",
-      targetLoadTss: 40,
-      actualOrScheduledLoadTss: 25,
-      loadDeltaTss: -15,
-      plannedDeltaTss: -5,
+      targetLoad: 40,
+      actualOrScheduledLoad: 25,
+      loadDelta: -15,
+      plannedDelta: -5,
     });
     expect(result.chart.weeks[0]?.tentativePlannedLoad).toBeNull();
   });
@@ -126,10 +126,10 @@ describe("deriveTrainingPathChartFromActiveProjection", () => {
           points: [
             {
               date: "2026-01-05",
-              predicted_load_tss: 300,
-              predicted_fitness_ctl: 40,
-              predicted_fatigue_atl: 45,
-              predicted_form_tsb: -5,
+              predicted_load: 300,
+              predicted_fitness_longTermLoad: 40,
+              predicted_fatigue_recentLoad: 45,
+              predicted_form_loadBalance: -5,
             },
           ],
         },
@@ -139,8 +139,8 @@ describe("deriveTrainingPathChartFromActiveProjection", () => {
     });
 
     expect(result.source).toBe("backend");
-    expect(result.chart.dailyPoints[0]?.targetLoadTss).toBe(300);
-    expect(result.chart.dailyPoints[0]?.loadDeltaTss).toBe(-280);
+    expect(result.chart.dailyPoints[0]?.targetLoad).toBe(300);
+    expect(result.chart.dailyPoints[0]?.loadDelta).toBe(-280);
   });
 
   it("falls back to the local chart when backend projection points are unusable", () => {
@@ -164,7 +164,7 @@ describe("deriveTrainingPathChartFromActiveProjection", () => {
     expect(result).toEqual({ chart: localChart, source: "local" });
   });
 
-  it("does not expose backend CTL, ATL, or TSB when local history is unavailable", () => {
+  it("does not expose backend Fitness, ATL, or TSB when local history is unavailable", () => {
     const localChart = { ...buildLocalChart(), emptyState: "noActivityHistory" as const };
     const result = deriveTrainingPathChartFromActiveProjection({
       activeProjection: {
@@ -180,13 +180,13 @@ describe("deriveTrainingPathChartFromActiveProjection", () => {
           points: [
             {
               date: "2026-01-05",
-              predicted_load_tss: 300,
-              predicted_fitness_ctl: 40,
-              predicted_fatigue_atl: 45,
-              predicted_form_tsb: -5,
+              predicted_load: 300,
+              predicted_fitness_longTermLoad: 40,
+              predicted_fatigue_recentLoad: 45,
+              predicted_form_loadBalance: -5,
             },
           ],
-          daily_load_points: [{ date: "2026-01-05", recommended_load_tss: 72 }],
+          daily_load_points: [{ date: "2026-01-05", recommended_common_load: 72 }],
         },
         previewSnapshotToken: null,
       } satisfies ActiveTrainingPlanProjection,

@@ -525,10 +525,10 @@ export const CreateEventFlow = forwardRef<
   const handleSelectPlanResource = (item: ResourcePickerItem) => {
     if (existingEventReadOnly) return;
     handleSelectPlan({
-      authoritative_metrics: {
-        estimated_duration: item.estimatedDuration ?? null,
-        estimated_tss: item.estimatedTss ?? null,
-      },
+      prescriptionQuantification:
+        "activityPlanCardData" in item
+          ? (item.activityPlanCardData.prescriptionQuantification ?? null)
+          : null,
       description: item.description ?? null,
       activity_category: item.activityCategory ?? "other",
       id: item.id,

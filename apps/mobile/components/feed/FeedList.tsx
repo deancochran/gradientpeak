@@ -1,13 +1,11 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { CalendarDays, Route, Users } from "lucide-react-native";
-import { useCallback } from "react";
 import { Pressable, View } from "react-native";
 import { ActivityCard } from "@/components/shared/ActivityCard";
 import { ResourceList } from "@/components/shared/ResourceList";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { FeedEmptyState } from "./FeedEmptyState";
-import type { FeedActivityItem } from "./types";
 import { useFeedListController } from "./useFeedListController";
 
 interface FeedListProps {
@@ -64,22 +62,6 @@ export function FeedList({ onCommentPress }: FeedListProps) {
     refreshing,
   } = useFeedListController();
 
-  const renderItem = useCallback(
-    (item: FeedActivityItem) => (
-      <ActivityCard
-        activity={item}
-        dateMode="absolute"
-        onCommentPress={onCommentPress ? () => onCommentPress(item.id) : undefined}
-        onPress={() => navigateTo(`/activity-detail?id=${item.id}`)}
-        showLike
-        variant="list"
-      />
-    ),
-    [navigateTo, onCommentPress],
-  );
-
-  const keyExtractor = useCallback((item: FeedActivityItem) => item.id, []);
-
   return (
     <ResourceList
       contentContainerClassName="gap-3 p-4 pb-6"
@@ -90,13 +72,22 @@ export function FeedList({ onCommentPress }: FeedListProps) {
       isError={isLoadingError}
       isFetchingNextPage={isFetchingNextPage}
       isLoading={isLoading}
-      keyExtractor={keyExtractor}
+      keyExtractor={(item) => item.id}
       ListHeaderComponent={<FeedShortcuts />}
       loadingSkeletonCount={3}
       onLoadMore={handleLoadMore}
       onRefresh={handleRefresh}
       refreshing={refreshing}
-      renderItem={renderItem}
+      renderItem={(item) => (
+        <ActivityCard
+          activity={item}
+          dateMode="absolute"
+          onCommentPress={onCommentPress ? () => onCommentPress(item.id) : undefined}
+          onPress={() => navigateTo(`/activity-detail?id=${item.id}`)}
+          showLike
+          variant="list"
+        />
+      )}
     />
   );
 }

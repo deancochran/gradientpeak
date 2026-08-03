@@ -137,7 +137,6 @@ const importedOnboardingValuesOutputSchema = z
         dob: z.string().optional(),
         gender: z.enum(["male", "female", "other"]).optional(),
         weight_kg: z.number().optional(),
-        ftp: z.number().optional(),
       })
       .strict(),
     sources: z
@@ -159,14 +158,6 @@ const importedOnboardingValuesOutputSchema = z
           .strict()
           .optional(),
         weight_kg: z
-          .object({
-            provider: publicIntegrationProviderSchema,
-            label: z.string(),
-            sourceRecordedAt: z.string().datetime().nullable(),
-          })
-          .strict()
-          .optional(),
-        ftp: z
           .object({
             provider: publicIntegrationProviderSchema,
             label: z.string(),

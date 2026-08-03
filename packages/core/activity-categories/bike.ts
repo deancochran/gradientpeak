@@ -31,7 +31,7 @@ export const bikeActivityCategory: ActivityCategoryRegistryEntry = {
     template: {
       avgIF: 0.75,
       avgDuration: 3600,
-      avgTSS: 60,
+      avgCommonLoad: 60,
     },
   },
 };

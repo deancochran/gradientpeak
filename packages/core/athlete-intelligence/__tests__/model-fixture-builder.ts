@@ -1,3 +1,4 @@
+import { calculateCyclingNormalizedPower } from "../../calculations/normalized-power";
 import {
   athleteIntelligenceModelInputSchema,
   type ParsedAthleteIntelligenceModelInput,
@@ -69,13 +70,13 @@ export function buildAthleteIntelligenceModel(
     ]),
   );
   const evidenceRegistry = {
-    "metric:ftp": {
+    "metric:weight": {
       athleteId: "athlete-1",
-      sourceId: "metric:ftp",
-      lineageGroupId: "metric:ftp-history",
+      sourceId: "metric:weight",
+      lineageGroupId: "metric:weight-history",
       observedAt: "2026-07-09T12:00:00.000Z",
-      rawObservation: { value: 250, unit: "watts" },
-      activity_category: "bike",
+      rawObservation: { value: 75, unit: "kilograms" },
+      activity_category: null,
       modality: "profile_metric",
       sourceType: "profile_metric",
       qualityState: "known",
@@ -175,9 +176,9 @@ export function buildAthleteIntelligenceModel(
     },
     metricEvidence: [
       {
-        metricType: "ftp",
-        role: "direct_threshold_evidence",
-        value: { value: 250, unit: "watts", evidenceSourceIds: ["metric:ftp"] },
+        metricType: "weight_kg",
+        role: "watts_per_kilogram_input",
+        value: { value: 75, unit: "kilograms", evidenceSourceIds: ["metric:weight"] },
       },
     ],
     activityWindow: { from: "2026-06-10T12:00:00.000Z", through: "2026-07-10T12:00:00.000Z" },
@@ -199,7 +200,10 @@ export function buildAthleteIntelligenceModel(
           caloriesKilocalories: activityMetric(null, "kilocalories"),
           averagePowerWatts: activityMetric(null, "watts"),
           maximumPowerWatts: activityMetric(null, "watts"),
-          normalizedPowerWatts: activityMetric(null, "watts"),
+          normalizedPowerResult: {
+            result: calculateCyclingNormalizedPower({ samples: [] }),
+            evidenceSourceIds: activityMetric(null, "watts").evidenceSourceIds,
+          },
           averageSpeedMetersPerSecond: activityMetric(null, "meters_per_second"),
           maximumSpeedMetersPerSecond: activityMetric(null, "meters_per_second"),
           averageHeartRateBpm: activityMetric(null, "beats_per_minute"),
@@ -253,8 +257,8 @@ export function buildAthleteIntelligenceModel(
       strategy: null,
       taperPreference: null,
       progressionPreference: null,
-      ctlOverride: unidentifiedLoad(null, "training_load"),
-      atlOverride: unidentifiedLoad(null, "training_load"),
+      longTermLoadOverride: unidentifiedLoad(null, "training_load"),
+      recentLoadOverride: unidentifiedLoad(null, "training_load"),
     },
     readCoverage: {
       metrics: { state: "complete", reason: null },

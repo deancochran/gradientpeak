@@ -37,7 +37,7 @@ export interface ActivityCategoryRouteHeuristics {
 export interface ActivityCategoryTemplateHeuristics {
   avgIF: number;
   avgDuration: number;
-  avgTSS: number;
+  avgCommonLoad: number;
 }
 
 export interface ActivityCategoryLoadHeuristics {

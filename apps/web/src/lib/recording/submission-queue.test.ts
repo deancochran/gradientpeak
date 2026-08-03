@@ -1,4 +1,5 @@
 import {
+  createUnavailableAthletePerformanceTargetFacts,
   type PortableWebRecordingSubmissionJob,
   portableWebRecordingArtifactSchema,
 } from "@repo/core";
@@ -34,7 +35,8 @@ const artifact = portableWebRecordingArtifactSchema.parse({
       activityPlanId: null,
       routeId: null,
     },
-    profileSnapshot: { defaultsApplied: [] },
+    profileSnapshot: {},
+    performanceTargets: createUnavailableAthletePerformanceTargetFacts("2026-07-20T10:00:00.000Z"),
     devices: { connected: [], controllableTrainer: null, selectedSources: [] },
     capabilities: {
       canTrackLocation: false,

@@ -2,23 +2,34 @@ import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardDescription, CardHeader } from "@repo/ui/components/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
+import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
 
-import { getCommonLoadPresentation } from "../../lib/activity-load-presentation";
 import { formatShortDayLabel } from "../../lib/planning";
 
-type EffectiveItem = {
-  commonLoad: unknown;
-  completedActivityId?: string;
-  date: string;
-  kind: "completed" | "scheduled";
-  scheduledItemId?: string;
-};
+type EffectiveItem =
+  | {
+      commonLoad: unknown;
+      completedActivityId: string;
+      date: string;
+      kind: "completed";
+      observationQuantification: unknown;
+      replacedScheduledItemId?: string | null;
+    }
+  | {
+      commonLoad: unknown;
+      date: string;
+      kind: "scheduled";
+      prescriptionQuantification: unknown;
+      scheduledItemId: string;
+    };
 
 type EffectiveLoad = {
   status: "available" | "unavailable";
   reason?: string;
   completed?: unknown;
+  completedObservationQuantification?: unknown;
   remaining?: unknown;
+  remainingPrescriptionQuantification?: unknown;
   resolvedRange?: {
     endDate: string | null;
     startDate: string | null;
@@ -26,6 +37,7 @@ type EffectiveLoad = {
   };
   sourceCoverage?: SourceCoverage;
   tentative?: unknown;
+  tentativePrescriptionQuantification?: unknown;
   effective?: {
     status: "available" | "integrity_unavailable";
     reason?: string;
@@ -54,21 +66,22 @@ function resolvedRangeLabel(range: EffectiveLoad["resolvedRange"]) {
   return `for ${range.startDate}–${range.endDate}${range.timezone ? ` in ${range.timezone}` : ""}`;
 }
 
-function LoadValue({ value }: { value: unknown }) {
-  const presentation = getCommonLoadPresentation(value);
-  if (presentation.status === "unavailable") {
-    return <Badge variant="outline">Load unavailable</Badge>;
+function CommonLoadValue({ value }: { value: unknown }) {
+  const presentation = getActivityQuantificationPresentation(value);
+  if (presentation.kind === "unavailable" || presentation.commonLoad.status === "unavailable") {
+    return <Badge variant="outline">Common Load unavailable</Badge>;
   }
   return (
     <Badge
       variant={
-        presentation.status === "available" || presentation.status === "complete"
+        presentation.commonLoad.status === "available" ||
+        presentation.commonLoad.status === "complete"
           ? "default"
           : "outline"
       }
     >
-      Load {presentation.load}
-      {presentation.status === "partial" ? " · partial" : ""}
+      {presentation.commonLoad.label} {presentation.commonLoad.value}
+      {presentation.commonLoad.status === "partial" ? " · partial" : ""}
     </Badge>
   );
 }
@@ -94,21 +107,25 @@ function ItemList({
   return (
     <div className="space-y-2">
       {items.map((item) => {
-        const presentation = getCommonLoadPresentation(item.commonLoad);
+        const quantification =
+          item.kind === "completed"
+            ? item.observationQuantification
+            : item.prescriptionQuantification;
+        const presentation = getActivityQuantificationPresentation(quantification);
         return (
           <div
-            key={item.completedActivityId ?? item.scheduledItemId ?? `${item.kind}-${item.date}`}
+            key={item.kind === "completed" ? item.completedActivityId : item.scheduledItemId}
             className="flex items-center justify-between gap-3 rounded-xl border p-3"
-            data-scheduled-item-id={item.scheduledItemId}
+            data-scheduled-item-id={item.kind === "scheduled" ? item.scheduledItemId : undefined}
           >
             <div>
               <p className="font-medium">{formatShortDayLabel(item.date)}</p>
               <p className="text-xs text-muted-foreground">
                 {item.kind === "completed" ? "Completed activity" : "Scheduled activity"}
               </p>
-              <p className="text-xs text-muted-foreground">{presentation.explanation}</p>
+              <p className="text-xs text-muted-foreground">{presentation.commonLoad.explanation}</p>
             </div>
-            <LoadValue value={item.commonLoad} />
+            <CommonLoadValue value={quantification} />
           </div>
         );
       })}
@@ -144,23 +161,27 @@ export function TrainingLoadPath({
       <CardHeader>
         <h2 className="leading-none font-semibold">Training path</h2>
         <CardDescription>
-          Server-composed common Load {resolvedRangeLabel(effectiveLoad?.resolvedRange)}. Firm and
+          Server-composed Common Load {resolvedRangeLabel(effectiveLoad?.resolvedRange)}. Firm and
           tentative work remain separate.
         </CardDescription>
       </CardHeader>
       <CardContent>
         {isError ? (
           <div className="space-y-2 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-            <p>Effective plan Load could not be refreshed. No client-side estimate is shown.</p>
+            <p>
+              Effective plan Common Load could not be refreshed. No client-side estimate is shown.
+            </p>
             {onRetry ? (
               <Button onClick={onRetry} size="sm" type="button" variant="outline">
-                Retry effective plan Load
+                Retry effective plan Common Load
               </Button>
             ) : null}
           </div>
         ) : unavailableReason ? (
           <div className="space-y-2 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-            <p>Effective plan Load is unavailable: {unavailableReason.replaceAll("_", " ")}.</p>
+            <p>
+              Effective plan Common Load is unavailable: {unavailableReason.replaceAll("_", " ")}.
+            </p>
             <p>{coverageLabel(sourceCoverage)}</p>
           </div>
         ) : (
@@ -173,15 +194,15 @@ export function TrainingLoadPath({
               <div className="grid gap-2 sm:grid-cols-3">
                 <div className="rounded-xl border p-3">
                   <p className="text-xs text-muted-foreground">Completed this week</p>
-                  <LoadValue value={effectiveLoad?.completed ?? { status: "unavailable" }} />
+                  <CommonLoadValue value={effectiveLoad?.completedObservationQuantification} />
                 </div>
                 <div className="rounded-xl border p-3">
                   <p className="text-xs text-muted-foreground">Remaining firm work</p>
-                  <LoadValue value={effectiveLoad?.remaining ?? { status: "unavailable" }} />
+                  <CommonLoadValue value={effectiveLoad?.remainingPrescriptionQuantification} />
                 </div>
                 <div className="rounded-xl border p-3">
                   <p className="text-xs text-muted-foreground">Tentative work</p>
-                  <LoadValue value={effectiveLoad?.tentative ?? { status: "unavailable" }} />
+                  <CommonLoadValue value={effectiveLoad?.tentativePrescriptionQuantification} />
                 </div>
               </div>
               <ItemList

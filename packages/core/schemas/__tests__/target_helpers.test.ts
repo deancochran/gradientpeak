@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  convertTargetToAbsolute,
   formatTargetValue,
   getRuntimeTargetIntensity,
   getTargetGuidance,
@@ -23,15 +22,10 @@ describe("modern speed target helpers", () => {
     expect(isInTargetRange(18, speedTarget)).toBe(false);
   });
 
-  it("uses m/s for runtime guidance and absolute/export values", () => {
+  it("uses m/s for runtime guidance", () => {
     expect(getTargetGuidance(4, speedTarget)).toEqual({
       status: "below",
       message: "Increase by 1 m/s",
-    });
-    expect(convertTargetToAbsolute(speedTarget, {})).toEqual({
-      intensity: 5,
-      unit: "m/s",
-      label: "Speed",
     });
   });
 });

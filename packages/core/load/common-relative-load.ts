@@ -10,7 +10,6 @@ export const COMMON_RELATIVE_LOAD_MODEL = "gradientpeak_relative_load" as const;
 export const COMMON_RELATIVE_LOAD_VERSION = "1" as const;
 export const commonLoadMethodSchema = z.enum([
   "power_threshold",
-  "critical_power_threshold",
   "run_pace_threshold",
   "swim_pace_threshold",
   "heart_rate_zones",
@@ -37,14 +36,6 @@ export const commonThresholdEvidenceSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("ftp_watts"),
-      value: z.number().finite().positive(),
-      unit: z.literal("watts"),
-      ...thresholdEvidenceBaseShape,
-    })
-    .strict(),
-  z
-    .object({
-      type: z.literal("critical_power_watts"),
       value: z.number().finite().positive(),
       unit: z.literal("watts"),
       ...thresholdEvidenceBaseShape,
@@ -183,6 +174,7 @@ const commonLoadUnavailableSchema = z
       "unsupported_modality",
       "insufficient_coverage",
       "stale_threshold",
+      "evidence_truncated",
       "intensity_out_of_range",
     ]),
   })
@@ -241,11 +233,12 @@ const commonLoadUnavailableSchema = z
     }
     if (result.reason === "stale_threshold") {
       if (
-        !hasCompleteProvenance ||
-        result.thresholdEvidence?.freshness !== "stale" ||
-        result.quality?.stale !== true
+        hasCompleteProvenance &&
+        (result.thresholdEvidence?.freshness !== "stale" || result.quality?.stale !== true)
       ) {
         issue("Stale threshold requires complete matching stale threshold provenance");
+      } else if (!hasCompleteProvenance && !hasNoProvenance) {
+        issue("Stale threshold provenance must be complete or wholly unavailable");
       }
       return;
     }
@@ -267,7 +260,6 @@ const commonLoadUnavailableSchema = z
 
 const expectedThresholdTypeByMethod = {
   power_threshold: "ftp_watts",
-  critical_power_threshold: "critical_power_watts",
   run_pace_threshold: "threshold_speed_mps",
   swim_pace_threshold: "swim_threshold_speed_mps",
   heart_rate_zones: "lthr_bpm",
@@ -275,7 +267,6 @@ const expectedThresholdTypeByMethod = {
 
 const allowedActivityCategoriesByMethod = {
   power_threshold: ["bike"],
-  critical_power_threshold: ["bike"],
   run_pace_threshold: ["run"],
   swim_pace_threshold: ["swim"],
   heart_rate_zones: ["run", "bike", "swim"],
@@ -548,6 +539,22 @@ export type IncompatibleCommonLoadAggregateObservation = z.infer<
 export type CommonLoadAggregateObservation =
   | CommonLoadResult
   | IncompatibleCommonLoadAggregateObservation;
+
+/**
+ * Reads normalized intensity from the canonical Common Load envelope. Common
+ * Load remains the single stored source of truth; callers should derive this
+ * value instead of persisting a second normalized-intensity field.
+ */
+export function getNormalizedIntensity(
+  commonLoad: CommonLoadResult | CommonLoadAggregate,
+): number | null {
+  if ("activity_category" in commonLoad) {
+    const parsed = commonLoadResultSchema.parse(commonLoad);
+    return parsed.status === "unavailable" ? null : parsed.intensity;
+  }
+  const parsed = commonLoadAggregateSchema.parse(commonLoad);
+  return parsed.status === "unavailable" ? null : parsed.intensity;
+}
 
 /** Calculates one fully evidenced v1 activity result without rounding or clamping. */
 export function calculateAvailableCommonLoad(

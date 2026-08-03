@@ -30,8 +30,6 @@ const profile: AuthProfile = {
   preferred_units: null,
   planning_timezone: null,
   language: null,
-  ftp: null,
-  threshold_hr: null,
   weight_kg: null,
 };
 

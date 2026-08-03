@@ -16,7 +16,7 @@ const periodizedBase = {
   start_date: "2026-01-05",
   end_date: "2026-04-20",
   fitness_progression: {
-    starting_ctl: 44,
+    starting_longTermLoad: 44,
   },
   activity_distribution: {
     run: { target_percentage: 0.8 },
@@ -30,7 +30,7 @@ const periodizedBase = {
       end_date: "2026-02-15",
       goal_ids: [goalOneId],
       phase: "build" as const,
-      target_weekly_tss_range: { min: 300, max: 380 },
+      target_weekly_load_range: { min: 300, max: 380 },
     },
     {
       id: "44444444-4444-4444-8444-444444444444",
@@ -39,7 +39,7 @@ const periodizedBase = {
       end_date: "2026-04-20",
       goal_ids: [goalTwoId],
       phase: "build" as const,
-      target_weekly_tss_range: { min: 320, max: 420 },
+      target_weekly_load_range: { min: 320, max: 420 },
     },
   ],
 };

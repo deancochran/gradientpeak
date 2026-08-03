@@ -1,5 +1,4 @@
 export {
-  type AthleteBaselineActivityCategory,
   type AthleteBaselineChange,
   type AthleteBaselineField,
   type AthleteBaselineFieldSource,

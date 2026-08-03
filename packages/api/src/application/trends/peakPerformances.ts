@@ -1,4 +1,6 @@
-export type PeakPerformanceMetric = "distance" | "speed" | "power" | "duration" | "tss";
+import type { ActivityObservationQuantificationBundle } from "@repo/core";
+
+export type PeakPerformanceMetric = "distance" | "speed" | "power" | "duration" | "common_load";
 
 export type PeakPerformanceActivityRow = {
   id: string;
@@ -12,7 +14,7 @@ export type PeakPerformanceActivityRow = {
 };
 
 export type PeakPerformanceDerivedSummary = {
-  tss?: number | null;
+  observationQuantification: ActivityObservationQuantificationBundle;
 };
 
 export type PeakPerformancesResult = {
@@ -24,6 +26,7 @@ export type PeakPerformancesResult = {
     unit: string;
     activity_category: string;
     rank: number;
+    observationQuantification: ActivityObservationQuantificationBundle | null;
   }>;
 };
 
@@ -34,15 +37,23 @@ function resolvePeakPerformanceValue(
 ) {
   switch (metric) {
     case "distance":
-      return { value: activity.distance_meters, unit: "m" };
+      return { value: activity.distance_meters, unit: "m", observationQuantification: null };
     case "speed":
-      return { value: activity.avg_speed_mps, unit: "m/s" };
+      return { value: activity.avg_speed_mps, unit: "m/s", observationQuantification: null };
     case "power":
-      return { value: activity.avg_power, unit: "W" };
+      return { value: activity.avg_power, unit: "W", observationQuantification: null };
     case "duration":
-      return { value: activity.moving_seconds, unit: "s" };
-    case "tss":
-      return { value: derivedMap?.get(activity.id)?.tss ?? null, unit: "TSS" };
+      return { value: activity.moving_seconds, unit: "s", observationQuantification: null };
+    case "common_load": {
+      const observationQuantification =
+        derivedMap?.get(activity.id)?.observationQuantification ?? null;
+      const commonLoad = observationQuantification?.summary.commonLoad;
+      return {
+        value: commonLoad?.status === "unavailable" ? null : (commonLoad?.load ?? null),
+        unit: "common_load",
+        observationQuantification,
+      };
+    }
   }
 }
 
@@ -58,7 +69,11 @@ export function buildPeakPerformances(
 
   const allPerformances = activityRows
     .map((activity) => {
-      const { value, unit } = resolvePeakPerformanceValue(activity, metric, derivedMap);
+      const { value, unit, observationQuantification } = resolvePeakPerformanceValue(
+        activity,
+        metric,
+        derivedMap,
+      );
 
       if (value === null || value === undefined) {
         return null;
@@ -71,13 +86,14 @@ export function buildPeakPerformances(
         value,
         unit,
         activity_category: activity.type,
+        observationQuantification,
       };
     })
     .filter((performance) => performance !== null);
 
   // Database ordering is sufficient for directly ordered metrics. Re-sort derived/nullable metric
   // candidates that may have been over-fetched or calculated outside the primary activity row.
-  if (["speed", "power", "tss"].includes(metric)) {
+  if (["speed", "power", "common_load"].includes(metric)) {
     allPerformances.sort((a, b) => b.value - a.value);
   }
 

@@ -20,7 +20,7 @@ function fixture() {
         },
       ],
     },
-    startingCtl: 40,
+    startingLongTermLoad: 40,
   });
   const dailyLoadPoints = buildDailyLoadDistribution({
     startDate: projection.start_date,
@@ -28,7 +28,7 @@ function fixture() {
     weeklyTargets: projection.blocks.map((block) => ({
       weekStartDate: block.start_date,
       weekEndDate: block.end_date,
-      targetTss: (block.target_weekly_tss_range.min + block.target_weekly_tss_range.max) / 2,
+      targetLoad: (block.target_weekly_load_range.min + block.target_weekly_load_range.max) / 2,
       phase: block.phase,
     })),
   });

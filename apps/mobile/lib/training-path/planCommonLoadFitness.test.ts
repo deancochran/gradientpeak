@@ -32,7 +32,7 @@ describe("buildPlanCommonLoadFitnessSeries", () => {
     });
 
     expect(result.actualFitnessHistory).toEqual([
-      { date: "2026-07-27", ctl: 40, atl: 50, tsb: -10 },
+      { date: "2026-07-27", longTermLoad: 40, recentLoad: 50, loadBalance: -10 },
     ]);
     expect(result.projectionStatus).toBe("complete");
     expect(result.projectedFitness.map((point) => point.date)).toEqual([

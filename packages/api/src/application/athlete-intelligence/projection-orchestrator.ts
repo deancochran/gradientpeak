@@ -15,6 +15,7 @@ import {
   type DurationAwareEffortCurve,
   type EvidenceItem,
   evaluatePhysiologyMetrics,
+  fingerprintCanonicalJson,
   type GoalDemandPolicyResult,
   type ParsedAthleteIntelligenceModelInput,
   unavailableResult,
@@ -36,6 +37,13 @@ const explainabilityResultStateSchema = z.enum([
   "unknown",
   "insufficient_evidence",
   "unsupported",
+]);
+const readinessMetricTypeSchema = z.enum([
+  "hrv_rmssd",
+  "sleep_hours",
+  "stress_score",
+  "soreness_level",
+  "wellness_score",
 ]);
 
 const explainabilityReasonLabels: Readonly<Record<string, string>> = {
@@ -246,15 +254,9 @@ function demandForGoal(goal: ParsedAthleteIntelligenceModelInput["goals"][number
 }
 
 function readinessContext(model: ParsedAthleteIntelligenceModelInput) {
-  const supported = new Set([
-    "hrv_rmssd",
-    "sleep_hours",
-    "stress_score",
-    "soreness_level",
-    "wellness_score",
-  ]);
   return model.metricEvidence.flatMap((metric) => {
-    if (!supported.has(metric.metricType) || metric.value.value === null) return [];
+    const metricType = readinessMetricTypeSchema.safeParse(metric.metricType);
+    if (!metricType.success || metric.value.value === null) return [];
     const sourceId = metric.value.evidenceSourceIds[0];
     const evidence = sourceId ? model.evidenceRegistry[sourceId] : undefined;
     if (!sourceId || !evidence) return [];
@@ -263,12 +265,7 @@ function readinessContext(model: ParsedAthleteIntelligenceModelInput) {
         sourceId,
         lineageGroupId: evidence.lineageGroupId,
         observedAt: evidence.observedAt,
-        metric: metric.metricType as
-          | "hrv_rmssd"
-          | "sleep_hours"
-          | "stress_score"
-          | "soreness_level"
-          | "wellness_score",
+        metric: metricType.data,
         value: metric.value.value,
       },
     ];
@@ -354,10 +351,6 @@ function curatedExplainability(input: {
     })),
   ].map((limit, index) => ({ ...limit, id: `limit-${index + 1}` }));
   const collectionPrompts = [
-    ...(input.projection.capability.ftp.state === "unknown" ||
-    input.projection.capability.ftp.state === "insufficient_evidence"
-      ? [{ label: "Add a profile metric", destination: "profile_metrics" as const }]
-      : []),
     ...(input.projection.readiness.volumeTrend.state === "unknown" ||
     input.projection.readiness.volumeTrend.state === "insufficient_evidence"
       ? [{ label: "Import activities", destination: "activity_import" as const }]
@@ -617,17 +610,26 @@ export async function projectAthleteIntelligence(input: {
     "strength_exposure_policy_not_available",
   ];
   const readinessPolicy = { policy: "activityReadiness", version: activityReadiness.policyVersion };
-  const representedLoadGroups = new Map<string, typeof policyActivities>();
+  const representedLoadGroups = new Map<
+    string,
+    { activities: typeof policyActivities; loadIdentity: string }
+  >();
   for (const activity of policyActivities) {
     const identity = activity.trainingLoadIdentity;
     if (
       activity.trainingLoad === null ||
       identity == null ||
-      identity.activity_category !== activity.activity_category
+      (identity.activity_category !== activity.activity_category &&
+        !(identity.family === "common_load" && identity.activity_category === "all"))
     )
       continue;
-    const key = JSON.stringify(identity);
-    representedLoadGroups.set(key, [...(representedLoadGroups.get(key) ?? []), activity]);
+    const loadIdentity = fingerprintCanonicalJson(identity);
+    const key = `${activity.activity_category}:${loadIdentity}`;
+    const existing = representedLoadGroups.get(key);
+    representedLoadGroups.set(key, {
+      loadIdentity,
+      activities: [...(existing?.activities ?? []), activity],
+    });
   }
   const calculationInputs = (activities: typeof policyActivities) =>
     activities
@@ -650,7 +652,7 @@ export async function projectAthleteIntelligence(input: {
     ),
     externalWork: [...representedLoadGroups.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([loadIdentity, activities]) => {
+      .map(([, { activities, loadIdentity }]) => {
         const targetActivityCategory = activities[0]?.activity_category ?? "other";
         const groupReadiness = calculateActivityReadiness({
           assessmentAt: model.assessmentAsOf,

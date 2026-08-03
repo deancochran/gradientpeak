@@ -18,8 +18,8 @@ export const activityTargetCapabilityConfig = {
     preferred: ["%FTP", "watts", "cadence", "%ThresholdHR", "bpm", "%MaxHR", "RPE"],
   },
   swim: {
-    allowed: ["bpm", "%MaxHR", "%ThresholdHR", "RPE"],
-    preferred: ["RPE", "%ThresholdHR", "bpm", "%MaxHR"],
+    allowed: ["speed", "bpm", "%MaxHR", "%ThresholdHR", "RPE"],
+    preferred: ["speed", "RPE", "%ThresholdHR", "bpm", "%MaxHR"],
   },
   strength: { allowed: ["RPE"], preferred: ["RPE"] },
   other: {

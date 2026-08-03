@@ -128,7 +128,7 @@ jest.mock("@/lib/api", () => ({
               duration_seconds: 3200,
               polyline: "encoded",
             },
-            derived: { stress: { tss: 75 } },
+            derived: null,
           },
         }),
       },

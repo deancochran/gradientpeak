@@ -6,14 +6,14 @@ const session = (overrides: Partial<PlanAlignmentSession> = {}): PlanAlignmentSe
   linkedActivityId: "activity-1",
   linkedActivityExists: true,
   linkedActivityProfileOwned: true,
-  plannedTss: 100,
-  completedTss: 100,
+  plannedCommonLoad: 100,
+  completedCommonLoad: 100,
   ...overrides,
 });
 
 describe("calculatePlanAlignment", () => {
   it("assesses a uniquely linked completion and scores over-target load symmetrically", () => {
-    expect(calculatePlanAlignment([session({ completedTss: 130 })])).toMatchObject({
+    expect(calculatePlanAlignment([session({ completedCommonLoad: 130 })])).toMatchObject({
       status: "available",
       score: 75,
       completedSessions: 1,
@@ -21,8 +21,8 @@ describe("calculatePlanAlignment", () => {
       totalSessions: 1,
       completedActivityIds: ["activity-1"],
       assessableActivityIds: ["activity-1"],
-      assessedPlannedTss: 100,
-      assessedCompletedTss: 130,
+      assessedPlannedCommonLoad: 100,
+      assessedCompletedCommonLoad: 130,
     });
   });
 
@@ -37,11 +37,13 @@ describe("calculatePlanAlignment", () => {
       unverifiedSessions: 2,
       completedActivityIds: [],
       assessableActivityIds: [],
-      assessedPlannedTss: 0,
-      assessedCompletedTss: 0,
+      assessedPlannedCommonLoad: 0,
+      assessedCompletedCommonLoad: 0,
     });
-    expect(calculatePlanAlignment([session({ plannedTss: null })]).status).toBe("unavailable");
-    expect(calculatePlanAlignment([session({ completedTss: null })]).score).toBeNull();
+    expect(calculatePlanAlignment([session({ plannedCommonLoad: null })]).status).toBe(
+      "unavailable",
+    );
+    expect(calculatePlanAlignment([session({ completedCommonLoad: null })]).score).toBeNull();
   });
 
   it("keeps an assessed subset partial and fails closed when global link occurrence is duplicated", () => {
@@ -58,8 +60,8 @@ describe("calculatePlanAlignment", () => {
       status: "unavailable",
       completedActivityIds: [],
       assessableActivityIds: [],
-      assessedPlannedTss: 0,
-      assessedCompletedTss: 0,
+      assessedPlannedCommonLoad: 0,
+      assessedCompletedCommonLoad: 0,
     });
   });
 

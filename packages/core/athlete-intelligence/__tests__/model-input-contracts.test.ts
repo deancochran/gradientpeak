@@ -1,29 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { calculateCyclingNormalizedPower } from "../../calculations/normalized-power";
 
 import { athleteIntelligenceModelInputSchema, goalInputSchema } from "../model-input-contracts";
 
 const asOf = "2026-07-10T12:00:00.000Z";
-const metricUnits = {
-  elapsedDurationSeconds: "seconds",
-  movingDurationSeconds: "seconds",
-  distanceMeters: "meters",
-  ascentMeters: "meters",
-  descentMeters: "meters",
-  workKilojoules: "kilojoules",
-  caloriesKilocalories: "kilocalories",
-  averagePowerWatts: "watts",
-  maximumPowerWatts: "watts",
-  normalizedPowerWatts: "watts",
-  averageSpeedMetersPerSecond: "meters_per_second",
-  maximumSpeedMetersPerSecond: "meters_per_second",
-  averageHeartRateBpm: "beats_per_minute",
-  maximumHeartRateBpm: "beats_per_minute",
-  averageCadenceRpm: "revolutions_per_minute",
-  maximumCadenceRpm: "revolutions_per_minute",
-  trainingLoad: "score",
-  aerobicTrainingEffect: "score",
-  anaerobicTrainingEffect: "score",
-} as const;
 
 function input() {
   let nextId = 0;
@@ -119,9 +99,9 @@ function input() {
     },
     metricEvidence: [
       {
-        metricType: "ftp" as const,
-        role: "direct_threshold_evidence" as const,
-        value: ev(250, "watts"),
+        metricType: "weight_kg" as const,
+        role: "watts_per_kilogram_input" as const,
+        value: ev(75, "kilograms"),
       },
     ],
     activityWindow: { from: "2026-06-10T12:00:00.000Z", through: asOf },
@@ -133,12 +113,30 @@ function input() {
         startedAt: "2026-07-09T12:00:00.000Z",
         endedAt: "2026-07-09T13:00:00.000Z",
         activity_category: "bike" as const,
-        metrics: Object.fromEntries(
-          Object.entries(metricUnits).map(([key, unit]) => [
-            key,
-            ev(key === "elapsedDurationSeconds" ? 3600 : null, unit),
-          ]),
-        ),
+        metrics: {
+          elapsedDurationSeconds: ev(3600, "seconds"),
+          movingDurationSeconds: ev(null, "seconds"),
+          distanceMeters: ev(null, "meters"),
+          ascentMeters: ev(null, "meters"),
+          descentMeters: ev(null, "meters"),
+          workKilojoules: ev(null, "kilojoules"),
+          caloriesKilocalories: ev(null, "kilocalories"),
+          averagePowerWatts: ev(null, "watts"),
+          maximumPowerWatts: ev(null, "watts"),
+          normalizedPowerResult: {
+            result: calculateCyclingNormalizedPower({ samples: [] }),
+            evidenceSourceIds: [evidence(null, "watts")],
+          },
+          averageSpeedMetersPerSecond: ev(null, "meters_per_second"),
+          maximumSpeedMetersPerSecond: ev(null, "meters_per_second"),
+          averageHeartRateBpm: ev(null, "beats_per_minute"),
+          maximumHeartRateBpm: ev(null, "beats_per_minute"),
+          averageCadenceRpm: ev(null, "revolutions_per_minute"),
+          maximumCadenceRpm: ev(null, "revolutions_per_minute"),
+          trainingLoad: ev(null, "score"),
+          aerobicTrainingEffect: ev(null, "score"),
+          anaerobicTrainingEffect: ev(null, "score"),
+        },
         zonesAndCurves: [
           {
             kind: "power_curve" as const,
@@ -222,8 +220,8 @@ function input() {
       strategy: "balanced" as const,
       taperPreference: "standard" as const,
       progressionPreference: "adaptive" as const,
-      ctlOverride: ev(null, "training_load"),
-      atlOverride: ev(null, "training_load"),
+      longTermLoadOverride: ev(null, "training_load"),
+      recentLoadOverride: ev(null, "training_load"),
     },
     readCoverage: {
       metrics: { state: "complete", reason: null },
@@ -321,30 +319,51 @@ describe("athlete intelligence model input contracts", () => {
       sourceDefinition: "provider:a",
     };
     rejects(mismatched);
+
+    const common = input();
+    const commonLoad = activity(common).metrics.trainingLoad as typeof load & {
+      evidenceSourceIds: string[];
+    };
+    commonLoad.value = 50;
+    commonLoad.identity = {
+      activity_category: "all",
+      family: "common_load",
+      method: "gradientpeak_relative_load",
+      version: "1",
+      sourceDefinition: "gradientpeak_relative_load",
+    };
+    const commonEvidenceId = commonLoad.evidenceSourceIds[0];
+    if (!commonEvidenceId) throw new Error("Common Load evidence fixture missing");
+    const commonEvidence = common.evidenceRegistry[commonEvidenceId];
+    if (!commonEvidence) throw new Error("Common Load registry fixture missing");
+    commonEvidence.rawObservation = { value: 50, unit: "score" };
+    expect(athleteIntelligenceModelInputSchema.safeParse(common).success).toBe(true);
   });
 
-  it("requires identified, mutually compatible CTL and ATL overrides", () => {
+  it("requires identified, mutually compatible LongTermLoad and RecentLoad overrides", () => {
     const candidate = input();
-    (candidate.trainingContext.ctlOverride as { value: number | null }).value = 50;
-    (candidate.trainingContext.atlOverride as { value: number | null }).value = 60;
+    (candidate.trainingContext.longTermLoadOverride as { value: number | null }).value = 50;
+    (candidate.trainingContext.recentLoadOverride as { value: number | null }).value = 60;
     (
-      candidate.trainingContext.ctlOverride as typeof candidate.trainingContext.ctlOverride & {
+      candidate.trainingContext
+        .longTermLoadOverride as typeof candidate.trainingContext.longTermLoadOverride & {
         identity: unknown;
       }
     ).identity = {
       activity_category: "bike",
-      family: "tss",
+      family: "load",
       method: "normalized_power",
       version: "1",
       sourceDefinition: "provider:a",
     };
     (
-      candidate.trainingContext.atlOverride as typeof candidate.trainingContext.atlOverride & {
+      candidate.trainingContext
+        .recentLoadOverride as typeof candidate.trainingContext.recentLoadOverride & {
         identity: unknown;
       }
     ).identity = {
       activity_category: "bike",
-      family: "tss",
+      family: "load",
       method: "normalized_power",
       version: "1",
       sourceDefinition: "provider:b",

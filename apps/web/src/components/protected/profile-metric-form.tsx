@@ -14,15 +14,10 @@ import { DialogFooter } from "@repo/ui/components/dialog";
 import {
   Form,
   FormBoundedNumberField,
-  FormControl,
   FormDateTimeField,
-  FormField,
-  FormItem,
-  FormMessage,
   FormTextareaField,
 } from "@repo/ui/components/form";
 import { LoadingButton } from "@repo/ui/components/loading";
-import { PaceSecondsField } from "@repo/ui/components/pace-seconds-field";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { z } from "zod";
 
@@ -120,48 +115,18 @@ export function ProfileMetricForm({
     label: "Save",
     submittingLabel: "Saving...",
   });
-  const paceUnit =
-    metricType === "threshold_pace_seconds_per_km" || metricType === "css_seconds_per_100m"
-      ? displayUnit
-      : null;
-
   return (
     <Form {...form}>
       <form className="space-y-4" onSubmit={submit.handleSubmit}>
-        {paceUnit ? (
-          <FormField
-            control={form.control}
-            name="value"
-            render={({ field, fieldState }) => (
-              <FormItem>
-                <FormControl>
-                  <PaceSecondsField
-                    error={fieldState.error?.message}
-                    formControl={form.control}
-                    helperText="Enter minutes and seconds for the displayed distance."
-                    id="profile-metric-pace"
-                    label={profileMetricDefinitions[metricType].label}
-                    onBlur={field.onBlur}
-                    onChangeSeconds={field.onChange}
-                    unitLabel={paceUnit}
-                    valueSeconds={typeof field.value === "number" ? field.value : null}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        ) : (
-          <FormBoundedNumberField
-            control={form.control}
-            decimals={decimals}
-            label={`Value (${displayUnit})`}
-            max={displayMax}
-            min={displayMin}
-            name="value"
-            unitLabel={displayUnit}
-          />
-        )}
+        <FormBoundedNumberField
+          control={form.control}
+          decimals={decimals}
+          label={`Value (${displayUnit})`}
+          max={displayMax}
+          min={displayMin}
+          name="value"
+          unitLabel={displayUnit}
+        />
         <FormDateTimeField control={form.control} label="Recorded at" name="recorded_at" />
         <FormTextareaField
           control={form.control}

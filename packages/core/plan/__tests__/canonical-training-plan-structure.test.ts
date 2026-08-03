@@ -173,7 +173,7 @@ describe("canonical training plan structure", () => {
       name: "Old periodized plan",
       start_date: "2026-01-01",
       end_date: "2026-03-01",
-      fitness_progression: { starting_ctl: 40 },
+      fitness_progression: { starting_longTermLoad: 40 },
       activity_distribution: { run: { target_percentage: 1 } },
       blocks: [
         {
@@ -183,7 +183,7 @@ describe("canonical training plan structure", () => {
           end_date: "2026-03-01",
           goal_ids: [],
           phase: "build",
-          target_weekly_tss_range: { min: 200, max: 300 },
+          target_weekly_load_range: { min: 200, max: 300 },
         },
       ],
     });

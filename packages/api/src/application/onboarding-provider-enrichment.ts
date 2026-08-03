@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { getActivityEffortObservationStatus } from "@repo/core/athlete-inputs";
 import { formatDateOfBirth, isValidDateOfBirth, parseDateOfBirth } from "@repo/core/profile";
 import type {
   DrizzleDbClient,
@@ -8,17 +7,13 @@ import type {
   PublicIntegrationProvider,
 } from "@repo/db";
 import { schema } from "@repo/db";
-import { and, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   createWahooClient,
   type WahooApiError,
   type WahooUser,
 } from "../lib/integrations/wahoo/client";
 import { decryptNullableProviderToken, decryptProviderToken } from "../lib/provider-token-crypto";
-import {
-  batchInsertActivityEfforts,
-  deriveEffortsForActivityCategory,
-} from "../utils/onboarding-helpers";
 import { isClearedProfileOverride } from "../utils/profile-override-observations";
 
 const ONBOARDING_ENRICHMENT_RESOURCE = "onboarding_enrichment";
@@ -26,7 +21,6 @@ const ONBOARDING_SYNC_MODE = "onboarding_enrichment";
 const PROFILE_ENRICHMENT_RESOURCE = "profile_enrichment";
 const PROFILE_ENRICHMENT_SYNC_MODE = "manual_refresh";
 const WAHOO_ONBOARDING_REQUEST_TIMEOUT_MS = 15_000;
-const RECENT_REAL_EFFORT_WINDOW_DAYS = 90;
 const ENRICHMENT_PROVIDERS = new Set<PublicIntegrationProvider>(["wahoo"]);
 
 export type OnboardingProviderSyncStatus =
@@ -48,7 +42,7 @@ export type OnboardingProviderItemStatus =
   | "skipped_unsupported"
   | "requirement_cleared";
 
-type ImportedOnboardingField = "dob" | "gender" | "weight_kg" | "ftp";
+type ImportedOnboardingField = "dob" | "gender" | "weight_kg";
 
 type ImportedOnboardingValue = string | number;
 
@@ -89,7 +83,6 @@ export type ImportedOnboardingValues = {
     dob?: string;
     gender?: "male" | "female" | "other";
     weight_kg?: number;
-    ftp?: number;
   };
   sources: Partial<
     Record<
@@ -255,8 +248,6 @@ export class OnboardingProviderEnrichmentService {
     const sourceHints = await this.getImportedFieldSources(profileId);
 
     for (const [field, source] of sourceHints) {
-      const metadataValue = source.value;
-      if (field === "ftp" && typeof metadataValue === "number") values.ftp = metadataValue;
       sources[field] = {
         provider: source.provider,
         label: getProviderLabel(source.provider),
@@ -342,7 +333,6 @@ export class OnboardingProviderEnrichmentService {
     const fieldsFilled: ImportedOnboardingField[] = [];
     const fieldsKept: ImportedOnboardingField[] = [];
     const fieldsUpdated: ImportedOnboardingField[] = [];
-    const now = new Date();
 
     try {
       const user = await withTimeout(
@@ -377,52 +367,10 @@ export class OnboardingProviderEnrichmentService {
       };
     }
 
-    let ftp: number | null = null;
-    let status: ProviderSetupRefreshResult["status"] = "succeeded";
-    try {
-      const powerZones = await withTimeout(
-        client.getPowerZones(),
-        WAHOO_ONBOARDING_REQUEST_TIMEOUT_MS,
-        "Wahoo power-zone refresh timed out",
-      );
-      ftp = normalizeFtp(powerZones.ftp ?? powerZones.critical_power);
-      if (ftp !== null) {
-        const didWriteFtp = await this.writeProviderMetric(integration, "ftp", ftp, "W", now);
-        if (didWriteFtp.wrote) {
-          fieldsUpdated.push("ftp");
-          await this.writeModeledCyclingEffortsFromFtp(integration.profile_id, ftp);
-        }
-      }
-    } catch (error) {
-      status = "partial";
-      await this.writeSetupRefreshState(
-        integration,
-        status,
-        {
-          fields_imported: fieldsFilled,
-          fields_kept: fieldsKept,
-          fields_updated: fieldsUpdated,
-          imported_values: ftp !== null ? { ftp } : undefined,
-          partial_reason: "Power zones unavailable.",
-          provider_error_code: getProviderErrorCode(error),
-        },
-        sanitizeProviderError(error),
-      );
-      return {
-        fieldsFilled,
-        fieldsKept,
-        fieldsUpdated,
-        keptExistingValues: fieldsKept.length > 0,
-        provider,
-        status,
-      };
-    }
-
-    await this.writeSetupRefreshState(integration, status, {
+    await this.writeSetupRefreshState(integration, "succeeded", {
       fields_imported: fieldsFilled,
       fields_kept: fieldsKept,
       fields_updated: fieldsUpdated,
-      imported_values: ftp !== null ? { ftp } : undefined,
     });
 
     return {
@@ -431,7 +379,7 @@ export class OnboardingProviderEnrichmentService {
       fieldsUpdated,
       keptExistingValues: fieldsKept.length > 0,
       provider,
-      status,
+      status: "succeeded",
     };
   }
 
@@ -488,37 +436,10 @@ export class OnboardingProviderEnrichmentService {
       return;
     }
 
-    try {
-      const powerZones = await withTimeout(
-        client.getPowerZones(),
-        WAHOO_ONBOARDING_REQUEST_TIMEOUT_MS,
-        "Wahoo power-zone enrichment timed out",
-      );
-      const ftp = normalizeFtp(powerZones.ftp ?? powerZones.critical_power);
-
-      if (ftp !== null) {
-        await this.writeProviderMetric(integration, "ftp", ftp, "W", new Date());
-        fieldsImported.push("ftp");
-      }
-
-      await this.writeSyncState(integration, "succeeded", {
-        blocking: true,
-        fields_imported: fieldsImported,
-        imported_values: ftp !== null ? { ftp } : undefined,
-      });
-    } catch (error) {
-      await this.writeSyncState(
-        integration,
-        "partial",
-        {
-          blocking: true,
-          fields_imported: fieldsImported,
-          partial_reason: "Power zones unavailable.",
-          provider_error_code: getProviderErrorCode(error),
-        },
-        sanitizeProviderError(error),
-      );
-    }
+    await this.writeSyncState(integration, "succeeded", {
+      blocking: true,
+      fields_imported: fieldsImported,
+    });
   }
 
   private async writeCanonicalImports(integration: IntegrationRow, imports: CanonicalImport[]) {
@@ -662,7 +583,7 @@ export class OnboardingProviderEnrichmentService {
 
   private async writeProviderMetric(
     integration: IntegrationRow,
-    metricType: "weight_kg" | "ftp",
+    metricType: "weight_kg",
     value: number,
     unit: string,
     recordedAt: Date,
@@ -704,57 +625,6 @@ export class OnboardingProviderEnrichmentService {
     });
 
     return { hadExisting: Boolean(latestMetric), wrote: true };
-  }
-
-  private async writeModeledCyclingEffortsFromFtp(profileId: string, ftp: number) {
-    const recentCutoff = new Date(
-      Date.now() - RECENT_REAL_EFFORT_WINDOW_DAYS * 24 * 60 * 60 * 1000,
-    );
-    const recentBikePowerEfforts = await this.db
-      .select({
-        id: schema.activityEfforts.id,
-        activityId: schema.activityEfforts.activity_id,
-        source: schema.activityEfforts.source,
-        method: schema.activityEfforts.method,
-        provenance: schema.activityEfforts.provenance,
-        unit: schema.activityEfforts.unit,
-        durationSeconds: schema.activityEfforts.duration_seconds,
-        value: schema.activityEfforts.value,
-      })
-      .from(schema.activityEfforts)
-      .where(
-        and(
-          eq(schema.activityEfforts.profile_id, profileId),
-          eq(schema.activityEfforts.activity_category, "bike"),
-          eq(schema.activityEfforts.effort_type, "power"),
-          gte(schema.activityEfforts.recorded_at, recentCutoff),
-          eq(schema.activityEfforts.source, "imported"),
-          eq(schema.activityEfforts.method, "activity_file_best_effort"),
-        ),
-      );
-
-    const hasObservedActivityEffort = recentBikePowerEfforts.some(
-      (effort) =>
-        getActivityEffortObservationStatus({
-          activityCategory: "bike",
-          effortType: "power",
-          durationSeconds: effort.durationSeconds,
-          value: effort.value,
-          unit: effort.unit,
-          activityId: effort.activityId,
-          source: effort.source,
-          method: effort.method,
-          provenance: effort.provenance,
-        }) === "observed",
-    );
-    if (hasObservedActivityEffort) return;
-
-    await batchInsertActivityEfforts(
-      this.db,
-      profileId,
-      deriveEffortsForActivityCategory("cycling", ftp),
-      "provider_wahoo_ftp",
-    );
   }
 
   private async getImportedFieldSources(profileId: string) {
@@ -987,12 +857,6 @@ function normalizeWahooGender(gender: number) {
 
 function normalizeWeight(weight: number) {
   return Number.isFinite(weight) && weight >= 30 && weight <= 300 ? weight : null;
-}
-
-function normalizeFtp(ftp: number | null | undefined) {
-  return typeof ftp === "number" && Number.isFinite(ftp) && ftp >= 50 && ftp <= 500
-    ? Math.round(ftp)
-    : null;
 }
 
 function isDateOnlyString(value: unknown) {

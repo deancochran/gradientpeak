@@ -40,66 +40,6 @@ export const optionalWeightKgSchema = z.preprocess(
 );
 
 /**
- * FTP (Functional Threshold Power) validation in watts
- * Range: 50W - 1000W (covers beginners to elite cyclists)
- */
-export const ftpSchema = z.preprocess(
-  stringToNumber,
-  z
-    .number({
-      message: "FTP must be a number",
-    })
-    .int("FTP must be a whole number")
-    .min(50, "FTP must be at least 50 watts")
-    .max(1000, "FTP must be less than 1000 watts")
-    .positive("FTP must be positive"),
-);
-
-/**
- * Optional FTP
- */
-export const optionalFtpSchema = z.preprocess(
-  (val) => stringToNumber(emptyStringToNull(val)),
-  z
-    .number()
-    .int("FTP must be a whole number")
-    .min(50, "FTP must be at least 50 watts")
-    .max(1000, "FTP must be less than 1000 watts")
-    .positive("FTP must be positive")
-    .nullable(),
-);
-
-/**
- * Threshold Heart Rate validation in BPM
- * Range: 100 - 220 BPM (covers all age groups)
- */
-export const thresholdHrSchema = z.preprocess(
-  stringToNumber,
-  z
-    .number({
-      message: "Threshold heart rate must be a number",
-    })
-    .int("Threshold heart rate must be a whole number")
-    .min(100, "Threshold heart rate must be at least 100 bpm")
-    .max(220, "Threshold heart rate must be less than 220 bpm")
-    .positive("Threshold heart rate must be positive"),
-);
-
-/**
- * Optional threshold heart rate
- */
-export const optionalThresholdHrSchema = z.preprocess(
-  (val) => stringToNumber(emptyStringToNull(val)),
-  z
-    .number()
-    .int("Threshold heart rate must be a whole number")
-    .min(100, "Threshold heart rate must be at least 100 bpm")
-    .max(220, "Threshold heart rate must be less than 220 bpm")
-    .positive("Threshold heart rate must be positive")
-    .nullable(),
-);
-
-/**
  * Maximum Heart Rate validation in BPM
  * Range: 120 - 250 BPM
  */
@@ -264,16 +204,14 @@ export type ProfileQuickUpdateData = z.infer<typeof profileQuickUpdateSchema>;
 /**
  * Canonical transport input for `profiles.update`.
  *
- * This intentionally preserves the API's existing acceptance semantics rather
- * than applying the stricter, presentation-specific rules used by profile forms.
+ * Performance thresholds are managed by the canonical calibration projection,
+ * not generic profile updates.
  */
 export const profilePatchInputSchema = z
   .object({
     username: optionalUsernameSchema.optional(),
     full_name: onboardingStep1Schema.shape.full_name.optional(),
     weight_kg: optionalWeightKgSchema.optional(),
-    ftp: optionalFtpSchema.optional(),
-    threshold_hr: optionalThresholdHrSchema.optional(),
     avatar_url: z.string().nullable().optional(),
     cover_url: z.string().nullable().optional(),
     bio: z.string().max(500).nullable().optional(),

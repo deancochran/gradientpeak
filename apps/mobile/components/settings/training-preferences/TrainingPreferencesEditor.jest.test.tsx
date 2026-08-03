@@ -44,8 +44,8 @@ const settingsFixture: AthleteTrainingSettings = {
   },
   baseline_fitness: {
     is_enabled: false,
-    max_weekly_tss_ramp_pct: 10,
-    max_ctl_ramp_per_week: 5,
+    max_weekly_load_ramp_pct: 10,
+    max_longTermLoad_ramp_per_week: 5,
   },
 };
 

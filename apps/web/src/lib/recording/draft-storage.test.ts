@@ -1,4 +1,8 @@
-import { type PortableTimerRecordingDraft, portableWebRecordingArtifactSchema } from "@repo/core";
+import {
+  createUnavailableAthletePerformanceTargetFacts,
+  type PortableTimerRecordingDraft,
+  portableWebRecordingArtifactSchema,
+} from "@repo/core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -66,7 +70,8 @@ const submissionArtifact = portableWebRecordingArtifactSchema.parse({
       activityPlanId: null,
       routeId: null,
     },
-    profileSnapshot: { defaultsApplied: [] },
+    profileSnapshot: {},
+    performanceTargets: createUnavailableAthletePerformanceTargetFacts("2026-07-20T10:00:00.000Z"),
     devices: { connected: [], controllableTrainer: null, selectedSources: [] },
     capabilities: {
       canTrackLocation: false,

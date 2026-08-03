@@ -1,4 +1,5 @@
 import {
+  type ActivityPrescriptionQuantificationBundle,
   canonicalTrainingPlanStructureSchema,
   mapPlanningContextToCanonicalTrainingPlanStructure,
   mapPlanningContextToTrainingPlanCreateInput,
@@ -43,10 +44,7 @@ type HydratableActivityPlan = {
   name: string;
   template_visibility?: string | null;
   is_system_template?: boolean | null;
-  authoritative_metrics?: {
-    estimated_tss?: number | null;
-    estimated_duration?: number | null;
-  } | null;
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
 };
 
 function toActivityPlanFacts(activityPlan: HydratableActivityPlan): TrainingPlanActivityPlanFacts {
@@ -56,8 +54,7 @@ function toActivityPlanFacts(activityPlan: HydratableActivityPlan): TrainingPlan
     published:
       activityPlan.template_visibility === "public" || activityPlan.is_system_template === true,
     accessible: true,
-    estimatedTss: activityPlan.authoritative_metrics?.estimated_tss ?? null,
-    estimatedDurationSeconds: activityPlan.authoritative_metrics?.estimated_duration ?? null,
+    prescriptionQuantification: activityPlan.prescriptionQuantification ?? null,
   };
 }
 
@@ -183,8 +180,7 @@ export function createTrainingPlanBuilderStateFromExistingPlan({
           name: "Unavailable activity plan",
           published: false,
           accessible: false,
-          estimatedTss: null,
-          estimatedDurationSeconds: null,
+          prescriptionQuantification: null,
         },
         ...(session.event_overrides ? { eventOverrides: session.event_overrides } : {}),
       })),

@@ -16,7 +16,6 @@ import { markEstimated } from "@/lib/estimatedMetrics";
 interface StructureStats {
   durationMs: number;
   stepCount: number;
-  estimatedTSS: number;
   distanceMeters: number;
 }
 

@@ -1,16 +1,19 @@
 import type { AggregatedStream } from "../activity-analysis/stream-contract";
 import type { FiveZoneRanges } from "./definitions";
+import {
+  calculateHeartRateDuration,
+  calculateHeartRateZoneDuration,
+  getHeartRateZoneIndexFromLthrRatio,
+  type HeartRateZoneDurationResult,
+  LTHR_ZONE_UPPER_RATIOS,
+} from "./heart-rate-duration";
+
+export const LTHR_ZONE_UPPER_PERCENTAGES = LTHR_ZONE_UPPER_RATIOS.map((ratio) => ratio * 100);
 
 export function estimateMaxHRFromAge(age: number): number {
   if (age <= 0) throw new Error("Age must be greater than 0");
   if (age < 10 || age > 100) throw new Error("Age must be between 10 and 100 years");
   return 220 - age;
-}
-
-export function estimateLTHRFromMaxHR(maxHR: number): number {
-  if (maxHR <= 0) throw new Error("Max HR must be greater than 0");
-  if (maxHR < 100 || maxHR > 250) throw new Error("Max HR must be between 100 and 250 bpm");
-  return Math.round(maxHR * 0.85);
 }
 
 export function calculateHRReserve(maxHR: number, restingHR: number): number {
@@ -55,42 +58,30 @@ export function calculateHRZonesFromReserve(maxHR: number, restingHR: number): F
 }
 
 export function getHrZoneIndexFromThresholdPercent(thresholdPercent: number): number {
-  if (thresholdPercent < 81) return 0;
-  if (thresholdPercent < 90) return 1;
-  if (thresholdPercent < 94) return 2;
-  if (thresholdPercent < 100) return 3;
-  return 4;
+  return getHeartRateZoneIndexFromLthrRatio(thresholdPercent / 100);
+}
+
+export function getHrZoneUpperBoundsFromLthr(lthrBpm: number): number[] {
+  if (!Number.isFinite(lthrBpm) || lthrBpm <= 0) return [];
+  return LTHR_ZONE_UPPER_PERCENTAGES.map((percentage) =>
+    Number.isFinite(percentage) ? (lthrBpm * percentage) / 100 : Number.POSITIVE_INFINITY,
+  );
 }
 
 export function calculateHRZoneDistribution(
   hrStream?: AggregatedStream,
   thresholdHR?: number | null,
-): Record<string, number | undefined> {
-  if (!hrStream?.values || !thresholdHR) {
-    return {
-      zone1: undefined,
-      zone2: undefined,
-      zone3: undefined,
-      zone4: undefined,
-      zone5: undefined,
-    };
-  }
-
-  const hrs = hrStream.values as number[];
-  const timestamps = hrStream.timestamps;
-  const zones = { zone1: 0, zone2: 0, zone3: 0, zone4: 0, zone5: 0 };
-
-  for (let index = 0; index < hrs.length; index += 1) {
-    const pct = (hrs[index]! / thresholdHR) * 100;
-    const timeInZone =
-      index < timestamps.length - 1
-        ? timestamps[index + 1]! - timestamps[index]!
-        : index > 0
-          ? timestamps[index]! - timestamps[index - 1]!
-          : 1;
-    const zoneIndex = getHrZoneIndexFromThresholdPercent(pct);
-    zones[`zone${zoneIndex + 1}` as keyof typeof zones] += timeInZone;
-  }
-
-  return Object.fromEntries(Object.entries(zones).map(([key, value]) => [key, Math.round(value)]));
+): HeartRateZoneDurationResult {
+  const samples =
+    hrStream?.timestamps.map((timestampSeconds, index) => {
+      const value = hrStream.values[index];
+      return {
+        timestampSeconds,
+        heartRateBpm: typeof value === "number" ? value : null,
+      };
+    }) ?? [];
+  return calculateHeartRateZoneDuration({
+    evidence: calculateHeartRateDuration({ samples }),
+    ...(thresholdHR === undefined ? {} : { lthrBpm: thresholdHR }),
+  });
 }

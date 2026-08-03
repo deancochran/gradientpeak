@@ -46,6 +46,7 @@ import type {
   providerSyncJobs,
   providerSyncState,
   providerWebhookReceipts,
+  swimmingCssProtocolEvidence,
   trainingPlans,
 } from "./tables";
 
@@ -137,6 +138,11 @@ export type ContentAccessGrantInsert = InferInsertModel<typeof contentAccessGran
 
 export type ActivityEffortRow = InferSelectModel<typeof activityEfforts>;
 export type ActivityEffortInsert = InferInsertModel<typeof activityEfforts>;
+
+export type SwimmingCssProtocolEvidenceRow = InferSelectModel<typeof swimmingCssProtocolEvidence>;
+export type SwimmingCssProtocolEvidenceInsert = InferInsertModel<
+  typeof swimmingCssProtocolEvidence
+>;
 
 export type ActivitySessionRpeEvidenceRow = InferSelectModel<typeof activitySessionRpeEvidence>;
 export type ActivitySessionRpeEvidenceInsert = InferInsertModel<typeof activitySessionRpeEvidence>;

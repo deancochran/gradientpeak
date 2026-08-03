@@ -1,13 +1,18 @@
 import {
   activityDerivedMetricsSchema,
   activityListDerivedSummarySchema,
-  activityTssIdentitySchema,
+  activityObservationQuantificationBundleSchema,
   completedActivitySegmentSetSchema,
+  completedSegmentSummarySchema,
   contentVisibilitySchema,
   ianaTimezoneSchema,
 } from "@repo/core";
 import { activityPlanStructureSchema } from "@repo/core/activity-plan";
-import { commonLoadAggregateSchema, commonLoadHistoryResultSchema } from "@repo/core/load";
+import {
+  commonLoadAggregateSchema,
+  commonLoadHistoryResultSchema,
+  commonLoadResultSchema,
+} from "@repo/core/load";
 import {
   activities,
   activityPlans,
@@ -61,6 +66,11 @@ const isoDatetimeSchema = z.string().datetime({ offset: true });
 const activityTimestampSchema = z.coerce.date();
 
 const activityRowSchema = publicActivitiesRowSchema
+  .omit({
+    normalized_graded_speed_mps: true,
+    efficiency_factor: true,
+    aerobic_decoupling: true,
+  })
   .extend({
     created_at: activityTimestampSchema,
     updated_at: activityTimestampSchema,
@@ -112,14 +122,14 @@ const activityCompositionSchema = z.object({
       distance_meters: z.number().nonnegative().nullable(),
       active_ms: z.number().int().nonnegative().nullable(),
       moving_ms: z.number().int().nonnegative().nullable(),
-      tss: z.number().nonnegative().nullable(),
-      tss_identity: activityTssIdentitySchema.nullable(),
+      common_load: z.union([commonLoadResultSchema, commonLoadAggregateSchema]).nullable(),
+      observationQuantification: activityObservationQuantificationBundleSchema.nullable(),
     })
     .strict()
     .nullable(),
 });
 
-const activitySegmentReadSchema = publicActivitySegmentsRowSchema
+const activitySegmentReadBaseSchema = publicActivitySegmentsRowSchema
   .pick({
     id: true,
     activity_id: true,
@@ -140,15 +150,39 @@ const activitySegmentReadSchema = publicActivitySegmentsRowSchema
     timing_coverage: true,
     active_ms: true,
     moving_ms: true,
-    summary: true,
   })
   .strict();
+
+const activitySegmentReadSchema = z.discriminatedUnion("status", [
+  activitySegmentReadBaseSchema
+    .extend({ status: z.literal("processing"), summary: z.null() })
+    .strict(),
+  activitySegmentReadBaseSchema
+    .extend({ status: z.literal("available"), summary: completedSegmentSummarySchema })
+    .strict(),
+  activitySegmentReadBaseSchema
+    .extend({
+      status: z.literal("failed"),
+      summary: z.null(),
+      reason: z.string().trim().min(1).max(512),
+    })
+    .strict(),
+]);
 
 const activitySegmentLoadSchema = activityListDerivedSummarySchema
   .extend({
     segment_id: z.string().uuid(),
     activity_category: publicActivityCategorySchema,
+    observationQuantification: activityObservationQuantificationBundleSchema,
   })
+  .strict();
+
+const activityListQuantifiedSummarySchema = activityListDerivedSummarySchema
+  .extend({ observationQuantification: activityObservationQuantificationBundleSchema })
+  .strict();
+
+const activityQuantifiedMetricsSchema = activityDerivedMetricsSchema
+  .extend({ observationQuantification: activityObservationQuantificationBundleSchema })
   .strict();
 
 const activityListItemSchema = activityRowSchema
@@ -156,7 +190,7 @@ const activityListItemSchema = activityRowSchema
     ...activityCompositionSchema.shape,
     likes_count: z.number().int().nonnegative(),
     has_liked: z.boolean(),
-    derived: activityListDerivedSummarySchema.nullable(),
+    derived: activityListQuantifiedSummarySchema.nullable(),
     segment_loads: activitySegmentLoadSchema.array(),
     ingestion: activityIngestionStatusSchema.nullable().optional(),
   })
@@ -193,7 +227,7 @@ const activityDerivedResponseSchema = z
   .object({
     activity: activityWithPlanSchema,
     has_liked: z.boolean(),
-    derived: activityDerivedMetricsSchema,
+    derived: activityQuantifiedMetricsSchema,
     segment_loads: activitySegmentLoadSchema.array(),
   })
   .strict();
@@ -208,7 +242,7 @@ const listPaginatedInputSchema = z
     search: z.string().trim().max(80).optional(),
     date_from: isoDatetimeSchema.optional(),
     date_to: isoDatetimeSchema.optional(),
-    sort_by: z.enum(["date", "distance", "duration", "tss"]).default("date"),
+    sort_by: z.enum(["date", "distance", "duration", "common_load"]).default("date"),
     sort_order: z.enum(["asc", "desc"]).default("desc"),
   })
   .strict();
@@ -250,7 +284,9 @@ const dailyCommonLoadObservationsOutputSchema = z
     start_date: z.iso.date(),
     end_date: z.iso.date(),
     timezone: ianaTimezoneSchema,
-    day_policy: z.literal("activity_started_at_in_requested_timezone"),
+    timezone_role: z.literal("viewer_projection"),
+    canonical_history_eligible: z.literal(false),
+    day_policy: z.literal("activity_started_at_in_viewer_timezone"),
     observations: z.array(
       z
         .object({
@@ -435,7 +471,18 @@ const _totalRowSchema = z.object({ total: z.union([z.number(), z.string()]) }).s
 const _likeRowSchema = z.object({ entity_id: z.string().uuid() }).strict();
 
 function parseActivityRow(value: unknown) {
-  return activityRowSchema.parse(value);
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return activityRowSchema.parse(value);
+  }
+  const currentFields = Object.fromEntries(
+    Object.entries(value).filter(
+      ([key]) =>
+        key !== "normalized_graded_speed_mps" &&
+        key !== "efficiency_factor" &&
+        key !== "aerobic_decoupling",
+    ),
+  );
+  return activityRowSchema.parse(currentFields);
 }
 
 function _parseActivityRows(value: unknown[]) {
@@ -594,9 +641,6 @@ export const activitiesRouter = createTRPCRouter({
       avgSpeedMps: null,
       maxSpeedMps: null,
       normalizedSpeedMps: null,
-      normalizedGradedSpeedMps: null,
-      efficiencyFactor: null,
-      aerobicDecoupling: null,
       avgTemperature: input.summary.avgTemperature ?? null,
       poolLengthMeters: input.summary.poolLengthMeters ?? null,
       deviceManufacturer: null,
@@ -607,7 +651,6 @@ export const activitiesRouter = createTRPCRouter({
       analysis: {
         efforts: [],
         detectedLTHR: null,
-        activityCompletedAt: new Date(input.finishedAt),
         ingestion: {
           source: "manual_import",
           operationKey: `activity-create:${acceptedArtifact.sha256}`,

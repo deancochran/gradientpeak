@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { db, pool } from "@repo/db/client";
 import {
   activities,
@@ -38,6 +39,7 @@ import { createWahooRepository } from "./drizzle-wahoo-repository";
 
 const userIds: string[] = [];
 const key = Buffer.alloc(32, 9).toString("base64");
+const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
 
 async function seed() {
   const profileId = randomUUID();
@@ -115,9 +117,6 @@ function importedSubmission(profileId: string): ActivitySubmission {
     startedAt: new Date("2026-01-01T10:00:00.000Z"),
     timingCoverage: "complete",
     normalizedSpeedMps: null,
-    normalizedGradedSpeedMps: null,
-    efficiencyFactor: null,
-    aerobicDecoupling: null,
     avgTemperature: null,
     deviceManufacturer: null,
     deviceProduct: null,
@@ -137,6 +136,7 @@ function importedSubmission(profileId: string): ActivitySubmission {
           summary: {
             version: 1,
             timing: { activeMs: 3_500_000, movingMs: 3_500_000, timingCoverage: "complete" },
+            normalizedPowerResult: unavailableNormalizedPowerResult,
           },
         },
       ],
@@ -161,7 +161,6 @@ function guardedImportedSubmission(owner: {
       providerUpdatedAt: "2026-01-01T11:00:00.000Z",
     },
     analysis: {
-      activityCompletedAt: new Date("2026-01-01T11:00:00.000Z"),
       detectedLTHR: null,
       efforts: [],
       ingestion: {
@@ -576,7 +575,6 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
           segmentSet,
           efforts: [],
           detectedLTHR: null,
-          activityCompletedAt: new Date("2026-01-01T11:00:00.000Z"),
         },
         { beforePersist: staleGuard },
       ),

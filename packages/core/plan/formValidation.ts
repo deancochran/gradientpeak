@@ -16,8 +16,8 @@ import {
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
 export const MIN_PREP_DAYS_BETWEEN_GOALS = 21;
-export const MAX_SAFE_WEEKLY_TSS_RAMP_PCT = 20;
-export const MAX_SAFE_CTL_RAMP_PER_WEEK = 8;
+export const MAX_SAFE_WEEKLY_COMMON_LOAD_RAMP_PCT = 20;
+export const MAX_SAFE_LongTermLoad_RAMP_PER_WEEK = 8;
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -294,8 +294,8 @@ export interface BlockingIssue {
 }
 
 const SUPPRESSED_OBSERVATION_CODES = new Set<string>([
-  "required_tss_ramp_exceeds_cap",
-  "required_ctl_ramp_exceeds_cap",
+  "required_load_ramp_exceeds_cap",
+  "required_longTermLoad_ramp_exceeds_cap",
 ]);
 
 export function validateTrainingPlanForm(

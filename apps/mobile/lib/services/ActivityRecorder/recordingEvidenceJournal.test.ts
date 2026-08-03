@@ -1,3 +1,4 @@
+import { createUnavailableAthletePerformanceTargetFacts } from "@repo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("expo-sqlite", () => ({ openDatabaseAsync: vi.fn() }));
@@ -451,7 +452,8 @@ describe("recording evidence journal", () => {
           activityPlanId: "550e8400-e29b-41d4-a716-446655440001",
           routeId: "550e8400-e29b-41d4-a716-446655440002",
         },
-        profileSnapshot: { ftp: 250, thresholdHr: 170, weightKg: 72, defaultsApplied: [] },
+        profileSnapshot: { weightKg: 72 },
+        performanceTargets: createUnavailableAthletePerformanceTargetFacts("2026-03-20T10:00:00Z"),
         devices: { connected: [], controllableTrainer: null, selectedSources: [] },
         capabilities: {
           canTrackLocation: true,

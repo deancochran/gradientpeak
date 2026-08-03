@@ -21,9 +21,9 @@ describe("Post-Event Fatigue Integration", () => {
     const points = createTestScenario({
       startDate: "2026-03-10",
       durationDays: 10,
-      startingCtl: 65,
-      startingAtl: 60,
-      ctlProgression: "flat",
+      startingLongTermLoad: 65,
+      startingRecentLoad: 60,
+      longTermLoadProgression: "flat",
     });
 
     const marathonTarget = createRaceTarget(
@@ -66,9 +66,9 @@ describe("Post-Event Fatigue Integration", () => {
     const points = createTestScenario({
       startDate: "2026-03-10",
       durationDays: 12,
-      startingCtl: 65,
-      startingAtl: 60,
-      ctlProgression: "flat",
+      startingLongTermLoad: 65,
+      startingRecentLoad: 60,
+      longTermLoadProgression: "flat",
     });
 
     const marathonTarget = createRaceTarget(
@@ -116,9 +116,9 @@ describe("Post-Event Fatigue Integration", () => {
     const points = createTestScenario({
       startDate: "2026-03-10",
       durationDays: 10,
-      startingCtl: 65,
-      startingAtl: 60,
-      ctlProgression: "flat",
+      startingLongTermLoad: 65,
+      startingRecentLoad: 60,
+      longTermLoadProgression: "flat",
     });
 
     const marathonTarget = createRaceTarget(
@@ -289,25 +289,25 @@ describe("Post-Event Fatigue Integration", () => {
     });
   });
 
-  it("ATL overload increases fatigue penalty", () => {
-    // Normal ATL scenario
+  it("RecentLoad overload increases fatigue penalty", () => {
+    // Normal RecentLoad scenario
     const normalPoints = createTestScenario({
       startDate: "2026-03-10",
       durationDays: 8,
-      startingCtl: 65,
-      startingAtl: 60,
-      ctlProgression: "flat",
+      startingLongTermLoad: 65,
+      startingRecentLoad: 60,
+      longTermLoadProgression: "flat",
     });
 
-    // High ATL overload scenario - manually adjust day after marathon
+    // High RecentLoad overload scenario - manually adjust day after marathon
     const overloadPoints = createTestScenario({
       startDate: "2026-03-10",
       durationDays: 8,
-      startingCtl: 65,
-      startingAtl: 60,
-      ctlProgression: "flat",
+      startingLongTermLoad: 65,
+      startingRecentLoad: 60,
+      longTermLoadProgression: "flat",
     });
-    // Simulate high ATL spike on day after marathon
+    // Simulate high RecentLoad spike on day after marathon
     overloadPoints[5] = createMockProjectionPoint("2026-03-15", 65, 75, -10);
 
     const marathonTarget = createRaceTarget(
@@ -331,10 +331,10 @@ describe("Post-Event Fatigue Integration", () => {
     const marathonIndex = 4;
     const dayAfterIndex = 5;
 
-    // Overload scenario should have lower readiness due to higher ATL
+    // Overload scenario should have lower readiness due to higher RecentLoad
     expect(overloadScores[dayAfterIndex]).toBeLessThanOrEqual(normalScores[dayAfterIndex]!);
 
-    console.log("ATL overload effect:", {
+    console.log("RecentLoad overload effect:", {
       normal: {
         marathon: normalScores[marathonIndex],
         day1: normalScores[dayAfterIndex],
@@ -376,9 +376,9 @@ describe("Post-Event Fatigue - Edge Cases", () => {
     const points = createTestScenario({
       startDate: "2026-03-10",
       durationDays: 8,
-      startingCtl: 65,
-      startingAtl: 60,
-      ctlProgression: "flat",
+      startingLongTermLoad: 65,
+      startingRecentLoad: 60,
+      longTermLoadProgression: "flat",
     });
 
     const marathonTarget = createRaceTarget(

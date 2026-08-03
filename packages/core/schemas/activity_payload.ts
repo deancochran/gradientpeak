@@ -9,7 +9,6 @@ export { Duration } from "./duration_helpers";
 export {
   activityPlanSpeedKphToMetersPerSecond,
   activityPlanSpeedMetersPerSecondToKph,
-  convertTargetToAbsolute,
   formatIntensityTarget,
   formatStepTargets,
   formatTargetValue,
@@ -86,7 +85,6 @@ export const ActivityMetricsSchema = z
     avg_speed: z.number().optional(),
     max_speed: z.number().optional(),
     normalized_speed_mps: z.number().optional(),
-    normalized_graded_speed_mps: z.number().optional(),
 
     // Work and calories
     total_work: z.number().optional(),
@@ -103,15 +101,10 @@ export const ActivityMetricsSchema = z
     weather_condition: z.string().optional(),
 
     // Analysis metrics
-    tss: z.number().optional(), // Training Stress Score
-    if: z.number().optional(), // Intensity Factor
+    common_load: z.number().optional(),
     vi: z.number().optional(), // Variability Index
-    ef: z.number().optional(), // Efficiency Factor
     power_weight_ratio: z.number().optional(),
     power_hr_ratio: z.number().optional(),
-    decoupling: z.number().optional(),
-    efficiency_factor: z.number().optional(),
-    aerobic_decoupling: z.number().optional(),
     training_effect: z.enum(["recovery", "base", "tempo", "threshold", "vo2max"]).optional(),
 
     // Swim metrics. Pool lengths are canonical metres; provider aliases must be normalized upstream.
@@ -131,14 +124,14 @@ export type ActivityMetrics = z.infer<typeof ActivityMetricsSchema>;
  * Schema for profile snapshot stored with activity
  * Captures athlete's profile data at time of activity
  */
-export const ProfileSnapshotSchema = z.object({
-  ftp: z.number().optional(),
-  weight_kg: z.number().optional(),
-  threshold_hr: z.number().optional(),
-  age: z.number().optional(),
-  recovery_time: z.number().optional(),
-  training_load: z.number().optional(),
-});
+export const ProfileSnapshotSchema = z
+  .object({
+    weight_kg: z.number().optional(),
+    age: z.number().optional(),
+    recovery_time: z.number().optional(),
+    training_load: z.number().optional(),
+  })
+  .strict();
 
 export type ProfileSnapshot = z.infer<typeof ProfileSnapshotSchema>;
 

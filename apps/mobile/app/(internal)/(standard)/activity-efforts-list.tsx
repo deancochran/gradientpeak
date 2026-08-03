@@ -240,7 +240,6 @@ function getCurveEffortIds(records: ActivityEffortRow[]) {
 
 function getEffortRecordStatusLabel(record: ActivityEffortRow) {
   const status = getActivityEffortObservationStatus(record);
-  if (status === "modeled") return "Modeled threshold";
   if (status === "review") return "Review effort";
   if (status === "invalid") return "Invalid effort";
   const sourceLabel =

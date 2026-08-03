@@ -19,6 +19,7 @@ export function TrainingPlanBuilderSurfaces({ controller }: TrainingPlanBuilderS
     controller.builder.queries.profile,
     controller.builder.queries.profileMetrics,
     controller.builder.queries.activityEfforts,
+    controller.builder.queries.performanceTargets,
     controller.builder.currentTrainingStatusQuery,
   ];
   const hasContextError = contextQueries.some((query) => query.isError);

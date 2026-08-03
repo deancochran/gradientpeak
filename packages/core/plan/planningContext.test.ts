@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  athletePerformanceTargetFactsSchema,
+  createUnavailableAthletePerformanceTargetFacts,
+} from "../performance-model";
+import {
   createAthletePlanningContextFromSnapshot,
   createEffectiveAthleteSnapshot,
 } from "./athletePlanningContext";
@@ -42,31 +46,17 @@ describe("planningContext", () => {
     expect(context.scheduling.preferredWeekdays).toEqual([1, 3, 5]);
   });
 
-  it("resolves thresholds from the canonical eligible evidence hierarchy", () => {
+  it("does not resolve performance targets from general profile observations", () => {
     const context = createAthletePlanningContextFromSnapshot({
       asOf: "2026-06-01T00:00:00.000Z",
       profileMetrics: [
         {
-          metric_type: "ftp",
-          value: 240,
-          unit: "W",
+          metric_type: "weight_kg",
+          value: 70,
+          unit: "kg",
           recorded_at: "2026-05-01T00:00:00.000Z",
           source: "manual",
           provenance: { manual_override: true },
-        },
-        {
-          metric_type: "threshold_pace_seconds_per_km",
-          value: 270,
-          unit: "seconds_per_km",
-          recorded_at: "2026-05-01T00:00:00.000Z",
-          source: "provider",
-        },
-        {
-          metric_type: "css_seconds_per_100m",
-          value: 100,
-          unit: "seconds_per_100m",
-          recorded_at: "2026-05-01T00:00:00.000Z",
-          source: "provider",
         },
       ],
       activityEfforts: [
@@ -88,22 +78,80 @@ describe("planningContext", () => {
       ],
     });
 
-    expect(context.physiology.ftpWatts).toMatchObject({
-      value: 240,
-      source: "profile_metric",
+    expect(context.physiology.planningThresholdPowerWatts).toMatchObject({
+      value: null,
+      source: "unknown",
     });
-    expect(context.physiology.thresholdPaceSecondsPerKm).toMatchObject({
-      value: 250,
-      source: "activity_effort",
-      unit: "seconds_per_km",
+    expect(context.physiology.planningThresholdPaceSecondsPerKm).toMatchObject({
+      value: null,
+      source: "unknown",
     });
-    expect(context.physiology.cssSecondsPer100m).toMatchObject({
-      value: 100,
-      source: "profile_metric",
+    expect(context.physiology.swimmingCssSecondsPer100m).toMatchObject({
+      value: null,
+      source: "unknown",
     });
   });
 
-  it("accepts the canonical persisted watts unit for cycling threshold evidence", () => {
+  it("rejects a planning snapshot whose performance targets use a different asOf", () => {
+    const performanceTargets = createUnavailableAthletePerformanceTargetFacts(
+      "2026-06-02T00:00:00.000Z",
+    );
+    expect(() =>
+      createEffectiveAthleteSnapshot({
+        asOf: "2026-06-01T00:00:00.000Z",
+        profileMetrics: [],
+        activityEfforts: [],
+        performanceTargets,
+      }),
+    ).toThrow("must match performance targets asOf");
+  });
+
+  it("accepts equivalent asOf spellings and preserves canonical performance targets", () => {
+    const unavailable = createUnavailableAthletePerformanceTargetFacts("2026-06-01T00:00:00.000Z");
+    const performanceTargets = athletePerformanceTargetFactsSchema.parse({
+      ...unavailable,
+      asOf: "2026-06-01T00:00:00Z",
+      cycling: {
+        planningThresholdPower: {
+          ...unavailable.cycling.planningThresholdPower,
+          status: "available",
+          value: 250,
+          calculationVersion: "planning-context-test-v1",
+          sourceEvidenceIds: ["power-evidence-1"],
+          evidenceTime: {
+            observedFrom: "2026-05-30T00:00:00.000Z",
+            observedThrough: "2026-05-30T00:00:00.000Z",
+            computedAt: "2026-06-01T00:00:00.000Z",
+          },
+          confidence: "high",
+          expiresAt: "2026-08-29T00:00:00.000Z",
+          reasons: [],
+        },
+      },
+    });
+
+    const implicitSnapshot = createEffectiveAthleteSnapshot({
+      profileMetrics: [],
+      activityEfforts: [],
+      performanceTargets,
+    });
+    const explicit = createAthletePlanningContextFromSnapshot({
+      asOf: "2026-06-01T00:00:00.000Z",
+      profileMetrics: [],
+      activityEfforts: [],
+      performanceTargets,
+    });
+
+    expect(implicitSnapshot.asOf).toBe("2026-06-01T00:00:00.000Z");
+    expect(implicitSnapshot.performanceTargets?.asOf).toBe(implicitSnapshot.asOf);
+    expect(explicit.performanceTargets.asOf).toBe("2026-06-01T00:00:00.000Z");
+    expect(explicit.physiology.planningThresholdPowerWatts.value).toBe(250);
+    expect(explicit.physiology.planningThresholdPowerWatts.recordedAt).toBe(
+      "2026-05-30T00:00:00.000Z",
+    );
+  });
+
+  it("does not manufacture FTP from canonical-unit raw efforts", () => {
     const context = createAthletePlanningContextFromSnapshot({
       asOf: "2026-06-01T00:00:00.000Z",
       profileMetrics: [],
@@ -126,10 +174,10 @@ describe("planningContext", () => {
       ],
     });
 
-    expect(context.physiology.ftpWatts).toMatchObject({
-      value: 237.5,
-      source: "activity_effort",
-      unit: "W",
+    expect(context.physiology.planningThresholdPowerWatts).toMatchObject({
+      value: null,
+      source: "unknown",
+      unit: "watts",
     });
   });
 
@@ -221,16 +269,21 @@ describe("planningContext", () => {
     expect(
       createEffectiveAthleteSnapshot({
         ...base,
-        currentFitness: { ctl: 40, atl: 45, tsb: -5, recorded_at: "not-a-date" },
+        currentFitness: {
+          longTermLoad: 40,
+          recentLoad: 45,
+          loadBalance: -5,
+          recorded_at: "not-a-date",
+        },
       }).currentFitness,
     ).toBeNull();
     expect(
       createEffectiveAthleteSnapshot({
         ...base,
         currentFitness: {
-          ctl: 40,
-          atl: 45,
-          tsb: -5,
+          longTermLoad: 40,
+          recentLoad: 45,
+          loadBalance: -5,
           recorded_at: "2026-06-02T00:00:00.000Z",
         },
       }).currentFitness,

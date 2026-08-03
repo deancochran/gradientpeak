@@ -2,7 +2,10 @@ import { type EventRow, schema } from "@repo/db";
 import { and, asc, eq, gte, lt } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import { type ActivityPlanExecutionDto, toActivityPlanExecutionDto } from "../../dto/activity-plan";
-import { getActivityPlansDerivedMetrics } from "../../utils/activity-plan-derived-metrics";
+import {
+  type ActivityPlanWithDerivedMetrics,
+  getActivityPlansDerivedMetrics,
+} from "../../utils/activity-plan-derived-metrics";
 
 type HomeDb = ReturnType<typeof getRequiredDb>;
 type EstimationStore = Parameters<typeof getActivityPlansDerivedMetrics>[2];
@@ -13,6 +16,10 @@ export type PlannedActivityRow = Pick<EventRow, "id" | "notes"> & {
   starts_at: Date;
   activity_plan: HomeActivityPlan | null;
   scheduled_date: string;
+};
+
+export type PlannedActivityWithEstimation = Omit<PlannedActivityRow, "activity_plan"> & {
+  activity_plan: ActivityPlanWithDerivedMetrics<HomeActivityPlan> | null;
 };
 
 export async function listPlannedActivitiesInRange(
@@ -62,7 +69,7 @@ export async function loadPlannedActivitiesWithEstimations(
   },
 ): Promise<{
   plannedActivities: PlannedActivityRow[];
-  activitiesWithEstimations: PlannedActivityRow[];
+  activitiesWithEstimations: PlannedActivityWithEstimation[];
 }> {
   const plannedActivities = await listPlannedActivitiesInRange(db, input);
 
@@ -71,7 +78,13 @@ export async function loadPlannedActivitiesWithEstimations(
     .filter((plan): plan is NonNullable<typeof plan> => Boolean(plan));
 
   if (plans.length === 0) {
-    return { plannedActivities, activitiesWithEstimations: plannedActivities };
+    return {
+      plannedActivities,
+      activitiesWithEstimations: plannedActivities.map((plannedActivity) => ({
+        ...plannedActivity,
+        activity_plan: null,
+      })),
+    };
   }
 
   const plansWithEstimation = await getActivityPlansDerivedMetrics(
@@ -88,7 +101,7 @@ export async function loadPlannedActivitiesWithEstimations(
       : undefined;
     return {
       ...plannedActivity,
-      activity_plan: estimatedPlan ?? plannedActivity.activity_plan,
+      activity_plan: estimatedPlan ?? null,
     };
   });
 

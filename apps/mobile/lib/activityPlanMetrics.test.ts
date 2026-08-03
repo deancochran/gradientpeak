@@ -1,20 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { getAuthoritativeActivityPlanMetrics } from "./activityPlanMetrics";
+import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
+import { getActivityPlanQuantitySummary } from "./activityPlanMetrics";
 
-describe("getAuthoritativeActivityPlanMetrics", () => {
-  it("keeps an explicit authoritative null", () => {
-    const metrics = getAuthoritativeActivityPlanMetrics({
-      authoritative_metrics: { estimated_distance: null },
+describe("getActivityPlanQuantitySummary", () => {
+  it("reads complete quantities from the canonical prescription bundle summary", () => {
+    const summary = getActivityPlanQuantitySummary({
+      prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+        durationSeconds: 3_600,
+        load: 64,
+      }),
     });
 
-    expect(metrics.estimated_distance).toBeNull();
+    expect(summary).toMatchObject({
+      commonIntensity: 0.8,
+      distanceMeters: null,
+      durationSeconds: 3_600,
+    });
+    expect(summary.commonLoad).toBeCloseTo(64);
   });
 
-  it("treats an absent authoritative metric as unavailable", () => {
-    const metrics = getAuthoritativeActivityPlanMetrics({
-      authoritative_metrics: { estimated_duration: 3_600 },
+  it("treats an absent canonical bundle as unavailable", () => {
+    expect(getActivityPlanQuantitySummary({})).toEqual({
+      commonIntensity: null,
+      commonLoad: null,
+      distanceMeters: null,
+      durationSeconds: null,
     });
+  });
 
-    expect(metrics.estimated_distance).toBeUndefined();
+  it("does not promote partial Common Load to a complete scalar", () => {
+    const summary = getActivityPlanQuantitySummary(
+      createPrescriptionQuantificationBundleFixture({ status: "partial" }),
+    );
+
+    expect(summary.commonIntensity).toBeNull();
+    expect(summary.commonLoad).toBeNull();
+    expect(summary.durationSeconds).toBe(3_600);
   });
 });

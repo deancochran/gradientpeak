@@ -47,7 +47,7 @@ type LocalPreviewInput = {
   profileSettings?: AthleteTrainingSettings;
   profileGoals?: ProfileGoal[];
   contextSummary?: CreationContextSummary;
-  startingCtlOverride?: number;
+  startingLongTermLoadOverride?: number;
   startingAtlOverride?: number;
   priorInferredSnapshot?: InferredStateSnapshot;
   previewBaseline?: PreviewReadinessSnapshot;
@@ -57,11 +57,11 @@ type ExpandedProjectionPlan = GoalAnchoredProjectionPlan;
 
 export function buildExpandedPlanFromMinimalGoal(
   minimalPlan: MinimalTrainingPlanCreate,
-  input?: { startingCtl?: number; preferenceProfile?: AthleteTrainingSettings },
+  input?: { startingLongTermLoad?: number; preferenceProfile?: AthleteTrainingSettings },
 ): ExpandedProjectionPlan {
   return buildGoalAnchoredProjectionPlan({
     minimalPlan,
-    startingCtl: input?.startingCtl,
+    startingLongTermLoad: input?.startingLongTermLoad,
     preferenceProfile: input?.preferenceProfile,
   });
 }
@@ -85,9 +85,9 @@ export function computeLocalCreationPreview(input: LocalPreviewInput): LocalPrev
     locks: finalConfig.locks,
   });
 
-  const effectiveStartingCtl = input.startingCtlOverride;
+  const effectiveStartingCtl = input.startingLongTermLoadOverride;
   const expandedPlan = buildExpandedPlanFromMinimalGoal(input.minimalPlan, {
-    startingCtl: effectiveStartingCtl,
+    startingLongTermLoad: effectiveStartingCtl,
     preferenceProfile: input.profileSettings,
   });
 
@@ -95,8 +95,8 @@ export function computeLocalCreationPreview(input: LocalPreviewInput): LocalPrev
     buildProjectionEngineInput({
       expanded_plan: expandedPlan,
       normalized_creation_config: finalConfig,
-      starting_ctl: effectiveStartingCtl,
-      starting_atl: input.startingAtlOverride,
+      starting_longTermLoad: effectiveStartingCtl,
+      starting_recentLoad: input.startingAtlOverride,
       prior_inferred_snapshot: input.priorInferredSnapshot,
       preference_profile: input.profileSettings,
     }),
@@ -156,11 +156,11 @@ function deriveProjectionDrivenConflicts(input: {
 }): LocalCreationConflict[] {
   const conflicts: LocalCreationConflict[] = [];
 
-  if ((input.projectionChart.constraint_summary?.tss_ramp_clamp_weeks ?? 0) > 0) {
+  if ((input.projectionChart.constraint_summary?.load_ramp_clamp_weeks ?? 0) > 0) {
     conflicts.push({
-      code: "required_tss_ramp_exceeds_cap",
+      code: "required_load_ramp_exceeds_cap",
       severity: "blocking",
-      message: "Required week-to-week TSS progression exceeds current safety guardrails",
+      message: "Required week-to-week Load progression exceeds current safety guardrails",
       suggestions: [
         "Lower aggressiveness or spike frequency",
         "Move one or more goals farther out",
@@ -169,11 +169,11 @@ function deriveProjectionDrivenConflicts(input: {
     });
   }
 
-  if ((input.projectionChart.constraint_summary?.ctl_ramp_clamp_weeks ?? 0) > 0) {
+  if ((input.projectionChart.constraint_summary?.longTermLoad_ramp_clamp_weeks ?? 0) > 0) {
     conflicts.push({
-      code: "required_ctl_ramp_exceeds_cap",
+      code: "required_longTermLoad_ramp_exceeds_cap",
       severity: "blocking",
-      message: "Required CTL progression exceeds current safety guardrails",
+      message: "Required Fitness progression exceeds current safety guardrails",
       suggestions: [
         "Lower aggressiveness or increase recovery priority",
         "Extend timeline before high-priority goals",

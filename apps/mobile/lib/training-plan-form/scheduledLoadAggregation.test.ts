@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
 import { aggregateScheduledLoadByDate } from "./scheduledLoadAggregation";
 
 describe("aggregateScheduledLoadByDate", () => {
@@ -13,7 +14,10 @@ describe("aggregateScheduledLoadByDate", () => {
           recurrence_rule: "FREQ=WEEKLY;COUNT=8;BYDAY=MO",
           activity_plan: {
             id: "activity-plan-1",
-            authoritative_metrics: { estimated_tss: 65 },
+            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+              id: "activity-plan-1",
+              load: 65,
+            }),
           },
           tentative: true,
         },
@@ -21,10 +25,10 @@ describe("aggregateScheduledLoadByDate", () => {
     });
 
     expect(result.scheduledLoadByDate.get("2026-06-15") ?? 0).toBe(0);
-    expect(result.tentativeScheduledLoadByDate.get("2026-06-15")).toBe(65);
+    expect(result.tentativeScheduledLoadByDate.get("2026-06-15")).toBeCloseTo(65);
     expect(
       [...result.tentativeScheduledLoadByDate.values()].reduce((total, value) => total + value, 0),
-    ).toBe(65);
+    ).toBeCloseTo(65);
   });
 
   it("dedupes the same event occurrence when schedule query windows overlap", () => {
@@ -34,7 +38,10 @@ describe("aggregateScheduledLoadByDate", () => {
       starts_at: "2026-06-15T12:00:00.000Z",
       activity_plan: {
         id: "activity-plan-1",
-        authoritative_metrics: { estimated_tss: 70 },
+        prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+          id: "activity-plan-1",
+          load: 70,
+        }),
       },
     };
 
@@ -44,7 +51,7 @@ describe("aggregateScheduledLoadByDate", () => {
       scheduledEvents: [scheduledEvent, scheduledEvent],
     });
 
-    expect(result.scheduledLoadByDate.get("2026-06-15")).toBe(70);
+    expect(result.scheduledLoadByDate.get("2026-06-15")).toBeCloseTo(70);
     expect(result.tentativeScheduledLoadByDate.get("2026-06-15") ?? 0).toBe(0);
   });
 });

@@ -48,21 +48,21 @@ function isCreateType(value: string | undefined): value is AgendaCreateType {
   return value === "event" || value === "planned" || value === "goal";
 }
 
-function parseSuggestionTssDelta(value: string | undefined) {
+function parseSuggestionLoadDelta(value: string | undefined) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
 function buildPlanSuggestionDefaults(input: {
   description?: string;
-  tssDelta: number | null;
+  loadDelta: number | null;
   type?: string;
 }): (CreateEventDefaults & { targetType: AgendaCreateType }) | null {
-  const roundedDelta = input.tssDelta === null ? null : Math.round(input.tssDelta);
+  const roundedDelta = input.loadDelta === null ? null : Math.round(input.loadDelta);
   const absoluteDelta = roundedDelta === null ? null : Math.abs(roundedDelta);
   const targetCopy =
     absoluteDelta && absoluteDelta > 0
-      ? `Target: about ${markEstimated(`${absoluteDelta} TSS`)}.`
+      ? `Target: about ${markEstimated(`${absoluteDelta} Load`)}.`
       : null;
   const notes = [
     input.description?.trim() || null,
@@ -101,7 +101,7 @@ export default function AgendaCreateScreen() {
   const params = useLocalSearchParams<{
     date?: string;
     planSuggestionDescription?: string;
-    planSuggestionTssDelta?: string;
+    planSuggestionLoadDelta?: string;
     planSuggestionType?: string;
     trainingPlanId?: string;
     type?: string;
@@ -112,10 +112,10 @@ export default function AgendaCreateScreen() {
     () =>
       buildPlanSuggestionDefaults({
         description: readParam(params.planSuggestionDescription),
-        tssDelta: parseSuggestionTssDelta(readParam(params.planSuggestionTssDelta)),
+        loadDelta: parseSuggestionLoadDelta(readParam(params.planSuggestionLoadDelta)),
         type: readParam(params.planSuggestionType),
       }),
-    [params.planSuggestionDescription, params.planSuggestionTssDelta, params.planSuggestionType],
+    [params.planSuggestionDescription, params.planSuggestionLoadDelta, params.planSuggestionType],
   );
   const requestedType = readParam(params.type);
   const initialType: AgendaCreateType = isCreateType(requestedType)

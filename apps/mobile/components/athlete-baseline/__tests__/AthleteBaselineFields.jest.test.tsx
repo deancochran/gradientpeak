@@ -72,9 +72,6 @@ const baseValue: AthleteBaselineValue = {
   weightDisplayUnit: "kg",
   maxHr: null,
   restingHr: null,
-  ftp: null,
-  thresholdPaceSecondsPerKm: null,
-  cssSecondsPer100m: null,
 };
 
 function ControlledHarness({
@@ -98,9 +95,8 @@ function ControlledHarness({
       <AthleteBaselineFields
         value={value}
         onChange={handleChange}
-        visibleActivityCategories={["cycling", "running", "swimming"]}
         sources={sources}
-        estimates={{ maxHr: 185, ftp: 210 }}
+        estimates={{ maxHr: 185 }}
       />
       {onNext ? (
         <Pressable testID="athlete-baseline-next" onPress={() => onNext(value)}>
@@ -112,39 +108,18 @@ function ControlledHarness({
 }
 
 describe("AthleteBaselineFields", () => {
-  it("never exposes manually editable activity-category thresholds", () => {
-    const { rerender } = renderNative(
-      <AthleteBaselineFields
-        value={baseValue}
-        onChange={jest.fn()}
-        visibleActivityCategories={["running"]}
-      />,
-    );
+  it("does not expose performance-threshold controls", () => {
+    renderNative(<AthleteBaselineFields value={baseValue} onChange={jest.fn()} />);
 
     expect(screen.queryByLabelText("Running threshold pace (Optional)")).toBeNull();
     expect(screen.queryByTestId("athlete-baseline-ftp")).toBeNull();
     expect(screen.queryByLabelText("Swim CSS (Optional)")).toBeNull();
-
-    rerender(
-      <AthleteBaselineFields
-        value={baseValue}
-        onChange={jest.fn()}
-        visibleActivityCategories={["cycling", "swimming"]}
-      />,
-    );
-    expect(screen.queryByTestId("athlete-baseline-ftp")).toBeNull();
-    expect(screen.queryByLabelText("Swim CSS (Optional)")).toBeNull();
-    expect(screen.queryByLabelText("Running threshold pace (Optional)")).toBeNull();
   });
 
   it("reports optional clears with an explicit cleared source", () => {
     const onChange = jest.fn();
     renderNative(
-      <AthleteBaselineFields
-        value={{ ...baseValue, restingHr: 52 }}
-        onChange={onChange}
-        visibleActivityCategories={[]}
-      />,
+      <AthleteBaselineFields value={{ ...baseValue, restingHr: 52 }} onChange={onChange} />,
     );
 
     fireEvent.changeText(screen.getByTestId("athlete-baseline-resting-hr"), "");
@@ -156,7 +131,6 @@ describe("AthleteBaselineFields", () => {
       <AthleteBaselineFields
         value={baseValue}
         onChange={jest.fn()}
-        visibleActivityCategories={[]}
         sources={{ restingHr: { kind: "cleared" } }}
       />,
     );
@@ -168,11 +142,7 @@ describe("AthleteBaselineFields", () => {
   it("offers an honest setup-scoped exclusion action for metrics", () => {
     const onChange = jest.fn();
     renderNative(
-      <AthleteBaselineFields
-        value={{ ...baseValue, restingHr: 52 }}
-        onChange={onChange}
-        visibleActivityCategories={[]}
-      />,
+      <AthleteBaselineFields value={{ ...baseValue, restingHr: 52 }} onChange={onChange} />,
     );
 
     expect(screen.getByText("Exclude from setup")).toBeTruthy();
@@ -189,7 +159,6 @@ describe("AthleteBaselineFields", () => {
       <AthleteBaselineFields
         value={{ ...baseValue, experience: "intermediate", gender: "female" }}
         onChange={jest.fn()}
-        visibleActivityCategories={[]}
       />,
     );
 
@@ -220,11 +189,7 @@ describe("AthleteBaselineFields", () => {
   it("uses a separate clear action instead of deselecting a checked radio", () => {
     const onChange = jest.fn();
     renderNative(
-      <AthleteBaselineFields
-        value={{ ...baseValue, gender: "female" }}
-        onChange={onChange}
-        visibleActivityCategories={[]}
-      />,
+      <AthleteBaselineFields value={{ ...baseValue, gender: "female" }} onChange={onChange} />,
     );
 
     fireEvent.press(screen.getByTestId("athlete-baseline-gender-female"));
@@ -238,24 +203,12 @@ describe("AthleteBaselineFields", () => {
     expect(onChange).toHaveBeenLastCalledWith({ field: "gender", value: null, source: "cleared" });
   });
 
-  it("does not expose imported FTP as an editable onboarding value", () => {
-    renderNative(
-      <ControlledHarness
-        initialValue={{ ftp: 245 }}
-        initialSources={{ ftp: { kind: "imported", label: "Wahoo" } }}
-      />,
-    );
-    expect(screen.queryByTestId("athlete-baseline-ftp")).toBeNull();
-    expect(screen.queryByText("Imported from Wahoo")).toBeNull();
-  });
-
   it("marks reset-to-estimate as estimated rather than manual", () => {
     const onChange = jest.fn();
     renderNative(
       <AthleteBaselineFields
         value={{ ...baseValue, maxHr: 190 }}
         onChange={onChange}
-        visibleActivityCategories={[]}
         sources={{ maxHr: { kind: "manual" } }}
         estimates={{ maxHr: 185 }}
       />,
@@ -271,7 +224,6 @@ describe("AthleteBaselineFields", () => {
       <AthleteBaselineFields
         value={{ ...baseValue, weightDisplayUnit: "lbs" }}
         onChange={onChange}
-        visibleActivityCategories={[]}
       />,
     );
 
@@ -291,17 +243,15 @@ describe("AthleteBaselineFields", () => {
     expect(screen.getByTestId("athlete-baseline-weight").props.error).toBeUndefined();
   });
 
-  it("submits onboarding without athlete-entered threshold values", () => {
+  it("submits only the current non-threshold baseline contract", () => {
     const onNext = jest.fn();
     renderNative(<ControlledHarness onNext={onNext} />);
 
     fireEvent.press(screen.getByTestId("athlete-baseline-next"));
 
-    expect(onNext).toHaveBeenCalledWith(
-      expect.objectContaining({
-        thresholdPaceSecondsPerKm: null,
-        cssSecondsPer100m: null,
-      }),
-    );
+    const submitted = onNext.mock.calls[0]?.[0];
+    expect(submitted).not.toHaveProperty("ftp");
+    expect(submitted).not.toHaveProperty("thresholdPaceSecondsPerKm");
+    expect(submitted).not.toHaveProperty("cssSecondsPer100m");
   });
 });

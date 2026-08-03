@@ -6,10 +6,10 @@ import { ConstraintIndicator, type ConstraintStatus } from "./ConstraintIndicato
 
 interface ConstraintValidationResult {
   constraints: {
-    weeklyTSS: {
+    weeklyLoad: {
       status: ConstraintStatus;
-      current: number;
-      withNew: number;
+      current: number | null;
+      withNew: number | null;
       limit: number;
     };
     activitiesPerWeek: {
@@ -47,12 +47,12 @@ interface ConstraintValidatorProps {
  * Shows all constraint checks with visual status indicators (satisfied/warning/violated).
  *
  * Validation checks:
- * - Weekly TSS limit
+ * - Weekly Load limit
  * - Activities per week target
  * - Consecutive training days
  * - Minimum rest days per week
  *
- * Note: Hard activity spacing cannot be validated proactively (requires actual IF data).
+ * Note: Hard activity spacing cannot be validated proactively without normalized-intensity data.
  *
  * Visual feedback:
  * - Green checkmark: Constraint satisfied
@@ -64,7 +64,7 @@ interface ConstraintValidatorProps {
  * const { data: validation, isLoading } = api.events.validateConstraints.useQuery({
  *   training_plan_id: planId,
  *   scheduled_date: date,
- *   activity: { estimated_tss: 100, intensity: "moderate" }
+ *   activity: { estimated_duration: 100, intensity: "moderate" }
  * });
  *
  * <ConstraintValidator validation={validation} isLoading={isLoading} />
@@ -90,6 +90,8 @@ export function ConstraintValidator({ validation, isLoading = false }: Constrain
   }
 
   const { constraints, canSchedule, hasWarnings } = validation;
+  const isWeeklyLoadUnavailable =
+    constraints.weeklyLoad.current === null || constraints.weeklyLoad.withNew === null;
 
   return (
     <View className="space-y-3">
@@ -106,21 +108,26 @@ export function ConstraintValidator({ validation, isLoading = false }: Constrain
             <Text className="text-sm font-medium text-yellow-600">⚠️ Has warnings</Text>
           </View>
         )}
-        {!canSchedule && (
+        {!canSchedule && isWeeklyLoadUnavailable && (
+          <View className="flex-row items-center">
+            <Text className="text-sm font-medium text-red-600">❌ Load cannot be evaluated</Text>
+          </View>
+        )}
+        {!canSchedule && !isWeeklyLoadUnavailable && (
           <View className="flex-row items-center">
             <Text className="text-sm font-medium text-red-600">❌ Constraints violated</Text>
           </View>
         )}
       </View>
 
-      {/* Weekly TSS Constraint */}
+      {/* Weekly Load Constraint */}
       <ConstraintIndicator
         label="Weekly Load"
-        status={constraints.weeklyTSS.status}
-        currentValue={constraints.weeklyTSS.current}
-        newValue={constraints.weeklyTSS.withNew}
-        limit={constraints.weeklyTSS.limit}
-        unit="Load"
+        status={constraints.weeklyLoad.status}
+        currentValue={constraints.weeklyLoad.current}
+        newValue={constraints.weeklyLoad.withNew}
+        limit={constraints.weeklyLoad.limit}
+        unit="Common Load"
         description="Total training Load for this week"
       />
 
@@ -158,7 +165,18 @@ export function ConstraintValidator({ validation, isLoading = false }: Constrain
       />
 
       {/* Bottom Warning/Error Message */}
-      {!canSchedule && (
+      {!canSchedule && isWeeklyLoadUnavailable && (
+        <View className="p-3 bg-red-50 border border-red-200 rounded-lg mt-2">
+          <Text className="text-sm text-red-700 font-medium">
+            Weekly Common Load cannot be evaluated because comparable Common Load is unavailable.
+          </Text>
+          <Text className="text-xs text-red-600 mt-1">
+            Scheduling remains blocked until all included activities have comparable Load.
+          </Text>
+        </View>
+      )}
+
+      {!canSchedule && !isWeeklyLoadUnavailable && (
         <View className="p-3 bg-red-50 border border-red-200 rounded-lg mt-2">
           <Text className="text-sm text-red-700 font-medium">
             ⚠️ This activity violates one or more training plan constraints.

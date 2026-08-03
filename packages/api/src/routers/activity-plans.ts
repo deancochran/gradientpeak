@@ -185,8 +185,8 @@ type DiscoverListActivityPlan = SerializedActivityPlan &
       | "estimate_last_accessed_at"
       | "estimate_source"
       | "estimator_version"
-      | "category_loads"
-      | "authoritative_metrics"
+      | "prescriptionQuantification"
+      | "duration_estimate"
       | "common_load"
     >
   >;
@@ -506,8 +506,6 @@ export const activityPlansRouter = createTRPCRouter({
               estimated_zones: undefined,
               confidence: undefined,
               confidence_score: undefined,
-              category_loads: undefined,
-              authoritative_metrics: undefined,
             })),
           );
     const likeStatsPromise = loadLikeStats(db, {

@@ -66,7 +66,6 @@
       "name": "profile_metric_type",
       "values": [
         "weight_kg",
-        "ftp",
         "resting_hr",
         "sleep_hours",
         "hrv_rmssd",
@@ -77,9 +76,7 @@
         "soreness_level",
         "wellness_score",
         "max_hr",
-        "lthr",
-        "threshold_pace_seconds_per_km",
-        "css_seconds_per_100m"
+        "lthr"
       ]
     },
     {
@@ -386,6 +383,12 @@
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
       "name": "sessions",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "swimming_css_protocol_evidence",
       "forceRls": false
     },
     {
@@ -6321,6 +6324,326 @@
     {
       "name": "id",
       "type": "uuid",
+      "table": "swimming_css_protocol_evidence",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "protocol_id",
+      "type": "text",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "evidence_id",
+      "type": "text",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "evidence_revision",
+      "type": "integer",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "profile_id",
+      "type": "uuid",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "activity_id",
+      "type": "uuid",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "source_artifact_id",
+      "type": "uuid",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "source_artifact_digest",
+      "type": "text",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "observed_at",
+      "type": "timestamp with time zone",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "protocol",
+      "type": "text",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "environment",
+      "type": "text",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "pool_length_meters",
+      "type": "real",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 12,
+      "generated": ""
+    },
+    {
+      "name": "timing_basis",
+      "type": "text",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 13,
+      "generated": ""
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 14,
+      "generated": ""
+    },
+    {
+      "name": "reasons",
+      "type": "jsonb",
+      "table": "swimming_css_protocol_evidence",
+      "default": "'[]'::jsonb",
+      "notNull": true,
+      "identity": "",
+      "position": 15,
+      "generated": ""
+    },
+    {
+      "name": "effort_400_id",
+      "type": "uuid",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 16,
+      "generated": ""
+    },
+    {
+      "name": "effort_400_evidence_revision",
+      "type": "integer",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 17,
+      "generated": ""
+    },
+    {
+      "name": "effort_400_segment_id",
+      "type": "uuid",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 18,
+      "generated": ""
+    },
+    {
+      "name": "effort_400_observed_at",
+      "type": "timestamp with time zone",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 19,
+      "generated": ""
+    },
+    {
+      "name": "effort_400_duration_seconds",
+      "type": "integer",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 20,
+      "generated": ""
+    },
+    {
+      "name": "effort_400_start_offset_ms",
+      "type": "bigint",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 21,
+      "generated": ""
+    },
+    {
+      "name": "effort_400_end_offset_ms",
+      "type": "bigint",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 22,
+      "generated": ""
+    },
+    {
+      "name": "effort_200_id",
+      "type": "uuid",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 23,
+      "generated": ""
+    },
+    {
+      "name": "effort_200_evidence_revision",
+      "type": "integer",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 24,
+      "generated": ""
+    },
+    {
+      "name": "effort_200_segment_id",
+      "type": "uuid",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 25,
+      "generated": ""
+    },
+    {
+      "name": "effort_200_observed_at",
+      "type": "timestamp with time zone",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 26,
+      "generated": ""
+    },
+    {
+      "name": "effort_200_duration_seconds",
+      "type": "integer",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 27,
+      "generated": ""
+    },
+    {
+      "name": "effort_200_start_offset_ms",
+      "type": "bigint",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 28,
+      "generated": ""
+    },
+    {
+      "name": "effort_200_end_offset_ms",
+      "type": "bigint",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 29,
+      "generated": ""
+    },
+    {
+      "name": "calculation_version",
+      "type": "text",
+      "table": "swimming_css_protocol_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 30,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "swimming_css_protocol_evidence",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 31,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "swimming_css_protocol_evidence",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 32,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
       "table": "training_plans",
       "default": "",
       "notNull": true,
@@ -7679,6 +8002,41 @@
       "name": "sessions_userId_idx",
       "table": "sessions",
       "definition": "CREATE INDEX \"sessions_userId_idx\" ON public.sessions USING btree (user_id)"
+    },
+    {
+      "name": "idx_swimming_css_protocol_evidence_activity",
+      "table": "swimming_css_protocol_evidence",
+      "definition": "CREATE INDEX idx_swimming_css_protocol_evidence_activity ON public.swimming_css_protocol_evidence USING btree (activity_id)"
+    },
+    {
+      "name": "idx_swimming_css_protocol_evidence_profile_observed",
+      "table": "swimming_css_protocol_evidence",
+      "definition": "CREATE INDEX idx_swimming_css_protocol_evidence_profile_observed ON public.swimming_css_protocol_evidence USING btree (profile_id, observed_at, id) WHERE (status = 'qualified'::text)"
+    },
+    {
+      "name": "idx_swimming_css_protocol_evidence_source_artifact",
+      "table": "swimming_css_protocol_evidence",
+      "definition": "CREATE INDEX idx_swimming_css_protocol_evidence_source_artifact ON public.swimming_css_protocol_evidence USING btree (source_artifact_id)"
+    },
+    {
+      "name": "swimming_css_protocol_evidence_pkey",
+      "table": "swimming_css_protocol_evidence",
+      "definition": "CREATE UNIQUE INDEX swimming_css_protocol_evidence_pkey ON public.swimming_css_protocol_evidence USING btree (id)"
+    },
+    {
+      "name": "swimming_css_protocol_evidence_profile_activity_protocol_unique",
+      "table": "swimming_css_protocol_evidence",
+      "definition": "CREATE UNIQUE INDEX swimming_css_protocol_evidence_profile_activity_protocol_unique ON public.swimming_css_protocol_evidence USING btree (profile_id, activity_id, protocol)"
+    },
+    {
+      "name": "swimming_css_protocol_evidence_profile_evidence_id_unique",
+      "table": "swimming_css_protocol_evidence",
+      "definition": "CREATE UNIQUE INDEX swimming_css_protocol_evidence_profile_evidence_id_unique ON public.swimming_css_protocol_evidence USING btree (profile_id, evidence_id)"
+    },
+    {
+      "name": "swimming_css_protocol_evidence_profile_protocol_id_unique",
+      "table": "swimming_css_protocol_evidence",
+      "definition": "CREATE UNIQUE INDEX swimming_css_protocol_evidence_profile_protocol_id_unique ON public.swimming_css_protocol_evidence USING btree (profile_id, protocol_id)"
     },
     {
       "name": "idx_training_plans_content_visibility",
@@ -10538,6 +10896,125 @@
       "definition": "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
     },
     {
+      "kind": "f",
+      "name": "swimming_css_protocol_evidence_activity_profile_fkey",
+      "table": "swimming_css_protocol_evidence",
+      "validated": true,
+      "definition": "FOREIGN KEY (activity_id, profile_id) REFERENCES activities(id, profile_id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "swimming_css_protocol_evidence_calculation_version_check",
+      "table": "swimming_css_protocol_evidence",
+      "validated": true,
+      "definition": "CHECK (calculation_version = 'canonical-swim-css-protocol-evidence-v1'::text)"
+    },
+    {
+      "kind": "c",
+      "name": "swimming_css_protocol_evidence_content_identity_check",
+      "table": "swimming_css_protocol_evidence",
+      "validated": true,
+      "definition": "CHECK (evidence_id ~ '^sha256:[0-9a-f]{64}$'::text AND source_artifact_digest ~ '^[0-9a-f]{64}$'::text)"
+    },
+    {
+      "kind": "c",
+      "name": "swimming_css_protocol_evidence_context_check",
+      "table": "swimming_css_protocol_evidence",
+      "validated": true,
+      "definition": "CHECK (environment = 'pool'::text AND timing_basis = 'pool_length_timing'::text AND pool_length_meters >= 10::double precision AND pool_length_meters <= 100::double precision AND (pool_length_meters <> ALL (ARRAY['NaN'::real, 'Infinity'::real, '-Infinity'::real])))"
+    },
+    {
+      "kind": "c",
+      "name": "swimming_css_protocol_evidence_distinct_efforts_check",
+      "table": "swimming_css_protocol_evidence",
+      "validated": true,
+      "definition": "CHECK (effort_400_id <> effort_200_id AND effort_400_segment_id <> effort_200_segment_id)"
+    },
+    {
+      "kind": "c",
+      "name": "swimming_css_protocol_evidence_duration_check",
+      "table": "swimming_css_protocol_evidence",
+      "validated": true,
+      "definition": "CHECK (effort_400_duration_seconds >= 1 AND effort_400_duration_seconds <= 14400 AND effort_200_duration_seconds >= 1 AND effort_200_duration_seconds <= 14400 AND effort_400_duration_seconds > (2 * effort_200_duration_seconds) AND ((effort_400_duration_seconds - effort_200_duration_seconds)::double precision / 2::double precision) >= 45::double precision AND ((effort_400_duration_seconds - effort_200_duration_seconds)::double precision / 2::double precision) <= 600::double precision)"
+    },
+    {
+      "kind": "f",
+      "name": "swimming_css_protocol_evidence_effort_200_fkey",
+      "table": "swimming_css_protocol_evidence",
+      "validated": true,
+      "definition": "FOREIGN KEY (effort_200_id) REFERENCES activity_efforts(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "f",
+      "name": "swimming_css_protocol_evidence_effort_400_fkey",
+      "table": "swimming_css_protocol_evidence",
+      "validated": true,
+      "definition": "FOREIGN KEY (effort_400_id) REFERENCES activity_efforts(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "swimming_css_protocol_evidence_order_check",
+      "table": "swimming_css_protocol_evidence",
+      "validated": true,
+      "definition": "CHECK (effort_400_start_offset_ms >= 0 AND effort_400_end_offset_ms > effort_400_start_offset_ms AND effort_200_start_offset_ms >= effort_400_end_offset_ms AND effort_200_end_offset_ms > effort_200_start_offset_ms AND effort_400_observed_at <= effort_200_observed_at AND observed_at = effort_200_observed_at)"
+    },
+    {
+      "kind": "p",
+      "name": "swimming_css_protocol_evidence_pkey",
+      "table": "swimming_css_protocol_evidence",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "u",
+      "name": "swimming_css_protocol_evidence_profile_activity_protocol_unique",
+      "table": "swimming_css_protocol_evidence",
+      "validated": true,
+      "definition": "UNIQUE (profile_id, activity_id, protocol)"
+    },
+    {
+      "kind": "u",
+      "name": "swimming_css_protocol_evidence_profile_evidence_id_unique",
+      "table": "swimming_css_protocol_evidence",
+      "validated": true,
+      "definition": "UNIQUE (profile_id, evidence_id)"
+    },
+    {
+      "kind": "u",
+      "name": "swimming_css_protocol_evidence_profile_protocol_id_unique",
+      "table": "swimming_css_protocol_evidence",
+      "validated": true,
+      "definition": "UNIQUE (profile_id, protocol_id)"
+    },
+    {
+      "kind": "c",
+      "name": "swimming_css_protocol_evidence_protocol_identity_check",
+      "table": "swimming_css_protocol_evidence",
+      "validated": true,
+      "definition": "CHECK (protocol = 'css_400m_200m'::text AND protocol_id = ('css_400m_200m:'::text || activity_id::text))"
+    },
+    {
+      "kind": "c",
+      "name": "swimming_css_protocol_evidence_revision_check",
+      "table": "swimming_css_protocol_evidence",
+      "validated": true,
+      "definition": "CHECK (evidence_revision > 0 AND effort_400_evidence_revision = evidence_revision AND effort_200_evidence_revision = evidence_revision)"
+    },
+    {
+      "kind": "f",
+      "name": "swimming_css_protocol_evidence_source_link_fkey",
+      "table": "swimming_css_protocol_evidence",
+      "validated": true,
+      "definition": "FOREIGN KEY (activity_id, source_artifact_id, profile_id) REFERENCES activity_artifact_links(activity_id, artifact_id, profile_id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "swimming_css_protocol_evidence_status_check",
+      "table": "swimming_css_protocol_evidence",
+      "validated": true,
+      "definition": "CHECK (status = 'qualified'::text AND jsonb_typeof(reasons) = 'array'::text AND jsonb_array_length(reasons) = 0)"
+    },
+    {
       "kind": "c",
       "name": "training_plans_content_visibility_check",
       "table": "training_plans",
@@ -11063,6 +11540,14 @@
       "rls": true,
       "kind": "r",
       "name": "sessions",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "swimming_css_protocol_evidence",
       "managed": true,
       "forceRls": false
     },

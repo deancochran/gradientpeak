@@ -1,4 +1,7 @@
-import { segmentSummarySchema } from "@repo/core";
+import {
+  type ActivityObservationQuantificationBundle,
+  createObservationQuantificationBundle,
+} from "@repo/core";
 import { activitySegments } from "@repo/db";
 import { and, eq, type SQL, type SQLWrapper, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -18,8 +21,8 @@ export type MatchedCategorySummary = {
   distance_meters: number | null;
   active_ms: number | null;
   moving_ms: number | null;
-  tss: number | null;
-  tss_identity: SegmentDerivedSummary["tss_identity"];
+  common_load: SegmentDerivedSummary["common_load"] | null;
+  observationQuantification: ActivityObservationQuantificationBundle | null;
 };
 
 export function describeActivityComposition(segments: readonly ActivitySegmentReadRow[]) {
@@ -71,12 +74,6 @@ export function buildActivityCompositionCondition(input: {
   return and(modeCondition, categoryCondition);
 }
 
-function completeTotal(values: readonly (number | null)[]): number | null {
-  return values.every((value): value is number => value !== null)
-    ? values.reduce((total, value) => total + value, 0)
-    : null;
-}
-
 export function summarizeMatchedCategory(input: {
   segments: readonly ActivitySegmentReadRow[];
   activity_category: ActivityCategory;
@@ -86,53 +83,40 @@ export function summarizeMatchedCategory(input: {
     (segment) =>
       segment.role === "activity" && segment.activity_category === input.activity_category,
   );
-  const distanceMeters = matching.map((segment) => {
-    const parsed = segmentSummarySchema.safeParse(segment.summary);
-    return parsed.success ? (parsed.data.distanceMeters ?? null) : null;
-  });
-  const activeMs = matching.map((segment) =>
-    segment.timing_coverage === "unavailable" ? null : segment.active_ms,
+  const matchingIds = new Set(matching.map((segment) => segment.id));
+  const derived = (input.derivedSegments ?? []).filter((summary) =>
+    matchingIds.has(summary.segment_id),
   );
-  const movingMs = matching.map((segment) =>
-    segment.timing_coverage === "unavailable" ? null : segment.moving_ms,
-  );
-  const bySegmentId = new Map(
-    (input.derivedSegments ?? []).map((summary) => [summary.segment_id, summary]),
-  );
-  const derived = matching.map((segment) => bySegmentId.get(segment.id));
-  const loadStreamKeys = new Set(derived.map((summary) => summary?.load_stream_key ?? null));
-  const hasCompatibleCompleteLoad =
+  const quantification =
     matching.length > 0 &&
-    derived.length === matching.length &&
-    derived.every(
-      (summary) =>
-        summary !== undefined &&
-        summary.tss !== null &&
-        summary.tss_identity !== null &&
-        summary.load_stream_key !== null,
-    ) &&
-    loadStreamKeys.size === 1;
-  const firstDerived = hasCompatibleCompleteLoad ? derived[0] : undefined;
+    matching.every((segment) => derived.some((item) => item.segment_id === segment.id))
+      ? createObservationQuantificationBundle({
+          members: derived.flatMap((summary) => summary.observationQuantification.members),
+        })
+      : null;
+  const distance = quantification?.summary.distance.value ?? null;
+  const activeSeconds = quantification?.summary.duration.active.value ?? null;
+  const movingSeconds = quantification?.summary.duration.moving.value ?? null;
 
   return {
     segment_count: matching.length,
-    distance_meters: completeTotal(distanceMeters),
-    active_ms: completeTotal(activeMs),
-    moving_ms: completeTotal(movingMs),
-    tss: hasCompatibleCompleteLoad
-      ? derived.reduce((total, summary) => total + (summary?.tss ?? 0), 0)
-      : null,
-    tss_identity: firstDerived?.tss_identity ?? null,
+    distance_meters: distance,
+    active_ms: activeSeconds === null ? null : activeSeconds * 1_000,
+    moving_ms: movingSeconds === null ? null : movingSeconds * 1_000,
+    common_load: quantification?.summary.commonLoad ?? null,
+    observationQuantification: quantification,
   };
 }
 
 export function matchedCategorySortValue(
   summary: MatchedCategorySummary,
-  sortBy: "distance" | "duration" | "tss",
+  sortBy: "distance" | "duration" | "common_load",
 ) {
   return sortBy === "distance"
     ? summary.distance_meters
     : sortBy === "duration"
       ? summary.active_ms
-      : summary.tss;
+      : summary.common_load && "load" in summary.common_load
+        ? summary.common_load.load
+        : null;
 }

@@ -60,8 +60,8 @@ export function getBuilderNumberStep({
   if (normalizedUnit === "h" || normalizedUnit === "hr" || normalizedUnit === "hours") return 0.5;
   if (normalizedLabel.includes("hour")) return 0.5;
   if (normalizedLabel.includes("ftp") || normalizedLabel.includes("power")) return 5;
-  if (normalizedLabel.includes("ctl")) return 5;
-  if (normalizedLabel.includes("tss") || normalizedLabel.includes("load")) return 10;
+  if (normalizedLabel.includes("fitness")) return 5;
+  if (normalizedLabel.includes("load")) return 10;
   return 1;
 }
 

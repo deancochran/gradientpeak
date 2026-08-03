@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { WahooProjectionSnapshot } from "../integrations/wahoo/plan-converter";
+import type { WahooSyncService } from "../integrations/wahoo/sync-service";
 import { getWahooGroupEventRouteDeliveryExternalId } from "./event-delivery/wahoo-group-event-route-delivery";
 import { getWahooOwnedRouteExternalId } from "./owned-routes/wahoo-owned-route-mirror";
 import { WahooSyncJobService } from "./wahoo-job-service";
@@ -24,18 +26,37 @@ function cleanupJob(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function projectionSnapshot(ftp = 250): WahooProjectionSnapshot {
+  return {
+    plan: {
+      header: {
+        name: "Tempo Intervals",
+        version: "1.0.0",
+        workout_type_family: 0,
+        workout_type_location: 0,
+        ftp,
+      },
+      intervals: [],
+    },
+  };
+}
+
 function plannedJob(overrides: Record<string, unknown> = {}) {
   return {
     attempt: 1,
     id: "planned-job-1",
     integrationGeneration: 3,
     integrationId: "integration-1",
+    internalResourceId: "event-1",
     jobType: "wahoo.publish_event",
     maxAttempts: 3,
+    operation: "publish",
     payload: {
+      performanceModelAsOf: "2026-07-28T12:00:00.000Z",
       eventId: "event-1",
       operation: "publish",
       projectionHash: "projection-1",
+      projectionSnapshot: projectionSnapshot(),
       startsAt: "2026-07-29T12:00:00.000Z",
     },
     profileId: "profile-1",
@@ -97,6 +118,7 @@ function plannedRepository(job: ReturnType<typeof plannedJob>, active = true) {
     markJobFailed: vi.fn().mockResolvedValue(true),
     markJobSucceeded: vi.fn().mockResolvedValue(true),
     renewJobLease: vi.fn().mockResolvedValue(true),
+    updateRunningJobDesiredState: vi.fn().mockResolvedValue(true),
   };
 }
 
@@ -365,6 +387,8 @@ describe("WahooSyncJobService", () => {
 
 describe("WahooSyncJobService planned activities", () => {
   it("claims and completes a generation-fenced publish with the lease signal", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-28T13:00:00.000Z"));
     const job = plannedJob();
     const repository = plannedRepository(job);
     const syncEvent = vi.fn().mockResolvedValue({ action: "created", success: true });
@@ -389,10 +413,14 @@ describe("WahooSyncJobService planned activities", () => {
       "event-1",
       "profile-1",
       expect.objectContaining({
+        performanceModelAsOf: "2026-07-28T13:00:00.000Z",
         expectedIntegrationGeneration: 3,
+        expectedProjectionHash: "projection-1",
         expectedStartsAt: "2026-07-29T12:00:00.000Z",
         integrationId: "integration-1",
+        queuedProjectionSnapshot: projectionSnapshot(),
         signal: expect.any(AbortSignal),
+        updateDesiredProjection: expect.any(Function),
       }),
     );
     expect(repository.completeJobWithSyncState).toHaveBeenCalledWith(
@@ -400,11 +428,68 @@ describe("WahooSyncJobService planned activities", () => {
     );
   });
 
+  it("atomically advances a running job to the latest target projection before completion", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-28T13:00:00.000Z"));
+    const repository = plannedRepository(plannedJob());
+    type SyncExecution = NonNullable<Parameters<WahooSyncService["syncEvent"]>[2]>;
+    const syncEvent = vi.fn(
+      async (_eventId: string, _profileId: string, execution: SyncExecution) => {
+        const updateDesiredProjection = execution.updateDesiredProjection;
+        if (!updateDesiredProjection) throw new Error("Expected desired-state updater");
+        await updateDesiredProjection({
+          performanceModelAsOf: "2026-07-28T13:00:00.000Z",
+          projectionHash: "projection-2",
+          projectionSnapshot: projectionSnapshot(275),
+        });
+        return { action: "updated" as const, success: true as const };
+      },
+    );
+    const service = new WahooSyncJobService({
+      providerSyncRepository: repository as never,
+      syncService: { syncEvent } as never,
+      wahooRepository: {} as never,
+    });
+
+    await expect(service.processDueJobs({ workerId: "planned-test" })).resolves.toEqual({
+      completed: 1,
+      failed: 0,
+      processed: 1,
+    });
+
+    expect(repository.updateRunningJobDesiredState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedIntegrationGeneration: 3,
+        id: "planned-job-1",
+        integrationId: "integration-1",
+        payload: expect.objectContaining({
+          performanceModelAsOf: "2026-07-28T13:00:00.000Z",
+          projectionHash: "projection-2",
+          projectionSnapshot: projectionSnapshot(275),
+        }),
+        payloadHash: expect.any(String),
+        profileId: "profile-1",
+        provider: "wahoo",
+        workerId: expect.stringMatching(/^planned-test:/),
+      }),
+    );
+    expect(repository.completeJobWithSyncState).toHaveBeenCalled();
+  });
+
   it.each([
-    ["missing", { eventId: "event-1", operation: "publish", projectionHash: "projection-1" }],
+    [
+      "missing performance-model timestamp",
+      {
+        eventId: "event-1",
+        operation: "publish",
+        projectionHash: "projection-1",
+        startsAt: "2026-07-29T12:00:00.000Z",
+      },
+    ],
     [
       "malformed",
       {
+        performanceModelAsOf: "not-a-timestamp",
         eventId: "event-1",
         operation: "publish",
         projectionHash: "projection-1",
@@ -473,6 +558,55 @@ describe("WahooSyncJobService planned activities", () => {
     );
   });
 
+  it("dead-letters publish payloads without an explicit calibration timestamp", async () => {
+    const job = plannedJob({
+      payload: {
+        eventId: "event-1",
+        operation: "publish",
+        projectionHash: "projection-1",
+        startsAt: "2026-07-29T12:00:00.000Z",
+      },
+    });
+    const repository = plannedRepository(job);
+    const syncEvent = vi.fn();
+    const service = new WahooSyncJobService({
+      providerSyncRepository: repository as never,
+      syncService: { syncEvent } as never,
+      wahooRepository: {} as never,
+    });
+
+    await service.processDueJobs({ workerId: "planned-test" });
+
+    expect(syncEvent).not.toHaveBeenCalled();
+    expect(repository.markJobFailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastError: "invalid_wahoo_planned_activity_payload",
+        status: "dead_lettered",
+      }),
+    );
+  });
+
+  it("dead-letters planned jobs whose payload event does not match the ordered resource", async () => {
+    const job = plannedJob({ internalResourceId: "event-2" });
+    const repository = plannedRepository(job);
+    const syncEvent = vi.fn();
+    const service = new WahooSyncJobService({
+      providerSyncRepository: repository as never,
+      syncService: { syncEvent } as never,
+      wahooRepository: {} as never,
+    });
+
+    await service.processDueJobs({ workerId: "planned-test" });
+
+    expect(syncEvent).not.toHaveBeenCalled();
+    expect(repository.markJobFailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastError: "invalid_wahoo_planned_activity_payload",
+        status: "dead_lettered",
+      }),
+    );
+  });
+
   it("terminalizes a superseded generation without provider work", async () => {
     const job = plannedJob();
     const repository = plannedRepository(job, false);
@@ -531,6 +665,7 @@ describe("WahooSyncJobService planned activities", () => {
   it("terminally completes a missing unsync link", async () => {
     const job = plannedJob({
       jobType: "wahoo.unsync_event",
+      operation: "unsync",
       payload: { eventId: "event-1", operation: "unsync" },
     });
     const repository = plannedRepository(job);

@@ -4,70 +4,96 @@ import {
   buildLoadSeries,
   evaluateLoadSeries,
   loadDayObservationSchema,
-  loadSeriesIdentityForActivityTss,
+  loadSeriesIdentityForAvailableCommonLoad,
   loadSeriesIdentitySchema,
   sameLoadSeriesIdentity,
 } from "../load-series";
 
-const tssIdentity = {
-  activity_category: "cycling",
-  family: "tss" as const,
+const loadIdentity = {
+  activity_category: "all",
+  family: "common_load" as const,
   method: "normalized_power",
   version: "1",
   sourceDefinition: "first_party:ftp-250",
 };
 
 describe("load-series contracts", () => {
-  it("keeps threshold calibration out of stable TSS series identity", () => {
-    const first = loadSeriesIdentityForActivityTss({
+  it("gives available Common Load its own stable family identity", () => {
+    const bike = {
+      status: "available",
+      model: "gradientpeak_relative_load",
+      version: "1",
       activity_category: "bike",
       method: "power_threshold",
-      source: "activity_analysis",
-      version: "1",
-      calibration: { type: "ftp_watts", value: 250 },
-    });
-    const recalibrated = loadSeriesIdentityForActivityTss({
-      activity_category: "bike",
-      method: "power_threshold",
-      source: "activity_analysis",
-      version: "1",
-      calibration: { type: "ftp_watts", value: 275 },
+      quality: {
+        source: "observed_effort",
+        observed_at: "2026-07-01T00:00:00.000Z",
+        confidence: "high",
+        stale: false,
+        estimate: false,
+      },
+      thresholdEvidence: null,
+      sessionRpeEvidence: null,
+      evidenceFingerprint: "calibration:ftp-1",
+      computedAsOf: "2026-07-01T00:00:00.000Z",
+      contributingDurationSeconds: 3600,
+      load: 75,
+      intensity: 0.8,
+      estimated: false,
+    } as const;
+    const identity = loadSeriesIdentityForAvailableCommonLoad(bike);
+    const otherAdapter = loadSeriesIdentityForAvailableCommonLoad({
+      ...bike,
+      activity_category: "run",
+      method: "run_pace_threshold",
     });
 
-    expect(first).toEqual({
-      activity_category: "bike",
-      family: "tss",
-      method: "power_threshold",
-      sourceDefinition: "activity_analysis",
+    expect(identity).toEqual({
+      activity_category: "all",
+      family: "common_load",
+      method: "gradientpeak_relative_load",
       version: "1",
+      sourceDefinition: "gradientpeak_relative_load",
     });
-    expect(sameLoadSeriesIdentity(first, recalibrated)).toBe(true);
+    expect(sameLoadSeriesIdentity(identity, otherAdapter)).toBe(true);
   });
 
   it("parses a complete exact identity", () => {
-    expect(loadSeriesIdentitySchema.parse(tssIdentity)).toEqual(tssIdentity);
-    expect(loadSeriesIdentitySchema.safeParse({ ...tssIdentity, version: "" }).success).toBe(false);
+    expect(loadSeriesIdentitySchema.parse(loadIdentity)).toEqual(loadIdentity);
+    expect(loadSeriesIdentitySchema.safeParse({ ...loadIdentity, version: "" }).success).toBe(
+      false,
+    );
+    expect(loadSeriesIdentitySchema.safeParse({ ...loadIdentity, family: "trimp" }).success).toBe(
+      false,
+    );
     expect(
-      loadSeriesIdentitySchema.safeParse({ ...tssIdentity, activity_category: "all" }).success,
+      loadSeriesIdentitySchema.safeParse({
+        ...loadIdentity,
+        activity_category: "all",
+        family: "common_load",
+      }).success,
+    ).toBe(true);
+    expect(
+      loadSeriesIdentitySchema.safeParse({ ...loadIdentity, activity_category: "cycling" }).success,
     ).toBe(false);
   });
 
   it.each([
-    [{ ...tssIdentity, family: "trimp" as const }, "family"],
-    [{ ...tssIdentity, family: "external_work_kj" as const }, "family"],
-    [{ ...tssIdentity, activity_category: "running" }, "activity_category"],
-    [{ ...tssIdentity, method: "provider_tss" }, "method"],
-    [{ ...tssIdentity, version: "2" }, "version"],
-    [{ ...tssIdentity, sourceDefinition: "provider:threshold-250" }, "source"],
+    [{ ...loadIdentity, family: "trimp" as const }, "family"],
+    [{ ...loadIdentity, family: "external_work_kj" as const }, "family"],
+    [{ ...loadIdentity, activity_category: "running" }, "activity_category"],
+    [{ ...loadIdentity, method: "provider_load" }, "method"],
+    [{ ...loadIdentity, version: "2" }, "version"],
+    [{ ...loadIdentity, sourceDefinition: "provider:threshold-250" }, "source"],
   ] as const)("treats a changed identity as incompatible", (other, _dimension) => {
-    expect(sameLoadSeriesIdentity(tssIdentity, other)).toBe(false);
+    expect(sameLoadSeriesIdentity(loadIdentity, other)).toBe(false);
   });
 
   it("refuses to flatten observations with mixed identities", () => {
     const result = buildLoadSeries([
-      { identity: tssIdentity, date: "2026-07-10", state: "observed", value: 50 },
+      { identity: loadIdentity, date: "2026-07-10", state: "observed", value: 50 },
       {
-        identity: { ...tssIdentity, family: "trimp" },
+        identity: { ...loadIdentity, family: "trimp", activity_category: "cycling" },
         date: "2026-07-11",
         state: "observed",
         value: 50,
@@ -100,7 +126,7 @@ describe("load-series contracts", () => {
         : { date: "2026-07-07", state, value };
     const result = evaluateLoadSeries(
       {
-        identity: tssIdentity,
+        identity: loadIdentity,
         observations: [
           ...Array.from({ length: 6 }, (_, index) => ({
             date: `2026-07-0${index + 1}`,

@@ -162,14 +162,14 @@ export function DiscoverFilterSheet({
                   testID: "discover-filter-sort-field-duration",
                 },
                 {
-                  label: "Estimated TSS",
-                  value: "estimated_tss",
-                  testID: "discover-filter-sort-field-tss",
+                  label: "Common Load",
+                  value: "common_load",
+                  testID: "discover-filter-sort-field-common-load",
                 },
                 {
-                  label: "Estimated IF",
-                  value: "intensity_factor",
-                  testID: "discover-filter-sort-field-if",
+                  label: "Common intensity",
+                  value: "common_intensity",
+                  testID: "discover-filter-sort-field-common-intensity",
                 },
               ]}
               value={activityPlanSort.field}
@@ -232,50 +232,50 @@ export function DiscoverFilterSheet({
             />
           </FilterSection>
 
-          <FilterSection title="Estimated TSS">
+          <FilterSection title="Common Load">
             <RangeInputRow
-              minValue={activityPlanFilters.minTss}
-              maxValue={activityPlanFilters.maxTss}
+              minValue={activityPlanFilters.minCommonLoad}
+              maxValue={activityPlanFilters.maxCommonLoad}
               onMinChange={(value) =>
                 onActivityPlanFiltersChange({
                   ...activityPlanFilters,
-                  minTss: parseNumericInput(value),
+                  minCommonLoad: parseNumericInput(value),
                 })
               }
               onMaxChange={(value) =>
                 onActivityPlanFiltersChange({
                   ...activityPlanFilters,
-                  maxTss: parseNumericInput(value),
+                  maxCommonLoad: parseNumericInput(value),
                 })
               }
-              minPlaceholder="Min TSS"
-              maxPlaceholder="Max TSS"
-              unitLabel="stress score"
-              testIDPrefix="discover-filter-activityPlans-tss"
+              minPlaceholder="Min Common Load"
+              maxPlaceholder="Max Common Load"
+              unitLabel="common load"
+              testIDPrefix="discover-filter-activityPlans-common-load"
             />
           </FilterSection>
 
-          <FilterSection title="Intensity factor">
+          <FilterSection title="Common intensity">
             <RangeInputRow
-              minValue={activityPlanFilters.minIf}
-              maxValue={activityPlanFilters.maxIf}
+              minValue={activityPlanFilters.minCommonIntensity}
+              maxValue={activityPlanFilters.maxCommonIntensity}
               onMinChange={(value) =>
                 onActivityPlanFiltersChange({
                   ...activityPlanFilters,
-                  minIf: parseNumericInput(value, { allowDecimal: true }),
+                  minCommonIntensity: parseNumericInput(value, { allowDecimal: true }),
                 })
               }
               onMaxChange={(value) =>
                 onActivityPlanFiltersChange({
                   ...activityPlanFilters,
-                  maxIf: parseNumericInput(value, { allowDecimal: true }),
+                  maxCommonIntensity: parseNumericInput(value, { allowDecimal: true }),
                 })
               }
-              minPlaceholder="Min IF"
-              maxPlaceholder="Max IF"
+              minPlaceholder="Min intensity"
+              maxPlaceholder="Max intensity"
               decimals={2}
-              unitLabel="intensity factor"
-              testIDPrefix="discover-filter-activityPlans-if"
+              unitLabel="common intensity"
+              testIDPrefix="discover-filter-activityPlans-common-intensity"
             />
           </FilterSection>
         </View>

@@ -1,21 +1,15 @@
 import {
   type ActivityPlanIntervalStep,
+  type ActivityPrescriptionQuantificationBundle,
   activityPlanStructureSchema,
   compileActivityPlan,
 } from "@repo/core";
 import { useMemo } from "react";
-import type { ActivityCategoryLoadMeasurement } from "@/components/shared/ActivityCategoryLoadBreakdown";
-import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 
 type ActivityPlanLike = {
   activity_category?: string | null;
-  authoritative_metrics?: {
-    estimated_duration?: number | null;
-    estimated_tss?: number | null;
-    intensity_factor?: number | null;
-    estimated_distance?: number | null;
-  } | null;
-  category_loads?: readonly ActivityCategoryLoadMeasurement[];
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
   profile_id?: string | null;
   structure?: unknown;
   [key: string]: unknown;
@@ -85,15 +79,13 @@ export function useActivityPlanDetailViewModel({
 
   const compiled = useMemo(() => (structure ? compileActivityPlan(structure) : null), [structure]);
 
-  const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(activityPlan);
-  const estimatedDurationSeconds = authoritativeMetrics.estimated_duration ?? null;
+  const quantitySummary = getActivityPlanQuantitySummary(activityPlan);
+  const estimatedDurationSeconds = quantitySummary.durationSeconds;
   const estimatedDurationMinutes = estimatedDurationSeconds
     ? Math.round(estimatedDurationSeconds / 60)
     : null;
   const durationMinutes =
     estimatedDurationMinutes ?? Math.round((compiled?.explicitTimedDurationSeconds ?? 0) / 60);
-  const tss = authoritativeMetrics.estimated_tss ?? null;
-  const intensityFactor = authoritativeMetrics.intensity_factor ?? null;
   const isOwnedByUser = activityPlan?.profile_id === profile?.id;
   const detailBadges = activityPlan
     ? [
@@ -105,10 +97,8 @@ export function useActivityPlanDetailViewModel({
   return {
     activityPlan,
     detailBadges,
-    intensityFactor,
     isOwnedByUser,
     steps,
-    tss,
     durationLabel: formatDuration(durationMinutes * 60),
     durationMinutes,
   };

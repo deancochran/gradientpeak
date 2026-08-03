@@ -14,9 +14,6 @@ describe("profileMetricSections", () => {
     const metricTypes = profileMetricSections.flatMap(({ metricTypes }) => metricTypes);
 
     expect(metricTypes).toEqual([
-      "ftp",
-      "threshold_pace_seconds_per_km",
-      "css_seconds_per_100m",
       "lthr",
       "max_hr",
       "resting_hr",

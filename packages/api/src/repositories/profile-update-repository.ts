@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { activityEfforts, profileMetrics, profiles } from "@repo/db";
+import { profileMetrics, profiles } from "@repo/db";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../db";
 import {
@@ -52,8 +52,6 @@ export async function compareAndSwapOwnedProfileMedia(
 
   return Boolean(updated);
 }
-
-const MANUAL_FTP_UNIT = "watts";
 
 export async function updateOwnedProfileFields(
   tx: ProfileUpdateTransaction,
@@ -126,72 +124,6 @@ export async function syncAppendOnlyProfileMetric(
     notes: null,
     reference_activity_id: null,
     value: input.value ?? 0,
-    source: "manual",
-    method: PROFILE_UPDATE_OVERRIDE_METHOD,
-    calculation_version: PROFILE_UPDATE_OVERRIDE_VERSION,
-    provenance: profileOverrideProvenance(state),
-  });
-}
-
-/** FTP uses latest-row replacement semantics while retaining every prior observation. */
-export async function replaceManualFtp(
-  tx: ProfileUpdateTransaction,
-  input: { profileId: string; value: number | null | undefined; now: Date },
-) {
-  if (input.value === undefined) return;
-
-  const overrideScope = and(
-    eq(activityEfforts.profile_id, input.profileId),
-    eq(activityEfforts.activity_category, "bike"),
-    eq(activityEfforts.effort_type, "power"),
-    eq(activityEfforts.duration_seconds, 1200),
-    isNull(activityEfforts.activity_id),
-    eq(activityEfforts.source, "manual"),
-    eq(activityEfforts.method, PROFILE_UPDATE_OVERRIDE_METHOD),
-  );
-  const [latest] = await tx
-    .select({
-      value: activityEfforts.value,
-      unit: activityEfforts.unit,
-      recorded_at: activityEfforts.recorded_at,
-      method: activityEfforts.method,
-      provenance: activityEfforts.provenance,
-    })
-    .from(activityEfforts)
-    .where(overrideScope)
-    .orderBy(desc(activityEfforts.recorded_at), desc(activityEfforts.created_at))
-    .limit(1);
-  if (input.value === null && latest && isClearedProfileOverride(latest)) return;
-  if (input.value === null && !latest) return;
-  const effortValue = input.value === null ? 0 : Number((input.value / 0.95).toFixed(2));
-  if (
-    input.value !== null &&
-    latest &&
-    !isClearedProfileOverride(latest) &&
-    latest.unit === MANUAL_FTP_UNIT &&
-    Number(latest.value) === effortValue
-  )
-    return;
-
-  const state = input.value === null ? "cleared" : "active";
-  const recordedAt =
-    latest && latest.recorded_at >= input.now
-      ? new Date(latest.recorded_at.getTime() + 1)
-      : input.now;
-
-  await tx.insert(activityEfforts).values({
-    id: randomUUID(),
-    created_at: input.now,
-    updated_at: input.now,
-    profile_id: input.profileId,
-    activity_id: null,
-    recorded_at: recordedAt,
-    activity_category: "bike",
-    effort_type: "power",
-    duration_seconds: 1200,
-    start_offset: null,
-    unit: MANUAL_FTP_UNIT,
-    value: effortValue,
     source: "manual",
     method: PROFILE_UPDATE_OVERRIDE_METHOD,
     calculation_version: PROFILE_UPDATE_OVERRIDE_VERSION,

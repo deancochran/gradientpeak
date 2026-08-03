@@ -31,9 +31,8 @@ describe("athlete intelligence package exports", () => {
     expect(assembleAthleteState).toBeTypeOf("function");
   });
 
-  it("exports canonical threshold, swim pace, and CP/W′ capability vocabulary", () => {
-    expect(metricCatalog.threshold_pace_seconds_per_km.canonicalUnit).toBe("seconds_per_km");
-    expect(metricCatalog.css_seconds_per_100m.canonicalUnit).toBe("seconds_per_100m");
+  it("exports contextual metrics, swim pace curves, and CP/W′ capability vocabulary", () => {
+    expect(metricCatalog.lthr.canonicalUnit).toBe("beats_per_minute");
     expect(effortCurveUnitSchema.options).toContain("seconds_per_100m");
     expect(calculateCriticalPowerCapability).toBeTypeOf("function");
   });

@@ -333,9 +333,6 @@ describe("drizzle-event-read-repository", () => {
 
   it("uses supplied asOf for route access-grant expiry while reading current route facts", async () => {
     const { db, selects } = createSelectCaptureDb({
-      profiles: [],
-      activity_efforts: [],
-      profile_metrics: [],
       activity_routes: [],
     });
     const repository = createEventReadRepository(db);
@@ -343,7 +340,6 @@ describe("drizzle-event-read-repository", () => {
 
     await repository.getEstimationInputs({
       asOfIso,
-      effortCutoffIso: "2026-01-19T12:34:56.000Z",
       profileId: "profile-1",
       routeIds: ["route-1"],
     });
@@ -353,6 +349,7 @@ describe("drizzle-event-read-repository", () => {
     expect(query.sql).toContain("content_access_grants.expires_at > $");
     expect(query.sql).not.toContain("now() ");
     expect(query.params).toContainEqual(new Date(asOfIso));
+    expect(selects.map((select) => select.table)).toEqual(["activity_routes"]);
   });
 
   it("fetches validate constraint plans by id after router permission checks", async () => {
@@ -375,7 +372,7 @@ describe("drizzle-event-read-repository", () => {
         profileId: "profile-1",
         trainingPlanId: "training-plan-1",
         activityPlanId: "activity-plan-1",
-        effortCutoffIso: "2026-01-01T00:00:00.000Z",
+        asOf: new Date("2026-04-01T00:00:00.000Z"),
       }),
     ).resolves.toMatchObject({
       trainingPlan: { id: "training-plan-1", structure: { block: "build" } },
@@ -403,48 +400,9 @@ describe("drizzle-event-read-repository", () => {
     expect(selectedTables).not.toContain("activity_efforts");
   });
 
-  it("serializes estimation inputs and skips route lookup when no route ids are provided", async () => {
+  it("serializes route estimation inputs and skips persistence when no route ids are provided", async () => {
     const withRoutes = createEventReadRepository(
       createQueryMapDbMock({
-        profiles: {
-          data: [{ dob: new Date("1992-03-04T00:00:00.000Z") }],
-          error: null,
-        },
-        activity_efforts: {
-          data: [
-            {
-              id: "effort-1",
-              activity_id: "activity-1",
-              effort_type: "power",
-              duration_seconds: 1200,
-              value: 287,
-              unit: "watts",
-              activity_category: "bike",
-              recorded_at: new Date("2026-04-18T08:15:00.000Z"),
-              source: "imported",
-              method: "activity_file_best_effort",
-              calculation_version: "activity-file-best-effort-v1",
-              quality_score: 0.94,
-              provenance: { activity_id: "activity-1", derived_from: "activity_file_stream" },
-            },
-          ],
-          error: null,
-        },
-        profile_metrics: {
-          data: [
-            {
-              metric_type: "weight_kg",
-              value: 71.4,
-              recorded_at: new Date("2026-04-01T09:30:00.000Z"),
-              source: "provider",
-              method: "provider_import",
-              calculation_version: "provider-import-v1",
-              quality_score: 0.88,
-              provenance: { provider: "fixture" },
-            },
-          ],
-          error: null,
-        },
         activity_routes: {
           data: [
             {
@@ -459,51 +417,16 @@ describe("drizzle-event-read-repository", () => {
         },
       }).db,
     );
-    const withoutRoutesMock = createQueryMapDbMock({
-      profiles: { data: [{ dob: null }], error: null },
-      activity_efforts: { data: [], error: null },
-      profile_metrics: { data: [], error: null },
-    });
+    const withoutRoutesMock = createQueryMapDbMock({});
     const withoutRoutes = createEventReadRepository(withoutRoutesMock.db);
 
     await expect(
       withRoutes.getEstimationInputs({
         asOfIso: "2026-05-01T00:00:00.000Z",
-        effortCutoffIso: "2026-03-01T00:00:00.000Z",
         profileId: "profile-1",
         routeIds: ["route-1"],
       }),
     ).resolves.toEqual({
-      profile: { dob: "1992-03-04T00:00:00.000Z" },
-      efforts: [
-        {
-          id: "effort-1",
-          activity_id: "activity-1",
-          effort_type: "power",
-          duration_seconds: 1200,
-          value: 287,
-          unit: "watts",
-          activity_category: "bike",
-          recorded_at: "2026-04-18T08:15:00.000Z",
-          source: "imported",
-          method: "activity_file_best_effort",
-          calculation_version: "activity-file-best-effort-v1",
-          quality_score: 0.94,
-          provenance: { activity_id: "activity-1", derived_from: "activity_file_stream" },
-        },
-      ],
-      metrics: [
-        {
-          metric_type: "weight_kg",
-          value: 71.4,
-          recorded_at: "2026-04-01T09:30:00.000Z",
-          source: "provider",
-          method: "provider_import",
-          calculation_version: "provider-import-v1",
-          quality_score: 0.88,
-          provenance: { provider: "fixture" },
-        },
-      ],
       routes: [
         {
           id: "route-1",
@@ -518,21 +441,13 @@ describe("drizzle-event-read-repository", () => {
     await expect(
       withoutRoutes.getEstimationInputs({
         asOfIso: "2026-05-01T00:00:00.000Z",
-        effortCutoffIso: "2026-03-01T00:00:00.000Z",
         profileId: "profile-1",
         routeIds: [],
       }),
     ).resolves.toEqual({
-      profile: { dob: null },
-      efforts: [],
-      metrics: [],
       routes: [],
     });
-    expect(withoutRoutesMock.callLog.map((entry) => entry.table)).toEqual([
-      "profiles",
-      "activity_efforts",
-      "profile_metrics",
-    ]);
+    expect(withoutRoutesMock.callLog).toEqual([]);
   });
 
   it("returns an accessible training plan projection with serialized planned and actual times", async () => {

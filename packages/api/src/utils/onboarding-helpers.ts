@@ -4,48 +4,26 @@
  * Reusable utilities for the onboarding flow to reduce code duplication
  * and improve maintainability. Provides abstraction layer for:
  * - Batch inserting profile metrics
- * - Batch inserting activity efforts
- * - Deriving efforts for different activity_categories
  * - Preparing metrics by merging user input with baseline
  */
 
 import { randomUUID } from "node:crypto";
-import {
-  type DerivedEffort,
-  derivePowerCurveFromFTP,
-  deriveSpeedCurveFromThresholdPace,
-  deriveSwimPaceCurveFromCSS,
-} from "@repo/core/calculations";
 import type {
   OnboardingBaselineFieldSource,
   OnboardingBaselineFieldSources,
 } from "@repo/core/schemas/onboarding";
-import {
-  type ActivityEffortInsert,
-  activityEfforts,
-  type ProfileMetricInsert,
-  type PublicActivityCategory,
-  type PublicEffortType,
-  type PublicProfileMetricType,
-  profileMetrics,
-} from "@repo/db";
+import { type ProfileMetricInsert, type PublicProfileMetricType, profileMetrics } from "@repo/db";
 import type { getRequiredDb } from "../db";
 
 interface BaselineProfile {
   max_hr: number;
   resting_hr: number;
-  lthr: number;
   vo2_max: number;
-  ftp?: number;
-  threshold_pace_seconds_per_km?: number;
-  css_seconds_per_hundred_meters?: number;
   confidence: "high" | "medium" | "low";
   source: string;
 }
 
 type ProfileMetricType = PublicProfileMetricType;
-type ActivityCategory = PublicActivityCategory;
-type EffortType = PublicEffortType;
 type OnboardingTransaction = Parameters<
   Parameters<ReturnType<typeof getRequiredDb>["transaction"]>[0]
 >[0];
@@ -106,78 +84,6 @@ export async function batchInsertProfileMetrics(
 }
 
 /**
- * Batch insert activity efforts with consistent formatting.
- *
- * Handles formatting of timestamps, profile_id, and activity_id for all efforts,
- * reducing duplication across different activity_categories.
- *
- * @param db - Drizzle database client
- * @param profileId - User's profile ID
- * @param efforts - Array of derived efforts to insert
- * @param seedSource - Source of the modeled seed (e.g., 'onboarding', 'baseline_beginner')
- * @returns Insert result
- */
-export async function batchInsertActivityEfforts(
-  tx: OnboardingWriteClient,
-  profileId: string,
-  efforts: DerivedEffort[],
-  seedSource: string = "onboarding",
-) {
-  if (efforts.length === 0) {
-    return;
-  }
-
-  const effortsToInsert = efforts.map((e) => ({
-    id: randomUUID(),
-    created_at: new Date(),
-    profile_id: profileId,
-    activity_id: null,
-    activity_category: e.activity_category as ActivityCategory,
-    duration_seconds: e.duration_seconds,
-    effort_type: e.effort_type as EffortType,
-    value: e.value,
-    unit: e.unit,
-    recorded_at: new Date(),
-    start_offset: null,
-    source: "derived",
-    method: "onboarding_modeled_curve",
-    calculation_version: "onboarding-effort-curve-v1",
-    provenance: { seed_source: seedSource },
-  })) satisfies ActivityEffortInsert[];
-
-  await tx.insert(activityEfforts).values(effortsToInsert);
-}
-
-/**
- * Derive efforts for a specific activity_category from a single metric.
- *
- * Provides unified interface for deriving efforts across all activity_categories,
- * reducing switch statements in the main procedure.
- *
- * @param activity_category - ActivityCategory type ('cycling', 'running', 'swimming')
- * @param metric - Performance metric value (FTP, threshold pace, or CSS)
- * @returns Array of derived efforts for standard durations
- *
- * @example
- * const cyclingEfforts = deriveEffortsForActivityCategory('cycling', 250); // FTP = 250W
- * const runningEfforts = deriveEffortsForActivityCategory('running', 315); // 5:15/km
- * const swimmingEfforts = deriveEffortsForActivityCategory('swimming', 90); // 1:30/100m
- */
-export function deriveEffortsForActivityCategory(
-  activity_category: "cycling" | "running" | "swimming",
-  metric: number,
-): DerivedEffort[] {
-  switch (activity_category) {
-    case "cycling":
-      return derivePowerCurveFromFTP(metric);
-    case "running":
-      return deriveSpeedCurveFromThresholdPace(metric);
-    case "swimming":
-      return deriveSwimPaceCurveFromCSS(metric);
-  }
-}
-
-/**
  * Prepare profile metrics by merging user input with baseline.
  *
  * Combines user-provided values with baseline defaults, prioritizing
@@ -192,11 +98,7 @@ export function prepareProfileMetrics(
     weight_kg?: number;
     max_hr?: number;
     resting_hr?: number;
-    lthr?: number;
     vo2max?: number;
-    ftp?: number;
-    threshold_pace_seconds_per_km?: number;
-    css_seconds_per_hundred_meters?: number;
   },
   baseline: BaselineProfile | null,
   options: PrepareProfileMetricsOptions = {},

@@ -25,7 +25,7 @@ interface TrainingPlanDetailHeaderActionsSectionProps {
     linkedActivities: number;
     microcycles: number;
     plannedTime: string;
-    plannedTss: number;
+    plannedLoad: number;
     sessions: number;
   };
   plan: {
@@ -143,7 +143,7 @@ export function TrainingPlanDetailHeaderActionsSection({
             <SummaryMetricCard label="Linked activities" value={`${overview.linkedActivities}`} />
             <SummaryMetricCard
               label="Planned Load"
-              value={markEstimated(`${overview.plannedTss}`) ?? "0"}
+              value={markEstimated(`${overview.plannedLoad}`) ?? "0"}
             />
             <SummaryMetricCard label="Planned time" value={overview.plannedTime} />
           </View>

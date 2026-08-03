@@ -36,8 +36,8 @@ type InsightTimelineFixture = {
   timeline: Array<{
     adherence_score: number;
     boundary_state: string;
-    completed_load_tss: number;
-    scheduled_load_tss: number;
+    completed_common_load: number;
+    scheduled_common_load: number;
   }>;
   projection: { at_goal_date: Record<string, unknown> };
   adherence_summary: { interpretation: string; contributors: Array<{ detail: string }> };
@@ -65,8 +65,8 @@ var mockSnapshotState: {
     timeline: Array.from({ length: 40 }, (_, index) => ({
       adherence_score: 80,
       boundary_state: "safe",
-      completed_load_tss: index + 100,
-      scheduled_load_tss: index + 110,
+      completed_common_load: index + 100,
+      scheduled_common_load: index + 110,
     })),
     projection: { at_goal_date: {} },
     adherence_summary: {
@@ -500,8 +500,8 @@ const resetTestState = () => {
     timeline: Array.from({ length: 40 }, (_, index) => ({
       adherence_score: 80,
       boundary_state: "safe",
-      completed_load_tss: index + 100,
-      scheduled_load_tss: index + 110,
+      completed_common_load: index + 100,
+      scheduled_common_load: index + 110,
     })),
     projection: { at_goal_date: {} },
     adherence_summary: {

@@ -7,13 +7,19 @@ This document defines how GradientPeak uses `profile_metrics` and `activity_effo
 | Question | `profile_metrics` | `activity_efforts` |
 | --- | --- | --- |
 | What does a row mean? | A point-in-time observation about an athlete | A maximum sustainable power or speed over a duration |
-| Typical examples | weight, resting HR, LTHR, HRV, CSS, direct FTP | bike power curve points, run/swim speed curve points, test efforts |
+| Typical examples | weight, resting HR, activity-derived LTHR, HRV | bike power curve points, run/swim speed curve points, qualified test efforts |
 | Required time | When the metric was observed | When the effort occurred |
 | Optional activity link | `reference_activity_id` records evidence origin | Imported observations require matching activity and segment identity |
 | Canonical units | The unit declared for the metric type | `watts` for bike power; `meters_per_second` for run/swim speed |
 | Not appropriate for | Duration/value curve points | General wellness or one-value biometrics |
 
-FTP may enter the system either as a direct `profile_metrics` observation or as eligible 20-minute bike-power evidence. Consumers must use the Core canonical-threshold resolver rather than selecting one source ad hoc.
+Prescriptive performance targets are projections of canonical models over eligible activity evidence. A profile metric or provider summary never becomes a cycling, running, or swimming target by being relabeled or expanded into synthetic curve points.
+
+`swimming_css_protocol_evidence` is a separate qualified protocol projection. One row retains the
+canonical pool `css_400m_200m` identity, current accepted source artifact content identity, accepted
+segment revision, and the distinct observed 400 m then 200 m effort identities and complete timing.
+It never stores CSS pace or speed. Core calculates CSS from an eligible protocol at the requested
+as-of instant; profile metrics and standalone/manual effort rows have no CSS authority.
 
 ## Evidence contract
 
@@ -22,6 +28,8 @@ Every consumer must preserve these dimensions:
 - **Ownership:** `profile_id` is the athlete whose evidence is represented. A linked activity must have the same owner. Authentication alone is not an ownership check.
 - **Observation time:** `recorded_at` is domain evidence time. `created_at` and `updated_at` are transaction metadata and must never renew freshness.
 - **As-of time:** calculations use only evidence with `recorded_at <= asOf`. Pass `asOf` explicitly; do not read the clock inside a deterministic calculation.
+- **Accepted artifact:** imported effort evidence is eligible only when its segment belongs to the parent activity's accepted segment revision and the segment's source artifact is that activity's current, accepted, owner-matched source link.
+- **CSS protocol identity:** qualified CSS evidence requires one activity-scoped protocol identity, one pool length and pool-length timing basis, exact complete 400 m then 200 m source segments, matching source-effort observation IDs, and one accepted evidence revision. A source artifact switch or segment revision change makes the old protocol ineligible until reconciliation replaces it.
 - **Units:** new database and API writes use canonical metric units. Presentation preference is an app-boundary concern. Core's central evidence adapter temporarily accepts documented legacy aliases for existing rows; feature code must not add new alias branches.
 - **Provenance:** `source`, `method`, `calculation_version`, and `provenance` travel together through repository, DTO, and Core snapshot boundaries. Dropping them changes trust semantics.
 - **Quality:** absence of a quality score means unknown, not perfect quality. Eligibility policy belongs in Core and may use provenance even when quality is unknown.
@@ -33,16 +41,16 @@ Every consumer must preserve these dimensions:
 1. Parse input through the owning Core schema and normalize to canonical units.
 2. Authorize `profile_id` and every referenced resource in the persistence predicate or transaction.
 3. Assign one documented source/method/provenance combination.
-4. Use one transaction for evidence created by one operation, such as a CSS test or activity-file reconciliation.
+4. Use one transaction for evidence created by one operation, such as activity-file reconciliation.
 5. Make replay behavior explicit with a source identity, operation ID, or uniqueness constraint.
 6. Prefer immutable observations. Corrections to generated/provider evidence create a manual override. Any in-place edit or hard delete of manual evidence is compatibility behavior until the evidence-lifecycle decision is completed; do not copy it into new writers.
 
 Canonical writers include:
 
-- profile metric CRUD and CSS tests in `packages/api/src/routers/profile-metrics.ts` and `packages/api/src/application/profile-metrics/`;
+- profile metric CRUD in `packages/api/src/routers/profile-metrics.ts`;
 - profile-setting override synchronization in `packages/api/src/repositories/profile-update-repository.ts`;
 - activity-file evidence reconciliation in `packages/api/src/application/activities/reconcile-activity-evidence.ts`;
-- onboarding/provider adapters, which must call the same normalization and provenance policies rather than inventing new ones.
+- onboarding/provider adapters for non-threshold profile observations, which must preserve source observation time and provenance.
 
 ## Read policy
 
@@ -51,7 +59,7 @@ Use an explicit projection instead of returning “some rows”:
 - **Raw history:** audit/debug view; includes superseded and cleared evidence.
 - **Effective history:** athlete-facing history; interprets overrides and excludes tombstones as measurements.
 - **Latest effective as-of:** calculations and current settings; deterministic order is `recorded_at DESC` plus a stable tie-break.
-- **Eligible effort curve:** analytics/planning; filters through the Core activity-effort evidence policy before selecting maxima.
+- **Eligible effort curve:** analytics/planning; requires current accepted artifact ownership and accepted segment revision before filtering through the Core activity-effort evidence policy.
 
 Do not:
 

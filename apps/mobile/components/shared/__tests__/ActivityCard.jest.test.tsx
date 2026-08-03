@@ -6,6 +6,7 @@ import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
 import { ActivityCard } from "../ActivityCard";
+import { createObservationQuantificationBundleFixture } from "./activityQuantificationFixture";
 
 const toggleLikeMutateMock = jest.fn();
 
@@ -91,72 +92,12 @@ jest.mock("@/lib/hooks/usePreferredUnitSystem", () => ({
 
 const mockUsePreferredUnitSystem = jest.mocked(usePreferredUnitSystem);
 
-const availableCommonLoad = {
-  status: "available" as const,
-  model: "gradientpeak_relative_load" as const,
-  version: "1" as const,
-  activity_category: "run" as const,
-  method: "run_pace_threshold" as const,
-  load: 64,
-  intensity: 0.8,
-  contributingDurationSeconds: 3600,
-  quality: {
-    source: "validated_test" as const,
-    observed_at: "2026-07-20T12:00:00.000Z",
-    confidence: "high" as const,
-    stale: false,
-    estimate: false,
-    calculation_version: "threshold-v1",
-    evidence_fingerprint: "quality-run",
-  },
-  thresholdEvidence: {
-    type: "threshold_speed_mps" as const,
-    value: 4,
-    unit: "meters_per_second" as const,
-    source: "validated_test" as const,
-    observedAt: "2026-07-20T12:00:00.000Z",
-    validAt: "2026-07-20T12:00:00.000Z",
-    freshness: "current" as const,
-    calculationVersion: "threshold-v1",
-    sourceFingerprint: "threshold-run",
-  },
-  evidenceFingerprint: "activity-run",
-  computedAsOf: "2026-07-21T12:00:00.000Z",
+const availableQuantification = createObservationQuantificationBundleFixture({
   estimated: false,
-};
-const {
-  status: _status,
-  load: _load,
-  intensity: _intensity,
-  contributingDurationSeconds: _duration,
-  estimated: _estimated,
-  ...commonLoadProvenance
-} = availableCommonLoad;
-const partialCommonLoad = {
-  status: "partial" as const,
-  ...commonLoadProvenance,
-  load: 32,
-  intensity: 0.8,
-  contributingDurationSeconds: 1800,
-  eligibleDurationSeconds: 3600,
-  sourceTimeCoverage: 0.5,
-  reason: "activity_data_partial" as const,
-};
-const unavailableAggregate = {
-  status: "unavailable" as const,
-  model: "gradientpeak_relative_load" as const,
-  version: "1" as const,
-  contributingDurationSeconds: 0,
-  knownDurationSeconds: 3_600,
-  contributingActivityCount: 0,
-  partialActivityCount: 0,
-  unavailableActivityCount: 1,
-  totalActivityCount: 1,
-  activityCountCoverage: 0,
-  knownDurationCoverage: 0,
-  unknownDurationActivityCount: 0,
-  reason: "no_load_data" as const,
-};
+});
+const partialQuantification = createObservationQuantificationBundleFixture({
+  status: "partial",
+});
 
 describe("ActivityCard", () => {
   beforeEach(() => {
@@ -219,18 +160,12 @@ describe("ActivityCard", () => {
             {
               segment_id: "segment-bike",
               activity_category: "bike",
-              tss: 52,
-              intensity_factor: 0.81,
-              method: "power_threshold",
-              unavailable_reason: null,
+              observationQuantification: null,
             },
             {
               segment_id: "segment-run",
               activity_category: "run",
-              tss: 38,
-              intensity_factor: 0.76,
-              method: "run_pace_threshold",
-              unavailable_reason: null,
+              observationQuantification: null,
             },
           ],
         }}
@@ -238,9 +173,9 @@ describe("ActivityCard", () => {
     );
 
     expect(screen.queryByText("ActivityCategory-specific load")).toBeNull();
-    expect(screen.getByText("Load")).toBeTruthy();
-    expect(screen.getByText("Unavailable")).toBeTruthy();
-    expect(screen.queryByText(/TSS|IF/)).toBeNull();
+    expect(screen.getByText("Common Load")).toBeTruthy();
+    expect(screen.getByText("Normalized intensity")).toBeTruthy();
+    expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
   });
 
   it("shows activity summary metrics in list mode", () => {
@@ -257,13 +192,7 @@ describe("ActivityCard", () => {
           avg_power: 240,
           avg_heart_rate: 148,
           derived: {
-            common_load: availableCommonLoad,
-            stress: {
-              tss: 72,
-              intensity_factor: 0.82,
-              method: "power_threshold",
-              unavailable_reason: null,
-            },
+            observationQuantification: availableQuantification,
           },
         }}
         variant="list"
@@ -274,11 +203,14 @@ describe("ActivityCard", () => {
     expect(screen.getByText("10.0 km")).toBeTruthy();
     expect(screen.getByText("Elapsed")).toBeTruthy();
     expect(screen.getByText("60 min")).toBeTruthy();
-    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Common Load")).toBeTruthy();
     expect(screen.getByText("64")).toBeTruthy();
-    expect(screen.getByText("Intensity")).toBeTruthy();
-    expect(screen.getByText("Tempo · 0.80")).toBeTruthy();
-    expect(screen.queryByText(/TSS|IF/)).toBeNull();
+    expect(screen.getByText("Normalized intensity")).toBeTruthy();
+    expect(screen.getByText("0.80")).toBeTruthy();
+    expect(
+      screen.getByText("Derived. Common Load is available using Run pace threshold."),
+    ).toBeTruthy();
+    expect(screen.getByText("Observed intensity: RPE 7/10 · Observed")).toBeTruthy();
     expect(screen.queryByText("Avg Pace")).toBeNull();
     expect(screen.queryByText("Avg Power")).toBeNull();
     expect(screen.queryByText("Avg HR")).toBeNull();
@@ -317,78 +249,43 @@ describe("ActivityCard", () => {
     expect(screen.queryByText("Elapsed")).toBeNull();
   });
 
-  it("marks partial common Load and Intensity incomplete", () => {
+  it("marks partial Common Load and normalized intensity incomplete", () => {
     renderNative(
       <ActivityCard
         activity={{
           id: "activity-partial",
           name: "Partial Run",
-          derived: { common_load: partialCommonLoad },
+          derived: { observationQuantification: partialQuantification },
         }}
       />,
     );
 
-    expect(screen.getByText("32 · Incomplete")).toBeTruthy();
-    expect(screen.getByText("Tempo · 0.80 · Incomplete")).toBeTruthy();
+    expect(screen.getByText("32")).toBeTruthy();
+    expect(screen.getByText("0.80")).toBeTruthy();
+    expect(screen.getByText(/Derived · Partial/)).toBeTruthy();
   });
 
-  it("renders canonical segment HR coverage for an unavailable parent aggregate", () => {
+  it("renders a canonical unavailable diagnostic", () => {
     renderNative(
       <ActivityCard
         activity={{
-          id: "activity-aggregate-coverage",
-          name: "Incomplete HR Run",
-          avg_heart_rate: 150,
-          derived: { common_load: unavailableAggregate, unavailable_reason: "threshold_missing" },
-          segment_loads: [
-            {
-              segment_id: "segment-hr",
-              activity_category: "run",
-              common_load: {
-                status: "unavailable",
-                model: "gradientpeak_relative_load",
-                version: "1",
-                activity_category: "run",
-                method: "heart_rate_zones",
-                quality: {
-                  source: "validated_test",
-                  observed_at: "2026-07-20T12:00:00.000Z",
-                  confidence: "high",
-                  stale: false,
-                  estimate: false,
-                  calculation_version: "threshold-v1",
-                  evidence_fingerprint: "quality-hr",
-                },
-                thresholdEvidence: {
-                  type: "lthr_bpm",
-                  value: 170,
-                  unit: "beats_per_minute",
-                  source: "validated_test",
-                  observedAt: "2026-07-20T12:00:00.000Z",
-                  validAt: "2026-07-20T12:00:00.000Z",
-                  freshness: "current",
-                  calculationVersion: "threshold-v1",
-                  sourceFingerprint: "threshold-hr",
-                },
-                evidenceFingerprint: "activity-hr",
-                computedAsOf: "2026-07-21T12:00:00.000Z",
-                contributingDurationSeconds: 1_200,
-                eligibleDurationSeconds: 3_600,
-                sourceTimeCoverage: 1 / 3,
-                reason: "insufficient_coverage",
-              },
-            },
-          ],
+          id: "activity-unsupported",
+          name: "Strength session",
+          derived: {
+            observationQuantification: createObservationQuantificationBundleFixture({
+              activityCategory: "strength",
+              status: "unsupported",
+            }),
+          },
         }}
       />,
     );
 
     expect(
       screen.getByText(
-        "Heart-rate samples cover 33% of eligible duration; at least 50% is required. Import activity data with more time-weighted heart-rate samples.",
+        "This activity category is not supported for canonical Load. Canonical Load is not available for this activity category.",
       ),
     ).toBeTruthy();
-    expect(screen.queryByText(/required threshold is missing/)).toBeNull();
   });
 
   it("formats activity distance in the viewer's imperial units", () => {
@@ -426,12 +323,13 @@ describe("ActivityCard", () => {
       />,
     );
 
-    expect(screen.getByText("Load")).toBeTruthy();
-    expect(screen.getByText("Unavailable")).toBeTruthy();
+    expect(screen.getByText("Common Load")).toBeTruthy();
+    expect(screen.getByText("Normalized intensity")).toBeTruthy();
+    expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("0")).toBeNull();
   });
 
-  it("does not fall back to compatibility TSS and IF fields", () => {
+  it("distinguishes absent canonical evidence from an unavailable canonical bundle", () => {
     const { rerender } = renderNative(
       <ActivityCard
         activity={{
@@ -440,20 +338,15 @@ describe("ActivityCard", () => {
           activity_kind: "single",
           activity_categories: ["strength"],
           elapsed_ms: 1_800_000,
-          derived: {
-            tss: 32,
-            intensity_factor: 0.8,
-            method: "heart_rate_threshold",
-            unavailable_reason: null,
-          },
+          derived: {},
         }}
         variant="list"
       />,
     );
 
-    expect(screen.getByText("Load")).toBeTruthy();
-    expect(screen.getByText("Unavailable")).toBeTruthy();
-    expect(screen.queryByText(/HR IF|Estimated HR Load|32|0.80/)).toBeNull();
+    expect(screen.getByText("Common Load")).toBeTruthy();
+    expect(screen.getByText("Normalized intensity")).toBeTruthy();
+    expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
 
     rerender(
       <ActivityCard
@@ -464,66 +357,42 @@ describe("ActivityCard", () => {
           activity_categories: ["strength"],
           elapsed_ms: 1_800_000,
           derived: {
-            common_load: {
-              status: "unavailable",
-              model: "gradientpeak_relative_load",
-              version: "1",
-              activity_category: "strength",
-              method: null,
-              quality: null,
-              thresholdEvidence: null,
-              evidenceFingerprint: null,
-              computedAsOf: "2026-07-21T12:00:00.000Z",
-              contributingDurationSeconds: 1800,
-              reason: "unsupported_modality",
-            },
-            tss: null,
-            intensity_factor: null,
-            method: null,
-            unavailable_reason: "threshold_missing",
+            observationQuantification: createObservationQuantificationBundleFixture({
+              activityCategory: "strength",
+              status: "unsupported",
+            }),
           },
         }}
         variant="list"
       />,
     );
 
-    expect(screen.getByText("Unavailable")).toBeTruthy();
+    expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
     expect(
       screen.getByText(
         "This activity category is not supported for canonical Load. Canonical Load is not available for this activity category.",
       ),
     ).toBeTruthy();
-    expect(screen.queryByText(/activity-category-specific LTHR/)).toBeNull();
   });
 
-  it("shows stale threshold source and age without claiming a tested threshold", () => {
-    renderNative(
+  it("emits canonical fields without retired metric aliases", () => {
+    const rendered = renderNative(
       <ActivityCard
         activity={{
           id: "activity-1",
-          name: "Morning Ride",
+          name: "Morning Run",
           activity_kind: "single",
-          activity_categories: ["bike"],
-          started_at: "2026-04-11T00:00:00.000Z",
+          activity_categories: ["run"],
+          started_at: "2026-07-21T00:00:00.000Z",
           elapsed_ms: 3_600_000,
-          derived: {
-            tss: 72,
-            intensity_factor: 0.82,
-            method: "power_threshold",
-            unavailable_reason: null,
-            calibration_quality: {
-              source: "observed_effort",
-              observed_at: "2026-01-01T00:00:00.000Z",
-              stale: true,
-              estimate: true,
-            },
-          },
+          derived: { observationQuantification: availableQuantification },
         }}
       />,
     );
 
-    expect(screen.getByText("20-minute effort estimate · 100d old · stale")).toBeTruthy();
-    expect(screen.queryByText(/tested/i)).toBeNull();
+    expect(JSON.stringify(rendered.toJSON())).not.toMatch(
+      /TSS|\bIF\b|intensityFactor|category_load|heart_rate_threshold/,
+    );
   });
 
   it("toggles likes using the activity entity type", () => {

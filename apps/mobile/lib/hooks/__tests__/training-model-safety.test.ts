@@ -14,8 +14,8 @@ describe("training model safety", () => {
         structure: {
           min_rest_days_per_week: 1,
           target_activities_per_week: 4,
-          target_weekly_tss_max: 500,
-          target_weekly_tss_min: 300,
+          target_weekly_load_max: 500,
+          target_weekly_load_min: 300,
         },
         created_at: "2026-01-01",
       },

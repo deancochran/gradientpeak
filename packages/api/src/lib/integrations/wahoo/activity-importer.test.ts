@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MATERIALIZER_VERSION } from "../../../application/activities/submit-activity";
 import { createActivityImporter } from "./activity-importer";
@@ -43,6 +44,10 @@ function activityFileResponse(bytes: Uint8Array, headers?: HeadersInit): Respons
   return new Response(body, { headers, status: 200 });
 }
 
+function sha256(bytes: Uint8Array) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
 function createRepositoryMock() {
   return {
     submitActivity: vi.fn().mockResolvedValue({ id: "activity-1" }),
@@ -80,18 +85,11 @@ const defaultActivityFileParser = vi.fn().mockReturnValue({
 });
 
 function createTestImporter(
-  deps: Omit<
-    Parameters<typeof createActivityImporter>[0],
-    "enrichActivity" | "generationGuard" | "stagingCleanup"
-  > &
+  deps: Omit<Parameters<typeof createActivityImporter>[0], "generationGuard" | "stagingCleanup"> &
     Partial<
-      Pick<
-        Parameters<typeof createActivityImporter>[0],
-        "enrichActivity" | "generationGuard" | "stagingCleanup"
-      >
+      Pick<Parameters<typeof createActivityImporter>[0], "generationGuard" | "stagingCleanup">
     >,
 ) {
-  const enrichActivity = deps.enrichActivity ?? vi.fn().mockResolvedValue({ id: "activity-1" });
   const stagingCleanup = deps.stagingCleanup ?? {
     reserve: vi
       .fn()
@@ -107,21 +105,7 @@ function createTestImporter(
     activityFileParser: deps.activityFileParser ?? defaultActivityFileParser,
     generationGuard: deps.generationGuard ?? vi.fn().mockResolvedValue(undefined),
     stagingCleanup,
-    submitActivity: (activity, parsedActivity, _options) =>
-      (
-        deps.submitActivity as (
-          input: typeof activity,
-          parsed: typeof parsedActivity,
-        ) => Promise<{ id: string }>
-      )(activity, parsedActivity),
-    enrichActivity: (activityId, activity, parsedActivity, _options) =>
-      (
-        enrichActivity as (
-          id: typeof activityId,
-          input: typeof activity,
-          parsed: typeof parsedActivity,
-        ) => Promise<{ id: string }>
-      )(activityId, activity, parsedActivity),
+    submitActivity: deps.submitActivity,
   });
   return {
     importWorkoutSummary(
@@ -140,6 +124,7 @@ describe("activity-importer", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", fetchMock);
     fetchMock.mockReset();
+    defaultActivityFileParser.mockClear();
     fetchMock.mockImplementation(() => {
       throw new Error("Unexpected fetch call");
     });
@@ -174,23 +159,31 @@ describe("activity-importer", () => {
     expect(activityFileStorage.uploadActivityFile).not.toHaveBeenCalled();
   });
 
-  it("short-circuits duplicate imports before any downstream work", async () => {
+  it("skips only after confirming an unchanged provider revision and artifact", async () => {
     const repository = createRepositoryMock();
+    const fitBytes = new TextEncoder().encode("fit-binary-data");
     repository.findImportedActivityLinkByExternalId.mockResolvedValueOnce({
       activityId: "existing-activity",
       linkId: "link-1",
       profileId: "profile-1",
       activityFilePath: "activities/profile-1/providers/wahoo/123.fit",
-      activityFileSize: 15,
+      activityFileSize: fitBytes.byteLength,
+      artifactId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      artifactSha256: sha256(fitBytes),
+      providerRevision: "2026-04-03T11:05:00.000Z",
       analysisReady: true,
       materializerVersion: MATERIALIZER_VERSION,
+      segmentsRevision: 1,
+      timingCoverage: "complete",
+      hasSwimSegment: false,
     });
-    const activityFileStorage = { uploadActivityFile: vi.fn() };
+    const activityFileStorage = { uploadActivityFile: vi.fn().mockResolvedValue(undefined) };
     const importer = createTestImporter({
       activityFileStorage,
       repository,
       submitActivity: repository.submitActivity,
     });
+    fetchMock.mockResolvedValueOnce(activityFileResponse(fitBytes));
 
     await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
       success: true,
@@ -203,28 +196,127 @@ describe("activity-importer", () => {
       externalId: "123",
       integrationId: "integration-1",
     });
-    expect(repository.findImportedActivityByProviderExternalId).not.toHaveBeenCalled();
-    expect(repository.findLinkedPlannedEventId).not.toHaveBeenCalled();
+    expect(repository.findImportedActivityByProviderExternalId).toHaveBeenCalledWith({
+      externalId: "123",
+      provider: "wahoo",
+    });
+    expect(repository.findLinkedPlannedEventId).toHaveBeenCalledWith({
+      externalWorkoutId: "456",
+      profileId: "profile-1",
+    });
     expect(repository.submitActivity).not.toHaveBeenCalled();
-    expect(activityFileStorage.uploadActivityFile).not.toHaveBeenCalled();
+    expect(activityFileStorage.uploadActivityFile).toHaveBeenCalledOnce();
+  });
+
+  it("routes a changed artifact at the same revision through atomic reconciliation", async () => {
+    const repository = createRepositoryMock();
+    const incomingBytes = new TextEncoder().encode("changed-fit-binary-data");
+    repository.findImportedActivityLinkByExternalId.mockResolvedValueOnce({
+      activityId: "existing-activity",
+      linkId: "link-1",
+      profileId: "profile-1",
+      activityFilePath: "artifacts/sha256/profile-1/old",
+      activityFileSize: 15,
+      artifactId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      artifactSha256: sha256(new TextEncoder().encode("fit-binary-data")),
+      providerRevision: "2026-04-03T11:05:00.000Z",
+      analysisReady: true,
+      materializerVersion: MATERIALIZER_VERSION,
+      segmentsRevision: 1,
+      timingCoverage: "complete",
+      hasSwimSegment: false,
+    });
+    repository.submitActivity.mockRejectedValueOnce(
+      new Error("Provider payload digest conflicts with the current provider revision"),
+    );
+    const activityFileParser = vi.fn(defaultActivityFileParser);
+    const importer = createTestImporter({
+      activityFileParser,
+      activityFileStorage: { uploadActivityFile: vi.fn().mockResolvedValue(undefined) },
+      repository,
+      submitActivity: repository.submitActivity,
+    });
+    fetchMock.mockResolvedValueOnce(activityFileResponse(incomingBytes));
+
+    await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
+      success: false,
+      error: "Wahoo activity persistence failed",
+    });
+    expect(activityFileParser).toHaveBeenCalledOnce();
+    expect(repository.submitActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ externalId: "123" }),
+      expect.any(Object),
+      expect.objectContaining({ artifactSha256: sha256(incomingBytes) }),
+    );
+  });
+
+  it("routes a newer provider revision with unchanged bytes through atomic reconciliation", async () => {
+    const repository = createRepositoryMock();
+    const fitBytes = new TextEncoder().encode("fit-binary-data");
+    repository.findImportedActivityLinkByExternalId.mockResolvedValueOnce({
+      activityId: "existing-activity",
+      linkId: "link-1",
+      profileId: "profile-1",
+      activityFilePath: "artifacts/sha256/profile-1/current",
+      activityFileSize: fitBytes.byteLength,
+      artifactId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      artifactSha256: sha256(fitBytes),
+      providerRevision: "2026-04-03T11:04:00.000Z",
+      analysisReady: true,
+      materializerVersion: MATERIALIZER_VERSION,
+      segmentsRevision: 1,
+      timingCoverage: "complete",
+      hasSwimSegment: false,
+    });
+    repository.submitActivity.mockResolvedValueOnce({ id: "existing-activity" });
+    const activityFileParser = vi.fn(defaultActivityFileParser);
+    const importer = createTestImporter({
+      activityFileParser,
+      activityFileStorage: { uploadActivityFile: vi.fn().mockResolvedValue(undefined) },
+      repository,
+      submitActivity: repository.submitActivity,
+    });
+    fetchMock.mockResolvedValueOnce(activityFileResponse(fitBytes));
+
+    await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
+      success: true,
+      activityId: "existing-activity",
+    });
+    expect(activityFileParser).toHaveBeenCalledOnce();
+    expect(repository.submitActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        externalId: "123",
+        providerUpdatedAt: "2026-04-03T11:05:00.000Z",
+      }),
+      expect.any(Object),
+      expect.objectContaining({ artifactSha256: sha256(fitBytes) }),
+    );
   });
 
   it("skips an existing import and repairs its link for the current profile", async () => {
     const repository = createRepositoryMock();
+    const fitBytes = new TextEncoder().encode("fit-binary-data");
     repository.findImportedActivityByProviderExternalId.mockResolvedValueOnce({
       activityId: "existing-activity",
       profileId: "profile-1",
       activityFilePath: "activities/profile-1/providers/wahoo/123.fit",
-      activityFileSize: 15,
+      activityFileSize: fitBytes.byteLength,
+      artifactId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      artifactSha256: sha256(fitBytes),
+      providerRevision: "2026-04-03T11:05:00.000Z",
       analysisReady: true,
       materializerVersion: MATERIALIZER_VERSION,
+      segmentsRevision: 1,
+      timingCoverage: "complete",
+      hasSwimSegment: false,
     });
-    const activityFileStorage = { uploadActivityFile: vi.fn() };
+    const activityFileStorage = { uploadActivityFile: vi.fn().mockResolvedValue(undefined) };
     const importer = createTestImporter({
       activityFileStorage,
       repository,
       submitActivity: repository.submitActivity,
     });
+    fetchMock.mockResolvedValueOnce(activityFileResponse(fitBytes));
 
     await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
       success: true,
@@ -242,9 +334,12 @@ describe("activity-importer", () => {
       provider: "wahoo",
       providerUpdatedAt: "2026-04-03T11:05:00.000Z",
     });
-    expect(repository.findLinkedPlannedEventId).not.toHaveBeenCalled();
+    expect(repository.findLinkedPlannedEventId).toHaveBeenCalledWith({
+      externalWorkoutId: "456",
+      profileId: "profile-1",
+    });
     expect(repository.submitActivity).not.toHaveBeenCalled();
-    expect(activityFileStorage.uploadActivityFile).not.toHaveBeenCalled();
+    expect(activityFileStorage.uploadActivityFile).toHaveBeenCalledOnce();
   });
 
   it("re-analyzes an existing import that has no ready provider ingestion", async () => {
@@ -258,7 +353,7 @@ describe("activity-importer", () => {
       analysisReady: false,
       materializerVersion: MATERIALIZER_VERSION,
     });
-    const enrichActivity = vi.fn().mockResolvedValue({ id: "existing-activity" });
+    repository.submitActivity.mockResolvedValueOnce({ id: "existing-activity" });
     const storedBytes = new TextEncoder().encode("fit-binary-data");
     const activityFileStorage = {
       readActivityFile: vi
@@ -270,19 +365,17 @@ describe("activity-importer", () => {
       activityFileStorage,
       repository,
       submitActivity: repository.submitActivity,
-      enrichActivity,
     });
     await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
       success: true,
       activityId: "existing-activity",
     });
 
-    expect(enrichActivity).toHaveBeenCalledWith(
-      "existing-activity",
+    expect(repository.submitActivity).toHaveBeenCalledWith(
       expect.objectContaining({ externalId: "123", profileId: "profile-1" }),
       expect.any(Object),
+      expect.objectContaining({ artifactSha256: sha256(storedBytes) }),
     );
-    expect(repository.submitActivity).not.toHaveBeenCalled();
     expect(repository.createImportedActivityResourceLink).toHaveBeenCalledOnce();
     expect(activityFileStorage.readActivityFile).toHaveBeenCalledWith(
       "activities/profile-1/providers/wahoo/123.fit",
@@ -325,21 +418,28 @@ describe("activity-importer", () => {
 
   it("does not retry timing fallback after the v2 materializer has already run", async () => {
     const repository = createRepositoryMock();
+    const fitBytes = new TextEncoder().encode("fit-binary-data");
     repository.findImportedActivityLinkByExternalId.mockResolvedValueOnce({
       activityId: "existing-activity",
       linkId: "link-1",
       profileId: "profile-1",
       activityFilePath: "activities/profile-1/providers/wahoo/123.fit",
-      activityFileSize: 15,
+      activityFileSize: fitBytes.byteLength,
+      artifactId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      artifactSha256: sha256(fitBytes),
+      providerRevision: "2026-04-03T11:05:00.000Z",
       analysisReady: true,
       materializerVersion: MATERIALIZER_VERSION,
+      segmentsRevision: 1,
       timingCoverage: "unavailable",
+      hasSwimSegment: false,
     });
     const importer = createTestImporter({
-      activityFileStorage: { uploadActivityFile: vi.fn() },
+      activityFileStorage: { uploadActivityFile: vi.fn().mockResolvedValue(undefined) },
       repository,
       submitActivity: repository.submitActivity,
     });
+    fetchMock.mockResolvedValueOnce(activityFileResponse(fitBytes));
 
     await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toMatchObject({
       skipped: true,
@@ -530,6 +630,7 @@ describe("activity-importer", () => {
         polyline: null,
       },
       expect.any(Object),
+      expect.objectContaining({ artifactSha256: sha256(fitBytes) }),
     );
   });
 
@@ -799,7 +900,126 @@ describe("activity-importer", () => {
         polyline: expect.any(String),
       }),
       expect.any(Object),
+      expect.objectContaining({ artifactSha256: sha256(fitBytes) }),
     );
+    const submittedActivity = repository.submitActivity.mock.calls[0]?.[0];
+    expect(submittedActivity).not.toHaveProperty("tss");
+    expect(submittedActivity).not.toHaveProperty("intensityFactor");
+    expect(repository.submitActivity.mock.calls[0]?.[1]).toMatchObject({
+      summary: { totalDistance: 38999.4, totalTime: 3300 },
+    });
+  });
+
+  it("replaces invalid file duration and distance before the analysis submission pipeline", async () => {
+    const repository = createRepositoryMock();
+    const activityFileStorage = { uploadActivityFile: vi.fn().mockResolvedValue(undefined) };
+    const activityFileParser = vi.fn().mockReturnValue({
+      metadata: {
+        startTime: new Date("2026-04-03T09:30:00.000Z"),
+        type: "cycling",
+      },
+      summary: {
+        totalTime: Number.POSITIVE_INFINITY,
+        totalDistance: Number.NaN,
+      },
+      records: [],
+      laps: [],
+      lengths: [],
+    });
+    const importer = createTestImporter({
+      activityFileStorage,
+      activityFileParser,
+      repository,
+      submitActivity: repository.submitActivity,
+    });
+    const fitBytes = new TextEncoder().encode("fit-binary-data");
+    fetchMock.mockResolvedValueOnce(activityFileResponse(fitBytes));
+
+    await expect(
+      importer.importWorkoutSummary(
+        77,
+        createSummary({ distance_accum: 12_000, duration_total_accum: 900 }),
+      ),
+    ).resolves.toMatchObject({ success: true });
+
+    expect(repository.submitActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ distanceMeters: 12_000, durationSeconds: 900 }),
+      expect.objectContaining({
+        summary: expect.objectContaining({ totalDistance: 12_000, totalTime: 900 }),
+      }),
+      expect.objectContaining({ artifactSha256: sha256(fitBytes) }),
+    );
+  });
+
+  it("preserves a genuine zero-distance file measurement through analysis submission", async () => {
+    const repository = createRepositoryMock();
+    const activityFileStorage = { uploadActivityFile: vi.fn().mockResolvedValue(undefined) };
+    const activityFileParser = vi.fn().mockReturnValue({
+      metadata: {
+        startTime: new Date("2026-04-03T09:30:00.000Z"),
+        type: "training",
+      },
+      summary: { totalTime: 600, totalDistance: 0 },
+      records: [],
+      laps: [],
+      lengths: [],
+    });
+    const importer = createTestImporter({
+      activityFileStorage,
+      activityFileParser,
+      repository,
+      submitActivity: repository.submitActivity,
+    });
+    const fitBytes = new TextEncoder().encode("fit-binary-data");
+    fetchMock.mockResolvedValueOnce(activityFileResponse(fitBytes));
+
+    await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toMatchObject({
+      success: true,
+    });
+
+    expect(repository.submitActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ distanceMeters: 0, durationSeconds: 600 }),
+      expect.objectContaining({
+        summary: expect.objectContaining({ totalDistance: 0, totalTime: 600 }),
+      }),
+      expect.objectContaining({ artifactSha256: sha256(fitBytes) }),
+    );
+  });
+
+  it("rejects the import before analysis submission when neither required metric source is valid", async () => {
+    const repository = createRepositoryMock();
+    const activityFileStorage = { uploadActivityFile: vi.fn().mockResolvedValue(undefined) };
+    const activityFileParser = vi.fn().mockReturnValue({
+      metadata: {
+        startTime: new Date("2026-04-03T09:30:00.000Z"),
+        type: "cycling",
+      },
+      summary: {
+        totalTime: Number.POSITIVE_INFINITY,
+        totalDistance: Number.NaN,
+      },
+      records: [],
+      laps: [],
+      lengths: [],
+    });
+    const importer = createTestImporter({
+      activityFileStorage,
+      activityFileParser,
+      repository,
+      submitActivity: repository.submitActivity,
+    });
+    fetchMock.mockResolvedValueOnce(
+      activityFileResponse(new TextEncoder().encode("fit-binary-data")),
+    );
+
+    await expect(
+      importer.importWorkoutSummary(
+        77,
+        createSummary({ distance_accum: Number.NaN, duration_total_accum: "invalid" }),
+      ),
+    ).resolves.toEqual({ success: false, error: "Wahoo activity import failed" });
+
+    expect(repository.submitActivity).not.toHaveBeenCalled();
   });
 
   it("fails safely when FIT upload fails", async () => {
@@ -862,8 +1082,14 @@ describe("activity-importer", () => {
         profileId: "profile-1",
         activityFilePath: "activities/profile-1/providers/wahoo/123.fit",
         activityFileSize: 15,
+        artifactId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        artifactSha256: sha256(new TextEncoder().encode("fit-binary-data")),
+        providerRevision: "2026-04-03T11:05:00.000Z",
         analysisReady: true,
         materializerVersion: MATERIALIZER_VERSION,
+        segmentsRevision: 1,
+        timingCoverage: "complete",
+        hasSwimSegment: false,
       });
     const activityFileStorage = { uploadActivityFile: vi.fn().mockResolvedValue(undefined) };
     const importer = createTestImporter({
@@ -892,7 +1118,7 @@ describe("activity-importer", () => {
     });
   });
 
-  it("repairs a concurrent provider import when the winning activity is not analyzed", async () => {
+  it("retries later when a concurrent winning activity still requires analysis", async () => {
     const repository = createRepositoryMock();
     repository.submitActivity.mockRejectedValueOnce(
       Object.assign(new Error("duplicate key"), {
@@ -907,29 +1133,29 @@ describe("activity-importer", () => {
         profileId: "profile-1",
         activityFilePath: "activities/profile-1/providers/wahoo/123.fit",
         activityFileSize: 15,
+        artifactId: null,
+        artifactSha256: null,
+        providerRevision: null,
         analysisReady: false,
         materializerVersion: MATERIALIZER_VERSION,
+        segmentsRevision: 0,
+        timingCoverage: "unavailable",
+        hasSwimSegment: false,
       });
-    const enrichActivity = vi.fn().mockResolvedValue({ id: "concurrent-activity" });
     const importer = createTestImporter({
       activityFileStorage: { uploadActivityFile: vi.fn().mockResolvedValue(undefined) },
       repository,
       submitActivity: repository.submitActivity,
-      enrichActivity,
     });
     fetchMock.mockResolvedValueOnce(
       activityFileResponse(new TextEncoder().encode("fit-binary-data")),
     );
 
     await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
-      success: true,
-      activityId: "concurrent-activity",
+      success: false,
+      error: "Wahoo activity persistence failed",
     });
-    expect(enrichActivity).toHaveBeenCalledWith(
-      "concurrent-activity",
-      expect.any(Object),
-      expect.any(Object),
-    );
+    expect(repository.submitActivity).toHaveBeenCalledOnce();
   });
 
   it("does not treat an unrelated submission failure as a recoverable race", async () => {
@@ -987,6 +1213,7 @@ describe("activity-importer", () => {
         name: "bike Activity",
       }),
       expect.any(Object),
+      expect.objectContaining({ artifactSha256: sha256(fitBytes) }),
     );
   });
 
@@ -1026,6 +1253,7 @@ describe("activity-importer", () => {
         finishedAt: "2026-04-03T12:00:00.000Z",
       }),
       expect.any(Object),
+      expect.objectContaining({ artifactSha256: sha256(fitBytes) }),
     );
   });
 });

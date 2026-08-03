@@ -119,6 +119,16 @@ export interface ProviderSyncRepository {
     resource: string;
     workerId: string;
   }): Promise<boolean>;
+  updateRunningJobDesiredState(input: {
+    expectedIntegrationGeneration: number;
+    id: string;
+    integrationId: string;
+    payload: unknown;
+    payloadHash: string;
+    profileId: string;
+    provider: "wahoo";
+    workerId: string;
+  }): Promise<boolean>;
   getQueueTelemetry?(input: {
     jobTypes?: string[];
     now: string;

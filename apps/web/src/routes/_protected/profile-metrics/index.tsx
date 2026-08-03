@@ -41,6 +41,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { SimpleTrendChart } from "../../../components/charts/simple-trend-chart";
 import { DetailPageIntro } from "../../../components/protected/activity-route-primitives";
+import { PerformanceModelSummary } from "../../../components/protected/performance-model-summary";
 import {
   getProfileMetricFormValues,
   ProfileMetricForm,
@@ -103,13 +104,17 @@ function ProfileMetricsPage() {
   const { user } = useAuth();
   const { unitSystem } = useViewingUserPreferredUnitSystem();
   const utils = api.useUtils();
-  const [selectedMetricType, setSelectedMetricType] = useState<ProfileMetricType>("ftp");
+  const [performanceModelAsOf] = useState(() => new Date().toISOString());
+  const [selectedMetricType, setSelectedMetricType] = useState<ProfileMetricType>("weight_kg");
   const [editorTarget, setEditorTarget] = useState<MetricEditorTarget | null>(null);
   const [deleteMetric, setDeleteMetric] = useState<ProfileMetricRow | null>(null);
   const metricsQuery = api.profileMetrics.list.useInfiniteQuery(
     { limit: 50 },
     { getNextPageParam: (lastPage) => lastPage.nextCursor },
   );
+  const performanceModelQuery = api.profiles.getPerformanceModel.useQuery({
+    asOf: performanceModelAsOf,
+  });
   useEffect(() => {
     if (metricsQuery.hasNextPage && !metricsQuery.isFetchingNextPage) {
       void metricsQuery.fetchNextPage();
@@ -176,6 +181,15 @@ function ProfileMetricsPage() {
         description="Trends now live with profile metrics: pick a measurement, inspect the chart, then edit or delete records from the table below."
         eyebrow="Profile"
         title="Profile metrics"
+      />
+
+      <PerformanceModelSummary
+        error={performanceModelQuery.error?.message ?? null}
+        isLoading={performanceModelQuery.isLoading}
+        onRetry={() => void performanceModelQuery.refetch()}
+        {...(performanceModelQuery.data !== undefined
+          ? { overview: performanceModelQuery.data }
+          : {})}
       />
 
       {metricsQuery.isError ? (

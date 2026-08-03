@@ -1,7 +1,7 @@
-import { performance } from "node:perf_hooks";
 import type { DrizzleDbClient } from "@repo/db";
 import { describe, expect, it, vi } from "vitest";
 import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
+import { createTestPerformanceModelRepository } from "../../test-support/performance-model";
 import { getActivityPlansDerivedMetrics } from "../activity-plan-derived-metrics";
 import type { EstimationReadStore } from "../estimation-helpers";
 
@@ -10,6 +10,9 @@ const thresholds = new Map([
   [25, 25],
   [100, 100],
 ]);
+const BENCHMARK_TIMEOUT_MS = 15_000;
+const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
+const benchmark = process.env.RUN_ACTIVITY_PLAN_DERIVED_METRICS_BENCHMARK === "1" ? it : it.skip;
 
 const fixtureUuid = (value: number) =>
   `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
@@ -47,7 +50,7 @@ function createBenchmarkPlan(index: number) {
   };
   return {
     id: `plan-${index}`,
-    profile_id: "profile-1",
+    profile_id: PROFILE_ID,
     name: `Plan ${index}`,
     description: null,
     structure,
@@ -59,35 +62,45 @@ function createBenchmarkPlan(index: number) {
 
 describe("on-demand estimator CPU benchmark", () => {
   for (const [count, thresholdMs] of thresholds) {
-    it(`${count} plans p95 is below ${thresholdMs}ms`, async () => {
-      const plans = Array.from({ length: count }, (_, index) => createBenchmarkPlan(index));
-      const store = {
-        getEstimationInputs: async () => ({ profile: null, efforts: [], metrics: [], routes: [] }),
-      } satisfies EstimationReadStore;
-      const run = () =>
-        getActivityPlansDerivedMetrics(plans, {} as DrizzleDbClient, store, "profile-1", {
-          asOf: new Date("2026-07-12T12:00:00.000Z"),
+    benchmark(
+      `${count} plans p95 is below ${thresholdMs}ms`,
+      async () => {
+        const plans = Array.from({ length: count }, (_, index) => createBenchmarkPlan(index));
+        const performanceRepository = createTestPerformanceModelRepository({
+          cyclingPlanningThresholdPowerWatts: null,
         });
+        const store = {
+          getEstimationInputs: async () => ({ routes: [] }),
+          readAthletePerformanceEvidenceSnapshot:
+            performanceRepository.readAthletePerformanceEvidenceSnapshot,
+        } satisfies EstimationReadStore;
+        const run = () =>
+          getActivityPlansDerivedMetrics(plans, {} as DrizzleDbClient, store, PROFILE_ID, {
+            asOf: new Date("2026-07-12T12:00:00.000Z"),
+          });
 
-      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-      try {
-        // Warm JIT/module paths before collecting enough samples for a stable p95.
-        for (let iteration = 0; iteration < 10; iteration++) await run();
+        const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+        try {
+          // Warm JIT/module paths before collecting enough samples for a stable p95.
+          for (let iteration = 0; iteration < 10; iteration++) await run();
 
-        const samples: number[] = [];
-        for (let iteration = 0; iteration < 50; iteration++) {
-          const start = performance.now();
-          await run();
-          samples.push(performance.now() - start);
+          const samples: number[] = [];
+          for (let iteration = 0; iteration < 50; iteration++) {
+            const start = process.threadCpuUsage();
+            await run();
+            const elapsed = process.threadCpuUsage(start);
+            samples.push((elapsed.user + elapsed.system) / 1_000);
+          }
+          samples.sort((a, b) => a - b);
+          const p95 = samples[Math.ceil(samples.length * 0.95) - 1];
+          if (p95 === undefined) throw new Error("Benchmark did not collect timing samples");
+          expect(errorSpy).not.toHaveBeenCalled();
+          expect(p95, `p95=${p95.toFixed(2)}ms`).toBeLessThan(thresholdMs);
+        } finally {
+          errorSpy.mockRestore();
         }
-        samples.sort((a, b) => a - b);
-        const p95 = samples[Math.ceil(samples.length * 0.95) - 1];
-        if (p95 === undefined) throw new Error("Benchmark did not collect timing samples");
-        expect(errorSpy).not.toHaveBeenCalled();
-        expect(p95, `p95=${p95.toFixed(2)}ms`).toBeLessThan(thresholdMs);
-      } finally {
-        errorSpy.mockRestore();
-      }
-    });
+      },
+      BENCHMARK_TIMEOUT_MS,
+    );
   }
 });

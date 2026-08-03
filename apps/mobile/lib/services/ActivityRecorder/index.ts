@@ -16,16 +16,17 @@
 import type { FTMSFeatures, FtmsMachineType } from "@deancochran/ftms";
 import {
   ACTIVITY_PLAN_COMPILER_VERSION,
+  type AthletePerformanceTargetFacts,
   activityPlanStructureSchema,
+  athletePerformanceTargetFactsSchema,
   type CurrentMetricValue,
   compileActivityPlan,
+  createUnavailableAthletePerformanceTargetFacts,
   type FtmsControlMode,
-  GLOBAL_DEFAULTS,
   type MetricFamily,
   type MetricSourceCandidate,
   type MetricSourceSelection,
   type MetricSourceType,
-  type PerformanceMetrics,
   type RecordingActivityCategory,
   type RecordingBoundaryJournalEntry,
   type RecordingCheckpoint,
@@ -64,6 +65,7 @@ import {
   persistRecordingCheckpoint,
   releaseRecordingCheckpointClaim,
 } from "./checkpointStorage";
+import { DEFAULT_RECORDING_WEIGHT_KG } from "./config";
 import { deleteFinalizedArtifactFiles } from "./finalizedArtifactStorage";
 import {
   appendActivityRecorderFitRecord,
@@ -519,53 +521,32 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   // === Profile ===
   private profile: RecorderProfileRef;
-  private ftp?: number;
-  private _baseFtp?: number;
   private _ftpScale: number = 1.0;
-
-  private thresholdHr?: number;
-  private _baseThresholdHr?: number;
 
   private weightKg?: number;
   private _baseWeightKg?: number;
-
-  private thresholdPaceSecondsPerKm?: number;
-  private _baseThresholdPaceSecondsPerKm?: number;
+  private performanceTargets?: AthletePerformanceTargetFacts;
 
   constructor(
     profile: RecorderProfileRef,
     metrics?: {
-      ftp?: number;
-      thresholdHr?: number;
       weightKg?: number;
-      thresholdPaceSecondsPerKm?: number;
     },
   ) {
     super();
     // Note: expo-modules-core EventEmitter doesn't have setMaxListeners
     // If you need more listeners, consider using Node.js EventEmitter instead
     this.profile = profile;
-    // Initialize base values from passed metrics or defaults
-    this._baseFtp = metrics?.ftp ?? GLOBAL_DEFAULTS.ftp;
-    this._baseThresholdHr = metrics?.thresholdHr ?? GLOBAL_DEFAULTS.thresholdHr;
-    this._baseWeightKg = metrics?.weightKg ?? GLOBAL_DEFAULTS.weightKg;
-    this._baseThresholdPaceSecondsPerKm =
-      metrics?.thresholdPaceSecondsPerKm ?? GLOBAL_DEFAULTS.thresholdPaceSecondsPerKm;
+    // Threshold-dependent values remain unavailable until canonical target facts are supplied.
+    this._baseWeightKg = metrics?.weightKg ?? DEFAULT_RECORDING_WEIGHT_KG;
 
     this._ftpScale = 1.0;
 
-    // Apply initial scale to FTP
-    this.ftp = Math.round((this._baseFtp || 0) * this._ftpScale);
-    this.thresholdHr = this._baseThresholdHr;
     this.weightKg = this._baseWeightKg;
-    this.thresholdPaceSecondsPerKm = this._baseThresholdPaceSecondsPerKm;
 
     // Initialize managers
     this.liveMetricsManager = new LiveMetricsManager(profile, {
-      ftp: this.ftp,
-      thresholdHr: this.thresholdHr,
       weightKg: this.weightKg,
-      thresholdPaceSecondsPerKm: this.thresholdPaceSecondsPerKm,
     });
     this.liveMetricsManager.addListener("sensorUpdate", () => {
       this.scheduleSessionUpdate();
@@ -694,51 +675,51 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   /**
    * Update performance metrics reactively
    * Updates internal values and LiveMetricsManager calculations.
-   * If recording with a plan, re-applies ERG targets to trainer.
    */
-  public updateMetrics(metrics: Partial<PerformanceMetrics>): void {
+  public updateMetrics(metrics: { weightKg?: number }): void {
     console.log("[Service] Updating metrics:", metrics);
 
-    if (metrics.ftp !== undefined) {
-      this._baseFtp = metrics.ftp;
-      this.ftp = Math.round(this._baseFtp * this._ftpScale);
-    }
-    if (metrics.thresholdHr !== undefined) {
-      this._baseThresholdHr = metrics.thresholdHr;
-      this.thresholdHr = metrics.thresholdHr;
-    }
     if (metrics.weightKg !== undefined) {
       this._baseWeightKg = metrics.weightKg;
       this.weightKg = metrics.weightKg;
     }
-    if (metrics.thresholdPaceSecondsPerKm !== undefined) {
-      this._baseThresholdPaceSecondsPerKm = metrics.thresholdPaceSecondsPerKm;
-      this.thresholdPaceSecondsPerKm = Math.round(
-        this._baseThresholdPaceSecondsPerKm / this._ftpScale,
-      );
-    }
 
     // Update LiveMetricsManager
     this.liveMetricsManager.updateMetrics({
-      ftp: this.ftp,
-      thresholdHr: this.thresholdHr,
       weightKg: this.weightKg,
-      thresholdPaceSecondsPerKm: this.thresholdPaceSecondsPerKm,
     });
-
-    // If recording and has a plan, re-apply targets (e.g. for %FTP targets in ERG mode)
-    if (this.state === "recording") {
-      console.log("[Service] Re-applying targets with new metrics");
-      this.syncAutomaticTrainerControl("periodic_refinement").catch(console.error);
-    }
 
     this.emit("metricsUpdated");
     this.publishSessionUpdate();
   }
 
+  /** Stages owner-only target facts for the next immutable recording session snapshot. */
+  public updatePerformanceTargets(snapshot: AthletePerformanceTargetFacts): void {
+    const parsed = athletePerformanceTargetFactsSchema.parse(snapshot);
+    this.performanceTargets = parsed;
+    this.applyPerformanceTargetsToLiveMetrics(
+      this.getSessionSnapshot()?.performanceTargets ?? parsed,
+    );
+    this.emit("metricsUpdated");
+    this.publishSessionUpdate();
+  }
+
+  private applyPerformanceTargetsToLiveMetrics(
+    snapshot: AthletePerformanceTargetFacts | undefined,
+  ): void {
+    this.liveMetricsManager.updatePerformanceTargets(snapshot ?? null);
+  }
+
+  private syncSelectedActivityCategoryTargets(
+    snapshot = this.getSessionSnapshot()?.performanceTargets ?? this.performanceTargets,
+  ): void {
+    this.liveMetricsManager.setActivityCategory(this.selectedActivityCategory);
+    this.applyPerformanceTargetsToLiveMetrics(snapshot);
+  }
+
   /**
    * Scale the activity intensity for this session.
-   * Affects FTP and Threshold Pace reactively.
+   * Changes target intent while leaving the immutable target-facts snapshot unchanged.
    */
   public setIntensityScale(scale: number): void {
     console.log(`[Service] Setting intensity scale: ${scale * 100}%`);
@@ -748,27 +729,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       intensityScale: scale,
     }));
 
-    const updates: Partial<PerformanceMetrics> = {};
-
-    if (this._baseFtp) {
-      this.ftp = Math.round(this._baseFtp * scale);
-      updates.ftp = this.ftp;
-    }
-
-    if (this._baseThresholdPaceSecondsPerKm) {
-      // Pace is seconds per km. Higher intensity = lower pace (faster).
-      this.thresholdPaceSecondsPerKm = Math.round(this._baseThresholdPaceSecondsPerKm / scale);
-      updates.thresholdPaceSecondsPerKm = this.thresholdPaceSecondsPerKm;
-    }
-
-    // Update LiveMetricsManager
-    if (Object.keys(updates).length > 0) {
-      this.liveMetricsManager.updateMetrics(updates);
-
-      // Re-apply targets if recording with plan
-      if (this.state === "recording") {
-        this.syncAutomaticTrainerControl("periodic_refinement").catch(console.error);
-      }
+    if (this.state === "recording") {
+      this.syncAutomaticTrainerControl("periodic_refinement").catch(console.error);
     }
 
     if (this.getSessionSnapshot()) {
@@ -788,20 +750,12 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this._ftpScale;
   }
 
-  public getBaseFtp(): number | undefined {
-    return this._baseFtp;
-  }
-
-  public getBaseThresholdPace(): number | undefined {
-    return this._baseThresholdPaceSecondsPerKm;
-  }
-
-  public getBaseThresholdHr(): number | undefined {
-    return this._baseThresholdHr;
-  }
-
   public getBaseWeight(): number | undefined {
     return this._baseWeightKg;
+  }
+
+  public getPerformanceTargets(): AthletePerformanceTargetFacts | undefined {
+    return this.getSessionSnapshot()?.performanceTargets ?? this.performanceTargets;
   }
 
   public getSessionSnapshot(): RecordingSessionSnapshot | null {
@@ -822,14 +776,14 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   public getSessionStats() {
     const stats = this.liveMetricsManager.getSessionStats();
-    const recordingMetrics = this.liveMetricsManager.getRecordingMetricsSnapshot();
+    const provisionalMetrics = this.liveMetricsManager.getProvisionalMetricsSnapshot();
 
     return {
       ...stats,
       duration: Math.floor(this.getElapsedTime() / 1000),
       movingTime: Math.floor(this.getMovingTime() / 1000),
       pausedTime: Math.floor(this.pausedTime / 1000),
-      recordingMetrics,
+      provisionalMetrics,
     };
   }
 
@@ -1665,23 +1619,15 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   private buildProfileSnapshot(): RecordingSessionSnapshot["profileSnapshot"] {
-    const defaultsApplied: string[] = [];
-
-    if (!this._baseFtp) defaultsApplied.push("ftp");
-    if (!this._baseThresholdHr) defaultsApplied.push("thresholdHr");
-    if (!this._baseThresholdPaceSecondsPerKm) defaultsApplied.push("thresholdPaceSecondsPerKm");
-    if (!this._baseWeightKg) defaultsApplied.push("weightKg");
-
     return {
-      ftp: this._baseFtp,
-      thresholdHr: this._baseThresholdHr,
-      thresholdPaceSecondsPerKm: this._baseThresholdPaceSecondsPerKm,
       weightKg: this._baseWeightKg,
-      defaultsApplied,
     };
   }
 
-  private buildSessionSnapshot(startedAt: string): RecordingSessionSnapshot {
+  private buildSessionSnapshot(
+    startedAt: string,
+    performanceTargets?: AthletePerformanceTargetFacts,
+  ): RecordingSessionSnapshot {
     const devices = this.buildConnectedDevicesSnapshot();
     const intent = this.buildRecordingLaunchIntent();
     const configuration = RecordingConfigResolver.resolveFromLaunchIntent(intent, {
@@ -1707,6 +1653,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         routeId: this.getAttachedRouteId(),
       },
       profileSnapshot: this.buildProfileSnapshot(),
+      performanceTargets:
+        performanceTargets ??
+        this.performanceTargets ??
+        createUnavailableAthletePerformanceTargetFacts(startedAt, this.profile.id),
       devices,
       capabilities: configuration.capabilities,
       policies: {
@@ -1987,6 +1937,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     this.selectedActivityCategory =
       this.currentStep?.activity_category ?? support.activity_category;
+    this.syncSelectedActivityCategoryTargets();
     void this.syncGpsTrackingForCurrentState().catch((error) => {
       console.error("[Service] Failed to sync GPS tracking after selecting plan:", error);
     });
@@ -2299,6 +2250,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
             timestamp: new Date(event.timestamp).toISOString(),
           })),
         },
+        performanceTargets: snapshot.performanceTargets,
         streamArtifactPaths: [this.liveMetricsManager.streamBuffer.getBufferStatus().storageDir],
       });
       return;
@@ -2341,6 +2293,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         selectedSources: this.getRuntimeSourceState().selectedSources,
         trainerMode: this.getSessionOverrideState().trainerMode,
       },
+      performanceTargets: snapshot.performanceTargets,
       streamArtifactPaths: [this.liveMetricsManager.streamBuffer.getBufferStatus().storageDir],
       revision: this.checkpointRevision,
     });
@@ -2711,6 +2664,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       }
       if (target) {
         this.selectedActivityCategory = target.activity_category ?? this.selectedActivityCategory;
+        this.syncSelectedActivityCategoryTargets();
         this._gpsRecordingEnabled =
           target.role === "activity" && Boolean(this._plan?.gps_recording_enabled);
       }
@@ -2936,15 +2890,15 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
    * Validate plan requirements before starting recording
    * Returns validation result with missing metrics and warnings
    */
-  public validatePlanRequirements(): PlanValidationResult | null {
+  public validatePlanRequirements(
+    performanceTargets = this.getPerformanceTargets(),
+  ): PlanValidationResult | null {
     if (!this._plan) {
       return null; // No plan, no validation needed
     }
 
     return validatePlanRequirements(this._plan, this.profile, {
-      ftp: this.ftp,
-      thresholdHr: this.thresholdHr,
-      weightKg: this.weightKg,
+      performanceTargets,
     });
   }
 
@@ -3067,6 +3021,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this.pausedTime =
         Math.max(0, checkpoint.summary.elapsedSeconds - checkpoint.summary.movingSeconds) * 1000;
       this.lastPauseTime = Date.parse(checkpoint.start.updatedAt);
+      this.performanceTargets = checkpoint.performanceTargets;
+      this.syncSelectedActivityCategoryTargets(this.performanceTargets);
       const rebuilt = this.buildSessionSnapshot(checkpoint.start.startedAt);
       const snapshot = deepFreeze({
         ...rebuilt,
@@ -3078,6 +3034,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       });
       this.sessionController.resetForNewSession(snapshot);
       await this.liveMetricsManager.stageRecoveredRecording({
+        sessionId: checkpoint.sessionId,
         streamBuffer,
         replay,
         startedAt: this.startTime,
@@ -3176,6 +3133,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       movingSeconds: checkpoint.occurrenceProgress.startMovingSeconds,
       distanceMeters: checkpoint.occurrenceProgress.startDistanceMeters,
     };
+    this.performanceTargets = checkpoint.performanceTargets;
+    this.syncSelectedActivityCategoryTargets(this.performanceTargets);
 
     const rebuiltSnapshot = this.buildSessionSnapshot(checkpoint.timing.startedAt);
     const snapshot = deepFreeze({
@@ -3198,6 +3157,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       sourceChanges: [],
     });
     await this.liveMetricsManager.stageRecoveredRecording({
+      sessionId: checkpoint.sessionId,
       streamBuffer,
       replay,
       startedAt: this.startTime,
@@ -3317,8 +3277,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.publishSessionUpdate();
   }
 
-  async startRecording(): Promise<void> {
-    return this.runLifecycleTransition(() => this.startRecordingTransition());
+  async startRecording(performanceTargets?: AthletePerformanceTargetFacts): Promise<void> {
+    const parsedTargets = performanceTargets
+      ? athletePerformanceTargetFactsSchema.parse(performanceTargets)
+      : undefined;
+    return this.runLifecycleTransition(() => this.startRecordingTransition(parsedTargets));
   }
 
   private runLifecycleTransition<T>(transition: () => Promise<T>): Promise<T> {
@@ -3330,7 +3293,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return result;
   }
 
-  private async startRecordingTransition(): Promise<void> {
+  private async startRecordingTransition(
+    performanceTargets?: AthletePerformanceTargetFacts,
+  ): Promise<void> {
     console.log("[Service] Starting recording");
 
     if (this.state === "recording") {
@@ -3389,7 +3354,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this.occurrenceStartStats = { movingSeconds: 0, distanceMeters: 0 };
       this.timerEvents = [];
 
-      const sessionSnapshot = this.buildSessionSnapshot(startedAt);
+      const sessionSnapshot = this.buildSessionSnapshot(startedAt, performanceTargets);
       this.sessionController.resetForNewSession(sessionSnapshot);
       // Allocate the sole profile-owned SQLite session before any manager, GPS, or BLE producer.
       await allocateRecordingEvidenceSession({
@@ -3432,7 +3397,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       await this.sensorsManager.reconnectAll();
 
       this.liveMetricsManager.setGpsRecordingEnabled(this._gpsRecordingEnabled);
-      this.liveMetricsManager.setActivityCategory(this.selectedActivityCategory);
+      this.syncSelectedActivityCategoryTargets(sessionSnapshot.performanceTargets);
       // A producer can subscribe before its async setup rejects; mark it owned
       // before awaiting so rollback always tears down that partial start.
       liveMetricsStarted = true;
@@ -3810,6 +3775,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }
 
     this.selectedActivityCategory = activity_category;
+    this.syncSelectedActivityCategoryTargets();
     if (gpsRecordingEnabled && !this._gpsRecordingEnabled) {
       void this.disconnectTrainerSensors();
     }
@@ -3830,6 +3796,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     this.hasConfiguredSetup = true;
     this.selectedActivityCategory = activity_category;
+    this.syncSelectedActivityCategoryTargets();
     if (gpsRecordingEnabled && !this._gpsRecordingEnabled) {
       void this.disconnectTrainerSensors();
     }

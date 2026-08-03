@@ -5,32 +5,37 @@ import {
 } from "@/lib/training-path/completedCommonLoadObservation";
 
 export type TrainingPathSelectedWeekPoint = {
-  actualOrScheduledLoadTss?: number | null;
-  completedLoadTss?: number | null;
+  actualOrScheduledLoad?: number | null;
+  completedLoad?: number | null;
   completedObservationState?: CompletedObservationState;
   completedCommonLoadIdentity?: CommonLoadIdentity | null;
   date: string;
   hasTargetLoad?: boolean;
   hasCompletedActivityWithoutLoad?: boolean;
-  plannedLoadTss?: number | null;
-  targetLoadTss?: number | null;
-  tentativePlannedLoadTss?: number | null;
+  plannedLoad?: number | null;
+  targetLoad?: number | null;
+  tentativePlannedLoad?: number | null;
 };
 
 export type TrainingPathSelectedWeekBucket<TPoint extends TrainingPathSelectedWeekPoint> = {
-  actualOrScheduledLoadTss: number;
-  completedLoadTss: number | null;
+  actualOrScheduledLoad: number | null;
+  completedLoad: number | null;
   completedLoadUnavailable: boolean;
-  loadDeltaTss: number | null;
-  plannedLoadTss: number;
+  loadDelta: number | null;
+  plannedLoad: number | null;
   points: TPoint[];
-  targetLoadTss: number | null;
+  targetLoad: number | null;
   weekEndDate: string;
   weekStartDate: string;
 };
 
-function numberValue(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+function finiteValue(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function isPositiveFinite(value: number | null | undefined): boolean {
+  const finite = finiteValue(value);
+  return finite !== null && finite > 0;
 }
 
 function dateKeyAtOffset(dateKey: string, offsetDays: number): string | null {
@@ -52,25 +57,32 @@ export function buildSelectedWeekBucket<TPoint extends TrainingPathSelectedWeekP
     (point) => point.date >= input.weekStart && point.date <= input.weekEnd,
   );
   if (points.length === 0) return null;
-  const sum = (selector: (point: TPoint) => number | null | undefined) =>
-    points.reduce((total, point) => total + numberValue(selector(point)), 0);
+  const sumAvailable = (selector: (point: TPoint) => number | null | undefined) => {
+    const values = points.map((point) => finiteValue(selector(point)));
+    if (values.some((value) => value === null)) return null;
+    return values
+      .filter((value): value is number => value !== null)
+      .reduce((total, value) => total + value, 0);
+  };
   let completedIdentity: CommonLoadIdentity | null = null;
   let completedLoadUnavailable = false;
   let hasCompletedObservation = false;
-  let completedLoadTss = 0;
+  let completedLoad = 0;
   for (const point of points) {
+    const finiteCompletedLoad = finiteValue(point.completedLoad);
     if (point.completedObservationState === "observed") {
       hasCompletedObservation = true;
       if (
         point.hasCompletedActivityWithoutLoad ||
         !point.completedCommonLoadIdentity ||
+        finiteCompletedLoad === null ||
         (completedIdentity &&
           !sameCommonLoadIdentity(completedIdentity, point.completedCommonLoadIdentity))
       ) {
         completedLoadUnavailable = true;
       } else {
         completedIdentity ??= point.completedCommonLoadIdentity;
-        completedLoadTss += numberValue(point.completedLoadTss);
+        completedLoad += finiteCompletedLoad;
       }
     } else if (point.completedObservationState === "known_zero") {
       hasCompletedObservation = true;
@@ -79,16 +91,16 @@ export function buildSelectedWeekBucket<TPoint extends TrainingPathSelectedWeekP
       point.completedObservationState === "uncovered"
     ) {
       completedLoadUnavailable = true;
-    } else if (numberValue(point.completedLoadTss) > 0) {
+    } else if (isPositiveFinite(point.completedLoad)) {
       completedLoadUnavailable = true;
     }
   }
   const targetLoadByDate = new Map(
     points.flatMap((point) =>
       point.hasTargetLoad !== false &&
-      typeof point.targetLoadTss === "number" &&
-      Number.isFinite(point.targetLoadTss)
-        ? [[point.date, point.targetLoadTss] as const]
+      typeof point.targetLoad === "number" &&
+      Number.isFinite(point.targetLoad)
+        ? [[point.date, point.targetLoad] as const]
         : [],
     ),
   );
@@ -96,23 +108,25 @@ export function buildSelectedWeekBucket<TPoint extends TrainingPathSelectedWeekP
     const dateKey = dateKeyAtOffset(input.weekStart, index);
     return dateKey !== null && targetLoadByDate.has(dateKey);
   }).every(Boolean);
-  const actualOrScheduledLoadTss = sum((point) => point.actualOrScheduledLoadTss);
-  const targetLoadTss = hasCompleteTargetCoverage
+  const actualOrScheduledLoad = sumAvailable((point) => point.actualOrScheduledLoad);
+  const targetLoad = hasCompleteTargetCoverage
     ? [...targetLoadByDate.values()].reduce((total, value) => total + value, 0)
     : null;
   return {
-    actualOrScheduledLoadTss,
-    completedLoadTss:
-      hasCompletedObservation && !completedLoadUnavailable ? completedLoadTss : null,
+    actualOrScheduledLoad,
+    completedLoad: hasCompletedObservation && !completedLoadUnavailable ? completedLoad : null,
     completedLoadUnavailable,
-    loadDeltaTss:
-      targetLoadTss == null || completedLoadUnavailable
+    loadDelta:
+      targetLoad == null || completedLoadUnavailable || actualOrScheduledLoad == null
         ? null
-        : actualOrScheduledLoadTss - targetLoadTss,
-    plannedLoadTss:
-      sum((point) => point.plannedLoadTss) + sum((point) => point.tentativePlannedLoadTss),
+        : actualOrScheduledLoad - targetLoad,
+    plannedLoad: (() => {
+      const planned = sumAvailable((point) => point.plannedLoad);
+      const tentative = sumAvailable((point) => point.tentativePlannedLoad);
+      return planned === null || tentative === null ? null : planned + tentative;
+    })(),
     points,
-    targetLoadTss,
+    targetLoad,
     weekEndDate: input.weekEnd,
     weekStartDate: input.weekStart,
   };

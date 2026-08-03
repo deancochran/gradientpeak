@@ -1,6 +1,6 @@
+import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
 import { format } from "date-fns";
-import { getCommonLoadPresentation } from "@/lib/activity-load-presentation";
-import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import { formatEstimatedDurationSeconds } from "@/lib/estimatedMetrics";
 import { formatEventTime } from "./eventSchedule";
 import type { CalendarEvent } from "./normalizeEvents";
@@ -66,18 +66,31 @@ export function getPlannedRecordingState(event: CalendarEvent): PlannedRecording
     : "planned";
 }
 
-function getEventCommonLoad(event: CalendarEvent): unknown {
-  return event.activity_plan?.common_load ?? event.common_load;
-}
-
 export function getEventCommonLoadMeta(event: CalendarEvent): string[] {
-  const presentation = getCommonLoadPresentation(getEventCommonLoad(event));
-  const availableLabels = [
-    presentation?.load ? `Load ${presentation.load}` : null,
-    presentation?.intensity ? `Intensity ${presentation.intensity}` : null,
-  ].filter((label): label is string => label !== null);
-  if (availableLabels.length > 0) return availableLabels;
-  return presentation?.unavailableText ? [`Load ${presentation.unavailableText}`] : [];
+  const quantification =
+    event.activity_plan?.prescriptionQuantification ?? event.prescriptionQuantification;
+  if (quantification === undefined) return [];
+  const presentation = getActivityQuantificationPresentation(quantification);
+  if (
+    presentation.kind === "unavailable" ||
+    presentation.commonLoad.unavailableReason === "unsupported_modality"
+  ) {
+    return [];
+  }
+  if (presentation.commonLoad.status === "unavailable") {
+    const value =
+      presentation.commonLoad.unavailableReason === "private_data"
+        ? "Private"
+        : presentation.commonLoad.value;
+    return [`${presentation.commonLoad.label} ${value}`];
+  }
+  const commonLoadSuffix = presentation.commonLoad.status === "partial" ? " · Incomplete" : "";
+  const intensitySuffix =
+    presentation.normalizedIntensity.status === "partial" ? " · Incomplete" : "";
+  return [
+    `${presentation.commonLoad.label} ${presentation.commonLoad.value}${commonLoadSuffix}`,
+    `${presentation.normalizedIntensity.label} ${presentation.normalizedIntensity.value}${intensitySuffix}`,
+  ];
 }
 
 export function isEditableEvent(event: CalendarEvent): boolean {
@@ -116,8 +129,8 @@ export function getEventTimeLabel(event: CalendarEvent): string {
 
 export function getEventPrimaryMeta(event: CalendarEvent): string[] {
   if (event.event_type === "planned" && hasActivityPlan(event)) {
-    const metrics = getAuthoritativeActivityPlanMetrics(event.activity_plan);
-    const duration = formatEstimatedDurationSeconds(readMetric(metrics.estimated_duration));
+    const quantitySummary = getActivityPlanQuantitySummary(event.activity_plan);
+    const duration = formatEstimatedDurationSeconds(readMetric(quantitySummary.durationSeconds));
     return [
       formatCategoryLabel(event.activity_plan?.activity_category),
       duration,

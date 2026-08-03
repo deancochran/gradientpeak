@@ -84,8 +84,8 @@ const makeWeeks = () => [
 
 const makeTimelineWeeks = () =>
   makeWeeks().map((week, weekIndex) => ({
-    estimatedTss: week.plannedLoad,
-    recommendedTss: week.targetLoad,
+    estimatedCommonLoad: week.plannedLoad,
+    recommendedLoad: week.targetLoad,
     sessions: [],
     weekIndex,
   }));

@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/ca
 import { Icon } from "@repo/ui/components/icon";
 import { Skeleton } from "@repo/ui/components/skeleton";
 import { Text } from "@repo/ui/components/text";
+import { getNormalizedPowerPresentation } from "@repo/ui/lib/normalized-power-presentation";
 import { skipToken } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Activity, Heart, Lock, Waves } from "lucide-react-native";
@@ -35,11 +36,7 @@ import { ActivityCard } from "@/components/shared/ActivityCard";
 import { DetailDeleteConfirmModal, DetailOverflowMenu } from "@/components/shared/detail";
 import { ResourceCardActionButton } from "@/components/shared/ResourceCardPrimitives";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
-import {
-  formatCalibrationQuality,
-  getActivityLoadLabels,
-  getCommonLoadPresentation,
-} from "@/lib/activity-load-presentation";
+import { getCommonLoadPresentation } from "@/lib/activity-load-presentation";
 import {
   getStreamArtifactMessage,
   presentActivityStreamAnalysis,
@@ -50,7 +47,6 @@ import {
   formatPaceSecondsPerKilometer,
   formatSpeedMetersPerSecond,
 } from "@/lib/display/formatters";
-import { formatEstimatedIntensityFactor, formatEstimatedTss } from "@/lib/estimatedMetrics";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
@@ -114,14 +110,16 @@ function formatSwimPace(metersPerSecond: number, preferredUnitSystem: PreferredU
 function VisualStateCard({
   message,
   state = "empty",
+  testID,
   title,
 }: {
   message: string;
   state?: "empty" | "error" | "loading" | "private";
+  testID?: string;
   title: string;
 }) {
   return (
-    <Card>
+    <Card testID={testID}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
       </CardHeader>
@@ -357,11 +355,14 @@ function ActivityDetailScreen() {
     linkedActivityPlanId ? { id: linkedActivityPlanId } : skipToken,
     { enabled: !!linkedActivityPlanId },
   );
-  const activityCategory =
-    activity?.segments?.find((segment) => segment.role === "activity")?.activity_category ?? null;
+  const primaryActivitySegment = activity?.segments?.find((segment) => segment.role === "activity");
+  const activityCategory = primaryActivitySegment?.activity_category ?? null;
+  const normalizedPowerPresentation = getNormalizedPowerPresentation(
+    primaryActivitySegment?.status === "available"
+      ? primaryActivitySegment.summary.normalizedPowerResult
+      : undefined,
+  );
   const derived = activityData?.derived;
-  const loadMethod = derived?.stress.method;
-  const loadLabels = getActivityLoadLabels(loadMethod);
   const commonLoadPresentation = getCommonLoadPresentation(derived?.stress.common_load, {
     hasHeartRateSummary:
       typeof activity?.avg_heart_rate === "number" && activity.avg_heart_rate > 0,
@@ -369,28 +370,7 @@ function ActivityDetailScreen() {
   });
   const loadUnavailableText = commonLoadPresentation?.diagnostic
     ? null
-    : derived?.stress.unavailable_reason === "private_data"
-      ? "Training load is private."
-      : derived?.stress.unavailable_reason === "threshold_missing"
-        ? "A required threshold is missing."
-        : derived?.stress.unavailable_reason === "invalid_data"
-          ? "The available activity or threshold data is invalid."
-          : "Compatible activity data is missing.";
-  const loadCalibrationQuality = derived?.stress.calibration_quality;
-  const calibrationText = formatCalibrationQuality(
-    loadCalibrationQuality
-      ? {
-          source: loadCalibrationQuality.source,
-          observed_at: loadCalibrationQuality.observed_at,
-          stale: loadCalibrationQuality.stale,
-          estimate: loadCalibrationQuality.estimate,
-          ...(loadCalibrationQuality.calculation_version !== undefined
-            ? { calculation_version: loadCalibrationQuality.calculation_version }
-            : {}),
-        }
-      : loadCalibrationQuality,
-    activity?.started_at,
-  );
+    : "Compatible activity data is unavailable.";
 
   // Get current user to check ownership
   const { user } = useAuth();
@@ -567,20 +547,6 @@ function ActivityDetailScreen() {
     );
   }
 
-  const stress = derived?.stress;
-  const { calibration_quality: calibrationQuality, ...stressWithoutCalibrationQuality } =
-    stress ?? {};
-  const activityCardStress =
-    stress == null
-      ? null
-      : {
-          ...stressWithoutCalibrationQuality,
-          ...(calibrationQuality === undefined ? {} : { calibration_quality: calibrationQuality }),
-        };
-  const { ingestion, ...activityWithoutIngestion } = activity;
-  const { last_error_message: lastErrorMessage, ...ingestionWithoutLastErrorMessage } =
-    ingestion ?? {};
-
   const renderHeaderActions = () => {
     if (!isOwner) {
       return null;
@@ -619,23 +585,15 @@ function ActivityDetailScreen() {
         <View className="p-4 gap-4">
           <ActivityCard
             activity={{
-              ...activityWithoutIngestion,
-              ...(ingestion === undefined
-                ? {}
-                : {
-                    ingestion:
-                      ingestion === null
-                        ? null
-                        : {
-                            ...ingestionWithoutLastErrorMessage,
-                            ...(lastErrorMessage === undefined
-                              ? {}
-                              : { last_error_message: lastErrorMessage }),
-                          },
-                  }),
-              derived: {
-                stress: activityCardStress,
-              },
+              ...activity,
+              ingestion:
+                activity.ingestion === null || activity.ingestion === undefined
+                  ? null
+                  : {
+                      status: activity.ingestion.status,
+                      last_error_message: activity.ingestion.last_error_message ?? null,
+                    },
+              ...(derived === undefined ? {} : { derived }),
               segment_loads: activityData.segment_loads,
             }}
             headerAccessory={
@@ -681,7 +639,6 @@ function ActivityDetailScreen() {
             <SessionRpeCard
               activityId={activity.id}
               effectiveSessionRpe={activity.effective_session_rpe}
-              {...(loadMethod ? { estimatedMethod: loadMethod } : {})}
             />
           ) : null}
 
@@ -807,8 +764,8 @@ function ActivityDetailScreen() {
             </Card>
           )}
 
-          {/* Canonical Load leads; activity-category-specific TSS/IF remains an advanced diagnostic. */}
-          {(commonLoadPresentation || derived?.stress) && (
+          {/* Canonical Common Load and its normalized intensity are the summary authority. */}
+          {(commonLoadPresentation || derived?.stress.common_load) && (
             <Card>
               <CardHeader>
                 <CardTitle>Load & Intensity</CardTitle>
@@ -838,26 +795,41 @@ function ActivityDetailScreen() {
                         : loadUnavailableText}
                   </Text>
                 )}
-                {derived?.stress?.tss != null ? (
-                  <Text className="mt-3 text-xs text-muted-foreground">
-                    Advanced {loadLabels.load}: {formatEstimatedTss(derived.stress.tss)}
-                    {derived.stress.intensity_factor != null
-                      ? ` · ${loadLabels.intensity}: ${formatEstimatedIntensityFactor(derived.stress.intensity_factor)}`
-                      : ""}
-                  </Text>
-                ) : null}
-                {calibrationText ? (
-                  <Text className="mt-3 text-xs text-muted-foreground">{calibrationText}</Text>
-                ) : null}
-                {loadMethod === "critical_power_threshold" ? (
-                  <Text className="mt-2 text-xs text-muted-foreground">
-                    Estimated CP Load uses a guarded power curve from multiple rides and remains
-                    separate from FTP-based TSS.
-                  </Text>
-                ) : null}
               </CardContent>
             </Card>
           )}
+
+          {activityCategory === "bike" && primaryActivitySegment?.status === "processing" ? (
+            <VisualStateCard
+              title="Normalized Power"
+              state="loading"
+              message="Segment analysis is still processing. Normalized Power will appear when analysis completes."
+              testID="activity-segment-analysis-processing"
+            />
+          ) : activityCategory === "bike" && primaryActivitySegment?.status === "failed" ? (
+            <VisualStateCard
+              title="Normalized Power"
+              state="error"
+              message={`Segment analysis failed: ${primaryActivitySegment.reason}`}
+              testID="activity-segment-analysis-failed"
+            />
+          ) : activityCategory === "bike" && normalizedPowerPresentation ? (
+            <Card testID="activity-normalized-power-card">
+              <CardHeader>
+                <CardTitle>{normalizedPowerPresentation.label}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Text className="text-3xl font-bold">
+                  {normalizedPowerPresentation.valueWatts === null
+                    ? "Unavailable"
+                    : `${Math.round(normalizedPowerPresentation.valueWatts)} W`}
+                </Text>
+                <Text className="mt-2 text-xs text-muted-foreground">
+                  {normalizedPowerPresentation.evidence}
+                </Text>
+              </CardContent>
+            </Card>
+          ) : null}
 
           {/* Zones */}
           {ingestionMessage ? (

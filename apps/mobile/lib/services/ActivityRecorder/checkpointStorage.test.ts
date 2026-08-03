@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
-import type { RecordingCheckpoint } from "@repo/core";
+import {
+  createUnavailableAthletePerformanceTargetFacts,
+  type RecordingCheckpoint,
+} from "@repo/core";
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityRecorderCheckpoint } from "./checkpointStorage";
 import {
@@ -79,6 +83,11 @@ const plan = {
 
 async function checkpoint(): Promise<ActivityRecorderCheckpoint> {
   const planHash = await hashRecordingPlan(plan);
+  const performanceTargets = buildPerformanceTargetFactsFixture({
+    asOf: "2026-01-01T10:00:00.000Z",
+    heartRateObservedAt: "2025-12-20T10:00:00.000Z",
+    lthrBpm: { run: 170 },
+  });
   return {
     schemaVersion: 2,
     variant: "planned",
@@ -132,6 +141,7 @@ async function checkpoint(): Promise<ActivityRecorderCheckpoint> {
       selectedSources: [],
       trainerMode: "auto",
     },
+    performanceTargets,
     streamArtifactPaths: ["file:///streams"],
     revision: 2,
   };
@@ -157,6 +167,12 @@ describe("recording checkpoint recovery", () => {
     await persistRecordingCheckpoint(value);
     const result = await loadAndClaimRecordingCheckpoint("profile-1");
     expect(result).toEqual({ status: "recovered", checkpoint: value });
+    expect(
+      result.status === "recovered" && result.checkpoint.performanceTargets.heartRate.run.lthr,
+    ).toMatchObject({
+      valueBpm: 170,
+      sourceEvidenceId: "run-lthr-evidence",
+    });
     releaseRecordingCheckpointClaim("session-1");
   });
 
@@ -259,6 +275,9 @@ describe("recording checkpoint recovery", () => {
       draft: { activity_category: "run" as const, gpsMode: "off" as const },
       summary: { elapsedSeconds: 1, movingSeconds: 1, distanceMeters: 0 },
       executionState: { timerEvents: [] },
+      performanceTargets: createUnavailableAthletePerformanceTargetFacts(
+        "2026-01-01T10:00:00.000Z",
+      ),
       streamArtifactPaths: ["file:///streams/unplanned"],
     };
     journalMocks.row = {
@@ -316,5 +335,39 @@ describe("recording checkpoint recovery", () => {
       checkpoint: value,
     });
     expect(journalMocks.claim).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "planned",
+    "unplanned",
+  ] as const)("quarantines an otherwise-current %s checkpoint missing targets", async (variant) => {
+    const value =
+      variant === "planned"
+        ? await checkpoint()
+        : {
+            schemaVersion: 4 as const,
+            variant: "unplanned" as const,
+            sessionId: "session-unplanned",
+            profileId: "profile-1",
+            lifecycle: "recording" as const,
+            revision: 1,
+            start: {
+              startedAt: "2026-01-01T10:00:00.000Z",
+              updatedAt: "2026-01-01T10:00:01.000Z",
+            },
+            draft: { activity_category: "run" as const, gpsMode: "off" as const },
+            summary: { elapsedSeconds: 1, movingSeconds: 1, distanceMeters: 0 },
+            executionState: { timerEvents: [] },
+            performanceTargets: createUnavailableAthletePerformanceTargetFacts(
+              "2026-01-01T10:00:00.000Z",
+            ),
+            streamArtifactPaths: ["file:///streams/unplanned"],
+          };
+    const { performanceTargets: _performanceTargets, ...legacy } = value;
+    journalMocks.row = { sessionId: value.sessionId, checkpointJson: JSON.stringify(legacy) };
+
+    await expect(loadAndClaimRecordingCheckpoint("profile-1")).resolves.toMatchObject({
+      status: "quarantined",
+    });
   });
 });

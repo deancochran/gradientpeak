@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { SWIMMING_CSS_SOURCE_EFFORT_METHOD } from "@repo/core";
 import { activityEfforts, profileMetrics } from "@repo/db";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
+import { reconcileSwimmingCssProtocolEvidenceWithProfileLockHeld } from "../performance-model/reconcile-swimming-css-protocol-evidence";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 type TransactionClient = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
@@ -12,12 +14,30 @@ type MetricRow = typeof profileMetrics.$inferSelect;
 const GENERATED_EFFORT_METHOD = "activity_file_best_effort";
 const GENERATED_LTHR_METHOD = "activity_file_lthr_detection";
 
+export interface GeneratedActivityLthrEvidence {
+  valueBpm: number;
+  recordedAt: Date;
+  calculationVersion: string;
+  provenance: {
+    activity_id: string;
+    segment_id: string;
+    derived_from: "activity_file_best_effort";
+    source_series: "heart_rate";
+    source_effort_calculation_version: string;
+    exact_window_start_timestamp_seconds: number;
+    exact_window_end_timestamp_seconds: number;
+    duration_seconds: number;
+    window_coverage: 1;
+    extraction_status: "available" | "partial";
+    extraction_reason: "source_incomplete" | null;
+  };
+}
+
 export interface GeneratedActivityEvidenceInput {
   activityId: string;
   profileId: string;
   efforts: EffortInsert[];
-  detectedLTHR: number | null;
-  activityCompletedAt: Date;
+  detectedLTHR: GeneratedActivityLthrEvidence | null;
   now: Date;
 }
 
@@ -29,11 +49,41 @@ export async function acquireActivityEvidenceProfileLock(
 }
 
 function effortIdentity(
-  effort: Pick<EffortInsert, "activity_category" | "effort_type" | "duration_seconds" | "unit">,
+  effort: Pick<
+    EffortInsert,
+    | "segment_id"
+    | "activity_category"
+    | "effort_type"
+    | "duration_seconds"
+    | "distance_meters"
+    | "unit"
+    | "method"
+  >,
 ) {
-  return [effort.activity_category, effort.effort_type, effort.duration_seconds, effort.unit].join(
-    ":",
-  );
+  return JSON.stringify([
+    effort.segment_id ?? null,
+    effort.activity_category,
+    effort.effort_type,
+    effort.duration_seconds,
+    effort.distance_meters ?? null,
+    effort.unit,
+    effort.method ?? null,
+  ]);
+}
+
+function bindGeneratedEffortObservationId(
+  effort: EffortInsert,
+  observationId: string,
+): EffortInsert {
+  const provenance = effort.provenance;
+  if (provenance === null || typeof provenance !== "object" || Array.isArray(provenance)) {
+    throw new Error("Generated activity effort requires object provenance");
+  }
+  return {
+    ...effort,
+    id: observationId,
+    provenance: { ...provenance, observation_id: observationId },
+  };
 }
 
 export function planGeneratedActivityEvidenceReconciliation(input: {
@@ -41,9 +91,18 @@ export function planGeneratedActivityEvidenceReconciliation(input: {
   existingMetrics: MetricRow[];
   generated: GeneratedActivityEvidenceInput;
 }) {
-  const generatedEfforts = input.existingEfforts.filter(
-    (effort) => effort.method === GENERATED_EFFORT_METHOD && effort.source === "imported",
-  );
+  const generatedEfforts = input.existingEfforts
+    .filter(
+      (effort) =>
+        (effort.method === GENERATED_EFFORT_METHOD ||
+          effort.method === SWIMMING_CSS_SOURCE_EFFORT_METHOD) &&
+        effort.source === "imported",
+    )
+    .sort(
+      (left, right) =>
+        effortIdentity(left).localeCompare(effortIdentity(right)) ||
+        left.id.localeCompare(right.id),
+    );
   const availableByIdentity = new Map<string, EffortRow[]>();
   for (const effort of generatedEfforts) {
     const identity = effortIdentity(effort);
@@ -54,12 +113,16 @@ export function planGeneratedActivityEvidenceReconciliation(input: {
   const effortInserts: EffortInsert[] = [];
   for (const desired of input.generated.efforts) {
     const existing = availableByIdentity.get(effortIdentity(desired))?.shift();
+    const observationId = existing?.id ?? desired.id ?? randomUUID();
     const values = {
-      ...desired,
+      ...bindGeneratedEffortObservationId(desired, observationId),
       activity_id: input.generated.activityId,
       profile_id: input.generated.profileId,
       source: "imported" as const,
-      method: GENERATED_EFFORT_METHOD,
+      method:
+        desired.method === SWIMMING_CSS_SOURCE_EFFORT_METHOD
+          ? SWIMMING_CSS_SOURCE_EFFORT_METHOD
+          : GENERATED_EFFORT_METHOD,
       updated_at: input.generated.now,
     };
     if (existing) {
@@ -67,38 +130,36 @@ export function planGeneratedActivityEvidenceReconciliation(input: {
     } else {
       effortInserts.push({
         ...values,
-        id: desired.id ?? randomUUID(),
         created_at: desired.created_at ?? input.generated.now,
       });
     }
   }
 
   const effortDeleteIds = [...availableByIdentity.values()].flat().map((effort) => effort.id);
-  const generatedMetrics = input.existingMetrics.filter(
-    (metric) =>
-      metric.metric_type === "lthr" &&
-      metric.method === GENERATED_LTHR_METHOD &&
-      metric.source === "derived",
-  );
+  const generatedMetrics = input.existingMetrics
+    .filter(
+      (metric) =>
+        metric.metric_type === "lthr" &&
+        metric.method === GENERATED_LTHR_METHOD &&
+        metric.source === "derived",
+    )
+    .sort((left, right) => left.id.localeCompare(right.id));
   const retainedMetric = generatedMetrics[0];
   const metricDeleteIds = generatedMetrics
-    .slice(input.generated.detectedLTHR ? 1 : 0)
+    .slice(input.generated.detectedLTHR === null ? 0 : 1)
     .map(({ id }) => id);
   const metricValues = input.generated.detectedLTHR
     ? {
         profile_id: input.generated.profileId,
         metric_type: "lthr" as const,
-        value: input.generated.detectedLTHR,
+        value: input.generated.detectedLTHR.valueBpm,
         unit: "bpm",
-        recorded_at: input.generated.activityCompletedAt,
+        recorded_at: input.generated.detectedLTHR.recordedAt,
         reference_activity_id: input.generated.activityId,
         source: "derived" as const,
         method: GENERATED_LTHR_METHOD,
-        calculation_version: "activity-file-lthr-v1",
-        provenance: {
-          activity_id: input.generated.activityId,
-          derived_from: "activity_file_stream",
-        },
+        calculation_version: input.generated.detectedLTHR.calculationVersion,
+        provenance: input.generated.detectedLTHR.provenance,
         updated_at: input.generated.now,
       }
     : null;
@@ -167,6 +228,16 @@ export async function reconcileGeneratedActivityEvidenceWithProfileLockHeld(
   if (plan.effortInserts.length) await tx.insert(activityEfforts).values(plan.effortInserts);
   if (plan.effortDeleteIds.length) {
     await tx.delete(activityEfforts).where(inArray(activityEfforts.id, plan.effortDeleteIds));
+  }
+  const reconcilesSwimmingCss = [...existingEfforts, ...input.efforts].some(
+    (effort) => effort.method === SWIMMING_CSS_SOURCE_EFFORT_METHOD,
+  );
+  if (reconcilesSwimmingCss) {
+    await reconcileSwimmingCssProtocolEvidenceWithProfileLockHeld(tx, {
+      activityId: input.activityId,
+      profileId: input.profileId,
+      now: input.now,
+    });
   }
   if (plan.metricUpdate) {
     await tx

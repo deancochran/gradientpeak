@@ -30,7 +30,7 @@ describe("ActivityCategory registry", () => {
     expect(getActivityCategoryTemplateDefaults("other")).toEqual({
       avgIF: 0.65,
       avgDuration: 1800,
-      avgTSS: 30,
+      avgCommonLoad: 30,
     });
   });
 });

@@ -26,7 +26,7 @@ const createPlan = createSystemActivityPlanBuilderFactory("run", [
 /**
  * Easy Aerobic Run - Outdoor
  * Total time: 30 minutes
- * Estimated TSS: ~25
+ * Estimated Common Load: ~25
  */
 export const EASY_AEROBIC_RUN: SystemActivityPlanTemplate = {
   id: "3b6c7d8e-9f0a-4b2c-bd4e-5f6a7b8c9d0e",
@@ -46,7 +46,7 @@ export const EASY_AEROBIC_RUN: SystemActivityPlanTemplate = {
 /**
  * Tempo Run - Outdoor
  * Total time: 60 minutes
- * Estimated TSS: ~75
+ * Estimated Common Load: ~75
  */
 export const TEMPO_RUN: RecordingServiceActivityPlan = {
   name: "Tempo Run",
@@ -77,7 +77,7 @@ export const TEMPO_RUN: RecordingServiceActivityPlan = {
 /**
  * Interval Training - Outdoor
  * Total time: 55 minutes
- * Estimated TSS: ~85
+ * Estimated Common Load: ~85
  */
 export const INTERVAL_RUN: RecordingServiceActivityPlan = {
   id: "4c7d8e9f-0a1b-4c3d-8e5f-6a7b8c9d0e1f",
@@ -120,7 +120,7 @@ export const INTERVAL_RUN: RecordingServiceActivityPlan = {
 /**
  * Long Run - Outdoor
  * Total time: 90 minutes
- * Estimated TSS: ~65
+ * Estimated Common Load: ~65
  */
 export const LONG_RUN: RecordingServiceActivityPlan = {
   id: "5d8e9f0a-1b2c-4d4e-9f6a-7b8c9d0e1f2a",
@@ -152,7 +152,7 @@ export const LONG_RUN: RecordingServiceActivityPlan = {
 /**
  * Fartlek Run - Outdoor
  * Total time: 50 minutes
- * Estimated TSS: ~70
+ * Estimated Common Load: ~70
  */
 export const FARTLEK_RUN: RecordingServiceActivityPlan = {
   id: "6e9f0a1b-2c3d-4e5f-aa7b-8c9d0e1f2a3b",

@@ -471,6 +471,41 @@ test("covers representative active current-contract regressions", async () => {
     const legacyTssProjection = ["allowLegacyTss", "Projection"].join("");
     const cases = [
       [
+        "packages/core/activity-segments/completed-segment-schema.ts",
+        "export const segmentSummarySchema = {};",
+        "removed segment summary compatibility name",
+      ],
+      [
+        "packages/core/activity-segments/completed-segment-schema.ts",
+        "const summary = { normalizedPowerWatts: 250 };",
+        "removed completed-segment scalar compatibility field",
+      ],
+      [
+        "packages/core/recording-metrics/contracts.ts",
+        "const snapshot = { efficiencyFactor: 1.5 };",
+        "removed provisional-metrics scalar compatibility field",
+      ],
+      [
+        "packages/core/activity-analysis/stress.ts",
+        "type Input = { normalized_power?: number };",
+        "removed activity-analysis scalar compatibility field",
+      ],
+      [
+        "packages/core/athlete-intelligence/model-input-contracts.ts",
+        "const metrics = { normalizedPowerWatts: evidencedMetric };",
+        "removed athlete-model Normalized Power scalar field",
+      ],
+      [
+        "packages/api/src/application/activity-file-ingestion/stream-derived-calculations.ts",
+        "type Metrics = { normalizedGradedSpeed?: number };",
+        "removed ingestion scalar compatibility field",
+      ],
+      [
+        "packages/api/src/application/activities/submit-activity.ts",
+        "type Submission = { aerobicDecoupling: number | null };",
+        "removed activity-submission scalar compatibility field",
+      ],
+      [
         "packages/core/calculations/current.ts",
         "estimateWPrime();",
         "removed demographic W′ estimate API",

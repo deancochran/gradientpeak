@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, test } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   changedDiffArguments,
   parseNulSeparatedPaths,
@@ -19,6 +20,7 @@ import {
 } from "./planner.mjs";
 
 const fixtures = [];
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 afterEach(async () => {
   await Promise.all(
@@ -35,6 +37,15 @@ async function fixture(files) {
     await writeFile(target, "// fixture\n");
   }
   return root;
+}
+
+async function writeFeatureManifest(root, featureId, capsules) {
+  const manifestPath = path.join(root, `tooling/testing/features/${featureId}.json`);
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify({ version: 1, id: featureId, capsules }, null, 2)}\n`,
+  );
 }
 
 test("path selection classifies suffixes and stays within the requested directory", async () => {
@@ -206,6 +217,131 @@ test("feature selection joins canonical roots and defers runtime tests", async (
     "apps/web/e2e/features/activities.spec.ts",
     "packages/api/src/features/activities/save.live-db.test.ts",
   ]);
+});
+
+test("feature manifests join explicit cross-boundary capsules into package-owned commands", async () => {
+  const root = await fixture([
+    "packages/api/src/numerical/api.test.ts",
+    "packages/core/numerical/core.test.ts",
+  ]);
+  await writeFeatureManifest(root, "numerical-trust", [
+    {
+      id: "api-boundary",
+      owner: "@repo/api",
+      tests: ["packages/api/src/numerical/api.test.ts"],
+    },
+    {
+      id: "core-calculation",
+      owner: "@repo/core",
+      tests: ["packages/core/numerical/core.test.ts"],
+    },
+  ]);
+
+  const plan = await createPlan({ root, selector: { feature: "numerical-trust" } });
+
+  assert.deepEqual(plan.featureIds, ["numerical-trust"]);
+  assert.deepEqual(
+    plan.tests.map((entry) => [entry.path, entry.featureId]),
+    [
+      ["packages/api/src/numerical/api.test.ts", "numerical-trust"],
+      ["packages/core/numerical/core.test.ts", "numerical-trust"],
+    ],
+  );
+  assert.deepEqual(
+    plan.featureManifests.map((manifest) => [
+      manifest.path,
+      manifest.capsules.map((capsule) => capsule.id),
+    ]),
+    [["tooling/testing/features/numerical-trust.json", ["api-boundary", "core-calculation"]]],
+  );
+  assert.deepEqual(
+    plan.commands.map((command) => command.args.slice(0, 4)),
+    [
+      ["--filter", "@repo/api", "test", "src/numerical/api.test.ts"],
+      ["--filter", "@repo/core", "exec", "vitest"],
+    ],
+  );
+  assert.match(
+    formatPlan(plan),
+    /tooling\/testing\/features\/numerical-trust\.json: 2 capsules, 2 tests/,
+  );
+});
+
+test("feature manifests reject omitted, duplicate, and cross-owner test declarations", async () => {
+  const missingRoot = await fixture([]);
+  await writeFeatureManifest(missingRoot, "numerical-trust", [
+    {
+      id: "core-calculation",
+      owner: "@repo/core",
+      tests: ["packages/core/numerical/missing.test.ts"],
+    },
+  ]);
+  await assert.rejects(
+    createPlan({ root: missingRoot, selector: { feature: "numerical-trust" } }),
+    /lists a missing test: packages\/core\/numerical\/missing\.test\.ts/,
+  );
+
+  const duplicateRoot = await fixture(["packages/core/numerical/core.test.ts"]);
+  await writeFeatureManifest(duplicateRoot, "numerical-trust", [
+    {
+      id: "core-calculation",
+      owner: "@repo/core",
+      tests: ["packages/core/numerical/core.test.ts"],
+    },
+    {
+      id: "core-recording",
+      owner: "@repo/core",
+      tests: ["packages/core/numerical/core.test.ts"],
+    },
+  ]);
+  await assert.rejects(
+    createPlan({ root: duplicateRoot, selector: { feature: "numerical-trust" } }),
+    /lists a test more than once/,
+  );
+
+  const wrongOwnerRoot = await fixture(["packages/api/src/numerical/api.test.ts"]);
+  await writeFeatureManifest(wrongOwnerRoot, "numerical-trust", [
+    {
+      id: "core-calculation",
+      owner: "@repo/core",
+      tests: ["packages/api/src/numerical/api.test.ts"],
+    },
+  ]);
+  await assert.rejects(
+    createPlan({ root: wrongOwnerRoot, selector: { feature: "numerical-trust" } }),
+    /package owner is @repo\/api/,
+  );
+});
+
+test("the numerical-trust manifest retains every required ownership capsule", async () => {
+  const plan = await createPlan({
+    root: repositoryRoot,
+    selector: { feature: "numerical-trust" },
+  });
+  const [manifest] = plan.featureManifests;
+
+  assert.ok(manifest, "expected the repository numerical-trust feature manifest");
+  assert.deepEqual(
+    manifest.capsules.map(({ id, owner, tests }) => [id, owner, tests.length]),
+    [
+      ["api-import-live", "@repo/api", 4],
+      ["api-propagation", "@repo/api", 4],
+      ["core-calculation-oracles", "@repo/core", 6],
+      ["core-heart-rate-swim", "@repo/core", 5],
+      ["core-observation-load", "@repo/core", 2],
+      ["core-recording", "@repo/core", 1],
+      ["core-segment-lifecycle", "@repo/core", 1],
+      ["mobile-live", "mobile", 1],
+      ["ui-presentation", "@repo/ui", 1],
+    ],
+  );
+  assert.equal(manifest.tests.length, 25);
+  assert.equal(plan.tests.length, 25);
+  assert.deepEqual(plan.deferredRuntime, []);
+  assert.equal(
+    plan.tests.every((entry) => entry.featureId === "numerical-trust"),
+    true,
+  );
 });
 
 test("feature ids require lowercase kebab segments", async () => {

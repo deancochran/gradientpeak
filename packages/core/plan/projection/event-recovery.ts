@@ -8,7 +8,7 @@
  * - Recovery time scales with event duration and intensity
  * - Different event types (race, threshold test, HR test) have different recovery profiles
  * - Post-event fatigue follows simple exponential decay
- * - ATL overload increases recovery time
+ * - RecentLoad overload increases recovery time
  */
 
 import type { CanonicalActivityCategory } from "../../schemas/activity-category";
@@ -50,7 +50,7 @@ function diffDateOnlyUtcDays(a: string, b: string): number {
  * Event recovery profile describing recovery requirements after an event
  */
 export interface EventRecoveryProfile {
-  /** Days until full recovery (TSB back to baseline) */
+  /** Days until full recovery (LoadBalance back to baseline) */
   recovery_days_full: number;
 
   /** Days until functional training state (can resume moderate training) */
@@ -59,8 +59,8 @@ export interface EventRecoveryProfile {
   /** Event intensity on 0-100 scale */
   fatigue_intensity: number;
 
-  /** Expected ATL spike multiplier (1.0 = no spike, 2.0 = double) */
-  atl_spike_factor: number;
+  /** Expected RecentLoad spike multiplier (1.0 = no spike, 2.0 = double) */
+  recentLoad_spike_factor: number;
 }
 
 /**
@@ -68,8 +68,8 @@ export interface EventRecoveryProfile {
  */
 export interface EventRecoveryInput {
   target: TrainingPlanGoalTarget;
-  projected_ctl_at_event: number;
-  projected_atl_at_event: number;
+  projected_longTermLoad_at_event: number;
+  projected_recentLoad_at_event: number;
   athlete_gender?: "male" | "female" | null;
 }
 
@@ -82,8 +82,8 @@ export interface PostEventFatigueInput {
   eventGoal: {
     target_date: string;
     targets: TrainingPlanGoalTarget[];
-    projected_ctl: number;
-    projected_atl: number;
+    projected_longTermLoad: number;
+    projected_recentLoad: number;
     athlete_gender?: "male" | "female" | null;
   };
 }
@@ -144,13 +144,13 @@ function computeThresholdRecoveryProfile(input: {
   const recoveryDaysFull = Math.round(clamp(1.5 + 4.5 * recoveryLoad, 2, 14));
   const recoveryDaysFunctional = Math.round(clamp(recoveryDaysFull * 0.42, 1, 7));
   const fatigueIntensity = Math.round(clamp(50 + 22 * recoveryLoad, 55, 85));
-  const atlSpikeFactor = Number(clamp(1 + recoveryLoad * 0.28, 1.05, 1.8).toFixed(2));
+  const recentLoadSpikeFactor = Number(clamp(1 + recoveryLoad * 0.28, 1.05, 1.8).toFixed(2));
 
   return {
     recovery_days_full: recoveryDaysFull,
     recovery_days_functional: recoveryDaysFunctional,
     fatigue_intensity: fatigueIntensity,
-    atl_spike_factor: atlSpikeFactor,
+    recentLoad_spike_factor: recentLoadSpikeFactor,
   };
 }
 
@@ -205,8 +205,8 @@ export function computeEventRecoveryProfile(input: EventRecoveryInput): EventRec
     // Functional recovery is ~40% of full recovery
     const recoveryDaysFunctional = Math.round(baseDays * 0.4 * Math.sqrt(genderRecoveryMultiplier));
 
-    // ATL spike factor: longer events cause bigger spikes
-    const atlSpikeFactor = Math.min(
+    // RecentLoad spike factor: longer events cause bigger spikes
+    const recentLoadSpikeFactor = Math.min(
       2.5,
       (1 + durationHours * 0.15) * (0.96 + genderRecoveryMultiplier * 0.04),
     );
@@ -215,7 +215,7 @@ export function computeEventRecoveryProfile(input: EventRecoveryInput): EventRec
       recovery_days_full: recoveryDaysFull,
       recovery_days_functional: recoveryDaysFunctional,
       fatigue_intensity: intensity,
-      atl_spike_factor: atlSpikeFactor,
+      recentLoad_spike_factor: recentLoadSpikeFactor,
     };
   }
 
@@ -256,7 +256,7 @@ export function computeEventRecoveryProfile(input: EventRecoveryInput): EventRec
     recovery_days_full: 7,
     recovery_days_functional: 3,
     fatigue_intensity: 75,
-    atl_spike_factor: 1.2,
+    recentLoad_spike_factor: 1.2,
   };
 }
 
@@ -270,7 +270,7 @@ export function computeEventRecoveryProfile(input: EventRecoveryInput): EventRec
  * 2. Get recovery profile for event
  * 3. Apply exponential decay: decay_factor = 0.5^(days / half_life)
  * 4. Calculate base penalty from event intensity
- * 5. Add ATL overload penalty if current ATL > CTL
+ * 5. Add RecentLoad overload penalty if current RecentLoad > LongTermLoad
  * 6. Apply decay and cap at 60%
  *
  * Example (marathon with 12-day full recovery):
@@ -299,8 +299,8 @@ export function computePostEventFatiguePenalty(input: PostEventFatigueInput): nu
   // Calculate recovery profile
   const recoveryProfile = computeEventRecoveryProfile({
     target: primaryTarget,
-    projected_ctl_at_event: input.eventGoal.projected_ctl,
-    projected_atl_at_event: input.eventGoal.projected_atl,
+    projected_longTermLoad_at_event: input.eventGoal.projected_longTermLoad,
+    projected_recentLoad_at_event: input.eventGoal.projected_recentLoad,
     ...optionalProperty("athlete_gender", input.eventGoal.athlete_gender),
   });
 
@@ -309,17 +309,17 @@ export function computePostEventFatiguePenalty(input: PostEventFatigueInput): nu
   const recoveryHalfLife = recoveryProfile.recovery_days_full / 3;
   const decayFactor = 0.5 ** (daysAfterEvent / recoveryHalfLife);
 
-  // Check current ATL/CTL ratio for overload penalty
-  const atlRatio =
-    input.currentPoint.predicted_fatigue_atl /
-    Math.max(1, input.currentPoint.predicted_fitness_ctl);
-  const atlOverloadPenalty = Math.max(0, (atlRatio - 1) * 30);
+  // Check current RecentLoad/LongTermLoad ratio for overload penalty
+  const recentLoadRatio =
+    input.currentPoint.predicted_fatigue_recentLoad /
+    Math.max(1, input.currentPoint.predicted_fitness_longTermLoad);
+  const recentLoadOverloadPenalty = Math.max(0, (recentLoadRatio - 1) * 30);
 
   // Base penalty from event intensity (0-50% range)
   const basePenalty = recoveryProfile.fatigue_intensity * 0.5;
 
   // Total penalty with decay
-  const totalPenalty = (basePenalty + atlOverloadPenalty) * decayFactor;
+  const totalPenalty = (basePenalty + recentLoadOverloadPenalty) * decayFactor;
 
   // Cap at 60% penalty
   return Math.min(60, totalPenalty);

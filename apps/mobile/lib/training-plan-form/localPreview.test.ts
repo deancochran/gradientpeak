@@ -33,7 +33,7 @@ const contextSummary = {
   effort_confidence_marker: "moderate" as const,
   profile_metric_completeness_marker: "moderate" as const,
   signal_quality: 0.6,
-  recommended_baseline_tss_range: { min: 280, max: 420 },
+  recommended_baseline_load_range: { min: 280, max: 420 },
   recommended_recent_influence_range: { min: -0.2, max: 0.3 },
   recommended_sessions_per_week_range: { min: 3, max: 5 },
   rationale_codes: [],
@@ -70,7 +70,7 @@ describe("computeLocalCreationPreview", () => {
       minimalPlan,
       creationInput: baseCreationInput,
       contextSummary,
-      startingCtlOverride: 42,
+      startingLongTermLoadOverride: 42,
       startingAtlOverride: 50,
     });
 
@@ -109,11 +109,11 @@ describe("computeLocalCreationPreview", () => {
   it("computes readiness delta diagnostics when baseline is provided", () => {
     const baseline: PreviewReadinessSnapshot = {
       readiness_score: 55,
-      predicted_load_tss: 320,
-      predicted_fatigue_atl: 48,
+      predicted_load: 320,
+      predicted_fatigue_recentLoad: 48,
       feasibility_state: "aggressive",
-      tss_ramp_clamp_weeks: 0,
-      ctl_ramp_clamp_weeks: 0,
+      load_ramp_clamp_weeks: 0,
+      longTermLoad_ramp_clamp_weeks: 0,
     };
 
     const preview = computeLocalCreationPreview({
@@ -149,21 +149,21 @@ describe("computeLocalCreationPreview", () => {
       name: string;
       minimalPlan: typeof minimalPlan;
       creationInput: CreationNormalizationInput;
-      startingCtlOverride?: number;
+      startingLongTermLoadOverride?: number;
       startingAtlOverride?: number;
     }> = [
       {
         name: "low",
         minimalPlan,
         creationInput: baseCreationInput,
-        startingCtlOverride: 16,
+        startingLongTermLoadOverride: 16,
         startingAtlOverride: 18,
       },
       {
         name: "sparse",
         minimalPlan,
         creationInput: baseCreationInput,
-        startingCtlOverride: 34,
+        startingLongTermLoadOverride: 34,
         startingAtlOverride: 37,
       },
       {
@@ -178,7 +178,7 @@ describe("computeLocalCreationPreview", () => {
             },
           },
         } satisfies CreationNormalizationInput,
-        startingCtlOverride: 58,
+        startingLongTermLoadOverride: 58,
         startingAtlOverride: 62,
       },
       {
@@ -193,13 +193,13 @@ describe("computeLocalCreationPreview", () => {
         minimalPlan: fixture.minimalPlan,
         creationInput: fixture.creationInput,
         contextSummary,
-        startingCtlOverride: fixture.startingCtlOverride,
+        startingLongTermLoadOverride: fixture.startingLongTermLoadOverride,
         startingAtlOverride: fixture.startingAtlOverride,
       });
       const server = buildServerRecomputeProjectionChartLike({
         minimalPlan: fixture.minimalPlan,
         creationInput: fixture.creationInput,
-        startingCtlOverride: fixture.startingCtlOverride,
+        startingLongTermLoadOverride: fixture.startingLongTermLoadOverride,
         startingAtlOverride: fixture.startingAtlOverride,
       });
 
@@ -225,16 +225,20 @@ describe("computeLocalCreationPreview", () => {
 
         expect(localPoint.date).toBe(serverPoint.date);
         expect(
-          Math.abs(localPoint.predicted_load_tss - serverPoint.predicted_load_tss),
-          `${fixture.name} point ${i} predicted_load_tss`,
+          Math.abs(localPoint.predicted_load - serverPoint.predicted_load),
+          `${fixture.name} point ${i} predicted_load`,
         ).toBeLessThanOrEqual(tolerance);
         expect(
-          Math.abs(localPoint.predicted_fatigue_atl - serverPoint.predicted_fatigue_atl),
-          `${fixture.name} point ${i} predicted_fatigue_atl`,
+          Math.abs(
+            localPoint.predicted_fatigue_recentLoad - serverPoint.predicted_fatigue_recentLoad,
+          ),
+          `${fixture.name} point ${i} predicted_fatigue_recentLoad`,
         ).toBeLessThanOrEqual(tolerance);
         expect(
-          Math.abs(localPoint.predicted_fitness_ctl - serverPoint.predicted_fitness_ctl),
-          `${fixture.name} point ${i} predicted_fitness_ctl`,
+          Math.abs(
+            localPoint.predicted_fitness_longTermLoad - serverPoint.predicted_fitness_longTermLoad,
+          ),
+          `${fixture.name} point ${i} predicted_fitness_longTermLoad`,
         ).toBeLessThanOrEqual(tolerance);
         expect(
           Math.abs(localPoint.readiness_score - serverPoint.readiness_score),
@@ -255,20 +259,20 @@ describe("computeLocalCreationPreview", () => {
 function buildServerRecomputeProjectionChartLike(input: {
   minimalPlan: typeof minimalPlan;
   creationInput: CreationNormalizationInput;
-  startingCtlOverride?: number;
+  startingLongTermLoadOverride?: number;
   startingAtlOverride?: number;
 }) {
   const finalConfig = normalizeCreationConfig(input.creationInput);
   const expandedPlan = buildExpandedPlanFromMinimalGoal(input.minimalPlan, {
-    startingCtl: input.startingCtlOverride,
+    startingLongTermLoad: input.startingLongTermLoadOverride,
   });
 
   const deterministicProjection = buildDeterministicProjectionPayload(
     buildProjectionEngineInput({
       expanded_plan: expandedPlan,
       normalized_creation_config: finalConfig,
-      starting_ctl: input.startingCtlOverride,
-      starting_atl: input.startingAtlOverride,
+      starting_longTermLoad: input.startingLongTermLoadOverride,
+      starting_recentLoad: input.startingAtlOverride,
     }),
   );
 

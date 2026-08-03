@@ -27,12 +27,12 @@ export const dailyLoadReasonCodeSchema = z.enum([
   "daily_load_distribution_v1",
   "source_weekly_target",
   "source_missing_weekly_target",
-  "target_zero_tss",
-  "target_positive_tss",
+  "target_zero_load",
+  "target_positive_load",
   "partial_week_scaled",
   "source_planned_session",
   "fallback_no_planned_session",
-  "planned_session_estimated_tss",
+  "planned_session_estimated_load",
   "planned_session_explicit_focus",
   "planned_session_explicit_activity",
   "source_preferred_weekdays",
@@ -75,7 +75,7 @@ export const plannedTrainingSessionSchema = z
   .object({
     date: z.string().nullable().optional(),
     offsetDays: z.number().int().nullable().optional(),
-    estimatedTss: z.number().nonnegative().nullable().optional(),
+    estimatedCommonLoad: z.number().nonnegative().nullable().optional(),
     estimatedDurationMinutes: z.number().nonnegative().nullable().optional(),
     estimatedFatigueCost: z.number().nonnegative().nullable().optional(),
     estimatedStrengthSets: z.number().nonnegative().nullable().optional(),
@@ -98,9 +98,9 @@ export const planningEngineInputSchema = z
     timeline: z.object({ start_date: z.string(), end_date: z.string() }).strict(),
     blocks: z.array(z.unknown()).default([]),
     goals: z.array(z.unknown()).default([]),
-    starting_ctl: z.number().optional(),
-    starting_atl: z.number().optional(),
-    starting_tsb: z.number().optional(),
+    starting_longTermLoad: z.number().optional(),
+    starting_recentLoad: z.number().optional(),
+    starting_loadBalance: z.number().optional(),
     creation_config: z.unknown().optional(),
     preference_profile: z.unknown().optional(),
     training_prescription: z.unknown().optional(),
@@ -109,7 +109,7 @@ export const planningEngineInputSchema = z
     scheduling_constraints: z.unknown().optional(),
     no_history_context: z.unknown().optional(),
     prior_inferred_snapshot: z.unknown().optional(),
-    disable_weekly_tss_optimizer: z.boolean().optional(),
+    disable_weekly_load_optimizer: z.boolean().optional(),
   })
   .strict();
 
@@ -119,7 +119,7 @@ export const dailyPrescriptionSessionSchema = z
   .object({
     activity_category: canonicalActivityCategorySchema,
     primary_focus: planningPrimaryFocusSchema,
-    target_load_tss: z.number().nonnegative(),
+    target_load: z.number().nonnegative(),
     target_duration_minutes: z.number().nonnegative(),
     target_fatigue_cost: z.number().nonnegative(),
     target_strength_sets: z.number().nonnegative(),
@@ -158,7 +158,7 @@ export type PlanningDiagnostics = z.infer<typeof planningDiagnosticsSchema>;
 
 type DailyPrescriptionSourcePoint = {
   date: string;
-  recommendedLoadTss: number;
+  recommendedLoad: number;
   recommendedDurationMinutes: number;
   recommendedFatigueCost: number;
   recommendedStrengthSets: number;
@@ -180,7 +180,7 @@ export function buildDailyPrescriptionPoints(
 ): DailyPrescriptionPoint[] {
   return points.map((point) => {
     const reason_codes = normalizeDailyLoadReasonCodes(point.reasonCodes);
-    const isTrainingDay = point.recommendedLoadTss > 0 && point.primaryFocus !== "rest";
+    const isTrainingDay = point.recommendedLoad > 0 && point.primaryFocus !== "rest";
     return dailyPrescriptionPointSchema.parse({
       date: point.date,
       reason_codes,
@@ -189,7 +189,7 @@ export function buildDailyPrescriptionPoints(
             {
               activity_category: point.activityCategory,
               primary_focus: point.primaryFocus,
-              target_load_tss: point.recommendedLoadTss,
+              target_load: point.recommendedLoad,
               target_duration_minutes: point.recommendedDurationMinutes,
               target_fatigue_cost: point.recommendedFatigueCost,
               target_strength_sets: point.recommendedStrengthSets,
@@ -213,7 +213,7 @@ export function buildPlanningDiagnostics(
   points: DailyPrescriptionSourcePoint[],
 ): PlanningDiagnostics {
   const dayCount = points.length;
-  const trainingDayCount = points.filter((point) => point.recommendedLoadTss > 0).length;
+  const trainingDayCount = points.filter((point) => point.recommendedLoad > 0).length;
   const plannedSessionAnchorCount = points.filter((point) =>
     point.reasonCodes.includes("planned_session_date_applied"),
   ).length;

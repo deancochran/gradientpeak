@@ -1,5 +1,6 @@
 import {
   createInitialRecordingReducerState,
+  createUnavailableAthletePerformanceTargetFacts,
   decideRecordingCommand,
   PORTABLE_TIMER_RECORDING_DRAFT_SCHEMA_VERSION,
   type PortableTimerRecordingDraft,
@@ -320,11 +321,12 @@ function createTimerOnlySnapshot(
   nowMs: number,
   sessionId: string,
 ): RecordingSessionSnapshot {
+  const startedAt = new Date(nowMs).toISOString();
   return {
     identity: {
       sessionId,
       revision: 0,
-      startedAt: new Date(nowMs).toISOString(),
+      startedAt,
     },
     activity: {
       activity_category: configuration.activity_category,
@@ -334,7 +336,8 @@ function createTimerOnlySnapshot(
       activityPlanId: configuration.activityPlanId ?? null,
       routeId: configuration.routeId ?? null,
     },
-    profileSnapshot: { defaultsApplied: [] },
+    profileSnapshot: {},
+    performanceTargets: createUnavailableAthletePerformanceTargetFacts(startedAt),
     devices: { connected: [], controllableTrainer: null, selectedSources: [] },
     capabilities: {
       canTrackLocation: false,

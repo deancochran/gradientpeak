@@ -16,15 +16,15 @@ interface TimelineChartProps {
   onIntervalPress?: (intervalId: string) => void;
 }
 
-function intensityHeight(normalizedIntensity: number | null, chartHeight: number): number {
+function intensityHeight(visualIntensity: number | null, chartHeight: number): number {
   const minimumHeight = Math.min(24, chartHeight);
-  if (normalizedIntensity === null) return minimumHeight;
-  return minimumHeight + normalizedIntensity * Math.max(0, chartHeight - minimumHeight);
+  if (visualIntensity === null) return minimumHeight;
+  return minimumHeight + visualIntensity * Math.max(0, chartHeight - minimumHeight);
 }
 
-function intensityColor(normalizedIntensity: number | null): string | undefined {
-  if (normalizedIntensity === null) return undefined;
-  return INTENSITY_ZONES[getIntensityZone(normalizedIntensity * 100)].color;
+function intensityColor(visualIntensity: number | null): string | undefined {
+  if (visualIntensity === null) return undefined;
+  return INTENSITY_ZONES[getIntensityZone(visualIntensity * 100)].color;
 }
 
 function occurrenceWeight(
@@ -102,12 +102,12 @@ export function TimelineChart({
               accessibilityLabel={label}
               accessibilityRole={occurrence.intervalId && onIntervalPress ? "button" : undefined}
               accessibilityState={selected ? { selected: true } : undefined}
-              className={`justify-end rounded-md border ${selected ? "border-primary" : "border-border"} ${isBoundary || occurrence.normalizedIntensity === null ? "bg-muted" : ""}`}
+              className={`justify-end rounded-md border ${selected ? "border-primary" : "border-border"} ${isBoundary || occurrence.visualIntensity === null ? "bg-muted" : ""}`}
               style={{
                 backgroundColor: isBoundary
                   ? undefined
-                  : intensityColor(occurrence.normalizedIntensity),
-                height: isBoundary ? 28 : intensityHeight(occurrence.normalizedIntensity, height),
+                  : intensityColor(occurrence.visualIntensity),
+                height: isBoundary ? 28 : intensityHeight(occurrence.visualIntensity, height),
                 flexBasis: 0,
                 flexGrow: occurrenceWeight(occurrence.duration),
                 minWidth: 0,

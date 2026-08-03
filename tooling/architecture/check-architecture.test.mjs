@@ -142,6 +142,24 @@ test("only imported schema composition is exempt from contract collision detecti
   );
 });
 
+test("discriminated-union fingerprints distinguish core and API status contracts", () => {
+  const root = resolve(architectureRoot, "../..");
+  const config = fixtureConfig({
+    core: { roots: ["packages/core"] },
+    api: { roots: ["packages/api"] },
+  });
+  const { active } = analyzeProject(root, config, [
+    "packages/api/src/contracts/recording-submission.ts",
+    "packages/api/src/routers/organizations.ts",
+    "packages/core/activity-quantification/contracts.ts",
+  ]);
+
+  assert.equal(
+    active.some((finding) => finding.category === "contract-structural-collision"),
+    false,
+  );
+});
+
 test("unsafe production typing ratchets stable fingerprints per file and owner", () => {
   const finding = {
     category: "unsafe-as-any",
@@ -166,6 +184,95 @@ test("unsafe scan includes double casts and ts-expect-error", () => {
   assert(categories.has("unsafe-ts-expect-error"));
   assert(categories.has("unsafe-non-null-assertion"));
 });
+
+test("forbidden first-party source patterns are rejected", () => {
+  const root = resolve(architectureRoot, "fixtures/forbidden-pattern");
+  const config = fixtureConfig(
+    { core: { roots: ["core"] } },
+    {
+      forbiddenSourcePatterns: [
+        {
+          id: "removed-load-timeline-aliases",
+          patterns: ["core/**/*.ts"],
+          terms: ["actual_tss"],
+        },
+        {
+          id: "removed-legacy-performance-model-authorities",
+          patterns: ["core/**/*.ts"],
+          terms: [
+            "getPerformanceCalibration",
+            "evaluateCriticalPower",
+            "critical_power_threshold",
+            "persistCssTest",
+          ],
+        },
+      ],
+    },
+  );
+  const { active } = analyzeProject(root, config, [
+    "core/legacy.ts",
+    "core/performance-authority.ts",
+  ]);
+
+  assert(
+    active.some(
+      (finding) =>
+        finding.category === "forbidden-source-pattern" &&
+        finding.details.id === "removed-load-timeline-aliases" &&
+        finding.details.term === "actual_tss",
+    ),
+  );
+  expectForbidden(active, "removed-legacy-performance-model-authorities");
+});
+
+test("calibration authority rules permit the approved application projection only", () => {
+  const root = resolve(architectureRoot, "fixtures/forbidden-pattern");
+  const config = fixtureConfig(
+    { api: { roots: ["packages/api"] } },
+    {
+      forbiddenSourcePatterns: [
+        {
+          id: "api-calibration-context-must-not-resolve-thresholds",
+          patterns: [
+            "packages/api/src/routers/activity-files.ts",
+            "packages/api/src/lib/activity-analysis/context.ts",
+          ],
+          terms: ["resolveCanonicalThresholds", "PERFORMANCE_CALIBRATION_FRESHNESS_WINDOW_MS"],
+        },
+        {
+          id: "removed-metric-evidence-calibration-authority",
+          patterns: ["packages/api/src/application/athlete-intelligence/**/*.ts"],
+          terms: ["MetricEvidenceAdapter", "freshnessHalfLifeDays"],
+        },
+      ],
+    },
+  );
+  const { active } = analyzeProject(root, config, [
+    "packages/api/src/routers/activity-files.ts",
+    "packages/api/src/lib/activity-analysis/context.ts",
+    "packages/api/src/application/athlete-intelligence/adapters/metrics/legacy.ts",
+    "packages/api/src/application/profile-metrics/get-performance-calibration-as-of.ts",
+  ]);
+
+  expectForbidden(active, "api-calibration-context-must-not-resolve-thresholds");
+  expectForbidden(active, "removed-metric-evidence-calibration-authority");
+  assert.equal(
+    active.some(
+      (finding) =>
+        finding.path.endsWith("get-performance-calibration-as-of.ts") &&
+        finding.category === "forbidden-source-pattern",
+    ),
+    false,
+  );
+});
+
+function expectForbidden(findings, id) {
+  assert(
+    findings.some(
+      (finding) => finding.category === "forbidden-source-pattern" && finding.details.id === id,
+    ),
+  );
+}
 
 test("merge-base protection supports bootstrap and rejects policy weakening", () => {
   const baseline = { version: 2, categories: {}, unsafe: {} };
@@ -330,6 +437,7 @@ test("canonical policy blocks widening while allowing debt reduction", () => {
     },
     enumParity: [],
     exceptions: [],
+    forbiddenSourcePatterns: [],
     generatedOwners: [],
     reviewedIgnores: [],
     scanExcludes: ["apps/web/legacy/**/*"],
@@ -397,6 +505,13 @@ test("merge-base canonical policy covers every enforcement surface", () => {
       },
     ],
     exceptions: [],
+    forbiddenSourcePatterns: [
+      {
+        id: "removed-source-pattern",
+        patterns: ["packages/**/*.ts"],
+        terms: ["removedTerm"],
+      },
+    ],
     reviewedIgnores: [],
     scanExcludes: [],
   };
@@ -406,6 +521,7 @@ test("merge-base canonical policy covers every enforcement surface", () => {
     (next) => (next.owners.core.verification.lint.script = "check"),
     (next) => next.coverage.lint.splice(0, 1),
     (next) => next.enumParity.splice(0, 1),
+    (next) => next.forbiddenSourcePatterns.splice(0, 1),
     (next) => (next.generatedOwners[0].script = "generate"),
     (next) =>
       next.reviewedIgnores.push({

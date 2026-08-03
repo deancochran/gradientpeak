@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { calculateCyclingNormalizedPower } from "../../../calculations/normalized-power";
 
 import {
   type CalculationResult,
@@ -27,26 +28,17 @@ const missing = (reason = "missing_test_evidence") =>
 
 const effect = (
   value: CalculationResult,
-  role: PhysiologyMetricsPolicyResult["metrics"]["ftp"]["role"],
+  role: PhysiologyMetricsPolicyResult["metrics"]["lthr"]["role"],
 ) => ({ role, result: value, influence: 1 });
-function physiology(ftp = 300, weight = 75): PhysiologyMetricsPolicyResult {
+function physiology(heartRateReserve = 140): PhysiologyMetricsPolicyResult {
   return {
     policyVersion: "physiology_metrics_v1",
     metrics: {
-      ftp: effect(result(ftp, "watts", "metric:ftp"), athleteMetricRoleByType.ftp),
-      threshold_pace_seconds_per_km: effect(
-        result(270, "seconds_per_km"),
-        athleteMetricRoleByType.threshold_pace_seconds_per_km,
-      ),
-      css_seconds_per_100m: effect(
-        result(95, "seconds_per_100m"),
-        athleteMetricRoleByType.css_seconds_per_100m,
-      ),
       lthr: effect(result(170, "beats_per_minute", "metric:lthr"), athleteMetricRoleByType.lthr),
       max_hr: effect(result(190, "beats_per_minute"), athleteMetricRoleByType.max_hr),
       resting_hr: effect(result(50, "beats_per_minute"), athleteMetricRoleByType.resting_hr),
       vo2_max: effect(missing(), athleteMetricRoleByType.vo2_max),
-      weight_kg: effect(result(weight, "kilograms"), athleteMetricRoleByType.weight_kg),
+      weight_kg: effect(result(75, "kilograms"), athleteMetricRoleByType.weight_kg),
       hrv_rmssd: effect(missing(), athleteMetricRoleByType.hrv_rmssd),
       sleep_hours: effect(missing(), athleteMetricRoleByType.sleep_hours),
       stress_score: effect(missing(), athleteMetricRoleByType.stress_score),
@@ -54,8 +46,7 @@ function physiology(ftp = 300, weight = 75): PhysiologyMetricsPolicyResult {
       wellness_score: effect(missing(), athleteMetricRoleByType.wellness_score),
       age_years: effect(missing(), athleteMetricRoleByType.age_years),
     },
-    wattsPerKilogram: result(ftp / weight, "watts_per_kilogram", "metric:ftp"),
-    heartRateReserve: result(140, "beats_per_minute", "metric:hr-reserve"),
+    heartRateReserve: result(heartRateReserve, "beats_per_minute", "metric:hr-reserve"),
     individualizedRatios: {
       hrvRmssd: missing(),
       sleep: missing(),
@@ -203,7 +194,10 @@ function model(
       caloriesKilocalories: nullEv("kilocalories"),
       averagePowerWatts: nullEv("watts"),
       maximumPowerWatts: nullEv("watts"),
-      normalizedPowerWatts: nullEv("watts"),
+      normalizedPowerResult: {
+        result: calculateCyclingNormalizedPower({ samples: [] }),
+        evidenceSourceIds: nullEv("watts").evidenceSourceIds,
+      },
       averageSpeedMetersPerSecond: nullEv("meters_per_second"),
       maximumSpeedMetersPerSecond: nullEv("meters_per_second"),
       averageHeartRateBpm: nullEv("beats_per_minute"),
@@ -284,8 +278,8 @@ function model(
       strategy: null,
       taperPreference: null,
       progressionPreference: null,
-      ctlOverride: nullEv("training_load"),
-      atlOverride: nullEv("training_load"),
+      longTermLoadOverride: nullEv("training_load"),
+      recentLoadOverride: nullEv("training_load"),
     },
     readCoverage: {
       metrics: { state: "complete", reason: null },
@@ -387,6 +381,11 @@ describe("whole athlete projection v1", () => {
           target: result(350, "W"),
           testDuration: result(1200, "s"),
         }),
+        effortCurve: {
+          policyVersion: "effort-curves-v1" as const,
+          threshold: result(300, "watts"),
+          highIntensity: result(400, "watts"),
+        },
       },
       {
         goalSourceId: "goal:hr",
@@ -644,6 +643,11 @@ describe("whole athlete projection v1", () => {
           target: result(1000, "W"),
           testDuration: result(1200, "s"),
         }),
+        effortCurve: {
+          policyVersion: "effort-curves-v1" as const,
+          threshold: result(300, "watts"),
+          highIntensity: result(400, "watts"),
+        },
       },
       {
         goalSourceId: "goal:high",
@@ -741,22 +745,14 @@ describe("whole athlete projection v1", () => {
       },
     ];
     const base = assembleWholeAthleteProjection(baseInput(goals, demands));
-    const ftp = assembleWholeAthleteProjection({
+    const heartRate = assembleWholeAthleteProjection({
       ...baseInput(goals, demands),
-      physiology: physiology(320, 80),
+      physiology: physiology(150),
     });
-    expect(ftp.capability.ftp.estimate).toBe(320);
-    expect(ftp.capability.runningThresholdPace).toMatchObject({
-      estimate: 270,
-      unit: "seconds_per_km",
-    });
-    expect(ftp.capability.swimmingCss).toMatchObject({
-      estimate: 95,
-      unit: "seconds_per_100m",
-    });
-    expect(ftp.capability.wattsPerKilogram.estimate).toBe(4);
-    expect(ftp.readiness).toEqual(base.readiness);
-    expect(ftp.feasibility).toEqual(base.feasibility);
+    expect(heartRate.capability.heartRateReserve.estimate).toBe(150);
+    expect(heartRate.capability.effortCurves).toEqual(base.capability.effortCurves);
+    expect(heartRate.readiness).toEqual(base.readiness);
+    expect(heartRate.feasibility).toEqual(base.feasibility);
     const effort = assembleWholeAthleteProjection(
       baseInput(goals, [
         {
@@ -776,7 +772,7 @@ describe("whole athlete projection v1", () => {
       ]),
     );
     expect(effort.capability.effortCurves[0]?.threshold.estimate).toBe(330);
-    expect(effort.goalCoverage).toEqual(base.goalCoverage);
+    expect(effort.goalCoverage).not.toEqual(base.goalCoverage);
     const endurance = assembleWholeAthleteProjection({
       ...baseInput(goals, demands),
       activityReadiness: readiness({ endurance: result(240, "minutes") }),
@@ -833,7 +829,17 @@ describe("whole athlete projection v1", () => {
           testDuration: result(1200, "s"),
         });
     const projection = assembleWholeAthleteProjection({
-      ...baseInput(goals, [{ goalSourceId: "goal:test", demand: demandResult }]),
+      ...baseInput(goals, [
+        {
+          goalSourceId: "goal:test",
+          demand: demandResult,
+          effortCurve: {
+            policyVersion: "effort-curves-v1",
+            threshold: result(300, "watts"),
+            highIntensity: result(400, "watts"),
+          },
+        },
+      ]),
       calendarFeasibility: feasibility(calendar),
       activityReadiness: readiness({
         readinessContext: result(recovery, "bounded_baseline_deviation"),
@@ -864,12 +870,12 @@ describe("whole athlete projection v1", () => {
         } as const,
       },
     ];
-    const uncertainFtp = unavailableResult({
+    const uncertainPowerCurve = unavailableResult({
       state: "insufficient_evidence",
       missingDataState: "partial",
       uncertainty: 0.6,
       reasonCodes: ["partial_direct_power_evidence"],
-      contributingSourceIds: ["metric:ftp"],
+      contributingSourceIds: ["effort:power-threshold"],
     });
     const projection = assembleWholeAthleteProjection({
       ...baseInput(goals, [
@@ -883,18 +889,11 @@ describe("whole athlete projection v1", () => {
           }),
           effortCurve: {
             policyVersion: "effort-curves-v1",
-            threshold: uncertainFtp,
+            threshold: uncertainPowerCurve,
             highIntensity: missing("distinct_high_intensity_requirement_missing"),
           },
         },
       ]),
-      physiology: {
-        ...physiology(),
-        metrics: {
-          ...physiology().metrics,
-          ftp: effect(uncertainFtp, "direct_threshold_evidence"),
-        },
-      },
     });
 
     expect(projection.opportunities.training).toEqual([]);
@@ -940,9 +939,9 @@ describe("whole athlete projection v1", () => {
               priority: 1,
               objective: {
                 type: "threshold" as const,
-                metric: "power" as const,
+                metric: "hr" as const,
                 activity_category: "bike" as const,
-                value: 350,
+                value: 175,
                 test_duration_s: 1200,
               },
             };
@@ -958,8 +957,8 @@ describe("whole athlete projection v1", () => {
             }
           : {
               type: "threshold" as const,
-              metric: "power" as const,
-              target: result(350, "W"),
+              metric: "hr" as const,
+              target: result(175, "bpm"),
               testDuration: result(1200, "s"),
             };
     const projection = assembleWholeAthleteProjection({

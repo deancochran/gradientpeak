@@ -12,7 +12,6 @@ type ActivityPlanFixture = {
   description: string;
   activity_category: string;
   estimated_duration: number;
-  estimated_tss: number;
 };
 type EventQueryError = { data: { code: string }; message?: string };
 type HostQueries = { UNSAFE_getByType(type: string): ReactTestInstance };
@@ -60,7 +59,6 @@ const eventDetailData: {
     description: "Progressive tempo with a strong finish.",
     activity_category: "run",
     estimated_duration: 3600,
-    estimated_tss: 72,
   },
   recurrence_rule: null as string | null,
   series_id: null as string | null,
@@ -306,7 +304,6 @@ describe("event detail fallback screen", () => {
       description: "Progressive tempo with a strong finish.",
       activity_category: "run",
       estimated_duration: 3600,
-      estimated_tss: 72,
     };
   });
 

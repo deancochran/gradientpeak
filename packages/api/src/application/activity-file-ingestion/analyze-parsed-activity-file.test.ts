@@ -1,10 +1,17 @@
-import { PgDialect } from "drizzle-orm/pg-core";
+import {
+  activityArtifactSemanticsSchema,
+  analyzeActivityDerivedMetrics,
+  getNormalizedIntensity,
+} from "@repo/core";
+import { selectCyclingNormalizedPowerWatts } from "@repo/core/calculations";
+import { calculateProvisionalRecordingMetrics } from "@repo/core/recording-metrics";
+import { AEROBIC_NUMERICAL_TRUST_FIXTURES_V1 } from "@repo/core/testing/aerobic-numerical-trust";
+import { CYCLING_NUMERICAL_TRUST_FIXTURES_V1 } from "@repo/core/testing/cycling-numerical-trust";
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { describe, expect, it, vi } from "vitest";
 import type { getRequiredDb } from "../../db";
-import {
-  analyzeParsedActivityFile,
-  getLatestActivityCategoryLthrValue,
-} from "./analyze-parsed-activity-file";
+import { buildAthletePerformanceModelFromEvidenceReads } from "../performance-model/get-athlete-performance-model-as-of";
+import { analyzeParsedActivityFile } from "./analyze-parsed-activity-file";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
@@ -61,33 +68,339 @@ function explicitBikeSegment(startedAt: Date, seconds: number) {
   ];
 }
 
-describe("analyzeParsedActivityFile", () => {
-  it("compares JSON provenance with the UUID reference through an explicit text cast", async () => {
-    let whereCondition: unknown;
-    const tail = {
-      where: vi.fn((condition: unknown) => {
-        whereCondition = condition;
-        return {
-          orderBy: vi.fn(() => ({ limit: vi.fn().mockResolvedValue([]) })),
-        };
-      }),
-    };
-    const db = {
-      select: vi.fn(() => ({
-        from: vi.fn(() => ({ innerJoin: vi.fn(() => tail) })),
-      })),
-    } as unknown as DbClient;
+function cyclingPerformanceTargets(asOf: string, thresholdPowerWatts: number) {
+  return buildPerformanceTargetFactsFixture({
+    asOf,
+    planningThresholdPowerWatts: thresholdPowerWatts,
+    calculationVersion: "cycling-parity-threshold-v1",
+  });
+}
 
-    await getLatestActivityCategoryLthrValue(db, {
-      activityCategory: "run",
-      profileId: "profile-1",
-      recordedAtLte: new Date("2026-01-01T10:00:00Z"),
+describe("analyzeParsedActivityFile", () => {
+  it("persists valid zero decoupling while keeping unavailable evidence nullable", async () => {
+    const fixture = AEROBIC_NUMERICAL_TRUST_FIXTURES_V1.validZeroDrift;
+    const startedAt = new Date("2026-07-31T10:00:00.000Z");
+    const durationSeconds = 1_200;
+    const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "aerobic-zero-drift-import-v1",
+      profileId: "aerobic-zero-drift-profile-v1",
+      refreshWeather: false,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "cycling" },
+        summary: {
+          totalTime: durationSeconds,
+          totalDistance: 12_000,
+          avgPower: 200,
+          avgHeartRate: 145,
+        },
+        records: fixture.input.samples.map((sample) => ({
+          sessionMessageIndex: 0,
+          timestamp: new Date(startedAt.getTime() + sample.timestampSeconds * 1_000),
+          ...(sample.output === null ? {} : { power: sample.output }),
+          ...(sample.heartRateBpm === null ? {} : { heartRate: sample.heartRateBpm }),
+        })),
+        segments: explicitBikeSegment(startedAt, durationSeconds),
+      },
     });
 
-    const query = new PgDialect().sqlToQuery(whereCondition as never).sql;
-    expect(query).toContain(
-      `"profile_metrics"."provenance" ->> 'activity_id' = cast("profile_metrics"."reference_activity_id" as text)`,
+    expect(result.summaryValues).not.toHaveProperty("efficiency_factor");
+    expect(result.summaryValues).not.toHaveProperty("aerobic_decoupling");
+    expect(result.segmentSet.segments[0]?.summary).toMatchObject({
+      efficiencyFactorResult: { status: "available", value: fixture.expected.efficiencyFactor },
+      aerobicDecouplingResult: { status: "available", value: 0 },
+    });
+
+    const unavailable = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "aerobic-missing-hr-import-v1",
+      profileId: "aerobic-missing-hr-profile-v1",
+      refreshWeather: false,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "cycling" },
+        summary: { totalTime: durationSeconds, totalDistance: 12_000, avgPower: 200 },
+        records: fixture.input.samples.map((sample) => ({
+          sessionMessageIndex: 0,
+          timestamp: new Date(startedAt.getTime() + sample.timestampSeconds * 1_000),
+          ...(sample.output === null ? {} : { power: sample.output }),
+        })),
+        segments: explicitBikeSegment(startedAt, durationSeconds),
+      },
+    });
+    expect(unavailable.summaryValues).not.toHaveProperty("efficiency_factor");
+    expect(unavailable.summaryValues).not.toHaveProperty("aerobic_decoupling");
+    expect(unavailable.segmentSet.segments[0]?.summary).toMatchObject({
+      efficiencyFactorResult: { status: "unavailable", value: null },
+      aerobicDecouplingResult: { status: "unavailable", value: null },
+    });
+    expect(unavailable.segmentSet.segments[0]?.summary).not.toHaveProperty("efficiencyFactor");
+    expect(unavailable.segmentSet.segments[0]?.summary).not.toHaveProperty("aerobicDecoupling");
+  });
+
+  it("keeps final cycling duration, distance, NP, intensity, and Common Load aligned with live replay", async () => {
+    const fixture = CYCLING_NUMERICAL_TRUST_FIXTURES_V1.canonicalThresholdHour;
+    const expected = fixture.expected;
+    const tolerance = CYCLING_NUMERICAL_TRUST_FIXTURES_V1.tolerances;
+    const startedAt = new Date("2026-07-31T10:00:00.000Z");
+    const finishedAt = new Date(startedAt.getTime() + expected.durationSeconds * 1_000);
+    const records = fixture.samples.map((sample) => ({
+      sessionMessageIndex: 0,
+      timestamp: new Date(startedAt.getTime() + sample.timestampSeconds * 1_000),
+      ...(sample.powerWatts === null ? {} : { power: sample.powerWatts }),
+    }));
+    const imported = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "cycling-numerical-trust-import-v1",
+      profileId: "cycling-numerical-trust-profile-v1",
+      refreshWeather: false,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "cycling" },
+        summary: {
+          totalTime: expected.durationSeconds,
+          totalDistance: expected.distanceMeters,
+          avgPower: expected.normalizedPowerWatts,
+        },
+        records,
+        segments: explicitBikeSegment(startedAt, expected.durationSeconds),
+        sessions: [
+          {
+            messageIndex: 0,
+            rawSport: "cycling",
+            startTime: startedAt,
+            endTime: finishedAt,
+            totalElapsedTime: expected.durationSeconds,
+            totalTimerTime: expected.durationSeconds,
+            totalMovingTime: expected.durationSeconds,
+            totalDistance: expected.distanceMeters,
+            laps: [],
+            records: [],
+          },
+        ],
+      },
+    });
+    const segment = imported.segmentSet.segments[0];
+    if (segment?.role !== "activity" || segment.summary.timing.timingCoverage !== "complete") {
+      throw new Error("Expected one completely timed imported bike segment");
+    }
+    const importedCommonLoad = analyzeActivityDerivedMetrics({
+      activity: {
+        id: segment.id,
+        type: "bike",
+        started_at: startedAt.toISOString(),
+        finished_at: finishedAt.toISOString(),
+        duration_seconds: segment.summary.timing.activeMs / 1_000,
+        moving_seconds: segment.summary.timing.movingMs / 1_000,
+        distance_meters: segment.summary.distanceMeters ?? null,
+        avg_power: segment.summary.averagePowerWatts ?? null,
+        normalized_power_result: segment.summary.normalizedPowerResult,
+      },
+      context: {
+        profileMetrics: {},
+        performanceTargets: cyclingPerformanceTargets(
+          finishedAt.toISOString(),
+          fixture.thresholdPowerWatts,
+        ),
+        recentEfforts: [],
+        profile: {},
+      },
+      computedAsOf: finishedAt.toISOString(),
+    }).stress.common_load;
+    const live = calculateProvisionalRecordingMetrics({
+      config: {
+        activityCategory: "bike",
+        performanceTargets: cyclingPerformanceTargets(
+          finishedAt.toISOString(),
+          fixture.thresholdPowerWatts,
+        ),
+        recordingSessionId: "cycling-numerical-trust-live-v1",
+      },
+      samples: fixture.samples.map((sample) => ({
+        timestampMs: startedAt.getTime() + sample.timestampSeconds * 1_000,
+        moving: sample.included !== false,
+        powerWatts: sample.powerWatts,
+        distanceMeters: fixture.distanceMetersPerSecond * sample.timestampSeconds,
+      })),
+    });
+
+    expect(imported.summaryValues).toMatchObject({
+      elapsed_ms: expected.durationSeconds * 1_000,
+      active_ms: expected.durationSeconds * 1_000,
+      moving_ms: expected.durationSeconds * 1_000,
+      distance_meters: expected.distanceMeters,
+    });
+    expect(live.stage).toBe("provisional");
+    expect(live.authority).toBe("live_recording_only");
+    expect(live.normalizedPowerResult).toMatchObject({
+      status: "available",
+      calculationVersion: CYCLING_NUMERICAL_TRUST_FIXTURES_V1.calculationVersion,
+      valueWatts: expected.normalizedPowerWatts,
+    });
+    expect(live.observations.duration.value).toMatchObject({
+      elapsed: { status: "available", value: expected.durationSeconds },
+      active: { status: "available", value: expected.durationSeconds },
+      moving: { status: "available", value: expected.durationSeconds },
+    });
+    expect(live.observations.distance.value).toMatchObject({
+      status: "available",
+      value: expected.distanceMeters,
+    });
+    const importedNormalizedPower = selectCyclingNormalizedPowerWatts(
+      segment.summary.normalizedPowerResult,
     );
+    const liveNormalizedPower = selectCyclingNormalizedPowerWatts(live.normalizedPowerResult);
+    expect(importedNormalizedPower).not.toBeNull();
+    expect(liveNormalizedPower).not.toBeNull();
+    if (importedNormalizedPower === null || liveNormalizedPower === null) {
+      throw new Error("Expected imported and live normalized power");
+    }
+    expect(Math.abs(importedNormalizedPower - expected.normalizedPowerWatts)).toBeLessThanOrEqual(
+      tolerance.normalizedPowerWatts,
+    );
+    expect(Math.abs(liveNormalizedPower - expected.normalizedPowerWatts)).toBeLessThanOrEqual(
+      tolerance.normalizedPowerWatts,
+    );
+    expect(Math.abs(importedNormalizedPower - liveNormalizedPower)).toBeLessThanOrEqual(
+      tolerance.normalizedPowerWatts,
+    );
+
+    const importedIntensity = getNormalizedIntensity(importedCommonLoad);
+    const liveIntensity = getNormalizedIntensity(live.commonLoad);
+    expect(importedIntensity).not.toBeNull();
+    expect(liveIntensity).not.toBeNull();
+    if (importedIntensity === null || liveIntensity === null) {
+      throw new Error("Expected imported and live normalized intensity");
+    }
+    expect(Math.abs(importedIntensity - expected.normalizedIntensity)).toBeLessThanOrEqual(
+      tolerance.normalizedIntensity,
+    );
+    expect(Math.abs(liveIntensity - expected.normalizedIntensity)).toBeLessThanOrEqual(
+      tolerance.normalizedIntensity,
+    );
+    expect(importedCommonLoad).toMatchObject({
+      status: "available",
+      load: expected.commonLoad,
+      intensity: expected.normalizedIntensity,
+    });
+    expect(live.commonLoad).toMatchObject({
+      status: "partial",
+      load: expected.commonLoad,
+      intensity: expected.normalizedIntensity,
+      reason: "duration_partial",
+    });
+    if (
+      importedCommonLoad.status !== "available" ||
+      live.commonLoad.status !== "partial" ||
+      live.commonLoad.load === null
+    ) {
+      throw new Error("Expected final import authority and provisional live authority");
+    }
+    expect(Math.abs(importedCommonLoad.load - live.commonLoad.load)).toBeLessThanOrEqual(
+      tolerance.commonLoad,
+    );
+  });
+
+  it("persists numeric partial Normalized Power with its coverage diagnostics", async () => {
+    const fixture = CYCLING_NUMERICAL_TRUST_FIXTURES_V1.missing;
+    const startedAt = new Date("2026-07-31T10:00:00.000Z");
+    const elapsedSeconds = 61;
+    const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "cycling-partial-import-v1",
+      profileId: "cycling-partial-profile-v1",
+      refreshWeather: false,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "cycling" },
+        summary: { totalTime: elapsedSeconds, totalDistance: 610, avgPower: 200 },
+        records: fixture.samples.map((sample) => ({
+          sessionMessageIndex: 0,
+          timestamp: new Date(startedAt.getTime() + sample.timestampSeconds * 1_000),
+          ...(sample.powerWatts === null ? {} : { power: sample.powerWatts }),
+        })),
+        segments: explicitBikeSegment(startedAt, elapsedSeconds),
+        sessions: [
+          {
+            messageIndex: 0,
+            rawSport: "cycling",
+            startTime: startedAt,
+            endTime: new Date(startedAt.getTime() + elapsedSeconds * 1_000),
+            totalElapsedTime: elapsedSeconds,
+            totalTimerTime: elapsedSeconds,
+            totalMovingTime: elapsedSeconds,
+            totalDistance: 610,
+            laps: [],
+            records: [],
+          },
+        ],
+      },
+    });
+
+    expect(result.segmentSet.segments[0]?.summary).toMatchObject({
+      normalizedPowerResult: {
+        status: "partial",
+        valueWatts: fixture.expected.normalizedPowerWatts,
+        reason: "source_incomplete",
+        diagnostics: fixture.expected.diagnostics,
+      },
+    });
+  });
+
+  it("uses retained semantic pause ranges as inactive rather than missing power", async () => {
+    const fixture = CYCLING_NUMERICAL_TRUST_FIXTURES_V1.paused;
+    const startedAt = new Date("2026-07-31T10:00:00.000Z");
+    const elapsedSeconds = 61;
+    const activeSeconds = 60;
+    const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "cycling-pause-import-v1",
+      profileId: "cycling-pause-profile-v1",
+      refreshWeather: false,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "cycling" },
+        summary: { totalTime: elapsedSeconds, totalDistance: 600, avgPower: 200 },
+        records: fixture.samples.map((sample) => ({
+          sessionMessageIndex: 0,
+          timestamp: new Date(startedAt.getTime() + sample.timestampSeconds * 1_000),
+          ...(sample.powerWatts === null ? {} : { power: sample.powerWatts }),
+        })),
+        segments: explicitBikeSegment(startedAt, elapsedSeconds),
+        sessions: [
+          {
+            messageIndex: 0,
+            rawSport: "cycling",
+            startTime: startedAt,
+            endTime: new Date(startedAt.getTime() + elapsedSeconds * 1_000),
+            totalElapsedTime: elapsedSeconds,
+            totalTimerTime: activeSeconds,
+            totalMovingTime: activeSeconds,
+            totalDistance: 600,
+            laps: [],
+            records: [],
+          },
+        ],
+        semantics: activityArtifactSemanticsSchema.parse({
+          segments: [
+            {
+              role: "activity",
+              activity_category: "bike",
+              rawSport: "cycling",
+              startOffsetMs: 0,
+              endOffsetMs: elapsedSeconds * 1_000,
+              activeMs: activeSeconds * 1_000,
+              movingMs: activeSeconds * 1_000,
+              distanceMeters: 600,
+              pauseRanges: [{ startOffsetMs: 30_000, endOffsetMs: 31_000 }],
+            },
+          ],
+          totals: {
+            elapsedMs: elapsedSeconds * 1_000,
+            activeMs: activeSeconds * 1_000,
+            movingMs: activeSeconds * 1_000,
+            distanceMeters: 600,
+          },
+        }),
+      },
+    });
+
+    expect(result.segmentSet.segments[0]?.summary.normalizedPowerResult).toMatchObject({
+      status: "available",
+      valueWatts: fixture.expected.normalizedPowerWatts,
+      diagnostics: fixture.expected.diagnostics,
+    });
   });
 
   it("isolates normalized metrics and efforts by ordered segment activity category and record slice", async () => {
@@ -156,9 +469,15 @@ describe("analyzeParsedActivityFile", () => {
     ).toBe(true);
     expect(
       efforts.every((effort) => {
-        const provenance = effort.provenance as Record<string, unknown>;
-        const exactStart = provenance.exact_window_start_seconds;
-        const exactEnd = provenance.exact_window_end_seconds;
+        const provenance = effort.provenance;
+        if (provenance === null || typeof provenance !== "object" || Array.isArray(provenance)) {
+          return false;
+        }
+        const entries = Object.entries(provenance);
+        const exactStart = entries.find(
+          ([key]) => key === "exact_window_start_offset_seconds",
+        )?.[1];
+        const exactEnd = entries.find(([key]) => key === "exact_window_end_offset_seconds")?.[1];
         if (typeof exactStart !== "number" || typeof exactEnd !== "number") return false;
         return effort.activity_category === "bike"
           ? exactStart >= 70 && exactEnd <= 130
@@ -167,8 +486,8 @@ describe("analyzeParsedActivityFile", () => {
     ).toBe(true);
     expect(result.summaryValues).toMatchObject({
       normalized_speed_mps: null,
-      normalized_graded_speed_mps: null,
     });
+    expect(result.summaryValues).not.toHaveProperty("normalized_graded_speed_mps");
     expect(result.segmentSet.segments[0]).toMatchObject({
       activity_category: "run",
       summary: {
@@ -179,7 +498,10 @@ describe("analyzeParsedActivityFile", () => {
       activity_category: "bike",
       summary: {
         averagePowerWatts: expect.any(Number),
-        normalizedPowerWatts: expect.any(Number),
+        normalizedPowerResult: {
+          status: "available",
+          valueWatts: expect.any(Number),
+        },
       },
     });
     expect(result.segmentSet.segments[3]).toMatchObject({ role: "unknown" });
@@ -250,6 +572,44 @@ describe("analyzeParsedActivityFile", () => {
       moving_ms: null,
       timing_coverage: "partial",
     });
+  });
+
+  it("keeps an unsupported provider modality unavailable instead of forcing the other category", async () => {
+    const startedAt = new Date("2026-01-01T10:00:00Z");
+    const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "activity-1",
+      profileId: "profile-1",
+      artifactId: "11111111-1111-4111-8111-111111111111",
+      provider: "wahoo",
+      refreshWeather: false,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "hiking" },
+        summary: { totalTime: 60, totalDistance: 500 },
+        records: [],
+        segments: [
+          {
+            sessionMessageIndex: 0,
+            role: "activity",
+            activity_category: "other",
+            rawSport: "hiking",
+            startTime: startedAt,
+            endTime: new Date(startedAt.getTime() + 60_000),
+          },
+        ],
+      },
+    });
+
+    expect(result.segmentSet.segments).toEqual([
+      expect.objectContaining({
+        role: "unknown",
+        source: expect.objectContaining({
+          kind: "artifact",
+          rawSport: "hiking",
+        }),
+      }),
+    ]);
+    expect(result.segmentSet.segments[0]).not.toHaveProperty("activity_category");
+    expect(result.effortsToInsert).toEqual([]);
   });
 
   it("uses wall-clock segment bounds when an aggregate summary reports active time", async () => {
@@ -443,7 +803,7 @@ describe("analyzeParsedActivityFile", () => {
       averageSpeedMetersPerSecond: 1,
     });
     expect(result.segmentSet.segments[0]?.summary.normalizedSpeedMetersPerSecond).toBeCloseTo(
-      50 / 60,
+      50 / 50,
     );
     expect(result.summaryValues.avg_speed_mps).toBe(1);
   });
@@ -629,6 +989,7 @@ describe("analyzeParsedActivityFile", () => {
     });
 
     expect(result.effortsToInsert).toEqual([]);
+    expect(result.detectedLTHR).toBeNull();
   });
 
   it("promotes a bike LTHR even when another activity category has a higher threshold", async () => {
@@ -644,7 +1005,21 @@ describe("analyzeParsedActivityFile", () => {
       },
     });
 
-    expect(result.detectedLTHR).toBe(162);
+    expect(result.detectedLTHR).toMatchObject({
+      valueBpm: 162,
+      recordedAt: new Date(startedAt.getTime() + 1_200_000),
+      calculationVersion: "activity-file-lthr-v1",
+      provenance: {
+        activity_id: "bike-activity",
+        segment_id: expect.any(String),
+        source_series: "heart_rate",
+        source_effort_calculation_version: "best-effort-extraction-v1",
+        exact_window_start_timestamp_seconds: startedAt.getTime() / 1_000,
+        exact_window_end_timestamp_seconds: startedAt.getTime() / 1_000 + 1_200,
+        duration_seconds: 1_200,
+        window_coverage: 1,
+      },
+    });
     expect(result.segmentSet.segments[0]?.summary).toMatchObject({
       heartRateDistribution: {
         coverageSeconds: 1200,
@@ -662,37 +1037,34 @@ describe("analyzeParsedActivityFile", () => {
     );
   });
 
-  it("keeps the same-category LTHR high-water behavior", async () => {
+  it("returns a detected LTHR below the latest prior same-category observation", async () => {
     const startedAt = new Date("2026-01-01T10:00:00Z");
-    const result = await analyzeParsedActivityFile(
-      dbWithMetricResults([
-        [
-          {
-            referenceActivityId: "prior-bike-activity",
-            value: 165,
-            source: "derived",
-            method: "activity_file_lthr_detection",
-            provenance: {
-              activity_id: "prior-bike-activity",
-              derived_from: "activity_file_stream",
-            },
+    const db = dbWithMetricResults([
+      [
+        {
+          referenceActivityId: "prior-bike-activity",
+          value: 175,
+          source: "derived",
+          method: "activity_file_lthr_detection",
+          provenance: {
+            activity_id: "prior-bike-activity",
+            derived_from: "activity_file_stream",
           },
-        ],
-        [],
-      ]),
-      {
-        activityId: "bike-activity",
-        profileId: "profile-1",
-        parsedData: {
-          metadata: { startTime: startedAt, type: "cycling" },
-          summary: { totalTime: 1_200, totalDistance: 20_000, avgHeartRate: 170 },
-          records: sustainedHeartRateRecords(startedAt),
-          segments: explicitBikeSegment(startedAt, 1_200),
         },
+      ],
+    ]);
+    const result = await analyzeParsedActivityFile(db, {
+      activityId: "bike-activity",
+      profileId: "profile-1",
+      parsedData: {
+        metadata: { startTime: startedAt, type: "cycling" },
+        summary: { totalTime: 1_200, totalDistance: 20_000, avgHeartRate: 170 },
+        records: sustainedHeartRateRecords(startedAt, 174),
+        segments: explicitBikeSegment(startedAt, 1_200),
       },
-    );
+    });
 
-    expect(result.detectedLTHR).toBeNull();
+    expect(result.detectedLTHR?.valueBpm).toBe(165);
   });
 
   it("does not let untrusted LTHR suppress trusted activity detection", async () => {
@@ -722,7 +1094,7 @@ describe("analyzeParsedActivityFile", () => {
       },
     );
 
-    expect(result.detectedLTHR).toBe(162);
+    expect(result.detectedLTHR?.valueBpm).toBe(162);
   });
 
   it("projects only complete owned pool-length evidence and single-swim parent fields", async () => {
@@ -767,7 +1139,7 @@ describe("analyzeParsedActivityFile", () => {
       },
     });
 
-    expect(result.segmentSet.segments[0]?.summary.swim).toEqual({
+    expect(result.segmentSet.segments[0]?.summary.swim).toMatchObject({
       poolLengthMeters: 22.86,
       lengthCount: 2,
       strokeCount: 40,
@@ -777,6 +1149,100 @@ describe("analyzeParsedActivityFile", () => {
       pool_length_meters: 22.86,
       total_strokes: 40,
       avg_swolf: 47.5,
+    });
+  });
+
+  it("uses complete owned pool lengths to separate active swim time from rest", async () => {
+    const startedAt = new Date("2026-01-01T10:00:00Z");
+    const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "swim-timing-activity",
+      profileId: "profile-1",
+      refreshWeather: false,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "swimming" },
+        summary: { totalTime: 60, totalDistance: 30 },
+        records: [
+          { timestamp: startedAt, speed: 1 },
+          { timestamp: new Date(startedAt.getTime() + 30_000), speed: 1 },
+        ],
+        segments: [
+          {
+            sessionMessageIndex: 4,
+            role: "activity",
+            activity_category: "swim",
+            rawSport: "swimming",
+            startTime: startedAt,
+            endTime: new Date(startedAt.getTime() + 60_000),
+          },
+        ],
+        sessions: [
+          {
+            messageIndex: 4,
+            rawSport: "swimming",
+            startTime: startedAt,
+            endTime: new Date(startedAt.getTime() + 60_000),
+            totalElapsedTime: 60,
+            numActiveLengths: 1,
+            totalDistance: 30,
+            laps: [],
+            records: [],
+          },
+        ],
+        lengths: [
+          { sessionMessageIndex: 4, lengthType: "active", totalTimerTime: 30 },
+          { sessionMessageIndex: 4, lengthType: "rest", totalElapsedTime: 30 },
+        ],
+      },
+    });
+
+    expect(result.segmentSet.segments[0]?.summary.timing).toEqual({
+      timingCoverage: "complete",
+      activeMs: 30_000,
+      movingMs: 30_000,
+    });
+    expect(result.segmentSet.segments[0]?.summary.swim?.timingEvidence).toMatchObject({
+      status: "available",
+      calculationVersion: "swim-active-rest-duration-v1",
+      activeDurationSeconds: 30,
+      restDurationSeconds: 30,
+    });
+    expect(result.summaryValues).toMatchObject({
+      elapsed_ms: 60_000,
+      active_ms: 30_000,
+      moving_ms: 30_000,
+      timing_coverage: "complete",
+      normalized_speed_mps: 1,
+    });
+    expect(result.effortsToInsert).toEqual([]);
+    expect(
+      result.segmentSet.segments[0]?.summary.bestEffortExtractions?.find(
+        (extraction) => extraction.metric === "speed",
+      ),
+    ).toBeDefined();
+
+    const noHeartRateEvidence = {
+      lthr: { rows: [], truncated: false },
+      maxHr: { rows: [], truncated: false },
+    };
+    const model = buildAthletePerformanceModelFromEvidenceReads(
+      { athleteId: "profile-1", asOf: new Date("2026-01-02T00:00:00.000Z") },
+      {
+        effortReads: {
+          bike: { rows: [], truncated: false },
+          run: { rows: [], truncated: false },
+          swim: { rows: [], truncated: false },
+        },
+        swimmingCssProtocolRead: { rows: [], truncated: false },
+        heartRateReads: {
+          bike: noHeartRateEvidence,
+          run: noHeartRateEvidence,
+          swim: noHeartRateEvidence,
+        },
+      },
+    );
+    expect(model.categories.swim.css).toMatchObject({
+      status: "unavailable",
+      value: null,
     });
   });
 
@@ -835,7 +1301,7 @@ describe("analyzeParsedActivityFile", () => {
       },
     });
 
-    expect(result.segmentSet.segments[0]?.summary.swim).toEqual({ lengthCount: 2 });
+    expect(result.segmentSet.segments[0]?.summary.swim).toMatchObject({ lengthCount: 2 });
     expect(result.summaryValues).toMatchObject({
       pool_length_meters: null,
       total_strokes: null,
@@ -873,6 +1339,6 @@ describe("analyzeParsedActivityFile", () => {
       },
     );
 
-    expect(result.detectedLTHR).toBe(162);
+    expect(result.detectedLTHR?.valueBpm).toBe(162);
   });
 });

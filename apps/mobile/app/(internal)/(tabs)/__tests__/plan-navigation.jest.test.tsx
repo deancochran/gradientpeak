@@ -1,5 +1,6 @@
 import React from "react";
 
+import { createActivityQuantificationFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
 import {
   createHost,
   type HostProps,
@@ -481,8 +482,8 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
       targetCTL: 50,
       targetDate: "2026-08-01",
       dataPoints: [
-        { date: "2026-04-01", ctl: 45 },
-        { date: "2026-08-01", ctl: 55 },
+        { date: "2026-04-01", longTermLoad: 45 },
+        { date: "2026-08-01", longTermLoad: 55 },
       ],
       goal_assessments: [
         {
@@ -538,8 +539,8 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
         load_resolution_summary: {
           week_count: 2,
           capped_weeks: 1,
-          tss_ramp_capped_weeks: 1,
-          ctl_ramp_capped_weeks: 0,
+          load_ramp_capped_weeks: 1,
+          longTermLoad_ramp_capped_weeks: 0,
           demand_floor_weeks: 0,
           demand_floor_override_weeks: 0,
           recovery_adjusted_weeks: 0,
@@ -548,7 +549,7 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
           average_requested_to_final_delta_tss: 5,
           average_mpc_to_final_delta_tss: 0,
           max_requested_to_final_delta_tss: 15,
-          limiting_constraints: ["weekly_tss_ramp_cap"],
+          limiting_constraints: ["weekly_load_ramp_cap"],
           confidence: "medium",
           confidence_reasons: [],
         },
@@ -566,20 +567,20 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
         activity_category_load_states: [],
         recovery_segments: [],
         readiness_points: [
-          { date: "2026-04-01", readiness_score: 62, predicted_fitness_ctl: 45 },
-          { date: "2026-08-01", readiness_score: 72, predicted_fitness_ctl: 55 },
+          { date: "2026-04-01", readiness_score: 62, predicted_fitness_longTermLoad: 45 },
+          { date: "2026-08-01", readiness_score: 72, predicted_fitness_longTermLoad: 55 },
         ],
         microcycles: [
           {
             week_start_date: "2026-04-06",
             week_end_date: "2026-04-12",
             phase: "build",
-            planned_weekly_tss: 315,
-            projected_ctl: 48,
-            constraints: ["weekly_tss_ramp_cap"],
+            planned_weekly_load: 315,
+            projected_longTermLoad: 48,
+            constraints: ["weekly_load_ramp_cap"],
             recovery_active: false,
             demand_floor_tss: null,
-            demand_gap_unmet_weekly_tss: null,
+            demand_gap_unmet_weekly_load: null,
           },
         ],
         goal_forecasts: [
@@ -614,7 +615,7 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
         current_readiness: 68,
         current_status: "building",
         confidence: "medium",
-        confidence_reason_codes: ["inferred_scheduled_load"],
+        confidence_reason_codes: ["inferred_scheduled_common_load"],
         series: {
           actual: {
             id: "actual",
@@ -708,8 +709,8 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
             week_start: "2026-04-01",
             week_end: "2026-04-07",
             actual_load: 40,
-            scheduled_load: 52,
-            recommended_load: 60,
+            scheduled_common_load: 52,
+            recommended_common_load: 60,
             safety_cap: null,
             is_recovery_week: false,
             has_goal: false,
@@ -731,7 +732,7 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
       schedule_recommendation: {
         type: "add_load",
         label: "Adjust schedule",
-        description: "Add about 80 TSS this week or schedule one moderate session.",
+        description: "Add about 80 Load this week or schedule one moderate session.",
         target_date: "2026-04-06",
         target_week_start: "2026-04-01",
         target_load_delta: 80,
@@ -747,9 +748,12 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
                 activity_plan_id: "activity-plan-80",
                 name: "Threshold Builder",
                 activity_category: "run",
-                estimated_tss: 78,
+                common_load: createActivityQuantificationFixture({ load: 78 }).commonLoad,
+                estimated_duration: 78,
                 estimated_duration_seconds: 3600,
                 score: 114,
+                target_load_delta: 80,
+                absolute_load_gap: 2,
                 target_tss_delta: 80,
                 absolute_tss_gap: 2,
                 reason_codes: ["owned_plan", "near_target_tss", "same_activity_category"],
@@ -760,13 +764,13 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
         adjustment: {
           date: "2026-04-06",
           tss_delta: 80,
-          resulting_scheduled_load: 132,
+          resulting_scheduled_common_load: 132,
         },
         comparison_date: "2026-04-10",
         scheduled_readiness: 70,
         simulated_readiness: 75.5,
         readiness_delta: 5.5,
-        scheduled_load: 52,
+        scheduled_common_load: 52,
         simulated_load: 132,
         confidence: "medium",
       },
@@ -777,10 +781,10 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
       timeline: [
         {
           date: "2026-04-01",
-          recommended_load_tss: 42,
-          scheduled_load_tss: 38,
-          tentative_scheduled_load_tss: 0,
-          completed_load_tss: 0,
+          recommended_common_load: 42,
+          scheduled_common_load: 38,
+          tentative_scheduled_common_load: 0,
+          completed_common_load: 0,
         },
       ],
     },

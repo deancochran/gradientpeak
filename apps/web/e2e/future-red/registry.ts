@@ -971,20 +971,6 @@ export const futureJourneyBlueprints = [
     ],
   ),
   journey(
-    "metrics.css",
-    "athlete",
-    "/profile-metrics",
-    ["CSS-capable athlete", "atomic operation cleanup", "failure injection"],
-    [
-      testId("css-test-form", "both CSS efforts share one atomic form"),
-      testId("css-test-result", "one persisted CSS result is observable"),
-    ],
-    [
-      "Valid 400m/200m efforts create exactly one atomic CSS result.",
-      "Invalid ordering/zero, partial failure, retry, idempotency, and reload are asserted.",
-    ],
-  ),
-  journey(
     "efforts.curves",
     "athlete",
     "/activity-efforts",

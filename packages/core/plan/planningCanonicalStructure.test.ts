@@ -55,8 +55,7 @@ function createContext(overrides: Partial<PlanningContext> = {}): PlanningContex
           name: "Tempo",
           published: true,
           accessible: true,
-          estimatedTss: 50,
-          estimatedDurationSeconds: 3600,
+          prescriptionQuantification: null,
         },
         eventOverrides: {
           title: "Tempo day",

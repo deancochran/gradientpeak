@@ -3,6 +3,8 @@ import {
   COMMON_LOAD_HISTORY_RECENT_DAYS,
 } from "./common-load-history";
 
+export const COMMON_LOAD_FORECAST_POLICY_VERSION = "common_load_forecast_v1" as const;
+export const COMMON_LOAD_FORECAST_BASIS = "planned_forecast" as const;
 const calendarDatePattern = /^(\d{4})-(\d{2})-(\d{2})$/;
 const MAX_PROJECTION_DAYS = 366;
 
@@ -27,16 +29,22 @@ export type CommonLoadTrendProjectionPoint = {
 export type CommonLoadTrendProjectionResult =
   | {
       status: "complete";
+      basis: typeof COMMON_LOAD_FORECAST_BASIS;
+      policyVersion: typeof COMMON_LOAD_FORECAST_POLICY_VERSION;
       points: CommonLoadTrendProjectionPoint[];
     }
   | {
       status: "partial";
+      basis: typeof COMMON_LOAD_FORECAST_BASIS;
+      policyVersion: typeof COMMON_LOAD_FORECAST_POLICY_VERSION;
       reason: "incomplete_load" | "projection_limit_reached";
       stoppedAt: string;
       points: CommonLoadTrendProjectionPoint[];
     }
   | {
       status: "unavailable";
+      basis: typeof COMMON_LOAD_FORECAST_BASIS;
+      policyVersion: typeof COMMON_LOAD_FORECAST_POLICY_VERSION;
       reason: "invalid_input" | "nonconsecutive_days";
       stoppedAt?: string;
       points: [];
@@ -84,12 +92,16 @@ export function projectCommonLoadTrend(input: {
   baseline: CommonLoadTrendBaseline;
   days: readonly CommonLoadTrendProjectionDay[];
 }): CommonLoadTrendProjectionResult {
+  const resultIdentity = {
+    basis: COMMON_LOAD_FORECAST_BASIS,
+    policyVersion: COMMON_LOAD_FORECAST_POLICY_VERSION,
+  };
   if (
     !isCalendarDate(input.baseline.date) ||
     !isFiniteNonnegative(input.baseline.longTermLoad) ||
     !isFiniteNonnegative(input.baseline.recentLoad)
   ) {
-    return { status: "unavailable", reason: "invalid_input", points: [] };
+    return { status: "unavailable", ...resultIdentity, reason: "invalid_input", points: [] };
   }
   let expectedDate = addCalendarDay(input.baseline.date);
   let longTermLoad = input.baseline.longTermLoad;
@@ -102,17 +114,25 @@ export function projectCommonLoadTrend(input: {
     if (index >= MAX_PROJECTION_DAYS) {
       return {
         status: "partial",
+        ...resultIdentity,
         reason: "projection_limit_reached",
         stoppedAt: day.date,
         points,
       };
     }
     if (!isCalendarDate(day.date)) {
-      return { status: "unavailable", reason: "invalid_input", stoppedAt: day.date, points: [] };
+      return {
+        status: "unavailable",
+        ...resultIdentity,
+        reason: "invalid_input",
+        stoppedAt: day.date,
+        points: [],
+      };
     }
     if (day.date !== expectedDate) {
       return {
         status: "unavailable",
+        ...resultIdentity,
         reason: "nonconsecutive_days",
         stoppedAt: day.date,
         points: [],
@@ -121,6 +141,7 @@ export function projectCommonLoadTrend(input: {
     if (day.state === "unavailable") {
       return {
         status: "partial",
+        ...resultIdentity,
         reason: "incomplete_load",
         stoppedAt: day.date,
         points,
@@ -129,7 +150,13 @@ export function projectCommonLoadTrend(input: {
 
     const load = day.state === "known_zero" ? 0 : day.load;
     if (!isFiniteNonnegative(load)) {
-      return { status: "unavailable", reason: "invalid_input", stoppedAt: day.date, points: [] };
+      return {
+        status: "unavailable",
+        ...resultIdentity,
+        reason: "invalid_input",
+        stoppedAt: day.date,
+        points: [],
+      };
     }
     longTermLoad += longTermAlpha * (load - longTermLoad);
     recentLoad += recentAlpha * (load - recentLoad);
@@ -142,5 +169,5 @@ export function projectCommonLoadTrend(input: {
     expectedDate = addCalendarDay(day.date);
   }
 
-  return { status: "complete", points };
+  return { status: "complete", ...resultIdentity, points };
 }

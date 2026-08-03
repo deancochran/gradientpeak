@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
 
 import {
   getEventPrimaryMeta,
@@ -7,46 +8,6 @@ import {
   getEventTimeLabel,
   isAuthoritativeCompletedCalendarEvent,
 } from "../eventPresentation";
-
-const commonLoadProvenance = {
-  model: "gradientpeak_relative_load" as const,
-  version: "1" as const,
-  activity_category: "run" as const,
-  method: "run_pace_threshold" as const,
-  quality: {
-    source: "validated_test" as const,
-    observed_at: "2026-03-22T12:00:00.000Z",
-    confidence: "high" as const,
-    stale: false,
-    estimate: false,
-    calculation_version: "threshold-v1",
-    evidence_fingerprint: "calendar-quality",
-  },
-  thresholdEvidence: {
-    type: "threshold_speed_mps" as const,
-    value: 4,
-    unit: "meters_per_second" as const,
-    source: "validated_test" as const,
-    observedAt: "2026-03-22T12:00:00.000Z",
-    validAt: "2026-03-22T12:00:00.000Z",
-    freshness: "current" as const,
-    calculationVersion: "threshold-v1",
-    sourceFingerprint: "calendar-threshold",
-  },
-  evidenceFingerprint: "calendar-activity",
-  computedAsOf: "2026-03-23T12:00:00.000Z",
-};
-
-function availableCommonLoad(load: number, intensity: number) {
-  return {
-    status: "available" as const,
-    ...commonLoadProvenance,
-    load,
-    intensity,
-    contributingDurationSeconds: 3600,
-    estimated: false,
-  };
-}
 
 describe("calendar event presentation", () => {
   it("builds rich planned-event metadata without extra badge noise", () => {
@@ -57,17 +18,21 @@ describe("calendar event presentation", () => {
       activity_plan: {
         id: "plan-1",
         activity_category: "run",
-        authoritative_metrics: {
-          estimated_duration: 3600,
-          estimated_tss: 72,
-        },
-        common_load: availableCommonLoad(64, 0.8),
+        prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+          durationSeconds: 3_600,
+          estimated: false,
+        }),
         description: "Progressive tempo with a strong finish.",
       },
     };
 
     expect(getEventTimeLabel(event)).not.toBe("Scheduled");
-    expect(getEventPrimaryMeta(event)).toEqual(["Run", "~1h", "Load 64", "Intensity Tempo · 0.80"]);
+    expect(getEventPrimaryMeta(event)).toEqual([
+      "Run",
+      "~1h",
+      "Common Load 64",
+      "Normalized intensity 0.80",
+    ]);
     expect(getEventSupportingLine(event)).toBe("Progressive tempo with a strong finish.");
     expect(getEventStatusLabel(event)).toBeNull();
   });
@@ -81,14 +46,19 @@ describe("calendar event presentation", () => {
       activity_plan: {
         id: "plan-2",
         activity_category: "bike",
-        authoritative_metrics: {
-          estimated_tss: 88,
-        },
-        common_load: availableCommonLoad(56.25, 0.75),
+        prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+          activityCategory: "bike",
+          estimated: false,
+        }),
       },
     };
 
-    expect(getEventPrimaryMeta(event)).toEqual(["Bike", "Load 56", "Intensity Tempo · 0.75"]);
+    expect(getEventPrimaryMeta(event)).toEqual([
+      "Bike",
+      "~1h",
+      "Common Load 64",
+      "Normalized intensity 0.80",
+    ]);
     expect(getEventStatusLabel(event)).toBe("Completed");
   });
 
@@ -157,15 +127,13 @@ describe("calendar event presentation", () => {
     expect(getEventStatusLabel(event)).toBeNull();
   });
 
-  it("omits external and noncanonical load values instead of exposing legacy TSS", () => {
+  it("omits missing canonical load instead of exposing legacy metrics", () => {
     const event = {
       id: "planned-external-load",
       event_type: "planned",
       activity_plan: {
         id: "plan-external-load",
         activity_category: "run",
-        authoritative_metrics: { estimated_tss: 88 },
-        common_load: 88,
       },
     };
 
@@ -181,7 +149,6 @@ describe("calendar event presentation", () => {
       completed: true,
       activity_plan: {
         activity_category: "run",
-        authoritative_metrics: { estimated_tss: 55 },
       },
     };
 

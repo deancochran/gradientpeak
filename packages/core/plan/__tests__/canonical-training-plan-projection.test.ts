@@ -39,7 +39,7 @@ const projection: GoalAnchoredProjectionPlan = {
   name: "10K",
   start_date: "2026-01-05",
   end_date: "2026-01-11",
-  fitness_progression: { starting_ctl: 40 },
+  fitness_progression: { starting_longTermLoad: 40 },
   activity_distribution: { run: { target_percentage: 1 } },
   blocks: [
     {
@@ -49,7 +49,7 @@ const projection: GoalAnchoredProjectionPlan = {
       start_date: "2026-01-05",
       end_date: "2026-01-11",
       goal_ids: [],
-      target_weekly_tss_range: { min: 200, max: 250 },
+      target_weekly_load_range: { min: 200, max: 250 },
       target_sessions_per_week_range: { min: 3, max: 5 },
     },
   ],
@@ -84,7 +84,7 @@ describe("projectCanonicalTrainingPlan", () => {
     const dailyLoadPoints = [
       {
         date: "2026-01-06",
-        recommended_load_tss: 55,
+        recommended_load: 55,
         primary_focus: "endurance" as const,
         activity_category: "run" as const,
         confidence: "high" as const,
@@ -123,7 +123,7 @@ describe("projectCanonicalTrainingPlan", () => {
       dailyLoadPoints: [
         {
           date: "2026-01-05",
-          recommended_load_tss: 0,
+          recommended_load: 0,
           primary_focus: "rest",
           activity_category: "run",
           confidence: "high",
@@ -131,7 +131,7 @@ describe("projectCanonicalTrainingPlan", () => {
         },
         {
           date: "2026-01-06",
-          recommended_load_tss: 50,
+          recommended_load: 50,
           primary_focus: "endurance",
           activity_category: "run",
           confidence: "high",
@@ -169,7 +169,7 @@ describe("projectCanonicalTrainingPlan", () => {
       dailyLoadPoints: [
         {
           date: "2026-01-06",
-          recommended_load_tss: 50,
+          recommended_load: 50,
           primary_focus: "endurance",
           activity_category: "run",
           confidence: "high",
@@ -200,7 +200,7 @@ describe("projectCanonicalTrainingPlan", () => {
       dailyLoadPoints: [
         {
           date: "2026-01-06",
-          recommended_load_tss: 32.5,
+          recommended_load: 32.5,
           primary_focus: "race_specific",
           activity_category: "other",
           confidence: "high",

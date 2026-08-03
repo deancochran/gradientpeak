@@ -16,7 +16,7 @@ export type EffectiveLoadPeriod = {
 
 export type ServerEffectiveLoadSummary = {
   status: "complete" | "partial" | "known_zero" | "unavailable";
-  /** Server-composed common Load; never inferred from a local TSS field. */
+  /** Server-composed Common Load; never inferred from an unversioned local field. */
   commonLoad: number | null;
   intensity: number | null;
   completedLoad: number | null;

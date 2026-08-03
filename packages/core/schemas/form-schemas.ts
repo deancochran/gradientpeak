@@ -36,21 +36,17 @@ import {
   ageSchema,
   bioSchema,
   dobSchema,
-  ftpSchema,
   genderSchema,
   optionalAgeSchema,
   optionalBioSchema,
   optionalDobSchema,
-  optionalFtpSchema,
   optionalGenderSchema,
   optionalMaxHrSchema,
   optionalRestingHrSchema,
-  optionalThresholdHrSchema,
   optionalWeightKgSchema,
   profileQuickUpdateSchema,
   profileSettingsFormSchema,
   restingHrSchema,
-  thresholdHrSchema,
   weightKgSchema,
 } from "./forms/profile";
 import {
@@ -103,24 +99,20 @@ export {
   ageSchema,
   bioSchema,
   dobSchema,
-  ftpSchema,
   genderSchema,
   maxHrSchema,
   optionalAgeSchema,
   optionalBioSchema,
   optionalDobSchema,
-  optionalFtpSchema,
   optionalGenderSchema,
   optionalMaxHrSchema,
   optionalRestingHrSchema,
-  optionalThresholdHrSchema,
   optionalWeightKgSchema,
   profileAvatarUpdateSchema,
   profilePatchInputSchema,
   profileQuickUpdateSchema,
   profileSettingsFormSchema,
   restingHrSchema,
-  thresholdHrSchema,
   weightKgSchema,
 } from "./forms/profile";
 
@@ -290,30 +282,30 @@ export const optionalEstimatedDurationSchema = z.preprocess(
 );
 
 /**
- * Estimated TSS validation
+ * Estimated Common Load validation
  * Range: 1 - 1000 (covers easy recovery to multi-hour epic rides)
  */
-export const estimatedTssSchema = z.preprocess(
+export const estimatedCommonLoadSchema = z.preprocess(
   stringToNumber,
   z
     .number({
-      message: "TSS must be a number",
+      message: "Common Load must be a number",
     })
-    .min(1, "TSS must be at least 1")
-    .max(1000, "TSS must be less than 1000")
-    .positive("TSS must be positive"),
+    .min(1, "Common Load must be at least 1")
+    .max(1000, "Common Load must be less than 1000")
+    .positive("Common Load must be positive"),
 );
 
 /**
- * Optional estimated TSS
+ * Optional estimated Common Load
  */
-export const optionalEstimatedTssSchema = z.preprocess(
+export const optionalEstimatedLoadSchema = z.preprocess(
   (val) => stringToNumber(emptyStringToNull(val)),
   z
     .number()
-    .min(1, "TSS must be at least 1")
-    .max(1000, "TSS must be less than 1000")
-    .positive("TSS must be positive")
+    .min(1, "Common Load must be at least 1")
+    .max(1000, "Common Load must be less than 1000")
+    .positive("Common Load must be positive")
     .nullable(),
 );
 
@@ -552,32 +544,32 @@ export type TrainingPlanCreationConfigFormData = z.infer<
 >;
 
 /**
- * Weekly TSS target validation
+ * Weekly Common Load target validation
  * Range: 50 - 2000 (covers recovery weeks to peak training)
  */
-export const weeklyTssTargetSchema = z.preprocess(
+export const weeklyLoadTargetSchema = z.preprocess(
   stringToNumber,
   z
     .number({
-      message: "Weekly TSS must be a number",
+      message: "Weekly Common Load must be a number",
     })
-    .int("Weekly TSS must be a whole number")
-    .min(50, "Weekly TSS must be at least 50")
-    .max(2000, "Weekly TSS must be less than 2000")
-    .positive("Weekly TSS must be positive"),
+    .int("Weekly Common Load must be a whole number")
+    .min(50, "Weekly Common Load must be at least 50")
+    .max(2000, "Weekly Common Load must be less than 2000")
+    .positive("Weekly Common Load must be positive"),
 );
 
 /**
- * Optional weekly TSS target
+ * Optional weekly Common Load target
  */
-export const optionalWeeklyTssTargetSchema = z.preprocess(
+export const optionalWeeklyLoadTargetSchema = z.preprocess(
   (val) => stringToNumber(emptyStringToNull(val)),
   z
     .number()
-    .int("Weekly TSS must be a whole number")
-    .min(50, "Weekly TSS must be at least 50")
-    .max(2000, "Weekly TSS must be less than 2000")
-    .positive("Weekly TSS must be positive")
+    .int("Weekly Common Load must be a whole number")
+    .min(50, "Weekly Common Load must be at least 50")
+    .max(2000, "Weekly Common Load must be less than 2000")
+    .positive("Weekly Common Load must be positive")
     .nullable(),
 );
 
@@ -599,7 +591,7 @@ export type TrainingPlanBasicInfoFormData = z.infer<typeof trainingPlanBasicInfo
  * Step 2 of training plan creation wizard
  */
 export const trainingPlanWeeklyTargetsFormSchema = z.object({
-  weekly_tss_target: weeklyTssTargetSchema,
+  weekly_load_target: weeklyLoadTargetSchema,
   weekly_duration_target: optionalEstimatedDurationSchema,
   activities_per_week: z.preprocess(
     stringToNumber,
@@ -628,12 +620,12 @@ export const trainingPlanRecoveryRulesFormSchema = z.object({
       .max(8, "Recovery week must occur at least every 8 weeks")
       .positive(),
   ),
-  recovery_week_tss_percentage: z.preprocess(
+  recovery_week_load_percentage: z.preprocess(
     stringToNumber,
     z
       .number()
-      .min(30, "Recovery week TSS must be at least 30% of normal")
-      .max(80, "Recovery week TSS must be at most 80% of normal")
+      .min(30, "Recovery week Common Load must be at least 30% of normal")
+      .max(80, "Recovery week Common Load must be at most 80% of normal")
       .positive(),
   ),
   rest_days_per_week: z.preprocess(
@@ -654,21 +646,21 @@ export type TrainingPlanRecoveryRulesFormData = z.infer<typeof trainingPlanRecov
 export const trainingPlanPeriodizationFormSchema = z
   .object({
     use_periodization: z.boolean().default(false),
-    starting_ctl: z.preprocess(
+    starting_longTermLoad: z.preprocess(
       stringToNumber,
       z
         .number()
-        .min(0, "Starting CTL must be at least 0")
-        .max(200, "Starting CTL must be less than 200")
+        .min(0, "Starting LongTermLoad must be at least 0")
+        .max(200, "Starting LongTermLoad must be less than 200")
         .optional()
         .nullable(),
     ),
-    target_ctl: z.preprocess(
+    target_longTermLoad: z.preprocess(
       stringToNumber,
       z
         .number()
-        .min(0, "Target CTL must be at least 0")
-        .max(250, "Target CTL must be less than 250")
+        .min(0, "Target LongTermLoad must be at least 0")
+        .max(250, "Target LongTermLoad must be less than 250")
         .optional()
         .nullable(),
     ),
@@ -685,14 +677,14 @@ export const trainingPlanPeriodizationFormSchema = z
   .refine(
     (data) => {
       if (data.use_periodization) {
-        if (!data.starting_ctl || !data.target_ctl) return false;
-        return data.target_ctl > data.starting_ctl;
+        if (!data.starting_longTermLoad || !data.target_longTermLoad) return false;
+        return data.target_longTermLoad > data.starting_longTermLoad;
       }
       return true;
     },
     {
-      message: "Target CTL must be greater than starting CTL",
-      path: ["target_ctl"],
+      message: "Target LongTermLoad must be greater than starting LongTermLoad",
+      path: ["target_longTermLoad"],
     },
   );
 
@@ -709,21 +701,21 @@ export const trainingPlanCreateFormSchema = z
     description: optionalTrainingPlanDescriptionSchema,
 
     // Step 2: Weekly Targets
-    tss_min: z.preprocess(
+    load_min: z.preprocess(
       stringToNumber,
       z
-        .number({ message: "Min TSS must be a number" })
-        .int("Min TSS must be a whole number")
-        .min(50, "Min TSS must be at least 50")
-        .max(1000, "Min TSS must be less than 1000"),
+        .number({ message: "Min Common Load must be a number" })
+        .int("Min Common Load must be a whole number")
+        .min(50, "Min Common Load must be at least 50")
+        .max(1000, "Min Common Load must be less than 1000"),
     ),
-    tss_max: z.preprocess(
+    load_max: z.preprocess(
       stringToNumber,
       z
-        .number({ message: "Max TSS must be a number" })
-        .int("Max TSS must be a whole number")
-        .min(100, "Max TSS must be at least 100")
-        .max(1500, "Max TSS must be less than 1500"),
+        .number({ message: "Max Common Load must be a number" })
+        .int("Max Common Load must be a whole number")
+        .min(100, "Max Common Load must be at least 100")
+        .max(1500, "Max Common Load must be less than 1500"),
     ),
     activities_per_week: z.preprocess(
       stringToNumber,
@@ -754,8 +746,8 @@ export const trainingPlanCreateFormSchema = z
 
     // Step 4: Periodization (Optional)
     use_periodization: z.boolean().optional().default(false),
-    starting_ctl: optionalWeeklyTssTargetSchema,
-    target_ctl: optionalWeeklyTssTargetSchema,
+    starting_longTermLoad: optionalWeeklyLoadTargetSchema,
+    target_longTermLoad: optionalWeeklyLoadTargetSchema,
     ramp_rate: z.preprocess(
       stringToNumber,
       z
@@ -766,9 +758,9 @@ export const trainingPlanCreateFormSchema = z
         .nullable(),
     ),
   })
-  .refine((data) => data.tss_max > data.tss_min, {
-    message: "Max TSS must be greater than min TSS",
-    path: ["tss_max"],
+  .refine((data) => data.load_max > data.load_min, {
+    message: "Max Common Load must be greater than min Common Load",
+    path: ["load_max"],
   })
   .refine((data) => data.min_rest_days + data.max_consecutive_days <= 7, {
     message: "Training days + rest days must fit in a week (7 days)",
@@ -776,14 +768,14 @@ export const trainingPlanCreateFormSchema = z
   })
   .refine(
     (data) => {
-      if (data.use_periodization && data.starting_ctl && data.target_ctl) {
-        return data.target_ctl > data.starting_ctl;
+      if (data.use_periodization && data.starting_longTermLoad && data.target_longTermLoad) {
+        return data.target_longTermLoad > data.starting_longTermLoad;
       }
       return true;
     },
     {
-      message: "Target CTL must be greater than starting CTL",
-      path: ["target_ctl"],
+      message: "Target LongTermLoad must be greater than starting LongTermLoad",
+      path: ["target_longTermLoad"],
     },
   )
   .refine(
@@ -801,14 +793,15 @@ export const trainingPlanCreateFormSchema = z
   )
   .refine(
     (data) => {
-      // Validate reasonable TSS per activity (not too high)
-      const avgTSS = (data.tss_min + data.tss_max) / 2;
-      const avgPerActivity = avgTSS / data.activities_per_week;
-      return avgPerActivity <= 500; // Max 500 TSS per activity
+      // Validate reasonable Common Load per activity (not too high)
+      const avgCommonLoad = (data.load_min + data.load_max) / 2;
+      const avgPerActivity = avgCommonLoad / data.activities_per_week;
+      return avgPerActivity <= 500; // Max 500 Common Load per activity
     },
     {
-      message: "Average TSS per activity is unreasonably high (>500). Please adjust your targets.",
-      path: ["tss_max"],
+      message:
+        "Average Common Load per activity is unreasonably high (>500). Please adjust your targets.",
+      path: ["load_max"],
     },
   );
 
@@ -947,10 +940,6 @@ export const formSchemas = {
   // Profile fields
   weightKg: weightKgSchema,
   optionalWeightKg: optionalWeightKgSchema,
-  ftp: ftpSchema,
-  optionalFtp: optionalFtpSchema,
-  threshold_hr: thresholdHrSchema,
-  optionalThresholdHr: optionalThresholdHrSchema,
   optionalMaxHr: optionalMaxHrSchema,
   restingHr: restingHrSchema,
   optionalRestingHr: optionalRestingHrSchema,

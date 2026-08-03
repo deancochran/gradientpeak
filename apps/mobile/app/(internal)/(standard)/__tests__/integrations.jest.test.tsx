@@ -222,7 +222,7 @@ jest.mock("@/lib/api", () => ({
             setupRefresh: {
               fieldsFilled: [],
               fieldsKept: ["dob"],
-              fieldsUpdated: ["weight_kg", "ftp"],
+              fieldsUpdated: ["weight_kg"],
               keptExistingValues: true,
               status: "succeeded",
             },

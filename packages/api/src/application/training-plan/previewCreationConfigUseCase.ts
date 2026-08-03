@@ -44,10 +44,10 @@ type OverrideAudit = {
 };
 
 type ProjectionFeasibilityDiagnostics = {
-  tss_ramp_near_cap_weeks: number;
-  ctl_ramp_near_cap_weeks: number;
-  tss_ramp_clamp_weeks: number;
-  ctl_ramp_clamp_weeks: number;
+  load_ramp_near_cap_weeks: number;
+  longTermLoad_ramp_near_cap_weeks: number;
+  load_ramp_clamp_weeks: number;
+  longTermLoad_ramp_clamp_weeks: number;
   recovery_weeks: number;
 };
 
@@ -119,8 +119,8 @@ type EvaluateCreationConfigResult = {
     conflicts: CreationConflictItem[];
   };
   feasibilitySummary: CreationFeasibilitySafetySummary;
-  globalCtlOverride?: number;
-  globalAtlOverride?: number;
+  globalLongTermLoadOverride?: number;
+  globalRecentLoadOverride?: number;
 };
 
 export async function previewCreationConfigUseCase<
@@ -143,8 +143,8 @@ export async function previewCreationConfigUseCase<
     inferred_current_state?: InferredStateSnapshot;
     points: Array<{
       readiness_score?: number;
-      predicted_load_tss: number;
-      predicted_fatigue_atl: number;
+      predicted_load: number;
+      predicted_fatigue_recentLoad: number;
     }>;
     readiness_score?: number;
     readiness_confidence?: unknown;
@@ -169,8 +169,8 @@ export async function previewCreationConfigUseCase<
     minimalPlan: PreviewCreationConfigInput["minimal_plan"];
     loadBootstrapState: LoadBootstrapState;
     priorInferredSnapshot?: InferredStateSnapshot;
-    startingCtlOverride?: number;
-    startingAtlOverride?: number;
+    startingLongTermLoadOverride?: number;
+    startingRecentLoadOverride?: number;
     finalConfig: Awaited<ReturnType<TEvaluateCreationConfig>>["finalConfig"];
     contextSummary: Awaited<ReturnType<TEvaluateCreationConfig>>["contextSummary"];
   }) => {
@@ -239,8 +239,10 @@ export async function previewCreationConfigUseCase<
       minimalPlan: input.params.minimal_plan,
       loadBootstrapState: evaluation.loadBootstrapState,
       priorInferredSnapshot: priorInferredSnapshot ?? undefined,
-      startingCtlOverride: input.params.starting_ctl_override ?? evaluation.globalCtlOverride,
-      startingAtlOverride: input.params.starting_atl_override ?? evaluation.globalAtlOverride,
+      startingLongTermLoadOverride:
+        input.params.starting_longTermLoad_override ?? evaluation.globalLongTermLoadOverride,
+      startingRecentLoadOverride:
+        input.params.starting_recentLoad_override ?? evaluation.globalRecentLoadOverride,
       finalConfig: evaluation.finalConfig,
       contextSummary: evaluation.contextSummary,
     });

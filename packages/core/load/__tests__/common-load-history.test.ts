@@ -6,6 +6,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   aggregateCommonLoad,
+  COMMON_LOAD_FORECAST_BASIS,
+  COMMON_LOAD_FORECAST_POLICY_VERSION,
+  COMMON_LOAD_HISTORY_BASIS,
+  COMMON_LOAD_HISTORY_CALCULATION_MODEL,
+  COMMON_LOAD_HISTORY_CALCULATION_VERSION,
   COMMON_LOAD_HISTORY_MATURE_DAYS,
   COMMON_LOAD_HISTORY_POLICY_VERSION,
   COMMON_RELATIVE_LOAD_MODEL,
@@ -14,12 +19,16 @@ import {
   type CommonLoadMethod,
   type CommonLoadResult,
   commonLoadHistoryDayObservationSchema,
+  commonLoadHistoryReplayInputSchema,
   commonLoadHistoryResultSchema,
   commonLoadResultSchema,
+  projectCommonLoadTrend,
   replayCommonLoadHistory,
 } from "../index";
+import { commonLoadHistoryV1SyntheticFixture } from "./fixtures/common-load-history-v1";
 
 const planningDate = "2026-07-21";
+const historyAsOf = "2026-07-21T12:00:00.000Z";
 const computedAsOf = "2026-07-20T12:00:00.000Z";
 
 function addDays(date: string, days: number): string {
@@ -99,6 +108,7 @@ function knownZeroDays(count = 84, startOffset = -84): CommonLoadHistoryDayObser
     date: addDays(planningDate, startOffset + index),
     model: COMMON_RELATIVE_LOAD_MODEL,
     version: COMMON_RELATIVE_LOAD_VERSION,
+    calculatedAsOf: historyAsOf,
     coverageStatus: "complete" as const,
     evidenceFingerprints: [`source-${String(index).padStart(2, "0")}`],
   }));
@@ -115,12 +125,66 @@ function observedDays(load: number): CommonLoadHistoryDayObservation[] {
   }));
 }
 
-function replay(observations: CommonLoadHistoryDayObservation[]) {
-  return replayCommonLoadHistory({
+function replayInput(
+  observations: CommonLoadHistoryDayObservation[],
+  planningTimezone = "America/Los_Angeles",
+) {
+  return {
+    basis: COMMON_LOAD_HISTORY_BASIS,
+    calculationIdentity: {
+      model: COMMON_LOAD_HISTORY_CALCULATION_MODEL,
+      version: COMMON_LOAD_HISTORY_CALCULATION_VERSION,
+      asOf: historyAsOf,
+    },
     currentPlanningDate: planningDate,
-    planningTimezone: "America/Los_Angeles",
+    planningTimezone,
     observations,
-  });
+  };
+}
+
+function replay(
+  observations: CommonLoadHistoryDayObservation[],
+  planningTimezone = "America/Los_Angeles",
+) {
+  return replayCommonLoadHistory(replayInput(observations, planningTimezone));
+}
+
+function completeAggregate(load: number) {
+  const aggregate = aggregateCommonLoad([available(load)]);
+  if (aggregate.status !== "complete") throw new Error("Complete fixture aggregate expected");
+  return aggregate;
+}
+
+function observationsForDailyLoads(
+  dailyLoads: readonly { date: string; load: number }[],
+): CommonLoadHistoryDayObservation[] {
+  return dailyLoads.map(
+    (day): CommonLoadHistoryDayObservation =>
+      day.load === 0
+        ? {
+            state: "known_zero",
+            date: day.date,
+            model: COMMON_RELATIVE_LOAD_MODEL,
+            version: COMMON_RELATIVE_LOAD_VERSION,
+            calculatedAsOf: historyAsOf,
+            coverageStatus: "complete",
+            evidenceFingerprints: [`fixture:${day.date}:known-zero`],
+          }
+        : {
+            state: "observed",
+            date: day.date,
+            model: COMMON_RELATIVE_LOAD_MODEL,
+            version: COMMON_RELATIVE_LOAD_VERSION,
+            calculatedAsOf: historyAsOf,
+            coverageStatus: "complete",
+            aggregate: completeAggregate(day.load),
+            evidenceFingerprints: [`fixture:${day.date}:load:${day.load}`],
+          },
+  );
+}
+
+function expectWithin(actual: number, expected: number, tolerance: number) {
+  expect(Math.abs(actual - expected)).toBeLessThanOrEqual(tolerance);
 }
 
 describe("common Load history v1 replay", () => {
@@ -144,6 +208,12 @@ describe("common Load history v1 replay", () => {
       },
       identity: {
         policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
+        basis: COMMON_LOAD_HISTORY_BASIS,
+        calculationIdentity: {
+          model: COMMON_LOAD_HISTORY_CALCULATION_MODEL,
+          version: COMMON_LOAD_HISTORY_CALCULATION_VERSION,
+          asOf: historyAsOf,
+        },
         planningTimezone: "America/Los_Angeles",
         startDate: "2026-04-28",
         endDate: "2026-07-20",
@@ -174,17 +244,17 @@ describe("common Load history v1 replay", () => {
   });
 
   it("rejects a missing/nonconsecutive profile-local date", () => {
-    const days = knownZeroDays().map((day, index, allDays) =>
-      index === 40 ? { ...day, date: allDays[41]?.date ?? "" } : day,
+    const days = knownZeroDays().map((day, index) =>
+      index === 40 ? { ...day, date: "2026-01-01" } : day,
     );
 
     expect(replay(days)).toMatchObject({
       status: "unavailable",
       reason: "nonconsecutive_history",
       context: {
-        observationIndex: 40,
-        expectedDate: "2026-06-07",
-        actualDate: "2026-06-08",
+        observationIndex: 0,
+        expectedDate: "2026-04-28",
+        actualDate: "2026-01-01",
       },
     });
   });
@@ -199,11 +269,7 @@ describe("common Load history v1 replay", () => {
   });
 
   it("matches exact v1 constant-load recurrence fixtures without rounding", () => {
-    const result = replayCommonLoadHistory({
-      currentPlanningDate: planningDate,
-      planningTimezone: "America/Los_Angeles",
-      observations: observedDays(100),
-    });
+    const result = replay(observedDays(100));
     expect(result.status).toBe("available");
     if (result.status !== "available") throw new Error("Expected available history");
 
@@ -217,12 +283,127 @@ describe("common Load history v1 replay", () => {
     expect(result.points.at(-1)?.loadBalance).toBeCloseTo(-13.532913902425989, 12);
   });
 
+  it("matches the literal independently calculated v1 synthetic fixture", () => {
+    const result = replay(
+      observationsForDailyLoads(commonLoadHistoryV1SyntheticFixture.dailyLoads),
+      commonLoadHistoryV1SyntheticFixture.planningTimezone,
+    );
+    expect(result.status).toBe("available");
+    if (result.status !== "available") throw new Error("Available fixture history expected");
+
+    expect(result.policyVersion).toBe(commonLoadHistoryV1SyntheticFixture.policyVersion);
+    expect(result.identity).toMatchObject({
+      basis: commonLoadHistoryV1SyntheticFixture.basis,
+      calculationIdentity: commonLoadHistoryV1SyntheticFixture.historyCalculation,
+    });
+    for (const expectedPoint of commonLoadHistoryV1SyntheticFixture.expectedPoints) {
+      const actual = result.points.find((point) => point.date === expectedPoint.date);
+      if (actual === undefined) throw new Error(`Missing fixture point ${expectedPoint.date}`);
+      expect(actual.dailyLoad).toBe(expectedPoint.dailyLoad);
+      expectWithin(
+        actual.longTermLoad,
+        expectedPoint.longTermLoad,
+        commonLoadHistoryV1SyntheticFixture.absoluteTolerance,
+      );
+      expectWithin(
+        actual.recentLoad,
+        expectedPoint.recentLoad,
+        commonLoadHistoryV1SyntheticFixture.absoluteTolerance,
+      );
+      expectWithin(
+        actual.loadBalance,
+        expectedPoint.loadBalance,
+        commonLoadHistoryV1SyntheticFixture.absoluteTolerance,
+      );
+    }
+  });
+
+  it("replays the same facts, version, and as-of identity exactly on every invocation", () => {
+    const observations = observationsForDailyLoads(commonLoadHistoryV1SyntheticFixture.dailyLoads);
+
+    expect(replay(observations)).toEqual(replay(observations));
+  });
+
+  it("decays both states on an evidenced zero-load day", () => {
+    const result = replay(
+      observationsForDailyLoads(commonLoadHistoryV1SyntheticFixture.dailyLoads),
+    );
+    expect(result.status).toBe("available");
+    if (result.status !== "available") throw new Error("Available fixture history expected");
+    const impulse = result.points.find((point) => point.date === "2026-06-09");
+    const nextZero = result.points.find((point) => point.date === "2026-06-10");
+
+    expect(nextZero?.dailyLoad).toBe(0);
+    expect(nextZero?.longTermLoad).toBeLessThan(impulse?.longTermLoad ?? 0);
+    expect(nextZero?.recentLoad).toBeLessThan(impulse?.recentLoad ?? 0);
+  });
+
+  it("never lowers a current or later state when one complete daily input is larger", () => {
+    const baselineLoads = commonLoadHistoryV1SyntheticFixture.dailyLoads;
+    const baseline = replay(observationsForDailyLoads(baselineLoads));
+    expect(baseline.status).toBe("available");
+    if (baseline.status !== "available") throw new Error("Available baseline expected");
+
+    for (const testCase of [
+      { date: "2026-04-28", increment: 1 },
+      { date: "2026-06-09", increment: 25 },
+      { date: "2026-07-20", increment: 100 },
+    ]) {
+      const largerLoads = baselineLoads.map((day) =>
+        day.date === testCase.date ? { ...day, load: day.load + testCase.increment } : day,
+      );
+      const larger = replay(observationsForDailyLoads(largerLoads));
+      expect(larger.status).toBe("available");
+      if (larger.status !== "available") throw new Error("Available larger-input history expected");
+      const changedIndex = larger.points.findIndex((point) => point.date === testCase.date);
+      expect(changedIndex).toBeGreaterThanOrEqual(0);
+      for (let index = changedIndex; index < larger.points.length; index += 1) {
+        const baselinePoint = baseline.points[index];
+        const largerPoint = larger.points[index];
+        if (baselinePoint === undefined || largerPoint === undefined) {
+          throw new Error("Aligned replay points expected");
+        }
+        expect(largerPoint.longTermLoad).toBeGreaterThanOrEqual(baselinePoint.longTermLoad);
+        expect(largerPoint.recentLoad).toBeGreaterThanOrEqual(baselinePoint.recentLoad);
+      }
+    }
+  });
+
+  it("matches an independent recurrence for bounded deterministic daily sequences", () => {
+    const dates = commonLoadHistoryV1SyntheticFixture.dailyLoads.map((day) => day.date);
+    const sequences = [
+      commonLoadHistoryV1SyntheticFixture.dailyLoads.map((day) => day.load),
+      dates.map((_, index) => (index * 37) % 101),
+      dates.map((_, index) => (index % 9 === 0 ? 120 : index % 3 === 0 ? 15 : 0)),
+    ];
+
+    for (const loads of sequences) {
+      const result = replay(
+        observationsForDailyLoads(dates.map((date, index) => ({ date, load: loads[index] ?? 0 }))),
+      );
+      expect(result.status).toBe("available");
+      if (result.status !== "available") throw new Error("Available property replay expected");
+      let expectedLongTerm = 0;
+      let expectedRecent = 0;
+      for (const [index, load] of loads.entries()) {
+        expectedLongTerm += (1 - Math.exp(-1 / 42)) * (load - expectedLongTerm);
+        expectedRecent += (1 - Math.exp(-1 / 7)) * (load - expectedRecent);
+        const actual = result.points[index];
+        if (actual === undefined) throw new Error("Replay point expected");
+        expectWithin(actual.longTermLoad, expectedLongTerm, 1e-12);
+        expectWithin(actual.recentLoad, expectedRecent, 1e-12);
+        expectWithin(actual.loadBalance, expectedLongTerm - expectedRecent, 1e-12);
+      }
+    }
+  });
+
   it("uses longer replay history to establish a mature baseline while retaining an 84-day chart", () => {
     const observations = Array.from({ length: COMMON_LOAD_HISTORY_MATURE_DAYS }, (_, index) => ({
       state: "known_zero" as const,
       date: addDays(planningDate, -COMMON_LOAD_HISTORY_MATURE_DAYS + index),
       model: COMMON_RELATIVE_LOAD_MODEL,
       version: COMMON_RELATIVE_LOAD_VERSION,
+      calculatedAsOf: historyAsOf,
       coverageStatus: "complete" as const,
       evidenceFingerprints: [`source-${index}`],
     }));
@@ -255,28 +436,20 @@ describe("common Load history v1 replay", () => {
           : day,
     );
 
-    const result = replayCommonLoadHistory({
-      currentPlanningDate: planningDate,
-      planningTimezone: "America/Los_Angeles",
-      observations: days,
-    });
+    const result = replay(days);
     expect(result.status).toBe("available");
     if (result.status !== "available") throw new Error("Expected available history");
     expect(result.points.at(-1)?.dailyLoad).toBe(149);
   });
 
-  it("rejects partial and unavailable observations before CTL/ATL recurrence", () => {
+  it("rejects partial and unavailable observations before LongTermLoad/RecentLoad recurrence", () => {
     const partialAggregate = aggregateCommonLoad([available(100), unavailableActivity()]);
     expect(partialAggregate.status).toBe("partial");
     const partialDays = knownZeroDays().map(
       (day, index): CommonLoadHistoryDayObservation =>
         index === 20 ? { ...day, state: "observed", aggregate: partialAggregate } : day,
     );
-    const partialResult = replayCommonLoadHistory({
-      currentPlanningDate: planningDate,
-      planningTimezone: "UTC",
-      observations: partialDays,
-    });
+    const partialResult = replay(partialDays, "UTC");
     expect(partialResult).toMatchObject({
       status: "unavailable",
       reason: "incomplete_observation",
@@ -294,13 +467,7 @@ describe("common Load history v1 replay", () => {
             }
           : day,
     );
-    expect(
-      replayCommonLoadHistory({
-        currentPlanningDate: planningDate,
-        planningTimezone: "UTC",
-        observations: unavailableDays,
-      }),
-    ).toMatchObject({
+    expect(replay(unavailableDays, "UTC")).toMatchObject({
       status: "unavailable",
       reason: "incomplete_observation",
       context: { observationState: "unavailable", observationReason: "source_incomplete" },
@@ -327,6 +494,137 @@ describe("common Load history v1 replay", () => {
       status: "unavailable",
       reason: "incomplete_observation",
       context: { observationState: "known_zero", observationReason: "partial_source_day" },
+    });
+  });
+
+  it("propagates missing and partial evidence at deterministic replay boundaries", () => {
+    const complete = observationsForDailyLoads(commonLoadHistoryV1SyntheticFixture.dailyLoads);
+    for (const index of [0, 41, 83]) {
+      const missing = complete.filter((_, observationIndex) => observationIndex !== index);
+      expect(replay(missing)).toMatchObject({
+        status: "unavailable",
+        reason: "insufficient_history",
+        context: { receivedDays: 83 },
+      });
+
+      const partial = complete.map(
+        (day, observationIndex): CommonLoadHistoryDayObservation =>
+          observationIndex === index ? { ...day, coverageStatus: "partial" } : day,
+      );
+      expect(replay(partial)).toMatchObject({
+        status: "unavailable",
+        reason: "incomplete_observation",
+        context: { observationReason: "partial_source_day" },
+      });
+    }
+  });
+
+  it("does not admit a partial available result through the public output schema", () => {
+    const availableResult = replay(knownZeroDays());
+    expect(availableResult.status).toBe("available");
+    if (availableResult.status !== "available") throw new Error("Available history expected");
+
+    expect(
+      commonLoadHistoryResultSchema.safeParse({
+        ...availableResult,
+        coverageStatus: "partial",
+      }).success,
+    ).toBe(false);
+    expect(
+      commonLoadHistoryResultSchema.safeParse({
+        ...availableResult,
+        maturity: {
+          ...availableResult.maturity,
+          status: "provisional",
+          coverage: { completeDays: 83, partialDays: 1, ratio: 83 / 84 },
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects duplicate date and evidence identities before aggregation", () => {
+    const complete = observationsForDailyLoads(commonLoadHistoryV1SyntheticFixture.dailyLoads);
+    const duplicateDate = complete.map((day, index) =>
+      index === 1 ? { ...day, date: complete[0]?.date ?? "" } : day,
+    );
+    expect(replay(duplicateDate)).toMatchObject({
+      status: "unavailable",
+      reason: "duplicate_observation_identity",
+      context: { identityKind: "date" },
+    });
+
+    const firstEvidence = complete[0]?.evidenceFingerprints[0];
+    if (firstEvidence === undefined) throw new Error("Fixture evidence identity expected");
+    const duplicateEvidence = complete.map((day, index) =>
+      index === 1 ? { ...day, evidenceFingerprints: [firstEvidence] } : day,
+    );
+    expect(replay(duplicateEvidence)).toMatchObject({
+      status: "unavailable",
+      reason: "duplicate_observation_identity",
+      context: { identityKind: "evidence_fingerprint" },
+    });
+  });
+
+  it("rejects incompatible history calculation versions before replay", () => {
+    const input = replayInput(knownZeroDays());
+    expect(
+      replayCommonLoadHistory({
+        ...input,
+        calculationIdentity: { ...input.calculationIdentity, version: "2" },
+      }),
+    ).toEqual({
+      status: "unavailable",
+      policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
+      reason: "incompatible_history_version",
+      context: {
+        expectedModel: COMMON_LOAD_HISTORY_CALCULATION_MODEL,
+        expectedVersion: COMMON_LOAD_HISTORY_CALCULATION_VERSION,
+        actualModel: COMMON_LOAD_HISTORY_CALCULATION_MODEL,
+        actualVersion: "2",
+      },
+    });
+  });
+
+  it("rejects mixed calculation as-of identities and evidence calculated after as-of", () => {
+    const earlier = knownZeroDays().map((day, index) =>
+      index === 10 ? { ...day, calculatedAsOf: "2026-07-21T11:59:59.000Z" } : day,
+    );
+    expect(replay(earlier)).toMatchObject({
+      status: "unavailable",
+      reason: "incompatible_calculation_identity",
+      context: { date: earlier[10]?.date, expectedAsOf: historyAsOf },
+    });
+
+    const later = knownZeroDays().map((day, index) =>
+      index === 10 ? { ...day, calculatedAsOf: "2026-07-21T12:00:00.001Z" } : day,
+    );
+    expect(replay(later)).toMatchObject({
+      status: "unavailable",
+      reason: "evidence_after_as_of",
+      context: { date: later[10]?.date, asOf: historyAsOf },
+    });
+  });
+
+  it("keeps planned forecast output structurally separate from completed history", () => {
+    const historyInput = replayInput(knownZeroDays());
+    const forecast = projectCommonLoadTrend({
+      baseline: { date: "2026-07-20", longTermLoad: 40, recentLoad: 50 },
+      days: [{ date: "2026-07-21", state: "available", load: 70 }],
+    });
+
+    expect(forecast).toMatchObject({
+      basis: COMMON_LOAD_FORECAST_BASIS,
+      policyVersion: COMMON_LOAD_FORECAST_POLICY_VERSION,
+    });
+    expect(
+      commonLoadHistoryReplayInputSchema.safeParse({
+        ...historyInput,
+        basis: forecast.basis,
+      }).success,
+    ).toBe(false);
+    expect(replay(knownZeroDays())).toMatchObject({
+      status: "available",
+      identity: { basis: COMMON_LOAD_HISTORY_BASIS },
     });
   });
 
@@ -384,13 +682,10 @@ describe("common Load history v1 replay", () => {
         date: "2026-02-30",
       }).success,
     ).toBe(false);
-    expect(
-      replayCommonLoadHistory({
-        currentPlanningDate: planningDate,
-        planningTimezone: "Not/A_Timezone",
-        observations: knownZeroDays(),
-      }),
-    ).toMatchObject({ status: "unavailable", reason: "invalid_input" });
+    expect(replay(knownZeroDays(), "Not/A_Timezone")).toMatchObject({
+      status: "unavailable",
+      reason: "invalid_input",
+    });
   });
 
   it.each([
@@ -407,12 +702,6 @@ describe("common Load history v1 replay", () => {
           : day,
     );
 
-    expect(
-      replayCommonLoadHistory({
-        currentPlanningDate: planningDate,
-        planningTimezone: "UTC",
-        observations: days,
-      }),
-    ).toMatchObject({ status: "unavailable", reason: "invalid_input" });
+    expect(replay(days, "UTC")).toMatchObject({ status: "unavailable", reason: "invalid_input" });
   });
 });

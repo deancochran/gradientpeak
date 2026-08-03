@@ -6,17 +6,9 @@ import {
   toCanonicalUnitValue,
   toDisplayUnitValue,
 } from "../units";
-import { formatSecondsToMmSs } from "../utils/fitness-inputs";
-
-export const PROFILE_PERFORMANCE_THRESHOLD_BOUNDS = {
-  ftpWatts: { min: 20, max: 700 },
-  runningThresholdPaceSecondsPerKilometer: { min: 120, max: 1_200 },
-  swimCssSecondsPerHundredMeters: { min: 45, max: 600 },
-} as const;
 
 export const profileMetricTypeSchema = z.enum([
   "weight_kg",
-  "ftp",
   "resting_hr",
   "sleep_hours",
   "hrv_rmssd",
@@ -28,17 +20,12 @@ export const profileMetricTypeSchema = z.enum([
   "wellness_score",
   "max_hr",
   "lthr",
-  "threshold_pace_seconds_per_km",
-  "css_seconds_per_100m",
 ]);
 
 export type ProfileMetricType = z.infer<typeof profileMetricTypeSchema>;
 
 export const activityDerivedThresholdMetricTypes = [
-  "ftp",
   "lthr",
-  "threshold_pace_seconds_per_km",
-  "css_seconds_per_100m",
 ] as const satisfies readonly ProfileMetricType[];
 
 export type ActivityDerivedThresholdMetricType =
@@ -47,7 +34,7 @@ export type ActivityDerivedThresholdMetricType =
 export function isActivityDerivedThresholdMetricType(
   metricType: ProfileMetricType,
 ): metricType is ActivityDerivedThresholdMetricType {
-  return (activityDerivedThresholdMetricTypes as readonly ProfileMetricType[]).includes(metricType);
+  return metricType === "lthr";
 }
 
 export type ProfileMetricInputKind = "weight" | "integer" | "decimal" | "percent" | "scale";
@@ -74,16 +61,6 @@ export const profileMetricDefinitions = {
     max: 300,
     decimals: 1,
     defaultValue: 70,
-  },
-  ftp: {
-    type: "ftp",
-    label: "Bike FTP",
-    unit: "W",
-    inputKind: "integer",
-    min: PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.ftpWatts.min,
-    max: PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.ftpWatts.max,
-    decimals: 0,
-    defaultValue: 250,
   },
   resting_hr: {
     type: "resting_hr",
@@ -195,29 +172,9 @@ export const profileMetricDefinitions = {
     decimals: 0,
     defaultValue: 165,
   },
-  threshold_pace_seconds_per_km: {
-    type: "threshold_pace_seconds_per_km",
-    label: "Running threshold pace",
-    unit: "seconds_per_km",
-    inputKind: "integer",
-    min: PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.runningThresholdPaceSecondsPerKilometer.min,
-    max: PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.runningThresholdPaceSecondsPerKilometer.max,
-    decimals: 0,
-    defaultValue: 270,
-  },
-  css_seconds_per_100m: {
-    type: "css_seconds_per_100m",
-    label: "Swim CSS",
-    unit: "seconds_per_100m",
-    inputKind: "integer",
-    min: PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.swimCssSecondsPerHundredMeters.min,
-    max: PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.swimCssSecondsPerHundredMeters.max,
-    decimals: 0,
-    defaultValue: 100,
-  },
 } as const satisfies Record<ProfileMetricType, ProfileMetricDefinition>;
 
-export const profileMetricTypes = Object.keys(profileMetricDefinitions) as ProfileMetricType[];
+export const profileMetricTypes = profileMetricTypeSchema.options;
 
 export function getProfileMetricDefinition(metricType: ProfileMetricType): ProfileMetricDefinition {
   return profileMetricDefinitions[metricType];
@@ -245,12 +202,6 @@ function getConvertibleProfileMetricCanonicalValue(
 ): CanonicalUnitValue | null {
   if (metricType === "weight_kg") {
     return { dimension: "mass", value, unit: "kilograms" };
-  }
-  if (metricType === "threshold_pace_seconds_per_km") {
-    return { dimension: "running_pace", value, unit: "seconds_per_kilometer" };
-  }
-  if (metricType === "css_seconds_per_100m") {
-    return { dimension: "swimming_pace", value, unit: "seconds_per_100_meters" };
   }
   return null;
 }
@@ -300,9 +251,6 @@ export function formatProfileMetricValue(input: {
     if (canonical) {
       const display = toDisplayUnitValue(canonical, input.preferredUnitSystem ?? "metric");
       const label = displayUnitLabel(display.unit);
-      if (display.dimension === "running_pace" || display.dimension === "swimming_pace") {
-        return `${formatSecondsToMmSs(Math.round(display.value))} ${label}`;
-      }
       const decimals = getProfileMetricDefinition(input.metric_type).decimals;
       return `${Number(display.value.toFixed(decimals))} ${label}`;
     }
@@ -342,7 +290,7 @@ export type ProfileMetricManualOverride = z.infer<typeof profileMetricManualOver
 
 /**
  * Keeps metric-specific provenance extensible while reserving an explicit
- * manual override representation for canonical threshold selection.
+ * manual override representation for profile-observation provenance.
  */
 export const profileMetricProvenanceSchema = z
   .object({
@@ -398,12 +346,7 @@ export function addProfileMetricValueRangeIssue(
   const definition = getProfileMetricDefinition(data.metric_type);
   ctx.addIssue({
     code: z.ZodIssueCode.custom,
-    message:
-      data.metric_type === "threshold_pace_seconds_per_km"
-        ? `${definition.label} must be between ${formatSecondsToMmSs(definition.min)} and ${formatSecondsToMmSs(definition.max)} /km`
-        : data.metric_type === "css_seconds_per_100m"
-          ? `${definition.label} must be between ${formatSecondsToMmSs(definition.min)} and ${formatSecondsToMmSs(definition.max)} /100m`
-          : `${definition.label} must be between ${definition.min} and ${definition.max} ${definition.unit}`,
+    message: `${definition.label} must be between ${definition.min} and ${definition.max} ${definition.unit}`,
     path: ["value"],
   });
 }

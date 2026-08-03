@@ -398,7 +398,7 @@ export function buildActivityInsights({
           })),
         },
         {
-          label: "Long-term Load (CTL)",
+          label: "Long-term Load",
           tone: "blue",
           points: loadPoints.map((point) => ({
             label: formatDate(point.date),
@@ -407,7 +407,7 @@ export function buildActivityInsights({
           })),
         },
         {
-          label: "Recent Load (ATL)",
+          label: "Recent Load",
           tone: "green",
           points: loadPoints.map((point) => ({
             label: formatDate(point.date),
@@ -416,7 +416,7 @@ export function buildActivityInsights({
           })),
         },
         {
-          label: "Load Balance (TSB)",
+          label: "Load Balance",
           tone: "purple",
           points: loadPoints.map((point) => ({
             label: formatDate(point.date),
@@ -431,15 +431,15 @@ export function buildActivityInsights({
           value: latestLoad ? formatNumber(latestLoad.dailyLoad, 1) : "--",
         },
         {
-          label: "Long-term Load (CTL)",
+          label: "Long-term Load",
           value: latestLoad ? formatNumber(latestLoad.longTermLoad, 1) : "--",
         },
         {
-          label: "Recent Load (ATL)",
+          label: "Recent Load",
           value: latestLoad ? formatNumber(latestLoad.recentLoad, 1) : "--",
         },
         {
-          label: "Load Balance (TSB)",
+          label: "Load Balance",
           value: latestLoad ? formatNumber(latestLoad.loadBalance, 1) : "--",
         },
         {

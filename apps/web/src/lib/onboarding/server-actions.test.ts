@@ -69,12 +69,12 @@ describe("parseOnboardingFormData", () => {
     });
   });
 
-  it("rejects invalid metric ranges and incomplete goals", () => {
+  it("rejects invalid baseline ranges and incomplete goals", () => {
     const form = new FormData();
     form.set("full_name", "Web Athlete");
     form.set("username", "web_athlete");
     form.set("experience_level", "advanced");
-    form.set("ftp", "701");
+    form.set("max_hr", "251");
     form.set("goal_title", "Incomplete goal");
 
     expect(() => parseOnboardingFormData(form)).toThrow();
@@ -85,7 +85,7 @@ describe("parseOnboardingFormData", () => {
     form.set("full_name", "Web Athlete");
     form.set("username", "web_athlete");
     form.set("experience_level", "skip");
-    form.set("ftp_source", "imported");
+    form.set("resting_hr_source", "imported");
 
     expect(parseOnboardingFormData(form).profile).toMatchObject({
       baseline_field_sources: {},

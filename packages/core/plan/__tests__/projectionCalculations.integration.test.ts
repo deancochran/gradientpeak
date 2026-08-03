@@ -21,14 +21,14 @@ describe("Readiness Score Bug Fix - End-to-End Integration", () => {
           phase: "build",
           start_date: "2026-03-01",
           end_date: "2026-05-10",
-          target_weekly_tss_range: { min: 350, max: 420 },
+          target_weekly_load_range: { min: 350, max: 420 },
         },
         {
           name: "Taper",
           phase: "taper",
           start_date: "2026-05-11",
           end_date: "2026-05-24",
-          target_weekly_tss_range: { min: 150, max: 200 },
+          target_weekly_load_range: { min: 150, max: 200 },
         },
       ],
       goals: [
@@ -47,9 +47,9 @@ describe("Readiness Score Bug Fix - End-to-End Integration", () => {
           ],
         },
       ],
-      starting_ctl: 50,
-      starting_atl: 48,
-      starting_tsb: 2,
+      starting_longTermLoad: 50,
+      starting_recentLoad: 48,
+      starting_loadBalance: 2,
     });
 
     const goalAssessment = projection.goal_assessments?.find((g) => g.goal_id === "marathon-1");
@@ -83,7 +83,7 @@ describe("Readiness Score Bug Fix - End-to-End Integration", () => {
           phase: "build",
           start_date: "2026-03-01",
           end_date: "2026-03-20",
-          target_weekly_tss_range: { min: 350, max: 420 },
+          target_weekly_load_range: { min: 350, max: 420 },
         },
       ],
       goals: [
@@ -116,9 +116,9 @@ describe("Readiness Score Bug Fix - End-to-End Integration", () => {
           ],
         },
       ],
-      starting_ctl: 65,
-      starting_atl: 60,
-      starting_tsb: 5,
+      starting_longTermLoad: 65,
+      starting_recentLoad: 60,
+      starting_loadBalance: 5,
     });
 
     const marathon1 = projection.goal_assessments?.find((g) => g.goal_id === "marathon-1");
@@ -153,7 +153,7 @@ describe("Readiness Score Bug Fix - End-to-End Integration", () => {
           phase: "build",
           start_date: "2026-03-01",
           end_date: "2026-03-20",
-          target_weekly_tss_range: { min: 350, max: 420 },
+          target_weekly_load_range: { min: 350, max: 420 },
         },
       ],
       goals: [
@@ -186,9 +186,9 @@ describe("Readiness Score Bug Fix - End-to-End Integration", () => {
           ],
         },
       ],
-      starting_ctl: 65,
-      starting_atl: 60,
-      starting_tsb: 5,
+      starting_longTermLoad: 65,
+      starting_recentLoad: 60,
+      starting_loadBalance: 5,
     });
 
     const marathon = projection.goal_assessments?.find((g) => g.goal_id === "marathon-1");
@@ -222,7 +222,7 @@ describe("Readiness Score Bug Fix - End-to-End Integration", () => {
           phase: "build",
           start_date: "2026-03-01",
           end_date: "2026-03-30",
-          target_weekly_tss_range: { min: 300, max: 400 },
+          target_weekly_load_range: { min: 300, max: 400 },
         },
       ],
       goals: [
@@ -241,9 +241,9 @@ describe("Readiness Score Bug Fix - End-to-End Integration", () => {
           ],
         },
       ],
-      starting_ctl: 50,
-      starting_atl: 48,
-      starting_tsb: 2,
+      starting_longTermLoad: 50,
+      starting_recentLoad: 48,
+      starting_loadBalance: 2,
     });
 
     const marathonProjection = buildDeterministicProjectionPayload({
@@ -257,7 +257,7 @@ describe("Readiness Score Bug Fix - End-to-End Integration", () => {
           phase: "build",
           start_date: "2026-03-01",
           end_date: "2026-03-30",
-          target_weekly_tss_range: { min: 300, max: 400 },
+          target_weekly_load_range: { min: 300, max: 400 },
         },
       ],
       goals: [
@@ -276,9 +276,9 @@ describe("Readiness Score Bug Fix - End-to-End Integration", () => {
           ],
         },
       ],
-      starting_ctl: 50,
-      starting_atl: 48,
-      starting_tsb: 2,
+      starting_longTermLoad: 50,
+      starting_recentLoad: 48,
+      starting_loadBalance: 2,
     });
 
     const fiveKGoal = fiveKProjection.goal_assessments?.find((g) => g.goal_id === "5k-1");
@@ -310,14 +310,14 @@ describe("Readiness Score Bug Fix - End-to-End Integration", () => {
           phase: "build",
           start_date: "2026-03-01",
           end_date: "2026-05-10",
-          target_weekly_tss_range: { min: 400, max: 500 },
+          target_weekly_load_range: { min: 400, max: 500 },
         },
         {
           name: "Taper",
           phase: "taper",
           start_date: "2026-05-11",
           end_date: "2026-05-24",
-          target_weekly_tss_range: { min: 150, max: 200 },
+          target_weekly_load_range: { min: 150, max: 200 },
         },
       ],
       goals: [
@@ -336,9 +336,9 @@ describe("Readiness Score Bug Fix - End-to-End Integration", () => {
           ],
         },
       ],
-      starting_ctl: 60,
-      starting_atl: 58,
-      starting_tsb: 2,
+      starting_longTermLoad: 60,
+      starting_recentLoad: 58,
+      starting_loadBalance: 2,
     });
 
     const goalAssessment = projection.goal_assessments?.find((g) => g.goal_id === "easy-goal");
@@ -375,14 +375,14 @@ describe("Readiness Score Bug Fix - Performance", () => {
           phase: "build",
           start_date: "2026-03-01",
           end_date: "2026-05-10",
-          target_weekly_tss_range: { min: 350, max: 420 },
+          target_weekly_load_range: { min: 350, max: 420 },
         },
         {
           name: "Taper",
           phase: "taper",
           start_date: "2026-05-11",
           end_date: "2026-05-24",
-          target_weekly_tss_range: { min: 150, max: 200 },
+          target_weekly_load_range: { min: 150, max: 200 },
         },
       ],
       goals: [
@@ -429,9 +429,9 @@ describe("Readiness Score Bug Fix - Performance", () => {
           ],
         },
       ],
-      starting_ctl: 50,
-      starting_atl: 48,
-      starting_tsb: 2,
+      starting_longTermLoad: 50,
+      starting_recentLoad: 48,
+      starting_loadBalance: 2,
     });
 
     const endTime = Date.now();
@@ -462,14 +462,14 @@ describe("Readiness Score Bug Fix - Determinism", () => {
           phase: "build" as const,
           start_date: "2026-03-01",
           end_date: "2026-05-10",
-          target_weekly_tss_range: { min: 350, max: 420 },
+          target_weekly_load_range: { min: 350, max: 420 },
         },
         {
           name: "Taper",
           phase: "taper" as const,
           start_date: "2026-05-11",
           end_date: "2026-05-24",
-          target_weekly_tss_range: { min: 150, max: 200 },
+          target_weekly_load_range: { min: 150, max: 200 },
         },
       ],
       goals: [
@@ -488,9 +488,9 @@ describe("Readiness Score Bug Fix - Determinism", () => {
           ],
         },
       ],
-      starting_ctl: 50,
-      starting_atl: 48,
-      starting_tsb: 2,
+      starting_longTermLoad: 50,
+      starting_recentLoad: 48,
+      starting_loadBalance: 2,
     };
 
     const projection1 = buildDeterministicProjectionPayload(input);

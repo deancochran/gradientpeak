@@ -46,7 +46,7 @@ describe("periodization benchmarks", () => {
     activity_category: "run",
   });
   const feasibility = assessFeasibility({
-    currentCtl: 45,
+    currentLongTermLoad: 45,
     weeksToPeak: 52,
     goals: normalizedGoals,
     resolvedDemands,
@@ -58,7 +58,7 @@ describe("periodization benchmarks", () => {
       generateReferenceTrajectory({
         startDate: "2026-01-01",
         endDate: "2026-12-31",
-        currentCtl: 45,
+        currentLongTermLoad: 45,
         goals: normalizedGoals,
         resolvedDemands,
         preferenceProfile: defaultAthletePreferenceProfile,
@@ -84,13 +84,13 @@ describe("periodization benchmarks", () => {
             phase: "build",
             start_date: "2026-01-01",
             end_date: "2026-12-31",
-            target_weekly_tss_range: { min: 320, max: 420 },
+            target_weekly_load_range: { min: 320, max: 420 },
           },
         ],
         goals: benchmarkGoals,
-        starting_ctl: 45,
-        starting_atl: 42,
-        starting_tsb: 3,
+        starting_longTermLoad: 45,
+        starting_recentLoad: 42,
+        starting_loadBalance: 3,
         preference_profile: defaultAthletePreferenceProfile,
       });
     }, 5);

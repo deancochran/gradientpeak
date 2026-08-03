@@ -61,9 +61,9 @@ describe("buildActivityInsights common load history", () => {
       value: "84.0",
       rows: [
         { label: "Daily Load", value: "84.0" },
-        { label: "Long-term Load (CTL)", value: "86.0" },
-        { label: "Recent Load (ATL)", value: "88.0" },
-        { label: "Load Balance (TSB)", value: "-2.0" },
+        { label: "Long-term Load", value: "86.0" },
+        { label: "Recent Load", value: "88.0" },
+        { label: "Load Balance", value: "-2.0" },
         { label: "History maturity", value: "Provisional" },
         { label: "History coverage", value: "partial" },
       ],
@@ -73,9 +73,9 @@ describe("buildActivityInsights common load history", () => {
     expect(insight?.points).toHaveLength(84);
     expect(insight?.series?.map(({ label }) => label)).toEqual([
       "Daily Load",
-      "Long-term Load (CTL)",
-      "Recent Load (ATL)",
-      "Load Balance (TSB)",
+      "Long-term Load",
+      "Recent Load",
+      "Load Balance",
     ]);
     expect(insight?.series?.every(({ points: seriesPoints }) => seriesPoints.length === 84)).toBe(
       true,

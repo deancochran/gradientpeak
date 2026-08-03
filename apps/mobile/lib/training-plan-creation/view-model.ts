@@ -1,10 +1,11 @@
 import {
   addDaysDateOnlyUtc,
+  buildDailyLoadByDateSeries,
   buildDailyLoadRecommendation,
-  buildDailyTssByDateSeries,
-  replayTrainingLoadByDate,
+  replayCommonLoadFitnessByDate,
   type TrainingPlanCreationPreview,
 } from "@repo/core";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import type { DailyTrainingAdjustmentPoint } from "@/lib/training-path/dailyTrainingPathModel";
 import {
   BUILDER_WEEKDAY_LABELS,
@@ -17,6 +18,14 @@ import {
 } from "./formatters";
 import { selectBuilderGoalBlueprints } from "./selectors";
 import type { TrainingPlanBuilderSession, TrainingPlanBuilderState } from "./types";
+
+function activityPlanLoad(activityPlan: TrainingPlanBuilderSession["activityPlan"]): number {
+  return getActivityPlanQuantitySummary(activityPlan).commonLoad ?? 0;
+}
+
+function activityPlanDuration(activityPlan: TrainingPlanBuilderSession["activityPlan"]): number {
+  return getActivityPlanQuantitySummary(activityPlan).durationSeconds ?? 0;
+}
 
 export type BuilderViewModelTarget =
   | { type: "addSession" }
@@ -43,10 +52,10 @@ export interface BuilderWeeklyCanvasRowViewModel {
   weekIndex: number;
   assignedSessionCount: number;
   sessionCount: number;
-  estimatedTss: number;
+  estimatedCommonLoad: number;
   estimatedDurationSeconds: number;
-  tssBarPercent: number;
-  recommendedTssMarkerPercent: number | null;
+  loadBarPercent: number;
+  recommendedLoadMarkerPercent: number | null;
   targetDeltaLabel: string | null;
 }
 
@@ -55,7 +64,7 @@ export interface BuilderTimelineSessionViewModel {
   dayIndex: number;
   dayLabel: string;
   title: string;
-  estimatedTss: number;
+  estimatedCommonLoad: number;
   assigned: boolean;
 }
 
@@ -69,10 +78,10 @@ export interface BuilderTimelineWeekViewModel {
   weekIndex: number;
   label: string;
   phaseLabel: "Base" | "Build" | "Peak" | "Taper";
-  estimatedTss: number;
+  estimatedCommonLoad: number;
   plannedLoadPercent: number;
   recommendedLoadPercent: number | null;
-  recommendedTss: number | null;
+  recommendedLoad: number | null;
   targetDeltaLabel: string | null;
   sessions: BuilderTimelineSessionViewModel[];
   goals: BuilderTimelineGoalMarkerViewModel[];
@@ -110,11 +119,11 @@ export interface BuilderDailyTrainingPathChartViewModel {
 }
 
 export interface BuilderRecommendedLoadViewModel {
-  weeklyTss: number;
-  rangeMinTss: number;
-  rangeMaxTss: number;
-  baselineWeeklyTss: number | null;
-  plannedAverageTss: number;
+  weeklyLoad: number;
+  rangeMinLoad: number;
+  rangeMaxLoad: number;
+  baselineWeeklyLoad: number | null;
+  plannedAverageLoad: number;
   markerPercent: number;
   label: string;
   guidance: string;
@@ -137,9 +146,9 @@ export interface BuilderActionRecommendationViewModel {
 }
 
 export interface BuilderCurrentBaselineViewModel {
-  ctl: number | null;
-  atl: number | null;
-  tsb: number | null;
+  longTermLoad: number | null;
+  recentLoad: number | null;
+  loadBalance: number | null;
   sourceLabel: string;
   summaryLabel: string;
   detail: string;
@@ -186,7 +195,7 @@ export interface BuilderPlanCreationViewModel {
   latestOffsetDays: number;
   durationDays: number;
   assignedSessionCount: number;
-  totalEstimatedTss: number;
+  totalEstimatedLoad: number;
   totalEstimatedDurationSeconds: number;
   goalCount: number;
   firstUnassignedSession: TrainingPlanBuilderSession | null;
@@ -225,20 +234,17 @@ export function deriveBuilderPlanCreationViewModel({
     (latest, session) => Math.max(latest, session.offsetDays),
     -1,
   );
-  const totalEstimatedTss =
-    creationPreview?.totalEstimatedTss ??
-    sessions.reduce((total, session) => total + (session.activityPlan?.estimatedTss ?? 0), 0);
+  const totalEstimatedLoad =
+    creationPreview?.totalEstimatedLoad ??
+    sessions.reduce((total, session) => total + activityPlanLoad(session.activityPlan), 0);
   const totalEstimatedDurationSeconds =
     creationPreview?.totalEstimatedDurationSeconds ??
-    sessions.reduce(
-      (total, session) => total + (session.activityPlan?.estimatedDurationSeconds ?? 0),
-      0,
-    );
+    sessions.reduce((total, session) => total + activityPlanDuration(session.activityPlan), 0);
   const assignedSessionCount = sessions.filter((session) => session.activityPlan !== null).length;
   const goalCount = selectBuilderGoalBlueprints(state).length;
   const durationDays = latestOffsetDays >= 0 ? latestOffsetDays + 1 : 0;
   const maxTss = sessions.reduce(
-    (max, session) => Math.max(max, session.activityPlan?.estimatedTss ?? 0),
+    (max, session) => Math.max(max, activityPlanLoad(session.activityPlan)),
     0,
   );
   const firstUnassignedSession = sessions.find((session) => session.activityPlan === null) ?? null;
@@ -260,7 +266,7 @@ export function deriveBuilderPlanCreationViewModel({
     latestOffsetDays,
     durationDays,
     assignedSessionCount,
-    totalEstimatedTss,
+    totalEstimatedLoad,
     totalEstimatedDurationSeconds,
     goalCount,
     firstUnassignedSession,
@@ -305,29 +311,32 @@ export function deriveBuilderPlanCreationViewModel({
     recommendedLoad,
     dailyTrainingPathChart: deriveDailyTrainingPathChart({ recommendedLoad, sessions, state }),
     sessionCanvasRows: sessions.map((session) => {
-      const tss = session.activityPlan?.estimatedTss ?? 0;
+      const load = activityPlanLoad(session.activityPlan);
       return {
         session,
         dayLabel: `${session.offsetDays + 1}`,
-        heightPercent: maxTss > 0 ? Math.max(24, Math.round((tss / maxTss) * 100)) : 24,
+        heightPercent: maxTss > 0 ? Math.max(24, Math.round((load / maxTss) * 100)) : 24,
         assigned: session.activityPlan !== null,
       };
     }),
     timelineWeeks: deriveTimelineWeeks({ creationPreview, recommendedLoad, sessions, state }),
     weeklyCanvasRows: (creationPreview?.weeks ?? []).slice(0, 6).map((week) => {
-      const scale = recommendedLoad ? Math.max(700, recommendedLoad.rangeMaxTss * 1.15) : 700;
+      const scale = recommendedLoad ? Math.max(700, recommendedLoad.rangeMaxLoad * 1.15) : 700;
       return {
         weekIndex: week.weekIndex,
         assignedSessionCount: week.assignedSessionCount,
         sessionCount: week.sessionCount,
-        estimatedTss: week.estimatedTss,
+        estimatedCommonLoad: week.estimatedCommonLoad,
         estimatedDurationSeconds: week.estimatedDurationSeconds,
-        tssBarPercent: Math.min(100, Math.max(6, Math.round((week.estimatedTss / scale) * 100))),
-        recommendedTssMarkerPercent: recommendedLoad
-          ? Math.min(100, Math.max(6, Math.round((recommendedLoad.weeklyTss / scale) * 100)))
+        loadBarPercent: Math.min(
+          100,
+          Math.max(6, Math.round((week.estimatedCommonLoad / scale) * 100)),
+        ),
+        recommendedLoadMarkerPercent: recommendedLoad
+          ? Math.min(100, Math.max(6, Math.round((recommendedLoad.weeklyLoad / scale) * 100)))
           : null,
         targetDeltaLabel: recommendedLoad
-          ? formatTargetDelta(week.estimatedTss, recommendedLoad)
+          ? formatTargetDelta(week.estimatedCommonLoad, recommendedLoad)
           : null,
       };
     }),
@@ -366,52 +375,52 @@ function deriveDailyTrainingPathChart({
   );
   const startDate = state.scheduling.startDate;
   const endDate = addDaysDateOnlyUtc(startDate, durationDays - 1);
-  const plannedTssByDate = new Map<string, number>();
+  const plannedLoadByDate = new Map<string, number>();
   for (const session of sessions) {
     const date = addDaysDateOnlyUtc(startDate, session.offsetDays);
-    plannedTssByDate.set(
+    plannedLoadByDate.set(
       date,
-      (plannedTssByDate.get(date) ?? 0) + (session.activityPlan?.estimatedTss ?? 0),
+      (plannedLoadByDate.get(date) ?? 0) + activityPlanLoad(session.activityPlan),
     );
   }
-  const targetTssByDate = buildRecommendedTssByDate({
+  const targetLoadByDate = buildRecommendedTssByDate({
     durationDays,
-    recommendedWeeklyTss: recommendedLoad?.weeklyTss ?? 0,
+    recommendedWeeklyTss: recommendedLoad?.weeklyLoad ?? 0,
     sessions,
     state,
   });
-  const plannedSeries = buildDailyTssByDateSeries({
+  const plannedSeries = buildDailyLoadByDateSeries({
     startDate,
     endDate,
-    tssByDate: plannedTssByDate,
+    loadByDate: plannedLoadByDate,
   });
-  const targetSeries = buildDailyTssByDateSeries({
+  const targetSeries = buildDailyLoadByDateSeries({
     startDate,
     endDate,
-    tssByDate: targetTssByDate,
+    loadByDate: targetLoadByDate,
   });
-  const initialCTL = state.athleteContext.physiology.currentFitnessCtl.value;
-  const initialATL = state.athleteContext.physiology.currentFatigueAtl.value;
-  const hasFitnessBaseline = initialCTL !== null && initialATL !== null;
+  const initialLongTermLoad = state.athleteContext.physiology.currentFitnessLongTermLoad.value;
+  const initialRecentLoad = state.athleteContext.physiology.currentFatigueRecentLoad.value;
+  const hasFitnessBaseline = initialLongTermLoad !== null && initialRecentLoad !== null;
   const plannedFitness = hasFitnessBaseline
-    ? replayTrainingLoadByDate({
-        dailyTss: plannedSeries,
-        initialATL,
-        initialCTL,
+    ? replayCommonLoadFitnessByDate({
+        dailyLoad: plannedSeries,
+        initialRecentLoad,
+        initialLongTermLoad,
       })
     : [];
   const idealFitness = hasFitnessBaseline
-    ? replayTrainingLoadByDate({
-        dailyTss: targetSeries,
-        initialATL,
-        initialCTL,
+    ? replayCommonLoadFitnessByDate({
+        dailyLoad: targetSeries,
+        initialRecentLoad,
+        initialLongTermLoad,
       })
     : [];
-  const fitnessValues = [...plannedFitness, ...idealFitness].map((point) => point.ctl);
+  const fitnessValues = [...plannedFitness, ...idealFitness].map((point) => point.longTermLoad);
   const maxLoad = Math.max(
     50,
-    ...plannedSeries.map((point) => point.tss),
-    ...targetSeries.map((point) => point.tss),
+    ...plannedSeries.map((point) => point.load),
+    ...targetSeries.map((point) => point.load),
   );
   const maxFitness = Math.max(10, ...fitnessValues);
 
@@ -419,22 +428,22 @@ function deriveDailyTrainingPathChart({
     const targetPoint = targetSeries[index];
     const plannedFitnessPoint = plannedFitness[index];
     const idealFitnessPoint = idealFitness[index];
-    const plannedLoadTss = Math.round(plannedPoint.tss);
-    const targetLoadTss = Math.round(targetPoint?.tss ?? 0);
+    const plannedLoad = Math.round(plannedPoint.load);
+    const targetLoad = Math.round(targetPoint?.load ?? 0);
     return {
       date: plannedPoint.date,
-      plannedLoadTss,
-      tentativePlannedLoadTss: 0,
-      completedLoadTss: 0,
-      targetLoadTss,
-      actualOrScheduledLoadTss: plannedLoadTss,
-      loadDeltaTss: plannedLoadTss - targetLoadTss,
-      plannedDeltaTss: plannedLoadTss - targetLoadTss,
+      plannedLoad,
+      tentativePlannedLoad: 0,
+      completedLoad: 0,
+      targetLoad,
+      actualOrScheduledLoad: plannedLoad,
+      loadDelta: plannedLoad - targetLoad,
+      plannedDelta: plannedLoad - targetLoad,
       fitnessCtl: null,
-      scheduledFitnessCtl: plannedFitnessPoint ? round1(plannedFitnessPoint.ctl) : null,
-      targetFitnessCtl: idealFitnessPoint ? round1(idealFitnessPoint.ctl) : null,
-      fatigueAtl: plannedFitnessPoint ? round1(plannedFitnessPoint.atl) : null,
-      formTsb: plannedFitnessPoint ? round1(plannedFitnessPoint.tsb) : null,
+      scheduledFitnessCtl: plannedFitnessPoint ? round1(plannedFitnessPoint.longTermLoad) : null,
+      targetFitnessCtl: idealFitnessPoint ? round1(idealFitnessPoint.longTermLoad) : null,
+      fatigueAtl: plannedFitnessPoint ? round1(plannedFitnessPoint.recentLoad) : null,
+      formTsb: plannedFitnessPoint ? round1(plannedFitnessPoint.loadBalance) : null,
       readinessScore: null,
       annotations: [],
     } satisfies DailyTrainingAdjustmentPoint;
@@ -457,14 +466,14 @@ function deriveDailyTrainingPathChart({
         weekEnd,
         label: formatBuilderWeekLabel(weekIndex),
         completedLoad: null,
-        plannedLoad: Math.round(weekPlannedSeries.reduce((sum, point) => sum + point.tss, 0)),
+        plannedLoad: Math.round(weekPlannedSeries.reduce((sum, point) => sum + point.load, 0)),
         tentativePlannedLoad: null,
-        targetLoad: Math.round(weekTargetSeries.reduce((sum, point) => sum + point.tss, 0)),
+        targetLoad: Math.round(weekTargetSeries.reduce((sum, point) => sum + point.load, 0)),
         fitness: null,
-        scheduledFitness: plannedPoint ? round1(plannedPoint.ctl) : null,
-        targetFitness: idealPoint ? round1(idealPoint.ctl) : null,
-        fatigue: plannedPoint ? round1(plannedPoint.atl) : null,
-        form: plannedPoint ? round1(plannedPoint.tsb) : null,
+        scheduledFitness: plannedPoint ? round1(plannedPoint.longTermLoad) : null,
+        targetFitness: idealPoint ? round1(idealPoint.longTermLoad) : null,
+        fatigue: plannedPoint ? round1(plannedPoint.recentLoad) : null,
+        form: plannedPoint ? round1(plannedPoint.loadBalance) : null,
         riskZone: null,
         isCurrent: weekIndex === 0,
         isSelected: weekIndex === 0,
@@ -496,8 +505,8 @@ function buildRecommendedTssByDate({
   sessions: TrainingPlanBuilderSession[];
   state: TrainingPlanBuilderState;
 }) {
-  const targetTssByDate = new Map<string, number>();
-  if (recommendedWeeklyTss <= 0 || durationDays <= 0) return targetTssByDate;
+  const targetLoadByDate = new Map<string, number>();
+  if (recommendedWeeklyTss <= 0 || durationDays <= 0) return targetLoadByDate;
   const weekCount = Math.ceil(durationDays / 7);
 
   const preferredWeekdays =
@@ -517,14 +526,17 @@ function buildRecommendedTssByDate({
     preferredWeekdays,
     weeklyTargets: Array.from({ length: weekCount }, (_, weekIndex) => ({
       weekIndex,
-      targetTss: recommendedWeeklyTss,
+      targetLoad: recommendedWeeklyTss,
     })),
     sessions: sessions.map((session) => ({
       offsetDays: session.offsetDays,
-      estimatedTss: session.activityPlan?.estimatedTss ?? session.intent?.targetTss ?? null,
+      estimatedCommonLoad:
+        getActivityPlanQuantitySummary(session.activityPlan).commonLoad ??
+        session.intent?.targetLoad ??
+        null,
       estimatedDurationMinutes:
-        typeof session.activityPlan?.estimatedDurationSeconds === "number"
-          ? session.activityPlan.estimatedDurationSeconds / 60
+        getActivityPlanQuantitySummary(session.activityPlan).durationSeconds !== null
+          ? activityPlanDuration(session.activityPlan) / 60
           : typeof session.intent?.targetDurationSeconds === "number"
             ? session.intent.targetDurationSeconds / 60
             : null,
@@ -535,10 +547,10 @@ function buildRecommendedTssByDate({
 
   for (const point of points) {
     if (!point.actionableRecommendation) continue;
-    targetTssByDate.set(point.date, point.actionableRecommendation.recommendedLoadTss);
+    targetLoadByDate.set(point.date, point.actionableRecommendation.recommendedLoad);
   }
 
-  return targetTssByDate;
+  return targetLoadByDate;
 }
 
 function deriveTimelineWeeks({
@@ -571,7 +583,7 @@ function deriveTimelineWeeks({
     maxSessionWeek + 1,
     maxGoalWeek + 1,
   );
-  const scale = recommendedLoad ? Math.max(700, recommendedLoad.rangeMaxTss * 1.15) : 700;
+  const scale = recommendedLoad ? Math.max(700, recommendedLoad.rangeMaxLoad * 1.15) : 700;
   const previewWeeksByIndex = new Map(
     (creationPreview?.weeks ?? []).map((week) => [week.weekIndex, week] as const),
   );
@@ -604,25 +616,30 @@ function deriveTimelineWeeks({
 
   return Array.from({ length: weekCount }).map((_, weekIndex) => {
     const previewWeek = previewWeeksByIndex.get(weekIndex);
-    const estimatedTss = previewWeek?.estimatedTss ?? 0;
+    const estimatedCommonLoad = previewWeek?.estimatedCommonLoad ?? 0;
     const weekSessions = sessionsByWeek.get(weekIndex) ?? [];
     return {
       weekIndex,
       label: formatBuilderWeekLabel(weekIndex),
       phaseLabel: getPhaseLabel(weekIndex, weekCount),
-      estimatedTss,
-      plannedLoadPercent: Math.min(100, Math.max(4, Math.round((estimatedTss / scale) * 100))),
+      estimatedCommonLoad,
+      plannedLoadPercent: Math.min(
+        100,
+        Math.max(4, Math.round((estimatedCommonLoad / scale) * 100)),
+      ),
       recommendedLoadPercent: recommendedLoad
-        ? Math.min(100, Math.max(4, Math.round((recommendedLoad.weeklyTss / scale) * 100)))
+        ? Math.min(100, Math.max(4, Math.round((recommendedLoad.weeklyLoad / scale) * 100)))
         : null,
-      recommendedTss: recommendedLoad?.weeklyTss ?? null,
-      targetDeltaLabel: recommendedLoad ? formatTargetDelta(estimatedTss, recommendedLoad) : null,
+      recommendedLoad: recommendedLoad?.weeklyLoad ?? null,
+      targetDeltaLabel: recommendedLoad
+        ? formatTargetDelta(estimatedCommonLoad, recommendedLoad)
+        : null,
       sessions: weekSessions.map((session) => ({
         session,
         dayIndex: session.offsetDays % 7,
         dayLabel: BUILDER_WEEKDAY_LABELS[session.offsetDays % 7] ?? "Day",
         title: formatBuilderSessionTitle(session),
-        estimatedTss: session.activityPlan?.estimatedTss ?? 0,
+        estimatedCommonLoad: activityPlanLoad(session.activityPlan),
         assigned: session.activityPlan !== null,
       })),
       goals: goalsByWeek.get(weekIndex) ?? [],
@@ -665,7 +682,7 @@ function deriveActionRecommendations({
   const recommendations: BuilderActionRecommendationViewModel[] = [];
   const goals = selectBuilderGoalBlueprints(state);
 
-  if (currentBaseline.ctl === null) {
+  if (currentBaseline.longTermLoad === null) {
     recommendations.push({
       key: "set-baseline",
       label: "Set your starting fitness",
@@ -706,7 +723,7 @@ function deriveActionRecommendations({
     recommendations.push({
       key: "increase-load",
       label: "Build toward the goal load",
-      detail: `Average planned load is ${recommendedLoad.plannedAverageTss} Load/wk; target ${recommendedLoad.rangeMinTss}-${recommendedLoad.rangeMaxTss}.`,
+      detail: `Average planned load is ${recommendedLoad.plannedAverageLoad} Load/wk; target ${recommendedLoad.rangeMinLoad}-${recommendedLoad.rangeMaxLoad}.`,
       target: { type: "addSession" },
     });
   }
@@ -715,21 +732,21 @@ function deriveActionRecommendations({
     recommendations.push({
       key: "reduce-load",
       label: "Bring load back into range",
-      detail: `Average planned load is ${recommendedLoad.plannedAverageTss} Load/wk, above the goal range.`,
+      detail: `Average planned load is ${recommendedLoad.plannedAverageLoad} Load/wk, above the goal range.`,
       target: { type: "week", weekIndex: 0 },
     });
   }
 
   if (
-    currentBaseline.ctl !== null &&
+    currentBaseline.longTermLoad !== null &&
     recommendedLoad &&
-    recommendedLoad.plannedAverageTss >
-      Math.max(recommendedLoad.rangeMaxTss, currentBaseline.ctl * 7 * 1.6)
+    recommendedLoad.plannedAverageLoad >
+      Math.max(recommendedLoad.rangeMaxLoad, currentBaseline.longTermLoad * 7 * 1.6)
   ) {
     recommendations.push({
       key: "baseline-ramp-caution",
       label: "Check the ramp from current fitness",
-      detail: `This plan averages ${recommendedLoad.plannedAverageTss} Load/wk from Long-term Load (CTL) ${Math.round(currentBaseline.ctl)}. Consider easing the first week if that jump feels aggressive.`,
+      detail: `This plan averages ${recommendedLoad.plannedAverageLoad} Load/wk from Fitness ${Math.round(currentBaseline.longTermLoad)}. Consider easing the first week if that jump feels aggressive.`,
       target: { type: "athleteContext" },
     });
   }
@@ -767,7 +784,7 @@ function deriveStrategyViewModel({
   const planWeeks = creationPreview?.weeks ?? [];
   const lowLoadWeeks = planWeeks.filter((week) => {
     if (!recommendedLoad) return false;
-    return week.estimatedTss < recommendedLoad.rangeMinTss * 0.72;
+    return week.estimatedCommonLoad < recommendedLoad.rangeMinLoad * 0.72;
   });
   const lastWeek = planWeeks[planWeeks.length - 1];
   const previousWeek = planWeeks[planWeeks.length - 2];
@@ -775,7 +792,7 @@ function deriveStrategyViewModel({
     goals.some((goal) => goal.targetOffsetDays !== null) &&
       lastWeek &&
       previousWeek &&
-      lastWeek.estimatedTss > previousWeek.estimatedTss * 0.85,
+      lastWeek.estimatedCommonLoad > previousWeek.estimatedCommonLoad * 0.85,
   );
   const goalSupportLevel = getOverallGoalSupportLevel({ recommendedLoad, sessions });
   const planHealth: BuilderPlanHealthItemViewModel[] = [
@@ -789,7 +806,7 @@ function deriveStrategyViewModel({
             : "risk",
       label: goalSupportLevel === "Unsupported" ? "Goal Unsupported" : "Goal Supported",
       detail: recommendedLoad
-        ? `Average load is ${recommendedLoad.plannedAverageTss} Load/wk against the strategic range.`
+        ? `Average load is ${recommendedLoad.plannedAverageLoad} Load/wk against the strategic range.`
         : "Add a goal or planning constraint to evaluate support.",
     },
     {
@@ -858,7 +875,7 @@ function deriveStrategyViewModel({
       key: "support-below",
       severity: "warning",
       title: "Goal support is weak",
-      detail: `Planned load averages ${recommendedLoad.plannedAverageTss} Load/wk, below the ${recommendedLoad.rangeMinTss}-${recommendedLoad.rangeMaxTss} range.`,
+      detail: `Planned load averages ${recommendedLoad.plannedAverageLoad} Load/wk, below the ${recommendedLoad.rangeMinLoad}-${recommendedLoad.rangeMaxLoad} range.`,
       target: { type: "addSession" },
     });
   }
@@ -867,7 +884,7 @@ function deriveStrategyViewModel({
       key: "support-above",
       severity: "risk",
       title: "Recovery risk is elevated",
-      detail: `Planned load averages ${recommendedLoad.plannedAverageTss} Load/wk, above the strategic range.`,
+      detail: `Planned load averages ${recommendedLoad.plannedAverageLoad} Load/wk, above the strategic range.`,
       target: { type: "week", weekIndex: 0 },
     });
   }
@@ -923,7 +940,7 @@ function deriveStrategyViewModel({
               ? "weak"
               : "unknown",
       detail: recommendedLoad
-        ? `Current strategy averages ${recommendedLoad.plannedAverageTss} Load/wk.`
+        ? `Current strategy averages ${recommendedLoad.plannedAverageLoad} Load/wk.`
         : "Add goals and activities to estimate readiness.",
     },
   };
@@ -956,37 +973,37 @@ function getGoalSupportDetail(
 }
 
 function deriveCurrentBaseline(state: TrainingPlanBuilderState): BuilderCurrentBaselineViewModel {
-  const ctl = state.athleteContext.physiology.currentFitnessCtl.value;
-  const atl = state.athleteContext.physiology.currentFatigueAtl.value;
-  const tsb = state.athleteContext.physiology.currentFormTsb.value;
-  const sourceLabel = state.athleteContext.physiology.currentFitnessCtl.overridden
+  const longTermLoad = state.athleteContext.physiology.currentFitnessLongTermLoad.value;
+  const recentLoad = state.athleteContext.physiology.currentFatigueRecentLoad.value;
+  const loadBalance = state.athleteContext.physiology.currentFormLoadBalance.value;
+  const sourceLabel = state.athleteContext.physiology.currentFitnessLongTermLoad.overridden
     ? "Manual baseline"
-    : ctl !== null
+    : longTermLoad !== null
       ? "Current fitness"
       : "No baseline selected";
 
-  if (ctl === null) {
+  if (longTermLoad === null) {
     return {
-      ctl,
-      atl,
-      tsb,
+      longTermLoad,
+      recentLoad,
+      loadBalance,
       sourceLabel,
       summaryLabel: "Fitness calibration needed",
       detail:
-        "Complete activities with calculated Load or add a Long-term Load (CTL), Recent Load (ATL), and Load Balance (TSB) baseline before using projections.",
+        "Complete activities with calculated Load or add a Fitness, Fatigue, and Load Balance baseline before using projections.",
       target: { type: "athleteContext" },
     };
   }
 
-  const formPart = tsb !== null ? ` · ${Math.round(tsb)} form` : "";
-  const fatiguePart = atl !== null ? ` · Recent Load (ATL) ${Math.round(atl)}` : "";
+  const formPart = loadBalance !== null ? ` · ${Math.round(loadBalance)} form` : "";
+  const fatiguePart = recentLoad !== null ? ` · Fatigue ${Math.round(recentLoad)}` : "";
   return {
-    ctl,
-    atl,
-    tsb,
+    longTermLoad,
+    recentLoad,
+    loadBalance,
     sourceLabel,
-    summaryLabel: `Starts at Long-term Load (CTL) ${Math.round(ctl)}${formPart}`,
-    detail: `Based on your recent training Load, this plan starts from Long-term Load (CTL) ${Math.round(ctl)}${fatiguePart}.`,
+    summaryLabel: `Starts at Fitness ${Math.round(longTermLoad)}${formPart}`,
+    detail: `Based on your recent training Load, this plan starts from Fitness ${Math.round(longTermLoad)}${fatiguePart}.`,
     target: { type: "athleteContext" },
   };
 }
@@ -1032,13 +1049,15 @@ function deriveRecommendedLoad({
   const frequencyLoad = state.planPreferences.weeklySessionCount
     ? state.planPreferences.weeklySessionCount * 45
     : null;
-  const baselineWeeklyTss =
-    currentBaseline.ctl !== null ? roundToNearestTen(currentBaseline.ctl * 7) : null;
+  const baselineWeeklyLoad =
+    currentBaseline.longTermLoad !== null
+      ? roundToNearestTen(currentBaseline.longTermLoad * 7)
+      : null;
   const loadCandidates = [
     ...goalLoadCandidates,
     preferenceLoad,
     frequencyLoad,
-    baselineWeeklyTss,
+    baselineWeeklyLoad,
   ].filter(
     (value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0,
   );
@@ -1058,22 +1077,24 @@ function deriveRecommendedLoad({
           : "Fitness baseline";
 
   const weeks = creationPreview?.weeks ?? [];
-  const plannedAverageTss =
+  const plannedAverageLoad =
     weeks.length > 0
-      ? Math.round(weeks.reduce((total, week) => total + week.estimatedTss, 0) / weeks.length)
+      ? Math.round(
+          weeks.reduce((total, week) => total + week.estimatedCommonLoad, 0) / weeks.length,
+        )
       : 0;
-  const rangeMinTss = roundToNearestTen(targetLoad * 0.85);
-  const rangeMaxTss = roundToNearestTen(targetLoad * 1.15);
+  const rangeMinLoad = roundToNearestTen(targetLoad * 0.85);
+  const rangeMaxLoad = roundToNearestTen(targetLoad * 1.15);
   const loadDeltaLabel =
-    baselineWeeklyTss !== null
-      ? `${targetLoad >= baselineWeeklyTss ? "+" : ""}${targetLoad - baselineWeeklyTss} vs baseline`
+    baselineWeeklyLoad !== null
+      ? `${targetLoad >= baselineWeeklyLoad ? "+" : ""}${targetLoad - baselineWeeklyLoad} vs baseline`
       : null;
   const status =
     weeks.length === 0
       ? "needs_sessions"
-      : plannedAverageTss < rangeMinTss
+      : plannedAverageLoad < rangeMinLoad
         ? "below"
-        : plannedAverageTss > rangeMaxTss
+        : plannedAverageLoad > rangeMaxLoad
           ? "above"
           : "on_track";
   const guidance =
@@ -1084,14 +1105,14 @@ function deriveRecommendedLoad({
         : status === "above"
           ? "Planned load is above the goal range. Reduce load or add recovery spacing."
           : "Planned load sits inside the goal range.";
-  const scale = Math.max(700, rangeMaxTss * 1.15);
+  const scale = Math.max(700, rangeMaxLoad * 1.15);
 
   return {
-    weeklyTss: targetLoad,
-    rangeMinTss,
-    rangeMaxTss,
-    baselineWeeklyTss,
-    plannedAverageTss,
+    weeklyLoad: targetLoad,
+    rangeMinLoad,
+    rangeMaxLoad,
+    baselineWeeklyLoad,
+    plannedAverageLoad,
     markerPercent: Math.min(100, Math.max(6, Math.round((targetLoad / scale) * 100))),
     label: `${targetLoad} Load/wk`,
     guidance,
@@ -1125,12 +1146,15 @@ function round1(value: number) {
   return Math.round(value * 10) / 10;
 }
 
-function formatTargetDelta(estimatedTss: number, recommendedLoad: BuilderRecommendedLoadViewModel) {
-  if (estimatedTss < recommendedLoad.rangeMinTss) {
-    return `${recommendedLoad.rangeMinTss - estimatedTss} under`;
+function formatTargetDelta(
+  estimatedCommonLoad: number,
+  recommendedLoad: BuilderRecommendedLoadViewModel,
+) {
+  if (estimatedCommonLoad < recommendedLoad.rangeMinLoad) {
+    return `${recommendedLoad.rangeMinLoad - estimatedCommonLoad} under`;
   }
-  if (estimatedTss > recommendedLoad.rangeMaxTss) {
-    return `${estimatedTss - recommendedLoad.rangeMaxTss} over`;
+  if (estimatedCommonLoad > recommendedLoad.rangeMaxLoad) {
+    return `${estimatedCommonLoad - recommendedLoad.rangeMaxLoad} over`;
   }
   return "in range";
 }
@@ -1204,16 +1228,16 @@ function hasCustomConstraints(state: TrainingPlanBuilderState) {
 function getAthleteContextSummary(state: TrainingPlanBuilderState) {
   const context = state.athleteContext;
   const parts = [
-    context.physiology.currentFitnessCtl.value !== null
-      ? `Long-term Load (CTL) ${Math.round(context.physiology.currentFitnessCtl.value)}`
+    context.physiology.currentFitnessLongTermLoad.value !== null
+      ? `Fitness ${Math.round(context.physiology.currentFitnessLongTermLoad.value)}`
       : null,
     context.demographics.gender ? formatBuilderGender(context.demographics.gender) : null,
     context.demographics.ageYears.value !== null
       ? `${Math.round(context.demographics.ageYears.value)} years old`
       : null,
     formatBuilderNumberWithUnit(context.body.weightKg.value, context.body.weightKg.unit),
-    context.physiology.ftpWatts.value !== null
-      ? `${Math.round(context.physiology.ftpWatts.value)} W FTP`
+    context.physiology.planningThresholdPowerWatts.value !== null
+      ? `${Math.round(context.physiology.planningThresholdPowerWatts.value)} W planning threshold`
       : null,
   ].filter((part) => part !== null);
 

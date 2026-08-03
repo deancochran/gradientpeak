@@ -102,7 +102,7 @@ interface RecordingServiceActivityPlan {
   name: string;
   description: string;
   activity_category: PublicActivityCategory;
-  estimated_tss?: number;
+  estimated_load?: number;
   estimated_duration?: number; // in seconds
   structure: {
     steps: Array<ActivityStep | RepetitionBlock>;
@@ -131,7 +131,7 @@ When adding new sample activities:
 2. Export individual activities for direct access
 3. Add to the appropriate `SAMPLE_<ACTIVITY>_ACTIVITIES` array
 4. Ensure each activity category has at least 5 varied activities
-5. Include realistic TSS and duration estimates
+5. Include realistic Common Load and duration estimates
 6. Provide clear descriptions and notes for guidance
 
 ## Testing
@@ -148,5 +148,5 @@ These samples are used throughout the application for:
 - All durations are specified in seconds
 - Intensity targets are percentages (0-100+)
 - Each activity includes detailed notes for user guidance
-- Activities range from recovery (TSS ~20) to high intensity (TSS ~95)
+- Activities range from recovery (Common Load ~20) to high intensity (Common Load ~95)
 - Duration ranges from 30 minutes to 2 hours

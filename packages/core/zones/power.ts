@@ -1,5 +1,15 @@
 import type { AggregatedStream } from "../activity-analysis/stream-contract";
 
+export const FTP_ZONE_UPPER_PERCENTAGES = [
+  55,
+  76,
+  91,
+  106,
+  121,
+  151,
+  Number.POSITIVE_INFINITY,
+] as const;
+
 export function getPowerZoneIndexFromFtpPercent(ftpPercent: number): number {
   if (ftpPercent < 55) return 0;
   if (ftpPercent < 76) return 1;
@@ -8,6 +18,13 @@ export function getPowerZoneIndexFromFtpPercent(ftpPercent: number): number {
   if (ftpPercent < 121) return 4;
   if (ftpPercent < 151) return 5;
   return 6;
+}
+
+export function getPowerZoneUpperBoundsFromFtp(ftpWatts: number): number[] {
+  if (!Number.isFinite(ftpWatts) || ftpWatts <= 0) return [];
+  return FTP_ZONE_UPPER_PERCENTAGES.map((percentage) =>
+    Number.isFinite(percentage) ? (ftpWatts * percentage) / 100 : Number.POSITIVE_INFINITY,
+  );
 }
 
 export function estimatePowerZoneDistribution(duration: number, avgIF: number): number[] {

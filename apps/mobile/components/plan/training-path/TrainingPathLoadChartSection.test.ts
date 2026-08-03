@@ -20,27 +20,28 @@ describe("buildSelectedWeekBucket", () => {
           {
             date: "2026-06-01",
             hasTargetLoad: false,
-            plannedLoadTss: 20,
-            targetLoadTss: 0,
+            plannedLoad: 20,
+            targetLoad: 0,
           },
         ],
       }),
-    ).toMatchObject({ targetLoadTss: null, loadDeltaTss: null });
+    ).toMatchObject({ targetLoad: null, loadDelta: null });
     expect(
       buildSelectedWeekBucket({
         ...base,
-        points: [{ date: "2026-06-01", targetLoadTss: 0 }],
+        points: [{ date: "2026-06-01", targetLoad: 0 }],
       }),
-    ).toMatchObject({ targetLoadTss: null, loadDeltaTss: null });
+    ).toMatchObject({ targetLoad: null, loadDelta: null });
     expect(
       buildSelectedWeekBucket({
         ...base,
         points: Array.from({ length: 7 }, (_, index) => ({
+          actualOrScheduledLoad: 0,
           date: `2026-06-0${index + 1}`,
-          targetLoadTss: 0,
+          targetLoad: 0,
         })),
       }),
-    ).toMatchObject({ targetLoadTss: 0, loadDeltaTss: 0 });
+    ).toMatchObject({ targetLoad: 0, loadDelta: 0 });
   });
 
   it("keeps completed aggregate null for incompatible or unavailable observations", () => {
@@ -50,20 +51,20 @@ describe("buildSelectedWeekBucket", () => {
       points: [
         {
           date: "2026-06-01",
-          completedLoadTss: 40,
+          completedLoad: 40,
           completedObservationState: "observed",
           completedCommonLoadIdentity: commonLoadIdentity,
         },
         {
           date: "2026-06-02",
-          completedLoadTss: 20,
+          completedLoad: 20,
           completedObservationState: "observed",
           completedCommonLoadIdentity: { ...commonLoadIdentity, version: "2" },
         },
       ],
     });
 
-    expect(bucket).toMatchObject({ completedLoadTss: null, completedLoadUnavailable: true });
+    expect(bucket).toMatchObject({ completedLoad: null, completedLoadUnavailable: true });
 
     expect(
       buildSelectedWeekBucket({
@@ -72,7 +73,7 @@ describe("buildSelectedWeekBucket", () => {
         points: [
           {
             date: "2026-06-01",
-            completedLoadTss: 40,
+            completedLoad: 40,
             completedObservationState: "observed",
             completedCommonLoadIdentity: commonLoadIdentity,
           },
@@ -83,7 +84,7 @@ describe("buildSelectedWeekBucket", () => {
           },
         ],
       }),
-    ).toMatchObject({ completedLoadTss: null, completedLoadUnavailable: true });
+    ).toMatchObject({ completedLoad: null, completedLoadUnavailable: true });
   });
 
   it.each([
@@ -95,15 +96,15 @@ describe("buildSelectedWeekBucket", () => {
       buildSelectedWeekBucket({
         weekStart,
         weekEnd: weekStart,
-        points: [{ date: weekStart, targetLoadTss: 10 }],
+        points: [{ date: weekStart, targetLoad: 10 }],
       }),
     ).not.toThrow();
     expect(
       buildSelectedWeekBucket({
         weekStart,
         weekEnd: weekStart,
-        points: [{ date: weekStart, targetLoadTss: 10 }],
+        points: [{ date: weekStart, targetLoad: 10 }],
       }),
-    ).toMatchObject({ targetLoadTss: null, loadDeltaTss: null });
+    ).toMatchObject({ targetLoad: null, loadDelta: null });
   });
 });

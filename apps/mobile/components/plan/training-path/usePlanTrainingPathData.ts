@@ -577,9 +577,9 @@ export function usePlanTrainingPathData() {
       commonLoadHistoryQuery.data?.status === "available"
         ? commonLoadHistoryQuery.data.points.map((point) => ({
             date: point.date,
-            ctl: point.longTermLoad,
-            atl: point.recentLoad,
-            tsb: point.loadBalance,
+            longTermLoad: point.longTermLoad,
+            recentLoad: point.recentLoad,
+            loadBalance: point.loadBalance,
           }))
         : [],
     [commonLoadHistoryQuery.data],
@@ -641,7 +641,7 @@ export function usePlanTrainingPathData() {
       snapshot,
     ],
   );
-  // Legacy recommended_load_tss dates cannot authorize a common-Load target.
+  // Noncanonical planning recommendation dates cannot authorize a Common Load target.
   const targetLoadDates = useMemo(() => new Set<string>(), []);
   const completedObservationMerge = useMemo(
     () =>
@@ -679,14 +679,14 @@ export function usePlanTrainingPathData() {
           scheduledWindowEnd,
         timeline: completedObservationMerge.timeline.map((point) => ({
           ...point,
-          tentative_scheduled_load_tss: point.tentative_scheduled_load_tss ?? 0,
+          tentative_scheduled_common_load: point.tentative_scheduled_common_load ?? null,
         })),
       }),
     [completedObservationMerge.timeline, scheduledWindowEnd, scheduledWindowStart, todayKey],
   );
   const baseTrainingPath = useTrainingPathViewModel({
-    // Canonical Plan load metrics are attached below from getEffectiveLoad. The local timeline
-    // remains a legacy adjustment-chart adapter and must not define this path's load values.
+    // Canonical Plan load metrics are attached below from getEffectiveLoad. The planning-preview
+    // timeline uses a different load model and must not define this path's Common Load values.
     timeline: [],
     fitnessHistory: planningTodayKey ? commonLoadFitnessHistory : [],
     projectedFitness: [],
@@ -769,9 +769,9 @@ export function usePlanTrainingPathData() {
         if (!summary) return point;
         const observedCompletedLoad =
           point.completedObservationState === "observed" &&
-          typeof point.completedLoadTss === "number" &&
-          Number.isFinite(point.completedLoadTss)
-            ? point.completedLoadTss
+          typeof point.completedLoad === "number" &&
+          Number.isFinite(point.completedLoad)
+            ? point.completedLoad
             : null;
         return {
           ...point,
@@ -839,10 +839,10 @@ export function usePlanTrainingPathData() {
       const recommendedFitness = recommendedFitnessByDate.get(point.date);
       return {
         ...point,
-        scheduledFitnessCtl: projectedFitness?.ctl ?? point.scheduledFitnessCtl ?? null,
-        targetFitnessCtl: recommendedFitness?.ctl ?? point.targetFitnessCtl ?? null,
-        fatigueAtl: projectedFitness?.atl ?? point.fatigueAtl ?? null,
-        formTsb: projectedFitness?.tsb ?? point.formTsb ?? null,
+        scheduledFitnessCtl: projectedFitness?.longTermLoad ?? point.scheduledFitnessCtl ?? null,
+        targetFitnessCtl: recommendedFitness?.longTermLoad ?? point.targetFitnessCtl ?? null,
+        fatigueAtl: projectedFitness?.recentLoad ?? point.fatigueAtl ?? null,
+        formTsb: projectedFitness?.loadBalance ?? point.formTsb ?? null,
       };
     });
   }, [effectiveBaseDailyTrainingPathPoints, recommendedFitnessTrend, scheduledFitnessTrend]);

@@ -1,6 +1,7 @@
 import { createHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 import { ActivityPlanCard } from "../ActivityPlanCard";
+import { createPrescriptionQuantificationBundleFixture } from "./activityQuantificationFixture";
 
 const toggleLikeMutateMock = jest.fn();
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
@@ -30,53 +31,6 @@ const activityPlanStructure = {
     },
   ],
 };
-const availableCommonLoad = {
-  status: "available" as const,
-  model: "gradientpeak_relative_load" as const,
-  version: "1" as const,
-  activity_category: "run" as const,
-  method: "run_pace_threshold" as const,
-  load: 64,
-  intensity: 0.8,
-  contributingDurationSeconds: 3600,
-  quality: {
-    source: "validated_test" as const,
-    observed_at: "2026-07-20T12:00:00.000Z",
-    confidence: "high" as const,
-    stale: false,
-    estimate: false,
-    calculation_version: "threshold-v1",
-    evidence_fingerprint: "quality-run",
-  },
-  thresholdEvidence: {
-    type: "threshold_speed_mps" as const,
-    value: 4,
-    unit: "meters_per_second" as const,
-    source: "validated_test" as const,
-    observedAt: "2026-07-20T12:00:00.000Z",
-    validAt: "2026-07-20T12:00:00.000Z",
-    freshness: "current" as const,
-    calculationVersion: "threshold-v1",
-    sourceFingerprint: "threshold-run",
-  },
-  evidenceFingerprint: "activity-run",
-  computedAsOf: "2026-07-21T12:00:00.000Z",
-  estimated: false,
-};
-const unsupportedCommonLoad = {
-  status: "unavailable" as const,
-  model: "gradientpeak_relative_load" as const,
-  version: "1" as const,
-  activity_category: "strength" as const,
-  method: null,
-  quality: null,
-  thresholdEvidence: null,
-  evidenceFingerprint: null,
-  computedAsOf: "2026-07-21T12:00:00.000Z",
-  contributingDurationSeconds: 3600,
-  reason: "unsupported_modality" as const,
-};
-
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
@@ -212,40 +166,28 @@ describe("ActivityPlanCard", () => {
     expect(screen.queryByLabelText("Open activity plan Run builder")).toBeNull();
   });
 
-  it("abstains from legacy and unsupported common load metrics", () => {
-    renderNative(
+  it("keeps unsupported canonical quantification unavailable without retired fields", () => {
+    const rendered = renderNative(
       <ActivityPlanCard
         activityPlan={{
           id: "plan-load",
-          name: "Brick builder",
-          activity_category: "bike",
-          authoritative_metrics: {
-            estimated_duration: 5400,
-            estimated_tss: null,
-            intensity_factor: null,
-          },
-          common_load: unsupportedCommonLoad,
-          category_loads: [
-            {
-              activity_category: "bike",
-              tss: 64,
-              intensity_factor: 0.84,
-              method: "power_threshold",
-            },
-            {
-              activity_category: "run",
-              tss: null,
-              intensity_factor: null,
-            },
-          ],
+          name: "Strength builder",
+          activity_category: "strength",
+          prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+            activityCategory: "strength",
+            durationSeconds: 5_400,
+            status: "unsupported",
+          }),
         }}
       />,
     );
 
-    expect(screen.queryByText("ActivityCategory-specific load")).toBeNull();
-    expect(screen.queryByText("Load")).toBeNull();
-    expect(screen.queryByText("Intensity")).toBeNull();
-    expect(screen.queryByText(/TSS|IF/)).toBeNull();
+    expect(screen.getByText("Common Load")).toBeTruthy();
+    expect(screen.getByText("Normalized intensity")).toBeTruthy();
+    expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
+    expect(JSON.stringify(rendered.toJSON())).not.toMatch(
+      /TSS|\bIF\b|category_load|intensityFactor/,
+    );
   });
 
   it("does not duplicate aggregate metrics for a single-activity-category plan", () => {
@@ -254,38 +196,18 @@ describe("ActivityPlanCard", () => {
         activityPlan={{
           id: "plan-single-activity-category-load",
           name: "Bike tempo",
-          activity_category: "bike",
-          structure: {
-            ...activityPlanStructure,
-            segments: activityPlanStructure.segments.map((segment) => ({
-              ...segment,
-              activity_category: "bike",
-            })),
-          },
-          authoritative_metrics: {
-            estimated_duration: 3600,
-            estimated_tss: 64,
-            intensity_factor: 0.84,
-          },
-          common_load: availableCommonLoad,
-          category_loads: [
-            {
-              activity_category: "bike",
-              tss: 64,
-              intensity_factor: 0.84,
-              method: "power_threshold",
-            },
-          ],
+          activity_category: "run",
+          structure: activityPlanStructure,
+          prescriptionQuantification: createPrescriptionQuantificationBundleFixture(),
         }}
       />,
     );
 
-    expect(screen.queryByText("ActivityCategory-specific load")).toBeNull();
-    expect(screen.getAllByText("Load")).toHaveLength(1);
+    expect(screen.getAllByText("Common Load")).toHaveLength(1);
     expect(screen.getAllByText("64")).toHaveLength(1);
-    expect(screen.getAllByText("Intensity")).toHaveLength(1);
-    expect(screen.getAllByText("Tempo · 0.80")).toHaveLength(1);
-    expect(screen.queryByText(/TSS|IF/)).toBeNull();
+    expect(screen.getAllByText("Normalized intensity")).toHaveLength(1);
+    expect(screen.getAllByText("0.80")).toHaveLength(1);
+    expect(screen.getByText("Prescribed intensity: RPE 7/10 · Prescribed")).toBeTruthy();
   });
 
   it("keeps compact cards visual, focused, and tappable", () => {
@@ -298,12 +220,7 @@ describe("ActivityPlanCard", () => {
           name: "Tempo Builder",
           description: "Progressive tempo with a strong finish.",
           activity_category: "run",
-          authoritative_metrics: {
-            estimated_duration: 3600,
-            estimated_tss: 72,
-            intensity_factor: 0.82,
-          },
-          common_load: availableCommonLoad,
+          prescriptionQuantification: createPrescriptionQuantificationBundleFixture(),
           structure: activityPlanStructure,
           created_at: "2026-03-21T08:00:00.000",
           owner: {
@@ -324,11 +241,10 @@ describe("ActivityPlanCard", () => {
     expect(screen.getByText("Tempo Builder")).toBeTruthy();
     expect(screen.getByText("Duration")).toBeTruthy();
     expect(screen.getByText("~1h")).toBeTruthy();
-    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Common Load")).toBeTruthy();
     expect(screen.getByText("64")).toBeTruthy();
-    expect(screen.getByText("Intensity")).toBeTruthy();
-    expect(screen.getByText("Tempo · 0.80")).toBeTruthy();
-    expect(screen.queryByText(/TSS|IF/)).toBeNull();
+    expect(screen.getByText("Normalized intensity")).toBeTruthy();
+    expect(screen.getByText("0.80")).toBeTruthy();
     expect(screen.queryByTestId("resource-owner-action-row")).toBeNull();
     expect(screen.queryByText("Coach Kim")).toBeNull();
     expect(screen.queryByText("Like")).toBeNull();

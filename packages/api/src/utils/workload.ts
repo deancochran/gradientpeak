@@ -1,26 +1,29 @@
 import {
-  type ActivityTssIdentity as CoreActivityTssIdentity,
+  type ActivityObservationQuantification,
+  activityObservationQuantificationBundleSchema,
+  aggregateObservations,
+  COMMON_RELATIVE_LOAD_MODEL,
+  COMMON_RELATIVE_LOAD_VERSION,
   computeAcwr,
   computeMonotony,
+  DuplicateActivityQuantificationSubjectError,
   type LoadDayObservation,
   type LoadSeries,
   type LoadSeriesIdentity,
-  loadSeriesIdentityForActivityTss,
+  loadSeriesIdentitySchema,
 } from "@repo/core";
 
-export type LoadSource = "trimp" | "tss" | "mixed" | "none";
-
-export type ActivityTssIdentity = CoreActivityTssIdentity;
+export type LoadSource = "common_load" | "none";
+type WorkloadRejectionReason =
+  | "duplicate_subject"
+  | "incompatible_common_load_identity"
+  | "incomplete_common_load"
+  | "missing_quantification";
 
 export interface CanonicalLoadActivity {
   started_at?: string | null;
-  activity_category?: string | null;
-  trimp?: number | null;
-  tss?: number | null;
-  tss_identity?: ActivityTssIdentity | null;
-  load_method?: string | null;
-  load_version?: string | null;
-  load_source_definition?: string | null;
+  /** Parsed at this read-model boundary so stale model/version identities fail closed. */
+  observationQuantification?: unknown;
 }
 
 export interface CanonicalDailyLoads {
@@ -29,6 +32,7 @@ export interface CanonicalDailyLoads {
   series: LoadSeries[];
   exactIdentity: LoadSeriesIdentity | null;
   complete: boolean;
+  rejectionReason: WorkloadRejectionReason | null;
 }
 
 export interface WorkloadBuildOptions {
@@ -47,35 +51,26 @@ function dateKeys(startDate: Date, endDate: Date): string[] {
   return keys;
 }
 
-function identityKey(identity: LoadSeriesIdentity): string {
-  return [
-    identity.activity_category,
-    identity.family,
-    identity.method,
-    identity.version,
-    identity.sourceDefinition,
-  ].join("\u0000");
-}
-
-function identityFor(
+function parseObservationMembers(
   activity: CanonicalLoadActivity,
-  family: "trimp" | "tss",
-): LoadSeriesIdentity | null {
-  if (family === "tss" && activity.tss_identity) {
-    return loadSeriesIdentityForActivityTss(activity.tss_identity);
+):
+  | { status: "available"; members: ActivityObservationQuantification[] }
+  | { status: "unavailable"; reason: WorkloadRejectionReason } {
+  const bundle = activityObservationQuantificationBundleSchema.safeParse(
+    activity.observationQuantification,
+  );
+  if (!bundle.success) {
+    return {
+      status: "unavailable",
+      reason: activity.observationQuantification
+        ? "incompatible_common_load_identity"
+        : "missing_quantification",
+    };
   }
-  const activity_category = activity.activity_category?.trim();
-  const method = activity.load_method?.trim();
-  const version = activity.load_version?.trim();
-  const sourceDefinition = activity.load_source_definition?.trim();
-  if (!activity_category || !method || !version || !sourceDefinition) return null;
-  return {
-    activity_category,
-    family,
-    method,
-    version,
-    sourceDefinition,
-  };
+  if (bundle.data.members.length === 0) {
+    return { status: "unavailable", reason: "missing_quantification" };
+  }
+  return { status: "available", members: bundle.data.members };
 }
 
 export function buildCanonicalDailyLoads(
@@ -85,66 +80,100 @@ export function buildCanonicalDailyLoads(
   options: WorkloadBuildOptions = {},
 ): CanonicalDailyLoads {
   const dates = dateKeys(startDate, endDate);
+  const dateSet = new Set(dates);
   const knownRestDates = new Set(options.knownRestDates ?? []);
-  const grouped = new Map<
-    string,
-    { identity: LoadSeriesIdentity; valuesByDate: Map<string, number> }
-  >();
+  const membersByDate = new Map<string, ActivityObservationQuantification[]>();
+  const allMembers: ActivityObservationQuantification[] = [];
   let complete = true;
+  let rejectionReason: WorkloadRejectionReason | null = null;
+  let sawCanonicalQuantification = false;
 
-  const add = (activity: CanonicalLoadActivity, family: "trimp" | "tss", value: number) => {
-    const identity = identityFor(activity, family);
-    if (!identity) {
+  const add = (activity: CanonicalLoadActivity) => {
+    const parsed = parseObservationMembers(activity);
+    if (parsed.status === "unavailable") {
       complete = false;
+      rejectionReason ??= parsed.reason;
       return;
     }
-    const key = identityKey(identity);
-    const group = grouped.get(key) ?? { identity, valuesByDate: new Map<string, number>() };
+    sawCanonicalQuantification = true;
     const date = activity.started_at
       ? new Date(activity.started_at).toISOString().split("T")[0]
       : undefined;
-    if (!date || !dates.includes(date)) return;
-    group.valuesByDate.set(date, (group.valuesByDate.get(date) ?? 0) + value);
-    grouped.set(key, group);
+    if (!date || !dateSet.has(date)) return;
+    allMembers.push(...parsed.members);
+    membersByDate.set(date, [...(membersByDate.get(date) ?? []), ...parsed.members]);
   };
 
   for (const activity of activities) {
-    if (!activity.started_at || Number.isNaN(new Date(activity.started_at).getTime())) continue;
-    if (typeof activity.trimp === "number" && Number.isFinite(activity.trimp)) {
-      add(activity, "trimp", Math.max(0, activity.trimp));
+    if (!activity.started_at || Number.isNaN(new Date(activity.started_at).getTime())) {
+      complete = false;
+      rejectionReason ??= "missing_quantification";
+      continue;
     }
-    if (typeof activity.tss === "number" && Number.isFinite(activity.tss)) {
-      add(activity, "tss", Math.max(0, activity.tss));
+    add(activity);
+  }
+
+  try {
+    if (allMembers.length > 0) aggregateObservations(allMembers);
+  } catch (error) {
+    if (!(error instanceof DuplicateActivityQuantificationSubjectError)) throw error;
+    complete = false;
+    rejectionReason = "duplicate_subject";
+  }
+
+  const valuesByDate = new Map<string, number>();
+  if (rejectionReason !== "duplicate_subject") {
+    for (const [date, members] of membersByDate) {
+      const aggregate = aggregateObservations(members);
+      const commonLoad = aggregate.commonLoad;
+      if (
+        commonLoad.model !== COMMON_RELATIVE_LOAD_MODEL ||
+        commonLoad.version !== COMMON_RELATIVE_LOAD_VERSION
+      ) {
+        complete = false;
+        rejectionReason ??= "incompatible_common_load_identity";
+      } else if (commonLoad.status !== "complete") {
+        complete = false;
+        rejectionReason ??= "incomplete_common_load";
+      } else {
+        valuesByDate.set(date, commonLoad.load);
+      }
     }
   }
 
-  const series = [...grouped.values()].map(({ identity, valuesByDate }) => ({
-    identity,
-    observations: dates.map<LoadDayObservation>((date) => {
-      const value = valuesByDate.get(date);
-      if (value !== undefined) return { date, state: "observed", value };
-      if (knownRestDates.has(date)) return { date, state: "known_zero", value: 0 };
-      return { date, state: "unknown", value: null };
-    }),
-  }));
+  const identity = loadSeriesIdentitySchema.parse({
+    activity_category: "all",
+    family: "common_load",
+    method: COMMON_RELATIVE_LOAD_MODEL,
+    version: COMMON_RELATIVE_LOAD_VERSION,
+    sourceDefinition: COMMON_RELATIVE_LOAD_MODEL,
+  });
+  const series =
+    valuesByDate.size === 0
+      ? []
+      : [
+          {
+            identity,
+            observations: dates.map<LoadDayObservation>((date) => {
+              const value = valuesByDate.get(date);
+              if (value !== undefined) return { date, state: "observed", value };
+              if (knownRestDates.has(date)) return { date, state: "known_zero", value: 0 };
+              return { date, state: "unknown", value: null };
+            }),
+          },
+        ];
   const onlySeries = series.length === 1 ? series[0] : undefined;
-  const families = new Set(series.map(({ identity }) => identity.family));
-
   return {
     coverageDays: onlySeries
       ? onlySeries.observations.filter(
           ({ state }) => state === "observed" || state === "known_zero",
         ).length
       : 0,
-    source:
-      series.length === 0
-        ? "none"
-        : families.size > 1
-          ? "mixed"
-          : (series[0]?.identity.family as "trimp" | "tss"),
+    source: series.length === 0 && !sawCanonicalQuantification ? "none" : "common_load",
     series,
     exactIdentity: complete && onlySeries ? onlySeries.identity : null,
     complete: complete && series.length === 1,
+    rejectionReason,
   };
 }
 
@@ -179,7 +208,9 @@ export function buildWorkloadEnvelopes(
 ) {
   const canonical = buildCanonicalDailyLoads(activities, startDate, endDate, options);
   if (!canonical.complete || canonical.series.length !== 1) {
-    const reason = canonical.series.length === 0 ? "missing_exact_identity" : "mixed_identities";
+    const reason =
+      canonical.rejectionReason ??
+      (canonical.series.length === 0 ? "missing_quantification" : "mixed_identities");
     return {
       acwr: unavailable(28, reason, canonical.source),
       monotony: unavailable(7, reason, canonical.source),

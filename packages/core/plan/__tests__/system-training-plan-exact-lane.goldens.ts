@@ -13,17 +13,19 @@ export const EXACT_LANE_CONSECUTIVE_MISS_PAIR_BUDGETS: Record<string, number> = 
 };
 
 export interface ExactLaneGoldenArtifact {
-  weeklyLoadTss: number[];
+  weeklyLoad: Array<number | null>;
+  weeklyStatus: Array<"complete" | "partial" | "unavailable">;
   summary: {
     weeks: number;
     sessionCount: number;
-    totalTss: number;
-    meanTss: number;
-    minTss: number;
-    maxTss: number;
+    totalLoad: number;
+    meanLoad: number;
+    minLoad: number | null;
+    maxLoad: number | null;
     feasibilityMode: "target_seeking" | "capacity_bounded";
-    blockGatePass: boolean;
-    meanGatePass: boolean;
+    blockStatus: "complete" | "partial" | "unavailable";
+    blockGatePass: boolean | null;
+    meanGatePass: boolean | null;
     weeklyMissesWithinBudget: boolean;
     consecutiveMissPairsWithinBudget: boolean;
   };
@@ -31,65 +33,84 @@ export interface ExactLaneGoldenArtifact {
 
 export const EXACT_LANE_GOLDENS: Record<string, ExactLaneGoldenArtifact> = {
   exact_5k_speed_block: {
-    weeklyLoadTss: [153, 140, 157, 122, 140, 140, 157, 122],
+    weeklyLoad: [110.2, 140.9, 114.2, 122.9, 140.9, 140.9, 114.2, 122.9],
+    weeklyStatus: [
+      "partial",
+      "complete",
+      "partial",
+      "complete",
+      "complete",
+      "complete",
+      "partial",
+      "complete",
+    ],
     summary: {
       weeks: 8,
       sessionCount: 30,
-      totalTss: 1131,
-      meanTss: 141.4,
-      minTss: 122,
-      maxTss: 157,
+      totalLoad: 1007.1,
+      meanLoad: 125.9,
+      minLoad: 110.2,
+      maxLoad: 140.9,
       feasibilityMode: "target_seeking",
-      blockGatePass: true,
-      meanGatePass: true,
+      blockStatus: "partial",
+      blockGatePass: null,
+      meanGatePass: null,
       weeklyMissesWithinBudget: true,
       consecutiveMissPairsWithinBudget: true,
     },
   },
   intermediate_rich_half: {
-    weeklyLoadTss: [144, 156, 144, 156, 174, 197, 174, 197, 156, 126],
+    weeklyLoad: [86.3, 54.9, 86.3, 54.9, 72.9, 153.7, 72.9, 153.7, 54.9, 68.3],
+    weeklyStatus: Array.from({ length: 10 }, () => "partial"),
     summary: {
       weeks: 10,
       sessionCount: 36,
-      totalTss: 1624,
-      meanTss: 162.4,
-      minTss: 126,
-      maxTss: 197,
+      totalLoad: 858.8,
+      meanLoad: 85.9,
+      minLoad: 54.9,
+      maxLoad: 153.7,
       feasibilityMode: "capacity_bounded",
-      blockGatePass: true,
-      meanGatePass: true,
+      blockStatus: "partial",
+      blockGatePass: null,
+      meanGatePass: null,
       weeklyMissesWithinBudget: true,
       consecutiveMissPairsWithinBudget: true,
     },
   },
   advanced_marathon_build: {
-    weeklyLoadTss: [144, 144, 162, 123, 144, 162, 144, 123, 144, 162, 144, 123],
+    weeklyLoad: [86.3, 86.3, 104.3, 65.2, 86.3, 104.3, 86.3, 65.2, 86.3, 104.3, 86.3, 65.2],
+    weeklyStatus: Array.from({ length: 12 }, () => "partial"),
     summary: {
       weeks: 12,
       sessionCount: 48,
-      totalTss: 1719,
-      meanTss: 143.3,
-      minTss: 123,
-      maxTss: 162,
+      totalLoad: 1026.1,
+      meanLoad: 85.5,
+      minLoad: 65.2,
+      maxLoad: 104.3,
       feasibilityMode: "capacity_bounded",
-      blockGatePass: true,
-      meanGatePass: true,
+      blockStatus: "partial",
+      blockGatePass: null,
+      meanGatePass: null,
       weeklyMissesWithinBudget: true,
       consecutiveMissPairsWithinBudget: true,
     },
   },
   boundary_feasible_bike: {
-    weeklyLoadTss: [230, 221, 230, 162, 238, 229, 238, 162, 238, 229, 238, 162],
+    weeklyLoad: [
+      219.5, 210.6, 219.5, 151.4, 227.5, 218.5, 227.5, 151.4, 227.5, 218.5, 227.5, 151.4,
+    ],
+    weeklyStatus: Array.from({ length: 12 }, () => "partial"),
     summary: {
       weeks: 12,
       sessionCount: 45,
-      totalTss: 2577,
-      meanTss: 214.8,
-      minTss: 162,
-      maxTss: 238,
+      totalLoad: 2450.9,
+      meanLoad: 204.2,
+      minLoad: 151.4,
+      maxLoad: 227.5,
       feasibilityMode: "target_seeking",
-      blockGatePass: true,
-      meanGatePass: true,
+      blockStatus: "partial",
+      blockGatePass: null,
+      meanGatePass: null,
       weeklyMissesWithinBudget: true,
       consecutiveMissPairsWithinBudget: true,
     },

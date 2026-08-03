@@ -1,3 +1,13 @@
+import type { CommonLoadAggregate } from "@repo/core";
+import {
+  activityPrescriptionQuantificationSchema,
+  commonLoadResultSchema,
+  createActivityPlanPrescriptionQuantificationBundle,
+  createActivityQuantificationCalculationIdentity,
+  createActivityQuantificationEvidenceIdentity,
+  createPlanActivityQuantificationSubjectIdentity,
+  createPlanOccurrenceActivityQuantificationSubjectIdentity,
+} from "@repo/core";
 import { describe, expect, it } from "vitest";
 import type {
   PlannedDaySummaryActivityPlanRecord,
@@ -63,11 +73,54 @@ function event(
   };
 }
 
+function commonLoad(
+  load: number | null,
+  status: "complete" | "partial" | "unavailable" = "complete",
+): CommonLoadAggregate {
+  if (status === "unavailable") {
+    return {
+      status,
+      model: "gradientpeak_relative_load",
+      version: "1",
+      contributingDurationSeconds: 0,
+      knownDurationSeconds: null,
+      contributingActivityCount: 0,
+      partialActivityCount: 0,
+      unavailableActivityCount: 1,
+      totalActivityCount: 1,
+      activityCountCoverage: 0,
+      knownDurationCoverage: null,
+      unknownDurationActivityCount: 1,
+      reason: "duration_missing",
+    };
+  }
+
+  const contributingDurationSeconds = status === "partial" ? 1800 : 3600;
+  const knownDurationSeconds = 3600;
+  const intensity = Math.sqrt((load ?? 0) / ((contributingDurationSeconds / 3600) * 100));
+  return {
+    status,
+    model: "gradientpeak_relative_load",
+    version: "1",
+    load: load ?? 0,
+    intensity,
+    contributingDurationSeconds,
+    knownDurationSeconds,
+    contributingActivityCount: 1,
+    partialActivityCount: status === "partial" ? 1 : 0,
+    unavailableActivityCount: 0,
+    totalActivityCount: 1,
+    activityCountCoverage: 1,
+    knownDurationCoverage: status === "partial" ? 0.5 : 1,
+    unknownDurationActivityCount: 0,
+  };
+}
+
 async function summarize(
   events: PlannedDaySummaryEventRecord[],
   estimates: Record<
     string,
-    { estimated_duration: number | null; estimated_tss: number | null }
+    { estimated_duration: number | null; common_load: CommonLoadAggregate }
   > = {},
 ) {
   let readInput: PlannedDaySummaryReadInput | undefined;
@@ -81,13 +134,171 @@ async function summarize(
       },
     },
     deriveMetrics: async (plans) =>
-      plans.map((plan) => ({
-        ...plan,
-        authoritative_metrics: estimates[plan.id] ?? {
+      plans.map((plan) => {
+        const estimate = estimates[plan.id] ?? {
           estimated_duration: 3600,
-          estimated_tss: 72,
-        },
-      })),
+          common_load: commonLoad(72),
+        };
+        const aggregate = estimate.common_load;
+        const parsedStructure = structure(["bike"]);
+        const sourceStructure =
+          typeof plan.structure === "object" && plan.structure !== null
+            ? plan.structure
+            : parsedStructure;
+        const activityCategory =
+          "segments" in sourceStructure && Array.isArray(sourceStructure.segments)
+            ? sourceStructure.segments.find(
+                (segment) =>
+                  typeof segment === "object" &&
+                  segment !== null &&
+                  "role" in segment &&
+                  segment.role === "activity" &&
+                  "activity_category" in segment,
+              )?.activity_category
+            : undefined;
+        const category = activityCategory === "run" ? "run" : "bike";
+        const method = category === "run" ? "run_pace_threshold" : "power_threshold";
+        const quality = {
+          source: "estimated" as const,
+          observed_at: "2026-07-27T00:00:00.000Z",
+          valid_at: "2026-07-27T00:00:00.000Z",
+          confidence: "low" as const,
+          stale: false,
+          estimate: true,
+          calculation_version: "test",
+          evidence_fingerprint: `quality-${plan.id}`,
+        };
+        const thresholdEvidence = {
+          ...(category === "run"
+            ? {
+                type: "threshold_speed_mps" as const,
+                value: 4,
+                unit: "meters_per_second" as const,
+              }
+            : { type: "ftp_watts" as const, value: 250, unit: "watts" as const }),
+          source: "estimated" as const,
+          observedAt: "2026-07-27T00:00:00.000Z",
+          validAt: "2026-07-27T00:00:00.000Z",
+          freshness: "current" as const,
+          calculationVersion: "test",
+          sourceFingerprint: `threshold-${plan.id}`,
+        };
+        const commonLoadResult = commonLoadResultSchema.parse(
+          aggregate.status === "unavailable"
+            ? {
+                status: "unavailable",
+                model: aggregate.model,
+                version: aggregate.version,
+                activity_category: category,
+                method: null,
+                quality: null,
+                thresholdEvidence: null,
+                evidenceFingerprint: null,
+                computedAsOf: "2026-07-27T00:00:00.000Z",
+                contributingDurationSeconds: null,
+                reason: "duration_missing",
+              }
+            : aggregate.status === "partial"
+              ? {
+                  status: "partial",
+                  model: aggregate.model,
+                  version: aggregate.version,
+                  activity_category: category,
+                  method,
+                  quality,
+                  thresholdEvidence,
+                  evidenceFingerprint: `plan-${plan.id}`,
+                  computedAsOf: "2026-07-27T00:00:00.000Z",
+                  load: aggregate.load,
+                  intensity: aggregate.intensity,
+                  contributingDurationSeconds: aggregate.contributingDurationSeconds,
+                  eligibleDurationSeconds: aggregate.knownDurationSeconds,
+                  sourceTimeCoverage: aggregate.knownDurationCoverage,
+                  reason: "duration_partial",
+                }
+              : {
+                  status: "available",
+                  model: aggregate.model,
+                  version: aggregate.version,
+                  activity_category: category,
+                  method,
+                  quality,
+                  thresholdEvidence,
+                  evidenceFingerprint: `plan-${plan.id}`,
+                  computedAsOf: "2026-07-27T00:00:00.000Z",
+                  load: aggregate.load,
+                  intensity: aggregate.intensity,
+                  contributingDurationSeconds: aggregate.contributingDurationSeconds,
+                  estimated: true,
+                },
+        );
+        const duration =
+          estimate.estimated_duration === null
+            ? {
+                status: "unavailable" as const,
+                evidenceRole: "estimated" as const,
+                value: null,
+                unit: "seconds" as const,
+                reason: "source_missing" as const,
+              }
+            : {
+                status: "available" as const,
+                evidenceRole: "estimated" as const,
+                value: estimate.estimated_duration,
+                unit: "seconds" as const,
+              };
+        const planSubjectIdentity = createPlanActivityQuantificationSubjectIdentity({
+          planId: plan.id,
+        });
+        const quantification = activityPrescriptionQuantificationSchema.parse({
+          kind: "prescription",
+          stage: "plan",
+          subjectIdentity: createPlanOccurrenceActivityQuantificationSubjectIdentity({
+            occurrenceId: `${plan.id}-occurrence`,
+            parentSubjectIdentity: planSubjectIdentity,
+          }),
+          evidenceIdentity: createActivityQuantificationEvidenceIdentity({
+            evidenceType: "plan_revision",
+            sourceIds: [plan.id],
+            revisionFingerprint: `revision-${plan.id}`,
+            details: { planId: plan.id, category },
+          }),
+          calculationIdentity: createActivityQuantificationCalculationIdentity({
+            model: commonLoadResult.model,
+            version: commonLoadResult.version,
+            computedAt: commonLoadResult.computedAsOf,
+            calibrationEvidenceFingerprint: commonLoadResult.evidenceFingerprint,
+          }),
+          activity_category: category,
+          duration: {
+            elapsed: duration,
+            active: duration,
+            moving: duration,
+          },
+          distance: {
+            status: "unavailable",
+            evidenceRole: "estimated",
+            value: null,
+            unit: "meters",
+            reason: "not_prescribed",
+          },
+          intensity: {
+            prescribed: {
+              status: "unavailable",
+              evidenceRole: "prescribed",
+              values: [],
+              reason: "not_authored",
+            },
+          },
+          commonLoad: commonLoadResult,
+        });
+        return {
+          ...plan,
+          prescriptionQuantification: createActivityPlanPrescriptionQuantificationBundle({
+            members: [quantification],
+          }),
+        };
+      }),
   });
   return { readInput, result };
 }
@@ -105,8 +316,11 @@ describe("plannedDaySummaryUseCase", () => {
       summary: {
         eventCount: 0,
         activity_categories: [],
-        totalDurationSeconds: 0,
-        totalTss: 0,
+        totalDurationSeconds: null,
+        prescriptionQuantification: expect.objectContaining({
+          summary: expect.objectContaining({ kind: "aggregate" }),
+        }),
+        commonLoad: expect.objectContaining({ status: "unavailable" }),
       },
       source: {
         complete: true,
@@ -122,15 +336,18 @@ describe("plannedDaySummaryUseCase", () => {
     const bike = plan("plan-bike", structure(["bike"]));
     const run = plan("plan-run", structure(["run"]));
     const { result } = await summarize([event("bike", bike), event("run", run)], {
-      "plan-bike": { estimated_duration: 3600, estimated_tss: 80 },
-      "plan-run": { estimated_duration: 1800, estimated_tss: 40 },
+      "plan-bike": { estimated_duration: 3600, common_load: commonLoad(80) },
+      "plan-run": { estimated_duration: 1800, common_load: commonLoad(40) },
     });
 
     expect(result.summary).toEqual({
       eventCount: 2,
       activity_categories: ["bike", "run"],
       totalDurationSeconds: 5400,
-      totalTss: 120,
+      prescriptionQuantification: expect.objectContaining({
+        summary: expect.objectContaining({ kind: "aggregate" }),
+      }),
+      commonLoad: expect.objectContaining({ status: "complete", load: 120 }),
     });
   });
 
@@ -140,18 +357,34 @@ describe("plannedDaySummaryUseCase", () => {
 
     expect(result.summary.activity_categories).toEqual(["bike"]);
     expect(result.summary.eventCount).toBe(2);
+    expect(result.summary.totalDurationSeconds).toBe(7200);
+    expect(result.summary.commonLoad).toMatchObject({
+      status: "complete",
+      load: 144,
+      totalActivityCount: 2,
+    });
+    expect(
+      result.summary.prescriptionQuantification.summary.memberSubjectIdentities
+        .flatMap((identity) =>
+          identity.subjectType === "plan_occurrence" &&
+          identity.parentSubjectIdentity.subjectType === "scheduled_event"
+            ? [identity.parentSubjectIdentity.eventId]
+            : [],
+        )
+        .sort(),
+    ).toEqual(["bike-1", "bike-2"]);
   });
 
   it("keeps aggregate estimates unknown rather than converting them to zero", async () => {
     const bike = plan("plan-bike", structure(["bike"]));
     const run = plan("plan-run", structure(["run"]));
     const { result } = await summarize([event("bike", bike), event("run", run)], {
-      "plan-bike": { estimated_duration: null, estimated_tss: 80 },
-      "plan-run": { estimated_duration: 1800, estimated_tss: null },
+      "plan-bike": { estimated_duration: null, common_load: commonLoad(80, "partial") },
+      "plan-run": { estimated_duration: 1800, common_load: commonLoad(null, "unavailable") },
     });
 
     expect(result.summary.totalDurationSeconds).toBeNull();
-    expect(result.summary.totalTss).toBeNull();
+    expect(result.summary.commonLoad).toMatchObject({ status: "partial", load: 80 });
     expect(result.source.unavailableEstimateCount).toBe(2);
   });
 
@@ -161,7 +394,7 @@ describe("plannedDaySummaryUseCase", () => {
 
     expect(result.summary).toMatchObject({
       eventCount: 1,
-      activity_categories: [],
+      activity_categories: ["other"],
     });
   });
 
@@ -175,9 +408,9 @@ describe("plannedDaySummaryUseCase", () => {
 
     expect(result.summary).toMatchObject({
       eventCount: 3,
-      activity_categories: [],
+      activity_categories: ["other"],
       totalDurationSeconds: null,
-      totalTss: null,
+      commonLoad: expect.objectContaining({ status: "unavailable" }),
     });
     expect(result.source).toEqual({
       complete: true,
@@ -193,14 +426,14 @@ describe("plannedDaySummaryUseCase", () => {
     const bike = plan("plan-bike", structure(["bike"]));
     const run = plan("plan-run", structure(["run"]));
     const { result } = await summarize([event("scheduled", bike), event("completed", run)], {
-      "plan-bike": { estimated_duration: 3600, estimated_tss: 80 },
-      "plan-run": { estimated_duration: 1800, estimated_tss: 40 },
+      "plan-bike": { estimated_duration: 3600, common_load: commonLoad(80) },
+      "plan-run": { estimated_duration: 1800, common_load: commonLoad(40) },
     });
 
     expect(result.summary).toMatchObject({
       eventCount: 2,
       totalDurationSeconds: 5400,
-      totalTss: 120,
+      commonLoad: expect.objectContaining({ status: "complete", load: 120 }),
     });
   });
 

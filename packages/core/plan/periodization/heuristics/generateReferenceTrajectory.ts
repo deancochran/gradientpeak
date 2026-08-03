@@ -21,7 +21,7 @@ import type { ResolvedConstraintProfile } from "./resolveConstraintProfile";
 export interface GenerateReferenceTrajectoryInput {
   startDate: string;
   endDate: string;
-  currentCtl: number;
+  currentLongTermLoad: number;
   goals: NormalizedPlanningGoal[];
   resolvedDemands: EventDemand[];
   preferenceProfile: AthletePreferenceProfile;
@@ -75,21 +75,22 @@ function resolvePlanningActivityCategory(demands: EventDemand[]): CanonicalActiv
   return "other";
 }
 
-function resolveGoalPeakCtl(
-  currentCtl: number,
+function resolveGoalPeakLongTermLoad(
+  currentLongTermLoad: number,
   startDate: string,
   goalDate: string,
-  requiredPeakCtl: number,
+  requiredPeakLongTermLoad: number,
   constraintProfile: ResolvedConstraintProfile,
   mode: TrajectoryMode,
 ): number {
   if (mode === "target_seeking") {
-    return round(requiredPeakCtl);
+    return round(requiredPeakLongTermLoad);
   }
 
   const weeksToGoal = Math.max(1 / 7, diffDays(startDate, goalDate) / 7);
-  const achievable = currentCtl + constraintProfile.effective_max_ctl_ramp_per_week * weeksToGoal;
-  return round(Math.min(requiredPeakCtl, achievable));
+  const achievable =
+    currentLongTermLoad + constraintProfile.effective_max_longTermLoad_ramp_per_week * weeksToGoal;
+  return round(Math.min(requiredPeakLongTermLoad, achievable));
 }
 
 function appendPoints(points: ReferenceTrajectoryPoint[], additions: ReferenceTrajectoryPoint[]) {
@@ -105,7 +106,7 @@ function appendPoints(points: ReferenceTrajectoryPoint[], additions: ReferenceTr
 function pushEventPoint(
   points: ReferenceTrajectoryPoint[],
   eventDate: string,
-  targetCtl: number,
+  targetLongTermLoad: number,
   activity_category: CanonicalActivityCategory,
   goalIds: string[],
   rationaleCodes: string[],
@@ -113,8 +114,8 @@ function pushEventPoint(
   const eventPoint = buildBaselineSegment({
     startDate: eventDate,
     endDate: eventDate,
-    startCtl: targetCtl,
-    endCtl: targetCtl,
+    startLongTermLoad: targetLongTermLoad,
+    endLongTermLoad: targetLongTermLoad,
     phase: "event",
     activity_category,
     goalIdsInEffect: goalIds,
@@ -141,11 +142,11 @@ function buildCandidates(input: GenerateReferenceTrajectoryInput): GoalTrajector
         goal,
         demand,
         activity_category: demand.activity_category,
-        targetCtl: resolveGoalPeakCtl(
-          input.currentCtl,
+        targetLongTermLoad: resolveGoalPeakLongTermLoad(
+          input.currentLongTermLoad,
           input.startDate,
           goal.target_date,
-          demand.required_peak_ctl,
+          demand.required_peak_longTermLoad,
           input.constraintProfile,
           input.mode,
         ),
@@ -160,7 +161,7 @@ function addRecoveryTail(
   points: ReferenceTrajectoryPoint[],
   currentDate: string,
   endDate: string,
-  currentCtl: number,
+  currentLongTermLoad: number,
   activity_category: CanonicalActivityCategory,
 ) {
   if (currentDate > endDate) {
@@ -173,8 +174,8 @@ function addRecoveryTail(
     buildBaselineSegment({
       startDate: currentDate,
       endDate: recoveryEndDate,
-      startCtl: currentCtl,
-      endCtl: round(currentCtl * 0.92),
+      startLongTermLoad: currentLongTermLoad,
+      endLongTermLoad: round(currentLongTermLoad * 0.92),
       phase: "recovery",
       activity_category,
       excludeStart: points.length > 0,
@@ -188,8 +189,8 @@ function addRecoveryTail(
       buildBaselineSegment({
         startDate: recoveryEndDate,
         endDate,
-        startCtl: round(currentCtl * 0.92),
-        endCtl: round(currentCtl * 0.92),
+        startLongTermLoad: round(currentLongTermLoad * 0.92),
+        endLongTermLoad: round(currentLongTermLoad * 0.92),
         phase: "maintenance",
         activity_category,
         excludeStart: true,
@@ -203,9 +204,9 @@ function renderMergedGoalWindow(
   points: ReferenceTrajectoryPoint[],
   window: MergedGoalTrajectory,
   currentDate: string,
-  currentCtl: number,
+  currentLongTermLoad: number,
   endDate: string,
-): { nextDate: string; nextCtl: number } {
+): { nextDate: string; nextLongTermLoad: number } {
   const activity_category = window.activity_category;
   const taperStart = clampDate(addDays(window.goalDate, -window.taperDays), currentDate, endDate);
 
@@ -214,8 +215,8 @@ function renderMergedGoalWindow(
     buildBaselineSegment({
       startDate: currentDate,
       endDate: taperStart,
-      startCtl: currentCtl,
-      endCtl: window.targetCtl,
+      startLongTermLoad: currentLongTermLoad,
+      endLongTermLoad: window.targetLongTermLoad,
       phase: currentDate === taperStart ? "build" : "build",
       activity_category,
       excludeStart: points.length > 0,
@@ -224,14 +225,14 @@ function renderMergedGoalWindow(
   );
 
   if (window.strategy === "sustained_peak" && window.secondaryGoalDate) {
-    const firstEventCtl = round(window.targetCtl * 0.96);
+    const firstEventLongTermLoad = round(window.targetLongTermLoad * 0.96);
     appendPoints(
       points,
       buildBaselineSegment({
         startDate: taperStart,
         endDate: addDays(window.goalDate, -1),
-        startCtl: window.targetCtl,
-        endCtl: firstEventCtl,
+        startLongTermLoad: window.targetLongTermLoad,
+        endLongTermLoad: firstEventLongTermLoad,
         phase: "taper",
         activity_category,
         excludeStart: true,
@@ -239,17 +240,23 @@ function renderMergedGoalWindow(
         rationaleCodes: [...window.rationale_codes, "sustained_peak_first_taper"],
       }),
     );
-    pushEventPoint(points, window.goalDate, firstEventCtl, activity_category, window.goalIds, [
-      ...window.rationale_codes,
-      "sustained_peak_first_event",
-    ]);
+    pushEventPoint(
+      points,
+      window.goalDate,
+      firstEventLongTermLoad,
+      activity_category,
+      window.goalIds,
+      [...window.rationale_codes, "sustained_peak_first_event"],
+    );
 
     const secondaryTaperStart = clampDate(
       addDays(window.secondaryGoalDate, -(window.secondaryTaperDays ?? window.taperDays)),
       addDays(window.goalDate, 1),
       endDate,
     );
-    const sustainedFloor = round(window.targetCtl * (window.sustainedPeakFloorFraction ?? 0.9));
+    const sustainedFloor = round(
+      window.targetLongTermLoad * (window.sustainedPeakFloorFraction ?? 0.9),
+    );
     const sustainedBridgeStart = addDays(window.goalDate, 1);
 
     if (sustainedBridgeStart <= secondaryTaperStart) {
@@ -258,8 +265,11 @@ function renderMergedGoalWindow(
         buildBaselineSegment({
           startDate: sustainedBridgeStart,
           endDate: secondaryTaperStart,
-          startCtl: Math.max(firstEventCtl, sustainedFloor),
-          endCtl: Math.max(window.secondaryTargetCtl ?? window.targetCtl, sustainedFloor),
+          startLongTermLoad: Math.max(firstEventLongTermLoad, sustainedFloor),
+          endLongTermLoad: Math.max(
+            window.secondaryTargetLongTermLoad ?? window.targetLongTermLoad,
+            sustainedFloor,
+          ),
           phase: "maintenance",
           activity_category,
           excludeStart: false,
@@ -269,14 +279,19 @@ function renderMergedGoalWindow(
       );
     }
 
-    const secondTargetCtl = round((window.secondaryTargetCtl ?? window.targetCtl) * 0.96);
+    const secondTargetLongTermLoad = round(
+      (window.secondaryTargetLongTermLoad ?? window.targetLongTermLoad) * 0.96,
+    );
     appendPoints(
       points,
       buildBaselineSegment({
         startDate: secondaryTaperStart,
         endDate: addDays(window.secondaryGoalDate, -1),
-        startCtl: Math.max(window.secondaryTargetCtl ?? window.targetCtl, sustainedFloor),
-        endCtl: secondTargetCtl,
+        startLongTermLoad: Math.max(
+          window.secondaryTargetLongTermLoad ?? window.targetLongTermLoad,
+          sustainedFloor,
+        ),
+        endLongTermLoad: secondTargetLongTermLoad,
         phase: "taper",
         activity_category,
         excludeStart: true,
@@ -287,7 +302,7 @@ function renderMergedGoalWindow(
     pushEventPoint(
       points,
       window.secondaryGoalDate,
-      secondTargetCtl,
+      secondTargetLongTermLoad,
       activity_category,
       window.goalIds,
       [...window.rationale_codes, "sustained_peak_second_event"],
@@ -295,19 +310,21 @@ function renderMergedGoalWindow(
 
     return {
       nextDate: addDays(window.secondaryGoalDate, 1),
-      nextCtl: secondTargetCtl,
+      nextLongTermLoad: secondTargetLongTermLoad,
     };
   }
 
-  const taperEndCtl = round(window.targetCtl * (window.localFlattenFraction ?? 0.94));
+  const taperEndLongTermLoad = round(
+    window.targetLongTermLoad * (window.localFlattenFraction ?? 0.94),
+  );
 
   appendPoints(
     points,
     buildBaselineSegment({
       startDate: taperStart,
       endDate: addDays(window.goalDate, -1),
-      startCtl: window.targetCtl,
-      endCtl: taperEndCtl,
+      startLongTermLoad: window.targetLongTermLoad,
+      endLongTermLoad: taperEndLongTermLoad,
       phase: "taper",
       activity_category,
       excludeStart: true,
@@ -315,14 +332,14 @@ function renderMergedGoalWindow(
       rationaleCodes: [...window.rationale_codes, `${window.strategy}_taper_segment`],
     }),
   );
-  pushEventPoint(points, window.goalDate, taperEndCtl, activity_category, window.goalIds, [
+  pushEventPoint(points, window.goalDate, taperEndLongTermLoad, activity_category, window.goalIds, [
     ...window.rationale_codes,
     `${window.strategy}_event_point`,
   ]);
 
   return {
     nextDate: addDays(window.goalDate, 1),
-    nextCtl: taperEndCtl,
+    nextLongTermLoad: taperEndLongTermLoad,
   };
 }
 
@@ -349,8 +366,8 @@ export function generateReferenceTrajectory(
       points: buildBaselineSegment({
         startDate: input.startDate,
         endDate: input.endDate,
-        startCtl: input.currentCtl,
-        endCtl: input.currentCtl,
+        startLongTermLoad: input.currentLongTermLoad,
+        endLongTermLoad: input.currentLongTermLoad,
         phase: "maintenance",
         activity_category,
         rationaleCodes: [...input.feasibility.rationale_codes, "no_goal_maintenance_baseline"],
@@ -362,7 +379,7 @@ export function generateReferenceTrajectory(
 
   const points: ReferenceTrajectoryPoint[] = [];
   let cursorDate = input.startDate;
-  let cursorCtl = input.currentCtl;
+  let cursorLongTermLoad = input.currentLongTermLoad;
 
   for (const goalWindow of mergedGoals) {
     if (goalWindow.goalDate < input.startDate || goalWindow.goalDate > input.endDate) {
@@ -373,14 +390,14 @@ export function generateReferenceTrajectory(
       points,
       goalWindow,
       cursorDate,
-      cursorCtl,
+      cursorLongTermLoad,
       input.endDate,
     );
     cursorDate = rendered.nextDate;
-    cursorCtl = rendered.nextCtl;
+    cursorLongTermLoad = rendered.nextLongTermLoad;
   }
 
-  addRecoveryTail(points, cursorDate, input.endDate, cursorCtl, activity_category);
+  addRecoveryTail(points, cursorDate, input.endDate, cursorLongTermLoad, activity_category);
 
   return referenceTrajectorySchema.parse({
     mode: input.mode,

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { db, pool } from "@repo/db/client";
 import {
   activities,
@@ -28,6 +29,7 @@ import {
 } from "../../application/activity-file-ingestion/ingestion-state";
 
 const seededUserIds: string[] = [];
+const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
 
 async function seedProfile() {
   const id = randomUUID();
@@ -83,6 +85,7 @@ function submission(
           summary: {
             version: 1,
             timing: { timingCoverage: "complete", activeMs: 3_500_000, movingMs: 3_500_000 },
+            normalizedPowerResult: unavailableNormalizedPowerResult,
           },
         },
       ],
@@ -99,9 +102,6 @@ function submission(
     avgSpeedMps: null,
     maxSpeedMps: null,
     normalizedSpeedMps: null,
-    normalizedGradedSpeedMps: null,
-    efficiencyFactor: null,
-    aerobicDecoupling: null,
     avgTemperature: null,
     deviceManufacturer: null,
     deviceProduct: null,
@@ -142,6 +142,7 @@ function segmentManifest(
         summary: {
           version: 1,
           timing: { timingCoverage: "complete", activeMs, movingMs },
+          normalizedPowerResult: unavailableNormalizedPowerResult,
         },
       },
     ],
@@ -199,7 +200,6 @@ describe("canonical activity persistence against PostgreSQL", () => {
       analysis: {
         efforts: [],
         detectedLTHR: null,
-        activityCompletedAt: new Date("2026-01-01T11:00:00.000Z"),
         ingestion: {
           source: "manual_import",
           artifact: acceptedArtifact,
@@ -228,7 +228,6 @@ describe("canonical activity persistence against PostgreSQL", () => {
         analysis: {
           efforts: [],
           detectedLTHR: null,
-          activityCompletedAt: new Date("2026-01-01T11:00:00.000Z"),
           ingestion: {
             source: "manual_import",
             artifact: acceptedArtifact,
@@ -287,7 +286,6 @@ describe("canonical activity persistence against PostgreSQL", () => {
       segmentSet: segmentManifest(3_700_000, 3_600_000, 3_550_000, "run"),
       efforts: [],
       detectedLTHR: null,
-      activityCompletedAt: new Date("2026-01-01T11:01:40Z"),
       activityPlanId: null,
       name: "Enriched activity",
       notes: "updated",
@@ -359,7 +357,6 @@ describe("canonical activity persistence against PostgreSQL", () => {
       analysis: {
         efforts: [],
         detectedLTHR: null,
-        activityCompletedAt: new Date("2026-01-01T11:00:00.000Z"),
         ingestion: {
           source: "provider_sync",
           provider: "wahoo",
@@ -375,7 +372,6 @@ describe("canonical activity persistence against PostgreSQL", () => {
       analysis: {
         efforts: [],
         detectedLTHR: null,
-        activityCompletedAt: new Date("2026-01-01T11:00:00.000Z"),
         ingestion: {
           source: "provider_sync",
           provider: "wahoo",
@@ -391,7 +387,6 @@ describe("canonical activity persistence against PostgreSQL", () => {
       analysis: {
         efforts: [],
         detectedLTHR: null,
-        activityCompletedAt: new Date("2026-01-01T11:00:00.000Z"),
         ingestion: {
           source: "provider_sync",
           provider: "wahoo",
@@ -401,13 +396,27 @@ describe("canonical activity persistence against PostgreSQL", () => {
         },
       },
     });
+    const newerRevisionWithSameArtifact = await submitActivity(db, {
+      ...submission(profileId, { name: "Provider metadata revision" }),
+      providerProvenance: { ...provider, providerUpdatedAt: "2026-01-01T12:00:30.000Z" },
+      analysis: {
+        efforts: [],
+        detectedLTHR: null,
+        ingestion: {
+          source: "provider_sync",
+          provider: "wahoo",
+          externalId,
+          operationKey: `provider:${externalId}:one`,
+          artifact: artifact(profileId, "a", 42),
+        },
+      },
+    });
     const current = await submitActivity(db, {
       ...submission(profileId, { name: "Provider revision two" }),
       providerProvenance: { ...provider, providerUpdatedAt: "2026-01-01T12:01:00.000Z" },
       analysis: {
         efforts: [],
         detectedLTHR: null,
-        activityCompletedAt: new Date("2026-01-01T11:00:00.000Z"),
         ingestion: {
           source: "provider_sync",
           provider: "wahoo",
@@ -419,13 +428,18 @@ describe("canonical activity persistence against PostgreSQL", () => {
     });
     expect(exactRedelivery).toMatchObject({ id: first.id, noOp: true });
     expect(stale).toMatchObject({ id: first.id, noOp: true });
+    expect(newerRevisionWithSameArtifact).toMatchObject({ id: first.id, noOp: false });
     expect(current).toMatchObject({ id: first.id, noOp: false });
     const imports = await db
       .select()
       .from(activities)
       .where(eq(activities.external_id, externalId));
     expect(imports).toHaveLength(1);
-    expect(imports[0]).toMatchObject({ id: first.id, name: "Provider revision two" });
+    expect(imports[0]).toMatchObject({
+      id: first.id,
+      name: "Provider revision two",
+      segments_revision: 3,
+    });
     const [resource] = await db
       .select()
       .from(integrationResourceLinks)
@@ -457,7 +471,6 @@ describe("canonical activity persistence against PostgreSQL", () => {
       analysis: {
         efforts: [],
         detectedLTHR: null,
-        activityCompletedAt: new Date("2026-01-01T11:00:00.000Z"),
         ingestion: {
           source: "mobile_recording",
           operationKey: `recording:${randomUUID()}`,
@@ -547,7 +560,6 @@ describe("canonical activity persistence against PostgreSQL", () => {
       analysis: {
         efforts: [],
         detectedLTHR: null,
-        activityCompletedAt: new Date("2026-01-01T11:00:00.000Z"),
         ingestion: {
           source: "manual_import",
           operationKey,

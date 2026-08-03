@@ -1,20 +1,61 @@
+import type { ActivitySegmentAnalysis } from "@repo/core";
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import React from "react";
+import { createObservationQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
+
+type ActivityDetailTestSegment = ActivitySegmentAnalysis & {
+  id: string;
+  ordinal: number;
+  role: "activity";
+  activity_category: "run" | "bike";
+  startOffsetMs: number;
+  endOffsetMs: number;
+};
+
+const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
+
+function activitySegment(
+  status: "available" | "processing" | "failed" = "available",
+  activity_category: "run" | "bike" = "run",
+): ActivityDetailTestSegment {
+  const identity = {
+    id: "22222222-2222-4222-8222-222222222222",
+    ordinal: 0,
+    role: "activity" as const,
+    activity_category,
+    startOffsetMs: 0,
+    endOffsetMs: 3_120_000,
+  };
+  if (status === "processing") return { ...identity, status, summary: null };
+  if (status === "failed") {
+    return { ...identity, status, summary: null, reason: "analysis_failed" };
+  }
+  return {
+    ...identity,
+    status,
+    summary: {
+      version: 1,
+      timing: {
+        timingCoverage: "complete",
+        activeMs: 3_120_000,
+        movingMs: 3_000_000,
+      },
+      normalizedPowerResult: unavailableNormalizedPowerResult,
+    },
+  };
+}
+
+const activitySegments: ActivityDetailTestSegment[] = [activitySegment()];
 
 const activityData = {
   activity: {
     id: "11111111-1111-4111-8111-111111111111",
     profile_id: "profile-1",
     activity_kind: "single",
-    segments: [
-      {
-        id: "22222222-2222-4222-8222-222222222222",
-        role: "activity",
-        activity_category: "run",
-      },
-    ],
+    segments: activitySegments,
     name: "Morning Threshold",
     started_at: "2026-03-23T09:00:00.000Z",
     distance_meters: 10400,
@@ -89,7 +130,7 @@ const activityData = {
 
 const toggleLikeMutateMock = jest.fn();
 const deleteMutateMock = jest.fn();
-const authState = { profile: { threshold_hr: 170 }, user: { id: "profile-1" } };
+const authState = { user: { id: "profile-1" } };
 const unavailableAggregate = {
   status: "unavailable",
   model: "gradientpeak_relative_load",
@@ -480,6 +521,7 @@ describe("activity detail screen", () => {
     deleteMutateMock.mockReset();
     toggleLikeMutateMock.mockReset();
     authState.user.id = "profile-1";
+    activitySegments.splice(0, activitySegments.length, activitySegment());
     activityData.activity.ingestion = null;
     activityData.activity.current_artifact = {
       id: "33333333-3333-4333-8333-333333333333",
@@ -535,7 +577,7 @@ describe("activity detail screen", () => {
       common_load: activityData.derived.stress.common_load,
     });
     expect(activityPlanComparison.props.actualMetrics).not.toHaveProperty("tss");
-    expect(activityPlanComparison.props.actualMetrics).not.toHaveProperty("intensity_factor");
+    expect(activityPlanComparison.props.actualMetrics).not.toHaveProperty("intensity");
     expect(activityPlanComparison.props.activityPlan.common_load).toEqual(
       activityData.derived.stress.common_load,
     );
@@ -543,18 +585,26 @@ describe("activity detail screen", () => {
   });
 
   it("renders a canonical segment diagnostic for an unavailable parent aggregate", () => {
+    const segmentQuantification = createObservationQuantificationBundleFixture({
+      status: "threshold_missing",
+    });
+    const aggregateQuantification = createObservationQuantificationBundleFixture({
+      status: "threshold_missing",
+    });
     activityQueryState = {
       data: {
         ...activityData,
         derived: {
           ...activityData.derived,
           stress: { ...activityData.derived.stress, common_load: unavailableAggregate },
+          observationQuantification: aggregateQuantification,
         },
         segment_loads: [
           {
             segment_id: "segment-hr",
             activity_category: "run",
             common_load: unavailableHeartRateSegment,
+            observationQuantification: segmentQuantification,
           },
         ],
       } as unknown as typeof activityData,
@@ -634,5 +684,24 @@ describe("activity detail screen", () => {
     renderNative(<ActivityDetailScreen />);
 
     expect(screen.getByText("Activity file is still processing.")).toBeTruthy();
+  });
+
+  it("renders an explicit processing state instead of reading a missing segment summary", () => {
+    activitySegments.splice(0, activitySegments.length, activitySegment("processing", "bike"));
+
+    renderNative(<ActivityDetailScreen />);
+
+    expect(screen.getByTestId("activity-segment-analysis-processing")).toBeTruthy();
+    expect(screen.queryByTestId("activity-normalized-power-card")).toBeNull();
+  });
+
+  it("renders an explicit failed state instead of reading a missing segment summary", () => {
+    activitySegments.splice(0, activitySegments.length, activitySegment("failed", "bike"));
+
+    renderNative(<ActivityDetailScreen />);
+
+    expect(screen.getByTestId("activity-segment-analysis-failed")).toBeTruthy();
+    expect(screen.getByText("Segment analysis failed: analysis_failed")).toBeTruthy();
+    expect(screen.queryByTestId("activity-normalized-power-card")).toBeNull();
   });
 });

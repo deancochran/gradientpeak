@@ -10,6 +10,7 @@ import { HeartPulse, Plus, Scale, TrendingUp } from "lucide-react-native";
 import React from "react";
 import { Pressable, ScrollView, useColorScheme, View } from "react-native";
 import Svg, { Circle, Line, Path, Text as SvgText } from "react-native-svg";
+import { PerformanceModelSummary } from "@/components/profile/PerformanceModelSummary";
 import { CompactInsightCard, DetailChartModal } from "@/components/shared";
 import { ErrorState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
@@ -361,11 +362,15 @@ function ProfileMetricRecords({
 
 export default function ProfileMetricsListScreen() {
   const navigateTo = useAppNavigate();
+  const performanceModelAsOf = React.useRef(new Date().toISOString()).current;
   const { data, isLoading, error, hasNextPage, isFetchingNextPage, fetchNextPage } =
     api.profileMetrics.list.useInfiniteQuery(
       { limit: 50 },
       { getNextPageParam: (lastPage) => lastPage.nextCursor },
     );
+  const performanceModelQuery = api.profiles.getPerformanceModel.useQuery({
+    asOf: performanceModelAsOf,
+  });
   const metrics = (data?.pages.flatMap((page) => page.items) ?? []) as ProfileMetricRow[];
   const metricGroups = React.useMemo(() => buildProfileMetricTrendGroups(metrics), [metrics]);
   const metricSections = React.useMemo(
@@ -434,6 +439,15 @@ export default function ProfileMetricsListScreen() {
             Tap a metric type to open its chart and the records behind that trend.
           </Text>
         </View>
+
+        <PerformanceModelSummary
+          error={performanceModelQuery.error?.message ?? null}
+          isLoading={performanceModelQuery.isLoading}
+          onRetry={() => void performanceModelQuery.refetch()}
+          {...(performanceModelQuery.data !== undefined
+            ? { overview: performanceModelQuery.data }
+            : {})}
+        />
 
         {metricSections.map((section) => (
           <View className="gap-3" key={section.id} testID={`profile-metric-section-${section.id}`}>

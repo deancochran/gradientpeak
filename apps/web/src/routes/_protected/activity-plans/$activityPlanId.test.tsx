@@ -63,7 +63,6 @@ vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 beforeEach(() => {
   mocks.eventListInput = undefined;
   mocks.plan = {
-    authoritative_metrics: null,
     content_visibility: "private",
     created_at: "2026-07-01T00:00:00.000Z",
     description: "Malformed activity",

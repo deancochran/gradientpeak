@@ -1,146 +1,56 @@
 import {
-  analyzeActivityDerivedMetrics,
+  commonLoadResultSchema,
   type LoadSeriesIdentity,
-  loadSeriesIdentityForActivityTss,
+  loadSeriesIdentityForAvailableCommonLoad,
+  loadSeriesIdentitySchema,
+  sameLoadSeriesIdentity,
 } from "@repo/core";
-import { resolveActivityContextFromEvidence } from "../../../../lib/activity-analysis";
-import type {
-  ActivityAnalysisContextSnapshot,
-  ActivityAnalysisMetricSnapshot,
-} from "../../../../repositories";
-import { normalizeActivityCategory } from "../../evidence-adapters";
-
-type MetricRow = {
-  id: string;
-  type: string;
-  value: number;
-  unit: string;
-  recordedAt: Date;
-  source?: "manual" | "test" | "imported" | "provider" | "estimated" | "derived" | null;
-  method?: string | null;
-  provenance?: unknown;
-  referenceActivityId: string | null;
-  referenceActivityCategory?: string | null;
-};
-
-type EffortRow = {
-  id: string;
-  activityId: string | null;
-  activity_category: string;
-  kind: "power" | "speed" | "heart_rate";
-  durationSeconds: number;
-  unit: string;
-  value: number;
-  recordedAt: Date;
-  source?: string | null;
-  method?: string | null;
-  provenance?: unknown;
-};
-
-type ActivityRow = {
-  id: string;
-  type: string;
-  startedAt: Date;
-  finishedAt: Date;
-  durationSeconds: number;
-  movingSeconds: number;
-  distanceMeters: number;
-  averageHeartRate: number | null;
-  maximumHeartRate: number | null;
-  averagePower: number | null;
-  maximumPower: number | null;
-  averageSpeed: number | null;
-  maximumSpeed: number | null;
-  normalizedPower: number | null;
-};
+import type { CanonicalCompletedObservationLoadProjection } from "../../../../lib/activity-analysis";
 
 export type AdaptedActivityTrainingLoad = {
   value: number;
   identity: LoadSeriesIdentity;
 };
 
-/** Derives bounded activity load from the same already-read evidence used by the model reader. */
-export function adaptActivityTrainingLoads(input: {
-  profileDob: Date | null;
-  activities: ActivityRow[];
-  metrics: MetricRow[];
-  efforts: EffortRow[];
-}): Map<string, AdaptedActivityTrainingLoad> {
-  const evidence: ActivityAnalysisContextSnapshot = {
-    profile: { dob: input.profileDob, gender: null },
-    profileMetrics: input.metrics.map((metric) => ({
-      id: metric.id,
-      metric_type: metric.type as ActivityAnalysisMetricSnapshot["metric_type"],
-      value: metric.value,
-      unit: metric.unit,
-      recorded_at: metric.recordedAt,
-      source: metric.source,
-      method: metric.method,
-      provenance: metric.provenance,
-      reference_activity_id: metric.referenceActivityId,
-      reference_activity_category: metric.referenceActivityCategory ?? null,
-    })),
-    recentEfforts: input.efforts.map((effort) => ({
-      id: effort.id,
-      activity_id: effort.activityId,
-      activity_category: normalizeActivityCategory(effort.activity_category),
-      effort_type: effort.kind,
-      duration_seconds: effort.durationSeconds,
-      recorded_at: effort.recordedAt,
-      unit: effort.unit,
-      value: effort.value,
-      source: effort.source,
-      method: effort.method,
-      calculation_version: null,
-      provenance: effort.provenance,
-    })),
-  };
-  const result = new Map<string, AdaptedActivityTrainingLoad>();
+export type AdaptActivityTrainingLoadsResult =
+  | { status: "available"; byActivityId: Map<string, AdaptedActivityTrainingLoad> }
+  | { status: "duplicate_activity"; activityId: string };
 
-  for (const activity of input.activities) {
-    const activity_category = normalizeActivityCategory(activity.type);
-    const context = resolveActivityContextFromEvidence({
-      activityTimestamp: activity.startedAt,
-      activityId: activity.id,
-      evidence,
-    });
-    const derived = analyzeActivityDerivedMetrics({
-      activity: {
-        id: activity.id,
-        type: activity_category,
-        started_at: activity.startedAt.toISOString(),
-        finished_at: activity.finishedAt.toISOString(),
-        duration_seconds: activity.durationSeconds,
-        moving_seconds: activity.movingSeconds,
-        distance_meters: activity.distanceMeters,
-        avg_heart_rate: activity.averageHeartRate,
-        max_heart_rate: activity.maximumHeartRate,
-        avg_power: activity.averagePower,
-        max_power: activity.maximumPower,
-        avg_speed_mps: activity.averageSpeed,
-        max_speed_mps: activity.maximumSpeed,
-        normalized_power: activity.normalizedPower,
-        normalized_speed_mps: null,
-        normalized_graded_speed_mps: null,
-      },
-      context,
-    });
-    const identity = derived.stress.tss_identity;
-    const value = derived.stress.tss;
-    if (
-      value === null ||
-      identity === null ||
-      derived.stress.method === null ||
-      identity.method !== derived.stress.method ||
-      identity.activity_category !== activity_category
-    ) {
+/**
+ * Adapts the canonical completed-observation projection without recalculating
+ * Common Load. Duplicate delivery is an explicit integrity result, never a Map overwrite.
+ */
+export function adaptActivityTrainingLoads(input: {
+  projections: readonly CanonicalCompletedObservationLoadProjection[];
+}): AdaptActivityTrainingLoadsResult {
+  const byActivityId = new Map<string, AdaptedActivityTrainingLoad>();
+  const seenActivityIds = new Set<string>();
+
+  for (const projection of input.projections) {
+    if (seenActivityIds.has(projection.activityId)) {
+      return { status: "duplicate_activity", activityId: projection.activityId };
+    }
+    seenActivityIds.add(projection.activityId);
+
+    const commonLoad = commonLoadResultSchema.parse(projection.commonLoad);
+    if (commonLoad.status !== "available") {
+      if (projection.loadSeriesIdentity !== null) {
+        throw new Error("Unavailable completed Common Load cannot claim a load-series identity");
+      }
       continue;
     }
-    result.set(activity.id, {
-      value,
-      identity: loadSeriesIdentityForActivityTss(identity),
-    });
+    if (projection.loadSeriesIdentity === null) {
+      throw new Error(
+        "Available completed Common Load requires its canonical load-series identity",
+      );
+    }
+    const identity = loadSeriesIdentitySchema.parse(projection.loadSeriesIdentity);
+    const expectedIdentity = loadSeriesIdentityForAvailableCommonLoad(commonLoad);
+    if (!sameLoadSeriesIdentity(identity, expectedIdentity)) {
+      throw new Error("Completed Common Load projection identity does not match its load result");
+    }
+    byActivityId.set(projection.activityId, { value: commonLoad.load, identity });
   }
 
-  return result;
+  return { status: "available", byActivityId };
 }

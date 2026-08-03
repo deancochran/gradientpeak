@@ -1,9 +1,11 @@
 // packages/api/src/routers/planning/training-plans/base.ts
 import {
+  type ActivityObservationQuantificationBundle,
   type AthletePreferenceProfile,
   addDaysDateOnlyUtc,
   athletePreferenceProfileSchema,
   type BuildReadinessForecastTimelineInput,
+  bindPrescriptionQuantificationToScheduledEvent,
   buildDailyLoadRecommendation,
   buildDeterministicProjectionPayload,
   buildGoalAnchoredProjectionPlan,
@@ -19,6 +21,8 @@ import {
   computeLoadBootstrapState,
   countAvailableTrainingDays,
   createAthletePlanningContextFromSnapshot,
+  createObservationQuantificationBundle,
+  createPrescriptionQuantificationBundle,
   creationBehaviorControlsSchema,
   creationConfigValueSchema,
   creationConstraintsSchema,
@@ -55,6 +59,7 @@ import {
   parseProfileGoalRecord,
   type postCreateBehaviorSchema,
   previewCreationConfigInputSchema,
+  projectAthletePerformanceTargetFacts,
   type ReadinessDailyLoadInput,
   type ReadinessDeltaDiagnostics,
   type ReadinessForecastGoalInput,
@@ -69,14 +74,23 @@ import {
   trainingPlanSchema,
   trainingPlanUpdateInputSchema,
 } from "@repo/core";
-import { getAuthoritativeActivityPlanMetrics } from "@repo/core/activity-plan";
-import { calculateTrainingLoadSeries, getLoadBalanceStatus } from "@repo/core/load";
+import {
+  COMMON_LOAD_HISTORY_POLICY_VERSION,
+  COMMON_RELATIVE_LOAD_MODEL,
+  COMMON_RELATIVE_LOAD_VERSION,
+  type CommonLoadHistoryResult,
+  calculateCommonLoadFitnessSeries,
+  commonLoadHistoryResultSchema,
+  commonLoadResultSchema,
+  getLoadBalanceStatus,
+} from "@repo/core/load";
 import { type ProfileGoalRow, schema, type TrainingPlanRow } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { readCurrentProfileCommonLoadHistory } from "../../../application/activities/read-current-profile-common-load-history";
 import { buildEffectiveAthleteSnapshot } from "../../../application/athlete-state/build-effective-athlete-snapshot";
+import { getAthletePerformanceModelAsOf } from "../../../application/performance-model/get-athlete-performance-model-as-of";
 import {
   parseProfileTrainingSettings,
   readParsedProfileTrainingSettings,
@@ -128,10 +142,12 @@ import {
   deriveActivityDurations,
   loadActivitySegmentsByActivityId,
   orderedActivitySegments,
-  summarizeSegmentTss,
+  summarizeSegmentCommonLoad,
+  summarizeSegmentQuantification,
 } from "../../../lib/activity-analysis";
 import { featureFlags } from "../../../lib/features";
 import { createContentAccessPermissions } from "../../../permissions/content-access";
+import { createAthletePerformanceModelRepository } from "../../../repositories/athlete-performance-model-repository";
 import { createTRPCRouter, protectedProcedure } from "../../../trpc";
 import { getActivityPlansDerivedMetrics } from "../../../utils/activity-plan-derived-metrics";
 import { indexCursorSchema } from "../../../utils/index-cursor";
@@ -143,6 +159,58 @@ import {
 const feasibilityStateSchema = z.enum(["feasible", "aggressive", "unsafe"]);
 const safetyStateSchema = z.enum(["safe", "caution", "exceeded"]);
 const trainingPlanTemplateVisibilitySchema = z.enum(["private", "followers", "public"]);
+const historyIdentityProbeSchema = z
+  .object({
+    status: z.literal("available"),
+    identity: z
+      .object({
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        commonLoad: z
+          .object({ model: z.string().min(1), version: z.string().min(1) })
+          .passthrough(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+const commonLoadIdentityProbeSchema = z
+  .object({ model: z.string().min(1), version: z.string().min(1) })
+  .passthrough();
+
+function normalizeCommonLoadHistoryResult(
+  value: unknown,
+  fallbackDate: string,
+): CommonLoadHistoryResult {
+  const parsed = commonLoadHistoryResultSchema.safeParse(value);
+  if (parsed.success) return parsed.data;
+  const identity = historyIdentityProbeSchema.safeParse(value);
+  if (
+    identity.success &&
+    (identity.data.identity.commonLoad.model !== COMMON_RELATIVE_LOAD_MODEL ||
+      identity.data.identity.commonLoad.version !== COMMON_RELATIVE_LOAD_VERSION)
+  ) {
+    return commonLoadHistoryResultSchema.parse({
+      status: "unavailable",
+      policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
+      reason: "incompatible_model_version",
+      context: {
+        date: identity.data.identity.endDate,
+        expectedModel: COMMON_RELATIVE_LOAD_MODEL,
+        expectedVersion: COMMON_RELATIVE_LOAD_VERSION,
+        actualModel: identity.data.identity.commonLoad.model,
+        actualVersion: identity.data.identity.commonLoad.version,
+      },
+    });
+  }
+  return commonLoadHistoryResultSchema.parse({
+    status: "unavailable",
+    policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
+    reason: "invalid_input",
+    context: {
+      path: "commonLoadHistory",
+      message: `Common Load history was invalid as of ${fallbackDate}`,
+    },
+  });
+}
 const trainingPlanUpdateMutationInputSchema = trainingPlanUpdateInputSchema
   .extend({
     id: z.string().uuid(),
@@ -230,7 +298,6 @@ const activitySummaryColumns = {
   avg_speed_mps: schema.activities.avg_speed_mps,
   max_speed_mps: schema.activities.max_speed_mps,
   normalized_speed_mps: schema.activities.normalized_speed_mps,
-  normalized_graded_speed_mps: schema.activities.normalized_graded_speed_mps,
 } as const;
 
 async function attachActivitySegments<
@@ -492,11 +559,11 @@ type ExpandedProjectionPlan = GoalAnchoredProjectionPlan & { description?: strin
 
 function buildExpandedPlanFromMinimalGoal(
   minimalPlan: MinimalTrainingPlanCreate,
-  input?: { startingCtl?: number },
+  input?: { startingLongTermLoad?: number },
 ): ExpandedProjectionPlan {
   return buildGoalAnchoredProjectionPlan({
     minimalPlan,
-    startingCtl: input?.startingCtl,
+    startingLongTermLoad: input?.startingLongTermLoad,
   });
 }
 
@@ -733,12 +800,12 @@ function ratioScore(actual: number, target: number): number {
 }
 
 function adherenceScore(
-  recommendedLoadTss: number,
-  scheduledLoadTss: number,
-  completedLoadTss: number,
+  recommendedLoad: number,
+  scheduledLoad: number,
+  completedLoad: number,
 ): number {
-  const completedVsScheduled = ratioScore(completedLoadTss, scheduledLoadTss);
-  const scheduledVsRecommended = ratioScore(scheduledLoadTss, recommendedLoadTss);
+  const completedVsScheduled = ratioScore(completedLoad, scheduledLoad);
+  const scheduledVsRecommended = ratioScore(scheduledLoad, recommendedLoad);
   return clampNumber(Math.round(completedVsScheduled * 0.7 + scheduledVsRecommended * 0.3), 0, 100);
 }
 
@@ -760,9 +827,9 @@ function getContributorImpact(
 
 function buildAdherenceSummary(
   timeline: Array<{
-    recommended_load_tss: number;
-    scheduled_load_tss: number;
-    completed_load_tss: number;
+    recommended_load: number;
+    scheduled_load: number;
+    completed_load: number;
     adherence_score: number;
     boundary_state: SafetyState;
   }>,
@@ -785,13 +852,13 @@ function buildAdherenceSummary(
 
   const scheduleAlignment =
     timeline.reduce(
-      (sum, point) => sum + ratioScore(point.scheduled_load_tss, point.recommended_load_tss),
+      (sum, point) => sum + ratioScore(point.scheduled_load, point.recommended_load),
       0,
     ) / timeline.length;
 
   const executionAlignment =
     timeline.reduce(
-      (sum, point) => sum + ratioScore(point.completed_load_tss, point.scheduled_load_tss),
+      (sum, point) => sum + ratioScore(point.completed_load, point.scheduled_load),
       0,
     ) / timeline.length;
 
@@ -925,27 +992,27 @@ function buildReadinessSummary(input: {
 }
 
 function classifyBoundaryState(
-  idealTss: number,
-  scheduledTss: number,
-  actualTss: number,
+  recommendedLoad: number,
+  scheduledLoad: number,
+  completedLoad: number,
 ): { state: SafetyState; reasons: string[] } {
   const reasons: string[] = [];
   let state: SafetyState = "safe";
 
-  if (idealTss > 0 && scheduledTss > idealTss * 1.35) {
+  if (recommendedLoad > 0 && scheduledLoad > recommendedLoad * 1.35) {
     state = "exceeded";
-    reasons.push("scheduled_load_above_ideal_boundary");
-  } else if (idealTss > 0 && scheduledTss > idealTss * 1.15) {
+    reasons.push("scheduled_load_above_recommended_boundary");
+  } else if (recommendedLoad > 0 && scheduledLoad > recommendedLoad * 1.15) {
     state = "caution";
-    reasons.push("scheduled_load_near_ideal_boundary");
+    reasons.push("scheduled_load_near_recommended_boundary");
   }
 
-  if (scheduledTss > 0 && actualTss > scheduledTss * 1.35) {
+  if (scheduledLoad > 0 && completedLoad > scheduledLoad * 1.35) {
     state = "exceeded";
-    reasons.push("actual_load_above_scheduled_boundary");
-  } else if (scheduledTss > 0 && actualTss > scheduledTss * 1.15) {
+    reasons.push("completed_load_above_scheduled_boundary");
+  } else if (scheduledLoad > 0 && completedLoad > scheduledLoad * 1.15) {
     state = state === "exceeded" ? "exceeded" : "caution";
-    reasons.push("actual_load_near_scheduled_boundary");
+    reasons.push("completed_load_near_scheduled_boundary");
   }
 
   return {
@@ -1086,17 +1153,25 @@ async function estimateWeeklyTssFromStructuredActivities(input: {
   const estimatedTssByPlanId = new Map(
     plansWithEstimations.map((plan) => [
       plan.id,
-      getAuthoritativeActivityPlanMetrics(plan).estimated_tss ?? 0,
+      plan.prescriptionQuantification.summary.commonLoad.status === "complete" ||
+      plan.prescriptionQuantification.summary.commonLoad.status === "partial"
+        ? plan.prescriptionQuantification.summary.commonLoad.load
+        : null,
     ]),
   );
 
   const dailyTss = new Map<string, number>();
+  let hasUnavailableScheduledLoad = false;
   for (const event of materializedEvents) {
     if (!event.activity_plan_id) {
       continue;
     }
 
-    const estimatedTss = estimatedTssByPlanId.get(event.activity_plan_id) || 0;
+    const estimatedTss = estimatedTssByPlanId.get(event.activity_plan_id);
+    if (estimatedTss === null || estimatedTss === undefined) {
+      hasUnavailableScheduledLoad = true;
+      continue;
+    }
     if (estimatedTss <= 0) {
       continue;
     }
@@ -1105,7 +1180,7 @@ async function estimateWeeklyTssFromStructuredActivities(input: {
   }
 
   return {
-    weeklyTss: estimateWeeklyTssFromDailyMap(dailyTss),
+    weeklyTss: hasUnavailableScheduledLoad ? null : estimateWeeklyTssFromDailyMap(dailyTss),
     latestScheduledDate,
   };
 }
@@ -1186,7 +1261,7 @@ export function buildBaselineDailyRecommendedTssByDate(input: {
   return new Map(
     points.flatMap((point) =>
       point.actionableRecommendation
-        ? [[point.date, point.actionableRecommendation.recommendedLoadTss] as const]
+        ? [[point.date, point.actionableRecommendation.recommendedLoad] as const]
         : [],
     ),
   );
@@ -1231,8 +1306,8 @@ function _findBlockForDate(
 
 function buildProjectionChartPayload(input: {
   expandedPlan: ExpandedProjectionPlan;
-  startingCtl?: number;
-  startingAtl?: number;
+  startingLongTermLoad?: number;
+  startingRecentLoad?: number;
   priorInferredSnapshot?: InferredStateSnapshot;
   normalizedCreationConfig?: TrainingPlanCreationConfig;
   preferenceProfile?: AthletePreferenceProfile;
@@ -1243,8 +1318,8 @@ function buildProjectionChartPayload(input: {
     buildProjectionEngineInput({
       expanded_plan: expandedPlan,
       normalized_creation_config: input.normalizedCreationConfig,
-      starting_ctl: input.startingCtl,
-      starting_atl: input.startingAtl,
+      starting_longTermLoad: input.startingLongTermLoad,
+      starting_recentLoad: input.startingRecentLoad,
       prior_inferred_snapshot: input.priorInferredSnapshot,
       preference_profile: input.preferenceProfile,
       no_history_context: input.noHistoryContext,
@@ -1261,7 +1336,7 @@ function deriveNoHistoryAnchorContext(input: {
   expandedPlan: ExpandedProjectionPlan;
   contextSummary: CreationContextSummary;
   finalConfig: Awaited<ReturnType<typeof evaluateCreationConfig>>["finalConfig"];
-  startingCtlOverride?: number;
+  startingLongTermLoadOverride?: number;
 }): NoHistoryAnchorContext | undefined {
   const earliestGoal = input.expandedPlan.goals.reduce<
     (typeof input.expandedPlan.goals)[number] | undefined
@@ -1308,7 +1383,7 @@ function deriveNoHistoryAnchorContext(input: {
       ? Math.max(0, diffDateOnlyUtcDays(input.expandedPlan.start_date, latestGoal.target_date) / 7)
       : undefined,
     goal_count: input.expandedPlan.goals.length,
-    starting_ctl_override: input.startingCtlOverride,
+    starting_longTermLoad_override: input.startingLongTermLoadOverride,
     context_summary: input.contextSummary,
     availability_context: {
       availability_days: input.finalConfig.availability_config.days,
@@ -1326,11 +1401,11 @@ function deriveProjectionDrivenConflicts(input: {
 }): CreationConflictItem[] {
   const conflicts: CreationConflictItem[] = [];
 
-  if (input.projectionChart.constraint_summary.tss_ramp_clamp_weeks > 0) {
+  if (input.projectionChart.constraint_summary.load_ramp_clamp_weeks > 0) {
     conflicts.push({
-      code: "required_tss_ramp_exceeds_cap",
+      code: "required_load_ramp_exceeds_cap",
       severity: "warning",
-      message: "Required week-to-week TSS progression exceeds current safety guardrails",
+      message: "Required week-to-week load progression exceeds current safety guardrails",
       field_paths: ["behavior_controls.aggressiveness", "optimization_profile"],
       suggestions: [
         "Lower aggressiveness or spike frequency",
@@ -1340,11 +1415,11 @@ function deriveProjectionDrivenConflicts(input: {
     });
   }
 
-  if (input.projectionChart.constraint_summary.ctl_ramp_clamp_weeks > 0) {
+  if (input.projectionChart.constraint_summary.longTermLoad_ramp_clamp_weeks > 0) {
     conflicts.push({
-      code: "required_ctl_ramp_exceeds_cap",
+      code: "required_longTermLoad_ramp_exceeds_cap",
       severity: "warning",
-      message: "Required CTL progression exceeds current safety guardrails",
+      message: "Required long-term load progression exceeds current safety guardrails",
       field_paths: ["behavior_controls.aggressiveness", "optimization_profile"],
       suggestions: [
         "Lower aggressiveness or increase recovery priority",
@@ -1394,7 +1469,6 @@ const insightTimelineInputSchema = z.object({
 });
 
 const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
-const safeFallbackHrThresholdBpm = 160;
 const projectionTargetTestDurationSeconds = 1200;
 type GoalProjectionSource = {
   goal: ProfileGoal;
@@ -1435,18 +1509,18 @@ type ProjectionDashboardSummary = {
   readiness_points: Array<{
     date: string;
     readiness_score: number;
-    predicted_fitness_ctl: number;
+    predicted_fitness_longTermLoad: number;
   }>;
   microcycles: Array<{
     week_start_date: string;
     week_end_date: string;
     phase: string;
-    planned_weekly_tss: number;
-    projected_ctl: number;
+    planned_weekly_load: number;
+    projected_longTermLoad: number;
     constraints: string[];
     recovery_active: boolean;
-    demand_floor_tss: number | null;
-    demand_gap_unmet_weekly_tss: number | null;
+    demand_floor_load: number | null;
+    demand_gap_unmet_weekly_load: number | null;
   }>;
   goal_forecasts: Array<{
     profile_goal_id: string;
@@ -1472,8 +1546,8 @@ type ScheduleSimulation = ReturnType<typeof simulateReadinessScheduleAdjustment>
 
 function mapDailyLoadFromDateTotals(map: Map<string, number>): ReadinessDailyLoadInput[] {
   return [...map.entries()]
-    .filter(([, tss]) => Number.isFinite(tss) && tss > 0)
-    .map(([date, tss]) => ({ date, tss: Math.round(tss * 10) / 10 }))
+    .filter(([, load]) => Number.isFinite(load) && load > 0)
+    .map(([date, load]) => ({ date, load: Math.round(load * 10) / 10 }))
     .sort((left, right) => left.date.localeCompare(right.date));
 }
 
@@ -1481,23 +1555,24 @@ function mapScheduledDailyLoadFromDateTotals(
   map: Map<string, number>,
 ): ScheduledReadinessDailyLoadInput[] {
   return [...map.entries()]
-    .filter(([, tss]) => Number.isFinite(tss) && tss > 0)
-    .map(([date, tss]) => ({
+    .filter(([, load]) => Number.isFinite(load) && load > 0)
+    .map(([date, load]) => ({
       date,
-      tss: Math.round(tss * 10) / 10,
+      load: Math.round(load * 10) / 10,
       confidence: "medium" as const,
     }))
     .sort((left, right) => left.date.localeCompare(right.date));
 }
 
 function mapRecommendedDailyLoadFromTimeline(
-  timeline: Array<{ date: string; recommended_load_tss: number }>,
+  timeline: Array<{ date: string; recommended_load: number }>,
 ): ReadinessDailyLoadInput[] {
   return timeline
-    .filter(
-      (point) => Number.isFinite(point.recommended_load_tss) && point.recommended_load_tss > 0,
-    )
-    .map((point) => ({ date: point.date, tss: Math.round(point.recommended_load_tss * 10) / 10 }))
+    .filter((point) => Number.isFinite(point.recommended_load) && point.recommended_load > 0)
+    .map((point) => ({
+      date: point.date,
+      load: Math.round(point.recommended_load * 10) / 10,
+    }))
     .sort((left, right) => left.date.localeCompare(right.date));
 }
 
@@ -1524,7 +1599,7 @@ function buildScheduleSimulation(input: {
   return simulateReadinessScheduleAdjustment({
     forecastInput: input.forecastInput,
     date: recommendation.target_date,
-    tssDelta: boundedDelta,
+    loadDelta: boundedDelta,
   });
 }
 
@@ -1569,21 +1644,6 @@ function buildReadinessForecastReasonCodes(input: {
   ];
 
   return uniqueReasons(codes) as ForecastConfidenceReasonCode[];
-}
-
-function buildSafeHrThresholdFallbackTarget(input?: {
-  preferredValue?: number | null;
-}): MinimalTrainingPlanCreate["goals"][number]["targets"][number] {
-  const preferred = input?.preferredValue;
-  const targetLthrBpm =
-    typeof preferred === "number" && Number.isFinite(preferred) && preferred > 0
-      ? clampNumber(Math.round(preferred), 120, 220)
-      : safeFallbackHrThresholdBpm;
-
-  return {
-    target_type: "hr_threshold",
-    target_lthr_bpm: targetLthrBpm,
-  };
 }
 
 function inferFallbackRaceTargetSpeedMps(input: {
@@ -1635,12 +1695,12 @@ function buildRacePerformanceTarget(input: {
   };
 }
 
-function mapCanonicalGoalToMinimalPlanGoal(
+export function mapCanonicalGoalToMinimalPlanGoal(
   source: GoalProjectionSource,
-): MinimalTrainingPlanCreate["goals"][number] {
+): MinimalTrainingPlanCreate["goals"][number] | null {
   const { goal, targetDate } = source;
 
-  const target: MinimalTrainingPlanCreate["goals"][number]["targets"][number] = (() => {
+  const target: MinimalTrainingPlanCreate["goals"][number]["targets"][number] | null = (() => {
     switch (goal.objective.type) {
       case "event_performance":
         return buildRacePerformanceTarget({
@@ -1668,9 +1728,10 @@ function mapCanonicalGoalToMinimalPlanGoal(
               activity_category: goal.activity_category,
             };
           case "hr":
-            return buildSafeHrThresholdFallbackTarget({
-              preferredValue: goal.objective.value,
-            });
+            return {
+              target_type: "hr_threshold",
+              target_lthr_bpm: goal.objective.value,
+            };
         }
       case "completion": {
         const distanceMeters = goal.objective.distance_m ?? 5000;
@@ -1681,9 +1742,11 @@ function mapCanonicalGoalToMinimalPlanGoal(
         });
       }
       case "consistency":
-        return buildSafeHrThresholdFallbackTarget();
+        return null;
     }
   })();
+
+  if (target === null) return null;
 
   return {
     name: goal.title,
@@ -1797,8 +1860,8 @@ function mapProjectionMicrocyclesToIdealTssByDate(
     if (!startDate || !endDate) continue;
 
     if (
-      typeof microcycle.planned_weekly_tss !== "number" ||
-      !Number.isFinite(microcycle.planned_weekly_tss)
+      typeof microcycle.planned_weekly_load !== "number" ||
+      !Number.isFinite(microcycle.planned_weekly_load)
     ) {
       continue;
     }
@@ -1806,11 +1869,11 @@ function mapProjectionMicrocyclesToIdealTssByDate(
     const dates = buildDateRange(startDate, endDate);
     if (dates.length === 0) continue;
 
-    const dailyTss =
-      Math.round((Math.max(0, microcycle.planned_weekly_tss) / dates.length) * 10) / 10;
+    const dailyLoad =
+      Math.round((Math.max(0, microcycle.planned_weekly_load) / dates.length) * 10) / 10;
 
     for (const date of dates) {
-      map.set(date, dailyTss);
+      map.set(date, dailyLoad);
     }
   }
 
@@ -1870,18 +1933,19 @@ function buildProjectionDashboardSummary(input: {
     readiness_points: input.projectionChart.points.map((point) => ({
       date: point.date,
       readiness_score: point.readiness_score,
-      predicted_fitness_ctl: point.predicted_fitness_ctl,
+      predicted_fitness_longTermLoad: point.predicted_fitness_longTermLoad,
     })),
     microcycles: input.projectionChart.microcycles.map((microcycle) => ({
       week_start_date: microcycle.week_start_date,
       week_end_date: microcycle.week_end_date,
       phase: microcycle.phase,
-      planned_weekly_tss: microcycle.planned_weekly_tss,
-      projected_ctl: microcycle.projected_ctl,
+      planned_weekly_load: microcycle.planned_weekly_load,
+      projected_longTermLoad: microcycle.projected_longTermLoad,
       constraints: microcycle.metadata.load_resolution.constraints,
       recovery_active: microcycle.metadata.recovery.active,
-      demand_floor_tss: microcycle.metadata.load_resolution.demand_floor_tss,
-      demand_gap_unmet_weekly_tss: microcycle.metadata.tss_ramp.demand_gap_unmet_weekly_tss ?? null,
+      demand_floor_load: microcycle.metadata.load_resolution.demand_floor_load,
+      demand_gap_unmet_weekly_load:
+        microcycle.metadata.load_ramp.demand_gap_unmet_weekly_load ?? null,
     })),
     goal_forecasts: goalForecasts,
   };
@@ -1929,7 +1993,10 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
       };
     }
 
-    const mappedGoals = rawGoals.map((goal) => mapCanonicalGoalToMinimalPlanGoal(goal));
+    const mappedGoals = rawGoals.flatMap((goal) => {
+      const mappedGoal = mapCanonicalGoalToMinimalPlanGoal(goal);
+      return mappedGoal === null ? [] : [mappedGoal];
+    });
 
     if (mappedGoals.length === 0) {
       return {
@@ -1985,11 +2052,13 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
       db: input.db,
       profileId: input.profileId,
     });
+    const asOfIso = new Date().toISOString();
 
     const profileContext = await deriveProfileAwareCreationContext({
       db: input.db,
       store: input.store,
       profileId: input.profileId,
+      asOfIso,
     });
 
     const creationConfig = await evaluateCreationConfig({
@@ -1997,6 +2066,7 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
       store: input.store,
       profileId: input.profileId,
       creationInput,
+      asOfIso,
     });
 
     const projectionArtifacts = buildCreationProjectionArtifacts({
@@ -2005,8 +2075,8 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
       finalConfig: creationConfig.finalConfig,
       preferenceProfile: profileContext.preferenceProfile,
       contextSummary: profileContext.contextSummary,
-      startingCtlOverride: profileContext.globalCtlOverride,
-      startingAtlOverride: profileContext.globalAtlOverride,
+      startingLongTermLoadOverride: profileContext.globalLongTermLoadOverride,
+      startingRecentLoadOverride: profileContext.globalRecentLoadOverride,
     });
 
     const idealTssByDate = mapProjectionMicrocyclesToIdealTssByDate(
@@ -2096,9 +2166,9 @@ async function estimateCurrentCtl(input: {
   const bootstrap = computeLoadBootstrapState({
     activities: data.map((activity: any) => ({
       occurred_at: activity.started_at,
-      tss: (() => {
-        const summary = summarizeSegmentTss(segmentDerived, new Set([activity.id]));
-        return summary.complete ? summary.tss : null;
+      load: (() => {
+        const summary = summarizeSegmentCommonLoad(segmentDerived, new Set([activity.id]));
+        return summary.status === "complete" ? summary.load : null;
       })(),
       duration_seconds:
         deriveActivityDurations(activity).active_seconds ??
@@ -2107,7 +2177,7 @@ async function estimateCurrentCtl(input: {
     as_of: asOf.toISOString(),
   });
 
-  return bootstrap.starting_ctl;
+  return bootstrap.starting_longTermLoad;
 }
 
 const blockSnapshotSchema = z.object({
@@ -2261,7 +2331,8 @@ function buildCreationPreviewSnapshotToken(input: {
     version: CREATION_PREVIEW_SNAPSHOT_VERSION,
     minimal_plan: canonicalizeMinimalTrainingPlanCreate(input.minimalPlan),
     normalized_creation_config: normalizedCreationConfigSnapshot,
-    estimated_current_ctl: Math.round(input.loadBootstrapState.starting_ctl * 10) / 10,
+    estimated_current_longTermLoad:
+      Math.round(input.loadBootstrapState.starting_longTermLoad * 10) / 10,
     projection_constraint_summary: input.projectionConstraintSummary,
     projection_feasibility: input.projectionFeasibility,
     canonical_resolution_fingerprint: input.canonicalResolutionFingerprint,
@@ -2279,8 +2350,8 @@ function buildCreationProjectionArtifacts(input: {
   minimalPlan: z.infer<typeof minimalTrainingPlanCreateSchema>;
   loadBootstrapState: LoadBootstrapState;
   priorInferredSnapshot?: InferredStateSnapshot;
-  startingCtlOverride?: number;
-  startingAtlOverride?: number;
+  startingLongTermLoadOverride?: number;
+  startingRecentLoadOverride?: number;
   finalConfig: Awaited<ReturnType<typeof evaluateCreationConfig>>["finalConfig"];
   preferenceProfile?: AthletePreferenceProfile;
   contextSummary: CreationContextSummary;
@@ -2289,24 +2360,26 @@ function buildCreationProjectionArtifacts(input: {
   projectionChart: ProjectionChartPayload;
   projectionFeasibility: ProjectionFeasibilitySummary;
 } {
-  const effectiveStartingCtl = input.startingCtlOverride ?? input.loadBootstrapState.starting_ctl;
-  const effectiveStartingAtl = input.startingAtlOverride ?? input.loadBootstrapState.starting_atl;
+  const effectiveStartingLongTermLoad =
+    input.startingLongTermLoadOverride ?? input.loadBootstrapState.starting_longTermLoad;
+  const effectiveStartingRecentLoad =
+    input.startingRecentLoadOverride ?? input.loadBootstrapState.starting_recentLoad;
 
   const expandedPlan = buildExpandedPlanFromMinimalGoal(input.minimalPlan, {
-    startingCtl: effectiveStartingCtl,
+    startingLongTermLoad: effectiveStartingLongTermLoad,
   });
 
   const noHistoryContext = deriveNoHistoryAnchorContext({
     expandedPlan,
     contextSummary: input.contextSummary,
     finalConfig: input.finalConfig,
-    startingCtlOverride: effectiveStartingCtl,
+    startingLongTermLoadOverride: effectiveStartingLongTermLoad,
   });
 
   const projectionChart = buildProjectionChartPayload({
     expandedPlan,
-    startingCtl: effectiveStartingCtl,
-    startingAtl: effectiveStartingAtl,
+    startingLongTermLoad: effectiveStartingLongTermLoad,
+    startingRecentLoad: effectiveStartingRecentLoad,
     priorInferredSnapshot: input.priorInferredSnapshot,
     normalizedCreationConfig: input.finalConfig,
     preferenceProfile: input.preferenceProfile,
@@ -2314,23 +2387,23 @@ function buildCreationProjectionArtifacts(input: {
   });
 
   const projectionPoints = projectionChart.points;
-  const startingFitnessCtl = projectionPoints[0]?.predicted_fitness_ctl;
-  const endingFitnessCtl = projectionPoints.at(-1)?.predicted_fitness_ctl;
+  const startingFitnessLongTermLoad = projectionPoints[0]?.predicted_fitness_longTermLoad;
+  const endingFitnessLongTermLoad = projectionPoints.at(-1)?.predicted_fitness_longTermLoad;
 
   if (
-    typeof startingFitnessCtl === "number" &&
-    typeof endingFitnessCtl === "number" &&
-    endingFitnessCtl < startingFitnessCtl
+    typeof startingFitnessLongTermLoad === "number" &&
+    typeof endingFitnessLongTermLoad === "number" &&
+    endingFitnessLongTermLoad < startingFitnessLongTermLoad
   ) {
     const lastPoint = projectionPoints.at(-1);
     if (lastPoint) {
-      lastPoint.predicted_fitness_ctl = startingFitnessCtl;
+      lastPoint.predicted_fitness_longTermLoad = startingFitnessLongTermLoad;
     }
 
     if (projectionChart.inferred_current_state?.mean) {
-      projectionChart.inferred_current_state.mean.ctl = Math.max(
-        projectionChart.inferred_current_state.mean.ctl,
-        startingFitnessCtl,
+      projectionChart.inferred_current_state.mean.longTermLoad = Math.max(
+        projectionChart.inferred_current_state.mean.longTermLoad,
+        startingFitnessLongTermLoad,
       );
     }
   }
@@ -2376,9 +2449,9 @@ export async function deriveProfileAwareCreationContext(input: {
   db: DbClient;
   store: ReturnType<typeof createActivityAnalysisStore>;
   profileId: string;
-  asOfIso?: string;
+  asOfIso: string;
 }) {
-  const asOf = input.asOfIso ? new Date(input.asOfIso) : new Date();
+  const asOf = new Date(input.asOfIso);
   const recentActivitiesCutoff = new Date(asOf);
   recentActivitiesCutoff.setDate(recentActivitiesCutoff.getDate() - 84);
 
@@ -2479,8 +2552,12 @@ export async function deriveProfileAwareCreationContext(input: {
         activity_category: segment.activity_category,
         duration_seconds:
           (segment.active_ms ?? segment.end_offset_ms - segment.start_offset_ms) / 1_000,
-        tss: derived?.tss ?? null,
-        intensity_factor: derived?.intensity_factor ?? null,
+        common_load: (() => {
+          const parsed = commonLoadResultSchema.safeParse(
+            derived?.observationQuantification.members[0]?.commonLoad,
+          );
+          return parsed.success ? parsed.data : null;
+        })(),
       };
     }),
   );
@@ -2538,10 +2615,21 @@ export async function deriveProfileAwareCreationContext(input: {
     profileId: input.profileId,
     now: asOf,
   });
+  const commonLoadHistoryResult = normalizeCommonLoadHistoryResult(
+    commonLoadHistory.result,
+    asOf.toISOString().slice(0, 10),
+  );
   const currentCommonLoad =
-    commonLoadHistory?.result.status === "available"
-      ? (commonLoadHistory.result.points.at(-1) ?? null)
+    commonLoadHistoryResult.status === "available"
+      ? (commonLoadHistoryResult.points.at(-1) ?? null)
       : null;
+  // One operation as-of anchors both the canonical model and Core planning context.
+  const performanceTargets = projectAthletePerformanceTargetFacts(
+    await getAthletePerformanceModelAsOf(
+      { athleteId: input.profileId, asOf },
+      createAthletePerformanceModelRepository(input.db),
+    ),
+  );
 
   const effectiveAthleteSnapshot = buildEffectiveAthleteSnapshot({
     asOf,
@@ -2554,29 +2642,27 @@ export async function deriveProfileAwareCreationContext(input: {
           ? profileResult.data[0].gender
           : null,
     },
-    profileMetrics: profileMetricsRows.map((metric) => ({
-      metric_type: metric.metric_type,
-      value: Number(metric.value),
-      unit:
-        metric.unit ??
-        (metric.metric_type === "ftp" ? "W" : metric.metric_type === "lthr" ? "bpm" : "kg"),
-      recorded_at: metric.recorded_at,
-      source: metric.source,
-      method: metric.method,
-      calculation_version: metric.calculation_version,
-      quality_score: metric.quality_score === null ? undefined : metric.quality_score,
-      provenance:
-        typeof metric.provenance === "object" && metric.provenance !== null
-          ? (metric.provenance as Record<string, unknown>)
-          : undefined,
-    })),
+    profileMetrics: profileMetricsRows.map((metric) => {
+      const provenance = z.record(z.string(), z.unknown()).safeParse(metric.provenance);
+      return {
+        metric_type: metric.metric_type,
+        value: Number(metric.value),
+        unit: metric.unit,
+        recorded_at: metric.recorded_at,
+        source: metric.source,
+        method: metric.method,
+        calculation_version: metric.calculation_version,
+        quality_score: metric.quality_score === null ? undefined : metric.quality_score,
+        provenance: provenance.success ? provenance.data : undefined,
+      };
+    }),
     currentFitness:
       currentCommonLoad === null
         ? null
         : {
-            ctl: currentCommonLoad.longTermLoad,
-            atl: currentCommonLoad.recentLoad,
-            tsb: currentCommonLoad.loadBalance,
+            longTermLoad: currentCommonLoad.longTermLoad,
+            recentLoad: currentCommonLoad.recentLoad,
+            loadBalance: currentCommonLoad.loadBalance,
             recorded_at: commonLoadHistory?.computedAt,
           },
     activityEfforts: efforts.flatMap((effort) => {
@@ -2615,18 +2701,9 @@ export async function deriveProfileAwareCreationContext(input: {
       profileMetrics: "complete",
       activityEfforts: (effortsResult.data?.length ?? 0) >= 200 ? "possibly_truncated" : "complete",
     },
+    performanceTargets,
   });
   const athleteContext = createAthletePlanningContextFromSnapshot(effectiveAthleteSnapshot);
-
-  const profileMetrics = {
-    ftp:
-      athleteContext.physiology.ftpWatts.value === null
-        ? null
-        : Math.round(athleteContext.physiology.ftpWatts.value),
-    threshold_hr: athleteContext.physiology.thresholdHeartRateBpm.value,
-    weight_kg: athleteContext.body.weightKg.value,
-    lthr: athleteContext.physiology.thresholdHeartRateBpm.value,
-  };
 
   const settings = parseProfileTrainingSettings(settingsResult.data?.settings);
   const preferenceProfile = settings ?? undefined;
@@ -2639,7 +2716,8 @@ export async function deriveProfileAwareCreationContext(input: {
       primary_category: primaryCategory,
       category_mix: categoryMix,
     },
-    profile_metrics: profileMetrics,
+    performance_targets: performanceTargets,
+    weight_kg: athleteContext.body.weightKg.value,
     profile: {
       dob: profileResult.data?.[0]?.dob?.toISOString() ?? null,
       gender:
@@ -2658,21 +2736,23 @@ export async function deriveProfileAwareCreationContext(input: {
     profile_age: contextSummary.user_age,
   });
 
-  const globalCtlOverride =
-    baselineFitnessOverride?.is_enabled && typeof baselineFitnessOverride?.override_ctl === "number"
-      ? baselineFitnessOverride.override_ctl
+  const globalLongTermLoadOverride =
+    baselineFitnessOverride?.is_enabled &&
+    typeof baselineFitnessOverride?.override_longTermLoad === "number"
+      ? baselineFitnessOverride.override_longTermLoad
       : undefined;
-  const globalAtlOverride =
-    baselineFitnessOverride?.is_enabled && typeof baselineFitnessOverride?.override_atl === "number"
-      ? baselineFitnessOverride.override_atl
+  const globalRecentLoadOverride =
+    baselineFitnessOverride?.is_enabled &&
+    typeof baselineFitnessOverride?.override_recentLoad === "number"
+      ? baselineFitnessOverride.override_recentLoad
       : undefined;
 
   return {
     athleteContext,
     contextSummary,
     loadBootstrapState,
-    globalCtlOverride,
-    globalAtlOverride,
+    globalLongTermLoadOverride,
+    globalRecentLoadOverride,
     baselineFitnessOverride,
     preferenceProfile,
   };
@@ -2684,11 +2764,11 @@ function buildConfirmedSuggestionsFromContext(input: {
   nowIso: string;
   baselineFitnessOverride?: {
     is_enabled: boolean;
-    override_ctl?: number;
-    override_atl?: number;
+    override_longTermLoad?: number;
+    override_recentLoad?: number;
     override_date?: string;
-    max_weekly_tss_ramp_pct?: number;
-    max_ctl_ramp_per_week?: number;
+    max_weekly_load_ramp_pct?: number;
+    max_longTermLoad_ramp_per_week?: number;
   };
 }) {
   const suggestedOptimizationProfile =
@@ -2708,13 +2788,13 @@ function buildConfirmedSuggestionsFromContext(input: {
       suggestedOptimizationProfile,
     post_goal_recovery_days: input.creationInput.defaults?.post_goal_recovery_days,
     // Apply ramp rate overrides when baseline fitness is enabled
-    max_weekly_tss_ramp_pct:
+    max_weekly_load_ramp_pct:
       input.baselineFitnessOverride?.is_enabled === true
-        ? input.baselineFitnessOverride.max_weekly_tss_ramp_pct
+        ? input.baselineFitnessOverride.max_weekly_load_ramp_pct
         : undefined,
-    max_ctl_ramp_per_week:
+    max_longTermLoad_ramp_per_week:
       input.baselineFitnessOverride?.is_enabled === true
-        ? input.baselineFitnessOverride.max_ctl_ramp_per_week
+        ? input.baselineFitnessOverride.max_longTermLoad_ramp_per_week
         : undefined,
     learned_ramp_rate:
       featureFlags.personalizationRampLearning && input.contextSummary.learned_ramp_rate
@@ -2811,18 +2891,18 @@ async function evaluateCreationConfig(input: {
   creationInput: z.infer<typeof creationNormalizationInputSchema>;
   asOfIso?: string;
 }) {
-  const nowIso = input.creationInput.now_iso ?? new Date().toISOString();
+  const nowIso = input.asOfIso ?? input.creationInput.now_iso ?? new Date().toISOString();
   const {
     contextSummary,
     loadBootstrapState,
-    globalCtlOverride,
-    globalAtlOverride,
+    globalLongTermLoadOverride,
+    globalRecentLoadOverride,
     baselineFitnessOverride,
   } = await deriveProfileAwareCreationContext({
     db: input.db,
     store: input.store,
     profileId: input.profileId,
-    asOfIso: input.asOfIso,
+    asOfIso: nowIso,
   });
 
   const { suggestionPayload, suggestedValues } = buildConfirmedSuggestionsFromContext({
@@ -2910,8 +2990,8 @@ async function evaluateCreationConfig(input: {
     suggestionPayload,
     conflictResolution,
     feasibilitySummary,
-    globalCtlOverride,
-    globalAtlOverride,
+    globalLongTermLoadOverride,
+    globalRecentLoadOverride,
   };
 }
 
@@ -3019,7 +3099,7 @@ export async function getPlanTabProjectionService({
     timezone: string;
     schedule_adjustment?: {
       date: string;
-      tss_delta: number;
+      load_delta: number;
       comparison_date?: string;
     };
   };
@@ -3128,13 +3208,13 @@ export async function getPlanTabProjectionService({
       ? await getActivityPlansDerivedMetrics(estimationPlans, db, estimationReader, profileId)
       : [];
   const failedEstimations = plansWithEstimations.filter(
-    (item: any) => item.counts_toward_aggregation === false,
+    (item) => item.estimate_source === "failed",
   );
 
-  const estimatedTssByPlanId = new Map(
+  const commonLoadByPlanId = new Map(
     plansWithEstimations
-      .filter((item: any) => item.counts_toward_aggregation !== false)
-      .map((item: any) => [item.id, getAuthoritativeActivityPlanMetrics(item).estimated_tss]),
+      .filter((item) => item.estimate_source !== "failed")
+      .map((item) => [item.id, item.prescriptionQuantification.summary.commonLoad]),
   );
 
   const scheduledByDate = new Map<string, number>();
@@ -3143,8 +3223,9 @@ export async function getPlanTabProjectionService({
     if (!scheduledDate) continue;
 
     const planId = planned.activity_plan?.id;
-    const estimatedTss = planId ? Number(estimatedTssByPlanId.get(planId) || 0) : 0;
-    scheduledByDate.set(scheduledDate, (scheduledByDate.get(scheduledDate) || 0) + estimatedTss);
+    const commonLoad = planId ? commonLoadByPlanId.get(planId) : undefined;
+    if (commonLoad?.status !== "complete") continue;
+    scheduledByDate.set(scheduledDate, (scheduledByDate.get(scheduledDate) ?? 0) + commonLoad.load);
   }
 
   const actualActivityParents = await db
@@ -3167,10 +3248,12 @@ export async function getPlanTabProjectionService({
   const actualByDate = new Map<string, number>();
   for (const activity of actualActivities) {
     const date = formatDateOnlyUtc(new Date(activity.started_at));
-    const tss = actualSegments
-      .filter((segment) => segment.activity_id === activity.id)
-      .reduce((sum, segment) => sum + (segment.tss ?? 0), 0);
-    actualByDate.set(date, (actualByDate.get(date) || 0) + tss);
+    const commonLoad = summarizeSegmentCommonLoad(actualSegments, new Set([activity.id]));
+    actualByDate.set(
+      date,
+      (actualByDate.get(date) || 0) +
+        (commonLoad.status === "complete" ? (commonLoad.load ?? 0) : 0),
+    );
   }
 
   const projectionGoalContext = await deriveInsightTimelineProjectionIdealTssByDate({
@@ -3197,28 +3280,24 @@ export async function getPlanTabProjectionService({
     hasActivityHistory,
   });
   const timeline = timelineDates.map((date) => {
-    const scheduled_load_tss = Math.round((scheduledByDate.get(date) || 0) * 10) / 10;
-    const recommended_load_tss =
+    const scheduled_load = Math.round((scheduledByDate.get(date) ?? 0) * 10) / 10;
+    const recommended_load =
       baselineRecommendedTssByDate.get(date) ??
       resolveBaselineDailyTss({
         date,
         blocks,
         hasActivityHistory,
       });
-    const completed_load_tss = Math.round((actualByDate.get(date) || 0) * 10) / 10;
-    const boundary = classifyBoundaryState(
-      recommended_load_tss,
-      scheduled_load_tss,
-      completed_load_tss,
-    );
+    const completed_load = Math.round((actualByDate.get(date) ?? 0) * 10) / 10;
+    const boundary = classifyBoundaryState(recommended_load, scheduled_load, completed_load);
 
     return {
       date,
-      recommended_load_tss,
-      scheduled_load_tss,
-      tentative_scheduled_load_tss: 0,
-      completed_load_tss,
-      adherence_score: adherenceScore(recommended_load_tss, scheduled_load_tss, completed_load_tss),
+      recommended_load,
+      scheduled_load,
+      tentative_scheduled_load: 0,
+      completed_load,
+      adherence_score: adherenceScore(recommended_load, scheduled_load, completed_load),
       boundary_state: boundary.state,
       boundary_reasons: boundary.reasons,
     };
@@ -3290,7 +3369,7 @@ export async function getPlanTabProjectionService({
           estimation: {
             failed_plan_count: failedEstimations.length,
             excluded_from_scheduled_load_count: failedEstimations.length,
-            affected_plan_ids: failedEstimations.map((item: any) => item.id),
+            affected_plan_ids: failedEstimations.map((item) => item.id),
           },
         }
       : {}),
@@ -3323,7 +3402,7 @@ export async function getPlanTabProjectionService({
       startDate: input.start_date,
       today,
       hasActualHistory: actualDailyLoad.length > 0,
-      estimatedCurrentCtl,
+      estimatedCurrentLongTermLoad: estimatedCurrentCtl,
       projectionDashboard: projectionGoalContext.dashboard,
       readinessSummaryScore: readinessSummary.score,
     }),
@@ -3350,10 +3429,10 @@ export async function getPlanTabProjectionService({
   });
   const upcomingImpact = buildUpcomingActivityImpact({
     plannedActivities: plannedActivitiesRaw || [],
-    estimatedTssByPlanId,
+    commonLoadByPlanId,
     today,
     horizonEnd: addDaysDateOnlyUtc(today, 14),
-    recommendedByDate: new Map(timeline.map((point) => [point.date, point.recommended_load_tss])),
+    recommendedByDate: new Map(timeline.map((point) => [point.date, point.recommended_load])),
   });
   const scheduleRecommendation = buildScheduleRecommendation({
     today,
@@ -3368,12 +3447,12 @@ export async function getPlanTabProjectionService({
   });
   const estimatedPlansById = new Map(plansWithEstimations.map((plan: any) => [plan.id, plan]));
   const ownedActivityPlans =
-    activityPlanMatchTarget.targetTssDelta && activityPlanMatchTarget.targetTssDelta > 0
+    activityPlanMatchTarget.targetLoadDelta && activityPlanMatchTarget.targetLoadDelta > 0
       ? ownedActivityPlansRaw.map((plan) => estimatedPlansById.get(plan.id) ?? plan)
       : [];
   const activityPlanMatches = buildScheduleGapActivityPlanMatches({
     targetDate: activityPlanMatchTarget.targetDate,
-    targetTssDelta: activityPlanMatchTarget.targetTssDelta,
+    targetLoadDelta: activityPlanMatchTarget.targetLoadDelta,
     primaryActivityCategory: primaryCategory,
     plans: ownedActivityPlans,
     today,
@@ -3382,7 +3461,7 @@ export async function getPlanTabProjectionService({
     ? simulateReadinessScheduleAdjustment({
         forecastInput: readinessForecastInput,
         date: input.schedule_adjustment.date,
-        tssDelta: input.schedule_adjustment.tss_delta,
+        loadDelta: input.schedule_adjustment.load_delta,
         comparisonDate: input.schedule_adjustment.comparison_date,
       })
     : buildScheduleSimulation({
@@ -3645,8 +3724,12 @@ export const trainingPlansProcedures = {
       profileId: ctx.session.user.id,
       now: today,
     });
+    const commonLoadHistoryResult = normalizeCommonLoadHistoryResult(
+      commonLoadHistory.result,
+      today.toISOString().slice(0, 10),
+    );
     const availableLoadHistory =
-      commonLoadHistory.result.status === "available" ? commonLoadHistory.result : null;
+      commonLoadHistoryResult.status === "available" ? commonLoadHistoryResult : null;
     const latestLoadState = availableLoadHistory?.points.at(-1) ?? null;
 
     // Get this week's progress
@@ -3661,6 +3744,13 @@ export const trainingPlansProcedures = {
       repository: createEventReadRepository(db),
       request: { startDate: weekStartDate, endDate: weekEndDate },
     });
+    const effectiveIdentity = commonLoadIdentityProbeSchema.safeParse(effectiveWeekLoad);
+    const validatedEffectiveWeekLoad =
+      effectiveIdentity.success &&
+      effectiveIdentity.data.model === COMMON_RELATIVE_LOAD_MODEL &&
+      effectiveIdentity.data.version === COMMON_RELATIVE_LOAD_VERSION
+        ? effectiveWeekLoad
+        : null;
 
     const estimationStore = createEventReadRepository(db);
 
@@ -3720,7 +3810,6 @@ export const trainingPlansProcedures = {
         const estimatedPlan = pa.activity_plan?.id
           ? upcomingPlansById.get(pa.activity_plan.id)
           : undefined;
-        const metrics = getAuthoritativeActivityPlanMetrics(estimatedPlan);
         return {
           id: pa.id,
           scheduled_date: pa.scheduled_date,
@@ -3728,10 +3817,11 @@ export const trainingPlansProcedures = {
             ? {
                 id: estimatedPlan.id,
                 name: estimatedPlan.name,
-                activity_category: estimatedPlan.activity_category,
-                authoritative_metrics: estimatedPlan.authoritative_metrics,
-                estimated_duration: metrics.estimated_duration,
-                estimated_tss: metrics.estimated_tss,
+                activity_category:
+                  estimatedPlan.prescriptionQuantification.summary.activity_categories[0] ??
+                  "other",
+                common_load: estimatedPlan.common_load,
+                prescriptionQuantification: estimatedPlan.prescriptionQuantification,
               }
             : null,
         };
@@ -3746,7 +3836,7 @@ export const trainingPlansProcedures = {
     return {
       asOf: commonLoadHistory.computedAt,
       weekBounds,
-      loadHistory: commonLoadHistory.result,
+      loadHistory: commonLoadHistoryResult,
       currentLoadStatus:
         latestLoadState === null || availableLoadHistory === null
           ? null
@@ -3760,18 +3850,27 @@ export const trainingPlansProcedures = {
               coverageStatus: availableLoadHistory.coverageStatus,
             },
       commonWeekProgress:
-        effectiveWeekLoad.status === "available"
+        validatedEffectiveWeekLoad?.status === "available"
           ? {
-              status: effectiveWeekLoad.effective.status,
-              completed: effectiveWeekLoad.completed,
-              remaining: effectiveWeekLoad.remaining,
-              tentative: effectiveWeekLoad.tentative,
-              effective: effectiveWeekLoad.effective,
-              sourceCounts: effectiveWeekLoad.sourceCounts,
+              status: validatedEffectiveWeekLoad.effective.status,
+              completed: validatedEffectiveWeekLoad.completed,
+              remaining: validatedEffectiveWeekLoad.remaining,
+              tentative: validatedEffectiveWeekLoad.tentative,
+              completedObservationQuantification:
+                validatedEffectiveWeekLoad.completedObservationQuantification,
+              remainingPrescriptionQuantification:
+                validatedEffectiveWeekLoad.remainingPrescriptionQuantification,
+              tentativePrescriptionQuantification:
+                validatedEffectiveWeekLoad.tentativePrescriptionQuantification,
+              effective: validatedEffectiveWeekLoad.effective,
+              sourceCounts: validatedEffectiveWeekLoad.sourceCounts,
             }
           : {
               status: "unavailable" as const,
-              reason: effectiveWeekLoad.reason,
+              reason:
+                validatedEffectiveWeekLoad?.status === "unavailable"
+                  ? validatedEffectiveWeekLoad.reason
+                  : "incompatible_common_load_identity",
               sourceCounts: effectiveWeekLoad.sourceCounts,
             },
       upcomingActivities: upcomingActivities || [],
@@ -3861,11 +3960,14 @@ export const trainingPlansProcedures = {
           activities: actualCurveWithSegments,
         });
         const tssData = actualCurve.map((activity) => {
-          const summary = summarizeSegmentTss(actualCurveSegmentDerived, new Set([activity.id]));
-          return summary.complete ? summary.tss : 0;
+          const summary = summarizeSegmentCommonLoad(
+            actualCurveSegmentDerived,
+            new Set([activity.id]),
+          );
+          return summary.status === "complete" ? (summary.load ?? 0) : 0;
         });
-        const series = calculateTrainingLoadSeries(tssData, 0, 0);
-        currentCTL = series[series.length - 1]?.ctl || currentCTL;
+        const series = calculateCommonLoadFitnessSeries(tssData, 0, 0);
+        currentCTL = series[series.length - 1]?.longTermLoad ?? currentCTL;
       }
 
       const targetCTL = Math.max(
@@ -3917,7 +4019,7 @@ export const trainingPlansProcedures = {
         projectedDailyTss.push(dailyTSS);
       }
 
-      const projectedSeries = calculateTrainingLoadSeries(
+      const projectedSeries = calculateCommonLoadFitnessSeries(
         projectedDailyTss,
         currentCTL,
         currentCTL,
@@ -3925,7 +4027,7 @@ export const trainingPlansProcedures = {
 
       const curve = projectionDatePoints.map((date, index) => ({
         date,
-        ctl: Math.round(projectedSeries[index]?.ctl ?? currentCTL),
+        longTermLoad: Math.round(projectedSeries[index]?.longTermLoad ?? currentCTL),
       }));
 
       return {
@@ -3999,7 +4101,7 @@ export const trainingPlansProcedures = {
         formatDateOnlyUtc(extendedStart),
         formatDateOnlyUtc(endDate),
       );
-      const series = calculateTrainingLoadSeries(
+      const series = calculateCommonLoadFitnessSeries(
         historyDates.map((date) => stressSeries.byDate.get(date) ?? 0),
         0,
         0,
@@ -4013,9 +4115,9 @@ export const trainingPlansProcedures = {
         return [
           {
             date,
-            ctl: Math.round(point.ctl * 10) / 10,
-            atl: Math.round(point.atl * 10) / 10,
-            tsb: Math.round(point.tsb * 10) / 10,
+            longTermLoad: Math.round(point.longTermLoad * 10) / 10,
+            recentLoad: Math.round(point.recentLoad * 10) / 10,
+            loadBalance: Math.round(point.loadBalance * 10) / 10,
           },
         ];
       });
@@ -4091,6 +4193,7 @@ export const trainingPlansProcedures = {
       const firstPriorWeekStart = addDaysDateOnlyUtc(currentWeek.startDate, -input.weeks_back * 7);
       const plannedActivitiesEventsRaw = await db
         .select({
+          id: schema.events.id,
           starts_at: schema.events.starts_at,
           scheduled_date: schema.events.scheduled_date,
           status: schema.events.status,
@@ -4118,35 +4221,29 @@ export const trainingPlansProcedures = {
 
       // Extract activity plans and add estimations
       const activityPlans = (plannedActivitiesRaw || [])
-        .map((pa: any) => pa.activity_plan)
+        .map((pa) => pa.activity_plan)
         .filter((plan: unknown): plan is NonNullable<typeof plan> => plan !== null);
 
       const estimationStore = createEventReadRepository(db);
       const plansWithEstimations =
         activityPlans.length > 0
           ? await getActivityPlansDerivedMetrics(
-              activityPlans as any,
+              activityPlans,
               db,
               estimationStore,
               ctx.session.user.id,
             )
           : [];
 
-      // Create a map for quick lookup of canonical metrics by plan ID.
-      const estimationMap = new Map(
-        plansWithEstimations.map((plan: any) => [plan.id, plan.authoritative_metrics]),
-      );
+      // Retain the complete canonical projection; reducing this to authoritative metrics
+      // discards quantification identity and makes unavailable Load look like zero.
+      const estimationMap = new Map(plansWithEstimations.map((plan) => [plan.id, plan]));
 
       // Map planned activities with their estimations
       const plannedActivities =
-        plannedActivitiesRaw?.map((pa: any) => ({
+        plannedActivitiesRaw?.map((pa) => ({
           ...pa,
-          activity_plan: pa.activity_plan
-            ? {
-                ...pa.activity_plan,
-                authoritative_metrics: estimationMap.get(pa.activity_plan.id) ?? null,
-              }
-            : null,
+          activity_plan: pa.activity_plan ? (estimationMap.get(pa.activity_plan.id) ?? null) : null,
         })) || [];
 
       const linkedActivityIds = [
@@ -4209,10 +4306,27 @@ export const trainingPlansProcedures = {
           requestedLinkedActivityIds.has(activity.id),
       );
       const activitiesById = new Map(ownedActivities.map((activity) => [activity.id, activity]));
-      const completedTssById = new Map(
+      const completedQuantificationById = new Map<string, ActivityObservationQuantificationBundle>(
         ownedActivities.map((activity) => {
-          const load = summarizeSegmentTss(completedSegments, new Set([activity.id]));
-          return [activity.id, load.complete ? load.tss : null] as const;
+          const observationQuantification = summarizeSegmentQuantification(
+            completedSegments,
+            new Set([activity.id]),
+          );
+          return [activity.id, observationQuantification] as const;
+        }),
+      );
+      const completedCommonLoadById = new Map(
+        ownedActivities.map((activity) => {
+          const quantification = summarizeSegmentQuantification(
+            completedSegments,
+            new Set([activity.id]),
+          );
+          return [
+            activity.id,
+            quantification.summary.commonLoad.status === "complete"
+              ? quantification.summary.commonLoad.load
+              : null,
+          ] as const;
         }),
       );
 
@@ -4229,16 +4343,23 @@ export const trainingPlansProcedures = {
             return (
               pa.scheduled_date >= weekRange.startDate &&
               pa.scheduled_date < weekRange.endDate &&
-              pa.status !== "cancelled" &&
-              pa.status !== "skipped"
+              pa.status !== "cancelled"
             );
           }) || [];
 
-        const plannedTSS = weekPlanned.reduce(
-          (sum: number, pa: any) =>
-            sum + (getAuthoritativeActivityPlanMetrics(pa.activity_plan).estimated_tss ?? 0),
-          0,
-        );
+        const plannedMembers = weekPlanned.flatMap((event) => {
+          const prescriptionQuantification = event.activity_plan?.prescriptionQuantification;
+          return !prescriptionQuantification || prescriptionQuantification.members.length === 0
+            ? []
+            : bindPrescriptionQuantificationToScheduledEvent({
+                prescriptionQuantification,
+                eventId: event.id,
+              }).members;
+        });
+        const plannedQuantification =
+          plannedMembers.length > 0
+            ? createPrescriptionQuantificationBundle({ members: plannedMembers })
+            : null;
 
         const alignmentCalculation = calculatePlanAlignment(
           weekPlanned.map((event) => {
@@ -4256,10 +4377,15 @@ export const trainingPlansProcedures = {
                 : { linkedActivityOccurrenceCount }),
               linkedActivityExists: Boolean(linkedActivity),
               linkedActivityProfileOwned: linkedActivity?.profile_id === ctx.session.user.id,
-              plannedTss:
-                getAuthoritativeActivityPlanMetrics(event.activity_plan).estimated_tss ?? null,
-              completedTss: event.linked_activity_id
-                ? (completedTssById.get(event.linked_activity_id) ?? null)
+              plannedCommonLoad:
+                event.activity_plan?.prescriptionQuantification.summary.commonLoad.status ===
+                  "complete" ||
+                event.activity_plan?.prescriptionQuantification.summary.commonLoad.status ===
+                  "partial"
+                  ? event.activity_plan.prescriptionQuantification.summary.commonLoad.load
+                  : null,
+              completedCommonLoad: event.linked_activity_id
+                ? (completedCommonLoadById.get(event.linked_activity_id) ?? null)
                 : null,
             };
           }),
@@ -4267,14 +4393,26 @@ export const trainingPlansProcedures = {
         const {
           completedActivityIds: _completedActivityIds,
           assessableActivityIds: _assessableActivityIds,
-          assessedPlannedTss,
-          assessedCompletedTss,
+          assessedPlannedCommonLoad,
+          assessedCompletedCommonLoad,
           ...planAlignment
         } = alignmentCalculation;
         const completedLoadAvailable = planAlignment.status === "available";
-        const completedTSS = completedLoadAvailable ? assessedCompletedTss : null;
+        const completedCommonLoad = completedLoadAvailable ? assessedCompletedCommonLoad : null;
+        const plannedCommonLoad =
+          plannedQuantification?.summary.commonLoad.status === "complete" ||
+          plannedQuantification?.summary.commonLoad.status === "partial"
+            ? plannedQuantification.summary.commonLoad.load
+            : null;
+        const completedMembers = alignmentCalculation.assessableActivityIds.flatMap(
+          (activityId) => completedQuantificationById.get(activityId)?.members ?? [],
+        );
+        const completedQuantification =
+          completedMembers.length > 0
+            ? createObservationQuantificationBundle({ members: completedMembers })
+            : null;
 
-        const targetWeeklyTSS = plannedTSS;
+        const targetCommonLoad = plannedCommonLoad;
         const targetActivities =
           structure.builder_planning_snapshot?.plan_preferences.weekly_session_count ??
           weekPlanned.length;
@@ -4292,13 +4430,16 @@ export const trainingPlansProcedures = {
         weekSummaries.push({
           weekStart: weekRange.startDate,
           weekEnd: addDaysDateOnlyUtc(weekRange.endDate, -1),
-          plannedTSS: Math.round(plannedTSS),
-          completedTSS: completedTSS === null ? null : Math.round(completedTSS),
-          tssComplete: completedLoadAvailable,
+          prescriptionQuantification: plannedQuantification,
+          observationQuantification: completedQuantification,
+          plannedCommonLoad: plannedCommonLoad === null ? null : Math.round(plannedCommonLoad),
+          completedCommonLoad:
+            completedCommonLoad === null ? null : Math.round(completedCommonLoad),
+          commonLoadComplete: completedLoadAvailable,
           plannedActivities: weekPlanned.length,
           completedActivities: planAlignment.completedSessions,
           planAlignment,
-          targetTSS: Math.round(targetWeeklyTSS),
+          targetCommonLoad: targetCommonLoad === null ? null : Math.round(targetCommonLoad),
           targetActivities,
           status,
         });

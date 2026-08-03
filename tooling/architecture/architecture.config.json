@@ -388,6 +388,140 @@
       "reason": "The form-only privacy choice maps to null before persistence."
     }
   ],
+  "forbiddenSourcePatterns": [
+    {
+      "id": "removed-training-load-timeline-compatibility",
+      "patterns": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "packages/**/*.tsx"],
+      "terms": [
+        "ideal_tss",
+        "scheduled_tss",
+        "actual_tss",
+        "LegacyTrainingLoadTimelinePoint",
+        "TrainingLoadTimelinePointWithLegacyAliases",
+        "withLegacyTrainingLoadAliases",
+        "allowLegacyTssProjection",
+        "buildScheduledFitnessTrend"
+      ]
+    },
+    {
+      "id": "removed-performance-calibration-local-authorities",
+      "patterns": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "packages/**/*.tsx"],
+      "terms": [
+        "GLOBAL_DEFAULTS",
+        "withDefaults",
+        "getProfileStats",
+        "materializeSystemPlanLoad",
+        "convertTargetToAbsolute",
+        "estimateFTPFromRecentActivities",
+        "estimateLTHRFromRecentActivities",
+        "estimateThresholdPaceFromRecentRuns",
+        "estimateCriticalVelocity",
+        "safeFallbackHrThresholdBpm",
+        "buildSafeHrThresholdFallbackTarget"
+      ]
+    },
+    {
+      "id": "removed-legacy-performance-model-authorities",
+      "patterns": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "packages/**/*.tsx"],
+      "terms": [
+        "PerformanceCalibrationSnapshot",
+        "performanceCalibrationSnapshotSchema",
+        "createUnavailablePerformanceCalibrationSnapshot",
+        "getPerformanceCalibration",
+        "updatePerformanceCalibration",
+        "resolveCalibratedActivityTargetValue",
+        "CRITICAL_POWER_CANONICAL_DURATIONS",
+        "selectCanonicalCriticalPowerEfforts",
+        "evaluateCriticalPower",
+        "calculateSeasonBestCurve",
+        "critical_power_threshold",
+        "critical_power_watts",
+        "persistCssTest",
+        "CssTestForm"
+      ]
+    },
+    {
+      "id": "api-calibration-context-must-not-resolve-thresholds",
+      "patterns": [
+        "packages/api/src/routers/activity-files.ts",
+        "packages/api/src/lib/activity-analysis/context.ts"
+      ],
+      "terms": [
+        "resolveCanonicalThresholds",
+        "PERFORMANCE_CALIBRATION_FRESHNESS_WINDOW_MS",
+        "getEligibleThresholdValue"
+      ]
+    },
+    {
+      "id": "removed-metric-evidence-calibration-authority",
+      "patterns": ["packages/api/src/application/athlete-intelligence/**/*.ts"],
+      "terms": ["MetricEvidenceAdapter", "MetricEvidencePolicy", "freshnessHalfLifeDays"]
+    },
+    {
+      "id": "removed-onboarding-calibration-defaults",
+      "patterns": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "packages/**/*.tsx"],
+      "terms": [
+        "getBaselineProfile",
+        "mergeWithBaseline",
+        "estimateConservativeFTPFromWeight",
+        "estimateFTPFromWeight",
+        "estimateFTPFromWeightByProfile",
+        "estimateLTHRFromMaxHR",
+        "estimateLTHR",
+        "estimateThresholdPaceFromFitnessLevel",
+        "estimateThresholdPaceFromGender",
+        "estimateCSSFromGender",
+        "validateActivityCategoryMetrics",
+        "ftpSchema",
+        "optionalFtpSchema",
+        "thresholdHrSchema",
+        "optionalThresholdHrSchema"
+      ]
+    },
+    {
+      "id": "removed-onboarding-threshold-dto-fields",
+      "patterns": [
+        "packages/core/schemas/onboarding.ts",
+        "packages/api/src/application/onboarding/complete-onboarding.ts",
+        "apps/mobile/components/onboarding/**/*.ts",
+        "apps/mobile/components/onboarding/**/*.tsx",
+        "apps/web/src/lib/onboarding/**/*.ts",
+        "apps/web/src/routes/onboarding.tsx"
+      ],
+      "terms": [
+        "lthr",
+        "ftp",
+        "threshold_pace",
+        "threshold_pace_seconds_per_km",
+        "thresholdPaceSecondsPerKm",
+        "css_seconds_per_hundred_meters",
+        "cssSecondsPer100m"
+      ]
+    },
+    {
+      "id": "removed-generic-profile-threshold-fields",
+      "patterns": [
+        "packages/core/schemas/forms/profile.ts",
+        "packages/api/src/routers/profiles.ts"
+      ],
+      "terms": ["ftp", "threshold_hr"]
+    },
+    {
+      "id": "removed-recording-threshold-dto-compatibility",
+      "patterns": [
+        "packages/core/schemas/recording-session.ts",
+        "apps/mobile/lib/services/ActivityRecorder/checkpointStorage.ts",
+        "apps/web/src/lib/recording/**/*.ts"
+      ],
+      "terms": [
+        "ftp",
+        "thresholdHr",
+        "thresholdPaceSecondsPerKm",
+        "defaultsApplied",
+        "performanceCalibrationSnapshotSchema.optional()"
+      ]
+    }
+  ],
   "exceptions": [
     {
       "id": "phase0-core-fit-sdk-direction",

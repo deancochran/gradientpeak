@@ -1,10 +1,6 @@
 import { randomUUID } from "node:crypto";
-import {
-  getActivityEffortThresholdEvidence,
-  type ThresholdMetricSource,
-} from "@repo/core/athlete-inputs";
 import { schema } from "@repo/db";
-import { and, asc, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
 import {
   decryptNullableProviderToken,
   decryptProviderToken,
@@ -16,11 +12,6 @@ import type {
   WahooEventResourceProviderMetadata,
   WahooRepository,
 } from "../../repositories";
-import {
-  filterSupersededProfileOverrides,
-  isActiveManualFtpOverride,
-  resolveLatestObservationsByKey,
-} from "../../utils/profile-override-observations";
 
 function toIsoString(value: Date | null): string | null {
   return value ? value.toISOString() : null;
@@ -52,13 +43,6 @@ export function toWahooEventResourceProviderMetadata(
   }
 
   return Object.keys(metadata).length > 0 ? { wahoo: metadata } : null;
-}
-
-function thresholdMetricSource(source: string | null): ThresholdMetricSource {
-  if (source === "manual") return "manual";
-  if (source === "estimated") return "estimated";
-  if (source === "derived" || source === "modeled") return "modeled";
-  return "provider";
 }
 
 export function wahooActiveIntegrationGenerationPredicate(
@@ -408,6 +392,8 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           activityFilePath: schema.activityArtifacts.path,
           activityFileSize: schema.activityArtifacts.byte_size,
           artifactId: schema.activityArtifacts.id,
+          artifactSha256: schema.activityArtifacts.digest,
+          providerRevision: schema.activityArtifactLinks.provider_revision,
           materializerVersion: schema.activities.materializer_version,
           segmentsRevision: schema.activities.segments_revision,
           timingCoverage: schema.activities.timing_coverage,
@@ -467,6 +453,8 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           activityFilePath: schema.activityArtifacts.path,
           activityFileSize: schema.activityArtifacts.byte_size,
           artifactId: schema.activityArtifacts.id,
+          artifactSha256: schema.activityArtifacts.digest,
+          providerRevision: schema.activityArtifactLinks.provider_revision,
           materializerVersion: schema.activities.materializer_version,
           segmentsRevision: schema.activities.segments_revision,
           timingCoverage: schema.activities.timing_coverage,
@@ -660,164 +648,6 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         routeId: row.routeId,
         startsAt: row.startsAt.toISOString(),
         activityPlan,
-      };
-    },
-
-    async getProfileSyncMetrics(profileId) {
-      const [metricRows, bikePowerEfforts] = await Promise.all([
-        db
-          .select({
-            id: schema.profileMetrics.id,
-            referenceActivityId: schema.profileMetrics.reference_activity_id,
-            recordedAt: schema.profileMetrics.recorded_at,
-            source: schema.profileMetrics.source,
-            type: schema.profileMetrics.metric_type,
-            value: schema.profileMetrics.value,
-            method: schema.profileMetrics.method,
-            provenance: schema.profileMetrics.provenance,
-          })
-          .from(schema.profileMetrics)
-          .where(
-            and(
-              eq(schema.profileMetrics.profile_id, profileId),
-              inArray(schema.profileMetrics.metric_type, ["ftp", "lthr", "max_hr"]),
-            ),
-          )
-          .orderBy(desc(schema.profileMetrics.recorded_at), desc(schema.profileMetrics.id)),
-        db
-          .select({
-            id: schema.activityEfforts.id,
-            activityId: schema.activityEfforts.activity_id,
-            observedAt: schema.activityEfforts.recorded_at,
-            source: schema.activityEfforts.source,
-            value: schema.activityEfforts.value,
-            unit: schema.activityEfforts.unit,
-            method: schema.activityEfforts.method,
-            provenance: schema.activityEfforts.provenance,
-          })
-          .from(schema.activityEfforts)
-          .where(
-            and(
-              eq(schema.activityEfforts.profile_id, profileId),
-              eq(schema.activityEfforts.activity_category, "bike"),
-              eq(schema.activityEfforts.effort_type, "power"),
-              eq(schema.activityEfforts.duration_seconds, 1200),
-            ),
-          )
-          .orderBy(desc(schema.activityEfforts.recorded_at), desc(schema.activityEfforts.id)),
-      ]);
-
-      const linkedLthrActivityIds = metricRows.flatMap((metric) =>
-        metric.type === "lthr" && metric.source !== "manual" && metric.referenceActivityId
-          ? [metric.referenceActivityId]
-          : [],
-      );
-      const linkedLthrActivities =
-        linkedLthrActivityIds.length === 0
-          ? []
-          : await db
-              .select({
-                id: schema.activitySegments.activity_id,
-                activity_category: schema.activitySegments.activity_category,
-              })
-              .from(schema.activitySegments)
-              .where(
-                and(
-                  inArray(schema.activitySegments.activity_id, linkedLthrActivityIds),
-                  eq(schema.activitySegments.role, "activity"),
-                ),
-              );
-      const linkedLthrCategories = new Map<string, Set<string>>();
-      for (const segment of linkedLthrActivities) {
-        if (!segment.activity_category) continue;
-        const activity_categories = linkedLthrCategories.get(segment.id) ?? new Set<string>();
-        activity_categories.add(segment.activity_category);
-        linkedLthrCategories.set(segment.id, activity_categories);
-      }
-      const linkedLthrActivityCategory = new Map<string, string>();
-      for (const [activityId, activity_categories] of linkedLthrCategories) {
-        if (activity_categories.size !== 1) continue;
-        const activity_category = activity_categories.values().next().value;
-        if (activity_category) linkedLthrActivityCategory.set(activityId, activity_category);
-      }
-
-      const resolvedMetrics = resolveLatestObservationsByKey(metricRows, (row) => {
-        if (row.type !== "lthr") return row.type;
-        if (row.source === "manual" || !row.referenceActivityId) return "lthr:generic";
-        const activity_category = linkedLthrActivityCategory.get(row.referenceActivityId);
-        return activity_category === "bike" ||
-          activity_category === "run" ||
-          activity_category === "swim"
-          ? `lthr:${activity_category}`
-          : `lthr:unclassified:${row.referenceActivityId}`;
-      });
-      const latest = new Map<string, number>();
-      for (const [type, row] of resolvedMetrics) if (row) latest.set(type, row.value);
-      const currentMetricRows = [...resolvedMetrics.values()].filter((row) => row !== null);
-      const currentBikePowerEfforts = filterSupersededProfileOverrides(
-        bikePowerEfforts,
-        (effort) => `bike:power:1200:${effort.unit}`,
-      );
-      const isManualFtp = (effort: (typeof currentBikePowerEfforts)[number]) =>
-        isActiveManualFtpOverride({
-          ...effort,
-          activity_id: effort.activityId,
-          activity_category: "bike",
-          duration_seconds: 1200,
-          effort_type: "power",
-        });
-      const manualFtpEffort = currentBikePowerEfforts.find(isManualFtp);
-
-      return {
-        bikePowerEfforts: currentBikePowerEfforts
-          .filter((effort) => !isManualFtp(effort))
-          .map((effort) => ({
-            observationKind:
-              effort.activityId !== null &&
-              effort.source !== "derived" &&
-              effort.source !== "estimated"
-                ? "actual"
-                : "derived",
-            observedAt: effort.observedAt.toISOString(),
-            value: effort.value,
-            evidence:
-              getActivityEffortThresholdEvidence({
-                activityCategory: "bike",
-                activityId: effort.activityId,
-                durationSeconds: 1200,
-                effortType: "power",
-                method: effort.method,
-                provenance: effort.provenance,
-                source: effort.source,
-                unit: effort.unit,
-                value: effort.value,
-              }) ?? undefined,
-          })),
-        ftpMetrics: [
-          ...currentMetricRows
-            .filter((metric) => metric.type === "ftp")
-            .map((metric) => ({
-              observedAt: metric.recordedAt.toISOString(),
-              source: thresholdMetricSource(metric.source),
-              value: metric.value,
-            })),
-          ...(manualFtpEffort
-            ? [
-                {
-                  observedAt: manualFtpEffort.observedAt.toISOString(),
-                  source: "manual" as const,
-                  value: manualFtpEffort.value * 0.95,
-                },
-              ]
-            : []),
-        ],
-        maxHr: latest.get("max_hr") ?? null,
-        thresholdHr: latest.get("lthr:generic") ?? null,
-        thresholdHrByActivityCategory: {
-          bike: latest.get("lthr:bike"),
-          run: latest.get("lthr:run"),
-          swim: latest.get("lthr:swim"),
-        },
       };
     },
 

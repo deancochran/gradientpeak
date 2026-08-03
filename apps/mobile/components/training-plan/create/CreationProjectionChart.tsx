@@ -71,17 +71,17 @@ const lineConfig: Array<{
 }> = [
   {
     key: "loadTss",
-    label: "Load",
+    label: "Common Load",
     color: "rgba(59, 130, 246, 0.95)",
   },
   {
     key: "fitnessCtl",
-    label: "Fitness",
+    label: "Long-term Load",
     color: "rgba(16, 185, 129, 0.95)",
   },
   {
     key: "fatigueAtl",
-    label: "Fatigue",
+    label: "Recent Load",
     color: "rgba(245, 158, 11, 0.95)",
   },
 ];
@@ -438,10 +438,10 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
 
     for (const point of points) {
       if (includeFitness) {
-        maxValue = Math.max(maxValue, point.predicted_fitness_ctl);
+        maxValue = Math.max(maxValue, point.predicted_fitness_longTermLoad);
       }
       if (includeFatigue) {
-        maxValue = Math.max(maxValue, point.predicted_fatigue_atl);
+        maxValue = Math.max(maxValue, point.predicted_fatigue_recentLoad);
       }
     }
 
@@ -455,9 +455,9 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
         xLabel:
           compactRelativeDayLabels[index] ??
           formatRelativePlanDay(point.date, relativePlanStartDate, "compact"),
-        loadTss: point.predicted_load_tss,
-        fitnessCtl: point.predicted_fitness_ctl,
-        fatigueAtl: point.predicted_fatigue_atl,
+        loadTss: point.predicted_load,
+        fitnessCtl: point.predicted_fitness_longTermLoad,
+        fatigueAtl: point.predicted_fatigue_recentLoad,
         readinessScore: point.readiness_score,
       })),
     [compactRelativeDayLabels, points, relativePlanStartDate],
@@ -607,7 +607,7 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
   const selectedReadiness = selectedPoint?.readiness_score;
   const projectionConfidenceHint = resolveProjectionConfidenceHint(projectionChart, selectedPoint);
   const selectedPointSummary = selectedPoint
-    ? `${longRelativeDayLabels[selectedPointIndex] ?? formatRelativePlanDay(selectedPoint.date, relativePlanStartDate)}. Weekly Load ${formatWeeklyTss(selectedPoint.predicted_load_tss)}. Long-term Load (CTL) ${selectedPoint.predicted_fitness_ctl.toFixed(1)}. Recent Load (ATL) ${selectedPoint.predicted_fatigue_atl.toFixed(1)}. Readiness ${Math.round(selectedReadiness ?? 0)} out of 100.`
+    ? `${longRelativeDayLabels[selectedPointIndex] ?? formatRelativePlanDay(selectedPoint.date, relativePlanStartDate)}. Weekly Load ${formatWeeklyTss(selectedPoint.predicted_load)}. Long-term Load ${selectedPoint.predicted_fitness_longTermLoad.toFixed(1)}. Recent Load ${selectedPoint.predicted_fatigue_recentLoad.toFixed(1)}. Readiness ${Math.round(selectedReadiness ?? 0)} out of 100.`
     : "No point selected.";
   const activePhase = useMemo(() => {
     if (!projectionChart || !selectedPoint) {
@@ -644,7 +644,7 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
     : "No microcycles.";
 
   const constraintSummaryText = projectionChart?.constraint_summary
-    ? `Ramp clamps: ${projectionChart.constraint_summary.tss_ramp_clamp_weeks} load week(s), ${projectionChart.constraint_summary.ctl_ramp_clamp_weeks} fitness week(s). Recovery weeks: ${projectionChart.constraint_summary.recovery_weeks}.`
+    ? `Ramp clamps: ${projectionChart.constraint_summary.load_ramp_clamp_weeks} load week(s), ${projectionChart.constraint_summary.longTermLoad_ramp_clamp_weeks} fitness week(s). Recovery weeks: ${projectionChart.constraint_summary.recovery_weeks}.`
     : "No ramp/recovery constraint summary.";
 
   const selectedMicrocycle = useMemo(
@@ -657,7 +657,7 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
         selectedMicrocycle.week_start_date,
         selectedMicrocycle.week_end_date,
         relativePlanStartDate,
-      )}. Requested ${formatWeeklyTss(selectedMicrocycle.metadata.tss_ramp.raw_requested_weekly_tss)} Load${selectedMicrocycle.metadata.tss_ramp.floor_override_applied ? `, floored to ${formatWeeklyTss(selectedMicrocycle.metadata.tss_ramp.requested_weekly_tss)} Load` : ""}, applied ${formatWeeklyTss(selectedMicrocycle.metadata.tss_ramp.applied_weekly_tss)} Load${selectedMicrocycle.metadata.tss_ramp.floor_override_applied ? " (floor minimum applied)" : selectedMicrocycle.metadata.tss_ramp.clamped ? " due to load ramp cap" : " within load ramp cap"}. Requested Long-term Load (CTL) ramp ${selectedMicrocycle.metadata.ctl_ramp.requested_ctl_ramp.toFixed(2)}, applied ${selectedMicrocycle.metadata.ctl_ramp.applied_ctl_ramp.toFixed(2)}${selectedMicrocycle.metadata.ctl_ramp.clamped ? " due to CTL cap" : " within CTL cap"}.${selectedMicrocycle.metadata.recovery.active ? ` Recovery active at ${toPercentReductionLabel(selectedMicrocycle.metadata.recovery.reduction_factor)} load reduction.` : " Recovery not active."}`
+      )}. Requested ${formatWeeklyTss(selectedMicrocycle.metadata.load_ramp.raw_requested_weekly_load)} Load${selectedMicrocycle.metadata.load_ramp.floor_override_applied ? `, floored to ${formatWeeklyTss(selectedMicrocycle.metadata.load_ramp.requested_weekly_load)} Load` : ""}, applied ${formatWeeklyTss(selectedMicrocycle.metadata.load_ramp.applied_weekly_load)} Load${selectedMicrocycle.metadata.load_ramp.floor_override_applied ? " (floor minimum applied)" : selectedMicrocycle.metadata.load_ramp.clamped ? " due to load ramp cap" : " within load ramp cap"}. Requested Long-term Load ramp ${selectedMicrocycle.metadata.longTermLoad_ramp.requested_longTermLoad_ramp.toFixed(2)}, applied ${selectedMicrocycle.metadata.longTermLoad_ramp.applied_longTermLoad_ramp.toFixed(2)}${selectedMicrocycle.metadata.longTermLoad_ramp.clamped ? " due to Long-term Load cap" : " within Long-term Load cap"}.${selectedMicrocycle.metadata.recovery.active ? ` Recovery active at ${toPercentReductionLabel(selectedMicrocycle.metadata.recovery.reduction_factor)} load reduction.` : " Recovery not active."}`
     : "No per-week safety metadata available for this point.";
 
   const recoverySegmentSummary = projectionChart?.recovery_segments?.length
@@ -697,12 +697,12 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
   const evidenceConfidenceScore = noHistoryMetadata?.evidence_confidence?.score;
   const evidenceConfidenceState = noHistoryMetadata?.evidence_confidence?.state;
   const readinessBand = noHistoryMetadata?.projection_feasibility?.readiness_band;
-  const unmetDemand = noHistoryMetadata?.projection_feasibility?.demand_gap.unmet_weekly_tss;
+  const unmetDemand = noHistoryMetadata?.projection_feasibility?.demand_gap.unmet_weekly_load;
   const dominantLimiters = noHistoryMetadata?.projection_feasibility?.dominant_limiters ?? [];
   const projectionRiskScore =
     typeof projectionChart?.risk_score === "number" ? Math.round(projectionChart.risk_score) : null;
   const noHistoryAccessibilitySummary = noHistoryMetadata
-    ? `Adaptive demand confidence ${noHistoryConfidenceLabel}. Demand floor enabled ${noHistoryFloorEnabledLabel}. Availability clamp ${noHistoryAvailabilityClampLabel}. Evidence confidence ${evidenceConfidenceState ?? "n/a"} ${evidenceConfidenceScore !== undefined ? evidenceConfidenceScore.toFixed(2) : "n/a"}. Readiness ${readinessBand ?? "n/a"}.${fitnessSignal !== null ? ` Fitness signal ${fitnessSignal} percent.` : ""}${goalDemandScore !== null ? ` Goal demand ${goalDemandScore} percent.` : ""}${projectionRiskScore !== null ? ` Risk score ${projectionRiskScore} percent.` : ""}`
+    ? `Adaptive demand confidence ${noHistoryConfidenceLabel}. Demand floor enabled ${noHistoryFloorEnabledLabel}. Availability clamp ${noHistoryAvailabilityClampLabel}. Evidence confidence ${evidenceConfidenceState ?? "n/a"} ${evidenceConfidenceScore !== undefined ? evidenceConfidenceScore.toFixed(2) : "n/a"}. Readiness ${readinessBand ?? "n/a"}.${fitnessSignal !== null ? ` Load-history signal ${fitnessSignal} percent.` : ""}${goalDemandScore !== null ? ` Goal demand ${goalDemandScore} percent.` : ""}${projectionRiskScore !== null ? ` Risk score ${projectionRiskScore} percent.` : ""}`
     : undefined;
   const continuousDiagnostics = useMemo(
     () => resolveContinuousProjectionDiagnostics(projectionChart),
@@ -767,7 +767,7 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
           </Text>
           {fitnessSignal !== null ? (
             <Text className="text-[11px] text-muted-foreground">
-              Fitness signal: {fitnessSignal}%
+              Load-history signal: {fitnessSignal}%
             </Text>
           ) : null}
           {goalDemandScore !== null ? (
@@ -965,13 +965,13 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
           {!compact && (
             <>
               <Text className="px-1 text-[11px] text-muted-foreground">
-                Raw projected values are shown directly: weekly Load, Long-term Load (CTL), and
-                Recent Load (ATL). Readiness is still calculated from core projection output (0-100)
-                and shown in selected-point details below, but not drawn as a chart line.
+                Raw projected values are shown directly: weekly Load, Long-term Load, and Recent
+                Load. Readiness is still calculated from core projection output (0-100) and shown in
+                selected-point details below, but not drawn as a chart line.
               </Text>
               <Text className="px-1 text-[11px] text-muted-foreground">
-                CTL and ATL are training-state metrics only and are not suitability or safety
-                determinations.
+                Long-term and Recent Load are training-state metrics only and do not determine
+                athlete suitability.
               </Text>
               <Text className="px-1 text-[11px] text-muted-foreground">
                 Projection window:{" "}
@@ -997,12 +997,12 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                 <Text className="text-xs font-medium">Training state</Text>
                 <Text className="text-xs text-muted-foreground">
                   {selectedPoint
-                    ? `${longRelativeDayLabels[selectedPointIndex] ?? formatRelativePlanDay(selectedPoint.date, relativePlanStartDate)} - Weekly Load ${formatWeeklyTss(selectedPoint.predicted_load_tss)} - Long-term Load (CTL) ${selectedPoint.predicted_fitness_ctl.toFixed(1)} - Recent Load (ATL) ${selectedPoint.predicted_fatigue_atl.toFixed(1)} - Readiness ${Math.round(selectedReadiness ?? 0)}/100`
+                    ? `${longRelativeDayLabels[selectedPointIndex] ?? formatRelativePlanDay(selectedPoint.date, relativePlanStartDate)} - Weekly Load ${formatWeeklyTss(selectedPoint.predicted_load)} - Long-term Load ${selectedPoint.predicted_fitness_longTermLoad.toFixed(1)} - Recent Load ${selectedPoint.predicted_fatigue_recentLoad.toFixed(1)} - Readiness ${Math.round(selectedReadiness ?? 0)}/100`
                     : "Tap a point to inspect projected details."}
                 </Text>
                 <Text className="text-xs text-muted-foreground">
-                  CTL/ATL describe training load and fatigue trends only; they do not determine
-                  athlete suitability.
+                  Long-term and Recent Load describe training-state trends only; they do not
+                  determine athlete suitability.
                 </Text>
                 <Text className="text-xs text-muted-foreground">
                   Active phase: {activePhase?.name ?? "-"}
@@ -1032,37 +1032,42 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                     <Text className="text-[11px] text-muted-foreground">
                       Weekly load: requested{" "}
                       {formatWeeklyTss(
-                        selectedMicrocycle.metadata.tss_ramp.raw_requested_weekly_tss,
+                        selectedMicrocycle.metadata.load_ramp.raw_requested_weekly_load,
                       )}
-                      {selectedMicrocycle.metadata.tss_ramp.floor_override_applied
+                      {selectedMicrocycle.metadata.load_ramp.floor_override_applied
                         ? `, floored to ${formatWeeklyTss(
-                            selectedMicrocycle.metadata.tss_ramp.requested_weekly_tss,
+                            selectedMicrocycle.metadata.load_ramp.requested_weekly_load,
                           )}`
                         : ""}
                       , applied{" "}
-                      {formatWeeklyTss(selectedMicrocycle.metadata.tss_ramp.applied_weekly_tss)}
-                      {selectedMicrocycle.metadata.tss_ramp.floor_override_applied
+                      {formatWeeklyTss(selectedMicrocycle.metadata.load_ramp.applied_weekly_load)}
+                      {selectedMicrocycle.metadata.load_ramp.floor_override_applied
                         ? " (floor minimum applied)"
-                        : selectedMicrocycle.metadata.tss_ramp.clamped
+                        : selectedMicrocycle.metadata.load_ramp.clamped
                           ? " (clamped by ramp cap)"
                           : " (within ramp cap)"}
                     </Text>
                     <Text className="text-[11px] text-muted-foreground">
                       Demand floor this week:{" "}
-                      {selectedMicrocycle.metadata.tss_ramp.floor_override_applied
+                      {selectedMicrocycle.metadata.load_ramp.floor_override_applied
                         ? "active"
                         : "not active"}
-                      {selectedMicrocycle.metadata.tss_ramp.demand_band_minimum_weekly_tss !==
+                      {selectedMicrocycle.metadata.load_ramp.demand_band_minimum_weekly_load !==
                         undefined &&
-                      selectedMicrocycle.metadata.tss_ramp.demand_band_minimum_weekly_tss !== null
-                        ? ` (${formatWeeklyTss(selectedMicrocycle.metadata.tss_ramp.demand_band_minimum_weekly_tss)} Load min)`
+                      selectedMicrocycle.metadata.load_ramp.demand_band_minimum_weekly_load !== null
+                        ? ` (${formatWeeklyTss(selectedMicrocycle.metadata.load_ramp.demand_band_minimum_weekly_load)} Load min)`
                         : ""}
                     </Text>
                     <Text className="text-[11px] text-muted-foreground">
-                      CTL ramp: requested{" "}
-                      {selectedMicrocycle.metadata.ctl_ramp.requested_ctl_ramp.toFixed(2)}, applied{" "}
-                      {selectedMicrocycle.metadata.ctl_ramp.applied_ctl_ramp.toFixed(2)}
-                      {selectedMicrocycle.metadata.ctl_ramp.clamped
+                      Long-term Load ramp: requested{" "}
+                      {selectedMicrocycle.metadata.longTermLoad_ramp.requested_longTermLoad_ramp.toFixed(
+                        2,
+                      )}
+                      , applied{" "}
+                      {selectedMicrocycle.metadata.longTermLoad_ramp.applied_longTermLoad_ramp.toFixed(
+                        2,
+                      )}
+                      {selectedMicrocycle.metadata.longTermLoad_ramp.clamped
                         ? " (clamped)"
                         : " (within cap)"}
                     </Text>
@@ -1108,7 +1113,7 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                         accessibilityRole="tab"
                         accessibilityState={{ selected: isActive }}
                         accessibilityLabel={`Point ${index + 1} of ${points.length}, ${dateLabel}`}
-                        accessibilityHint={`Weekly Load ${formatWeeklyTss(point.predicted_load_tss)}, Long-term Load (CTL) ${point.predicted_fitness_ctl.toFixed(1)}, Recent Load (ATL) ${point.predicted_fatigue_atl.toFixed(1)}, readiness ${Math.round(point.readiness_score ?? 0)} out of 100`}
+                        accessibilityHint={`Weekly Load ${formatWeeklyTss(point.predicted_load)}, Long-term Load ${point.predicted_fitness_longTermLoad.toFixed(1)}, Recent Load ${point.predicted_fatigue_recentLoad.toFixed(1)}, readiness ${Math.round(point.readiness_score ?? 0)} out of 100`}
                         hitSlop={8}
                         style={{
                           minHeight: 44,
@@ -1182,8 +1187,8 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                             )}
                           </Text>
                           <Text className="text-[11px] text-muted-foreground">
-                            {Math.round(phase.target_weekly_tss_min)}-
-                            {Math.round(phase.target_weekly_tss_max)} Load/wk
+                            {Math.round(phase.target_weekly_load_min)}-
+                            {Math.round(phase.target_weekly_load_max)} Load/wk
                           </Text>
                         </View>
                       );
@@ -1231,13 +1236,13 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                             {microcycle.phase} - {microcycle.pattern}
                           </Text>
                           <Text className="text-[11px] text-muted-foreground">
-                            {formatWeeklyTss(microcycle.planned_weekly_tss)} Load / Long-term Load
-                            (CTL) {microcycle.projected_ctl.toFixed(1)}
+                            {formatWeeklyTss(microcycle.planned_weekly_load)} Load / Long-term Load
+                            Long-term Load {microcycle.projected_longTermLoad.toFixed(1)}
                           </Text>
                           {microcycle.metadata ? (
                             <Text className="text-[11px] text-muted-foreground">
-                              {microcycle.metadata.tss_ramp.clamped ||
-                              microcycle.metadata.ctl_ramp.clamped
+                              {microcycle.metadata.load_ramp.clamped ||
+                              microcycle.metadata.longTermLoad_ramp.clamped
                                 ? "Ramp clamped"
                                 : "Ramp within limits"}
                               {microcycle.metadata.recovery.active
@@ -1274,17 +1279,18 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                     {" | "}Max weekly load ramp:{" "}
                     {
                       projectionChart.constraint_summary.normalized_creation_config
-                        .max_weekly_tss_ramp_pct
+                        .max_weekly_load_ramp_pct
                     }
-                    %{" | "}Max weekly CTL ramp:{" "}
+                    %{" | "}Max weekly Long-term Load ramp:{" "}
                     {
                       projectionChart.constraint_summary.normalized_creation_config
-                        .max_ctl_ramp_per_week
+                        .max_longTermLoad_ramp_per_week
                     }
                   </Text>
                   <Text className="text-[11px] text-muted-foreground">
-                    Clamped weeks - Load: {projectionChart.constraint_summary.tss_ramp_clamp_weeks},
-                    Fitness: {projectionChart.constraint_summary.ctl_ramp_clamp_weeks}, Recovery:{" "}
+                    Clamped weeks - Load: {projectionChart.constraint_summary.load_ramp_clamp_weeks}
+                    , Long-term Load:{" "}
+                    {projectionChart.constraint_summary.longTermLoad_ramp_clamp_weeks}, Recovery:{" "}
                     {projectionChart.constraint_summary.recovery_weeks}
                   </Text>
                   {showContinuousDiagnostics ? (

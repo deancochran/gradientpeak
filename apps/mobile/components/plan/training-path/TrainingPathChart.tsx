@@ -9,15 +9,7 @@ import {
   useFont,
   vec,
 } from "@shopify/react-native-skia";
-import {
-  type ComponentProps,
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type AccessibilityActionEvent,
   type LayoutChangeEvent,
@@ -63,13 +55,6 @@ type ChartYKey =
   | "fitness"
   | "scheduledFitness"
   | "targetFitness";
-
-type TrainingPathCartesianChartProps = ComponentProps<
-  typeof CartesianChart<ChartDatum, "index", ChartYKey>
->;
-type TrainingPathChartPressConfig = NonNullable<
-  TrainingPathCartesianChartProps["chartPressConfig"]
->;
 
 type TrainingPathChartProps = {
   model: TrainingPathViewModel;
@@ -734,29 +719,37 @@ export function TrainingPathChart({
     ? [
         `Selected week ${accessibilityWeek.label}, ${accessibilityWeek.weekStart} to ${accessibilityWeek.weekEnd}`,
         accessibilityWeek.effectiveLoadStatus === "unavailable"
-          ? "Load unavailable"
-          : `${formatAccessibleMetric("Load", accessibilityWeek.effectiveLoad ?? null)}${accessibilityWeek.effectiveLoadStatus === "partial" ? " incomplete" : ""}`,
+          ? "Common Load unavailable"
+          : `${formatAccessibleMetric("Common Load", accessibilityWeek.effectiveLoad ?? null)}${accessibilityWeek.effectiveLoadStatus === "partial" ? " incomplete" : ""}`,
         accessibilityWeek.effectiveLoadStatus === "known_zero"
-          ? "Intensity not applicable"
+          ? "Normalized intensity not applicable"
           : accessibilityWeek.effectiveIntensity == null
-            ? "Intensity unavailable"
-            : `Intensity ${accessibilityWeek.effectiveIntensity.toFixed(2)}${accessibilityWeek.effectiveLoadStatus === "partial" ? " incomplete" : ""}`,
+            ? "Normalized intensity unavailable"
+            : `Normalized intensity ${accessibilityWeek.effectiveIntensity.toFixed(2)}${accessibilityWeek.effectiveLoadStatus === "partial" ? " incomplete" : ""}`,
         accessibilityWeek.effectiveCompletedLoad == null
           ? null
-          : formatAccessibleMetric("Completed load", accessibilityWeek.effectiveCompletedLoad),
-        accessibilityWeek.completedLoadUnavailable ? "Completed activity load unavailable" : null,
+          : formatAccessibleMetric(
+              "Completed Common Load",
+              accessibilityWeek.effectiveCompletedLoad,
+            ),
+        accessibilityWeek.completedLoadUnavailable
+          ? "Completed activity Common Load unavailable"
+          : null,
         accessibilityWeek.effectiveRemainingLoad == null
           ? null
-          : formatAccessibleMetric("Planned load", accessibilityWeek.effectiveRemainingLoad),
+          : formatAccessibleMetric("Planned Common Load", accessibilityWeek.effectiveRemainingLoad),
         accessibilityWeek.effectiveTentativeLoad == null
           ? null
-          : formatAccessibleMetric("Tentative load", accessibilityWeek.effectiveTentativeLoad),
+          : formatAccessibleMetric(
+              "Tentative Common Load",
+              accessibilityWeek.effectiveTentativeLoad,
+            ),
         !accessibilityWeek.recommendedLoadStatus
           ? null
           : accessibilityWeek.recommendedLoadStatus === "unavailable" ||
               accessibilityWeek.recommendedLoad == null
-            ? "Recommended load unavailable"
-            : `${formatAccessibleMetric("Recommended load", accessibilityWeek.recommendedLoad)}${accessibilityWeek.recommendedLoadStatus === "partial" ? " incomplete" : ""}`,
+            ? "Recommended Common Load unavailable"
+            : `${formatAccessibleMetric("Recommended Common Load", accessibilityWeek.recommendedLoad)}${accessibilityWeek.recommendedLoadStatus === "partial" ? " incomplete" : ""}`,
         formatAccessibleMetric("Actual fitness", accessibilityWeek.fitness),
         formatAccessibleMetric("Projected fitness", accessibilityWeek.scheduledFitness),
         accessibilityWeek.recommendedLoadStatus === "complete" ||
@@ -869,16 +862,7 @@ export function TrainingPathChart({
           lineColor: chartColors.frame,
           lineWidth: { bottom: 1, left: scrollX ? 0 : 1, right: 0, top: 0 },
         }}
-        chartPressState={reviewWeeks ? chartPressState : undefined}
-        chartPressConfig={
-          scrollX
-            ? ({
-                pan: {
-                  simultaneousWithExternalGesture: scrollViewRef,
-                },
-              } as unknown as TrainingPathChartPressConfig)
-            : undefined
-        }
+        chartPressState={reviewWeeks && !scrollX ? chartPressState : undefined}
       >
         {({ points, chartBounds }) => (
           <>
@@ -1002,16 +986,16 @@ export function TrainingPathChart({
                   showPlannedLoad &&
                   typeof plannedWithTentativePoint?.yValue === "number" &&
                   typeof plannedWithTentativePoint.y === "number" &&
-                  plannedWithTentativePoint.yValue > (plannedPoint?.yValue ?? 0) ? (
+                  typeof plannedPoint?.yValue === "number" &&
+                  typeof plannedPoint.y === "number" &&
+                  plannedWithTentativePoint.yValue > plannedPoint.yValue ? (
                     shouldFocusScrolledBars ? (
                       <AnimatedTentativePatternFill
                         key={`tentative-planned-${week.weekStart}`}
                         x={barLeft}
                         y={plannedWithTentativePoint.y}
                         width={barWidth}
-                        height={
-                          (plannedPoint?.y ?? chartBounds.bottom) - plannedWithTentativePoint.y
-                        }
+                        height={plannedPoint.y - plannedWithTentativePoint.y}
                         activeColor={chartColors.plannedOutline}
                         dimColor={chartColors.plannedDimmed}
                         index={index}
@@ -1170,7 +1154,7 @@ export function TrainingPathChart({
   return (
     <View style={{ height }} onLayout={onChartLayout} testID="training-path-chart">
       <View className="flex-row items-center justify-between px-2 pb-1">
-        <Text className="text-[10px] font-medium text-muted-foreground">Load</Text>
+        <Text className="text-[10px] font-medium text-muted-foreground">Common Load</Text>
         <Text className="text-[10px] font-medium text-muted-foreground">Fitness</Text>
       </View>
       {reviewWeeks && onSelectedWeekChange ? (

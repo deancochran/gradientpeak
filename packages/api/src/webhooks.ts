@@ -3,8 +3,11 @@
  * Exposes clean interfaces for webhook handlers without exposing internal implementation
  */
 
-export { enrichImportedActivityArtifact } from "./application/activity-file-ingestion/enrich-imported-activity-artifact";
 export { submitImportedActivityArtifact } from "./application/activity-file-ingestion/submit-imported-activity-artifact";
+export {
+  createAthletePerformanceModelReader,
+  createAthletePerformanceTargetFactsReader,
+} from "./application/performance-model/get-athlete-performance-model-as-of";
 export { createProviderSyncRepository, createWahooRepository } from "./infrastructure/repositories";
 export {
   createActivityImporter,
@@ -20,3 +23,4 @@ export { WahooActivityHistoryJobService } from "./lib/provider-sync/wahoo-activi
 export { WahooSyncJobService } from "./lib/provider-sync/wahoo-job-service";
 export { createWahooStagingCleanupReservation } from "./lib/provider-sync/wahoo-staging-cleanup";
 export { WahooWebhookJobService } from "./lib/provider-sync/wahoo-webhook-job-service";
+export { createAthletePerformanceModelRepository } from "./repositories";

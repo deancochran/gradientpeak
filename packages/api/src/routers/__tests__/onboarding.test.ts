@@ -19,7 +19,6 @@ const wahooClientMock = {
     gender: 0,
     weight: 72,
   })),
-  getPowerZones: vi.fn(async () => ({ ftp: 248 })),
 };
 
 vi.mock("../../lib/integrations/wahoo/client", () => ({
@@ -300,7 +299,6 @@ describe("onboardingRouter", () => {
       gender: 0,
       weight: 72,
     });
-    wahooClientMock.getPowerZones.mockResolvedValue({ ftp: 248 });
   });
 
   afterEach(() => vi.unstubAllEnvs());
@@ -319,8 +317,8 @@ describe("onboardingRouter", () => {
           metadata: {
             status: "succeeded",
             blocking: true,
-            fields_imported: ["dob", "gender", "weight_kg", "ftp"],
-            imported_values: { ftp: 248 },
+            fields_imported: ["dob", "gender", "weight_kg"],
+            imported_values: { weight_kg: 72 },
           },
           last_sync_succeeded_at: new Date("2026-05-16T00:00:00.000Z"),
         },
@@ -332,10 +330,9 @@ describe("onboardingRouter", () => {
         dob: "1990-01-01",
         gender: "male",
         weight_kg: 72,
-        ftp: 248,
       },
       sources: {
-        ftp: { provider: "wahoo", label: "Wahoo" },
+        weight_kg: { provider: "wahoo", label: "Wahoo" },
       },
     });
   });
@@ -352,7 +349,7 @@ describe("onboardingRouter", () => {
 
     expect(updateCalls.some((call) => call.table === profiles)).toBe(true);
     const metricInserts = insertCalls.filter((call) => call.table === profileMetrics);
-    expect(metricInserts).toHaveLength(2);
+    expect(metricInserts).toHaveLength(1);
     expect(insertCalls.some((call) => call.table === providerSyncState)).toBe(true);
     expect(insertCalls).toEqual(
       expect.arrayContaining([
@@ -361,21 +358,6 @@ describe("onboardingRouter", () => {
           values: expect.objectContaining({
             source: "provider",
             provenance: expect.objectContaining({ provider: "wahoo" }),
-          }),
-        }),
-        expect.objectContaining({
-          table: profileMetrics,
-          values: expect.objectContaining({
-            metric_type: "ftp",
-            value: 248,
-            unit: "W",
-            source: "provider",
-            method: "provider_metric_import",
-            calculation_version: "provider-import-v1",
-            provenance: expect.objectContaining({
-              integration_id: integrationId,
-              provider: "wahoo",
-            }),
           }),
         }),
       ]),
@@ -399,11 +381,7 @@ describe("onboardingRouter", () => {
 
     await caller.startProviderEnrichment({ providers: ["wahoo"] });
 
-    expect(insertCalls.filter((call) => call.table === profileMetrics)).toEqual([
-      expect.objectContaining({
-        values: expect.objectContaining({ metric_type: "ftp", value: 248, source: "provider" }),
-      }),
-    ]);
+    expect(insertCalls.filter((call) => call.table === profileMetrics)).toEqual([]);
     expect(insertCalls.some((call) => call.table === providerSyncState)).toBe(true);
   });
 
@@ -429,122 +407,15 @@ describe("onboardingRouter", () => {
     await expect(service.refreshSetupData(userId, "wahoo")).resolves.toEqual({
       fieldsFilled: [],
       fieldsKept: ["dob", "gender"],
-      fieldsUpdated: ["weight_kg", "ftp"],
+      fieldsUpdated: ["weight_kg"],
       keptExistingValues: true,
       provider: "wahoo",
       status: "succeeded",
     });
 
     expect(updateCalls).toHaveLength(0);
-    expect(insertCalls.filter((call) => call.table === profileMetrics)).toHaveLength(2);
-    const effortInsert = insertCalls.find((call) => call.table === activityEfforts);
-    expect(effortInsert?.values).toHaveLength(1);
-    expect(effortInsert?.values).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          source: "derived",
-          method: "onboarding_modeled_curve",
-          unit: "watts",
-          activity_id: null,
-          duration_seconds: 3600,
-          value: 248,
-        }),
-      ]),
-    );
+    expect(insertCalls.filter((call) => call.table === profileMetrics)).toHaveLength(1);
     expect(insertCalls.some((call) => call.table === providerSyncState)).toBe(true);
-  });
-
-  it("does not model an FTP-derived curve when recent real bike power efforts exist", async () => {
-    const userId = "11111111-1111-4111-8111-111111111111";
-    const integrationId = "22222222-2222-4222-8222-222222222222";
-    const { db, insertCalls } = createCaller({
-      userId,
-      integrationRows: [
-        {
-          id: integrationId,
-          provider: "wahoo",
-          profile_id: userId,
-          access_token: encryptProviderToken("access-1"),
-          refresh_token: encryptProviderToken("refresh-1"),
-        } as any,
-      ],
-      activityEffortRows: [
-        {
-          id: "real-effort-1",
-          activity_id: "33333333-3333-4333-8333-333333333333",
-          duration_seconds: 300,
-          value: 300,
-          unit: "watts",
-          source: "imported",
-          method: "activity_file_best_effort",
-          provenance: {
-            activity_id: "33333333-3333-4333-8333-333333333333",
-            derived_from: "activity_file_stream",
-          },
-        },
-      ],
-      profileRow: { dob: null, gender: null, onboarded: true },
-    });
-    const service = new OnboardingProviderEnrichmentService({ db: db as any });
-
-    await service.refreshSetupData(userId, "wahoo");
-
-    expect(insertCalls.some((call) => call.table === activityEfforts)).toBe(false);
-    expect(insertCalls.some((call) => call.table === profileMetrics)).toBe(true);
-  });
-
-  it("does not treat a linked modeled effort as observed provider evidence", async () => {
-    const userId = "11111111-1111-4111-8111-111111111111";
-    const integrationId = "22222222-2222-4222-8222-222222222222";
-    const { db, insertCalls } = createCaller({
-      userId,
-      integrationRows: [{ id: integrationId, provider: "wahoo", profile_id: userId }],
-      activityEffortRows: [
-        {
-          id: "modeled-effort-1",
-          source: "derived",
-          method: "onboarding_modeled_curve",
-          provenance: { seed_source: "provider_wahoo_ftp" },
-        },
-      ],
-      profileRow: { dob: null, gender: null, onboarded: true },
-    });
-    const service = new OnboardingProviderEnrichmentService({ db: db as any });
-
-    await service.refreshSetupData(userId, "wahoo");
-
-    expect(insertCalls.find((call) => call.table === activityEfforts)?.values).toEqual([
-      expect.objectContaining({ activity_id: null, duration_seconds: 3600, value: 248 }),
-    ]);
-  });
-
-  it("does not treat unlinked imported efforts as observed provider evidence", async () => {
-    const userId = "11111111-1111-4111-8111-111111111111";
-    const integrationId = "22222222-2222-4222-8222-222222222222";
-    const { db, insertCalls } = createCaller({
-      userId,
-      integrationRows: [{ id: integrationId, provider: "wahoo", profile_id: userId }],
-      activityEffortRows: [
-        {
-          id: "unlinked-imported-effort-1",
-          activity_id: null,
-          duration_seconds: 300,
-          value: 300,
-          unit: "watts",
-          source: "imported",
-          method: "activity_file_best_effort",
-          provenance: { derived_from: "activity_file_stream" },
-        },
-      ],
-      profileRow: { dob: null, gender: null, onboarded: true },
-    });
-    const service = new OnboardingProviderEnrichmentService({ db: db as any });
-
-    await service.refreshSetupData(userId, "wahoo");
-
-    expect(insertCalls.find((call) => call.table === activityEfforts)?.values).toEqual([
-      expect.objectContaining({ activity_id: null, duration_seconds: 3600, value: 248 }),
-    ]);
   });
 
   it("marks unsupported connected providers as non-blocking skipped items", async () => {
@@ -568,7 +439,6 @@ describe("onboardingRouter", () => {
     experience_level: "skip",
     intents: ["train_event", "groups"],
     baseline_field_sources: {},
-    ftp: 250,
   };
   const lifecycleGoal = {
     target_date: "2026-09-13",

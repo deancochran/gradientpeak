@@ -74,8 +74,8 @@ function readParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function formatPlanSuggestion(input: { type?: string; tssDelta?: string; description?: string }) {
-  const delta = Number(input.tssDelta);
+function formatPlanSuggestion(input: { type?: string; loadDelta?: string; description?: string }) {
+  const delta = Number(input.loadDelta);
   if (!Number.isFinite(delta) || delta === 0) {
     return null;
   }
@@ -83,13 +83,13 @@ function formatPlanSuggestion(input: { type?: string; tssDelta?: string; descrip
   const absoluteDelta = Math.abs(Math.round(delta));
   const direction = input.type === "reduce_load" || delta < 0 ? "Reduce" : "Add";
   return {
-    title: `${direction} about ${markEstimated(`${absoluteDelta} TSS`)}`,
+    title: `${direction} about ${markEstimated(`${absoluteDelta} Load`)}`,
     description:
       input.description?.trim() ||
       (direction === "Reduce"
         ? "Review scheduled sessions on this day and reduce total load."
         : "Create or refine a session on this day to close the readiness gap."),
-    tssDelta: String(Math.round(delta)),
+    loadDelta: String(Math.round(delta)),
     type: direction === "Reduce" ? "reduce_load" : "add_load",
     actionLabel: direction === "Reduce" ? "Create adjustment note" : "Create suggested session",
   };
@@ -111,7 +111,7 @@ export default function CalendarDayScreen() {
     date?: string;
     trainingPlanId?: string;
     planSuggestionType?: string;
-    planSuggestionTssDelta?: string;
+    planSuggestionLoadDelta?: string;
     planSuggestionDescription?: string;
   }>();
   const navigateTo = useAppNavigate();
@@ -145,14 +145,14 @@ export default function CalendarDayScreen() {
       : "Set a valid planning timezone in your profile to view calendar days.";
   const planSuggestion = useMemo(() => {
     const type = readParam(params.planSuggestionType);
-    const tssDelta = readParam(params.planSuggestionTssDelta);
+    const loadDelta = readParam(params.planSuggestionLoadDelta);
     const description = readParam(params.planSuggestionDescription);
     return formatPlanSuggestion({
       ...(type === undefined ? {} : { type }),
-      ...(tssDelta === undefined ? {} : { tssDelta }),
+      ...(loadDelta === undefined ? {} : { loadDelta }),
       ...(description === undefined ? {} : { description }),
     });
-  }, [params.planSuggestionDescription, params.planSuggestionTssDelta, params.planSuggestionType]);
+  }, [params.planSuggestionDescription, params.planSuggestionLoadDelta, params.planSuggestionType]);
   const setActiveDate = useCalendarStore((state) => state.setActiveDate);
   const eventsQueryEnabled = useAuthStore(
     (state) => state.ready && !!state.session && hasSessionAuthCredentials(),
@@ -308,7 +308,7 @@ export default function CalendarDayScreen() {
         ...(planSuggestion
           ? {
               planSuggestionType: planSuggestion.type,
-              planSuggestionTssDelta: planSuggestion.tssDelta,
+              planSuggestionLoadDelta: planSuggestion.loadDelta,
             }
           : {}),
       },

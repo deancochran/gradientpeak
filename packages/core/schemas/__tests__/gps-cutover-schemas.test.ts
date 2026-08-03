@@ -40,6 +40,15 @@ describe("GPS cutover schemas", () => {
         location: "outdoor",
       }).success,
     ).toBe(false);
+
+    for (const retiredField of ["ftp", "threshold_hr"] as const) {
+      expect(
+        ActivityUploadSchema.safeParse({
+          ...base,
+          profileSnapshot: { [retiredField]: 250 },
+        }).success,
+      ).toBe(false);
+    }
   });
 
   it("requires strict structure and rejects top-level location/activity_category aliases", () => {

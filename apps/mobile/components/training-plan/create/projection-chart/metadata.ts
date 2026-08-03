@@ -213,8 +213,8 @@ export const resolveContinuousProjectionDiagnostics = (
     readFirstNumber(objectiveContributions, ["sampled_weeks", "sampledWeeks"]) ?? undefined;
   const derivedClampPressure =
     clampCounts && sampledWeeks && sampledWeeks > 0
-      ? ((readFirstNumber(clampCounts, ["tss"]) ?? 0) +
-          (readFirstNumber(clampCounts, ["ctl"]) ?? 0)) /
+      ? ((readFirstNumber(clampCounts, ["load"]) ?? 0) +
+          (readFirstNumber(clampCounts, ["longTermLoad"]) ?? 0)) /
         sampledWeeks
       : undefined;
   const effectiveOptimizerSummaryRecord =

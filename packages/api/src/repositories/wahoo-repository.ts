@@ -1,7 +1,3 @@
-import type {
-  ActivityEffortThresholdEvidence,
-  ThresholdMetricSource,
-} from "@repo/core/athlete-inputs";
 import type { DrizzleQueryExecutor } from "../db";
 
 export type WahooIntegrationRecord = {
@@ -118,6 +114,8 @@ export interface WahooRepository {
     activityFilePath: string | null;
     activityFileSize: number | null;
     artifactId: string | null;
+    artifactSha256: string | null;
+    providerRevision: string | null;
     analysisReady: boolean;
     materializerVersion: string | null;
     segmentsRevision: number;
@@ -133,6 +131,8 @@ export interface WahooRepository {
     activityFilePath: string | null;
     activityFileSize: number | null;
     artifactId: string | null;
+    artifactSha256: string | null;
+    providerRevision: string | null;
     analysisReady: boolean;
     materializerVersion: string | null;
     segmentsRevision: number;
@@ -170,22 +170,6 @@ export interface WahooRepository {
     id: string;
     routeId: string | null;
     startsAt: string;
-  } | null>;
-  getProfileSyncMetrics(profileId: string): Promise<{
-    bikePowerEfforts: Array<{
-      observationKind: "actual" | "derived";
-      observedAt: string;
-      value: number;
-      evidence?: ActivityEffortThresholdEvidence;
-    }>;
-    ftpMetrics: Array<{
-      observedAt: string;
-      source: ThresholdMetricSource;
-      value: number;
-    }>;
-    maxHr: number | null;
-    thresholdHr: number | null;
-    thresholdHrByActivityCategory?: Partial<Record<"bike" | "run" | "swim", number>>;
   } | null>;
   getOwnedRouteForMirror(input: { profileId: string; routeId: string }): Promise<{
     description: string | null;

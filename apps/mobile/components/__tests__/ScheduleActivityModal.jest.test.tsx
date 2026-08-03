@@ -23,6 +23,22 @@ type ExistingActivityData = {
 };
 
 let existingActivityData: ExistingActivityData | null = null;
+const createMockConstraintValidation = () => ({
+  canSchedule: false,
+  hasWarnings: false,
+  constraints: {
+    weeklyLoad: {
+      status: "violated",
+      current: 200 as number | null,
+      withNew: 320 as number | null,
+      limit: 280,
+    },
+    activitiesPerWeek: { status: "satisfied", current: 3, withNew: 4, limit: 5 },
+    consecutiveDays: { status: "warning", current: 2, withNew: 3, limit: 3 },
+    restDays: { status: "warning", current: 1, withNew: 0, minimum: 1 },
+  },
+});
+let mockConstraintValidationData = createMockConstraintValidation();
 
 jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
@@ -172,16 +188,7 @@ jest.mock("@/lib/api", () => ({
       getById: { useQuery: () => ({ data: existingActivityData, isLoading: false }) },
       validateConstraints: {
         useQuery: () => ({
-          data: {
-            canSchedule: false,
-            hasWarnings: false,
-            constraints: {
-              weeklyTSS: { status: "violated", current: 200, withNew: 320, limit: 280 },
-              activitiesPerWeek: { status: "ok", current: 3, withNew: 4, limit: 5 },
-              consecutiveDays: { status: "warning", current: 2, withNew: 3, limit: 3 },
-              restDays: { status: "warning", current: 1, withNew: 0, minimum: 1 },
-            },
-          },
+          data: mockConstraintValidationData,
           isLoading: false,
           error: null,
         }),
@@ -199,7 +206,6 @@ jest.mock("@/lib/api", () => ({
             activity_category: "run",
             activity_categories: ["run"],
             estimated_duration: 3600,
-            estimated_tss: 72,
             structure: { intervals: [{ id: "step-1" }] },
           },
           isLoading: false,
@@ -220,6 +226,7 @@ describe("ScheduleActivityModal", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     existingActivityData = null;
+    mockConstraintValidationData = createMockConstraintValidation();
   });
 
   it("shows the activity preview immediately and keeps constraints collapsed by default", () => {
@@ -257,6 +264,38 @@ describe("ScheduleActivityModal", () => {
     expect(screen.getByTestId("schedule-preview-details")).toBeTruthy();
     expect(screen.getByTestId("schedule-constraints-details")).toBeTruthy();
     expect(screen.getByText("Constraint Validation")).toBeTruthy();
+  });
+
+  it("describes unavailable weekly Load as unevaluable instead of over the limit", () => {
+    mockConstraintValidationData = {
+      ...createMockConstraintValidation(),
+      constraints: {
+        ...createMockConstraintValidation().constraints,
+        weeklyLoad: { status: "violated", current: null, withNew: null, limit: 280 },
+      },
+    };
+
+    renderNative(
+      <ScheduleActivityModal
+        visible
+        onClose={jest.fn()}
+        activityPlanId="plan-1"
+        trainingPlanId="training-plan-1"
+      />,
+    );
+
+    expect(screen.getAllByText("Weekly Common Load unavailable").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(
+        "This date cannot be evaluated against the weekly limit because comparable Common Load is unavailable.",
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText("Constraint override required")).toBeNull();
+    expect(screen.queryByText("This date violates one or more training-plan limits.")).toBeNull();
+    const submitButton = screen.getByTestId("schedule-submit-button");
+    expect(submitButton.props.disabled).toBe(true);
+    fireEvent.press(submitButton);
+    expect(createMutateMock).not.toHaveBeenCalled();
   });
 
   it("submits bounded weekly recurrence when scheduling a planned activity", () => {

@@ -12,7 +12,7 @@ describe("activity_category registry and load state foundations", () => {
   it("resolves activity_category configs through the registry", () => {
     expect(getActivityCategoryModelConfig("run")).toMatchObject({
       activity_category: "run",
-      atl_tau_days: 10,
+      recentLoad_tau_days: 10,
       impact_factor: 1,
     });
     expect(listActivityCategoryModelConfigs()).toHaveLength(5);
@@ -28,7 +28,7 @@ describe("activity_category registry and load state foundations", () => {
       dailyLoad: 100,
     });
 
-    expect(swimState.atl).toBeGreaterThan(runState.atl);
+    expect(swimState.recentLoad).toBeGreaterThan(runState.recentLoad);
     expect(runState.impact_load).toBe(100);
     expect(swimState.impact_load).toBe(20);
   });

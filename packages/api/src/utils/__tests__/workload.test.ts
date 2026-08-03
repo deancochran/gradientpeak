@@ -1,198 +1,240 @@
-import { describe, expect, it } from "vitest";
 import {
-  buildCanonicalDailyLoads,
-  buildWorkloadEnvelopes,
-  type CanonicalLoadActivity,
-} from "../workload";
+  type CommonLoadResult,
+  calculateAvailableCommonLoad,
+  createObservationQuantificationBundle,
+  quantifyCompletedActivityObservation,
+} from "@repo/core";
+import { describe, expect, it } from "vitest";
+import { buildCanonicalDailyLoads, buildWorkloadEnvelopes } from "../workload";
 
 const start = new Date("2026-02-01T00:00:00.000Z");
 const end = new Date("2026-02-28T00:00:00.000Z");
-const allDates = Array.from(
-  { length: 28 },
-  (_, index) => `2026-02-${String(index + 1).padStart(2, "0")}`,
-);
-const bikeIdentity = {
-  activity_category: "bike" as const,
-  method: "power_threshold" as const,
-  source: "activity_analysis" as const,
-  version: "1" as const,
-  calibration: { type: "ftp_watts" as const, value: 250 },
-};
-const runIdentity = {
-  activity_category: "run" as const,
-  method: "run_pace_threshold" as const,
-  source: "activity_analysis" as const,
-  version: "1" as const,
-  calibration: { type: "threshold_speed_mps" as const, value: 4 },
-};
+
+function observation(commonLoad: CommonLoadResult) {
+  return quantifyCompletedActivityObservation({
+    activityCategory: "bike",
+    source: {
+      activityId: "activity-1",
+      segmentId: "segment-1",
+      provider: null,
+      externalId: null,
+      artifactId: null,
+      capability: "unknown",
+      parserVersion: null,
+      decodedContractVersion: null,
+      materializerVersion: null,
+      segmentsRevision: null,
+      segmentRevision: null,
+      summaryVersion: 1,
+      sourceSessionIndex: null,
+      sourceMessageIndex: null,
+      rawType: null,
+      rawSport: null,
+      rawSubSport: null,
+    },
+    timing: {
+      coverage: "complete",
+      source: "unknown",
+      basis: "unknown",
+      startedAt: "2026-02-01T12:00:00.000Z",
+      finishedAt: "2026-02-01T13:00:00.000Z",
+      elapsedSeconds: 3600,
+      activeSeconds: 3600,
+      movingSeconds: 3600,
+    },
+    distance: { meters: 20_000, source: "unknown", basis: "unknown" },
+    intensity: {
+      averageHeartRateBpm: null,
+      averagePowerWatts: 200,
+      averageSpeedMetersPerSecond: null,
+      normalizedSpeedMetersPerSecond: null,
+    },
+    commonLoad,
+  });
+}
+
+function observationBundle(commonLoad: CommonLoadResult) {
+  return createObservationQuantificationBundle({ members: [observation(commonLoad)] });
+}
+
+function unavailableCommonLoad(): CommonLoadResult {
+  return {
+    status: "unavailable",
+    model: "gradientpeak_relative_load",
+    version: "1",
+    activity_category: "bike",
+    method: null,
+    quality: null,
+    thresholdEvidence: null,
+    evidenceFingerprint: null,
+    computedAsOf: "2026-02-01T12:00:00.000Z",
+    contributingDurationSeconds: null,
+    reason: "threshold_missing",
+  };
+}
 
 describe("workload utils", () => {
-  it("keeps same-day TRIMP and TSS in separate identity series", () => {
+  it("does not manufacture a numeric workload when Common Load is absent", () => {
+    const result = buildCanonicalDailyLoads([], start, end);
+
+    expect(result).toMatchObject({ source: "none", complete: false, series: [] });
+    expect(buildWorkloadEnvelopes([], start, end).acwr).toMatchObject({
+      value: null,
+      reasonCode: "missing_quantification",
+    });
+  });
+
+  it("preserves unavailable Common Load as an unavailable workload envelope", () => {
+    const result = buildWorkloadEnvelopes(
+      [
+        {
+          started_at: "2026-02-01T12:00:00.000Z",
+          observationQuantification: observationBundle(unavailableCommonLoad()),
+        },
+      ],
+      start,
+      end,
+    );
+
+    expect(result.acwr).toMatchObject({ value: null, reasonCode: "incomplete_common_load" });
+    expect(result.monotony).toMatchObject({ value: null, reasonCode: "incomplete_common_load" });
+  });
+
+  it("rejects a quantification from an incompatible Common Load model version", () => {
+    const compatible = observationBundle(unavailableCommonLoad());
+    const incompatible = {
+      ...compatible,
+      summary: {
+        ...compatible.summary,
+        commonLoad: { ...compatible.summary.commonLoad, version: "0" },
+      },
+    };
+
+    const result = buildWorkloadEnvelopes(
+      [
+        {
+          started_at: "2026-02-01T12:00:00.000Z",
+          observationQuantification: incompatible,
+        },
+      ],
+      start,
+      end,
+    );
+
+    expect(result.acwr).toMatchObject({
+      value: null,
+      reasonCode: "incompatible_common_load_identity",
+    });
+  });
+
+  it("builds one compatible Common Load series without TSS or IF aliases", () => {
+    const commonLoad = calculateAvailableCommonLoad({
+      activity_category: "bike",
+      method: "power_threshold",
+      intensity: 0.8,
+      contributingDurationSeconds: 3600,
+      quality: {
+        source: "manual",
+        observed_at: "2026-01-01T00:00:00.000Z",
+        valid_at: "2026-01-01T00:00:00.000Z",
+        confidence: "high",
+        stale: false,
+        estimate: false,
+        calculation_version: "1",
+        evidence_fingerprint: "quality",
+      },
+      thresholdEvidence: {
+        type: "ftp_watts",
+        value: 250,
+        unit: "watts",
+        source: "manual",
+        observedAt: "2026-01-01T00:00:00.000Z",
+        validAt: "2026-01-01T00:00:00.000Z",
+        freshness: "current",
+        calculationVersion: "1",
+        sourceFingerprint: "threshold",
+      },
+      evidenceFingerprint: "activity",
+      computedAsOf: "2026-02-01T12:00:00.000Z",
+      estimated: false,
+    });
     const result = buildCanonicalDailyLoads(
       [
         {
           started_at: "2026-02-01T12:00:00.000Z",
-          activity_category: "cycling",
-          trimp: 100,
-          tss: 50,
-          tss_identity: bikeIdentity,
-          load_method: "heart_rate_threshold",
-          load_version: "1",
-          load_source_definition: "activity_analysis",
+          observationQuantification: observationBundle(commonLoad),
         },
       ],
       start,
-      start,
-    );
-
-    expect(result.source).toBe("mixed");
-    expect(result).not.toHaveProperty("dailyLoads");
-    expect(result.series.map(({ identity }) => identity.family)).toEqual(["trimp", "tss"]);
-    expect(buildWorkloadEnvelopes([], start, end).acwr.value).toBeNull();
-  });
-
-  it("sums compatible same-day observations without flattening identities", () => {
-    const result = buildCanonicalDailyLoads(
-      [
-        { started_at: "2026-02-01T08:00:00.000Z", tss: 30, tss_identity: bikeIdentity },
-        { started_at: "2026-02-01T12:00:00.000Z", tss: 20, tss_identity: bikeIdentity },
-      ],
-      start,
-      start,
-    );
-
-    expect(result.series).toHaveLength(1);
-    expect(result.series[0]?.observations).toEqual([
-      { date: "2026-02-01", state: "observed", value: 50 },
-    ]);
-  });
-
-  it("returns unavailable rather than numeric workload for mixed activity_categories", () => {
-    const activities = allDates.flatMap((date) => [
-      { started_at: `${date}T06:00:00.000Z`, tss: 50, tss_identity: bikeIdentity },
-      { started_at: `${date}T18:00:00.000Z`, tss: 25, tss_identity: runIdentity },
-    ]);
-    const workload = buildWorkloadEnvelopes(activities, start, end);
-
-    expect(workload.acwr).toMatchObject({ value: null, reasonCode: "mixed_identities" });
-    expect(workload.monotony).toMatchObject({ value: null, reasonCode: "mixed_identities" });
-  });
-
-  it("returns unavailable when a load method changes", () => {
-    const activities = allDates.map((date, index) => ({
-      started_at: `${date}T06:00:00.000Z`,
-      tss: 40 + index,
-      tss_identity:
-        index < 14
-          ? bikeIdentity
-          : {
-              ...bikeIdentity,
-              method: "heart_rate_threshold" as const,
-              calibration: {
-                type: "lthr_bpm" as const,
-                value: 165,
-              },
-            },
-    }));
-
-    expect(buildWorkloadEnvelopes(activities, start, end).acwr).toMatchObject({
-      value: null,
-      reasonCode: "mixed_identities",
-    });
-  });
-
-  it("keeps a continuous workload series when threshold calibration changes", () => {
-    const activities = allDates.map((date, index) => ({
-      started_at: `${date}T06:00:00.000Z`,
-      tss: 40 + index,
-      tss_identity: {
-        ...bikeIdentity,
-        calibration: { type: "ftp_watts" as const, value: index < 14 ? 250 : 275 },
-      },
-    }));
-
-    const workload = buildWorkloadEnvelopes(activities, start, end);
-    expect(workload.acwr.value).toBeTypeOf("number");
-    expect(workload.acwr.identity).toMatchObject({
-      activity_category: "bike",
-      family: "tss",
-      method: "power_threshold",
-      sourceDefinition: "activity_analysis",
-      version: "1",
-    });
-  });
-
-  it("distinguishes missing days from explicit known rest coverage", () => {
-    const activity = [
+      end,
       {
-        started_at: "2026-02-28T06:00:00.000Z",
-        tss: 50,
-        tss_identity: bikeIdentity,
+        knownRestDates: Array.from({ length: 27 }, (_, index) =>
+          new Date(Date.UTC(2026, 1, index + 2)).toISOString().slice(0, 10),
+        ),
       },
-    ];
-    const missing = buildWorkloadEnvelopes(activity, start, end);
-    const covered = buildWorkloadEnvelopes(activity, start, end, {
-      knownRestDates: allDates.slice(0, -1),
-    });
+    );
 
-    expect(missing.acwr).toMatchObject({ value: null, reasonCode: "unknown_days" });
-    expect(covered.acwr.reasonCode).not.toBe("unknown_days");
-    expect(covered.acwr.coverageDays).toBe(28);
-    expect(covered.acwr.identity).toMatchObject({
+    expect(result).toMatchObject({
+      complete: true,
+      source: "common_load",
+      exactIdentity: {
+        family: "common_load",
+        method: "gradientpeak_relative_load",
+        version: "1",
+      },
+    });
+    expect(result).not.toHaveProperty("tss");
+    expect(result).not.toHaveProperty("intensityFactor");
+  });
+
+  it("returns an explicit duplicate-subject rejection before workload arithmetic", () => {
+    const commonLoad = calculateAvailableCommonLoad({
       activity_category: "bike",
-      family: "tss",
       method: "power_threshold",
-      version: "1",
-      sourceDefinition: "activity_analysis",
+      intensity: 0.8,
+      contributingDurationSeconds: 3600,
+      quality: {
+        source: "manual",
+        observed_at: "2026-01-01T00:00:00.000Z",
+        valid_at: "2026-01-01T00:00:00.000Z",
+        confidence: "high",
+        stale: false,
+        estimate: false,
+        calculation_version: "1",
+        evidence_fingerprint: "quality",
+      },
+      thresholdEvidence: {
+        type: "ftp_watts",
+        value: 250,
+        unit: "watts",
+        source: "manual",
+        observedAt: "2026-01-01T00:00:00.000Z",
+        validAt: "2026-01-01T00:00:00.000Z",
+        freshness: "current",
+        calculationVersion: "1",
+        sourceFingerprint: "threshold",
+      },
+      evidenceFingerprint: "activity",
+      computedAsOf: "2026-02-01T12:00:00.000Z",
+      estimated: false,
     });
-  });
+    const duplicated = observationBundle(commonLoad);
+    const deliveries = [
+      { started_at: "2026-02-01T12:00:00.000Z", observationQuantification: duplicated },
+      { started_at: "2026-02-02T12:00:00.000Z", observationQuantification: duplicated },
+    ];
+    const result = buildCanonicalDailyLoads(deliveries, start, end);
 
-  it("computes a fully identified TRIMP series without requiring a TSS identity", () => {
-    const activities = allDates.map((date, index) => ({
-      started_at: `${date}T06:00:00.000Z`,
-      activity_category: "run",
-      trimp: 40 + index,
-      load_method: "heart_rate_threshold",
-      load_version: "1",
-      load_source_definition: "activity_analysis",
-    }));
-    const workload = buildWorkloadEnvelopes(activities, start, end);
-
-    expect(workload.acwr.value).toBeTypeOf("number");
-    expect(workload.acwr.identity).toMatchObject({
-      activity_category: "run",
-      family: "trimp",
-      method: "heart_rate_threshold",
-      version: "1",
-      sourceDefinition: "activity_analysis",
+    expect(result).toMatchObject({
+      complete: false,
+      source: "common_load",
+      series: [],
+      exactIdentity: null,
+      rejectionReason: "duplicate_subject",
     });
-    expect(workload.monotony.value).toBeTypeOf("number");
-  });
-
-  it("supports current router TSS-only inputs through canonical identity", () => {
-    const activities = allDates.map((date, index) => ({
-      started_at: `${date}T06:00:00.000Z`,
-      tss: 40 + index,
-      tss_identity: bikeIdentity,
-    }));
-    const workload = buildWorkloadEnvelopes(activities, start, end);
-
-    expect(workload.acwr.value).toBeTypeOf("number");
-    expect(workload.acwr.source).toBe("tss");
-    expect(workload.monotony.value).toBeTypeOf("number");
-  });
-
-  it("rejects the retired training_stress_score alias and does not read it", () => {
-    const retiredInput = {
-      started_at: "2026-02-01T06:00:00.000Z",
-      // @ts-expect-error The workload boundary accepts current tss only.
-      training_stress_score: 50,
-      tss_identity: bikeIdentity,
-    } satisfies CanonicalLoadActivity;
-
-    const result = buildCanonicalDailyLoads([retiredInput], start, start);
-
-    expect(result.series).toEqual([]);
-    expect(result).not.toHaveProperty("dailyLoads");
+    expect(buildWorkloadEnvelopes(deliveries, start, end).acwr).toMatchObject({
+      value: null,
+      reasonCode: "duplicate_subject",
+    });
   });
 });

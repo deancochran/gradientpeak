@@ -1,4 +1,5 @@
 import { canonicalActivityCategorySchema } from "@repo/core";
+import { commonLoadAggregateSchema, commonLoadResultSchema } from "@repo/core/load";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { decodeFeedCursor } from "../application/feed/feedPage";
@@ -20,8 +21,7 @@ const nullableNonnegativeIntegerSchema = z.preprocess((value) => {
 
 const feedDerivedSchema = z
   .object({
-    tss: z.number().nullable(),
-    intensity_factor: z.number().nullable(),
+    common_load: z.union([commonLoadResultSchema, commonLoadAggregateSchema]),
     computed_as_of: z.string(),
   })
   .nullable();

@@ -721,12 +721,6 @@ export const mobileWebJourneyDomains: MobileWebJourneyDomain[] = [
         "provider/activity metric seed",
       ),
       blocked(
-        "metrics.css",
-        "Atomic CSS protocol",
-        "needs-seed",
-        "deterministic CSS operation seed",
-      ),
-      blocked(
         "efforts.curves",
         "Observed curves, evidence labels and ranges",
         "needs-seed",

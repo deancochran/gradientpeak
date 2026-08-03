@@ -17,7 +17,7 @@ type ExpandedPlanInput = {
     phase: string;
     start_date: string;
     end_date: string;
-    target_weekly_tss_range?: { min: number; max: number };
+    target_weekly_load_range?: { min: number; max: number };
   }>;
   goals: Array<{
     id?: string;
@@ -41,14 +41,14 @@ type ProjectionRelevantCreationConfig = Pick<
 export interface BuildProjectionEngineInputShape {
   expanded_plan: ExpandedPlanInput;
   normalized_creation_config?: ProjectionRelevantCreationConfig;
-  starting_ctl?: number;
-  starting_atl?: number;
+  starting_longTermLoad?: number;
+  starting_recentLoad?: number;
   prior_inferred_snapshot?: InferredStateSnapshot;
   preference_profile?: AthletePreferenceProfile;
   planned_sessions?: DailyLoadRecommendationSession[];
   scheduling_constraints?: DailyLoadDistributionSchedulingConstraints;
   no_history_context?: NoHistoryAnchorContext;
-  disable_weekly_tss_optimizer?: boolean;
+  disable_weekly_load_optimizer?: boolean;
 }
 
 function buildSchedulingConstraintsFromCreationConfig(
@@ -105,7 +105,7 @@ export function buildProjectionEngineInput(
       phase: block.phase,
       start_date: block.start_date,
       end_date: block.end_date,
-      ...optionalProperty("target_weekly_tss_range", block.target_weekly_tss_range),
+      ...optionalProperty("target_weekly_load_range", block.target_weekly_load_range),
     })),
     goals: input.expanded_plan.goals.map((goal) => ({
       name: goal.name,
@@ -114,8 +114,8 @@ export function buildProjectionEngineInput(
       ...optionalProperty("priority", goal.priority),
       ...optionalProperty("targets", goal.targets),
     })),
-    ...optionalProperty("starting_ctl", input.starting_ctl),
-    ...optionalProperty("starting_atl", input.starting_atl),
+    ...optionalProperty("starting_longTermLoad", input.starting_longTermLoad),
+    ...optionalProperty("starting_recentLoad", input.starting_recentLoad),
     ...optionalProperty("prior_inferred_snapshot", input.prior_inferred_snapshot),
     ...optionalProperty("preference_profile", input.preference_profile),
     ...optionalProperty("planned_sessions", input.planned_sessions),
@@ -136,6 +136,6 @@ export function buildProjectionEngineInput(
           }
         : undefined,
     ),
-    ...optionalProperty("disable_weekly_tss_optimizer", input.disable_weekly_tss_optimizer),
+    ...optionalProperty("disable_weekly_load_optimizer", input.disable_weekly_load_optimizer),
   };
 }

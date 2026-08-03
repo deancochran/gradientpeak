@@ -11,9 +11,6 @@ import {
 
 const AS_OF = "2026-07-10T12:00:00.000Z";
 const units: Record<AthleteMetricType, string> = {
-  ftp: "watts",
-  threshold_pace_seconds_per_km: "seconds_per_km",
-  css_seconds_per_100m: "seconds_per_100m",
   lthr: "beats_per_minute",
   max_hr: "beats_per_minute",
   resting_hr: "beats_per_minute",
@@ -144,8 +141,8 @@ function model(
       strategy: null,
       taperPreference: null,
       progressionPreference: null,
-      ctlOverride: ev(null, "training_load"),
-      atlOverride: ev(null, "training_load"),
+      longTermLoadOverride: ev(null, "training_load"),
+      recentLoadOverride: ev(null, "training_load"),
     },
   };
 }
@@ -173,14 +170,11 @@ const ratioMetricCases = [
 ])[];
 
 const expectedDownstreamEffects: Record<AthleteMetricType, readonly string[]> = {
-  ftp: ["wattsPerKilogram"],
-  threshold_pace_seconds_per_km: [],
-  css_seconds_per_100m: [],
   lthr: [],
   max_hr: ["heartRateReserve"],
   resting_hr: ["heartRateReserve"],
   vo2_max: [],
-  weight_kg: ["wattsPerKilogram"],
+  weight_kg: [],
   hrv_rmssd: ["hrvRmssd"],
   sleep_hours: ["sleep"],
   stress_score: ["stress"],
@@ -191,7 +185,6 @@ const expectedDownstreamEffects: Record<AthleteMetricType, readonly string[]> = 
 
 function downstreamEstimates(result: ReturnType<typeof evaluatePhysiologyMetrics>) {
   return {
-    wattsPerKilogram: result.wattsPerKilogram.estimate,
     heartRateReserve: result.heartRateReserve.estimate,
     hrvRmssd: result.individualizedRatios.hrvRmssd.estimate,
     sleep: result.individualizedRatios.sleep.estimate,
@@ -202,7 +195,6 @@ function downstreamEstimates(result: ReturnType<typeof evaluatePhysiologyMetrics
 }
 
 const downstreamKeys = [
-  "wattsPerKilogram",
   "heartRateReserve",
   "hrvRmssd",
   "sleep",
@@ -212,30 +204,12 @@ const downstreamKeys = [
 ] satisfies readonly (keyof ReturnType<typeof downstreamEstimates>)[];
 
 describe("physiology metric policy", () => {
-  it("publishes canonical running threshold pace and swimming CSS policy outputs", () => {
-    const result = evaluatePhysiologyMetrics(
-      model({
-        threshold_pace_seconds_per_km: [{ value: 270, activity_category: "run" }],
-        css_seconds_per_100m: [{ value: 95, activity_category: "swim" }],
-      }),
-    );
-
-    expect(result.metrics.threshold_pace_seconds_per_km.result).toMatchObject({
-      estimate: 270,
-      unit: "seconds_per_km",
-    });
-    expect(result.metrics.css_seconds_per_100m.result).toMatchObject({
-      estimate: 95,
-      unit: "seconds_per_100m",
-    });
-  });
-
   it("is versioned and keeps every metric in its frozen individualized role", () => {
     const result = evaluatePhysiologyMetrics(model({ age_years: [{ value: 42 }] }));
     expect(result.policyVersion).toBe(PHYSIOLOGY_METRICS_POLICY_VERSION);
     expect(result.metrics.age_years.role).toBe("adaptation_recovery_context");
     expect(result.metrics.age_years.result.estimate).toBe(42);
-    expect(result.metrics.ftp.result.state).toBe("insufficient_evidence");
+    expect(result.metrics.lthr.result.state).toBe("insufficient_evidence");
     expect(result).not.toHaveProperty("score");
   });
 
@@ -293,9 +267,6 @@ describe("physiology metric policy", () => {
     PHYSIOLOGY_METRIC_TYPES,
   )("changes only intended downstream calculations for %s", (metricType) => {
     const observations: Record<AthleteMetricType, Observation[]> = {
-      ftp: [{ value: 250 }],
-      threshold_pace_seconds_per_km: [{ value: 270 }],
-      css_seconds_per_100m: [{ value: 95 }],
       lthr: [{ value: 170 }],
       max_hr: [{ value: 190 }],
       resting_hr: [{ value: 50 }],
@@ -325,16 +296,15 @@ describe("physiology metric policy", () => {
     expect(changedOutputs).toEqual(expectedDownstreamEffects[metricType]);
   });
 
-  it("uses weight only to enable W/kg and max/resting HR only for normalization", () => {
+  it("keeps weight contextual and uses max/resting HR only for normalization", () => {
     const result = evaluatePhysiologyMetrics(
       model({
-        ftp: [{ value: 280 }],
         weight_kg: [{ value: 70 }],
         max_hr: [{ value: 190 }],
         resting_hr: [{ value: 50 }],
       }),
     );
-    expect(result.wattsPerKilogram.estimate).toBe(4);
+    expect(result.metrics.weight_kg.result.estimate).toBe(70);
     expect(result.heartRateReserve.estimate).toBe(140);
   });
 
@@ -434,16 +404,16 @@ describe("physiology metric policy", () => {
     expect(evaluatePhysiologyMetrics(input, "bike").metrics.lthr.result.estimate).toBe(178);
   });
 
-  it("prioritizes recent observed performance over a newer profile threshold", () => {
+  it("prioritizes observed activity evidence over a newer profile observation", () => {
     const result = evaluatePhysiologyMetrics(
       model({
-        ftp: [
-          { value: 250, daysAgo: 1, sourceType: "profile_metric" },
-          { value: 270, daysAgo: 2, sourceType: "activity_effort" },
+        vo2_max: [
+          { value: 50, daysAgo: 1, sourceType: "profile_metric" },
+          { value: 55, daysAgo: 2, sourceType: "activity_effort" },
         ],
       }),
     );
-    expect(result.metrics.ftp.result.estimate).toBe(270);
-    expect(result.metrics.ftp.result.contributingSourceIds[0]).toContain("manual:physiology-");
+    expect(result.metrics.vo2_max.result.estimate).toBe(55);
+    expect(result.metrics.vo2_max.result.contributingSourceIds[0]).toContain("manual:physiology-");
   });
 });

@@ -1,11 +1,10 @@
 import { type CompiledActivityPlan, compileActivityPlan } from "../activity-plan";
-import { GLOBAL_DEFAULTS } from "../calculations/defaults";
+import type { AthletePerformanceTargetFacts } from "../performance-model";
 import type { RecordingServiceActivityPlan } from "../schemas";
+import { resolvePerformanceTargetValue } from "../utils/recording-plan-target-resolver";
 
 export interface PlanValidationMetrics {
-  ftp?: number;
-  thresholdHr?: number;
-  weightKg?: number;
+  performanceTargets?: AthletePerformanceTargetFacts;
 }
 
 export interface MissingMetric {
@@ -46,40 +45,44 @@ export function validatePlanRequirements(
     };
   }
 
-  const allTargetTypes = new Set<string>();
-
+  const missingMetrics = new Map<string, MissingMetric>();
   for (const occurrence of compiled.occurrences) {
     if (occurrence.role !== "activity") continue;
     for (const target of occurrence.targets) {
-      allTargetTypes.add(target.type);
+      if (
+        (target.type === "%FTP" || target.type === "%ThresholdHR" || target.type === "%MaxHR") &&
+        !resolvePerformanceTargetValue({
+          target,
+          activityCategory: occurrence.activity_category,
+          ...(metrics?.performanceTargets !== undefined
+            ? { performanceTargets: metrics.performanceTargets }
+            : {}),
+        })
+      ) {
+        const activityCategoryLabel =
+          occurrence.activity_category.charAt(0).toUpperCase() +
+          occurrence.activity_category.slice(1);
+        const name =
+          target.type === "%FTP"
+            ? "planning threshold power"
+            : target.type === "%ThresholdHR"
+              ? `${activityCategoryLabel} LTHR`
+              : `${activityCategoryLabel} max HR`;
+        missingMetrics.set(`${occurrence.activity_category}:${target.type}`, {
+          name,
+          description: `A current ${name} performance-model fact is required for ${target.type} targets.`,
+          settingPath: "/profile-metrics",
+        });
+      }
     }
   }
 
-  const warnings: string[] = [];
-
-  if (allTargetTypes.has("%FTP") && !metrics?.ftp) {
-    warnings.push(
-      `Using default FTP (${GLOBAL_DEFAULTS.ftp}W). Set your FTP in Settings for more accurate training.`,
-    );
-  }
-
-  if (allTargetTypes.has("%ThresholdHR") && !metrics?.thresholdHr) {
-    warnings.push(
-      `Using default Threshold HR (${GLOBAL_DEFAULTS.thresholdHr} bpm). Set yours in Settings for more accurate training.`,
-    );
-  }
-
-  if ((allTargetTypes.has("%FTP") || allTargetTypes.has("watts")) && !metrics?.ftp) {
-    const fallbackWarning = "Consider setting your FTP for more accurate power-based training.";
-    if (!warnings.includes(fallbackWarning)) {
-      warnings.push(fallbackWarning);
-    }
-  }
+  const missing = [...missingMetrics.values()];
 
   return {
-    isValid: true,
-    missingMetrics: [],
-    warnings,
+    isValid: missing.length === 0,
+    missingMetrics: missing,
+    warnings: [],
   };
 }
 

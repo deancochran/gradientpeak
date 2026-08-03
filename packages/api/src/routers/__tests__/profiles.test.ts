@@ -1,5 +1,15 @@
-import { activities, activityEfforts, profileMetrics, profiles } from "@repo/db";
+import {
+  activities,
+  activityEfforts,
+  profileMetrics,
+  profiles,
+  swimmingCssProtocolEvidence,
+} from "@repo/db";
 import { describe, expect, it, vi } from "vitest";
+import {
+  createTestHeartRateCalibrationRow,
+  createTestPerformanceModelEffortRows,
+} from "../../test-support/performance-model";
 
 const analysisMocks = vi.hoisted(() => ({
   buildActivitySegmentDerivedSummaries: vi.fn(),
@@ -22,7 +32,12 @@ vi.mock("../../infrastructure/repositories", () => ({
 
 import { profilesRouter } from "../profiles";
 
-type TableName = "activities" | "activityEfforts" | "profileMetrics" | "profiles";
+type TableName =
+  | "activities"
+  | "activityEfforts"
+  | "profileMetrics"
+  | "profiles"
+  | "swimmingCssProtocolEvidence";
 
 type SelectPlan = Partial<Record<TableName, Array<unknown[]>>>;
 
@@ -40,6 +55,7 @@ function getTableName(table: unknown): TableName {
   if (table === profileMetrics) return "profileMetrics";
   if (table === activityEfforts) return "activityEfforts";
   if (table === activities) return "activities";
+  if (table === swimmingCssProtocolEvidence) return "swimmingCssProtocolEvidence";
   throw new Error(`Unhandled table: ${String(table)}`);
 }
 
@@ -65,12 +81,32 @@ function createProfileRow(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+function performanceModelMetricQueue({
+  bikeLthr = [],
+  runLthr = [],
+  swimLthr = [],
+  bikeMaxHr = [],
+  runMaxHr = [],
+  swimMaxHr = [],
+}: Partial<
+  Record<"bikeLthr" | "runLthr" | "swimLthr" | "bikeMaxHr" | "runMaxHr" | "swimMaxHr", unknown[]>
+> = {}) {
+  return [bikeLthr, bikeMaxHr, runLthr, runMaxHr, swimLthr, swimMaxHr];
+}
+
+function allObjectKeys(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(allObjectKeys);
+  if (value === null || typeof value !== "object") return [];
+  return Object.entries(value).flatMap(([key, nested]) => [key, ...allObjectKeys(nested)]);
+}
+
 function createDbMock(plan: DbPlan = {}) {
   const selectQueues = {
     profiles: [...(plan.select?.profiles ?? [])],
     profileMetrics: [...(plan.select?.profileMetrics ?? [])],
     activityEfforts: [...(plan.select?.activityEfforts ?? [])],
     activities: [...(plan.select?.activities ?? [])],
+    swimmingCssProtocolEvidence: [...(plan.select?.swimmingCssProtocolEvidence ?? [])],
   } satisfies Record<TableName, Array<unknown[]>>;
   const executeQueue = [...(plan.execute ?? [])];
 
@@ -94,6 +130,7 @@ function createDbMock(plan: DbPlan = {}) {
           tableName = getTableName(table);
           return builder;
         },
+        innerJoin: () => builder,
         where: () => builder,
         orderBy: () => builder,
         limit: (...args: unknown[]) => {
@@ -169,11 +206,16 @@ function createDbMock(plan: DbPlan = {}) {
   };
 }
 
-function createCaller(plan: DbPlan = {}) {
+function createCaller(
+  plan: DbPlan = {},
+  session: { user: { id: string; email: string } } | null = {
+    user: { id: SESSION_USER_ID, email: "athlete@example.com" },
+  },
+) {
   const { db, calls } = createDbMock(plan);
   const caller = profilesRouter.createCaller({
     db: db as any,
-    session: { user: { id: SESSION_USER_ID, email: "athlete@example.com" } },
+    session,
     headers: new Headers(),
     clientType: "test",
     trpcSource: "vitest",
@@ -183,12 +225,146 @@ function createCaller(plan: DbPlan = {}) {
 }
 
 describe("profilesRouter", () => {
+  it("returns an owner-scoped athlete overview without model lineage or internal fields", async () => {
+    const asOf = "2026-07-30T12:00:00.000Z";
+    const asOfDate = new Date(asOf);
+    const { caller, calls } = createCaller({
+      select: {
+        profileMetrics: performanceModelMetricQueue(),
+        activityEfforts: [
+          createTestPerformanceModelEffortRows({
+            athleteId: SESSION_USER_ID,
+            activityCategory: "bike",
+            target: 300,
+            evidenceIdOffset: 0,
+            asOf: asOfDate,
+          }),
+          [],
+          [],
+        ],
+      },
+    });
+
+    const result = await caller.getPerformanceModel({ asOf });
+
+    expect(result).toMatchObject({
+      bike: {
+        planningThresholdPower: {
+          status: "available",
+          value: "300 W",
+          confidence: "high",
+          freshness: "current",
+        },
+      },
+      run: { planningThresholdPace: { status: "unavailable", value: null } },
+      swim: { cssPace: { status: "unavailable", value: null, action: null } },
+    });
+    expect(Object.keys(result)).toEqual(["bike", "run", "swim"]);
+    expect(Object.keys(result.bike.planningThresholdPower).sort()).toEqual([
+      "action",
+      "confidence",
+      "freshness",
+      "status",
+      "trainingImpact",
+      "value",
+    ]);
+    const forbiddenKeys = new Set([
+      "activityId",
+      "asOf",
+      "athleteId",
+      "calculationIdentity",
+      "calculationVersion",
+      "capabilities",
+      "categories",
+      "contractVersion",
+      "evidenceCoverage",
+      "evidenceSummary",
+      "heartRate",
+      "method",
+      "other",
+      "policyVersion",
+      "provenance",
+      "reasons",
+      "sourceActivityId",
+      "sourceEvidenceId",
+      "sourceEvidenceIds",
+      "strength",
+      "trainingLevels",
+    ]);
+    expect(allObjectKeys(result).filter((key) => forbiddenKeys.has(key))).toEqual([]);
+    expect(JSON.stringify(result)).not.toContain("90000000-0000-4000");
+    expect(calls.selects.filter(({ table }) => table === "profileMetrics")).toHaveLength(6);
+    expect(calls.selects.filter(({ table }) => table === "activityEfforts")).toHaveLength(3);
+    expect(
+      calls.selects.filter(({ table }) => table === "swimmingCssProtocolEvidence"),
+    ).toHaveLength(1);
+  });
+
+  it("requires callers to supply an explicit performance-model asOf instant", async () => {
+    const { caller } = createCaller();
+    const callWithoutInput = caller.getPerformanceModel as unknown as () => Promise<unknown>;
+
+    await expect(callWithoutInput()).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("returns authenticated target facts without transporting the full model", async () => {
+    const asOf = "2026-07-30T12:00:00.000Z";
+    const { caller } = createCaller({
+      select: {
+        profileMetrics: performanceModelMetricQueue(),
+        activityEfforts: [
+          createTestPerformanceModelEffortRows({
+            athleteId: SESSION_USER_ID,
+            activityCategory: "bike",
+            target: 300,
+            evidenceIdOffset: 0,
+            asOf: new Date(asOf),
+          }),
+          [],
+          [],
+        ],
+      },
+    });
+
+    const result = await caller.getPerformanceTargets({ asOf });
+
+    expect(result).toMatchObject({
+      contractVersion: "athlete-performance-target-facts-v1",
+      athleteId: SESSION_USER_ID,
+      asOf,
+      cycling: { planningThresholdPower: { status: "available" } },
+      running: { planningThresholdPace: { status: "unavailable", value: null } },
+      swimming: { css: { status: "unavailable", value: null } },
+    });
+    expect(result.cycling.planningThresholdPower.value).toBeCloseTo(300, 8);
+    expect("categories" in result).toBe(false);
+    expect("strength" in result).toBe(false);
+    expect("other" in result).toBe(false);
+    expect("capabilityProfile" in result).toBe(false);
+    expect("trainingLevels" in result).toBe(false);
+  });
+
+  it("rejects unauthenticated performance-target reads", async () => {
+    const { caller } = createCaller({}, null);
+
+    await expect(
+      caller.getPerformanceTargets({ asOf: "2026-07-30T12:00:00.000Z" }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
   it("get returns identity fields without exposing legacy manual thresholds", async () => {
     const { caller } = createCaller({
       select: {
         profiles: [[createProfileRow()], [createProfileRow()]],
-        profileMetrics: [[{ value: "70.4" }], [{ value: "176" }], []],
-        activityEfforts: [[{ value: 300, recorded_at: new Date() }], []],
+        profileMetrics: [
+          [{ value: 70.4, unit: "kg", method: null, provenance: null }],
+          [],
+          [],
+          [],
+          [],
+          [],
+        ],
+        activityEfforts: [[], []],
       },
     });
 
@@ -197,13 +373,13 @@ describe("profilesRouter", () => {
     expect(result.email).toBe("athlete@example.com");
     expect(result.full_name).toBe("Athlete Example");
     expect(result.weight_kg).toBe(70.4);
-    expect(result.threshold_hr).toBeNull();
-    expect(result.ftp).toBeNull();
+    expect("threshold_hr" in result).toBe(false);
+    expect("ftp" in result).toBe(false);
     expect(result.created_at).toBe("2026-04-01T10:00:00.000Z");
     expect(result.planning_timezone).toBe("America/Los_Angeles");
   });
 
-  it("does not expose direct profile metrics as canonical FTP", async () => {
+  it("does not expose direct profile metrics through obsolete threshold aliases", async () => {
     const now = new Date();
     const { caller } = createCaller({
       select: {
@@ -222,7 +398,8 @@ describe("profilesRouter", () => {
 
     const result = await caller.get();
 
-    expect(result.ftp).toBeNull();
+    expect("ftp" in result).toBe(false);
+    expect("threshold_hr" in result).toBe(false);
   });
 
   it("get provisions a default profile when the auth user exists without a profile row", async () => {
@@ -337,9 +514,11 @@ describe("profilesRouter", () => {
   it("rejects threshold fields in the generic profile patch", async () => {
     const { caller, calls } = createCaller();
 
-    await expect(caller.update({ ftp: 300 })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(caller.update({ threshold_hr: 175 })).rejects.toMatchObject({
-      code: "FORBIDDEN",
+    await expect(caller.update({ ftp: 300 } as never)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    await expect(caller.update({ threshold_hr: 175 } as never)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
     });
     expect(calls.updates).toHaveLength(0);
   });
@@ -384,61 +563,156 @@ describe("profilesRouter", () => {
     });
   });
 
-  it("getZones calculates heart-rate, power, and pace thresholds from current metrics", async () => {
+  it("getZones returns explicit unavailable canonical zones", async () => {
     const { caller } = createCaller({
       select: {
-        profileMetrics: [[{ value: "71" }], [{ value: "170" }], []],
+        profileMetrics: performanceModelMetricQueue(),
+        activityEfforts: [[], [], []],
+      },
+    });
+
+    const result = await caller.getZones({ asOf: new Date().toISOString() });
+
+    expect("profile" in result).toBe(false);
+    expect(result.heartRateZones).toBeNull();
+    expect(result.powerZones).toBeNull();
+  });
+
+  it("getZones exposes modeled planning threshold power and the newest bike LTHR", async () => {
+    const now = new Date();
+    const lthr = (valueBpm: number, asOf: Date) =>
+      createTestHeartRateCalibrationRow({
+        athleteId: SESSION_USER_ID,
+        activityCategory: "bike",
+        metric: "lthr",
+        valueBpm,
+        asOf,
+      });
+    const { caller } = createCaller({
+      select: {
+        profileMetrics: performanceModelMetricQueue({
+          bikeLthr: [lthr(165, now), lthr(180, new Date(now.getTime() - 60_000))],
+        }),
         activityEfforts: [
-          [{ value: 310, recorded_at: new Date() }],
-          [{ value: 4.5, recorded_at: new Date() }],
-          [
-            {
-              activity_category: "bike",
-              activity_id: "bike-activity",
-              segment_id: "33333333-3333-4333-8333-333333333333",
-              duration_seconds: 1200,
-              effort_type: "power",
-              recorded_at: new Date(),
-              unit: "watts",
-              value: 310,
-              source: "imported",
-              method: "activity_file_best_effort",
-              provenance: {
-                activity_id: "bike-activity",
-                derived_from: "activity_file_stream",
-              },
-            },
-            {
-              activity_category: "run",
-              activity_id: "run-activity",
-              segment_id: "44444444-4444-4444-8444-444444444444",
-              duration_seconds: 1200,
-              effort_type: "speed",
-              recorded_at: new Date(),
-              unit: "meters_per_second",
-              value: 4.5,
-              source: "imported",
-              method: "activity_file_best_effort",
-              provenance: {
-                activity_id: "run-activity",
-                derived_from: "activity_file_stream",
-              },
-            },
-          ],
+          createTestPerformanceModelEffortRows({
+            athleteId: SESSION_USER_ID,
+            activityCategory: "bike",
+            target: 300,
+            evidenceIdOffset: 0,
+            asOf: now,
+          }),
+          [],
+          [],
         ],
       },
     });
 
-    const result = await caller.getZones();
+    const result = await caller.getZones({ asOf: now.toISOString() });
 
-    expect(result.profile).toEqual({
-      threshold_hr: undefined,
-      ftp: 295,
-      weight_kg: 71,
-      threshold_pace: undefined,
-    });
-    expect(result.heartRateZones).toBeNull();
     expect(result.powerZones).not.toBeNull();
+    expect(result.heartRateZones).not.toBeNull();
+    expect(result.powerZones?.zone1.max).toBe(Math.round(300 * 0.55));
+    expect(result.heartRateZones?.zone1.max).toBe(Math.round(165 * 0.81));
+  });
+
+  it("overview, target facts, and zones use the same explicit-as-of authority", async () => {
+    const now = new Date();
+    const lthr = (valueBpm: number, asOf: Date) =>
+      createTestHeartRateCalibrationRow({
+        athleteId: SESSION_USER_ID,
+        activityCategory: "bike",
+        metric: "lthr",
+        valueBpm,
+        asOf,
+      });
+    const plan = (): DbPlan => ({
+      select: {
+        profiles: [[createProfileRow()], [createProfileRow()]],
+        profileMetrics: performanceModelMetricQueue({
+          bikeLthr: [lthr(165, now), lthr(180, new Date(now.getTime() - 60_000))],
+        }),
+        activityEfforts: [
+          createTestPerformanceModelEffortRows({
+            athleteId: SESSION_USER_ID,
+            activityCategory: "bike",
+            target: 300,
+            evidenceIdOffset: 0,
+            asOf: now,
+          }),
+          [],
+          [],
+        ],
+      },
+    });
+    const overviewCaller = createCaller(plan()).caller;
+    const targetsCaller = createCaller(plan()).caller;
+    const zonesCaller = createCaller(plan()).caller;
+
+    const asOf = now.toISOString();
+    const [overview, targets, zones] = await Promise.all([
+      overviewCaller.getPerformanceModel({ asOf }),
+      targetsCaller.getPerformanceTargets({ asOf }),
+      zonesCaller.getZones({ asOf }),
+    ]);
+
+    expect(overview.bike.planningThresholdPower.value).toBe("300 W");
+    expect(targets.asOf).toBe(asOf);
+    expect(targets.cycling.planningThresholdPower.value).toBeCloseTo(300, 8);
+    expect(zones.powerZones?.zone1.max).toBe(Math.round(300 * 0.55));
+    expect(zones.heartRateZones?.zone1.max).toBe(Math.round(165 * 0.81));
+  });
+
+  it("does not derive bike HR zones from run or swim LTHR", async () => {
+    const now = new Date();
+    const lthr = (activityCategory: "run" | "swim") =>
+      createTestHeartRateCalibrationRow({
+        athleteId: SESSION_USER_ID,
+        activityCategory,
+        metric: "lthr",
+        valueBpm: 175,
+        asOf: now,
+      });
+    const { caller } = createCaller({
+      select: {
+        profileMetrics: performanceModelMetricQueue({
+          runLthr: [lthr("run")],
+          swimLthr: [lthr("swim")],
+        }),
+        activityEfforts: [[], [], []],
+      },
+    });
+
+    const result = await caller.getZones({ asOf: now.toISOString() });
+
+    expect(result.heartRateZones).toBeNull();
+  });
+
+  it("withholds power zones when no fresh cycling evidence survives the as-of query", async () => {
+    const { caller } = createCaller({
+      select: {
+        profileMetrics: performanceModelMetricQueue(),
+        activityEfforts: [[], [], []],
+      },
+    });
+
+    const result = await caller.getZones({ asOf: new Date().toISOString() });
+
+    expect(result.powerZones).toBeNull();
+  });
+
+  it("never includes calibration aliases on get", async () => {
+    const { caller } = createCaller({
+      select: {
+        profiles: [[createProfileRow()], [createProfileRow()]],
+        profileMetrics: [[], []],
+        activityEfforts: [[], []],
+      },
+    });
+
+    const result = await caller.get();
+
+    expect("ftp" in result).toBe(false);
+    expect("threshold_hr" in result).toBe(false);
   });
 
   it("get provisions a missing profile instead of returning NOT_FOUND", async () => {

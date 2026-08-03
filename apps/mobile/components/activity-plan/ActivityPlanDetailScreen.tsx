@@ -18,7 +18,7 @@ import {
   ResourceOwnerActionRow,
 } from "@/components/shared/ResourceCardPrimitives";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
-import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import { api } from "@/lib/api";
 import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
 import { ROUTES } from "@/lib/constants/routes";
@@ -113,7 +113,7 @@ export function ActivityPlanDetailScreen({
     [activityPlan?.structure],
   );
   const planCategory = activityPlan?.activity_category ?? "other";
-  const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(activityPlan);
+  const quantitySummary = getActivityPlanQuantitySummary(activityPlan);
   const categoryItems = getUniqueActivityCategoryConfigs([
     presentation?.activity_category ?? planCategory,
   ]).map((activity_category) => ({
@@ -240,8 +240,6 @@ export function ActivityPlanDetailScreen({
     );
   }
 
-  const tss = vm.tss;
-  const intensityFactor = vm.intensityFactor;
   const isOwnedByUser = vm.isOwnedByUser;
   const isEventContext = !!eventId;
   const primaryScheduleLabel = scheduling.primaryScheduleLabel;
@@ -348,14 +346,10 @@ export function ActivityPlanDetailScreen({
             />
 
             <ActivityPlanSummary
-              activityCategory={planCategory}
-              categoryLoads={activityPlan.category_loads}
-              commonLoad={activityPlan.common_load}
               description={activityPlan.description}
-              estimatedDuration={authoritativeMetrics.estimated_duration ?? null}
-              estimatedTss={tss}
-              intensityFactor={intensityFactor}
+              estimatedDuration={quantitySummary.durationSeconds}
               presentation={presentation}
+              prescriptionQuantification={activityPlan.prescriptionQuantification}
               structure={activityPlan.structure}
               title={activityPlan.name}
               variant="standalone"

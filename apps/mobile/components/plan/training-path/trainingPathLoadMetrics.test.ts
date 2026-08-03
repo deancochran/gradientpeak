@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { buildTrainingPathLoadMetrics } from "./trainingPathLoadMetrics";
 
 describe("buildTrainingPathLoadMetrics", () => {
-  it("does not relabel or compare legacy TSS values as common Load", () => {
+  it("does not reinterpret unversioned planning values as Common Load", () => {
     expect(
       buildTrainingPathLoadMetrics({
-        completedLoadTss: 60,
-        plannedLoadTss: 80,
-        targetLoadTss: 100,
-        tentativePlannedLoadTss: 20,
+        completedLoad: 60,
+        plannedLoad: 80,
+        targetLoad: 100,
+        tentativePlannedLoad: 20,
       }),
     ).toEqual([]);
   });
@@ -59,12 +59,12 @@ describe("buildTrainingPathLoadMetrics", () => {
         effectiveIntensity: null,
       }),
     ).toEqual([
-      { label: "Load", value: "0" },
-      { label: "Intensity", value: "—" },
+      { label: "Common Load", value: "0" },
+      { label: "Normalized intensity", value: "—" },
     ]);
   });
 
-  it("leads selected summaries with effective Load and RMS Intensity", () => {
+  it("leads selected summaries with Common Load and normalized intensity", () => {
     expect(
       buildTrainingPathLoadMetrics({
         effectiveLoadStatus: "complete",
@@ -73,11 +73,11 @@ describe("buildTrainingPathLoadMetrics", () => {
         effectiveCompletedLoad: 42,
         effectiveRemainingLoad: 44.4,
         effectiveTentativeLoad: 12,
-        targetLoadTss: 80,
+        targetLoad: 80,
       }),
     ).toEqual([
-      { label: "Load", value: "86" },
-      { label: "Intensity", value: "Moderate · 0.78" },
+      { label: "Common Load", value: "86" },
+      { label: "Normalized intensity", value: "Moderate · 0.78" },
       { label: "Completed", value: "42" },
       { label: "Remaining", value: "44" },
       { label: "Tentative", value: "12" },
@@ -93,8 +93,8 @@ describe("buildTrainingPathLoadMetrics", () => {
         hasCompletedActivityWithoutLoad: true,
       }),
     ).toEqual([
-      { label: "Load", value: "42 incomplete" },
-      { label: "Intensity", value: "Moderate · 0.70 incomplete" },
+      { label: "Common Load", value: "42 incomplete" },
+      { label: "Normalized intensity", value: "Moderate · 0.70 incomplete" },
       { label: "Completed", value: "Unavailable" },
     ]);
     expect(
@@ -104,8 +104,8 @@ describe("buildTrainingPathLoadMetrics", () => {
         effectiveIntensity: null,
       }),
     ).toEqual([
-      { label: "Load", value: "Unavailable" },
-      { label: "Intensity", value: "Unavailable" },
+      { label: "Common Load", value: "Unavailable" },
+      { label: "Normalized intensity", value: "Unavailable" },
     ]);
   });
 });

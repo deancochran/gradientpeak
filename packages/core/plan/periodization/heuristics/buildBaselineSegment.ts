@@ -5,8 +5,8 @@ import { getActivityCategoryModelConfig } from "../activity-categories";
 export interface BuildBaselineSegmentInput {
   startDate: string;
   endDate: string;
-  startCtl: number;
-  endCtl: number;
+  startLongTermLoad: number;
+  endLongTermLoad: number;
   phase: TrajectoryPhase;
   activity_category: CanonicalActivityCategory;
   goalIdsInEffect?: string[];
@@ -34,8 +34,15 @@ function diffDays(startDate: string, endDate: string): number {
   );
 }
 
-function solveDailyTss(currentCtl: number, nextCtl: number, ctlTauDays: number): number {
-  return Math.max(0, round(currentCtl + ctlTauDays * (nextCtl - currentCtl)));
+function solveDailyLoad(
+  currentLongTermLoad: number,
+  nextLongTermLoad: number,
+  longTermLoadTauDays: number,
+): number {
+  return Math.max(
+    0,
+    round(currentLongTermLoad + longTermLoadTauDays * (nextLongTermLoad - currentLongTermLoad)),
+  );
 }
 
 export function buildBaselineSegment(input: BuildBaselineSegmentInput) {
@@ -49,19 +56,24 @@ export function buildBaselineSegment(input: BuildBaselineSegmentInput) {
 
   for (let index = input.excludeStart ? 1 : 0; index <= totalDays; index += 1) {
     const progress = totalDays === 0 ? 1 : index / totalDays;
-    const ctl = Math.max(0, round(input.startCtl + (input.endCtl - input.startCtl) * progress));
-    const nextProgress = totalDays === 0 ? 1 : Math.min(1, (index + 1) / totalDays);
-    const nextCtl = Math.max(
+    const longTermLoad = Math.max(
       0,
-      round(input.startCtl + (input.endCtl - input.startCtl) * nextProgress),
+      round(input.startLongTermLoad + (input.endLongTermLoad - input.startLongTermLoad) * progress),
+    );
+    const nextProgress = totalDays === 0 ? 1 : Math.min(1, (index + 1) / totalDays);
+    const nextLongTermLoad = Math.max(
+      0,
+      round(
+        input.startLongTermLoad + (input.endLongTermLoad - input.startLongTermLoad) * nextProgress,
+      ),
     );
 
     points.push(
       referenceTrajectoryPointSchema.parse({
         date: addDays(input.startDate, index),
-        target_ctl: ctl,
-        target_tss: solveDailyTss(ctl, nextCtl, config.ctl_tau_days),
-        target_atl_ceiling: round(ctl * config.acwr_ceiling),
+        target_longTermLoad: longTermLoad,
+        target_load: solveDailyLoad(longTermLoad, nextLongTermLoad, config.longTermLoad_tau_days),
+        target_recentLoad_ceiling: round(longTermLoad * config.acwr_ceiling),
         phase: input.phase,
         goal_ids_in_effect: input.goalIdsInEffect ?? [],
         rationale_codes: input.rationaleCodes ?? [],

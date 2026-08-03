@@ -30,10 +30,6 @@ export interface OnboardingData {
   activity_category_interests: Array<"cycling" | "running" | "swimming" | "strength" | "other">;
   max_hr: number | null;
   resting_hr: number | null;
-  lthr: number | null;
-  ftp: number | null;
-  threshold_pace_seconds_per_km: number | null;
-  css: number | null;
   vo2max: number | null;
   training_frequency: "1-2" | "3-4" | "5-6" | "7+" | null;
   equipment: string[];

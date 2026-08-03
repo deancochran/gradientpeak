@@ -152,12 +152,7 @@ export type OrganizationOperationRoleEligibilityDecision = z.infer<
 >;
 
 const coachingCalendarEventStatusSchema = eventLifecycleStatusSchema.exclude(["deleted"]);
-const coachingPerformanceMetricTypeSchema = profileMetricTypeSchema.extract([
-  "ftp",
-  "lthr",
-  "threshold_pace_seconds_per_km",
-  "css_seconds_per_100m",
-]);
+const coachingPerformanceMetricTypeSchema = profileMetricTypeSchema.extract(["lthr"]);
 
 export const basicProfileScopeProjectionSchema = z
   .object({

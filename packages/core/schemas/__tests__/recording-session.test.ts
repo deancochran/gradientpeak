@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createUnavailableAthletePerformanceTargetFacts } from "../../performance-model";
 
 import {
   recordingLaunchIntentSchema,
@@ -70,11 +71,11 @@ describe("recording session schemas", () => {
         routeId: "550e8400-e29b-41d4-a716-446655440002",
       },
       profileSnapshot: {
-        ftp: 250,
-        thresholdHr: 170,
         weightKg: 72,
-        defaultsApplied: [],
       },
+      performanceTargets: createUnavailableAthletePerformanceTargetFacts(
+        "2026-03-20T10:00:00.000Z",
+      ),
       devices: {
         connected: [
           {
@@ -122,7 +123,16 @@ describe("recording session schemas", () => {
       },
     };
 
-    expect(recordingSessionSnapshotSchema.safeParse(snapshot).success).toBe(true);
+    const parsedSnapshot = recordingSessionSnapshotSchema.parse(snapshot);
+    expect(parsedSnapshot.performanceTargets.asOf).toBe("2026-03-20T10:00:00.000Z");
+    expect(
+      recordingSessionSnapshotSchema.safeParse({
+        ...snapshot,
+        performanceTargets: createUnavailableAthletePerformanceTargetFacts(
+          "2026-03-20T10:00:01.000Z",
+        ),
+      }).success,
+    ).toBe(false);
 
     const artifact = recordingSessionArtifactSchema.safeParse({
       schemaVersion: 2,
@@ -160,6 +170,46 @@ describe("recording session schemas", () => {
     });
 
     expect(artifact.success).toBe(true);
+  });
+
+  it("rejects obsolete recording threshold and default markers", () => {
+    const result = recordingSessionSnapshotSchema.safeParse({
+      identity: { sessionId: "session-1", revision: 1, startedAt: "2026-03-20T10:00:00Z" },
+      activity: {
+        activity_category: "bike",
+        mode: "free",
+        gpsMode: "off",
+        eventId: null,
+        activityPlanId: null,
+        routeId: null,
+      },
+      profileSnapshot: {
+        ftp: 250,
+        thresholdHr: 170,
+        thresholdPaceSecondsPerKm: 300,
+        defaultsApplied: [],
+      },
+      performanceTargets: createUnavailableAthletePerformanceTargetFacts(
+        "2026-03-20T10:00:00.000Z",
+      ),
+      devices: { connected: [], controllableTrainer: null, selectedSources: [] },
+      capabilities: validCapabilities,
+      policies: {
+        sourcePolicy: {
+          preferUserSelection: true,
+          allowDerivedSpeed: true,
+          allowDerivedDistance: true,
+        },
+        controlPolicy: { trainerMode: "auto", autoAdvanceSteps: true },
+        degradedModePolicy: {
+          allowWithoutGps: true,
+          allowWithoutSensors: true,
+          exposeSourceWarnings: true,
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
   });
 
   it("rejects unsupported identity-changing overrides", () => {

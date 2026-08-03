@@ -10,8 +10,8 @@ export interface QuickAdjustmentPlanStructure {
     target_date?: string | null;
   } | null;
   target_activities_per_week: number;
-  target_weekly_tss_max: number;
-  target_weekly_tss_min: number;
+  target_weekly_load_max: number;
+  target_weekly_load_min: number;
 }
 
 export interface AdjustmentPreset<TStructure extends QuickAdjustmentPlanStructure> {
@@ -32,8 +32,8 @@ export function reduceIntensity<TStructure extends QuickAdjustmentPlanStructure>
       2,
       Math.floor(structure.target_activities_per_week * 0.85),
     ),
-    target_weekly_tss_max: Math.round(structure.target_weekly_tss_max * 0.8),
-    target_weekly_tss_min: Math.round(structure.target_weekly_tss_min * 0.8),
+    target_weekly_load_max: Math.round(structure.target_weekly_load_max * 0.8),
+    target_weekly_load_min: Math.round(structure.target_weekly_load_min * 0.8),
   };
 }
 
@@ -43,8 +43,8 @@ export function increaseIntensity<TStructure extends QuickAdjustmentPlanStructur
   return {
     ...structure,
     target_activities_per_week: Math.min(7, Math.ceil(structure.target_activities_per_week * 1.15)),
-    target_weekly_tss_max: Math.round(structure.target_weekly_tss_max * 1.2),
-    target_weekly_tss_min: Math.round(structure.target_weekly_tss_min * 1.15),
+    target_weekly_load_max: Math.round(structure.target_weekly_load_max * 1.2),
+    target_weekly_load_min: Math.round(structure.target_weekly_load_min * 1.15),
   };
 }
 
@@ -83,14 +83,14 @@ export const ADJUSTMENT_PRESETS: AdjustmentPreset<QuickAdjustmentPlanStructure>[
     type: "reduce_intensity",
     label: "Reduce Intensity",
     icon: "-20%",
-    description: "Lower TSS targets by 20% and add rest.",
+    description: "Lower Common Load targets by 20% and add rest.",
     calculate: reduceIntensity,
   },
   {
     type: "increase_intensity",
     label: "Increase Intensity",
     icon: "+15%",
-    description: "Raise TSS targets by 15-20%.",
+    description: "Raise Common Load targets by 15-20%.",
     calculate: increaseIntensity,
   },
   {
@@ -116,11 +116,11 @@ export function getAdjustmentSummary<TStructure extends QuickAdjustmentPlanStruc
   const changes: string[] = [];
 
   if (
-    oldStructure.target_weekly_tss_min !== newStructure.target_weekly_tss_min ||
-    oldStructure.target_weekly_tss_max !== newStructure.target_weekly_tss_max
+    oldStructure.target_weekly_load_min !== newStructure.target_weekly_load_min ||
+    oldStructure.target_weekly_load_max !== newStructure.target_weekly_load_max
   ) {
     changes.push(
-      `Weekly TSS: ${oldStructure.target_weekly_tss_min}-${oldStructure.target_weekly_tss_max} -> ${newStructure.target_weekly_tss_min}-${newStructure.target_weekly_tss_max}`,
+      `Weekly Common Load: ${oldStructure.target_weekly_load_min}-${oldStructure.target_weekly_load_max} -> ${newStructure.target_weekly_load_min}-${newStructure.target_weekly_load_max}`,
     );
   }
 
