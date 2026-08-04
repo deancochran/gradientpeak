@@ -7,6 +7,11 @@ import viteReact from "@vitejs/plugin-react";
 import { nitro } from "nitro/vite";
 import { defineConfig, loadEnv } from "vite";
 
+import {
+  clientDisconnectRecorderPlugin,
+  clientDisconnectSuppressionPlugin,
+} from "./vite/client-disconnect-plugin";
+
 const config = defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
@@ -30,6 +35,7 @@ const config = defineConfig(({ mode }) => {
       },
     },
     plugins: [
+      clientDisconnectRecorderPlugin(),
       devtools(),
       tailwindcss(),
       tanstackStart({
@@ -44,6 +50,7 @@ const config = defineConfig(({ mode }) => {
         org: env.SENTRY_ORG,
         project: env.SENTRY_PROJECT,
       }),
+      clientDisconnectSuppressionPlugin(),
     ],
   };
 });
