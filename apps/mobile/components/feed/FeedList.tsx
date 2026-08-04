@@ -1,7 +1,4 @@
-import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { CalendarDays, Route, Users } from "lucide-react-native";
-import { Pressable, View } from "react-native";
 import { ActivityCard } from "@/components/shared/ActivityCard";
 import { ResourceList } from "@/components/shared/ResourceList";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
@@ -10,43 +7,6 @@ import { useFeedListController } from "./useFeedListController";
 
 interface FeedListProps {
   onCommentPress?: (activityId: string) => void;
-}
-
-function FeedShortcuts() {
-  const navigateTo = useAppNavigate();
-  const shortcuts = [
-    { label: "Groups", icon: Users, onPress: () => navigateTo("/groups") },
-    { label: "Plan", icon: Route, onPress: () => navigateTo("/plan") },
-    { label: "Calendar", icon: CalendarDays, onPress: () => navigateTo("/calendar") },
-  ];
-
-  return (
-    <View className="gap-3">
-      <View className="rounded-3xl border border-border bg-card p-4">
-        <Text className="text-base font-semibold text-foreground">Quick actions</Text>
-        <Text className="mt-1 text-sm text-muted-foreground">
-          Jump into the surfaces that keep training social and consistent.
-        </Text>
-        <View className="mt-4 flex-row gap-3">
-          {shortcuts.map((shortcut) => (
-            <Pressable
-              accessibilityRole="button"
-              className="flex-1 items-center gap-2 rounded-2xl border border-border bg-background px-2 py-3"
-              key={shortcut.label}
-              onPress={shortcut.onPress}
-              testID={`home-shortcut-${shortcut.label.toLowerCase()}`}
-            >
-              <Icon as={shortcut.icon} size={20} className="text-foreground" />
-              <Text className="text-xs font-medium text-foreground">{shortcut.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-      </View>
-      <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Feed
-      </Text>
-    </View>
-  );
 }
 
 export function FeedList({ onCommentPress }: FeedListProps) {
@@ -73,7 +33,11 @@ export function FeedList({ onCommentPress }: FeedListProps) {
       isFetchingNextPage={isFetchingNextPage}
       isLoading={isLoading}
       keyExtractor={(item) => item.id}
-      ListHeaderComponent={<FeedShortcuts />}
+      ListHeaderComponent={
+        <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Feed
+        </Text>
+      }
       loadingSkeletonCount={3}
       onLoadMore={handleLoadMore}
       onRefresh={handleRefresh}
