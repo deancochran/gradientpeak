@@ -1,4 +1,7 @@
-import { canonicalActivityCategorySchema } from "@repo/core";
+import {
+  activityObservationQuantificationBundleSchema,
+  canonicalActivityCategorySchema,
+} from "@repo/core";
 import { commonLoadAggregateSchema, commonLoadResultSchema } from "@repo/core/load";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -23,6 +26,7 @@ const feedDerivedSchema = z
   .object({
     common_load: z.union([commonLoadResultSchema, commonLoadAggregateSchema]),
     computed_as_of: z.string(),
+    observationQuantification: activityObservationQuantificationBundleSchema,
   })
   .nullable();
 const feedIngestionSchema = z

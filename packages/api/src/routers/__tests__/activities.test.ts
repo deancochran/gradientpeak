@@ -2118,6 +2118,28 @@ describe("activitiesRouter", () => {
     expect(mockActivityAnalysis.analyzeActivityDerivedMetrics).not.toHaveBeenCalled();
   });
 
+  it("keeps owner analysis metadata outside the strict stress DTO", async () => {
+    const activity = buildActivityRow({ profile_id: OWNER_ID });
+    const derived = parentDerivedSummary(ACTIVITY_ID, availableCommonLoad(72));
+    const db = createDbMock({
+      queryActivitiesFindFirst: [{ profile_id: OWNER_ID, content_visibility: "private" }],
+      joinedRows: [{ activity, activityPlan: null }],
+    });
+    mockActivityAnalysis.buildActivityDerivedSummaryMap.mockResolvedValue(
+      new Map([[ACTIVITY_ID, derived]]),
+    );
+
+    const result = await createCaller(db).getById({ id: ACTIVITY_ID });
+
+    expect(result.derived).toMatchObject({
+      computed_as_of: derived.computed_as_of,
+      observationQuantification: derived.observationQuantification,
+      stress: { common_load: derived.common_load },
+    });
+    expect(result.derived.stress).not.toHaveProperty("computed_as_of");
+    expect(result.derived.stress).not.toHaveProperty("observationQuantification");
+  });
+
   it("returns ordered completed multisport source identity to the owner without raw payloads", async () => {
     const activity = buildActivityRow({ profile_id: OWNER_ID });
     const sourceArtifactId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -2192,6 +2214,31 @@ describe("activitiesRouter", () => {
     expect(result.activity.segments).not.toContainEqual(
       expect.objectContaining({ coordinates: expect.anything() }),
     );
+  });
+
+  it("does not expose internal analysis metadata in activity detail segments", async () => {
+    const activity = buildActivityRow({ profile_id: OWNER_ID });
+    const segment = buildSegmentReadRow(ACTIVITY_ID, 0, "run", {
+      summary_version: 1,
+      segment_revision: 2,
+      parser_version: "test-parser-v1",
+      materializer_version: "test-materializer-v1",
+    });
+    mockActivityAnalysis.loadActivitySegmentsByActivityId.mockResolvedValue(
+      new Map([[ACTIVITY_ID, [segment]]]),
+    );
+    const db = createDbMock({
+      queryActivitiesFindFirst: [{ profile_id: OWNER_ID, content_visibility: "private" }],
+      joinedRows: [{ activity, activityPlan: null }],
+    });
+
+    const result = await createCaller(db).getById({ id: ACTIVITY_ID });
+
+    expect(result.activity.segments).toHaveLength(1);
+    expect(result.activity.segments[0]).not.toHaveProperty("summary_version");
+    expect(result.activity.segments[0]).not.toHaveProperty("segment_revision");
+    expect(result.activity.segments[0]).not.toHaveProperty("parser_version");
+    expect(result.activity.segments[0]).not.toHaveProperty("materializer_version");
   });
 
   it("returns the unique effective session RPE evidence only to the activity owner", async () => {

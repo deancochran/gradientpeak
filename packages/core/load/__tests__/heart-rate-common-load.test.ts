@@ -4,7 +4,10 @@ import { analyzeActivityDerivedMetrics } from "../../activity-analysis";
 import { SWIMMING_HEART_RATE_NUMERICAL_TRUST_FIXTURES_V1 as fixtures } from "../../calculations/__tests__/fixtures/swimming-heart-rate-numerical-trust-v1";
 import { calculateCyclingNormalizedPower } from "../../calculations/normalized-power";
 import { buildPerformanceTargetFactsFixture } from "../../performance-model/__tests__/fixtures/target-facts";
-import { calculateHeartRateDuration } from "../../zones/heart-rate-duration";
+import {
+  calculateHeartRateDuration,
+  type StoredHeartRateDurationEvidence,
+} from "../../zones/heart-rate-duration";
 import {
   aggregateCommonLoad,
   COMMON_RELATIVE_LOAD_MODEL,
@@ -18,14 +21,19 @@ const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ sampl
 function finalHeartRateLoad(input: {
   samples: Parameters<typeof calculateHeartRateDuration>[0]["samples"];
   durationSeconds: number;
+  elapsedSeconds?: number;
+  includeElapsed?: boolean;
+  distribution?: StoredHeartRateDurationEvidence;
   lthrBpm?: number | null;
   includeQuality?: boolean;
   stale?: boolean;
 }): CommonLoadResult {
-  const evidence = calculateHeartRateDuration({
-    samples: input.samples,
-    maxGapSeconds: fixtures.heartRate.maxGapSeconds,
-  });
+  const evidence =
+    input.distribution ??
+    calculateHeartRateDuration({
+      samples: input.samples,
+      maxGapSeconds: fixtures.heartRate.maxGapSeconds,
+    });
   const result = analyzeActivityDerivedMetrics({
     activity: {
       id: `phase5-hr-${input.durationSeconds}`,
@@ -33,6 +41,9 @@ function finalHeartRateLoad(input: {
       started_at: STARTED_AT,
       finished_at: new Date(Date.parse(STARTED_AT) + input.durationSeconds * 1_000).toISOString(),
       duration_seconds: input.durationSeconds,
+      ...(input.includeElapsed === false
+        ? {}
+        : { elapsed_seconds: input.elapsedSeconds ?? input.durationSeconds }),
       moving_seconds: input.durationSeconds,
       timing_coverage: "complete",
       normalized_power_result: unavailableNormalizedPowerResult,
@@ -94,6 +105,139 @@ describe("Phase 5 final HR Common Load contract", () => {
       eligibleDurationSeconds: fixture.expected.eligibleDurationSeconds,
       sourceTimeCoverage: fixture.expected.sourceTimeCoverage,
       reason: "activity_data_partial",
+    });
+  });
+
+  it("uses bounded versioned HR evidence duration when provider active time differs", () => {
+    const distribution: StoredHeartRateDurationEvidence = {
+      status: "available",
+      calculationVersion: "heart-rate-zone-duration-v1",
+      coverageSeconds: 1_800,
+      eligibleDurationSeconds: 1_800,
+      sourceTimeCoverage: 1,
+      timeWeightedAverageBpm: fixtures.heartRate.lthrBpm,
+      buckets: [{ bpm: fixtures.heartRate.lthrBpm, seconds: 1_800 }],
+      diagnostics: {
+        sourceSampleCount: 1_801,
+        acceptedTimestampCount: 1_801,
+        contributingIntervalCount: 1_800,
+        observedSpanSeconds: 1_800,
+        pausedDurationSeconds: 0,
+        excludedGapDurationSeconds: 0,
+        excludedMissingDurationSeconds: 0,
+        excludedInvalidDurationSeconds: 0,
+        duplicateTimestampCount: 0,
+        reversedTimestampCount: 0,
+        invalidTimestampCount: 0,
+      },
+    };
+
+    expect(
+      finalHeartRateLoad({
+        samples: [],
+        durationSeconds: 2_400,
+        elapsedSeconds: 3_600,
+        distribution,
+      }),
+    ).toMatchObject({
+      status: "available",
+      method: "heart_rate_zones",
+      contributingDurationSeconds: 1_800,
+      load: 50,
+      intensity: 1,
+    });
+  });
+
+  it("rejects versioned HR evidence that exceeds the segment elapsed boundary", () => {
+    const distribution: StoredHeartRateDurationEvidence = {
+      status: "available",
+      calculationVersion: "heart-rate-zone-duration-v1",
+      coverageSeconds: 1_800,
+      eligibleDurationSeconds: 1_800,
+      sourceTimeCoverage: 1,
+      timeWeightedAverageBpm: fixtures.heartRate.lthrBpm,
+      buckets: [{ bpm: fixtures.heartRate.lthrBpm, seconds: 1_800 }],
+      diagnostics: {
+        sourceSampleCount: 1_801,
+        acceptedTimestampCount: 1_801,
+        contributingIntervalCount: 1_800,
+        observedSpanSeconds: 1_800,
+        pausedDurationSeconds: 0,
+        excludedGapDurationSeconds: 0,
+        excludedMissingDurationSeconds: 0,
+        excludedInvalidDurationSeconds: 0,
+        duplicateTimestampCount: 0,
+        reversedTimestampCount: 0,
+        invalidTimestampCount: 0,
+      },
+    };
+
+    expect(
+      finalHeartRateLoad({
+        samples: [],
+        durationSeconds: 1_800,
+        elapsedSeconds: 1_700,
+        distribution,
+      }),
+    ).toMatchObject({ status: "unavailable", reason: "invalid_data" });
+  });
+
+  it("uses active duration as the evidence boundary when elapsed duration is omitted", () => {
+    const distribution: StoredHeartRateDurationEvidence = {
+      status: "available",
+      calculationVersion: "heart-rate-zone-duration-v1",
+      coverageSeconds: 1_800,
+      eligibleDurationSeconds: 1_800,
+      sourceTimeCoverage: 1,
+      timeWeightedAverageBpm: fixtures.heartRate.lthrBpm,
+      buckets: [{ bpm: fixtures.heartRate.lthrBpm, seconds: 1_800 }],
+      diagnostics: {
+        sourceSampleCount: 1_801,
+        acceptedTimestampCount: 1_801,
+        contributingIntervalCount: 1_800,
+        observedSpanSeconds: 1_800,
+        pausedDurationSeconds: 0,
+        excludedGapDurationSeconds: 0,
+        excludedMissingDurationSeconds: 0,
+        excludedInvalidDurationSeconds: 0,
+        duplicateTimestampCount: 0,
+        reversedTimestampCount: 0,
+        invalidTimestampCount: 0,
+      },
+    };
+
+    expect(
+      finalHeartRateLoad({
+        samples: [],
+        durationSeconds: 1_800,
+        includeElapsed: false,
+        distribution,
+      }),
+    ).toMatchObject({
+      status: "available",
+      method: "heart_rate_zones",
+      contributingDurationSeconds: 1_800,
+      load: 50,
+      intensity: 1,
+    });
+  });
+
+  it("continues to normalize legacy HR evidence against active duration", () => {
+    expect(
+      finalHeartRateLoad({
+        samples: [],
+        durationSeconds: 2_400,
+        elapsedSeconds: 3_600,
+        distribution: {
+          coverageSeconds: 2_400,
+          buckets: [{ bpm: fixtures.heartRate.lthrBpm, seconds: 2_400 }],
+        },
+      }),
+    ).toMatchObject({
+      status: "available",
+      method: "heart_rate_zones",
+      contributingDurationSeconds: 2_400,
+      intensity: 1,
     });
   });
 

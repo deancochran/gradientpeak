@@ -208,9 +208,9 @@ describe("ActivityCard", () => {
     expect(screen.getByText("Normalized intensity")).toBeTruthy();
     expect(screen.getByText("0.80")).toBeTruthy();
     expect(
-      screen.getByText("Derived. Common Load is available using Run pace threshold."),
-    ).toBeTruthy();
-    expect(screen.getByText("Observed intensity: RPE 7/10 · Observed")).toBeTruthy();
+      screen.queryByText("Derived. Common Load is available using Run pace threshold."),
+    ).toBeNull();
+    expect(screen.queryByText("Observed intensity: RPE 7/10 · Observed")).toBeNull();
     expect(screen.queryByText("Avg Pace")).toBeNull();
     expect(screen.queryByText("Avg Power")).toBeNull();
     expect(screen.queryByText("Avg HR")).toBeNull();
@@ -249,7 +249,7 @@ describe("ActivityCard", () => {
     expect(screen.queryByText("Elapsed")).toBeNull();
   });
 
-  it("marks partial Common Load and normalized intensity incomplete", () => {
+  it("keeps partial Common Load and normalized intensity values compact", () => {
     renderNative(
       <ActivityCard
         activity={{
@@ -262,10 +262,10 @@ describe("ActivityCard", () => {
 
     expect(screen.getByText("32")).toBeTruthy();
     expect(screen.getByText("0.80")).toBeTruthy();
-    expect(screen.getByText(/Derived · Partial/)).toBeTruthy();
+    expect(screen.queryByText(/Derived · Partial/)).toBeNull();
   });
 
-  it("renders a canonical unavailable diagnostic", () => {
+  it("does not render an unavailable-load diagnostic in the card", () => {
     renderNative(
       <ActivityCard
         activity={{
@@ -282,10 +282,10 @@ describe("ActivityCard", () => {
     );
 
     expect(
-      screen.getByText(
+      screen.queryByText(
         "This activity category is not supported for canonical Load. Canonical Load is not available for this activity category.",
       ),
-    ).toBeTruthy();
+    ).toBeNull();
   });
 
   it("formats activity distance in the viewer's imperial units", () => {
@@ -369,10 +369,10 @@ describe("ActivityCard", () => {
 
     expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
     expect(
-      screen.getByText(
+      screen.queryByText(
         "This activity category is not supported for canonical Load. Canonical Load is not available for this activity category.",
       ),
-    ).toBeTruthy();
+    ).toBeNull();
   });
 
   it("emits canonical fields without retired metric aliases", () => {
@@ -517,7 +517,7 @@ describe("ActivityCard", () => {
     ).toBeTruthy();
   });
 
-  it("shows lightweight ingestion state for feed and list cards", () => {
+  it("does not show ingestion text in feed and list cards", () => {
     renderNative(
       <ActivityCard
         activity={{
@@ -529,7 +529,7 @@ describe("ActivityCard", () => {
       />,
     );
 
-    expect(screen.getByTestId("activity-card-ingestion-status-activity-1")).toBeTruthy();
-    expect(screen.getByText("Queued for upload")).toBeTruthy();
+    expect(screen.queryByTestId("activity-card-ingestion-status-activity-1")).toBeNull();
+    expect(screen.queryByText("Queued for upload")).toBeNull();
   });
 });

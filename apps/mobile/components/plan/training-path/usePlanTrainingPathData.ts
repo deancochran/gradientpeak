@@ -57,6 +57,7 @@ function isPresent<T>(value: T | null | undefined): value is T {
 const DORMANT_DATE_KEY = "1970-01-01";
 const DORMANT_INSTANT = "1970-01-01T00:00:00.000Z";
 const DATA_QUERY_DAY_RADIUS = 182;
+const EFFECTIVE_PLAN_LOAD_DAY_RADIUS = 44;
 const MAX_RETAINED_DATA_CHUNKS = 12;
 
 function useTrainingPathTodayKey(planningTimezone: string | null) {
@@ -273,6 +274,17 @@ export function usePlanTrainingPathData() {
       ? scheduleQueryWindowEnd
       : candidateDataWindowEnd
     : DORMANT_DATE_KEY;
+  // The server caps authoritative effective-load composition at 90 days. Keep this
+  // request inside that envelope while retaining the broader window for lighter
+  // schedule and chart reads.
+  const effectiveLoadWindowStart =
+    dataWindowStart > addDaysToDateKey(dataWindowAnchor, -EFFECTIVE_PLAN_LOAD_DAY_RADIUS)
+      ? dataWindowStart
+      : addDaysToDateKey(dataWindowAnchor, -EFFECTIVE_PLAN_LOAD_DAY_RADIUS);
+  const effectiveLoadWindowEnd =
+    dataWindowEnd < addDaysToDateKey(dataWindowAnchor, EFFECTIVE_PLAN_LOAD_DAY_RADIUS)
+      ? dataWindowEnd
+      : addDaysToDateKey(dataWindowAnchor, EFFECTIVE_PLAN_LOAD_DAY_RADIUS);
   const upcomingWindowStart = dataWindowStart > todayKey ? dataWindowStart : todayKey;
   const recentWindowEnd = dataWindowEnd < todayKey ? dataWindowEnd : todayKey;
   const scheduledWindowRange = useMemo(
@@ -745,12 +757,12 @@ export function usePlanTrainingPathData() {
   );
   const effectivePlanLoadQuery = api.trainingPlans.getEffectiveLoad.useQuery(
     {
-      startDate: dataWindowStart,
-      endDate: dataWindowEnd,
+      startDate: effectiveLoadWindowStart,
+      endDate: effectiveLoadWindowEnd,
     },
     {
       ...scheduleAwareReadQueryOptions,
-      enabled: scheduleQueriesEnabled && dataWindowStart <= dataWindowEnd,
+      enabled: scheduleQueriesEnabled && effectiveLoadWindowStart <= effectiveLoadWindowEnd,
       placeholderData: keepPreviousData,
     },
   );

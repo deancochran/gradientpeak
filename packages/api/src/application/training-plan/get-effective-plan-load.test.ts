@@ -20,7 +20,11 @@ import { relationalSchema } from "@repo/db";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EventReadRepository } from "../../repositories";
-import { getEffectivePlanLoad, getEffectivePlanLoadInputSchema } from "./get-effective-plan-load";
+import {
+  getEffectivePlanLoad,
+  getEffectivePlanLoadInputSchema,
+  MAX_EFFECTIVE_PLAN_LOAD_RANGE_DAYS,
+} from "./get-effective-plan-load";
 
 const activityAnalysis = vi.hoisted(() => ({
   buildActivityDerivedSummaries: vi.fn(),
@@ -238,6 +242,31 @@ describe("getEffectivePlanLoad", () => {
     expect(getEffectivePlanLoadInputSchema.safeParse({ startDate: "2026-07-23" }).success).toBe(
       false,
     );
+    expect(
+      getEffectivePlanLoadInputSchema.safeParse({
+        startDate: "2026-02-30",
+        endDate: "2026-03-01",
+      }).success,
+    ).toBe(false);
+    expect(
+      getEffectivePlanLoadInputSchema.safeParse({
+        startDate: "2026-01-01",
+        endDate: "2026-03-31",
+      }).success,
+    ).toBe(true);
+    const overLimit = getEffectivePlanLoadInputSchema.safeParse({
+      startDate: "2026-01-01",
+      endDate: "2026-04-01",
+    });
+    expect(overLimit.success).toBe(false);
+    if (!overLimit.success) {
+      expect(overLimit.error.issues).toContainEqual(
+        expect.objectContaining({
+          message: `Effective Load ranges cannot exceed ${MAX_EFFECTIVE_PLAN_LOAD_RANGE_DAYS} days`,
+          path: ["endDate"],
+        }),
+      );
+    }
   });
 
   it("does not turn a missing profile timezone into zero Load", async () => {

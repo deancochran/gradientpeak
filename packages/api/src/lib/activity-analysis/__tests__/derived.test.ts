@@ -1,9 +1,13 @@
-import { createUnavailableAthletePerformanceTargetFacts } from "@repo/core";
+import {
+  completedSegmentSummarySchema,
+  createUnavailableAthletePerformanceTargetFacts,
+} from "@repo/core";
 import {
   type CyclingNormalizedPowerResult,
   calculateCyclingNormalizedPower,
 } from "@repo/core/calculations";
 import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
+import type { StoredHeartRateDurationEvidence } from "@repo/core/zones";
 import { describe, expect, it, vi } from "vitest";
 import type {
   ActivityAnalysisContextEvidenceRequest,
@@ -13,6 +17,7 @@ import type {
 import {
   buildActivityDerivedSummaryMap,
   buildActivitySegmentDerivedSummaries,
+  buildCompletedSegmentAnalysisActivity,
   buildDynamicStressSeries,
   deriveActivityParentClassification,
 } from "../derived";
@@ -58,10 +63,7 @@ function segment(
   activity_category: "bike" | "run" | "swim" | "strength" | "other",
   start: number,
   end: number,
-  heartRateDistribution?: {
-    coverageSeconds: number;
-    buckets: Array<{ bpm: number; seconds: number }>;
-  },
+  heartRateDistribution?: StoredHeartRateDurationEvidence,
 ) {
   const normalizedPowerResult =
     activity_category === "bike"
@@ -171,14 +173,27 @@ function contextRequestKeyForTest(request: ActivityAnalysisContextEvidenceReques
   ].join("\u0000");
 }
 
-function heartRateStore() {
+function heartRateStore(
+  input: {
+    lthrCategory?: "bike" | "run";
+    planningThresholdPaceSecondsPerKm?: number;
+    planningThresholdPowerWatts?: number;
+  } = {},
+) {
+  const lthrCategory = input.lthrCategory ?? "run";
   return {
     getPerformanceTargetsAsOf: vi.fn(async ({ asOf }: { asOf: Date }) =>
       buildPerformanceTargetFactsFixture({
         athleteId: PROFILE_ID,
         asOf: asOf.toISOString(),
         heartRateObservedAt: "2026-06-15T10:30:00.000Z",
-        lthrBpm: { run: 150 },
+        lthrBpm: { [lthrCategory]: 150 },
+        ...(input.planningThresholdPaceSecondsPerKm === undefined
+          ? {}
+          : { planningThresholdPaceSecondsPerKm: input.planningThresholdPaceSecondsPerKm }),
+        ...(input.planningThresholdPowerWatts === undefined
+          ? {}
+          : { planningThresholdPowerWatts: input.planningThresholdPowerWatts }),
       }),
     ),
     loadContextEvidence: vi.fn(
@@ -640,7 +655,7 @@ describe("segment-derived activity analysis", () => {
     expect(fallbackStore.getPerformanceTargetsAsOf).not.toHaveBeenCalled();
   });
 
-  it("batches more than 525 performance-target requests while retaining older valid evidence", async () => {
+  it("keeps context-evidence queries small while retaining older valid evidence", async () => {
     const calculationAsOf = new Date("2026-08-01T12:00:00.000Z");
     const input = activity(
       Array.from({ length: 526 }, (_, index) =>
@@ -656,10 +671,10 @@ describe("segment-derived activity analysis", () => {
       computedAsOf: calculationAsOf,
     });
 
-    expect(analysisStore.loadContextEvidence).toHaveBeenCalledTimes(2);
+    expect(analysisStore.loadContextEvidence).toHaveBeenCalledTimes(17);
     expect(
-      analysisStore.loadContextEvidence.mock.calls.map(([batch]) => batch.requests.length),
-    ).toEqual([525, 1]);
+      analysisStore.loadContextEvidence.mock.calls.every(([batch]) => batch.requests.length <= 32),
+    ).toBe(true);
     const requests = analysisStore.loadContextEvidence.mock.calls.flatMap(
       ([batch]) => batch.requests,
     );
@@ -1211,6 +1226,231 @@ describe("segment-derived activity analysis", () => {
           sourceFingerprint: "run-lthr-evidence",
         },
       },
+    });
+  });
+
+  it("uses versioned HR evidence duration when a Wahoo-style active summary differs", async () => {
+    const distribution: StoredHeartRateDurationEvidence = {
+      status: "available",
+      calculationVersion: "heart-rate-zone-duration-v1",
+      coverageSeconds: 1_800,
+      eligibleDurationSeconds: 1_800,
+      sourceTimeCoverage: 1,
+      timeWeightedAverageBpm: 150,
+      buckets: [{ bpm: 150, seconds: 1_800 }],
+      diagnostics: {
+        sourceSampleCount: 1_801,
+        acceptedTimestampCount: 1_801,
+        contributingIntervalCount: 1_800,
+        observedSpanSeconds: 1_800,
+        pausedDurationSeconds: 0,
+        excludedGapDurationSeconds: 0,
+        excludedMissingDurationSeconds: 0,
+        excludedInvalidDurationSeconds: 0,
+        duplicateTimestampCount: 0,
+        reversedTimestampCount: 0,
+        invalidTimestampCount: 0,
+      },
+    };
+    const input = activity([
+      segment("22222222-2222-4222-8222-222222222222", 0, "run", 0, 3_600_000, distribution),
+    ]);
+    const inputSegment = input.segments[0];
+    if (!inputSegment) throw new Error("Expected a test segment");
+    inputSegment.active_ms = 2_400_000;
+    inputSegment.summary.timing = {
+      timingCoverage: "complete",
+      activeMs: 2_400_000,
+      movingMs: 2_400_000,
+    };
+
+    const [summary] = await buildActivitySegmentDerivedSummaries({
+      store: heartRateStore() as never,
+      profileId: PROFILE_ID,
+      activities: [input],
+    });
+
+    expect(summary?.common_load).toMatchObject({
+      status: "available",
+      method: "heart_rate_zones",
+      contributingDurationSeconds: 1_800,
+      load: 50,
+      intensity: 1,
+    });
+  });
+
+  it("uses bounded versioned HR intervals when provider active timing is unavailable", async () => {
+    const distribution: StoredHeartRateDurationEvidence = {
+      status: "partial",
+      reason: "source_incomplete",
+      calculationVersion: "heart-rate-zone-duration-v1",
+      coverageSeconds: 3_717,
+      eligibleDurationSeconds: 3_720,
+      sourceTimeCoverage: 3_717 / 3_720,
+      timeWeightedAverageBpm: 150,
+      buckets: [{ bpm: 150, seconds: 3_717 }],
+      diagnostics: {
+        sourceSampleCount: 3_721,
+        acceptedTimestampCount: 3_721,
+        contributingIntervalCount: 3_717,
+        observedSpanSeconds: 3_720,
+        pausedDurationSeconds: 0,
+        excludedGapDurationSeconds: 0,
+        excludedMissingDurationSeconds: 3,
+        excludedInvalidDurationSeconds: 0,
+        duplicateTimestampCount: 0,
+        reversedTimestampCount: 0,
+        invalidTimestampCount: 0,
+      },
+    };
+    const unavailable = {
+      ...segment("22222222-2222-4222-8222-222222222222", 0, "run", 0, 3_720_000, distribution),
+      timing_coverage: "unavailable",
+      active_ms: null,
+      moving_ms: null,
+      summary: {
+        ...segment("22222222-2222-4222-8222-222222222222", 0, "run", 0, 3_720_000, distribution)
+          .summary,
+        timing: { timingCoverage: "unavailable" },
+      },
+    } as unknown as ReturnType<typeof segment>;
+
+    const analysisActivity = buildCompletedSegmentAnalysisActivity({
+      activityStartedAt: new Date("2026-07-01T08:00:00.000Z"),
+      segment: unavailable,
+      summary: completedSegmentSummarySchema.parse(unavailable.summary),
+    });
+    expect(analysisActivity).toMatchObject({
+      duration_seconds: 3_720,
+      moving_seconds: null,
+      timing_coverage: "unavailable",
+    });
+
+    const [summary] = await buildActivitySegmentDerivedSummaries({
+      store: heartRateStore({ planningThresholdPaceSecondsPerKm: 300 }) as never,
+      profileId: PROFILE_ID,
+      activities: [activity([unavailable])],
+    });
+
+    expect(summary?.common_load).toMatchObject({
+      status: "partial",
+      method: "heart_rate_zones",
+      contributingDurationSeconds: 3_717,
+      eligibleDurationSeconds: 3_720,
+      sourceTimeCoverage: 3_717 / 3_720,
+      load: 103.25,
+      intensity: 1,
+      reason: "activity_data_partial",
+    });
+  });
+
+  it("keeps duration unavailable when versioned HR evidence has no contributing intervals", async () => {
+    const distribution: StoredHeartRateDurationEvidence = {
+      status: "unavailable",
+      reason: "no_contributing_intervals",
+      calculationVersion: "heart-rate-zone-duration-v1",
+      coverageSeconds: 0,
+      eligibleDurationSeconds: 60,
+      sourceTimeCoverage: 0,
+      timeWeightedAverageBpm: null,
+      buckets: [],
+      diagnostics: {
+        sourceSampleCount: 61,
+        acceptedTimestampCount: 61,
+        contributingIntervalCount: 0,
+        observedSpanSeconds: 60,
+        pausedDurationSeconds: 0,
+        excludedGapDurationSeconds: 0,
+        excludedMissingDurationSeconds: 60,
+        excludedInvalidDurationSeconds: 0,
+        duplicateTimestampCount: 0,
+        reversedTimestampCount: 0,
+        invalidTimestampCount: 0,
+      },
+    };
+    const source = segment(
+      "22222222-2222-4222-8222-222222222222",
+      0,
+      "run",
+      0,
+      60_000,
+      distribution,
+    );
+    const unavailable = {
+      ...source,
+      timing_coverage: "unavailable",
+      active_ms: null,
+      moving_ms: null,
+      summary: { ...source.summary, timing: { timingCoverage: "unavailable" } },
+    } as unknown as ReturnType<typeof segment>;
+
+    const [summary] = await buildActivitySegmentDerivedSummaries({
+      store: heartRateStore() as never,
+      profileId: PROFILE_ID,
+      activities: [activity([unavailable])],
+    });
+
+    expect(summary?.common_load).toMatchObject({
+      status: "unavailable",
+      method: null,
+      contributingDurationSeconds: null,
+      reason: "duration_missing",
+    });
+  });
+
+  it("does not let HR-derived duration authorize direct power Load", async () => {
+    const distribution: StoredHeartRateDurationEvidence = {
+      status: "available",
+      calculationVersion: "heart-rate-zone-duration-v1",
+      coverageSeconds: 60,
+      eligibleDurationSeconds: 60,
+      sourceTimeCoverage: 1,
+      timeWeightedAverageBpm: 150,
+      buckets: [{ bpm: 150, seconds: 60 }],
+      diagnostics: {
+        sourceSampleCount: 61,
+        acceptedTimestampCount: 61,
+        contributingIntervalCount: 60,
+        observedSpanSeconds: 60,
+        pausedDurationSeconds: 0,
+        excludedGapDurationSeconds: 0,
+        excludedMissingDurationSeconds: 0,
+        excludedInvalidDurationSeconds: 0,
+        duplicateTimestampCount: 0,
+        reversedTimestampCount: 0,
+        invalidTimestampCount: 0,
+      },
+    };
+    const source = segment(
+      "22222222-2222-4222-8222-222222222222",
+      0,
+      "bike",
+      0,
+      60_000,
+      distribution,
+    );
+    const unavailable = {
+      ...source,
+      timing_coverage: "unavailable",
+      active_ms: null,
+      moving_ms: null,
+      summary: { ...source.summary, timing: { timingCoverage: "unavailable" } },
+    } as unknown as ReturnType<typeof segment>;
+
+    const [summary] = await buildActivitySegmentDerivedSummaries({
+      store: heartRateStore({
+        lthrCategory: "bike",
+        planningThresholdPowerWatts: 250,
+      }) as never,
+      profileId: PROFILE_ID,
+      activities: [activity([unavailable])],
+    });
+
+    expect(summary?.common_load).toMatchObject({
+      status: "available",
+      method: "heart_rate_zones",
+      contributingDurationSeconds: 60,
+      intensity: 1,
     });
   });
 

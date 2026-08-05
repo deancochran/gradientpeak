@@ -612,17 +612,20 @@ export async function getActivityByIdForViewer({
   const resolvedDerived: ActivityDerivedMetrics & {
     observationQuantification: typeof sharedQuantification;
   } = parentDerived
-    ? {
-        stress: {
-          ...parentDerived,
-          trimp: null,
-          trimp_source: null,
-          training_effect: null,
-        },
-        zones: { hr: [], power: [] },
-        computed_as_of: parentDerived.computed_as_of,
-        observationQuantification: parentDerived.observationQuantification,
-      }
+    ? (() => {
+        const { computed_as_of, observationQuantification, ...parentStress } = parentDerived;
+        return {
+          stress: {
+            ...parentStress,
+            trimp: null,
+            trimp_source: null,
+            training_effect: null,
+          },
+          zones: { hr: [], power: [] },
+          computed_as_of,
+          observationQuantification,
+        };
+      })()
     : derived;
   // Session RPE is deliberately owner-only even when the activity itself is
   // shared. It is manually-entered health/training evidence rather than
@@ -662,7 +665,25 @@ export async function getActivityByIdForViewer({
     activity: {
       ...response.activity,
       segments: activity.segments.map((segment) => ({
-        ...segment,
+        id: segment.id,
+        activity_id: segment.activity_id,
+        ordinal: segment.ordinal,
+        role: segment.role,
+        activity_category: segment.activity_category,
+        start_offset_ms: segment.start_offset_ms,
+        end_offset_ms: segment.end_offset_ms,
+        source_artifact_id: segment.source_artifact_id,
+        source_session_index: segment.source_session_index,
+        source_message_index: segment.source_message_index,
+        raw_type_string: segment.raw_type_string,
+        raw_type_integer: segment.raw_type_integer,
+        raw_sport_string: segment.raw_sport_string,
+        raw_sport_integer: segment.raw_sport_integer,
+        raw_sub_sport_string: segment.raw_sub_sport_string,
+        raw_sub_sport_integer: segment.raw_sub_sport_integer,
+        timing_coverage: segment.timing_coverage,
+        active_ms: segment.active_ms,
+        moving_ms: segment.moving_ms,
         ...createAnalyzedActivitySegmentAnalysis(segment.summary),
       })),
       current_artifact: currentArtifact,

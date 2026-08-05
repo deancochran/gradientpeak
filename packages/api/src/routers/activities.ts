@@ -182,7 +182,10 @@ const activityListQuantifiedSummarySchema = activityListDerivedSummarySchema
   .strict();
 
 const activityQuantifiedMetricsSchema = activityDerivedMetricsSchema
-  .extend({ observationQuantification: activityObservationQuantificationBundleSchema })
+  .extend({
+    computed_as_of: isoDatetimeSchema,
+    observationQuantification: activityObservationQuantificationBundleSchema,
+  })
   .strict();
 
 const activityListItemSchema = activityRowSchema

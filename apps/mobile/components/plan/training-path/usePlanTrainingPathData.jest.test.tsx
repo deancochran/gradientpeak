@@ -517,6 +517,18 @@ describe("usePlanTrainingPathData", () => {
     );
   });
 
+  it("keeps the effective Load request within the server range limit", () => {
+    renderHook(() => usePlanTrainingPathData());
+
+    const [input] = mockEffectivePlanLoadUseQuery.mock.calls.at(-1) ?? [];
+    const range = input as { startDate: string; endDate: string };
+    expect(
+      (Date.parse(`${range.endDate}T00:00:00.000Z`) -
+        Date.parse(`${range.startDate}T00:00:00.000Z`)) /
+        86_400_000,
+    ).toBeLessThan(90);
+  });
+
   it("queries daily common Load with the persisted planning timezone and maps observed completed load", () => {
     mockDailyCommonLoadObservations = [
       {

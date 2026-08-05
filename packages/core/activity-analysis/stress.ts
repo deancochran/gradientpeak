@@ -460,6 +460,53 @@ function resolveEligibleDurationSeconds(activity: ActivitySummaryForAnalysis): n
     : null;
 }
 
+/**
+ * Versioned HR evidence carries the stream interval denominator used to build
+ * its buckets. Activity active time can be supplied independently by a
+ * provider, so use that evidence denominator only when the segment's elapsed
+ * boundary can contain it. Legacy bucket-only evidence still uses active time
+ * as its denominator.
+ */
+type HeartRateEvidenceDurationResolution =
+  | { status: "resolved"; durationSeconds: number }
+  | { status: "invalid_data" };
+
+function resolveHeartRateEvidenceDuration(input: {
+  activity: ActivitySummaryForAnalysis;
+  distribution: ActivityHeartRateDistribution | null | undefined;
+}): HeartRateEvidenceDurationResolution {
+  const parsed = activityHeartRateDistributionSchema.safeParse(input.distribution);
+  if (!parsed.success || !("calculationVersion" in parsed.data)) {
+    return { status: "resolved", durationSeconds: input.activity.duration_seconds };
+  }
+
+  const activityDurationSeconds = input.activity.duration_seconds;
+  const hasValidActivityDuration =
+    Number.isFinite(activityDurationSeconds) && activityDurationSeconds > 0;
+  const elapsedSeconds = input.activity.elapsed_seconds;
+  const hasElapsedBoundary =
+    elapsedSeconds !== null &&
+    elapsedSeconds !== undefined &&
+    Number.isFinite(elapsedSeconds) &&
+    elapsedSeconds > 0;
+  const upperBoundSeconds = hasElapsedBoundary
+    ? elapsedSeconds
+    : hasValidActivityDuration
+      ? activityDurationSeconds
+      : null;
+  if (
+    upperBoundSeconds === null ||
+    (hasElapsedBoundary &&
+      hasValidActivityDuration &&
+      elapsedSeconds + Number.EPSILON * elapsedSeconds * 16 < activityDurationSeconds) ||
+    parsed.data.eligibleDurationSeconds >
+      upperBoundSeconds + Number.EPSILON * upperBoundSeconds * 16
+  ) {
+    return { status: "invalid_data" };
+  }
+  return { status: "resolved", durationSeconds: parsed.data.eligibleDurationSeconds };
+}
+
 function resolveDirectCommonLoadSelection(input: {
   activity: ActivitySummaryForAnalysis;
   context: ActivityAnalysisContext;
@@ -999,7 +1046,8 @@ export function analyzeActivityDerivedMetrics(
     ? resolveLthrPerformanceTarget(context, activity_category)
     : null;
   const directSelection =
-    activity_category === "run" || activity_category === "bike" || activity_category === "swim"
+    activity.timing_coverage !== "unavailable" &&
+    (activity_category === "run" || activity_category === "bike" || activity_category === "swim")
       ? resolveDirectCommonLoadSelection({ activity, context, activity_category })
       : null;
   const directCommonLoad: CommonLoadResult | null =
@@ -1062,24 +1110,38 @@ export function analyzeActivityDerivedMetrics(
       : directCommonLoad !== null && directCommonLoad.status !== "unavailable"
         ? directCommonLoad
         : (() => {
-            const heartRateCommonLoad = resolveHeartRateCommonLoad({
-              activity_category,
-              // Persisted HR distributions integrate active elapsed intervals and are not
-              // moving-time filtered, so their denominator is the activity's active duration.
-              durationSeconds: activity.duration_seconds,
-              computedAsOf,
-              lthr: lthrCalibration?.value ?? null,
-              quality: lthrCalibration?.quality ?? null,
+            const evidenceDuration = resolveHeartRateEvidenceDuration({
+              activity,
               distribution: heartRateDistribution,
-              evidenceFingerprint: `activity-common-load:v1:${JSON.stringify([
-                activity.id,
-                activity_category,
-                activity.duration_seconds,
-                heartRateDistribution ?? null,
-                lthrCalibration?.quality?.evidence_fingerprint ?? null,
-              ])}`,
             });
+            const heartRateCommonLoad =
+              evidenceDuration.status === "invalid_data"
+                ? unavailableCommonLoad({
+                    activity_category,
+                    computedAsOf,
+                    contributingDurationSeconds: null,
+                    reason: "invalid_data",
+                  })
+                : resolveHeartRateCommonLoad({
+                    activity_category,
+                    // A versioned distribution owns its qualified interval denominator. It is
+                    // accepted only when bounded by the segment's elapsed duration; legacy
+                    // evidence remains normalized against the active duration.
+                    durationSeconds: evidenceDuration.durationSeconds,
+                    computedAsOf,
+                    lthr: lthrCalibration?.value ?? null,
+                    quality: lthrCalibration?.quality ?? null,
+                    distribution: heartRateDistribution,
+                    evidenceFingerprint: `activity-common-load:v1:${JSON.stringify([
+                      activity.id,
+                      activity_category,
+                      activity.duration_seconds,
+                      heartRateDistribution ?? null,
+                      lthrCalibration?.quality?.evidence_fingerprint ?? null,
+                    ])}`,
+                  });
             return directCommonLoad !== null &&
+              evidenceDuration.status !== "invalid_data" &&
               heartRateCommonLoad.status === "unavailable" &&
               heartRateCommonLoad.quality === null
               ? directCommonLoad

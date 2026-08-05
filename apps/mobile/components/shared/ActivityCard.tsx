@@ -1,8 +1,4 @@
-import {
-  type ActivityObservationQuantificationBundle,
-  activityObservationQuantificationBundleSchema,
-  decodePolyline,
-} from "@repo/core";
+import { type ActivityObservationQuantificationBundle, decodePolyline } from "@repo/core";
 import { formatDurationSec } from "@repo/core/utils/dates";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -10,7 +6,6 @@ import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-qua
 import { MessageCircle, Route } from "lucide-react-native";
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";
-import { formatCalibrationQuality } from "@/lib/activity-load-presentation";
 import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
 import { formatDistanceMeters } from "@/lib/display/formatters";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
@@ -136,24 +131,6 @@ function getQuantificationPresentation(activity: ActivityCardActivity) {
   });
 }
 
-function getCalibrationText(activity: ActivityCardActivity): string | null {
-  const parsed = activityObservationQuantificationBundleSchema.safeParse(
-    activity.derived?.observationQuantification,
-  );
-  const commonLoad = parsed.success ? parsed.data.members[0]?.commonLoad : null;
-  if (!commonLoad || commonLoad.status === "unavailable") return null;
-  return formatCalibrationQuality(commonLoad.quality, activity.started_at);
-}
-
-function getIngestionStatusText(activity: ActivityCardActivity): string | null {
-  const status = activity.ingestion?.status;
-
-  if (!status || status === "ready") return null;
-  if (status === "failed") return "Processing failed";
-  if (status === "pending_upload") return "Queued for upload";
-  return "Processing activity file";
-}
-
 function ActivityMetricsRow({
   activity,
   compact,
@@ -267,16 +244,6 @@ export function ActivityCard({
     }
   }, [activity.polyline, shouldShowCompactRoutePreview, shouldShowVisualPreview]);
   const routeCoordinates = decodedPolylineCoordinates;
-  const ingestionStatusText = getIngestionStatusText(activity);
-  const calibrationText = getCalibrationText(activity);
-  const quantification = getQuantificationPresentation(activity);
-  const loadCoverageMessage = quantification.commonLoad.diagnostic
-    ? `${quantification.commonLoad.diagnostic.summary} ${quantification.commonLoad.diagnostic.action}`
-    : quantification.commonLoad.status === "partial"
-      ? "Common Load is partial because some activity evidence is missing. Open to review details."
-      : quantification.commonLoad.status === "unavailable"
-        ? "Common Load is unavailable until compatible activity evidence is available. Open to review details."
-        : null;
   const hasCommentAction = Boolean(onCommentPress);
   const hasFooterAccessory = Boolean(footerAccessory);
   const hasHeaderAccessory = Boolean(headerAccessory);
@@ -338,38 +305,6 @@ export function ActivityCard({
       />
 
       <ActivityMetricsRow activity={activity} compact={false} />
-
-      <Text className="text-xs text-muted-foreground">
-        {quantification.commonLoad.evidence}. {quantification.commonLoad.explanation}
-      </Text>
-
-      {quantification.nativeIntensity.status !== "unavailable" ? (
-        <Text className="text-xs text-muted-foreground">
-          {quantification.nativeIntensity.label}: {quantification.nativeIntensity.value} ·{" "}
-          {quantification.nativeIntensity.evidence}
-        </Text>
-      ) : null}
-
-      {loadCoverageMessage ? (
-        <Text className="text-xs text-muted-foreground">{loadCoverageMessage}</Text>
-      ) : null}
-
-      {calibrationText ? (
-        <Text className="text-xs text-muted-foreground">{calibrationText}</Text>
-      ) : null}
-
-      {ingestionStatusText ? (
-        <Text
-          className={
-            activity.ingestion?.status === "failed"
-              ? "text-xs font-medium text-destructive"
-              : "text-xs font-medium text-muted-foreground"
-          }
-          testID={`activity-card-ingestion-status-${activity.id}`}
-        >
-          {ingestionStatusText}
-        </Text>
-      ) : null}
 
       {shouldShowVisualPreview && routeCoordinates.length > 0 ? (
         <View

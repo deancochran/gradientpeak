@@ -83,6 +83,7 @@ function createDbMock(plan: DbPlan = {}) {
         innerJoin: () => builder,
         leftJoin: () => builder,
         where: () => builder,
+        groupBy: () => builder,
         orderBy: () => builder,
         limit: () => builder,
         then: (resolve: (rows: unknown[]) => unknown) =>
@@ -142,10 +143,7 @@ describe("groups.events router", () => {
         [{ id: VIEWER_ID }],
         [{ event: buildGroupEventRow(), group: buildGroupRow() }],
         [buildGroupEventRsvpRow()],
-        [
-          buildGroupEventRsvpRow(),
-          buildGroupEventRsvpRow({ profile_id: "99999999-9999-4999-8999-999999999999" }),
-        ],
+        [{ group_event_id: EVENT_ID, acceptedRsvpCount: 2 }],
       ],
     });
     const caller = createCaller(mock.db);
@@ -162,6 +160,27 @@ describe("groups.events router", () => {
       },
       acceptedRsvpCount: 2,
       viewerRsvp: { status: "accepted" },
+    });
+  });
+
+  it("returns grouped RSVP counts for calendar events", async () => {
+    const mock = createDbMock({
+      select: [
+        [{ id: VIEWER_ID }],
+        [{ event: buildGroupEventRow() }],
+        [],
+        [],
+        [{ group_event_id: EVENT_ID, acceptedRsvpCount: 2 }],
+      ],
+    });
+    const caller = createCaller(mock.db);
+
+    const result = await caller.events.myCalendarGroupEvents({ startsAfter: NOW.toISOString() });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      id: EVENT_ID,
+      acceptedRsvpCount: 2,
     });
   });
 

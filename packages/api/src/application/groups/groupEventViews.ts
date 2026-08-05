@@ -1,6 +1,6 @@
 import { GROUP_EVENT_RSVP_STATUSES, resolveGroupEventFallbackFields } from "@repo/core/groups";
 import { groupEventRsvps, groupEventSeriesRsvps, groupEvents, type groups } from "@repo/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 
 const GROUP_EVENT_RSVP_STATUS_ACCEPTED = GROUP_EVENT_RSVP_STATUSES[0];
@@ -123,7 +123,7 @@ export async function serializeGroupEventsForViewer(
     .filter((event) => event.series_id === null && event.recurrence_rule !== null)
     .map((event) => event.id);
   const seriesRsvpIds = Array.from(new Set([...seriesIds, ...recurringSeriesRootIds]));
-  const [seriesRows, rsvps, seriesRsvps, acceptedRsvps] = await Promise.all([
+  const [seriesRows, rsvps, seriesRsvps, acceptedRsvpCounts] = await Promise.all([
     seriesIds.length > 0
       ? db.select().from(groupEvents).where(inArray(groupEvents.id, seriesIds))
       : Promise.resolve([]),
@@ -148,23 +148,24 @@ export async function serializeGroupEventsForViewer(
           )
       : Promise.resolve([]),
     db
-      .select()
+      .select({
+        group_event_id: groupEventRsvps.group_event_id,
+        acceptedRsvpCount: count(),
+      })
       .from(groupEventRsvps)
       .where(
         and(
           inArray(groupEventRsvps.group_event_id, eventIds),
           eq(groupEventRsvps.status, GROUP_EVENT_RSVP_STATUS_ACCEPTED),
         ),
-      ),
+      )
+      .groupBy(groupEventRsvps.group_event_id),
   ]);
 
   const rsvpByEventId = new Map(rsvps.map((rsvp) => [rsvp.group_event_id, rsvp]));
   const acceptedRsvpCountByEventId = new Map<string, number>();
-  for (const rsvp of acceptedRsvps) {
-    acceptedRsvpCountByEventId.set(
-      rsvp.group_event_id,
-      (acceptedRsvpCountByEventId.get(rsvp.group_event_id) ?? 0) + 1,
-    );
+  for (const row of acceptedRsvpCounts) {
+    acceptedRsvpCountByEventId.set(row.group_event_id, row.acceptedRsvpCount);
   }
   const seriesById = new Map(seriesRows.map((series) => [series.id, series]));
   const seriesRsvpBySeriesId = new Map(

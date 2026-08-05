@@ -9,6 +9,8 @@ import {
   createObservationQuantificationBundle,
   createPrescriptionQuantificationBundle,
   createUnavailableActivityPlanPlanningEstimate,
+  dateOnlySchema,
+  diffDateOnlyUtcDays,
 } from "@repo/core";
 import {
   aggregateCommonLoadEnvelopes,
@@ -37,7 +39,8 @@ import {
 
 type Db = ReturnType<typeof getRequiredDb>;
 
-const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const dateSchema = dateOnlySchema;
+export const MAX_EFFECTIVE_PLAN_LOAD_RANGE_DAYS = 90;
 const sourceCountsSchema = z
   .object({ activities: z.number().int().nonnegative(), events: z.number().int().nonnegative() })
   .strict();
@@ -104,6 +107,17 @@ export const getEffectivePlanLoadInputSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: "startDate must not follow endDate",
+        path: ["endDate"],
+      });
+    }
+    if (
+      value.startDate &&
+      value.endDate &&
+      diffDateOnlyUtcDays(value.startDate, value.endDate) >= MAX_EFFECTIVE_PLAN_LOAD_RANGE_DAYS
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Effective Load ranges cannot exceed ${MAX_EFFECTIVE_PLAN_LOAD_RANGE_DAYS} days`,
         path: ["endDate"],
       });
     }

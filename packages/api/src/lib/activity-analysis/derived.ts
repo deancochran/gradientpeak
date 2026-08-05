@@ -26,6 +26,12 @@ import {
   type ActivityAnalysisMetricSnapshot,
   type ActivityAnalysisStore,
 } from "../../repositories";
+
+// The store turns each request into a correlated SQL predicate. Keep individual
+// statements well below its 525-request safety ceiling so long planning windows
+// do not create an unplannable OR expression.
+const ACTIVITY_ANALYSIS_CONTEXT_EVIDENCE_QUERY_WINDOW_LIMIT = 32;
+
 import { resolveActivityContextFromEvidence } from "./context";
 
 export type ActivitySegmentReadRow = Pick<
@@ -364,11 +370,11 @@ async function loadBatchedContextEvidence(input: {
   for (
     let offset = 0;
     offset < input.requests.length;
-    offset += ACTIVITY_ANALYSIS_CONTEXT_EVIDENCE_REQUEST_LIMIT
+    offset += ACTIVITY_ANALYSIS_CONTEXT_EVIDENCE_QUERY_WINDOW_LIMIT
   ) {
     const requests = input.requests.slice(
       offset,
-      offset + ACTIVITY_ANALYSIS_CONTEXT_EVIDENCE_REQUEST_LIMIT,
+      offset + ACTIVITY_ANALYSIS_CONTEXT_EVIDENCE_QUERY_WINDOW_LIMIT,
     );
     const batch = await input.load({ requests });
     const profileIds = new Set(requests.map((request) => request.profileId));
@@ -448,6 +454,30 @@ function nonnegativeObservation(value: number | undefined): number | null {
   return value !== undefined && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
+function resolveVersionedHeartRateDurationSeconds(input: {
+  segment: Pick<ActivitySegmentReadRow, "start_offset_ms" | "end_offset_ms">;
+  summary: ReturnType<typeof completedSegmentSummarySchema.parse>;
+}): number | null {
+  const distribution = input.summary.heartRateDistribution;
+  if (
+    distribution === undefined ||
+    !("calculationVersion" in distribution) ||
+    distribution.status === "unavailable"
+  ) {
+    return null;
+  }
+
+  const elapsedSeconds = (input.segment.end_offset_ms - input.segment.start_offset_ms) / 1_000;
+  const eligibleDurationSeconds = distribution.eligibleDurationSeconds;
+  const tolerance = Number.EPSILON * Math.max(1, elapsedSeconds) * 16;
+  return Number.isFinite(elapsedSeconds) &&
+    elapsedSeconds > 0 &&
+    eligibleDurationSeconds > 0 &&
+    eligibleDurationSeconds <= elapsedSeconds + tolerance
+    ? eligibleDurationSeconds
+    : null;
+}
+
 export function buildCompletedSegmentAnalysisActivity(input: {
   activityStartedAt: Date;
   segment: ActivitySegmentReadRow & {
@@ -459,7 +489,13 @@ export function buildCompletedSegmentAnalysisActivity(input: {
   const durationMs =
     ("activeMs" in timing ? timing.activeMs : undefined) ??
     ("movingMs" in timing ? timing.movingMs : undefined);
-  if (durationMs === undefined) {
+  const heartRateDurationSeconds = resolveVersionedHeartRateDurationSeconds(input);
+  let durationSeconds: number;
+  if (durationMs !== undefined) {
+    durationSeconds = durationMs / 1_000;
+  } else if (heartRateDurationSeconds !== null) {
+    durationSeconds = heartRateDurationSeconds;
+  } else {
     throw new Error("Completed segment analysis requires active or moving duration evidence");
   }
   const startedAt = new Date(input.activityStartedAt.getTime() + input.segment.start_offset_ms);
@@ -470,7 +506,7 @@ export function buildCompletedSegmentAnalysisActivity(input: {
     type: input.segment.activity_category,
     started_at: startedAt.toISOString(),
     finished_at: finishedAt.toISOString(),
-    duration_seconds: durationMs / 1_000,
+    duration_seconds: durationSeconds,
     elapsed_seconds: (input.segment.end_offset_ms - input.segment.start_offset_ms) / 1_000,
     moving_seconds: movingMs === null ? null : movingMs / 1_000,
     timing_coverage: timing.timingCoverage,
@@ -752,7 +788,11 @@ export async function buildActivitySegmentDerivedSummaries(input: {
         segment.activity_category === "strength" || segment.activity_category === "other"
           ? ("unsupported_modality" as const)
           : ("duration_missing" as const);
-      if (timing.timingCoverage === "unavailable") {
+      const heartRateDurationSeconds = resolveVersionedHeartRateDurationSeconds({
+        segment,
+        summary,
+      });
+      if (timing.timingCoverage === "unavailable" && heartRateDurationSeconds === null) {
         output.push(
           buildSegmentDerivedSummary({
             activity,
@@ -778,7 +818,8 @@ export async function buildActivitySegmentDerivedSummaries(input: {
       }
       if (
         ("activeMs" in timing ? timing.activeMs : undefined) === undefined &&
-        ("movingMs" in timing ? timing.movingMs : undefined) === undefined
+        ("movingMs" in timing ? timing.movingMs : undefined) === undefined &&
+        heartRateDurationSeconds === null
       ) {
         output.push(
           buildSegmentDerivedSummary({
