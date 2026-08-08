@@ -99,10 +99,6 @@ export function hydrateTrendInsights(items: ServerTrendInsight[]): Insight[] {
   }));
 }
 
-export function toIsoDate(date: Date) {
-  return date.toISOString().split("T")[0] ?? "";
-}
-
 export function formatNumber(value: number, digits = 0) {
   return new Intl.NumberFormat(undefined, {
     maximumFractionDigits: digits,

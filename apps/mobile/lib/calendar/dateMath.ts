@@ -1,7 +1,6 @@
 import {
   addDeviceCalendarDays,
   addDeviceCalendarMonths,
-  endOfDeviceCalendarDateToIsoInstant,
   formatDateOnlyInTimeZone,
   formatDeviceCalendarDate,
   getDeviceCalendarMonthEnd,
@@ -10,7 +9,6 @@ import {
   millisecondsUntilNextDeviceCalendarDate,
   parseDeviceCalendarDate,
   scheduledDateTimeToIsoInstant,
-  startOfDeviceCalendarDateToIsoInstant,
 } from "@repo/core/calendar";
 
 export function toDateKey(date: Date): string {
@@ -27,14 +25,6 @@ export function isCanonicalDateKey(value: string): boolean {
 
 export function parseDateKey(dateKey: string): Date {
   return parseDeviceCalendarDate(dateKey);
-}
-
-export function toLocalDayStartIso(dateKey: string): string {
-  return startOfDeviceCalendarDateToIsoInstant(dateKey);
-}
-
-export function toLocalDayEndIso(dateKey: string): string {
-  return endOfDeviceCalendarDateToIsoInstant(dateKey);
 }
 
 /**

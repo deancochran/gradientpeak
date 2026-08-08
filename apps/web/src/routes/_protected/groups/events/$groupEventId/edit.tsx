@@ -70,7 +70,10 @@ function EditGroupEventPage() {
                   };
                   if (event.is_recurring_occurrence) await occurrenceMutation.mutateAsync(payload);
                   else await updateMutation.mutateAsync(payload);
-                  await utils.groups.events.invalidate();
+                  await Promise.all([
+                    utils.groups.events.invalidate(),
+                    utils.calendar.invalidate(),
+                  ]);
                   toast.success("Event updated");
                   void navigate({ to: "/groups/events/$groupEventId", params: { groupEventId } });
                 }}

@@ -803,6 +803,31 @@ describe("drizzle-event-read-repository", () => {
     expect(whereSql).toContain('"activity_plans"."structure" @>');
   });
 
+  it("uses planning-zone instants for timed events while preserving all-day date keys", async () => {
+    const { db, selects } = createSelectCaptureDb({ events: [createEventRow()] });
+    const repository = createEventReadRepository(db);
+
+    await repository.listOwnedEvents({
+      profileId: "profile-1",
+      limit: 25,
+      includeAdhoc: true,
+      dateFrom: "2026-03-08",
+      dateTo: "2026-03-09",
+      planningTimezone: "America/New_York",
+    });
+
+    const where = selects[0]?.whereArg;
+    const whereSql = toSql(where);
+    const params = toQuery(where).params;
+    expect(whereSql).toContain('"events"."all_day" =');
+    expect(whereSql).toContain('"events"."scheduled_date" >=');
+    expect(whereSql).toContain('"events"."scheduled_date" <');
+    expect(whereSql).toContain('"events"."starts_at" >=');
+    expect(whereSql).toContain('"events"."starts_at" <');
+    expect(params).toContain("2026-03-08T05:00:00.000Z");
+    expect(params).toContain("2026-03-09T04:00:00.000Z");
+  });
+
   it("scopes planned-day summaries to active/completed planned work before ordering and bounding", async () => {
     const { db, selects } = createSelectCaptureDb({ events: [createEventRow()] });
     const repository = createEventReadRepository(db);

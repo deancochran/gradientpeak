@@ -9,9 +9,11 @@ import {
   GoalAgendaCard,
   PlannedAgendaEventCard,
 } from "@/components/calendar/AgendaCards";
+import type { CalendarActivity } from "@/components/calendar/CalendarTimelineModel";
 import { PlannedDaySummary } from "@/components/calendar/PlannedDaySummary";
 import { announcePlannedDaySummaryRetryStatus } from "@/components/calendar/plannedDaySummaryAccessibility";
 import { GroupEventCard } from "@/components/groups/GroupEventCards";
+import { ActivityCard } from "@/components/shared/ActivityCard";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
@@ -175,6 +177,13 @@ export default function CalendarDayScreen() {
     () => (data?.selectedGroupEvents?.items ?? []) as CalendarGroupEvent[],
     [data?.selectedGroupEvents?.items],
   );
+  const visibleCompletedActivities = useMemo(
+    () =>
+      ((data?.completedActivities?.items ?? []) as CalendarActivity[]).filter(
+        (activity) => activity.scheduled_date === dateKey,
+      ),
+    [data?.completedActivities?.items, dateKey],
+  );
   const eventsByDate = useMemo(() => buildEventsByDate(events), [events]);
   const goals = data?.goals?.items ?? [];
   const timelineEvents = useMemo(
@@ -214,6 +223,7 @@ export default function CalendarDayScreen() {
   );
   const isRestDay =
     visibleGroupEvents.length === 0 &&
+    visibleCompletedActivities.length === 0 &&
     !visibleTimelineEvents.some(
       (event) =>
         event.type === "planned_activity" ||
@@ -280,8 +290,16 @@ export default function CalendarDayScreen() {
     navigateTo({ pathname: "/group-event-detail", params: { groupEventId: eventId } } as never);
   };
 
-  const hasAgendaEvents = visibleEvents.length > 0 || visibleGroupEvents.length > 0;
-  const agendaEventCount = visibleEvents.length + visibleGroupEvents.length;
+  const handleOpenActivity = (activityId: string) => {
+    navigateTo(`/activity-detail?id=${activityId}` as never);
+  };
+
+  const hasAgendaEvents =
+    visibleEvents.length > 0 ||
+    visibleGroupEvents.length > 0 ||
+    visibleCompletedActivities.length > 0;
+  const agendaEventCount =
+    visibleEvents.length + visibleGroupEvents.length + visibleCompletedActivities.length;
   const isAgendaInitiallyLoading = isLoading && !data;
   const hasAgendaInitialError = Boolean(error && !data);
   const [agendaRetryStatus, setAgendaRetryStatus] = useState<string | null>(null);
@@ -447,6 +465,29 @@ export default function CalendarDayScreen() {
                       }
                       onPress={() => handleOpenGroupEvent(event.id)}
                       testID={`calendar-day-group-event-${event.id}`}
+                    />
+                  ))}
+
+                  {visibleCompletedActivities.map((activity) => (
+                    <ActivityCard
+                      key={activity.id}
+                      activity={{
+                        id: activity.id,
+                        name: activity.name,
+                        started_at: activity.started_at,
+                        ...(activity.distance_meters === undefined
+                          ? {}
+                          : { distance_meters: activity.distance_meters }),
+                        ...(activity.duration_seconds === undefined
+                          ? {}
+                          : { elapsed_seconds: activity.duration_seconds }),
+                      }}
+                      dateMode="none"
+                      onPress={() => handleOpenActivity(activity.id)}
+                      showLike={false}
+                      showNotes={false}
+                      showVisualPreview={false}
+                      testID={`calendar-day-completed-activity-${activity.id}`}
                     />
                   ))}
 

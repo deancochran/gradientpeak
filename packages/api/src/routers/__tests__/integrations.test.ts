@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   getProviderSyncOverview: vi.fn(),
   syncIntegrationNow: vi.fn(),
   refreshSetupData: vi.fn(),
-  getImportedOnboardingValues: vi.fn(),
+  getSetupData: vi.fn(),
   providerSyncRepository: { requestWahooDisconnect: vi.fn() },
   repositories: {
     integrations: { deleteByProfileIdAndProvider: vi.fn(), listByProfileId: vi.fn() },
@@ -22,8 +22,8 @@ vi.mock("../../application/integrations", () => ({
 }));
 vi.mock("../../application/wahoo-profile-setup-service", () => ({
   WahooProfileSetupService: class {
-    getImportedOnboardingValues(...args: Parameters<typeof mocks.getImportedOnboardingValues>) {
-      return mocks.getImportedOnboardingValues(...args);
+    getSetupData(...args: Parameters<typeof mocks.getSetupData>) {
+      return mocks.getSetupData(...args);
     }
     refreshSetupData(...args: Parameters<typeof mocks.refreshSetupData>) {
       return mocks.refreshSetupData(...args);
@@ -70,7 +70,7 @@ describe("integrationsRouter", () => {
     mocks.repositories.oauthStates.deleteExpired.mockResolvedValue(0);
     mocks.repositories.integrations.listByProfileId.mockResolvedValue([]);
     mocks.getProviderSyncOverview.mockResolvedValue([]);
-    mocks.getImportedOnboardingValues.mockResolvedValue({
+    mocks.getSetupData.mockResolvedValue({
       profile: { dob: null, gender: null, onboarded: false },
       sources: {},
       values: {},

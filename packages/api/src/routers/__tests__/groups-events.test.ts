@@ -160,27 +160,6 @@ describe("groups.events router", () => {
     });
   });
 
-  it("returns grouped RSVP counts for calendar events", async () => {
-    const mock = createDbMock({
-      select: [
-        [{ id: VIEWER_ID }],
-        [{ event: buildGroupEventRow() }],
-        [],
-        [],
-        [{ group_event_id: EVENT_ID, acceptedRsvpCount: 2 }],
-      ],
-    });
-    const caller = createCaller(mock.db);
-
-    const result = await caller.events.myCalendarGroupEvents({ startsAfter: NOW.toISOString() });
-
-    expect(result.items).toHaveLength(1);
-    expect(result.items[0]).toMatchObject({
-      id: EVENT_ID,
-      acceptedRsvpCount: 2,
-    });
-  });
-
   it("blocks members-only event detail for non-members", async () => {
     const mock = createDbMock({
       select: [

@@ -77,6 +77,7 @@ export function createAthleteIntelligenceRouter(
       .input(athleteReadModelRequestSchema)
       .output(athleteReadModelSchema)
       .query(async ({ ctx, input }) => {
+        const profileId = input.profileId ?? ctx.session.user.id;
         const requestsMetrics = Boolean(
           input.sections.publishedState ||
             input.sections.status ||
@@ -88,7 +89,7 @@ export function createAthleteIntelligenceRouter(
         const requestsActivities = Boolean(
           input.sections.activityAnalytics || input.sections.trendInsights,
         );
-        if (ctx.session.user.id !== input.profileId && requestsMetrics && requestsActivities) {
+        if (ctx.session.user.id !== profileId && requestsMetrics && requestsActivities) {
           throw new TRPCError({
             code: "FORBIDDEN",
             message: "Delegated AthleteReadModel requests must use one consent scope",
@@ -96,7 +97,7 @@ export function createAthleteIntelligenceRouter(
         }
         return readProfileWithAthleteConsent({
           ctx,
-          profileId: input.profileId,
+          profileId,
           scope: requestsActivities ? "activities" : "metrics",
           deniedCode: "FORBIDDEN",
           deniedMessage: "Not authorized",
@@ -104,7 +105,7 @@ export function createAthleteIntelligenceRouter(
           read: (authorizedDb) =>
             readModel({
               db: authorizedDb,
-              profileId: input.profileId,
+              profileId,
               sections: input.sections,
               now: new Date(),
             }),

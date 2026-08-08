@@ -1,4 +1,8 @@
-import { canonicalActivityCategorySchema, templateApplyInputSchema } from "@repo/core";
+import {
+  canonicalActivityCategorySchema,
+  dateOnlySchema,
+  templateApplyInputSchema,
+} from "@repo/core";
 import { z } from "zod";
 import {
   applyTrainingPlanTemplateUseCase,
@@ -39,8 +43,8 @@ const reorderTrainingPlanActivitiesInputSchema = z
         z
           .object({
             event_id: z.string().uuid(),
-            expected_scheduled_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-            requested_scheduled_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+            expected_scheduled_date: dateOnlySchema,
+            requested_scheduled_date: dateOnlySchema,
           })
           .strict()
           .refine((change) => change.expected_scheduled_date !== change.requested_scheduled_date, {

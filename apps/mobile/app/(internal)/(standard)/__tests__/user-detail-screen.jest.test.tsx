@@ -162,9 +162,6 @@ jest.mock("@/lib/api", () => ({
       followUser: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
       unfollowUser: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
     },
-    integrations: {
-      list: { useQuery: () => ({ data: [{ provider: "strava" }] }) },
-    },
     messaging: {
       getOrCreateDM: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
     },

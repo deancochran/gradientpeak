@@ -29,8 +29,11 @@ export function RouteEventAttachment({ routeId }: { routeId: string }) {
     [eventsQuery.data?.items],
   );
   const attachMutation = api.events.update.useMutation({
-    onSuccess: async () => {
-      await utils.events.invalidate();
+    onSuccess: async (event) => {
+      await Promise.all([
+        utils.calendar.invalidate(),
+        utils.events.getById.invalidate({ id: event.id }),
+      ]);
       toast.success("Route attached to event");
     },
     onError: (error) => toast.error(error.message || "Route attachment failed"),

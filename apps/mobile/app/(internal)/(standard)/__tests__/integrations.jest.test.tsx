@@ -95,13 +95,6 @@ jest.mock("@/lib/api", () => ({
       },
     },
     integrations: {
-      list: {
-        useQuery: () => ({
-          data: [{ provider: "strava" }],
-          refetch: refetchMock,
-          isLoading: false,
-        }),
-      },
       getSyncOverview: {
         useQuery: () => ({
           data:

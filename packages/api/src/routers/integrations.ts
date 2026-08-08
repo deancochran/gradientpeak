@@ -175,9 +175,9 @@ export const integrationsRouter = createTRPCRouter({
   getSyncOverview: protectedProcedure.query(async ({ ctx }) => {
     const db = getRequiredDb(ctx);
     const profileId = ctx.session.user.id;
-    const [overview, imported] = await Promise.all([
+    const [overview, setupData] = await Promise.all([
       getProviderSyncOverview({ db, profileId }),
-      new WahooProfileSetupService({ db }).getImportedOnboardingValues(profileId),
+      new WahooProfileSetupService({ db }).getSetupData(profileId),
     ]);
     return parseBoundaryValue(
       syncOverviewSchema,
@@ -185,10 +185,10 @@ export const integrationsRouter = createTRPCRouter({
         ...provider,
         setupData: {
           ...provider.setupData,
-          values: imported.values,
-          profile: imported.profile,
+          values: setupData.values,
+          profile: setupData.profile,
           sources: Object.fromEntries(
-            Object.entries(imported.sources).map(([field, source]) => [
+            Object.entries(setupData.sources).map(([field, source]) => [
               field,
               { label: source.label },
             ]),

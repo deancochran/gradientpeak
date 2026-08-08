@@ -650,6 +650,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         .select({
           id: schema.events.id,
           startsAt: schema.events.starts_at,
+          timezone: schema.events.timezone,
           activityPlan: {
             id: schema.activityPlans.id,
             name: schema.activityPlans.name,
@@ -687,6 +688,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         id: row.id,
         routeId: row.routeId,
         startsAt: row.startsAt.toISOString(),
+        timezone: row.timezone,
         activityPlan,
       };
     },
@@ -1036,6 +1038,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         .select({
           eventId: schema.events.id,
           startsAt: schema.events.starts_at,
+          timezone: schema.events.timezone,
           activityPlan: {
             description: schema.activityPlans.description,
             id: schema.activityPlans.id,
@@ -1096,6 +1099,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         activityPlan: row.activityPlan,
         eventId: row.eventId,
         startsAt: row.startsAt.toISOString(),
+        timezone: row.timezone,
       }));
     },
 

@@ -30,7 +30,7 @@ import type {
   OnboardingData,
   OnboardingFieldSources,
   OnboardingStatusModal,
-  ProviderSyncStatus,
+  WahooSetupStatus,
 } from "./types";
 
 type SocialActionJob = { key: string; run: () => Promise<unknown> };
@@ -58,7 +58,6 @@ export function useOnboardingFlow() {
   const [data, setData] = useState<OnboardingData>(INITIAL_ONBOARDING_DATA);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [providerSyncStarted, setProviderSyncStarted] = useState(false);
   const [debouncedUsername, setDebouncedUsername] = useState("");
   const [touchedFields, setTouchedFields] = useState<Set<keyof OnboardingData>>(() => new Set());
   const [clearedFields, setClearedFields] = useState<Set<keyof OnboardingData>>(() => new Set());
@@ -116,7 +115,6 @@ export function useOnboardingFlow() {
     setData(INITIAL_ONBOARDING_DATA);
     setCurrentStepIndex(0);
     setIsSubmitting(false);
-    setProviderSyncStarted(false);
     setDebouncedUsername("");
     setTouchedFields(new Set());
     setClearedFields(new Set());
@@ -208,8 +206,7 @@ export function useOnboardingFlow() {
               .map(([key]) => key),
           );
           const restoredSteps = getOnboardingSteps({
-            providerSyncStarted: false,
-            canContinueProviderSync: true,
+            canContinueWahooSetup: true,
             isUsernameAvailable: true,
           }).filter((step) => step.shouldShow(recoveredData));
           setCurrentStepIndex(
@@ -331,7 +328,7 @@ export function useOnboardingFlow() {
   }, [debouncedUsername, username]);
 
   const refreshIntegrationState = useCallback(() => {
-    void syncOverviewQuery.refetch();
+    return syncOverviewQuery.refetch();
   }, [syncOverviewQuery.refetch]);
 
   useEffect(() => {
@@ -398,32 +395,15 @@ export function useOnboardingFlow() {
   const wahooSyncOverview = syncOverviewQuery.data?.find(
     (provider) => provider.provider === "wahoo",
   );
-  const providerSyncStatus = useMemo<ProviderSyncStatus | undefined>(() => {
-    if (!wahooSyncOverview || !providerSyncStarted) return undefined;
+  const wahooSetupStatus = useMemo<WahooSetupStatus | undefined>(() => {
+    if (!wahooSyncOverview) return undefined;
     const setupStatus = wahooSyncOverview.setupData.status;
-    const status =
-      setupStatus === "refreshing"
-        ? "running"
-        : setupStatus === "refreshed"
-          ? "succeeded"
-          : setupStatus === "failed"
-            ? "failed"
-            : "idle";
     return {
-      status,
+      status: setupStatus,
       canContinue: setupStatus !== "refreshing",
-      providers: [
-        {
-          provider: "wahoo",
-          status: setupStatus,
-          blocking: setupStatus === "refreshing",
-          ...(wahooSyncOverview.setupData.lastError
-            ? { message: wahooSyncOverview.setupData.lastError }
-            : {}),
-        },
-      ],
+      lastError: wahooSyncOverview.setupData.lastError,
     };
-  }, [providerSyncStarted, wahooSyncOverview]);
+  }, [wahooSyncOverview]);
 
   useEffect(() => {
     const importedValues = wahooSyncOverview?.setupData;
@@ -502,11 +482,10 @@ export function useOnboardingFlow() {
     }
   }, [profile?.full_name, profile?.username, touchedFields, updateData]);
 
-  const retryProviderSync = async () => {
+  const retryWahooSetup = async () => {
     const result = await syncOverviewQuery.refetch();
     const provider = result.data?.find((item) => item.provider === "wahoo");
     if (!provider?.connected || !provider.actions.includes("refresh_setup_data")) return;
-    setProviderSyncStarted(true);
     await refreshSetupDataMutation.mutateAsync({ provider: "wahoo" });
     await syncOverviewQuery.refetch();
   };
@@ -514,8 +493,7 @@ export function useOnboardingFlow() {
   const steps = useMemo(
     () =>
       getOnboardingSteps({
-        providerSyncStarted,
-        canContinueProviderSync: !providerSyncStarted || (providerSyncStatus?.canContinue ?? true),
+        canContinueWahooSetup: wahooSetupStatus?.canContinue ?? true,
         isUsernameAvailable:
           usernameIsReadyToCheck &&
           !usernameAvailabilityQuery.isError &&
@@ -523,8 +501,7 @@ export function useOnboardingFlow() {
           usernameAvailabilityQuery.data?.available === true,
       }),
     [
-      providerSyncStarted,
-      providerSyncStatus?.canContinue,
+      wahooSetupStatus?.canContinue,
       usernameAvailabilityQuery.data?.available,
       usernameAvailabilityQuery.isError,
       usernameAvailabilityQuery.isFetching,
@@ -536,10 +513,8 @@ export function useOnboardingFlow() {
   const isLastStep = currentStepIndex === activeSteps.length - 1;
   const isStepValid = currentStep?.isValid(data) ?? true;
   const canSkipStep = !isLastStep && (currentStep?.canSkip ?? false);
-  const isProviderSyncBlocking =
-    currentStep?.id === "connect_import" &&
-    providerSyncStarted &&
-    providerSyncStatus?.status === "running";
+  const isWahooSetupBlocking =
+    currentStep?.id === "connect_import" && wahooSetupStatus?.status === "refreshing";
   const isBusy =
     isRecoveryLoading ||
     isSubmitting ||
@@ -1014,17 +989,16 @@ export function useOnboardingFlow() {
       const provider = result.data?.find((item) => item.provider === "wahoo");
 
       if (
-        !providerSyncStarted &&
         provider?.connected &&
-        provider.actions.includes("refresh_setup_data")
+        provider.actions.includes("refresh_setup_data") &&
+        provider.setupData.status === "idle"
       ) {
-        setProviderSyncStarted(true);
         try {
           await refreshSetupDataMutation.mutateAsync({ provider: "wahoo" });
           await syncOverviewQuery.refetch();
         } catch (error) {
           console.error(error);
-          setStatusModal({ title: "Error", description: "Failed to sync connected providers." });
+          setStatusModal({ title: "Error", description: "Failed to refresh Wahoo setup data." });
         }
         return;
       }
@@ -1074,11 +1048,14 @@ export function useOnboardingFlow() {
     handleSkip,
     isBusy,
     isLastStep,
-    isProviderSyncBlocking,
+    isWahooSetupBlocking,
     isStepValid,
-    providerSyncStatus,
+    wahooSetupStatus,
+    integrationOverview: syncOverviewQuery.data,
+    integrationOverviewError: syncOverviewQuery.error,
+    integrationOverviewLoading: syncOverviewQuery.isLoading,
     refreshIntegrationState,
-    retryProviderSync,
+    retryWahooSetup,
     setStatusModal,
     statusModal,
     updateData,

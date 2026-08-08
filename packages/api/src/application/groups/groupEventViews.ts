@@ -6,7 +6,7 @@ import {
   groupMemberships,
   groups,
 } from "@repo/db";
-import { and, asc, count, eq, gte, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 
 const GROUP_EVENT_RSVP_STATUS_ACCEPTED = GROUP_EVENT_RSVP_STATUSES[0];
@@ -189,8 +189,8 @@ export async function getAcceptedRsvpCount(
 export async function readSelectedGroupEventsForCalendar(input: {
   db: ReturnType<typeof getRequiredDb>;
   profileId: string;
-  startsAt: Date;
-  endsAtExclusive: Date;
+  startDate: string;
+  endDateExclusive: string;
   limit: number;
 }) {
   const visibility = or(
@@ -217,8 +217,8 @@ export async function readSelectedGroupEventsForCalendar(input: {
         visibility,
         isNull(groupEvents.cancelled_at),
         or(isNull(groupEvents.recurrence_rule), isNotNull(groupEvents.series_id)),
-        gte(groupEvents.starts_at, input.startsAt),
-        lt(groupEvents.starts_at, input.endsAtExclusive),
+        sql`(${groupEvents.starts_at} at time zone ${groupEvents.timezone})::date >= ${input.startDate}::date`,
+        sql`(${groupEvents.starts_at} at time zone ${groupEvents.timezone})::date < ${input.endDateExclusive}::date`,
       ),
     )
     .orderBy(asc(groupEvents.starts_at), asc(groupEvents.id))
@@ -255,8 +255,8 @@ export async function readSelectedGroupEventsForCalendar(input: {
           eq(groupEventRsvps.status, GROUP_EVENT_RSVP_STATUS_ACCEPTED),
         ),
         isNull(groupEvents.cancelled_at),
-        gte(groupEvents.starts_at, input.startsAt),
-        lt(groupEvents.starts_at, input.endsAtExclusive),
+        sql`(${groupEvents.starts_at} at time zone ${groupEvents.timezone})::date >= ${input.startDate}::date`,
+        sql`(${groupEvents.starts_at} at time zone ${groupEvents.timezone})::date < ${input.endDateExclusive}::date`,
       ),
     )
     .orderBy(asc(groupEvents.starts_at), asc(groupEvents.id))

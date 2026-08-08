@@ -3,7 +3,6 @@ import { activityPlanStructureSchema, materializeRecurrenceOccurrences } from "@
 import {
   createOneOffGroupEventInputSchema,
   createRecurringEventSeriesInputSchema,
-  GROUP_EVENT_RSVP_STATUSES,
   listOneOffGroupEventsInputSchema,
   rsvpEventSeriesInputSchema,
   rsvpOneOffGroupEventInputSchema,
@@ -37,7 +36,6 @@ import {
 import { getRequiredDb } from "../../db";
 import { createTRPCRouter, protectedProcedure } from "../../trpc";
 import {
-  GROUP_ACCESS_LEVEL_PUBLIC,
   GROUP_MEMBERSHIP_STATUS_ACTIVE,
   getActiveGroupMembership,
   getCurrentProfileId,
@@ -57,9 +55,7 @@ const seriesOccurrencesInputSchema = groupEventIdInputSchema.extend({
   cursor: z.string().min(1).nullable().optional(),
   limit: z.number().int().min(1).max(50).default(20),
 });
-const myCalendarGroupEventsInputSchema = listOneOffGroupEventsInputSchema.omit({ groupId: true });
-
-const GROUP_EVENT_RSVP_STATUS_ACCEPTED = GROUP_EVENT_RSVP_STATUSES[0];
+const myUpcomingGroupEventsInputSchema = listOneOffGroupEventsInputSchema.omit({ groupId: true });
 
 type MaterializedGroupEventOccurrence = {
   endsAt: string | null;
@@ -422,7 +418,7 @@ export const groupEventsRouter = createTRPCRouter({
   }),
 
   myUpcomingGroupEvents: protectedProcedure
-    .input(myCalendarGroupEventsInputSchema)
+    .input(myUpcomingGroupEventsInputSchema)
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const profileId = await getCurrentProfileId(db, ctx.session.user.id);
@@ -881,106 +877,5 @@ export const groupEventsRouter = createTRPCRouter({
         }),
         rsvp: serializeSeriesRsvp(rsvp as GroupEventSeriesRsvpRow),
       };
-    }),
-
-  myCalendarGroupEvents: protectedProcedure
-    .input(myCalendarGroupEventsInputSchema)
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const profileId = await getCurrentProfileId(db, ctx.session.user.id);
-      const cursorFilter = await getGroupEventCursorFilter(db, null, input.cursor);
-
-      const occurrenceRsvpRows = await db
-        .select({ event: groupEvents })
-        .from(groupEventRsvps)
-        .innerJoin(groupEvents, eq(groupEvents.id, groupEventRsvps.group_event_id))
-        .innerJoin(groups, eq(groups.id, groupEvents.group_id))
-        .leftJoin(
-          groupMemberships,
-          and(eq(groupMemberships.group_id, groups.id), eq(groupMemberships.profile_id, profileId)),
-        )
-        .where(
-          and(
-            eq(groupEventRsvps.profile_id, profileId),
-            eq(groupEventRsvps.status, GROUP_EVENT_RSVP_STATUS_ACCEPTED),
-            isNull(groups.deleted_at),
-            or(
-              eq(groups.access_level, GROUP_ACCESS_LEVEL_PUBLIC),
-              eq(groupMemberships.status, GROUP_MEMBERSHIP_STATUS_ACTIVE),
-            ),
-            input.includeCancelled ? undefined : isNull(groupEvents.cancelled_at),
-            // Series roots are scheduling templates; calendar lists should show concrete events.
-            or(isNull(groupEvents.recurrence_rule), isNotNull(groupEvents.series_id)),
-            input.startsAfter ? gte(groupEvents.starts_at, new Date(input.startsAfter)) : undefined,
-            input.startsBefore
-              ? lte(groupEvents.starts_at, new Date(input.startsBefore))
-              : undefined,
-            cursorFilter,
-          ),
-        )
-        .orderBy(asc(groupEvents.starts_at), asc(groupEvents.id))
-        .limit(input.limit + 1);
-
-      const seriesOccurrenceRows = await db
-        .select({ event: groupEvents })
-        .from(groupEventSeriesRsvps)
-        .innerJoin(
-          groupEvents,
-          eq(groupEvents.series_id, groupEventSeriesRsvps.group_event_series_id),
-        )
-        .innerJoin(groups, eq(groups.id, groupEvents.group_id))
-        .leftJoin(
-          groupMemberships,
-          and(eq(groupMemberships.group_id, groups.id), eq(groupMemberships.profile_id, profileId)),
-        )
-        .leftJoin(
-          groupEventRsvps,
-          and(
-            eq(groupEventRsvps.group_event_id, groupEvents.id),
-            eq(groupEventRsvps.profile_id, profileId),
-          ),
-        )
-        .where(
-          and(
-            eq(groupEventSeriesRsvps.profile_id, profileId),
-            eq(groupEventSeriesRsvps.status, GROUP_EVENT_RSVP_STATUS_ACCEPTED),
-            isNotNull(groupEvents.series_id),
-            isNull(groups.deleted_at),
-            or(
-              eq(groups.access_level, GROUP_ACCESS_LEVEL_PUBLIC),
-              eq(groupMemberships.status, GROUP_MEMBERSHIP_STATUS_ACTIVE),
-            ),
-            // A declined or tentative occurrence RSVP overrides accepted series RSVP calendar inclusion.
-            or(
-              isNull(groupEventRsvps.profile_id),
-              eq(groupEventRsvps.status, GROUP_EVENT_RSVP_STATUS_ACCEPTED),
-            ),
-            input.includeCancelled ? undefined : isNull(groupEvents.cancelled_at),
-            gte(
-              groupEvents.starts_at,
-              input.startsAfter ? new Date(input.startsAfter) : new Date(),
-            ),
-            input.startsBefore
-              ? lte(groupEvents.starts_at, new Date(input.startsBefore))
-              : undefined,
-            cursorFilter,
-          ),
-        )
-        .orderBy(asc(groupEvents.starts_at), asc(groupEvents.id))
-        .limit(input.limit + 1);
-
-      const eventById = new Map<string, GroupEventRow>();
-      for (const row of [...occurrenceRsvpRows, ...seriesOccurrenceRows]) {
-        eventById.set(row.event.id, row.event);
-      }
-      const rows = Array.from(eventById.values())
-        .sort((a, b) => {
-          const startsAtDiff = a.starts_at.getTime() - b.starts_at.getTime();
-          return startsAtDiff !== 0 ? startsAtDiff : a.id.localeCompare(b.id);
-        })
-        .slice(0, input.limit + 1);
-
-      const items = await serializeGroupEventsForViewer(db, rows, profileId);
-      return pageResult(items, input.limit, (event) => event.id);
     }),
 });

@@ -9,7 +9,7 @@ const planId = "11111111-1111-4111-8111-111111111111";
 const firstEventId = "22222222-2222-4222-8222-222222222222";
 const secondEventId = "33333333-3333-4333-8333-333333333333";
 const mocks = vi.hoisted(() => ({
-  invalidateEvents: vi.fn(),
+  invalidateCalendar: vi.fn(),
   refetchEvents: vi.fn(),
   reorderActivities: vi.fn(),
   eventItems: [
@@ -32,7 +32,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../lib/api/client", () => ({
   api: {
-    useUtils: () => ({ events: { invalidate: mocks.invalidateEvents } }),
+    useUtils: () => ({ calendar: { invalidate: mocks.invalidateCalendar } }),
     calendar: {
       range: {
         useQuery: () => ({
@@ -91,6 +91,7 @@ describe("TrainingPlanActivityReorder", () => {
         },
       ],
     });
+    expect(mocks.invalidateCalendar).toHaveBeenCalledOnce();
     expect(await screen.findByText("Activity schedule saved.")).toBeTruthy();
   });
 

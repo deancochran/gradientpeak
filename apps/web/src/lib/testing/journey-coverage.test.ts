@@ -33,7 +33,7 @@ describe("web mobile-journey coverage manifest", () => {
       ),
     ].sort();
 
-    expect(requiredFeatureIds).toHaveLength(53);
+    expect(requiredFeatureIds).toHaveLength(50);
     expect(mappedFeatureIds).toEqual(requiredFeatureIds);
     expect(mappedFeatureIds).not.toContain("coaching.dashboard");
 
@@ -61,8 +61,8 @@ describe("web mobile-journey coverage manifest", () => {
       syntaxChecked: 0,
     });
     expect(report.features).toMatchObject({
-      declared: 53,
-      denominator: 53,
+      declared: 50,
+      denominator: 50,
       percentage: 0,
       runtimeVerified: 0,
       syntaxChecked: 0,

@@ -352,6 +352,7 @@ export class WahooActivityHistoryJobService {
                 workerId,
               });
             if (run.status === "completed") {
+              importRunCompleted = true;
               const finalized = await completeHistoryJob(
                 run,
                 Math.max(1, Math.ceil(run.discovered_count / DEFAULT_PAGE_SIZE)),
@@ -362,9 +363,16 @@ export class WahooActivityHistoryJobService {
             const client = (this.deps.wahooClientFactory ?? createDefaultWahooClient)(
               resolvedIntegration,
             );
+            // A running Wahoo run with no next page has durably committed its terminal
+            // page. It is waiting only for completion/freshness finalization, not for
+            // page one to be retried.
             let page = run.next_page ?? 1;
-            let terminal = false;
-            for (let pageOffset = 0; pageOffset < MAX_PAGES_PER_LEASE; pageOffset += 1) {
+            let terminal = run.next_page === null;
+            for (
+              let pageOffset = 0;
+              !terminal && pageOffset < MAX_PAGES_PER_LEASE;
+              pageOffset += 1
+            ) {
               await assertActive();
               const pageResult = await client.listWorkoutSummaries({
                 endDate: historyEnd,
@@ -482,7 +490,10 @@ export class WahooActivityHistoryJobService {
             if (!completedRun) throw new Error("activity_import_run_completion_lost");
             run = completedRun;
             importRunCompleted = true;
-            const finalized = await completeHistoryJob(run, page);
+            const finalized = await completeHistoryJob(
+              run,
+              Math.max(page, Math.ceil(run.discovered_count / DEFAULT_PAGE_SIZE), 1),
+            );
             if (finalized === false) return "failed";
             logger.info("Wahoo activity history import completed", {
               discoveredCount: boundedImportTelemetryCount(run.discovered_count),

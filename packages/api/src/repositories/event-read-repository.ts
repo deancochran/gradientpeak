@@ -13,6 +13,7 @@ export interface EventListOwnedInput {
   cursor?: { id: string; startsAt: string };
   dateFrom?: string;
   dateTo?: string;
+  planningTimezone?: string;
   eventTypes?: EventCompletionEventRecord["event_type"][];
   includeAdhoc?: boolean;
   limit: number;

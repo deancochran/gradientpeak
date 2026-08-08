@@ -585,12 +585,16 @@ async function addEventLifecycleStatus<
   },
 >(
   events: T[],
-  ctx: { repository: ReturnType<typeof createEventReadRepository>; profileId: string },
+  ctx: {
+    repository: ReturnType<typeof createEventReadRepository>;
+    profileId: string;
+    planningTimezone: string;
+  },
 ): Promise<Array<T & { status: EventLifecycleStatus }>> {
   if (events.length === 0) return [];
 
   const statusContext: EventStatusContext = {
-    todayDateKey: toDateKey(new Date().toISOString()),
+    todayDateKey: getCalendarDateInIanaZone(new Date().toISOString(), ctx.planningTimezone),
   };
 
   return events.map((event) => ({
@@ -775,8 +779,9 @@ async function readPersonalCalendarRange(
       profileId,
       limit: input.limit + 1,
       includeAdhoc: input.includeAdhoc,
-      dateFrom: toDayStartIso(input.startDate, planningTimezone),
-      dateTo: toDayStartIso(input.endDateExclusive, planningTimezone),
+      dateFrom: input.startDate,
+      dateTo: input.endDateExclusive,
+      planningTimezone,
       ...(input.trainingPlanId === undefined ? {} : { trainingPlanId: input.trainingPlanId }),
       ...(input.activityPlanId === undefined ? {} : { activityPlanId: input.activityPlanId }),
       ...(input.activityCategory === undefined ? {} : { activityCategory: input.activityCategory }),
@@ -792,7 +797,12 @@ async function readPersonalCalendarRange(
   }
   const rows = listedEvents ?? [];
   const hasMore = rows.length > input.limit;
-  const projectedRows = rows.slice(0, input.limit) as PlannedEventRecord[];
+  const projectedRows = (rows.slice(0, input.limit) as PlannedEventRecord[]).map((event) => ({
+    ...event,
+    scheduled_date: event.all_day
+      ? event.scheduled_date
+      : getCalendarDateInIanaZone(event.starts_at, planningTimezone),
+  }));
   const events = mapEvents(projectedRows);
   const plans = events
     .map((event) => event.activity_plan)
@@ -812,6 +822,7 @@ async function readPersonalCalendarRange(
   const items = await addEventLifecycleStatus(enriched, {
     repository,
     profileId,
+    planningTimezone,
   });
   const startAt = toDayStartIso(input.startDate, planningTimezone);
   const endsAtExclusive = toDayStartIso(input.endDateExclusive, planningTimezone);
@@ -831,8 +842,8 @@ async function readPersonalCalendarRange(
     readSelectedGroupEventsForCalendar({
       db: getRequiredDb(ctx),
       profileId,
-      startsAt: new Date(startAt),
-      endsAtExclusive: new Date(endsAtExclusive),
+      startDate: input.startDate,
+      endDateExclusive: input.endDateExclusive,
       limit: CALENDAR_PROJECTION_SOURCE_LIMIT,
     }),
   ]);
@@ -872,7 +883,7 @@ async function readPersonalCalendarRange(
   const groupActivityPlanById = new Map(groupActivityPlans.map((plan) => [plan.id, plan]));
   const groupEvents = selectedGroupEvents.items.map((event) => ({
     ...event,
-    scheduled_date: getCalendarDateInIanaZone(event.starts_at, planningTimezone),
+    scheduled_date: getCalendarDateInIanaZone(event.starts_at, event.timezone),
     selectedActivityPlan: event.activity_plan_id
       ? (groupActivityPlanById.get(event.activity_plan_id) ?? null)
       : null,

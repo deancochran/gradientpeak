@@ -1,3 +1,4 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -33,6 +34,37 @@ import {
   shiftMonthKey,
   toDateKey,
 } from "../../../lib/planning";
+
+type CalendarRangeOutput = inferRouterOutputs<AppRouter>["calendar"]["range"];
+type CalendarProjectionItem =
+  | { date: string; id: string; kind: "event"; title: string; value: PlanningEvent }
+  | {
+      date: string;
+      id: string;
+      kind: "activity";
+      title: string;
+      value: CalendarRangeOutput["completedActivities"]["items"][number];
+    }
+  | {
+      date: string;
+      id: string;
+      kind: "group";
+      title: string;
+      value: CalendarRangeOutput["selectedGroupEvents"]["items"][number];
+    };
+
+function getProjectionItemStart(item: CalendarProjectionItem): string {
+  return item.kind === "activity" ? item.value.started_at : (item.value.starts_at ?? "");
+}
+
+function formatProjectionItemTime(item: CalendarProjectionItem, planningTimezone: string) {
+  if (item.kind !== "activity") return formatEventTimeRange(item.value);
+  return new Date(item.value.started_at).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: planningTimezone,
+  });
+}
 
 export const Route = createFileRoute("/_protected/calendar/")({
   validateSearch: (
@@ -89,23 +121,65 @@ function CalendarIndexPage() {
     () => ((eventsQuery.data?.items ?? []) as PlanningEvent[]).slice().sort(compareEventsByStart),
     [eventsQuery.data?.items],
   );
-  const eventsByDate = useMemo(() => {
-    const grouped = new Map<string, PlanningEvent[]>();
-    for (const event of events) {
-      const dateKey = event.scheduled_date;
-      if (!dateKey) continue;
-      const bucket = grouped.get(dateKey) ?? [];
-      bucket.push(event);
-      grouped.set(dateKey, bucket);
+  const projectionItems = useMemo(() => {
+    const items: CalendarProjectionItem[] = events.flatMap((event) =>
+      event.scheduled_date
+        ? [
+            {
+              date: event.scheduled_date,
+              id: event.id,
+              kind: "event" as const,
+              title: getEventTitle(event),
+              value: event,
+            },
+          ]
+        : [],
+    );
+    for (const activity of eventsQuery.data?.completedActivities.items ?? []) {
+      items.push({
+        date: activity.scheduled_date,
+        id: activity.id,
+        kind: "activity",
+        title: activity.name?.trim() || "Completed activity",
+        value: activity,
+      });
+    }
+    for (const event of eventsQuery.data?.selectedGroupEvents.items ?? []) {
+      items.push({
+        date: event.scheduled_date,
+        id: event.id,
+        kind: "group",
+        title: event.title,
+        value: event,
+      });
+    }
+    return items.sort((left, right) => {
+      const dateOrder = left.date.localeCompare(right.date);
+      if (dateOrder !== 0) return dateOrder;
+      const leftStart = getProjectionItemStart(left);
+      const rightStart = getProjectionItemStart(right);
+      return leftStart.localeCompare(rightStart) || left.id.localeCompare(right.id);
+    });
+  }, [
+    events,
+    eventsQuery.data?.completedActivities.items,
+    eventsQuery.data?.selectedGroupEvents.items,
+  ]);
+  const projectionItemsByDate = useMemo(() => {
+    const grouped = new Map<string, CalendarProjectionItem[]>();
+    for (const item of projectionItems) {
+      const bucket = grouped.get(item.date) ?? [];
+      bucket.push(item);
+      grouped.set(item.date, bucket);
     }
     return grouped;
-  }, [events]);
+  }, [projectionItems]);
   const goalDates = useMemo(
     () => new Set((eventsQuery.data?.goals?.items ?? []).map((goal) => goal.target_date)),
     [eventsQuery.data?.goals?.items],
   );
   const gridDays = useMemo(() => getCalendarGrid(month), [month]);
-  const monthEventDays = eventsByDate.size;
+  const monthEventDays = projectionItemsByDate.size;
 
   return (
     <div className="space-y-6">
@@ -187,8 +261,8 @@ function CalendarIndexPage() {
 
       <div className="grid gap-4 md:grid-cols-3">
         <SummaryCard
-          title="Scheduled events"
-          value={events.length}
+          title="Calendar items"
+          value={projectionItems.length}
           description="Across this month"
         />
         <SummaryCard
@@ -263,7 +337,7 @@ function CalendarIndexPage() {
               <div className="grid grid-cols-7 gap-2">
                 {gridDays.map((date) => {
                   const dateKey = toDateKey(date);
-                  const dayEvents = eventsByDate.get(dateKey) ?? [];
+                  const dayEvents = projectionItemsByDate.get(dateKey) ?? [];
                   const isCurrentMonth = date.getMonth() === parseInt(month.slice(5, 7), 10) - 1;
                   const hasGoal = goalDates.has(dateKey);
 
@@ -287,10 +361,10 @@ function CalendarIndexPage() {
                       <div className="mt-3 space-y-1">
                         {dayEvents.slice(0, 2).map((event) => (
                           <div
-                            key={event.id}
+                            key={`${event.kind}-${event.id}`}
                             className="truncate rounded-md bg-muted px-2 py-1 text-xs"
                           >
-                            {getEventTitle(event)}
+                            {event.title}
                           </div>
                         ))}
                         {dayEvents.length > 2 ? (
@@ -315,7 +389,7 @@ function CalendarIndexPage() {
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-7">
               {weekWindow.days.map((dateKey) => {
-                const dayEvents = eventsByDate.get(dateKey) ?? [];
+                const dayEvents = projectionItemsByDate.get(dateKey) ?? [];
                 return (
                   <div key={dateKey} className="min-h-40 rounded-xl border p-3">
                     <Link
@@ -327,17 +401,31 @@ function CalendarIndexPage() {
                       {formatShortDayLabel(dateKey)}
                     </Link>
                     <div className="mt-3 space-y-2">
-                      {dayEvents.map((event) => (
-                        <Link
-                          key={event.id}
-                          to="/calendar/events/$eventId"
-                          params={{ eventId: event.id }}
-                          search={{ flash: undefined, flashType: undefined, month, view }}
-                          className="block rounded-md bg-muted p-2 text-xs hover:bg-accent"
-                        >
-                          {getEventTitle(event)}
-                        </Link>
-                      ))}
+                      {dayEvents.map((event) =>
+                        event.kind === "event" ? (
+                          <Link
+                            key={`${event.kind}-${event.id}`}
+                            to="/calendar/events/$eventId"
+                            params={{ eventId: event.id }}
+                            search={{ flash: undefined, flashType: undefined, month, view }}
+                            className="block rounded-md bg-muted p-2 text-xs hover:bg-accent"
+                          >
+                            {event.title}
+                          </Link>
+                        ) : (
+                          <a
+                            className="block rounded-md bg-muted p-2 text-xs hover:bg-accent"
+                            href={
+                              event.kind === "activity"
+                                ? `/activities/${event.id}`
+                                : `/groups/events/${event.id}`
+                            }
+                            key={`${event.kind}-${event.id}`}
+                          >
+                            {event.title}
+                          </a>
+                        ),
+                      )}
                       <a
                         href={`/calendar/new?date=${dateKey}&type=custom`}
                         className="block text-xs text-primary hover:underline"
@@ -363,37 +451,58 @@ function CalendarIndexPage() {
             <CardContent>
               {eventsQuery.isLoading ? (
                 <p className="text-sm text-muted-foreground">Loading agenda...</p>
-              ) : events.length > 0 ? (
+              ) : projectionItems.length > 0 ? (
                 <div className="space-y-3">
-                  {events.map((event) => (
-                    <Link
-                      key={event.id}
-                      to="/calendar/events/$eventId"
-                      params={{ eventId: event.id }}
-                      search={{ flash: undefined, flashType: undefined, month, view }}
-                      className="block rounded-xl border p-4 transition-colors hover:border-primary hover:bg-accent/40"
-                    >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  {projectionItems.map((item) => {
+                    const content = (
+                      <div
+                        className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+                        key={`content-${item.kind}-${item.id}`}
+                      >
                         <div>
-                          <p className="font-medium">{getEventTitle(event)}</p>
+                          <p className="font-medium">{item.title}</p>
                           <p className="text-sm text-muted-foreground">
-                            {event.scheduled_date} · {formatEventTimeRange(event)}
+                            {item.date} ·{" "}
+                            {formatProjectionItemTime(item, eventsQuery.data?.timezone ?? "UTC")}
                           </p>
-                          {event.activity_plan?.activity_category ? (
+                          {item.kind === "event" && item.value.activity_plan?.activity_category ? (
                             <p className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">
-                              {event.activity_plan.activity_category}
+                              {item.value.activity_plan.activity_category}
                             </p>
                           ) : null}
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          <Badge variant="outline">{event.event_type ?? "event"}</Badge>
-                          {goalDates.has(event.scheduled_date ?? "") ? (
-                            <Badge>Goal day</Badge>
-                          ) : null}
+                          <Badge variant="outline">
+                            {item.kind === "event" ? (item.value.event_type ?? "event") : item.kind}
+                          </Badge>
+                          {goalDates.has(item.date) ? <Badge>Goal day</Badge> : null}
                         </div>
                       </div>
-                    </Link>
-                  ))}
+                    );
+                    return item.kind === "event" ? (
+                      <Link
+                        key={`${item.kind}-${item.id}`}
+                        to="/calendar/events/$eventId"
+                        params={{ eventId: item.id }}
+                        search={{ flash: undefined, flashType: undefined, month, view }}
+                        className="block rounded-xl border p-4 transition-colors hover:border-primary hover:bg-accent/40"
+                      >
+                        {content}
+                      </Link>
+                    ) : (
+                      <a
+                        className="block rounded-xl border p-4 transition-colors hover:border-primary hover:bg-accent/40"
+                        href={
+                          item.kind === "activity"
+                            ? `/activities/${item.id}`
+                            : `/groups/events/${item.id}`
+                        }
+                        key={`${item.kind}-${item.id}`}
+                      >
+                        {content}
+                      </a>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">No events scheduled this month.</p>

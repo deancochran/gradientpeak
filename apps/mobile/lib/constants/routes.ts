@@ -85,9 +85,6 @@ export const ROUTES = {
 
   // Activity Recording
   RECORD: "/record" as const,
-
-  // Activity Management
-  ACTIVITIES_REORDER: "/activities-reorder" as const,
 } as const;
 
 /**

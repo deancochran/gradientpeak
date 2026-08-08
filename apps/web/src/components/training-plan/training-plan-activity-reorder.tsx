@@ -60,7 +60,7 @@ export function TrainingPlanActivityReorder() {
       const input = buildActivityReorderInput(original, activities);
       if (!input) return;
       await reorder.mutateAsync(input);
-      await Promise.all([utils.events.invalidate(), events.refetch()]);
+      await utils.calendar.invalidate();
       setOriginal(structuredClone(activities));
       setDirty(false);
       setMessage("Activity schedule saved.");

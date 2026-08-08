@@ -14,8 +14,18 @@ for (const unsafeUrl of [
 }
 
 const invocations: string[][] = [];
-resetMvp(defaultLocalDatabaseUrl, (args) => invocations.push(args));
+const seedInvocations: string[][] = [];
+resetMvp(
+  defaultLocalDatabaseUrl,
+  (args) => invocations.push(args),
+  (args) => seedInvocations.push(args),
+);
 assert.deepEqual(invocations, [["db", "reset", "--local"]]);
+assert.deepEqual(seedInvocations, [
+  ["tsx", "scripts/seed-templates.ts"],
+  ["tsx", "scripts/seed-training-plan-templates.ts"],
+  ["tsx", "scripts/verify-system-content-seed.ts"],
+]);
 console.log(
-  "[db:reset:mvp:test] unsafe targets rejected and fixed local-only CLI invocation verified",
+  "[db:reset:mvp:test] unsafe targets rejected; local baseline reset and Core content seeds verified",
 );

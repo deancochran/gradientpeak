@@ -76,7 +76,7 @@ describe("getTrendsLoadState", () => {
     ).toBe(false);
   });
 
-  it("retains independent insight cards when another query fails", () => {
+  it("retains cached read-model insight cards when a refresh fails", () => {
     expect(
       getTrendsLoadState({
         hasError: true,
@@ -87,7 +87,7 @@ describe("getTrendsLoadState", () => {
     ).toEqual({ showInitialLoading: false, showFullError: false, showPartialError: true });
   });
 
-  it("uses the full error only when no independent insight remains", () => {
+  it("uses the full error only when the read model has no insight payload", () => {
     expect(
       getTrendsLoadState({
         hasError: true,

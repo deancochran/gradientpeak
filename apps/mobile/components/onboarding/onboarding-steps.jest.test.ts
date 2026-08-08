@@ -12,8 +12,7 @@ jest.mock("./steps", () => ({
 
 describe("training baseline onboarding validation", () => {
   const baselineStep = getOnboardingSteps({
-    providerSyncStarted: false,
-    canContinueProviderSync: true,
+    canContinueWahooSetup: true,
     isUsernameAvailable: true,
   }).find((step) => step.id === "training_baseline");
 

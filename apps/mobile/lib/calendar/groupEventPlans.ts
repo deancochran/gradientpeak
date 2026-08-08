@@ -1,9 +1,8 @@
-import { toDateKey } from "@/lib/calendar/dateMath";
 import type { CalendarEventActivityPlan } from "@/lib/calendar/normalizeEvents";
 import type { GroupEventListItem } from "@/lib/groups";
 
 export type CalendarGroupEvent = GroupEventListItem & {
-  scheduled_date?: string | null;
+  scheduled_date: string;
   selectedActivityPlan?: CalendarEventActivityPlan | null;
   selectedActivityPlanOptionLabel?: string | null;
   selectedActivityPlanTentative?: boolean;
@@ -13,9 +12,7 @@ export function buildGroupEventsByDate(events: CalendarGroupEvent[]) {
   const map = new Map<string, CalendarGroupEvent[]>();
 
   for (const event of events) {
-    const startsAt = new Date(event.starts_at);
-    if (Number.isNaN(startsAt.getTime())) continue;
-    const dateKey = event.scheduled_date ?? toDateKey(startsAt);
+    const dateKey = event.scheduled_date;
     const items = map.get(dateKey) ?? [];
     items.push(event);
     map.set(dateKey, items);

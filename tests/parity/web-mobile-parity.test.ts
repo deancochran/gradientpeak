@@ -160,10 +160,8 @@ describe("mobile-to-web parity registry", () => {
       "planning.plan_tab": "implemented-unverified",
       "profile.settings": "implemented-unverified",
       "profile.training_preferences": "implemented-unverified",
+      "profile.trends": "implemented",
       "record.launcher": "implemented",
-      "record.plan": "implemented-unverified",
-      "record.route": "implemented",
-      "record.route_preview": "implemented",
       "record.session": "implemented-unverified",
       "record.sensors": "missing",
       "record.ftms": "missing",
@@ -173,7 +171,6 @@ describe("mobile-to-web parity registry", () => {
       "training_plans.detail": "implemented-unverified",
       "training_plans.edit": "implemented-unverified",
       "training_plans.list": "implemented-unverified",
-      "training_plans.reorder_activities": "implemented-unverified",
     } as const;
 
     const mismatches = Object.entries(expectedFeatureStatuses)

@@ -83,6 +83,7 @@ export async function enqueueWahooRelativeTargetRefreshes(input: {
         activityPlan: { ...event.activityPlan, structure: structure.data },
         eventId: event.eventId,
         startsAt: event.startsAt,
+        timezone: event.timezone,
       };
       const beforeProjection = projectWahooPlannedActivity({
         ...projectionInput,

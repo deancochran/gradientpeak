@@ -1,4 +1,4 @@
-import { getCalendarDateInIanaZone } from "@repo/core/calendar";
+import { getCalendarDateInIanaZone, scheduledDateTimeToIsoInstant } from "@repo/core/calendar";
 import { type DrizzleDbClient, schema } from "@repo/db";
 import {
   and,
@@ -711,12 +711,47 @@ export function createEventReadRepository(
 
       if (input.dateFrom) {
         const scheduleDateFrom = input.dateFrom.slice(0, 10);
-        conditions.push(gte(schema.events.scheduled_date, scheduleDateFrom));
+        if (input.planningTimezone) {
+          const startsAtFrom = new Date(
+            scheduledDateTimeToIsoInstant({
+              scheduledDate: scheduleDateFrom,
+              time: "00:00",
+              timeZone: input.planningTimezone,
+            }),
+          );
+          const planningDateLowerBound = or(
+            and(
+              eq(schema.events.all_day, true),
+              gte(schema.events.scheduled_date, scheduleDateFrom),
+            ),
+            and(eq(schema.events.all_day, false), gte(schema.events.starts_at, startsAtFrom)),
+          );
+          if (!planningDateLowerBound) throw new Error("Planning date lower bound is required");
+          conditions.push(planningDateLowerBound);
+        } else {
+          conditions.push(gte(schema.events.scheduled_date, scheduleDateFrom));
+        }
       }
 
       if (input.dateTo) {
         const scheduleDateTo = input.dateTo.slice(0, 10);
-        conditions.push(lt(schema.events.scheduled_date, scheduleDateTo));
+        if (input.planningTimezone) {
+          const startsAtTo = new Date(
+            scheduledDateTimeToIsoInstant({
+              scheduledDate: scheduleDateTo,
+              time: "00:00",
+              timeZone: input.planningTimezone,
+            }),
+          );
+          const planningDateUpperBound = or(
+            and(eq(schema.events.all_day, true), lt(schema.events.scheduled_date, scheduleDateTo)),
+            and(eq(schema.events.all_day, false), lt(schema.events.starts_at, startsAtTo)),
+          );
+          if (!planningDateUpperBound) throw new Error("Planning date upper bound is required");
+          conditions.push(planningDateUpperBound);
+        } else {
+          conditions.push(lt(schema.events.scheduled_date, scheduleDateTo));
+        }
       }
 
       if (input.cursor) {

@@ -50,7 +50,6 @@ jest.mock("@repo/api/client", () => ({
   __esModule: true,
   invalidatePostActivityIngestionQueries: (...args: unknown[]) =>
     (invalidatePostActivityIngestionQueriesMock as jest.Mock)(...args),
-  queryKeys: { activities: { detail: (id: string) => ["activity", id] } },
 }));
 
 jest.mock("expo-file-system", () => ({

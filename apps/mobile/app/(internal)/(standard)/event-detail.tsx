@@ -221,7 +221,6 @@ export default function EventDetailScreen() {
   const createEventFlowRef = useRef<CreateEventFlowHandle>(null);
   const { Stack } = require("expo-router") as typeof import("expo-router");
   const queryClient = useQueryClient();
-  const utils = api.useUtils();
   const {
     id,
     mode,
@@ -301,10 +300,7 @@ export default function EventDetailScreen() {
   });
   const updateEventMutation = api.events.update.useMutation({
     onSuccess: async () => {
-      await Promise.all([
-        utils.events.invalidate(),
-        refreshScheduleViews(queryClient, "eventMutation"),
-      ]);
+      await refreshScheduleViews(queryClient, "eventMutation");
     },
   });
 

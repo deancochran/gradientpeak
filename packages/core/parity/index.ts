@@ -146,35 +146,6 @@ export const parityRegistry = [
   },
   {
     area: "record",
-    backendOperations: [
-      "calendar.day",
-      "events.getById",
-      "activityPlans.getById",
-      "routes.loadFull",
-    ],
-    id: "record.plan",
-    mobileRoute: "/(internal)/record/plan",
-    policy: "required_on_web",
-    title: "Recording plan selector",
-  },
-  {
-    area: "record",
-    backendOperations: ["routes.list"],
-    id: "record.route",
-    mobileRoute: "/(internal)/record/route",
-    policy: "required_on_web",
-    title: "Recording route selector",
-  },
-  {
-    area: "record",
-    backendOperations: ["routes.get", "routes.loadFull"],
-    id: "record.route_preview",
-    mobileRoute: "/(internal)/record/route-preview",
-    policy: "required_on_web",
-    title: "Recording route preview",
-  },
-  {
-    area: "record",
     backendOperations: ["routes.loadFull"],
     id: "record.session",
     mobileRoute: "/(internal)/record/index",
@@ -419,14 +390,6 @@ export const parityRegistry = [
     title: "Training plan edit",
   },
   {
-    area: "training_plans",
-    backendOperations: ["calendar.range", "events.update"],
-    id: "training_plans.reorder_activities",
-    mobileRoute: "/(internal)/(standard)/activities-reorder",
-    policy: "required_on_web",
-    title: "Training plan activity reorder",
-  },
-  {
     area: "profile",
     backendOperations: [
       "profiles.getPublicById",
@@ -478,6 +441,14 @@ export const parityRegistry = [
     mobileRoute: "/(internal)/(standard)/profile-metric-detail",
     policy: "required_on_web",
     title: "Profile metric detail",
+  },
+  {
+    area: "profile",
+    backendOperations: ["athleteIntelligence.getReadModel"],
+    id: "profile.trends",
+    mobileRoute: "/(internal)/(standard)/trends",
+    policy: "required_on_web",
+    title: "Athlete trends",
   },
   {
     area: "profile",

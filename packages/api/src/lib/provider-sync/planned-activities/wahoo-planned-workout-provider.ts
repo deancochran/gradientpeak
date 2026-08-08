@@ -112,6 +112,7 @@ export class WahooPlannedActivityProvider implements WahooPlannedActivityAdapter
       eventId: input.eventId,
       performanceTargets: publishedTargets.targets,
       startsAt: planned.startsAt,
+      timezone: planned.timezone,
     });
     if (projection.disposition === "unsupported_sport") {
       return rejectOrUnsync("Only run and bike planned activities are supported by Wahoo");

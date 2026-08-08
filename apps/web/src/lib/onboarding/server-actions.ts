@@ -22,7 +22,7 @@ export const loadOnboardingOptions = createServerFn({ method: "GET" }).handler(a
   ]);
 
   return {
-    imported:
+    setupData:
       integrations.status === "fulfilled" && integrations.value[0]
         ? {
             profile: integrations.value[0].setupData.profile,

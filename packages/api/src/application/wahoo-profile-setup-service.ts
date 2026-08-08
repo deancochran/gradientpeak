@@ -10,22 +10,22 @@ const PROFILE_ENRICHMENT_RESOURCE = "profile_enrichment";
 const PROFILE_ENRICHMENT_SYNC_MODE = "manual_refresh";
 type ExecutableEnrichmentProvider = "wahoo";
 
-type ImportedOnboardingField = "dob" | "gender" | "weight_kg";
+type ProfileSetupField = "dob" | "gender" | "weight_kg";
 
-type ImportedOnboardingValue = string | number;
+type ProfileSetupValue = string | number;
 
 type SyncMetadata = {
   status?: "queued" | "running" | "succeeded" | "partial" | "failed";
   blocking?: boolean;
-  fields_imported?: ImportedOnboardingField[];
-  fields_kept?: ImportedOnboardingField[];
-  fields_updated?: ImportedOnboardingField[];
-  imported_values?: Partial<Record<ImportedOnboardingField, ImportedOnboardingValue>>;
+  fields_imported?: ProfileSetupField[];
+  fields_kept?: ProfileSetupField[];
+  fields_updated?: ProfileSetupField[];
+  imported_values?: Partial<Record<ProfileSetupField, ProfileSetupValue>>;
   partial_reason?: string;
   provider_error_code?: string;
 };
 
-export type ImportedOnboardingValues = {
+export type WahooProfileSetupData = {
   profile: {
     dob: string | null;
     gender: "male" | "female" | "other" | null;
@@ -38,7 +38,7 @@ export type ImportedOnboardingValues = {
   };
   sources: Partial<
     Record<
-      ImportedOnboardingField,
+      ProfileSetupField,
       {
         provider: ExecutableEnrichmentProvider;
         label: string;
@@ -53,9 +53,9 @@ type ServiceInput = {
 };
 
 export type ProviderSetupRefreshResult = {
-  fieldsFilled: ImportedOnboardingField[];
-  fieldsKept: ImportedOnboardingField[];
-  fieldsUpdated: ImportedOnboardingField[];
+  fieldsFilled: ProfileSetupField[];
+  fieldsKept: ProfileSetupField[];
+  fieldsUpdated: ProfileSetupField[];
   keptExistingValues: boolean;
   provider: ExecutableEnrichmentProvider;
   status: "queued" | "succeeded" | "partial" | "failed";
@@ -68,7 +68,7 @@ export class WahooProfileSetupService {
     this.db = db;
   }
 
-  async getImportedOnboardingValues(profileId: string): Promise<ImportedOnboardingValues> {
+  async getSetupData(profileId: string): Promise<WahooProfileSetupData> {
     const [profile] = await this.db
       .select({
         dob: schema.profiles.dob,
@@ -79,8 +79,8 @@ export class WahooProfileSetupService {
       .where(eq(schema.profiles.id, profileId))
       .limit(1);
 
-    const values: ImportedOnboardingValues["values"] = {};
-    const sources: ImportedOnboardingValues["sources"] = {};
+    const values: WahooProfileSetupData["values"] = {};
+    const sources: WahooProfileSetupData["sources"] = {};
 
     if (profile?.dob) values.dob = toDateOnlyString(profile.dob);
     if (profile?.gender) values.gender = profile.gender;
@@ -163,11 +163,11 @@ export class WahooProfileSetupService {
     const integrations = await this.getConnectedIntegrations(profileId);
     if (integrations.length === 0)
       return new Map<
-        ImportedOnboardingField,
+        ProfileSetupField,
         {
           provider: ExecutableEnrichmentProvider;
           recordedAt: string | null;
-          value?: ImportedOnboardingValue;
+          value?: ProfileSetupValue;
         }
       >();
 
@@ -188,11 +188,11 @@ export class WahooProfileSetupService {
       integrations.map((integration) => [integration.id, integration]),
     );
     const sources = new Map<
-      ImportedOnboardingField,
+      ProfileSetupField,
       {
         provider: ExecutableEnrichmentProvider;
         recordedAt: string | null;
-        value?: ImportedOnboardingValue;
+        value?: ProfileSetupValue;
       }
     >();
 

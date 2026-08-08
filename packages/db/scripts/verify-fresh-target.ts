@@ -607,6 +607,30 @@ async function assertRouteStorageLifecycle(target: {
   }
 }
 
+async function assertProfileObservationsDoNotInvalidateAthleteState(target: {
+  query: <Row extends Record<string, unknown>>(
+    text: string,
+    values?: unknown[],
+  ) => Promise<{ rows: Row[] }>;
+}) {
+  const triggers = await target.query<{ tgname: string }>(`
+    select tgname
+    from pg_catalog.pg_trigger
+    where not tgisinternal
+      and tgrelid in (
+        'public.profile_metrics'::regclass,
+        'public.swimming_css_protocol_evidence'::regclass
+      )
+      and tgname in (
+        'profile_metrics_bump_athlete_state_source_revision',
+        'swimming_css_bump_athlete_state_source_revision'
+      )
+  `);
+  if (triggers.rows.length > 0) {
+    throw new Error("profile observations must not invalidate athlete state");
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2);
   await withDisposableDatabase(args, "fresh_verify", async (target, targetUrl) => {
@@ -619,6 +643,7 @@ async function main() {
     await assertProfileGoalConstraints(target);
     await assertArtifactLifecycleFunctionPrivileges(target);
     await assertRouteStorageLifecycle(target);
+    await assertProfileObservationsDoNotInvalidateAthleteState(target);
 
     const env = {
       ...process.env,

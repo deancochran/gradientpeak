@@ -54,8 +54,9 @@ export async function completeRequiredOnboarding(input: {
   if (!initialProfile) throw new OnboardingProfileNotFoundForLockError();
   if (initialProfile.onboarded) return alreadyCompletedResult();
 
-  const providerEnrichment = new WahooProfileSetupService({ db: input.db });
-  const imported = await providerEnrichment.getImportedOnboardingValues(input.profileId);
+  const setupData = await new WahooProfileSetupService({ db: input.db }).getSetupData(
+    input.profileId,
+  );
   const fieldSources = input.data.baseline_field_sources;
   const effectiveDob = fieldSources?.dob === "cleared" ? undefined : input.data.dob;
   const effectiveGender = fieldSources?.gender === "cleared" ? undefined : input.data.gender;
@@ -74,12 +75,12 @@ export async function completeRequiredOnboarding(input: {
   if (
     fieldSources?.weight_kg === "imported" &&
     input.data.weight_kg !== undefined &&
-    input.data.weight_kg === imported.values.weight_kg
+    input.data.weight_kg === setupData.values.weight_kg
   ) {
     preserveImportedFields.add("weight_kg");
   }
   const importedProvenance = Object.fromEntries(
-    Object.entries(imported.sources).map(([field, source]) => [
+    Object.entries(setupData.sources).map(([field, source]) => [
       field,
       {
         provider: source.provider,

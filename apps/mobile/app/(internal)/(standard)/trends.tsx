@@ -1,7 +1,6 @@
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { skipToken } from "@tanstack/react-query";
 import { CalendarDays, X } from "lucide-react-native";
 import React from "react";
 import {
@@ -1132,25 +1131,18 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
     };
   }, []);
 
-  const profile = api.profiles.get.useQuery();
-  const readModel = api.athleteIntelligence.getReadModel.useQuery(
-    profile.data
-      ? {
-          profileId: profile.data.id,
-          sections: {
-            trendInsights: {
-              startAt: range.startDate.toISOString(),
-              endAt: range.endDate.toISOString(),
-              groupBy: "week",
-              peakMetric: "power",
-              peakLimit: 5,
-              observationLimit: 200,
-            },
-          },
-        }
-      : skipToken,
-    { enabled: Boolean(profile.data) },
-  );
+  const readModel = api.athleteIntelligence.getReadModel.useQuery({
+    sections: {
+      trendInsights: {
+        startAt: range.startDate.toISOString(),
+        endAt: range.endDate.toISOString(),
+        groupBy: "week",
+        peakMetric: "power",
+        peakLimit: 5,
+        observationLimit: 200,
+      },
+    },
+  });
   const handleRefresh = React.useCallback(async () => {
     setRefreshing(true);
     try {
@@ -1160,8 +1152,8 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
     }
   }, [readModel]);
 
-  const isLoading = profile.isLoading || readModel.isLoading;
-  const hasError = profile.error || readModel.error;
+  const isLoading = readModel.isLoading;
+  const hasError = readModel.error;
 
   const insights = React.useMemo(() => {
     return hydrateTrendInsights(readModel.data?.trendInsights?.items ?? []);

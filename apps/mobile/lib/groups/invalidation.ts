@@ -71,8 +71,8 @@ export async function invalidateGroupEventQueries(
       ? utils.groups.events.detail.invalidate({ groupEventId: input.groupEventId })
       : utils.groups.events.detail.invalidate(),
     utils.groups.events.seriesOccurrences.invalidate(),
-    utils.groups.events.myCalendarGroupEvents.invalidate(),
     utils.groups.events.myUpcomingGroupEvents.invalidate(),
+    utils.calendar.invalidate(),
   ]);
 }
 

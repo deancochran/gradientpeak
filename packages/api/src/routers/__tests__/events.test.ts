@@ -2,6 +2,7 @@ import { activityPlanStructureSchema, SYSTEM_TEMPLATES } from "@repo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { estimateActivityPlans } from "../../application/activity-plans/estimate-activity-plans";
 import { deleteEventUseCase } from "../../application/events/deleteEventUseCase";
+import { readSelectedGroupEventsForCalendar } from "../../application/groups/groupEventViews";
 import {
   EventCurrentPlanUpdateConflict,
   EventPlanReplacementCompletionConflict,
@@ -262,68 +263,8 @@ function createCaller(queryMap: QueryMap) {
   } as any;
   const eventCaller = eventsRouter.createCaller(context);
   const calendarCaller = calendarRouter.createCaller(context);
-  const addDateDays = (date: string, days: number) => {
-    const value = new Date(`${date.slice(0, 10)}T00:00:00.000Z`);
-    value.setUTCDate(value.getUTCDate() + days);
-    return value.toISOString().slice(0, 10);
-  };
-  const todayInPlanningZone = () => {
-    const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/New_York",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).formatToParts(new Date());
-    const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-    return `${value.year}-${value.month}-${value.day}`;
-  };
-  const calendarCompatibility = {
-    list: (input: Record<string, any>) =>
-      calendarCaller.range({
-        startDate: String(input.date_from ?? "2026-01-01").slice(0, 10),
-        endDateExclusive: input.date_to ? addDateDays(String(input.date_to), 1) : "2027-01-01",
-        includeAdhoc: input.include_adhoc ?? true,
-        limit: input.limit ?? 100,
-        ...(input.cursor ? { cursor: input.cursor } : {}),
-        ...(input.event_types ? { eventTypes: input.event_types } : {}),
-        ...(input.activity_category ? { activityCategory: input.activity_category } : {}),
-        ...(input.activity_plan_id ? { activityPlanId: input.activity_plan_id } : {}),
-        ...(input.training_plan_id ? { trainingPlanId: input.training_plan_id } : {}),
-        ...("unexpected" in input ? { unexpected: input.unexpected } : {}),
-      } as any),
-    getToday: async () => (await calendarCaller.day({ date: todayInPlanningZone() })).items,
-    getWeekCount: async () => {
-      const today = todayInPlanningZone();
-      const weekday = new Date(`${today}T00:00:00.000Z`).getUTCDay();
-      const result = await calendarCaller.range({
-        startDate: addDateDays(today, -weekday),
-        endDateExclusive: addDateDays(today, 7 - weekday),
-        includeAdhoc: true,
-        limit: 500,
-      });
-      return result.items.length;
-    },
-    listByWeek: async (input: { weekStart: string; weekEnd: string }) =>
-      (
-        await calendarCaller.range({
-          startDate: input.weekStart,
-          endDateExclusive: addDateDays(input.weekEnd, 1),
-          includeAdhoc: true,
-          limit: 500,
-        })
-      ).items,
-    plannedDaySummary: async (input: { date: string }) =>
-      (await calendarCaller.day(input)).plannedLoadSummary,
-  };
-  const caller = new Proxy(eventCaller, {
-    get(target, property, receiver) {
-      if (property in calendarCompatibility)
-        return calendarCompatibility[property as keyof typeof calendarCompatibility];
-      return Reflect.get(target, property, receiver);
-    },
-  }) as typeof eventCaller & typeof calendarCompatibility;
 
-  return { caller, callLog: db.callLog };
+  return { caller: eventCaller, calendarCaller, callLog: db.callLog };
 }
 
 function createReadRepository(params: {
@@ -711,8 +652,8 @@ describe("eventsRouter generalization", () => {
     expect(revokeEventGrants).toHaveBeenNthCalledWith(3, "custom-1");
   });
 
-  it("list returns mixed event types with normalized event_type values", async () => {
-    const { caller } = createCaller({
+  it("calendar range returns mixed event types with normalized event_type values", async () => {
+    const { calendarCaller } = createCaller({
       events: {
         data: [
           createEventRow({ id: "a", event_type: "planned" }),
@@ -724,19 +665,74 @@ describe("eventsRouter generalization", () => {
       activities: { data: [], error: null },
     });
 
-    const result = await caller.list({ limit: 20, include_adhoc: true });
+    const result = await calendarCaller.range({
+      startDate: "2026-01-01",
+      endDateExclusive: "2027-01-01",
+      limit: 20,
+      includeAdhoc: true,
+    });
 
     expect(result.items.map((item) => item.event_type)).toEqual([
       "planned",
       "race_target",
       "imported",
     ]);
+    expect(result.plannedLoadSummaries).toMatchObject({
+      items: [
+        {
+          date: "2026-03-02",
+          timezone: "America/New_York",
+          source: { eventCount: 1, unlinkedPlanCount: 1 },
+          summary: { eventCount: 1 },
+        },
+      ],
+      truncated: false,
+    });
+  });
+
+  it("projects personal timed events in the planning zone and selected group events in the organizer zone", async () => {
+    vi.mocked(readSelectedGroupEventsForCalendar).mockResolvedValueOnce({
+      items: [
+        {
+          id: "group-event-1",
+          title: "Tokyo start",
+          starts_at: "2026-04-30T15:30:00.000Z",
+          timezone: "Asia/Tokyo",
+          activity_plan_id: null,
+        },
+      ],
+      truncated: false,
+    } as never);
+    const { calendarCaller } = createCaller({
+      events: {
+        data: [
+          createEventRow({
+            id: "personal-timed-1",
+            all_day: false,
+            starts_at: "2026-03-10T03:30:00.000Z",
+            scheduled_date: "2026-03-10",
+          }),
+        ],
+        error: null,
+      },
+      activities: { data: [], error: null },
+    });
+
+    const result = await calendarCaller.range({
+      startDate: "2026-03-01",
+      endDateExclusive: "2026-05-02",
+      limit: 20,
+      includeAdhoc: true,
+    });
+
+    expect(result.items[0]?.scheduled_date).toBe("2026-03-09");
+    expect(result.selectedGroupEvents.items[0]?.scheduled_date).toBe("2026-05-01");
   });
 
   it("does not infer completion for a plan-less event from an unrelated same-day activity", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-12T12:00:00.000Z"));
-    const { caller } = createCaller({
+    const { calendarCaller } = createCaller({
       events: {
         data: [
           createEventRow({ scheduled_date: "2026-03-02", starts_at: "2026-03-02T09:00:00.000Z" }),
@@ -751,15 +747,20 @@ describe("eventsRouter generalization", () => {
       },
     });
 
-    await expect(caller.list({ limit: 20, include_adhoc: true })).resolves.toMatchObject({
-      items: [expect.objectContaining({ status: "expired" })],
-    });
+    await expect(
+      calendarCaller.range({
+        startDate: "2026-01-01",
+        endDateExclusive: "2027-01-01",
+        limit: 20,
+        includeAdhoc: true,
+      }),
+    ).resolves.toMatchObject({ items: [expect.objectContaining({ status: "expired" })] });
   });
 
   it("does not infer completion for a same-plan same-day activity without a persisted link", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-12T12:00:00.000Z"));
-    const { caller } = createCaller({
+    const { calendarCaller } = createCaller({
       events: {
         data: [
           createEventRow({
@@ -778,15 +779,20 @@ describe("eventsRouter generalization", () => {
       },
     });
 
-    await expect(caller.list({ limit: 20, include_adhoc: true })).resolves.toMatchObject({
-      items: [expect.objectContaining({ status: "expired" })],
-    });
+    await expect(
+      calendarCaller.range({
+        startDate: "2026-01-01",
+        endDateExclusive: "2027-01-01",
+        limit: 20,
+        includeAdhoc: true,
+      }),
+    ).resolves.toMatchObject({ items: [expect.objectContaining({ status: "expired" })] });
   });
 
   it("does not trust a completed lifecycle label without an activity identity", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-12T12:00:00.000Z"));
-    const { caller } = createCaller({
+    const { calendarCaller } = createCaller({
       events: {
         data: [
           createEventRow({
@@ -801,13 +807,18 @@ describe("eventsRouter generalization", () => {
       activities: { data: [], error: null },
     });
 
-    await expect(caller.list({ limit: 20, include_adhoc: true })).resolves.toMatchObject({
-      items: [expect.objectContaining({ status: "expired" })],
-    });
+    await expect(
+      calendarCaller.range({
+        startDate: "2026-01-01",
+        endDateExclusive: "2027-01-01",
+        limit: 20,
+        includeAdhoc: true,
+      }),
+    ).resolves.toMatchObject({ items: [expect.objectContaining({ status: "expired" })] });
   });
 
   it("gives cancelled status precedence over a retained activity link", async () => {
-    const { caller } = createCaller({
+    const { calendarCaller } = createCaller({
       events: {
         data: [
           createEventRow({
@@ -826,20 +837,14 @@ describe("eventsRouter generalization", () => {
       activities: { data: [], error: null },
     });
 
-    const result = await caller.list({ limit: 20, include_adhoc: true });
-
-    expect(result.items.map((item) => item.status)).toEqual(["cancelled", "completed"]);
-  });
-
-  it("list accepts tRPC infinite-query direction metadata", async () => {
-    const { caller } = createCaller({
-      events: { data: [], error: null },
-      activities: { data: [], error: null },
+    const result = await calendarCaller.range({
+      startDate: "2026-01-01",
+      endDateExclusive: "2027-01-01",
+      limit: 20,
+      includeAdhoc: true,
     });
 
-    await expect(
-      caller.list({ limit: 20, include_adhoc: true, direction: "forward" }),
-    ).resolves.toMatchObject({ items: [] });
+    expect(result.items.map((item) => item.status)).toEqual(["cancelled", "completed"]);
   });
 
   it("uses one bounded canonical repository page and preserves the cursor contract", async () => {
@@ -852,11 +857,16 @@ describe("eventsRouter generalization", () => {
       id: "00000000-0000-4000-8000-000000000103",
       starts_at: "2026-03-04T00:00:00.000Z",
     });
-    const { caller, callLog } = createCaller({
+    const { calendarCaller, callLog } = createCaller({
       events: { data: [first, second, third], error: null },
     });
 
-    const result = await caller.list({ limit: 2, include_adhoc: true });
+    const result = await calendarCaller.range({
+      startDate: "2026-01-01",
+      endDateExclusive: "2027-01-01",
+      limit: 2,
+      includeAdhoc: true,
+    });
 
     expect(result.items).toHaveLength(2);
     expect(result.nextCursor).toBe("2026-03-03T00:00:00.000Z_00000000-0000-4000-8000-000000000102");
@@ -875,12 +885,17 @@ describe("eventsRouter generalization", () => {
     ]);
   });
 
-  it("list rejects unexpected input keys", async () => {
-    const { caller } = createCaller({});
+  it("calendar range rejects unexpected input keys", async () => {
+    const { calendarCaller } = createCaller({});
 
-    await expect(caller.list({ limit: 20, unexpected: true } as never)).rejects.toThrow(
-      "Unrecognized key",
-    );
+    await expect(
+      calendarCaller.range({
+        startDate: "2026-01-01",
+        endDateExclusive: "2027-01-01",
+        limit: 20,
+        unexpected: true,
+      } as never),
+    ).rejects.toThrow("Unrecognized key");
   });
 
   it("getById returns non-planned events", async () => {
@@ -962,8 +977,8 @@ describe("eventsRouter generalization", () => {
     });
   });
 
-  it("list hydrates linked activity plans for planned events", async () => {
-    const { caller } = createCaller({
+  it("calendar range hydrates linked activity plans for planned events", async () => {
+    const { calendarCaller } = createCaller({
       events: {
         data: [
           createEventRow({
@@ -991,7 +1006,12 @@ describe("eventsRouter generalization", () => {
       activities: { data: [], error: null },
     });
 
-    const result = await caller.list({ limit: 20, include_adhoc: true });
+    const result = await calendarCaller.range({
+      startDate: "2026-01-01",
+      endDateExclusive: "2027-01-01",
+      limit: 20,
+      includeAdhoc: true,
+    });
     const plannedEvent = result.items.find((item) => item.id === "planned-1");
 
     expect(plannedEvent?.activity_plan).toMatchObject({
@@ -1013,11 +1033,11 @@ describe("eventsRouter generalization", () => {
     });
   });
 
-  it("getToday returns normalized events for the current planning-zone day", async () => {
+  it("calendar day returns normalized events for the requested planning-zone day", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-12T15:00:00.000Z"));
 
-    const { caller, callLog } = createCaller({
+    const { calendarCaller, callLog } = createCaller({
       events: {
         data: [
           createEventRow({
@@ -1030,7 +1050,7 @@ describe("eventsRouter generalization", () => {
       },
     });
 
-    const result = await caller.getToday();
+    const result = (await calendarCaller.day({ date: "2026-03-12" })).items;
 
     expect(result).toHaveLength(1);
     expect(result[0]?.event_type).toBe("race_target");
@@ -1040,7 +1060,7 @@ describe("eventsRouter generalization", () => {
       payload: {
         type: "gte",
         column: "starts_at",
-        value: "2026-03-12T04:00:00.000Z",
+        value: "2026-03-12",
       },
     });
     expect(callLog).toContainEqual({
@@ -1049,15 +1069,15 @@ describe("eventsRouter generalization", () => {
       payload: {
         type: "lt",
         column: "starts_at",
-        value: "2026-03-13T04:00:00.000Z",
+        value: "2026-03-13",
       },
     });
   });
 
-  it("getToday rejects mixed nested plans", async () => {
+  it("calendar day rejects mixed nested plans", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-12T15:00:00.000Z"));
-    const { caller } = createCaller({
+    const { calendarCaller } = createCaller({
       events: {
         data: [
           createEventRow({
@@ -1073,7 +1093,7 @@ describe("eventsRouter generalization", () => {
       },
     });
 
-    await expect(caller.getToday()).rejects.toMatchObject({
+    await expect(calendarCaller.day({ date: "2026-03-12" })).rejects.toMatchObject({
       code: "INTERNAL_SERVER_ERROR",
       message: "Stored activity plan is not valid",
     });
@@ -1101,11 +1121,11 @@ describe("eventsRouter generalization", () => {
     });
   });
 
-  it("getWeekCount counts canonical event rows in the current planning-zone week", async () => {
+  it("calendar range returns canonical event rows for a planning-zone week", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-11T15:00:00.000Z"));
 
-    const { caller, callLog } = createCaller({
+    const { calendarCaller, callLog } = createCaller({
       events: {
         data: [
           createEventRow({ id: "week-visible-1", event_type: "planned" }),
@@ -1116,16 +1136,21 @@ describe("eventsRouter generalization", () => {
       },
     });
 
-    const result = await caller.getWeekCount();
+    const result = await calendarCaller.range({
+      startDate: "2026-03-08",
+      endDateExclusive: "2026-03-15",
+      includeAdhoc: true,
+      limit: 500,
+    });
 
-    expect(result).toBe(3);
+    expect(result.items).toHaveLength(3);
     expect(callLog).toContainEqual({
       table: "events",
       operation: "filter",
       payload: {
         type: "gte",
         column: "starts_at",
-        value: "2026-03-08T05:00:00.000Z",
+        value: "2026-03-08",
       },
     });
     expect(callLog).toContainEqual({
@@ -1134,7 +1159,7 @@ describe("eventsRouter generalization", () => {
       payload: {
         type: "lt",
         column: "starts_at",
-        value: "2026-03-15T04:00:00.000Z",
+        value: "2026-03-15",
       },
     });
   });
@@ -2527,7 +2552,7 @@ describe("eventsRouter generalization", () => {
   });
 
   it("status resolution prefers explicit linkage when present", async () => {
-    const { caller } = createCaller({
+    const { calendarCaller } = createCaller({
       events: {
         data: [
           createEventRow({
@@ -2541,15 +2566,20 @@ describe("eventsRouter generalization", () => {
       activities: { data: [], error: null },
     });
 
-    const result = await caller.list({ limit: 20, include_adhoc: true });
+    const result = await calendarCaller.range({
+      startDate: "2026-01-01",
+      endDateExclusive: "2027-01-01",
+      includeAdhoc: true,
+      limit: 20,
+    });
     expect(result.items[0]?.status).toBe("completed");
   });
 
-  it("listByWeek returns week events with lifecycle status", async () => {
+  it("calendar range returns week events with lifecycle status", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-12T15:00:00.000Z"));
 
-    const { caller, callLog } = createCaller({
+    const { calendarCaller, callLog } = createCaller({
       events: {
         data: [
           createEventRow({
@@ -2574,20 +2604,22 @@ describe("eventsRouter generalization", () => {
       },
     });
 
-    const result = await caller.listByWeek({
-      weekStart: "2026-03-08",
-      weekEnd: "2026-03-14",
+    const result = await calendarCaller.range({
+      startDate: "2026-03-08",
+      endDateExclusive: "2026-03-15",
+      includeAdhoc: true,
+      limit: 500,
     });
 
-    expect(result).toHaveLength(1);
-    expect(result[0]?.status).toBe("expired");
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.status).toBe("expired");
     expect(callLog).toContainEqual({
       table: "events",
       operation: "filter",
       payload: {
         type: "gte",
         column: "starts_at",
-        value: "2026-03-08T05:00:00.000Z",
+        value: "2026-03-08",
       },
     });
     expect(callLog).toContainEqual({
@@ -2596,22 +2628,22 @@ describe("eventsRouter generalization", () => {
       payload: {
         type: "lt",
         column: "starts_at",
-        value: "2026-03-15T04:00:00.000Z",
+        value: "2026-03-15",
       },
     });
   });
 
-  it("calendar range normalizes legacy timestamp fixtures to planning date keys", async () => {
-    const { caller, callLog } = createCaller({
+  it("calendar range uses planning date keys and an exclusive end boundary", async () => {
+    const { calendarCaller, callLog } = createCaller({
       events: { data: [], error: null },
       activities: { data: [], error: null },
     });
 
-    await caller.list({
+    await calendarCaller.range({
+      startDate: "2026-03-10",
+      endDateExclusive: "2026-03-13",
       limit: 20,
-      include_adhoc: true,
-      date_from: "2026-03-10T23:30:00-05:00",
-      date_to: "2026-03-12T01:00:00+09:00",
+      includeAdhoc: true,
     });
 
     const rangeFilters = callLog
@@ -2621,41 +2653,12 @@ describe("eventsRouter generalization", () => {
     expect(rangeFilters).toContainEqual({
       type: "gte",
       column: "starts_at",
-      value: "2026-03-10T04:00:00.000Z",
+      value: "2026-03-10",
     });
     expect(rangeFilters).toContainEqual({
       type: "lt",
       column: "starts_at",
-      value: "2026-03-13T04:00:00.000Z",
-    });
-  });
-
-  it("list keeps date-only end ranges inclusive", async () => {
-    const { caller, callLog } = createCaller({
-      events: { data: [], error: null },
-      activities: { data: [], error: null },
-    });
-
-    await caller.list({
-      limit: 20,
-      include_adhoc: true,
-      date_from: "2026-03-10",
-      date_to: "2026-03-12",
-    });
-
-    const rangeFilters = callLog
-      .filter((call) => call.table === "events" && call.operation === "filter")
-      .map((call) => call.payload as { type?: string; column?: string; value?: unknown });
-
-    expect(rangeFilters).toContainEqual({
-      type: "gte",
-      column: "starts_at",
-      value: "2026-03-10T04:00:00.000Z",
-    });
-    expect(rangeFilters).toContainEqual({
-      type: "lt",
-      column: "starts_at",
-      value: "2026-03-13T04:00:00.000Z",
+      value: "2026-03-13",
     });
   });
 
@@ -3135,10 +3138,10 @@ describe("eventsRouter generalization", () => {
     expect(linkedFilter).toBe(true);
   });
 
-  it("plannedDaySummary returns the profile planning timezone and canonical date boundary", async () => {
-    const { caller, callLog } = createCaller({ events: { data: [], error: null } });
+  it("calendar day planned-load summary returns the planning timezone and date boundary", async () => {
+    const { calendarCaller, callLog } = createCaller({ events: { data: [], error: null } });
 
-    const result = await caller.plannedDaySummary({ date: "2026-07-27" });
+    const result = (await calendarCaller.day({ date: "2026-07-27" })).plannedLoadSummary;
     expect(result).toMatchObject({
       date: "2026-07-27",
       timezone: "America/New_York",
@@ -3173,10 +3176,10 @@ describe("eventsRouter generalization", () => {
     });
   });
 
-  it("plannedDaySummary rejects non-canonical calendar dates", async () => {
-    const { caller } = createCaller({ events: { data: [], error: null } });
+  it("calendar day rejects non-canonical calendar dates", async () => {
+    const { calendarCaller } = createCaller({ events: { data: [], error: null } });
 
-    await expect(caller.plannedDaySummary({ date: "2026-02-30" })).rejects.toMatchObject({
+    await expect(calendarCaller.day({ date: "2026-02-30" })).rejects.toMatchObject({
       code: "BAD_REQUEST",
     });
   });

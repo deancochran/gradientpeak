@@ -114,21 +114,24 @@ function ActivityPlanDetailPage() {
   });
   const createSchedule = api.events.create.useMutation({
     onSuccess: async () => {
-      await utils.events.invalidate();
+      await utils.calendar.invalidate();
       toast.success("Activity plan scheduled");
     },
     onError: (error) => toast.error(error.message || "Activity plan could not be scheduled"),
   });
   const updateSchedule = api.events.update.useMutation({
-    onSuccess: async () => {
-      await utils.events.invalidate();
+    onSuccess: async (event) => {
+      await Promise.all([
+        utils.calendar.invalidate(),
+        utils.events.getById.invalidate({ id: event.id }),
+      ]);
       toast.success("Activity plan rescheduled");
     },
     onError: (error) => toast.error(error.message || "Activity plan could not be rescheduled"),
   });
   const removeSchedule = api.events.delete.useMutation({
     onSuccess: async () => {
-      await utils.events.invalidate();
+      await utils.calendar.invalidate();
       toast.success("Activity plan removed from the schedule");
     },
     onError: (error) => toast.error(error.message || "Scheduled activity could not be removed"),

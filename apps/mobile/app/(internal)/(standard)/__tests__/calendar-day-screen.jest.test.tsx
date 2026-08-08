@@ -63,6 +63,7 @@ type UnsafeTypeQuery = {
 
 let eventItems: CalendarEvent[] = [];
 let groupEventItems: CalendarEvent[] = [];
+let completedActivityItems: CalendarEvent[] = [];
 const mockEventRefetch = jest.fn(async () => undefined);
 const mockEventsUseQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
   data: {
@@ -72,6 +73,7 @@ const mockEventsUseQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
       truncated: false,
     },
     selectedGroupEvents: { items: groupEventItems, truncated: false },
+    completedActivities: { items: completedActivityItems, truncated: false },
   },
   isLoading: false,
   error: null,
@@ -160,6 +162,11 @@ jest.mock("@/components/shared/ActivityPlanCard", () => ({
   ActivityPlanCard: mockCreateHost("ActivityPlanCard"),
 }));
 
+jest.mock("@/components/shared/ActivityCard", () => ({
+  __esModule: true,
+  ActivityCard: mockCreateHost("ActivityCard"),
+}));
+
 jest.mock("@/lib/utils/plan/colors", () => ({
   __esModule: true,
   getActivityColor: () => ({
@@ -238,6 +245,7 @@ describe("calendar day screen", () => {
       },
     ];
     groupEventItems = [];
+    completedActivityItems = [];
     pushMock.mockReset();
     mockEventsUseQuery.mockClear();
     mockEventRefetch.mockClear();
@@ -267,6 +275,24 @@ describe("calendar day screen", () => {
       { date: today },
       expect.objectContaining({ enabled: true }),
     );
+  });
+
+  it("renders standalone completed activities from the calendar day projection", () => {
+    completedActivityItems = [
+      {
+        id: "activity-1",
+        name: "Morning ride",
+        scheduled_date: today,
+        started_at: `${today}T10:00:00.000Z`,
+        distance_meters: 12_000,
+        duration_seconds: 3_600,
+      },
+    ];
+
+    renderNative(<CalendarDayScreen />);
+
+    expect(screen.getByTestId("calendar-day-completed-activity-activity-1")).toBeTruthy();
+    expect(screen.getByText("3 events")).toBeTruthy();
   });
 
   it("uses valid dormant inputs without executing queries for an invalid route date", () => {

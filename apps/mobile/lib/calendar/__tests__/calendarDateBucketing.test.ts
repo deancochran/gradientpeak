@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { millisecondsUntilNextLocalDay, toLocalDayEndIso, toLocalDayStartIso } from "../dateMath";
+import { millisecondsUntilNextLocalDay } from "../dateMath";
 import { buildGroupEventsByDate, type CalendarGroupEvent } from "../groupEventPlans";
 import { buildEventsByDate } from "../normalizeEvents";
 
@@ -18,13 +18,6 @@ afterAll(() => {
 });
 
 describe("calendar date bucketing", () => {
-  it("converts date keys to local-midnight query boundaries", () => {
-    expect(toLocalDayStartIso("2026-05-01")).toBe("2026-05-01T07:00:00.000Z");
-    expect(toLocalDayStartIso("2026-11-01")).toBe("2026-11-01T07:00:00.000Z");
-    expect(toLocalDayEndIso("2026-05-01")).toBe("2026-05-02T06:59:59.999Z");
-    expect(toLocalDayEndIso("2026-11-01")).toBe("2026-11-02T07:59:59.999Z");
-  });
-
   it("schedules local-midnight rollover across DST boundaries", () => {
     expect(millisecondsUntilNextLocalDay(new Date(2026, 2, 8, 0, 30))).toBe(22.5 * 60 * 60 * 1000);
     expect(millisecondsUntilNextLocalDay(new Date(2026, 10, 1, 0, 30))).toBe(24.5 * 60 * 60 * 1000);

@@ -90,7 +90,7 @@ export const athleteReadModelSectionsSchema = z
 
 export const athleteReadModelRequestSchema = z
   .object({
-    profileId: z.string().uuid(),
+    profileId: z.string().uuid().optional(),
     sections: athleteReadModelSectionsSchema,
   })
   .strict();

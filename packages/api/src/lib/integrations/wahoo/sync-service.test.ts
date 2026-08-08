@@ -112,6 +112,8 @@ function syncFixture(
     repository?: Record<string, unknown>;
     routeContent?: string | null;
     routeId?: string | null;
+    startsAt?: string;
+    timezone?: string;
     wahooClient?: Record<string, unknown>;
   } = {},
 ) {
@@ -155,7 +157,8 @@ function syncFixture(
       },
       id: "event-1",
       routeId: input.routeId ?? null,
-      startsAt: "2026-07-29T12:00:00.000Z",
+      startsAt: input.startsAt ?? "2026-07-29T12:00:00.000Z",
+      timezone: input.timezone ?? "UTC",
     }),
     getOwnedRouteForMirror: vi.fn().mockResolvedValue({
       description: "Ridge loop",
@@ -221,7 +224,8 @@ function syncFixture(
   const execution = {
     performanceModelAsOf,
     expectedIntegrationGeneration: 3,
-    expectedStartsAt: "2026-07-29T12:00:00.000Z",
+    expectedStartsAt: input.startsAt ?? "2026-07-29T12:00:00.000Z",
+    expectedTimezone: input.timezone ?? "UTC",
     integrationId: "integration-1",
     signal: new AbortController().signal,
   };
@@ -488,6 +492,25 @@ describe("WahooSyncService planned-activity reconciliation", () => {
         integrationId: "integration-1",
         profileId: "profile-1",
       }),
+    );
+  });
+
+  it("serializes a DST-crossed event in its persisted zone with an explicit offset", async () => {
+    const { execution, service, wahooClient } = syncFixture({
+      startsAt: "2026-03-09T13:30:00.000Z",
+      timezone: "America/New_York",
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1", execution)).resolves.toMatchObject({
+      action: "created",
+      success: true,
+    });
+
+    expect(wahooClient.createWorkout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scheduledDate: "2026-03-09T09:30:00.000-04:00",
+      }),
+      execution.signal,
     );
   });
 

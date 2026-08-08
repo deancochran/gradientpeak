@@ -88,11 +88,20 @@ export async function invalidateSchedulingQueries(
 }
 
 export async function invalidatePostActivityIngestionQueries(queryClient: QueryClient) {
+  const paths = [
+    ["activities", "listPaginated"],
+    ["calendar", "range"],
+    ["calendar", "day"],
+    ["events", "getById"],
+    ["athleteIntelligence", "getReadModel"],
+    ["trainingPlans", "getActivePlan"],
+  ] as const;
   await Promise.all([
-    queryClient.invalidateQueries({ queryKey: queryKeys.activities.lists() }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.trainingPlans.status() }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.events.all }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.athleteReadModel.all }),
+    ...paths.map((path) =>
+      queryClient.invalidateQueries({
+        predicate: (query) => matchesQueryPath(query.queryKey, path),
+      }),
+    ),
     queryClient.invalidateQueries({
       predicate: (query) =>
         query.queryKey[0] === "home" ||
@@ -273,7 +282,7 @@ export const queryKeys = {
  * @example
  * const mutation = trpc.activities.update.useMutation({
  *   onSuccess: () => {
- *     invalidateQueries(queryClient, queryKeys.activities.all);
+ *     invalidateQueries(queryClient, [["activities", "listPaginated"]]);
  *   }
  * });
  */
@@ -290,7 +299,7 @@ export function invalidateQueries(queryClient: QueryClient, queryKey: readonly u
  *   onMutate: async (variables) => {
  *     await updateQueryData(
  *       queryClient,
- *       queryKeys.activities.detail(variables.id),
+ *       [["activities", "getById"], { input: { id: variables.id }, type: "query" }],
  *       (old) => ({ ...old, ...variables })
  *     );
  *   }

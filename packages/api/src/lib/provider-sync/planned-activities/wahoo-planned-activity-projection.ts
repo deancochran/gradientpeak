@@ -16,7 +16,10 @@ import {
   type WahooCompatibilityResult,
   type WahooProjectionSnapshot,
 } from "../../integrations/wahoo/plan-converter";
-import { resolveWahooSyncMetrics } from "../../integrations/wahoo/sync-service";
+import {
+  resolveWahooSyncMetrics,
+  serializeWahooScheduledStart,
+} from "../../integrations/wahoo/sync-service";
 import { hashPlannedActivityPayload } from "./planned-activity-hash";
 import {
   getEarliestPlannedActivityRunAt,
@@ -33,6 +36,7 @@ type WahooPublishJobPayload = {
   projectionHash: string;
   projectionSnapshot: WahooProjectionSnapshot;
   startsAt: string;
+  timezone: string;
 };
 
 type WahooPublishDesiredPayload = Omit<WahooPublishJobPayload, "performanceModelAsOf">;
@@ -61,6 +65,7 @@ export function projectWahooPlannedActivity(input: {
   eventId: string;
   performanceTargets: AthletePerformanceTargetFacts;
   startsAt: string;
+  timezone: string;
 }): WahooPlannedActivityProjection {
   const compiled = compileActivityPlan(input.activityPlan.structure);
   const providerActivityType = toActivityType(compiled.activity_category);
@@ -92,7 +97,8 @@ export function projectWahooPlannedActivity(input: {
     operation: "publish",
     projectionHash,
     projectionSnapshot,
-    startsAt: input.startsAt,
+    startsAt: serializeWahooScheduledStart(input.startsAt, input.timezone),
+    timezone: input.timezone,
   };
   return {
     desiredPayload,

@@ -3,6 +3,7 @@ import { createQueryMapDbMock } from "../../test/mock-query-db";
 import { trainingPlansRouter } from "../planning/training-plans";
 
 const TRAINING_PLAN_ID = "11111111-1111-4111-8111-111111111111";
+const EVENT_ID = "22222222-2222-4222-8222-222222222222";
 
 const VALID_TRAINING_PLAN_STRUCTURE = {
   id: TRAINING_PLAN_ID,
@@ -142,6 +143,28 @@ describe("trainingPlansRouter boundary validation", () => {
           },
         },
       } as any),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(callLog).toHaveLength(0);
+  });
+
+  it.each([
+    ["expected date", "2026-02-30", "2026-03-01"],
+    ["requested date", "2026-02-28", "2026-02-30"],
+  ])("rejects an impossible reorder %s before hitting the database", async (_label, expected, requested) => {
+    const { caller, callLog } = createCaller();
+
+    await expect(
+      caller.reorderActivities({
+        training_plan_id: TRAINING_PLAN_ID,
+        changes: [
+          {
+            event_id: EVENT_ID,
+            expected_scheduled_date: expected,
+            requested_scheduled_date: requested,
+          },
+        ],
+      }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     expect(callLog).toHaveLength(0);

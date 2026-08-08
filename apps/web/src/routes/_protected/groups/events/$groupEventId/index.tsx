@@ -40,13 +40,13 @@ function GroupEventDetailPage() {
     { enabled: Boolean(event?.activity_plan_id), retry: false },
   );
   const rsvpMutation = api.groups.events.rsvp.useMutation({
-    onSuccess: () => utils.groups.events.invalidate(),
+    onSuccess: () => Promise.all([utils.groups.events.invalidate(), utils.calendar.invalidate()]),
   });
   const seriesRsvpMutation = api.groups.events.rsvpEventSeries.useMutation({
-    onSuccess: () => utils.groups.events.invalidate(),
+    onSuccess: () => Promise.all([utils.groups.events.invalidate(), utils.calendar.invalidate()]),
   });
   const cancelMutation = api.groups.events.cancel.useMutation({
-    onSuccess: () => utils.groups.events.invalidate(),
+    onSuccess: () => Promise.all([utils.groups.events.invalidate(), utils.calendar.invalidate()]),
   });
   const mutationError = rsvpMutation.error ?? seriesRsvpMutation.error ?? cancelMutation.error;
   const canManage = Boolean(group.data?.viewer.canCreateGroupEvent);

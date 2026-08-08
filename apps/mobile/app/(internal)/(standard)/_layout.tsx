@@ -299,13 +299,6 @@ export default function StandardLayout() {
           title: "Edit Training Plan",
         }}
       />
-      <Stack.Screen
-        name="activities-reorder"
-        options={{
-          title: "Reorder Activities",
-        }}
-      />
-
       {/* USER */}
       <Stack.Screen
         name="user/[userId]"

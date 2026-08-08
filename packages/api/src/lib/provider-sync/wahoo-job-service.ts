@@ -1,3 +1,4 @@
+import { isValidIanaTimeZone } from "@repo/core/calendar";
 import type { WahooRepository, WahooSyncRepository } from "../../repositories";
 import { isWahooIntegrationEnabled } from "../integrations/oauth-config";
 import {
@@ -38,6 +39,7 @@ type WahooPublishJobPayload = {
   projectionHash: string;
   projectionSnapshot: WahooProjectionSnapshot;
   startsAt: string;
+  timezone: string;
 };
 
 type WahooUnsyncJobPayload = {
@@ -61,6 +63,8 @@ function isWahooJobPayload(value: unknown): value is WahooJobPayload {
     return (
       typeof payload.startsAt === "string" &&
       !Number.isNaN(Date.parse(payload.startsAt)) &&
+      typeof payload.timezone === "string" &&
+      isValidIanaTimeZone(payload.timezone) &&
       typeof payload.performanceModelAsOf === "string" &&
       !Number.isNaN(Date.parse(payload.performanceModelAsOf)) &&
       typeof payload.projectionHash === "string" &&
@@ -73,7 +77,8 @@ function isWahooJobPayload(value: unknown): value is WahooJobPayload {
     payload.performanceModelAsOf !== undefined ||
     payload.projectionHash !== undefined ||
     payload.projectionSnapshot !== undefined ||
-    payload.startsAt !== undefined
+    payload.startsAt !== undefined ||
+    payload.timezone !== undefined
   )
     return false;
   if (payload.unsyncTarget === undefined) return true;
@@ -332,6 +337,7 @@ export class WahooSyncJobService {
                       performanceModelAsOf: payload.performanceModelAsOf,
                       expectedProjectionHash: payload.projectionHash,
                       expectedStartsAt: payload.startsAt,
+                      expectedTimezone: payload.timezone,
                       expectedIntegrationGeneration: generation,
                       integrationId: job.integrationId,
                       queuedProjectionSnapshot: payload.projectionSnapshot,
@@ -343,6 +349,7 @@ export class WahooSyncJobService {
                           projectionHash: latest.projectionHash,
                           projectionSnapshot: latest.projectionSnapshot,
                           startsAt: payload.startsAt,
+                          timezone: payload.timezone,
                         };
                         return this.deps.providerSyncRepository.updateRunningJobDesiredState({
                           expectedIntegrationGeneration: generation,

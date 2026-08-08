@@ -49,6 +49,7 @@ function providerFixture(
     routeId?: string | null;
     scope?: string;
     startsAt?: string;
+    timezone?: string;
     performanceTargets?: AthletePerformanceTargetFacts;
   } = {},
 ) {
@@ -72,6 +73,7 @@ function providerFixture(
       id: "event-1",
       routeId: overrides.routeId ?? null,
       startsAt: overrides.startsAt ?? "2026-07-29T12:00:00.000Z",
+      timezone: overrides.timezone ?? "UTC",
     }),
     getEventResourceLink: vi.fn().mockResolvedValue(overrides.existingLink ?? null),
   };
@@ -130,7 +132,8 @@ describe("WahooPlannedActivityProvider", () => {
       projectionSnapshot: expect.objectContaining({
         plan: expect.objectContaining({ header: expect.objectContaining({ ftp: 250 }) }),
       }),
-      startsAt: "2026-07-29T12:00:00.000Z",
+      startsAt: "2026-07-29T12:00:00.000+00:00",
+      timezone: "UTC",
     });
     expect(getPerformanceTargets).toHaveBeenCalledWith({
       profileId: "profile-1",
@@ -147,6 +150,34 @@ describe("WahooPlannedActivityProvider", () => {
     expect(first.enqueueJob.mock.calls[0]?.[0].payloadHash).not.toBe(
       second.enqueueJob.mock.calls[0]?.[0].payloadHash,
     );
+  });
+
+  it("queues a DST-crossed event with its event-local wall time and explicit offset", async () => {
+    const { enqueueJob, provider } = providerFixture({
+      startsAt: "2026-03-09T13:30:00.000Z",
+      timezone: "America/New_York",
+    });
+
+    await provider.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" });
+
+    expect(enqueueJob.mock.calls[0]?.[0].payload).toMatchObject({
+      startsAt: "2026-03-09T09:30:00.000-04:00",
+      timezone: "America/New_York",
+    });
+  });
+
+  it("uses the explicit standard-time offset after New York fall-back", async () => {
+    const { enqueueJob, provider } = providerFixture({
+      startsAt: "2026-11-02T14:30:00.000Z",
+      timezone: "America/New_York",
+    });
+
+    await provider.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" });
+
+    expect(enqueueJob.mock.calls[0]?.[0].payload).toMatchObject({
+      startsAt: "2026-11-02T09:30:00.000-05:00",
+      timezone: "America/New_York",
+    });
   });
 
   it("keeps provider desired state and model authority stable when only enqueue time changes", async () => {
@@ -208,7 +239,7 @@ describe("WahooPlannedActivityProvider", () => {
       }),
     );
     expect(enqueueJob.mock.calls[0]?.[0].payload).toMatchObject({
-      startsAt: "2026-07-29T06:00:00.000Z",
+      startsAt: "2026-07-29T06:00:00.000+00:00",
     });
   });
 

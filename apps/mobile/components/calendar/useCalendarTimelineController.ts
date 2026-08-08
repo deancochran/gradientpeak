@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
-import { addDaysToDateKey, toDateKey } from "@/lib/calendar/dateMath";
+import { addDaysToDateKey } from "@/lib/calendar/dateMath";
 import { buildOpenEventRoute } from "@/lib/calendar/eventRouting";
 import { buildGroupEventsByDate, type CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
 import { buildEventsByDate, type CalendarEvent } from "@/lib/calendar/normalizeEvents";
@@ -58,10 +58,7 @@ function buildActivitiesByDate(activities: CalendarActivity[]) {
   const map = new Map<string, CalendarActivity[]>();
 
   for (const activity of activities) {
-    if (!activity.started_at) {
-      continue;
-    }
-    const dateKey = activity.scheduled_date ?? toDateKey(new Date(activity.started_at));
+    const dateKey = activity.scheduled_date;
     const items = map.get(dateKey) ?? [];
     items.push(activity);
     map.set(dateKey, items);

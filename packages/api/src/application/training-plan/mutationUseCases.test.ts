@@ -98,11 +98,27 @@ describe("deleteTrainingPlanUseCase", () => {
 });
 
 describe("reorderTrainingPlanActivitiesUseCase", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("increments the plan revision and clears projection validation in the event transaction", async () => {
     mocks.enqueueWahooPlannedActivitySyncAfterCalendarMutation.mockResolvedValue(null);
     const execute = vi
       .fn()
       .mockResolvedValueOnce({ rows: [{ id: TRAINING_PLAN_ID }] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            ends_at: new Date("2026-08-01T11:00:00.000Z"),
+            event_id: EVENT_ID,
+            expected_scheduled_date: "2026-08-01",
+            requested_scheduled_date: "2026-08-02",
+            starts_at: new Date("2026-08-01T10:00:00.000Z"),
+            timezone: "UTC",
+          },
+        ],
+      })
       .mockResolvedValueOnce({ rows: [{ id: EVENT_ID }] })
       .mockResolvedValueOnce({ rows: [] });
     const tx = { execute };
@@ -127,10 +143,74 @@ describe("reorderTrainingPlanActivitiesUseCase", () => {
       }),
     ).resolves.toEqual({ affected_count: 1, affected_event_ids: [EVENT_ID] });
 
-    const query = new PgDialect().sqlToQuery(execute.mock.calls[2]?.[0] as never).sql;
+    const query = new PgDialect().sqlToQuery(execute.mock.calls[3]?.[0] as never).sql;
     expect(query).toContain("revision = revision + 1");
     expect(query).toContain("validated_state_revision = null");
     expect(query).toContain("validated_at = null");
     expect(query).toContain("projection_algorithm_version = null");
+    expect(mocks.enqueueWahooPlannedActivitySyncAfterCalendarMutation).toHaveBeenCalledWith({
+      db,
+      eventIds: [EVENT_ID],
+      operation: "publish",
+      profileId: PROFILE_ID,
+      transaction: tx,
+    });
+    expect(
+      mocks.enqueueWahooPlannedActivitySyncAfterCalendarMutation.mock.invocationCallOrder[0],
+    ).toBeGreaterThan(execute.mock.invocationCallOrder[3] ?? Number.POSITIVE_INFINITY);
+  });
+
+  it("fails the reorder transaction when Wahoo publish admission cannot be queued", async () => {
+    mocks.enqueueWahooPlannedActivitySyncAfterCalendarMutation.mockResolvedValue({
+      affectedCount: 1,
+      error: "Wahoo planned-activity sync is unavailable",
+      operation: "publish",
+      queued: false,
+      success: false,
+    });
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [{ id: TRAINING_PLAN_ID }] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            ends_at: null,
+            event_id: EVENT_ID,
+            expected_scheduled_date: "2026-08-01",
+            requested_scheduled_date: "2026-08-02",
+            starts_at: new Date("2026-08-01T10:00:00.000Z"),
+            timezone: "UTC",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [{ id: EVENT_ID }] })
+      .mockResolvedValueOnce({ rows: [] });
+    const tx = { execute };
+    const db = {
+      transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
+        callback(tx),
+      ),
+    };
+
+    await expect(
+      reorderTrainingPlanActivitiesUseCase({
+        db: db as never,
+        profileId: PROFILE_ID,
+        trainingPlanId: TRAINING_PLAN_ID,
+        changes: [
+          {
+            event_id: EVENT_ID,
+            expected_scheduled_date: "2026-08-01",
+            requested_scheduled_date: "2026-08-02",
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Failed to queue planned activity synchronization",
+    });
+    expect(mocks.enqueueWahooPlannedActivitySyncAfterCalendarMutation).toHaveBeenCalledWith(
+      expect.objectContaining({ transaction: tx }),
+    );
   });
 });

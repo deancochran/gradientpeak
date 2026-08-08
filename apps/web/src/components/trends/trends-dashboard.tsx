@@ -8,7 +8,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { skipToken } from "@tanstack/react-query";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useViewingUserPreferredUnitSystem } from "../../hooks/use-viewing-user-preferred-unit-system";
@@ -26,30 +25,24 @@ const RANGE_OPTIONS = [
   { days: 365, label: "1 year" },
 ] as const;
 
-type TrendSourceName = "Profile metrics" | "Dashboard" | "Training load" | "Peak power";
-
-export function TrendPartialFailure({
-  failedSources,
+export function TrendReadModelFailure({
   isRetrying,
   onRetry,
 }: {
-  failedSources: readonly TrendSourceName[];
   isRetrying: boolean;
   onRetry: () => void;
 }) {
-  if (failedSources.length === 0) return null;
-
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-destructive/40 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <p className="font-medium text-destructive">Some analytics are unavailable</p>
+        <p className="font-medium text-destructive">Analytics are unavailable</p>
         <p className="text-sm text-muted-foreground">
-          Showing successful sources. Unavailable: {failedSources.join(", ")}.
+          The athlete read model could not be loaded. Retry to restore trend data.
         </p>
       </div>
       <Button disabled={isRetrying} onClick={onRetry} type="button" variant="outline">
         <RefreshCw className={`mr-2 h-4 w-4 ${isRetrying ? "animate-spin" : ""}`} />
-        Retry unavailable
+        Retry analytics
       </Button>
     </div>
   );
@@ -88,18 +81,6 @@ export function CommonLoadUnavailable({
   );
 }
 
-export function getFailedTrendSources(
-  states: ReadonlyArray<{ isError: boolean; name: TrendSourceName }>,
-): TrendSourceName[] {
-  return states.filter((state) => state.isError).map((state) => state.name);
-}
-
-export async function retryFailedTrendQueries(
-  queries: ReadonlyArray<{ isError: boolean; refetch: () => Promise<unknown> }>,
-) {
-  await Promise.all(queries.filter((query) => query.isError).map((query) => query.refetch()));
-}
-
 function toIsoDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
@@ -124,12 +105,6 @@ export function getTrendSpeedDisplay(metersPerSecond: number, unitSystem: Prefer
   return { label: displayUnitLabel(display.unit), value: display.value };
 }
 
-export function flattenProfileMetricPages<T>(
-  pages: ReadonlyArray<{ items: readonly T[] }> | undefined,
-): T[] {
-  return pages?.flatMap((page) => [...page.items]) ?? [];
-}
-
 export function TrendsDashboard() {
   const { unitSystem } = useViewingUserPreferredUnitSystem();
   const [rangeDays, setRangeDays] = useState<(typeof RANGE_OPTIONS)[number]["days"]>(365);
@@ -142,30 +117,23 @@ export function TrendsDashboard() {
     return { end, endDate: toIsoDate(end), start, startDate: toIsoDate(start) };
   }, [rangeDays]);
 
-  const profile = api.profiles.get.useQuery();
-  const readModel = api.athleteIntelligence.getReadModel.useQuery(
-    profile.data
-      ? {
-          profileId: profile.data.id,
-          sections: {
-            loadHistory: true,
-            profileObservations: {
-              startAt: range.start.toISOString(),
-              endAt: range.end.toISOString(),
-              limit: 200,
-            },
-            activityAnalytics: {
-              startAt: range.start.toISOString(),
-              endAt: range.end.toISOString(),
-              groupBy: "week",
-              peakMetric: "power",
-              peakLimit: 5,
-            },
-          },
-        }
-      : skipToken,
-    { enabled: Boolean(profile.data) },
-  );
+  const readModel = api.athleteIntelligence.getReadModel.useQuery({
+    sections: {
+      loadHistory: true,
+      profileObservations: {
+        startAt: range.start.toISOString(),
+        endAt: range.end.toISOString(),
+        limit: 200,
+      },
+      activityAnalytics: {
+        startAt: range.start.toISOString(),
+        endAt: range.end.toISOString(),
+        groupBy: "week",
+        peakMetric: "power",
+        peakLimit: 5,
+      },
+    },
+  });
   const analytics =
     readModel.data?.activityAnalytics?.status === "available"
       ? readModel.data.activityAnalytics
@@ -174,16 +142,8 @@ export function TrendsDashboard() {
   const load = readModel.data?.loadHistory?.result ?? null;
   const peakPower = analytics?.peakPerformances ?? [];
   const profileMetricItems = readModel.data?.profileObservations?.items;
-  const failedSources = readModel.isError
-    ? (["Profile metrics", "Dashboard", "Training load", "Peak power"] as const)
-    : [];
-  const isInitialLoading =
-    readModel.data === undefined && (readModel.isLoading || profile.isLoading);
+  const isInitialLoading = readModel.data === undefined && readModel.isLoading;
   const isRetrying = readModel.isRefetching;
-
-  const retryFailedSources = async () => {
-    await readModel.refetch();
-  };
 
   const metricRows = (profileMetricItems ?? []).filter((row) => row.metric_type === selectedMetric);
   const selectedMetricDefinition = profileMetricOptions.find(
@@ -239,11 +199,9 @@ export function TrendsDashboard() {
         </Badge>
       </div>
 
-      <TrendPartialFailure
-        failedSources={failedSources}
-        isRetrying={isRetrying}
-        onRetry={() => void retryFailedSources()}
-      />
+      {readModel.isError ? (
+        <TrendReadModelFailure isRetrying={isRetrying} onRetry={() => void readModel.refetch()} />
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-2">
         {load?.status === "available" ? (

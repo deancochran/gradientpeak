@@ -290,7 +290,6 @@ describe("athleteIntelligenceRouter.getReadModel", () => {
 
     await expect(
       api.getReadModel({
-        profileId: OWNER_ID,
         sections: { publishedState: true, status: true },
       }),
     ).resolves.toEqual(expect.objectContaining({ publishedRevision: 4 }));

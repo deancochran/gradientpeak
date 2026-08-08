@@ -169,6 +169,7 @@ export interface WahooRepository {
     id: string;
     routeId: string | null;
     startsAt: string;
+    timezone: string;
   } | null>;
   getOwnedRouteForMirror(input: { profileId: string; routeId: string }): Promise<{
     description: string | null;
@@ -238,6 +239,7 @@ export interface WahooRepository {
       };
       eventId: string;
       startsAt: string;
+      timezone: string;
     }>
   >;
   listOwnedRoutesForMirror(input: {

@@ -8,8 +8,6 @@ let routeDate: string | undefined = "2026-07-27";
 const navigateMock = jest.fn();
 const calendarDayUseQueryMock = jest.fn();
 const calendarDayRefetchMock = jest.fn(() => Promise.resolve());
-const agendaGroupsRefetchMock = jest.fn(() => Promise.resolve());
-let groupEventsQueryState: Record<string, unknown> = { data: { items: [] }, isLoading: false };
 
 jest.mock("expo-router", () => ({
   __esModule: true,
@@ -53,10 +51,6 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,
   useAppNavigate: () => navigateMock,
 }));
-jest.mock("@/lib/hooks/useProfileGoals", () => ({
-  __esModule: true,
-  useProfileGoals: () => ({ goals: [] }),
-}));
 jest.mock("@/lib/auth/auth-headers", () => ({
   __esModule: true,
   hasSessionAuthCredentials: () => true,
@@ -81,12 +75,6 @@ jest.mock("@/lib/api", () => ({
     calendar: {
       day: { useQuery: (...args: unknown[]) => calendarDayUseQueryMock(...args) },
     },
-    groups: {
-      events: {
-        myCalendarGroupEvents: { useQuery: () => groupEventsQueryState },
-      },
-    },
-    activityPlans: { getManyByIds: { useQuery: () => ({ data: { items: [] } }) } },
   },
 }));
 
@@ -97,12 +85,6 @@ function configureQueries(
 ) {
   const agendaLoading = input.agendaState === "loading";
   const agendaError = input.agendaState === "error";
-  groupEventsQueryState = {
-    data: agendaLoading || agendaError ? undefined : { items: [] },
-    error: agendaError ? new Error("agenda failed") : null,
-    isLoading: agendaLoading,
-    refetch: agendaGroupsRefetchMock,
-  };
   calendarDayUseQueryMock.mockImplementation(() => ({
     data:
       agendaLoading || agendaError
@@ -152,10 +134,8 @@ describe("calendar day planned summary boundary", () => {
     routeDate = "2026-07-27";
     navigateMock.mockReset();
     calendarDayRefetchMock.mockClear();
-    agendaGroupsRefetchMock.mockClear();
     jest.mocked(announcePlannedDaySummaryRetryStatus).mockClear();
     calendarDayUseQueryMock.mockReset();
-    groupEventsQueryState = { data: { items: [] }, isLoading: false };
   });
 
   it("uses one exact-day summary query while keeping cancelled Event cards independently actionable", () => {
@@ -275,17 +255,10 @@ describe("calendar day planned summary boundary", () => {
   it("makes the localized agenda retry semantic, announced, and re-enabled after deferred success and failure", async () => {
     configureQueries({ agendaState: "error" });
     let resolveEvents: (() => void) | undefined;
-    let resolveGroups: (() => void) | undefined;
     calendarDayRefetchMock.mockImplementation(
       () =>
         new Promise<void>((resolve) => {
           resolveEvents = resolve;
-        }),
-    );
-    agendaGroupsRefetchMock.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveGroups = resolve;
         }),
     );
     renderNative(<CalendarDayScreen />);
@@ -303,14 +276,12 @@ describe("calendar day planned summary boundary", () => {
 
     await act(async () => {
       resolveEvents?.();
-      resolveGroups?.();
     });
     expect(screen.getByTestId("calendar-day-agenda-retry").props.disabled).toBe(false);
     expect(screen.getByText("Day agenda retry finished.")).toBeTruthy();
     expect(announcePlannedDaySummaryRetryStatus).toHaveBeenCalledWith("Day agenda retry finished.");
 
     calendarDayRefetchMock.mockImplementationOnce(() => Promise.reject(new Error("offline")));
-    agendaGroupsRefetchMock.mockImplementationOnce(() => Promise.resolve());
     await act(async () => {
       fireEvent.press(screen.getByTestId("calendar-day-agenda-retry"));
     });

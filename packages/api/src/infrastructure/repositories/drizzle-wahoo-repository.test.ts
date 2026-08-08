@@ -392,6 +392,7 @@ describe("Wahoo repository activity persistence boundary", () => {
         {
           id: "event-1",
           startsAt: new Date("2026-07-18T08:00:00.000Z"),
+          timezone: "America/New_York",
           routeId: "route-1",
           activityPlan: {
             id: "plan-1",
@@ -412,6 +413,7 @@ describe("Wahoo repository activity persistence boundary", () => {
 
     expect(result?.activityPlan).not.toHaveProperty("activityCategory");
     expect(result?.routeId).toBe("route-1");
+    expect(result?.timezone).toBe("America/New_York");
     expect(result?.activityPlan).not.toHaveProperty("routeId");
   });
 

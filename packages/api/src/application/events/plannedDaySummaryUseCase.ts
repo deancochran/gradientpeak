@@ -120,17 +120,27 @@ export function summarizePlannedDayEvents(input: {
     }
 
     const estimate = estimatesByPlanId.get(plan.id);
-    const eventQuantification = estimate
-      ? bindPrescriptionQuantificationToScheduledEvent({
-          prescriptionQuantification: estimate.prescriptionQuantification,
-          eventId: event.id,
-        })
-      : unavailableEventQuantification({
-          date: input.date,
-          eventId: event.id,
-          planId: plan.id,
-          activityCategory: parsed.data.activity_category,
-        });
+    let eventQuantification: ActivityPrescriptionQuantificationBundle;
+    try {
+      eventQuantification = estimate
+        ? bindPrescriptionQuantificationToScheduledEvent({
+            prescriptionQuantification: estimate.prescriptionQuantification,
+            eventId: event.id,
+          })
+        : unavailableEventQuantification({
+            date: input.date,
+            eventId: event.id,
+            planId: plan.id,
+            activityCategory: parsed.data.activity_category,
+          });
+    } catch {
+      eventQuantification = unavailableEventQuantification({
+        date: input.date,
+        eventId: event.id,
+        planId: plan.id,
+        activityCategory: parsed.data.activity_category,
+      });
+    }
     const eventAggregate = eventQuantification.summary;
     if (
       eventAggregate.duration.elapsed.status === "unavailable" ||
