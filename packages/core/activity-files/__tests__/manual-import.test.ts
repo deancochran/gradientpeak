@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildManualActivityImportProvenance,
   deriveActivityNameFromFileName,
   getSupportedActivityFileExtension,
   MAX_ACTIVITY_FILE_SIZE_BYTES,
@@ -17,7 +16,6 @@ const validFile = {
 
 const validForm = {
   files: [validFile],
-  activity_category: "bike",
   name: "Morning ride",
   notes: null,
 };
@@ -78,13 +76,6 @@ describe("manual activity import form contract", () => {
     ).toBe(false);
   });
 
-  it("requires a canonical activity_category", () => {
-    expect(
-      manualActivityImportFormSchema.safeParse({ ...validForm, activity_category: "pickleball" })
-        .success,
-    ).toBe(false);
-  });
-
   it("trims activity names and enforces their bounds", () => {
     expect(
       manualActivityImportFormSchema.parse({ ...validForm, name: "  Morning ride  " }).name,
@@ -105,22 +96,5 @@ describe("manual activity import form contract", () => {
     expect(
       manualActivityImportFormSchema.safeParse({ ...validForm, notes: "a".repeat(5_001) }).success,
     ).toBe(false);
-  });
-});
-
-describe("manual activity import provenance", () => {
-  it("builds canonical provenance from a safe supported filename", () => {
-    expect(buildManualActivityImportProvenance("  Race.Final.TCX  ")).toEqual({
-      import_source: "manual_historical",
-      import_file_type: "tcx",
-      import_original_file_name: "Race.Final.TCX",
-    });
-  });
-
-  it("refuses unsupported and unsafe filenames", () => {
-    expect(() => buildManualActivityImportProvenance("activity.csv")).toThrow(
-      "Unsupported activity file extension",
-    );
-    expect(() => buildManualActivityImportProvenance("folder/activity.fit")).toThrow();
   });
 });

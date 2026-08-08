@@ -1,10 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { millisecondsUntilNextLocalDay, toLocalDayEndIso, toLocalDayStartIso } from "../dateMath";
-import {
-  buildGroupEventsByDate,
-  type CalendarGroupEvent,
-  toGroupEventScheduledActivityPlanEvent,
-} from "../groupEventPlans";
+import { buildGroupEventsByDate, type CalendarGroupEvent } from "../groupEventPlans";
 import { buildEventsByDate } from "../normalizeEvents";
 
 const originalTimezone = process.env.TZ;
@@ -34,16 +30,22 @@ describe("calendar date bucketing", () => {
     expect(millisecondsUntilNextLocalDay(new Date(2026, 10, 1, 0, 30))).toBe(24.5 * 60 * 60 * 1000);
   });
 
-  it("buckets timed instants by device-local date while preserving date-only semantics", () => {
+  it("buckets events by their materialized scheduled date", () => {
     const priorLocalDayInstant = "2026-05-01T01:30:00.000Z";
     const eventsByDate = buildEventsByDate([
-      { id: "timed", starts_at: priorLocalDayInstant },
+      { id: "timed", scheduled_date: "2026-04-30", starts_at: priorLocalDayInstant },
       {
         id: "scheduled-date",
         scheduled_date: "2026-05-01",
         starts_at: priorLocalDayInstant,
       },
-      { id: "all-day", all_day: true, starts_at: "2026-05-01T00:00:00.000Z" },
+      {
+        id: "all-day",
+        all_day: true,
+        scheduled_date: "2026-05-01",
+        starts_at: "2026-05-01T00:00:00.000Z",
+      },
+      { id: "missing-date", starts_at: priorLocalDayInstant },
     ]);
 
     expect(eventsByDate.get("2026-04-30")?.map((event) => event.id)).toEqual(["timed"]);
@@ -55,12 +57,12 @@ describe("calendar date bucketing", () => {
     const groupEvent = {
       id: "group",
       starts_at: priorLocalDayInstant,
+      scheduled_date: "2026-05-01",
       selectedActivityPlan: { id: "plan" },
     } as CalendarGroupEvent;
     const groupEventsByDate = buildGroupEventsByDate([groupEvent]);
 
-    expect(groupEventsByDate.get("2026-04-30")?.map((event) => event.id)).toEqual(["group"]);
-    expect(groupEventsByDate.has("2026-05-01")).toBe(false);
-    expect(toGroupEventScheduledActivityPlanEvent(groupEvent)?.scheduled_date).toBe("2026-04-30");
+    expect(groupEventsByDate.get("2026-05-01")?.map((event) => event.id)).toEqual(["group"]);
+    expect(groupEventsByDate.has("2026-04-30")).toBe(false);
   });
 });

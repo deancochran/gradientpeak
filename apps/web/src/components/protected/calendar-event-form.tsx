@@ -61,8 +61,6 @@ export function CalendarEventForm({ event, month, view }: CalendarEventFormProps
   const [date, setDate] = useState(event.scheduled_date ?? "");
   const [time, setTime] = useState("09:00");
   const [allDay, setAllDay] = useState(Boolean(event.all_day));
-  const recurring = Boolean(event.series_id || event.recurrence_rule);
-  const [scope, setScope] = useState<"single" | "future" | "series">("single");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submittingRef = useRef(false);
@@ -116,7 +114,7 @@ export function CalendarEventForm({ event, month, view }: CalendarEventFormProps
       >
         <input {...contractEpochFormInputProps} />
         <input type="hidden" name="event_id" value={event.id} />
-        <input type="hidden" name="scope" value={scope} />
+        <input type="hidden" name="scope" value="single" />
         <input
           type="hidden"
           name="redirectTo"
@@ -129,7 +127,6 @@ export function CalendarEventForm({ event, month, view }: CalendarEventFormProps
               directly to the server action; the shared RHF date/time fields do not emit names. */}
           <div>
             <DateInput
-              disabled={scope !== "single"}
               id="event-date"
               label="Date"
               name="scheduled_date"
@@ -139,7 +136,7 @@ export function CalendarEventForm({ event, month, view }: CalendarEventFormProps
           </div>
           <div>
             <TimeInput
-              disabled={allDay || scope !== "single"}
+              disabled={allDay}
               id="event-time"
               label="Time"
               name="time"
@@ -161,30 +158,6 @@ export function CalendarEventForm({ event, month, view }: CalendarEventFormProps
         </label>
 
         <FormTextareaField control={form.control} label="Notes" name="notes" />
-
-        {recurring ? (
-          <div className="space-y-3 rounded-xl border p-4">
-            <div className="space-y-2">
-              <label htmlFor="event-scope" className="text-sm font-medium">
-                Apply changes to
-              </label>
-              <select
-                id="event-scope"
-                value={scope}
-                onChange={(event) => setScope(event.target.value as typeof scope)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="single">This event only</option>
-                <option value="future">This and future events</option>
-                <option value="series">Entire series</option>
-              </select>
-              <p className="text-xs text-muted-foreground">
-                Rescheduling is instance-only. Future and series scopes update title and notes
-                without changing occurrence dates.
-              </p>
-            </div>
-          </div>
-        ) : null}
 
         {submitError ? (
           <p role="alert" aria-live="polite" className="text-sm text-destructive">

@@ -13,11 +13,12 @@ function createIntegration(
       lastSucceededAt: null,
       queuedJobId: null,
       status: "idle",
+      importRun: null,
     },
     configured: true,
     connected: false,
     integrationId: null,
-    label: "Strava",
+    label: "Wahoo",
     plannedActivities: {
       lastError: null,
       lastFailedAt: null,
@@ -26,19 +27,22 @@ function createIntegration(
       status: "unsupported",
     },
     primaryAction: "connect",
-    provider: "strava",
+    provider: "wahoo",
     providerHealth: { lastError: null, status: "unsupported" },
     setupData: {
       lastError: null,
       lastFailedAt: null,
       lastSucceededAt: null,
+      profile: { dob: null, gender: null, onboarded: false },
+      sources: {},
       status: "idle",
+      values: {},
     },
     summary: {
       badge: "Available",
       health: "unavailable",
       subtitle: "Not connected",
-      title: "Strava",
+      title: "Wahoo",
     },
     ...overrides,
   };
@@ -62,13 +66,13 @@ describe("IntegrationProviderList", () => {
       <IntegrationProviderList integrations={[createIntegration()]} onConnect={onConnect} />,
     );
 
-    const connectButton = getByTestId("integration-connect-strava");
-    expect(connectButton.props.accessibilityLabel).toBe("Connect Strava");
+    const connectButton = getByTestId("integration-connect-wahoo");
+    expect(connectButton.props.accessibilityLabel).toBe("Connect Wahoo");
     expect(connectButton.props.accessibilityRole).toBe("button");
     expect(connectButton.props.accessibilityState).toEqual({ disabled: false });
     expect(connectButton.props.className).toContain("min-h-12");
     fireEvent.press(connectButton);
-    expect(onConnect).toHaveBeenCalledWith("strava");
+    expect(onConnect).toHaveBeenCalledWith("wahoo");
   });
 
   it("uses semantic success and info status colors", () => {
@@ -81,7 +85,7 @@ describe("IntegrationProviderList", () => {
         badge: "Connected",
         health: "connected",
         subtitle: "Ready",
-        title: "Strava",
+        title: "Wahoo",
       },
     });
     const syncing = createIntegration({
@@ -94,12 +98,18 @@ describe("IntegrationProviderList", () => {
         title: "Wahoo",
       },
     });
-    const { getByText } = render(
-      <IntegrationProviderList integrations={[connected, syncing]} onConnect={jest.fn()} />,
+    const connectedView = render(
+      <IntegrationProviderList integrations={[connected]} onConnect={jest.fn()} />,
     );
-
-    expect(getByText("Connected").props.className).toContain("text-success-subtle-foreground");
-    expect(getByText("Syncing").props.className).toContain("text-info-subtle-foreground");
+    expect(connectedView.getByText("Connected").props.className).toContain(
+      "text-success-subtle-foreground",
+    );
+    connectedView.rerender(
+      <IntegrationProviderList integrations={[syncing]} onConnect={jest.fn()} />,
+    );
+    expect(connectedView.getByText("Syncing").props.className).toContain(
+      "text-info-subtle-foreground",
+    );
   });
 
   it("announces a pending provider action once through the shared spinner", () => {
@@ -107,15 +117,121 @@ describe("IntegrationProviderList", () => {
       <IntegrationProviderList
         integrations={[createIntegration()]}
         onConnect={jest.fn()}
-        pendingByProvider={{ strava: "connect" }}
+        pendingByProvider={{ wahoo: "connect" }}
       />,
     );
 
-    expect(getByLabelText("Strava action in progress").props).toMatchObject({
+    expect(getByLabelText("Wahoo action in progress").props).toMatchObject({
       accessibilityLiveRegion: "polite",
       accessibilityRole: "progressbar",
       accessibilityState: { busy: true },
     });
-    expect(queryByText("Strava action in progress")).toBeNull();
+    expect(queryByText("Wahoo action in progress")).toBeNull();
+  });
+
+  it("renders transitional cached data without published state as unavailable", () => {
+    const transitional = createIntegration();
+    const { getByText } = render(
+      <IntegrationProviderList integrations={[transitional]} onConnect={jest.fn()} />,
+    );
+
+    expect(getByText("State unavailable")).toBeTruthy();
+  });
+
+  it("shows truthful rebuild state and opens the exact imported batch", () => {
+    const onViewImportedActivities = jest.fn();
+    const importRunId = "77777777-7777-4777-8777-777777777777";
+    const integration = createIntegration({
+      activityHistory: {
+        importRun: {
+          id: importRunId,
+          status: "completed",
+          importedCount: 12,
+          skippedCount: 1,
+          failedCount: 0,
+        },
+        lastError: null,
+        lastFailedAt: null,
+        lastSucceededAt: "2026-08-01T12:00:00.000Z",
+        queuedJobId: null,
+        status: "synced",
+      },
+    });
+    const { getByTestId, getByText } = render(
+      <IntegrationProviderList
+        integrations={[integration]}
+        onConnect={jest.fn()}
+        onViewImportedActivities={onViewImportedActivities}
+        publishedState={{
+          contractVersion: "athlete-read-model-v1",
+          profileId: "11111111-1111-4111-8111-111111111111",
+          asOf: "2026-08-01T12:00:00.000Z",
+          publishedRevision: 4,
+          algorithmVersion: "athlete-state-projection-v1",
+          status: {
+            freshness: "stale",
+            rebuildStatus: "rebuilding",
+            importStatus: "complete",
+            sourceRevision: 5,
+            publishedRevision: 4,
+            coverage: { startAt: null, endAt: null, lastActivityAt: null },
+          },
+        }}
+      />,
+    );
+
+    expect(getByText(/State rebuilding/)).toBeTruthy();
+    fireEvent.press(getByTestId("integration-view-import-wahoo"));
+    expect(onViewImportedActivities).toHaveBeenCalledWith(importRunId);
+  });
+
+  it.each([
+    ["pending", "Activities imported; state pending"],
+    ["rebuilding", "State rebuilding"],
+    ["fresh", "State current"],
+    ["failed_incomplete", "History incomplete after failed import"],
+  ] as const)("renders truthful athlete-state status %s", (status, expected) => {
+    const integration = createIntegration();
+    const { getByText } = render(
+      <IntegrationProviderList
+        integrations={[integration]}
+        onConnect={jest.fn()}
+        publishedState={{
+          contractVersion: "athlete-read-model-v1",
+          profileId: "11111111-1111-4111-8111-111111111111",
+          asOf: "2026-08-01T12:00:00.000Z",
+          publishedRevision: 4,
+          algorithmVersion: "athlete-state-projection-v1",
+          status: {
+            freshness: status === "fresh" ? "fresh" : "stale",
+            rebuildStatus: status === "failed_incomplete" ? "failed" : status,
+            importStatus: status === "failed_incomplete" ? "failed" : "complete",
+            sourceRevision: 4,
+            publishedRevision: 4,
+            coverage: { startAt: null, endAt: null, lastActivityAt: null },
+          },
+        }}
+      />,
+    );
+    expect(getByText(expected)).toBeTruthy();
+  });
+
+  it("keeps a persisted disabled provider visible and disconnectable", () => {
+    const integration = createIntegration({
+      configured: false,
+      connected: true,
+      primaryAction: "disconnect",
+      providerHealth: { lastError: null, status: "connected" },
+    });
+    const onDisconnect = jest.fn();
+    const { getByTestId } = render(
+      <IntegrationProviderList
+        integrations={[integration]}
+        onConnect={jest.fn()}
+        onDisconnect={onDisconnect}
+      />,
+    );
+    fireEvent.press(getByTestId("integration-disconnect-wahoo"));
+    expect(onDisconnect).toHaveBeenCalledWith(integration);
   });
 });

@@ -1,10 +1,10 @@
-import { activityPlanStructureSchema, getScheduledDateKey } from "@repo/core";
+import { activityPlanStructureSchema } from "@repo/core";
 import type { PublicEventStatus } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import type { Context } from "../../context";
 import type { createEventWriteRepository } from "../../infrastructure/repositories";
 import { logger } from "../../lib/logger";
-import type { PlannedActivityQueueResult } from "../../lib/provider-sync/planned-activities";
+import type { WahooPlannedActivityQueueResult } from "../../lib/provider-sync/planned-activities";
 import type { createContentAccessPermissions } from "../../permissions/content-access";
 
 type ProtectedContext = Context & {
@@ -76,10 +76,10 @@ type CreateEventUseCaseDependencies<
     endsAt: string | null;
     recurrence: NonNullable<TNormalized["recurrence"]>;
   }) => MaterializedOccurrence[];
-  enqueueProviderPlannedActivityJobs: (
+  enqueueWahooPlannedActivityJobs: (
     ctx: ProtectedContext,
     input: { eventIds: string[]; operation: "publish" | "unsync"; profileId?: string },
-  ) => Promise<PlannedActivityQueueResult | null>;
+  ) => Promise<WahooPlannedActivityQueueResult | null>;
   ensurePersistableRecurrence: (recurrence: TNormalized["recurrence"]) => void;
   getContentPermissions: (ctx: Context) => ContentPermissions;
   getEventWriteRepository: (ctx: Context) => ReturnType<typeof createEventWriteRepository>;
@@ -243,16 +243,16 @@ export async function createEventUseCase<
     createdEvents = (await eventWriteRepository.createOwnedEvents({
       anchor: {
         ...sharedEventInput,
+        scheduledDate: recurrence
+          ? (occurrences[0]?.occurrenceKey ?? normalizedCreate.scheduledDate)
+          : normalizedCreate.scheduledDate,
         seriesId: null,
         occurrenceKey: recurrence ? (occurrences[0]?.occurrenceKey ?? null) : null,
         originalStartsAt: recurrence ? (occurrences[0]?.startsAt ?? null) : null,
       },
       occurrences: occurrences.slice(1).map((occurrence) => ({
         ...sharedEventInput,
-        scheduledDate:
-          normalizedEventType === "planned"
-            ? occurrence.startsAt.slice(0, 10)
-            : getScheduledDateKey(occurrence.startsAt, normalizedCreate.timezone),
+        scheduledDate: occurrence.occurrenceKey,
         startsAt: occurrence.startsAt,
         endsAt: occurrence.endsAt,
         occurrenceKey: occurrence.occurrenceKey,
@@ -285,11 +285,11 @@ export async function createEventUseCase<
     }
   }
 
-  let plannedActivitySyncResult: PlannedActivityQueueResult | null = null;
+  let plannedActivitySyncResult: WahooPlannedActivityQueueResult | null = null;
   // Route-only Wahoo targets are terminally unsupported; avoid a no-op publish job.
   if (event.event_type === "planned" && normalizedCreate.activityPlanId) {
     try {
-      plannedActivitySyncResult = await dependencies.enqueueProviderPlannedActivityJobs(ctx, {
+      plannedActivitySyncResult = await dependencies.enqueueWahooPlannedActivityJobs(ctx, {
         eventIds: createdEvents.map((createdEvent) => createdEvent.id),
         operation: "publish",
       });

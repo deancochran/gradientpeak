@@ -33,28 +33,18 @@ export default function GroupEventDetailRoute() {
 
   const managementActions: DetailOverflowMenuAction[] = [];
   if (event && groupVm.viewer?.canCreateGroupEvent) {
-    managementActions.push({
-      label: event.is_recurring_occurrence ? "Edit this event" : "Edit event",
-      onPress: () =>
-        router.push({ pathname: "/group-event-edit", params: { groupEventId: event.id } }),
-      testID: "group-event-detail-edit",
-    });
-
-    if (event.is_recurring_occurrence && event.series_id) {
+    if (!event.is_recurring_series) {
       managementActions.push({
-        label: "Edit series",
+        label: event.is_recurring_occurrence ? "Edit this event" : "Edit event",
         onPress: () =>
-          router.push({
-            pathname: "/group-event-edit",
-            params: { groupEventId: event.series_id as string },
-          }),
-        testID: "group-event-detail-edit-series",
+          router.push({ pathname: "/group-event-edit", params: { groupEventId: event.id } }),
+        testID: "group-event-detail-edit",
       });
     }
 
     if (!event.cancelled_at) {
       managementActions.push({
-        label: "Cancel event",
+        label: event.is_recurring_series ? "Cancel series" : "Cancel event",
         onPress: () => {
           const cancelWithScope = async (scope: "single" | "series") => {
             try {
@@ -68,7 +58,19 @@ export default function GroupEventDetailRoute() {
             }
           };
 
-          if (event.is_recurring_occurrence || event.is_recurring_series) {
+          if (event.is_recurring_series) {
+            Alert.alert("Cancel recurring series", "Cancel the entire recurring series?", [
+              { text: "Keep series", style: "cancel" },
+              {
+                text: "Cancel series",
+                style: "destructive",
+                onPress: () => void cancelWithScope("series"),
+              },
+            ]);
+            return;
+          }
+
+          if (event.is_recurring_occurrence) {
             Alert.alert(
               "Cancel recurring event",
               "Choose whether to cancel only this event or the full series.",

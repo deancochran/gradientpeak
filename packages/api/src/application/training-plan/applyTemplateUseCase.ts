@@ -11,7 +11,7 @@ import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
 import { and, asc, eq, gte, inArray, ne, sql } from "drizzle-orm";
 import type { z } from "zod";
-import { enqueuePlannedActivitySyncAfterCalendarMutation } from "../../lib/provider-sync/planned-activities";
+import { enqueueWahooPlannedActivitySyncAfterCalendarMutation } from "../../lib/provider-sync/planned-activities";
 import { needsContentGrantForRow } from "../../permissions/content-access";
 import type { TrainingPlanRepository } from "../../repositories";
 import { materializeAppliedTrainingPlan } from "./schedulingUtils";
@@ -359,7 +359,7 @@ export async function applyTrainingPlanTemplateUseCase(input: {
       for (const event of candidates) {
         await permissions.revokeEventGrants(event.id);
       }
-      const unsyncResult = await enqueuePlannedActivitySyncAfterCalendarMutation({
+      const unsyncResult = await enqueueWahooPlannedActivitySyncAfterCalendarMutation({
         db: transactionDb,
         eventIds: candidates.map((event) => event.id),
         operation: "unsync",
@@ -411,8 +411,7 @@ export async function applyTrainingPlanTemplateUseCase(input: {
         const shouldGrantTrainingPlan = needsContentGrantForRow(
           {
             ownerProfileId: templatePlan.profile_id,
-            isPublic:
-              (templatePlan.content_visibility ?? templatePlan.template_visibility) === "public",
+            isPublic: templatePlan.content_visibility === "public",
             isSystem: templatePlan.is_system_template,
           },
           profileId,
@@ -431,7 +430,7 @@ export async function applyTrainingPlanTemplateUseCase(input: {
         });
       }
 
-      const publishResult = await enqueuePlannedActivitySyncAfterCalendarMutation({
+      const publishResult = await enqueueWahooPlannedActivitySyncAfterCalendarMutation({
         db: transactionDb,
         eventIds: insertedEvents
           .filter((_, index) => Boolean(eventRows[index]?.activity_plan_id))
@@ -458,6 +457,6 @@ export async function applyTrainingPlanTemplateUseCase(input: {
     scheduled_sessions_created: insertedEvents.length,
     scheduled_sessions_skipped: materializedApplication.skippedSessions,
     scheduled_sessions_replaced: removedEvents.length,
-    cache_tags: ["events.list", "trainingPlans.list"],
+    cache_tags: ["calendar.range", "calendar.day", "trainingPlans.list"],
   };
 }

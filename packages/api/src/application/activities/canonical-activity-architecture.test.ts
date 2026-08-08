@@ -7,10 +7,13 @@ function source(relativeUrl: string) {
 }
 
 describe("canonical activity submission architecture", () => {
-  it("routes standard and recording creation through submitActivity", () => {
+  it("exposes only session-bound recording creation and delegates canonical persistence", () => {
     const router = source("../../routers/activities.ts");
-    expect(router).toContain("submitActivity(db");
+    const recordingSubmission = source("./submit-mobile-recording.ts");
+    expect(router).toContain("submitMobileRecording(");
+    expect(router).not.toContain("create: protectedProcedure");
     expect(router).not.toContain("tx.insert(activities)");
+    expect(recordingSubmission).toContain("submitActivity(db");
   });
 
   it("keeps provider adapters free of direct activity projection inserts", () => {

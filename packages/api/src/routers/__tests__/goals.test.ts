@@ -1,6 +1,7 @@
 import type { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
-import { goalsRouter } from "../goals";
+import type { withAuthorizedAthleteReadAcrossOrganizations } from "../../application/organizations/authorize-athlete-read";
+import { createGoalsRouter, goalsRouter } from "../goals";
 
 type GoalRow = {
   id: string;
@@ -176,11 +177,35 @@ function createDbMock(queryMap: QueryMap = {}) {
   return { db, callLog };
 }
 
-function createCaller(params?: { userId?: string; queryMap?: QueryMap }) {
-  const { userId = OWNER_ID, queryMap } = params ?? {};
-  const { db, callLog } = createDbMock(queryMap);
+type ConsentState = "expired" | "missing" | "revoked" | "valid";
 
-  const caller = goalsRouter.createCaller({
+function consentAuthorizer(input: {
+  state: ConsentState;
+  scopes: readonly ("goals" | "metrics")[];
+}) {
+  return vi.fn(
+    async (request: Parameters<typeof withAuthorizedAthleteReadAcrossOrganizations>[0]) => {
+      if (input.state !== "valid" || !input.scopes.includes(request.scope as "goals" | "metrics")) {
+        return { outcome: "deny" as const };
+      }
+      return {
+        outcome: "allow" as const,
+        organizationId: "33333333-3333-4333-8333-333333333333",
+        value: await request.read(request.db as never),
+      };
+    },
+  ) as unknown as typeof withAuthorizedAthleteReadAcrossOrganizations;
+}
+
+function createCaller(params?: {
+  userId?: string;
+  queryMap?: QueryMap;
+  authorizeRead?: typeof withAuthorizedAthleteReadAcrossOrganizations;
+}) {
+  const { userId = OWNER_ID, queryMap, authorizeRead } = params ?? {};
+  const { db, callLog } = createDbMock(queryMap);
+  const router = authorizeRead ? createGoalsRouter(authorizeRead) : goalsRouter;
+  const caller = router.createCaller({
     db: db as any,
     session: { user: { id: userId } },
     headers: new Headers(),
@@ -289,9 +314,9 @@ describe("goalsRouter", () => {
     const goal = createGoalRow();
     const { caller } = createCaller({
       userId: COACH_ID,
+      authorizeRead: consentAuthorizer({ state: "valid", scopes: ["goals"] }),
       queryMap: {
         profileGoalsSelect: [[goal]],
-        profileAccess: [{ has_access: true }],
       },
     });
 
@@ -304,9 +329,9 @@ describe("goalsRouter", () => {
     const goal = createGoalRow();
     const { caller } = createCaller({
       userId: COACH_ID,
+      authorizeRead: consentAuthorizer({ state: "missing", scopes: ["goals"] }),
       queryMap: {
         profileGoalsSelect: [[goal]],
-        profileAccess: [{ has_access: false }],
       },
     });
 
@@ -512,9 +537,7 @@ describe("goalsRouter", () => {
   it("rejects unauthorized profile goal reads", async () => {
     const { caller } = createCaller({
       userId: COACH_ID,
-      queryMap: {
-        profileAccess: [{ has_access: false }],
-      },
+      authorizeRead: consentAuthorizer({ state: "missing", scopes: ["goals"] }),
     });
 
     await expect(
@@ -523,5 +546,65 @@ describe("goalsRouter", () => {
         limit: 20,
       }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" } as Partial<TRPCError>);
+  });
+
+  it("allows a coach to list goals through valid goals consent", async () => {
+    const goal = createGoalRow();
+    const authorizeRead = consentAuthorizer({ state: "valid", scopes: ["goals"] });
+    const { caller } = createCaller({
+      userId: COACH_ID,
+      authorizeRead,
+      queryMap: { profileGoalsSelect: [goal], profileGoalsCount: [{ total: 1 }] },
+    });
+
+    await expect(caller.list({ profile_id: OWNER_ID, limit: 20 })).resolves.toMatchObject({
+      items: [goal],
+      total: 1,
+    });
+    expect(authorizeRead).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorProfileId: COACH_ID,
+        athleteProfileId: OWNER_ID,
+        scope: "goals",
+      }),
+    );
+  });
+
+  it.each([
+    "missing",
+    "revoked",
+    "expired",
+  ] as const)("denies list and hides getById when goals consent is %s", async (state) => {
+    const authorizeRead = consentAuthorizer({ state, scopes: ["goals"] });
+    const list = createCaller({ userId: COACH_ID, authorizeRead });
+    const detail = createCaller({
+      userId: COACH_ID,
+      authorizeRead,
+      queryMap: { profileGoalsSelect: [[createGoalRow()]] },
+    });
+
+    await expect(list.caller.list({ profile_id: OWNER_ID, limit: 20 })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(detail.caller.getById({ id: GOAL_ID })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+
+  it("does not treat valid metrics consent as goals consent", async () => {
+    const authorizeRead = consentAuthorizer({ state: "valid", scopes: ["metrics"] });
+    const list = createCaller({ userId: COACH_ID, authorizeRead });
+    const detail = createCaller({
+      userId: COACH_ID,
+      authorizeRead,
+      queryMap: { profileGoalsSelect: [[createGoalRow()]] },
+    });
+
+    await expect(list.caller.list({ profile_id: OWNER_ID, limit: 20 })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(detail.caller.getById({ id: GOAL_ID })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
   });
 });

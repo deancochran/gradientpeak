@@ -475,42 +475,11 @@ export const futureJourneyBlueprints = [
     ["recurring event fixture", "bounded deterministic dates", "event cleanup"],
     [
       testId("event-recurrence-controls", "recurrence bounds are stable controls"),
-      testId("event-recurrence-scope", "single, future, and series scopes are explicit"),
+      testId("event-recurrence-scope", "single occurrence and series cancellation are explicit"),
     ],
     [
-      "Recurring create/edit/delete produces the exact bounded occurrence set for each scope.",
+      "Recurring create plus occurrence or series cancellation produces the exact bounded set.",
       "Invalid recurrence, authorization failure, cancel, failed mutation, and retry are observable.",
-    ],
-  ),
-  journey(
-    "scheduled-activities.library",
-    "athlete",
-    "/scheduled-activities",
-    ["upcoming and past planned events", "multiple activity categories"],
-    [
-      testId("scheduled-activities-library", "the library has a stable root"),
-      testIdPrefix("scheduled-activity-card-", "persisted rows expose event identity"),
-    ],
-    [
-      "Range and category filters return the exact authorized events in deterministic order.",
-      "Empty, invalid query, loading, error, and retry states never collapse together.",
-    ],
-  ),
-  journey(
-    "scheduled-activities.detail",
-    "athlete",
-    "/scheduled-activities/00000000-0000-4000-8000-000000000001",
-    ["owned scheduled event", "attachable activity plan", "recurring scope fixture"],
-    [
-      testId("scheduled-activity-detail", "scheduled detail has a stable root"),
-      testId(
-        "scheduled-activity-management",
-        "attach, reschedule, and remove controls are grouped",
-      ),
-    ],
-    [
-      "Detail can attach/remove a plan, reschedule an occurrence, and remove single/future/series scopes.",
-      "Inaccessible links, cancellation, mutation failure, retry, and authorization are explicit.",
     ],
   ),
   journey(
@@ -971,34 +940,6 @@ export const futureJourneyBlueprints = [
     ],
   ),
   journey(
-    "efforts.curves",
-    "athlete",
-    "/activity-efforts",
-    ["observed, modeled, review, and multi-duration effort evidence"],
-    [
-      testId("effort-definition-library", "effort definitions have stable cards"),
-      testId("effort-observed-curve", "observed-only curve is explicit"),
-    ],
-    [
-      "Observed rows alone enter correctly scaled duration/history curves with evidence labels.",
-      "Modeled/review exclusion, pace inversion, empty duration, API failure, and retry are asserted.",
-    ],
-  ),
-  journey(
-    "efforts.lifecycle",
-    "athlete",
-    "/activity-efforts",
-    ["activity-derived effort", "source-preserving policy fixture"],
-    [
-      testIdPrefix("activity-effort-record-", "evidence rows expose identity"),
-      testId("activity-effort-read-only-policy", "calculated evidence policy is explicit"),
-    ],
-    [
-      "Activity-derived effort evidence is read-only and linked to its source activity.",
-      "No unsupported conventional CRUD control is exposed; override/delete policy matches the API contract.",
-    ],
-  ),
-  journey(
     "trends.analytics",
     "athlete",
     "/trends",
@@ -1144,7 +1085,7 @@ export const futureJourneyBlueprints = [
     "integrations.oauth",
     "athlete",
     "/integrations",
-    ["PROVIDER_OAUTH_TEST_ADAPTER=1", "disconnected provider", "OAuth state cleanup"],
+    ["WAHOO_OAUTH_TEST_ADAPTER=1", "disconnected Wahoo", "OAuth state cleanup"],
     [
       testId("integration-connect", "OAuth starts from a stable action"),
       testId("integration-oauth-result", "sanitized success/replay outcomes are explicit"),

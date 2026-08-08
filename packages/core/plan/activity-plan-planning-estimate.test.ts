@@ -20,12 +20,12 @@ import {
 const id = (value: number) => `20000000-0000-4000-8000-${String(value).padStart(12, "0")}`;
 const singleBike = activityPlanStructureSchema.parse({
   version: 3,
+  activity_category: "bike",
   segments: [
     {
       role: "activity",
       id: id(1),
       name: "Bike",
-      activity_category: "bike",
       intervals: [
         {
           id: id(2),
@@ -89,12 +89,12 @@ function onlyPrescription(estimate: ActivityPlanPlanningEstimate) {
 function distanceRun(target: { type: "speed" | "RPE"; intensity: number }) {
   return activityPlanStructureSchema.parse({
     version: 3,
+    activity_category: "run",
     segments: [
       {
         role: "activity",
         id: id(30),
         name: "Run",
-        activity_category: "run",
         intervals: [
           {
             id: id(31),
@@ -523,6 +523,7 @@ describe("estimateActivityPlanForTrainingContext", () => {
   it("fails closed on mixed-category and transition plans", () => {
     const structure = {
       version: 3,
+      activity_category: "bike",
       segments: [
         ...singleBike.segments,
         { role: "transition", id: id(4), name: "T1", duration: { type: "time", seconds: 120 } },
@@ -561,12 +562,12 @@ describe("estimateActivityPlanForTrainingContext", () => {
   it("does not report complete high-confidence load from partial cycling-power evidence", () => {
     const structure = activityPlanStructureSchema.parse({
       version: 3,
+      activity_category: "bike",
       segments: [
         {
           role: "activity",
           id: id(20),
           name: "Bike",
-          activity_category: "bike",
           intervals: [
             {
               id: id(21),

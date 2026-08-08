@@ -74,12 +74,12 @@ export class SystemActivityPlanBuilder {
 
     return {
       version: 3,
+      activity_category: this.activity_category,
       segments: [
         {
           id: deterministicUuidFromSeed(`segment:0:${segmentSeed}`),
           name: `${this.activity_category} activity`,
           role: "activity",
-          activity_category: this.activity_category,
           intervals: this.intervals.map((interval, intervalIndex) => ({
             id: deterministicUuidFromSeed(`interval:${intervalIndex}:${segmentSeed}`),
             name: interval.name,

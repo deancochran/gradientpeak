@@ -16,16 +16,9 @@ import {
   updateGroupInputSchema,
   updateMemberRoleInputSchema,
 } from "@repo/core/groups";
-import {
-  groupEvents,
-  groupInvitations,
-  groupJoinRequests,
-  groupMemberships,
-  groups,
-  profiles,
-} from "@repo/db";
+import { groupInvitations, groupJoinRequests, groupMemberships, groups, profiles } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, gt, ilike, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import { createOrGetPendingGroupJoinRequest } from "../../application/groups/joinRequestMutations";
 import {
@@ -33,10 +26,6 @@ import {
   setGroupMembershipActive,
 } from "../../application/groups/membershipMutations";
 import { getRequiredDb } from "../../db";
-import {
-  enqueueWahooGroupEventRouteDeliveryForAcceptedRecipients,
-  enqueueWahooGroupEventRouteDeliveryReconcileForProfile,
-} from "../../lib/provider-sync/event-delivery/wahoo-group-event-route-delivery";
 import { createTRPCRouter, protectedProcedure } from "../../trpc";
 import {
   buildGroupViewerStateForProfile,
@@ -411,20 +400,6 @@ export const groupsRouter = createTRPCRouter({
             eq(groupJoinRequests.status, GROUP_JOIN_REQUEST_STATUS_PENDING),
           ),
         );
-      const routedEvents = await tx
-        .select({ eventId: groupEvents.id, routeId: groupEvents.route_id })
-        .from(groupEvents)
-        .where(and(eq(groupEvents.group_id, input.groupId), isNotNull(groupEvents.route_id)));
-      for (const event of routedEvents) {
-        if (!event.routeId) continue;
-        await enqueueWahooGroupEventRouteDeliveryForAcceptedRecipients({
-          db,
-          eventId: event.eventId,
-          groupId: input.groupId,
-          sourceRouteId: event.routeId,
-          transaction: tx,
-        });
-      }
     });
 
     return { success: true };
@@ -589,12 +564,6 @@ export const groupsRouter = createTRPCRouter({
             eq(groupMemberships.profile_id, profileId),
           ),
         );
-      await enqueueWahooGroupEventRouteDeliveryReconcileForProfile({
-        db,
-        profileId,
-        transaction: tx,
-        trigger: "access_changed",
-      });
     });
 
     return { success: true };
@@ -1001,12 +970,6 @@ export const groupsRouter = createTRPCRouter({
             ),
           )
           .returning();
-        await enqueueWahooGroupEventRouteDeliveryReconcileForProfile({
-          db,
-          profileId: input.profileId,
-          transaction: tx,
-          trigger: "access_changed",
-        });
         return [updatedMembership];
       });
 

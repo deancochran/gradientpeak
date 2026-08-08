@@ -3,7 +3,7 @@ import { disconnectWahooIfConnected } from "../integrations/journey";
 
 test.skip(
   (!process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY) ||
-    process.env.PROVIDER_OAUTH_TEST_ADAPTER !== "1",
+    process.env.WAHOO_OAUTH_TEST_ADAPTER !== "1",
   "integration E2E requires local test-user seeding and the explicit non-production OAuth adapter",
 );
 

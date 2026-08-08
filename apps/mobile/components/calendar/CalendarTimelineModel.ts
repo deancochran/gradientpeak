@@ -9,6 +9,7 @@ export type CalendarActivity = {
   name?: string | null;
   type?: string | null;
   started_at?: string | Date | null;
+  scheduled_date?: string | null;
   distance_meters?: number | null;
   duration_seconds?: number | null;
   derived?: {

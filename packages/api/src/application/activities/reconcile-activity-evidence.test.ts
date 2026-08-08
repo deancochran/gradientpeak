@@ -32,13 +32,14 @@ function effort(overrides: Record<string, unknown>) {
   return {
     id: "generated-effort",
     created_at: completedAt,
-    updated_at: completedAt,
     profile_id: "profile-1",
     activity_id: "activity-1",
+    segment_id: "segment-1",
     recorded_at: completedAt,
     activity_category: "bike",
     effort_type: "power",
     duration_seconds: 300,
+    distance_meters: null,
     start_offset: 0,
     unit: "watts",
     value: 250,
@@ -62,25 +63,57 @@ function generated(efforts = [effort({ id: "new-random-id", value: 275 })]) {
 }
 
 describe("planGeneratedActivityEvidenceReconciliation", () => {
-  it("is idempotent by natural identity and preserves generated row IDs", () => {
+  it("makes identical redelivery a no-op and preserves immutable evidence", () => {
+    const plan = planGeneratedActivityEvidenceReconciliation({
+      existingEfforts: [effort({})],
+      existingMetrics: [],
+      generated: generated([effort({ id: "redelivery-random-id" })]),
+    });
+
+    expect(plan.effortInserts).toEqual([]);
+    expect(plan.effortDeleteIds).toEqual([]);
+    expect(plan.effortMaterialRecordedAt).toBeNull();
+  });
+
+  it("treats PostgreSQL real output precision as identical evidence", () => {
+    const plan = planGeneratedActivityEvidenceReconciliation({
+      existingEfforts: [effort({ value: 373.333 })],
+      existingMetrics: [],
+      generated: generated([effort({ id: "redelivery-random-id", value: 373.3333333333333 })]),
+    });
+
+    expect(plan.effortInserts).toEqual([]);
+    expect(plan.effortDeleteIds).toEqual([]);
+    expect(plan.effortMaterialRecordedAt).toBeNull();
+  });
+
+  it("replaces changed generated evidence instead of updating an observation", () => {
     const plan = planGeneratedActivityEvidenceReconciliation({
       existingEfforts: [effort({})],
       existingMetrics: [],
       generated: generated(),
     });
 
-    expect(plan.effortInserts).toEqual([]);
-    expect(plan.effortDeleteIds).toEqual([]);
-    expect(plan.effortUpdates).toEqual([
+    expect(plan.effortDeleteIds).toEqual(["generated-effort"]);
+    expect(plan.effortInserts).toEqual([
       expect.objectContaining({
-        id: "generated-effort",
-        values: expect.objectContaining({
-          id: "generated-effort",
-          value: 275,
-          provenance: expect.objectContaining({ observation_id: "generated-effort" }),
-        }),
+        id: "new-random-id",
+        value: 275,
+        provenance: expect.objectContaining({ observation_id: "new-random-id" }),
       }),
     ]);
+    expect(plan.effortMaterialRecordedAt).toEqual(completedAt);
+  });
+
+  it("carries the earliest changed effort observation time into durable scheduling", () => {
+    const futureRecordedAt = new Date("2026-08-08T09:00:00.000Z");
+    const plan = planGeneratedActivityEvidenceReconciliation({
+      existingEfforts: [],
+      existingMetrics: [],
+      generated: generated([effort({ id: "future-effort", recorded_at: futureRecordedAt })]),
+    });
+
+    expect(plan.effortMaterialRecordedAt).toEqual(futureRecordedAt);
   });
 
   it("preserves the canonical CSS source method across reconciliation", () => {
@@ -123,7 +156,6 @@ describe("planGeneratedActivityEvidenceReconciliation", () => {
     });
 
     expect(plan.effortDeleteIds).toEqual([]);
-    expect(plan.effortUpdates).toEqual([]);
     expect(plan.metricDeleteIds).toEqual([]);
     expect(plan.metricUpdate).toBeNull();
   });

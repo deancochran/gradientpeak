@@ -1,3 +1,4 @@
+import { trainingPlanSchema } from "@repo/core/schemas";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
@@ -37,24 +38,10 @@ export function TrainingPlanDetail({
     { ids: activityIds },
     { enabled: activityIds.length > 0 },
   );
-  const start = new Date();
-  start.setUTCDate(start.getUTCDate() - 84);
-  const insight = api.trainingPlans.getInsightTimeline.useQuery({
-    training_plan_id: planId,
-    start_date: dateKey(start),
-    end_date: dateKey(new Date()),
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-  });
-  const weekly = api.trainingPlans.getWeeklySummary.useQuery({
-    training_plan_id: planId,
-    weeks_back: 8,
-  });
-  const recentAlignment = weekly.data?.at(-1)?.planAlignment;
   const [scheduleDate, setScheduleDate] = useState(dateKey(new Date()));
   const [replaceExisting, setReplaceExisting] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const update = api.trainingPlans.update.useMutation();
-  const duplicate = api.trainingPlans.duplicate.useMutation();
+  const commit = api.trainingPlans.commit.useMutation();
   const remove = api.trainingPlans.removeAppliedSchedule.useMutation();
   const apply = api.trainingPlans.applyTemplate.useMutation();
   const deletePlan = api.trainingPlans.delete.useMutation();
@@ -84,7 +71,7 @@ export function TrainingPlanDetail({
   }
 
   const summary = summarizeTrainingPlan(plan.structure);
-  const visibility = plan.content_visibility ?? plan.template_visibility ?? "private";
+  const visibility = plan.content_visibility;
   const isApplied = activePlan.data?.id === plan.id;
   const activeScheduleBatchId = activePlan.data?.schedule_batch_id;
 
@@ -106,14 +93,30 @@ export function TrainingPlanDetail({
             </Button>
           ) : null}
           <Button
-            disabled={duplicate.isPending}
+            disabled={commit.isPending}
             onClick={() =>
               void runAction(async () => {
-                const copy = await duplicate.mutateAsync({
-                  id: plan.id,
-                  newName: `${plan.name} (Copy)`,
+                if (!profile.data?.id) throw new Error("Refresh your profile before duplicating.");
+                const state = await utils.athleteIntelligence.getReadModel.fetch({
+                  profileId: profile.data.id,
+                  sections: { status: true },
                 });
-                onOpenDuplicate(copy.id);
+                if (state.publishedRevision === null) {
+                  throw new Error("Refresh athlete state before duplicating this plan.");
+                }
+                const copy = await commit.mutateAsync({
+                  kind: "duplicate",
+                  basePublishedRevision: state.publishedRevision,
+                  draft: {
+                    sourcePlanId: plan.id,
+                    name: `${plan.name} (Copy)`,
+                    previewStartDate: scheduleDate,
+                  },
+                });
+                if (copy.status !== "saved") {
+                  throw new Error("The plan or athlete state changed. Refresh and retry.");
+                }
+                onOpenDuplicate(copy.planId);
               }, "Plan duplicated.")
             }
             type="button"
@@ -171,20 +174,8 @@ export function TrainingPlanDetail({
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <strong>
-              {recentAlignment?.score ?? "—"}
-              {recentAlignment?.score !== null && recentAlignment?.score !== undefined ? "%" : ""}
-            </strong>
-            <p className="text-sm text-muted-foreground">Plan alignment</p>
-            {recentAlignment ? (
-              <p className="text-xs text-muted-foreground">
-                {recentAlignment.assessableSessions} of {recentAlignment.totalSessions} sessions
-                assessed
-                {recentAlignment.unverifiedSessions > 0
-                  ? ` · ${recentAlignment.unverifiedSessions} unverified`
-                  : ""}
-              </p>
-            ) : null}
+            <strong>{owned ? (plan.editor?.validation.status ?? "—") : "—"}</strong>
+            <p className="text-sm text-muted-foreground">Projection status</p>
           </CardContent>
         </Card>
       </div>
@@ -192,8 +183,6 @@ export function TrainingPlanDetail({
       <Tabs defaultValue="structure">
         <TabsList aria-label="Training plan detail sections">
           <TabsTrigger value="structure">Structure</TabsTrigger>
-          <TabsTrigger value="progress">Progress</TabsTrigger>
-          <TabsTrigger value="insights">Insights</TabsTrigger>
           <TabsTrigger value="activities">Activities</TabsTrigger>
         </TabsList>
         <TabsContent value="structure">
@@ -215,56 +204,6 @@ export function TrainingPlanDetail({
                   </li>
                 ))}
               </ol>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="progress">
-          <Card>
-            <CardHeader>
-              <CardTitle>Weekly progress</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {weekly.isLoading ? <p>Loading progress…</p> : null}
-              {weekly.error ? <p role="alert">{weekly.error.message}</p> : null}
-              {weekly.data?.map((week) => (
-                <div className="flex justify-between rounded-lg border p-3" key={week.weekStart}>
-                  <span>{week.weekStart}</span>
-                  <span>
-                    {week.planAlignment.score ?? "—"}
-                    {week.planAlignment.score !== null ? "%" : ""} ·{" "}
-                    {week.planAlignment.assessableSessions} of {week.planAlignment.totalSessions}{" "}
-                    sessions assessed
-                    {week.planAlignment.unverifiedSessions > 0
-                      ? ` · ${week.planAlignment.unverifiedSessions} unverified`
-                      : ""}
-                  </span>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="insights">
-          <Card>
-            <CardHeader>
-              <CardTitle>Training insights</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {insight.isLoading ? <p>Loading insights…</p> : null}
-              {insight.error ? (
-                <div role="alert">
-                  <p>{insight.error.message}</p>
-                  <Button onClick={() => void insight.refetch()} type="button" variant="outline">
-                    Retry insights
-                  </Button>
-                </div>
-              ) : null}
-              {insight.data ? (
-                <>
-                  <p>Feasibility: {insight.data.plan_feasibility.state}</p>
-                  <p>Safety: {insight.data.plan_safety.state}</p>
-                  <p>{insight.data.timeline.length} timeline points analyzed</p>
-                </>
-              ) : null}
             </CardContent>
           </Card>
         </TabsContent>
@@ -362,18 +301,36 @@ export function TrainingPlanDetail({
             <div className="flex flex-wrap gap-2">
               {(["private", "followers", "public"] as const).map((value) => (
                 <Button
-                  disabled={update.isPending || visibility === value}
+                  disabled={commit.isPending || visibility === value}
                   key={value}
                   onClick={() =>
-                    void runAction(
-                      () =>
-                        update.mutateAsync({
-                          id: plan.id,
-                          expectedStructureHash: plan.structure_hash,
-                          template_visibility: value,
-                        }),
-                      `Visibility changed to ${value}.`,
-                    )
+                    void runAction(async () => {
+                      const state = await utils.athleteIntelligence.getReadModel.fetch({
+                        profileId: profile.data?.id ?? "",
+                        sections: { status: true },
+                      });
+                      const parsed = trainingPlanSchema.parse(plan.structure);
+                      const editor = plan.editor;
+                      if (state.publishedRevision === null || !editor)
+                        throw new Error("Refresh the plan and athlete state before saving.");
+                      const { id: _planId, ...structure } = parsed;
+                      const result = await commit.mutateAsync({
+                        kind: "update",
+                        basePublishedRevision: state.publishedRevision,
+                        draft: {
+                          planId: plan.id,
+                          expectedRevision: editor.revision,
+                          expectedStructureHash: editor.structureHash,
+                          name: plan.name,
+                          description: plan.description,
+                          contentVisibility: value,
+                          structure,
+                          previewStartDate: scheduleDate,
+                        },
+                      });
+                      if (result.status !== "saved")
+                        throw new Error("The plan or athlete state changed. Refresh and retry.");
+                    }, `Visibility changed to ${value}.`)
                   }
                   type="button"
                   variant="outline"

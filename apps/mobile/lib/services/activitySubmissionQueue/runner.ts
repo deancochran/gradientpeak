@@ -305,7 +305,6 @@ async function runActivitySubmissionQueueJobOnce(
             finishedAt: job.draft.finishedAt,
             activityPlanId: job.draft.activityPlanId,
             executionManifest: job.executionManifest,
-            artifactSource: "uploadedArtifact",
             uploadedArtifact: { ingestionId },
             summary: {
               distanceMeters: Math.round(job.draft.distanceMeters),

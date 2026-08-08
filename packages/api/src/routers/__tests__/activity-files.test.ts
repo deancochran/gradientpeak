@@ -2,7 +2,8 @@ import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performan
 import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@repo/db", () => ({
+vi.mock("@repo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/db")>()),
   activities: {
     id: "activities.id",
     created_at: "activities.created_at",
@@ -72,8 +73,6 @@ const mocks = vi.hoisted(() => ({
   encodePolyline: vi.fn(),
   inferActivityFileType: vi.fn(),
   parseActivityFile: vi.fn(),
-  calculateGradedSpeedStream: vi.fn(),
-  calculateNGP: vi.fn(),
   calculateNormalizedPower: vi.fn(),
   calculateNormalizedSpeed: vi.fn(),
   estimateVO2Max: vi.fn(),
@@ -115,8 +114,6 @@ vi.mock("@repo/core/server/activity-files", () => ({
 
 vi.mock("@repo/core/calculations", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/core/calculations")>()),
-  calculateGradedSpeedStream: mocks.calculateGradedSpeedStream,
-  calculateNGP: mocks.calculateNGP,
   calculateNormalizedPower: mocks.calculateNormalizedPower,
   calculateNormalizedSpeed: mocks.calculateNormalizedSpeed,
   estimateVO2Max: mocks.estimateVO2Max,
@@ -355,8 +352,6 @@ beforeEach(() => {
     throw new Error("Unsupported activity file type");
   });
 
-  mocks.calculateGradedSpeedStream.mockReturnValue([4.5, 4.7]);
-  mocks.calculateNGP.mockReturnValue(4.6);
   mocks.calculateNormalizedPower.mockReturnValue(calculateCyclingNormalizedPower({ samples: [] }));
   mocks.calculateNormalizedSpeed.mockReturnValue(11.1);
   mocks.estimateVO2Max.mockReturnValue(52);
@@ -413,15 +408,6 @@ describe("activityFilesRouter", () => {
   });
 
   it("returns an already accepted claim without issuing another upload URL", async () => {
-    const acceptedArtifact = {
-      sha256: "a".repeat(64),
-      byteSize: 9,
-      bucket: "activity-files",
-      path: `artifacts/sha256/11111111-1111-4111-8111-111111111111/${"a".repeat(64)}`,
-      mediaType: "application/vnd.ant.fit",
-      format: "fit" as const,
-      originalName: null,
-    };
     mocks.beginMobileRecordingUploadClaim.mockResolvedValueOnce({
       status: "ready",
       ingestionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -430,7 +416,6 @@ describe("activityFilesRouter", () => {
       sha256: "a".repeat(64),
       format: "fit",
       mediaType: "application/vnd.ant.fit",
-      acceptedArtifact,
     });
 
     const result = await createCaller({ db: createDbMock().db }).beginMobileRecordingUpload({
@@ -439,7 +424,11 @@ describe("activityFilesRouter", () => {
       sha256: "a".repeat(64),
       format: "fit",
     });
-    expect(result).toMatchObject({ status: "ready", acceptedArtifact });
+    expect(result).toEqual({
+      status: "ready",
+      ingestionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      activityId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    });
     expect(mocks.storage.createSignedUploadUrl).not.toHaveBeenCalled();
   });
 
@@ -513,7 +502,34 @@ describe("activityFilesRouter", () => {
 
     await expect(
       caller.getSignedUploadUrl({ fileName: "ride.fit", fileSize: 1234 }),
-    ).rejects.toThrow("Failed to generate upload URL");
+    ).rejects.toThrow("Unable to prepare activity file upload");
+  });
+
+  it("redacts synthetic private data from manual upload preparation errors", async () => {
+    const privateCanaries = [
+      "11111111-1111-4111-8111-111111111111",
+      "Dean Private Ride",
+      "https://storage.test/upload?token=super-secret-token",
+    ] as const;
+    mocks.storage.createSignedUploadUrl.mockResolvedValueOnce({
+      data: null,
+      error: { message: privateCanaries.join(" ") },
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const rejection = await createCaller()
+        .getSignedUploadUrl({ fileName: "ride.fit", fileSize: 1234 })
+        .catch((error: unknown) => error);
+      expect(rejection).toMatchObject({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Unable to prepare activity file upload",
+      });
+      const logged = JSON.stringify(consoleError.mock.calls);
+      expect(logged).toContain("manual_activity_import.prepare_upload.prepare_failed");
+      for (const canary of privateCanaries) expect(logged).not.toContain(canary);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it("delegates owned manual uploads to the ingestion use case without changing the response", async () => {
@@ -579,11 +595,6 @@ describe("activityFilesRouter", () => {
       activityFilePath: "activities/11111111-1111-4111-8111-111111111111/uploads/123_history.fit",
       name: "Morning Ride",
       notes: "Imported",
-      importProvenance: {
-        import_source: "manual_historical",
-        import_file_type: "fit",
-        import_original_file_name: "morning-ride.fit",
-      },
     });
 
     expect(result).toMatchObject({
@@ -599,7 +610,7 @@ describe("activityFilesRouter", () => {
       expect.objectContaining({
         profileId: "11111111-1111-4111-8111-111111111111",
         activityFilePath: "activities/11111111-1111-4111-8111-111111111111/uploads/123_history.fit",
-        originalName: "morning-ride.fit",
+        originalName: "history.fit",
         fileType: "fit",
       }),
       expect.objectContaining({
@@ -632,6 +643,33 @@ describe("activityFilesRouter", () => {
     ).rejects.toThrow("Access denied");
 
     expect(mocks.readObjectBounded).not.toHaveBeenCalled();
+  });
+
+  it("returns and logs only allowlisted manual processing failures", async () => {
+    const privateCanaries = [
+      "activities/11111111-1111-4111-8111-111111111111/uploads/dean-private.fit",
+      "Dean Private Ride",
+      "https://storage.test/upload?token=super-secret-token",
+    ] as const;
+    mocks.processManualActivityFile.mockRejectedValueOnce(new Error(privateCanaries.join(" ")));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const rejection = await createCaller({ db: createDbMock().db })
+        .processActivityFile({
+          activityFilePath: privateCanaries[0],
+          name: privateCanaries[1],
+        })
+        .catch((error: unknown) => error);
+      expect(rejection).toMatchObject({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Activity file processing failed",
+      });
+      const logged = JSON.stringify(consoleError.mock.calls);
+      expect(logged).toContain("manual_activity_import.process.process_failed");
+      for (const canary of privateCanaries) expect(logged).not.toContain(canary);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it("rejects the removed processActivityFile parent classification field", async () => {
@@ -800,7 +838,7 @@ describe("activityFilesRouter", () => {
     expect(mocks.readObjectBounded).not.toHaveBeenCalled();
   });
 
-  it("marks ingestion failed and preserves the activity when uploaded file parsing fails", async () => {
+  it("marks ingestion failed, preserves the activity, and cleans staging when parsing fails", async () => {
     const userId = "11111111-1111-4111-8111-111111111111";
     const activityId = "99999999-9999-4999-8999-999999999999";
     const ingestionId = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
@@ -845,7 +883,7 @@ describe("activityFilesRouter", () => {
       }),
     ).rejects.toThrow("Unable to parse activity file");
     expect(callLog.deleteCalls).toEqual([]);
-    expect(mocks.storage.remove).not.toHaveBeenCalled();
+    expect(mocks.storage.remove).toHaveBeenCalledWith([`activities/${userId}/uploads/bad.fit`]);
     expect(callLog.updateCalls).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -1241,7 +1279,7 @@ describe("activityFilesRouter", () => {
         name: "Morning Ride",
         notes: "Imported",
       }),
-    ).rejects.toThrow("Failed to parse activity file");
+    ).rejects.toThrow("Unable to parse activity file");
 
     expect(mocks.storage.remove).not.toHaveBeenCalled();
   });

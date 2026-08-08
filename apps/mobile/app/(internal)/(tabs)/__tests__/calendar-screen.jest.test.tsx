@@ -1,4 +1,3 @@
-import { keepPreviousData } from "@tanstack/react-query";
 import { act } from "@testing-library/react-native/pure";
 import React from "react";
 import type { ReactTestInstance } from "react-test-renderer";
@@ -327,10 +326,10 @@ jest.mock("@/lib/api", () => ({
         invalidate: utilsEventsInvalidateMock,
       },
     }),
-    events: {
-      list: {
-        useInfiniteQuery: (input?: unknown, options?: unknown) =>
-          eventsListUseQueryMock(input, options) ?? {
+    calendar: {
+      range: {
+        useQuery: (input?: unknown, options?: unknown) => {
+          const eventQuery = eventsListUseQueryMock(input, options) ?? {
             data: {
               pages: [
                 {
@@ -439,7 +438,54 @@ jest.mock("@/lib/api", () => ({
             isFetchingNextPage: false,
             isLoading: false,
             refetch: jest.fn(async () => undefined),
-          },
+          };
+          const activityQuery = activitiesListUseQueryMock(input, options);
+          const groupQuery = groupEventsListUseQueryMock(input, options);
+          const planQuery = activityPlansGetManyUseQueryMock(input, options);
+          if (eventQuery.data === undefined) return eventQuery;
+          const eventPage = eventQuery.data?.pages?.[0] ?? eventQuery.data ?? { items: [] };
+          const activityItems = activityQuery?.data?.pages?.flatMap(
+            (page: { items?: unknown[] }) => page.items ?? [],
+          ) ?? [
+            {
+              id: "activity-1",
+              name: "Morning miles",
+              type: "run",
+              scheduled_date: today,
+              started_at: `${today}T11:00:00.000Z`,
+              duration_seconds: 2700,
+              distance_meters: 8000,
+              derived: {
+                observationQuantification: createObservationQuantificationBundleFixture(),
+                computed_as_of: `${today}T11:45:00.000Z`,
+              },
+            },
+          ];
+          const planById = new Map(
+            (planQuery?.data?.items ?? []).map((plan: { id: string }) => [plan.id, plan]),
+          );
+          const groupItems = (
+            groupQuery?.data?.pages?.flatMap((page: { items?: unknown[] }) => page.items ?? []) ??
+            []
+          ).map((event: { activity_plan_id?: string | null; id: string }) => ({
+            ...event,
+            selectedActivityPlan: event.activity_plan_id
+              ? (planById.get(event.activity_plan_id) ?? null)
+              : null,
+          }));
+          return {
+            ...eventQuery,
+            data: {
+              ...eventPage,
+              completedActivities: { items: activityItems, truncated: false },
+              goals: {
+                items: [{ id: "goal-1", title: "Spring A Race", target_date: today }],
+                truncated: false,
+              },
+              selectedGroupEvents: { items: groupItems, truncated: false },
+            },
+          };
+        },
       },
     },
     groups: {
@@ -520,11 +566,10 @@ jest.mock("@/lib/api", () => ({
 
 const CalendarScreenWithErrorBoundary = require("../calendar").default;
 const {
-  CALENDAR_EVENT_QUERY_LIMIT,
+  CALENDAR_PROJECTION_LIMIT,
   DAY_RANGE_BACKWARD,
   DAY_RANGE_EXTENSION,
   DAY_RANGE_FORWARD,
-  GROUP_CALENDAR_EVENT_QUERY_LIMIT,
   buildDayQueryWindow,
   ensureDayQueryWindowCovers,
 } = require("@/components/calendar/useCalendarTimelineController");
@@ -566,12 +611,12 @@ describe("calendar day timeline screen", () => {
     mockFlatListScrollToOffset.mockClear();
   });
 
-  it("keeps previous calendar data visible while the query window changes", () => {
+  it("requests one bounded calendar projection for the visible window", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
     expect(eventsListUseQueryMock).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ placeholderData: keepPreviousData }),
+      expect.objectContaining({ limit: CALENDAR_PROJECTION_LIMIT }),
+      expect.not.objectContaining({ getNextPageParam: expect.anything() }),
     );
   });
 
@@ -1020,8 +1065,8 @@ describe("calendar day timeline screen", () => {
 
     expect(eventsListUseQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        date_from: "2026-03-02T05:00:00.000Z",
-        date_to: "2026-07-21T04:00:00.000Z",
+        startDate: "2026-03-02",
+        endDateExclusive: "2026-07-21",
       }),
       expect.anything(),
     );
@@ -1077,23 +1122,17 @@ describe("calendar day timeline screen", () => {
     );
   });
 
-  it("renders personal events returned on later cursor pages", () => {
+  it("renders personal events returned by the bounded projection", () => {
     eventsListUseQueryMock.mockReturnValue({
       data: {
-        pages: [
-          { items: [], nextCursor: "page-2" },
+        items: [
           {
-            items: [
-              {
-                id: "event-page-2",
-                event_type: "custom",
-                title: "Later page event",
-                scheduled_date: today,
-                starts_at: `${today}T16:00:00.000`,
-                all_day: false,
-              },
-            ],
-            nextCursor: undefined,
+            id: "event-page-2",
+            event_type: "custom",
+            title: "Projected event",
+            scheduled_date: today,
+            starts_at: `${today}T16:00:00.000`,
+            all_day: false,
           },
         ],
       },
@@ -1110,7 +1149,7 @@ describe("calendar day timeline screen", () => {
     expect(screen.getByTestId("calendar-event-row-event-page-2")).toBeTruthy();
   });
 
-  it("continues personal and group event cursor queries", () => {
+  it("does not continue retired client-side source cursors", () => {
     const fetchNextEventsPage = jest.fn(async () => undefined);
     const fetchNextGroupEventsPage = jest.fn(async () => undefined);
     eventsListUseQueryMock.mockReturnValue({
@@ -1134,41 +1173,33 @@ describe("calendar day timeline screen", () => {
 
     renderNative(<CalendarScreenWithErrorBoundary />);
 
-    expect(fetchNextEventsPage).toHaveBeenCalledTimes(1);
-    expect(fetchNextGroupEventsPage).toHaveBeenCalledTimes(1);
+    expect(fetchNextEventsPage).not.toHaveBeenCalled();
+    expect(fetchNextGroupEventsPage).not.toHaveBeenCalled();
   });
 
-  it("uses bounded cursor page sizes for personal and group events", () => {
+  it("uses the bounded server projection size", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
-    expect(CALENDAR_EVENT_QUERY_LIMIT).toBe(50);
-    expect(GROUP_CALENDAR_EVENT_QUERY_LIMIT).toBe(50);
+    expect(CALENDAR_PROJECTION_LIMIT).toBe(500);
     expect(eventsListUseQueryMock).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 50 }),
-      expect.objectContaining({ getNextPageParam: expect.any(Function) }),
-    );
-    expect(groupEventsListUseQueryMock).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 50 }),
-      expect.objectContaining({ getNextPageParam: expect.any(Function) }),
+      expect.objectContaining({ limit: 500 }),
+      expect.not.objectContaining({ getNextPageParam: expect.anything() }),
     );
   });
 
-  it("shows a retryable warning when one calendar source fails", () => {
+  it("shows a retryable warning when the calendar projection fails", () => {
     const refetch = jest.fn(async () => undefined);
-    groupEventsListUseQueryMock.mockReturnValue({
-      data: { pages: [{ items: [], nextCursor: undefined }] },
-      fetchNextPage: jest.fn(async () => undefined),
-      hasNextPage: false,
+    eventsListUseQueryMock.mockReturnValue({
+      data: undefined,
       isError: true,
-      isFetchingNextPage: false,
       isLoading: false,
       refetch,
     });
 
     renderNative(<CalendarScreenWithErrorBoundary />);
-    fireEvent.press(screen.getByLabelText("Retry loading calendar items"));
+    fireEvent.press(screen.getByText("Retry"));
 
-    expect(screen.getByTestId("calendar-partial-error")).toBeTruthy();
+    expect(screen.getByText("Unable to load calendar events right now.")).toBeTruthy();
     expect(refetch).toHaveBeenCalled();
   });
 
@@ -1190,8 +1221,8 @@ describe("calendar day timeline screen", () => {
 
     expect(eventsListUseQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        date_from: "2026-04-01T04:00:00.000Z",
-        date_to: "2026-08-20T04:00:00.000Z",
+        startDate: "2026-04-01",
+        endDateExclusive: "2026-08-20",
       }),
       expect.anything(),
     );
@@ -1207,8 +1238,8 @@ describe("calendar day timeline screen", () => {
 
     expect(eventsListUseQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        date_from: "2026-01-31T05:00:00.000Z",
-        date_to: "2026-06-21T04:00:00.000Z",
+        startDate: "2026-01-31",
+        endDateExclusive: "2026-06-21",
       }),
       expect.anything(),
     );

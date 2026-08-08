@@ -4,11 +4,10 @@ vi.mock("expo-crypto", () => ({ randomUUID: () => "00000000-0000-4000-8000-00000
 
 import { useActivityPlanCreationStore } from "./activityPlanCreation";
 
-const activity = (id: string, activity_category: "run" | "bike" = "run") => ({
+const activity = (id: string) => ({
   id,
   role: "activity" as const,
-  name: activity_category,
-  activity_category,
+  name: id,
   intervals: [],
 });
 const rest = {
@@ -22,14 +21,18 @@ describe("activityPlanCreation segment boundary", () => {
   beforeEach(() => {
     useActivityPlanCreationStore.setState({
       activityCategory: "run",
-      structure: { version: 3, segments: [activity("run-1")] },
+      structure: { version: 3, activity_category: "run", segments: [activity("run-1")] },
     });
   });
 
-  it("rejects direct mixed-activity_category additions without changing structure", () => {
+  it("changes the single root activity_category without rewriting segments", () => {
     const store = useActivityPlanCreationStore.getState();
-    store.addSegment(activity("bike-1", "bike"));
-    expect(useActivityPlanCreationStore.getState().structure.segments).toEqual([activity("run-1")]);
+    store.setActivityCategory("bike");
+    expect(useActivityPlanCreationStore.getState().structure).toEqual({
+      version: 3,
+      activity_category: "bike",
+      segments: [activity("run-1")],
+    });
   });
 
   it("accepts same-activity_category activities and rest segments", () => {
@@ -41,16 +44,16 @@ describe("activityPlanCreation segment boundary", () => {
     ).toEqual(["run-1", "rest", "run-2"]);
   });
 
-  it("rejects invalid replacements and reorder inputs while preserving valid same-activity_category reorder", () => {
+  it("reorders segments without segment-level category checks", () => {
     const store = useActivityPlanCreationStore.getState();
     store.setSegments([activity("run-1"), rest]);
     store.reorderSegments([rest, activity("run-1")]);
     expect(
       useActivityPlanCreationStore.getState().structure.segments.map((segment) => segment.id),
     ).toEqual(["rest", "run-1"]);
-    store.reorderSegments([activity("bike-1", "bike"), rest]);
+    store.reorderSegments([activity("bike-1"), rest]);
     expect(
       useActivityPlanCreationStore.getState().structure.segments.map((segment) => segment.id),
-    ).toEqual(["rest", "run-1"]);
+    ).toEqual(["bike-1", "rest"]);
   });
 });

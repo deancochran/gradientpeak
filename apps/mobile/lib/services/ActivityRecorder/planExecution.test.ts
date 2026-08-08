@@ -5,12 +5,12 @@ import { PlanExecution } from "./planExecution";
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 const structure = {
   version: 3 as const,
+  activity_category: "run" as const,
   segments: [
     {
       id: id(1),
       role: "activity" as const,
       name: "Run",
-      activity_category: "run" as const,
       intervals: [
         {
           id: id(2),
@@ -31,7 +31,6 @@ const structure = {
       id: id(5),
       role: "activity" as const,
       name: "Run steady",
-      activity_category: "run" as const,
       intervals: [
         {
           id: id(6),
@@ -58,7 +57,6 @@ const structure = {
       id: id(9),
       role: "activity" as const,
       name: "Run again",
-      activity_category: "run" as const,
       intervals: [
         {
           id: id(10),
@@ -88,10 +86,10 @@ describe("PlanExecution", () => {
     expect(freeRun.id).toBeUndefined();
     expect(freeRun.structure).toMatchObject({
       version: 3,
+      activity_category: "run",
       segments: [
         {
           role: "activity",
-          activity_category: "run",
           intervals: [{ repetitions: 1, steps: [{ duration: { type: "untilFinished" } }] }],
         },
       ],

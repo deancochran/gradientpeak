@@ -3,9 +3,7 @@ import { z } from "zod";
 import {
   calculateHeartRateZoneDuration,
   type HeartRateDurationEvidence,
-  normalizeStoredHeartRateDurationEvidence,
-  type StoredHeartRateDurationEvidence,
-  storedHeartRateDurationEvidenceSchema,
+  heartRateDurationEvidenceSchema,
 } from "../zones/heart-rate-duration";
 
 export const HEART_RATE_COMMON_LOAD_CALCULATION_VERSION = "heart-rate-common-load-v1" as const;
@@ -15,7 +13,7 @@ export const HEART_RATE_COMMON_LOAD_MINIMUM_DURATION_SECONDS = 30;
 export interface CalculateHeartRateZoneStressInput {
   durationSeconds: number;
   lthrBpm: number | null;
-  distribution: StoredHeartRateDurationEvidence;
+  distribution: HeartRateDurationEvidence;
   minimumCoverageRatio?: number;
   minimumDurationSeconds?: number;
 }
@@ -117,12 +115,15 @@ function unavailable(input: {
 function resolveEvidence(
   input: CalculateHeartRateZoneStressInput,
 ): HeartRateDurationEvidence | null {
-  const parsed = storedHeartRateDurationEvidenceSchema.safeParse(input.distribution);
+  const parsed = heartRateDurationEvidenceSchema.safeParse(input.distribution);
   if (!parsed.success) return null;
-  return normalizeStoredHeartRateDurationEvidence({
-    evidence: parsed.data,
-    eligibleDurationSeconds: input.durationSeconds,
-  });
+  const tolerance =
+    Number.EPSILON *
+    Math.max(1, Math.abs(parsed.data.eligibleDurationSeconds), Math.abs(input.durationSeconds)) *
+    16;
+  return Math.abs(parsed.data.eligibleDurationSeconds - input.durationSeconds) <= tolerance
+    ? parsed.data
+    : null;
 }
 
 /**
@@ -155,7 +156,7 @@ export function calculateHeartRateZoneStress(
     });
   }
 
-  const parsedDistribution = storedHeartRateDurationEvidenceSchema.safeParse(input.distribution);
+  const parsedDistribution = heartRateDurationEvidenceSchema.safeParse(input.distribution);
   const parsedCoverage = parsedDistribution.success ? parsedDistribution.data.coverageSeconds : 0;
   const rawCoverage = parsedCoverage <= input.durationSeconds ? parsedCoverage : 0;
   if (input.lthrBpm === null) {

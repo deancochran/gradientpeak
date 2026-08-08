@@ -19,7 +19,6 @@ import {
   inviteProfilesInputSchema,
   listGroupsInputSchema,
   listOneOffGroupEventsInputSchema,
-  resolveGroupEventFallbackFields,
   reviewJoinRequestInputSchema,
   rsvpEventSeriesInputSchema,
   rsvpOneOffGroupEventInputSchema,
@@ -168,9 +167,9 @@ describe("recurring group event input schemas", () => {
     expect(
       updateEventOccurrenceInputSchema.safeParse({
         groupEventId: validGroupEventId,
-        title: null,
+        title: "Updated occurrence",
         description: null,
-        timezone: null,
+        timezone: "America/New_York",
         routeId: null,
       }).success,
     ).toBe(true);
@@ -187,37 +186,9 @@ describe("recurring group event input schemas", () => {
       updateEventOccurrenceInputSchema.safeParse({
         groupEventId: validGroupEventId,
         activityPlanId: validActivityPlanId,
+        timezone: "America/New_York",
       }).success,
     ).toBe(true);
-  });
-
-  it("resolves occurrence display fields from series fallback", () => {
-    expect(
-      resolveGroupEventFallbackFields(
-        {
-          title: null,
-          description: null,
-          timezone: null,
-          locationName: "Park",
-          routeId: null,
-          activityPlanId: null,
-        },
-        {
-          title: "Series",
-          description: "Default",
-          timezone: "America/New_York",
-          routeId: validRouteId,
-          activityPlanId: validActivityPlanId,
-        },
-      ),
-    ).toEqual({
-      title: "Series",
-      description: "Default",
-      timezone: "America/New_York",
-      locationName: "Park",
-      routeId: validRouteId,
-      activityPlanId: validActivityPlanId,
-    });
   });
 });
 
@@ -255,6 +226,7 @@ describe("one-off group event input schemas", () => {
         title: "x".repeat(GROUP_EVENT_TITLE_MAX_LENGTH),
         description: "x".repeat(GROUP_EVENT_DESCRIPTION_MAX_LENGTH),
         startsAt: "2026-06-06T14:00:00.000Z",
+        timezone: "UTC",
       }).success,
     ).toBe(true);
     expect(
@@ -291,6 +263,7 @@ describe("one-off group event input schemas", () => {
         groupEventId: validGroupEventId,
         title: "Updated Ride",
         cancelledAt: null,
+        timezone: "UTC",
       }).success,
     ).toBe(true);
     expect(listOneOffGroupEventsInputSchema.parse({ groupId: validGroupId })).toEqual({

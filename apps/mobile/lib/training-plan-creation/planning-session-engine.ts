@@ -15,6 +15,8 @@ export type TrainingPlanCreationPreviewQueryState = {
 
 export type TrainingPlanCreationSessionInput = {
   authoritativeProjection: BackendPreviewProjection | null;
+  authoritativePreviewReason: string;
+  authoritativePreviewInputAvailable: boolean;
   backendPreviewInputEnabled: boolean;
   isBackendPlanningInputStale: boolean;
   localProjection: TrainingPlanLocalProjection;
@@ -25,7 +27,7 @@ export type TrainingPlanPreviewLifecycle =
   | { status: "backend_input_unavailable"; reason: string }
   | { status: "backend_preview_failed"; reason: string }
   | { status: "backend_preview_pending" }
-  | { status: "backend_preview_ready"; snapshotToken: string }
+  | { status: "backend_preview_ready" }
   | { status: "backend_preview_stale" }
   | { status: "local_ready"; reason: string };
 
@@ -78,12 +80,7 @@ function derivePreviewLifecycle({
     };
   }
 
-  if (authoritativeProjection?.previewSnapshotToken) {
-    return {
-      status: "backend_preview_ready",
-      snapshotToken: authoritativeProjection.previewSnapshotToken,
-    };
-  }
+  if (authoritativeProjection) return { status: "backend_preview_ready" };
 
   return { status: "local_ready", reason: "Using instant local planning projection." };
 }
@@ -162,6 +159,8 @@ export function deriveTrainingPlanReadinessPresentation({
 
 export function deriveTrainingPlanCreationSession({
   authoritativeProjection,
+  authoritativePreviewReason,
+  authoritativePreviewInputAvailable,
   backendPreviewInputEnabled,
   isBackendPlanningInputStale,
   localProjection,
@@ -176,8 +175,8 @@ export function deriveTrainingPlanCreationSession({
 
   const previewLifecycle = derivePreviewLifecycle({
     authoritativeProjection,
-    backendPlanningReason: localProjection.backendPlanning.status.reason,
-    backendPreviewInputAvailable: localProjection.backendPlanning.previewInput !== null,
+    backendPlanningReason: authoritativePreviewReason,
+    backendPreviewInputAvailable: authoritativePreviewInputAvailable,
     backendPreviewInputEnabled,
     isBackendPlanningInputStale,
     previewQuery,
@@ -194,8 +193,8 @@ export function deriveTrainingPlanCreationSession({
 
   const trainingPathProjectionStatus = deriveTrainingPathProjectionStatus({
     activeProjection,
-    backendInputAvailable: localProjection.backendPlanning.previewInput !== null,
-    backendPlanningReason: localProjection.backendPlanning.status.reason,
+    backendInputAvailable: authoritativePreviewInputAvailable,
+    backendPlanningReason: authoritativePreviewReason,
     backendPreviewEnabled: backendPreviewInputEnabled,
     backendPreviewError: previewQuery.error,
     backendPreviewLoading: previewQuery.isLoading || previewQuery.isFetching,

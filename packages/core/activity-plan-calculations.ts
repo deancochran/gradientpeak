@@ -63,10 +63,7 @@ export function extractActivityProfile(plan: CompiledActivityPlan): ActivityProf
  * normalized intensity belong to ActivityQuantification and are intentionally
  * not reconstructed in this presentation helper.
  */
-export function calculateActivityPlanStats(
-  plan: CompiledActivityPlan,
-  _compatibilityOptions?: { cyclingFtpWatts?: number },
-): ActivityPlanStats {
+export function calculateActivityPlanStats(plan: CompiledActivityPlan): ActivityPlanStats {
   const duration = summarizeActivityPlanDuration(plan);
   const occurrencesByCategory = new Map<
     CanonicalActivityCategory,

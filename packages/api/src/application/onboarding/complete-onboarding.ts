@@ -7,7 +7,7 @@ import {
   readOnboardingProfileState,
 } from "../../repositories/onboarding-lifecycle-repository";
 import { batchInsertProfileMetrics, prepareProfileMetrics } from "../../utils/onboarding-helpers";
-import { OnboardingProviderEnrichmentService } from "../onboarding-provider-enrichment";
+import { WahooProfileSetupService } from "../wahoo-profile-setup-service";
 import {
   OnboardingProfileNotFoundError,
   persistOnboardingProfile,
@@ -23,13 +23,6 @@ export type RequiredOnboardingResult = {
   confidence: "high" | "medium" | "low";
   warnings: string[];
 };
-
-export class OnboardingProviderPreconditionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "OnboardingProviderPreconditionError";
-  }
-}
 
 export class OnboardingRequiredWriteError extends Error {
   constructor(
@@ -61,17 +54,7 @@ export async function completeRequiredOnboarding(input: {
   if (!initialProfile) throw new OnboardingProfileNotFoundForLockError();
   if (initialProfile.onboarded) return alreadyCompletedResult();
 
-  const providerEnrichment = new OnboardingProviderEnrichmentService({ db: input.db });
-  try {
-    await providerEnrichment.assertCanComplete(input.profileId);
-  } catch (error) {
-    const recheckedProfile = await readOnboardingProfileState(input.db, input.profileId);
-    if (recheckedProfile?.onboarded) return alreadyCompletedResult();
-    throw new OnboardingProviderPreconditionError(
-      error instanceof Error ? error.message : "Provider enrichment is still required",
-    );
-  }
-
+  const providerEnrichment = new WahooProfileSetupService({ db: input.db });
   const imported = await providerEnrichment.getImportedOnboardingValues(input.profileId);
   const fieldSources = input.data.baseline_field_sources;
   const effectiveDob = fieldSources?.dob === "cleared" ? undefined : input.data.dob;

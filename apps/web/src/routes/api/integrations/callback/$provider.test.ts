@@ -21,7 +21,7 @@ describe("OAuth callback HTTP boundary", () => {
 
   it("does not use the request origin as the production fallback redirect", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("PROVIDER_OAUTH_TEST_ADAPTER", "1");
+    vi.stubEnv("WAHOO_OAUTH_TEST_ADAPTER", "1");
     vi.stubEnv("OAUTH_MOBILE_CALLBACK_URL", "https://app.example.com/integrations");
     getDefaultMobileOAuthRedirect.mockReturnValue("https://app.example.com/integrations");
     handleOAuthCallback.mockResolvedValue({
@@ -48,7 +48,7 @@ describe("OAuth callback HTTP boundary", () => {
 
   it("does not reflect a hostile non-production origin through the local test fallback", async () => {
     vi.stubEnv("NODE_ENV", "test");
-    vi.stubEnv("PROVIDER_OAUTH_TEST_ADAPTER", "1");
+    vi.stubEnv("WAHOO_OAUTH_TEST_ADAPTER", "1");
     vi.stubEnv("OAUTH_MOBILE_CALLBACK_URL", "https://app.example.com/integrations");
     getDefaultMobileOAuthRedirect.mockReturnValue("https://app.example.com/integrations");
     handleOAuthCallback.mockResolvedValue({
@@ -90,7 +90,7 @@ describe("OAuth callback HTTP boundary", () => {
 
   it("allows the explicit loopback origin for the local OAuth test adapter", async () => {
     vi.stubEnv("NODE_ENV", "test");
-    vi.stubEnv("PROVIDER_OAUTH_TEST_ADAPTER", "1");
+    vi.stubEnv("WAHOO_OAUTH_TEST_ADAPTER", "1");
     handleOAuthCallback.mockResolvedValue({
       redirectUrl: "http://127.0.0.1:3000/integrations?error=invalid_state",
       status: 302,

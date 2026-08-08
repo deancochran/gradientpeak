@@ -9,7 +9,6 @@ function segment(segmentId: string, intervalId: string): ActivityPlanActivitySeg
     id: segmentId,
     role: "activity",
     name: segmentId,
-    activity_category: "run",
     intervals: [
       {
         id: intervalId,

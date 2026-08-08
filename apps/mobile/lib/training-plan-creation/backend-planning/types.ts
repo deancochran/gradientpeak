@@ -1,27 +1,7 @@
-import type { PreviewCreationConfigInput } from "@repo/core";
-import type { TrainingPlanPlanningContext } from "../planning-context";
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import type { BuilderDailyTrainingPathChartViewModel } from "../view-model";
 
-export type BackendPlanningOperation = "previewCreationConfig";
-
-export type BackendPlanningClientStatus = {
-  available: boolean;
-  enabledOperations: BackendPlanningOperation[];
-  reason: string;
-};
-
-export type BackendPlanningRequestSnapshot = {
-  context: TrainingPlanPlanningContext;
-  operation: BackendPlanningOperation;
-};
-
-export type BackendPlanningState = {
-  status: BackendPlanningClientStatus;
-  plannedOperations: BackendPlanningOperation[];
-  contextFingerprint: string;
-  previewInput: PreviewCreationConfigInput | null;
-  previewRequest: BackendPlanningRequestSnapshot;
-};
+export type ProjectionPreviewOutput = inferRouterOutputs<AppRouter>["trainingPlans"]["preview"];
 
 export type BackendPreviewProjection = {
   source: "backend";
@@ -42,7 +22,7 @@ export type BackendPreviewProjection = {
     blockCount: number;
   } | null;
   projectionChart: unknown;
-  previewSnapshotToken: string | null;
+  simulation: Extract<ProjectionPreviewOutput, { status: "available" }>["simulation"];
 };
 
 export type LocalFallbackProjection = {
@@ -86,7 +66,3 @@ export type ScheduleInspectorBackendInsight = {
   recommendation: string | null;
   outcome: "Better prepared" | "Too fatigued" | "Needs support";
 };
-
-export type BackendCreationConfigMappingResult =
-  | { ok: true; input: PreviewCreationConfigInput }
-  | { ok: false; reason: string };

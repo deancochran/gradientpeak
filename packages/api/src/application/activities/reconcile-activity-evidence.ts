@@ -86,6 +86,42 @@ function bindGeneratedEffortObservationId(
   };
 }
 
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function hasSamePostgresRealValue(left: number, right: number): boolean {
+  return Math.abs(left - right) <= Math.max(0.000001, Math.abs(right) * 0.000005);
+}
+
+function hasSameEffortEvidence(left: EffortRow, right: EffortInsert): boolean {
+  return (
+    left.profile_id === right.profile_id &&
+    left.activity_id === right.activity_id &&
+    left.segment_id === right.segment_id &&
+    left.recorded_at.getTime() === right.recorded_at.getTime() &&
+    left.activity_category === right.activity_category &&
+    left.effort_type === right.effort_type &&
+    left.duration_seconds === right.duration_seconds &&
+    left.distance_meters === (right.distance_meters ?? null) &&
+    left.start_offset === (right.start_offset ?? null) &&
+    left.unit === right.unit &&
+    hasSamePostgresRealValue(left.value, right.value) &&
+    left.source === right.source &&
+    left.method === right.method &&
+    left.calculation_version === right.calculation_version &&
+    left.quality_score === (right.quality_score ?? null) &&
+    canonicalJson(left.provenance) === canonicalJson(right.provenance)
+  );
+}
+
 export function planGeneratedActivityEvidenceReconciliation(input: {
   existingEfforts: EffortRow[];
   existingMetrics: MetricRow[];
@@ -109,11 +145,33 @@ export function planGeneratedActivityEvidenceReconciliation(input: {
     availableByIdentity.set(identity, [...(availableByIdentity.get(identity) ?? []), effort]);
   }
 
-  const effortUpdates: Array<{ id: string; values: EffortInsert }> = [];
+  const effortDeleteIds: string[] = [];
   const effortInserts: EffortInsert[] = [];
+  const effortMaterialTimes: Date[] = [];
   for (const desired of input.generated.efforts) {
     const existing = availableByIdentity.get(effortIdentity(desired))?.shift();
-    const observationId = existing?.id ?? desired.id ?? randomUUID();
+    const retainedValues = existing ? bindGeneratedEffortObservationId(desired, existing.id) : null;
+    const normalizedRetainedValues = retainedValues
+      ? {
+          ...retainedValues,
+          activity_id: input.generated.activityId,
+          profile_id: input.generated.profileId,
+          source: "imported" as const,
+          method:
+            desired.method === SWIMMING_CSS_SOURCE_EFFORT_METHOD
+              ? SWIMMING_CSS_SOURCE_EFFORT_METHOD
+              : GENERATED_EFFORT_METHOD,
+        }
+      : null;
+    if (
+      existing &&
+      normalizedRetainedValues &&
+      hasSameEffortEvidence(existing, normalizedRetainedValues)
+    ) {
+      continue;
+    }
+
+    const observationId = desired.id && desired.id !== existing?.id ? desired.id : randomUUID();
     const values = {
       ...bindGeneratedEffortObservationId(desired, observationId),
       activity_id: input.generated.activityId,
@@ -123,19 +181,21 @@ export function planGeneratedActivityEvidenceReconciliation(input: {
         desired.method === SWIMMING_CSS_SOURCE_EFFORT_METHOD
           ? SWIMMING_CSS_SOURCE_EFFORT_METHOD
           : GENERATED_EFFORT_METHOD,
-      updated_at: input.generated.now,
+      created_at: desired.created_at ?? input.generated.now,
     };
     if (existing) {
-      effortUpdates.push({ id: existing.id, values });
+      effortDeleteIds.push(existing.id);
+      effortInserts.push(values);
+      effortMaterialTimes.push(existing.recorded_at, desired.recorded_at);
     } else {
-      effortInserts.push({
-        ...values,
-        created_at: desired.created_at ?? input.generated.now,
-      });
+      effortInserts.push(values);
+      effortMaterialTimes.push(desired.recorded_at);
     }
   }
 
-  const effortDeleteIds = [...availableByIdentity.values()].flat().map((effort) => effort.id);
+  const effortDeletes = [...availableByIdentity.values()].flat();
+  effortDeleteIds.push(...effortDeletes.map((effort) => effort.id));
+  effortMaterialTimes.push(...effortDeletes.map((effort) => effort.recorded_at));
   const generatedMetrics = input.existingMetrics
     .filter(
       (metric) =>
@@ -167,7 +227,10 @@ export function planGeneratedActivityEvidenceReconciliation(input: {
   return {
     effortDeleteIds,
     effortInserts,
-    effortUpdates,
+    effortMaterialRecordedAt:
+      effortMaterialTimes.length === 0
+        ? null
+        : new Date(Math.min(...effortMaterialTimes.map((value) => value.getTime()))),
     metricDeleteIds,
     metricInsert:
       metricValues && !retainedMetric
@@ -221,14 +284,10 @@ export async function reconcileGeneratedActivityEvidenceWithProfileLockHeld(
     generated: input,
   });
 
-  for (const update of plan.effortUpdates) {
-    const { id: _ignoredId, created_at: _ignoredCreatedAt, ...values } = update.values;
-    await tx.update(activityEfforts).set(values).where(eq(activityEfforts.id, update.id));
-  }
-  if (plan.effortInserts.length) await tx.insert(activityEfforts).values(plan.effortInserts);
   if (plan.effortDeleteIds.length) {
     await tx.delete(activityEfforts).where(inArray(activityEfforts.id, plan.effortDeleteIds));
   }
+  if (plan.effortInserts.length) await tx.insert(activityEfforts).values(plan.effortInserts);
   const reconcilesSwimmingCss = [...existingEfforts, ...input.efforts].some(
     (effort) => effort.method === SWIMMING_CSS_SOURCE_EFFORT_METHOD,
   );

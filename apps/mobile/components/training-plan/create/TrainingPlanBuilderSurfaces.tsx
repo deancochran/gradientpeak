@@ -2,6 +2,7 @@ import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { ScrollView, View } from "react-native";
 import type { TrainingPathChartSectionContext } from "@/components/plan/training-path/TrainingPathLoadChartSection";
+import { BuilderPublishedProjectionCard } from "@/components/training-plan/create/BuilderPublishedProjectionCard";
 import { BuilderScheduleEditor } from "@/components/training-plan/create/BuilderScheduleEditor";
 import { BuilderStrategyComposer } from "@/components/training-plan/create/BuilderStrategyComposer";
 import { useScheduleEditorController } from "@/components/training-plan/create/useScheduleEditorController";
@@ -15,13 +16,7 @@ type TrainingPlanBuilderSurfacesProps = {
 export function TrainingPlanBuilderSurfaces({ controller }: TrainingPlanBuilderSurfacesProps) {
   const scheduleEditor = useScheduleEditorController(controller);
   const strategyComposer = useStrategyComposerController(controller);
-  const contextQueries = [
-    controller.builder.queries.profile,
-    controller.builder.queries.profileMetrics,
-    controller.builder.queries.activityEfforts,
-    controller.builder.queries.performanceTargets,
-    controller.builder.currentTrainingStatusQuery,
-  ];
+  const contextQueries = [controller.builder.queries.creationContext];
   const hasContextError = contextQueries.some((query) => query.isError);
   const previewError = controller.builder.derived.backendPlanningPreview.error;
   const renderSelectedDayPanel = (context: TrainingPathChartSectionContext) => (
@@ -48,11 +43,25 @@ export function TrainingPlanBuilderSurfaces({ controller }: TrainingPlanBuilderS
         ) : null}
         {previewError ? (
           <QueryNotice
-            detail="The advisory backend preview could not refresh. Local plan checks remain available and saving is not blocked."
+            detail="The authoritative server preview could not refresh. The local projection remains tentative, and saving waits for server validation."
             label="Preview unavailable"
             onRetry={() => void controller.builder.backendPlanningPreviewQuery.refetch()}
           />
         ) : null}
+        {controller.builder.derived.projectionConflict ? (
+          <QueryNotice
+            detail={controller.builder.derived.projectionConflict}
+            label="Plan validation conflict"
+            onRetry={() => void controller.actions.handleSave()}
+          />
+        ) : null}
+        <BuilderPublishedProjectionCard
+          onRetry={() => {
+            void controller.builder.queries.publishedState.refetch();
+            void controller.builder.backendPlanningPreviewQuery.refetch();
+          }}
+          projection={controller.builder.derived.publishedProjection}
+        />
         <BuilderStrategyComposer {...strategyComposer} renderBelowChart={renderSelectedDayPanel} />
       </View>
     </ScrollView>

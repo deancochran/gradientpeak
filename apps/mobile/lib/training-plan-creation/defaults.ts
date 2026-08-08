@@ -14,7 +14,7 @@ export function createDefaultTrainingPlanBuilderState(): TrainingPlanBuilderStat
     details: {
       name: DEFAULT_TRAINING_PLAN_NAME,
       description: "",
-      templateVisibility: "private",
+      contentVisibility: "private",
     },
     anchorDate: getDefaultAnchorDate(),
     athleteContext: createAthletePlanningContextFromSnapshot({

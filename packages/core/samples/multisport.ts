@@ -32,12 +32,12 @@ function componentPlan({
     gps_recording_enabled: activity_category === "run" || activity_category === "bike",
     structure: activityPlanStructureSchema.parse({
       version: 3,
+      activity_category,
       segments: [
         {
           id: segmentId,
           name,
           role: "activity",
-          activity_category,
           intervals: [
             {
               id: intervalId,

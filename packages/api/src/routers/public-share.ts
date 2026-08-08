@@ -71,7 +71,7 @@ const publicActivityPlanSchema = z
     structure: activityPlanStructureSchema,
     structure_hash: z.string().regex(/^v1:sha256:[0-9a-f]{64}$/),
     gps_recording_enabled: z.boolean(),
-    template_visibility: z.enum(["private", "followers", "public"]),
+    content_visibility: z.enum(["private", "followers", "public"]),
     is_system_template: z.boolean(),
     created_at: z.string(),
     updated_at: z.string(),
@@ -86,7 +86,7 @@ const publicTrainingPlanSchema = z
     description: z.string().nullable(),
     structure: trainingPlanSchema,
     structure_hash: z.string().regex(/^v1:sha256:[0-9a-f]{64}$/),
-    template_visibility: z.enum(["private", "followers", "public"]),
+    content_visibility: z.enum(["private", "followers", "public"]),
     sessions_per_week_target: z.number().int().nullable(),
     duration_hours: z.number().nullable(),
     is_system_template: z.boolean(),
@@ -156,7 +156,7 @@ type PublicPlanRow = {
   structure: unknown;
   structure_hash: string;
   gps_recording_enabled?: boolean;
-  template_visibility: "private" | "followers" | "public";
+  content_visibility: "private" | "followers" | "public";
   sessions_per_week_target?: number | null;
   duration_hours?: number | string | null;
   is_system_template: boolean;
@@ -269,7 +269,7 @@ export const publicShareRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const result = await getRequiredDb(ctx).execute(sql<PublicPlanRow>`
         select ap.id, ap.name, ap.description, ap.notes, ap.structure, ap.structure_hash,
-          ap.gps_recording_enabled, ap.template_visibility, ap.is_system_template,
+          ap.gps_recording_enabled, ap.content_visibility, ap.is_system_template,
           ap.created_at, ap.updated_at,
           p.id as owner_id, p.full_name as owner_name, p.username as owner_username,
           p.avatar_url as owner_avatar_url
@@ -288,7 +288,7 @@ export const publicShareRouter = createTRPCRouter({
         structure: publicJsonSchema.parse(row.structure),
         structure_hash: row.structure_hash,
         gps_recording_enabled: row.gps_recording_enabled,
-        template_visibility: row.template_visibility,
+        content_visibility: row.content_visibility,
         is_system_template: row.is_system_template,
         created_at: toIsoString(row.created_at),
         updated_at: toIsoString(row.updated_at),
@@ -302,7 +302,7 @@ export const publicShareRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const result = await getRequiredDb(ctx).execute(sql<PublicPlanRow>`
         select tp.id, tp.name, tp.description, tp.structure, tp.structure_hash,
-          tp.template_visibility, tp.sessions_per_week_target, tp.duration_hours,
+          tp.content_visibility, tp.sessions_per_week_target, tp.duration_hours,
           tp.is_system_template, tp.created_at, tp.updated_at,
           p.id as owner_id, p.full_name as owner_name, p.username as owner_username,
           p.avatar_url as owner_avatar_url
@@ -319,7 +319,7 @@ export const publicShareRouter = createTRPCRouter({
         description: row.description,
         structure: publicJsonSchema.parse(row.structure),
         structure_hash: row.structure_hash,
-        template_visibility: row.template_visibility,
+        content_visibility: row.content_visibility,
         sessions_per_week_target: row.sessions_per_week_target ?? null,
         is_system_template: row.is_system_template,
         duration_hours: toNumberOrNull(row.duration_hours ?? null),

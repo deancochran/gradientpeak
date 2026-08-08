@@ -20,7 +20,6 @@ import { Route as ProtectedMessagesRouteImport } from './routes/_protected/messa
 import { Route as ProtectedNotificationsRouteImport } from './routes/_protected/notifications'
 import { Route as ProtectedPlanRouteImport } from './routes/_protected/plan'
 import { Route as ProtectedRecordRouteImport } from './routes/_protected/record'
-import { Route as ProtectedScheduledActivitiesRouteImport } from './routes/_protected/scheduled-activities'
 import { Route as ProtectedSearchRouteImport } from './routes/_protected/search'
 import { Route as ProtectedSettingsRouteImport } from './routes/_protected/settings'
 import { Route as ProtectedTrainingPreferencesRouteImport } from './routes/_protected/training-preferences'
@@ -40,8 +39,6 @@ import { Route as CoachingOrganizationsIndexRouteImport } from './routes/_coachi
 import { Route as CoachingOrganizationsOrganizationIdRouteImport } from './routes/_coaching/organizations/$organizationId'
 import { Route as ProtectedActivitiesIndexRouteImport } from './routes/_protected/activities/index'
 import { Route as ProtectedActivitiesImportRouteImport } from './routes/_protected/activities/import'
-import { Route as ProtectedActivityEffortsIndexRouteImport } from './routes/_protected/activity-efforts/index'
-import { Route as ProtectedActivityEffortsNewRouteImport } from './routes/_protected/activity-efforts/new'
 import { Route as ProtectedActivityPlansIndexRouteImport } from './routes/_protected/activity-plans/index'
 import { Route as ProtectedActivityPlansActivityPlanIdRouteImport } from './routes/_protected/activity-plans/$activityPlanId'
 import { Route as ProtectedCalendarIndexRouteImport } from './routes/_protected/calendar/index'
@@ -56,8 +53,6 @@ import { Route as ProtectedRecordPlanRouteImport } from './routes/_protected/rec
 import { Route as ProtectedRecordSessionRouteImport } from './routes/_protected/record/session'
 import { Route as ProtectedRoutesIndexRouteImport } from './routes/_protected/routes/index'
 import { Route as ProtectedRoutesUploadRouteImport } from './routes/_protected/routes/upload'
-import { Route as ProtectedScheduledActivitiesIndexRouteImport } from './routes/_protected/scheduled-activities/index'
-import { Route as ProtectedScheduledActivitiesEventIdRouteImport } from './routes/_protected/scheduled-activities/$eventId'
 import { Route as ProtectedTrainingPlansIndexRouteImport } from './routes/_protected/training-plans/index'
 import { Route as ProtectedTrainingPlansCreateRouteImport } from './routes/_protected/training-plans/create'
 import { Route as ProtectedTrainingPlansReorderRouteImport } from './routes/_protected/training-plans/reorder'
@@ -70,7 +65,6 @@ import { Route as ShareTrainingPlansTrainingPlanIdRouteImport } from './routes/s
 import { Route as CoachingOrganizationsOrganizationIdIndexRouteImport } from './routes/_coaching/organizations/$organizationId/index'
 import { Route as CoachingOrganizationsOrganizationIdDashboardRouteImport } from './routes/_coaching/organizations/$organizationId/dashboard'
 import { Route as ProtectedActivitiesActivityIdIndexRouteImport } from './routes/_protected/activities/$activityId/index'
-import { Route as ProtectedActivityEffortsEffortIdIndexRouteImport } from './routes/_protected/activity-efforts/$effortId/index'
 import { Route as ProtectedCalendarDayDateRouteImport } from './routes/_protected/calendar/day/$date'
 import { Route as ProtectedGoalsGoalIdIndexRouteImport } from './routes/_protected/goals/$goalId/index'
 import { Route as ProtectedGoalsGoalIdEditRouteImport } from './routes/_protected/goals/$goalId/edit'
@@ -149,12 +143,6 @@ const ProtectedRecordRoute = ProtectedRecordRouteImport.update({
   path: '/record',
   getParentRoute: () => ProtectedRoute,
 } as any)
-const ProtectedScheduledActivitiesRoute =
-  ProtectedScheduledActivitiesRouteImport.update({
-    id: '/scheduled-activities',
-    path: '/scheduled-activities',
-    getParentRoute: () => ProtectedRoute,
-  } as any)
 const ProtectedSearchRoute = ProtectedSearchRouteImport.update({
   id: '/search',
   path: '/search',
@@ -255,18 +243,6 @@ const ProtectedActivitiesImportRoute =
     path: '/activities/import',
     getParentRoute: () => ProtectedRoute,
   } as any)
-const ProtectedActivityEffortsIndexRoute =
-  ProtectedActivityEffortsIndexRouteImport.update({
-    id: '/activity-efforts/',
-    path: '/activity-efforts/',
-    getParentRoute: () => ProtectedRoute,
-  } as any)
-const ProtectedActivityEffortsNewRoute =
-  ProtectedActivityEffortsNewRouteImport.update({
-    id: '/activity-efforts/new',
-    path: '/activity-efforts/new',
-    getParentRoute: () => ProtectedRoute,
-  } as any)
 const ProtectedActivityPlansIndexRoute =
   ProtectedActivityPlansIndexRouteImport.update({
     id: '/activity-plans/',
@@ -340,18 +316,6 @@ const ProtectedRoutesUploadRoute = ProtectedRoutesUploadRouteImport.update({
   path: '/routes/upload',
   getParentRoute: () => ProtectedRoute,
 } as any)
-const ProtectedScheduledActivitiesIndexRoute =
-  ProtectedScheduledActivitiesIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => ProtectedScheduledActivitiesRoute,
-  } as any)
-const ProtectedScheduledActivitiesEventIdRoute =
-  ProtectedScheduledActivitiesEventIdRouteImport.update({
-    id: '/$eventId',
-    path: '/$eventId',
-    getParentRoute: () => ProtectedScheduledActivitiesRoute,
-  } as any)
 const ProtectedTrainingPlansIndexRoute =
   ProtectedTrainingPlansIndexRouteImport.update({
     id: '/training-plans/',
@@ -419,12 +383,6 @@ const ProtectedActivitiesActivityIdIndexRoute =
   ProtectedActivitiesActivityIdIndexRouteImport.update({
     id: '/activities/$activityId/',
     path: '/activities/$activityId/',
-    getParentRoute: () => ProtectedRoute,
-  } as any)
-const ProtectedActivityEffortsEffortIdIndexRoute =
-  ProtectedActivityEffortsEffortIdIndexRouteImport.update({
-    id: '/activity-efforts/$effortId/',
-    path: '/activity-efforts/$effortId/',
     getParentRoute: () => ProtectedRoute,
   } as any)
 const ProtectedCalendarDayDateRoute =
@@ -582,7 +540,6 @@ export interface FileRoutesByFullPath {
   '/notifications': typeof ProtectedNotificationsRoute
   '/plan': typeof ProtectedPlanRoute
   '/record': typeof ProtectedRecordRouteWithChildren
-  '/scheduled-activities': typeof ProtectedScheduledActivitiesRouteWithChildren
   '/search': typeof ProtectedSearchRoute
   '/settings': typeof ProtectedSettingsRoute
   '/training-preferences': typeof ProtectedTrainingPreferencesRoute
@@ -600,7 +557,6 @@ export interface FileRoutesByFullPath {
   '/auth/verify': typeof AuthVerifyRoute
   '/organizations/$organizationId': typeof CoachingOrganizationsOrganizationIdRouteWithChildren
   '/activities/import': typeof ProtectedActivitiesImportRoute
-  '/activity-efforts/new': typeof ProtectedActivityEffortsNewRoute
   '/activity-plans/$activityPlanId': typeof ProtectedActivityPlansActivityPlanIdRoute
   '/calendar/new': typeof ProtectedCalendarNewRoute
   '/goals/new': typeof ProtectedGoalsNewRoute
@@ -608,7 +564,6 @@ export interface FileRoutesByFullPath {
   '/record/plan': typeof ProtectedRecordPlanRoute
   '/record/session': typeof ProtectedRecordSessionRoute
   '/routes/upload': typeof ProtectedRoutesUploadRoute
-  '/scheduled-activities/$eventId': typeof ProtectedScheduledActivitiesEventIdRoute
   '/training-plans/create': typeof ProtectedTrainingPlansCreateRoute
   '/training-plans/reorder': typeof ProtectedTrainingPlansReorderRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -619,7 +574,6 @@ export interface FileRoutesByFullPath {
   '/share/training-plans/$trainingPlanId': typeof ShareTrainingPlansTrainingPlanIdRoute
   '/organizations/': typeof CoachingOrganizationsIndexRoute
   '/activities/': typeof ProtectedActivitiesIndexRoute
-  '/activity-efforts/': typeof ProtectedActivityEffortsIndexRoute
   '/activity-plans/': typeof ProtectedActivityPlansIndexRoute
   '/calendar/': typeof ProtectedCalendarIndexRoute
   '/goals/': typeof ProtectedGoalsIndexRoute
@@ -627,7 +581,6 @@ export interface FileRoutesByFullPath {
   '/profile-metrics/': typeof ProtectedProfileMetricsIndexRoute
   '/record/': typeof ProtectedRecordIndexRoute
   '/routes/': typeof ProtectedRoutesIndexRoute
-  '/scheduled-activities/': typeof ProtectedScheduledActivitiesIndexRoute
   '/training-plans/': typeof ProtectedTrainingPlansIndexRoute
   '/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/calendar/day/$date': typeof ProtectedCalendarDayDateRoute
@@ -642,7 +595,6 @@ export interface FileRoutesByFullPath {
   '/api/integrations/callback/$provider': typeof ApiIntegrationsCallbackProviderRoute
   '/organizations/$organizationId/': typeof CoachingOrganizationsOrganizationIdIndexRoute
   '/activities/$activityId/': typeof ProtectedActivitiesActivityIdIndexRoute
-  '/activity-efforts/$effortId/': typeof ProtectedActivityEffortsEffortIdIndexRoute
   '/goals/$goalId/': typeof ProtectedGoalsGoalIdIndexRoute
   '/groups/$groupId/': typeof ProtectedGroupsGroupIdIndexRoute
   '/record/route/': typeof ProtectedRecordRouteIndexRoute
@@ -681,7 +633,6 @@ export interface FileRoutesByTo {
   '/auth/verification-success': typeof AuthVerificationSuccessRoute
   '/auth/verify': typeof AuthVerifyRoute
   '/activities/import': typeof ProtectedActivitiesImportRoute
-  '/activity-efforts/new': typeof ProtectedActivityEffortsNewRoute
   '/activity-plans/$activityPlanId': typeof ProtectedActivityPlansActivityPlanIdRoute
   '/calendar/new': typeof ProtectedCalendarNewRoute
   '/goals/new': typeof ProtectedGoalsNewRoute
@@ -689,7 +640,6 @@ export interface FileRoutesByTo {
   '/record/plan': typeof ProtectedRecordPlanRoute
   '/record/session': typeof ProtectedRecordSessionRoute
   '/routes/upload': typeof ProtectedRoutesUploadRoute
-  '/scheduled-activities/$eventId': typeof ProtectedScheduledActivitiesEventIdRoute
   '/training-plans/create': typeof ProtectedTrainingPlansCreateRoute
   '/training-plans/reorder': typeof ProtectedTrainingPlansReorderRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -700,7 +650,6 @@ export interface FileRoutesByTo {
   '/share/training-plans/$trainingPlanId': typeof ShareTrainingPlansTrainingPlanIdRoute
   '/organizations': typeof CoachingOrganizationsIndexRoute
   '/activities': typeof ProtectedActivitiesIndexRoute
-  '/activity-efforts': typeof ProtectedActivityEffortsIndexRoute
   '/activity-plans': typeof ProtectedActivityPlansIndexRoute
   '/calendar': typeof ProtectedCalendarIndexRoute
   '/goals': typeof ProtectedGoalsIndexRoute
@@ -708,7 +657,6 @@ export interface FileRoutesByTo {
   '/profile-metrics': typeof ProtectedProfileMetricsIndexRoute
   '/record': typeof ProtectedRecordIndexRoute
   '/routes': typeof ProtectedRoutesIndexRoute
-  '/scheduled-activities': typeof ProtectedScheduledActivitiesIndexRoute
   '/training-plans': typeof ProtectedTrainingPlansIndexRoute
   '/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/calendar/day/$date': typeof ProtectedCalendarDayDateRoute
@@ -723,7 +671,6 @@ export interface FileRoutesByTo {
   '/api/integrations/callback/$provider': typeof ApiIntegrationsCallbackProviderRoute
   '/organizations/$organizationId': typeof CoachingOrganizationsOrganizationIdIndexRoute
   '/activities/$activityId': typeof ProtectedActivitiesActivityIdIndexRoute
-  '/activity-efforts/$effortId': typeof ProtectedActivityEffortsEffortIdIndexRoute
   '/goals/$goalId': typeof ProtectedGoalsGoalIdIndexRoute
   '/groups/$groupId': typeof ProtectedGroupsGroupIdIndexRoute
   '/record/route': typeof ProtectedRecordRouteIndexRoute
@@ -751,7 +698,6 @@ export interface FileRoutesById {
   '/_protected/notifications': typeof ProtectedNotificationsRoute
   '/_protected/plan': typeof ProtectedPlanRoute
   '/_protected/record': typeof ProtectedRecordRouteWithChildren
-  '/_protected/scheduled-activities': typeof ProtectedScheduledActivitiesRouteWithChildren
   '/_protected/search': typeof ProtectedSearchRoute
   '/_protected/settings': typeof ProtectedSettingsRoute
   '/_protected/training-preferences': typeof ProtectedTrainingPreferencesRoute
@@ -770,7 +716,6 @@ export interface FileRoutesById {
   '/_protected/': typeof ProtectedIndexRoute
   '/_coaching/organizations/$organizationId': typeof CoachingOrganizationsOrganizationIdRouteWithChildren
   '/_protected/activities/import': typeof ProtectedActivitiesImportRoute
-  '/_protected/activity-efforts/new': typeof ProtectedActivityEffortsNewRoute
   '/_protected/activity-plans/$activityPlanId': typeof ProtectedActivityPlansActivityPlanIdRoute
   '/_protected/calendar/new': typeof ProtectedCalendarNewRoute
   '/_protected/goals/new': typeof ProtectedGoalsNewRoute
@@ -778,7 +723,6 @@ export interface FileRoutesById {
   '/_protected/record/plan': typeof ProtectedRecordPlanRoute
   '/_protected/record/session': typeof ProtectedRecordSessionRoute
   '/_protected/routes/upload': typeof ProtectedRoutesUploadRoute
-  '/_protected/scheduled-activities/$eventId': typeof ProtectedScheduledActivitiesEventIdRoute
   '/_protected/training-plans/create': typeof ProtectedTrainingPlansCreateRoute
   '/_protected/training-plans/reorder': typeof ProtectedTrainingPlansReorderRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -789,7 +733,6 @@ export interface FileRoutesById {
   '/share/training-plans/$trainingPlanId': typeof ShareTrainingPlansTrainingPlanIdRoute
   '/_coaching/organizations/': typeof CoachingOrganizationsIndexRoute
   '/_protected/activities/': typeof ProtectedActivitiesIndexRoute
-  '/_protected/activity-efforts/': typeof ProtectedActivityEffortsIndexRoute
   '/_protected/activity-plans/': typeof ProtectedActivityPlansIndexRoute
   '/_protected/calendar/': typeof ProtectedCalendarIndexRoute
   '/_protected/goals/': typeof ProtectedGoalsIndexRoute
@@ -797,7 +740,6 @@ export interface FileRoutesById {
   '/_protected/profile-metrics/': typeof ProtectedProfileMetricsIndexRoute
   '/_protected/record/': typeof ProtectedRecordIndexRoute
   '/_protected/routes/': typeof ProtectedRoutesIndexRoute
-  '/_protected/scheduled-activities/': typeof ProtectedScheduledActivitiesIndexRoute
   '/_protected/training-plans/': typeof ProtectedTrainingPlansIndexRoute
   '/_coaching/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/_protected/calendar/day/$date': typeof ProtectedCalendarDayDateRoute
@@ -812,7 +754,6 @@ export interface FileRoutesById {
   '/api/integrations/callback/$provider': typeof ApiIntegrationsCallbackProviderRoute
   '/_coaching/organizations/$organizationId/': typeof CoachingOrganizationsOrganizationIdIndexRoute
   '/_protected/activities/$activityId/': typeof ProtectedActivitiesActivityIdIndexRoute
-  '/_protected/activity-efforts/$effortId/': typeof ProtectedActivityEffortsEffortIdIndexRoute
   '/_protected/goals/$goalId/': typeof ProtectedGoalsGoalIdIndexRoute
   '/_protected/groups/$groupId/': typeof ProtectedGroupsGroupIdIndexRoute
   '/_protected/record/route/': typeof ProtectedRecordRouteIndexRoute
@@ -840,7 +781,6 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/plan'
     | '/record'
-    | '/scheduled-activities'
     | '/search'
     | '/settings'
     | '/training-preferences'
@@ -858,7 +798,6 @@ export interface FileRouteTypes {
     | '/auth/verify'
     | '/organizations/$organizationId'
     | '/activities/import'
-    | '/activity-efforts/new'
     | '/activity-plans/$activityPlanId'
     | '/calendar/new'
     | '/goals/new'
@@ -866,7 +805,6 @@ export interface FileRouteTypes {
     | '/record/plan'
     | '/record/session'
     | '/routes/upload'
-    | '/scheduled-activities/$eventId'
     | '/training-plans/create'
     | '/training-plans/reorder'
     | '/api/auth/$'
@@ -877,7 +815,6 @@ export interface FileRouteTypes {
     | '/share/training-plans/$trainingPlanId'
     | '/organizations/'
     | '/activities/'
-    | '/activity-efforts/'
     | '/activity-plans/'
     | '/calendar/'
     | '/goals/'
@@ -885,7 +822,6 @@ export interface FileRouteTypes {
     | '/profile-metrics/'
     | '/record/'
     | '/routes/'
-    | '/scheduled-activities/'
     | '/training-plans/'
     | '/organizations/$organizationId/dashboard'
     | '/calendar/day/$date'
@@ -900,7 +836,6 @@ export interface FileRouteTypes {
     | '/api/integrations/callback/$provider'
     | '/organizations/$organizationId/'
     | '/activities/$activityId/'
-    | '/activity-efforts/$effortId/'
     | '/goals/$goalId/'
     | '/groups/$groupId/'
     | '/record/route/'
@@ -939,7 +874,6 @@ export interface FileRouteTypes {
     | '/auth/verification-success'
     | '/auth/verify'
     | '/activities/import'
-    | '/activity-efforts/new'
     | '/activity-plans/$activityPlanId'
     | '/calendar/new'
     | '/goals/new'
@@ -947,7 +881,6 @@ export interface FileRouteTypes {
     | '/record/plan'
     | '/record/session'
     | '/routes/upload'
-    | '/scheduled-activities/$eventId'
     | '/training-plans/create'
     | '/training-plans/reorder'
     | '/api/auth/$'
@@ -958,7 +891,6 @@ export interface FileRouteTypes {
     | '/share/training-plans/$trainingPlanId'
     | '/organizations'
     | '/activities'
-    | '/activity-efforts'
     | '/activity-plans'
     | '/calendar'
     | '/goals'
@@ -966,7 +898,6 @@ export interface FileRouteTypes {
     | '/profile-metrics'
     | '/record'
     | '/routes'
-    | '/scheduled-activities'
     | '/training-plans'
     | '/organizations/$organizationId/dashboard'
     | '/calendar/day/$date'
@@ -981,7 +912,6 @@ export interface FileRouteTypes {
     | '/api/integrations/callback/$provider'
     | '/organizations/$organizationId'
     | '/activities/$activityId'
-    | '/activity-efforts/$effortId'
     | '/goals/$goalId'
     | '/groups/$groupId'
     | '/record/route'
@@ -1008,7 +938,6 @@ export interface FileRouteTypes {
     | '/_protected/notifications'
     | '/_protected/plan'
     | '/_protected/record'
-    | '/_protected/scheduled-activities'
     | '/_protected/search'
     | '/_protected/settings'
     | '/_protected/training-preferences'
@@ -1027,7 +956,6 @@ export interface FileRouteTypes {
     | '/_protected/'
     | '/_coaching/organizations/$organizationId'
     | '/_protected/activities/import'
-    | '/_protected/activity-efforts/new'
     | '/_protected/activity-plans/$activityPlanId'
     | '/_protected/calendar/new'
     | '/_protected/goals/new'
@@ -1035,7 +963,6 @@ export interface FileRouteTypes {
     | '/_protected/record/plan'
     | '/_protected/record/session'
     | '/_protected/routes/upload'
-    | '/_protected/scheduled-activities/$eventId'
     | '/_protected/training-plans/create'
     | '/_protected/training-plans/reorder'
     | '/api/auth/$'
@@ -1046,7 +973,6 @@ export interface FileRouteTypes {
     | '/share/training-plans/$trainingPlanId'
     | '/_coaching/organizations/'
     | '/_protected/activities/'
-    | '/_protected/activity-efforts/'
     | '/_protected/activity-plans/'
     | '/_protected/calendar/'
     | '/_protected/goals/'
@@ -1054,7 +980,6 @@ export interface FileRouteTypes {
     | '/_protected/profile-metrics/'
     | '/_protected/record/'
     | '/_protected/routes/'
-    | '/_protected/scheduled-activities/'
     | '/_protected/training-plans/'
     | '/_coaching/organizations/$organizationId/dashboard'
     | '/_protected/calendar/day/$date'
@@ -1069,7 +994,6 @@ export interface FileRouteTypes {
     | '/api/integrations/callback/$provider'
     | '/_coaching/organizations/$organizationId/'
     | '/_protected/activities/$activityId/'
-    | '/_protected/activity-efforts/$effortId/'
     | '/_protected/goals/$goalId/'
     | '/_protected/groups/$groupId/'
     | '/_protected/record/route/'
@@ -1190,13 +1114,6 @@ declare module '@tanstack/react-router' {
       path: '/record'
       fullPath: '/record'
       preLoaderRoute: typeof ProtectedRecordRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/scheduled-activities': {
-      id: '/_protected/scheduled-activities'
-      path: '/scheduled-activities'
-      fullPath: '/scheduled-activities'
-      preLoaderRoute: typeof ProtectedScheduledActivitiesRouteImport
       parentRoute: typeof ProtectedRoute
     }
     '/_protected/search': {
@@ -1332,20 +1249,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedActivitiesImportRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/_protected/activity-efforts/': {
-      id: '/_protected/activity-efforts/'
-      path: '/activity-efforts'
-      fullPath: '/activity-efforts/'
-      preLoaderRoute: typeof ProtectedActivityEffortsIndexRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/activity-efforts/new': {
-      id: '/_protected/activity-efforts/new'
-      path: '/activity-efforts/new'
-      fullPath: '/activity-efforts/new'
-      preLoaderRoute: typeof ProtectedActivityEffortsNewRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
     '/_protected/activity-plans/': {
       id: '/_protected/activity-plans/'
       path: '/activity-plans'
@@ -1444,20 +1347,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedRoutesUploadRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/_protected/scheduled-activities/': {
-      id: '/_protected/scheduled-activities/'
-      path: '/'
-      fullPath: '/scheduled-activities/'
-      preLoaderRoute: typeof ProtectedScheduledActivitiesIndexRouteImport
-      parentRoute: typeof ProtectedScheduledActivitiesRoute
-    }
-    '/_protected/scheduled-activities/$eventId': {
-      id: '/_protected/scheduled-activities/$eventId'
-      path: '/$eventId'
-      fullPath: '/scheduled-activities/$eventId'
-      preLoaderRoute: typeof ProtectedScheduledActivitiesEventIdRouteImport
-      parentRoute: typeof ProtectedScheduledActivitiesRoute
-    }
     '/_protected/training-plans/': {
       id: '/_protected/training-plans/'
       path: '/training-plans'
@@ -1540,13 +1429,6 @@ declare module '@tanstack/react-router' {
       path: '/activities/$activityId'
       fullPath: '/activities/$activityId/'
       preLoaderRoute: typeof ProtectedActivitiesActivityIdIndexRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/activity-efforts/$effortId/': {
-      id: '/_protected/activity-efforts/$effortId/'
-      path: '/activity-efforts/$effortId'
-      fullPath: '/activity-efforts/$effortId/'
-      preLoaderRoute: typeof ProtectedActivityEffortsEffortIdIndexRouteImport
       parentRoute: typeof ProtectedRoute
     }
     '/_protected/calendar/day/$date': {
@@ -1813,24 +1695,6 @@ const ProtectedRecordRouteWithChildren = ProtectedRecordRoute._addFileChildren(
   ProtectedRecordRouteChildren,
 )
 
-interface ProtectedScheduledActivitiesRouteChildren {
-  ProtectedScheduledActivitiesEventIdRoute: typeof ProtectedScheduledActivitiesEventIdRoute
-  ProtectedScheduledActivitiesIndexRoute: typeof ProtectedScheduledActivitiesIndexRoute
-}
-
-const ProtectedScheduledActivitiesRouteChildren: ProtectedScheduledActivitiesRouteChildren =
-  {
-    ProtectedScheduledActivitiesEventIdRoute:
-      ProtectedScheduledActivitiesEventIdRoute,
-    ProtectedScheduledActivitiesIndexRoute:
-      ProtectedScheduledActivitiesIndexRoute,
-  }
-
-const ProtectedScheduledActivitiesRouteWithChildren =
-  ProtectedScheduledActivitiesRoute._addFileChildren(
-    ProtectedScheduledActivitiesRouteChildren,
-  )
-
 interface ProtectedRouteChildren {
   ProtectedCalendarRoute: typeof ProtectedCalendarRouteWithChildren
   ProtectedGoalsRoute: typeof ProtectedGoalsRouteWithChildren
@@ -1839,21 +1703,18 @@ interface ProtectedRouteChildren {
   ProtectedNotificationsRoute: typeof ProtectedNotificationsRoute
   ProtectedPlanRoute: typeof ProtectedPlanRoute
   ProtectedRecordRoute: typeof ProtectedRecordRouteWithChildren
-  ProtectedScheduledActivitiesRoute: typeof ProtectedScheduledActivitiesRouteWithChildren
   ProtectedSearchRoute: typeof ProtectedSearchRoute
   ProtectedSettingsRoute: typeof ProtectedSettingsRoute
   ProtectedTrainingPreferencesRoute: typeof ProtectedTrainingPreferencesRoute
   ProtectedTrendsRoute: typeof ProtectedTrendsRoute
   ProtectedIndexRoute: typeof ProtectedIndexRoute
   ProtectedActivitiesImportRoute: typeof ProtectedActivitiesImportRoute
-  ProtectedActivityEffortsNewRoute: typeof ProtectedActivityEffortsNewRoute
   ProtectedActivityPlansActivityPlanIdRoute: typeof ProtectedActivityPlansActivityPlanIdRoute
   ProtectedGroupsNewRoute: typeof ProtectedGroupsNewRoute
   ProtectedRoutesUploadRoute: typeof ProtectedRoutesUploadRoute
   ProtectedTrainingPlansCreateRoute: typeof ProtectedTrainingPlansCreateRoute
   ProtectedTrainingPlansReorderRoute: typeof ProtectedTrainingPlansReorderRoute
   ProtectedActivitiesIndexRoute: typeof ProtectedActivitiesIndexRoute
-  ProtectedActivityEffortsIndexRoute: typeof ProtectedActivityEffortsIndexRoute
   ProtectedActivityPlansIndexRoute: typeof ProtectedActivityPlansIndexRoute
   ProtectedGroupsIndexRoute: typeof ProtectedGroupsIndexRoute
   ProtectedProfileMetricsIndexRoute: typeof ProtectedProfileMetricsIndexRoute
@@ -1866,7 +1727,6 @@ interface ProtectedRouteChildren {
   ProtectedUserUserIdFollowersRoute: typeof ProtectedUserUserIdFollowersRoute
   ProtectedUserUserIdFollowingRoute: typeof ProtectedUserUserIdFollowingRoute
   ProtectedActivitiesActivityIdIndexRoute: typeof ProtectedActivitiesActivityIdIndexRoute
-  ProtectedActivityEffortsEffortIdIndexRoute: typeof ProtectedActivityEffortsEffortIdIndexRoute
   ProtectedGroupsGroupIdIndexRoute: typeof ProtectedGroupsGroupIdIndexRoute
   ProtectedRoutesRouteIdIndexRoute: typeof ProtectedRoutesRouteIdIndexRoute
   ProtectedTrainingPlansPlanIdIndexRoute: typeof ProtectedTrainingPlansPlanIdIndexRoute
@@ -1884,15 +1744,12 @@ const ProtectedRouteChildren: ProtectedRouteChildren = {
   ProtectedNotificationsRoute: ProtectedNotificationsRoute,
   ProtectedPlanRoute: ProtectedPlanRoute,
   ProtectedRecordRoute: ProtectedRecordRouteWithChildren,
-  ProtectedScheduledActivitiesRoute:
-    ProtectedScheduledActivitiesRouteWithChildren,
   ProtectedSearchRoute: ProtectedSearchRoute,
   ProtectedSettingsRoute: ProtectedSettingsRoute,
   ProtectedTrainingPreferencesRoute: ProtectedTrainingPreferencesRoute,
   ProtectedTrendsRoute: ProtectedTrendsRoute,
   ProtectedIndexRoute: ProtectedIndexRoute,
   ProtectedActivitiesImportRoute: ProtectedActivitiesImportRoute,
-  ProtectedActivityEffortsNewRoute: ProtectedActivityEffortsNewRoute,
   ProtectedActivityPlansActivityPlanIdRoute:
     ProtectedActivityPlansActivityPlanIdRoute,
   ProtectedGroupsNewRoute: ProtectedGroupsNewRoute,
@@ -1900,7 +1757,6 @@ const ProtectedRouteChildren: ProtectedRouteChildren = {
   ProtectedTrainingPlansCreateRoute: ProtectedTrainingPlansCreateRoute,
   ProtectedTrainingPlansReorderRoute: ProtectedTrainingPlansReorderRoute,
   ProtectedActivitiesIndexRoute: ProtectedActivitiesIndexRoute,
-  ProtectedActivityEffortsIndexRoute: ProtectedActivityEffortsIndexRoute,
   ProtectedActivityPlansIndexRoute: ProtectedActivityPlansIndexRoute,
   ProtectedGroupsIndexRoute: ProtectedGroupsIndexRoute,
   ProtectedProfileMetricsIndexRoute: ProtectedProfileMetricsIndexRoute,
@@ -1914,8 +1770,6 @@ const ProtectedRouteChildren: ProtectedRouteChildren = {
   ProtectedUserUserIdFollowingRoute: ProtectedUserUserIdFollowingRoute,
   ProtectedActivitiesActivityIdIndexRoute:
     ProtectedActivitiesActivityIdIndexRoute,
-  ProtectedActivityEffortsEffortIdIndexRoute:
-    ProtectedActivityEffortsEffortIdIndexRoute,
   ProtectedGroupsGroupIdIndexRoute: ProtectedGroupsGroupIdIndexRoute,
   ProtectedRoutesRouteIdIndexRoute: ProtectedRoutesRouteIdIndexRoute,
   ProtectedTrainingPlansPlanIdIndexRoute:

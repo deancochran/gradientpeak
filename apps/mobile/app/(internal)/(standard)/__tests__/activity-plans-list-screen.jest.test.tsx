@@ -11,7 +11,7 @@ const activityPlansListUseQueryMock = jest.fn((_input?: unknown) => ({
         name: "Tempo Ride",
         description: "Steady state tempo blocks",
         activity_category: "bike",
-        template_visibility: "private",
+        content_visibility: "private",
         owner: { id: "owner-1", username: "Owner", avatar_url: null },
       },
     ],

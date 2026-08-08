@@ -50,12 +50,12 @@ const ids = {
 function validStructure() {
   return {
     version: 3 as const,
+    activity_category: "bike" as const,
     segments: [
       {
         id: ids.segment,
         role: "activity" as const,
         name: "Bike",
-        activity_category: "bike" as const,
         intervals: [
           {
             id: ids.interval,
@@ -76,7 +76,6 @@ function validStructure() {
         id: ids.segment2,
         role: "activity" as const,
         name: "Bike again",
-        activity_category: "bike" as const,
         intervals: [
           {
             id: ids.interval2,
@@ -105,7 +104,7 @@ describe("useActivityPlanForm", () => {
       description: "",
       activityCategory: "bike",
       notes: "",
-      structure: { version: 3, segments: [] },
+      structure: { version: 3, activity_category: "bike", segments: [] },
     });
   });
 

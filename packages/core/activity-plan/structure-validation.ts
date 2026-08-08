@@ -3,7 +3,11 @@ import type { z } from "zod";
 import { isTargetTypePermittedForActivity } from "../targets/capabilities";
 import type { ActivityPlanSegment } from "./structure-schema";
 
-type ActivityPlanStructureShape = { version: 3; segments: ActivityPlanSegment[] };
+type ActivityPlanStructureShape = {
+  version: 3;
+  activity_category: "run" | "bike" | "swim" | "strength" | "other";
+  segments: ActivityPlanSegment[];
+};
 
 export const ACTIVITY_PLAN_LIMITS = {
   maxSegments: 64,
@@ -26,7 +30,6 @@ export const activityPlanIssueCodes = {
   payloadTooLarge: "ACTIVITY_PLAN_PAYLOAD_TOO_LARGE",
   consecutiveRests: "ACTIVITY_PLAN_CONSECUTIVE_RESTS",
   incompatibleTarget: "ACTIVITY_PLAN_INCOMPATIBLE_TARGET",
-  mixedActivityCategories: "ACTIVITY_PLAN_MIXED_ACTIVITY_CATEGORIES",
 } as const;
 
 export type ActivityPlanIssueCode =
@@ -61,7 +64,6 @@ export function getActivityPlanDocumentIssues(
   const issues: ValidationIssue[] = [];
   const ids = new Map<string, PropertyKey[]>();
   let activityCount = 0;
-  const activityCategories = new Set<string>();
   let expandedOccurrences = 0;
   let explicitTimedSeconds = 0;
 
@@ -99,7 +101,6 @@ export function getActivityPlanDocumentIssues(
     }
 
     activityCount += 1;
-    activityCategories.add(segment.activity_category);
     segment.intervals.forEach((interval, intervalIndex) => {
       const intervalPath = [...segmentPath, "intervals", intervalIndex];
       registerId(interval.id, [...intervalPath, "id"]);
@@ -113,7 +114,7 @@ export function getActivityPlanDocumentIssues(
         step.targets.forEach((target, targetIndex) => {
           if (
             !isTargetTypePermittedForActivity({
-              activityCategory: segment.activity_category,
+              activityCategory: structure.activity_category,
               targetType: target.type,
             })
           ) {
@@ -121,7 +122,7 @@ export function getActivityPlanDocumentIssues(
               issue(
                 activityPlanIssueCodes.incompatibleTarget,
                 [...intervalPath, "steps", stepIndex, "targets", targetIndex, "type"],
-                `Target type ${target.type} is not permitted for ${segment.activity_category}.`,
+                `Target type ${target.type} is not permitted for ${structure.activity_category}.`,
               ),
             );
           }
@@ -136,15 +137,6 @@ export function getActivityPlanDocumentIssues(
         activityPlanIssueCodes.missingActivity,
         ["segments"],
         "A plan must contain at least one activity segment.",
-      ),
-    );
-  }
-  if (activityCategories.size > 1) {
-    issues.push(
-      issue(
-        activityPlanIssueCodes.mixedActivityCategories,
-        ["segments"],
-        "A plan must contain activity segments for exactly one activity_category.",
       ),
     );
   }

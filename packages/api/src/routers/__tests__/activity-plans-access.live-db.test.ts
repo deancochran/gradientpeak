@@ -86,7 +86,6 @@ async function seedPlan(input: {
     structure: activityPlanStructure,
     structure_hash: structureHash,
     gps_recording_enabled: true,
-    template_visibility: input.system ? "public" : input.visibility,
     content_visibility: input.system ? "public" : input.visibility,
     is_system_template: input.system ?? false,
     created_at: createdAt,

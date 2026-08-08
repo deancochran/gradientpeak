@@ -54,7 +54,7 @@ export type ActivityPlanAuthoringValues = {
   name: string;
   notes: string | null;
   structure: ReturnType<typeof activityPlanStructureSchema.parse>;
-  template_visibility: (typeof visibilityOptions)[number];
+  content_visibility: (typeof visibilityOptions)[number];
 };
 
 type ActivityPlanComposerProps = {
@@ -64,7 +64,7 @@ type ActivityPlanComposerProps = {
     name: string;
     notes?: string | null;
     structure: unknown;
-    template_visibility?: string | null;
+    content_visibility?: string | null;
   };
   mode: "create" | "edit";
   onCancel: () => void;
@@ -75,7 +75,11 @@ type ActivityPlanComposerProps = {
 function editableStructure(value: unknown): EditableActivityPlanStructure {
   const parsed = activityPlanStructureSchema.safeParse(value);
   return parsed.success
-    ? { version: 3, segments: [...parsed.data.segments] }
+    ? {
+        version: 3,
+        activity_category: parsed.data.activity_category,
+        segments: [...parsed.data.segments],
+      }
     : createActivityPlanStructure();
 }
 
@@ -123,9 +127,9 @@ export function ActivityPlanComposer({
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
-  const [visibility, setVisibility] = useState<ActivityPlanAuthoringValues["template_visibility"]>(
-    initial?.template_visibility === "public" || initial?.template_visibility === "followers"
-      ? initial.template_visibility
+  const [visibility, setVisibility] = useState<ActivityPlanAuthoringValues["content_visibility"]>(
+    initial?.content_visibility === "public" || initial?.content_visibility === "followers"
+      ? initial.content_visibility
       : "private",
   );
   const [gpsEnabled, setGpsEnabled] = useState(initial?.gps_recording_enabled ?? true);
@@ -145,6 +149,7 @@ export function ActivityPlanComposer({
   const removeSegment = (segmentId: string) => {
     setStructure((current) => ({
       version: 3,
+      activity_category: current.activity_category,
       segments: current.segments.filter((segment) => segment.id !== segmentId),
     }));
   };
@@ -152,6 +157,7 @@ export function ActivityPlanComposer({
   const removeInterval = (intervalId: string) => {
     setStructure((current) => ({
       version: 3,
+      activity_category: current.activity_category,
       segments: current.segments.map((segment) =>
         segment.role === "activity"
           ? {
@@ -187,7 +193,7 @@ export function ActivityPlanComposer({
         name: name.trim(),
         notes: notes.trim() || null,
         structure: validStructure.data,
-        template_visibility: visibility,
+        content_visibility: visibility,
       });
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "Activity plan could not be saved.");
@@ -228,7 +234,7 @@ export function ActivityPlanComposer({
               id="activity-plan-visibility"
               onChange={(event) =>
                 setVisibility(
-                  event.currentTarget.value as ActivityPlanAuthoringValues["template_visibility"],
+                  event.currentTarget.value as ActivityPlanAuthoringValues["content_visibility"],
                 )
               }
               value={visibility}
@@ -309,10 +315,8 @@ export function ActivityPlanComposer({
               onClick={() =>
                 setStructure((current) => ({
                   version: 3,
-                  segments: [
-                    ...current.segments,
-                    createActivityPlanSegment(role, activity_category),
-                  ],
+                  activity_category: current.activity_category,
+                  segments: [...current.segments, createActivityPlanSegment(role)],
                 }))
               }
               size="sm"
@@ -336,6 +340,7 @@ export function ActivityPlanComposer({
           onMove={(offset) =>
             setStructure((current) => ({
               version: 3,
+              activity_category: current.activity_category,
               segments: moveActivityPlanItem(current.segments, segmentIndex, offset),
             }))
           }
@@ -562,7 +567,7 @@ function SegmentEditor({
 
                 {interval.steps.map((step, stepIndex) => (
                   <StepEditor
-                    activityCategory={segment.activity_category}
+                    activityCategory={structure.activity_category}
                     index={stepIndex}
                     intervalId={interval.id}
                     key={step.id}

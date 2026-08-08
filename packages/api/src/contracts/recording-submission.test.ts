@@ -44,16 +44,14 @@ const baseSubmission = {
 };
 
 describe("recording submission contract", () => {
-  it("requires an explicit, session-bound accepted artifact", () => {
+  it("requires an explicit, session-bound uploaded artifact claim", () => {
     const parsed = recordingSummarySubmissionInputSchema.parse({
       ...baseSubmission,
-      artifactSource: "acceptedArtifact",
-      acceptedArtifact,
+      uploadedArtifact: { ingestionId: "33333333-3333-4333-8333-333333333333" },
     });
     expect(parsed).toMatchObject({
-      artifactSource: "acceptedArtifact",
       source: "mobile_recording",
-      acceptedArtifact,
+      uploadedArtifact: { ingestionId: "33333333-3333-4333-8333-333333333333" },
     });
     expect(parsed.recordingSessionId).toBe("session-1");
   });
@@ -61,11 +59,9 @@ describe("recording submission contract", () => {
   it("accepts only the server-owned ingestion identifier for a staged upload", () => {
     const parsed = recordingSummarySubmissionInputSchema.parse({
       ...baseSubmission,
-      artifactSource: "uploadedArtifact",
       uploadedArtifact: { ingestionId: "33333333-3333-4333-8333-333333333333" },
     });
     expect(parsed).toMatchObject({
-      artifactSource: "uploadedArtifact",
       uploadedArtifact: { ingestionId: "33333333-3333-4333-8333-333333333333" },
     });
     expect(parsed).not.toHaveProperty("stagingPath");
@@ -78,14 +74,12 @@ describe("recording submission contract", () => {
         ...Object.fromEntries(
           Object.entries(baseSubmission).filter(([key]) => key !== "recordingSessionId"),
         ),
-        artifactSource: "acceptedArtifact",
-        acceptedArtifact,
+        uploadedArtifact: { ingestionId: "33333333-3333-4333-8333-333333333333" },
       }).success,
     ).toBe(false);
     expect(
       recordingSummarySubmissionInputSchema.safeParse({
         ...baseSubmission,
-        artifactSource: "acceptedArtifact",
         acceptedArtifact: { ...acceptedArtifact, path: "activities/profile/uploads/legacy.fit" },
       }).success,
     ).toBe(false);

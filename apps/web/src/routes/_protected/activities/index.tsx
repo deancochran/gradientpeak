@@ -11,6 +11,7 @@ import {
 import { api } from "../../../lib/api/client";
 
 type ActivityHistorySearch = {
+  importRunId?: string;
   q?: string;
   category?: "run" | "bike" | "swim" | "strength" | "other";
   sort?: "date" | "distance" | "duration";
@@ -21,6 +22,7 @@ type ActivityHistorySearch = {
 
 const CATEGORIES = ["run", "bike", "swim", "strength", "other"] as const;
 const SORTS = ["date", "distance", "duration"] as const;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function validateActivityHistorySearch(
   search: Record<string, unknown>,
@@ -29,6 +31,9 @@ export function validateActivityHistorySearch(
   const category = CATEGORIES.find((value) => value === search.category);
   const sort = SORTS.find((value) => value === search.sort);
   return {
+    ...(typeof search.importRunId === "string" && UUID.test(search.importRunId)
+      ? { importRunId: search.importRunId }
+      : {}),
     ...(q ? { q } : {}),
     ...(category !== undefined ? { category } : {}),
     ...(sort !== undefined ? { sort } : {}),
@@ -54,6 +59,7 @@ function ActivitiesPage() {
   const activitiesQuery = api.activities.listPaginated.useInfiniteQuery(
     {
       limit: 20,
+      importRunId: search.importRunId,
       sort_by: search.sort ?? "date",
       sort_order: search.order ?? "desc",
       search: search.q,
@@ -193,7 +199,9 @@ function ActivitiesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{total} saved activities</CardTitle>
+          <CardTitle>
+            {total} {search.importRunId ? "imported" : "saved"} activities
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {activitiesQuery.isLoading ? (

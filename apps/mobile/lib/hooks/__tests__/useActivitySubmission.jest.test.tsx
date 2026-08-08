@@ -217,7 +217,6 @@ describe("useActivitySubmission", () => {
       expect.objectContaining({
         name: "Queued ride",
         executionManifest,
-        artifactSource: "uploadedArtifact",
         uploadedArtifact: { ingestionId: "ingestion-1" },
         source: "mobile_recording",
       }),

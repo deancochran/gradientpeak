@@ -16,12 +16,6 @@ for (const columnName of [
   "expected_byte_size",
   "expected_format",
   "expected_media_type",
-  "accepted_sha256",
-  "accepted_byte_size",
-  "accepted_bucket",
-  "accepted_path",
-  "accepted_media_type",
-  "accepted_format",
   "uploaded_at",
   "staging_cleanup_pending",
   "staging_cleaned_at",
@@ -31,7 +25,6 @@ for (const columnName of [
 }
 
 assert.equal(columns.get("expected_byte_size")?.dataType, "number");
-assert.equal(columns.get("accepted_byte_size")?.dataType, "number");
 assert.equal(columns.get("staging_cleanup_pending")?.notNull, true);
 assert.equal(columns.get("staging_cleanup_pending")?.default, false);
 
@@ -40,15 +33,26 @@ for (const checkName of [
   "activity_file_ingestions_claim_check",
   "activity_file_ingestions_processing_claim_check",
   "activity_file_ingestions_expected_size_check",
-  "activity_file_ingestions_accepted_size_check",
   "activity_file_ingestions_expected_hash_check",
-  "activity_file_ingestions_accepted_hash_check",
   "activity_file_ingestions_staging_metadata_check",
-  "activity_file_ingestions_accepted_metadata_check",
-  "activity_file_ingestions_claim_artifact_match_check",
   "activity_file_ingestions_cleanup_state_check",
 ]) {
   assert.ok(checkNames.has(checkName), `${checkName} must exist`);
+}
+
+for (const removedColumn of [
+  "accepted_sha256",
+  "accepted_byte_size",
+  "accepted_bucket",
+  "accepted_path",
+  "accepted_media_type",
+  "accepted_format",
+]) {
+  assert.equal(
+    columns.has(removedColumn),
+    false,
+    `activity_file_ingestions.${removedColumn} must be owned by activity_artifacts only`,
+  );
 }
 
 const indexNames = new Set(config.indexes.map((index) => index.config.name));

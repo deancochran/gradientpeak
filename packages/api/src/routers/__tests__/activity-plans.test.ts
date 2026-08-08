@@ -5,60 +5,38 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { estimationState, plannedActivitySyncState } = vi.hoisted(() => ({
   estimationState: {
-    getActivityPlanDerivedMetrics: vi.fn(async (plan: any) => ({
+    estimateActivityPlan: vi.fn(async (plan: any) => ({
       ...plan,
-      common_load: { status: "available", load: 88, intensity: 0.82 },
-      confidence: "moderate",
-      confidence_score: 82,
-      estimate_source: "cache",
-      estimate_computed_at: "2026-03-01T10:00:00.000Z",
-      estimator_version: "2026-05-estimated-provenance-v1",
+      prescriptionQuantification: { summary: { commonLoad: { status: "available", load: 88 } } },
     })),
-    getActivityPlansDerivedMetrics: vi.fn(async (plans: any[]) =>
+    estimateActivityPlans: vi.fn(async (plans: any[]) =>
       plans.map((plan) => ({
         ...plan,
-        common_load: { status: "available", load: 88, intensity: 0.82 },
-        confidence: "moderate",
-        confidence_score: 82,
-        estimate_source: "cache",
-        estimate_computed_at: "2026-03-01T10:00:00.000Z",
-        estimator_version: "2026-05-estimated-provenance-v1",
+        prescriptionQuantification: { summary: { commonLoad: { status: "available", load: 88 } } },
       })),
     ),
-    computePlanMetrics: vi.fn(async () => ({})),
-    createEventReadRepository: vi.fn(() => ({ kind: "event-read-repository" })),
   },
   plannedActivitySyncState: {
-    enqueueProviderPlannedActivityJobs: vi.fn(),
+    enqueueWahooPlannedActivityJobs: vi.fn(),
   },
 }));
 
 vi.mock("../../application/events", () => ({
-  enqueueProviderPlannedActivityJobs: plannedActivitySyncState.enqueueProviderPlannedActivityJobs,
+  enqueueWahooPlannedActivityJobs: plannedActivitySyncState.enqueueWahooPlannedActivityJobs,
 }));
 
-vi.mock("../../utils/estimation-helpers", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../utils/estimation-helpers")>();
+vi.mock("../../application/activity-plans/estimate-activity-plans", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("../../application/activity-plans/estimate-activity-plans")
+    >();
 
   return {
     ...actual,
-    computePlanMetrics: estimationState.computePlanMetrics,
+    estimateActivityPlan: estimationState.estimateActivityPlan,
+    estimateActivityPlans: estimationState.estimateActivityPlans,
   };
 });
-
-vi.mock("../../utils/activity-plan-derived-metrics", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../utils/activity-plan-derived-metrics")>();
-
-  return {
-    ...actual,
-    getActivityPlanDerivedMetrics: estimationState.getActivityPlanDerivedMetrics,
-    getActivityPlansDerivedMetrics: estimationState.getActivityPlansDerivedMetrics,
-  };
-});
-
-vi.mock("../../infrastructure/repositories", () => ({
-  createEventReadRepository: estimationState.createEventReadRepository,
-}));
 
 import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import { activityPlansRouter } from "../activity-plans";
@@ -84,11 +62,11 @@ const pgDialect = new PgDialect();
 
 const sampleStructure: any = {
   version: 3,
+  activity_category: "bike",
   segments: [
     {
       id: "22222222-2222-4222-8222-222222222222",
       role: "activity",
-      activity_category: "bike",
       name: "Bike",
       intervals: [
         {
@@ -109,14 +87,14 @@ const sampleStructure: any = {
   ],
 };
 
-function createCompositionStructure(activity_categories: Array<"bike" | "run">) {
+function createCompositionStructure(activity_category: "bike" | "run", segmentCount = 1) {
   return {
     version: 3,
-    segments: activity_categories.map((activity_category, index) => {
+    activity_category,
+    segments: Array.from({ length: segmentCount }, (_, index) => {
       const segment = structuredClone(sampleStructure.segments[0]);
       const suffix = (index + 1).toString().padStart(12, "0");
       segment.id = `10000000-0000-4000-8000-${suffix}`;
-      segment.activity_category = activity_category;
       segment.name = activity_category === "bike" ? "Bike" : "Run";
       segment.intervals[0].id = `20000000-0000-4000-8000-${suffix}`;
       segment.intervals[0].steps[0].id = `30000000-0000-4000-8000-${suffix}`;
@@ -141,10 +119,11 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
     structure: sampleStructure,
     structure_hash: activityPlanStructureHash(sampleStructure),
     gps_recording_enabled: true,
-    template_visibility: "private",
-    import_provider: null,
-    import_external_id: null,
+    content_visibility: "private",
     is_system_template: false,
+    system_content_key: null,
+    system_content_version: null,
+    system_content_hash: null,
     ...overrides,
   };
 }
@@ -300,7 +279,7 @@ function createProfileRow(overrides: Record<string, unknown> = {}) {
 describe("activityPlansRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    plannedActivitySyncState.enqueueProviderPlannedActivityJobs.mockResolvedValue(null);
+    plannedActivitySyncState.enqueueWahooPlannedActivityJobs.mockResolvedValue(null);
   });
 
   it("list returns estimated items, liked state, and a next cursor", async () => {
@@ -322,7 +301,7 @@ describe("activityPlansRouter", () => {
       },
     });
 
-    const result = await caller.list({ includeOwnOnly: true, limit: 1 });
+    const result = await caller.list({ ownerScope: "own", limit: 1 });
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({
@@ -337,11 +316,12 @@ describe("activityPlansRouter", () => {
         avatar_url: "https://example.com/avatar.png",
       },
       visibility: "private",
-      common_load: {
-        status: "available",
-        load: 88,
-      },
     });
+    expect(result.items[0]).toHaveProperty("prescriptionQuantification");
+    expect(result.items[0]).not.toHaveProperty("common_load");
+    expect(result.items[0]).not.toHaveProperty("duration_estimate");
+    expect(result.items[0]).not.toHaveProperty("confidence");
+    expect(result.items[0]).not.toHaveProperty("estimation_warnings");
     expect(result.nextCursor).toBe(`${firstPlan.created_at.toISOString()}_${firstPlan.id}`);
   });
 
@@ -349,7 +329,6 @@ describe("activityPlansRouter", () => {
     const publicPlan = createActivityPlanRow({
       id: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       profile_id: OTHER_USER_ID,
-      template_visibility: "public",
       content_visibility: "public",
     });
     const { caller } = createCaller({
@@ -391,13 +370,13 @@ describe("activityPlansRouter", () => {
       },
     });
 
-    const result = await caller.list({ includeOwnOnly: true, limit: 1 });
+    const result = await caller.list({ ownerScope: "own", limit: 1 });
 
     expect(result.items.map((plan) => plan.id)).toEqual([validPlan.id]);
     expect(result.nextCursor).toBe(`${validPlan.created_at.toISOString()}_${validPlan.id}`);
 
     const nextPage = await caller.list({
-      includeOwnOnly: true,
+      ownerScope: "own",
       limit: 1,
       cursor: result.nextCursor,
     });
@@ -427,9 +406,9 @@ describe("activityPlansRouter", () => {
     expect(result.nextCursor).toBe("index:1");
   });
 
-  it("filters by activity_categories contained in structure segments instead of the storage column", async () => {
+  it("filters by the root activity_category instead of a storage alias", async () => {
     const runStructure = structuredClone(sampleStructure);
-    runStructure.segments[0].activity_category = "run";
+    runStructure.activity_category = "run";
     runStructure.segments[0].intervals[0].steps[0].targets = [{ type: "%MaxHR", intensity: 70 }];
     const runPlan = createActivityPlanRow({
       id: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -444,7 +423,7 @@ describe("activityPlansRouter", () => {
       },
     });
 
-    const result = await caller.list({ activityCategories: ["run"], limit: 20 });
+    const result = await caller.list({ ownerScope: "own", activityCategories: ["run"], limit: 20 });
 
     expect(result.items.map((item) => item.id)).toEqual([runPlan.id]);
     expect(result.items[0]).toMatchObject({ activity_category: "run" });
@@ -454,7 +433,7 @@ describe("activityPlansRouter", () => {
   it("applies activity_category containment in one bounded database query", async () => {
     const row = (index: number, activity_category: "bike" | "run") => {
       const structure = structuredClone(sampleStructure);
-      structure.segments[0].activity_category = activity_category;
+      structure.activity_category = activity_category;
       structure.segments[0].intervals[0].steps[0].targets =
         activity_category === "run"
           ? [{ type: "%MaxHR", intensity: 70 }]
@@ -474,7 +453,7 @@ describe("activityPlansRouter", () => {
       },
     });
 
-    const result = await caller.list({ activityCategories: ["run"], limit: 20 });
+    const result = await caller.list({ ownerScope: "own", activityCategories: ["run"], limit: 20 });
 
     expect(result.items).toHaveLength(20);
     expect(result.items.every((item) => item.activity_category === "run")).toBe(true);
@@ -484,8 +463,14 @@ describe("activityPlansRouter", () => {
     ).toHaveLength(1);
   });
 
-  it("rejects metadata updates to mixed stored plans", async () => {
-    const structure = createCompositionStructure(["run", "bike"]);
+  it("rejects metadata updates to legacy segment-category plans", async () => {
+    const structure = {
+      version: 3,
+      segments: createCompositionStructure("run", 2).segments.map((segment, index) => ({
+        ...segment,
+        activity_category: index === 0 ? "run" : "bike",
+      })),
+    };
     const structureHash = activityPlanStructureHash(structure);
     const legacyPlan = createActivityPlanRow({ structure, structure_hash: structureHash });
     const { caller, callLog } = createCaller({
@@ -504,8 +489,8 @@ describe("activityPlansRouter", () => {
     expect(callLog.some((call) => call.operation === "update")).toBe(false);
   });
 
-  it("treats repeated activity_categories in separate activity segments as executable", async () => {
-    const structure = createCompositionStructure(["bike", "bike"]);
+  it("treats repeated activity segments under one root category as executable", async () => {
+    const structure = createCompositionStructure("bike", 2);
     const plan = createActivityPlanRow({ structure });
     const { caller } = createCaller({
       state: {
@@ -515,15 +500,21 @@ describe("activityPlansRouter", () => {
       },
     });
 
-    const result = await caller.list({ limit: 20 });
+    const result = await caller.list({ ownerScope: "own", limit: 20 });
 
     expect(result.items[0]).toMatchObject({
       activity_category: "bike",
     });
   });
 
-  it("omits mixed rows and fails closed on direct detail", async () => {
-    const structure = createCompositionStructure(["run", "bike", "run"]);
+  it("omits legacy segment-category rows and fails closed on direct detail", async () => {
+    const structure = {
+      version: 3,
+      segments: createCompositionStructure("run", 3).segments.map((segment, index) => ({
+        ...segment,
+        activity_category: index === 1 ? "bike" : "run",
+      })),
+    };
     const plan = createActivityPlanRow({ structure });
     const state: MockDbState = {
       "select:activity_plans": [[plan]],
@@ -532,7 +523,7 @@ describe("activityPlansRouter", () => {
     };
     const { caller: listCaller } = createCaller({ state });
     const { caller: detailCaller } = createCaller({ state });
-    const listResult = await listCaller.list({ limit: 20 });
+    const listResult = await listCaller.list({ ownerScope: "own", limit: 20 });
 
     expect(listResult.items).toEqual([]);
     await expect(detailCaller.getById({ id: plan.id })).rejects.toMatchObject({
@@ -540,7 +531,7 @@ describe("activityPlansRouter", () => {
     });
   });
 
-  it("uses role-aware activity_category containment SQL", async () => {
+  it("uses root activity_category containment SQL", async () => {
     const plan = createActivityPlanRow();
     const { caller, callLog } = createCaller({
       state: {
@@ -550,13 +541,11 @@ describe("activityPlansRouter", () => {
       },
     });
 
-    await caller.list({ activityCategories: ["run"], limit: 20 });
+    await caller.list({ ownerScope: "own", activityCategories: ["run"], limit: 20 });
 
     const query = getActivityPlanListQuery(callLog);
     expect(query.sql).toContain("@>");
-    expect(query.params).toContain(
-      JSON.stringify({ segments: [{ role: "activity", activity_category: "run" }] }),
-    );
+    expect(query.params).toContain(JSON.stringify({ activity_category: "run" }));
   });
 
   it("getById rejects a private plan owned by another user", async () => {
@@ -567,7 +556,7 @@ describe("activityPlansRouter", () => {
             createActivityPlanRow({
               id: "99999999-9999-4999-8999-999999999999",
               profile_id: OTHER_USER_ID,
-              template_visibility: "private",
+              content_visibility: "private",
               is_system_template: false,
             }),
           ],
@@ -575,7 +564,7 @@ describe("activityPlansRouter", () => {
             createActivityPlanRow({
               id: "99999999-9999-4999-8999-999999999999",
               profile_id: OTHER_USER_ID,
-              template_visibility: "private",
+              content_visibility: "private",
               is_system_template: false,
             }),
           ],
@@ -614,7 +603,6 @@ describe("activityPlansRouter", () => {
     const publicPlan = createActivityPlanRow({
       id: "22222222-2222-4222-8222-222222222222",
       profile_id: OTHER_USER_ID,
-      template_visibility: "public",
       gps_recording_enabled: true,
       structure_hash: activityPlanStructureHash(sampleStructure),
       content_visibility: "public",
@@ -650,12 +638,12 @@ describe("activityPlansRouter", () => {
     const grantedPlan = createActivityPlanRow({
       id: "22222222-2222-4222-8222-222222222222",
       profile_id: OTHER_USER_ID,
-      template_visibility: "private",
+      content_visibility: "private",
     });
     const deniedPlan = createActivityPlanRow({
       id: "33333333-3333-4333-8333-333333333333",
       profile_id: OTHER_USER_ID,
-      template_visibility: "private",
+      content_visibility: "private",
     });
     const systemPlan = createActivityPlanRow({
       id: "44444444-4444-4444-8444-444444444444",
@@ -693,7 +681,6 @@ describe("activityPlansRouter", () => {
         createActivityPlanRow({
           id: `30000000-0000-4000-8000-${(index + 1).toString().padStart(12, "0")}`,
           profile_id: `40000000-0000-4000-8000-${(index + 1).toString().padStart(12, "0")}`,
-          template_visibility: "followers",
           content_visibility: "followers",
         }),
       );
@@ -701,7 +688,7 @@ describe("activityPlansRouter", () => {
         createActivityPlanRow({
           id: `50000000-0000-4000-8000-${(index + 1).toString().padStart(12, "0")}`,
           profile_id: `60000000-0000-4000-8000-${(index + 1).toString().padStart(12, "0")}`,
-          template_visibility: "private",
+          content_visibility: "private",
         }),
       );
       const { caller, callLog } = createCaller({
@@ -757,7 +744,7 @@ describe("activityPlansRouter", () => {
     const createdRow = createActivityPlanRow({
       id: "55555555-5555-4555-8555-555555555555",
       name: "Created Plan",
-      template_visibility: "public",
+      content_visibility: "public",
       structure_hash: activityPlanStructureHash(sampleStructure),
     });
     const { caller, callLog } = createCaller({
@@ -770,7 +757,7 @@ describe("activityPlansRouter", () => {
       name: "Created Plan",
       notes: "Hydrate",
       structure: sampleStructure,
-      template_visibility: "public",
+      content_visibility: "public",
     });
 
     const insertCall = callLog.find((call) => call.operation === "insert");
@@ -778,7 +765,7 @@ describe("activityPlansRouter", () => {
       name: "Created Plan",
       description: null,
       profile_id: USER_ID,
-      template_visibility: "public",
+      content_visibility: "public",
     });
     expect(result).toMatchObject({
       id: createdRow.id,
@@ -803,21 +790,6 @@ describe("activityPlansRouter", () => {
     expect(callLog.some((call) => call.operation === "insert")).toBe(false);
   });
 
-  it("create rejects provider import provenance", async () => {
-    const { caller, callLog } = createCaller();
-
-    await expect(
-      caller.create({
-        name: "Spoofed import",
-        structure: sampleStructure,
-        import_provider: "fit",
-        import_external_id: "spoofed-fit-id",
-      } as never),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
-
-    expect(callLog).toHaveLength(0);
-  });
-
   it("create rejects unsupported old activity-plan JSON without conversion", async () => {
     const { caller, callLog } = createCaller();
 
@@ -838,7 +810,7 @@ describe("activityPlansRouter", () => {
     const updatedRow = createActivityPlanRow({
       id: existingRow.id,
       name: "After Update",
-      template_visibility: "public",
+      content_visibility: "public",
     });
     const { caller, callLog } = createCaller({
       state: {
@@ -851,14 +823,14 @@ describe("activityPlansRouter", () => {
       id: existingRow.id,
       expectedStructureHash: existingRow.structure_hash,
       name: "After Update",
-      template_visibility: "public",
+      content_visibility: "public",
       structure: sampleStructure,
     });
 
     const updateCall = callLog.find((call) => call.operation === "update");
     expect(updateCall?.payload).toMatchObject({
       name: "After Update",
-      template_visibility: "public",
+      content_visibility: "public",
     });
     expect(result).toMatchObject({ id: existingRow.id, visibility: "public" });
   });
@@ -905,7 +877,7 @@ describe("activityPlansRouter", () => {
     const existingRow = createActivityPlanRow({ name: "Before Update" });
     const updatedRow = createActivityPlanRow({ name: "After Update" });
     const futureEvents = [{ id: "event-1" }, { id: "event-2" }];
-    plannedActivitySyncState.enqueueProviderPlannedActivityJobs.mockResolvedValue({
+    plannedActivitySyncState.enqueueWahooPlannedActivityJobs.mockResolvedValue({
       affectedCount: 2,
       operation: "publish",
       queued: true,
@@ -925,8 +897,8 @@ describe("activityPlansRouter", () => {
       name: "After Update",
     });
 
-    expect(plannedActivitySyncState.enqueueProviderPlannedActivityJobs).toHaveBeenCalledOnce();
-    expect(plannedActivitySyncState.enqueueProviderPlannedActivityJobs).toHaveBeenCalledWith(
+    expect(plannedActivitySyncState.enqueueWahooPlannedActivityJobs).toHaveBeenCalledOnce();
+    expect(plannedActivitySyncState.enqueueWahooPlannedActivityJobs).toHaveBeenCalledWith(
       expect.anything(),
       { eventIds: ["event-1", "event-2"], operation: "publish" },
     );
@@ -954,7 +926,7 @@ describe("activityPlansRouter", () => {
       name: existingRow.name,
     });
 
-    expect(plannedActivitySyncState.enqueueProviderPlannedActivityJobs).not.toHaveBeenCalled();
+    expect(plannedActivitySyncState.enqueueWahooPlannedActivityJobs).not.toHaveBeenCalled();
     expect(callLog.filter((call) => call.table === "events")).toHaveLength(0);
   });
 
@@ -999,20 +971,6 @@ describe("activityPlansRouter", () => {
     expect(callLog.some((call) => call.operation === "update")).toBe(false);
   });
 
-  it("update rejects provider import provenance", async () => {
-    const { caller, callLog } = createCaller();
-
-    await expect(
-      caller.update({
-        id: "66666666-6666-4666-8666-666666666666",
-        import_provider: "zwo",
-        import_external_id: "spoofed-zwo-id",
-      } as never),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
-
-    expect(callLog).toHaveLength(0);
-  });
-
   it("delete returns only the current plannedActivitySync DTO field", async () => {
     const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
     const { caller, callLog } = createCaller({
@@ -1032,7 +990,7 @@ describe("activityPlansRouter", () => {
   it("delete enqueues unsync for linked future planned events before allowing FK set-null", async () => {
     const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
     const eventRows = [{ id: "event-1" }, { id: "event-2" }];
-    plannedActivitySyncState.enqueueProviderPlannedActivityJobs.mockResolvedValue({
+    plannedActivitySyncState.enqueueWahooPlannedActivityJobs.mockResolvedValue({
       affectedCount: 2,
       operation: "unsync",
       queued: true,
@@ -1048,7 +1006,7 @@ describe("activityPlansRouter", () => {
 
     const result = await caller.delete({ id: "77777777-7777-4777-8777-777777777777" });
 
-    expect(plannedActivitySyncState.enqueueProviderPlannedActivityJobs).toHaveBeenCalledWith(
+    expect(plannedActivitySyncState.enqueueWahooPlannedActivityJobs).toHaveBeenCalledWith(
       expect.anything(),
       { eventIds: ["event-1", "event-2"], operation: "unsync" },
     );
@@ -1069,12 +1027,12 @@ describe("activityPlansRouter", () => {
 
     expect(callLog.filter((call) => call.table === "events")).toHaveLength(0);
     expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(0);
-    expect(plannedActivitySyncState.enqueueProviderPlannedActivityJobs).not.toHaveBeenCalled();
+    expect(plannedActivitySyncState.enqueueWahooPlannedActivityJobs).not.toHaveBeenCalled();
   });
 
   it("delete keeps the plan when unsync enqueue reports failure", async () => {
     const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
-    plannedActivitySyncState.enqueueProviderPlannedActivityJobs.mockResolvedValue({
+    plannedActivitySyncState.enqueueWahooPlannedActivityJobs.mockResolvedValue({
       affectedCount: 1,
       error: "provider queue unavailable",
       operation: "unsync",
@@ -1100,7 +1058,7 @@ describe("activityPlansRouter", () => {
 
   it("delete keeps the plan when unsync enqueue throws", async () => {
     const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
-    plannedActivitySyncState.enqueueProviderPlannedActivityJobs.mockRejectedValue(
+    plannedActivitySyncState.enqueueWahooPlannedActivityJobs.mockRejectedValue(
       new Error("provider queue unavailable"),
     );
     const { caller, callLog } = createCaller({
@@ -1135,14 +1093,14 @@ describe("activityPlansRouter", () => {
     const originalRow = createActivityPlanRow({
       id: "88888888-8888-4888-8888-888888888888",
       profile_id: OTHER_USER_ID,
-      template_visibility: "public",
+      content_visibility: "public",
       name: "Shared Activity",
     });
     const duplicatedRow = createActivityPlanRow({
       id: "99999999-8888-4888-8888-888888888888",
       profile_id: USER_ID,
       name: "Shared Activity (Copy)",
-      template_visibility: "private",
+      content_visibility: "private",
     });
     const { caller, callLog } = createCaller({
       state: {
@@ -1157,9 +1115,7 @@ describe("activityPlansRouter", () => {
     expect(insertCall?.payload).toMatchObject({
       name: "Shared Activity (Copy)",
       profile_id: USER_ID,
-      template_visibility: "private",
-      import_provider: null,
-      import_external_id: null,
+      content_visibility: "private",
     });
     expect(result).toMatchObject({ id: duplicatedRow.id, visibility: "private" });
   });

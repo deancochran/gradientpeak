@@ -3,9 +3,8 @@
 import {
   type CanonicalActivityCategory,
   canonicalActivityCategorySchema,
-  getTemplatesByCategory,
-  SYSTEM_TEMPLATES,
-  type SystemTemplate,
+  getSystemActivityTemplateDefinitions,
+  type SystemActivityTemplateDefinition,
 } from "@repo/core";
 import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { eq } from "drizzle-orm";
@@ -14,6 +13,7 @@ import { Pool } from "pg";
 import { activityPlans } from "../src/schema/tables";
 import { deepEqual, prepareDbEnv } from "./_helpers";
 import { structureHash } from "./canonical-json";
+import { materializeSystemActivityTemplateSeedValues } from "./system-content-seed-values";
 
 const args = process.argv.slice(2);
 const isDryRun = args.includes("--dry-run");
@@ -24,12 +24,15 @@ const activity_category: CanonicalActivityCategory | undefined = categoryArg
   ? canonicalActivityCategorySchema.parse(categoryArg.slice("--activity_category=".length))
   : undefined;
 
-const templates = activity_category ? getTemplatesByCategory(activity_category) : SYSTEM_TEMPLATES;
 let pool: Pool | undefined;
 
 type ExistingActivityTemplate = typeof activityPlans.$inferSelect;
 
-function hasChanges(local: SystemTemplate, remote: ExistingActivityTemplate): boolean {
+function hasChanges(
+  definition: SystemActivityTemplateDefinition,
+  remote: ExistingActivityTemplate,
+): boolean {
+  const local = definition.content;
   if (local.name !== remote.name) return true;
   if (local.description !== (remote.description ?? null)) return true;
   if ((local.gps_recording_enabled ?? true) !== remote.gps_recording_enabled) return true;
@@ -37,8 +40,10 @@ function hasChanges(local: SystemTemplate, remote: ExistingActivityTemplate): bo
   if ((local.notes ?? null) !== (remote.notes ?? null)) return true;
   if (remote.profile_id !== null) return true;
   if (remote.is_system_template !== true) return true;
-  if (remote.template_visibility !== "public") return true;
   if (remote.content_visibility !== "public") return true;
+  if (remote.system_content_key !== definition.key) return true;
+  if (remote.system_content_version !== definition.version) return true;
+  if (remote.system_content_hash !== definition.contentHash) return true;
 
   const localStructure = JSON.parse(JSON.stringify(local.structure));
   const remoteStructure = remote.structure;
@@ -47,9 +52,16 @@ function hasChanges(local: SystemTemplate, remote: ExistingActivityTemplate): bo
 }
 
 async function seedTemplates() {
-  for (const template of templates) activityPlanStructureSchema.parse(template.structure);
+  const definitions = (await getSystemActivityTemplateDefinitions()).filter(
+    (definition) =>
+      activity_category === undefined ||
+      definition.content.structure.activity_category === activity_category,
+  );
+  for (const definition of definitions) {
+    activityPlanStructureSchema.parse(definition.content.structure);
+  }
   if (isValidateOnly) {
-    console.log(`Validated ${templates.length} strict current system activity templates.`);
+    console.log(`Validated ${definitions.length} strict current system activity templates.`);
     return;
   }
 
@@ -60,7 +72,7 @@ async function seedTemplates() {
   console.log("🌱 Starting template sync...");
   console.log(`   Mode: ${isDryRun ? "DRY RUN" : "LIVE"}`);
   console.log(`   Filter: ${activity_category ? `${activity_category} only` : "all"}`);
-  console.log(`   Local Templates: ${templates.length}\n`);
+  console.log(`   Local Templates: ${definitions.length}\n`);
 
   const existingTemplates = await db
     .select()
@@ -87,7 +99,8 @@ async function seedTemplates() {
   let deletedCount = 0;
   let errorCount = 0;
 
-  for (const template of templates) {
+  for (const definition of definitions) {
+    const template = definition.content;
     if (!template.id) {
       console.error(`❌ Template "${template.name}" is missing a static ID. Skipping.`);
       errorCount += 1;
@@ -98,24 +111,16 @@ async function seedTemplates() {
     const existing = existingMap.get(template.id);
 
     try {
+      const { id: _id, ...seedValues } = materializeSystemActivityTemplateSeedValues(definition);
       if (existing) {
-        if (hasChanges(template, existing)) {
+        if (hasChanges(definition, existing)) {
           console.log(`📝 Updating "${template.name}" (${template.id})...`);
 
           if (!isDryRun) {
             await db
               .update(activityPlans)
               .set({
-                name: template.name,
-                description: template.description,
-                structure: template.structure,
-                structure_hash: structureHash(template.structure),
-                gps_recording_enabled: template.gps_recording_enabled ?? true,
-                notes: template.notes ?? null,
-                profile_id: null,
-                is_system_template: true,
-                template_visibility: "public",
-                content_visibility: "public",
+                ...seedValues,
                 updated_at: new Date(),
               })
               .where(eq(activityPlans.id, existing.id));
@@ -132,17 +137,7 @@ async function seedTemplates() {
           const now = new Date();
 
           await db.insert(activityPlans).values({
-            id: template.id,
-            profile_id: null,
-            is_system_template: true,
-            template_visibility: "public",
-            content_visibility: "public",
-            name: template.name,
-            description: template.description,
-            structure: template.structure,
-            structure_hash: structureHash(template.structure),
-            gps_recording_enabled: template.gps_recording_enabled ?? true,
-            notes: template.notes ?? null,
+            ...materializeSystemActivityTemplateSeedValues(definition),
             created_at: now,
             updated_at: now,
           });

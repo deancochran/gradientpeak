@@ -13,19 +13,15 @@ import {
 } from "@repo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const wahooClientMock = {
-  getUserProfile: vi.fn(async () => ({
-    birth: "1990-01-01",
-    gender: 0,
-    weight: 72,
-  })),
-};
+const enqueueWahooProfileEnrichmentMock = vi.hoisted(() =>
+  vi.fn(async () => ({ id: "99999999-9999-4999-8999-999999999999", status: "queued" })),
+);
 
-vi.mock("../../lib/integrations/wahoo/client", () => ({
-  createWahooClient: vi.fn(() => wahooClientMock),
+vi.mock("../../lib/provider-sync/wahoo-profile-enrichment", () => ({
+  enqueueWahooProfileEnrichment: enqueueWahooProfileEnrichmentMock,
 }));
 
-import { OnboardingProviderEnrichmentService } from "../../application/onboarding-provider-enrichment";
+import { WahooProfileSetupService } from "../../application/wahoo-profile-setup-service";
 import { encryptProviderToken } from "../../lib/provider-token-crypto";
 import { getOnboardingGoalId } from "../../repositories/onboarding-lifecycle-repository";
 import { onboardingRouter } from "../onboarding";
@@ -39,7 +35,13 @@ function createCaller(params?: {
   userId?: string;
   updatedProfileId?: string | null;
   latestActivityId?: string | null;
-  integrationRows?: Array<{ id: string; provider: "strava" | "wahoo"; profile_id: string }>;
+  integrationRows?: Array<{
+    generation?: number;
+    id: string;
+    lifecycle_status?: string;
+    provider: "strava" | "wahoo";
+    profile_id: string;
+  }>;
   activityEffortRows?: Array<{
     id: string;
     activity_id?: string | null;
@@ -81,7 +83,11 @@ function createCaller(params?: {
   const userId = params?.userId ?? "11111111-1111-4111-8111-111111111111";
   const updatedProfileId = params?.updatedProfileId ?? userId;
   const latestActivityId = params?.latestActivityId ?? null;
-  const integrationRows = params?.integrationRows ?? [];
+  const integrationRows = (params?.integrationRows ?? []).map((row) => ({
+    ...row,
+    generation: row.generation ?? 1,
+    lifecycle_status: row.lifecycle_status ?? "active",
+  }));
   const activityEffortRows = params?.activityEffortRows ?? [];
   const profileRow = params?.profileRow ?? null;
   const profileMetricRows = params?.profileMetricRows ?? [];
@@ -159,7 +165,11 @@ function createCaller(params?: {
           return {
             where: () => ({
               limit: async () => [
-                { access_token: encryptProviderToken("wahoo-access-token"), refresh_token: null },
+                {
+                  access_token: encryptProviderToken("wahoo-access-token"),
+                  refresh_token: null,
+                  scope: "user_read",
+                },
               ],
             }),
           };
@@ -294,98 +304,11 @@ describe("onboardingRouter", () => {
   beforeEach(() => {
     vi.stubEnv("PROVIDER_TOKEN_ENCRYPTION_KEY", Buffer.alloc(32, 7).toString("base64"));
     vi.clearAllMocks();
-    wahooClientMock.getUserProfile.mockResolvedValue({
-      birth: "1990-01-01",
-      gender: 0,
-      weight: 72,
-    });
   });
 
   afterEach(() => vi.unstubAllEnvs());
 
-  it("returns imported onboarding values from canonical profile data and sync metadata", async () => {
-    const userId = "11111111-1111-4111-8111-111111111111";
-    const integrationId = "22222222-2222-4222-8222-222222222222";
-    const { caller } = createCaller({
-      userId,
-      profileRow: { dob: new Date("1990-01-01T00:00:00.000Z"), gender: "male", onboarded: false },
-      profileMetricRows: [{ value: 72, recorded_at: new Date("2026-05-16T00:00:00.000Z") }],
-      integrationRows: [{ id: integrationId, provider: "wahoo", profile_id: userId }],
-      syncRows: [
-        {
-          integration_id: integrationId,
-          metadata: {
-            status: "succeeded",
-            blocking: true,
-            fields_imported: ["dob", "gender", "weight_kg"],
-            imported_values: { weight_kg: 72 },
-          },
-          last_sync_succeeded_at: new Date("2026-05-16T00:00:00.000Z"),
-        },
-      ],
-    });
-
-    await expect(caller.getImportedOnboardingValues()).resolves.toMatchObject({
-      values: {
-        dob: "1990-01-01",
-        gender: "male",
-        weight_kg: 72,
-      },
-      sources: {
-        weight_kg: { provider: "wahoo", label: "Wahoo" },
-      },
-    });
-  });
-
-  it("writes Wahoo enrichment values to canonical storage and sync state", async () => {
-    const userId = "11111111-1111-4111-8111-111111111111";
-    const integrationId = "22222222-2222-4222-8222-222222222222";
-    const { caller, insertCalls, updateCalls } = createCaller({
-      userId,
-      integrationRows: [{ id: integrationId, provider: "wahoo", profile_id: userId }],
-    });
-
-    await caller.startProviderEnrichment({ providers: ["wahoo"] });
-
-    expect(updateCalls.some((call) => call.table === profiles)).toBe(true);
-    const metricInserts = insertCalls.filter((call) => call.table === profileMetrics);
-    expect(metricInserts).toHaveLength(1);
-    expect(insertCalls.some((call) => call.table === providerSyncState)).toBe(true);
-    expect(insertCalls).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          table: profileMetrics,
-          values: expect.objectContaining({
-            source: "provider",
-            provenance: expect.objectContaining({ provider: "wahoo" }),
-          }),
-        }),
-      ]),
-    );
-  });
-
-  it("does not duplicate the latest provider-imported weight metric on retry", async () => {
-    const userId = "11111111-1111-4111-8111-111111111111";
-    const integrationId = "22222222-2222-4222-8222-222222222222";
-    const { caller, insertCalls } = createCaller({
-      userId,
-      integrationRows: [{ id: integrationId, provider: "wahoo", profile_id: userId }],
-      profileMetricRows: [
-        {
-          value: 72,
-          recorded_at: new Date("2026-05-16T00:00:00.000Z"),
-          notes: "Imported from Wahoo",
-        },
-      ],
-    });
-
-    await caller.startProviderEnrichment({ providers: ["wahoo"] });
-
-    expect(insertCalls.filter((call) => call.table === profileMetrics)).toEqual([]);
-    expect(insertCalls.some((call) => call.table === providerSyncState)).toBe(true);
-  });
-
-  it("refreshes setup data without overwriting existing canonical values", async () => {
+  it("queues setup refresh without overwriting existing canonical values", async () => {
     const userId = "11111111-1111-4111-8111-111111111111";
     const integrationId = "22222222-2222-4222-8222-222222222222";
     const { db, insertCalls, updateCalls } = createCaller({
@@ -402,35 +325,49 @@ describe("onboardingRouter", () => {
       profileRow: { dob: new Date("1988-02-03T00:00:00.000Z"), gender: "female", onboarded: true },
       profileMetricRows: [{ value: 70, recorded_at: new Date("2026-05-16T00:00:00.000Z") }],
     });
-    const service = new OnboardingProviderEnrichmentService({ db: db as any });
+    const service = new WahooProfileSetupService({ db: db as any });
 
     await expect(service.refreshSetupData(userId, "wahoo")).resolves.toEqual({
       fieldsFilled: [],
-      fieldsKept: ["dob", "gender"],
-      fieldsUpdated: ["weight_kg"],
-      keptExistingValues: true,
+      fieldsKept: [],
+      fieldsUpdated: [],
+      keptExistingValues: false,
       provider: "wahoo",
-      status: "succeeded",
+      status: "queued",
     });
 
     expect(updateCalls).toHaveLength(0);
-    expect(insertCalls.filter((call) => call.table === profileMetrics)).toHaveLength(1);
+    expect(insertCalls.filter((call) => call.table === profileMetrics)).toHaveLength(0);
     expect(insertCalls.some((call) => call.table === providerSyncState)).toBe(true);
+    expect(enqueueWahooProfileEnrichmentMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        admission: expect.objectContaining({ trigger: "manual" }),
+      }),
+    );
   });
 
-  it("marks unsupported connected providers as non-blocking skipped items", async () => {
+  it("stops disabled setup refresh before credential or provider I/O", async () => {
+    vi.stubEnv("WAHOO_CLIENT_ID", "");
+    vi.stubEnv("WAHOO_CLIENT_SECRET", "");
     const userId = "11111111-1111-4111-8111-111111111111";
-    const integrationId = "33333333-3333-4333-8333-333333333333";
-    const { caller } = createCaller({
+    const { db, insertCalls, updateCalls } = createCaller({
       userId,
-      integrationRows: [{ id: integrationId, provider: "strava", profile_id: userId }],
+      integrationRows: [
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          provider: "wahoo",
+          profile_id: userId,
+        },
+      ],
     });
+    const service = new WahooProfileSetupService({ db: db as any });
 
-    await expect(caller.startProviderEnrichment({ providers: ["strava"] })).resolves.toMatchObject({
-      status: "succeeded",
-      canContinue: true,
-      providers: [{ provider: "strava", status: "skipped_unsupported", blocking: false }],
-    });
+    await expect(service.refreshSetupData(userId, "wahoo")).rejects.toThrow(
+      "Integration not found",
+    );
+    expect(enqueueWahooProfileEnrichmentMock).not.toHaveBeenCalled();
+    expect(insertCalls).toEqual([]);
+    expect(updateCalls).toEqual([]);
   });
 
   const lifecycleProfile: CompleteOnboarding = {
@@ -475,11 +412,7 @@ describe("onboardingRouter", () => {
       goal: { status: "saved", retryable: false },
       settings: { status: "saved", retryable: false },
       retryable: false,
-      cache_tags: [
-        "onboarding.getImportedOnboardingValues",
-        "goals.list",
-        "profileSettings.getForProfile",
-      ],
+      cache_tags: ["integrations.getSyncOverview", "goals.list", "profileSettings.getForProfile"],
     });
     expect(repeated).toMatchObject({
       status: "already_completed",

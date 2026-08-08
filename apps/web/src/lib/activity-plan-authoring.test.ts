@@ -21,7 +21,7 @@ describe("activity plan authoring", () => {
   it("creates additional activity segments with the plan activity category and permits rest", () => {
     const structure = createActivityPlanStructure("run");
     structure.segments.push(createActivityPlanSegment("rest"));
-    structure.segments.push(createActivityPlanSegment("activity", "run"));
+    structure.segments.push(createActivityPlanSegment("activity"));
     expect(activityPlanStructureSchema.parse(structure).segments.map((item) => item.role)).toEqual([
       "activity",
       "rest",
@@ -42,13 +42,13 @@ describe("activity plan authoring", () => {
     });
 
     expect(hasIncompatibleTargets(structure, "bike")).toBe(true);
-    expect(applyActivityPlanActivityCategory(structure, "bike").segments[0]).toMatchObject({
+    expect(applyActivityPlanActivityCategory(structure, "bike")).toMatchObject({
       activity_category: "bike",
-      intervals: [{ steps: [{ targets: [{ type: "speed", intensity: 3 }] }] }],
+      segments: [{ intervals: [{ steps: [{ targets: [{ type: "speed", intensity: 3 }] }] }] }],
     });
-    expect(applyActivityPlanActivityCategory(structure, "bike", true).segments[0]).toMatchObject({
+    expect(applyActivityPlanActivityCategory(structure, "bike", true)).toMatchObject({
       activity_category: "bike",
-      intervals: [{ steps: [{ targets: [{ type: "RPE", intensity: 5 }] }] }],
+      segments: [{ intervals: [{ steps: [{ targets: [{ type: "RPE", intensity: 5 }] }] }] }],
     });
   });
 

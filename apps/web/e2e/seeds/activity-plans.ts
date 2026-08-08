@@ -118,8 +118,8 @@ async function upsertActivityPlan(
   await pool.query(
     `insert into "activity_plans" (
       "id", "profile_id", "name", "description", "notes", "structure", "structure_hash",
-      "gps_recording_enabled", "template_visibility", "content_visibility", "is_system_template"
-    ) values ($1, $2, $3, $4, $5, $6::jsonb, $7, true, 'private', 'private', false)
+      "gps_recording_enabled", "content_visibility", "is_system_template"
+    ) values ($1, $2, $3, $4, $5, $6::jsonb, $7, true, 'private', false)
     on conflict ("id") do update set
       "profile_id" = excluded."profile_id",
       "name" = excluded."name",

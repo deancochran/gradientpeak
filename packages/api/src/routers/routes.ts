@@ -24,7 +24,6 @@ import {
 } from "../application/routes/serializeActivityRouteRow";
 import { getRequiredDb } from "../db";
 import { logger } from "../lib/logger";
-import { enqueueWahooOwnedRouteMirror } from "../lib/provider-sync/owned-routes";
 import {
   buildRouteFileArtifacts,
   getCanonicalRouteStorageFormat,
@@ -591,14 +590,6 @@ export const routesRouter = createTRPCRouter({
             if (current?.storage_state === "ready" && matchesUpload(current)) return current;
             throw new Error("route_upload_claim_not_pending");
           }
-          await enqueueWahooOwnedRouteMirror({
-            db,
-            expectedRouteUpdatedAt: updatedAt.toISOString(),
-            operation: "upsert",
-            profileId: ctx.session.user.id,
-            routeId,
-            transaction: tx,
-          });
           return updated;
         });
         return serializeActivityRouteRow(readyRoute);
@@ -650,14 +641,6 @@ export const routesRouter = createTRPCRouter({
           )
           .returning();
         if (!updated) throw new Error("route_update_failed");
-        await enqueueWahooOwnedRouteMirror({
-          db,
-          expectedRouteUpdatedAt: updatedAt.toISOString(),
-          operation: "upsert",
-          profileId: ctx.session.user.id,
-          routeId: input.id,
-          transaction: tx,
-        });
         return updated;
       });
       return serializeActivityRouteRow(updatedRoute);
@@ -785,13 +768,6 @@ export const routesRouter = createTRPCRouter({
           )
           .returning({ id: activityRoutes.id });
         if (!deletedRoute) return;
-        await enqueueWahooOwnedRouteMirror({
-          db,
-          operation: "delete",
-          profileId: ctx.session.user.id,
-          routeId: input.id,
-          transaction: tx,
-        });
         await tx
           .delete(likes)
           .where(and(eq(likes.entity_id, input.id), eq(likes.entity_type, "route")));

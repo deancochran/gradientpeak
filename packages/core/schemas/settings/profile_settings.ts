@@ -246,9 +246,6 @@ export const athletePreferenceBaselineSchema = z
  */
 export const athletePreferenceProfileSchema = z
   .object({
-    // This is deliberately a profile-level opt-in. A missing value represents the
-    // pre-rollout state and must remain disabled when old settings are read.
-    wahooEventRouteDeliveryEnabled: z.boolean().default(false),
     availability: athletePreferenceAvailabilitySchema,
     dose_limits: athletePreferenceDoseLimitsSchema,
     training_style: athletePreferenceTrainingStyleSchema,
@@ -321,7 +318,6 @@ export const athletePreferenceAvailabilityPatchSchema = z
 
 export const athletePreferenceProfilePatchSchema = z
   .object({
-    wahooEventRouteDeliveryEnabled: z.boolean().optional(),
     availability: athletePreferenceAvailabilityPatchSchema.optional(),
     dose_limits: athletePreferenceDoseLimitsBaseSchema.partial().optional(),
     training_style: athletePreferenceTrainingStyleSchema.partial().optional(),
@@ -333,7 +329,6 @@ export const athletePreferenceProfilePatchSchema = z
   .strict();
 
 export const defaultAthletePreferenceProfile = athletePreferenceProfileSchema.parse({
-  wahooEventRouteDeliveryEnabled: false,
   availability: {
     weekly_windows: [],
     hard_rest_days: [],

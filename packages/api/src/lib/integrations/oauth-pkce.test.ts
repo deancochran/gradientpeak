@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ResolvedProviderOAuthConfig } from "./oauth-config";
+import type { ResolvedWahooOAuthConfig } from "./oauth-config";
 import {
   createOAuthCodeChallenge,
   deriveOAuthCodeVerifier,
@@ -8,7 +8,7 @@ import {
   redeemLocalOAuthAuthorizationCode,
 } from "./oauth-pkce";
 
-const config: ResolvedProviderOAuthConfig = {
+const config: ResolvedWahooOAuthConfig = {
   adapter: "local-test",
   authUrl: "local-test://authorize",
   clientId: "local-client",

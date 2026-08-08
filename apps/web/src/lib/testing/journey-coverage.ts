@@ -166,11 +166,6 @@ export const webJourneyCoverageManifest = {
     direct("scheduled_activities.event_update"),
     direct("planning.calendar_tab"),
   ),
-  "scheduled-activities.library": entry(direct("scheduled_activities.list")),
-  "scheduled-activities.detail": entry(
-    direct("scheduled_activities.event_detail"),
-    direct("scheduled_activities.event_update"),
-  ),
   "goals.lifecycle": entry(direct("goals.detail"), direct("planning.plan_tab")),
   "goals.intelligence": entry(direct("goals.detail"), direct("planning.plan_tab")),
 
@@ -228,11 +223,9 @@ export const webJourneyCoverageManifest = {
   ),
   "routes.record-entry": entry(direct("record.route"), direct("record.route_preview")),
 
-  // Metrics, efforts, and trends
+  // Metrics and trends
   "metrics.library-crud": entry(direct("profile.metrics_list"), direct("profile.metric_detail")),
   "metrics.override": entry(direct("profile.metrics_list"), direct("profile.metric_detail")),
-  "efforts.curves": entry(direct("activity_efforts.list"), direct("activity_efforts.detail")),
-  "efforts.lifecycle": entry(direct("activity_efforts.list"), direct("activity_efforts.detail")),
   "trends.analytics": entry(
     approximate(
       "profile.metrics_list",

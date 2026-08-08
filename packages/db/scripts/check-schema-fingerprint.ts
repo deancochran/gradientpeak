@@ -10,12 +10,8 @@ import { schema } from "../src/schema";
 import { dbPackageRoot, prepareDbEnv } from "./_helpers";
 
 const fingerprintPath = resolve(dbPackageRoot, "schema-fingerprint.json");
-const policy = JSON.parse(
-  readFileSync(resolve(dbPackageRoot, "migration-policy.json"), "utf8"),
-) as {
-  ownedExtensions: Array<{ name: string; schema: string }>;
-  ownedDefaultPrivilegeRoles: string[];
-};
+const ownedExtensionPolicy = [{ name: "btree_gist", schema: "extensions" }];
+const ownedDefaultPrivilegeRoles = ["postgres"];
 function managedTableNames() {
   return Object.values(schema)
     .flatMap((value) => {
@@ -263,17 +259,13 @@ export async function createSchemaFingerprint(pool: Pool) {
         ), '[]'::jsonb)
       ) as fingerprint
     `,
-    [
-      tables,
-      policy.ownedExtensions.map((extension) => extension.name),
-      policy.ownedDefaultPrivilegeRoles,
-    ],
+    [tables, ownedExtensionPolicy.map((extension) => extension.name), ownedDefaultPrivilegeRoles],
   );
   const fingerprint = result.rows[0]?.fingerprint as Record<string, unknown>;
   const ownedExtensions = fingerprint.ownedExtensions;
-  if (JSON.stringify(ownedExtensions) !== JSON.stringify(policy.ownedExtensions)) {
+  if (JSON.stringify(ownedExtensions) !== JSON.stringify(ownedExtensionPolicy)) {
     throw new Error(
-      `owned extension location drift: expected=${JSON.stringify(policy.ownedExtensions)} actual=${JSON.stringify(ownedExtensions)}`,
+      `owned extension location drift: expected=${JSON.stringify(ownedExtensionPolicy)} actual=${JSON.stringify(ownedExtensions)}`,
     );
   }
   return fingerprint;

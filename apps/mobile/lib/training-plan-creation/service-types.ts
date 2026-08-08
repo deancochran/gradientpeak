@@ -3,7 +3,7 @@ import type { api } from "@/lib/api";
 import type { TrainingPlanBuilderGoalBlueprint } from "./types";
 
 type TrainingPlanMutationError = NonNullable<
-  ReturnType<typeof api.trainingPlans.create.useMutation>["error"]
+  ReturnType<typeof api.trainingPlans.commit.useMutation>["error"]
 >;
 
 export interface TrainingPlanCreationProfileGoalSnapshot {

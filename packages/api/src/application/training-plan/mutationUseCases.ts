@@ -14,7 +14,7 @@ import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { logger } from "../../lib/logger";
-import { enqueuePlannedActivitySyncAfterCalendarMutation } from "../../lib/provider-sync/planned-activities";
+import { enqueueWahooPlannedActivitySyncAfterCalendarMutation } from "../../lib/provider-sync/planned-activities";
 import type {
   LockedPlanningTemplateRow,
   PlanningTemplateRepository,
@@ -30,7 +30,7 @@ type TrainingPlanCreateInput = z.infer<typeof trainingPlanCreateInputSchema>;
 type TrainingPlanUpdateInput = z.infer<typeof trainingPlanUpdateInputSchema> & {
   id: string;
   expectedStructureHash: string;
-  template_visibility?: "private" | "followers" | "public";
+  content_visibility?: "private" | "followers" | "public";
 };
 
 export type TrainingPlanActivityDateChange = {
@@ -73,7 +73,7 @@ function parseTrainingPlanCreateStructureOrThrow(input: {
   });
 }
 
-function requirePublishedLinkedActivityPlans(input: {
+export function requirePublishedLinkedActivityPlans(input: {
   rows: LockedPlanningTemplateRow[];
   structure: z.infer<typeof trainingPlanSchema>;
 }) {
@@ -132,7 +132,7 @@ async function enqueuePlannedActivitySyncForCalendarWrite(input: {
   profileId: string;
 }) {
   try {
-    await enqueuePlannedActivitySyncAfterCalendarMutation(input);
+    await enqueueWahooPlannedActivitySyncAfterCalendarMutation(input);
   } catch (error) {
     logger.error("Failed to enqueue planned activity sync after calendar write", {
       error: error instanceof Error ? error.message : "Unknown error",
@@ -147,7 +147,7 @@ async function insertTrainingPlan(input: {
     description: string | null;
     structure: Record<string, unknown>;
     profileId: string;
-    templateVisibility?: "private" | "followers" | "public";
+    contentVisibility?: "private" | "followers" | "public";
   };
 }): Promise<TrainingPlanRow> {
   const result = await input.db.execute(sql<TrainingPlanRow>`
@@ -158,7 +158,6 @@ async function insertTrainingPlan(input: {
       structure,
       structure_hash,
       profile_id,
-      template_visibility,
       content_visibility
     )
     values (
@@ -168,8 +167,7 @@ async function insertTrainingPlan(input: {
       ${JSON.stringify(input.values.structure)}::jsonb,
       ${activityPlanStructureHash(input.values.structure)},
       ${input.values.profileId}::uuid,
-      ${input.values.templateVisibility ?? "private"},
-      ${input.values.templateVisibility ?? "private"}
+      ${input.values.contentVisibility ?? "private"}
     )
     returning *
   `);
@@ -205,19 +203,21 @@ async function updateOwnedTrainingPlanRow(input: {
   description?: string | null;
   structure?: Record<string, unknown>;
   expectedStructureHash: string;
-  templateVisibility?: "private" | "followers" | "public";
+  contentVisibility?: "private" | "followers" | "public";
 }): Promise<TrainingPlanRow | null> {
-  const updates = [sql`updated_at = now()`];
+  const updates = [sql`updated_at = now()`, sql`revision = revision + 1`];
 
   if (input.name !== undefined) updates.push(sql`name = ${input.name}`);
   if (input.description !== undefined) updates.push(sql`description = ${input.description}`);
   if (input.structure !== undefined) {
     updates.push(sql`structure = ${JSON.stringify(input.structure)}::jsonb`);
     updates.push(sql`structure_hash = ${activityPlanStructureHash(input.structure)}`);
+    updates.push(sql`validated_state_revision = null`);
+    updates.push(sql`validated_at = null`);
+    updates.push(sql`projection_algorithm_version = null`);
   }
-  if (input.templateVisibility !== undefined) {
-    updates.push(sql`template_visibility = ${input.templateVisibility}`);
-    updates.push(sql`content_visibility = ${input.templateVisibility}`);
+  if (input.contentVisibility !== undefined) {
+    updates.push(sql`content_visibility = ${input.contentVisibility}`);
   }
 
   const result = await input.db.execute(sql<TrainingPlanRow>`
@@ -302,7 +302,7 @@ export async function createTrainingPlanUseCase(input: {
           description: input.values.description ?? null,
           structure: structureWithId,
           profileId: input.profileId,
-          templateVisibility: input.values.template_visibility ?? defaultContentVisibility,
+          contentVisibility: input.values.content_visibility ?? defaultContentVisibility,
         },
       });
     },
@@ -316,7 +316,7 @@ export async function updateTrainingPlanUseCase(input: {
   repository: TrainingPlanRepository;
   values: TrainingPlanUpdateInput;
 }) {
-  const { id, expectedStructureHash, template_visibility, ...updates } = input.values;
+  const { id, expectedStructureHash, content_visibility, ...updates } = input.values;
   const submittedStructure =
     updates.structure === undefined
       ? undefined
@@ -367,7 +367,7 @@ export async function updateTrainingPlanUseCase(input: {
         description: updates.description,
         expectedStructureHash,
         structure,
-        templateVisibility: template_visibility,
+        contentVisibility: content_visibility,
       });
     },
   );
@@ -446,6 +446,16 @@ export async function reorderTrainingPlanActivitiesUseCase(input: {
         message: "Scheduled activities changed or are no longer eligible; reload and try again",
       });
     }
+    await tx.execute(sql`
+      update training_plans
+      set revision = revision + 1,
+          validated_state_revision = null,
+          validated_at = null,
+          projection_algorithm_version = null,
+          updated_at = now()
+      where id = ${input.trainingPlanId}::uuid
+        and profile_id = ${input.profileId}::uuid
+    `);
 
     return updatedRows.map((row) => row.id);
   });
@@ -493,7 +503,7 @@ export async function deleteTrainingPlanUseCase(input: {
         ),
       )
       .for("update");
-    const syncResult = await enqueuePlannedActivitySyncAfterCalendarMutation({
+    const syncResult = await enqueueWahooPlannedActivitySyncAfterCalendarMutation({
       db: input.db,
       eventIds: plannedEvents.map((event) => event.id),
       operation: "unsync",
@@ -566,56 +576,11 @@ export async function duplicateTrainingPlanUseCase(input: {
           description: sourcePlan.description ?? null,
           structure: duplicatedStructure,
           profileId: input.profileId,
-          templateVisibility: "private",
+          contentVisibility: "private",
         },
       });
     },
   );
 
   return mapTrainingPlanContentIdentity(data);
-}
-
-export async function applyQuickAdjustmentUseCase(input: {
-  adjustedStructure: z.infer<typeof trainingPlanSchema>;
-  db: DrizzleDbClient;
-  expectedStructureHash: string;
-  id: string;
-  planningTemplateRepository: PlanningTemplateRepository;
-  profileId: string;
-  repository: TrainingPlanRepository;
-}) {
-  const existing = await input.repository.getOwnedTrainingPlan({
-    id: input.id,
-    profileId: input.profileId,
-  });
-
-  if (!existing) {
-    throw new TRPCError({
-      code: "NOT_FOUND",
-      message: "Training plan not found or you don't have permission to edit it",
-    });
-  }
-  if (existing.structure_hash !== input.expectedStructureHash) {
-    throw new TRPCError({ code: "CONFLICT", message: "STALE_STRUCTURE_HASH" });
-  }
-
-  const data = await input.planningTemplateRepository.withLockedPublishedTemplates(
-    input.adjustedStructure.sessions.map((session) => session.activity_plan_id),
-    async ({ db, rows }) => {
-      requirePublishedLinkedActivityPlans({ rows, structure: input.adjustedStructure });
-      return updateOwnedTrainingPlanRow({
-        db,
-        id: input.id,
-        expectedStructureHash: input.expectedStructureHash,
-        profileId: input.profileId,
-        structure: input.adjustedStructure,
-      });
-    },
-  );
-
-  if (!data) {
-    throw new TRPCError({ code: "CONFLICT", message: "STALE_STRUCTURE_HASH" });
-  }
-
-  return data;
 }

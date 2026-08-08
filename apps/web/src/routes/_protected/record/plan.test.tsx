@@ -47,7 +47,16 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("../../../lib/api/client", () => ({
-  api: { events: { getToday: { useQuery: () => mocks.getToday() } } },
+  api: {
+    calendar: {
+      day: {
+        useQuery: () => {
+          const result = mocks.getToday();
+          return { ...result, data: { items: result.data ?? [] } };
+        },
+      },
+    },
+  },
 }));
 
 vi.mock("../../../lib/recording/provider", () => ({

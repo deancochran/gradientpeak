@@ -42,29 +42,15 @@ export const Route = createFileRoute("/_protected/calendar/day/$date")({
 function CalendarDayPage() {
   const { date: routeDate } = Route.useParams();
   const { month, view } = Route.useSearch();
-  const profileQuery = api.profiles.get.useQuery();
-  const eventsQuery = api.events.list.useQuery({
-    date_from: routeDate,
-    date_to: routeDate,
-    include_adhoc: true,
-    limit: 100,
-  });
-  const plannedDaySummaryQuery = api.events.plannedDaySummary.useQuery({ date: routeDate });
-  const goalsQuery = api.goals.list.useQuery(
-    {
-      profile_id: profileQuery.data?.id ?? "00000000-0000-0000-0000-000000000000",
-      limit: 200,
-    },
-    { enabled: Boolean(profileQuery.data?.id) },
-  );
+  const eventsQuery = api.calendar.day.useQuery({ date: routeDate });
 
   const events = useMemo(
     () => ((eventsQuery.data?.items ?? []) as PlanningEvent[]).slice().sort(compareEventsByStart),
     [eventsQuery.data?.items],
   );
   const goals = useMemo(
-    () => (goalsQuery.data?.items ?? []).filter((goal) => goal.target_date === routeDate),
-    [goalsQuery.data?.items, routeDate],
+    () => (eventsQuery.data?.goals?.items ?? []).filter((goal) => goal.target_date === routeDate),
+    [eventsQuery.data?.goals?.items, routeDate],
   );
 
   return (
@@ -136,25 +122,21 @@ function CalendarDayPage() {
       ) : null}
 
       <PlannedDaySummary
-        {...(plannedDaySummaryQuery.data === undefined
+        {...(eventsQuery.data?.plannedLoadSummary === undefined
           ? {}
-          : { data: plannedDaySummaryQuery.data })}
-        error={plannedDaySummaryQuery.isError}
-        isLoading={plannedDaySummaryQuery.isLoading}
-        onRetry={() => plannedDaySummaryQuery.refetch()}
+          : { data: eventsQuery.data.plannedLoadSummary })}
+        error={eventsQuery.isError}
+        isLoading={eventsQuery.isLoading}
+        onRetry={() => eventsQuery.refetch()}
       />
 
-      {eventsQuery.isError || goalsQuery.isError ? (
+      {eventsQuery.isError ? (
         <div
           role="alert"
           className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/40 p-4"
         >
           <p className="text-sm">The day agenda could not be fully loaded.</p>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void Promise.all([eventsQuery.refetch(), goalsQuery.refetch()])}
-          >
+          <Button size="sm" variant="outline" onClick={() => void eventsQuery.refetch()}>
             Retry
           </Button>
         </div>

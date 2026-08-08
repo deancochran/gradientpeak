@@ -21,10 +21,7 @@ type ActivityPlanReference = Omit<ActivityPlanRow, "created_at" | "updated_at"> 
   updated_at: string | Date;
 };
 
-type PublicActivityRow = Omit<
-  ActivityRow,
-  "normalized_graded_speed_mps" | "efficiency_factor" | "aerobic_decoupling"
->;
+type PublicActivityRow = ActivityRow;
 
 export function mapActivityToDerivedResponse(input: {
   activity: PublicActivityRow & { likes_count: number } & {

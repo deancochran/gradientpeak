@@ -8,7 +8,7 @@ import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
 import { and, eq, gte, inArray, ne } from "drizzle-orm";
 import type { DrizzleTransactionClient } from "../../db";
-import { enqueuePlannedActivitySyncAfterCalendarMutation } from "../../lib/provider-sync/planned-activities";
+import { enqueueWahooPlannedActivitySyncAfterCalendarMutation } from "../../lib/provider-sync/planned-activities";
 import type { TrainingPlanRepository } from "../../repositories";
 
 const plannedEventType = "planned" as const;
@@ -34,7 +34,7 @@ async function enqueuePlannedActivitySyncForCalendarWrite(input: {
   profileId: string;
   transaction?: DrizzleTransactionClient;
 }) {
-  return enqueuePlannedActivitySyncAfterCalendarMutation(input);
+  return enqueueWahooPlannedActivitySyncAfterCalendarMutation(input);
 }
 
 export async function removeAppliedScheduleUseCase(input: {

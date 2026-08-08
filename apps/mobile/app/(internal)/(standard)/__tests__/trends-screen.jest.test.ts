@@ -38,8 +38,6 @@ jest.mock("react-native-svg", () => ({
 const {
   getTrendNativeVisualTokens,
   getTrendsLoadState,
-  hasResolvedCommonLoad,
-  refetchTrendsSources,
   TREND_CUSTOM_RANGE_SNAP_POINTS,
 } = require("../trends");
 
@@ -58,13 +56,6 @@ describe("getTrendNativeVisualTokens", () => {
 });
 
 describe("getTrendsLoadState", () => {
-  it("counts successful common-load abstention as resolved but not transport errors", () => {
-    expect(hasResolvedCommonLoad("available")).toBe(true);
-    expect(hasResolvedCommonLoad("unavailable")).toBe(true);
-    expect(hasResolvedCommonLoad("error")).toBe(false);
-    expect(hasResolvedCommonLoad("loading")).toBe(false);
-  });
-
   it("keeps initial loading visible until any source, including common load, resolves", () => {
     expect(
       getTrendsLoadState({
@@ -105,24 +96,6 @@ describe("getTrendsLoadState", () => {
         isLoading: false,
       }).showFullError,
     ).toBe(true);
-  });
-});
-
-describe("trend source refresh", () => {
-  it("refetches common load history with every preserved trend source", async () => {
-    const sources = {
-      commonLoad: { refetch: jest.fn(async () => "commonLoad") },
-      dashboard: { refetch: jest.fn(async () => "dashboard") },
-      peakPower: { refetch: jest.fn(async () => "peakPower") },
-      profileMetrics: { refetch: jest.fn(async () => "profileMetrics") },
-    };
-
-    await refetchTrendsSources(sources);
-
-    expect(sources.commonLoad.refetch).toHaveBeenCalledTimes(1);
-    expect(Object.values(sources).every(({ refetch }) => refetch.mock.calls.length === 1)).toBe(
-      true,
-    );
   });
 });
 

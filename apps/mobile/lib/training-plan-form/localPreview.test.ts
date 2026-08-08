@@ -7,11 +7,11 @@ import {
   normalizeCreationConfig,
 } from "@repo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildExpandedPlanFromMinimalGoal, computeLocalCreationPreview } from "./localPreview";
+import { buildGoalProjectionPlan, computeLocalCreationPreview } from "./localPreview";
 
 const frozenToday = new Date("2026-01-01T00:00:00.000Z");
 
-const minimalPlan = {
+const projectionInput = {
   goals: [
     {
       name: "Spring race",
@@ -67,7 +67,7 @@ describe("computeLocalCreationPreview", () => {
 
   it("builds a local projection chart and conflict summary", () => {
     const preview = computeLocalCreationPreview({
-      minimalPlan,
+      projectionInput,
       creationInput: baseCreationInput,
       contextSummary,
       startingLongTermLoadOverride: 42,
@@ -82,7 +82,7 @@ describe("computeLocalCreationPreview", () => {
 
   it("recomputes different projection outputs when inputs change", () => {
     const earlierGoal = computeLocalCreationPreview({
-      minimalPlan,
+      projectionInput,
       contextSummary,
       creationInput: baseCreationInput,
     });
@@ -90,10 +90,10 @@ describe("computeLocalCreationPreview", () => {
     const laterGoal = computeLocalCreationPreview({
       contextSummary,
       creationInput: baseCreationInput,
-      minimalPlan: {
+      projectionInput: {
         goals: [
           {
-            ...minimalPlan.goals[0],
+            ...projectionInput.goals[0],
             target_date: "2026-07-01",
           },
         ],
@@ -117,7 +117,7 @@ describe("computeLocalCreationPreview", () => {
     };
 
     const preview = computeLocalCreationPreview({
-      minimalPlan,
+      projectionInput,
       creationInput: baseCreationInput,
       contextSummary,
       previewBaseline: baseline,
@@ -129,7 +129,7 @@ describe("computeLocalCreationPreview", () => {
 
   it("forwards profile settings into goal readiness targets", () => {
     const preview = computeLocalCreationPreview({
-      minimalPlan,
+      projectionInput,
       creationInput: baseCreationInput,
       contextSummary,
       profileSettings: {
@@ -147,28 +147,28 @@ describe("computeLocalCreationPreview", () => {
   it("keeps local preview projection in parity with server recompute mapping across fixture histories", () => {
     const fixtures: Array<{
       name: string;
-      minimalPlan: typeof minimalPlan;
+      projectionInput: typeof projectionInput;
       creationInput: CreationNormalizationInput;
       startingLongTermLoadOverride?: number;
       startingAtlOverride?: number;
     }> = [
       {
         name: "low",
-        minimalPlan,
+        projectionInput,
         creationInput: baseCreationInput,
         startingLongTermLoadOverride: 16,
         startingAtlOverride: 18,
       },
       {
         name: "sparse",
-        minimalPlan,
+        projectionInput,
         creationInput: baseCreationInput,
         startingLongTermLoadOverride: 34,
         startingAtlOverride: 37,
       },
       {
         name: "rich",
-        minimalPlan,
+        projectionInput,
         creationInput: {
           user_values: {
             behavior_controls: {
@@ -183,21 +183,21 @@ describe("computeLocalCreationPreview", () => {
       },
       {
         name: "no-history",
-        minimalPlan,
+        projectionInput,
         creationInput: baseCreationInput,
       },
     ];
 
     for (const fixture of fixtures) {
       const local = computeLocalCreationPreview({
-        minimalPlan: fixture.minimalPlan,
+        projectionInput: fixture.projectionInput,
         creationInput: fixture.creationInput,
         contextSummary,
         startingLongTermLoadOverride: fixture.startingLongTermLoadOverride,
         startingAtlOverride: fixture.startingAtlOverride,
       });
       const server = buildServerRecomputeProjectionChartLike({
-        minimalPlan: fixture.minimalPlan,
+        projectionInput: fixture.projectionInput,
         creationInput: fixture.creationInput,
         startingLongTermLoadOverride: fixture.startingLongTermLoadOverride,
         startingAtlOverride: fixture.startingAtlOverride,
@@ -257,13 +257,13 @@ describe("computeLocalCreationPreview", () => {
 });
 
 function buildServerRecomputeProjectionChartLike(input: {
-  minimalPlan: typeof minimalPlan;
+  projectionInput: typeof projectionInput;
   creationInput: CreationNormalizationInput;
   startingLongTermLoadOverride?: number;
   startingAtlOverride?: number;
 }) {
   const finalConfig = normalizeCreationConfig(input.creationInput);
-  const expandedPlan = buildExpandedPlanFromMinimalGoal(input.minimalPlan, {
+  const expandedPlan = buildGoalProjectionPlan(input.projectionInput, {
     startingLongTermLoad: input.startingLongTermLoadOverride,
   });
 

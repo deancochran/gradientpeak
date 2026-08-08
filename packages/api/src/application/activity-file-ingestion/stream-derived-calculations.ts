@@ -456,7 +456,6 @@ function buildActivityFileBestEffortRow(
   return {
     id,
     created_at: new Date(),
-    updated_at: new Date(),
     activity_id: input.activityId,
     segment_id: input.segmentId,
     profile_id: input.profileId,
@@ -570,7 +569,6 @@ function buildActivityFileSwimDistanceEffortRow(
   return {
     id,
     created_at: new Date(),
-    updated_at: new Date(),
     activity_id: input.activityId,
     segment_id: input.segmentId,
     profile_id: input.profileId,

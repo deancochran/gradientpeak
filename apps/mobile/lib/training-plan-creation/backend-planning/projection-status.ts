@@ -23,8 +23,7 @@ export function deriveTrainingPathProjectionStatus({
     backendPreviewEnabled,
     backendPreviewLoading,
     backendPreviewError: backendPreviewError?.message ?? null,
-    backendPreviewHasSnapshot:
-      activeProjection.source === "backend" && Boolean(activeProjection.previewSnapshotToken),
+    backendPreviewHasSnapshot: activeProjection.source === "backend",
     fallbackReason:
       chartSource === "backend"
         ? null

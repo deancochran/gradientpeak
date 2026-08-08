@@ -36,6 +36,7 @@ import { useAuth } from "../../../components/providers/auth-provider";
 import { getActivityPlanMetricSummary } from "../../../lib/activity-plan-presentation";
 import { formatDate } from "../../../lib/activity-route-helpers";
 import { api } from "../../../lib/api/client";
+import { getTodayDateKey, shiftDateKey } from "../../../lib/planning";
 
 export const Route = createFileRoute("/_protected/activity-plans/$activityPlanId")({
   component: ActivityPlanDetailPage,
@@ -47,9 +48,12 @@ function ActivityPlanDetailPage() {
   const utils = api.useUtils();
   const { activityPlanId } = Route.useParams();
   const planQuery = api.activityPlans.getById.useQuery({ id: activityPlanId }, { retry: false });
-  const scheduleQuery = api.events.list.useQuery({
-    activity_plan_id: activityPlanId,
-    include_adhoc: true,
+  const today = getTodayDateKey();
+  const scheduleQuery = api.calendar.range.useQuery({
+    startDate: today,
+    endDateExclusive: shiftDateKey(today, 366),
+    activityPlanId,
+    includeAdhoc: true,
     limit: 100,
   });
   const [editing, setEditing] = useState(false);

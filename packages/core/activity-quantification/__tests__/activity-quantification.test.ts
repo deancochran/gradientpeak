@@ -1,8 +1,6 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { activityCalibrationQualitySchema } from "../../activity-analysis/calibration-quality";
-import { activityPlanStructureSchema } from "../../activity-plan";
-import { buildEstimationContext, estimateActivity } from "../../estimation";
 import {
   COMMON_RELATIVE_LOAD_MODEL,
   COMMON_RELATIVE_LOAD_VERSION,
@@ -295,19 +293,6 @@ function observationWithSubject(
       segmentId,
     },
   });
-}
-
-function numericLoadOrIntensityPaths(value: unknown, path: readonly string[] = []): string[] {
-  if (value === null || typeof value !== "object") return [];
-  const matches: string[] = [];
-  for (const [key, child] of Object.entries(value)) {
-    const childPath = [...path, key];
-    if (/(?:load|intensity)/i.test(key) && typeof child === "number") {
-      matches.push(childPath.join("."));
-    }
-    matches.push(...numericLoadOrIntensityPaths(child, childPath));
-  }
-  return matches;
 }
 
 describe("activity quantification contracts", () => {
@@ -684,59 +669,5 @@ describe("activity quantification contracts", () => {
         calculationIdentity: inconsistentCalculation,
       }).success,
     ).toBe(false);
-  });
-});
-
-describe("ancillary estimation boundary", () => {
-  it("does not fabricate numeric load, intensity, or confidence fallbacks", () => {
-    const template = estimateActivity(
-      buildEstimationContext({
-        userProfile: { weight_kg: 75 },
-        activityPlan: { activity_category: "bike" },
-      }),
-    );
-    const structure = activityPlanStructureSchema.parse({
-      version: 3,
-      segments: [
-        {
-          role: "activity",
-          id: "50000000-0000-4000-8000-000000000001",
-          name: "Bike",
-          activity_category: "bike",
-          intervals: [
-            {
-              id: "50000000-0000-4000-8000-000000000002",
-              name: "Set",
-              repetitions: 1,
-              steps: [
-                {
-                  id: "50000000-0000-4000-8000-000000000003",
-                  name: "Steady",
-                  duration: { type: "time", seconds: 3_600 },
-                  targets: [{ type: "%FTP", intensity: 80 }],
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    });
-    const structured = estimateActivity(
-      buildEstimationContext({
-        userProfile: {},
-        activityPlan: { activity_category: "bike", structure },
-      }),
-    );
-
-    expect(template).toMatchObject({
-      load: null,
-      duration: null,
-      confidence: null,
-      confidenceScore: null,
-    });
-    expect(template).not.toHaveProperty("intensity");
-    expect(structured).toMatchObject({ load: null, duration: 3_600 });
-    expect(numericLoadOrIntensityPaths(template)).toEqual([]);
-    expect(numericLoadOrIntensityPaths(structured)).toEqual([]);
   });
 });

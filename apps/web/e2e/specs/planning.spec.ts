@@ -172,12 +172,3 @@ test("agenda.create and events.recurrence persist a bounded series and honor del
   await athletePage.getByRole("button", { name: /delete event/i }).click();
   await expect(athletePage).toHaveURL(/\/calendar/);
 });
-
-test("scheduled-activities.library and scheduled-activities.detail expose filters and persisted controls", async ({
-  athletePage,
-}) => {
-  await openPlanningRoute(athletePage, "/scheduled-activities", /^scheduled activities$/i);
-  await expect(athletePage.getByLabel("Schedule range")).toBeVisible();
-  await expect(athletePage.getByLabel("Activity category")).toBeVisible();
-  await expect(athletePage.getByRole("link", { name: /schedule activity/i })).toBeVisible();
-});

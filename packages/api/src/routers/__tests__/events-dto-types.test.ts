@@ -11,12 +11,14 @@ type Assert<T extends true> = T;
 type Equal<Left, Right> =
   (<T>() => T extends Left ? 1 : 2) extends <T>() => T extends Right ? 1 : 2 ? true : false;
 type EventOutputs = inferRouterOutputs<AppRouter>["events"];
+type CalendarOutputs = inferRouterOutputs<AppRouter>["calendar"];
 type NestedPlan<T> = NonNullable<T extends { activity_plan: infer Plan } ? Plan : never>;
 
 type DetailPlan = NestedPlan<EventOutputs["getById"]>;
-type TodayPlan = NestedPlan<EventOutputs["getToday"][number]>;
-type ListPlan = NestedPlan<EventOutputs["list"]["items"][number]>;
-type PlannedDaySummary = EventOutputs["plannedDaySummary"];
+type TodayPlan = NestedPlan<CalendarOutputs["day"]["items"][number]>;
+type ListPlan = NestedPlan<CalendarOutputs["range"]["items"][number]>;
+type PlannedDaySummary = CalendarOutputs["day"]["plannedLoadSummary"];
+type RangePlannedDaySummary = CalendarOutputs["range"]["plannedLoadSummaries"]["items"][number];
 type _detailActivityCategoryIsCanonical = Assert<
   Equal<DetailPlan["activity_category"], CanonicalActivityCategory>
 >;
@@ -50,6 +52,7 @@ type _plannedDaySummarySourceIsTyped = Assert<
     }
   >
 >;
+type _rangePlannedDaySummaryMatchesDay = Assert<Equal<RangePlannedDaySummary, PlannedDaySummary>>;
 
 describe("Event DTO public type contract", () => {
   it("keeps canonical plan activity category in AppRouter outputs", () => {

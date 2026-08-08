@@ -22,6 +22,7 @@ const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padSta
 
 const structure = {
   version: 3,
+  activity_category: "run",
   segments: [
     {
       id: id(1),
@@ -32,7 +33,6 @@ const structure = {
     {
       id: id(2),
       role: "activity",
-      activity_category: "run",
       name: "First run",
       intervals: [
         {
@@ -53,7 +53,6 @@ const structure = {
     {
       id: id(6),
       role: "activity",
-      activity_category: "run",
       name: "Steady run",
       intervals: [
         {
@@ -80,7 +79,6 @@ const structure = {
     {
       id: id(10),
       role: "activity",
-      activity_category: "run",
       name: "Second run",
       intervals: [
         {
@@ -185,11 +183,11 @@ describe("TimelineChart", () => {
         height={120}
         structure={{
           version: 3,
+          activity_category: "bike",
           segments: [
             {
               id: id(20),
               role: "activity",
-              activity_category: "bike",
               name: "Mixed volume",
               intervals: [
                 {

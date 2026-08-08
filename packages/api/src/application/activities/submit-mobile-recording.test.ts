@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const activityWriter = vi.hoisted(() => ({ submitActivity: vi.fn() }));
+const artifactFinalizer = vi.hoisted(() => ({ finalizeActivityArtifactIngestion: vi.fn() }));
 const uploadFlow = vi.hoisted(() => ({
   loadAcceptedArtifactForClaim: vi.fn(),
   markPreparedMobileRecordingArtifactFailed: vi.fn(),
@@ -12,6 +13,7 @@ vi.mock("./submit-activity", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./submit-activity")>()),
   submitActivity: activityWriter.submitActivity,
 }));
+vi.mock("../activity-file-ingestion/finalize-activity-artifact-ingestion", () => artifactFinalizer);
 vi.mock("../activity-file-ingestion/mobile-recording-upload", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../activity-file-ingestion/mobile-recording-upload")>()),
   loadAcceptedArtifactForClaim: uploadFlow.loadAcceptedArtifactForClaim,
@@ -42,7 +44,6 @@ const acceptedArtifact = {
 const submission = recordingSummarySubmissionInputSchema.parse({
   profileId: PROFILE_ID,
   recordingSessionId: "session-1",
-  artifactSource: "uploadedArtifact",
   name: "Recorder run",
   startedAt: "2026-07-24T08:00:00.000Z",
   finishedAt: "2026-07-24T09:00:00.000Z",
@@ -71,13 +72,13 @@ const submission = recordingSummarySubmissionInputSchema.parse({
   summary: { distanceMeters: 10_000 },
 });
 
-function activityPlanStructure(activity_categories: Array<"bike" | "run">) {
+function activityPlanStructure(activity_category: "bike" | "run", segmentCount = 1) {
   return {
     version: 3,
-    segments: activity_categories.map((activity_category, index) => ({
+    activity_category,
+    segments: Array.from({ length: segmentCount }, (_, index) => ({
       id: `50000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
       role: "activity" as const,
-      activity_category,
       name: activity_category,
       intervals: [
         {
@@ -126,11 +127,21 @@ describe("submitMobileRecording", () => {
     activityWriter.submitActivity.mockResolvedValue({ id: "activity-1" });
     uploadFlow.retryMobileRecordingStagingCleanup.mockResolvedValue(true);
     uploadFlow.loadAcceptedArtifactForClaim.mockResolvedValue(acceptedArtifact);
+    artifactFinalizer.finalizeActivityArtifactIngestion.mockImplementation(
+      async (_db: unknown, input: { submit: (value: unknown) => Promise<unknown> }) =>
+        input.submit({ parsedData: null, artifact: acceptedArtifact }),
+    );
     uploadFlow.prepareMobileRecordingArtifact.mockResolvedValue({
       status: "claimed",
-      ingestion: { id: INGESTION_ID },
+      ingestion: { id: INGESTION_ID, expected_sha256: ACCEPTED_SHA256 },
       claimToken: CLAIM_TOKEN,
-      artifact: acceptedArtifact,
+      staging: {
+        bucket: "activity-files",
+        path: `staging/mobile-recordings/${PROFILE_ID}/artifact.fit`,
+        bytes: new Uint8Array([1, 2, 3]),
+        format: "fit",
+        mediaType: "application/vnd.ant.fit",
+      },
     });
   });
 
@@ -152,7 +163,7 @@ describe("submitMobileRecording", () => {
             contentVisibility: "private",
             isSystem: false,
             ownerProfileId: PROFILE_ID,
-            structure: activityPlanStructure(["run", "run"]),
+            structure: activityPlanStructure("run", 2),
           },
         ],
       ],
@@ -174,7 +185,7 @@ describe("submitMobileRecording", () => {
     );
   });
 
-  it("rejects a mixed plan before storage work", async () => {
+  it("rejects a legacy segment-category plan before storage work", async () => {
     const db = createDb({
       activities: [undefined, { id: "activity-1", profile_id: PROFILE_ID }],
       ingestions: [
@@ -192,7 +203,13 @@ describe("submitMobileRecording", () => {
             contentVisibility: "private",
             isSystem: false,
             ownerProfileId: PROFILE_ID,
-            structure: activityPlanStructure(["bike", "run"]),
+            structure: {
+              ...activityPlanStructure("bike", 2),
+              segments: activityPlanStructure("bike", 2).segments.map((segment, index) => ({
+                ...segment,
+                activity_category: index === 0 ? "bike" : "run",
+              })),
+            },
           },
         ],
       ],
@@ -237,14 +254,13 @@ describe("submitMobileRecording", () => {
             contentVisibility: "private",
             isSystem: false,
             ownerProfileId: OTHER_PROFILE_ID,
-            structure: activityPlanStructure(["run"]),
+            structure: activityPlanStructure("run"),
           },
         ],
         [
           {
             id: PLAN_ID,
             ownerProfileId: OTHER_PROFILE_ID,
-            templateVisibility: "private",
             contentVisibility: "private",
             isSystem: false,
           },
@@ -290,9 +306,15 @@ describe("submitMobileRecording", () => {
     });
     uploadFlow.prepareMobileRecordingArtifact.mockResolvedValue({
       status: "claimed",
-      ingestion: { id: INGESTION_ID },
+      ingestion: { id: INGESTION_ID, expected_sha256: ACCEPTED_SHA256 },
       claimToken: CLAIM_TOKEN,
-      artifact: acceptedArtifact,
+      staging: {
+        bucket: "activity-files",
+        path: `staging/mobile-recordings/${PROFILE_ID}/artifact.fit`,
+        bytes: new Uint8Array([1, 2, 3]),
+        format: "fit",
+        mediaType: "application/vnd.ant.fit",
+      },
     });
 
     const result = await submitMobileRecording(db as never, {} as never, {
@@ -352,16 +374,15 @@ describe("submitMobileRecording", () => {
     expect(uploadFlow.retryMobileRecordingStagingCleanup).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps an accepted artifact submission scoped to its explicit recording session", async () => {
-    const acceptedSubmission = recordingSummarySubmissionInputSchema.parse({
+  it("keeps an uploaded artifact submission scoped to its explicit recording session", async () => {
+    const uploadedSubmission = recordingSummarySubmissionInputSchema.parse({
       profileId: PROFILE_ID,
-      recordingSessionId: "accepted-artifact-session-1",
-      artifactSource: "acceptedArtifact",
+      recordingSessionId: "uploaded-artifact-session-1",
       name: "Recorder run",
       startedAt: "2026-07-24T08:00:00.000Z",
       finishedAt: "2026-07-24T09:00:00.000Z",
       executionManifest: submission.executionManifest,
-      acceptedArtifact,
+      uploadedArtifact: { ingestionId: INGESTION_ID },
       summary: { distanceMeters: 10_000 },
     });
     const readyIngestion = {
@@ -385,32 +406,31 @@ describe("submitMobileRecording", () => {
 
     await submitMobileRecording(db as never, storage as never, {
       actorProfileId: PROFILE_ID,
-      submission: acceptedSubmission,
+      submission: uploadedSubmission,
     });
 
     expect(activityWriter.submitActivity).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
-        requestedActivityId: recordingSessionActivityId(PROFILE_ID, "accepted-artifact-session-1"),
+        requestedActivityId: recordingSessionActivityId(PROFILE_ID, "uploaded-artifact-session-1"),
         analysis: expect.objectContaining({
           ingestion: expect.objectContaining({
-            operationKey: "mobile-recording:accepted-artifact-session-1",
+            operationKey: "mobile-recording:uploaded-artifact-session-1",
           }),
         }),
       }),
     );
   });
 
-  it("rejects a conflicting replay for the same session-bound accepted artifact", async () => {
-    const acceptedSubmission = recordingSummarySubmissionInputSchema.parse({
+  it("rejects a conflicting replay for the same session-bound upload claim", async () => {
+    const uploadedSubmission = recordingSummarySubmissionInputSchema.parse({
       profileId: PROFILE_ID,
-      recordingSessionId: "accepted-artifact-session-1",
-      artifactSource: "acceptedArtifact",
+      recordingSessionId: "uploaded-artifact-session-1",
       name: "Recorder run",
       startedAt: "2026-07-24T08:00:00.000Z",
       finishedAt: "2026-07-24T09:00:00.000Z",
       executionManifest: submission.executionManifest,
-      acceptedArtifact,
+      uploadedArtifact: { ingestionId: "22222222-2222-4222-8222-222222222223" },
       summary: { distanceMeters: 10_000 },
     });
     const db = createDb({
@@ -419,16 +439,10 @@ describe("submitMobileRecording", () => {
         { id: INGESTION_ID, profile_id: PROFILE_ID, source: "mobile_recording", status: "ready" },
       ],
     });
-    uploadFlow.loadAcceptedArtifactForClaim.mockResolvedValueOnce({
-      ...acceptedArtifact,
-      path: `artifacts/sha256/${PROFILE_ID}/${"b".repeat(64)}`,
-      sha256: "b".repeat(64),
-    });
-
     await expect(
       submitMobileRecording(db as never, {} as never, {
         actorProfileId: PROFILE_ID,
-        submission: acceptedSubmission,
+        submission: uploadedSubmission,
       }),
     ).rejects.toMatchObject({ code: "conflict" });
   });

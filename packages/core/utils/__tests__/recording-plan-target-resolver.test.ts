@@ -73,12 +73,12 @@ function targets(input: { power?: number; runLthr?: number; runMaxHr?: number } 
 function occurrence(activity_category: "run" | "bike" | "swim", targets: ActivityTarget[]) {
   const compiled = compileActivityPlan({
     version: 3,
+    activity_category,
     segments: [
       {
         role: "activity",
         id: "50000000-0000-4000-8000-000000000001",
         name: "Segment",
-        activity_category,
         intervals: [
           {
             id: "50000000-0000-4000-8000-000000000002",

@@ -33,11 +33,11 @@ const prescriptionQuantification = estimateActivityPlanForTrainingContext({
   planId: activityPlanId,
   structure: {
     version: 3,
+    activity_category: "bike",
     segments: [
       {
         id: "22222222-2222-4222-8222-222222222222",
         role: "activity",
-        activity_category: "bike",
         name: "Endurance Ride",
         intervals: [
           {

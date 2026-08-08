@@ -74,6 +74,7 @@ export function AddActivityModal({
     error: activitiesError,
   } = api.activityPlans.list.useQuery(
     {
+      ownerScope: "all",
       limit: 100,
     },
     {

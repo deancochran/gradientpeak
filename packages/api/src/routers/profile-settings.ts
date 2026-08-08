@@ -3,18 +3,10 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
   normalizeProfileTrainingSettingsRow,
-  parseProfileTrainingSettings,
   readProfileTrainingSettings,
   upsertProfileTrainingSettings,
 } from "../application/profile-settings/profileTrainingSettings";
-import type { DrizzleTransactionClient } from "../db";
 import { getRequiredDb } from "../db";
-import {
-  createProviderSyncRepository,
-  createWahooRepository,
-} from "../infrastructure/repositories";
-import { hasWahooRouteMirrorScopes } from "../lib/integrations/wahoo/planned-activity-scopes";
-import { enqueueWahooGroupEventRouteDeliveryReconcile } from "../lib/provider-sync/event-delivery/wahoo-group-event-route-delivery";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { assertProfileAccess, withProfileWriteAccess } from "./account/profile-access";
 
@@ -85,34 +77,10 @@ export const profileSettingsRouter = createTRPCRouter({
     .input(profileSettingsUpsertInputSchema)
     .output(profileSettingsUpsertOutputSchema)
     .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-
       const data = await withProfileWriteAccess({
         ctx,
         profileId: input.profile_id,
-        write: async (tx) => {
-          const previous = await readProfileTrainingSettings(tx, input.profile_id);
-          const data = await upsertProfileTrainingSettings(tx, input);
-          const wasEnabled = parseProfileTrainingSettings(
-            previous?.settings,
-          )?.wahooEventRouteDeliveryEnabled;
-          if (Boolean(wasEnabled) !== input.settings.wahooEventRouteDeliveryEnabled) {
-            const integration = await createWahooRepository({
-              db: tx,
-            }).findWahooIntegrationByProfileId(input.profile_id);
-            if (integration && hasWahooRouteMirrorScopes(integration.scope)) {
-              await enqueueWahooGroupEventRouteDeliveryReconcile({
-                integrationGeneration: integration.integrationGeneration,
-                integrationId: integration.id,
-                profileId: input.profile_id,
-                providerSyncRepository: createProviderSyncRepository({ db }),
-                transaction: tx as DrizzleTransactionClient,
-                trigger: "preference_changed",
-              });
-            }
-          }
-          return data;
-        },
+        write: (tx) => upsertProfileTrainingSettings(tx, input),
       });
 
       if (!data) {

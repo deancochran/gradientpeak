@@ -9,11 +9,11 @@ import {
 
 const structure = {
   version: 3 as const,
+  activity_category: "run" as const,
   segments: [
     {
       id: "00000000-0000-4000-8000-000000000001",
       role: "activity" as const,
-      activity_category: "run" as const,
       name: "Run",
       intervals: [
         {
@@ -35,7 +35,7 @@ const structure = {
 };
 
 describe("activity plan schema composition", () => {
-  it("accepts strict V3 create input without top-level activity_category authority", () => {
+  it("accepts strict V3 create input with root activity_category authority", () => {
     expect(activityPlanCreateSchema.safeParse({ name: "Tempo builder", structure }).success).toBe(
       true,
     );

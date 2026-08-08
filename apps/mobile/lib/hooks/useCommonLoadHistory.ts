@@ -1,3 +1,4 @@
+import { skipToken } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { api } from "@/lib/api";
 
@@ -13,8 +14,22 @@ function nextDateKey(dateKey: string): string | null {
  * The device clock and cached profile are intentionally not inputs to this query.
  */
 export function useCommonLoadHistory() {
-  const query = api.activities.commonLoadHistory.useQuery();
+  const profile = api.profiles.get.useQuery();
+  const query = api.athleteIntelligence.getReadModel.useQuery(
+    profile.data
+      ? {
+          profileId: profile.data.id,
+          sections: {
+            status: true,
+            currentBaseline: { includePlanningContext: false },
+            loadHistory: true,
+          },
+        }
+      : skipToken,
+    { enabled: Boolean(profile.data) },
+  );
   const refetch = useCallback(() => query.refetch(), [query.refetch]);
+  const history = query.data?.loadHistory?.result;
 
   if (query.isLoading) {
     return {
@@ -28,25 +43,40 @@ export function useCommonLoadHistory() {
     };
   }
 
-  if (query.data?.status === "available") {
+  if (history?.status === "available") {
     return {
       status: "available" as const,
-      currentPlanningDate: nextDateKey(query.data.identity.endDate),
-      planningTimezone: query.data.identity.planningTimezone,
-      data: query.data,
+      currentPlanningDate:
+        query.data?.currentBaseline?.currentPlanningDate ?? nextDateKey(history.identity.endDate),
+      planningTimezone:
+        query.data?.currentBaseline?.planningTimezone ?? history.identity.planningTimezone,
+      data: history,
       error: query.error ?? null,
       isLoading: false,
       refetch,
     };
   }
 
-  if (query.data?.status === "unavailable") {
+  if (history?.status === "unavailable") {
     return {
       status: "unavailable" as const,
-      reason: query.data.reason,
+      reason: history.reason,
       currentPlanningDate: null,
       planningTimezone: null,
-      data: query.data,
+      data: history,
+      error: query.error ?? null,
+      isLoading: false,
+      refetch,
+    };
+  }
+
+  if (query.data && history === undefined) {
+    return {
+      status: "unavailable" as const,
+      reason: "published_state_not_current" as const,
+      currentPlanningDate: query.data.currentBaseline?.currentPlanningDate ?? null,
+      planningTimezone: query.data.currentBaseline?.planningTimezone ?? null,
+      data: null,
       error: query.error ?? null,
       isLoading: false,
       refetch,

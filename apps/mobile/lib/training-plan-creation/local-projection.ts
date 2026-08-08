@@ -4,7 +4,6 @@ import {
   hasPlanningPreferenceSeed,
   selectAthletePlanningContextFields,
 } from "@repo/core";
-import { deriveBackendPlanningState } from "./backend-planning-client";
 import {
   selectApplicableTrainingPlanBuilderModules,
   selectTrainingPlanBuilderStageSummaries,
@@ -44,7 +43,6 @@ export function deriveTrainingPlanLocalProjection(
   });
   const athleteContextFields = selectAthletePlanningContextFields(planningContext.athleteContext);
   const planningConstraintFields = selectTrainingPlanPreferenceFields(planningContext.preferences);
-  const backendPlanning = deriveBackendPlanningState(planningProjection.estimatedContext);
   const canUseStructureProposal =
     planningContext.sessions.length === 0 &&
     (planningContext.goals.length > 0 || hasPlanningPreferenceSeed(planningContext.preferences));
@@ -63,7 +61,6 @@ export function deriveTrainingPlanLocalProjection(
     schedulingPreview,
     athleteContextFields,
     planningConstraintFields,
-    backendPlanning,
     canUseStructureProposal,
     modules,
     moduleStages: selectTrainingPlanBuilderStageSummaries(state),

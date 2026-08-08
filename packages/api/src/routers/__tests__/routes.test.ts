@@ -21,7 +21,6 @@ const mockRouteParser = vi.hoisted(() => ({
 }));
 
 const mockLogger = vi.hoisted(() => ({ error: vi.fn(), warn: vi.fn() }));
-const mockOwnedRouteMirror = vi.hoisted(() => vi.fn());
 
 const mockCore = vi.hoisted(() => ({
   calculateRouteStats: vi.fn(),
@@ -48,9 +47,6 @@ vi.mock("../../lib/routes/route-parser", () => ({
 }));
 
 vi.mock("../../lib/logger", () => ({ logger: mockLogger }));
-vi.mock("../../lib/provider-sync/owned-routes", () => ({
-  enqueueWahooOwnedRouteMirror: mockOwnedRouteMirror,
-}));
 
 vi.mock("@repo/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/core")>();
@@ -149,7 +145,6 @@ beforeEach(() => {
   mockStorage.upload.mockResolvedValue({ error: null });
   mockStorage.download.mockResolvedValue({ error: null, data: null });
   mockStorage.remove.mockResolvedValue({ error: null });
-  mockOwnedRouteMirror.mockResolvedValue(null);
   mockRouteParser.parseRouteWithFormat.mockImplementation((content: string, fileType?: string) => ({
     format:
       fileType === "tcx" || (fileType === "xml" && content.includes("TrainingCenterDatabase"))
@@ -583,15 +578,6 @@ describe("routesRouter", () => {
         upsert: true,
       },
     );
-    expect(mockOwnedRouteMirror).toHaveBeenCalledWith(
-      expect.objectContaining({
-        expectedRouteUpdatedAt: expect.any(String),
-        operation: "upsert",
-        profileId: OWNER_ID,
-        routeId: UPLOADED_ROUTE_ID,
-        transaction: db,
-      }),
-    );
     expect(result).toEqual({
       ...Object.fromEntries(Object.entries(insertedRoute).filter(([key]) => key !== "file_sha256")),
       created_at: "2026-02-01T10:00:00.000Z",
@@ -1008,10 +994,9 @@ describe("routesRouter", () => {
       }),
     ).resolves.toMatchObject({ id: UPLOADED_ROUTE_ID, storage_state: "ready" });
     expect(mockStorage.upload).toHaveBeenCalledOnce();
-    expect(mockOwnedRouteMirror).not.toHaveBeenCalled();
   });
 
-  it("updates owned route metadata without clearing an omitted description and queues a mirror", async () => {
+  it("updates owned route metadata without clearing an omitted description", async () => {
     const updatedRoute = createRouteRow({ name: "Renamed Loop" });
     const set = vi.fn((_changes: Record<string, unknown>) => ({
       where: vi.fn(() => ({ returning: vi.fn().mockResolvedValue([updatedRoute]) })),
@@ -1030,15 +1015,6 @@ describe("routesRouter", () => {
     const [changes] = set.mock.calls[0] ?? [];
     expect(changes).toMatchObject({ name: "Renamed Loop", updated_at: expect.any(Date) });
     expect(changes).not.toHaveProperty("description");
-    expect(mockOwnedRouteMirror).toHaveBeenCalledWith(
-      expect.objectContaining({
-        expectedRouteUpdatedAt: expect.any(String),
-        operation: "upsert",
-        profileId: OWNER_ID,
-        routeId: ROUTE_ID,
-        transaction: db,
-      }),
-    );
   });
 
   it("deletes an unused route and removes its stored file", async () => {
@@ -1077,13 +1053,6 @@ describe("routesRouter", () => {
     const result = await caller.delete({ id: ROUTE_ID });
 
     expect(result).toEqual({ success: true });
-    expect(mockOwnedRouteMirror).toHaveBeenCalledWith({
-      db: expect.any(Object),
-      operation: "delete",
-      profileId: OWNER_ID,
-      routeId: ROUTE_ID,
-      transaction: db,
-    });
     expect(mockStorage.remove).toHaveBeenCalledWith([`${OWNER_ID}/route.gpx`]);
     expect(db.delete).toHaveBeenCalledTimes(3);
   });
@@ -1152,36 +1121,6 @@ describe("routesRouter", () => {
     });
   });
 
-  it("keeps deletion resumable when its remote-delete job cannot be persisted", async () => {
-    mockOwnedRouteMirror.mockRejectedValueOnce(new Error("queue unavailable"));
-    const route = createRouteRow();
-    const db = {
-      select: vi
-        .fn()
-        .mockImplementationOnce(() => createSelectWithLimit([route]))
-        .mockImplementationOnce(() => ({
-          from: vi.fn(() => ({ where: vi.fn().mockResolvedValue([{ value: 0 }]) })),
-        }))
-        .mockImplementationOnce(() => ({
-          from: vi.fn(() => ({ where: vi.fn().mockResolvedValue([{ value: 0 }]) })),
-        })),
-      delete: vi.fn(() => ({
-        where: vi.fn(() => ({ returning: vi.fn().mockResolvedValue([{ id: ROUTE_ID }]) })),
-      })),
-      update: vi.fn(() => ({
-        set: vi.fn(() => ({
-          where: vi.fn(() => ({
-            returning: vi.fn().mockResolvedValue([{ ...route, storage_state: "deletion_pending" }]),
-          })),
-        })),
-      })),
-    };
-
-    await expect(createCaller(db).delete({ id: ROUTE_ID })).rejects.toThrow("queue unavailable");
-    expect(db.delete).toHaveBeenCalledOnce();
-    expect(mockStorage.remove).toHaveBeenCalledWith([`${OWNER_ID}/route.gpx`]);
-  });
-
   it("returns a conflict without deleting when events still link the route", async () => {
     const db = {
       select: vi
@@ -1202,7 +1141,6 @@ describe("routesRouter", () => {
         "Cannot delete route because it is used by 2 events. Please remove the route from those events first.",
     });
     expect(db.delete).not.toHaveBeenCalled();
-    expect(mockOwnedRouteMirror).not.toHaveBeenCalled();
     expect(mockStorage.remove).not.toHaveBeenCalled();
   });
 });

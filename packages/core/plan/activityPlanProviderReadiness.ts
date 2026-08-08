@@ -8,7 +8,6 @@ import {
   getProviderCapabilityDefinition,
   getProviderPlannedActivityCapability,
   type IntegrationProviderId,
-  isProviderRuntimeEnabled,
   providerHasCapability,
 } from "../integrations/provider-capabilities";
 import {
@@ -46,30 +45,6 @@ export type ActivityPlanProviderProjection = {
   disposition: ProviderProjectionDisposition;
   findings: ProviderProjectionFinding[];
   provider: ActivityPlanProvider;
-};
-
-export type ActivityPlanProviderReadinessStatus =
-  | "ready"
-  | "uses_defaults"
-  | "missing_anchor"
-  | "unsupported_target"
-  | "unsupported_activity_category"
-  | "unsupported_provider";
-
-export type ActivityPlanProviderReadinessIssue = {
-  blockedBy?: "external";
-  code: Exclude<ActivityPlanProviderReadinessStatus, "ready" | "uses_defaults">;
-  message: string;
-  path?: (string | number)[];
-  targetType?: ActivityPlanTarget["type"];
-};
-
-export type ActivityPlanProviderReadinessResult = {
-  defaultedTargetTypes: ActivityPlanTarget["type"][];
-  issues: ActivityPlanProviderReadinessIssue[];
-  projection: ActivityPlanProviderProjection;
-  provider: ActivityPlanProvider;
-  status: ActivityPlanProviderReadinessStatus;
 };
 
 function isPositiveFinite(value: number | null | undefined): value is number {
@@ -189,7 +164,6 @@ export function getActivityPlanProviderProjection(input: {
     const definition = getProviderCapabilityDefinition(input.provider);
     const capability = getProviderPlannedActivityCapability(input.provider);
     if (
-      !isProviderRuntimeEnabled(input.provider) ||
       !providerHasCapability(input.provider, "planned_activity_push") ||
       capability.maturity !== "available"
     ) {

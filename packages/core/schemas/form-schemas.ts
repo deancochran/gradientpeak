@@ -392,9 +392,8 @@ export const plannedActivityUpdateFormSchema = z.object({
   scheduled_date: dateStringSchema.optional(),
   notes: activityPlanNotesSchema,
   event_type: eventTypeInputSchema.optional(),
-  recurrence: eventRecurrenceSchema.optional(),
   lifecycle: eventLifecycleSchema.optional(),
-  scope: eventMutationScopeSchema.default("single").optional(),
+  scope: z.literal("single").default("single").optional(),
 });
 
 export type PlannedActivityUpdateFormData = z.infer<typeof plannedActivityUpdateFormSchema>;
@@ -408,7 +407,7 @@ export const plannedActivityRescheduleFormSchema = z.object({
     trimString,
     z.string().max(500, "Reason must be less than 500 characters").optional(),
   ),
-  scope: eventMutationScopeSchema.default("single"),
+  scope: z.literal("single").default("single"),
 });
 
 export type PlannedActivityRescheduleFormData = z.infer<typeof plannedActivityRescheduleFormSchema>;

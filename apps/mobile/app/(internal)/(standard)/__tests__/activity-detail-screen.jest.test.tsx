@@ -163,6 +163,19 @@ let activityQueryState: { data: typeof activityData | undefined; isLoading: bool
   data: activityData,
   isLoading: false,
 };
+let effortsQueryState: {
+  data: Array<{
+    id: string;
+    activity_category: "run" | "bike";
+    effort_type: "speed" | "power" | "heart_rate";
+    duration_seconds: number;
+    distance_meters: number | null;
+    unit: string;
+    value: number;
+  }>;
+  isError: boolean;
+  isLoading: boolean;
+} = { data: [], isError: false, isLoading: false };
 const streamsData = {
   records: [
     { timestamp: "2026-03-23T09:00:00.000Z", heartRate: 142 },
@@ -432,6 +445,9 @@ jest.mock("@/lib/api", () => ({
       getById: {
         useQuery: () => activityQueryState,
       },
+      getEfforts: {
+        useQuery: () => effortsQueryState,
+      },
       delete: {
         useMutation: () => ({ mutate: deleteMutateMock, isPending: false }),
       },
@@ -441,7 +457,13 @@ jest.mock("@/lib/api", () => ({
     },
     activityPlans: {
       getById: {
-        useQuery: () => ({ data: { common_load: activityData.derived.stress.common_load } }),
+        useQuery: () => ({
+          data: {
+            prescriptionQuantification: {
+              summary: { commonLoad: activityData.derived.stress.common_load },
+            },
+          },
+        }),
       },
     },
     profiles: {
@@ -528,6 +550,7 @@ describe("activity detail screen", () => {
       availability: "accepted",
     };
     activityQueryState = { data: activityData, isLoading: false };
+    effortsQueryState = { data: [], isError: false, isLoading: false };
     streamsData.laps = [];
     mockUsePreferredUnitSystem.mockReturnValue("metric");
   });
@@ -584,6 +607,31 @@ describe("activity detail screen", () => {
     expect(unsafeRendered.UNSAFE_getByType("ActivityRouteMap")).toBeTruthy();
   });
 
+  it("renders immutable derived effort evidence on the activity detail", () => {
+    effortsQueryState = {
+      data: [
+        {
+          id: "44444444-4444-4444-8444-444444444444",
+          activity_category: "run",
+          effort_type: "speed",
+          duration_seconds: 1200,
+          distance_meters: 5000,
+          unit: "meters_per_second",
+          value: 4.2,
+        },
+      ],
+      isError: false,
+      isLoading: false,
+    };
+
+    renderNative(<ActivityDetailScreen />);
+
+    expect(screen.getByTestId("activity-derived-efforts")).toBeTruthy();
+    expect(screen.getByText("run speed")).toBeTruthy();
+    expect(screen.getByText("20:00 · 5000 m")).toBeTruthy();
+    expect(screen.getByText("4.20 m/s")).toBeTruthy();
+  });
+
   it("renders a canonical segment diagnostic for an unavailable parent aggregate", () => {
     const segmentQuantification = createObservationQuantificationBundleFixture({
       status: "threshold_missing",
@@ -615,7 +663,7 @@ describe("activity detail screen", () => {
 
     expect(
       screen.getAllByText(/activity-category-specific LTHR is missing for this activity/),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
     expect(screen.queryByText("A required threshold is missing.")).toBeNull();
   });
 

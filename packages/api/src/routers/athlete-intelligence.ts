@@ -1,62 +1,113 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { athleteIntelligenceRuntimeProjectionSchema } from "../application/athlete-intelligence/projection-orchestrator";
-import { evaluateAthleteIntelligence } from "../application/athlete-intelligence/read-model";
-import { getProfileGoalById } from "../application/goals/getProfileGoalById";
-import type { Context } from "../context";
-import { getRequiredDb } from "../db";
+import {
+  athleteReadModelRequestSchema,
+  athleteReadModelSchema,
+  readAthleteReadModel,
+} from "../application/athlete-intelligence/athlete-read-model";
+import {
+  getGoalAssessment,
+  goalAssessmentResponseSchema,
+} from "../application/athlete-intelligence/goal-assessment";
+import { getProfileGoalOwnerId } from "../application/goals/getProfileGoalById";
+import {
+  withAuthorizedAthleteReadAcrossOrganizations,
+  withResolvedAuthorizedAthleteReadAcrossOrganizations,
+} from "../application/organizations/authorize-athlete-read";
+import type { DrizzleQueryExecutor } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { assertProfileAccess } from "./account/profile-access";
+import {
+  type ConsentAwareAthleteReadAuthorizer,
+  type ConsentAwareResolvedAthleteReadAuthorizer,
+  readProfileWithAthleteConsent,
+  readResolvedProfileWithAthleteConsent,
+} from "./account/athlete-read-access";
 
-const evaluateInputSchema = z
+const goalAssessmentInputSchema = z
   .object({
     goalId: z.string().uuid(),
   })
   .strict();
 
-export async function resolveAccessibleGoalProfile(input: {
-  ctx: Context;
-  db: ReturnType<typeof getRequiredDb>;
+export async function resolveGoalProfile(input: {
+  db: DrizzleQueryExecutor;
   goalId: string;
-  getGoal?: typeof getProfileGoalById;
-  assertAccess?: typeof assertProfileAccess;
+  getGoalOwnerId?: typeof getProfileGoalOwnerId;
 }): Promise<string> {
-  const getGoal = input.getGoal ?? getProfileGoalById;
-  const assertAccess = input.assertAccess ?? assertProfileAccess;
-  const goal = await getGoal(input.db, input.goalId);
-  if (!goal) {
+  const getGoalOwnerId = input.getGoalOwnerId ?? getProfileGoalOwnerId;
+  const profileId = await getGoalOwnerId(input.db, input.goalId);
+  if (!profileId) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Goal not found" });
   }
-  try {
-    await assertAccess({ ctx: input.ctx, profileId: goal.profile_id });
-  } catch (error) {
-    if (error instanceof TRPCError && error.code === "FORBIDDEN") {
-      throw new TRPCError({ code: "NOT_FOUND", message: "Goal not found" });
-    }
-    throw error;
-  }
-  return goal.profile_id;
+  return profileId;
 }
 
 export function createAthleteIntelligenceRouter(
-  evaluateProjection: typeof evaluateAthleteIntelligence = evaluateAthleteIntelligence,
-  resolveGoalProfile: (input: {
-    ctx: Context;
-    db: ReturnType<typeof getRequiredDb>;
+  assessGoal: typeof getGoalAssessment = getGoalAssessment,
+  resolveGoalProfileForRequest: (input: {
+    db: DrizzleQueryExecutor;
     goalId: string;
-  }) => Promise<string> = resolveAccessibleGoalProfile,
+  }) => Promise<string> = resolveGoalProfile,
+  readModel: typeof readAthleteReadModel = readAthleteReadModel,
+  authorizeRead: ConsentAwareAthleteReadAuthorizer = withAuthorizedAthleteReadAcrossOrganizations,
+  authorizeResolvedRead: ConsentAwareResolvedAthleteReadAuthorizer = withResolvedAuthorizedAthleteReadAcrossOrganizations,
 ) {
   return createTRPCRouter({
-    evaluate: protectedProcedure
-      .input(evaluateInputSchema)
-      .output(athleteIntelligenceRuntimeProjectionSchema)
+    getGoalAssessment: protectedProcedure
+      .input(goalAssessmentInputSchema)
+      .output(goalAssessmentResponseSchema)
       .query(async ({ ctx, input }) => {
-        const db = getRequiredDb(ctx);
-        const profileId = await resolveGoalProfile({ ctx, db, goalId: input.goalId });
-        return evaluateProjection({
-          db,
-          profileId,
-          goalId: input.goalId,
+        return readResolvedProfileWithAthleteConsent({
+          ctx,
+          scope: "goals",
+          deniedCode: "NOT_FOUND",
+          deniedMessage: "Goal not found",
+          authorizeRead: authorizeResolvedRead,
+          resolveProfileId: (authorizedDb) =>
+            resolveGoalProfileForRequest({ db: authorizedDb, goalId: input.goalId }),
+          read: (authorizedDb, profileId) =>
+            assessGoal({
+              db: authorizedDb,
+              profileId,
+              goalId: input.goalId,
+            }),
+        });
+      }),
+    getReadModel: protectedProcedure
+      .input(athleteReadModelRequestSchema)
+      .output(athleteReadModelSchema)
+      .query(async ({ ctx, input }) => {
+        const requestsMetrics = Boolean(
+          input.sections.publishedState ||
+            input.sections.status ||
+            input.sections.currentBaseline ||
+            input.sections.loadHistory ||
+            input.sections.profileObservations ||
+            input.sections.trendInsights,
+        );
+        const requestsActivities = Boolean(
+          input.sections.activityAnalytics || input.sections.trendInsights,
+        );
+        if (ctx.session.user.id !== input.profileId && requestsMetrics && requestsActivities) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Delegated AthleteReadModel requests must use one consent scope",
+          });
+        }
+        return readProfileWithAthleteConsent({
+          ctx,
+          profileId: input.profileId,
+          scope: requestsActivities ? "activities" : "metrics",
+          deniedCode: "FORBIDDEN",
+          deniedMessage: "Not authorized",
+          authorizeRead,
+          read: (authorizedDb) =>
+            readModel({
+              db: authorizedDb,
+              profileId: input.profileId,
+              sections: input.sections,
+              now: new Date(),
+            }),
         });
       }),
   });

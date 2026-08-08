@@ -41,13 +41,11 @@ describe("fitness input utilities", () => {
   });
 
   it("parses and formats date-only values", () => {
-    const fallback = new Date("2026-03-21T12:00:00.000Z");
-
     expect(parseDateOnly("2026-03-21")).toBe("2026-03-21");
     expect(parseDateOnly("03/21/2026")).toBeUndefined();
     expect(formatDateOnly(new Date("2026-03-21T00:00:00.000Z"))).toBe("2026-03-21");
-    expect(parseDateOnlyToDate("bad-date", fallback)).toBe(fallback);
-    expect(parseDateOnlyToDate("2026-03-21").toISOString()).toContain("2026-03-21");
+    expect(parseDateOnlyToDate("bad-date")).toBeUndefined();
+    expect(parseDateOnlyToDate("2026-03-21")?.toISOString()).toContain("2026-03-21");
   });
 
   it("parses and normalizes duration and pace strings", () => {

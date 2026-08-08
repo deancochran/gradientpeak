@@ -2,7 +2,6 @@ import type {
   ActivityObservationQuantificationBundle,
   ActivityPrescriptionQuantificationBundle,
 } from "@repo/core";
-import { toDateKey } from "@/lib/calendar/dateMath";
 
 export interface CalendarEventActivityPlan {
   id?: string | null;
@@ -47,34 +46,6 @@ export interface CalendarEvent {
 
 export type CalendarEventsByDate = Map<string, CalendarEvent[]>;
 
-function getEventStartDateKey(event: CalendarEvent): string | null {
-  if (event.scheduled_date) {
-    return event.scheduled_date;
-  }
-
-  if (event.starts_at) {
-    if (event.all_day) {
-      return event.starts_at.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? null;
-    }
-
-    const startsAt = new Date(event.starts_at);
-    if (!Number.isNaN(startsAt.getTime())) {
-      return toDateKey(startsAt);
-    }
-  }
-
-  return null;
-}
-
-function getScheduledDateKey(event: CalendarEvent): string | null {
-  const startDateKey = getEventStartDateKey(event);
-  if (!startDateKey) {
-    return null;
-  }
-
-  return startDateKey;
-}
-
 function compareEvents(left: CalendarEvent, right: CalendarEvent): number {
   if (left.all_day && !right.all_day) return -1;
   if (!left.all_day && right.all_day) return 1;
@@ -94,7 +65,7 @@ export function buildEventsByDate(events: CalendarEvent[]): CalendarEventsByDate
   const map = new Map<string, CalendarEvent[]>();
 
   for (const event of events) {
-    const dateKey = getScheduledDateKey(event);
+    const dateKey = event.scheduled_date;
     if (!dateKey) continue;
     const current = map.get(dateKey) ?? [];
     current.push(event);

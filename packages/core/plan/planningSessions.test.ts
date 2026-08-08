@@ -93,12 +93,12 @@ describe("planningSessions", () => {
           activity_category: "run",
           structure: {
             version: 3,
+            activity_category: "run",
             segments: [
               {
                 id: "22222222-2222-4222-8222-222222222222",
                 name: "Run",
                 role: "activity",
-                activity_category: "run",
                 intervals: [
                   {
                     id: "33333333-3333-4333-8333-333333333333",
@@ -173,12 +173,12 @@ describe("planningSessions", () => {
     const openPlan = {
       structure: {
         version: 3,
+        activity_category: "run",
         segments: [
           {
             id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             name: "Open run",
             role: "activity",
-            activity_category: "run",
             intervals: [
               {
                 id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
@@ -238,12 +238,12 @@ describe("planningSessions", () => {
       id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
       structure: {
         version: 3,
+        activity_category: "bike",
         segments: [
           {
             id: "11111111-2222-4333-8444-555555555555",
             name: "Bike",
             role: "activity",
-            activity_category: "bike",
             intervals: [
               {
                 id: "66666666-7777-4888-8999-aaaaaaaaaaaa",
@@ -336,12 +336,12 @@ describe("planningSessions", () => {
         "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee": {
           structure: {
             version: 3,
+            activity_category: "bike",
             segments: [
               {
                 id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
                 name: "Bike",
                 role: "activity",
-                activity_category: "bike",
                 intervals: [
                   {
                     id: "11111111-2222-4333-8444-555555555555",

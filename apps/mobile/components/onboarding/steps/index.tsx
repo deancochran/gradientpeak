@@ -1,9 +1,9 @@
 import {
   createEmptyGoalDraft,
-  estimateMaxHRFromDOB,
   formatWeightForDisplay,
   getGoalDraftQualityFeedback,
 } from "@repo/core";
+import { estimateMaxHRFromDOB } from "@repo/core/estimators";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Form, FormTextField } from "@repo/ui/components/form";
@@ -340,6 +340,7 @@ export const IntegrationsStep = ({ onRefreshIntegrations }: StepProps) => {
   } = api.integrations.getSyncOverview.useQuery(undefined);
 
   const handleConnect = async (providerKey: IntegrationProvider) => {
+    if (providerKey !== "wahoo") return;
     setPendingProvider(providerKey);
     try {
       const redirectUri = getMobileRedirectUri();
@@ -403,11 +404,7 @@ export const IntegrationsStep = ({ onRefreshIntegrations }: StepProps) => {
   );
 };
 
-export const ProviderSyncStep = ({
-  providerSyncStatus,
-  onRetryProviderSync,
-  onClearProviderRequirement,
-}: StepProps) => {
+export const ProviderSyncStep = ({ providerSyncStatus, onRetryProviderSync }: StepProps) => {
   const status = providerSyncStatus?.status ?? "idle";
   const isRecoverable = status === "failed" || status === "timed_out";
 
@@ -433,16 +430,6 @@ export const ProviderSyncStep = ({
               </View>
               {provider.message ? (
                 <Text className="text-xs text-muted-foreground">{provider.message}</Text>
-              ) : null}
-              {(provider.status === "failed" || provider.status === "timed_out") &&
-              provider.blocking ? (
-                <Button
-                  variant="outline"
-                  onPress={() => onClearProviderRequirement?.(provider.provider)}
-                  testID={`onboarding-clear-${provider.provider}-requirement`}
-                >
-                  <Text>Remove from onboarding</Text>
-                </Button>
               ) : null}
             </View>
           ))}

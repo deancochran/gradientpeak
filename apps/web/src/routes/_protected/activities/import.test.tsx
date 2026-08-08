@@ -111,11 +111,6 @@ describe("ActivityImportPage", () => {
     expect(mocks.upload).toHaveBeenCalledWith(file, "https://upload");
     expect(mocks.process).toHaveBeenCalledWith({
       activityFilePath: "user/activity.fit",
-      importProvenance: {
-        import_file_type: "fit",
-        import_original_file_name: "Morning.FIT",
-        import_source: "manual_historical",
-      },
       name: "Morning ride",
       notes: "Felt good",
     });

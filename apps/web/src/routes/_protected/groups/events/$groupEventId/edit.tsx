@@ -40,7 +40,11 @@ function EditGroupEventPage() {
           void group.refetch();
         }}
       >
-        {event && group.data?.viewer.canCreateGroupEvent ? (
+        {event?.is_recurring_series ? (
+          <p role="alert">
+            Recurring series editing is unavailable. Edit an individual occurrence instead.
+          </p>
+        ) : event && group.data?.viewer.canCreateGroupEvent ? (
           <Card>
             <CardHeader>
               <CardTitle>Event details</CardTitle>

@@ -53,7 +53,7 @@ const completeLifecycleSetupMutationMock: jest.MockedFunction<
   settings: { status: "saved" as const, retryable: false },
   retryable: false,
   cache_tags: [
-    "onboarding.getImportedOnboardingValues",
+    "integrations.getSyncOverview",
     "goals.list",
     "profileSettings.getForProfile",
   ] as const,
@@ -76,7 +76,6 @@ const invalidateGroupJoinRequestsMock = jest.fn(async () => undefined);
 const invalidateFollowersMock = jest.fn(async () => undefined);
 const invalidateFollowingMock = jest.fn(async () => undefined);
 const mutationOrder: string[] = [];
-let importedOnboardingValuesMock: unknown = null;
 let profileSettingsRecordMock: unknown = null;
 let profileSettingsQueryStateMock: "loading" | "success" | "error" = "success";
 let integrationOverviewMock: unknown[] = [];
@@ -106,7 +105,9 @@ const createIntegrationOverview = (provider: "strava" | "wahoo", configured: boo
     lastSucceededAt: null,
     queuedJobId: null,
     status: "idle",
+    importRun: null,
   },
+  athleteState: { status: "unavailable", revision: null },
   configured,
   connected: false,
   integrationId: null,
@@ -125,7 +126,10 @@ const createIntegrationOverview = (provider: "strava" | "wahoo", configured: boo
     lastError: null,
     lastFailedAt: null,
     lastSucceededAt: null,
+    profile: { dob: null, gender: null, onboarded: false },
+    sources: {},
     status: "idle",
+    values: {},
   },
   summary: {
     badge: "Available",
@@ -233,9 +237,8 @@ jest.mock("@/lib/api", () => ({
       },
     },
     useUtils: () => ({
-      onboarding: {
-        getImportedOnboardingValues: { invalidate: jest.fn(async () => undefined) },
-        getProviderEnrichmentStatus: { invalidate: jest.fn(async () => undefined) },
+      integrations: {
+        getSyncOverview: { invalidate: jest.fn(async () => undefined) },
       },
       profiles: {
         get: { invalidate: invalidateProfileMock },
@@ -289,27 +292,8 @@ jest.mock("@/lib/api", () => ({
       completeLifecycleSetup: {
         useMutation: () => ({ mutateAsync: completeLifecycleSetupMutationMock, isPending: false }),
       },
-      getImportedOnboardingValues: {
-        useQuery: () => ({
-          data: importedOnboardingValuesMock,
-          isLoading: false,
-          refetch: jest.fn(),
-        }),
-      },
-      getProviderEnrichmentStatus: {
-        useQuery: () => ({ data: null, isLoading: false, refetch: jest.fn() }),
-      },
-      startProviderEnrichment: {
-        useMutation: () => ({ mutateAsync: jest.fn(async () => undefined), isPending: false }),
-      },
-      clearProviderRequirement: {
-        useMutation: () => ({ mutateAsync: jest.fn(async () => undefined), isPending: false }),
-      },
     },
     integrations: {
-      list: {
-        useQuery: () => ({ data: [], refetch: jest.fn(async () => ({ data: [] })) }),
-      },
       getSyncOverview: {
         useQuery: () => ({
           data: integrationOverviewMock,
@@ -322,6 +306,9 @@ jest.mock("@/lib/api", () => ({
         useMutation: () => ({
           mutateAsync: jest.fn(async () => ({ url: "https://example.test" })),
         }),
+      },
+      refreshSetupData: {
+        useMutation: () => ({ mutateAsync: jest.fn(async () => undefined), isPending: false }),
       },
     },
     groups: {
@@ -406,6 +393,11 @@ jest.mock("@repo/core", () => ({
   ...jest.requireActual("@repo/core"),
   estimateMaxHRFromDOB: jest.fn((dob?: string | null) => (dob ? 185 : null)),
   formatWeightForDisplay: jest.fn((weight: number) => `${weight} kg`),
+}));
+
+jest.mock("@repo/core/estimators", () => ({
+  __esModule: true,
+  estimateMaxHRFromDOB: jest.fn((dob?: string | null) => (dob ? 185 : null)),
 }));
 
 jest.mock("@repo/ui/components/button", () => ({
@@ -606,7 +598,7 @@ const {
   estimateMaxHRFromDOB,
 }: {
   estimateMaxHRFromDOB: jest.Mock;
-} = require("@repo/core");
+} = require("@repo/core/estimators");
 
 const TrainingBaselineHarness = ({
   initialData = {},
@@ -650,7 +642,6 @@ describe("onboarding screen", () => {
       full_name: "Riley Chen",
       username: "riley_runs",
     };
-    importedOnboardingValuesMock = null;
     profileSettingsRecordMock = null;
     profileSettingsQueryStateMock = "success";
     integrationOverviewMock = [];
@@ -679,7 +670,7 @@ describe("onboarding screen", () => {
         settings: { status: "saved" as const, retryable: false },
         retryable: false,
         cache_tags: [
-          "onboarding.getImportedOnboardingValues",
+          "integrations.getSyncOverview",
           "goals.list",
           "profileSettings.getForProfile",
         ] as const,
@@ -1651,11 +1642,7 @@ describe("onboarding screen", () => {
       goal: { status: "skipped", retryable: false },
       settings: { status: "saved", retryable: false },
       retryable: false,
-      cache_tags: [
-        "onboarding.getImportedOnboardingValues",
-        "goals.list",
-        "profileSettings.getForProfile",
-      ],
+      cache_tags: ["integrations.getSyncOverview", "goals.list", "profileSettings.getForProfile"],
     });
     await waitForGateOwnedCompletion();
   });
@@ -2136,7 +2123,7 @@ describe("onboarding screen", () => {
   });
 
   it("prefills provider-imported onboarding fields before submission", async () => {
-    importedOnboardingValuesMock = {
+    const importedValues = {
       profile: {
         dob: "1988-04-05",
         gender: "female",
@@ -2165,6 +2152,17 @@ describe("onboarding screen", () => {
         },
       },
     };
+    integrationOverviewMock = [
+      {
+        ...createIntegrationOverview("wahoo", true),
+        setupData: {
+          ...createIntegrationOverview("wahoo", true).setupData,
+          profile: importedValues.profile,
+          sources: importedValues.sources,
+          values: importedValues.values,
+        },
+      },
+    ];
 
     renderNative(<OnboardingScreen />);
 

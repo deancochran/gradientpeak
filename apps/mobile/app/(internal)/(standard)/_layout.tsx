@@ -34,7 +34,6 @@ import { TouchableOpacity } from "react-native";
  *
  * SCHEDULED ACTIVITIES:
  * - schedule-activity - Schedule activity to calendar
- * - scheduled-activities-list - View all scheduled activities
  *
  * GOALS:
  * - goals-list - Browse and filter athlete goals
@@ -144,20 +143,6 @@ export default function StandardLayout() {
         }}
       />
 
-      {/* ACTIVITY EFFORTS */}
-      <Stack.Screen
-        name="activity-efforts-list"
-        options={{
-          title: "My Activity Efforts",
-        }}
-      />
-      <Stack.Screen
-        name="activity-effort-detail"
-        options={{
-          title: "Activity Effort",
-        }}
-      />
-
       {/* ACTIVITY PLANS */}
       <Stack.Screen
         name="activity-plans-list"
@@ -178,12 +163,6 @@ export default function StandardLayout() {
         }}
       />
       {/* SCHEDULED ACTIVITIES */}
-      <Stack.Screen
-        name="scheduled-activities-list"
-        options={{
-          title: "Scheduled Activities",
-        }}
-      />
       <Stack.Screen
         name="event-detail"
         options={{

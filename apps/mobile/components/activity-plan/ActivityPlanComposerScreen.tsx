@@ -9,6 +9,7 @@ import {
   activityPlanStructureSchema,
   calculateActivityPlanStats,
   compileActivityPlan,
+  createUnavailableAthletePerformanceTargetFacts,
   getAvailablePerformanceTargetValue,
 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
@@ -30,6 +31,7 @@ import { createDefaultActivityPlanStep } from "@/lib/activityPlanDefaults";
 import { api } from "@/lib/api";
 import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
+import { useAuthStore } from "@/lib/stores/auth-store";
 
 export type ActivityPlanComposerModeContract =
   | {
@@ -190,29 +192,39 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   const selectedActivitySegment =
     activitySegments.find((segment) => segment.id === selectedSegmentId) ?? activitySegments[0];
   const intervals = selectedActivitySegment?.intervals ?? [];
-  const performanceTargetsQuery = api.profiles.getPerformanceTargets.useQuery({
-    asOf: performanceModelAsOf,
-  });
+  const profileId = useAuthStore((state) => state.profile?.id ?? state.user?.id ?? null);
+  const publishedStateQuery = api.athleteIntelligence.getReadModel.useQuery(
+    { profileId: profileId ?? "", sections: { publishedState: true, status: true } },
+    { enabled: profileId !== null },
+  );
+  const performanceTargets = useMemo(
+    () =>
+      publishedStateQuery.data?.status?.freshness === "fresh" &&
+      publishedStateQuery.data.status.rebuildStatus === "fresh" &&
+      publishedStateQuery.data.publishedState?.performanceTargets
+        ? publishedStateQuery.data.publishedState.performanceTargets
+        : createUnavailableAthletePerformanceTargetFacts(
+            publishedStateQuery.data?.publishedState?.publishedAt ?? performanceModelAsOf,
+          ),
+    [performanceModelAsOf, publishedStateQuery.data],
+  );
   const targetAnchors = useMemo<ActivityPlanTargetAnchors>(
     () => ({
       ftpWatts:
-        performanceTargetsQuery.data === undefined
-          ? undefined
-          : (getAvailablePerformanceTargetValue(
-              performanceTargetsQuery.data.cycling.planningThresholdPower,
-            ) ?? undefined),
+        getAvailablePerformanceTargetValue(performanceTargets.cycling.planningThresholdPower) ??
+        undefined,
       maxHeartRateBpm: activityCategoryHeartRateValue(
-        performanceTargetsQuery.data,
+        performanceTargets,
         "max_hr",
         form.activityCategory,
       ),
       thresholdHeartRateBpm: activityCategoryHeartRateValue(
-        performanceTargetsQuery.data,
+        performanceTargets,
         "lthr",
         form.activityCategory,
       ),
     }),
-    [form.activityCategory, performanceTargetsQuery.data],
+    [form.activityCategory, performanceTargets],
   );
   const stepBeingEdited = useMemo(() => {
     if (!editingIntervalId || !editingStepId) {
@@ -228,14 +240,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     if (!parsed.success) {
       return { durationMs: 0, stepCount: 0, distanceMeters: 0 };
     }
-    const stats = calculateActivityPlanStats(compileActivityPlan(parsed.data), {
-      cyclingFtpWatts:
-        performanceTargetsQuery.data === undefined
-          ? undefined
-          : (getAvailablePerformanceTargetValue(
-              performanceTargetsQuery.data.cycling.planningThresholdPower,
-            ) ?? undefined),
-    });
+    const stats = calculateActivityPlanStats(compileActivityPlan(parsed.data));
 
     return {
       durationMs: Math.round((stats.duration.exactElapsedSeconds ?? 0) * 1000),
@@ -245,7 +250,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
         0,
       ),
     };
-  }, [form.structure, performanceTargetsQuery.data]);
+  }, [form.structure]);
 
   const selectedInterval = selectedIntervalId
     ? intervals.find((interval) => interval.id === selectedIntervalId)
@@ -301,11 +306,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   const handleAddInterval = () => {
     if (!selectedActivitySegment) return;
     addInterval(
-      createDefaultInterval(
-        selectedActivitySegment.activity_category,
-        intervals.length,
-        targetAnchors,
-      ),
+      createDefaultInterval(form.structure.activity_category, intervals.length, targetAnchors),
       selectedActivitySegment.id,
     );
   };
@@ -318,7 +319,6 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
             id,
             role,
             name: `Activity ${activitySegments.length + 1}`,
-            activity_category: form.activityCategory,
             intervals: [createDefaultInterval(form.activityCategory, 0, targetAnchors)],
           }
         : {
@@ -496,6 +496,14 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
             }}
           />
 
+          {publishedStateQuery.data && publishedStateQuery.data.status?.freshness !== "fresh" ? (
+            <Text className="text-sm text-muted-foreground">
+              Published performance targets are{" "}
+              {publishedStateQuery.data.status?.freshness ?? "unavailable"}; relative targets remain
+              unavailable until athlete state is current.
+            </Text>
+          ) : null}
+
           <View className="gap-3 rounded-lg border border-border bg-card p-3">
             <Text className="text-base font-semibold text-foreground">Ordered segments</Text>
             {form.structure.segments.map((segment, index) => (
@@ -505,7 +513,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
                 accessibilityRole={segment.role === "activity" ? "button" : undefined}
                 accessibilityLabel={
                   segment.role === "activity"
-                    ? `Select ${segment.name}, ${segment.activity_category}, ${segment.intervals.length} interval${segment.intervals.length === 1 ? "" : "s"}`
+                    ? `Select ${segment.name}, ${form.structure.activity_category}, ${segment.intervals.length} interval${segment.intervals.length === 1 ? "" : "s"}`
                     : undefined
                 }
                 accessibilityState={
@@ -520,7 +528,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
                     <Text className="font-medium text-foreground">{segment.name}</Text>
                     <Text className="text-xs text-muted-foreground">
                       {segment.role === "activity"
-                        ? `${segment.activity_category} · ${segment.intervals.length} interval${segment.intervals.length === 1 ? "" : "s"}`
+                        ? `${form.structure.activity_category} · ${segment.intervals.length} interval${segment.intervals.length === 1 ? "" : "s"}`
                         : `${segment.role} · ${Math.round(segment.duration.seconds / 60)} min`}
                     </Text>
                   </View>
@@ -608,7 +616,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
         onOpenChange={setEditDialogOpen}
         step={stepBeingEdited}
         onSave={(step) => handleSaveStep(step)}
-        activityCategory={selectedActivitySegment?.activity_category ?? form.activityCategory}
+        activityCategory={form.structure.activity_category}
         targetAnchors={targetAnchors}
       />
 

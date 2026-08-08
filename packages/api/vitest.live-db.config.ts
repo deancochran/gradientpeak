@@ -11,6 +11,7 @@ export default defineConfig({
     ],
   },
   test: {
+    fileParallelism: false,
     include: ["src/**/*.live-db.test.ts"],
     setupFiles: [path.resolve(__dirname, "./src/test/setup.ts")],
   },

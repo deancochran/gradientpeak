@@ -106,9 +106,9 @@ export async function completeLifecycleSetup(input: {
     retryable: goal.retryable || settings.retryable,
     cache_tags: [
       // biome-ignore lint/security/noSecrets: Public tRPC cache tag, not a credential.
-      "onboarding.getImportedOnboardingValues",
+      "integrations.getSyncOverview",
       "goals.list",
       "profileSettings.getForProfile",
-    ] as ["onboarding.getImportedOnboardingValues", "goals.list", "profileSettings.getForProfile"],
+    ] as ["integrations.getSyncOverview", "goals.list", "profileSettings.getForProfile"],
   };
 }

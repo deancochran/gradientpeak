@@ -49,10 +49,11 @@ describe("Wahoo repository activity persistence boundary", () => {
     expect(repository).not.toHaveProperty("createImportedActivity");
   });
 
-  it("keeps link repair as an idempotency concern separate from canonical creation", () => {
+  it("uses source references as the sole imported-activity identity", () => {
     const repository = createWahooRepository({ db: {} as never });
     expect(repository).toHaveProperty("findImportedActivityByProviderExternalId");
-    expect(repository).toHaveProperty("createImportedActivityResourceLink");
+    expect(repository).not.toHaveProperty("migrateLegacyImportedActivityLink");
+    expect(repository).not.toHaveProperty("createImportedActivityResourceLink");
   });
 
   it("binds planned-activity link writes to the active profile integration generation", () => {
@@ -353,43 +354,6 @@ describe("Wahoo repository activity persistence boundary", () => {
       "00000000-0000-4000-8000-000000000001",
       false,
     ]);
-  });
-
-  it("reads provider activity bytes from the current accepted source artifact", async () => {
-    let selected: Record<string, unknown> | undefined;
-    const row = {
-      activityId: "00000000-0000-4000-8000-000000000010",
-      linkId: "00000000-0000-4000-8000-000000000011",
-      profileId: "00000000-0000-4000-8000-000000000012",
-      activityFilePath: "sources/wahoo.fit",
-      activityFileSize: 4096,
-      analysisReady: true,
-    };
-    const builder: SelectQueryBuilder = {
-      from: () => builder,
-      innerJoin: () => builder,
-      leftJoin: () => builder,
-      where: () => builder,
-      limit: async () => [row],
-    };
-    const db = {
-      select: vi.fn((fields: Record<string, unknown>) => {
-        selected = fields;
-        return builder;
-      }),
-    };
-
-    const result = await createWahooRepository({
-      db: db as never,
-    }).findImportedActivityLinkByExternalId({ externalId: "42", integrationId: row.linkId });
-
-    expect(selected?.activityFilePath).toBe(schema.activityArtifacts.path);
-    expect(selected?.activityFileSize).toBe(schema.activityArtifacts.byte_size);
-    expect(selected?.artifactId).toBe(schema.activityArtifacts.id);
-    expect(selected?.artifactSha256).toBe(schema.activityArtifacts.digest);
-    expect(selected?.providerRevision).toBe(schema.activityArtifactLinks.provider_revision);
-    expect(selected?.segmentsRevision).toBe(schema.activities.segments_revision);
-    expect(result).toEqual(row);
   });
 
   it("derives planned activity category from the canonical structure", async () => {

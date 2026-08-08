@@ -100,7 +100,6 @@ export const activityPlanActivitySegmentSchema = z
   .object({
     ...segmentBase,
     role: z.literal("activity"),
-    activity_category: canonicalActivityCategorySchema,
     intervals: z
       .array(activityPlanIntervalSchema)
       .min(1)
@@ -129,6 +128,7 @@ const activityPlanStructureShapeSchema = z
       error:
         "[ACTIVITY_PLAN_UNSUPPORTED_VERSION] Only activity-plan structure version 3 is accepted.",
     }),
+    activity_category: canonicalActivityCategorySchema,
     segments: z.array(activityPlanSegmentSchema).min(1).max(ACTIVITY_PLAN_LIMITS.maxSegments),
   })
   .strict();
@@ -146,6 +146,7 @@ export type ActivityPlanStructure = z.output<typeof activityPlanStructureSchema>
 /** Mutable authoring shape validated and branded only when persisted or executed. */
 export type EditableActivityPlanStructure = {
   version: 3;
+  activity_category: z.infer<typeof canonicalActivityCategorySchema>;
   segments: ActivityPlanSegment[];
 };
 

@@ -42,7 +42,6 @@ describe("feed activity projections", () => {
           avg_speed_mps: null,
           max_speed_mps: null,
           normalized_speed_mps: null,
-          normalized_graded_speed_mps: null,
           elevation_gain_meters: null,
           calories: null,
           polyline: null,

@@ -1,10 +1,11 @@
 import {
   type ActivityPrescriptionQuantificationBundle,
+  type ContentVisibility,
   canonicalTrainingPlanStructureSchema,
+  contentVisibilitySchema,
   mapPlanningContextToCanonicalTrainingPlanStructure,
   mapPlanningContextToTrainingPlanCreateInput,
   mapPlanningContextToTrainingPlanUpdateInput,
-  type PlanningSnapshotOptions,
   trainingPlanSchema,
 } from "@repo/core";
 import type { z } from "zod";
@@ -20,8 +21,6 @@ import type {
 
 type TrainingPlanStructure = z.output<typeof canonicalTrainingPlanStructureSchema>;
 
-export type TrainingPlanBuilderPlanningSnapshotOptions = PlanningSnapshotOptions;
-
 function parsePersistedCanonicalStructure(structure: unknown): TrainingPlanStructure {
   const persisted = trainingPlanSchema.safeParse(structure);
   if (persisted.success) {
@@ -36,13 +35,13 @@ type HydratableTrainingPlan = {
   name: string;
   description?: string | null;
   structure: unknown;
-  template_visibility?: string | null;
+  content_visibility: ContentVisibility;
 };
 
 type HydratableActivityPlan = {
   id: string;
   name: string;
-  template_visibility?: string | null;
+  content_visibility: string;
   is_system_template?: boolean | null;
   prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
 };
@@ -52,48 +51,40 @@ function toActivityPlanFacts(activityPlan: HydratableActivityPlan): TrainingPlan
     id: activityPlan.id,
     name: activityPlan.name,
     published:
-      activityPlan.template_visibility === "public" || activityPlan.is_system_template === true,
+      activityPlan.content_visibility === "public" || activityPlan.is_system_template === true,
     accessible: true,
     prescriptionQuantification: activityPlan.prescriptionQuantification ?? null,
   };
 }
 
-export function toTrainingPlanStructure(
-  state: TrainingPlanBuilderState,
-  options: TrainingPlanBuilderPlanningSnapshotOptions = {},
-): TrainingPlanStructure {
+export function toTrainingPlanStructure(state: TrainingPlanBuilderState): TrainingPlanStructure {
   return mapPlanningContextToCanonicalTrainingPlanStructure(
     createTrainingPlanPlanningContext(state),
-    options,
   );
 }
 
 export function toTrainingPlanCreatePayload(
   state: TrainingPlanBuilderState,
-  options: TrainingPlanBuilderPlanningSnapshotOptions = {},
 ): TrainingPlanFinalCreatePayload {
   return mapPlanningContextToTrainingPlanCreateInput({
     context: createTrainingPlanPlanningContext(state),
     name: state.details.name.trim(),
     description: state.details.description,
     isActive: true,
-    snapshotOptions: options,
-    templateVisibility: state.details.templateVisibility,
+    contentVisibility: state.details.contentVisibility,
   });
 }
 
 export function toTrainingPlanUpdatePayload(
   planId: string,
   state: TrainingPlanBuilderState,
-  options: TrainingPlanBuilderPlanningSnapshotOptions = {},
 ): TrainingPlanFinalUpdatePayload {
   return mapPlanningContextToTrainingPlanUpdateInput({
     planId,
     context: createTrainingPlanPlanningContext(state),
     name: state.details.name.trim(),
     description: state.details.description,
-    snapshotOptions: options,
-    templateVisibility: state.details.templateVisibility,
+    contentVisibility: state.details.contentVisibility,
   });
 }
 
@@ -132,7 +123,7 @@ export function createTrainingPlanBuilderStateFromExistingPlan({
     details: {
       name: plan.name,
       description: plan.description ?? "",
-      templateVisibility: plan.template_visibility === "public" ? "public" : "private",
+      contentVisibility: contentVisibilitySchema.parse(plan.content_visibility),
     },
     anchorDate,
     goalContext: {
@@ -187,7 +178,7 @@ export function createTrainingPlanBuilderStateFromExistingPlan({
     },
     scheduling: {
       ...defaultState.scheduling,
-      startDate: planningSnapshot?.scheduling.start_date ?? anchorDate,
+      startDate: anchorDate,
       preferredWeekdays:
         planningSnapshot?.scheduling.preferred_weekdays ??
         defaultState.scheduling.preferredWeekdays,

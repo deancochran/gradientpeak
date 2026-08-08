@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { projectAthletePerformanceTargetFacts } from "@repo/core";
 import { db, pool } from "@repo/db/client";
 import {
   activities,
@@ -6,12 +7,14 @@ import {
   activityArtifacts,
   activityEfforts,
   activitySegments,
+  profileAthleteState,
   profileMetrics,
   profiles,
   users,
 } from "@repo/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { getAthletePerformanceModelAsOf } from "../application/performance-model/get-athlete-performance-model-as-of";
 import {
   ATHLETE_PERFORMANCE_BATCH_ROW_LIMIT,
   type AthletePerformanceModelReadInput,
@@ -143,7 +146,6 @@ async function seedCanonicalBikeEffort(
   await db.insert(activityEfforts).values({
     id: evidenceId,
     created_at: seededAt,
-    updated_at: seededAt,
     profile_id: activity.profileId,
     activity_id: activity.activityId,
     segment_id: activity.segmentId,
@@ -206,49 +208,56 @@ async function seedHighVolumeLthrEvidence(
   firstRecordedAt: Date,
 ): Promise<void> {
   const evidenceCount = ATHLETE_PERFORMANCE_BATCH_ROW_LIMIT + 1;
-  await db.execute(sql`
-    with generated_evidence as (
+  await db.transaction(async (tx) => {
+    // This fixture validates bounded historical reads, not one trigger invocation per synthetic row.
+    await tx.execute(sql`set local session_replication_role = replica`);
+    await tx.execute(sql`
+      with generated_evidence as (
+        select
+          gen_random_uuid() as id,
+          ${firstRecordedAt}::timestamptz + ordinal * interval '1 millisecond' as recorded_at
+        from generate_series(0, ${evidenceCount - 1}) as ordinal
+      )
+      insert into profile_metrics (
+        id,
+        profile_id,
+        metric_type,
+        recorded_at,
+        unit,
+        value,
+        source,
+        method,
+        calculation_version,
+        provenance,
+        reference_activity_id,
+        created_at,
+        updated_at
+      )
       select
-        gen_random_uuid() as id,
-        ${firstRecordedAt}::timestamptz + ordinal * interval '1 millisecond' as recorded_at
-      from generate_series(0, ${evidenceCount - 1}) as ordinal
-    )
-    insert into profile_metrics (
-      id,
-      profile_id,
-      metric_type,
-      recorded_at,
-      unit,
-      value,
-      source,
-      method,
-      calculation_version,
-      provenance,
-      reference_activity_id,
-      created_at,
-      updated_at
-    )
-    select
-      generated_evidence.id,
-      ${activity.profileId}::uuid,
-      'lthr',
-      generated_evidence.recorded_at,
-      'bpm',
-      170,
-      'derived',
-      'activity_file_lthr_detection',
-      'activity-file-lthr-v1',
-      jsonb_build_object('segment_id', ${activity.segmentId}::text),
-      ${activity.activityId}::uuid,
-      ${seededAt},
-      ${seededAt}
-    from generated_evidence
-  `);
+        generated_evidence.id,
+        ${activity.profileId}::uuid,
+        'lthr',
+        generated_evidence.recorded_at,
+        'bpm',
+        170,
+        'derived',
+        'activity_file_lthr_detection',
+        'activity-file-lthr-v1',
+        jsonb_build_object('segment_id', ${activity.segmentId}::text),
+        ${activity.activityId}::uuid,
+        ${seededAt},
+        ${seededAt}
+      from generated_evidence
+    `);
+  });
 }
 
 afterEach(async () => {
   for (const profileId of seededProfileIds.splice(0)) {
     await db.transaction(async (tx) => {
+      await tx.execute(sql`set local session_replication_role = replica`);
+      await tx.delete(profileMetrics).where(eq(profileMetrics.profile_id, profileId));
+      await tx.execute(sql`set local session_replication_role = origin`);
       await tx.delete(activities).where(eq(activities.profile_id, profileId));
       await tx.execute(
         sql`select set_config('gradientpeak.artifact_lifecycle_authorized', 'on', true)`,
@@ -273,6 +282,56 @@ afterEach(async () => {
 afterAll(async () => pool.end());
 
 describe("athlete performance-model historical batch reads", () => {
+  it("keeps ordinary metrics out of athlete-state freshness while accepted HR evidence advances the source revision", async () => {
+    const profileId = await seedProfile("metric revision lanes");
+    await db.insert(profileMetrics).values({
+      id: randomUUID(),
+      profile_id: profileId,
+      metric_type: "weight_kg",
+      recorded_at: seededAt,
+      unit: "kg",
+      value: 72,
+      source: "manual",
+      created_at: seededAt,
+      updated_at: seededAt,
+    });
+    await expect(
+      db.select().from(profileAthleteState).where(eq(profileAthleteState.profile_id, profileId)),
+    ).resolves.toHaveLength(0);
+
+    const activity = await seedBikeActivity(profileId, "accepted HR evidence", seededAt);
+    await seedLthrEvidence(activity, seededAt);
+    const [state] = await db
+      .select()
+      .from(profileAthleteState)
+      .where(eq(profileAthleteState.profile_id, profileId));
+    expect(state).toMatchObject({
+      source_revision: 1,
+      published_revision: 0,
+      dirty_from_at: seededAt,
+    });
+  });
+
+  it("does not publish current targets from evidence whose parent activity finishes in the future", async () => {
+    const profileId = await seedProfile("future parent activity");
+    const activity = await seedBikeActivity(
+      profileId,
+      "future parent activity",
+      new Date("2026-08-03T00:00:00.000Z"),
+    );
+    await seedCanonicalBikeEffort(activity, new Date("2026-08-01T12:00:00.000Z"));
+    await seedLthrEvidence(activity, new Date("2026-08-01T12:00:00.000Z"));
+    const repository = createAthletePerformanceModelRepository(db);
+    const model = await getAthletePerformanceModelAsOf(
+      { athleteId: profileId, asOf: new Date("2026-08-02T00:00:00.000Z") },
+      repository,
+    );
+    const targets = projectAthletePerformanceTargetFacts(model);
+
+    expect(targets.cycling.planningThresholdPower).toMatchObject({ status: "unavailable" });
+    expect(targets.heartRate.bike.lthr).toMatchObject({ status: "unavailable" });
+  });
+
   it("matches direct reads across athletes, as-of windows, and self-exclusion above the old global cap", async () => {
     const highVolumeAthleteId = await seedProfile("high-volume athlete");
     const otherAthleteId = await seedProfile("other athlete");
@@ -301,6 +360,11 @@ describe("athlete performance-model historical batch reads", () => {
       "other newer",
       otherNewerRecordedAt,
     );
+    const futureFinishedActivity = await seedBikeActivity(
+      otherAthleteId,
+      "future finished",
+      new Date("2026-08-03T00:00:00.000Z"),
+    );
 
     const historicalEffortId = await seedCanonicalBikeEffort(
       historicalActivity,
@@ -317,6 +381,14 @@ describe("athlete performance-model historical batch reads", () => {
       otherNewerRecordedAt,
     );
     const otherNewerLthrId = await seedLthrEvidence(otherNewerActivity, otherNewerRecordedAt);
+    const futureEffortId = await seedCanonicalBikeEffort(
+      futureFinishedActivity,
+      new Date("2026-08-01T12:00:00.000Z"),
+    );
+    const futureLthrId = await seedLthrEvidence(
+      futureFinishedActivity,
+      new Date("2026-08-01T12:00:00.000Z"),
+    );
     await seedHighVolumeLthrEvidence(highVolumeActivity, highVolumeRecordedAt);
 
     const requests: AthletePerformanceModelReadInput[] = [
@@ -365,6 +437,10 @@ describe("athlete performance-model historical batch reads", () => {
       otherNewerLthrId,
       otherOlderLthrId,
     ]);
+    expect(batchReads[2]?.effortReads.bike.rows.map(({ id }) => id)).not.toContain(futureEffortId);
+    expect(batchReads[2]?.heartRateReads.bike.lthr.rows.map(({ id }) => id)).not.toContain(
+      futureLthrId,
+    );
     expect(batchReads[3]?.effortReads.bike.rows.map(({ id }) => id)).toEqual([otherOlderEffortId]);
     expect(batchReads[3]?.heartRateReads.bike.lthr.rows.map(({ id }) => id)).toEqual([
       otherOlderLthrId,

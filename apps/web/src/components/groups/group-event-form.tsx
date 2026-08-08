@@ -1,3 +1,4 @@
+import { formatIsoInstantInIanaZone, scheduledDateTimeToIsoInstant } from "@repo/core/calendar";
 import { Button } from "@repo/ui/components/button";
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
@@ -27,12 +28,22 @@ type GroupEventFormProps = {
   submitLabel: string;
 };
 
-function localDateTime(value?: string | null) {
+function wallDateTime(value: string | null | undefined, timezone: string) {
   if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+  try {
+    return formatIsoInstantInIanaZone(value, timezone);
+  } catch {
+    return "";
+  }
+}
+
+function wallDateTimeToInstant(value: string, timezone: string) {
+  const [scheduledDate, time] = value.split("T");
+  return scheduledDateTimeToIsoInstant({
+    scheduledDate: scheduledDate ?? "",
+    time: time ?? "",
+    timeZone: timezone,
+  });
 }
 
 export function GroupEventForm({
@@ -44,38 +55,43 @@ export function GroupEventForm({
 }: GroupEventFormProps) {
   const routesQuery = api.routes.list.useQuery({ limit: 50, ownerScope: "all" });
   const plansQuery = api.activityPlans.list.useQuery({
-    includeOwnOnly: false,
-    includeSystemTemplates: true,
     includeEstimation: false,
     ownerScope: "all",
     limit: 50,
   });
+  const timezone = useMemo(
+    () => event?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    [event?.timezone],
+  );
   const [title, setTitle] = useState(event?.title ?? "");
   const [description, setDescription] = useState(event?.description ?? "");
   const [startsAt, setStartsAt] = useState(
-    localDateTime(event?.starts_at) ||
-      localDateTime(new Date(Date.now() + 86_400_000).toISOString()),
+    wallDateTime(event?.starts_at, timezone) ||
+      wallDateTime(new Date(Date.now() + 86_400_000).toISOString(), timezone),
   );
-  const [endsAt, setEndsAt] = useState(localDateTime(event?.ends_at));
+  const [endsAt, setEndsAt] = useState(wallDateTime(event?.ends_at, timezone));
   const [locationName, setLocationName] = useState(event?.location_name ?? "");
   const [routeId, setRouteId] = useState(event?.route_id ?? "");
   const [activityPlanId, setActivityPlanId] = useState(event?.activity_plan_id ?? "");
   const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
   const [recurrenceUntil, setRecurrenceUntil] = useState("");
   const [error, setError] = useState<unknown>(null);
-  const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
-
   return (
     <form
       className="space-y-5"
       onSubmit={(submitEvent) => {
         submitEvent.preventDefault();
-        const start = new Date(startsAt);
-        const end = endsAt ? new Date(endsAt) : null;
-        if (Number.isNaN(start.getTime()) || (end && end <= start)) {
-          setError(
-            new Error(end ? "End time must be after start time." : "Choose a valid start time."),
-          );
+        let startInstant: string;
+        let endInstant: string | null;
+        try {
+          startInstant = wallDateTimeToInstant(startsAt, timezone);
+          endInstant = endsAt ? wallDateTimeToInstant(endsAt, timezone) : null;
+        } catch (wallTimeError) {
+          setError(wallTimeError);
+          return;
+        }
+        if (endInstant && Date.parse(endInstant) <= Date.parse(startInstant)) {
+          setError(new Error("End time must be after start time."));
           return;
         }
         if (!event && recurrence !== "none" && !recurrenceUntil) {
@@ -90,8 +106,8 @@ export function GroupEventForm({
         void onSubmit({
           title: title.trim(),
           description: description.trim() || null,
-          startsAt: start.toISOString(),
-          endsAt: end?.toISOString() ?? null,
+          startsAt: startInstant,
+          endsAt: endInstant,
           timezone,
           locationName: locationName.trim() || null,
           routeId: routeId || null,
@@ -101,6 +117,7 @@ export function GroupEventForm({
       }}
     >
       <div className="space-y-2">
+        <p className="text-sm text-muted-foreground">Times use {timezone}.</p>
         <Label htmlFor="group-event-title">Title</Label>
         <Input
           id="group-event-title"

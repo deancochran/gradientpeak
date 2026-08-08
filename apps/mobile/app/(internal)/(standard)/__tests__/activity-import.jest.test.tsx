@@ -290,7 +290,6 @@ describe("activity import screen", () => {
 
     fireEvent.changeText(screen.getByTestId("activity-import-name-input"), " ");
     fireEvent.changeText(screen.getByTestId("activity-import-notes-input"), "n".repeat(5001));
-    fireEvent.changeText(screen.getByTestId("activity-import-type-select"), "pickleball");
     await act(async () => {
       fireEvent.press(screen.getByTestId("activity-import-submit-button"));
     });
@@ -386,7 +385,6 @@ describe("activity import screen", () => {
     expect(screen.getByText("Step 1 of 3: Preparing upload…")).toBeTruthy();
     expect(screen.getByTestId("activity-import-file-input").props.disabled).toBe(true);
     expect(screen.getByTestId("activity-import-name-input").props.editable).toBe(false);
-    expect(screen.getByTestId("activity-import-type-select").props.editable).toBe(false);
     expect(screen.getByTestId("activity-import-notes-input").props.editable).toBe(false);
     expect(screen.getByTestId("activity-import-submit-button").props.disabled).toBe(true);
 
@@ -468,6 +466,34 @@ describe("activity import screen", () => {
     expect(processActivityFileMock).toHaveBeenCalledTimes(1);
   });
 
+  it("shows generic recovery without logging raw manual-import failures", async () => {
+    const privateCanaries = [
+      "file:///private/dean-private.fit",
+      "Dean Private Ride",
+      "https://storage.test/upload?token=super-secret-token",
+    ] as const;
+    processActivityFileMock.mockRejectedValueOnce(new Error(privateCanaries.join(" ")));
+    renderNative(<ActivityImportScreen />);
+    consoleErrorSpy.mockClear();
+    await chooseFile({
+      ...defaultPickedFitFile,
+      name: "dean-private.fit",
+      uri: privateCanaries[0],
+    });
+    fireEvent.changeText(screen.getByTestId("activity-import-name-input"), privateCanaries[1]);
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("activity-import-submit-button"));
+    });
+
+    expect(
+      await screen.findByText(
+        "The activity file could not be imported right now. Please try again.",
+      ),
+    ).toBeTruthy();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+  });
+
   it("keeps terminal success through invalidation/navigation failures and retries navigation only", async () => {
     invalidatePostActivityIngestionQueriesMock.mockRejectedValueOnce(
       new Error("activity cache unavailable"),
@@ -519,7 +545,7 @@ describe("activity import screen", () => {
     expect(processActivityFileMock).toHaveBeenCalledTimes(1);
   });
 
-  it("submits canonical payload and provenance, invalidates caches, and navigates", async () => {
+  it("submits the canonical payload, invalidates caches, and navigates", async () => {
     renderNative(<ActivityImportScreen />);
     await chooseFile();
     fireEvent.changeText(screen.getByTestId("activity-import-name-input"), "  Morning Ride  ");
@@ -534,11 +560,6 @@ describe("activity import screen", () => {
         activityFilePath: "activities/user/uploads/123_morning-ride.fit",
         name: "Morning Ride",
         notes: "From archive",
-        importProvenance: {
-          import_source: "manual_historical",
-          import_file_type: "fit",
-          import_original_file_name: "morning-ride.fit",
-        },
       });
       expect(invalidatePostActivityIngestionQueriesMock).toHaveBeenCalled();
       expect(invalidateActivitiesMock).toHaveBeenCalled();

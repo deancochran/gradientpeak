@@ -36,12 +36,12 @@ export function createFreeRecordingExecutionPlan(
     name,
     structure: {
       version: 3,
+      activity_category,
       segments: [
         {
           id: FREE_RECORDING_SEGMENT_ID,
           role: "activity",
           name,
-          activity_category,
           intervals: [
             {
               id: FREE_RECORDING_INTERVAL_ID,

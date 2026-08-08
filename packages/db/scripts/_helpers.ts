@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
 
 import { config } from "dotenv";
 import {
@@ -11,6 +12,12 @@ import {
 } from "./_local-database-config";
 
 const safeSupabaseCliEnvironment = () => ({ ...process.env });
+const require = createRequire(import.meta.url);
+const supabaseCliEntryPoint = resolve(
+  dirname(require.resolve("supabase/package.json")),
+  "dist",
+  "supabase.js",
+);
 
 export { dbPackageRoot, defaultLocalDatabaseUrl, repoRoot, supabaseCliRoot };
 
@@ -47,7 +54,7 @@ export function runSupabaseCli(
   encoding: "utf8" | undefined = undefined,
 ) {
   try {
-    return execFileSync("pnpm", ["exec", "supabase", "--workdir", workdir, ...args], {
+    return execFileSync(process.execPath, [supabaseCliEntryPoint, "--workdir", workdir, ...args], {
       cwd: supabaseCliRoot,
       env: safeSupabaseCliEnvironment(),
       encoding,

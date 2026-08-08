@@ -1,4 +1,8 @@
-import { createUnavailableAthletePerformanceTargetFacts } from "@repo/core";
+import {
+  athleteStateBaselineSchema,
+  createAthletePlanningContextFromSnapshot,
+  createUnavailableAthletePerformanceTargetFacts,
+} from "@repo/core";
 import React from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
@@ -33,7 +37,7 @@ const activityPlan = {
   id: "11111111-1111-4111-8111-111111111111",
   name: "Aerobic builder",
   created_at: ACTIVITY_PLAN_CREATED_AT,
-  template_visibility: "public",
+  content_visibility: "public",
   is_system_template: false,
   prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
     durationSeconds: 3_600,
@@ -41,8 +45,8 @@ const activityPlan = {
   }),
 };
 
-let mockPreviewCreationConfigData: unknown;
-let mockPreviewCreationConfigError: Error | null;
+let mockAuthoritativePreviewData: unknown;
+let mockAuthoritativePreviewError: Error | null;
 let mockEditPlanError: Error | null;
 let mockPerformanceModelError: Error | null;
 const mockContextRefetch = {
@@ -50,19 +54,27 @@ const mockContextRefetch = {
   profileMetrics: jest.fn(),
   activityEfforts: jest.fn(),
   performanceTargets: jest.fn(),
-  trainingStatus: jest.fn(),
 };
+const mockProjectionRefetch = {
+  baseline: jest.fn(),
+};
+const mockInvalidateProjectionPlanView = jest.fn();
 const mockMutations = {
   create: jest.fn(),
   update: jest.fn(),
 };
-let mockMutationIndex = 0;
 
 const editableTrainingPlan = {
   id: "22222222-2222-4222-8222-222222222222",
   name: "Existing builder plan",
   description: "Edit this plan",
-  template_visibility: "private",
+  content_visibility: "private",
+  revision: 1,
+  structure_hash: `v1:sha256:${"a".repeat(64)}`,
+  editor: {
+    revision: 1,
+    structureHash: `v1:sha256:${"a".repeat(64)}`,
+  },
   structure: {
     id: "22222222-2222-4222-8222-222222222222",
     version: 1,
@@ -75,7 +87,67 @@ const editableTrainingPlan = {
     ],
   },
 };
-
+const projectionBaseline = {
+  contractVersion: "athlete-read-model-v1" as const,
+  profileId: "44444444-4444-4444-8444-444444444444",
+  asOf: FIXTURE_NOW.toISOString(),
+  publishedRevision: 7,
+  algorithmVersion: "athlete-state-projection-v1",
+  status: {
+    freshness: "fresh" as const,
+    rebuildStatus: "fresh" as const,
+    importStatus: "complete" as const,
+  },
+  publishedState: {
+    publishedAt: FIXTURE_NOW.toISOString(),
+  },
+  currentBaseline: {
+    planningTimezone: "UTC",
+    currentPlanningDate: "2026-06-01",
+    baseline: athleteStateBaselineSchema.parse({
+      contractVersion: "athlete-state-projection-v1",
+      athleteId: "44444444-4444-4444-8444-444444444444",
+      stateRevision: 7,
+      asOf: FIXTURE_NOW.toISOString(),
+      longTermLoad: 41,
+      recentLoad: 50,
+      loadBalance: -9,
+      evidenceConfidence: 0.8,
+      capabilities: [],
+      athleteAgeYears: 28,
+    }),
+    planningContext: null as unknown,
+  },
+};
+const creationContext = {
+  asOf: FIXTURE_NOW.toISOString(),
+  profileId: "44444444-4444-4444-8444-444444444444",
+  planningTimezone: "UTC",
+  athleteContext: createAthletePlanningContextFromSnapshot({
+    asOf: FIXTURE_NOW.toISOString(),
+    profile: {
+      dob: "1998-06-01T00:00:00.000Z",
+      gender: "male",
+      preferred_units: "metric",
+    },
+    profileMetrics: [
+      {
+        metric_type: "weight_kg",
+        value: 72,
+        unit: "kg",
+        recorded_at: LATEST_WEIGHT_RECORDED_AT,
+      },
+    ],
+    activityEfforts: [],
+    currentFitness: {
+      longTermLoad: 41,
+      recentLoad: 50,
+      loadBalance: -9,
+      recorded_at: FIXTURE_NOW.toISOString(),
+    },
+    performanceTargets: createUnavailableAthletePerformanceTargetFacts(FIXTURE_NOW.toISOString()),
+  }),
+};
 jest.mock("lucide-react-native", () => {
   const Icon = () => React.createElement("Icon");
   return {
@@ -439,11 +511,14 @@ jest.mock("../BuilderScheduleEditor", () => ({
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
-    useUtils: () => ({ trainingPlans: {} }),
+    useUtils: () => ({
+      trainingPlans: { invalidate: mockInvalidateProjectionPlanView },
+    }),
     profiles: {
       get: {
         useQuery: () => ({
           data: {
+            id: "44444444-4444-4444-8444-444444444444",
             dob: "1998-06-01T00:00:00.000Z",
             full_name: "John Apple",
             gender: "male",
@@ -461,6 +536,25 @@ jest.mock("@/lib/api", () => ({
             : createUnavailableAthletePerformanceTargetFacts(FIXTURE_NOW.toISOString()),
           isError: Boolean(mockPerformanceModelError),
           refetch: mockContextRefetch.performanceTargets,
+        }),
+      },
+    },
+    athleteIntelligence: {
+      getReadModel: {
+        useQuery: () => ({
+          data: mockPerformanceModelError
+            ? undefined
+            : {
+                ...projectionBaseline,
+                currentBaseline: {
+                  ...projectionBaseline.currentBaseline,
+                  planningContext: creationContext.athleteContext,
+                },
+              },
+          error: mockPerformanceModelError,
+          isError: Boolean(mockPerformanceModelError),
+          isLoading: false,
+          refetch: mockProjectionRefetch.baseline,
         }),
       },
     },
@@ -504,25 +598,11 @@ jest.mock("@/lib/api", () => ({
       },
     },
     trainingPlans: {
-      create: {},
-      update: {},
-      getCurrentStatus: {
+      commit: {},
+      preview: {
         useQuery: () => ({
-          data: {
-            asOf: FIXTURE_NOW.toISOString(),
-            longTermLoad: 41,
-            recentLoad: 50,
-            loadBalance: -9,
-          },
-          isLoading: false,
-          isError: false,
-          refetch: mockContextRefetch.trainingStatus,
-        }),
-      },
-      previewCreationConfig: {
-        useQuery: () => ({
-          data: mockPreviewCreationConfigData,
-          error: mockPreviewCreationConfigError,
+          data: mockAuthoritativePreviewData,
+          error: mockAuthoritativePreviewError,
           isFetching: false,
           isLoading: false,
           refetch: jest.fn(),
@@ -574,15 +654,10 @@ jest.mock("@/lib/api", () => ({
 
 jest.mock("@/lib/hooks/useReliableMutation", () => ({
   __esModule: true,
-  useReliableMutation: () => {
-    const keys = ["create", "update"] as const;
-    const key = keys[mockMutationIndex % keys.length];
-    mockMutationIndex += 1;
-    if (key === undefined) {
-      throw new Error("Expected a mutation fixture key");
-    }
-    return { isPending: false, mutateAsync: mockMutations[key] };
-  },
+  useReliableMutation: () => ({
+    isPending: false,
+    mutateAsync: (input: { kind: "create" | "update" }) => mockMutations[input.kind](input),
+  }),
 }));
 
 jest.mock("@/lib/hooks/useDebouncedValue", () => ({
@@ -596,16 +671,22 @@ describe("TrainingPlanBuilderScreen", () => {
     jest.setSystemTime(FIXTURE_NOW);
     activityPlanCardProps.length = 0;
     trainingPathChartProps.length = 0;
-    mockPreviewCreationConfigData = undefined;
-    mockPreviewCreationConfigError = null;
+    mockAuthoritativePreviewData = undefined;
+    mockAuthoritativePreviewError = null;
     mockEditPlanError = null;
     mockPerformanceModelError = null;
     for (const refetch of Object.values(mockContextRefetch)) refetch.mockReset();
-    mockMutationIndex = 0;
-    for (const mutation of Object.values(mockMutations)) {
-      mutation.mockReset();
-      mutation.mockResolvedValue({ id: "created-plan" });
-    }
+    for (const refetch of Object.values(mockProjectionRefetch)) refetch.mockReset();
+    mockInvalidateProjectionPlanView.mockReset();
+    for (const mutation of Object.values(mockMutations)) mutation.mockReset();
+    mockMutations.create.mockResolvedValue({
+      status: "saved",
+      planId: "55555555-5555-4555-8555-555555555555",
+    });
+    mockMutations.update.mockResolvedValue({
+      status: "saved",
+      planId: editableTrainingPlan.id,
+    });
   });
 
   afterEach(() => {
@@ -731,9 +812,9 @@ describe("TrainingPlanBuilderScreen", () => {
   });
 
   it("routes create through the canonical mutation and preserves the authored payload", async () => {
-    mockPreviewCreationConfigData = {
-      projection_chart: { readiness_score: 80, points: [] },
-      preview_snapshot: { token: "snapshot-token" },
+    mockAuthoritativePreviewData = {
+      status: "available",
+      simulation: {},
     };
     renderNative(<TrainingPlanBuilderScreen />);
 
@@ -772,21 +853,26 @@ describe("TrainingPlanBuilderScreen", () => {
     });
     expect(mockMutations.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: "FTP build",
-        structure: expect.objectContaining({
-          sessions: [
-            expect.objectContaining({
-              activity_plan_id: activityPlan.id,
-              offset_days: 0,
-            }),
-          ],
+        kind: "create",
+        basePublishedRevision: projectionBaseline.publishedRevision,
+        draft: expect.objectContaining({
+          name: "FTP build",
+          structure: expect.objectContaining({
+            sessions: [
+              expect.objectContaining({
+                activity_plan_id: activityPlan.id,
+                offset_days: 0,
+              }),
+            ],
+          }),
         }),
       }),
     );
+    expect(mockMutations.create.mock.calls[0]?.[0]).not.toHaveProperty("plannedSessions");
   });
 
-  it("saves a zero-goal plan when the advisory preview errors", async () => {
-    mockPreviewCreationConfigError = new Error("offline");
+  it("allows authoritative commit when preview feedback is unavailable", async () => {
+    mockAuthoritativePreviewError = new Error("offline");
     renderNative(<TrainingPlanBuilderScreen />);
 
     fireEvent.press(screen.getByText("Name your plan"));
@@ -803,12 +889,7 @@ describe("TrainingPlanBuilderScreen", () => {
     });
     fireEvent.press(screen.getByText("Create"));
 
-    await waitFor(() => {
-      expect(mockMutations.create).toHaveBeenCalledTimes(1);
-    });
-    const payload = mockMutations.create.mock.calls[0]?.[0];
-    expect(payload.structure.goal_blueprints).toBeUndefined();
-    expect(payload.structure.builder_planning_snapshot.goal_context.selected_goals).toEqual([]);
+    await waitFor(() => expect(mockMutations.create).toHaveBeenCalledTimes(1));
     expect(screen.getByText("Preview unavailable")).toBeTruthy();
   });
 
@@ -819,7 +900,7 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(screen.getByText("Athlete context unavailable")).toBeTruthy();
     fireEvent.press(screen.getByLabelText("Retry athlete context unavailable"));
 
-    expect(mockContextRefetch.performanceTargets).toHaveBeenCalledTimes(1);
+    expect(mockProjectionRefetch.baseline).toHaveBeenCalledTimes(1);
   });
 
   it("hydrates edit mode into the new builder save flow", async () => {
@@ -833,6 +914,10 @@ describe("TrainingPlanBuilderScreen", () => {
     });
     fireEvent.press(screen.getByText("Existing builder plan"));
     expect(screen.getByLabelText("Private training plan").props.accessibilityState).toEqual({
+      checked: true,
+    });
+    fireEvent.press(screen.getByLabelText("Followers training plan"));
+    expect(screen.getByLabelText("Followers training plan").props.accessibilityState).toEqual({
       checked: true,
     });
     fireEvent.press(screen.getByLabelText("Public training plan"));

@@ -50,22 +50,15 @@ vi.mock("../../../../lib/api/client", () => ({
   api: {
     profiles: { get: { useQuery: () => ({ data: { id: "profile-1" } }) } },
     goals: { list: { useQuery: () => ({ data: { items: [] }, isError: false }) } },
-    events: {
-      list: {
-        useQuery: () => ({
-          data: { items: mocks.events },
-          isError: mocks.eventsError,
-          isLoading: mocks.eventsLoading,
-          refetch: vi.fn(),
-        }),
-      },
-      plannedDaySummary: {
+    calendar: {
+      day: {
         useQuery: (input: Record<string, unknown>) => {
           mocks.summaryInputs.push(input);
           return {
-            data: mocks.plannedDaySummary,
-            isError: mocks.summaryError,
-            isLoading: mocks.summaryLoading,
+            data: { items: mocks.events, plannedLoadSummary: mocks.plannedDaySummary },
+            isError: mocks.eventsError || mocks.summaryError,
+            isLoading: mocks.eventsLoading || mocks.summaryLoading,
+            error: mocks.eventsError || mocks.summaryError ? new Error("Calendar failed") : null,
             refetch: mocks.summaryRefetch,
           };
         },
@@ -132,7 +125,7 @@ describe("CalendarDayPage planned workload", () => {
 
     render(<CalendarDayPage />);
 
-    expect(screen.getByRole("alert").textContent).toContain("Planned workload could not be loaded");
+    expect(screen.getByText("Planned workload could not be loaded.")).toBeTruthy();
     expect(screen.getByText("Run easy")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry planned workload" }));
     expect(mocks.summaryRefetch).toHaveBeenCalledOnce();

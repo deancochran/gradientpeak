@@ -24,7 +24,6 @@ let mockNewUserNoActivities = false;
 const readinessChartPropsMock = jest.fn();
 const projectionChartPropsMock = jest.fn();
 const mockTrainingPathSectionProps = jest.fn();
-const mockDashboardViewModelParams = jest.fn();
 const emptyCommonLoadAggregate = {
   status: "unavailable" as const,
   reason: "no_load_data" as const,
@@ -271,19 +270,15 @@ jest.mock("@/components/plan/training-path/TrainingPathSection", () => ({
   },
 }));
 
-jest.mock("@/components/plan/usePlanDashboardViewModel", () => {
-  const actual = jest.requireActual<typeof import("@/components/plan/usePlanDashboardViewModel")>(
-    "@/components/plan/usePlanDashboardViewModel",
-  );
-  return {
-    __esModule: true,
-    ...actual,
-    usePlanDashboardViewModel: (params: Parameters<typeof actual.usePlanDashboardViewModel>[0]) => {
-      mockDashboardViewModelParams(params);
-      return actual.usePlanDashboardViewModel(params);
-    },
-  };
-});
+jest.mock("@/components/plan/training-path/useScrollableTrainingPathWindow", () => ({
+  __esModule: true,
+  useScrollableTrainingPathWindow: () => ({
+    resolvedWeekWindow: { start: "2026-03-30", end: "2026-10-04" },
+    extendWindowEnd: jest.fn(),
+    extendWindowStart: jest.fn(),
+    resetWindow: jest.fn(),
+  }),
+}));
 
 jest.mock("@/components/shared", () => ({
   __esModule: true,
@@ -477,6 +472,21 @@ jest.mock("@/lib/hooks/useProfileSettings", () => ({
 jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
   __esModule: true,
   useTrainingPlanSnapshot: () => ({
+    status: {
+      asOf: "2026-04-05T12:00:00.000Z",
+      loadHistory: {
+        result: {
+          status: "unavailable",
+          policyVersion: "common_load_history_v1",
+          reason: "insufficient_history",
+        },
+      },
+    },
+    actualCurveData: { dataPoints: [] },
+    loading: { actualCurve: false },
+    errors: { actualCurve: null },
+    hasAnyError: false,
+    refetchers: { actualCurve: jest.fn(async () => undefined) },
     idealCurveData: {
       startCTL: 40,
       targetCTL: 50,
@@ -827,13 +837,48 @@ jest.mock("@/lib/api", () => ({
   api: {
     useUtils: () => ({
       trainingPlans: { invalidate: jest.fn() },
-      events: { list: { invalidate: jest.fn() }, invalidate: jest.fn() },
+      events: { invalidate: jest.fn() },
+      calendar: { invalidate: jest.fn() },
       profileSettings: { getForProfile: { invalidate: jest.fn() } },
       goals: { list: { invalidate: jest.fn() } },
     }),
     trainingPlans: {
-      getActualCurve: {
-        useQuery: () => ({ data: { dataPoints: [] }, isFetching: false, isLoading: false }),
+      getPlanTabProjection: {
+        useQuery: (_input: unknown, options: QueryOptions) => {
+          activePlanQueryOptionsRef.current = options;
+          return {
+            data: {
+              contractVersion: "plan-tab-projection-v1",
+              asOf: "2026-04-05T12:00:00.000Z",
+              planningTimezone: "America/Los_Angeles",
+              today: "2026-04-05",
+              currentScheduledPlan: null,
+              timeline: {
+                startDate: "2026-03-30",
+                endDate: "2026-04-12",
+                today: "2026-04-05",
+                days: [],
+                weeks: [],
+              },
+              dayLoads: {},
+              fitness: { actual: [], scheduled: [], recommended: [] },
+              recommendationPoints: [],
+              sourceCoverage: { activities: null, scheduledItems: null },
+              goalMarkers: mockGoals.map((goal) => ({
+                id: goal.id,
+                label: goal.title,
+                targetDate: goal.target_date,
+                activityCategory: goal.activity_category,
+              })),
+              publishedRevision: null,
+              algorithmVersion: null,
+            },
+            isError: false,
+            isFetching: false,
+            isLoading: false,
+            refetch: jest.fn(async () => undefined),
+          };
+        },
       },
       getEffectiveLoad: {
         useQuery: () => ({
@@ -867,15 +912,15 @@ jest.mock("@/lib/api", () => ({
         }),
       },
     },
-    events: {
-      list: {
+    calendar: {
+      range: {
         useInfiniteQuery: (
-          input: { date_from?: string; date_to?: string },
+          input: { startDate?: string; endDateExclusive?: string },
           options: QueryOptions,
         ) => {
           eventQueryOptionsRef.current.push(options);
           const items =
-            input?.date_from && input?.date_to
+            input?.startDate && input?.endDateExclusive
               ? [
                   {
                     id: "event-1",
@@ -894,6 +939,8 @@ jest.mock("@/lib/api", () => ({
           };
         },
       },
+    },
+    events: {
       create: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
       update: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
     },
@@ -913,14 +960,6 @@ jest.mock("@/lib/api", () => ({
       },
     },
     activities: {
-      commonLoadHistory: {
-        useQuery: () => ({
-          data: { status: "unavailable", reason: "insufficient_history" },
-          isFetching: false,
-          isLoading: false,
-          refetch: jest.fn(async () => undefined),
-        }),
-      },
       dailyCommonLoadObservations: {
         useQuery: () => ({
           data: { observations: [] },
@@ -971,7 +1010,6 @@ describe("plan dashboard navigation", () => {
     readinessChartPropsMock.mockClear();
     projectionChartPropsMock.mockClear();
     mockTrainingPathSectionProps.mockClear();
-    mockDashboardViewModelParams.mockClear();
     mockDetailDateRange = "90d";
     mockNewUserNoActivities = false;
     mockGoals = defaultMockGoals;
@@ -991,54 +1029,6 @@ describe("plan dashboard navigation", () => {
     }
   });
 
-  it("refreshes the projection snapshot when planned events change", async () => {
-    const view = renderNative(<PlanScreenWithErrorBoundary />);
-
-    await React.act(async () => undefined);
-    refetchActivePlanMock.mockClear();
-    refetchSnapshotMock.mockClear();
-
-    expect(refetchActivePlanMock).not.toHaveBeenCalled();
-    expect(refetchSnapshotMock).not.toHaveBeenCalled();
-
-    await React.act(async () => {
-      recentEventsUpdatedAtRef.current += 1;
-      upcomingEventsUpdatedAtRef.current += 1;
-      view.rerender(<PlanScreenWithErrorBoundary />);
-    });
-
-    expect(refetchActivePlanMock).toHaveBeenCalledTimes(1);
-    expect(refetchSnapshotMock).toHaveBeenCalledTimes(1);
-    await React.act(async () => {
-      view.rerender(<PlanScreenWithErrorBoundary />);
-    });
-    expect(refetchActivePlanMock).toHaveBeenCalledTimes(1);
-    expect(refetchSnapshotMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("refreshes the projection snapshot when goals change", async () => {
-    const view = renderNative(<PlanScreenWithErrorBoundary />);
-
-    await React.act(async () => undefined);
-    refetchActivePlanMock.mockClear();
-    refetchSnapshotMock.mockClear();
-
-    expect(refetchSnapshotMock).not.toHaveBeenCalled();
-
-    await React.act(async () => {
-      goalsUpdatedAtRef.current += 1;
-      view.rerender(<PlanScreenWithErrorBoundary />);
-    });
-
-    expect(refetchActivePlanMock).toHaveBeenCalledTimes(1);
-    expect(refetchSnapshotMock).toHaveBeenCalledTimes(1);
-    await React.act(async () => {
-      view.rerender(<PlanScreenWithErrorBoundary />);
-    });
-    expect(refetchActivePlanMock).toHaveBeenCalledTimes(1);
-    expect(refetchSnapshotMock).toHaveBeenCalledTimes(1);
-  });
-
   it("renders the training path section on the plan tab", () => {
     renderNative(<PlanScreenWithErrorBoundary />);
 
@@ -1053,9 +1043,6 @@ describe("plan dashboard navigation", () => {
         onOpenScheduledEvent: expect.any(Function),
         onSelectedWeekChange: expect.any(Function),
       }),
-    );
-    expect(mockDashboardViewModelParams).toHaveBeenCalledWith(
-      expect.objectContaining({ includeGoalReadiness: false }),
     );
   });
 

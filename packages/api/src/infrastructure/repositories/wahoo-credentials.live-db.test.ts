@@ -5,8 +5,8 @@ import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveWahooCredentials } from "../../lib/integrations/wahoo/credentials";
 import { encryptProviderToken } from "../../lib/provider-token-crypto";
-import { createProviderSyncRepository } from "./drizzle-provider-sync-repository";
 import { createWahooRepository } from "./drizzle-wahoo-repository";
+import { createWahooSyncRepository } from "./drizzle-wahoo-sync-repository";
 
 const userIds: string[] = [];
 const testKey = Buffer.alloc(32, 7).toString("base64");
@@ -112,7 +112,7 @@ describe("Wahoo credential PostgreSQL CAS", () => {
     const disconnectFirst = await seedWahooCredentials();
     const refreshFirst = await seedWahooCredentials();
     const credentials = createWahooRepository({ db });
-    const lifecycle = createProviderSyncRepository({ db });
+    const lifecycle = createWahooSyncRepository({ db });
     const staleDisconnectFirst = await credentials.findWahooIntegrationByProfileId(
       disconnectFirst.profileId,
     );

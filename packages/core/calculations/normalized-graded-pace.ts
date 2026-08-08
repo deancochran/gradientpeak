@@ -303,28 +303,6 @@ export function calculateGradeAdjustedSpeedSeries(input: {
   });
 }
 
-/**
- * Compatibility adapter for callers that need the grade-adjusted stream before
- * normalization. Unsafe timestamp ordering is rejected rather than compacted.
- */
-export function calculateGradedSpeedStream(
-  speedStream: readonly number[],
-  elevationStream: readonly number[],
-  timestamps: readonly number[],
-): number[] {
-  const projected = calculateGradeAdjustedSpeedSeries({
-    speedMetersPerSecond: speedStream,
-    elevationMeters: elevationStream,
-    timestampsSeconds: timestamps,
-  });
-  return projected.map((sample) => {
-    if (sample.value === null) {
-      throw new Error("Grade-adjusted speed stream requires ordered, fully aligned evidence");
-    }
-    return sample.value;
-  });
-}
-
 /** Calculates versioned NGP from an already grade-adjusted timestamped stream. */
 export function calculateNGPResult(
   gradedSpeedStream: readonly (number | null)[],
@@ -354,15 +332,4 @@ export function calculateNGPResult(
     ...(config === undefined ? {} : { config }),
   });
   return mapNormalizedSeriesResult(result);
-}
-
-/** Numeric compatibility view. Unavailable NGP remains `null`, never zero. */
-export function calculateNGP(
-  gradedSpeedStream: readonly (number | null)[],
-  timestampsSeconds: readonly number[],
-  config?: NormalizedSeriesConfig,
-  includedStream?: readonly boolean[],
-): number | null {
-  const result = calculateNGPResult(gradedSpeedStream, timestampsSeconds, config, includedStream);
-  return result.status === "unavailable" ? null : result.valueMetersPerSecond;
 }

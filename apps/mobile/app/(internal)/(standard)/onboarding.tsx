@@ -65,7 +65,6 @@ export default function OnboardingScreen() {
           <CurrentStep
             data={flow.data}
             fieldSources={flow.fieldSources}
-            onClearProviderRequirement={flow.clearProviderRequirement}
             onRefreshIntegrations={flow.refreshIntegrationState}
             onRetryProviderSync={flow.retryProviderSync}
             providerSyncStatus={flow.providerSyncStatus}

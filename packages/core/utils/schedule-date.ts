@@ -95,33 +95,46 @@ export function isValidIanaTimeZone(timeZone: string): boolean {
   }
 }
 
-/**
- * Derives an event's local YYYY-MM-DD anchor from an ISO instant.
- * Missing or unsupported time zones intentionally fall back to UTC.
- */
-export function getScheduledDateKey(isoInstant: string, timeZone?: string | null): string {
-  const instant = new Date(isoInstant);
-  if (Number.isNaN(instant.getTime())) {
-    throw new RangeError("isoInstant must be a valid ISO instant");
+/** Canonicalizes an explicitly offset UTC instant without consulting device locale. */
+export function canonicalUtcInstant(isoInstant: string): string {
+  if (!/(?:Z|[+-]\d{2}:\d{2})$/.test(isoInstant)) {
+    throw new RangeError("isoInstant must include an explicit UTC offset");
   }
+  const instant = new Date(isoInstant);
+  if (Number.isNaN(instant.getTime())) throw new RangeError("isoInstant must be valid");
+  return instant.toISOString();
+}
 
-  const resolvedTimeZone = timeZone && isValidIanaTimeZone(timeZone) ? timeZone : "UTC";
-  const local = getLocalDateTime(instant, resolvedTimeZone);
+/** Derives a calendar date in one required IANA zone; no fallback is applied. */
+export function getCalendarDateInIanaZone(isoInstant: string, timeZone: string): string {
+  if (!isValidIanaTimeZone(timeZone)) throw new RangeError("timeZone must be a valid IANA zone");
+  const instant = new Date(canonicalUtcInstant(isoInstant));
+  const local = getLocalDateTime(instant, timeZone);
   return `${String(local.year).padStart(4, "0")}-${String(local.month).padStart(2, "0")}-${String(
     local.day,
   ).padStart(2, "0")}`;
 }
 
-/** Derives the event-zone wall-clock HH:mm time from an ISO instant. */
-export function getScheduledTime(isoInstant: string, timeZone?: string | null): string {
-  const instant = new Date(isoInstant);
-  if (Number.isNaN(instant.getTime())) {
-    throw new RangeError("isoInstant must be a valid ISO instant");
-  }
+/** Formats an explicit instant as a `YYYY-MM-DDTHH:mm` wall time in one required IANA zone. */
+export function formatIsoInstantInIanaZone(isoInstant: string, timeZone: string): string {
+  if (!isValidIanaTimeZone(timeZone)) throw new RangeError("timeZone must be a valid IANA zone");
+  const instant = new Date(canonicalUtcInstant(isoInstant));
+  const local = getLocalDateTime(instant, timeZone);
+  return `${String(local.year).padStart(4, "0")}-${String(local.month).padStart(2, "0")}-${String(
+    local.day,
+  ).padStart(2, "0")}T${String(local.hour).padStart(2, "0")}:${String(local.minute).padStart(
+    2,
+    "0",
+  )}`;
+}
 
-  const resolvedTimeZone = timeZone && isValidIanaTimeZone(timeZone) ? timeZone : "UTC";
-  const local = getLocalDateTime(instant, resolvedTimeZone);
-  return `${String(local.hour).padStart(2, "0")}:${String(local.minute).padStart(2, "0")}`;
+export function getCalendarDateInUtc(isoInstant: string): string {
+  return getCalendarDateInIanaZone(isoInstant, "UTC");
+}
+
+/** Device-local is explicit: callers must supply the device's resolved IANA zone. */
+export function getCalendarDateInDeviceZone(isoInstant: string, deviceTimeZone: string): string {
+  return getCalendarDateInIanaZone(isoInstant, deviceTimeZone);
 }
 
 /**
@@ -173,4 +186,17 @@ export function scheduledDateTimeToIsoInstant({
     throw new RangeError("The local wall time could not be resolved");
   }
   return match.toISOString();
+}
+
+/** Resolves the final millisecond of a local calendar date in an explicit IANA zone. */
+export function endOfScheduledDateToIsoInstant(input: {
+  scheduledDate: string;
+  timeZone: string;
+}): string {
+  const finalMinute = scheduledDateTimeToIsoInstant({
+    scheduledDate: input.scheduledDate,
+    time: "23:59",
+    timeZone: input.timeZone,
+  });
+  return new Date(Date.parse(finalMinute) + 59_999).toISOString();
 }

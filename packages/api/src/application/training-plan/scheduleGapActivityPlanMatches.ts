@@ -97,9 +97,7 @@ function readCanonicalPlanActivityCategory(
 ): CanonicalActivityCategory | null {
   const parsed = activityPlanStructureSchema.safeParse(plan.structure);
   if (!parsed.success) return null;
-  return (
-    parsed.data.segments.find((segment) => segment.role === "activity")?.activity_category ?? null
-  );
+  return parsed.data.activity_category;
 }
 
 export function buildScheduleGapActivityPlanMatches(input: {

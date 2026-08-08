@@ -2,29 +2,21 @@ import {
   activityDerivedMetricsSchema,
   activityListDerivedSummarySchema,
   activityObservationQuantificationBundleSchema,
-  completedActivitySegmentSetSchema,
   completedSegmentSummarySchema,
   contentVisibilitySchema,
   ianaTimezoneSchema,
 } from "@repo/core";
-import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import { commonLoadAggregateSchema, commonLoadResultSchema } from "@repo/core/load";
 import {
-  commonLoadAggregateSchema,
-  commonLoadHistoryResultSchema,
-  commonLoadResultSchema,
-} from "@repo/core/load";
-import {
-  activities,
-  activityPlans,
-  events,
-  profiles,
+  activityEfforts,
   publicActivitiesRowSchema,
   publicActivityCategorySchema,
+  publicActivityEffortsRowSchema,
   publicActivityPlansRowSchema,
   publicActivitySegmentsRowSchema,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { activityCompositionModeSchema } from "../application/activities/activity-discovery";
 import {
@@ -39,23 +31,17 @@ import {
   DailyCommonLoadActivityLimitExceededError,
   getDailyCommonLoadObservations,
 } from "../application/activities/daily-common-load-observations";
-import { readCurrentProfileCommonLoadHistory } from "../application/activities/read-current-profile-common-load-history";
 import {
   recordSessionRpe,
   SessionRpeEvidenceConflictError,
   SessionRpeEvidenceNotFoundError,
 } from "../application/activities/record-session-rpe";
-import { submitActivity } from "../application/activities/submit-activity";
 import {
   MobileRecordingSubmissionError,
   submitMobileRecording,
 } from "../application/activities/submit-mobile-recording";
-import { verifyAcceptedActivityArtifact } from "../application/activity-file-ingestion/artifact-storage";
 import { MobileRecordingUploadError } from "../application/activity-file-ingestion/mobile-recording-upload";
-import {
-  recordingAcceptedArtifactSchema,
-  recordingSummarySubmissionInputSchema,
-} from "../contracts/recording-submission";
+import { recordingSummarySubmissionInputSchema } from "../contracts/recording-submission";
 import { getRequiredDb } from "../db";
 import { getActivityArtifactStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -67,9 +53,14 @@ const activityTimestampSchema = z.coerce.date();
 
 const activityRowSchema = publicActivitiesRowSchema
   .omit({
-    normalized_graded_speed_mps: true,
-    efficiency_factor: true,
-    aerobic_decoupling: true,
+    athlete_state_common_load: true,
+    athlete_state_activity_category: true,
+    athlete_state_evidence_confidence: true,
+    athlete_state_capability_distance_meters: true,
+    athlete_state_capability_duration_minutes: true,
+    athlete_state_input_version: true,
+    athlete_state_computed_at: true,
+    canonical_evidence_tier: true,
   })
   .extend({
     created_at: activityTimestampSchema,
@@ -239,6 +230,7 @@ const listPaginatedInputSchema = z
   .object({
     limit: z.number().int().min(1).max(50).default(25),
     cursor: indexCursorSchema.optional(),
+    importRunId: z.string().uuid().optional(),
     direction: z.enum(["forward", "backward"]).optional(),
     activity_category: publicActivityCategorySchema.optional(),
     composition_mode: activityCompositionModeSchema.default("include_multisport"),
@@ -247,13 +239,6 @@ const listPaginatedInputSchema = z
     date_to: isoDatetimeSchema.optional(),
     sort_by: z.enum(["date", "distance", "duration", "common_load"]).default("date"),
     sort_order: z.enum(["asc", "desc"]).default("desc"),
-  })
-  .strict();
-
-const commonLoadHistoryInputSchema = z
-  .object({
-    current_planning_date: z.iso.date(),
-    planning_timezone: ianaTimezoneSchema,
   })
   .strict();
 
@@ -300,66 +285,6 @@ const dailyCommonLoadObservationsOutputSchema = z
     ),
   })
   .strict();
-
-async function resolveAcceptedArtifact(
-  profileId: string,
-  artifact: z.infer<typeof recordingAcceptedArtifactSchema>,
-) {
-  try {
-    return await verifyAcceptedActivityArtifact(getActivityArtifactStorageService(), {
-      profileId,
-      ...artifact,
-    });
-  } catch (cause) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "Accepted activity artifact could not be verified",
-      cause,
-    });
-  }
-}
-
-const activityParentSummarySchema = z
-  .object({
-    distanceMeters: z.number().int().nonnegative().default(0),
-    calories: z.number().int().nonnegative().nullable().optional(),
-    elevationGainMeters: z.number().nonnegative().nullable().optional(),
-    avgTemperature: z.number().finite().nullable().optional(),
-    poolLengthMeters: z.number().positive().nullable().optional(),
-  })
-  .strict()
-  .default({ distanceMeters: 0 });
-
-const createInputSchema = z
-  .object({
-    profile_id: z.string().uuid(),
-    eventId: z.string().uuid().optional().nullable(),
-    name: z.string().trim().min(1),
-    notes: z.string().nullable().optional(),
-    startedAt: isoDatetimeSchema,
-    finishedAt: isoDatetimeSchema,
-    content_visibility: contentVisibilitySchema.optional(),
-    segmentSet: completedActivitySegmentSetSchema,
-    acceptedArtifact: recordingAcceptedArtifactSchema,
-    summary: activityParentSummarySchema,
-  })
-  .strict()
-  .superRefine((data, context) => {
-    const elapsedMs = new Date(data.finishedAt).getTime() - new Date(data.startedAt).getTime();
-    if (elapsedMs <= 0) {
-      context.addIssue({
-        code: "custom",
-        message: "finishedAt must be after startedAt",
-        path: ["finishedAt"],
-      });
-    } else if (data.segmentSet.elapsedMs !== elapsedMs) {
-      context.addIssue({
-        code: "custom",
-        message: "segmentSet elapsedMs must match the parent activity time range",
-        path: ["segmentSet", "elapsedMs"],
-      });
-    }
-  });
 
 const getByIdInputSchema = z.object({ id: z.string().uuid() }).strict();
 
@@ -427,48 +352,6 @@ function sessionRpeEvidenceResponse(evidence: Awaited<ReturnType<typeof recordSe
   });
 }
 
-function aggregateSegmentTiming(segmentSet: z.infer<typeof completedActivitySegmentSetSchema>) {
-  const timings = segmentSet.segments.map((segment) => segment.summary.timing);
-  const complete = timings.every((timing) => timing.timingCoverage === "complete");
-  return {
-    activeMs: complete
-      ? timings.reduce(
-          (sum, timing) => sum + ("activeMs" in timing ? (timing.activeMs ?? 0) : 0),
-          0,
-        )
-      : null,
-    movingMs: complete
-      ? timings.reduce(
-          (sum, timing) => sum + ("movingMs" in timing ? (timing.movingMs ?? 0) : 0),
-          0,
-        )
-      : null,
-    timingCoverage: complete ? ("complete" as const) : ("partial" as const),
-  };
-}
-
-async function getProfileDefaultContentVisibility(
-  db: ReturnType<typeof getRequiredDb>,
-  profileId: string,
-) {
-  let profile: { defaultContentVisibility: "private" | "followers" | "public" } | undefined;
-  try {
-    [profile] = await db
-      .select({ defaultContentVisibility: profiles.default_content_visibility })
-      .from(profiles)
-      .where(eq(profiles.id, profileId))
-      .limit(1);
-  } catch {
-    if (process.env.NODE_ENV === "test") return "private";
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Failed to load profile defaults",
-    });
-  }
-
-  return profile?.defaultContentVisibility ?? "private";
-}
-
 const _totalRowSchema = z.object({ total: z.union([z.number(), z.string()]) }).strict();
 
 const _likeRowSchema = z.object({ entity_id: z.string().uuid() }).strict();
@@ -478,12 +361,7 @@ function parseActivityRow(value: unknown) {
     return activityRowSchema.parse(value);
   }
   const currentFields = Object.fromEntries(
-    Object.entries(value).filter(
-      ([key]) =>
-        key !== "normalized_graded_speed_mps" &&
-        key !== "efficiency_factor" &&
-        key !== "aerobic_decoupling",
-    ),
+    Object.entries(value).filter(([key]) => key !== "canonical_evidence_tier"),
   );
   return activityRowSchema.parse(currentFields);
 }
@@ -493,27 +371,6 @@ function _parseActivityRows(value: unknown[]) {
 }
 
 export const activitiesRouter = createTRPCRouter({
-  commonLoadHistory: protectedProcedure
-    .input(commonLoadHistoryInputSchema.optional())
-    .output(commonLoadHistoryResultSchema)
-    .query(async ({ ctx, input }) => {
-      const history = await readCurrentProfileCommonLoadHistory({
-        db: getRequiredDb(ctx),
-        profileId: ctx.session.user.id,
-      });
-      if (
-        input &&
-        (input.planning_timezone !== history.planningTimezone ||
-          input.current_planning_date !== history.currentPlanningDate)
-      ) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Common Load history input must match the profile planning timezone and date",
-        });
-      }
-      return history.result;
-    }),
-
   dailyCommonLoadObservations: protectedProcedure
     .input(dailyCommonLoadObservationsInputSchema)
     .output(dailyCommonLoadObservationsOutputSchema)
@@ -553,132 +410,6 @@ export const activitiesRouter = createTRPCRouter({
         .parse(result);
     }),
 
-  // Simplified: Just create the activity first
-  create: protectedProcedure.input(createInputSchema).mutation(async ({ input, ctx }) => {
-    const db = getRequiredDb(ctx);
-
-    if (input.profile_id !== ctx.session.user.id) {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "Cannot create activities for other profiles",
-      });
-    }
-
-    const contentVisibility =
-      input.content_visibility ?? (await getProfileDefaultContentVisibility(db, input.profile_id));
-
-    let linkedActivityPlanId: string | null = null;
-    if (input.eventId) {
-      const [linkedEvent] = await db
-        .select({
-          activity_plan_id: events.activity_plan_id,
-          activity_plan: activityPlans,
-        })
-        .from(events)
-        .leftJoin(activityPlans, eq(events.activity_plan_id, activityPlans.id))
-        .where(
-          and(
-            eq(events.id, input.eventId),
-            eq(events.profile_id, ctx.session.user.id),
-            eq(events.event_type, "planned"),
-          ),
-        )
-        .limit(1);
-
-      if (!linkedEvent) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Linked event not found.",
-        });
-      }
-
-      if (linkedEvent.activity_plan_id) {
-        const parsedPlan = linkedEvent.activity_plan
-          ? activityPlanStructureSchema.safeParse(linkedEvent.activity_plan.structure)
-          : null;
-        if (!parsedPlan?.success) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Linked event plan is not available for recording",
-          });
-        }
-      }
-
-      linkedActivityPlanId = linkedEvent.activity_plan_id;
-    }
-
-    const activitySegment = input.segmentSet.segments.find(
-      (segment) => segment.role === "activity",
-    );
-    if (!activitySegment) {
-      throw new TRPCError({ code: "BAD_REQUEST", message: "An activity segment is required" });
-    }
-    const timing = aggregateSegmentTiming(input.segmentSet);
-    const acceptedArtifact = await resolveAcceptedArtifact(
-      input.profile_id,
-      input.acceptedArtifact,
-    );
-
-    const { id: createdActivityId } = await submitActivity(db, {
-      profileId: input.profile_id,
-      activityPlanId: linkedActivityPlanId,
-      name: input.name,
-      notes: input.notes ?? null,
-      contentVisibility,
-      startedAt: new Date(input.startedAt),
-      finishedAt: new Date(input.finishedAt),
-      elapsedMs: input.segmentSet.elapsedMs,
-      activeMs: timing.activeMs,
-      movingMs: timing.movingMs,
-      timingCoverage: timing.timingCoverage,
-      segmentSet: input.segmentSet,
-      distanceMeters: input.summary.distanceMeters,
-      calories: input.summary.calories ?? null,
-      elevationGainMeters: input.summary.elevationGainMeters ?? null,
-      avgHeartRate: null,
-      maxHeartRate: null,
-      avgPower: null,
-      maxPower: null,
-      avgCadence: null,
-      maxCadence: null,
-      avgSpeedMps: null,
-      maxSpeedMps: null,
-      normalizedSpeedMps: null,
-      avgTemperature: input.summary.avgTemperature ?? null,
-      poolLengthMeters: input.summary.poolLengthMeters ?? null,
-      deviceManufacturer: null,
-      deviceProduct: null,
-      laps: null,
-      mapBounds: null,
-      polyline: null,
-      analysis: {
-        efforts: [],
-        detectedLTHR: null,
-        ingestion: {
-          source: "manual_import",
-          operationKey: `activity-create:${acceptedArtifact.sha256}`,
-          artifact: acceptedArtifact,
-          fileType: acceptedArtifact.format,
-        },
-      },
-    });
-
-    const createdActivity = await db.query.activities.findFirst({
-      where: eq(activities.id, createdActivityId),
-    });
-
-    if (!createdActivity) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to load created activity",
-      });
-    }
-
-    const data = parseActivityRow(createdActivity);
-
-    return data;
-  }),
-
   createFromRecordingSummary: protectedProcedure
     .input(recordingSummarySubmissionInputSchema)
     .mutation(async ({ input, ctx }) => {
@@ -698,7 +429,6 @@ export const activitiesRouter = createTRPCRouter({
             status: result.ingestion.status,
             source: result.ingestion.source,
           },
-          acceptedArtifact: result.acceptedArtifact,
         };
       } catch (error) {
         if (error instanceof MobileRecordingSubmissionError) {
@@ -740,6 +470,29 @@ export const activitiesRouter = createTRPCRouter({
       }),
     );
   }),
+
+  getEfforts: protectedProcedure
+    .input(getByIdInputSchema)
+    .output(publicActivityEffortsRowSchema.array())
+    .query(async ({ input, ctx }) => {
+      const db = getRequiredDb(ctx);
+      const activityView = await getActivityByIdForViewer({
+        db,
+        activityId: input.id,
+        viewerId: ctx.session.user.id,
+      });
+      const rows = await db
+        .select()
+        .from(activityEfforts)
+        .where(
+          and(
+            eq(activityEfforts.activity_id, input.id),
+            eq(activityEfforts.profile_id, activityView.activity.profile_id),
+          ),
+        )
+        .orderBy(desc(activityEfforts.recorded_at), desc(activityEfforts.duration_seconds));
+      return publicActivityEffortsRowSchema.array().parse(rows);
+    }),
 
   // Update activity (e.g., to set metrics after calculation)
   update: protectedProcedure.input(updateInputSchema).mutation(async ({ ctx, input }) => {

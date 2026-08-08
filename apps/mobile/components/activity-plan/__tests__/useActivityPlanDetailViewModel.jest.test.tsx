@@ -35,12 +35,12 @@ describe("useActivityPlanDetailViewModel", () => {
             }),
             structure: {
               version: 3,
+              activity_category: "run",
               segments: [
                 {
                   id: "00000000-0000-4000-8000-000000000001",
                   role: "activity",
                   name: "Run",
-                  activity_category: "run",
                   intervals: [
                     {
                       id: "00000000-0000-4000-8000-000000000002",

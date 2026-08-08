@@ -42,17 +42,43 @@ const mockActivityAnalysis = vi.hoisted(() => ({
   resolveActivityContextAsOf: vi.fn(),
   loadActivitySegmentsByActivityId: vi.fn(),
 }));
-const mockArtifactStorage = vi.hoisted(() => ({
-  verifyAcceptedActivityArtifact: vi.fn(),
+const mobileUploadFlow = vi.hoisted(() => ({
+  loadAcceptedArtifactForClaim: vi.fn(),
+  markPreparedMobileRecordingArtifactFailed: vi.fn(),
+  prepareMobileRecordingArtifact: vi.fn(),
+  retryMobileRecordingStagingCleanup: vi.fn(),
 }));
+const artifactFinalizer = vi.hoisted(() => ({ finalizeActivityArtifactIngestion: vi.fn() }));
 
-vi.mock("../../application/activity-file-ingestion/artifact-storage", async (importOriginal) => ({
-  ...(await importOriginal<
-    typeof import("../../application/activity-file-ingestion/artifact-storage")
-  >()),
-  verifyAcceptedActivityArtifact: mockArtifactStorage.verifyAcceptedActivityArtifact,
-}));
+vi.mock(
+  "../../application/activity-file-ingestion/mobile-recording-upload",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("../../application/activity-file-ingestion/mobile-recording-upload")
+    >()),
+    loadAcceptedArtifactForClaim: mobileUploadFlow.loadAcceptedArtifactForClaim,
+    markPreparedMobileRecordingArtifactFailed:
+      mobileUploadFlow.markPreparedMobileRecordingArtifactFailed,
+    prepareMobileRecordingArtifact: mobileUploadFlow.prepareMobileRecordingArtifact,
+    retryMobileRecordingStagingCleanup: mobileUploadFlow.retryMobileRecordingStagingCleanup,
+  }),
+);
+vi.mock(
+  "../../application/activity-file-ingestion/finalize-activity-artifact-ingestion",
+  () => artifactFinalizer,
+);
 vi.mock("../../storage-service", () => ({ getActivityArtifactStorageService: () => ({}) }));
+vi.mock("../../application/athlete-intelligence/athlete-state-evidence", () => ({
+  materializeActivityAthleteStateEvidence: vi.fn().mockResolvedValue({
+    commonLoad: null,
+    confidence: null,
+    materialChanged: false,
+  }),
+}));
+vi.mock("../../repositories/athlete-state-repository", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../repositories/athlete-state-repository")>()),
+  markAthleteStateDirty: vi.fn(async () => 1),
+}));
 
 vi.mock("@repo/core", async () => {
   const actual = await vi.importActual<typeof import("@repo/core")>("@repo/core");
@@ -91,9 +117,9 @@ const OTHER_ID = "22222222-2222-4222-8222-222222222222";
 const ACTIVITY_ID = "33333333-3333-4333-8333-333333333333";
 const ACTIVITY_ID_2 = "44444444-4444-4444-8444-444444444444";
 const ACTIVITY_ID_3 = "55555555-5555-4555-8555-555555555555";
-const EVENT_ID = "66666666-6666-4666-8666-666666666666";
 const PLAN_ID = "77777777-7777-4777-8777-777777777777";
 const SEGMENT_ID = "99999999-9999-4999-8999-999999999999";
+const INGESTION_ID = "88888888-8888-4888-8888-888888888888";
 const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
 const ACCEPTED_ARTIFACT = {
   sha256: "a".repeat(64),
@@ -105,39 +131,13 @@ const ACCEPTED_ARTIFACT = {
   originalName: "accepted.fit",
 };
 
-function singleSegmentSet(activity_category: "run" | "bike" | "swim", elapsedMs = 3_600_000) {
-  return {
-    version: 1 as const,
-    elapsedMs,
-    segments: [
-      {
-        id: SEGMENT_ID,
-        ordinal: 0,
-        role: "activity" as const,
-        activity_category,
-        startOffsetMs: 0,
-        endOffsetMs: elapsedMs,
-        summary: {
-          version: 1 as const,
-          timing: {
-            timingCoverage: "complete" as const,
-            activeMs: elapsedMs,
-            movingMs: elapsedMs - 100_000,
-          },
-          normalizedPowerResult: unavailableNormalizedPowerResult,
-        },
-      },
-    ],
-  };
-}
-
-function activityPlanStructure(activity_categories: Array<"bike" | "run">) {
+function activityPlanStructure(activity_category: "bike" | "run", segmentCount = 1) {
   return {
     version: 3 as const,
-    segments: activity_categories.map((activity_category, index) => ({
+    activity_category,
+    segments: Array.from({ length: segmentCount }, (_, index) => ({
       id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
       role: "activity" as const,
-      activity_category,
       name: activity_category,
       intervals: [
         {
@@ -186,12 +186,11 @@ function recordingCreateInput(profileId = OWNER_ID) {
   return {
     profileId,
     recordingSessionId: "recording-session-1",
-    artifactSource: "acceptedArtifact" as const,
     name: "Recorder Run",
     startedAt: "2026-01-15T09:00:00.000Z",
     finishedAt: "2026-01-15T10:00:00.000Z",
     executionManifest: recordingExecutionManifest(),
-    acceptedArtifact: ACCEPTED_ARTIFACT,
+    uploadedArtifact: { ingestionId: INGESTION_ID },
     summary: { distanceMeters: 10000 },
   };
 }
@@ -407,8 +406,6 @@ function buildActivityRow(overrides: Record<string, unknown> = {}) {
     profile_id: OWNER_ID,
     activity_plan_id: null,
     name: "Morning Run",
-    provider: null,
-    external_id: null,
     started_at: new Date("2026-01-10T08:00:00.000Z"),
     finished_at: new Date("2026-01-10T08:45:00.000Z"),
     elapsed_ms: 2_700_000,
@@ -433,11 +430,8 @@ function buildActivityRow(overrides: Record<string, unknown> = {}) {
     avg_speed_mps: 3.3,
     max_speed_mps: 4.8,
     normalized_speed_mps: null,
-    normalized_graded_speed_mps: null,
     avg_temperature: null,
     avg_swolf: null,
-    efficiency_factor: null,
-    aerobic_decoupling: null,
     pool_length_meters: null,
     total_strokes: null,
     device_manufacturer: null,
@@ -452,13 +446,7 @@ function buildActivityRow(overrides: Record<string, unknown> = {}) {
 }
 
 function publicActivityRow(row: ReturnType<typeof buildActivityRow>) {
-  const {
-    normalized_graded_speed_mps: _normalizedGradedSpeedMetersPerSecond,
-    efficiency_factor: _efficiencyFactor,
-    aerobic_decoupling: _aerobicDecoupling,
-    ...current
-  } = row;
-  return current;
+  return row;
 }
 
 function buildSegmentReadRow(
@@ -513,9 +501,7 @@ function buildActivityPlanRow(overrides: Record<string, unknown> = {}) {
     activity_category: "run",
     structure: null,
     version: "1.0",
-    template_visibility: "private",
-    import_provider: null,
-    import_external_id: null,
+    content_visibility: "private",
     is_system_template: false,
     ...overrides,
   };
@@ -584,12 +570,6 @@ function buildActivityFileIngestionRow(overrides: Record<string, unknown> = {}) 
     external_id: null,
     operation_key: "mobile-recording:recording-session-1",
     artifact_id: accepted ? "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" : null,
-    accepted_sha256: accepted ? ACCEPTED_ARTIFACT.sha256 : null,
-    accepted_byte_size: accepted ? ACCEPTED_ARTIFACT.byteSize : null,
-    accepted_bucket: accepted ? ACCEPTED_ARTIFACT.bucket : null,
-    accepted_path: accepted ? ACCEPTED_ARTIFACT.path : null,
-    accepted_media_type: accepted ? ACCEPTED_ARTIFACT.mediaType : null,
-    accepted_format: accepted ? ACCEPTED_ARTIFACT.format : null,
     uploaded_at: accepted ? new Date("2026-01-01T00:00:00.000Z") : null,
     staging_cleanup_pending: false,
     file_path: null,
@@ -676,12 +656,14 @@ function createSequencedFn(values: unknown[]) {
 
 function createDbMock(options: {
   activityRows?: any[];
+  activityEffortRows?: any[];
   activityPlanRows?: any[];
   likeRows?: Array<{ entity_id: string; likes_count: number; has_liked: boolean }>;
   totalRows?: Array<{ total: number }>;
   joinedRows?: any[];
   activitySummaryRows?: any[];
   activityImportRows?: any[];
+  activityFileIngestionRows?: any[];
   activityGeometryRows?: any[];
   activityLapRows?: any[];
   currentArtifactRows?: any[];
@@ -690,6 +672,7 @@ function createDbMock(options: {
   integrationRows?: any[];
   providerSyncRows?: any[];
   queryActivitiesFindFirst?: any[];
+  queryActivityArtifactsFindFirst?: any[];
   queryActivityFileIngestionsFindFirst?: any[];
   queryActivityGeometryFindFirst?: any[];
   queryActivityImportsFindFirst?: any[];
@@ -703,7 +686,14 @@ function createDbMock(options: {
   onCommonLoadScanBatch?: (batchNumber: number) => void;
 }) {
   const insertValues = vi.fn();
-  const deleteWhere = vi.fn(() => Promise.resolve());
+  const deleteBuilder = {
+    returning: vi.fn(() =>
+      Promise.resolve([{ id: ACTIVITY_ID, startedAt: new Date("2026-01-01T12:00:00.000Z") }]),
+    ),
+    then: (onFulfilled: (value: undefined) => unknown) =>
+      Promise.resolve(undefined).then(onFulfilled),
+  };
+  const deleteWhere = vi.fn(() => deleteBuilder);
   const offset = vi.fn();
   const selectWhere = vi.fn();
   const commonLoadLimit = vi.fn();
@@ -755,8 +745,10 @@ function createDbMock(options: {
     if (tableName === "integrations") return options.integrationRows ?? [];
     if (tableName === "provider_sync_state") return options.providerSyncRows ?? [];
     if (tableName === "activity_summaries") return options.activitySummaryRows ?? [];
+    if (tableName === "activity_efforts") return options.activityEffortRows ?? [];
     if (tableName === "activity_plans") return options.activityPlanRows ?? [];
     if (tableName === "activity_imports") return options.activityImportRows ?? [];
+    if (tableName === "activity_file_ingestions") return options.activityFileIngestionRows ?? [];
     if (tableName === "activity_geometry") return options.activityGeometryRows ?? [];
     if (tableName === "activity_laps") return options.activityLapRows ?? [];
     if (tableName === "activity_artifact_links") return options.currentArtifactRows ?? [];
@@ -827,9 +819,11 @@ function createDbMock(options: {
                 orderBy:
                   getTableName(table) === "activities"
                     ? orderBy
-                    : getTableName(table) === "activity_session_rpe_evidence"
+                    : getTableName(table) === "activity_efforts"
                       ? vi.fn(() => Promise.resolve(rows))
-                      : vi.fn(() => ({ limit: vi.fn(resolveRows) })),
+                      : getTableName(table) === "activity_session_rpe_evidence"
+                        ? vi.fn(() => Promise.resolve(rows))
+                        : vi.fn(() => ({ limit: vi.fn(resolveRows) })),
                 then: (onFulfilled: (value: unknown[]) => unknown) =>
                   Promise.resolve(rows).then(onFulfilled),
               };
@@ -892,6 +886,21 @@ function createDbMock(options: {
       activities: {
         findFirst: createSequencedFn(options.queryActivitiesFindFirst ?? []),
       },
+      activityArtifacts: {
+        findFirst: createSequencedFn(
+          options.queryActivityArtifactsFindFirst ?? [
+            {
+              digest: ACCEPTED_ARTIFACT.sha256,
+              byte_size: ACCEPTED_ARTIFACT.byteSize,
+              bucket: ACCEPTED_ARTIFACT.bucket,
+              path: ACCEPTED_ARTIFACT.path,
+              media_type: ACCEPTED_ARTIFACT.mediaType,
+              format: ACCEPTED_ARTIFACT.format,
+              original_name: null,
+            },
+          ],
+        ),
+      },
       activityFileIngestions: {
         findFirst: createSequencedFn(options.queryActivityFileIngestionsFindFirst ?? []),
       },
@@ -927,9 +936,6 @@ function createDbMock(options: {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockArtifactStorage.verifyAcceptedActivityArtifact.mockImplementation(
-    async (_storage: unknown, input: unknown) => input,
-  );
   activityCategories.clear();
   mockActivityAnalysis.buildActivityDerivedSummaryMap.mockResolvedValue(new Map());
   mockActivityAnalysis.buildActivitySegmentDerivedSummaries.mockResolvedValue([]);
@@ -943,6 +949,24 @@ beforeEach(() => {
       ),
   );
   mockActivityAnalysis.resolveActivityContextAsOf.mockResolvedValue({});
+  mobileUploadFlow.loadAcceptedArtifactForClaim.mockResolvedValue(ACCEPTED_ARTIFACT);
+  mobileUploadFlow.retryMobileRecordingStagingCleanup.mockResolvedValue(true);
+  mobileUploadFlow.prepareMobileRecordingArtifact.mockResolvedValue({
+    status: "claimed",
+    ingestion: { id: INGESTION_ID, expected_sha256: ACCEPTED_ARTIFACT.sha256 },
+    claimToken: "33333333-3333-4333-8333-333333333333",
+    staging: {
+      bucket: "activity-files",
+      path: `mobile-recordings/${OWNER_ID}/${ACTIVITY_ID}.fit`,
+      bytes: new Uint8Array([1, 2, 3]),
+      format: "fit",
+      mediaType: "application/vnd.ant.fit",
+    },
+  });
+  artifactFinalizer.finalizeActivityArtifactIngestion.mockImplementation(
+    async (_db: unknown, input: { submit: (value: unknown) => Promise<unknown> }) =>
+      input.submit({ parsedData: null, artifact: ACCEPTED_ARTIFACT }),
+  );
   mockActivityAnalysis.analyzeActivityDerivedMetrics.mockReturnValue({
     stress: {
       common_load: availableCommonLoad(50),
@@ -954,103 +978,6 @@ beforeEach(() => {
 });
 
 describe("activitiesRouter", () => {
-  it("returns authenticated profile-scoped common Load history through the Core output contract", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-21T16:00:00.000Z"));
-    try {
-      const coverageCompletedAt = new Date("2026-07-21T16:00:00.000Z");
-      const result = await createCaller(
-        createDbMock({
-          integrationRows: [{ id: "wahoo-history", provider: "wahoo" }],
-          providerSyncRows: [
-            {
-              integrationId: "wahoo-history",
-              lastSucceededAt: coverageCompletedAt,
-              lastFailedAt: null,
-              consecutiveFailures: 0,
-              highWatermark: coverageCompletedAt,
-              metadata: {
-                activityHistoryCoverage: {
-                  start: "2026-01-01T00:00:00.000Z",
-                  end: "2026-07-21T04:00:00.000Z",
-                },
-              },
-            },
-          ],
-        }),
-      ).commonLoadHistory();
-
-      expect(result.status).toBe("available");
-      if (result.status !== "available") throw new Error("Available common Load history expected");
-      expect(result.points).toHaveLength(84);
-      expect(result.points.at(-1)).toMatchObject({ date: "2026-07-20", dailyLoad: 0 });
-      expect(mockActivityAnalysis.buildActivitySegmentDerivedSummaries).toHaveBeenCalledWith({
-        store: { kind: "activity-analysis-store" },
-        profileId: OWNER_ID,
-        activities: [],
-        computedAsOf: new Date("2026-07-21T16:00:00.000Z"),
-      });
-
-      const unauthenticatedCaller = activitiesRouter.createCaller({
-        db: createDbMock({}),
-        session: null,
-        headers: new Headers(),
-        clientType: "test",
-        trpcSource: "vitest",
-      } as any);
-      await expect(
-        unauthenticatedCaller.commonLoadHistory({
-          current_planning_date: "2026-07-21",
-          planning_timezone: "America/New_York",
-        }),
-      ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("returns explicit abstention when the profile planning timezone is missing", async () => {
-    const result = await createCaller(
-      createDbMock({ profileRows: [{ planningTimezone: null }] }),
-    ).commonLoadHistory();
-
-    expect(result).toMatchObject({
-      status: "unavailable",
-      reason: "invalid_input",
-      context: { path: "planningTimezone" },
-    });
-  });
-
-  it("rejects a planning date that differs from the server-derived profile-local date", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-21T16:00:00.000Z"));
-    try {
-      await expect(
-        createCaller(createDbMock({})).commonLoadHistory({
-          current_planning_date: "2026-07-22",
-          planning_timezone: "America/New_York",
-        }),
-      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("rejects a viewer timezone even when its calendar date matches the profile date", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-21T16:00:00.000Z"));
-    try {
-      await expect(
-        createCaller(createDbMock({})).commonLoadHistory({
-          current_planning_date: "2026-07-21",
-          planning_timezone: "UTC",
-        }),
-      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   it("lists paginated owned activities with like and derived summaries", async () => {
     const rows = [buildActivityRow()];
     const firstRow = rows[0];
@@ -1286,8 +1213,6 @@ describe("activitiesRouter", () => {
         elapsed_ms: 2_000,
         active_ms: 2_000,
         moving_ms: 1_900,
-        provider: null,
-        external_id: null,
         polyline: "legacy-polyline",
         map_bounds: { legacy: true },
       }),
@@ -1325,8 +1250,6 @@ describe("activitiesRouter", () => {
       elapsed_ms: 2_000,
       active_ms: 2_000,
       moving_ms: 1_900,
-      provider: null,
-      external_id: null,
       polyline: "legacy-polyline",
       map_bounds: { legacy: true },
     });
@@ -1597,177 +1520,6 @@ describe("activitiesRouter", () => {
     expect(mockActivityAnalysis.buildActivityDerivedSummaryMap).not.toHaveBeenCalled();
   });
 
-  it("creates an activity linked to a planned-activity event", async () => {
-    const createdActivity = buildActivityRow({
-      id: ACTIVITY_ID,
-      profile_id: OWNER_ID,
-      activity_plan_id: PLAN_ID,
-      name: "Long Ride",
-      activity_category: "bike",
-    });
-    const db = createDbMock({
-      queryEventsFindFirst: [
-        {
-          activity_plan_id: PLAN_ID,
-          activity_plan: {
-            structure: {
-              version: 3,
-              segments: [
-                {
-                  id: "10000000-0000-4000-8000-000000000001",
-                  role: "activity",
-                  activity_category: "bike",
-                  name: "Bike",
-                  intervals: [
-                    {
-                      id: "20000000-0000-4000-8000-000000000001",
-                      name: "Main",
-                      repetitions: 1,
-                      steps: [
-                        {
-                          id: "30000000-0000-4000-8000-000000000001",
-                          name: "Step",
-                          duration: { type: "time", seconds: 600 },
-                          targets: [{ type: "RPE", intensity: 5 }],
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-          },
-        },
-      ],
-      executeRows: [{ id: ACTIVITY_ID }],
-      queryActivitiesFindFirst: [createdActivity],
-    });
-
-    const caller = createCaller(db);
-    const result = await caller.create({
-      profile_id: OWNER_ID,
-      eventId: EVENT_ID,
-      name: "Long Ride",
-      notes: "Outdoor endurance",
-      startedAt: "2026-01-15T09:00:00.000Z",
-      finishedAt: "2026-01-15T11:00:00.000Z",
-      segmentSet: singleSegmentSet("bike", 7_200_000),
-      acceptedArtifact: ACCEPTED_ARTIFACT,
-      summary: { distanceMeters: 50000 },
-    });
-
-    expect(result).toEqual(publicActivityRow(createdActivity));
-    expect(db.select).toHaveBeenCalled();
-    expect(db.transaction).toHaveBeenCalledTimes(1);
-  });
-
-  it("rejects direct Event recording for legacy or invalid linked plans", async () => {
-    for (const structure of [
-      activityPlanStructure(["bike", "run"]),
-      { version: 3, segments: [] },
-    ]) {
-      const db = createDbMock({
-        queryEventsFindFirst: [{ activity_plan_id: PLAN_ID, activity_plan: { structure } }],
-      });
-
-      await expect(
-        createCaller(db).create({
-          profile_id: OWNER_ID,
-          eventId: EVENT_ID,
-          name: "Rejected event recording",
-          startedAt: "2026-01-15T09:00:00.000Z",
-          finishedAt: "2026-01-15T10:00:00.000Z",
-          segmentSet: singleSegmentSet("bike"),
-          acceptedArtifact: ACCEPTED_ARTIFACT,
-          summary: { distanceMeters: 1000 },
-        }),
-      ).rejects.toMatchObject({
-        code: "BAD_REQUEST",
-        message: "Linked event plan is not available for recording",
-      });
-      expect(db.transaction).not.toHaveBeenCalled();
-    }
-  });
-
-  it("allows direct Event recording for repeated same-category plans", async () => {
-    const createdActivity = buildActivityRow({ id: ACTIVITY_ID, profile_id: OWNER_ID });
-    const db = createDbMock({
-      queryEventsFindFirst: [
-        {
-          activity_plan_id: PLAN_ID,
-          activity_plan: { structure: activityPlanStructure(["bike", "bike"]) },
-        },
-      ],
-      executeRows: [{ id: ACTIVITY_ID }],
-      queryActivitiesFindFirst: [createdActivity],
-    });
-
-    await expect(
-      createCaller(db).create({
-        profile_id: OWNER_ID,
-        eventId: EVENT_ID,
-        name: "Repeated bike event recording",
-        startedAt: "2026-01-15T09:00:00.000Z",
-        finishedAt: "2026-01-15T10:00:00.000Z",
-        segmentSet: singleSegmentSet("bike"),
-        acceptedArtifact: ACCEPTED_ARTIFACT,
-        summary: { distanceMeters: 1000 },
-      }),
-    ).resolves.toEqual(publicActivityRow(createdActivity));
-  });
-
-  it("rejects native submission when accepted artifact bytes cannot be verified", async () => {
-    mockArtifactStorage.verifyAcceptedActivityArtifact.mockRejectedValueOnce(
-      new Error("digest mismatch"),
-    );
-    const db = createDbMock({});
-    await expect(
-      createCaller(db).create({
-        profile_id: OWNER_ID,
-        name: "Unverified activity",
-        startedAt: "2026-01-15T09:00:00.000Z",
-        finishedAt: "2026-01-15T10:00:00.000Z",
-        segmentSet: singleSegmentSet("bike"),
-        acceptedArtifact: ACCEPTED_ARTIFACT,
-        summary: { distanceMeters: 0 },
-      }),
-    ).rejects.toMatchObject({
-      code: "BAD_REQUEST",
-      message: "Accepted activity artifact could not be verified",
-    });
-    expect(db.transaction).not.toHaveBeenCalled();
-  });
-
-  it("persists canonical temperature and pool-length metrics when creating an activity", async () => {
-    const createdActivity = buildActivityRow({
-      id: ACTIVITY_ID,
-      profile_id: OWNER_ID,
-      activity_category: "swim",
-      avg_temperature: 21.5,
-      pool_length_meters: 25,
-    });
-    const db = createDbMock({
-      executeRows: [{ id: ACTIVITY_ID }],
-      queryActivitiesFindFirst: [createdActivity],
-    });
-
-    await createCaller(db).create({
-      profile_id: OWNER_ID,
-      name: "Pool session",
-      notes: null,
-      startedAt: "2026-01-15T09:00:00.000Z",
-      finishedAt: "2026-01-15T10:00:00.000Z",
-      segmentSet: singleSegmentSet("swim"),
-      acceptedArtifact: ACCEPTED_ARTIFACT,
-      summary: { distanceMeters: 2000, avgTemperature: 21.5, poolLengthMeters: 25 },
-    });
-
-    expect(findInsertedValue(db, "activities")).toMatchObject({
-      avg_temperature: 21.5,
-      pool_length_meters: 25,
-    });
-  });
-
   it("rejects a sessionless accepted-artifact recording submission", async () => {
     const createdActivity = buildActivityRow({
       id: ACTIVITY_ID,
@@ -1827,6 +1579,7 @@ describe("activitiesRouter", () => {
       },
       queryActivitiesFindFirst: [undefined, createdActivity],
       queryActivityFileIngestionsFindFirst: [ingestion],
+      activityFileIngestionRows: [{ id: INGESTION_ID }],
     });
 
     await createCaller(db).createFromRecordingSummary({
@@ -1890,7 +1643,7 @@ describe("activitiesRouter", () => {
     ]);
   });
 
-  it("rejects a mixed recording plan before persistence", async () => {
+  it("rejects a legacy segment-category recording plan before persistence", async () => {
     const createdActivity = buildActivityRow({
       id: ACTIVITY_ID,
       activity_plan_id: null,
@@ -1904,7 +1657,13 @@ describe("activitiesRouter", () => {
           contentVisibility: "private",
           isSystem: false,
           ownerProfileId: OWNER_ID,
-          structure: activityPlanStructure(["bike", "run"]),
+          structure: {
+            version: 3,
+            segments: activityPlanStructure("bike", 2).segments.map((segment, index) => ({
+              ...segment,
+              activity_category: index === 0 ? "bike" : "run",
+            })),
+          },
         },
       ],
       insertedRowsByTable: {
@@ -1988,18 +1747,14 @@ describe("activitiesRouter", () => {
     expect(db.transaction).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects a recording submission whose accepted artifact is not canonical", async () => {
-    mockArtifactStorage.verifyAcceptedActivityArtifact.mockRejectedValueOnce(
-      new Error("accepted path is not content-addressed"),
-    );
-
+  it("rejects the removed accepted-artifact recording transport", async () => {
     await expect(
       createCaller(createDbMock({})).createFromRecordingSummary({
         ...recordingCreateInput(),
+        uploadedArtifact: undefined,
         acceptedArtifact: { ...ACCEPTED_ARTIFACT, path: "staging/attacker-controlled.fit" },
-      }),
+      } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(mockArtifactStorage.verifyAcceptedActivityArtifact).not.toHaveBeenCalled();
   });
 
   it("rejects recording manifests outside the parent time range", async () => {
@@ -2116,6 +1871,38 @@ describe("activitiesRouter", () => {
     });
     expect(mockActivityAnalysis.resolveActivityContextAsOf).not.toHaveBeenCalled();
     expect(mockActivityAnalysis.analyzeActivityDerivedMetrics).not.toHaveBeenCalled();
+  });
+
+  it("returns immutable derived efforts through the authorized activity view", async () => {
+    const activity = buildActivityRow({ profile_id: OWNER_ID });
+    const effort = {
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      created_at: new Date("2026-01-09T09:00:00.000Z"),
+      profile_id: OWNER_ID,
+      activity_id: ACTIVITY_ID,
+      segment_id: SEGMENT_ID,
+      recorded_at: new Date("2026-01-09T08:20:00.000Z"),
+      activity_category: "run",
+      effort_type: "speed",
+      duration_seconds: 1200,
+      distance_meters: 5000,
+      start_offset: 0,
+      unit: "meters_per_second",
+      value: 4.2,
+      source: "derived",
+      method: "activity_file_best_effort",
+      calculation_version: "1",
+      quality_score: 0.9,
+      provenance: { parser: "fit" },
+    };
+    const db = createDbMock({
+      queryActivitiesFindFirst: [{ profile_id: OWNER_ID, content_visibility: "private" }],
+      joinedRows: [{ activity, activityPlan: null }],
+      activityEffortRows: [effort],
+    });
+
+    await expect(createCaller(db).getEfforts({ id: ACTIVITY_ID })).resolves.toEqual([effort]);
+    expect(db.__spies.selectWhere).toHaveBeenCalled();
   });
 
   it("keeps owner analysis metadata outside the strict stress DTO", async () => {
@@ -2310,8 +2097,6 @@ describe("activitiesRouter", () => {
       elapsed_ms: 2_000,
       active_ms: 2_000,
       moving_ms: 1_900,
-      provider: "wahoo",
-      external_id: "legacy-external-id",
       polyline: "legacy-polyline",
       map_bounds: { legacy: true },
       laps: [{ legacy: true }],
@@ -2374,7 +2159,6 @@ describe("activitiesRouter", () => {
       elapsed_ms: 2_000,
       active_ms: 2_000,
       moving_ms: 1_900,
-      external_id: "legacy-external-id",
       polyline: "legacy-polyline",
       map_bounds: { legacy: true },
       laps: [{ legacy: true }],
@@ -2462,24 +2246,6 @@ describe("activitiesRouter", () => {
       caller.listPaginated({
         date_from: "not-a-date",
         date_to: "2026-01-31T23:59:59.999Z",
-      }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-  });
-
-  it("rejects non-ISO activity upload timestamps", async () => {
-    const caller = createCaller(createDbMock({}));
-
-    await expect(
-      caller.create({
-        profile_id: OWNER_ID,
-        eventId: null,
-        name: "Long Ride",
-        notes: null,
-        startedAt: "2026-01-15",
-        finishedAt: "2026-01-15T11:00:00.000Z",
-        segmentSet: singleSegmentSet("bike", 7_200_000),
-        acceptedArtifact: ACCEPTED_ARTIFACT,
-        summary: { distanceMeters: 50000 },
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });

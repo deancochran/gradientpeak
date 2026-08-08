@@ -56,7 +56,7 @@ const intents = [
   ["coach_group", "Coach or manage"],
   ["explore", "Just exploring"],
 ] as const;
-const providers = ["strava", "wahoo", "trainingpeaks", "garmin", "zwift"] as const;
+const providers = ["wahoo"] as const;
 
 function SourceSelect({ field, defaultValue }: { field: string; defaultValue?: string }) {
   return (

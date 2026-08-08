@@ -21,7 +21,6 @@ import {
   type ActivityArtifactStorage,
   activityArtifactSha256,
   cleanupActivityArtifactStaging,
-  promoteActivityArtifact,
 } from "./artifact-storage";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
@@ -108,24 +107,7 @@ function claimMatchesExpected(
   );
 }
 
-function acceptedArtifactFromClaim(
-  claim: ActivityFileIngestionRow,
-): RecordingAcceptedArtifact | null {
-  const parsed = recordingAcceptedArtifactSchema.safeParse({
-    sha256: claim.accepted_sha256,
-    byteSize: claim.accepted_byte_size,
-    bucket: claim.accepted_bucket,
-    path: claim.accepted_path,
-    mediaType: claim.accepted_media_type,
-    format: claim.accepted_format,
-    originalName: null,
-  });
-  return parsed.success ? parsed.data : null;
-}
-
 export async function loadAcceptedArtifactForClaim(db: DbClient, claim: ActivityFileIngestionRow) {
-  const fromClaim = acceptedArtifactFromClaim(claim);
-  if (fromClaim) return fromClaim;
   if (!claim.artifact_id) return null;
 
   const artifact = await loadAcceptedActivityArtifact(db, {
@@ -256,7 +238,13 @@ export type PreparedMobileRecordingArtifact =
       status: "claimed";
       ingestion: ActivityFileIngestionRow;
       claimToken: string;
-      artifact: RecordingAcceptedArtifact;
+      staging: {
+        bucket: string;
+        path: string;
+        bytes: Uint8Array;
+        format: "fit" | "gpx" | "tcx";
+        mediaType: string;
+      };
     };
 
 function safeUploadFailure(error: unknown) {
@@ -365,33 +353,18 @@ export async function prepareMobileRecordingArtifact(
       );
     }
 
-    const promoted = await promoteActivityArtifact(storage, {
-      profileId: input.profileId,
-      bucket: claim.staging_bucket,
-      stagingPath: claim.staging_path,
-      bytes: stored.data,
-      format: format.data,
-      mediaType: claim.expected_media_type,
-    });
-    const artifact = recordingAcceptedArtifactSchema.parse({
-      sha256: promoted.sha256,
-      byteSize: promoted.byteSize,
-      bucket: promoted.bucket,
-      path: promoted.path,
-      mediaType: promoted.mediaType,
-      format: promoted.format,
-      originalName: null,
-    });
-    if (
-      artifact.sha256 !== claim.expected_sha256 ||
-      artifact.byteSize !== claim.expected_byte_size
-    ) {
-      throw new MobileRecordingUploadError(
-        "expected_artifact_mismatch",
-        "Promoted recording artifact does not match the durable claim",
-      );
-    }
-    return { status: "claimed", ingestion: claim, claimToken, artifact };
+    return {
+      status: "claimed",
+      ingestion: claim,
+      claimToken,
+      staging: {
+        bucket: claim.staging_bucket,
+        path: claim.staging_path,
+        bytes: stored.data,
+        format: format.data,
+        mediaType: claim.expected_media_type,
+      },
+    };
   } catch (error) {
     const safeError = safeUploadFailure(error);
     await markMobileRecordingUploadFailed(db, {
@@ -435,7 +408,8 @@ export async function retryMobileRecordingStagingCleanup(
 ) {
   const { ingestion } = input;
   if (!ingestion.staging_cleanup_pending) return true;
-  if (!ingestion.staging_bucket || !ingestion.staging_path || !ingestion.accepted_path) {
+  const artifact = await loadAcceptedArtifactForClaim(db, ingestion);
+  if (!ingestion.staging_bucket || !ingestion.staging_path || !artifact) {
     await recordMobileRecordingStagingCleanupFailure(db, {
       ingestionId: ingestion.id,
       profileId: input.profileId,
@@ -448,7 +422,7 @@ export async function retryMobileRecordingStagingCleanup(
     await cleanupActivityArtifactStaging(storage, {
       bucket: ingestion.staging_bucket,
       stagingPath: ingestion.staging_path,
-      path: ingestion.accepted_path,
+      path: artifact.path,
     });
     await markMobileRecordingStagingCleaned(db, {
       ingestionId: ingestion.id,

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { defaultAthletePreferenceProfile } from "../../schemas/settings/profile_settings";
-import { buildGoalAnchoredProjectionPlan, canonicalizeMinimalTrainingPlanCreate } from "..";
+import { buildGoalAnchoredProjectionPlan, canonicalizeGoalProjectionInput } from "..";
 
 describe("buildGoalAnchoredProjectionPlan", () => {
   it("keeps a later A marathon out of a long global taper after an earlier B half marathon", () => {
     const plan = buildGoalAnchoredProjectionPlan({
-      minimalPlan: canonicalizeMinimalTrainingPlanCreate({
+      projectionInput: canonicalizeGoalProjectionInput({
         plan_start_date: "2026-04-12",
         goals: [
           {
@@ -59,7 +59,7 @@ describe("buildGoalAnchoredProjectionPlan", () => {
 
   it("merges same-date goals into one shared event window", () => {
     const plan = buildGoalAnchoredProjectionPlan({
-      minimalPlan: canonicalizeMinimalTrainingPlanCreate({
+      projectionInput: canonicalizeGoalProjectionInput({
         plan_start_date: "2026-01-01",
         goals: [
           {
@@ -106,7 +106,7 @@ describe("buildGoalAnchoredProjectionPlan", () => {
 
   it("uses a micro taper for a lower-priority goal close before an A goal", () => {
     const plan = buildGoalAnchoredProjectionPlan({
-      minimalPlan: canonicalizeMinimalTrainingPlanCreate({
+      projectionInput: canonicalizeGoalProjectionInput({
         plan_start_date: "2026-01-01",
         goals: [
           {
@@ -150,7 +150,7 @@ describe("buildGoalAnchoredProjectionPlan", () => {
   });
 
   it("makes training preference sliders change phase shape and load targets", () => {
-    const minimalPlan = canonicalizeMinimalTrainingPlanCreate({
+    const projectionInput = canonicalizeGoalProjectionInput({
       plan_start_date: "2026-01-01",
       goals: [
         {
@@ -169,7 +169,7 @@ describe("buildGoalAnchoredProjectionPlan", () => {
       ],
     });
     const conservative = buildGoalAnchoredProjectionPlan({
-      minimalPlan,
+      projectionInput,
       startingLongTermLoad: 45,
       preferenceProfile: {
         ...defaultAthletePreferenceProfile,
@@ -195,7 +195,7 @@ describe("buildGoalAnchoredProjectionPlan", () => {
       },
     });
     const aggressive = buildGoalAnchoredProjectionPlan({
-      minimalPlan,
+      projectionInput,
       startingLongTermLoad: 45,
       preferenceProfile: {
         ...defaultAthletePreferenceProfile,
@@ -248,7 +248,7 @@ describe("buildGoalAnchoredProjectionPlan", () => {
       },
     };
     const shortGoalPlan = buildGoalAnchoredProjectionPlan({
-      minimalPlan: canonicalizeMinimalTrainingPlanCreate({
+      projectionInput: canonicalizeGoalProjectionInput({
         plan_start_date: "2026-01-01",
         goals: [
           {
@@ -269,7 +269,7 @@ describe("buildGoalAnchoredProjectionPlan", () => {
       preferenceProfile: basePreferenceProfile,
     });
     const marathonPlan = buildGoalAnchoredProjectionPlan({
-      minimalPlan: canonicalizeMinimalTrainingPlanCreate({
+      projectionInput: canonicalizeGoalProjectionInput({
         plan_start_date: "2026-01-01",
         goals: [
           {

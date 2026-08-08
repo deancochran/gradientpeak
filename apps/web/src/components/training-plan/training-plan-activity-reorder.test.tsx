@@ -33,8 +33,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../lib/api/client", () => ({
   api: {
     useUtils: () => ({ events: { invalidate: mocks.invalidateEvents } }),
-    events: {
-      list: {
+    calendar: {
+      range: {
         useQuery: () => ({
           data: {
             items: mocks.eventItems,

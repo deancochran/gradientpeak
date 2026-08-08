@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { ProviderSyncJobRecord, ProviderSyncRepository } from "../../repositories";
+import type { WahooSyncJobRecord, WahooSyncRepository } from "../../repositories";
 
 export const WAHOO_STAGING_CLEANUP_JOB = "wahoo.staging_cleanup";
 // Lower queue values run first. Cleanup is recoverable background maintenance,
@@ -48,7 +48,7 @@ function stagingPath(input: {
 }
 
 export function createWahooStagingCleanupReservation(input: {
-  providerSyncRepository: Pick<ProviderSyncRepository, "enqueueJob">;
+  providerSyncRepository: Pick<WahooSyncRepository, "enqueueJob">;
   createAttemptId?: () => string;
   now?: () => Date;
 }): WahooStagingCleanupReservation {
@@ -111,7 +111,7 @@ export function createWahooStagingCleanupReservation(input: {
 /** Validate both the durable payload and the claimed job's ownership fields. */
 export function isWahooStagingCleanupPayload(
   value: unknown,
-  job: Pick<ProviderSyncJobRecord, "integrationGeneration" | "integrationId" | "profileId">,
+  job: Pick<WahooSyncJobRecord, "integrationGeneration" | "integrationId" | "profileId">,
 ): value is WahooStagingCleanupPayload {
   if (
     !value ||

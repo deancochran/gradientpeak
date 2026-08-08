@@ -27,8 +27,6 @@ function ActivityPlansListScreen() {
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const { data, isFetching, isLoading, error, refetch } = api.activityPlans.list.useQuery({
     ownerScope: "own",
-    includeOwnOnly: true,
-    includeSystemTemplates: false,
     search: searchQuery.trim() || undefined,
     activityCategories: categoryFilter ? [categoryFilter] : undefined,
     limit: 100,

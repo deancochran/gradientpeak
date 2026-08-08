@@ -1,7 +1,6 @@
 import {
   type ActivityObservationQuantificationBundle,
   type ActivityPlanPrescriptionQuantificationBundle,
-  type ActivityPrescriptionQuantificationBundle,
   activityObservationQuantificationBundleSchema,
   activityPlanPrescriptionQuantificationBundleSchema,
   activityPrescriptionQuantificationBundleSchema,
@@ -10,8 +9,8 @@ import {
   createPrescriptionQuantificationBundle,
   createUnavailableActivityPlanPlanningEstimate,
   dateOnlySchema,
-  diffDateOnlyUtcDays,
 } from "@repo/core";
+import { diffDateOnlyUtcDays, getCalendarDateInIanaZone } from "@repo/core/calendar";
 import {
   aggregateCommonLoadEnvelopes,
   buildCommonLoadRecommendation,
@@ -22,7 +21,6 @@ import {
   commonLoadRecommendationSchema,
   commonLoadResultSchema,
 } from "@repo/core/load";
-import { getScheduledDateKey } from "@repo/core/utils/schedule-date";
 import { z } from "zod";
 import type { getRequiredDb } from "../../db";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
@@ -31,7 +29,7 @@ import {
   loadActivitySegmentsByActivityId,
 } from "../../lib/activity-analysis";
 import type { EventReadRepository } from "../../repositories";
-import { getActivityPlansDerivedMetrics } from "../../utils/activity-plan-derived-metrics";
+import { estimateActivityPlans } from "../activity-plans/estimate-activity-plans";
 import {
   composeEffectivePlanDto,
   effectivePlanCompositionDtoSchema,
@@ -158,7 +156,7 @@ export const effectivePlanLoadDtoSchema = z.discriminatedUnion("status", [
 export type EffectivePlanLoadDto = z.infer<typeof effectivePlanLoadDtoSchema>;
 
 function localDate(instant: Date, timezone: string): string {
-  return getScheduledDateKey(instant.toISOString(), timezone);
+  return getCalendarDateInIanaZone(instant.toISOString(), timezone);
 }
 
 function unavailableActivityLoad(asOf: string): CommonLoadResult {
@@ -276,10 +274,9 @@ export async function getEffectivePlanLoad(input: {
       event.activity_plan ? [[event.activity_plan.id, event.activity_plan] as const] : [],
     ),
   );
-  const plans = await getActivityPlansDerivedMetrics(
+  const plans = await estimateActivityPlans(
     [...activityPlansById.values()],
     input.db,
-    input.repository,
     input.profileId,
     { asOf },
   );

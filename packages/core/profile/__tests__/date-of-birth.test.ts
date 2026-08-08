@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  calculateAge,
   calculateDateOfBirthAge,
   formatDateOfBirth,
   isValidDateOfBirth,
@@ -23,10 +22,5 @@ describe("date-of-birth", () => {
   it("calculates age on calendar birthday boundaries", () => {
     expect(calculateDateOfBirthAge("1990-07-12", new Date("2026-07-11T23:59:59Z"))).toBe(35);
     expect(calculateDateOfBirthAge("1990-07-12", new Date("2026-07-12T00:00:00Z"))).toBe(36);
-  });
-
-  it("preserves the nullable age adapter contract", () => {
-    expect(calculateAge(null)).toBeUndefined();
-    expect(calculateAge("not-a-date")).toBeUndefined();
   });
 });

@@ -1,3 +1,4 @@
+import { activityImportRuns, profileAthleteState } from "@repo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
@@ -17,17 +18,45 @@ vi.mock("../../infrastructure/repositories", () => ({
       listByProfileId: mocks.listByProfileId,
     },
   })),
-  createProviderSyncRepository: vi.fn(() => ({
+  createWahooSyncRepository: vi.fn(() => ({
     listJobs: mocks.listJobs,
     listSyncStateByIntegrationIds: mocks.listSyncStateByIntegrationIds,
   })),
 }));
 
 vi.mock("../../lib/integrations/oauth-config", () => ({
-  isProviderOAuthConfigured: vi.fn(() => true),
+  isWahooIntegrationEnabled: vi.fn(() => true),
 }));
 
 import { getProviderSyncOverview } from "./syncOverviewUseCase";
+
+function overviewDb(
+  input: { importRuns?: unknown[]; failedBulkRuns?: unknown[]; athleteState?: unknown[] } = {},
+) {
+  return {
+    select: vi.fn((selection?: { id?: unknown }) => {
+      let selectedTable: unknown;
+      const builder = {
+        from: vi.fn((table: unknown) => {
+          selectedTable = table;
+          return builder;
+        }),
+        where: vi.fn(() => builder),
+        orderBy: vi.fn(() => builder),
+        limit: vi.fn(async () =>
+          selectedTable === activityImportRuns
+            ? selection?.id === activityImportRuns.id
+              ? (input.failedBulkRuns ?? [])
+              : (input.importRuns ?? [])
+            : selectedTable === profileAthleteState
+              ? (input.athleteState ?? [])
+              : [],
+        ),
+      };
+      return builder;
+    }),
+  } as never;
+}
 
 describe("getProviderSyncOverview planned Wahoo delivery", () => {
   beforeEach(() => {
@@ -56,9 +85,10 @@ describe("getProviderSyncOverview planned Wahoo delivery", () => {
   });
 
   it("reports planned delivery as automatic when grants are ready", async () => {
-    const overview = await getProviderSyncOverview({ db: {} as never, profileId: PROFILE_ID });
+    const overview = await getProviderSyncOverview({ db: overviewDb(), profileId: PROFILE_ID });
     const wahoo = overview.find((provider) => provider.provider === "wahoo");
 
+    expect(overview.map(({ provider }) => provider)).toEqual(["wahoo"]);
     expect(wahoo?.plannedActivities).toEqual({
       lastError: null,
       lastFailedAt: null,
@@ -75,13 +105,35 @@ describe("getProviderSyncOverview planned Wahoo delivery", () => {
       scope: "workouts_read offline_data",
     });
 
-    const overview = await getProviderSyncOverview({ db: {} as never, profileId: PROFILE_ID });
+    const overview = await getProviderSyncOverview({ db: overviewDb(), profileId: PROFILE_ID });
     const wahoo = overview.find((provider) => provider.provider === "wahoo");
 
     expect(wahoo?.plannedActivities).toMatchObject({
       lastError: "Reconnect Wahoo to grant planned activity permissions",
       status: "unsupported",
     });
+  });
+
+  it("reports a failed bulk import as incomplete before any state has published", async () => {
+    const overview = await getProviderSyncOverview({
+      db: overviewDb({
+        failedBulkRuns: [{ id: "88888888-8888-4888-8888-888888888888" }],
+        importRuns: [
+          {
+            id: "88888888-8888-4888-8888-888888888888",
+            integration_id: INTEGRATION_ID,
+            kind: "history_sync",
+            status: "failed",
+            imported_count: 2,
+            skipped_count: 0,
+            failed_count: 1,
+          },
+        ],
+      }),
+      profileId: PROFILE_ID,
+    });
+    const wahoo = overview.find((provider) => provider.provider === "wahoo");
+    expect(wahoo?.activityHistory.importRun).toMatchObject({ status: "failed", importedCount: 2 });
   });
 
   it("surfaces an active planned-delivery job when grants are ready", async () => {
@@ -94,7 +146,7 @@ describe("getProviderSyncOverview planned Wahoo delivery", () => {
       },
     ]);
 
-    const overview = await getProviderSyncOverview({ db: {} as never, profileId: PROFILE_ID });
+    const overview = await getProviderSyncOverview({ db: overviewDb(), profileId: PROFILE_ID });
     const wahoo = overview.find((provider) => provider.provider === "wahoo");
 
     expect(wahoo?.plannedActivities).toMatchObject({
@@ -118,7 +170,7 @@ describe("getProviderSyncOverview planned Wahoo delivery", () => {
       },
     ]);
 
-    const overview = await getProviderSyncOverview({ db: {} as never, profileId: PROFILE_ID });
+    const overview = await getProviderSyncOverview({ db: overviewDb(), profileId: PROFILE_ID });
     const wahoo = overview.find((provider) => provider.provider === "wahoo");
 
     expect(wahoo?.activityHistory).toMatchObject({ lastError: null, status: "idle" });
@@ -138,7 +190,7 @@ describe("getProviderSyncOverview planned Wahoo delivery", () => {
       },
     ]);
 
-    const overview = await getProviderSyncOverview({ db: {} as never, profileId: PROFILE_ID });
+    const overview = await getProviderSyncOverview({ db: overviewDb(), profileId: PROFILE_ID });
     const wahoo = overview.find((provider) => provider.provider === "wahoo");
 
     expect(wahoo?.activityHistory).toMatchObject({

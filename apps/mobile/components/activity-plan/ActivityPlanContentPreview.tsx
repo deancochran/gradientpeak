@@ -161,7 +161,7 @@ export function ActivityPlanContentPreview({
             {structure?.segments.map((segment, index) => {
               const segmentTitle = segment.name?.trim() || `Segment ${index + 1}`;
               const semantic =
-                segment.role === "activity" ? segment.activity_category : segment.role;
+                segment.role === "activity" ? structure.activity_category : segment.role;
               const showSemantic = !labelContainsSemantic(segmentTitle, semantic);
 
               return (

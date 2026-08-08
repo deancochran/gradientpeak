@@ -1,5 +1,8 @@
-import { addDaysDateOnlyUtc } from "@repo/core";
-import { getScheduledDateKey, scheduledDateTimeToIsoInstant } from "@repo/core/utils/schedule-date";
+import {
+  addDaysDateOnlyUtc,
+  getCalendarDateInIanaZone,
+  scheduledDateTimeToIsoInstant,
+} from "@repo/core/calendar";
 
 export type PlanningDateRange = {
   endDate: string;
@@ -36,7 +39,7 @@ export function getPlanningDateRange(input: {
 
 /** Server-owned Sunday-Saturday bounds in the athlete's planning calendar. */
 export function getCurrentPlanningWeek(instant: Date, timezone: string): PlanningDateRange {
-  const currentDate = getScheduledDateKey(instant.toISOString(), timezone);
+  const currentDate = getCalendarDateInIanaZone(instant.toISOString(), timezone);
   const weekday = new Date(`${currentDate}T00:00:00.000Z`).getUTCDay();
   const startDate = addDaysDateOnlyUtc(currentDate, -weekday);
   return getPlanningDateRange({

@@ -1,8 +1,7 @@
 import { SYSTEM_TEMPLATES } from "@repo/core";
 import { groupEventRsvps, groupEventSeriesRsvps, groupEvents, notifications } from "@repo/db";
 import type { TRPCError } from "@trpc/server";
-import { describe, expect, it, vi } from "vitest";
-import * as wahooRouteDelivery from "../../lib/provider-sync/event-delivery/wahoo-group-event-route-delivery";
+import { describe, expect, it } from "vitest";
 import {
   buildGroupEventRow,
   buildGroupEventRsvpRow,
@@ -32,9 +31,7 @@ function buildActivityPlanRow(overrides: Record<string, unknown> = {}) {
     activity_category: "ride",
     structure: SYSTEM_TEMPLATES[0]?.structure,
     version: "1.0",
-    template_visibility: "private",
-    import_provider: null,
-    import_external_id: null,
+    content_visibility: "private",
     is_system_template: false,
     ...overrides,
   };
@@ -200,16 +197,12 @@ describe("groups.events router", () => {
     } satisfies Partial<TRPCError>);
   });
 
-  it("falls back to series activity plan for unmodified occurrences", async () => {
+  it("returns materialized fields from recurring occurrences", async () => {
     const seriesId = "88888888-8888-4888-8888-888888888888";
     const occurrence = buildGroupEventRow({
       series_id: seriesId,
       occurrence_key: "2026-05-21",
-      title: null,
-    });
-    const series = buildGroupEventRow({
-      id: seriesId,
-      recurrence_rule: "FREQ=WEEKLY;COUNT=3",
+      title: "Saturday Ride",
       activity_plan_id: ACTIVITY_PLAN_ID,
     });
     const mock = createDbMock({
@@ -217,7 +210,7 @@ describe("groups.events router", () => {
         [{ id: VIEWER_ID }],
         [{ event: occurrence, group: buildGroupRow({ access_level: "members_only" }) }],
         [{ role: "member", status: "active" }],
-        [series],
+        [],
         [],
         [],
       ],
@@ -256,6 +249,7 @@ describe("groups.events router", () => {
     const result = await caller.events.create({
       groupId: GROUP_ID,
       title: "Saturday Ride",
+      description: "Series details",
       startsAt: NOW.toISOString(),
       endsAt: "2026-05-21T14:00:00.000Z",
       timezone: "America/New_York",
@@ -288,6 +282,7 @@ describe("groups.events router", () => {
         groupId: GROUP_ID,
         title: "Saturday Ride",
         startsAt: NOW.toISOString(),
+        timezone: "UTC",
       }),
     ).rejects.toMatchObject({
       code: "FORBIDDEN",
@@ -307,6 +302,7 @@ describe("groups.events router", () => {
         groupId: GROUP_ID,
         title: "Saturday Ride",
         startsAt: NOW.toISOString(),
+        timezone: "UTC",
         activityPlanId: ACTIVITY_PLAN_ID,
       }),
     ).rejects.toMatchObject({
@@ -329,7 +325,7 @@ describe("groups.events router", () => {
         [
           buildActivityPlanRow({
             profile_id: "99999999-9999-4999-8999-999999999999",
-            template_visibility: "public",
+            content_visibility: "public",
           }),
         ],
         [
@@ -348,6 +344,7 @@ describe("groups.events router", () => {
       groupId: GROUP_ID,
       title: "Saturday Ride",
       startsAt: NOW.toISOString(),
+      timezone: "UTC",
       routeId: ROUTE_ID,
       activityPlanId: ACTIVITY_PLAN_ID,
     });
@@ -380,6 +377,7 @@ describe("groups.events router", () => {
     const result = await caller.events.createRecurringEventSeries({
       groupId: GROUP_ID,
       title: "Saturday Ride",
+      description: "Series details",
       startsAt: NOW.toISOString(),
       endsAt: "2026-05-21T14:00:00.000Z",
       timezone: "America/New_York",
@@ -391,9 +389,30 @@ describe("groups.events router", () => {
     expect(mock.insertCalls[0]).toMatchObject({ table: groupEvents });
     expect(mock.insertCalls[1]).toMatchObject({ table: groupEvents });
     expect(mock.insertCalls[1]?.values).toMatchObject([
-      { group_id: GROUP_ID, series_id: EVENT_ID, occurrence_key: "2026-05-21" },
-      { group_id: GROUP_ID, series_id: EVENT_ID, occurrence_key: "2026-05-28" },
-      { group_id: GROUP_ID, series_id: EVENT_ID, occurrence_key: "2026-06-04" },
+      {
+        group_id: GROUP_ID,
+        series_id: EVENT_ID,
+        occurrence_key: "2026-05-21",
+        title: "Saturday Ride",
+        description: "Series details",
+        timezone: "America/New_York",
+      },
+      {
+        group_id: GROUP_ID,
+        series_id: EVENT_ID,
+        occurrence_key: "2026-05-28",
+        title: "Saturday Ride",
+        description: "Series details",
+        timezone: "America/New_York",
+      },
+      {
+        group_id: GROUP_ID,
+        series_id: EVENT_ID,
+        occurrence_key: "2026-06-04",
+        title: "Saturday Ride",
+        description: "Series details",
+        timezone: "America/New_York",
+      },
     ]);
   });
 
@@ -521,7 +540,11 @@ describe("groups.events router", () => {
     const caller = createCaller(mock.db);
 
     await expect(
-      caller.events.updateEventOccurrence({ groupEventId: EVENT_ID, title: "New title" }),
+      caller.events.updateEventOccurrence({
+        groupEventId: EVENT_ID,
+        title: "New title",
+        timezone: "UTC",
+      }),
     ).rejects.toMatchObject({
       code: "BAD_REQUEST",
       message: "Group event is not a recurring occurrence",
@@ -545,7 +568,11 @@ describe("groups.events router", () => {
     const caller = createCaller(mock.db);
 
     await expect(
-      caller.events.updateEventOccurrence({ groupEventId: EVENT_ID, title: "Moved ride" }),
+      caller.events.updateEventOccurrence({
+        groupEventId: EVENT_ID,
+        title: "Moved ride",
+        timezone: "UTC",
+      }),
     ).rejects.toMatchObject({
       code: "NOT_FOUND",
       message: "Group event not found",
@@ -611,21 +638,14 @@ describe("groups.events router", () => {
     } satisfies Partial<TRPCError>);
   });
 
-  it("resolves recurring occurrence fields and activity plans from the series until overridden", async () => {
+  it("reads recurring occurrence fields without consulting the series", async () => {
     const seriesId = "88888888-8888-4888-8888-888888888888";
-    const series = buildGroupEventRow({
-      id: seriesId,
-      title: "Series Ride",
-      description: "Series default details",
-      recurrence_rule: "FREQ=WEEKLY;COUNT=3",
-      route_id: "99999999-9999-4999-8999-999999999999",
-      activity_plan_id: ACTIVITY_PLAN_ID,
-    });
     const occurrence = buildGroupEventRow({
       title: "Occurrence Override",
-      description: null,
+      description: "Materialized details",
       location_name: "Occurrence Lot",
-      route_id: null,
+      route_id: "99999999-9999-4999-8999-999999999999",
+      activity_plan_id: ACTIVITY_PLAN_ID,
       series_id: seriesId,
       occurrence_key: "2026-05-28",
     });
@@ -635,9 +655,9 @@ describe("groups.events router", () => {
         [{ id: VIEWER_ID }],
         [{ event: occurrence, group: buildGroupRow() }],
         [],
-        [series],
         [],
         [seriesRsvp],
+        [],
       ],
     });
     const caller = createCaller(mock.db);
@@ -647,7 +667,7 @@ describe("groups.events router", () => {
     expect(result.event).toMatchObject({
       id: EVENT_ID,
       title: "Occurrence Override",
-      description: "Series default details",
+      description: "Materialized details",
       location_name: "Occurrence Lot",
       route_id: "99999999-9999-4999-8999-999999999999",
       is_recurring_occurrence: true,
@@ -766,6 +786,7 @@ describe("groups.events router", () => {
       groupEventId: EVENT_ID,
       title: "Saturday Ride - Short Route",
       startsAt: "2026-05-21T13:00:00.000Z",
+      timezone: "UTC",
     });
 
     expect(result.event).toMatchObject({
@@ -835,7 +856,7 @@ describe("groups.events router", () => {
     expect(mock.insertCalls).toHaveLength(0);
   });
 
-  it("enqueues cancellation convergence for every routed series occurrence", async () => {
+  it("cancels every series occurrence without provider route delivery", async () => {
     const seriesId = "88888888-8888-4888-8888-888888888888";
     const overrideEventId = "99999999-9999-4999-8999-999999999998";
     const overrideRouteId = "99999999-9999-4999-8999-999999999997";
@@ -861,9 +882,6 @@ describe("groups.events router", () => {
       route_id: overrideRouteId,
       cancelled_at: NOW,
     });
-    const enqueue = vi
-      .spyOn(wahooRouteDelivery, "enqueueWahooGroupEventRouteDeliveryForAcceptedRecipients")
-      .mockResolvedValue(0);
     const mock = createDbMock({
       select: [
         [{ id: VIEWER_ID }],
@@ -877,25 +895,10 @@ describe("groups.events router", () => {
     });
     const caller = createCaller(mock.db);
 
-    try {
-      await caller.events.cancel({ groupEventId: EVENT_ID, scope: "series" });
-
-      expect(enqueue).toHaveBeenCalledTimes(3);
-      expect(enqueue).toHaveBeenNthCalledWith(
-        1,
-        expect.objectContaining({ eventId: seriesId, sourceRouteId: ROUTE_ID }),
-      );
-      expect(enqueue).toHaveBeenNthCalledWith(
-        2,
-        expect.objectContaining({ eventId: EVENT_ID, sourceRouteId: ROUTE_ID }),
-      );
-      expect(enqueue).toHaveBeenNthCalledWith(
-        3,
-        expect.objectContaining({ eventId: overrideEventId, sourceRouteId: overrideRouteId }),
-      );
-    } finally {
-      enqueue.mockRestore();
-    }
+    await expect(
+      caller.events.cancel({ groupEventId: EVENT_ID, scope: "series" }),
+    ).resolves.toMatchObject({ event: { id: EVENT_ID } });
+    expect(mock.updateCalls).toHaveLength(1);
   });
 
   it("rejects occurrence override updates against recurring series roots", async () => {
@@ -916,6 +919,7 @@ describe("groups.events router", () => {
       caller.events.updateEventOccurrence({
         groupEventId: EVENT_ID,
         title: "Single date override",
+        timezone: "UTC",
       }),
     ).rejects.toMatchObject({
       code: "BAD_REQUEST",

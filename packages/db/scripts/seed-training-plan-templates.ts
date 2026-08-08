@@ -1,43 +1,44 @@
 #!/usr/bin/env tsx
 
-import { ALL_SAMPLE_PLANS } from "@repo/core";
-import { canonicalTrainingPlanStructureSchema } from "@repo/core/schemas";
+import { getSystemTrainingPlanDefinitions } from "@repo/core";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { trainingPlans } from "../src/schema/tables";
 import { deepEqual, prepareDbEnv } from "./_helpers";
 import { structureHash } from "./canonical-json";
+import {
+  materializeSystemTrainingPlanSeedValues,
+  persistedTrainingPlanStructure,
+  type SystemTrainingPlanDefinition,
+} from "./system-content-seed-values";
 
 const args = process.argv.slice(2);
 const isDryRun = args.includes("--dry-run");
 const isValidateOnly = args.includes("--validate-only");
 const noDelete = args.includes("--no-delete") || args.includes("--no-clear");
 
-const templates = ALL_SAMPLE_PLANS;
 let pool: Pool | undefined;
-
-function persistedStructure(template: (typeof templates)[number]) {
-  const { id: _id, ...structure } = template.structure;
-  return canonicalTrainingPlanStructureSchema.parse(structure);
-}
 
 type ExistingTrainingPlanTemplate = typeof trainingPlans.$inferSelect;
 
 function hasChanges(
-  local: (typeof ALL_SAMPLE_PLANS)[number],
+  definition: SystemTrainingPlanDefinition,
   remote: ExistingTrainingPlanTemplate,
 ): boolean {
+  const local = definition.content;
   if (local.name !== remote.name) return true;
   if ((local.description ?? null) !== (remote.description ?? null)) return true;
   if (local.sessions_per_week_target !== remote.sessions_per_week_target) return true;
   if (`${local.duration_hours}` !== `${remote.duration_hours ?? ""}`) return true;
   if (remote.profile_id !== null) return true;
   if (remote.is_system_template !== true) return true;
-  if (remote.template_visibility !== "public") return true;
   if (remote.content_visibility !== "public") return true;
+  if (remote.system_content_key !== definition.key) return true;
+  if (remote.system_content_version !== definition.version) return true;
+  if (remote.system_content_hash !== definition.contentHash) return true;
 
-  const localStructure = persistedStructure(local);
+  const localStructure = persistedTrainingPlanStructure(local);
 
   return (
     structureHash(localStructure) !== remote.structure_hash ||
@@ -46,9 +47,10 @@ function hasChanges(
 }
 
 async function seedTrainingPlanTemplates() {
-  for (const template of templates) persistedStructure(template);
+  const definitions = await getSystemTrainingPlanDefinitions();
+  for (const definition of definitions) persistedTrainingPlanStructure(definition.content);
   if (isValidateOnly) {
-    console.log(`Validated ${templates.length} strict canonical V1 system training templates.`);
+    console.log(`Validated ${definitions.length} strict canonical V1 system training templates.`);
     return;
   }
 
@@ -59,7 +61,7 @@ async function seedTrainingPlanTemplates() {
   console.log("🌱 Starting training plan template sync...");
   console.log(`   Mode: ${isDryRun ? "DRY RUN" : "LIVE"}`);
   console.log("   Filter: all");
-  console.log(`   Local Templates: ${templates.length}\n`);
+  console.log(`   Local Templates: ${definitions.length}\n`);
 
   const existingTemplates = await db
     .select()
@@ -86,7 +88,8 @@ async function seedTrainingPlanTemplates() {
   let deletedCount = 0;
   let errorCount = 0;
 
-  for (const template of templates) {
+  for (const definition of definitions) {
+    const template = definition.content;
     if (!template.id) {
       console.error(`❌ Template "${template.name}" is missing a static ID. Skipping.`);
       errorCount += 1;
@@ -97,24 +100,16 @@ async function seedTrainingPlanTemplates() {
     const existing = existingMap.get(template.id);
 
     try {
+      const { id: _id, ...seedValues } = materializeSystemTrainingPlanSeedValues(definition);
       if (existing) {
-        if (hasChanges(template, existing)) {
+        if (hasChanges(definition, existing)) {
           console.log(`📝 Updating "${template.name}" (${template.id})...`);
 
           if (!isDryRun) {
             await db
               .update(trainingPlans)
               .set({
-                name: template.name,
-                description: template.description ?? null,
-                structure: persistedStructure(template),
-                structure_hash: structureHash(persistedStructure(template)),
-                sessions_per_week_target: template.sessions_per_week_target,
-                duration_hours: template.duration_hours ?? null,
-                profile_id: null,
-                is_system_template: true,
-                template_visibility: "public",
-                content_visibility: "public",
+                ...seedValues,
                 updated_at: new Date(),
               })
               .where(eq(trainingPlans.id, existing.id));
@@ -131,17 +126,7 @@ async function seedTrainingPlanTemplates() {
           const now = new Date();
 
           await db.insert(trainingPlans).values({
-            id: template.id,
-            profile_id: null,
-            is_system_template: true,
-            template_visibility: "public",
-            content_visibility: "public",
-            name: template.name,
-            description: template.description ?? null,
-            structure: persistedStructure(template),
-            structure_hash: structureHash(persistedStructure(template)),
-            sessions_per_week_target: template.sessions_per_week_target,
-            duration_hours: template.duration_hours ?? null,
+            ...materializeSystemTrainingPlanSeedValues(definition),
             created_at: now,
             updated_at: now,
           });

@@ -22,6 +22,7 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 const structure = {
   version: 3,
+  activity_category: "run",
   segments: [
     {
       id: id(4),
@@ -32,7 +33,6 @@ const structure = {
     {
       id: id(1),
       role: "activity",
-      activity_category: "run",
       name: "Run",
       intervals: [
         {

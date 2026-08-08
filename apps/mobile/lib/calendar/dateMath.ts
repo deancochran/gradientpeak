@@ -1,10 +1,20 @@
-import { formatDateOnlyInTimeZone, scheduledDateTimeToIsoInstant } from "@repo/core";
-import { addDays, addMonths, endOfMonth, format, startOfMonth } from "date-fns";
-
-const MINUTE_MS = 60_000;
+import {
+  addDeviceCalendarDays,
+  addDeviceCalendarMonths,
+  endOfDeviceCalendarDateToIsoInstant,
+  formatDateOnlyInTimeZone,
+  formatDeviceCalendarDate,
+  getDeviceCalendarMonthEnd,
+  getDeviceCalendarMonthStart,
+  isValidDateOnlyUtc,
+  millisecondsUntilNextDeviceCalendarDate,
+  parseDeviceCalendarDate,
+  scheduledDateTimeToIsoInstant,
+  startOfDeviceCalendarDateToIsoInstant,
+} from "@repo/core/calendar";
 
 export function toDateKey(date: Date): string {
-  return format(date, "yyyy-MM-dd");
+  return formatDeviceCalendarDate(date);
 }
 
 export function toDateKeyInTimeZone(date: Date, timeZone: string): string {
@@ -12,24 +22,19 @@ export function toDateKeyInTimeZone(date: Date, timeZone: string): string {
 }
 
 export function isCanonicalDateKey(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const parsed = new Date(`${value}T12:00:00.000Z`);
-  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  return isValidDateOnlyUtc(value);
 }
 
 export function parseDateKey(dateKey: string): Date {
-  const [year, month, day] = dateKey.split("-").map(Number);
-  return new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1, 12, 0, 0, 0);
+  return parseDeviceCalendarDate(dateKey);
 }
 
 export function toLocalDayStartIso(dateKey: string): string {
-  const [year, month, day] = dateKey.split("-").map(Number);
-  return new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1, 0, 0, 0, 0).toISOString();
+  return startOfDeviceCalendarDateToIsoInstant(dateKey);
 }
 
 export function toLocalDayEndIso(dateKey: string): string {
-  const [year, month, day] = dateKey.split("-").map(Number);
-  return new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1, 23, 59, 59, 999).toISOString();
+  return endOfDeviceCalendarDateToIsoInstant(dateKey);
 }
 
 /**
@@ -41,25 +46,23 @@ export function toPlanningDayStartIso(dateKey: string, timeZone: string): string
 }
 
 export function millisecondsUntilNextLocalDay(now: Date): number {
-  const nextDay = new Date(now);
-  nextDay.setHours(24, 0, 0, 0);
-  return Math.max(MINUTE_MS, nextDay.getTime() - now.getTime());
+  return millisecondsUntilNextDeviceCalendarDate(now);
 }
 
 export function addDaysToDateKey(dateKey: string, days: number): string {
-  return toDateKey(addDays(parseDateKey(dateKey), days));
+  return addDeviceCalendarDays(dateKey, days);
 }
 
 export function addMonthsToDateKey(dateKey: string, months: number): string {
-  return toDateKey(addMonths(parseDateKey(dateKey), months));
+  return addDeviceCalendarMonths(dateKey, months);
 }
 
 export function getStartOfMonthKey(dateKey: string): string {
-  return toDateKey(startOfMonth(parseDateKey(dateKey)));
+  return getDeviceCalendarMonthStart(dateKey);
 }
 
 export function getEndOfMonthKey(dateKey: string): string {
-  return toDateKey(endOfMonth(parseDateKey(dateKey)));
+  return getDeviceCalendarMonthEnd(dateKey);
 }
 
 export function getMonthAnchor(dateKey: string): string {

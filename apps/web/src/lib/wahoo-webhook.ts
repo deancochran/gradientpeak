@@ -13,6 +13,7 @@ export interface WahooWebhookPayload {
 type AuthenticatedWahooWebhookPayload = Omit<WahooWebhookPayload, "webhook_token">;
 
 interface WahooWebhookHandlerDependencies {
+  isEnabled: () => boolean;
   getToken: () => string | undefined;
   storeAndEnqueueReceipt: (payload: AuthenticatedWahooWebhookPayload) => Promise<unknown>;
   maxBodyBytes?: number;
@@ -111,6 +112,10 @@ export function verifyWahooWebhookSignature(
 
 export function createWahooWebhookPostHandler(dependencies: WahooWebhookHandlerDependencies) {
   return async (request: Request): Promise<Response> => {
+    if (!dependencies.isEnabled()) {
+      return errorResponse(404, "Webhook receiver is not available");
+    }
+
     const token = dependencies.getToken()?.trim();
 
     if (!token) {

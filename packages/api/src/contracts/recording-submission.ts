@@ -49,27 +49,18 @@ const recordingSummarySubmissionBaseShape = {
   source: z.literal("mobile_recording").default("mobile_recording"),
 } satisfies z.ZodRawShape;
 
-const acceptedRecordingSummarySubmissionSchema = z
-  .object({
-    ...recordingSummarySubmissionBaseShape,
-    recordingSessionId: z.string().trim().min(1).max(200),
-    artifactSource: z.literal("acceptedArtifact"),
-    acceptedArtifact: recordingAcceptedArtifactSchema,
-  })
-  .strict();
-
 const uploadedRecordingSummarySubmissionSchema = z
   .object({
     ...recordingSummarySubmissionBaseShape,
     recordingSessionId: z.string().trim().min(1).max(200),
-    artifactSource: z.literal("uploadedArtifact"),
     uploadedArtifact: recordingUploadedArtifactSchema,
   })
   .strict();
 
 /** API-owned session-bound recording submission input. */
 export const recordingSummarySubmissionInputSchema = z
-  .union([acceptedRecordingSummarySubmissionSchema, uploadedRecordingSummarySubmissionSchema])
+  .object(uploadedRecordingSummarySubmissionSchema.shape)
+  .strict()
   .refine((value) => new Date(value.finishedAt) > new Date(value.startedAt), {
     message: "finishedAt must be after startedAt",
     path: ["finishedAt"],
@@ -88,10 +79,6 @@ const mobileRecordingUploadClaimSchema = z
   .object({
     ingestionId: z.string().uuid(),
     activityId: z.string().uuid(),
-    byteSize: z.number().int().positive().max(MAX_ACTIVITY_FILE_SIZE_BYTES),
-    sha256: sha256Schema,
-    format: mobileRecordingArtifactFormatSchema,
-    mediaType: z.string().trim().min(1),
   })
   .strict();
 
@@ -106,7 +93,6 @@ export const beginMobileRecordingUploadOutputSchema = z.discriminatedUnion("stat
   mobileRecordingUploadClaimSchema
     .extend({
       status: z.literal("ready"),
-      acceptedArtifact: recordingAcceptedArtifactSchema,
     })
     .strict(),
 ]);

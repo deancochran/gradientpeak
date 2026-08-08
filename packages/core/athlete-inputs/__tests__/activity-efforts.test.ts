@@ -7,16 +7,13 @@ import {
   MANUAL_ACTIVITY_EFFORT_PROVENANCE,
 } from "../activity-effort-policy";
 import {
-  createActivityEffortInputSchema,
   formatActivityEffortValue,
   formatEffortDuration,
   getActivityEffortDefinition,
   getActivityEffortDefinitionsForCategory,
-  normalizeActivityEffortUpdate,
   paceSecondsFromSpeedMetersPerSecond,
   speedMetersPerSecondFromDistanceAndElapsedSeconds,
   speedMetersPerSecondFromPace,
-  updateActivityEffortInputSchema,
 } from "../activity-efforts";
 
 describe("activity effort definitions", () => {
@@ -39,83 +36,6 @@ describe("activity effort definitions", () => {
       defaultDurationSeconds: 300,
       durationPresets: [30, 60, 120, 300, 1_200, 1_800],
     });
-  });
-
-  it("rejects unsupported category and effort combinations", () => {
-    expect(() =>
-      createActivityEffortInputSchema.parse({
-        activity_category: "run",
-        effort_type: "power",
-        duration_seconds: 60,
-        value: 300,
-        recorded_at: "2026-07-09T12:00:00.000Z",
-      }),
-    ).toThrow();
-  });
-
-  it("normalizes unit and value on create", () => {
-    const parsed = createActivityEffortInputSchema.parse({
-      activity_category: "bike",
-      effort_type: "power",
-      duration_seconds: 1200,
-      value: 301.4,
-      recorded_at: "2026-07-09T12:00:00.000Z",
-    });
-
-    expect(parsed).toMatchObject({ unit: "watts", value: 301 });
-  });
-
-  it("enforces canonical hard bounds on create and update", () => {
-    const baseCreate = {
-      activity_category: "bike" as const,
-      effort_type: "power" as const,
-      duration_seconds: 14_400,
-      value: 3_000,
-      recorded_at: "2026-07-09T12:00:00.000Z",
-    };
-    expect(createActivityEffortInputSchema.safeParse(baseCreate).success).toBe(true);
-    expect(
-      createActivityEffortInputSchema.safeParse({ ...baseCreate, duration_seconds: 14_401 })
-        .success,
-    ).toBe(false);
-    expect(createActivityEffortInputSchema.safeParse({ ...baseCreate, value: 3_001 }).success).toBe(
-      false,
-    );
-
-    const id = "00000000-0000-4000-8000-000000000001";
-    expect(
-      updateActivityEffortInputSchema.safeParse({ id, duration_seconds: 14_401 }).success,
-    ).toBe(false);
-    expect(updateActivityEffortInputSchema.safeParse({ id, value: 3_001 }).success).toBe(false);
-    expect(
-      updateActivityEffortInputSchema.safeParse({
-        id,
-        activity_category: "run",
-        effort_type: "speed",
-        value: 13,
-      }).success,
-    ).toBe(true);
-  });
-
-  it("allows explicit activity linkage and start offsets to be cleared", () => {
-    const normalized = normalizeActivityEffortUpdate(
-      {
-        activity_id: "00000000-0000-4000-8000-000000000010",
-        activity_category: "run",
-        duration_seconds: 600,
-        effort_type: "speed",
-        recorded_at: "2026-07-09T12:00:00.000Z",
-        start_offset: 30,
-        value: 4,
-      },
-      {
-        id: "00000000-0000-4000-8000-000000000001",
-        activity_id: null,
-        start_offset: null,
-      },
-    );
-
-    expect(normalized).toMatchObject({ activity_id: null, start_offset: null });
   });
 
   it("formats effort values and durations", () => {

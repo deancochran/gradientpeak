@@ -266,9 +266,6 @@ function UserProfilePage() {
                 <Button asChild variant="outline">
                   <Link to="/profile-metrics">Profile metrics</Link>
                 </Button>
-                <Button asChild variant="outline">
-                  <Link to="/activity-efforts">Activity efforts</Link>
-                </Button>
                 <Button asChild>
                   <Link to="/settings" search={{ flash: undefined, flashType: undefined }}>
                     Edit profile

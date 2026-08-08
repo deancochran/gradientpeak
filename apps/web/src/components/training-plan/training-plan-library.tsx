@@ -95,8 +95,6 @@ export function TrainingPlanLibrary({ onCreate, onOpen }: TrainingPlanLibraryPro
   const owned = api.trainingPlans.list.useInfiniteQuery(
     {
       ownerScope: "own",
-      includeOwnOnly: true,
-      includeSystemTemplates: false,
       search: search.trim() || undefined,
       limit: 25,
     },

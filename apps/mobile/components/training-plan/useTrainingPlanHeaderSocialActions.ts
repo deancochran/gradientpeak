@@ -1,5 +1,6 @@
 import { invalidateTrainingPlanQueries } from "@repo/api/react";
-import type { ContentVisibility } from "@repo/core";
+import { type ContentVisibility, formatDateOnlyInTimeZone } from "@repo/core";
+import { trainingPlanSchema } from "@repo/core/schemas";
 import type { Router } from "expo-router";
 import { Alert, Share } from "react-native";
 import { api } from "@/lib/api";
@@ -14,10 +15,9 @@ const VISIBILITY_LABELS: Record<ContentVisibility, string> = {
 function resolvePlanVisibility(
   plan: {
     content_visibility?: string | null;
-    template_visibility?: string | null;
   } | null,
 ): ContentVisibility {
-  const visibility = plan?.content_visibility ?? plan?.template_visibility;
+  const visibility = plan?.content_visibility;
   return visibility === "public" || visibility === "followers" || visibility === "private"
     ? visibility
     : "private";
@@ -37,11 +37,16 @@ interface UseTrainingPlanHeaderSocialActionsParams {
   plan: {
     id: string;
     name?: string;
+    description?: string | null;
+    structure?: unknown;
     structure_hash: string;
     content_visibility?: string | null;
-    template_visibility?: string | null;
     has_liked?: boolean;
     likes_count?: number;
+    editor?: {
+      revision: number;
+      structureHash: string;
+    } | null;
   } | null;
   router: Pick<Router, "replace">;
   utils: ReturnType<typeof api.useUtils>;
@@ -59,7 +64,7 @@ export function useTrainingPlanHeaderSocialActions({
   );
   React.useEffect(() => {
     setContentVisibility(resolvePlanVisibility(plan));
-  }, [plan?.content_visibility, plan?.template_visibility]);
+  }, [plan?.content_visibility]);
 
   const [isLiked, setIsLiked] = React.useState(plan?.has_liked ?? false);
   const [likesCount, setLikesCount] = React.useState(plan?.likes_count ?? 0);
@@ -68,29 +73,7 @@ export function useTrainingPlanHeaderSocialActions({
     setLikesCount(plan?.likes_count ?? 0);
   }, [plan?.has_liked, plan?.likes_count]);
 
-  const duplicatePlanMutation = api.trainingPlans.duplicate.useMutation({
-    onSuccess: async (result: { id: string }) => {
-      await invalidateTrainingPlanQueries(utils);
-      Alert.alert("Duplicated", "Training plan added to your plans.", [
-        {
-          text: "Open",
-          onPress: () => router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(result.id)),
-        },
-      ]);
-    },
-    onError: (error: { message?: string }) => {
-      Alert.alert("Duplicate failed", error.message || "Could not duplicate this training plan");
-    },
-  });
-
-  const updateVisibilityMutation = api.trainingPlans.update.useMutation({
-    onSuccess: async () => invalidateTrainingPlanQueries(utils),
-    onError: async (error) => {
-      if (error.data?.code === "CONFLICT") await invalidateTrainingPlanQueries(utils);
-      setContentVisibility(resolvePlanVisibility(plan));
-      Alert.alert("Update Failed", error.message || "Failed to update visibility");
-    },
-  });
+  const commitPlanMutation = api.trainingPlans.commit.useMutation();
 
   const toggleLikeMutation = api.social.toggleLike.useMutation({
     onError: () => {
@@ -101,42 +84,60 @@ export function useTrainingPlanHeaderSocialActions({
 
   const handleChangeVisibility = () => {
     if (!plan) return;
+    const commitVisibility = async (visibility: ContentVisibility) => {
+      setContentVisibility(visibility);
+      try {
+        const profile = await utils.profiles.get.fetch();
+        const state = await utils.athleteIntelligence.getReadModel.fetch({
+          profileId: profile.id,
+          sections: { status: true },
+        });
+        const parsed = trainingPlanSchema.parse(plan.structure);
+        if (state.publishedRevision === null || !plan.editor)
+          throw new Error("Refresh the plan and athlete state before saving.");
+        const { id: _planId, ...structure } = parsed;
+        const result = await commitPlanMutation.mutateAsync({
+          kind: "update",
+          basePublishedRevision: state.publishedRevision,
+          draft: {
+            planId: plan.id,
+            expectedRevision: plan.editor.revision,
+            expectedStructureHash: plan.editor.structureHash,
+            name: plan.name ?? "Training plan",
+            description: plan.description ?? null,
+            contentVisibility: visibility,
+            structure,
+            previewStartDate: formatDateOnlyInTimeZone(
+              new Date(),
+              profile.planning_timezone ?? "UTC",
+            ),
+          },
+        });
+        if (result.status !== "saved") throw new Error("The plan changed. Refresh and retry.");
+        await invalidateTrainingPlanQueries(utils);
+      } catch (error) {
+        setContentVisibility(resolvePlanVisibility(plan));
+        Alert.alert(
+          "Update Failed",
+          error instanceof Error ? error.message : "Failed to update visibility",
+        );
+      }
+    };
     Alert.alert(
       "Change visibility",
       `Current visibility is ${VISIBILITY_LABELS[contentVisibility]}.`,
       [
         {
           text: "Private",
-          onPress: () => {
-            setContentVisibility("private");
-            updateVisibilityMutation.mutate({
-              id: plan.id,
-              expectedStructureHash: plan.structure_hash,
-              template_visibility: "private",
-            });
-          },
+          onPress: () => void commitVisibility("private"),
         },
         {
           text: "Followers",
-          onPress: () => {
-            setContentVisibility("followers");
-            updateVisibilityMutation.mutate({
-              id: plan.id,
-              expectedStructureHash: plan.structure_hash,
-              template_visibility: "followers",
-            });
-          },
+          onPress: () => void commitVisibility("followers"),
         },
         {
           text: "Public",
-          onPress: () => {
-            setContentVisibility("public");
-            updateVisibilityMutation.mutate({
-              id: plan.id,
-              expectedStructureHash: plan.structure_hash,
-              template_visibility: "public",
-            });
-          },
+          onPress: () => void commitVisibility("public"),
         },
         { text: "Cancel", style: "cancel" },
       ],
@@ -168,19 +169,52 @@ export function useTrainingPlanHeaderSocialActions({
     toggleLikeMutation.mutate({ entity_id: plan.id, entity_type: "training_plan" });
   };
 
-  const handleDuplicate = () => {
+  const handleDuplicate = async () => {
     if (!plan?.id) {
       Alert.alert("Duplicate failed", "No plan ID was found.");
       return;
     }
-    duplicatePlanMutation.mutate({
-      id: plan.id,
-      newName: `${plan.name} (Copy)`,
-    });
+    try {
+      const profile = await utils.profiles.get.fetch();
+      if (!profile?.id) throw new Error("Refresh your profile before duplicating.");
+      const state = await utils.athleteIntelligence.getReadModel.fetch({
+        profileId: profile.id,
+        sections: { status: true },
+      });
+      if (state.publishedRevision === null) {
+        throw new Error("Refresh athlete state before duplicating this plan.");
+      }
+      const result = await commitPlanMutation.mutateAsync({
+        kind: "duplicate",
+        basePublishedRevision: state.publishedRevision,
+        draft: {
+          sourcePlanId: plan.id,
+          name: `${plan.name} (Copy)`,
+          previewStartDate: formatDateOnlyInTimeZone(
+            new Date(),
+            profile.planning_timezone ?? "UTC",
+          ),
+        },
+      });
+      if (result.status !== "saved")
+        throw new Error("The plan or athlete state changed. Refresh and retry.");
+      await invalidateTrainingPlanQueries(utils);
+      Alert.alert("Duplicated", "Training plan added to your plans.", [
+        {
+          text: "Open",
+          onPress: () => router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(result.planId)),
+        },
+      ]);
+    } catch (error) {
+      Alert.alert(
+        "Duplicate failed",
+        error instanceof Error ? error.message : "Could not duplicate",
+      );
+    }
   };
 
   return {
-    duplicatePending: duplicatePlanMutation.isPending,
+    duplicatePending: commitPlanMutation.isPending,
     contentVisibility,
     handleDuplicate,
     handleChangeVisibility,
@@ -188,6 +222,6 @@ export function useTrainingPlanHeaderSocialActions({
     handleToggleLike,
     isLiked,
     likesCount,
-    visibilityPending: updateVisibilityMutation.isPending,
+    visibilityPending: commitPlanMutation.isPending,
   };
 }

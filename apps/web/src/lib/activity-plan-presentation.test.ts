@@ -53,11 +53,11 @@ describe("activity plan presentation", () => {
       getActivityPlanMetricSummary({
         structure: {
           version: 3,
+          activity_category: "run",
           segments: [
             {
               id: "00000000-0000-4000-8000-000000000001",
               role: "activity",
-              activity_category: "run",
               name: "Run",
               intervals: [
                 {

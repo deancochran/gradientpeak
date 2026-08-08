@@ -3,9 +3,6 @@ import {
   calculateCyclingNormalizedPower,
   calculateEfficiencyFactor,
   calculateRunningNormalizedGradedPace,
-  selectAerobicDecouplingValue,
-  selectEfficiencyFactorValue,
-  selectRunningNormalizedGradedSpeedMetersPerSecond,
 } from "@repo/core/calculations";
 import {
   activities,
@@ -14,14 +11,16 @@ import {
   activityEfforts,
   activityFileIngestions,
   activitySegments,
-  integrationResourceLinks,
+  activitySourceReferences,
   profileMetrics,
 } from "@repo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { getRequiredDb } from "../../db";
+import { materializeActivityAthleteStateEvidence } from "../athlete-intelligence/athlete-state-evidence";
 import type { GeneratedActivityLthrEvidence } from "./reconcile-activity-evidence";
 import {
   type ActivitySubmission,
+  canCanonicalEvidenceReplace,
   MATERIALIZER_VERSION,
   manualImportActivityId,
   providerActivityId,
@@ -29,6 +28,15 @@ import {
   recordingSessionActivityId,
   submitActivity,
 } from "./submit-activity";
+
+vi.mock("../athlete-intelligence/athlete-state-evidence", () => ({
+  materializeActivityAthleteStateEvidence: vi.fn().mockResolvedValue({
+    commonLoad: null,
+    confidence: null,
+    effectiveAt: null,
+    materialChanged: false,
+  }),
+}));
 
 describe("recordingSessionActivityId", () => {
   it("returns a stable profile-scoped UUID", () => {
@@ -153,6 +161,16 @@ describe("providerProjectionDecision", () => {
   });
 });
 
+describe("canonical activity evidence priority", () => {
+  it("orders FIT above raw samples, provider summaries, and inferred fallback", () => {
+    expect(canCanonicalEvidenceReplace("fit_artifact", "raw_samples")).toBe(false);
+    expect(canCanonicalEvidenceReplace("raw_samples", "provider_summary")).toBe(false);
+    expect(canCanonicalEvidenceReplace("provider_summary", "inferred_fallback")).toBe(false);
+    expect(canCanonicalEvidenceReplace("provider_summary", "fit_artifact")).toBe(true);
+    expect(canCanonicalEvidenceReplace("raw_samples", "raw_samples")).toBe(true);
+  });
+});
+
 type DbClient = ReturnType<typeof getRequiredDb>;
 const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
 const segmentSet = {
@@ -241,13 +259,23 @@ function createDb(
     moving_ms: 60_000,
     timing_coverage: "complete",
     segments_revision: 1,
+    canonical_evidence_tier: "provider_summary",
     content_visibility: "private",
+    athlete_state_common_load: null,
+    athlete_state_activity_category: null,
+    athlete_state_evidence_confidence: null,
+    athlete_state_capability_distance_meters: null,
+    athlete_state_capability_duration_minutes: null,
+    athlete_state_input_version: null,
+    athlete_state_computed_at: null,
   },
 ) {
   const committed: unknown[] = [];
   const insertedValues: Array<{ table: unknown; values: unknown }> = [];
   const updatedValues: Array<{ table: unknown; values: unknown }> = [];
-  const transaction = vi.fn(async (callback: (tx: MockTx) => Promise<void>) => {
+  let activityRow = existingActivity;
+  let segmentRows: unknown[] = [];
+  const transaction = vi.fn(async (callback: (tx: MockTx) => Promise<unknown>) => {
     const staged: unknown[] = [];
     const selectBuilder = (rows: unknown[]) => {
       let builder: MockSelectBuilder;
@@ -264,7 +292,13 @@ function createDb(
     const tx = {
       select: vi.fn(() => ({
         from: vi.fn((table: unknown) =>
-          selectBuilder(table === activities && existingActivity ? [existingActivity] : []),
+          selectBuilder(
+            table === activities && activityRow
+              ? [activityRow]
+              : table === activitySegments
+                ? segmentRows
+                : [],
+          ),
         ),
       })),
       execute: vi.fn().mockResolvedValue({ rows: [] }),
@@ -273,8 +307,28 @@ function createDb(
           if (table === failOn) throw new Error("write failed");
           staged.push(table);
           insertedValues.push({ table, values });
+          if (table === activities)
+            activityRow = {
+              athlete_state_common_load: null,
+              athlete_state_activity_category: null,
+              athlete_state_evidence_confidence: null,
+              athlete_state_capability_distance_meters: null,
+              athlete_state_capability_duration_minutes: null,
+              athlete_state_input_version: null,
+              athlete_state_computed_at: null,
+              ...(values as object),
+            };
+          if (table === activitySegments) segmentRows = Array.isArray(values) ? values : [values];
           const conflictResult = {
-            returning: vi.fn().mockResolvedValue([{ id: "persisted-id" }]),
+            returning: vi.fn().mockResolvedValue(
+              table === activitySourceReferences
+                ? [
+                    {
+                      activityId: (values as { activity_id: string }).activity_id,
+                    },
+                  ]
+                : [{ id: "persisted-id", sourceRevision: 1 }],
+            ),
           };
           return {
             onConflictDoUpdate: vi.fn(() => conflictResult),
@@ -287,6 +341,8 @@ function createDb(
         set: vi.fn((values: unknown) => ({
           where: vi.fn(() => {
             updatedValues.push({ table, values });
+            if (table === activities && activityRow)
+              activityRow = { ...(activityRow as object), ...(values as object) };
             if (table === failOn) throw new Error("write failed");
             staged.push(table);
             const result = Promise.resolve(undefined);
@@ -303,8 +359,9 @@ function createDb(
         }),
       })),
     };
-    await callback(tx);
+    const result = await callback(tx);
     committed.push(...staged);
+    return result;
   });
   return {
     db: { transaction } as unknown as DbClient,
@@ -365,6 +422,7 @@ describe("submitActivity", () => {
               created_at: new Date(),
               profile_id: "profile-1",
               activity_id: "activity-1",
+              segment_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
               activity_category: "bike",
               effort_type: "power",
               duration_seconds: 300,
@@ -372,6 +430,10 @@ describe("submitActivity", () => {
               recorded_at: new Date(),
               unit: "watts",
               value: 250,
+              source: "derived",
+              method: "activity_file_best_effort",
+              calculation_version: "best-effort-extraction-v1",
+              provenance: { observation_id: "effort-crossing" },
             },
           ],
           detectedLTHR: null,
@@ -413,6 +475,148 @@ describe("submitActivity", () => {
     expect(committed).toEqual([]);
   });
 
+  it("attaches a lower-quality provider source without replacing canonical FIT evidence", async () => {
+    const materializeCalls = vi.mocked(materializeActivityAthleteStateEvidence).mock.calls.length;
+    const { db, insertedValues, updatedValues } = createDb(undefined, {
+      id: "activity-1",
+      profile_id: "profile-1",
+      activity_plan_id: null,
+      name: "FIT authority",
+      notes: null,
+      started_at: new Date("2026-01-01T10:00:00.000Z"),
+      finished_at: new Date("2026-01-01T11:00:00.000Z"),
+      elapsed_ms: 3_600_000,
+      active_ms: 3_600_000,
+      moving_ms: 3_600_000,
+      timing_coverage: "complete",
+      segments_revision: 1,
+      content_visibility: "private",
+      canonical_evidence_tier: "fit_artifact",
+    });
+    const result = await submitActivity(db, {
+      ...createInput(),
+      requestedActivityId: "activity-1",
+      name: "Lower quality provider summary",
+      providerProvenance: {
+        provider: "strava",
+        externalId: "strava-summary-1",
+        integrationId: "integration-2",
+        providerUpdatedAt: "2026-01-02T00:00:00.000Z",
+        evidenceTier: "provider_summary",
+      },
+      analysis: {
+        efforts: [],
+        detectedLTHR: null,
+        ingestion: {
+          source: "provider_sync",
+          provider: "strava",
+          externalId: "strava-summary-1",
+          operationKey: "provider_sync:strava:strava-summary-1:artifact-a",
+          artifact: {
+            sha256: "a".repeat(64),
+            byteSize: 123,
+            bucket: "activity-files",
+            path: `artifacts/sha256/profile-1/${"a".repeat(64)}`,
+            mediaType: "application/gpx+xml",
+            format: "gpx",
+          },
+        },
+      },
+    });
+
+    expect(result.noOp).toBe(true);
+    expect(insertedValues.some(({ table }) => table === activitySourceReferences)).toBe(true);
+    expect(insertedValues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          table: activitySourceReferences,
+          values: expect.objectContaining({ artifact_sha256: "a".repeat(64) }),
+        }),
+      ]),
+    );
+    expect(updatedValues.some(({ table }) => table === activities)).toBe(false);
+    expect(materializeActivityAthleteStateEvidence).toHaveBeenCalledTimes(materializeCalls);
+  });
+
+  it("persists normalized material effective time for deferred import recovery", async () => {
+    vi.mocked(materializeActivityAthleteStateEvidence).mockResolvedValueOnce({
+      commonLoad: 25,
+      confidence: 0.9,
+      effectiveAt: new Date("2026-01-02T11:00:00.000Z"),
+      materialChanged: true,
+    });
+    const { db, updatedValues } = createDb(undefined, null);
+    await submitActivity(db, createInput(), {
+      importRunId: "77777777-7777-4777-8777-777777777777",
+      deferAthleteStateRefresh: true,
+    });
+
+    expect(updatedValues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          table: activitySourceReferences,
+          values: expect.objectContaining({
+            last_material_import_run_id: "77777777-7777-4777-8777-777777777777",
+            last_material_effective_at: new Date("2026-01-02T11:00:00.000Z"),
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("treats a summary-to-FIT correction as material when reduced values stay equal", async () => {
+    vi.mocked(materializeActivityAthleteStateEvidence).mockResolvedValueOnce({
+      commonLoad: 25,
+      confidence: 0.9,
+      effectiveAt: new Date("2026-01-01T11:00:00.000Z"),
+      materialChanged: true,
+    });
+    const { db, updatedValues } = createDb();
+    await submitActivity(
+      db,
+      {
+        ...createInput(),
+        requestedActivityId: "activity-1",
+        analysis: {
+          efforts: [],
+          detectedLTHR: null,
+          ingestion: {
+            source: "provider_sync",
+            provider: "wahoo",
+            externalId: "external-1",
+            artifact: {
+              sha256: "b".repeat(64),
+              byteSize: 321,
+              bucket: "activity-files",
+              path: `artifacts/sha256/profile-1/${"b".repeat(64)}`,
+              mediaType: "application/octet-stream",
+              format: "fit",
+            },
+          },
+        },
+      },
+      { importRunId: "88888888-8888-4888-8888-888888888888" },
+    );
+
+    expect(materializeActivityAthleteStateEvidence).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        canonicalEvidenceMaterialChanged: true,
+        effortMaterialRecordedAt: null,
+      }),
+    );
+    expect(updatedValues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          table: activitySourceReferences,
+          values: expect.objectContaining({
+            last_material_import_run_id: "88888888-8888-4888-8888-888888888888",
+          }),
+        }),
+      ]),
+    );
+  });
+
   it("atomically creates every canonical provider projection", async () => {
     const { db, committed, insertedValues, transaction } = createDb(undefined, null);
     await submitActivity(db, {
@@ -424,12 +628,16 @@ describe("submitActivity", () => {
             created_at: new Date("2026-01-01T11:00:00Z"),
             profile_id: "wrong-profile",
             activity_id: "wrong-activity",
+            segment_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             activity_category: "bike",
             effort_type: "power",
             duration_seconds: 300,
             recorded_at: new Date("2026-01-01T11:00:00Z"),
             unit: "watts",
             value: 250,
+            source: "derived",
+            method: "activity_file_best_effort",
+            calculation_version: "best-effort-extraction-v1",
             provenance: { observation_id: "effort-1" },
           },
         ],
@@ -454,7 +662,7 @@ describe("submitActivity", () => {
     expect(committed).toEqual(
       expect.arrayContaining([
         activities,
-        integrationResourceLinks,
+        activitySourceReferences,
         activityEfforts,
         activityFileIngestions,
         activityArtifacts,
@@ -475,6 +683,12 @@ describe("submitActivity", () => {
         status: "ready",
         provider: "wahoo",
         external_id: "external-1",
+      }),
+    );
+    expect(materializeActivityAthleteStateEvidence).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        effortMaterialRecordedAt: new Date("2026-01-01T11:00:00.000Z"),
       }),
     );
   });
@@ -601,7 +815,7 @@ describe("submitActivity", () => {
     ]);
   });
 
-  it("derives retained relational projections only from structured segment results", async () => {
+  it("keeps numerical analysis in the canonical segment summary", async () => {
     const normalizedGradedPaceResult = calculateRunningNormalizedGradedPace({
       samples: Array.from({ length: 61 }, (_, timestampSeconds) => ({
         timestampSeconds,
@@ -644,13 +858,21 @@ describe("submitActivity", () => {
       segmentSet: structuredSegmentSet,
     });
 
-    expect(created.insertedValues.find(({ table }) => table === activities)?.values).toMatchObject({
-      normalized_graded_speed_mps: selectRunningNormalizedGradedSpeedMetersPerSecond(
-        normalizedGradedPaceResult,
-      ),
-      efficiency_factor: selectEfficiencyFactorValue(efficiencyFactorResult),
-      aerobic_decoupling: selectAerobicDecouplingValue(aerobicDecouplingResult),
-    });
+    const activityValues = created.insertedValues.find(({ table }) => table === activities)?.values;
+    expect(activityValues).not.toHaveProperty("normalized_graded_speed_mps");
+    expect(activityValues).not.toHaveProperty("efficiency_factor");
+    expect(activityValues).not.toHaveProperty("aerobic_decoupling");
+    expect(created.insertedValues.find(({ table }) => table === activitySegments)?.values).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          summary: expect.objectContaining({
+            normalizedGradedPaceResult,
+            efficiencyFactorResult,
+            aerobicDecouplingResult,
+          }),
+        }),
+      ]),
+    );
   });
 
   it("round-trips FIT string and numeric raw sub-activity-category identity through segment insertion", async () => {
@@ -810,6 +1032,7 @@ describe("submitActivity", () => {
           id: "effort-1",
           activity_id: "activity-1",
           profile_id: "profile-1",
+          segment_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
           effort_type: "power",
           activity_category: "bike",
           duration_seconds: 5,
@@ -817,6 +1040,9 @@ describe("submitActivity", () => {
           unit: "watts",
           recorded_at: new Date("2026-01-01T11:00:00Z"),
           created_at: new Date(),
+          source: "derived",
+          method: "activity_file_best_effort",
+          calculation_version: "best-effort-extraction-v1",
           provenance: { observation_id: "effort-1" },
         },
       ],
@@ -939,6 +1165,7 @@ describe("submitActivity", () => {
           id: "effort-1",
           activity_id: "foreign-activity",
           profile_id: "foreign-profile",
+          segment_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
           effort_type: "power",
           activity_category: "bike",
           duration_seconds: 5,
@@ -946,6 +1173,9 @@ describe("submitActivity", () => {
           unit: "watts",
           recorded_at: new Date(),
           created_at: new Date(),
+          source: "derived",
+          method: "activity_file_best_effort",
+          calculation_version: "best-effort-extraction-v1",
           provenance: { observation_id: "effort-1" },
         },
       ],
@@ -983,12 +1213,16 @@ describe("submitActivity", () => {
             created_at: new Date(),
             profile_id: "profile-1",
             activity_id: "activity-1",
+            segment_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             recorded_at: new Date(),
             activity_category: "bike",
             effort_type: "power",
             duration_seconds: 300,
             unit: "watts",
             value: 250,
+            source: "derived",
+            method: "activity_file_best_effort",
+            calculation_version: "best-effort-extraction-v1",
             provenance: { observation_id: "effort-1" },
           },
         ],

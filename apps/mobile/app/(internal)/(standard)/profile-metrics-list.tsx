@@ -1,3 +1,4 @@
+import { projectAthletePerformanceTargetOverview } from "@repo/core";
 import {
   formatProfileMetricValue,
   getProfileMetricDefinition,
@@ -15,6 +16,7 @@ import { CompactInsightCard, DetailChartModal } from "@/components/shared";
 import { ErrorState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { getProfileMetricVisualPolicy } from "@/lib/insights/visualPolicy";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import {
@@ -362,15 +364,31 @@ function ProfileMetricRecords({
 
 export default function ProfileMetricsListScreen() {
   const navigateTo = useAppNavigate();
-  const performanceModelAsOf = React.useRef(new Date().toISOString()).current;
+  const { user } = useAuth();
   const { data, isLoading, error, hasNextPage, isFetchingNextPage, fetchNextPage } =
     api.profileMetrics.list.useInfiniteQuery(
       { limit: 50 },
       { getNextPageParam: (lastPage) => lastPage.nextCursor },
     );
-  const performanceModelQuery = api.profiles.getPerformanceModel.useQuery({
-    asOf: performanceModelAsOf,
-  });
+  const publishedStateQuery = api.athleteIntelligence.getReadModel.useQuery(
+    {
+      profileId: user?.id ?? "",
+      sections: { publishedState: true, status: true },
+    },
+    { enabled: !!user?.id },
+  );
+  const performanceOverview =
+    publishedStateQuery.data?.status?.freshness === "fresh" &&
+    publishedStateQuery.data.publishedState?.performanceTargets
+      ? projectAthletePerformanceTargetOverview(
+          publishedStateQuery.data.publishedState.performanceTargets,
+        )
+      : undefined;
+  const performanceStateError = publishedStateQuery.error?.message
+    ? publishedStateQuery.error.message
+    : publishedStateQuery.data && !performanceOverview
+      ? `Published performance state is ${publishedStateQuery.data.status?.freshness ?? "unavailable"}.`
+      : null;
   const metrics = (data?.pages.flatMap((page) => page.items) ?? []) as ProfileMetricRow[];
   const metricGroups = React.useMemo(() => buildProfileMetricTrendGroups(metrics), [metrics]);
   const metricSections = React.useMemo(
@@ -441,12 +459,10 @@ export default function ProfileMetricsListScreen() {
         </View>
 
         <PerformanceModelSummary
-          error={performanceModelQuery.error?.message ?? null}
-          isLoading={performanceModelQuery.isLoading}
-          onRetry={() => void performanceModelQuery.refetch()}
-          {...(performanceModelQuery.data !== undefined
-            ? { overview: performanceModelQuery.data }
-            : {})}
+          error={performanceStateError}
+          isLoading={publishedStateQuery.isLoading}
+          onRetry={() => void publishedStateQuery.refetch()}
+          {...(performanceOverview === undefined ? {} : { overview: performanceOverview })}
         />
 
         {metricSections.map((section) => (

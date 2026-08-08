@@ -49,7 +49,6 @@ export function UserNav() {
     label: string;
     to:
       | "/"
-      | "/activity-efforts"
       | "/activity-plans"
       | "/goals"
       | "/groups"
@@ -58,7 +57,7 @@ export function UserNav() {
       | "/notifications"
       | "/organizations"
       | "/profile-metrics"
-      | "/scheduled-activities"
+      | "/calendar"
       | "/training-plans"
       | "/training-preferences"
       | "/trends"
@@ -71,11 +70,10 @@ export function UserNav() {
     { to: "/notifications", label: "Notifications", icon: Bell },
     { to: "/activity-plans", label: "Activity plans", icon: ClipboardList },
     { to: "/training-plans", label: "Training plans", icon: ClipboardList },
-    { to: "/scheduled-activities", label: "Scheduled activities", icon: CalendarDays },
+    { to: "/calendar", label: "Calendar", icon: CalendarDays },
     { to: "/goals", label: "Goals", icon: Target },
     { to: "/groups", label: "Groups", icon: Users },
     { to: "/trends", label: "Trends", icon: TrendingUp },
-    { to: "/activity-efforts", label: "Activity efforts", icon: Activity },
     { to: "/profile-metrics", label: "Profile metrics", icon: Gauge },
     { to: "/training-preferences", label: "Training preferences", icon: SlidersHorizontal },
     { to: "/integrations", label: "Integrations", icon: Plug },

@@ -138,35 +138,7 @@ export const heartRateDurationEvidenceSchema = z.discriminatedUnion("status", [
   unavailableHeartRateDurationSchema,
 ]);
 
-export const legacyHeartRateDistributionSchema = z
-  .object({
-    coverageSeconds: z.number().int().positive(),
-    buckets: z.array(heartRateBucketSchema.extend({ seconds: z.number().int().positive() })).min(1),
-  })
-  .strict()
-  .superRefine((distribution, context) => {
-    if (new Set(distribution.buckets.map(({ bpm }) => bpm)).size !== distribution.buckets.length) {
-      context.addIssue({ code: "custom", path: ["buckets"], message: "HR buckets must be unique" });
-    }
-    if (
-      distribution.buckets.reduce((sum, bucket) => sum + bucket.seconds, 0) !==
-      distribution.coverageSeconds
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["coverageSeconds"],
-        message: "Legacy HR coverage must equal bucket duration",
-      });
-    }
-  });
-
-export const storedHeartRateDurationEvidenceSchema = z.union([
-  heartRateDurationEvidenceSchema,
-  legacyHeartRateDistributionSchema,
-]);
-
 export type HeartRateDurationEvidence = z.infer<typeof heartRateDurationEvidenceSchema>;
-export type StoredHeartRateDurationEvidence = z.infer<typeof storedHeartRateDurationEvidenceSchema>;
 
 export interface HeartRateDurationSample {
   timestampSeconds: number;
@@ -476,63 +448,5 @@ export function calculateHeartRateZoneDuration(input: {
     lthrBpm: input.lthrBpm,
     zoneSeconds,
     evidence,
-  });
-}
-
-function nearlyEqual(left: number, right: number): boolean {
-  const tolerance = Number.EPSILON * Math.max(1, Math.abs(left), Math.abs(right)) * 16;
-  return Math.abs(left - right) <= tolerance;
-}
-
-/** Adapts persisted pre-v1 bucket-only evidence without promoting incomplete coverage. */
-export function normalizeStoredHeartRateDurationEvidence(input: {
-  evidence: StoredHeartRateDurationEvidence;
-  eligibleDurationSeconds: number;
-}): HeartRateDurationEvidence | null {
-  const parsed = storedHeartRateDurationEvidenceSchema.safeParse(input.evidence);
-  if (
-    !parsed.success ||
-    !Number.isFinite(input.eligibleDurationSeconds) ||
-    input.eligibleDurationSeconds <= 0
-  ) {
-    return null;
-  }
-  if ("calculationVersion" in parsed.data) {
-    return nearlyEqual(parsed.data.eligibleDurationSeconds, input.eligibleDurationSeconds)
-      ? parsed.data
-      : null;
-  }
-  if (parsed.data.coverageSeconds > input.eligibleDurationSeconds) return null;
-
-  const coverageSeconds = parsed.data.coverageSeconds;
-  const sourceTimeCoverage = coverageSeconds / input.eligibleDurationSeconds;
-  const weightedHeartRateSum = parsed.data.buckets.reduce(
-    (sum, bucket) => sum + bucket.bpm * bucket.seconds,
-    0,
-  );
-  const missingDurationSeconds = input.eligibleDurationSeconds - coverageSeconds;
-  const sourceIncomplete = missingDurationSeconds > 0;
-  return heartRateDurationEvidenceSchema.parse({
-    status: sourceIncomplete ? "partial" : "available",
-    ...(sourceIncomplete ? { reason: "source_incomplete" } : {}),
-    calculationVersion: HEART_RATE_ZONE_DURATION_CALCULATION_VERSION,
-    coverageSeconds,
-    eligibleDurationSeconds: input.eligibleDurationSeconds,
-    sourceTimeCoverage,
-    timeWeightedAverageBpm: weightedHeartRateSum / coverageSeconds,
-    buckets: parsed.data.buckets,
-    diagnostics: {
-      sourceSampleCount: parsed.data.buckets.length,
-      acceptedTimestampCount: 0,
-      contributingIntervalCount: parsed.data.buckets.length,
-      observedSpanSeconds: input.eligibleDurationSeconds,
-      pausedDurationSeconds: 0,
-      excludedGapDurationSeconds: 0,
-      excludedMissingDurationSeconds: missingDurationSeconds,
-      excludedInvalidDurationSeconds: 0,
-      duplicateTimestampCount: 0,
-      reversedTimestampCount: 0,
-      invalidTimestampCount: 0,
-    },
   });
 }

@@ -1,6 +1,6 @@
 export * from "./createEventUseCase";
 export * from "./deleteEventUseCase";
-export * from "./enqueueProviderPlannedActivityJobs";
+export * from "./enqueueWahooPlannedActivityJobs";
 export * from "./listVisibleOwnedEvents";
 export * from "./plannedDaySummaryUseCase";
 export * from "./updateEventUseCase";

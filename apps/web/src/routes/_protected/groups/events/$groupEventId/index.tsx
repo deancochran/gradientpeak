@@ -98,8 +98,18 @@ function GroupEventDetailPage() {
                   {event.cancelled_at ? <Badge variant="destructive">Cancelled</Badge> : null}
                 </div>
                 <p className="font-medium">
-                  {new Date(event.starts_at).toLocaleString()}
-                  {event.ends_at ? ` – ${new Date(event.ends_at).toLocaleString()}` : ""}
+                  {new Intl.DateTimeFormat(undefined, {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                    timeZone: event.timezone ?? "UTC",
+                  }).format(new Date(event.starts_at))}
+                  {event.ends_at
+                    ? ` – ${new Intl.DateTimeFormat(undefined, {
+                        timeStyle: "short",
+                        timeZone: event.timezone ?? "UTC",
+                      }).format(new Date(event.ends_at))}`
+                    : ""}
+                  {` (${event.timezone ?? "UTC"})`}
                 </p>
                 {event.location_name ? (
                   <p className="text-muted-foreground">{event.location_name}</p>
@@ -112,39 +122,27 @@ function GroupEventDetailPage() {
                 <p>{event.acceptedRsvpCount} going</p>
                 {canManage ? (
                   <div className="flex flex-wrap gap-2">
-                    <Button
-                      onClick={() =>
-                        void navigate({
-                          to: "/groups/events/$groupEventId/edit",
-                          params: { groupEventId },
-                        })
-                      }
-                      type="button"
-                      variant="outline"
-                    >
-                      {event.is_recurring_occurrence ? "Edit this event" : "Edit event"}
-                    </Button>
-                    {event.is_recurring_occurrence && event.series_id ? (
+                    {!event.is_recurring_series ? (
                       <Button
                         onClick={() =>
                           void navigate({
                             to: "/groups/events/$groupEventId/edit",
-                            params: { groupEventId: event.series_id as string },
+                            params: { groupEventId },
                           })
                         }
                         type="button"
                         variant="outline"
                       >
-                        Edit series
+                        {event.is_recurring_occurrence ? "Edit this event" : "Edit event"}
                       </Button>
                     ) : null}
-                    {!event.cancelled_at ? (
+                    {!event.cancelled_at && !event.is_recurring_series ? (
                       <Button
                         disabled={cancelMutation.isPending}
                         onClick={() => {
                           if (
                             window.confirm(
-                              event.is_recurring_occurrence || event.is_recurring_series
+                              event.is_recurring_occurrence
                                 ? "Cancel this event only?"
                                 : "Cancel this event?",
                             )

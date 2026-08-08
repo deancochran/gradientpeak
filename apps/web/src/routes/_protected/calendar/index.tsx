@@ -39,6 +39,7 @@ export const Route = createFileRoute("/_protected/calendar/")({
     search: Record<string, unknown>,
   ): {
     date?: string;
+    scheduled?: true;
     flash?: string;
     flashType?: RouteFlashType;
     month: string;
@@ -57,6 +58,9 @@ export const Route = createFileRoute("/_protected/calendar/")({
     ...(typeof search.date === "string" && isValidDateKey(search.date)
       ? { date: search.date }
       : {}),
+    ...(search.scheduled === true || search.scheduled === "true"
+      ? { scheduled: true as const }
+      : {}),
     view: search.view === "agenda" || search.view === "week" ? search.view : "month",
   }),
   component: CalendarIndexPage,
@@ -73,20 +77,13 @@ function CalendarIndexPage() {
   const weekWindow = useMemo(() => getWeekWindow(date), [date]);
   const { startKey, endKey } = view === "week" ? weekWindow : monthWindow;
   const todayKey = getTodayDateKey();
-  const profileQuery = api.profiles.get.useQuery();
-  const eventsQuery = api.events.list.useQuery({
-    date_from: startKey,
-    date_to: endKey,
-    include_adhoc: true,
+  const eventsQuery = api.calendar.range.useQuery({
+    startDate: startKey,
+    endDateExclusive: shiftDateKey(endKey, 1),
+    includeAdhoc: true,
+    ...(search.scheduled ? { eventTypes: ["planned" as const] } : {}),
     limit: 500,
   });
-  const goalsQuery = api.goals.list.useQuery(
-    {
-      profile_id: profileQuery.data?.id ?? "00000000-0000-0000-0000-000000000000",
-      limit: 200,
-    },
-    { enabled: Boolean(profileQuery.data?.id) },
-  );
 
   const events = useMemo(
     () => ((eventsQuery.data?.items ?? []) as PlanningEvent[]).slice().sort(compareEventsByStart),
@@ -104,8 +101,8 @@ function CalendarIndexPage() {
     return grouped;
   }, [events]);
   const goalDates = useMemo(
-    () => new Set((goalsQuery.data?.items ?? []).map((goal) => goal.target_date)),
-    [goalsQuery.data?.items],
+    () => new Set((eventsQuery.data?.goals?.items ?? []).map((goal) => goal.target_date)),
+    [eventsQuery.data?.goals?.items],
   );
   const gridDays = useMemo(() => getCalendarGrid(month), [month]);
   const monthEventDays = eventsByDate.size;
@@ -209,7 +206,7 @@ function CalendarIndexPage() {
         />
       </div>
 
-      {eventsQuery.isError || goalsQuery.isError ? (
+      {eventsQuery.isError ? (
         <div
           role="alert"
           className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/40 p-4"
@@ -217,11 +214,7 @@ function CalendarIndexPage() {
           <p className="text-sm">
             Some calendar data could not be loaded. Existing results remain visible.
           </p>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void Promise.all([eventsQuery.refetch(), goalsQuery.refetch()])}
-          >
+          <Button size="sm" variant="outline" onClick={() => void eventsQuery.refetch()}>
             Retry
           </Button>
         </div>

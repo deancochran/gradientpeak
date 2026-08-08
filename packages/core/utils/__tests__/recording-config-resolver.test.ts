@@ -453,12 +453,12 @@ describe("RecordingConfigResolver", () => {
           requiresManualAdvance: false,
           structure: {
             version: 3,
+            activity_category: "bike",
             segments: [
               {
                 role: "activity",
                 id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 name: "Bike",
-                activity_category: "bike",
                 intervals: [
                   {
                     id: "11111111-1111-4111-8111-111111111111",
@@ -512,12 +512,12 @@ describe("RecordingConfigResolver", () => {
           requiresManualAdvance: false,
           structure: {
             version: 3,
+            activity_category: "bike",
             segments: [
               {
                 role: "activity",
                 id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                 name: "Bike",
-                activity_category: "bike",
                 intervals: [
                   {
                     id: "33333333-3333-4333-8333-333333333333",

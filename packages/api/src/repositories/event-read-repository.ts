@@ -1,12 +1,10 @@
 import type {
   ActivityPlanRow,
-  ActivityRouteRow,
   ActivityRow,
   EventRow,
   ProfileMetricRow,
   TrainingPlanRow,
 } from "@repo/db";
-import type { AthletePerformanceModelRepository } from "./athlete-performance-model-repository";
 import type { EventCompletionEventRecord } from "./event-completion-repository";
 
 export interface EventListOwnedInput {
@@ -25,6 +23,19 @@ export interface EventListOwnedInput {
 type SerializedProfileDob = { dob: string | null };
 type SerializedActivityTime = Pick<ActivityRow, "activity_plan_id" | "id"> & {
   started_at: string;
+};
+export type CalendarCompletedActivityRecord = Pick<
+  ActivityRow,
+  "active_ms" | "distance_meters" | "elapsed_ms" | "id" | "name"
+> & { started_at: string };
+export type CalendarGoalRecord = {
+  activity_category: string;
+  id: string;
+  priority: number;
+  profile_id: string;
+  target_date: string;
+  target_payload: unknown;
+  title: string;
 };
 type SerializedEventDate = { starts_at: string };
 export type EffectivePlanLoadActivityRecord = Pick<
@@ -84,13 +95,6 @@ type ConstraintActivityPlan = Pick<
 >;
 type ProfileMetricValue = Pick<ProfileMetricRow, "value">;
 type ConstraintTrainingPlan = Pick<TrainingPlanRow, "id" | "structure">;
-type EstimationRoute = {
-  id: ActivityRouteRow["id"];
-  distance_meters: number | null;
-  total_ascent: ActivityRouteRow["total_ascent"];
-  total_descent: ActivityRouteRow["total_descent"];
-  updated_at: string;
-};
 type ProjectionActivity = Pick<
   ActivityRow,
   | "id"
@@ -106,7 +110,6 @@ type ProjectionActivity = Pick<
   | "active_ms"
   | "moving_ms"
   | "normalized_speed_mps"
-  | "normalized_graded_speed_mps"
 > & { started_at: string; finished_at: string };
 type ProjectionPlannedActivity = Pick<EventRow, "training_plan_id"> & {
   activity_plan: ActivityPlanRow | null;
@@ -115,7 +118,7 @@ type ProjectionPlannedActivity = Pick<EventRow, "training_plan_id"> & {
 };
 type ProjectionTrainingPlan = Pick<TrainingPlanRow, "id" | "structure">;
 
-export interface EventReadRepository extends AthletePerformanceModelRepository {
+export interface EventReadRepository {
   /** Profile-owned facts for the server-side effective Plan Load projection. */
   getEffectivePlanLoadInputs(input: {
     asOf: Date;
@@ -153,6 +156,19 @@ export interface EventReadRepository extends AthletePerformanceModelRepository {
     startedAtGte: string;
     startedAtLt: string;
   }): Promise<SerializedActivityTime[]>;
+  listCalendarCompletedActivities(input: {
+    limit: number;
+    profileId: string;
+    startedAtGte: string;
+    startedAtLt: string;
+  }): Promise<CalendarCompletedActivityRecord[]>;
+  listCalendarGoals(input: {
+    endDateExclusive: string;
+    limit: number;
+    profileId: string;
+    startDate: string;
+  }): Promise<CalendarGoalRecord[]>;
+  listCalendarGroupActivityPlans(input: { activityPlanIds: string[] }): Promise<ActivityPlanRow[]>;
   listPlannedEventDatesInRange(input: {
     profileId: string;
     startsAtGte: string;
@@ -171,17 +187,6 @@ export interface EventReadRepository extends AthletePerformanceModelRepository {
     profile: SerializedProfileDob | null;
     trainingPlan: ConstraintTrainingPlan | null;
     weightMetric: ProfileMetricValue | null;
-  }>;
-  getEstimationInputs(input: {
-    /**
-     * Stable request instant for access-expiry evaluation.
-     * Route rows are current facts: routes have no historical versions to reconstruct at asOf.
-     */
-    asOfIso: string;
-    profileId: string;
-    routeIds: string[];
-  }): Promise<{
-    routes: EstimationRoute[];
   }>;
   getAccessibleTrainingPlanProjection(input: {
     endDateExclusiveIso: string;

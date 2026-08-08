@@ -169,7 +169,6 @@ describe("mobile-to-web parity registry", () => {
       "record.ftms": "missing",
       "record.submit": "implemented",
       "scheduled_activities.event_detail": "implemented-unverified",
-      "scheduled_activities.list": "implemented-unverified",
       "training_plans.create": "implemented-unverified",
       "training_plans.detail": "implemented-unverified",
       "training_plans.edit": "implemented-unverified",

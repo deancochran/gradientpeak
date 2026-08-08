@@ -15,10 +15,15 @@ import {
   type ProfileGoalRecord,
 } from "../application/goals/getProfileGoalById";
 import { profileGoalWriteDataSchema } from "../application/goals/profile-goal-write";
+import { withAuthorizedAthleteReadAcrossOrganizations } from "../application/organizations/authorize-athlete-read";
 import { type DrizzleQueryExecutor, getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
-import { assertProfileAccess, withProfileWriteAccess } from "./account/profile-access";
+import {
+  type ConsentAwareAthleteReadAuthorizer,
+  readProfileWithAthleteConsent,
+} from "./account/athlete-read-access";
+import { withProfileWriteAccess } from "./account/profile-access";
 
 function rethrowTrpcError(error: unknown): never | undefined {
   if (error instanceof TRPCError) {
@@ -95,7 +100,7 @@ function buildGoalListConditions(input: {
 }
 
 async function listProfileGoals(input: {
-  db: ReturnType<typeof getRequiredDb>;
+  db: DrizzleQueryExecutor;
   profileId: string;
   search?: string;
   activityCategory?: z.infer<typeof canonicalGoalActivityCategorySchema>;
@@ -131,6 +136,15 @@ async function listProfileGoals(input: {
     .offset(input.offset);
 
   return profileGoalRecordSchema.array().parse(rows);
+}
+
+async function getProfileGoalOwnerId(db: DrizzleQueryExecutor, id: string): Promise<string | null> {
+  const [row] = await db
+    .select({ profile_id: profileGoals.profile_id })
+    .from(profileGoals)
+    .where(eq(profileGoals.id, id))
+    .limit(1);
+  return row?.profile_id ?? null;
 }
 
 async function createProfileGoal(input: {
@@ -205,113 +219,183 @@ async function deleteProfileGoal(input: {
   return Boolean(row);
 }
 
-export const goalsRouter = createTRPCRouter({
-  list: protectedProcedure.input(goalsListInputSchema).query(async ({ ctx, input }) => {
-    const db = getRequiredDb(ctx);
-    const offset = parseIndexCursor(input.cursor);
-
-    await assertProfileAccess({ ctx, profileId: input.profile_id });
-
-    const conditions = buildGoalListConditions({
-      profileId: input.profile_id,
-      search: input.search,
-      activityCategory: input.activity_category,
-    });
-
-    try {
-      const [items, totalRows] = await Promise.all([
-        listProfileGoals({
-          db,
-          profileId: input.profile_id,
-          search: input.search,
-          activityCategory: input.activity_category,
-          sortBy: input.sort_by,
-          sortOrder: input.sort_order,
-          limit: input.limit,
-          offset,
-        }),
-        db
-          .select({ total: count() })
-          .from(profileGoals)
-          .where(and(...conditions)),
-      ]);
-
-      const total = Number(totalRows[0]?.total ?? 0);
-
-      return {
-        items,
-        total,
-        ...buildIndexPageInfo({ offset, limit: input.limit, total }),
-      };
-    } catch {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to list profile goals",
-      });
-    }
-  }),
-
-  getById: protectedProcedure.input(goalIdInputSchema).query(async ({ ctx, input }) => {
-    const db = getRequiredDb(ctx);
-
-    const goal = await getProfileGoalById(db, input.id);
-
-    if (!goal) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "Goal not found",
-      });
-    }
-
-    try {
-      await assertProfileAccess({ ctx, profileId: goal.profile_id });
-    } catch (error) {
-      rethrowPrivateGoalTrpcError(error);
-      throw error;
-    }
-
-    return goal;
-  }),
-
-  create: protectedProcedure.input(profileGoalWriteSchema).mutation(async ({ ctx, input }) => {
-    try {
-      const createdGoal = await withProfileWriteAccess({
+export function createGoalsRouter(
+  authorizeRead: ConsentAwareAthleteReadAuthorizer = withAuthorizedAthleteReadAcrossOrganizations,
+) {
+  return createTRPCRouter({
+    list: protectedProcedure.input(goalsListInputSchema).query(async ({ ctx, input }) => {
+      const offset = parseIndexCursor(input.cursor);
+      return readProfileWithAthleteConsent({
         ctx,
         profileId: input.profile_id,
-        write: (tx) =>
-          createProfileGoal({
-            db: tx,
-            values: {
-              profile_id: input.profile_id,
-              target_date: input.target_date,
-              title: input.title,
-              priority: input.priority,
-              activity_category: input.activity_category,
-              target_payload: input.target_payload,
-            },
-          }),
-      });
+        scope: "goals",
+        deniedCode: "FORBIDDEN",
+        deniedMessage: "You are not authorized to access this profile",
+        authorizeRead,
+        read: async (db) => {
+          const conditions = buildGoalListConditions({
+            profileId: input.profile_id,
+            search: input.search,
+            activityCategory: input.activity_category,
+          });
 
-      return {
-        ...createdGoal,
-        cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
-      };
-    } catch (error) {
-      rethrowTrpcError(error);
-      console.error("goals.create failed", {
-        errorCode: getSafeErrorCode(error),
-      });
+          try {
+            const [items, totalRows] = await Promise.all([
+              listProfileGoals({
+                db,
+                profileId: input.profile_id,
+                search: input.search,
+                activityCategory: input.activity_category,
+                sortBy: input.sort_by,
+                sortOrder: input.sort_order,
+                limit: input.limit,
+                offset,
+              }),
+              db
+                .select({ total: count() })
+                .from(profileGoals)
+                .where(and(...conditions)),
+            ]);
 
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to create goal",
+            const total = Number(totalRows[0]?.total ?? 0);
+            return {
+              items,
+              total,
+              ...buildIndexPageInfo({ offset, limit: input.limit, total }),
+            };
+          } catch (error) {
+            rethrowTrpcError(error);
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Failed to list profile goals",
+            });
+          }
+        },
       });
-    }
-  }),
+    }),
 
-  update: protectedProcedure
-    .input(profileGoalUpdateInputSchema)
-    .mutation(async ({ ctx, input }) => {
+    getById: protectedProcedure.input(goalIdInputSchema).query(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
+      const profileId = await getProfileGoalOwnerId(db, input.id);
+      if (!profileId) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Goal not found",
+        });
+      }
+      return readProfileWithAthleteConsent({
+        ctx,
+        profileId,
+        scope: "goals",
+        deniedCode: "NOT_FOUND",
+        deniedMessage: "Goal not found",
+        authorizeRead,
+        read: async (authorizedDb) => {
+          const goal = await getProfileGoalById(authorizedDb, input.id);
+          if (!goal || goal.profile_id !== profileId) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Goal not found" });
+          }
+          return goal;
+        },
+      });
+    }),
+
+    create: protectedProcedure.input(profileGoalWriteSchema).mutation(async ({ ctx, input }) => {
+      try {
+        const createdGoal = await withProfileWriteAccess({
+          ctx,
+          profileId: input.profile_id,
+          write: (tx) =>
+            createProfileGoal({
+              db: tx,
+              values: {
+                profile_id: input.profile_id,
+                target_date: input.target_date,
+                title: input.title,
+                priority: input.priority,
+                activity_category: input.activity_category,
+                target_payload: input.target_payload,
+              },
+            }),
+        });
+
+        return {
+          ...createdGoal,
+          cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
+        };
+      } catch (error) {
+        rethrowTrpcError(error);
+        console.error("goals.create failed", {
+          errorCode: getSafeErrorCode(error),
+        });
+
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to create goal",
+        });
+      }
+    }),
+
+    update: protectedProcedure
+      .input(profileGoalUpdateInputSchema)
+      .mutation(async ({ ctx, input }) => {
+        const db = getRequiredDb(ctx);
+
+        const existingGoal = await getProfileGoalById(db, input.id);
+
+        if (!existingGoal) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Goal not found",
+          });
+        }
+
+        const mergedGoal = profileGoalRecordSchema.safeParse({
+          ...existingGoal,
+          ...input.data,
+        });
+
+        if (!mergedGoal.success) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Goal update payload is invalid",
+            cause: mergedGoal.error.flatten(),
+          });
+        }
+
+        try {
+          const updatedGoal = await withProfileWriteAccess({
+            ctx,
+            profileId: existingGoal.profile_id,
+            write: (tx) =>
+              updateProfileGoal({
+                db: tx,
+                id: input.id,
+                profileId: existingGoal.profile_id,
+                data: mergedGoal.data,
+              }),
+          });
+
+          if (!updatedGoal) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "You are not authorized to access this profile",
+            });
+          }
+          return {
+            ...updatedGoal,
+            cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
+          };
+        } catch (error) {
+          rethrowPrivateGoalTrpcError(error);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to update goal",
+          });
+        }
+      }),
+
+    delete: protectedProcedure.input(goalIdInputSchema).mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
       const existingGoal = await getProfileGoalById(db, input.id);
@@ -323,91 +407,37 @@ export const goalsRouter = createTRPCRouter({
         });
       }
 
-      const mergedGoal = profileGoalRecordSchema.safeParse({
-        ...existingGoal,
-        ...input.data,
-      });
-
-      if (!mergedGoal.success) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Goal update payload is invalid",
-          cause: mergedGoal.error.flatten(),
-        });
-      }
-
       try {
-        const updatedGoal = await withProfileWriteAccess({
+        const deleted = await withProfileWriteAccess({
           ctx,
           profileId: existingGoal.profile_id,
           write: (tx) =>
-            updateProfileGoal({
+            deleteProfileGoal({
               db: tx,
               id: input.id,
               profileId: existingGoal.profile_id,
-              data: mergedGoal.data,
             }),
         });
-
-        if (!updatedGoal) {
+        if (!deleted) {
           throw new TRPCError({
             code: "FORBIDDEN",
             message: "You are not authorized to access this profile",
           });
         }
-        return {
-          ...updatedGoal,
-          cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
-        };
       } catch (error) {
         rethrowPrivateGoalTrpcError(error);
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to update goal",
+          message: "Failed to delete goal",
         });
       }
+
+      return {
+        success: true,
+        cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
+      };
     }),
+  });
+}
 
-  delete: protectedProcedure.input(goalIdInputSchema).mutation(async ({ ctx, input }) => {
-    const db = getRequiredDb(ctx);
-
-    const existingGoal = await getProfileGoalById(db, input.id);
-
-    if (!existingGoal) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "Goal not found",
-      });
-    }
-
-    try {
-      const deleted = await withProfileWriteAccess({
-        ctx,
-        profileId: existingGoal.profile_id,
-        write: (tx) =>
-          deleteProfileGoal({
-            db: tx,
-            id: input.id,
-            profileId: existingGoal.profile_id,
-          }),
-      });
-      if (!deleted) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "You are not authorized to access this profile",
-        });
-      }
-    } catch (error) {
-      rethrowPrivateGoalTrpcError(error);
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to delete goal",
-      });
-    }
-
-    return {
-      success: true,
-      cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
-    };
-  }),
-});
+export const goalsRouter = createGoalsRouter();

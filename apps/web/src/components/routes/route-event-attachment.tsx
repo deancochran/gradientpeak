@@ -9,11 +9,18 @@ import {
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../lib/api/client";
+import { getTodayDateKey, shiftDateKey } from "../../lib/planning";
 
 export function RouteEventAttachment({ routeId }: { routeId: string }) {
   const utils = api.useUtils();
   const [eventId, setEventId] = useState("");
-  const eventsQuery = api.events.list.useQuery({ include_adhoc: true, limit: 100 });
+  const today = getTodayDateKey();
+  const eventsQuery = api.calendar.range.useQuery({
+    startDate: today,
+    endDateExclusive: shiftDateKey(today, 366),
+    includeAdhoc: true,
+    limit: 100,
+  });
   const events = useMemo(
     () =>
       [...(eventsQuery.data?.items ?? [])].sort((left, right) =>

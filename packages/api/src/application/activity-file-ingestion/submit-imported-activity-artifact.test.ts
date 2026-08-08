@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   analyzeParsedActivityFile: vi.fn(),
   submitActivity: vi.fn(),
   cleanupActivityArtifactStaging: vi.fn(),
+  cleanupOwnedPromotedActivityArtifact: vi.fn(),
   promoteActivityArtifact: vi.fn(),
   readObjectBounded: vi.fn(),
 }));
@@ -19,8 +20,10 @@ vi.mock("../activities/submit-activity", () => ({
   providerActivityId: mocks.providerActivityId,
   submitActivity: mocks.submitActivity,
 }));
-vi.mock("./artifact-storage", () => ({
+vi.mock("./artifact-storage", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./artifact-storage")>()),
   cleanupActivityArtifactStaging: mocks.cleanupActivityArtifactStaging,
+  cleanupOwnedPromotedActivityArtifact: mocks.cleanupOwnedPromotedActivityArtifact,
   promoteActivityArtifact: mocks.promoteActivityArtifact,
 }));
 vi.mock("../../storage-service", () => ({
@@ -46,10 +49,11 @@ describe("submitImportedActivityArtifact", () => {
       mediaType: "application/octet-stream",
       format: "fit",
       stagingPath: "activities/profile-1/providers/wahoo/123.fit",
+      createdDestination: false,
     });
   });
 
-  it("persists provider analysis, efforts, and a ready ingestion as one canonical submission", async () => {
+  it("uses only canonical source identity before artifact submission", async () => {
     const completedAt = new Date("2026-01-01T11:00:00Z");
     const segmentSet = {
       version: 1 as const,
@@ -116,7 +120,7 @@ describe("submitImportedActivityArtifact", () => {
       segmentSet,
     });
     mocks.submitActivity.mockResolvedValue({ id: "activity-generated" });
-    const rows = [[], []];
+    const rows = [[]];
     const db = {
       select: vi.fn(() => ({
         from: vi.fn(() => ({
@@ -175,6 +179,7 @@ describe("submitImportedActivityArtifact", () => {
       db,
       expect.objectContaining({
         profileId: "profile-1",
+        requestedActivityId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
         providerProvenance: expect.objectContaining({ externalId: "123", provider: "wahoo" }),
         elapsedMs: 3_600_000,
         activeMs: 3_550_000,
@@ -201,6 +206,8 @@ describe("submitImportedActivityArtifact", () => {
           },
         },
       }),
+      {},
     );
+    expect(mocks.providerActivityId).toHaveBeenCalledWith("profile-1", "wahoo", "123");
   });
 });

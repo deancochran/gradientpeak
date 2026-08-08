@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { canonicalActivityCategorySchema } from "../schemas/activity-category";
 
 export const SUPPORTED_ACTIVITY_FILE_EXTENSIONS = ["fit", "gpx", "tcx"] as const;
 export const MAX_ACTIVITY_FILE_SIZE_BYTES = 50 * 1024 * 1024;
@@ -49,40 +48,13 @@ const normalizedNotesSchema = z
 export const manualActivityImportFormSchema = z
   .object({
     files: z.array(portableActivityFileMetadataSchema).length(1, "Select exactly one file"),
-    activity_category: canonicalActivityCategorySchema,
     name: z.string().trim().min(1, "Activity name is required").max(100),
     notes: normalizedNotesSchema,
   })
   .strict();
-
-export const manualActivityImportProvenanceSchema = z
-  .object({
-    import_source: z.literal("manual_historical"),
-    import_file_type: supportedActivityFileExtensionSchema,
-    import_original_file_name: safeFileNameSchema,
-  })
-  .strict();
-
-export function buildManualActivityImportProvenance(
-  fileName: string,
-): ManualActivityImportProvenance {
-  const safeFileName = safeFileNameSchema.parse(fileName);
-  const extension = getSupportedActivityFileExtension(safeFileName);
-
-  if (extension === null) {
-    throw new Error("Unsupported activity file extension");
-  }
-
-  return manualActivityImportProvenanceSchema.parse({
-    import_source: "manual_historical",
-    import_file_type: extension,
-    import_original_file_name: safeFileName,
-  });
-}
 
 export type PortableActivityFileMetadataInput = z.input<typeof portableActivityFileMetadataSchema>;
 export type PortableActivityFileMetadata = z.output<typeof portableActivityFileMetadataSchema>;
 export type PortableActivityFileMetadataOutput = PortableActivityFileMetadata;
 export type ManualActivityImportInput = z.input<typeof manualActivityImportFormSchema>;
 export type ManualActivityImportOutput = z.output<typeof manualActivityImportFormSchema>;
-export type ManualActivityImportProvenance = z.output<typeof manualActivityImportProvenanceSchema>;

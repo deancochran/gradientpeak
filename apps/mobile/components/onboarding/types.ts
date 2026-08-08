@@ -105,7 +105,6 @@ export interface StepProps {
   providerSyncStatus?: ProviderSyncStatus;
   onRetryProviderSync?: () => void;
   onRefreshIntegrations?: () => void;
-  onClearProviderRequirement?: (provider: IntegrationProvider) => void;
   usernameAvailability?: {
     available?: boolean;
     isError: boolean;

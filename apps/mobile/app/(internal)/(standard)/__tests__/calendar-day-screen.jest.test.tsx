@@ -64,24 +64,18 @@ type UnsafeTypeQuery = {
 let eventItems: CalendarEvent[] = [];
 let groupEventItems: CalendarEvent[] = [];
 const mockEventRefetch = jest.fn(async () => undefined);
-const mockGroupEventRefetch = jest.fn(async () => undefined);
 const mockEventsUseQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
-  data: { items: eventItems },
+  data: {
+    items: eventItems,
+    goals: {
+      items: [{ id: "goal-1", title: "Spring A Race", target_date: today }],
+      truncated: false,
+    },
+    selectedGroupEvents: { items: groupEventItems, truncated: false },
+  },
   isLoading: false,
   error: null,
   refetch: mockEventRefetch,
-}));
-const mockGroupEventsUseQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
-  data: { items: groupEventItems },
-  isLoading: false,
-  error: null,
-  refetch: mockGroupEventRefetch,
-}));
-const mockPlannedDaySummaryUseQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
-  data: undefined,
-  isError: false,
-  isLoading: false,
-  refetch: jest.fn(async () => undefined),
 }));
 
 jest.mock("react-native", () => ({
@@ -143,19 +137,6 @@ jest.mock("@/lib/auth/auth-headers", () => ({
   hasSessionAuthCredentials: () => true,
 }));
 
-jest.mock("@/lib/hooks/useProfileGoals", () => ({
-  __esModule: true,
-  useProfileGoals: () => ({
-    goals: [
-      {
-        id: "goal-1",
-        title: "Spring A Race",
-        target_date: today,
-      },
-    ],
-  }),
-}));
-
 jest.mock("@/lib/stores/activitySelectionStore", () => ({
   __esModule: true,
   activitySelectionStore: { setSelection: setSelectionMock },
@@ -197,29 +178,9 @@ jest.mock("@/lib/api", () => ({
         useQuery: () => ({ data: { id: "route-1", name: "River Loop" } }),
       },
     },
-    events: {
-      list: {
+    calendar: {
+      day: {
         useQuery: (input: unknown, options: unknown) => mockEventsUseQuery(input, options),
-      },
-      plannedDaySummary: {
-        useQuery: (input: unknown, options: unknown) =>
-          mockPlannedDaySummaryUseQuery(input, options),
-      },
-    },
-    activityPlans: {
-      getManyByIds: {
-        useQuery: () => ({
-          data: { items: [] },
-          isLoading: false,
-          error: null,
-        }),
-      },
-    },
-    groups: {
-      events: {
-        myCalendarGroupEvents: {
-          useQuery: (input: unknown, options: unknown) => mockGroupEventsUseQuery(input, options),
-        },
       },
     },
   },
@@ -279,10 +240,7 @@ describe("calendar day screen", () => {
     groupEventItems = [];
     pushMock.mockReset();
     mockEventsUseQuery.mockClear();
-    mockPlannedDaySummaryUseQuery.mockClear();
-    mockGroupEventsUseQuery.mockClear();
     mockEventRefetch.mockClear();
-    mockGroupEventRefetch.mockClear();
   });
 
   beforeAll(() => {
@@ -306,17 +264,9 @@ describe("calendar day screen", () => {
     renderNative(<CalendarDayScreen />);
 
     expect(mockEventsUseQuery).toHaveBeenCalledWith(
-      expect.objectContaining({ date_from: today, date_to: today }),
+      { date: today },
       expect.objectContaining({ enabled: true }),
     );
-    expect(mockGroupEventsUseQuery).toHaveBeenCalledWith(
-      expect.objectContaining({
-        startsAfter: "2026-03-23T04:00:00.000Z",
-        startsBefore: "2026-03-24T03:59:59.999Z",
-      }),
-      expect.objectContaining({ enabled: true }),
-    );
-    expect(mockGroupEventsUseQuery.mock.calls.at(-1)?.[1]).toEqual({ enabled: true });
   });
 
   it("uses valid dormant inputs without executing queries for an invalid route date", () => {
@@ -325,14 +275,7 @@ describe("calendar day screen", () => {
     renderNative(<CalendarDayScreen />);
 
     expect(mockEventsUseQuery).toHaveBeenCalledWith(
-      expect.objectContaining({ date_from: "1970-01-01", date_to: "1970-01-01" }),
-      expect.objectContaining({ enabled: false }),
-    );
-    expect(mockGroupEventsUseQuery).toHaveBeenCalledWith(
-      expect.objectContaining({
-        startsAfter: "1970-01-01T00:00:00.000Z",
-        startsBefore: "1970-01-01T00:00:00.000Z",
-      }),
+      { date: "1970-01-01" },
       expect.objectContaining({ enabled: false }),
     );
     expect(screen.getByText("Choose a valid calendar date to view this day.")).toBeTruthy();

@@ -27,6 +27,7 @@ import {
   getMonthKey,
   getTodayDateKey,
   type PlanningEvent,
+  shiftDateKey,
 } from "../../lib/planning";
 
 export const Route = createFileRoute("/_protected/plan")({
@@ -51,15 +52,14 @@ function PlanPage() {
   // non-current views.
   const effectiveLoadQuery = api.trainingPlans.getEffectiveLoad.useQuery({});
   const trainingPlansQuery = api.trainingPlans.list.useQuery({
-    includeOwnOnly: true,
-    includeSystemTemplates: false,
+    ownerScope: "own",
     limit: 6,
   });
 
-  const upcomingEventsQuery = api.events.list.useQuery({
-    date_from: getTodayDateKey(),
-    date_to: "2100-12-31",
-    include_adhoc: false,
+  const upcomingEventsQuery = api.calendar.range.useQuery({
+    startDate: getTodayDateKey(),
+    endDateExclusive: shiftDateKey(getTodayDateKey(), 366),
+    includeAdhoc: false,
     limit: 12,
   });
   const goalsQuery = api.goals.list.useQuery(
@@ -321,7 +321,7 @@ function PlanPage() {
           </Link>
         </Button>
         <Button asChild variant="outline">
-          <a href="/scheduled-activities">Scheduled activities</a>
+          <a href="/calendar?view=agenda&scheduled=true">Scheduled activities</a>
         </Button>
       </div>
     </div>

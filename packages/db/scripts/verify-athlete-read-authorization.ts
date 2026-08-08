@@ -1,7 +1,5 @@
 #!/usr/bin/env tsx
 
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { athleteReadAccessDecisionSchema, athleteReadScopeSchema } from "@repo/core/organizations";
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
 import {
@@ -9,7 +7,7 @@ import {
   bootstrapSupabaseSchemas,
   withDisposableDatabase,
 } from "./_disposable-target";
-import { dbPackageRoot } from "./_helpers";
+import { requireFreshBaseline } from "./baseline-workflow";
 
 const scopes = ["basic_profile", "training", "activities", "metrics", "goals", "calendar"] as const;
 type Scope = (typeof scopes)[number];
@@ -1200,28 +1198,12 @@ async function proveAclDenials(pool: Pool, url: string) {
 }
 
 async function main() {
-  const policy = JSON.parse(
-    readFileSync(resolve(dbPackageRoot, "migration-policy.json"), "utf8"),
-  ) as { authorityDirectory: string; activeLedgerFile: string };
-  const ledger = JSON.parse(
-    readFileSync(resolve(dbPackageRoot, policy.activeLedgerFile), "utf8"),
-  ) as { entries: Array<{ version: string; name: string }> };
-
   await withDisposableDatabase(
     process.argv.slice(2),
     "coaching_authorization",
     async (pool, targetUrl) => {
       await bootstrapSupabaseSchemas(pool);
-      for (const migration of ledger.entries) {
-        await applySqlFile(
-          pool,
-          resolve(
-            dbPackageRoot,
-            policy.authorityDirectory,
-            `${migration.version}_${migration.name}.sql`,
-          ),
-        );
-      }
+      await applySqlFile(pool, requireFreshBaseline().sourcePath);
       await seedProfiles(pool);
       await proveDecisionMatrix(pool);
       await proveMembershipCommands(pool);

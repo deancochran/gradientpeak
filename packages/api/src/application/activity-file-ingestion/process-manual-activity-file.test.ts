@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   markFailed: vi.fn(),
   promote: vi.fn(),
   cleanup: vi.fn(),
+  cleanupOwned: vi.fn(),
   analyze: vi.fn(),
   submit: vi.fn(),
 }));
@@ -19,9 +20,11 @@ vi.mock("./ingestion-state", () => ({
   markProcessing: mocks.markProcessing,
   markFailed: mocks.markFailed,
 }));
-vi.mock("./artifact-storage", () => ({
+vi.mock("./artifact-storage", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./artifact-storage")>()),
   promoteActivityArtifact: mocks.promote,
   cleanupActivityArtifactStaging: mocks.cleanup,
+  cleanupOwnedPromotedActivityArtifact: mocks.cleanupOwned,
 }));
 vi.mock("./analyze-parsed-activity-file", () => ({ analyzeParsedActivityFile: mocks.analyze }));
 vi.mock("../activities/submit-activity", async () => {
@@ -87,6 +90,7 @@ function configureSuccess() {
     mediaType: "application/octet-stream",
     format: "fit",
     stagingPath: `activities/${profileId}/uploads/ride.fit`,
+    createdDestination: false,
   });
   mocks.analyze.mockResolvedValue({
     startedAt: new Date("2026-01-01T10:00:00Z"),
@@ -205,18 +209,10 @@ describe("processManualActivityFile", () => {
     expect(mocks.markProcessing).toHaveBeenCalledOnce();
   });
 
-  it("marks parse failures failed and leaves staging intact", async () => {
+  it("marks parse failures failed and removes staging before any promotion", async () => {
     mocks.createIngestion.mockResolvedValue(ingestion());
     mocks.markUploaded.mockResolvedValue({ ...ingestion(), status: "uploaded" });
     mocks.markProcessing.mockResolvedValue(ingestion("processing"));
-    mocks.promote.mockResolvedValue({
-      sha256: digest,
-      byteSize: 3,
-      bucket: "activity-files",
-      path: `artifacts/sha256/${profileId}/${digest}`,
-      format: "fit",
-      stagingPath: `activities/${profileId}/uploads/ride.fit`,
-    });
     const deps = dependencies();
     deps.decodeActivityFile.mockImplementation(() => {
       throw new TRPCError({ code: "BAD_REQUEST", message: "bad fit" });
@@ -240,7 +236,48 @@ describe("processManualActivityFile", () => {
         errorMessage: "Unable to parse activity file",
       }),
     );
-    expect(mocks.cleanup).not.toHaveBeenCalled();
+    expect(mocks.promote).not.toHaveBeenCalled();
+    expect(mocks.cleanup).toHaveBeenCalledOnce();
+  });
+
+  it("emits only stable manual-import failure labels for synthetic private error data", async () => {
+    configureSuccess();
+    mocks.createIngestion.mockResolvedValue(ingestion());
+    mocks.markUploaded.mockResolvedValue({ ...ingestion(), status: "uploaded" });
+    mocks.markProcessing.mockResolvedValue(ingestion("processing"));
+    const privateCanaries = [
+      `activities/${profileId}/uploads/dean-private.fit`,
+      "Dean Private Ride",
+      "https://storage.test/upload?token=super-secret-token",
+    ] as const;
+    mocks.submit.mockRejectedValueOnce(new Error(privateCanaries.join(" ")));
+    const deps = dependencies();
+
+    const rejection = await processManualActivityFile(
+      db(),
+      {
+        profileId,
+        activityFilePath: privateCanaries[0],
+        name: privateCanaries[1],
+        fileType: "fit",
+      },
+      deps as never,
+    ).catch((error: unknown) => error);
+
+    expect(rejection).toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Activity file processing failed",
+    });
+    expect(mocks.markFailed).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        errorCode: "process_failed",
+        errorMessage: "Activity file processing failed",
+      }),
+    );
+    const logged = JSON.stringify(deps.logger.error.mock.calls);
+    expect(logged).toContain("manual_activity_import.process.process_failed");
+    for (const canary of privateCanaries) expect(logged).not.toContain(canary);
   });
 
   it("does not mark failed or delete staging when another claimant owns the lease", async () => {

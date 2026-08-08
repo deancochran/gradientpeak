@@ -1,7 +1,7 @@
 import type { AthletePreferenceProfile } from "../schemas/settings/profile_settings";
 import { defaultAthletePreferenceProfile } from "../schemas/settings/profile_settings";
 import type {
-  MinimalTrainingPlanCreate,
+  GoalProjectionInput,
   TrainingPlanGoalTarget,
 } from "../schemas/training-plan-structure";
 import { addDaysDateOnlyUtc, diffDateOnlyUtcDays, formatDateOnlyUtc } from "./dateOnlyUtc";
@@ -13,12 +13,11 @@ import { resolveEventDemand } from "./periodization/heuristics/resolveEventDeman
 
 type ProjectionBlockPhase = "base" | "build" | "peak" | "taper" | "recovery" | "maintenance";
 
-export type GoalAnchoredProjectionGoal = MinimalTrainingPlanCreate["goals"][number] & {
+export type GoalAnchoredProjectionGoal = GoalProjectionInput["goals"][number] & {
   id: string;
 };
 
 export type GoalAnchoredProjectionPlan = {
-  plan_type: "periodized";
   name: string;
   start_date: string;
   end_date: string;
@@ -41,7 +40,7 @@ export type GoalAnchoredProjectionPlan = {
 };
 
 export interface BuildGoalAnchoredProjectionPlanInput {
-  minimalPlan: MinimalTrainingPlanCreate;
+  projectionInput: GoalProjectionInput;
   startingLongTermLoad?: number;
   preferenceProfile?: AthletePreferenceProfile;
 }
@@ -151,7 +150,7 @@ function resolvePlannerPreferenceTuning(
 }
 
 function buildActivityDistribution(
-  goals: MinimalTrainingPlanCreate["goals"],
+  goals: GoalProjectionInput["goals"],
 ): GoalAnchoredProjectionPlan["activity_distribution"] {
   const categoryCounts = new Map<string, number>();
 
@@ -402,12 +401,12 @@ export function buildGoalAnchoredProjectionPlan(
   input: BuildGoalAnchoredProjectionPlanInput,
 ): GoalAnchoredProjectionPlan {
   const timeline = derivePlanTimeline({
-    goals: input.minimalPlan.goals,
-    plan_start_date: input.minimalPlan.plan_start_date ?? formatDateOnlyUtc(new Date()),
+    goals: input.projectionInput.goals,
+    plan_start_date: input.projectionInput.plan_start_date ?? formatDateOnlyUtc(new Date()),
   });
   const startingLongTermLoad = input.startingLongTermLoad ?? 45;
   const preferenceProfile = input.preferenceProfile ?? defaultAthletePreferenceProfile;
-  const goals = input.minimalPlan.goals
+  const goals = input.projectionInput.goals
     .map((goal, index) => ({
       ...goal,
       id: deterministicUuidFromSeed(
@@ -496,7 +495,6 @@ export function buildGoalAnchoredProjectionPlan(
       : undefined;
 
   return {
-    plan_type: "periodized",
     name: goals.length === 1 ? `${goals[0]?.name} Plan` : "Multi-goal Training Plan",
     start_date: timeline.start_date,
     end_date: timelineEndDate,

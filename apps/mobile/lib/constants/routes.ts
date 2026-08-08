@@ -11,7 +11,6 @@ export const ROUTES = {
     INDEX: "/(internal)/(tabs)/plan" as const,
     CALENDAR: "/(internal)/(tabs)/calendar" as const,
     CREATE: "/create-activity-plan" as const,
-    SCHEDULED: "/scheduled-activities-list" as const,
     CALENDAR_DAY: (date: string) => ({ pathname: "/calendar-day", params: { date } }) as const,
     AGENDA_CREATE: (date: string) => ({ pathname: "/agenda-create", params: { date } }) as const,
     EVENT_CREATE: (date: string) =>
@@ -45,8 +44,6 @@ export const ROUTES = {
     LIST: "/activities-list" as const,
     IMPORT: "/activity-import" as const,
     DETAIL: (activityId: string) => `/activity-detail?id=${activityId}` as const,
-    EFFORTS_LIST: "/activity-efforts-list" as const,
-    EFFORT_DETAIL: (effortId: string) => `/activity-effort-detail?id=${effortId}` as const,
   },
 
   PROFILE_METRICS: {

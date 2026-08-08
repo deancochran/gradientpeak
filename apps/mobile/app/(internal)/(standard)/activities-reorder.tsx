@@ -14,6 +14,7 @@ import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
+import { addDaysToDateKey } from "@/lib/calendar/dateMath";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
 
@@ -30,8 +31,10 @@ export default function ActivitiesReorder() {
     data: plannedActivitiesData,
     isLoading,
     refetch,
-  } = api.events.list.useQuery(
+  } = api.calendar.range.useQuery(
     {
+      startDate: new Date().toISOString().slice(0, 10),
+      endDateExclusive: addDaysToDateKey(new Date().toISOString().slice(0, 10), 366),
       limit: 100,
     },
     { enabled: eventsQueryEnabled },

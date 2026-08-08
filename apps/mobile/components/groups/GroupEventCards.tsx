@@ -1,7 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import { format } from "date-fns";
 import { CalendarDays, MapPin } from "lucide-react-native";
 import { type GestureResponderEvent, Pressable, TouchableOpacity, View } from "react-native";
 import type { GroupEventListItem } from "@/lib/groups";
@@ -18,16 +17,29 @@ type GroupEventCardProps = {
 };
 
 export function formatGroupEventDateRange(
-  event: Pick<GroupEventListItem, "ends_at" | "starts_at">,
+  event: Pick<GroupEventListItem, "ends_at" | "starts_at" | "timezone">,
 ) {
   const startsAt = new Date(event.starts_at);
   const endsAt = event.ends_at ? new Date(event.ends_at) : null;
   if (Number.isNaN(startsAt.getTime())) return "Date unavailable";
 
-  const startLabel = format(startsAt, "EEE, MMM d · h:mm a");
+  const timezone = event.timezone || "UTC";
+  const startLabel = new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: timezone,
+  }).format(startsAt);
   if (!endsAt || Number.isNaN(endsAt.getTime())) return startLabel;
 
-  return `${startLabel} - ${format(endsAt, "h:mm a")}`;
+  const endLabel = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: timezone,
+  }).format(endsAt);
+  return `${startLabel} - ${endLabel}`;
 }
 
 export function formatAcceptedRsvpCount(count: number) {

@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import type { Context } from "../../context";
 import type { DrizzleTransactionClient } from "../../db";
 import type { createEventCompletionRepository } from "../../infrastructure/repositories";
-import type { PlannedActivityQueueResult } from "../../lib/provider-sync/planned-activities";
+import type { WahooPlannedActivityQueueResult } from "../../lib/provider-sync/planned-activities";
 import type { createContentAccessPermissions } from "../../permissions/content-access";
 
 type ProtectedContext = Context & {
@@ -13,7 +13,7 @@ type ProtectedContext = Context & {
 
 type CoreEventType = "planned" | "race_target" | "custom" | "imported";
 type DbEventType = "planned" | "race_target" | "custom" | "imported";
-type EventMutationScope = "single" | "future" | "series";
+type EventMutationScope = "single" | "series";
 
 type EventRecord = {
   activity_plan_id: string | null;
@@ -33,7 +33,7 @@ type DeleteEventUseCaseDependencies = {
     changedDate?: string | null;
     changeAt?: string;
   }) => unknown;
-  enqueueProviderPlannedActivityJobs: (
+  enqueueWahooPlannedActivityJobs: (
     ctx: ProtectedContext,
     input: {
       eventIds: string[];
@@ -41,7 +41,7 @@ type DeleteEventUseCaseDependencies = {
       profileId?: string;
       transaction?: DrizzleTransactionClient;
     },
-  ) => Promise<PlannedActivityQueueResult | null>;
+  ) => Promise<WahooPlannedActivityQueueResult | null>;
   getContentPermissions: (
     ctx: Context,
     transaction?: DrizzleTransactionClient,
@@ -94,7 +94,7 @@ export async function deleteEventUseCase<
           .filter((row) => row.event_type === "planned" && row.activity_plan_id)
           .map((row) => row.id);
         if (plannedEventIds.length > 0) {
-          const result = await dependencies.enqueueProviderPlannedActivityJobs(ctx, {
+          const result = await dependencies.enqueueWahooPlannedActivityJobs(ctx, {
             eventIds: plannedEventIds,
             operation: "unsync",
             transaction: tx,

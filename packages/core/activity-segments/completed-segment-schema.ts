@@ -9,7 +9,7 @@ import {
 import { runningNormalizedGradedPaceResultSchema } from "../calculations/normalized-graded-pace";
 import { cyclingNormalizedPowerResultSchema } from "../calculations/normalized-power";
 import { canonicalActivityCategorySchema } from "../schemas/activity-category";
-import { storedHeartRateDurationEvidenceSchema } from "../zones/heart-rate-duration";
+import { heartRateDurationEvidenceSchema } from "../zones/heart-rate-duration";
 
 const rawSourceStringSchema = z.string().refine(
   (value) => {
@@ -145,7 +145,7 @@ export const completedSegmentSummarySchema = z
     descentMeters: z.number().nonnegative().optional(),
     caloriesKcal: z.number().nonnegative().optional(),
     averageHeartRateBpm: z.number().nonnegative().optional(),
-    heartRateDistribution: storedHeartRateDurationEvidenceSchema.optional(),
+    heartRateDistribution: heartRateDurationEvidenceSchema.optional(),
     averagePowerWatts: z.number().nonnegative().optional(),
     normalizedPowerResult: cyclingNormalizedPowerResultSchema,
     averageCadenceRpm: z

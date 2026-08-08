@@ -1,14 +1,25 @@
 import { profileGoalRecordSchema } from "@repo/core";
 import { profileGoals } from "@repo/db";
 import { eq } from "drizzle-orm";
-import type { getRequiredDb } from "../../db";
-
-type GoalsDb = ReturnType<typeof getRequiredDb>;
+import type { DrizzleQueryExecutor } from "../../db";
 
 export type ProfileGoalRecord = ReturnType<typeof profileGoalRecordSchema.parse>;
 
+/** Reads only the opaque owner identifier needed to authorize a later goal read. */
+export async function getProfileGoalOwnerId(
+  db: DrizzleQueryExecutor,
+  id: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ profile_id: profileGoals.profile_id })
+    .from(profileGoals)
+    .where(eq(profileGoals.id, id))
+    .limit(1);
+  return row?.profile_id ?? null;
+}
+
 export async function getProfileGoalById(
-  db: GoalsDb,
+  db: DrizzleQueryExecutor,
   id: string,
 ): Promise<ProfileGoalRecord | null> {
   const row =

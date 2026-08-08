@@ -31,11 +31,11 @@ const activityAnalysis = vi.hoisted(() => ({
   loadActivitySegmentsByActivityId: vi.fn(),
 }));
 const activityPlanMetrics = vi.hoisted(() => ({
-  getActivityPlansDerivedMetrics: vi.fn(async (): Promise<unknown[]> => []),
+  estimateActivityPlans: vi.fn(async (): Promise<unknown[]> => []),
 }));
 
 vi.mock("../../lib/activity-analysis", () => activityAnalysis);
-vi.mock("../../utils/activity-plan-derived-metrics", () => activityPlanMetrics);
+vi.mock("../activity-plans/estimate-activity-plans", () => activityPlanMetrics);
 
 function quantification(input: {
   commonLoad: CommonLoadResult;
@@ -203,15 +203,16 @@ function effectivePlanRepository(
     throw new Error("Unexpected EventReadRepository call in effective Plan Load test");
   };
   return {
-    readAthletePerformanceEvidenceSnapshot: unexpectedCall,
     getEffectivePlanLoadInputs,
     countOwnedEventsInRange: unexpectedCall,
     getOwnedEventById: unexpectedCall,
     listCompletedActivitiesInRange: unexpectedCall,
+    listCalendarCompletedActivities: unexpectedCall,
+    listCalendarGoals: unexpectedCall,
+    listCalendarGroupActivityPlans: unexpectedCall,
     listPlannedEventDatesInRange: unexpectedCall,
     listOwnedPlannedEventsForDay: unexpectedCall,
     getValidateConstraintsInputs: unexpectedCall,
-    getEstimationInputs: unexpectedCall,
     getAccessibleTrainingPlanProjection: unexpectedCall,
     listOwnedEvents: unexpectedCall,
   };
@@ -219,8 +220,8 @@ function effectivePlanRepository(
 
 describe("getEffectivePlanLoad", () => {
   beforeEach(() => {
-    activityPlanMetrics.getActivityPlansDerivedMetrics.mockReset();
-    activityPlanMetrics.getActivityPlansDerivedMetrics.mockResolvedValue([]);
+    activityPlanMetrics.estimateActivityPlans.mockReset();
+    activityPlanMetrics.estimateActivityPlans.mockResolvedValue([]);
   });
 
   it("accepts a server-derived current week or a bounded date range and tentative server-item overlay", () => {
@@ -478,7 +479,7 @@ describe("getEffectivePlanLoad", () => {
       ]),
       segments: [],
     });
-    activityPlanMetrics.getActivityPlansDerivedMetrics.mockResolvedValue([
+    activityPlanMetrics.estimateActivityPlans.mockResolvedValue([
       {
         id: activityPlanId,
         prescriptionQuantification: createActivityPlanPrescriptionQuantificationBundle({
@@ -594,7 +595,7 @@ describe("getEffectivePlanLoad", () => {
       parent: new Map(),
       segments: [],
     });
-    activityPlanMetrics.getActivityPlansDerivedMetrics.mockResolvedValue([
+    activityPlanMetrics.estimateActivityPlans.mockResolvedValue([
       {
         id: activityPlanId,
         prescriptionQuantification: incompatibleQuantification,
@@ -663,7 +664,7 @@ describe("getEffectivePlanLoad", () => {
       parent: new Map(),
       segments: [],
     });
-    activityPlanMetrics.getActivityPlansDerivedMetrics.mockResolvedValue([
+    activityPlanMetrics.estimateActivityPlans.mockResolvedValue([
       {
         id: activityPlanId,
         common_load: commonLoad,

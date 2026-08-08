@@ -97,7 +97,7 @@ export default function GoalDetailScreen() {
 
   const goalQuery = api.goals.getById.useQuery({ id: goalId }, { enabled: !!goalId });
   const { data: goal, isLoading } = goalQuery;
-  const intelligenceQuery = api.athleteIntelligence.evaluate.useQuery(
+  const assessmentQuery = api.athleteIntelligence.getGoalAssessment.useQuery(
     { goalId },
     { enabled: !!goalId },
   );
@@ -238,17 +238,10 @@ export default function GoalDetailScreen() {
       </SectionCard>
 
       <GoalIntelligenceCard
-        intelligence={intelligenceQuery.data}
-        isError={intelligenceQuery.isError}
-        isLoading={intelligenceQuery.isLoading}
-        onCollectionPrompt={(destination) =>
-          router.navigate(
-            (destination === "profile_metrics"
-              ? ROUTES.PROFILE_METRICS.CREATE
-              : ROUTES.ACTIVITIES.IMPORT) as never,
-          )
-        }
-        onRetry={() => void intelligenceQuery.refetch()}
+        assessment={assessmentQuery.data}
+        isError={assessmentQuery.isError}
+        isLoading={assessmentQuery.isLoading}
+        onRetry={() => void assessmentQuery.refetch()}
       />
     </DetailScaffold>
   );

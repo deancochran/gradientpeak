@@ -147,7 +147,7 @@ export const parityRegistry = [
   {
     area: "record",
     backendOperations: [
-      "events.getToday",
+      "calendar.day",
       "events.getById",
       "activityPlans.getById",
       "routes.loadFull",
@@ -175,7 +175,7 @@ export const parityRegistry = [
   },
   {
     area: "record",
-    backendOperations: ["profiles.getZones", "routes.loadFull"],
+    backendOperations: ["routes.loadFull"],
     id: "record.session",
     mobileRoute: "/(internal)/record/index",
     policy: "required_on_web",
@@ -210,12 +210,11 @@ export const parityRegistry = [
     backendOperations: [
       "trainingPlans.getActivePlan",
       "trainingPlans.list",
-      "events.list",
+      "calendar.range",
       "goals.list",
       "trainingPlans.get",
-      "trainingPlans.getInsightTimeline",
-      "trainingPlans.getActualCurve",
-      "trainingPlans.getIdealCurve",
+      "athleteIntelligence.getReadModel",
+      "trainingPlans.preview",
       "goals.create",
       "goals.update",
     ],
@@ -226,7 +225,7 @@ export const parityRegistry = [
   },
   {
     area: "planning",
-    backendOperations: ["events.list", "goals.list"],
+    backendOperations: ["calendar.range", "goals.list"],
     id: "planning.calendar_tab",
     mobileRoute: "/(internal)/(tabs)/calendar",
     policy: "required_on_web",
@@ -297,22 +296,6 @@ export const parityRegistry = [
     title: "Route upload",
   },
   {
-    area: "activity_efforts",
-    backendOperations: ["activityEfforts.getForProfile"],
-    id: "activity_efforts.list",
-    mobileRoute: "/(internal)/(standard)/activity-efforts-list",
-    policy: "required_on_web",
-    title: "Activity efforts list",
-  },
-  {
-    area: "activity_efforts",
-    backendOperations: ["activityEfforts.getById", "activities.getById", "activityEfforts.delete"],
-    id: "activity_efforts.detail",
-    mobileRoute: "/(internal)/(standard)/activity-effort-detail",
-    policy: "required_on_web",
-    title: "Activity effort detail",
-  },
-  {
     area: "activity_plans",
     backendOperations: ["activityPlans.list"],
     id: "activity_plans.list",
@@ -355,14 +338,6 @@ export const parityRegistry = [
   },
   {
     area: "scheduled_activities",
-    backendOperations: ["events.list"],
-    id: "scheduled_activities.list",
-    mobileRoute: "/(internal)/(standard)/scheduled-activities-list",
-    policy: "required_on_web",
-    title: "Scheduled activities list",
-  },
-  {
-    area: "scheduled_activities",
     backendOperations: [
       "events.getById",
       "trainingPlans.getById",
@@ -385,7 +360,7 @@ export const parityRegistry = [
   },
   {
     area: "scheduled_activities",
-    backendOperations: ["events.list", "goals.list"],
+    backendOperations: ["calendar.day", "goals.list"],
     id: "scheduled_activities.calendar_day",
     mobileRoute: "/(internal)/(standard)/calendar-day",
     policy: "required_on_web",
@@ -412,15 +387,13 @@ export const parityRegistry = [
     backendOperations: [
       "trainingPlans.getTemplate",
       "trainingPlans.get",
-      "trainingPlans.getInsightTimeline",
-      "trainingPlans.getActualCurve",
-      "trainingPlans.getIdealCurve",
+      "athleteIntelligence.getReadModel",
+      "trainingPlans.preview",
       "trainingPlans.getActivePlan",
       "trainingPlans.applyTemplate",
       "trainingPlans.removeAppliedSchedule",
       "trainingPlans.delete",
-      "trainingPlans.update",
-      "trainingPlans.duplicate",
+      "trainingPlans.commit",
       "activityPlans.list",
       "activityPlans.getManyByIds",
     ],
@@ -431,7 +404,7 @@ export const parityRegistry = [
   },
   {
     area: "training_plans",
-    backendOperations: ["trainingPlans.previewCreationConfig", "trainingPlans.update"],
+    backendOperations: ["trainingPlans.preview", "trainingPlans.commit"],
     id: "training_plans.create",
     mobileRoute: "/(internal)/(standard)/training-plan-create",
     policy: "required_on_web",
@@ -439,11 +412,7 @@ export const parityRegistry = [
   },
   {
     area: "training_plans",
-    backendOperations: [
-      "trainingPlans.get",
-      "trainingPlans.previewCreationConfig",
-      "trainingPlans.update",
-    ],
+    backendOperations: ["trainingPlans.get", "trainingPlans.preview", "trainingPlans.commit"],
     id: "training_plans.edit",
     mobileRoute: "/(internal)/(standard)/training-plan-edit",
     policy: "required_on_web",
@@ -451,7 +420,7 @@ export const parityRegistry = [
   },
   {
     area: "training_plans",
-    backendOperations: ["events.list", "events.update"],
+    backendOperations: ["calendar.range", "events.update"],
     id: "training_plans.reorder_activities",
     mobileRoute: "/(internal)/(standard)/activities-reorder",
     policy: "required_on_web",
@@ -520,7 +489,7 @@ export const parityRegistry = [
   },
   {
     area: "profile",
-    backendOperations: ["auth.signOut", "profiles.getPublicById", "integrations.list"],
+    backendOperations: ["auth.signOut", "profiles.getPublicById", "integrations.getSyncOverview"],
     id: "profile.settings",
     mobileRoute: "/(internal)/(standard)/user/[userId]",
     policy: "required_on_web",
@@ -528,7 +497,11 @@ export const parityRegistry = [
   },
   {
     area: "integrations",
-    backendOperations: ["integrations.list", "integrations.getAuthUrl", "integrations.disconnect"],
+    backendOperations: [
+      "integrations.getSyncOverview",
+      "integrations.getAuthUrl",
+      "integrations.disconnect",
+    ],
     id: "integrations.management",
     mobileRoute: "/(internal)/(standard)/integrations",
     policy: "required_on_web",

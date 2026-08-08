@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WahooProjectionSnapshot } from "../integrations/wahoo/plan-converter";
 import type { WahooSyncService } from "../integrations/wahoo/sync-service";
-import { getWahooGroupEventRouteDeliveryExternalId } from "./event-delivery/wahoo-group-event-route-delivery";
-import { getWahooOwnedRouteExternalId } from "./owned-routes/wahoo-owned-route-mirror";
 import { WahooSyncJobService } from "./wahoo-job-service";
+import { WAHOO_PROFILE_ENRICHMENT_JOB } from "./wahoo-profile-enrichment";
 import { WAHOO_STAGING_CLEANUP_JOB } from "./wahoo-staging-cleanup";
 
 function cleanupJob(overrides: Record<string, unknown> = {}) {
@@ -67,41 +66,13 @@ function plannedJob(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function routeJob(overrides: Record<string, unknown> = {}) {
+function profileEnrichmentJob(overrides: Record<string, unknown> = {}) {
   return plannedJob({
-    id: "route-job-1",
-    internalResourceId: "route-1",
-    jobType: "wahoo.upsert_owned_route",
-    operation: "upsert",
-    payload: {
-      expectedRouteUpdatedAt: "2026-07-29T12:00:00.000Z",
-      externalId: getWahooOwnedRouteExternalId("route-1"),
-      operation: "upsert",
-      routeId: "route-1",
-    },
-    resourceKind: "activity_route",
-    ...overrides,
-  });
-}
-
-function deliveryJob(overrides: Record<string, unknown> = {}) {
-  return plannedJob({
-    id: "delivery-job-1",
-    internalResourceId: "event-1",
-    jobType: "wahoo.deliver_group_event_route",
-    operation: "deliver",
-    payload: {
-      eventId: "event-1",
-      expectedEventUpdatedAt: "2026-07-29T12:00:00.000Z",
-      expectedRouteUpdatedAt: "2026-07-29T12:01:00.000Z",
-      externalId: getWahooGroupEventRouteDeliveryExternalId({
-        eventId: "event-1",
-        profileId: "profile-1",
-        sourceRouteId: "route-1",
-      }),
-      sourceRouteId: "route-1",
-    },
-    resourceKind: "group_event_route_delivery",
+    id: "profile-enrichment-job-1",
+    internalResourceId: null,
+    jobType: WAHOO_PROFILE_ENRICHMENT_JOB,
+    operation: "fill_absent",
+    payload: { trigger: "connect" },
     ...overrides,
   });
 }
@@ -385,6 +356,85 @@ describe("WahooSyncJobService", () => {
   });
 });
 
+describe("WahooSyncJobService profile enrichment", () => {
+  it("fills only absent profile facts under the claimed integration generation", async () => {
+    const job = profileEnrichmentJob();
+    const repository = plannedRepository(job);
+    const applyProfileEnrichmentIfAbsent = vi.fn().mockResolvedValue({
+      fieldsFilled: ["dob", "weight_kg"],
+      fieldsKept: ["gender"],
+    });
+    const getUserProfile = vi.fn().mockResolvedValue({
+      birth: "1990-06-15",
+      gender: 1,
+      id: 7,
+      weight: 61.5,
+    });
+    const service = new WahooSyncJobService({
+      providerSyncRepository: repository as never,
+      wahooClientFactory: () => ({ disconnect: vi.fn(), getUserProfile }) as never,
+      wahooRepository: {
+        applyProfileEnrichmentIfAbsent,
+        findWahooIntegrationByProfileId: vi.fn().mockResolvedValue({
+          accessToken: "token",
+          id: "integration-1",
+          integrationGeneration: 3,
+          scope: "user_read",
+        }),
+      } as never,
+    });
+
+    await expect(service.processDueJobs({ workerId: "profile-test" })).resolves.toEqual({
+      completed: 1,
+      failed: 0,
+      processed: 1,
+    });
+    expect(applyProfileEnrichmentIfAbsent).toHaveBeenCalledWith({
+      dob: new Date("1990-06-15T00:00:00.000Z"),
+      expectedIntegrationGeneration: 3,
+      gender: "female",
+      integrationId: "integration-1",
+      profileId: "profile-1",
+      weightKg: 61.5,
+    });
+    expect(repository.completeJobWithSyncState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedIntegrationGeneration: 3,
+        metadata: expect.objectContaining({
+          fields_imported: ["dob", "weight_kg"],
+          fields_kept: ["gender"],
+          status: "succeeded",
+        }),
+        resource: "profile_enrichment",
+      }),
+    );
+  });
+
+  it("finishes a stale-generation enrichment without calling Wahoo or writing profile data", async () => {
+    const job = profileEnrichmentJob();
+    const repository = plannedRepository(job, false);
+    const getUserProfile = vi.fn();
+    const applyProfileEnrichmentIfAbsent = vi.fn();
+    const service = new WahooSyncJobService({
+      providerSyncRepository: repository as never,
+      wahooClientFactory: () => ({ disconnect: vi.fn(), getUserProfile }) as never,
+      wahooRepository: {
+        applyProfileEnrichmentIfAbsent,
+        findWahooIntegrationByProfileId: vi.fn(),
+      } as never,
+    });
+
+    await expect(service.processDueJobs({ workerId: "profile-test" })).resolves.toEqual({
+      completed: 1,
+      failed: 0,
+      processed: 1,
+    });
+    expect(getUserProfile).not.toHaveBeenCalled();
+    expect(applyProfileEnrichmentIfAbsent).not.toHaveBeenCalled();
+    expect(repository.markJobSucceeded).toHaveBeenCalled();
+  });
+});
+
 describe("WahooSyncJobService planned activities", () => {
   it("claims and completes a generation-fenced publish with the lease signal", async () => {
     vi.useFakeTimers();
@@ -409,11 +459,21 @@ describe("WahooSyncJobService planned activities", () => {
         jobTypes: expect.arrayContaining(["wahoo.publish_event", "wahoo.unsync_event"]),
       }),
     );
+    const claimedJobTypes = repository.claimDueJobs.mock.calls[0]?.[0].jobTypes;
+    expect(claimedJobTypes).not.toEqual(
+      expect.arrayContaining([
+        "wahoo.upsert_owned_route",
+        "wahoo.delete_owned_route",
+        "wahoo.reconcile_owned_routes",
+        "wahoo.deliver_group_event_route",
+        "wahoo.reconcile_group_event_route_deliveries",
+      ]),
+    );
     expect(syncEvent).toHaveBeenCalledWith(
       "event-1",
       "profile-1",
       expect.objectContaining({
-        performanceModelAsOf: "2026-07-28T13:00:00.000Z",
+        performanceModelAsOf: "2026-07-28T12:00:00.000Z",
         expectedIntegrationGeneration: 3,
         expectedProjectionHash: "projection-1",
         expectedStartsAt: "2026-07-29T12:00:00.000Z",
@@ -685,240 +745,6 @@ describe("WahooSyncJobService planned activities", () => {
 
     expect(repository.completeJobWithSyncState).toHaveBeenCalledWith(
       expect.objectContaining({ metadata: { status: "skipped" } }),
-    );
-  });
-});
-
-describe("WahooSyncJobService owned routes", () => {
-  it("claims and completes a generation-fenced route upsert", async () => {
-    const repository = plannedRepository(routeJob());
-    const syncOwnedRoute = vi.fn().mockResolvedValue({ action: "created", success: true });
-    const service = new WahooSyncJobService({
-      providerSyncRepository: repository as never,
-      syncService: { syncOwnedRoute } as never,
-      wahooRepository: {} as never,
-    });
-
-    await expect(service.processDueJobs({ workerId: "route-test" })).resolves.toMatchObject({
-      completed: 1,
-      processed: 1,
-    });
-    expect(syncOwnedRoute).toHaveBeenCalledWith(
-      "route-1",
-      "profile-1",
-      getWahooOwnedRouteExternalId("route-1"),
-      expect.objectContaining({
-        expectedIntegrationGeneration: 3,
-        expectedRouteUpdatedAt: "2026-07-29T12:00:00.000Z",
-        integrationId: "integration-1",
-        signal: expect.any(AbortSignal),
-      }),
-    );
-    expect(repository.completeJobWithSyncState).toHaveBeenCalledWith(
-      expect.objectContaining({ resource: "routes" }),
-    );
-  });
-
-  it("dead-letters an ambiguous route create", async () => {
-    const repository = plannedRepository(routeJob());
-    const service = new WahooSyncJobService({
-      providerSyncRepository: repository as never,
-      syncService: {
-        syncOwnedRoute: vi.fn().mockResolvedValue({
-          failureCategory: "provider",
-          failureCode: "ambiguous_create",
-          retryable: false,
-          success: false,
-        }),
-      } as never,
-      wahooRepository: {} as never,
-    });
-
-    await service.processDueJobs({ workerId: "route-test" });
-    expect(repository.failJobWithSyncState).toHaveBeenCalledWith(
-      expect.objectContaining({ lastError: "ambiguous_create", status: "dead_lettered" }),
-    );
-  });
-
-  it("dead-letters a route job whose provider identity does not match its local route", async () => {
-    const repository = plannedRepository(
-      routeJob({
-        payload: {
-          expectedRouteUpdatedAt: "2026-07-29T12:00:00.000Z",
-          externalId: getWahooOwnedRouteExternalId("different-route"),
-          operation: "upsert",
-          routeId: "route-1",
-        },
-      }),
-    );
-    const syncOwnedRoute = vi.fn();
-    const service = new WahooSyncJobService({
-      providerSyncRepository: repository as never,
-      syncService: { syncOwnedRoute } as never,
-      wahooRepository: {} as never,
-    });
-
-    await service.processDueJobs({ workerId: "route-test" });
-
-    expect(repository.markJobFailed).toHaveBeenCalledWith(
-      expect.objectContaining({
-        lastError: "invalid_wahoo_owned_route_payload",
-        status: "dead_lettered",
-      }),
-    );
-    expect(syncOwnedRoute).not.toHaveBeenCalled();
-  });
-
-  it("fans a reconciliation job into one serialized upsert per owned route", async () => {
-    const repository = plannedRepository(
-      routeJob({
-        jobType: "wahoo.reconcile_owned_routes",
-        operation: "reconcile",
-        payload: { trigger: "connect" },
-      }),
-    );
-    const enqueueJob = vi.fn().mockResolvedValue({ id: "upsert-1", status: "queued" });
-    Object.assign(repository, { enqueueJob });
-    const listOwnedRoutesForMirror = vi
-      .fn()
-      .mockResolvedValueOnce([{ id: "route-1", updatedAt: "2026-07-29T12:00:00.000Z" }]);
-    const service = new WahooSyncJobService({
-      providerSyncRepository: repository as never,
-      syncService: {} as never,
-      wahooRepository: {
-        findWahooIntegrationByProfileId: vi.fn().mockResolvedValue({
-          id: "integration-1",
-          integrationGeneration: 3,
-          scope: "routes_read routes_write offline_data",
-        }),
-        listOwnedRoutesForMirror,
-      } as never,
-    });
-
-    await service.processDueJobs({ workerId: "route-test" });
-    expect(enqueueJob).toHaveBeenCalledWith(
-      expect.objectContaining({
-        jobType: "wahoo.upsert_owned_route",
-        internalResourceId: "route-1",
-      }),
-    );
-    expect(repository.completeJobWithSyncState).toHaveBeenCalledWith(
-      expect.objectContaining({ metadata: { affectedCount: 1, status: "reconciled" } }),
-    );
-  });
-});
-
-describe("WahooSyncJobService group-event route delivery", () => {
-  const integration = {
-    externalId: "wahoo-user-1",
-    id: "integration-1",
-    integrationGeneration: 3,
-    scope: "routes_read routes_write offline_data",
-  };
-
-  it("dead-letters a payload mismatch before provider work", async () => {
-    const repository = plannedRepository(
-      deliveryJob({
-        payload: { eventId: "event-1", externalId: "wrong", sourceRouteId: "route-1" },
-      }),
-    );
-    const syncGroupEventRouteDelivery = vi.fn();
-    const service = new WahooSyncJobService({
-      providerSyncRepository: repository as never,
-      syncService: { syncGroupEventRouteDelivery } as never,
-      wahooRepository: {} as never,
-    });
-
-    await service.processDueJobs({ workerId: "delivery-test" });
-
-    expect(repository.markJobFailed).toHaveBeenCalledWith(
-      expect.objectContaining({
-        lastError: "invalid_wahoo_group_event_route_delivery_payload",
-        status: "dead_lettered",
-      }),
-    );
-    expect(syncGroupEventRouteDelivery).not.toHaveBeenCalled();
-  });
-
-  it("completes an ineligible delivery as skipped without deleting a route", async () => {
-    const repository = plannedRepository(deliveryJob());
-    const syncGroupEventRouteDelivery = vi.fn().mockResolvedValue({
-      failureCategory: "eligibility",
-      failureCode: "missing_route",
-      retryable: false,
-      success: false,
-    });
-    const service = new WahooSyncJobService({
-      providerSyncRepository: repository as never,
-      syncService: { syncGroupEventRouteDelivery } as never,
-      wahooRepository: {
-        findWahooIntegrationByProfileId: vi.fn().mockResolvedValue(integration),
-      } as never,
-    });
-
-    await service.processDueJobs({ workerId: "delivery-test" });
-
-    expect(repository.completeJobWithSyncState).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: { status: "skipped" },
-        resource: "group_event_route_delivery",
-      }),
-    );
-  });
-
-  it("dead-letters an ambiguous delivery", async () => {
-    const repository = plannedRepository(deliveryJob());
-    const service = new WahooSyncJobService({
-      providerSyncRepository: repository as never,
-      syncService: {
-        syncGroupEventRouteDelivery: vi.fn().mockResolvedValue({
-          failureCategory: "provider",
-          failureCode: "ambiguous_create",
-          retryable: false,
-          success: false,
-        }),
-      } as never,
-      wahooRepository: {
-        findWahooIntegrationByProfileId: vi.fn().mockResolvedValue(integration),
-      } as never,
-    });
-
-    await service.processDueJobs({ workerId: "delivery-test" });
-    expect(repository.failJobWithSyncState).toHaveBeenCalledWith(
-      expect.objectContaining({ lastError: "ambiguous_create", status: "dead_lettered" }),
-    );
-  });
-
-  it("calls the delivery sync service with a generation-fenced recipient account", async () => {
-    const repository = plannedRepository(deliveryJob());
-    const syncGroupEventRouteDelivery = vi
-      .fn()
-      .mockResolvedValue({ action: "created", success: true });
-    const service = new WahooSyncJobService({
-      providerSyncRepository: repository as never,
-      syncService: { syncGroupEventRouteDelivery } as never,
-      wahooRepository: {
-        findWahooIntegrationByProfileId: vi.fn().mockResolvedValue(integration),
-      } as never,
-    });
-
-    await service.processDueJobs({ workerId: "delivery-test" });
-
-    expect(syncGroupEventRouteDelivery).toHaveBeenCalledWith(
-      "event-1",
-      "profile-1",
-      "route-1",
-      getWahooGroupEventRouteDeliveryExternalId({
-        eventId: "event-1",
-        profileId: "profile-1",
-        sourceRouteId: "route-1",
-      }),
-      expect.objectContaining({
-        expectedIntegrationGeneration: 3,
-        integrationId: "integration-1",
-        providerAccountExternalId: "wahoo-user-1",
-        signal: expect.any(AbortSignal),
-      }),
     );
   });
 });

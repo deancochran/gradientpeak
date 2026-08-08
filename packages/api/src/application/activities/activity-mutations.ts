@@ -3,6 +3,7 @@ import { activities } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
+import { markAthleteStateDirty } from "../../repositories/athlete-state-repository";
 import { createActivityArtifactRetentionService } from "../activity-file-ingestion/artifact-retention";
 import type { ActivityArtifactStorage } from "../activity-file-ingestion/artifact-storage";
 import { updateCanonicalActivityFields } from "./submit-activity";
@@ -67,9 +68,17 @@ export async function deleteActivityForProfile({
   while ((await retention.resumeDeletionForProfile(profileId)) > 0) {}
   await retention.deleteForActivity({ activityId, profileId });
 
-  await db
-    .delete(activities)
-    .where(and(eq(activities.id, activityId), eq(activities.profile_id, profileId)));
+  await db.transaction(async (tx) => {
+    const [deleted] = await tx
+      .delete(activities)
+      .where(and(eq(activities.id, activityId), eq(activities.profile_id, profileId)))
+      .returning({ id: activities.id, finishedAt: activities.finished_at });
+    if (!deleted) throw new Error("Activity deletion lost ownership before commit");
+    await markAthleteStateDirty(tx, {
+      profileId,
+      effectiveAt: deleted.finishedAt,
+    });
+  });
 
   return { success: true, deletedActivityId: activityId };
 }

@@ -1,4 +1,10 @@
-import { scheduledDateTimeToIsoInstant } from "@repo/core";
+import {
+  addDaysDateOnlyUtc,
+  formatDeviceCalendarDate,
+  isValidDateOnlyUtc,
+  parseDateOnlyUtc,
+  scheduledDateTimeToIsoInstant,
+} from "@repo/core/calendar";
 
 export type PlanningEvent = {
   id: string;
@@ -24,10 +30,7 @@ export type PlanningEvent = {
 const recurrenceWeekdays = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
 
 export function toDateKey(value: Date) {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return formatDeviceCalendarDate(value);
 }
 
 export function getTodayDateKey() {
@@ -57,24 +60,7 @@ export function parseMonthKey(monthKey: string) {
 }
 
 export function isValidDateKey(dateKey: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
-    return false;
-  }
-
-  const [year = Number.NaN, month = Number.NaN, day = Number.NaN] = dateKey.split("-").map(Number);
-  if (
-    !Number.isInteger(year) ||
-    !Number.isInteger(month) ||
-    !Number.isInteger(day) ||
-    month < 1 ||
-    month > 12 ||
-    day < 1 ||
-    day > 31
-  ) {
-    return false;
-  }
-
-  return toDateKey(new Date(year, month - 1, day, 12, 0, 0, 0)) === dateKey;
+  return isValidDateOnlyUtc(dateKey);
 }
 
 export function getMonthWindow(monthKey: string) {
@@ -96,13 +82,11 @@ export function shiftMonthKey(monthKey: string, offset: number) {
 }
 
 export function shiftDateKey(dateKey: string, offset: number) {
-  const value = new Date(`${dateKey}T12:00:00.000Z`);
-  value.setUTCDate(value.getUTCDate() + offset);
-  return value.toISOString().slice(0, 10);
+  return addDaysDateOnlyUtc(dateKey, offset);
 }
 
 export function getWeekWindow(dateKey: string) {
-  const value = new Date(`${dateKey}T12:00:00.000Z`);
+  const value = parseDateOnlyUtc(dateKey);
   const startKey = shiftDateKey(dateKey, -value.getUTCDay());
   const days = Array.from({ length: 7 }, (_, index) => shiftDateKey(startKey, index));
 
@@ -124,7 +108,7 @@ export function buildWeeklyRecurrence({
 }) {
   if (!Number.isInteger(count) || count <= 1) return null;
 
-  const weekday = recurrenceWeekdays[new Date(`${scheduledDate}T12:00:00.000Z`).getUTCDay()];
+  const weekday = recurrenceWeekdays[parseDateOnlyUtc(scheduledDate).getUTCDay()];
   if (!weekday) return null;
 
   return {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { trainingPlanCreateInputSchema, trainingPlanUpdateInputSchema } from "../schemas";
+import type { ContentVisibility } from "../schemas/content_visibility";
 import {
   type CanonicalTrainingPlanStructure,
   canonicalTrainingPlanStructureSchema,
@@ -17,16 +18,8 @@ export const planningTrainingPlanUpdateInputSchema = trainingPlanUpdateInputSche
 export type PlanningTrainingPlanCreateInput = z.infer<typeof planningTrainingPlanCreateInputSchema>;
 export type PlanningTrainingPlanUpdateInput = z.infer<typeof planningTrainingPlanUpdateInputSchema>;
 
-export type PlanningSnapshotOptions = {
-  backendPlanning?: {
-    projectionSource: "backend" | "local" | null;
-    previewSnapshotToken: string | null;
-  };
-};
-
 export function mapPlanningContextToCanonicalTrainingPlanStructure(
   context: PlanningContext,
-  options: PlanningSnapshotOptions = {},
 ): CanonicalTrainingPlanStructure {
   const goalBlueprints = context.goals
     .filter((goal) => goal.title.trim().length > 0)
@@ -67,20 +60,11 @@ export function mapPlanningContextToCanonicalTrainingPlanStructure(
         taper_style_preference: context.preferences.taperStylePreference,
       },
       scheduling: {
-        start_date: context.scheduling.startDate,
         preferred_weekdays: context.scheduling.preferredWeekdays,
       },
       goal_context: {
         selected_goals: selectedGoals,
       },
-      ...(options.backendPlanning
-        ? {
-            backend_planning: {
-              projection_source: options.backendPlanning.projectionSource,
-              preview_snapshot_token: options.backendPlanning.previewSnapshotToken,
-            },
-          }
-        : {}),
     },
     sessions: context.sessions
       .filter((session) => session.activityPlan !== null)
@@ -100,22 +84,20 @@ export function mapPlanningContextToTrainingPlanCreateInput({
   description,
   isActive = true,
   name,
-  snapshotOptions = {},
-  templateVisibility = "private",
+  contentVisibility = "private",
 }: {
   context: PlanningContext;
   description?: string | null;
   isActive?: boolean;
   name: string;
-  snapshotOptions?: PlanningSnapshotOptions;
-  templateVisibility?: "private" | "public";
+  contentVisibility?: ContentVisibility;
 }): PlanningTrainingPlanCreateInput {
   return planningTrainingPlanCreateInputSchema.parse({
     name: name.trim(),
     description: description?.trim() || null,
     is_active: isActive,
-    template_visibility: templateVisibility,
-    structure: mapPlanningContextToCanonicalTrainingPlanStructure(context, snapshotOptions),
+    content_visibility: contentVisibility,
+    structure: mapPlanningContextToCanonicalTrainingPlanStructure(context),
   });
 }
 
@@ -124,22 +106,20 @@ export function mapPlanningContextToTrainingPlanUpdateInput({
   description,
   name,
   planId,
-  snapshotOptions = {},
-  templateVisibility,
+  contentVisibility,
 }: {
   context: PlanningContext;
   description?: string | null;
   name: string;
   planId: string;
-  snapshotOptions?: PlanningSnapshotOptions;
-  templateVisibility?: "private" | "public";
+  contentVisibility?: ContentVisibility;
 }): PlanningTrainingPlanUpdateInput {
   return planningTrainingPlanUpdateInputSchema.parse({
     id: planId,
     name: name.trim(),
     description: description?.trim() || null,
-    ...(templateVisibility ? { template_visibility: templateVisibility } : {}),
-    structure: mapPlanningContextToCanonicalTrainingPlanStructure(context, snapshotOptions),
+    ...(contentVisibility ? { content_visibility: contentVisibility } : {}),
+    structure: mapPlanningContextToCanonicalTrainingPlanStructure(context),
   });
 }
 

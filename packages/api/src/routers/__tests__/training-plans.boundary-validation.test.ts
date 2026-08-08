@@ -24,7 +24,7 @@ function createCaller() {
           name: "Shared Build",
           description: "Shared plan",
           profile_id: "profile-123",
-          template_visibility: "private",
+          content_visibility: "private",
           is_system_template: false,
           structure: VALID_TRAINING_PLAN_STRUCTURE,
         },
@@ -36,7 +36,7 @@ function createCaller() {
           name: "Updated Build",
           description: "Shared plan",
           profile_id: "profile-123",
-          template_visibility: "private",
+          content_visibility: "private",
           is_system_template: false,
           structure: VALID_TRAINING_PLAN_STRUCTURE,
         },
@@ -57,11 +57,47 @@ function createCaller() {
 }
 
 describe("trainingPlansRouter boundary validation", () => {
+  it("rejects client-authored projected sessions from authoritative preview input", async () => {
+    const { caller, callLog } = createCaller();
+
+    await expect(
+      caller.preview({
+        kind: "create",
+        draft: {
+          name: "Forged preview",
+          previewStartDate: "2026-08-03",
+          structure: {
+            version: 1,
+            sessions: VALID_TRAINING_PLAN_STRUCTURE.sessions,
+          },
+          plannedSessions: [
+            {
+              sourceId: "forged",
+              scheduledAt: "2026-08-03T00:00:00.000Z",
+              commonLoad: 10_000,
+            },
+          ],
+        },
+      } as any),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(callLog).toHaveLength(0);
+  });
+
   it("rejects unknown keys on update before hitting the database", async () => {
     const { caller, callLog } = createCaller();
 
     await expect(
-      caller.update({ id: TRAINING_PLAN_ID, name: "Updated Build", unexpected: true } as any),
+      caller.commit({
+        kind: "create",
+        basePublishedRevision: 1,
+        draft: {
+          name: "Updated Build",
+          previewStartDate: "2026-08-03",
+          structure: { version: 1, sessions: VALID_TRAINING_PLAN_STRUCTURE.sessions },
+        },
+        unexpected: true,
+      } as any),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     expect(callLog).toHaveLength(0);
@@ -71,22 +107,14 @@ describe("trainingPlansRouter boundary validation", () => {
     const { caller, callLog } = createCaller();
 
     await expect(
-      caller.update({
-        id: TRAINING_PLAN_ID,
-        expectedStructureHash: `v1:sha256:${"0".repeat(64)}`,
-      }),
-    ).rejects.toThrow("At least one training plan update field is required");
-
-    expect(callLog).toHaveLength(0);
-  });
-
-  it("rejects non-plan quick adjustments before ownership queries", async () => {
-    const { caller, callLog } = createCaller();
-
-    await expect(
-      caller.applyQuickAdjustment({
-        id: TRAINING_PLAN_ID,
-        adjustedStructure: { plan_type: "periodized" },
+      caller.commit({
+        kind: "update",
+        basePublishedRevision: 1,
+        draft: {
+          planId: TRAINING_PLAN_ID,
+          expectedRevision: 1,
+          expectedStructureHash: `v1:sha256:${"0".repeat(64)}`,
+        },
       } as any),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
@@ -97,26 +125,21 @@ describe("trainingPlansRouter boundary validation", () => {
     const { caller, callLog } = createCaller();
 
     await expect(
-      caller.create({
-        name: "Old shape",
-        structure: {
-          plan_type: "periodized",
-          name: "Old periodized plan",
-          start_date: "2026-01-01",
-          end_date: "2026-03-01",
-          fitness_progression: { starting_ctl: 45 },
-          activity_distribution: { run: { target_percentage: 1 } },
-          blocks: [
-            {
-              id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-              name: "Base",
-              phase: "base",
-              start_date: "2026-01-01",
-              end_date: "2026-01-28",
-              goal_ids: [],
-              target_weekly_tss_range: { min: 280, max: 320 },
-            },
-          ],
+      caller.commit({
+        kind: "create",
+        basePublishedRevision: 1,
+        draft: {
+          name: "Old shape",
+          previewStartDate: "2026-08-03",
+          structure: {
+            plan_type: "periodized",
+            name: "Old periodized plan",
+            start_date: "2026-01-01",
+            end_date: "2026-03-01",
+            fitness_progression: { starting_ctl: 45 },
+            activity_distribution: { run: { target_percentage: 1 } },
+            blocks: [],
+          },
         },
       } as any),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });

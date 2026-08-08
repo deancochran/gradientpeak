@@ -61,7 +61,7 @@ export const TrainingPreferencesProjectionPreview = React.memo(
         projectionChart: previewResult.projectionChart,
         snapshot,
       });
-    }, [previewResult.projectionChart, snapshot.insightTimeline?.timeline, snapshot]);
+    }, [previewResult.projectionChart, snapshot.actualCurveData?.dataPoints, snapshot]);
 
     const todayKey = toDateKey(new Date());
     const [selectedDate, setSelectedDate] = useState<string | null>(todayKey);

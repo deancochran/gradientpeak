@@ -19,16 +19,25 @@ describe("GoalIntelligenceCard", () => {
     expect(onRetry).toHaveBeenCalledOnce();
   });
 
-  it("keeps stale intelligence visible and names empty explainability sections", () => {
+  it("keeps stale readiness visible with confidence and reasons", () => {
     render(
       <GoalIntelligenceCard
-        intelligence={{
-          explainability: {
-            assessment: { at: "2026-07-10T12:00:00.000Z", state: "unknown", uncertainty: "high" },
-            evidence: [],
-            limits: [],
-            coverage: [],
-            collectionPrompts: [],
+        assessment={{
+          stateRevision: 4,
+          computedAt: "2026-07-10T12:00:00.000Z",
+          freshness: "stale",
+          assessmentConfidence: 0.42,
+          rebuildStatus: "pending",
+          assessment: {
+            goalId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            assessedAt: "2026-07-10T12:00:00.000Z",
+            readiness: 48,
+            status: "watch",
+            fitnessScore: 56,
+            fatiguePenalty: 12,
+            specificityScore: 45,
+            assessmentConfidence: 0.42,
+            reasonCodes: ["fitness_below_goal_demand", "assessment_evidence_low_confidence"],
           },
         }}
         isError
@@ -38,9 +47,8 @@ describe("GoalIntelligenceCard", () => {
     );
 
     expect(screen.getByText(/as of 2026-07-10/i)).toBeTruthy();
-    expect(screen.getByText(/no evidence was used/i)).toBeTruthy();
-    expect(screen.getByText(/no assessment limits/i)).toBeTruthy();
-    expect(screen.getByText(/no coverage details/i)).toBeTruthy();
-    expect(screen.getByText(/no collection prompts/i)).toBeTruthy();
+    expect(screen.getByText(/stale state/i)).toBeTruthy();
+    expect(screen.getByText(/42% confidence/i)).toBeTruthy();
+    expect(screen.getByText(/fitness below goal demand/i)).toBeTruthy();
   });
 });

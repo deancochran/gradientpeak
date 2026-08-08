@@ -1,6 +1,5 @@
 export * from "./baseline-profiles";
 export * from "./best-efforts";
-export * from "./curves";
 export * from "./duration";
 export * from "./efficiency";
 export * from "./heart-rate";

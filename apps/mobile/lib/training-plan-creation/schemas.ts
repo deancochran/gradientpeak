@@ -1,5 +1,6 @@
 import {
   athletePlanningContextSchema,
+  contentVisibilitySchema,
   dateOnlySchema,
   plannedTrainingActivityPlanFactsSchema,
   plannedTrainingEventOverridesSchema,
@@ -17,7 +18,7 @@ export const trainingPlanBuilderDetailsSchema = z
   .object({
     name: z.string(),
     description: z.string(),
-    templateVisibility: z.enum(["private", "public"]),
+    contentVisibility: contentVisibilitySchema,
   })
   .strict();
 

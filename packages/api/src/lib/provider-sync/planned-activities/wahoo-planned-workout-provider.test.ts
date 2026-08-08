@@ -30,9 +30,9 @@ function planWithRelativeTarget(type: "%FTP" | "%ThresholdHR", activityCategory:
   const template = SYSTEM_TEMPLATES[0];
   if (!template) throw new Error("Expected a system template fixture");
   const structure = structuredClone(template.structure);
+  structure.activity_category = activityCategory;
   for (const segment of structure.segments) {
     if (segment.role !== "activity") continue;
-    segment.activity_category = activityCategory;
     for (const interval of segment.intervals) {
       for (const step of interval.steps) step.targets = [{ type, intensity: 80 }];
     }
@@ -75,9 +75,10 @@ function providerFixture(
     }),
     getEventResourceLink: vi.fn().mockResolvedValue(overrides.existingLink ?? null),
   };
-  const getPerformanceTargets = vi
-    .fn()
-    .mockResolvedValue(overrides.performanceTargets ?? performanceTargets());
+  const getPerformanceTargets = vi.fn().mockResolvedValue({
+    status: "available",
+    targets: overrides.performanceTargets ?? performanceTargets(),
+  });
   return {
     enqueueJob,
     provider: new WahooPlannedActivityProvider({
@@ -132,8 +133,7 @@ describe("WahooPlannedActivityProvider", () => {
       startsAt: "2026-07-29T12:00:00.000Z",
     });
     expect(getPerformanceTargets).toHaveBeenCalledWith({
-      actorProfileId: "profile-1",
-      asOf: operationTime,
+      profileId: "profile-1",
     });
   });
 
@@ -149,7 +149,7 @@ describe("WahooPlannedActivityProvider", () => {
     );
   });
 
-  it("keeps provider desired-state hashing stable when only model evaluation time changes", async () => {
+  it("keeps provider desired state and model authority stable when only enqueue time changes", async () => {
     const first = providerFixture({ now: operationTime });
     const second = providerFixture({ now: new Date(operationTime.getTime() + 60_000) });
 
@@ -159,7 +159,7 @@ describe("WahooPlannedActivityProvider", () => {
     expect(first.enqueueJob.mock.calls[0]?.[0].payloadHash).toBe(
       second.enqueueJob.mock.calls[0]?.[0].payloadHash,
     );
-    expect(first.enqueueJob.mock.calls[0]?.[0].payload.performanceModelAsOf).not.toBe(
+    expect(first.enqueueJob.mock.calls[0]?.[0].payload.performanceModelAsOf).toBe(
       second.enqueueJob.mock.calls[0]?.[0].payload.performanceModelAsOf,
     );
   });
@@ -285,10 +285,8 @@ describe("WahooPlannedActivityProvider", () => {
   });
 
   it("queues unsync when an existing export is edited to an unsupported activity category", async () => {
-    const unsupported = SYSTEM_TEMPLATES.find((template) =>
-      template.structure.segments.some(
-        (segment) => segment.role === "activity" && segment.activity_category === "strength",
-      ),
+    const unsupported = SYSTEM_TEMPLATES.find(
+      (template) => template.structure.activity_category === "strength",
     );
     if (!unsupported) throw new Error("Expected a strength system template fixture");
     const { enqueueJob, provider } = providerFixture({

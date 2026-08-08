@@ -3,7 +3,7 @@ import { act, renderHook } from "@testing-library/react-native";
 const alertMock = jest.fn();
 const toggleLikeMutateMock = jest.fn();
 const duplicateMutateMock = jest.fn();
-const updateMutateMock = jest.fn();
+const commitMutateAsyncMock = jest.fn();
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -22,8 +22,8 @@ jest.mock("@/lib/api", () => ({
       duplicate: {
         useMutation: () => ({ mutate: duplicateMutateMock, isPending: false }),
       },
-      update: {
-        useMutation: () => ({ mutate: updateMutateMock, isPending: false }),
+      commit: {
+        useMutation: () => ({ mutateAsync: commitMutateAsyncMock, isPending: false }),
       },
     },
     social: {
@@ -43,7 +43,7 @@ describe("useTrainingPlanHeaderSocialActions", () => {
     alertMock.mockReset();
     toggleLikeMutateMock.mockReset();
     duplicateMutateMock.mockReset();
-    updateMutateMock.mockReset();
+    commitMutateAsyncMock.mockReset();
   });
 
   it("blocks likes for invalid plan ids", () => {
@@ -54,7 +54,7 @@ describe("useTrainingPlanHeaderSocialActions", () => {
           structure_hash: `v1:sha256:${"0".repeat(64)}`,
           has_liked: false,
           likes_count: 0,
-          template_visibility: "private",
+          content_visibility: "private",
         },
         router: { replace: jest.fn() },
         utils: emptyUtils,
@@ -80,7 +80,7 @@ describe("useTrainingPlanHeaderSocialActions", () => {
           structure_hash: `v1:sha256:${"1".repeat(64)}`,
           has_liked: false,
           likes_count: 0,
-          template_visibility: "private",
+          content_visibility: "private",
           name: "Plan",
         },
         router: { replace: jest.fn() },

@@ -53,17 +53,31 @@ export function useRecordScreenController() {
   const { allGranted: allPermissionsGranted, isLoading: permissionsLoading } =
     useAllPermissionsGranted();
 
-  const { data: recordingProfile } = api.profiles.get.useQuery(undefined, {
-    enabled: !!user && !!service && hasSessionAuthCredentials(),
-    staleTime: 1000 * 60 * 5,
-  });
-  const { data: performanceTargets } = api.profiles.getPerformanceTargets.useQuery(
-    { asOf: performanceModelAsOf },
+  const { data: publishedAthleteState } = api.athleteIntelligence.getReadModel.useQuery(
+    {
+      profileId: user?.id ?? "",
+      sections: {
+        publishedState: true,
+        status: true,
+        currentBaseline: { includePlanningContext: true },
+      },
+    },
     {
       enabled: !!user && !!service && hasSessionAuthCredentials(),
-      staleTime: 1000 * 60 * 5,
     },
   );
+  const performanceTargets = React.useMemo(() => {
+    if (
+      publishedAthleteState?.status?.freshness === "fresh" &&
+      publishedAthleteState.status.rebuildStatus === "fresh" &&
+      publishedAthleteState.publishedState?.performanceTargets
+    ) {
+      return publishedAthleteState.publishedState.performanceTargets;
+    }
+    return createUnavailableAthletePerformanceTargetFacts(
+      publishedAthleteState?.publishedState?.publishedAt ?? performanceModelAsOf,
+    );
+  }, [performanceModelAsOf, publishedAthleteState]);
 
   const pendingPlanQuery = api.activityPlans.getById.useQuery(
     { id: pendingPlanId ?? "" },
@@ -108,9 +122,9 @@ export function useRecordScreenController() {
   }, [performanceTargets, service]);
 
   React.useEffect(() => {
-    if (!service || !recordingProfile) return;
+    if (!service || !publishedAthleteState?.currentBaseline?.planningContext) return;
 
-    const { weight_kg } = recordingProfile;
+    const weight_kg = publishedAthleteState.currentBaseline.planningContext.body.weightKg.value;
 
     if (weight_kg) {
       console.log("[RecordModal] Applying derived metrics:", {
@@ -120,7 +134,7 @@ export function useRecordScreenController() {
         weightKg: weight_kg,
       });
     }
-  }, [recordingProfile, service]);
+  }, [publishedAthleteState?.currentBaseline, service]);
 
   React.useEffect(() => {
     console.log("[RecordModal] Permission status changed:", {
@@ -245,13 +259,30 @@ export function useRecordScreenController() {
 
   const fetchStartPerformanceTargets = React.useCallback(async () => {
     const asOf = new Date().toISOString();
+    if (!user?.id) return createUnavailableAthletePerformanceTargetFacts(asOf);
     try {
-      return await apiUtils.profiles.getPerformanceTargets.fetch({ asOf });
+      const published = await apiUtils.athleteIntelligence.getReadModel.fetch({
+        profileId: user.id,
+        sections: { publishedState: true, status: true },
+      });
+      if (
+        published.status?.freshness !== "fresh" ||
+        published.status.rebuildStatus !== "fresh" ||
+        !published.publishedState?.performanceTargets
+      ) {
+        console.warn(
+          `[RecordModal] Start-time performance targets ${published.status?.freshness ?? "unavailable"}`,
+        );
+        return createUnavailableAthletePerformanceTargetFacts(
+          published.publishedState?.publishedAt ?? asOf,
+        );
+      }
+      return published.publishedState.performanceTargets;
     } catch {
       console.warn("[RecordModal] Start-time performance targets unavailable");
       return createUnavailableAthletePerformanceTargetFacts(asOf);
     }
-  }, [apiUtils]);
+  }, [apiUtils, user?.id]);
 
   const handleStart = React.useCallback(async () => {
     console.log("[RecordModal] Start clicked, checking permissions");

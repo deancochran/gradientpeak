@@ -11,6 +11,7 @@ describe("activity history search contract", () => {
     expect(
       validateActivityHistorySearch({
         q: "  morning run  ",
+        importRunId: "77777777-7777-4777-8777-777777777777",
         category: "run",
         sort: "distance",
         order: "asc",
@@ -20,6 +21,7 @@ describe("activity history search contract", () => {
       }),
     ).toEqual({
       q: "morning run",
+      importRunId: "77777777-7777-4777-8777-777777777777",
       category: "run",
       sort: "distance",
       order: "asc",
@@ -30,6 +32,7 @@ describe("activity history search contract", () => {
     expect(
       validateActivityHistorySearch({
         category: "ski",
+        importRunId: "not-a-uuid",
         sort: "tss",
         order: "sideways",
         from: "yesterday",

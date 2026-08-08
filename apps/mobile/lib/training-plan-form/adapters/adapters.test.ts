@@ -1,11 +1,6 @@
-import { buildPreviewMinimalPlanFromForm } from "@repo/core";
 import { describe, expect, it } from "vitest";
-import type {
-  GoalFormData,
-  TrainingPlanConfigFormData,
-} from "@/components/training-plan/create/SinglePageForm";
+import type { TrainingPlanConfigFormData } from "@/components/training-plan/create/SinglePageForm";
 import {
-  buildMinimalTrainingPlanPayload,
   toCreationNormalizationInput,
   toTrainingPlanConfigFormDataFromStructure,
   toTrainingPlanFormDataFromStructure,
@@ -126,26 +121,6 @@ function buildConfigFixture(): TrainingPlanConfigFormData {
   } as unknown as TrainingPlanConfigFormData;
 }
 
-function buildGoalFixture(): GoalFormData[] {
-  return [
-    {
-      id: "goal-1",
-      name: "  Spring Marathon  ",
-      targetDate: "2026-05-01",
-      priority: 1,
-      targets: [
-        {
-          id: "target-1",
-          targetType: "race_performance",
-          activityCategory: "run",
-          distanceKm: "42.2",
-          completionTimeHms: "03:10:00",
-        },
-      ],
-    },
-  ];
-}
-
 describe("toCreationNormalizationInput", () => {
   it("maps config fields deterministically and preserves lock precedence", () => {
     const fixture = buildConfigFixture();
@@ -227,98 +202,6 @@ describe("toCreationNormalizationInput", () => {
 
     expect(mapped.user_values?.behavior_controls?.shape_target).toBe(-0.55);
     expect(mapped.user_values?.behavior_controls?.shape_strength).toBe(0.92);
-  });
-});
-
-describe("buildMinimalTrainingPlanPayload", () => {
-  it("normalizes payload and converts race target fields", () => {
-    const payload = buildMinimalTrainingPlanPayload({
-      planStartDate: "2026-01-05",
-      goals: buildGoalFixture(),
-    });
-
-    expect(payload).toEqual({
-      plan_start_date: "2026-01-05",
-      goals: [
-        {
-          name: "Spring Marathon",
-          target_date: "2026-05-01",
-          priority: 1,
-          targets: [
-            {
-              target_type: "race_performance",
-              distance_m: 42200,
-              target_time_s: 11400,
-              activity_category: "run",
-            },
-          ],
-        },
-      ],
-    });
-  });
-
-  it("keeps create and preview minimal payloads in parity", () => {
-    const goals: GoalFormData[] = [
-      {
-        id: "goal-1",
-        name: "Spring Marathon",
-        targetDate: "2026-05-01",
-        priority: 1,
-        targets: [
-          {
-            id: "target-1",
-            targetType: "race_performance",
-            activityCategory: "run",
-            distanceKm: "42.2",
-            completionTimeHms: "03:10:00",
-          },
-          {
-            id: "target-2",
-            targetType: "pace_threshold",
-            activityCategory: "run",
-            paceMmSs: "04:15",
-            testDurationHms: "00:20:00",
-          },
-        ],
-      },
-      {
-        id: "goal-2",
-        name: "FTP Block",
-        targetDate: "2026-07-15",
-        priority: 2,
-        targets: [
-          {
-            id: "target-3",
-            targetType: "power_threshold",
-            activityCategory: "bike",
-            targetWatts: 280,
-            testDurationHms: "00:20:00",
-          },
-          {
-            id: "target-4",
-            targetType: "hr_threshold",
-            targetLthrBpm: 168,
-          },
-        ],
-      },
-    ];
-
-    const createPayload = buildMinimalTrainingPlanPayload({
-      planStartDate: "2026-01-05",
-      goals,
-    });
-
-    const previewPayload = buildPreviewMinimalPlanFromForm({
-      planStartDate: "2026-01-05",
-      goals: goals.map((goal) => ({
-        name: goal.name,
-        targetDate: goal.targetDate,
-        priority: goal.priority,
-        targets: goal.targets,
-      })),
-    });
-
-    expect(previewPayload).toEqual(createPayload);
   });
 });
 

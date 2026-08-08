@@ -23,7 +23,7 @@ type ActivityPlanPickerSource = {
   likes_count?: number | null;
   name: string;
   prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
-  template_visibility?: string | null;
+  content_visibility?: string | null;
   updated_at?: string | null;
 };
 
@@ -201,7 +201,7 @@ export function mapActivityPlanToResourcePickerItem(
     estimatedDuration: quantitySummary.durationSeconds,
     id: plan.id,
     hasLiked: plan.has_liked,
-    isPublic: plan.template_visibility === "public",
+    isPublic: plan.content_visibility === "public",
     isSystem: plan.is_system_template,
     likesCount: plan.likes_count,
     name: plan.name,

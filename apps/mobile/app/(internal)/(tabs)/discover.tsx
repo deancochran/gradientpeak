@@ -165,8 +165,6 @@ export default function DiscoverPage() {
   const shouldLoadUsers = activeScope === "users";
   const activityPlansInfiniteQuery = api.activityPlans.list.useInfiniteQuery(
     {
-      includeSystemTemplates: true,
-      includeOwnOnly: false,
       includeEstimation: true,
       ownerScope: "all",
       search: validatedSearchQuery || undefined,

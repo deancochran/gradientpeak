@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DrizzleTransactionClient } from "../../db";
-import { getProviderOAuthConfig } from "../../lib/integrations/oauth-config";
+import { getWahooOAuthConfig } from "../../lib/integrations/oauth-config";
 import {
   createOAuthCodeChallenge,
   deriveOAuthCodeVerifier,
@@ -13,7 +13,7 @@ import {
   IntegrationLifecycleChangedError,
   type IntegrationsRepositories,
 } from "../../repositories/integrations-repository";
-import type { ProviderSyncRepository } from "../../repositories/provider-sync-repository";
+import type { WahooSyncRepository } from "../../repositories/wahoo-sync-repository";
 import { handleOAuthCallback } from "./oauthCallbackUseCase";
 
 const STATE_ID = "55555555-5555-4555-8555-555555555555";
@@ -30,7 +30,7 @@ function createDependencies(
   }> = {},
 ) {
   let available = true;
-  const config = getProviderOAuthConfig(provider);
+  const config = provider === "wahoo" ? getWahooOAuthConfig() : null;
   const transaction = { kind: "test-transaction" } as unknown as DrizzleTransactionClient;
   const oauthStates = {
     deleteByState: vi.fn(async () => {
@@ -66,7 +66,13 @@ function createDependencies(
     upsertFromOAuthStateInTransaction: vi.fn(async () => {
       if (!available) return null;
       available = false;
-      return { generation: 3, id: INTEGRATION_ID };
+      return {
+        generation: 3,
+        id: INTEGRATION_ID,
+        lifecycle_status: "active",
+        profile_id: PROFILE_ID,
+        provider: "wahoo",
+      };
     }),
   };
   const providerSyncRepository = {
@@ -84,7 +90,7 @@ function createDependencies(
   };
   return {
     repositories: { integrations, oauthStates } as unknown as IntegrationsRepositories,
-    providerSyncRepository: providerSyncRepository as unknown as ProviderSyncRepository,
+    providerSyncRepository: providerSyncRepository as unknown as WahooSyncRepository,
     runInTransaction,
     integrations,
     oauthStates,
@@ -95,7 +101,7 @@ function createDependencies(
 }
 
 function createLocalCode() {
-  const config = getProviderOAuthConfig("wahoo");
+  const config = getWahooOAuthConfig();
   if (!config) throw new Error("local adapter was not configured");
   return issueLocalOAuthAuthorizationCode({
     challenge: createOAuthCodeChallenge(
@@ -111,21 +117,15 @@ function createLocalCode() {
 }
 
 function useRemoteWahooConfig() {
-  delete process.env.PROVIDER_OAUTH_TEST_ADAPTER;
+  delete process.env.WAHOO_OAUTH_TEST_ADAPTER;
   process.env.WAHOO_CLIENT_ID = "wahoo-client-id";
   process.env.WAHOO_CLIENT_SECRET = "wahoo-client-secret";
-}
-
-function useRemoteStravaConfig() {
-  delete process.env.PROVIDER_OAUTH_TEST_ADAPTER;
-  process.env.STRAVA_CLIENT_ID = "strava-client-id";
-  process.env.STRAVA_CLIENT_SECRET = "strava-client-secret";
 }
 
 describe("OAuth callback use case", () => {
   beforeEach(() => {
     process.env.NODE_ENV = "test";
-    process.env.PROVIDER_OAUTH_TEST_ADAPTER = "1";
+    process.env.WAHOO_OAUTH_TEST_ADAPTER = "1";
   });
 
   afterEach(() => {
@@ -165,7 +165,7 @@ describe("OAuth callback use case", () => {
         integrationId: INTEGRATION_ID,
         profileId: PROFILE_ID,
         provider: "wahoo",
-        payload: { trigger: "connect", windowMonths: 12 },
+        payload: { trigger: "connect" },
       }),
     );
     expect(deps.providerSyncRepositoryMock.enqueueJobInTransaction).toHaveBeenCalledWith(
@@ -173,26 +173,20 @@ describe("OAuth callback use case", () => {
       expect.objectContaining({
         integrationGeneration: 3,
         integrationId: INTEGRATION_ID,
-        jobType: "wahoo.reconcile_owned_routes",
+        jobType: "wahoo.profile_enrichment",
         payload: { trigger: "connect" },
         profileId: PROFILE_ID,
         provider: "wahoo",
-        resourceKind: "activity_route",
       }),
     );
-    expect(deps.providerSyncRepositoryMock.enqueueJobInTransaction).toHaveBeenCalledWith(
-      deps.transaction,
-      expect.objectContaining({
-        integrationGeneration: 3,
-        integrationId: INTEGRATION_ID,
-        jobType: "wahoo.reconcile_group_event_route_deliveries",
-        payload: { trigger: "connect" },
-        profileId: PROFILE_ID,
-        provider: "wahoo",
-        resourceKind: "group_event_route_delivery",
-      }),
-    );
-    expect(deps.providerSyncRepositoryMock.enqueueJobInTransaction).toHaveBeenCalledTimes(3);
+    expect(deps.providerSyncRepositoryMock.enqueueJobInTransaction).toHaveBeenCalledTimes(2);
+    const queuedJobTypes = (
+      deps.providerSyncRepositoryMock.enqueueJobInTransaction.mock.calls as unknown as Array<
+        [unknown, { jobType: string }]
+      >
+    ).map(([, job]) => job.jobType);
+    expect(queuedJobTypes).not.toContain("wahoo.reconcile_owned_routes");
+    expect(queuedJobTypes).not.toContain("wahoo.reconcile_group_event_route_deliveries");
   });
 
   it("rejects a provider mismatch and clears the stored state", async () => {
@@ -477,7 +471,7 @@ describe("OAuth callback use case", () => {
         accessToken: "remote-access-token",
         expiresAt: expect.any(Date),
         refreshToken: null,
-        scope: null,
+        scope: expect.stringContaining("workouts_read"),
       }),
     );
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -600,8 +594,7 @@ describe("OAuth callback use case", () => {
     expect(deps.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
   });
 
-  it("fails closed when a non-Wahoo token omits the provider identity", async () => {
-    useRemoteStravaConfig();
+  it("rejects a callback for a provider without an enabled server adapter", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(
@@ -618,16 +611,11 @@ describe("OAuth callback use case", () => {
       state: STATE_ID,
     });
 
-    expect(new URL(result.redirectUrl).searchParams.get("error")).toBe("provider_identity_failed");
+    expect(new URL(result.redirectUrl).searchParams.get("error")).toBe("invalid_provider");
     expect(deps.getTransactionCallCount()).toBe(0);
     expect(deps.integrations.upsertFromOAuthStateInTransaction).not.toHaveBeenCalled();
-    expect(deps.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
-    const [, request] = fetchMock.mock.calls[0] ?? [];
-    const headers = new Headers(request?.headers);
-    const body = new URLSearchParams(String(request?.body));
-    expect(headers.get("Authorization")).toMatch(/^Basic /);
-    expect(body.has("client_secret")).toBe(false);
-    expect(body.has("code_verifier")).toBe(true);
+    expect(deps.oauthStates.deleteByState).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("persists an identity-bearing Wahoo token before activation", async () => {
@@ -642,7 +630,7 @@ describe("OAuth callback use case", () => {
             athlete: { id: 42 },
             expires_in: 3600,
             refresh_token: "remote-refresh-token",
-            scope: "workouts_read offline_data",
+            scope: "workouts_read offline_data user_read",
           }),
           { status: 200 },
         );

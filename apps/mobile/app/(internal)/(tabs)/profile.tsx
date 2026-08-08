@@ -250,15 +250,6 @@ export default function ProfileTabScreen() {
             onPress={() => navigateTo(ROUTES.PROFILE_METRICS.LIST)}
             testID="profile-tab-profile-metrics"
           />
-          <SettingItem
-            type="button"
-            label="Activity Efforts"
-            description="Best power and speed efforts grouped by activity and measurement type."
-            buttonLabel="Manage"
-            variant="outline"
-            onPress={() => navigateTo(ROUTES.ACTIVITIES.EFFORTS_LIST)}
-            testID="profile-tab-activity-efforts"
-          />
         </SettingsGroup>
 
         <SettingsGroup

@@ -6,9 +6,16 @@ const queryRefetchMock = jest.fn(async () => ({ data: undefined }));
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
-    activities: {
-      commonLoadHistory: {
-        useQuery: (...args: unknown[]) => commonLoadQueryMock(...args),
+    profiles: { get: { useQuery: () => ({ data: { id: "profile-1" } }) } },
+    athleteIntelligence: {
+      getReadModel: {
+        useQuery: (...args: unknown[]) => {
+          const query = commonLoadQueryMock(...args);
+          return {
+            ...query,
+            data: query.data ? { loadHistory: { result: query.data } } : undefined,
+          };
+        },
       },
     },
   },
@@ -31,7 +38,17 @@ describe("useCommonLoadHistory", () => {
   it("queries the server-owned planning boundary without device input", () => {
     renderHook(() => useCommonLoadHistory());
 
-    expect(commonLoadQueryMock).toHaveBeenLastCalledWith();
+    expect(commonLoadQueryMock).toHaveBeenLastCalledWith(
+      {
+        profileId: "profile-1",
+        sections: {
+          status: true,
+          currentBaseline: { includePlanningContext: false },
+          loadHistory: true,
+        },
+      },
+      { enabled: true },
+    );
   });
 
   it("exposes available history and its authoritative identity", () => {

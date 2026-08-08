@@ -7,13 +7,21 @@ import { Route } from "./integrations";
 const mocks = vi.hoisted(() => ({
   error: null as Error | null,
   integrations: [] as Array<Record<string, unknown>>,
+  navigate: vi.fn(),
+  publishedState: {
+    publishedState: { publishedAt: "2026-08-01T12:00:00.000Z" },
+    status: { rebuildStatus: "fresh", importStatus: "complete" },
+  } as Record<string, unknown>,
   refetch: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute: () => (options: object) => options,
+  createFileRoute: () => (options: object) => ({
+    ...options,
+    useNavigate: () => mocks.navigate,
+  }),
 }));
 
 vi.mock("sonner", () => ({
@@ -48,6 +56,12 @@ vi.mock("../../lib/api/client", () => {
         refreshSetupData: { useMutation: () => mutation },
         syncNow: { useMutation: () => mutation },
       },
+      profiles: {
+        get: { useQuery: () => ({ data: { id: "11111111-1111-4111-8111-111111111111" } }) },
+      },
+      athleteIntelligence: {
+        getReadModel: { useQuery: () => ({ data: mocks.publishedState }) },
+      },
     },
   };
 });
@@ -56,12 +70,14 @@ function integration(overrides: Record<string, unknown> = {}) {
   return {
     actions: [],
     activityHistory: {
+      importRun: null,
       lastError: null,
       lastFailedAt: null,
       lastSucceededAt: null,
       queuedJobId: null,
       status: "idle",
     },
+    athleteState: { revision: null, status: "unavailable" },
     configured: true,
     connected: false,
     integrationId: null,
@@ -80,7 +96,10 @@ function integration(overrides: Record<string, unknown> = {}) {
       lastError: null,
       lastFailedAt: null,
       lastSucceededAt: null,
+      profile: { dob: null, gender: null, onboarded: false },
+      sources: {},
       status: "idle",
+      values: {},
     },
     summary: {
       badge: "Ready",
@@ -97,6 +116,12 @@ afterEach(() => {
   vi.clearAllMocks();
   mocks.error = null;
   mocks.integrations = [];
+  mocks.publishedState = {
+    publishedAt: "2026-08-01T12:00:00.000Z",
+    rebuildStatus: "fresh",
+    importStatus: "complete",
+  };
+  mocks.navigate.mockReset();
   window.history.replaceState(null, "", "/");
 });
 
@@ -174,5 +199,75 @@ describe("web integrations journey", () => {
       "Wahoo has too many active GradientPeak authorizations. Revoke GradientPeak in Wahoo, then try again.",
     );
     expect(window.location.search).toBe("");
+  });
+
+  it("shows truthful incomplete history and opens the exact imported batch", () => {
+    const importRunId = "77777777-7777-4777-8777-777777777777";
+    mocks.integrations = [
+      integration({
+        activityHistory: {
+          importRun: {
+            id: importRunId,
+            status: "failed",
+            importedCount: 12,
+            skippedCount: 1,
+            failedCount: 1,
+          },
+          lastError: "Activity history sync failed",
+          lastFailedAt: "2026-08-01T12:00:00.000Z",
+          lastSucceededAt: null,
+          queuedJobId: null,
+          status: "failed",
+        },
+        athleteState: { revision: 4, status: "failed_incomplete" },
+      }),
+    ];
+    mocks.publishedState = {
+      publishedState: { publishedAt: "2026-08-01T12:00:00.000Z" },
+      status: { rebuildStatus: "failed", importStatus: "failed" },
+    };
+
+    render(<IntegrationsPage />);
+    expect(screen.getByText("History incomplete after failed import")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "View imported activities" }));
+    expect(mocks.navigate).toHaveBeenCalledWith({
+      to: "/activities",
+      search: { importRunId },
+    });
+  });
+
+  it.each([
+    ["pending", "Activities imported; state pending"],
+    ["rebuilding", "State rebuilding"],
+    ["current", "State current"],
+    ["failed_incomplete", "History incomplete after failed import"],
+  ])("renders truthful athlete-state status %s", (status, expected) => {
+    mocks.integrations = [integration({ athleteState: { revision: 4, status } })];
+    mocks.publishedState = {
+      publishedState: { publishedAt: "2026-08-01T12:00:00.000Z" },
+      status: {
+        rebuildStatus: status === "current" ? "fresh" : status,
+        importStatus: status === "failed_incomplete" ? "failed" : "complete",
+      },
+    };
+    render(<IntegrationsPage />);
+    expect(screen.getByText(expected)).toBeTruthy();
+  });
+
+  it("labels an active history run as activities importing", () => {
+    mocks.integrations = [
+      integration({
+        activityHistory: {
+          importRun: null,
+          lastError: null,
+          lastFailedAt: null,
+          lastSucceededAt: null,
+          queuedJobId: "77777777-7777-4777-8777-777777777777",
+          status: "importing",
+        },
+      }),
+    ];
+    render(<IntegrationsPage />);
+    expect(screen.getByText("Activities importing")).toBeTruthy();
   });
 });

@@ -11,7 +11,6 @@ var mockAlert = jest.fn<void, Parameters<NativeAlert>>();
 var mockApplyTemplateMutate = jest.fn();
 var mockDuplicateMutate = jest.fn();
 var mockRemoveAppliedScheduleMutate = jest.fn();
-var mockUpdatePlanMutate = jest.fn();
 type TrainingPlanFixture = {
   id: string;
   name: string;
@@ -20,7 +19,7 @@ type TrainingPlanFixture = {
   structure: Record<string, unknown>;
   profile_id?: string;
   is_active?: boolean;
-  template_visibility?: string;
+  content_visibility?: string;
   durationWeeks?: { recommended: number };
   sessions_per_week_target?: number;
   activity_category?: string[];
@@ -80,6 +79,10 @@ var mockSnapshotState: {
   },
 };
 
+jest.mock("expo-crypto", () => ({
+  randomUUID: () => "33333333-3333-4333-8333-333333333333",
+}));
+
 jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
   ...jest.requireActual("@tanstack/react-query"),
@@ -128,6 +131,16 @@ jest.mock("@/lib/api", () => ({
   api: {
     useUtils: () => ({
       client: {},
+      profiles: {
+        get: { fetch: jest.fn(async () => ({ id: "test-profile-id" })) },
+      },
+      athleteIntelligence: {
+        getReadModel: {
+          fetch: jest.fn(async () => ({
+            publishedRevision: 3,
+          })),
+        },
+      },
       trainingPlans: {
         invalidate: jest.fn(),
       },
@@ -136,27 +149,24 @@ jest.mock("@/lib/api", () => ({
       },
     }),
     trainingPlans: {
+      commit: {
+        useMutation: () => ({
+          mutateAsync: async (input: unknown) => {
+            mockDuplicateMutate(input);
+            return { status: "saved" as const, planId: "duplicated-training-plan-1" };
+          },
+          isPending: false,
+        }),
+      },
       getTemplate: {
         useQuery: () => ({ data: null, isLoading: false }),
       },
       getActivePlan: {
         useQuery: () => ({ data: mockActivePlanData }),
       },
-      update: {
-        useMutation: () => ({ mutate: mockUpdatePlanMutate, isPending: false }),
-      },
       removeAppliedSchedule: {
         useMutation: () => ({
           mutate: mockRemoveAppliedScheduleMutate,
-          isPending: false,
-        }),
-      },
-      duplicate: {
-        useMutation: (options?: { onSuccess?: (data: { id: string }) => void }) => ({
-          mutate: (input: unknown) => {
-            mockDuplicateMutate(input);
-            options?.onSuccess?.({ id: "duplicated-training-plan-1" });
-          },
           isPending: false,
         }),
       },
@@ -189,6 +199,16 @@ jest.mock("@/lib/api", () => ({
       },
       addComment: {
         useMutation: () => ({ mutate: jest.fn(), isPending: false }),
+      },
+    },
+    athleteIntelligence: {
+      getReadModel: {
+        useQuery: () => ({
+          data: {
+            publishedRevision: 1,
+          },
+          refetch: jest.fn(),
+        }),
       },
     },
     activityPlans: {
@@ -490,7 +510,6 @@ const resetTestState = () => {
   mockApplyTemplateMutate.mockReset();
   mockDuplicateMutate.mockReset();
   mockRemoveAppliedScheduleMutate.mockReset();
-  mockUpdatePlanMutate.mockReset();
   mockActivePlanData = null;
   mockApplyTemplateResult = null;
   mockSnapshotState.plan = null;
@@ -598,7 +617,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
       id: "plan-owned-1",
       name: "Owned Plan",
       profile_id: "test-profile-id",
-      template_visibility: "private",
+      content_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
       structure_hash: "fixture-structure-hash",
       structure: {},
@@ -618,7 +637,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
       id: "plan-owned-snapshot-1",
       name: "Owned Plan",
       profile_id: "test-profile-id",
-      template_visibility: "private",
+      content_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
       structure_hash: "fixture-structure-hash",
       structure: {
@@ -649,7 +668,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
       id: "plan-owned-anchor-1",
       name: "Anchor Plan",
       profile_id: "test-profile-id",
-      template_visibility: "private",
+      content_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
       structure_hash: "fixture-structure-hash",
       structure: {},
@@ -675,7 +694,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
       id: "plan-owned-anchor-2",
       name: "Anchor Plan",
       profile_id: "test-profile-id",
-      template_visibility: "private",
+      content_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
       structure_hash: "fixture-structure-hash",
       structure: {},
@@ -717,7 +736,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
       id: "plan-owned-anchor-3",
       name: "Anchor Plan",
       profile_id: "test-profile-id",
-      template_visibility: "private",
+      content_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
       structure_hash: "fixture-structure-hash",
       structure: {},
@@ -752,7 +771,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
       id: "plan-owned-anchor-4",
       name: "Anchor Plan",
       profile_id: "test-profile-id",
-      template_visibility: "private",
+      content_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
       structure_hash: "fixture-structure-hash",
       structure: {},
@@ -780,7 +799,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
       id: "plan-owned-anchor-4b",
       name: "Anchor Plan",
       profile_id: "test-profile-id",
-      template_visibility: "private",
+      content_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
       structure_hash: "fixture-structure-hash",
       structure: {},
@@ -818,7 +837,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
       id: "plan-owned-anchor-5",
       name: "Anchor Plan",
       profile_id: "test-profile-id",
-      template_visibility: "private",
+      content_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
       structure_hash: "fixture-structure-hash",
       structure: {},
@@ -850,7 +869,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
       id: "plan-owned-anchor-6",
       name: "Anchor Plan",
       profile_id: "test-profile-id",
-      template_visibility: "private",
+      content_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
       structure_hash: "fixture-structure-hash",
       structure: {},
@@ -895,7 +914,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
       id: "active-plan-1",
       name: "Active Plan",
       profile_id: "test-profile-id",
-      template_visibility: "private",
+      content_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
       structure_hash: "fixture-structure-hash",
       structure: {},
@@ -914,7 +933,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
       id: "active-plan-2",
       name: "Active Plan",
       profile_id: "test-profile-id",
-      template_visibility: "private",
+      content_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
       structure_hash: "fixture-structure-hash",
       structure: {},
@@ -991,25 +1010,38 @@ describe("TrainingPlanOverview deep-link routing", () => {
       id: "plan-shared-1",
       name: "Shared Plan",
       profile_id: "someone-else",
-      template_visibility: "public",
+      content_visibility: "public",
       created_at: "2026-01-01T00:00:00.000Z",
       structure_hash: "fixture-structure-hash",
-      structure: {},
+      structure: {
+        id: "11111111-1111-4111-8111-111111111111",
+        version: 1,
+        activity_category: ["run"],
+        durationWeeks: { recommended: 8 },
+        experienceLevel: ["beginner"],
+        sessions: [{ offset_days: 0, activity_plan_id: "22222222-2222-4222-8222-222222222222" }],
+      },
     };
     mockLocalSearchParams.id = "plan-shared-1";
 
     renderPlan();
 
     await act(async () => {
-      findNodeByTestId("training-plan-options-duplicate").props.onPress();
+      await findNodeByTestId("training-plan-options-duplicate").props.onPress();
     });
 
     expect(hasTextContaining("Duplicate")).toBe(true);
 
-    expect(mockDuplicateMutate).toHaveBeenCalledWith({
-      id: "plan-shared-1",
-      newName: "Shared Plan (Copy)",
-    });
+    expect(mockDuplicateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "duplicate",
+        basePublishedRevision: 3,
+        draft: expect.objectContaining({
+          sourcePlanId: "plan-shared-1",
+          name: "Shared Plan (Copy)",
+        }),
+      }),
+    );
     await waitFor(() => {
       expect(nativeAlertMock).toHaveBeenCalledWith(
         "Duplicated",

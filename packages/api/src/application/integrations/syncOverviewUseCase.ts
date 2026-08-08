@@ -1,22 +1,24 @@
 import {
   getConfigurableProviderActions,
   getProviderCapabilityDefinition,
-  isProviderRuntimeEnabled,
+  isProviderActivityHistoryReconciliationTarget,
   providerCapabilityRegistry,
   providerHasCapability,
 } from "@repo/core";
 import {
+  activityImportRuns,
   type DrizzleDbClient,
   type PublicIntegrationProvider,
   publicIntegrationsRowSchema,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import {
   createIntegrationsRepositories,
-  createProviderSyncRepository,
+  createWahooSyncRepository,
 } from "../../infrastructure/repositories";
-import { isProviderOAuthConfigured } from "../../lib/integrations/oauth-config";
+import { isWahooIntegrationEnabled } from "../../lib/integrations/oauth-config";
 import { hasWahooPlannedActivityScopes } from "../../lib/integrations/wahoo/planned-activity-scopes";
 import { logger } from "../../lib/logger";
 
@@ -40,15 +42,8 @@ function parseBoundaryValue<T>(schema: z.ZodType<T>, value: unknown, message: st
   return parsed.data;
 }
 
-export function supportsActivityHistorySync(provider: PublicIntegrationProvider): boolean {
-  return (
-    providerHasCapability(provider, "activity_history_read") &&
-    providerHasCapability(provider, "activity_file_download")
-  );
-}
-
 async function readProviderSyncOverviewState(
-  providerSyncRepository: ReturnType<typeof createProviderSyncRepository>,
+  providerSyncRepository: ReturnType<typeof createWahooSyncRepository>,
   integrationIds: string[],
 ) {
   try {
@@ -62,7 +57,7 @@ async function readProviderSyncOverviewState(
 }
 
 async function readActiveProviderSyncJobs(
-  providerSyncRepository: ReturnType<typeof createProviderSyncRepository>,
+  providerSyncRepository: ReturnType<typeof createWahooSyncRepository>,
   profileId: string,
 ) {
   try {
@@ -112,8 +107,6 @@ function toSafeProviderSyncCopy(error: string): string | null {
   switch (error) {
     case "activity_history_failed":
       return "Activity history sync failed";
-    case "activity_history_budget_exceeded":
-      return "Activity history sync will retry";
     case "invalid_job_payload":
       return "Sync job could not be processed";
     case "integration_generation_inactive":
@@ -281,7 +274,7 @@ function getAllowedActions(input: {
 
 export async function getProviderSyncOverview(input: { db: DrizzleDbClient; profileId: string }) {
   const repositories = createIntegrationsRepositories(input.db);
-  const providerSyncRepository = createProviderSyncRepository({ db: input.db });
+  const providerSyncRepository = createWahooSyncRepository({ db: input.db });
   const integrations = parseBoundaryValue(
     z.array(publicIntegrationsRowSchema),
     await repositories.integrations.listByProfileId(input.profileId),
@@ -291,9 +284,26 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
     (integration) => integration.lifecycle_status === "active",
   );
   const integrationIds = activeIntegrations.map((integration) => integration.id);
-  const [syncStates, activeJobs] = await Promise.all([
+  const [syncStates, activeJobs, importRuns] = await Promise.all([
     readProviderSyncOverviewState(providerSyncRepository, integrationIds),
     readActiveProviderSyncJobs(providerSyncRepository, input.profileId),
+    Promise.all(
+      integrationIds.map(async (integrationId) => {
+        const [run] = await input.db
+          .select()
+          .from(activityImportRuns)
+          .where(
+            and(
+              eq(activityImportRuns.profile_id, input.profileId),
+              eq(activityImportRuns.integration_id, integrationId),
+              inArray(activityImportRuns.kind, ["onboarding", "history_sync", "manual_sync"]),
+            ),
+          )
+          .orderBy(desc(activityImportRuns.updated_at))
+          .limit(1);
+        return run;
+      }),
+    ).then((runs) => runs.filter((run) => run !== undefined)),
   ]);
   const integrationsByProvider = new Map(
     integrations.map((integration) => [integration.provider, integration]),
@@ -301,9 +311,9 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
 
   return Promise.all(
     providerCapabilityRegistry
-      .filter((definition) => isProviderRuntimeEnabled(definition.id))
+      .filter(({ id }) => id === "wahoo")
       .map(async (definition) => {
-        const configured = isProviderOAuthConfigured(definition.id);
+        const configured = isWahooIntegrationEnabled();
         const lifecycleIntegration = integrationsByProvider.get(definition.id);
         const disconnecting = lifecycleIntegration?.lifecycle_status === "disconnect_pending";
         const integration =
@@ -320,6 +330,9 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
                 candidate.integrationId === integration.id &&
                 candidate.resource === activityHistoryResource,
             )
+          : null;
+        const importRun = integration
+          ? importRuns.find((candidate) => candidate.integration_id === integration.id)
           : null;
         const setupState = integration
           ? syncStates.find(
@@ -348,7 +361,9 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
                 wahooPlannedActivityJobTypes.has(job.jobType),
             )
           : null;
-        const activityHistorySupported = supportsActivityHistorySync(definition.id);
+        const activityHistorySupported = isProviderActivityHistoryReconciliationTarget(
+          definition.id,
+        );
         const setupSupported = providerHasCapability(definition.id, "profile_enrichment_read");
         const plannedScopesGranted =
           definition.id !== "wahoo" || hasWahooPlannedActivityScopes(grant?.scope);
@@ -435,6 +450,15 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
             lastSucceededAt: activityState?.lastSyncSucceededAt ?? null,
             queuedJobId: activeActivityJob?.id ?? null,
             status: activityHistoryStatus,
+            importRun: importRun
+              ? {
+                  id: importRun.id,
+                  status: importRun.status,
+                  importedCount: importRun.imported_count,
+                  skippedCount: importRun.skipped_count,
+                  failedCount: importRun.failed_count,
+                }
+              : null,
           },
           plannedActivities: {
             lastError: plannedUnavailableReason ?? plannedLastError,

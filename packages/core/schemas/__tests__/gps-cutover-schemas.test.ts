@@ -54,11 +54,11 @@ describe("GPS cutover schemas", () => {
   it("requires strict structure and rejects top-level location/activity_category aliases", () => {
     const structure = {
       version: 3 as const,
+      activity_category: "run" as const,
       segments: [
         {
           id: "00000000-0000-4000-8000-000000000001",
           role: "activity" as const,
-          activity_category: "run" as const,
           name: "Run",
           intervals: [
             {

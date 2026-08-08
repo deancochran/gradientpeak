@@ -1,4 +1,5 @@
-import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
+import { projectAthletePerformanceTargetFacts } from "@repo/core";
+import { buildPerformanceModelSnapshotFixture } from "@repo/core/testing/performance-model";
 import React from "react";
 import { Alert } from "react-native";
 import { createButtonComponent, createHost } from "../../../../test/mock-components";
@@ -11,12 +12,23 @@ const pauseMock = jest.fn();
 const resumeMock = jest.fn();
 const finishMock = jest.fn(async () => undefined);
 const requestPermissionMock = jest.fn(async () => true);
-const mockPerformanceTargets = buildPerformanceTargetFactsFixture({
+const mockPerformanceModel = buildPerformanceModelSnapshotFixture({
   asOf: "2026-06-01T00:00:00.000Z",
 });
-const mockGetPerformanceTargetsQuery = jest.fn(() => ({ data: mockPerformanceTargets }));
-const mockFetchPerformanceTargets = jest.fn(async ({ asOf }: { asOf: string }) =>
-  buildPerformanceTargetFactsFixture({ asOf }),
+const mockPerformanceTargets = projectAthletePerformanceTargetFacts(mockPerformanceModel);
+const mockPublishedState = {
+  status: { freshness: "fresh" as const, rebuildStatus: "fresh" as const },
+  publishedState: {
+    publishedAt: mockPerformanceModel.asOf,
+    performanceTargets: mockPerformanceTargets,
+  },
+  currentBaseline: {
+    planningContext: { body: { weightKg: { value: 72 } } },
+  },
+};
+const mockGetPublishedStateQuery = jest.fn(() => ({ data: mockPublishedState }));
+const mockFetchPublishedState = jest.fn(
+  async (_input: { profileId: string; sections: Record<string, boolean> }) => mockPublishedState,
 );
 const mockGetProfileQuery = jest.fn(() => ({ data: { weight_kg: 72 } }));
 let mockRecordingLifecycle: "idle" | "setup" | "active" = "idle";
@@ -226,7 +238,7 @@ jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
     useUtils: () => ({
-      profiles: { getPerformanceTargets: { fetch: mockFetchPerformanceTargets } },
+      athleteIntelligence: { getReadModel: { fetch: mockFetchPublishedState } },
       routes: { invalidate: jest.fn() },
     }),
     activityPlans: {
@@ -234,12 +246,14 @@ jest.mock("@/lib/api", () => ({
         useQuery: () => ({ data: null }),
       },
     },
+    athleteIntelligence: {
+      getReadModel: {
+        useQuery: mockGetPublishedStateQuery,
+      },
+    },
     profiles: {
       get: {
         useQuery: mockGetProfileQuery,
-      },
-      getPerformanceTargets: {
-        useQuery: mockGetPerformanceTargetsQuery,
       },
     },
     routes: {
@@ -287,9 +301,7 @@ describe("record screen", () => {
     service.refreshAndCheckAllPermissions.mockResolvedValue(true);
     service.refreshAndCheckRecordingPermissions.mockResolvedValue(true);
     service.validatePlanRequirements.mockReturnValue({ isValid: true, warnings: [] });
-    mockFetchPerformanceTargets.mockImplementation(async ({ asOf }: { asOf: string }) =>
-      buildPerformanceTargetFactsFixture({ asOf }),
-    );
+    mockFetchPublishedState.mockResolvedValue(mockPublishedState);
     activitySelectionStoreMock.peekSelection.mockReturnValue({
       activity_category: "bike",
       gpsRecordingEnabled: false,
@@ -315,8 +327,15 @@ describe("record screen", () => {
     await waitFor(() => {
       expect(service.updatePerformanceTargets).toHaveBeenCalledWith(mockPerformanceTargets);
     });
-    expect(mockGetPerformanceTargetsQuery).toHaveBeenCalledWith(
-      { asOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) },
+    expect(mockGetPublishedStateQuery).toHaveBeenCalledWith(
+      {
+        profileId: "user-1",
+        sections: {
+          publishedState: true,
+          status: true,
+          currentBaseline: { includePlanningContext: true },
+        },
+      },
       expect.objectContaining({ enabled: true }),
     );
   });
@@ -345,22 +364,19 @@ describe("record screen", () => {
     await waitFor(() => {
       expect(startMock).toHaveBeenCalled();
     });
-    expect(mockFetchPerformanceTargets).toHaveBeenCalledWith({
-      asOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    expect(mockFetchPublishedState).toHaveBeenCalledWith({
+      profileId: "user-1",
+      sections: { publishedState: true, status: true },
     });
-    expect(service.updatePerformanceTargets).toHaveBeenLastCalledWith(
-      expect.objectContaining({ asOf: mockFetchPerformanceTargets.mock.calls[0]?.[0].asOf }),
-    );
-    expect(startMock).toHaveBeenCalledWith(
-      expect.objectContaining({ asOf: mockFetchPerformanceTargets.mock.calls[0]?.[0].asOf }),
-    );
+    expect(service.updatePerformanceTargets).toHaveBeenLastCalledWith(mockPerformanceTargets);
+    expect(startMock).toHaveBeenCalledWith(mockPerformanceTargets);
     expect(service.updatePerformanceTargets.mock.invocationCallOrder.at(-1)).toBeLessThan(
       startMock.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
     );
   });
 
   it("stages explicit unavailable targets when the start-time query fails", async () => {
-    mockFetchPerformanceTargets.mockRejectedValueOnce(new Error("offline"));
+    mockFetchPublishedState.mockRejectedValueOnce(new Error("offline"));
     renderNative(<RecordScreen />);
     fireEvent.press(await screen.findByText("Start"));
 
@@ -388,10 +404,17 @@ describe("record screen", () => {
   });
 
   it("uses the validated start targets unchanged when continuing after a validation dialog", async () => {
-    const initialTargets = buildPerformanceTargetFactsFixture({
+    const initialModel = buildPerformanceModelSnapshotFixture({
       asOf: "2026-07-31T01:00:00.000Z",
     });
-    mockFetchPerformanceTargets.mockResolvedValueOnce(initialTargets);
+    const initialTargets = projectAthletePerformanceTargetFacts(initialModel);
+    mockFetchPublishedState.mockResolvedValueOnce({
+      ...mockPublishedState,
+      publishedState: {
+        publishedAt: initialModel.asOf,
+        performanceTargets: projectAthletePerformanceTargetFacts(initialModel),
+      },
+    });
     service.validatePlanRequirements.mockReturnValue({
       isValid: false,
       missingMetrics: [{ name: "FTP", description: "Needed for ERG targets." }],
@@ -410,7 +433,7 @@ describe("record screen", () => {
     const alertButtons = (Alert.alert as jest.Mock).mock.calls.at(-1)?.[2] as AlertButtonFixture[];
     await alertButtons.find((button) => button.text === "Continue Anyway")?.onPress?.();
 
-    expect(mockFetchPerformanceTargets).toHaveBeenCalledTimes(1);
+    expect(mockFetchPublishedState).toHaveBeenCalledTimes(1);
     expect(service.updatePerformanceTargets).toHaveBeenLastCalledWith(initialTargets);
     expect(startMock).toHaveBeenCalledWith(initialTargets);
   });

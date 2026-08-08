@@ -1,95 +1,125 @@
 import { act, renderHook } from "@testing-library/react-native";
 
-const refetchPlan = jest.fn(async () => ({}));
-const refetchStatus = jest.fn(async () => ({}));
-const refetchInsightTimeline = jest.fn(async () => ({}));
-const refetchActualCurve = jest.fn(async () => ({}));
-const refetchIdealCurve = jest.fn(async () => ({}));
-const refetchWeeklySummary = jest.fn(async () => ({}));
-
-const snapshotMocks = {
-  refetchPlan,
-  refetchStatus,
-  refetchInsightTimeline,
-  refetchActualCurve,
-  refetchIdealCurve,
-  refetchWeeklySummary,
-  getPlanQuery: jest.fn(() => ({
+const refetch = jest.fn(async () => ({}));
+const queries = {
+  plan: jest.fn((_input?: unknown, _options?: unknown) => ({
     data: {
-      id: "plan-123",
-      name: "Plan 123",
-      created_at: "2026-01-01T00:00:00.000Z",
-      structure: {},
+      id: "11111111-1111-4111-8111-111111111111",
+      name: "Base plan",
+      description: null,
+      content_visibility: "private",
+      created_at: "2026-08-01T00:00:00.000Z",
+      structure_hash: `v1:sha256:${"1".repeat(64)}`,
+      structure: {
+        id: "11111111-1111-4111-8111-111111111111",
+        version: 1,
+        sessions: [
+          {
+            offset_days: 0,
+            activity_plan_id: "22222222-2222-4222-8222-222222222222",
+          },
+        ],
+      },
     },
     isLoading: false,
     isError: false,
     error: null,
-    refetch: refetchPlan,
-  })) as jest.Mock,
-  getStatusQuery: jest.fn(() => ({
-    data: { longTermLoad: 44 },
+    refetch,
+  })),
+  profile: jest.fn((_input?: unknown, _options?: unknown) => ({
+    data: { id: "profile-1" },
+    refetch,
+  })),
+  published: jest.fn((_input?: unknown, _options?: unknown) => ({
+    data: {
+      publishedRevision: 7,
+      asOf: "2026-08-01T00:00:00.000Z",
+      currentBaseline: {
+        currentPlanningDate: "2026-08-01",
+        baseline: {
+          asOf: "2026-08-01T00:00:00.000Z",
+          longTermLoad: 42,
+          recentLoad: 35,
+          loadBalance: 7,
+        },
+      },
+      loadHistory: {
+        result: {
+          status: "available",
+          points: [
+            {
+              date: "2026-08-01",
+              dailyLoad: 10,
+              longTermLoad: 42,
+              recentLoad: 35,
+              loadBalance: 7,
+            },
+          ],
+        },
+      },
+    },
     isLoading: false,
     isError: false,
     error: null,
-    refetch: refetchStatus,
-  })) as jest.Mock,
-  getInsightTimelineQuery: jest.fn(() => ({
-    data: { timeline: [] },
+    refetch,
+  })),
+  history: jest.fn((_input?: unknown, _options?: unknown) => ({
+    data: {
+      status: "available",
+      points: [
+        { date: "2026-08-01", dailyLoad: 10, longTermLoad: 42, recentLoad: 35, loadBalance: 7 },
+      ],
+    },
     isLoading: false,
     isError: false,
     error: null,
-    refetch: refetchInsightTimeline,
-  })) as jest.Mock,
-  getActualCurveQuery: jest.fn(() => ({
-    data: { dataPoints: [] },
+    refetch,
+  })),
+  projection: jest.fn((_input?: unknown, _options?: unknown) => ({
+    data: {
+      status: "available",
+      simulation: {
+        simulatedAt: "2026-08-02T23:59:59.000Z",
+        projectedState: { longTermLoad: 44 },
+        transitions: [
+          {
+            state: {
+              asOf: "2026-08-02T23:59:59.000Z",
+              longTermLoad: 44,
+              recentLoad: 38,
+              loadBalance: 6,
+            },
+          },
+        ],
+      },
+    },
     isLoading: false,
     isError: false,
     error: null,
-    refetch: refetchActualCurve,
-  })) as jest.Mock,
-  getIdealCurveQuery: jest.fn(() => ({
-    data: { dataPoints: [] },
-    isLoading: false,
-    isError: false,
-    error: null,
-    refetch: refetchIdealCurve,
-  })) as jest.Mock,
-  getWeeklySummaryQuery: jest.fn(() => ({
-    data: [],
-    isLoading: false,
-    isError: false,
-    error: null,
-    refetch: refetchWeeklySummary,
-  })) as jest.Mock,
+    refetch,
+  })),
 };
 
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
+    profiles: {
+      get: { useQuery: (input: unknown, options: unknown) => queries.profile(input, options) },
+    },
+    athleteIntelligence: {
+      getReadModel: {
+        useQuery: (input: unknown, options: unknown) => queries.published(input, options),
+      },
+    },
+    activities: {
+      commonLoadHistory: {
+        useQuery: (input: unknown, options: unknown) => queries.history(input, options),
+      },
+    },
     trainingPlans: {
-      get: {
-        useQuery: (...args: Parameters<typeof snapshotMocks.getPlanQuery>) =>
-          snapshotMocks.getPlanQuery(...args),
-      },
-      getCurrentStatus: {
-        useQuery: (...args: Parameters<typeof snapshotMocks.getStatusQuery>) =>
-          snapshotMocks.getStatusQuery(...args),
-      },
-      getInsightTimeline: {
-        useQuery: (...args: Parameters<typeof snapshotMocks.getInsightTimelineQuery>) =>
-          snapshotMocks.getInsightTimelineQuery(...args),
-      },
-      getActualCurve: {
-        useQuery: (...args: Parameters<typeof snapshotMocks.getActualCurveQuery>) =>
-          snapshotMocks.getActualCurveQuery(...args),
-      },
-      getIdealCurve: {
-        useQuery: (...args: Parameters<typeof snapshotMocks.getIdealCurveQuery>) =>
-          snapshotMocks.getIdealCurveQuery(...args),
-      },
-      getWeeklySummary: {
-        useQuery: (...args: Parameters<typeof snapshotMocks.getWeeklySummaryQuery>) =>
-          snapshotMocks.getWeeklySummaryQuery(...args),
+      get: { useQuery: (input: unknown, options: unknown) => queries.plan(input, options) },
+      preview: {
+        useQuery: (input: unknown, options: unknown) => queries.projection(input, options),
       },
     },
   },
@@ -97,165 +127,48 @@ jest.mock("@/lib/api", () => ({
 
 jest.mock("../useProfileGoals", () => ({
   __esModule: true,
-  useProfileGoals: () => ({ goals: [], goalsCount: 0, profileId: null, refetch: jest.fn() }),
+  useProfileGoals: () => ({ goals: [] }),
 }));
 
 jest.mock("../useProfileSettings", () => ({
   __esModule: true,
-  useProfileSettings: () => ({
-    settings: {
-      availability_config: { days: [] },
-      behavior_controls: { aggressiveness: 0.5, recovery_priority: 0.5, variability: 0.5 },
-      constraints: { hard_rest_days: [] },
-      locks: { volume_by_day: false, intensity_distribution: false },
-      post_goal_recovery_days: 5,
-      microcycle_pattern: { hard_days: [], medium_days: [], easy_days: [] },
-      progression_preferences: { weekly_progression_cap: 0.08 },
-      diagnostics: { include_readiness_codes: true },
-    },
-    settingsRecord: null,
-    refetch: jest.fn(),
-  }),
+  useProfileSettings: () => ({ settings: {}, refetch }),
 }));
 
 import { useTrainingPlanSnapshot } from "../useTrainingPlanSnapshot";
 
 describe("useTrainingPlanSnapshot", () => {
   beforeEach(() => {
-    Object.values(snapshotMocks).forEach((value) => {
-      if (typeof value === "function" && "mockClear" in value) {
-        (value as jest.Mock).mockClear();
-      }
-    });
+    refetch.mockClear();
+    Object.values(queries).forEach((query) => query.mockClear());
   });
 
-  it("can disable status and weekly-summary queries for lighter route entry", async () => {
+  it("adapts canonical history and authoritative projection data", () => {
     const { result } = renderHook(() =>
-      useTrainingPlanSnapshot({
-        planId: "plan-123",
-        includeStatus: false,
-        includeWeeklySummaries: false,
-      }),
+      useTrainingPlanSnapshot({ planId: "11111111-1111-4111-8111-111111111111" }),
     );
 
-    expect(snapshotMocks.getPlanQuery).toHaveBeenCalledWith(
-      { id: "plan-123" },
-      expect.not.objectContaining({
-        staleTime: expect.anything(),
-        refetchOnMount: expect.anything(),
-      }),
-    );
-
-    expect(snapshotMocks.getStatusQuery).toHaveBeenCalledWith(
-      undefined,
-      expect.objectContaining({ enabled: false }),
-    );
-
-    expect(snapshotMocks.getWeeklySummaryQuery).toHaveBeenCalledWith(
-      expect.objectContaining({ training_plan_id: "plan-123" }),
-      expect.objectContaining({ enabled: false }),
-    );
-
-    await act(async () => {
-      await result.current.refetch();
+    expect(result.current.actualCurveData?.dataPoints[0]).toMatchObject({
+      date: "2026-08-01",
+      longTermLoad: 42,
     });
-    expect(snapshotMocks.refetchPlan).toHaveBeenCalledTimes(1);
-    expect(snapshotMocks.refetchStatus).toHaveBeenCalledTimes(0);
-    expect(snapshotMocks.refetchInsightTimeline).toHaveBeenCalledTimes(0);
-
-    await act(async () => {
-      await result.current.refetchAll();
+    expect(result.current.idealCurveData).toMatchObject({
+      startCTL: 42,
+      targetCTL: 44,
+      targetDate: "2026-08-02",
     });
-    expect(snapshotMocks.refetchPlan).toHaveBeenCalledTimes(2);
-    expect(snapshotMocks.refetchStatus).toHaveBeenCalledTimes(0);
-    expect(snapshotMocks.refetchInsightTimeline).toHaveBeenCalledTimes(1);
-    expect(snapshotMocks.refetchActualCurve).toHaveBeenCalledTimes(1);
-    expect(snapshotMocks.refetchIdealCurve).toHaveBeenCalledTimes(1);
-    expect(snapshotMocks.refetchWeeklySummary).toHaveBeenCalledTimes(0);
-  });
-
-  it("can disable insight timeline work without affecting structural curve inputs", async () => {
-    snapshotMocks.getInsightTimelineQuery.mockImplementationOnce(() => ({
-      data: { timeline: [] },
-      isLoading: true,
-      isError: true,
-      error: new Error("insight unavailable"),
-      refetch: refetchInsightTimeline,
-    }));
-
-    const { result } = renderHook(() =>
-      useTrainingPlanSnapshot({
-        planId: "plan-123",
-        includeInsightTimeline: false,
-        includeWeeklySummaries: false,
+    expect(queries.projection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "create",
+        draft: expect.objectContaining({ name: "Base plan", previewStartDate: "2026-08-01" }),
       }),
-    );
-
-    expect(snapshotMocks.getInsightTimelineQuery).toHaveBeenCalledWith(
-      expect.objectContaining({ training_plan_id: "plan-123" }),
-      expect.objectContaining({ enabled: false }),
-    );
-    expect(result.current.insightTimeline).toBeUndefined();
-    expect(result.current.loading.insightTimeline).toBe(false);
-    expect(result.current.errors.insightTimeline).toBeNull();
-    expect(result.current.actualCurveData).toEqual({ dataPoints: [] });
-    expect(result.current.idealCurveData).toEqual({ dataPoints: [] });
-
-    await act(async () => {
-      await result.current.refetchAll();
-    });
-
-    expect(snapshotMocks.refetchInsightTimeline).not.toHaveBeenCalled();
-    expect(snapshotMocks.refetchActualCurve).toHaveBeenCalledTimes(1);
-    expect(snapshotMocks.refetchIdealCurve).toHaveBeenCalledTimes(1);
-  });
-
-  it("requests insight timeline with the active plan id and explicit window inputs", () => {
-    renderHook(() =>
-      useTrainingPlanSnapshot({
-        planId: "plan-123",
-        includeWeeklySummaries: false,
-        insightWindow: {
-          start_date: "2026-03-14",
-          end_date: "2027-03-13",
-        },
-        timezone: "America/New_York",
-      }),
-    );
-
-    expect(snapshotMocks.getInsightTimelineQuery).toHaveBeenCalledWith(
-      {
-        training_plan_id: "plan-123",
-        start_date: "2026-03-14",
-        end_date: "2027-03-13",
-        timezone: "America/New_York",
-      },
       expect.objectContaining({ enabled: true }),
     );
   });
 
-  it("requests insight timeline without a training plan id when no active plan exists", async () => {
-    snapshotMocks.getPlanQuery.mockImplementationOnce(() => ({
-      data: null as never,
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: snapshotMocks.refetchPlan,
-    }));
-    snapshotMocks.getInsightTimelineQuery.mockClear();
-    snapshotMocks.refetchInsightTimeline.mockClear();
-
-    const { result } = renderHook(() => useTrainingPlanSnapshot({}));
-
-    expect(snapshotMocks.getInsightTimelineQuery).toHaveBeenCalledWith(
-      expect.not.objectContaining({ training_plan_id: expect.anything() }),
-      expect.objectContaining({ enabled: true }),
-    );
-
-    await act(async () => {
-      await result.current.refetchAll();
-    });
-
-    expect(snapshotMocks.refetchInsightTimeline).toHaveBeenCalledTimes(1);
+  it("refreshes every current snapshot dependency", async () => {
+    const { result } = renderHook(() => useTrainingPlanSnapshot());
+    await act(async () => result.current.refetchAll());
+    expect(refetch).toHaveBeenCalled();
   });
 });

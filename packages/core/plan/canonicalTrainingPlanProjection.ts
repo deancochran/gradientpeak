@@ -286,7 +286,6 @@ export function projectCanonicalTrainingPlan(input: {
         rest_days_per_week: null,
       },
       scheduling: {
-        start_date: input.projection.start_date,
         preferred_weekdays: preferredWeekdays,
       },
       goal_context: {

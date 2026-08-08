@@ -10,7 +10,7 @@
  */
 
 import { completeOnboardingSchema } from "@repo/core/schemas/onboarding";
-import { publicIntegrationProviderSchema, schema } from "@repo/db";
+import { schema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, ne, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -20,8 +20,6 @@ import {
   lifecycleSettingsPatchSchema,
 } from "../application/onboarding/complete-lifecycle-setup";
 import { OnboardingProfileNotFoundError } from "../application/onboarding/persist-onboarding-profile";
-import { OnboardingProviderEnrichmentService } from "../application/onboarding-provider-enrichment";
-import type { Context } from "../context";
 import { getRequiredDb } from "../db";
 import { OnboardingProfileNotFoundForLockError } from "../repositories/onboarding-lifecycle-repository";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -56,7 +54,7 @@ const completeLifecycleSetupOutputSchema = z
     retryable: z.boolean(),
     cache_tags: z.tuple([
       // biome-ignore lint/security/noSecrets: Public tRPC cache tag, not a credential.
-      z.literal("onboarding.getImportedOnboardingValues"),
+      z.literal("integrations.getSyncOverview"),
       z.literal("goals.list"),
       z.literal("profileSettings.getForProfile"),
     ]),
@@ -67,112 +65,6 @@ const checkUsernameAvailabilityInputSchema = z
   .object({ username: completeOnboardingSchema.shape.username })
   .strict();
 const checkUsernameAvailabilityOutputSchema = z.object({ available: z.boolean() }).strict();
-
-const providerEnrichmentOverallStatusSchema = z.enum([
-  "idle",
-  "queued",
-  "running",
-  "succeeded",
-  "partial",
-  "failed",
-  "timed_out",
-]);
-
-const providerEnrichmentItemStatusSchema = z.enum([
-  "queued",
-  "running",
-  "succeeded",
-  "partial",
-  "failed",
-  "timed_out",
-  "skipped_unsupported",
-  "requirement_cleared",
-]);
-
-const providerEnrichmentStatusOutputSchema = z
-  .object({
-    status: providerEnrichmentOverallStatusSchema,
-    canContinue: z.boolean(),
-    providers: z.array(
-      z
-        .object({
-          provider: publicIntegrationProviderSchema,
-          status: providerEnrichmentItemStatusSchema,
-          blocking: z.boolean(),
-          connected: z.boolean(),
-          message: z.string().optional(),
-          lastSyncStartedAt: z.string().datetime().nullable(),
-          lastSyncSucceededAt: z.string().datetime().nullable(),
-          lastSyncFailedAt: z.string().datetime().nullable(),
-        })
-        .strict(),
-    ),
-  })
-  .strict();
-
-const providerEnrichmentStartInputSchema = z
-  .object({
-    providers: z.array(publicIntegrationProviderSchema).min(1).max(5).optional(),
-  })
-  .strict()
-  .optional();
-
-const clearProviderRequirementInputSchema = z
-  .object({
-    provider: publicIntegrationProviderSchema,
-  })
-  .strict();
-
-const importedOnboardingValuesOutputSchema = z
-  .object({
-    profile: z
-      .object({
-        dob: z.string().nullable(),
-        gender: z.enum(["male", "female", "other"]).nullable(),
-        onboarded: z.boolean().nullable(),
-      })
-      .strict(),
-    values: z
-      .object({
-        dob: z.string().optional(),
-        gender: z.enum(["male", "female", "other"]).optional(),
-        weight_kg: z.number().optional(),
-      })
-      .strict(),
-    sources: z
-      .object({
-        dob: z
-          .object({
-            provider: publicIntegrationProviderSchema,
-            label: z.string(),
-            sourceRecordedAt: z.string().datetime().nullable(),
-          })
-          .strict()
-          .optional(),
-        gender: z
-          .object({
-            provider: publicIntegrationProviderSchema,
-            label: z.string(),
-            sourceRecordedAt: z.string().datetime().nullable(),
-          })
-          .strict()
-          .optional(),
-        weight_kg: z
-          .object({
-            provider: publicIntegrationProviderSchema,
-            label: z.string(),
-            sourceRecordedAt: z.string().datetime().nullable(),
-          })
-          .strict()
-          .optional(),
-      })
-      .strict(),
-  })
-  .strict();
-
-function getOnboardingProviderEnrichmentService(ctx: Context) {
-  return new OnboardingProviderEnrichmentService({ db: getRequiredDb(ctx) });
-}
 
 function isUsernameConflict(error: unknown): boolean {
   let candidate = error;
@@ -224,36 +116,6 @@ export const onboardingRouter = createTRPCRouter({
         .limit(1);
 
       return { available: !conflict };
-    }),
-
-  startProviderEnrichment: protectedProcedure
-    .input(providerEnrichmentStartInputSchema)
-    .output(providerEnrichmentStatusOutputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const service = getOnboardingProviderEnrichmentService(ctx);
-      return service.start(ctx.session.user.id, input?.providers);
-    }),
-
-  getProviderEnrichmentStatus: protectedProcedure
-    .output(providerEnrichmentStatusOutputSchema)
-    .query(async ({ ctx }) => {
-      const service = getOnboardingProviderEnrichmentService(ctx);
-      return service.getStatus(ctx.session.user.id);
-    }),
-
-  getImportedOnboardingValues: protectedProcedure
-    .output(importedOnboardingValuesOutputSchema)
-    .query(async ({ ctx }) => {
-      const service = getOnboardingProviderEnrichmentService(ctx);
-      return service.getImportedOnboardingValues(ctx.session.user.id);
-    }),
-
-  clearProviderRequirement: protectedProcedure
-    .input(clearProviderRequirementInputSchema)
-    .output(providerEnrichmentStatusOutputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const service = getOnboardingProviderEnrichmentService(ctx);
-      return service.clearProviderRequirement(ctx.session.user.id, input.provider);
     }),
 
   completeLifecycleSetup: protectedProcedure

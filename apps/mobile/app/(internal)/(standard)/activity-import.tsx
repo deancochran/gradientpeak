@@ -1,7 +1,5 @@
 import { invalidatePostActivityIngestionQueries } from "@repo/api/client";
 import {
-  buildManualActivityImportProvenance,
-  type CanonicalActivityCategory,
   deriveActivityNameFromFileName,
   getSupportedActivityFileExtension,
   type ManualActivityImportOutput,
@@ -9,13 +7,7 @@ import {
 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
-import {
-  Form,
-  FormFileField,
-  FormSegmentedSelectField,
-  FormTextareaField,
-  FormTextField,
-} from "@repo/ui/components/form";
+import { Form, FormFileField, FormTextareaField, FormTextField } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
@@ -29,14 +21,6 @@ import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { ActivityFileUploader } from "@/lib/services/fit/ActivityFileUploader";
-
-const ACTIVITY_CATEGORIES = [
-  { value: "run", label: "Run" },
-  { value: "bike", label: "Ride" },
-  { value: "swim", label: "Swim" },
-  { value: "strength", label: "Strength" },
-  { value: "other", label: "Other" },
-] as const satisfies readonly { value: CanonicalActivityCategory; label: string }[];
 
 const ACTIVITY_FILE_MIME_TYPES = [
   "application/vnd.ant.fit",
@@ -60,6 +44,7 @@ function isActivityParseFailureMessage(message: string) {
   return (
     normalized.includes("failed to parse fit file") ||
     normalized.includes("failed to parse activity file") ||
+    normalized.includes("unable to parse activity file") ||
     normalized.includes("fit decode") ||
     normalized.includes("fit parser") ||
     normalized.includes("fit parse") ||
@@ -70,11 +55,6 @@ function isActivityParseFailureMessage(message: string) {
     normalized.includes("bar error")
   );
 }
-
-const createOption = (value: string, label?: string) => ({
-  value,
-  label: label || value,
-});
 
 export default function ActivityImportScreen() {
   const navigateTo = useAppNavigate();
@@ -95,7 +75,6 @@ export default function ActivityImportScreen() {
     schema: manualActivityImportFormSchema,
     defaultValues: {
       files: [],
-      activity_category: "bike",
       name: "",
       notes: null,
     },
@@ -203,7 +182,6 @@ export default function ActivityImportScreen() {
         activityFilePath: signedUrlData.filePath,
         name: data.name,
         notes: data.notes ?? undefined,
-        importProvenance: buildManualActivityImportProvenance(selectedFile.name),
       });
 
       terminalSuccessRef.current = true;
@@ -215,7 +193,6 @@ export default function ActivityImportScreen() {
       setImportPhase("idle");
       form.reset({
         files: [],
-        activity_category: "bike",
         name: "",
         notes: null,
       });
@@ -225,7 +202,6 @@ export default function ActivityImportScreen() {
         Promise.resolve().then(() => utils.activities.invalidate()),
       ]);
     } catch (error) {
-      console.error("Historical activity import failed", error);
       const message = error instanceof Error ? error.message : "Unknown error";
 
       if (message.includes("File type must be one of")) {
@@ -260,8 +236,7 @@ export default function ActivityImportScreen() {
     setNavigationError(null);
     try {
       navigateTo(ROUTES.ACTIVITIES.DETAIL(importSummary.activityId) as Href);
-    } catch (error) {
-      console.error("Failed to open imported activity", error);
+    } catch {
       setNavigationError("Could not open the activity. Tap View Activity to try again.");
     }
   };
@@ -320,17 +295,6 @@ export default function ActivityImportScreen() {
                   name="name"
                   placeholder="Activity name"
                   testId="activity-import-name-input"
-                />
-
-                <FormSegmentedSelectField
-                  control={form.control}
-                  disabled={isFormDisabled}
-                  label="Activity category"
-                  name="activity_category"
-                  options={ACTIVITY_CATEGORIES.map((activityCategory) =>
-                    createOption(activityCategory.value, activityCategory.label),
-                  )}
-                  testId="activity-import-type-select"
                 />
 
                 <FormTextareaField

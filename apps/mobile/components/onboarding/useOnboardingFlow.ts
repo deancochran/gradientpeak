@@ -1,9 +1,9 @@
 import {
   buildGoalCreatePayload,
-  estimateMaxHRFromDOB,
   getGoalDraftQualityFeedback,
   profileTrainingSettingsRecordSchema,
 } from "@repo/core";
+import { estimateMaxHRFromDOB } from "@repo/core/estimators";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
@@ -27,7 +27,6 @@ import { isValidOnboardingUsername } from "@/lib/onboarding/validation";
 import { getCompactTrainingPreferencesValue, INITIAL_ONBOARDING_DATA } from "./onboarding-data";
 import { getOnboardingSteps } from "./onboarding-steps";
 import type {
-  IntegrationProvider,
   OnboardingData,
   OnboardingFieldSources,
   OnboardingStatusModal,
@@ -90,28 +89,15 @@ export function useOnboardingFlow() {
     { enabled: profileQueryEnabled && usernameIsReadyToCheck },
   );
   const utils = api.useUtils();
-  const { data: integrations = [], refetch: refetchIntegrations } = api.integrations.list.useQuery(
-    undefined,
-    { enabled: profileQueryEnabled },
-  );
-  const importedValuesQuery = api.onboarding.getImportedOnboardingValues.useQuery(undefined, {
+  const syncOverviewQuery = api.integrations.getSyncOverview.useQuery(undefined, {
     enabled: profileQueryEnabled,
+    refetchInterval: (query) =>
+      query.state.data?.some((provider) => provider.setupData.status === "refreshing")
+        ? 1000
+        : false,
   });
-  const statusQuery = api.onboarding.getProviderEnrichmentStatus.useQuery(undefined, {
-    enabled: profileQueryEnabled && providerSyncStarted,
-    refetchInterval: 1000,
-  });
-  const startProviderEnrichmentMutation = api.onboarding.startProviderEnrichment.useMutation({
-    onSuccess: async () => {
-      await utils.onboarding.getProviderEnrichmentStatus.invalidate();
-      await utils.onboarding.getImportedOnboardingValues.invalidate();
-    },
-  });
-  const clearProviderRequirementMutation = api.onboarding.clearProviderRequirement.useMutation({
-    onSuccess: async () => {
-      await utils.onboarding.getProviderEnrichmentStatus.invalidate();
-      await utils.onboarding.getImportedOnboardingValues.invalidate();
-    },
+  const refreshSetupDataMutation = api.integrations.refreshSetupData.useMutation({
+    onSuccess: () => utils.integrations.getSyncOverview.invalidate(),
   });
   const completeLifecycleSetupMutation = api.onboarding.completeLifecycleSetup.useMutation();
   const acceptInviteMutation = api.groups.acceptInvite.useMutation();
@@ -345,8 +331,8 @@ export function useOnboardingFlow() {
   }, [debouncedUsername, username]);
 
   const refreshIntegrationState = useCallback(() => {
-    void refetchIntegrations();
-  }, [refetchIntegrations]);
+    void syncOverviewQuery.refetch();
+  }, [syncOverviewQuery.refetch]);
 
   useEffect(() => {
     if (data.training_preferences_hydration_status !== "loading") {
@@ -409,8 +395,38 @@ export function useOnboardingFlow() {
     updateData,
   ]);
 
+  const wahooSyncOverview = syncOverviewQuery.data?.find(
+    (provider) => provider.provider === "wahoo",
+  );
+  const providerSyncStatus = useMemo<ProviderSyncStatus | undefined>(() => {
+    if (!wahooSyncOverview || !providerSyncStarted) return undefined;
+    const setupStatus = wahooSyncOverview.setupData.status;
+    const status =
+      setupStatus === "refreshing"
+        ? "running"
+        : setupStatus === "refreshed"
+          ? "succeeded"
+          : setupStatus === "failed"
+            ? "failed"
+            : "idle";
+    return {
+      status,
+      canContinue: setupStatus !== "refreshing",
+      providers: [
+        {
+          provider: "wahoo",
+          status: setupStatus,
+          blocking: setupStatus === "refreshing",
+          ...(wahooSyncOverview.setupData.lastError
+            ? { message: wahooSyncOverview.setupData.lastError }
+            : {}),
+        },
+      ],
+    };
+  }, [providerSyncStarted, wahooSyncOverview]);
+
   useEffect(() => {
-    const importedValues = importedValuesQuery.data;
+    const importedValues = wahooSyncOverview?.setupData;
     if (!importedValues) return;
 
     const updates: Partial<OnboardingData> = {};
@@ -450,7 +466,7 @@ export function useOnboardingFlow() {
         ),
       });
     }
-  }, [clearedFields, importedValuesQuery.data, touchedFields, updateData]);
+  }, [clearedFields, touchedFields, updateData, wahooSyncOverview?.setupData]);
 
   useEffect(() => {
     const updates: Partial<OnboardingData> = {};
@@ -487,26 +503,19 @@ export function useOnboardingFlow() {
   }, [profile?.full_name, profile?.username, touchedFields, updateData]);
 
   const retryProviderSync = async () => {
-    const result = await refetchIntegrations();
-    const providers = (result.data ?? integrations).map((integration) => integration.provider);
-    if (providers.length === 0) return;
+    const result = await syncOverviewQuery.refetch();
+    const provider = result.data?.find((item) => item.provider === "wahoo");
+    if (!provider?.connected || !provider.actions.includes("refresh_setup_data")) return;
     setProviderSyncStarted(true);
-    await startProviderEnrichmentMutation.mutateAsync({ providers });
-    await statusQuery.refetch();
-    await importedValuesQuery.refetch();
-  };
-
-  const clearProviderRequirement = async (provider: IntegrationProvider) => {
-    setProviderSyncStarted(true);
-    await clearProviderRequirementMutation.mutateAsync({ provider });
-    await statusQuery.refetch();
+    await refreshSetupDataMutation.mutateAsync({ provider: "wahoo" });
+    await syncOverviewQuery.refetch();
   };
 
   const steps = useMemo(
     () =>
       getOnboardingSteps({
         providerSyncStarted,
-        canContinueProviderSync: !providerSyncStarted || (statusQuery.data?.canContinue ?? false),
+        canContinueProviderSync: !providerSyncStarted || (providerSyncStatus?.canContinue ?? true),
         isUsernameAvailable:
           usernameIsReadyToCheck &&
           !usernameAvailabilityQuery.isError &&
@@ -515,7 +524,7 @@ export function useOnboardingFlow() {
       }),
     [
       providerSyncStarted,
-      statusQuery.data?.canContinue,
+      providerSyncStatus?.canContinue,
       usernameAvailabilityQuery.data?.available,
       usernameAvailabilityQuery.isError,
       usernameAvailabilityQuery.isFetching,
@@ -530,12 +539,11 @@ export function useOnboardingFlow() {
   const isProviderSyncBlocking =
     currentStep?.id === "connect_import" &&
     providerSyncStarted &&
-    ["queued", "running"].includes(statusQuery.data?.status ?? "running");
+    providerSyncStatus?.status === "running";
   const isBusy =
     isRecoveryLoading ||
     isSubmitting ||
-    startProviderEnrichmentMutation.isPending ||
-    clearProviderRequirementMutation.isPending ||
+    refreshSetupDataMutation.isPending ||
     completeLifecycleSetupMutation.isPending;
 
   function sectionNeedsRetry(section: OnboardingRecoverySection): boolean {
@@ -1002,23 +1010,24 @@ export function useOnboardingFlow() {
     }
 
     if (currentStep?.id === "connect_import") {
-      const result = await refetchIntegrations();
-      const providers = (result.data ?? integrations).map((integration) => integration.provider);
+      const result = await syncOverviewQuery.refetch();
+      const provider = result.data?.find((item) => item.provider === "wahoo");
 
-      if (!providerSyncStarted && providers.length > 0) {
+      if (
+        !providerSyncStarted &&
+        provider?.connected &&
+        provider.actions.includes("refresh_setup_data")
+      ) {
         setProviderSyncStarted(true);
         try {
-          await startProviderEnrichmentMutation.mutateAsync({ providers });
-          await statusQuery.refetch();
-          await importedValuesQuery.refetch();
+          await refreshSetupDataMutation.mutateAsync({ provider: "wahoo" });
+          await syncOverviewQuery.refetch();
         } catch (error) {
           console.error(error);
           setStatusModal({ title: "Error", description: "Failed to sync connected providers." });
         }
         return;
       }
-
-      await importedValuesQuery.refetch();
     }
 
     setCurrentStepIndex((prev) => prev + 1);
@@ -1057,7 +1066,6 @@ export function useOnboardingFlow() {
   return {
     activeSteps,
     canSkipStep,
-    clearProviderRequirement,
     currentStep,
     currentStepIndex,
     data,
@@ -1068,7 +1076,7 @@ export function useOnboardingFlow() {
     isLastStep,
     isProviderSyncBlocking,
     isStepValid,
-    providerSyncStatus: statusQuery.data as ProviderSyncStatus | undefined,
+    providerSyncStatus,
     refreshIntegrationState,
     retryProviderSync,
     setStatusModal,

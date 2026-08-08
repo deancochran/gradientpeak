@@ -23,7 +23,6 @@ const activitySegment = (input: {
 }): ActivityPlanActivitySegment => ({
   id: id(input.id),
   role: "activity" as const,
-  activity_category: input.activity_category,
   name: input.activity_category,
   intervals: [
     {
@@ -46,6 +45,7 @@ describe("activity plan structure", () => {
   it("accepts repeated same-category activity segments and rests", () => {
     const structure = {
       version: 3 as const,
+      activity_category: "run" as const,
       segments: [
         {
           id: id(1),
@@ -71,6 +71,7 @@ describe("activity plan structure", () => {
   it("requires persisted step names and interval repetitions during strict parsing and preflight", () => {
     const validStructure = {
       version: 3 as const,
+      activity_category: "run" as const,
       segments: [
         activitySegment({
           id: 1,
@@ -102,9 +103,10 @@ describe("activity plan structure", () => {
     }
   });
 
-  it("rejects top-level transitions, mixed activity activity_categories, consecutive rests, and missing activity", () => {
+  it("rejects top-level transitions, segment categories, consecutive rests, and missing activity", () => {
     const result = activityPlanStructureSchema.safeParse({
       version: 3,
+      activity_category: "run",
       segments: [
         { id: id(1), role: "rest", name: "Rest", duration: { type: "time", seconds: 1 } },
         { id: id(2), role: "rest", name: "Rest", duration: { type: "time", seconds: 1 } },
@@ -120,15 +122,19 @@ describe("activity plan structure", () => {
     expect(
       activityPlanStructureSchema.safeParse({
         version: 3,
+        activity_category: "run",
         segments: [
-          activitySegment({ id: 10, activity_category: "run", intervalId: 11, stepId: 12 }),
-          activitySegment({ id: 13, activity_category: "bike", intervalId: 14, stepId: 15 }),
+          {
+            ...activitySegment({ id: 10, activity_category: "run", intervalId: 11, stepId: 12 }),
+            activity_category: "run",
+          },
         ],
       }).success,
     ).toBe(false);
     expect(
       activityPlanStructureSchema.safeParse({
         version: 3,
+        activity_category: "run",
         segments: [
           activitySegment({ id: 20, activity_category: "run", intervalId: 21, stepId: 22 }),
           { id: id(23), role: "transition", name: "Bad", duration: { type: "time", seconds: 1 } },
@@ -140,12 +146,17 @@ describe("activity plan structure", () => {
   it("rejects unknown fields instead of stripping them", () => {
     const segment = activitySegment({ id: 1, activity_category: "run", intervalId: 2, stepId: 3 });
     expect(
-      activityPlanStructureSchema.safeParse({ version: 3, segments: [segment], unknown: true })
-        .success,
+      activityPlanStructureSchema.safeParse({
+        version: 3,
+        activity_category: "run",
+        segments: [segment],
+        unknown: true,
+      }).success,
     ).toBe(false);
     expect(
       activityPlanStructureSchema.safeParse({
         version: 3,
+        activity_category: "run",
         segments: [{ ...segment, unknown: true }],
       }).success,
     ).toBe(false);
@@ -177,7 +188,11 @@ describe("activity plan structure", () => {
     }));
     segment.intervals.push({ ...interval, id: id(100) });
 
-    const result = activityPlanStructureSchema.safeParse({ version: 3, segments: [segment] });
+    const result = activityPlanStructureSchema.safeParse({
+      version: 3,
+      activity_category: "run",
+      segments: [segment],
+    });
     expect(result.success).toBe(false);
     if (!result.success) {
       const messages = result.error.issues.map((issue) => issue.message).join(" ");
@@ -213,7 +228,11 @@ describe("activity plan structure", () => {
 
     for (const candidate of candidates) {
       expect(
-        activityPlanStructureSchema.safeParse({ version: 3, segments: [candidate] }).success,
+        activityPlanStructureSchema.safeParse({
+          version: 3,
+          activity_category: "run",
+          segments: [candidate],
+        }).success,
       ).toBe(false);
     }
   });
@@ -228,12 +247,14 @@ describe("activity plan structure", () => {
     expect(
       activityPlanStructureSchema.safeParse({
         version: 3,
+        activity_category: "run",
         segments: [{ ...segment, name: "😀".repeat(100) }],
       }).success,
     ).toBe(true);
     expect(
       activityPlanStructureSchema.safeParse({
         version: 3,
+        activity_category: "run",
         segments: [{ ...segment, name: "😀".repeat(101) }],
       }).success,
     ).toBe(false);
@@ -248,7 +269,11 @@ describe("activity plan structure", () => {
       repetitions: 8,
       seconds: 24 * 60 * 60,
     });
-    const result = activityPlanStructureSchema.safeParse({ version: 3, segments: [segment] });
+    const result = activityPlanStructureSchema.safeParse({
+      version: 3,
+      activity_category: "run",
+      segments: [segment],
+    });
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.issues.some((issue) => issue.message.includes("TIMED_BUDGET"))).toBe(
@@ -267,10 +292,14 @@ describe("activity plan structure", () => {
         stepId: nextId++,
       }),
     );
-    expect(activityPlanStructureSchema.safeParse({ version: 3, segments }).success).toBe(true);
+    expect(
+      activityPlanStructureSchema.safeParse({ version: 3, activity_category: "run", segments })
+        .success,
+    ).toBe(true);
     expect(
       activityPlanStructureSchema.safeParse({
         version: 3,
+        activity_category: "run",
         segments: [
           ...segments,
           activitySegment({
@@ -299,7 +328,11 @@ describe("activity plan structure", () => {
       targets: [{ type: "RPE" as const, intensity: 5 }],
     }));
     expect(
-      activityPlanStructureSchema.safeParse({ version: 3, segments: [occurrenceSegment] }).success,
+      activityPlanStructureSchema.safeParse({
+        version: 3,
+        activity_category: "run",
+        segments: [occurrenceSegment],
+      }).success,
     ).toBe(true);
 
     const timed = activitySegment({
@@ -310,9 +343,13 @@ describe("activity plan structure", () => {
       repetitions: 7,
       seconds: 24 * 60 * 60,
     });
-    expect(activityPlanStructureSchema.safeParse({ version: 3, segments: [timed] }).success).toBe(
-      true,
-    );
+    expect(
+      activityPlanStructureSchema.safeParse({
+        version: 3,
+        activity_category: "run",
+        segments: [timed],
+      }).success,
+    ).toBe(true);
   });
 
   it("enforces the encoded persistence payload bound", () => {
@@ -338,7 +375,11 @@ describe("activity plan structure", () => {
       })),
     }));
 
-    const result = activityPlanStructureSchema.safeParse({ version: 3, segments: [segment] });
+    const result = activityPlanStructureSchema.safeParse({
+      version: 3,
+      activity_category: "run",
+      segments: [segment],
+    });
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.issues.some((issue) => issue.message.includes("PAYLOAD_TOO_LARGE"))).toBe(
@@ -359,6 +400,7 @@ describe("activity plan structure", () => {
   it("compiles deterministic, stable occurrences for repeated single-activity-category segments", () => {
     const structure = {
       version: 3 as const,
+      activity_category: "run" as const,
       segments: [
         activitySegment({
           id: 1,
@@ -400,6 +442,7 @@ describe("activity plan structure", () => {
     expect(
       activityPlanStructureSchema.safeParse({
         version: 3,
+        activity_category: "run",
         segments: [
           { ...segment, intervals: [{ ...segment.intervals[0], steps: [withoutTargets] }] },
         ],
@@ -407,6 +450,7 @@ describe("activity plan structure", () => {
     ).toBe(false);
     const openPlan = activityPlanStructureSchema.parse({
       version: 3,
+      activity_category: "run",
       segments: [
         {
           ...segment,
@@ -433,6 +477,7 @@ describe("activity plan structure", () => {
     if (!step) throw new Error("Fixture requires a step.");
     const result = activityPlanStructureSchema.safeParse({
       version: 3,
+      activity_category: "run",
       segments: [
         {
           ...segment,

@@ -34,7 +34,7 @@ export interface ActivityPlan {
   prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
   notes?: string | null;
   profile_id?: string | null;
-  template_visibility?: string | null;
+  content_visibility?: string | null;
   is_system_template?: boolean | null;
   created_at?: string | Date;
   updated_at?: string | Date;

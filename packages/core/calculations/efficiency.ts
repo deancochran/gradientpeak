@@ -1365,8 +1365,3 @@ export function createAerobicAnalysisAccumulator(
 }
 
 /** Compatibility name retained for callers that previously used stream input. */
-export function calculateDecouplingFromStreams(
-  input: AerobicAnalysisInput,
-): AerobicDecouplingResult {
-  return calculateAerobicDecoupling(input);
-}

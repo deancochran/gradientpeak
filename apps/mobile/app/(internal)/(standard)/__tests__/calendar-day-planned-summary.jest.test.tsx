@@ -6,10 +6,8 @@ import { act, fireEvent, renderNative, screen } from "../../../../test/render-na
 
 let routeDate: string | undefined = "2026-07-27";
 const navigateMock = jest.fn();
-const listUseQueryMock = jest.fn();
-const plannedDaySummaryUseQueryMock = jest.fn();
-const summaryRefetchMock = jest.fn(() => Promise.resolve());
-const agendaEventsRefetchMock = jest.fn(() => Promise.resolve());
+const calendarDayUseQueryMock = jest.fn();
+const calendarDayRefetchMock = jest.fn(() => Promise.resolve());
 const agendaGroupsRefetchMock = jest.fn(() => Promise.resolve());
 let groupEventsQueryState: Record<string, unknown> = { data: { items: [] }, isLoading: false };
 
@@ -80,11 +78,8 @@ jest.mock("@/components/calendar/plannedDaySummaryAccessibility", () => ({
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
-    events: {
-      list: { useQuery: (...args: unknown[]) => listUseQueryMock(...args) },
-      plannedDaySummary: {
-        useQuery: (...args: unknown[]) => plannedDaySummaryUseQueryMock(...args),
-      },
+    calendar: {
+      day: { useQuery: (...args: unknown[]) => calendarDayUseQueryMock(...args) },
     },
     groups: {
       events: {
@@ -108,7 +103,7 @@ function configureQueries(
     isLoading: agendaLoading,
     refetch: agendaGroupsRefetchMock,
   };
-  listUseQueryMock.mockImplementation(() => ({
+  calendarDayUseQueryMock.mockImplementation(() => ({
     data:
       agendaLoading || agendaError
         ? undefined
@@ -124,16 +119,103 @@ function configureQueries(
                 status: "cancelled",
               },
             ],
+            plannedLoadSummary: input.summaryError
+              ? undefined
+              : {
+                  date: routeDate,
+                  source: {
+                    complete: true,
+                    eventCount: 1,
+                    unavailableEstimateCount: 0,
+                    unavailablePlanCount: 0,
+                    unlinkedPlanCount: 0,
+                  },
+                  summary: {
+                    eventCount: 1,
+                    activity_categories: ["bike"],
+                    totalDurationSeconds: 3_600,
+                    prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+                      activityCategory: "bike",
+                      load: 50,
+                    }),
+                  },
+                },
           },
     isLoading: agendaLoading,
-    error: agendaError ? new Error("agenda failed") : null,
-    refetch: agendaEventsRefetchMock,
+    error: agendaError || input.summaryError ? new Error("calendar day failed") : null,
+    refetch: calendarDayRefetchMock,
   }));
-  plannedDaySummaryUseQueryMock.mockImplementation(() => ({
-    data: input.summaryError
-      ? undefined
-      : {
-          date: routeDate,
+}
+
+describe("calendar day planned summary boundary", () => {
+  beforeEach(() => {
+    routeDate = "2026-07-27";
+    navigateMock.mockReset();
+    calendarDayRefetchMock.mockClear();
+    agendaGroupsRefetchMock.mockClear();
+    jest.mocked(announcePlannedDaySummaryRetryStatus).mockClear();
+    calendarDayUseQueryMock.mockReset();
+    groupEventsQueryState = { data: { items: [] }, isLoading: false };
+  });
+
+  it("uses one exact-day summary query while keeping cancelled Event cards independently actionable", () => {
+    configureQueries();
+    renderNative(<CalendarDayScreen />);
+
+    expect(calendarDayUseQueryMock).toHaveBeenCalledWith(
+      { date: "2026-07-27" },
+      expect.objectContaining({ enabled: true }),
+    );
+    fireEvent.press(screen.getByTestId("event-card-cancelled-event"));
+    expect(navigateMock).toHaveBeenCalled();
+    expect(screen.getByText("1 Event")).toBeTruthy();
+  });
+
+  it("keeps prior Event cards visible and actionable when the summary fails", async () => {
+    configureQueries({ summaryError: true });
+    renderNative(<CalendarDayScreen />);
+
+    expect(screen.getByText("Planned workload could not be loaded.")).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("calendar-day-planned-summary-retry"));
+    });
+    expect(calendarDayRefetchMock).toHaveBeenCalledTimes(1);
+    fireEvent.press(screen.getByTestId("event-card-cancelled-event"));
+    expect(navigateMock).toHaveBeenCalled();
+  });
+
+  it.each([
+    "loading",
+    "error",
+  ] as const)("keeps the unified Calendar day status consistent when it is %s", (agendaState) => {
+    configureQueries({ agendaState });
+    renderNative(<CalendarDayScreen />);
+
+    expect(
+      screen.getByText(
+        agendaState === "loading"
+          ? "Loading planned workload..."
+          : "Planned workload could not be loaded.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        agendaState === "loading" ? "Loading day agenda..." : "Unable to load this day right now.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("does not show prior-day totals while the next day summary is loading", () => {
+    configureQueries();
+    const rendered = renderNative(<CalendarDayScreen />);
+    expect(screen.getByText("50")).toBeTruthy();
+
+    routeDate = "2026-07-28";
+    calendarDayUseQueryMock.mockImplementation(() => ({
+      data: {
+        items: [],
+        plannedLoadSummary: {
+          date: "2026-07-27",
           source: {
             complete: true,
             eventCount: 1,
@@ -151,122 +233,40 @@ function configureQueries(
             }),
           },
         },
-    isError: Boolean(input.summaryError),
-    isLoading: false,
-    refetch: summaryRefetchMock,
-  }));
-}
-
-describe("calendar day planned summary boundary", () => {
-  beforeEach(() => {
-    routeDate = "2026-07-27";
-    navigateMock.mockReset();
-    summaryRefetchMock.mockClear();
-    agendaEventsRefetchMock.mockClear();
-    agendaGroupsRefetchMock.mockClear();
-    jest.mocked(announcePlannedDaySummaryRetryStatus).mockClear();
-    listUseQueryMock.mockReset();
-    plannedDaySummaryUseQueryMock.mockReset();
-    groupEventsQueryState = { data: { items: [] }, isLoading: false };
-  });
-
-  it("uses one exact-day summary query while keeping cancelled Event cards independently actionable", () => {
-    configureQueries();
-    renderNative(<CalendarDayScreen />);
-
-    expect(plannedDaySummaryUseQueryMock).toHaveBeenCalledWith(
-      { date: "2026-07-27" },
-      expect.objectContaining({ enabled: true }),
-    );
-    fireEvent.press(screen.getByTestId("event-card-cancelled-event"));
-    expect(navigateMock).toHaveBeenCalled();
-    expect(screen.getByText("1 Event")).toBeTruthy();
-  });
-
-  it("keeps prior Event cards visible and actionable when the summary fails", async () => {
-    configureQueries({ summaryError: true });
-    renderNative(<CalendarDayScreen />);
-
-    expect(screen.getByText("Planned workload could not be loaded.")).toBeTruthy();
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("calendar-day-planned-summary-retry"));
-    });
-    expect(summaryRefetchMock).toHaveBeenCalledTimes(1);
-    fireEvent.press(screen.getByTestId("event-card-cancelled-event"));
-    expect(navigateMock).toHaveBeenCalled();
-  });
-
-  it.each([
-    "loading",
-    "error",
-  ] as const)("keeps a successful summary visible when the agenda is %s", (agendaState) => {
-    configureQueries({ agendaState });
-    renderNative(<CalendarDayScreen />);
-
-    expect(screen.getByText("1 Event")).toBeTruthy();
-    expect(
-      screen.getByText(
-        agendaState === "loading" ? "Loading day agenda..." : "Unable to load this day right now.",
-      ),
-    ).toBeTruthy();
-  });
-
-  it("does not show prior-day totals while the next day summary is loading", () => {
-    configureQueries();
-    const rendered = renderNative(<CalendarDayScreen />);
-    expect(screen.getByText("50")).toBeTruthy();
-
-    routeDate = "2026-07-28";
-    plannedDaySummaryUseQueryMock.mockImplementation(() => ({
-      data: {
-        date: "2026-07-27",
-        source: {
-          complete: true,
-          eventCount: 1,
-          unavailableEstimateCount: 0,
-          unavailablePlanCount: 0,
-          unlinkedPlanCount: 0,
-        },
-        summary: {
-          eventCount: 1,
-          activity_categories: ["bike"],
-          totalDurationSeconds: 3_600,
-          prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
-            activityCategory: "bike",
-            load: 50,
-          }),
-        },
       },
-      isError: false,
       isLoading: true,
-      refetch: summaryRefetchMock,
+      error: null,
+      refetch: calendarDayRefetchMock,
     }));
     rendered.rerender(<CalendarDayScreen />);
     expect(screen.queryByText("50")).toBeNull();
     expect(screen.getByText("Loading planned workload...")).toBeTruthy();
 
-    plannedDaySummaryUseQueryMock.mockImplementation(() => ({
+    calendarDayUseQueryMock.mockImplementation(() => ({
       data: {
-        date: "2026-07-28",
-        source: {
-          complete: true,
-          eventCount: 1,
-          unavailableEstimateCount: 0,
-          unavailablePlanCount: 0,
-          unlinkedPlanCount: 0,
-        },
-        summary: {
-          eventCount: 1,
-          activity_categories: ["run"],
-          totalDurationSeconds: 1_800,
-          prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
-            load: 75,
-          }),
+        items: [],
+        plannedLoadSummary: {
+          date: "2026-07-28",
+          source: {
+            complete: true,
+            eventCount: 1,
+            unavailableEstimateCount: 0,
+            unavailablePlanCount: 0,
+            unlinkedPlanCount: 0,
+          },
+          summary: {
+            eventCount: 1,
+            activity_categories: ["run"],
+            totalDurationSeconds: 1_800,
+            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+              load: 75,
+            }),
+          },
         },
       },
-      isError: false,
       isLoading: false,
-      refetch: summaryRefetchMock,
+      error: null,
+      refetch: calendarDayRefetchMock,
     }));
     rendered.rerender(<CalendarDayScreen />);
     expect(screen.getByText("75")).toBeTruthy();
@@ -276,7 +276,7 @@ describe("calendar day planned summary boundary", () => {
     configureQueries({ agendaState: "error" });
     let resolveEvents: (() => void) | undefined;
     let resolveGroups: (() => void) | undefined;
-    agendaEventsRefetchMock.mockImplementation(
+    calendarDayRefetchMock.mockImplementation(
       () =>
         new Promise<void>((resolve) => {
           resolveEvents = resolve;
@@ -309,7 +309,7 @@ describe("calendar day planned summary boundary", () => {
     expect(screen.getByText("Day agenda retry finished.")).toBeTruthy();
     expect(announcePlannedDaySummaryRetryStatus).toHaveBeenCalledWith("Day agenda retry finished.");
 
-    agendaEventsRefetchMock.mockImplementationOnce(() => Promise.reject(new Error("offline")));
+    calendarDayRefetchMock.mockImplementationOnce(() => Promise.reject(new Error("offline")));
     agendaGroupsRefetchMock.mockImplementationOnce(() => Promise.resolve());
     await act(async () => {
       fireEvent.press(screen.getByTestId("calendar-day-agenda-retry"));
@@ -327,12 +327,8 @@ describe("calendar day planned summary boundary", () => {
     renderNative(<CalendarDayScreen />);
 
     expect(screen.getByText("Choose a valid calendar date to view this day.")).toBeTruthy();
-    expect(plannedDaySummaryUseQueryMock).toHaveBeenCalledWith(
+    expect(calendarDayUseQueryMock).toHaveBeenCalledWith(
       { date: "1970-01-01" },
-      expect.objectContaining({ enabled: false }),
-    );
-    expect(listUseQueryMock).toHaveBeenCalledWith(
-      expect.objectContaining({ date_from: "1970-01-01", date_to: "1970-01-01" }),
       expect.objectContaining({ enabled: false }),
     );
   });

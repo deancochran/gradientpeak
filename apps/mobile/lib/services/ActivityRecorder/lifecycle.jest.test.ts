@@ -399,12 +399,12 @@ type StartFailureMutableRecorder = {
 function configureDistancePlan(mutable: DistancePlanMutableRecorder, includeRest = false) {
   const structure = {
     version: 3 as const,
+    activity_category: "run" as const,
     segments: [
       {
         id: navigationIds.segment,
         role: "activity" as const,
         name: "Run",
-        activity_category: "run" as const,
         intervals: [
           {
             id: navigationIds.interval,
@@ -604,12 +604,12 @@ describe("ActivityRecorderService lifecycle", () => {
       name: "New run",
       structure: {
         version: 3 as const,
+        activity_category: "run" as const,
         segments: [
           {
             id: "50000000-0000-4000-8000-000000000001",
             role: "activity" as const,
             name: "Run",
-            activity_category: "run" as const,
             intervals: [
               {
                 id: "50000000-0000-4000-8000-000000000002",
@@ -992,7 +992,6 @@ describe("ActivityRecorderService lifecycle", () => {
       id: segmentId,
       role: "activity" as const,
       name,
-      activity_category: "run" as const,
       intervals: [
         {
           id: intervalId,
@@ -1011,6 +1010,7 @@ describe("ActivityRecorderService lifecycle", () => {
     });
     const structure = {
       version: 3 as const,
+      activity_category: "run" as const,
       segments: [
         activity(navigationIds.segment, navigationIds.interval, navigationIds.first, "First"),
         {
@@ -1128,12 +1128,12 @@ describe("ActivityRecorderService lifecycle", () => {
     const { service, mutable } = createService();
     const structure = {
       version: 3 as const,
+      activity_category: "strength" as const,
       segments: [
         {
           id: navigationIds.segment,
           role: "activity" as const,
           name: "Strength",
-          activity_category: "strength" as const,
           intervals: [
             {
               id: navigationIds.interval,
@@ -1503,7 +1503,6 @@ describe("ActivityRecorderService lifecycle", () => {
       id: segmentId,
       role: "activity" as const,
       name,
-      activity_category: "run" as const,
       intervals: [
         {
           id: intervalId,
@@ -1522,6 +1521,7 @@ describe("ActivityRecorderService lifecycle", () => {
     });
     const structure = {
       version: 3 as const,
+      activity_category: "run" as const,
       segments: [
         activitySegment(segment("1"), segment("2"), segment("3"), "Run one"),
         {
@@ -1633,12 +1633,12 @@ describe("ActivityRecorderService lifecycle", () => {
     ];
     const planSnapshot = {
       version: 3,
+      activity_category: "run",
       segments: [
         {
           id: segmentId,
           role: "activity",
           name: "Run",
-          activity_category: "run",
           intervals: [
             {
               id: intervalId,
@@ -1769,12 +1769,12 @@ describe("ActivityRecorderService lifecycle", () => {
       lifecycle: "recording",
       planSnapshot: {
         version: 3,
+        activity_category: "run",
         segments: [
           {
             id: segmentId,
             role: "activity",
             name: "Run",
-            activity_category: "run",
             intervals: [
               {
                 id: intervalId,

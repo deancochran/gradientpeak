@@ -1,8 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
-  assembleAthleteState,
-  athleteStateVectorSchema,
   calculateCriticalPowerCapability,
   effortCurveUnitSchema,
   metricCatalog,
@@ -25,10 +23,8 @@ describe("athlete intelligence package exports", () => {
     ).toEqual([]);
   });
 
-  it("intentionally exports planning context and ephemeral athlete state", () => {
+  it("intentionally exports request-scoped planning context", () => {
     expect(requestScopedAthletePlanningContextSchema).toBeDefined();
-    expect(athleteStateVectorSchema).toBeDefined();
-    expect(assembleAthleteState).toBeTypeOf("function");
   });
 
   it("exports contextual metrics, swim pace curves, and CP/W′ capability vocabulary", () => {

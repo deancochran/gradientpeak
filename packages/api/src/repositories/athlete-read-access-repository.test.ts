@@ -88,4 +88,42 @@ describe("athlete read access repository", () => {
     await expect(missing.evaluate(input)).rejects.toThrow();
     await expect(unknown.evaluate(input)).rejects.toThrow();
   });
+
+  it("resolves an organization only through the canonical exact-scope decision", async () => {
+    let query: unknown;
+    const execute = vi.fn(async (input: unknown) => {
+      query = input;
+      return { rows: [{ organization_id: organizationId }] };
+    });
+    const repository = createAthleteReadAccessRepository({ execute } as never);
+
+    await expect(
+      repository.findAuthorizedOrganizationId({
+        actorProfileId,
+        athleteProfileId,
+        scope: "metrics",
+      }),
+    ).resolves.toBe(organizationId);
+    expect(collectParameters(query)).toEqual([
+      actorProfileId,
+      athleteProfileId,
+      actorProfileId,
+      athleteProfileId,
+      "metrics",
+    ]);
+  });
+
+  it("fails closed when no shared organization returns an allow decision", async () => {
+    const repository = createAthleteReadAccessRepository({
+      execute: vi.fn(async () => ({ rows: [] })),
+    } as never);
+
+    await expect(
+      repository.findAuthorizedOrganizationId({
+        actorProfileId,
+        athleteProfileId,
+        scope: "goals",
+      }),
+    ).resolves.toBeNull();
+  });
 });

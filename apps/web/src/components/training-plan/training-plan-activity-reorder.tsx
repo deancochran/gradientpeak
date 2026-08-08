@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/ca
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "../../lib/api/client";
+import { getTodayDateKey, shiftDateKey } from "../../lib/planning";
 import { buildActivityReorderInput, moveScheduledActivity } from "./training-plan-model";
 
 type ReorderActivity = {
@@ -15,7 +16,12 @@ type ReorderActivity = {
 
 export function TrainingPlanActivityReorder() {
   const utils = api.useUtils();
-  const events = api.events.list.useQuery({ limit: 100 });
+  const today = getTodayDateKey();
+  const events = api.calendar.range.useQuery({
+    startDate: today,
+    endDateExclusive: shiftDateKey(today, 366),
+    limit: 100,
+  });
   const reorder = api.trainingPlans.reorderActivities.useMutation();
   const source = useMemo(
     () =>

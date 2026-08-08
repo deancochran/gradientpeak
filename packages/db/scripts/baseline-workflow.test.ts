@@ -1,14 +1,6 @@
 #!/usr/bin/env tsx
 import { execFileSync } from "node:child_process";
-import {
-  cpSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { dbPackageRoot } from "./_helpers";
@@ -49,6 +41,13 @@ try {
   rejects(() => mkdirSync(resolve(fixture, "supabase/migrations/nested")));
   rejects(() => writeFileSync(resolve(fixture, "supabase/migrations/README"), "unexpected\n"));
   rejects(() => {
+    const mirror = resolve(fixture, "drizzle/deploy");
+    mkdirSync(mirror, { recursive: true });
+    writeFileSync(resolve(mirror, "20260730000000_mvp_baseline.sql"), "BEGIN;\nCOMMIT;\n");
+  });
+  rejects(() => writeFileSync(resolve(fixture, "migration-policy.json"), "{}\n"));
+  rejects(() => writeFileSync(resolve(fixture, "migration-ledger.json"), "{}\n"));
+  rejects(() => {
     const baseline = resolve(fixture, "supabase/migrations/20260730000000_mvp_baseline.sql");
     const replacement = resolve(fixture, "supabase/migrations/20260730000000_renamed.sql");
     rmSync(baseline);
@@ -58,30 +57,13 @@ try {
     const baseline = resolve(fixture, "supabase/migrations/20260730000000_mvp_baseline.sql");
     const linked = resolve(fixture, "supabase/migrations/linked.sql");
     rmSync(baseline);
-    symlinkSync(resolve(fixture, "migration-ledger.json"), linked);
-  });
-  rejects(() =>
-    writeFileSync(
-      resolve(fixture, "drizzle/deploy/20260730000000_mvp_baseline.sql"),
-      `${readFileSync(resolve(fixture, "drizzle/deploy/20260730000000_mvp_baseline.sql"))}-- drift\n`,
-    ),
-  );
-  rejects(() => rmSync(resolve(fixture, "drizzle/deploy/20260730000000_mvp_baseline.sql")));
-  rejects(() => mkdirSync(resolve(fixture, "drizzle/deploy/nested")));
-  rejects(() => writeFileSync(resolve(fixture, "drizzle/deploy/README"), "unexpected\n"));
-  rejects(() => {
-    const policyPath = resolve(fixture, "migration-policy.json");
-    const policy = JSON.parse(readFileSync(policyPath, "utf8"));
-    policy.baseline.name = "renamed_baseline";
-    writeFileSync(policyPath, `${JSON.stringify(policy)}\n`);
+    symlinkSync(resolve(fixture, "package.json"), linked);
   });
   rejects(() => {
-    const path = resolve(fixture, "migration-ledger.json");
-    const ledger = JSON.parse(readFileSync(path, "utf8"));
-    ledger.entries.push(ledger.entries[0]);
-    writeFileSync(path, `${JSON.stringify(ledger)}\n`);
+    const path = resolve(fixture, "supabase/migrations/20260730000000_mvp_baseline.sql");
+    writeFileSync(path, "select 1;\n");
   });
-  console.log("[db:baseline:workflow:test] fresh-only file, mirror, and ledger restrictions OK");
+  console.log("[db:baseline:workflow:test] exactly-one transactional authority restrictions OK");
 } finally {
   rmSync(fixture, { force: true, recursive: true });
 }

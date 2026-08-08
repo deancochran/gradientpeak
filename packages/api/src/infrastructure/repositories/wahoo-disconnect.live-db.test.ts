@@ -6,10 +6,12 @@ import {
   activityArtifactLinks,
   activityArtifacts,
   activityFileIngestions,
+  activitySourceReferences,
   integrationCredentials,
   integrationResourceLinks,
   integrations,
   oauthStates,
+  profileMetrics,
   profiles,
   providerSyncJobs,
   providerSyncState,
@@ -34,8 +36,8 @@ import {
   IntegrationLifecycleChangedError,
 } from "../../repositories/integrations-repository";
 import { createIntegrationsRepositories } from "./drizzle-integrations-repository";
-import { createProviderSyncRepository } from "./drizzle-provider-sync-repository";
 import { createWahooRepository } from "./drizzle-wahoo-repository";
+import { createWahooSyncRepository } from "./drizzle-wahoo-sync-repository";
 
 const userIds: string[] = [];
 const key = Buffer.alloc(32, 9).toString("base64");
@@ -76,7 +78,7 @@ async function seed() {
 }
 
 async function claimDisconnect(integrationId: string, profileId: string) {
-  const repository = createProviderSyncRepository({ db });
+  const repository = createWahooSyncRepository({ db });
   const workerId = `disconnect:${randomUUID()}`;
   const claimNow = new Date(Date.now() + 60_000).toISOString();
   const jobs = await repository.claimDueJobs({
@@ -218,6 +220,9 @@ afterEach(async () => {
         .delete(integrationResourceLinks)
         .where(eq(integrationResourceLinks.profile_id, userId));
       await tx.delete(activities).where(eq(activities.profile_id, userId));
+      // Profile-metric deletion invalidates athlete state, so run it while the profile
+      // still exists instead of relying on an unordered user-delete cascade.
+      await tx.delete(profileMetrics).where(eq(profileMetrics.profile_id, userId));
       await tx.execute(
         sql`select set_config('gradientpeak.artifact_lifecycle_authorized', 'on', true)`,
       );
@@ -240,11 +245,120 @@ afterEach(async () => {
 afterAll(async () => pool.end());
 
 describe("Wahoo disconnect PostgreSQL lifecycle", () => {
+  it("fills only absent profile enrichment fields under the active generation", async () => {
+    const owner = await seed();
+    const repository = createWahooRepository({ db });
+
+    await expect(
+      repository.applyProfileEnrichmentIfAbsent({
+        dob: new Date("1990-06-15T00:00:00.000Z"),
+        expectedIntegrationGeneration: 1,
+        gender: "female",
+        integrationId: owner.integrationId,
+        profileId: owner.profileId,
+        weightKg: 61.5,
+      }),
+    ).resolves.toEqual({ fieldsFilled: ["dob", "gender", "weight_kg"], fieldsKept: [] });
+
+    const [profile] = await db
+      .select({ dob: profiles.dob, gender: profiles.gender })
+      .from(profiles)
+      .where(eq(profiles.id, owner.profileId));
+    const weights = await db
+      .select({ value: profileMetrics.value })
+      .from(profileMetrics)
+      .where(
+        and(
+          eq(profileMetrics.profile_id, owner.profileId),
+          eq(profileMetrics.metric_type, "weight_kg"),
+        ),
+      );
+    expect(profile).toMatchObject({ dob: new Date("1990-06-15T00:00:00.000Z"), gender: "female" });
+    expect(weights).toEqual([{ value: 61.5 }]);
+
+    await expect(
+      repository.applyProfileEnrichmentIfAbsent({
+        dob: new Date("1980-01-01T00:00:00.000Z"),
+        expectedIntegrationGeneration: 1,
+        gender: "male",
+        integrationId: owner.integrationId,
+        profileId: owner.profileId,
+        weightKg: 90,
+      }),
+    ).resolves.toEqual({ fieldsFilled: [], fieldsKept: ["dob", "gender", "weight_kg"] });
+    expect(
+      await db
+        .select({ value: profileMetrics.value })
+        .from(profileMetrics)
+        .where(
+          and(
+            eq(profileMetrics.profile_id, owner.profileId),
+            eq(profileMetrics.metric_type, "weight_kg"),
+          ),
+        ),
+    ).toEqual([{ value: 61.5 }]);
+  });
+
+  it("rejects profile enrichment after the integration generation is fenced", async () => {
+    const owner = await seed();
+    await db
+      .update(integrations)
+      .set({ generation: 2, lifecycle_status: "disconnect_pending" })
+      .where(eq(integrations.id, owner.integrationId));
+
+    await expect(
+      createWahooRepository({ db }).applyProfileEnrichmentIfAbsent({
+        dob: new Date("1990-06-15T00:00:00.000Z"),
+        expectedIntegrationGeneration: 1,
+        integrationId: owner.integrationId,
+        profileId: owner.profileId,
+      }),
+    ).rejects.toThrow("integration_generation_inactive");
+    const [profile] = await db
+      .select({ dob: profiles.dob })
+      .from(profiles)
+      .where(eq(profiles.id, owner.profileId));
+    expect(profile?.dob).toBeNull();
+  });
+
+  it("locally disconnects a persisted record when the server adapter is disabled", async () => {
+    const owner = await seed();
+    vi.stubEnv("WAHOO_CLIENT_ID", "");
+    vi.stubEnv("WAHOO_CLIENT_SECRET", "");
+    const repository = createWahooSyncRepository({ db });
+
+    await expect(
+      repository.requestWahooDisconnect({ profileId: owner.profileId }),
+    ).resolves.toEqual({
+      generation: 2,
+      integrationId: owner.integrationId,
+      jobId: null,
+      status: "disconnected",
+    });
+    const [integration] = await db
+      .select()
+      .from(integrations)
+      .where(eq(integrations.id, owner.integrationId));
+    expect(integration).toMatchObject({
+      generation: 2,
+      lifecycle_status: "disconnected",
+      remote_revoked_at: null,
+    });
+    expect(integration?.disconnect_requested_at).toBeInstanceOf(Date);
+    expect(integration?.disconnected_at).toBeInstanceOf(Date);
+    await expect(
+      db
+        .select()
+        .from(integrationCredentials)
+        .where(eq(integrationCredentials.integration_id, owner.integrationId)),
+    ).resolves.toEqual([]);
+  });
+
   it("hides disconnected tombstones from the active overview and restores them on reconnect", async () => {
     vi.stubEnv("NODE_ENV", "test");
-    vi.stubEnv("PROVIDER_OAUTH_TEST_ADAPTER", "1");
+    vi.stubEnv("WAHOO_OAUTH_TEST_ADAPTER", "1");
     const owner = await seed();
-    const providerSyncRepository = createProviderSyncRepository({ db });
+    const providerSyncRepository = createWahooSyncRepository({ db });
     await providerSyncRepository.requestWahooDisconnect({ profileId: owner.profileId });
     const [queuedDisconnect] = await db
       .select({ priority: providerSyncJobs.priority })
@@ -377,7 +491,7 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
 
   it("updates a queued staging reservation outcome in place without changing its delayed authority", async () => {
     const owner = await seed();
-    const repository = createProviderSyncRepository({ db });
+    const repository = createWahooSyncRepository({ db });
     const now = new Date("2030-01-01T00:00:00.000Z");
     const reservation = createWahooStagingCleanupReservation({
       createAttemptId: () => "11111111-1111-4111-8111-111111111111",
@@ -427,7 +541,7 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
 
   it("fails closed when a running staging reservation receives a committed successor", async () => {
     const owner = await seed();
-    const repository = createProviderSyncRepository({ db });
+    const repository = createWahooSyncRepository({ db });
     const now = new Date("2030-01-01T00:00:00.000Z");
     const reservation = createWahooStagingCleanupReservation({
       createAttemptId: () => "22222222-2222-4222-8222-222222222222",
@@ -478,7 +592,7 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
 
   it("linearizes import persistence before a waiting disconnect without a worker-level deadlock", async () => {
     const owner = await seed();
-    const lifecycle = createProviderSyncRepository({ db });
+    const lifecycle = createWahooSyncRepository({ db });
     let releaseImport: (() => void) | undefined;
     const importReleased = new Promise<void>((resolve) => {
       releaseImport = resolve;
@@ -527,6 +641,12 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
         .select()
         .from(integrationResourceLinks)
         .where(eq(integrationResourceLinks.integration_id, owner.integrationId)),
+    ).toHaveLength(0);
+    expect(
+      await db
+        .select()
+        .from(activitySourceReferences)
+        .where(eq(activitySourceReferences.integration_id, owner.integrationId)),
     ).toHaveLength(1);
     expect(
       await db
@@ -548,6 +668,10 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
         .where(eq(integrationResourceLinks.integration_id, owner.integrationId)),
       db
         .select()
+        .from(activitySourceReferences)
+        .where(eq(activitySourceReferences.integration_id, owner.integrationId)),
+      db
+        .select()
         .from(activityFileIngestions)
         .where(eq(activityFileIngestions.profile_id, owner.profileId)),
     ]);
@@ -556,7 +680,8 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
     await expect(
       submitActivity(db, guardedImportedSubmission(owner), { beforePersist: staleGuard }),
     ).rejects.toThrow("integration_generation_inactive");
-    const existing = beforeRejectedWrites[0][0]!;
+    const existing = beforeRejectedWrites[0][0];
+    if (!existing) throw new Error("Expected persisted activity before stale writes");
     const segmentSet = importedSubmission(owner.profileId).segmentSet;
     if (!segmentSet) throw new Error("Expected imported submission segment set");
     await expect(
@@ -580,8 +705,9 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
       ),
     ).rejects.toThrow("integration_generation_inactive");
     await expect(
-      createWahooRepository({ db }).createImportedActivityResourceLink({
+      createWahooRepository({ db }).enrichImportedActivitySourceReference({
         activityId: existing.id,
+        artifactSha256: "a".repeat(64),
         externalId: `stale-${randomUUID()}`,
         integrationId: owner.integrationId,
         integrationGeneration: 1,
@@ -607,6 +733,10 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
           .where(eq(integrationResourceLinks.integration_id, owner.integrationId)),
         db
           .select()
+          .from(activitySourceReferences)
+          .where(eq(activitySourceReferences.integration_id, owner.integrationId)),
+        db
+          .select()
           .from(activityFileIngestions)
           .where(eq(activityFileIngestions.profile_id, owner.profileId)),
       ]),
@@ -622,7 +752,7 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
 
   it("rolls the lifecycle fence back when durable disconnect enqueue fails", async () => {
     const owner = await seed();
-    const repository = createProviderSyncRepository({ db });
+    const repository = createWahooSyncRepository({ db });
     const suffix = randomUUID().replaceAll("-", "");
     const functionName = `disconnect_enqueue_fail_${suffix}`;
     const triggerName = `disconnect_enqueue_fail_trigger_${suffix}`;
@@ -662,7 +792,7 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
 
   it("atomically fences active work, enqueues one durable intent, and converges duplicate requests", async () => {
     const owner = await seed();
-    const repository = createProviderSyncRepository({ db });
+    const repository = createWahooSyncRepository({ db });
     await db.insert(providerSyncJobs).values({
       integration_id: owner.integrationId,
       job_type: "wahoo.activity_history_reconcile",
@@ -714,7 +844,7 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
 
   it("classifies a late claimed job generation as superseded without deleting credentials", async () => {
     const owner = await seed();
-    const repository = createProviderSyncRepository({ db });
+    const repository = createWahooSyncRepository({ db });
     await repository.requestWahooDisconnect({ profileId: owner.profileId });
     const { job, workerId } = await claimDisconnect(owner.integrationId, owner.profileId);
     await db
@@ -746,7 +876,7 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
 
   it("classifies a pending disconnect without credentials as invalid and dead-letters it", async () => {
     const owner = await seed();
-    const repository = createProviderSyncRepository({ db });
+    const repository = createWahooSyncRepository({ db });
     await repository.requestWahooDisconnect({ profileId: owner.profileId });
     const { job, workerId } = await claimDisconnect(owner.integrationId, owner.profileId);
     await db
@@ -786,15 +916,15 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
 
   it("confirmed revocation deletes credentials but retains historical resource links", async () => {
     const owner = await seed();
-    const repository = createProviderSyncRepository({ db });
+    const repository = createWahooSyncRepository({ db });
     await db.insert(integrationResourceLinks).values({
-      external_id: "historical-activity",
+      external_id: "historical-plan",
       id: randomUUID(),
       integration_id: owner.integrationId,
       internal_resource_id: randomUUID(),
       profile_id: owner.profileId,
       provider: "wahoo",
-      resource_kind: "activity",
+      resource_kind: "activity_plan",
     });
     await repository.requestWahooDisconnect({ profileId: owner.profileId });
     const { job, workerId } = await claimDisconnect(owner.integrationId, owner.profileId);
@@ -845,7 +975,7 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
 
   it("blocks OAuth reconnect while revocation is in flight and permits it after confirmation", async () => {
     const owner = await seed();
-    const providerSyncRepository = createProviderSyncRepository({ db });
+    const providerSyncRepository = createWahooSyncRepository({ db });
     const integrationsRepository = createIntegrationsRepositories(db).integrations;
     const racedState = `raced-reconnect-${randomUUID()}`;
     await db.insert(oauthStates).values({
@@ -973,7 +1103,7 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
 
   it("defensively rejects stale disconnect finalization after an out-of-band generation advance", async () => {
     const owner = await seed();
-    const repository = createProviderSyncRepository({ db });
+    const repository = createWahooSyncRepository({ db });
     await repository.requestWahooDisconnect({ profileId: owner.profileId });
     const { job, workerId } = await claimDisconnect(owner.integrationId, owner.profileId);
     await db
@@ -1018,7 +1148,7 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
       .update(integrations)
       .set({ external_id: providerUserId.toString() })
       .where(eq(integrations.id, owner.integrationId));
-    const providerSyncRepository = createProviderSyncRepository({ db });
+    const providerSyncRepository = createWahooSyncRepository({ db });
     const importer = { importWorkoutSummary: vi.fn() };
     const service = new WahooWebhookJobService({
       importer: importer as never,
@@ -1032,6 +1162,7 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
       workout_summary: { id: 101 },
     });
     expect(captured.queued).toBe(true);
+    if (!captured.jobId) throw new Error("Expected captured webhook job");
     await expect(
       providerSyncRepository.requestWahooDisconnect({ profileId: owner.profileId }),
     ).resolves.toMatchObject({ generation: 2, status: "pending" });
@@ -1115,7 +1246,7 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
     ).toEqual([{ error: "integration_generation_inactive", status: "processed" }]);
     expect(
       await providerSyncRepository.finalizeWebhookReceiptJob({
-        jobId: captured.jobId!,
+        jobId: captured.jobId,
         jobStatus: "completed",
         receiptId: captured.receiptId,
         receiptStatus: "processed",

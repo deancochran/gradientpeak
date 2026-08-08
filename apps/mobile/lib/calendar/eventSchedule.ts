@@ -1,4 +1,4 @@
-import { getScheduledDateKey, scheduledDateTimeToIsoInstant } from "@repo/core";
+import { getCalendarDateInIanaZone, scheduledDateTimeToIsoInstant } from "@repo/core/calendar";
 import { format } from "date-fns";
 
 export function getDeviceTimeZone(): string {
@@ -42,11 +42,12 @@ export function getEventScheduledDate(event: {
   if (event.scheduled_date) return event.scheduled_date;
   if (!event.starts_at) return null;
   if (event.all_day) return event.starts_at.slice(0, 10);
+  if (!event.timezone) return null;
 
   try {
-    return getScheduledDateKey(event.starts_at, event.timezone);
+    return getCalendarDateInIanaZone(event.starts_at, event.timezone);
   } catch {
-    return event.starts_at.slice(0, 10);
+    return null;
   }
 }
 

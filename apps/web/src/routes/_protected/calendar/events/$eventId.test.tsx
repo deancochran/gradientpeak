@@ -46,9 +46,9 @@ describe("EventDetailPage", () => {
       activity_plan: {
         name: "Tempo run",
         structure: {
+          activity_category: "run",
           segments: [
             {
-              activity_category: "run",
               id: id(1),
               intervals: [
                 {

@@ -86,12 +86,11 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       Alert.alert("Unsupported plan", "This plan is not a valid version 3 activity plan.");
       return;
     }
-    const firstActivity = parsed.data.segments.find((segment) => segment.role === "activity");
     store.reset();
     store.setName(existingPlan.name);
     store.setDescription(existingPlan.description || "");
     store.setNotes(existingPlan.notes || "");
-    if (firstActivity) store.setActivityCategory(firstActivity.activity_category);
+    store.setActivityCategory(parsed.data.activity_category);
     store.setStructure(parsed.data);
   }, [
     existingPlan,

@@ -3,8 +3,8 @@ import {
   type AthletePerformanceTargetFacts,
   compileActivityPlan,
 } from "@repo/core";
-import type { EnqueueProviderSyncJobInput } from "../../../repositories/provider-sync-repository";
 import type { WahooIntegrationRecord } from "../../../repositories/wahoo-repository";
+import type { EnqueueWahooSyncJobInput } from "../../../repositories/wahoo-sync-repository";
 import {
   getWahooProjectionCategoryOption,
   isWahooSupported,
@@ -20,11 +20,11 @@ import { resolveWahooSyncMetrics } from "../../integrations/wahoo/sync-service";
 import { hashPlannedActivityPayload } from "./planned-activity-hash";
 import {
   getEarliestPlannedActivityRunAt,
-  getPlannedActivityJobType,
-  getPlannedActivitySyncLaneKey,
-  getPlannedActivitySyncPolicy,
+  getWahooPlannedActivityJobType,
+  getWahooPlannedActivitySyncLaneKey,
+  getWahooPlannedActivitySyncPolicy,
   PLANNED_ACTIVITY_JOB_PRIORITY,
-} from "./planned-activity-policy";
+} from "./wahoo-planned-activity-policy";
 
 type WahooPublishJobPayload = {
   performanceModelAsOf: string;
@@ -103,15 +103,15 @@ export function projectWahooPlannedActivity(input: {
 
 export function buildWahooPlannedActivityPublishJob(input: {
   integration: Pick<WahooIntegrationRecord, "id" | "integrationGeneration">;
+  now: string;
   performanceModelAsOf: string;
   profileId: string;
   projection: WahooPublishablePlannedActivityProjection;
-}): EnqueueProviderSyncJobInput {
-  const policy = getPlannedActivitySyncPolicy("wahoo");
-  if (!policy) throw new Error("Wahoo planned-activity sync is not configured");
+}): EnqueueWahooSyncJobInput {
+  const policy = getWahooPlannedActivitySyncPolicy();
   const runAt = getEarliestPlannedActivityRunAt({
     availabilityWindowDays: policy.availabilityWindowDays,
-    now: input.performanceModelAsOf,
+    now: input.now,
     startsAt: input.projection.desiredPayload.startsAt,
   });
   return {
@@ -119,7 +119,7 @@ export function buildWahooPlannedActivityPublishJob(input: {
     integrationId: input.integration.id,
     integrationGeneration: input.integration.integrationGeneration,
     internalResourceId: input.projection.desiredPayload.eventId,
-    jobType: getPlannedActivityJobType({ operation: "publish", provider: "wahoo" }),
+    jobType: getWahooPlannedActivityJobType({ operation: "publish" }),
     operation: "publish",
     payload: {
       performanceModelAsOf: input.performanceModelAsOf,
@@ -132,10 +132,9 @@ export function buildWahooPlannedActivityPublishJob(input: {
     provider: "wahoo",
     resourceKind: "event",
     runAt,
-    syncLaneKey: getPlannedActivitySyncLaneKey({
+    syncLaneKey: getWahooPlannedActivitySyncLaneKey({
       eventId: input.projection.desiredPayload.eventId,
       integrationId: input.integration.id,
-      provider: "wahoo",
     }),
   };
 }

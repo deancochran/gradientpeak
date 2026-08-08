@@ -1,19 +1,22 @@
 import { activityPlanStructureSchema } from "@repo/core";
-import type { AthletePerformanceTargetFactsReader } from "../../../application/performance-model/get-athlete-performance-model-as-of";
-import type { ProviderSyncRepository, WahooRepository } from "../../../repositories";
+import type { PublishedAthletePerformanceTargetsRead } from "../../../application/athlete-intelligence/published-athlete-state";
+import type { WahooRepository, WahooSyncRepository } from "../../../repositories";
 import { hasWahooPlannedActivityScopes } from "../../integrations/wahoo/planned-activity-scopes";
 import { hashPlannedActivityPayload } from "./planned-activity-hash";
 import {
-  getPlannedActivityJobType,
-  getPlannedActivitySyncLaneKey,
+  getWahooPlannedActivityJobType,
+  getWahooPlannedActivitySyncLaneKey,
   PLANNED_ACTIVITY_JOB_PRIORITY,
-} from "./planned-activity-policy";
-import type { PlannedActivityProviderAdapter, PlannedActivityProviderQueueResult } from "./types";
+} from "./wahoo-planned-activity-policy";
 import {
   buildWahooPlannedActivityPublishJob,
   projectWahooPlannedActivity,
   type WahooPublishablePlannedActivityProjection,
 } from "./wahoo-planned-activity-projection";
+import type {
+  WahooPlannedActivityAdapter,
+  WahooPlannedActivityProviderQueueResult,
+} from "./wahoo-types";
 
 type WahooUnsyncJobPayload = {
   eventId: string;
@@ -27,14 +30,16 @@ type WahooIntegration = NonNullable<
 >;
 
 /** Preflight is deliberately before durable enqueue so ineligible events never reach a worker. */
-export class WahooPlannedActivityProvider implements PlannedActivityProviderAdapter {
+export class WahooPlannedActivityProvider implements WahooPlannedActivityAdapter {
   readonly provider = "wahoo" as const;
   constructor(
     private readonly deps: {
-      providerSyncRepository: ProviderSyncRepository;
+      providerSyncRepository: WahooSyncRepository;
       wahooRepository: WahooRepository;
-      getPerformanceTargets: AthletePerformanceTargetFactsReader;
-      enqueueJob?: ProviderSyncRepository["enqueueJob"];
+      getPerformanceTargets: (input: {
+        profileId: string;
+      }) => Promise<PublishedAthletePerformanceTargetsRead>;
+      enqueueJob?: WahooSyncRepository["enqueueJob"];
       now: () => Date;
     },
   ) {}
@@ -49,10 +54,11 @@ export class WahooPlannedActivityProvider implements PlannedActivityProviderAdap
 
   private async enqueuePublishProjection(input: {
     integration: WahooIntegration;
+    now: string;
     performanceModelAsOf: string;
     profileId: string;
     projection: WahooPublishablePlannedActivityProjection;
-  }): Promise<PlannedActivityProviderQueueResult> {
+  }): Promise<WahooPlannedActivityProviderQueueResult> {
     const enqueue =
       this.deps.enqueueJob ??
       this.deps.providerSyncRepository.enqueueJob.bind(this.deps.providerSyncRepository);
@@ -63,9 +69,8 @@ export class WahooPlannedActivityProvider implements PlannedActivityProviderAdap
   async enqueuePublishEvent(input: {
     eventId: string;
     profileId: string;
-  }): Promise<PlannedActivityProviderQueueResult> {
+  }): Promise<WahooPlannedActivityProviderQueueResult> {
     const operationTime = this.deps.now();
-    const performanceModelAsOf = operationTime.toISOString();
     const integration = await this.integration(input.profileId);
     const planned = await this.deps.wahooRepository.getPlannedEventForSync(input);
     const existing = await this.deps.wahooRepository.getEventResourceLink({
@@ -91,13 +96,21 @@ export class WahooPlannedActivityProvider implements PlannedActivityProviderAdap
     if (!parsed.success) {
       return rejectOrUnsync("Wahoo sync requires a valid activity-plan structure");
     }
+    const publishedTargets = await this.deps.getPerformanceTargets({ profileId: input.profileId });
+    if (publishedTargets.status === "unavailable") {
+      throw new Error(
+        "Wahoo planned-activity preflight failed: published performance targets unavailable",
+      );
+    }
+    if (publishedTargets.status === "stale") {
+      throw new Error(
+        "Wahoo planned-activity preflight failed: published performance targets stale",
+      );
+    }
     const projection = projectWahooPlannedActivity({
       activityPlan: { ...planned.activityPlan, structure: parsed.data },
       eventId: input.eventId,
-      performanceTargets: await this.deps.getPerformanceTargets({
-        actorProfileId: input.profileId,
-        asOf: operationTime,
-      }),
+      performanceTargets: publishedTargets.targets,
       startsAt: planned.startsAt,
     });
     if (projection.disposition === "unsupported_sport") {
@@ -113,7 +126,8 @@ export class WahooPlannedActivityProvider implements PlannedActivityProviderAdap
     }
     return this.enqueuePublishProjection({
       integration,
-      performanceModelAsOf,
+      now: operationTime.toISOString(),
+      performanceModelAsOf: publishedTargets.targets.asOf,
       profileId: input.profileId,
       projection,
     });
@@ -123,7 +137,7 @@ export class WahooPlannedActivityProvider implements PlannedActivityProviderAdap
     eventId: string;
     profileId: string;
     unsyncTarget?: { externalId: string; resourceLinkId: string };
-  }): Promise<PlannedActivityProviderQueueResult> {
+  }): Promise<WahooPlannedActivityProviderQueueResult> {
     const integration = await this.integration(input.profileId);
     const payload: WahooJobPayload = {
       eventId: input.eventId,
@@ -138,7 +152,7 @@ export class WahooPlannedActivityProvider implements PlannedActivityProviderAdap
       integrationId: integration.id,
       integrationGeneration: integration.integrationGeneration,
       internalResourceId: input.eventId,
-      jobType: getPlannedActivityJobType({ operation: "unsync", provider: "wahoo" }),
+      jobType: getWahooPlannedActivityJobType({ operation: "unsync" }),
       operation: "unsync",
       payload,
       payloadHash: hashPlannedActivityPayload(payload),
@@ -147,10 +161,9 @@ export class WahooPlannedActivityProvider implements PlannedActivityProviderAdap
       provider: "wahoo",
       resourceKind: "event",
       runAt: new Date().toISOString(),
-      syncLaneKey: getPlannedActivitySyncLaneKey({
+      syncLaneKey: getWahooPlannedActivitySyncLaneKey({
         eventId: input.eventId,
         integrationId: integration.id,
-        provider: "wahoo",
       }),
     });
     return { jobId: job.id, queued: job.status === "queued" };

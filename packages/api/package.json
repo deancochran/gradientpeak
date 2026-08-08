@@ -52,7 +52,6 @@
   },
   "scripts": {
     "check-types": "tsc --noEmit",
-    "benchmark:activity-plan-derived-metrics": "RUN_ACTIVITY_PLAN_DERIVED_METRICS_BENCHMARK=1 vitest run src/utils/__tests__/activity-plan-derived-metrics.benchmark.test.ts",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",

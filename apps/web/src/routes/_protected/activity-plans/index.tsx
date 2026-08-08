@@ -41,8 +41,6 @@ function ActivityPlansPage() {
     {
       activityCategories: activity_category === "all" ? undefined : [activity_category],
       includeEstimation: true,
-      includeOwnOnly: true,
-      includeSystemTemplates: false,
       limit: 20,
       ownerScope: "own",
       search: search.trim() || undefined,

@@ -29,9 +29,7 @@ function readCanonicalPlanActivityCategory(plan: unknown): CanonicalActivityCate
   if (!plan || typeof plan !== "object") return null;
   const parsed = activityPlanStructureSchema.safeParse((plan as { structure?: unknown }).structure);
   if (!parsed.success) return null;
-  return (
-    parsed.data.segments.find((segment) => segment.role === "activity")?.activity_category ?? null
-  );
+  return parsed.data.activity_category;
 }
 
 export function buildUpcomingActivityImpact(input: {

@@ -10,12 +10,12 @@ describe("activity plan calculations", () => {
   it("preserves the single-segment timed cycling golden", () => {
     const plan = compileActivityPlan({
       version: 3,
+      activity_category: "bike",
       segments: [
         {
           role: "activity",
           id: "70000000-0000-4000-8000-000000000001",
           name: "Bike",
-          activity_category: "bike",
           intervals: [
             {
               id: "70000000-0000-4000-8000-000000000002",
@@ -53,6 +53,7 @@ describe("activity plan calculations", () => {
   it("fails closed on mixed-category and transition plans", () => {
     const structure = {
       version: 3,
+      activity_category: "bike",
       segments: [
         {
           role: "activity",
@@ -110,12 +111,12 @@ describe("activity plan calculations", () => {
   it("does not calculate bike-only Load or normalized intensity", () => {
     const plan = compileActivityPlan({
       version: 3,
+      activity_category: "bike",
       segments: [
         {
           role: "activity",
           id: "70000000-0000-4000-8000-000000000021",
           name: "Variable bike",
-          activity_category: "bike",
           intervals: [
             {
               id: "70000000-0000-4000-8000-000000000022",
@@ -154,12 +155,12 @@ describe("activity plan calculations", () => {
   it("keeps target coverage out of the structural statistics helper", () => {
     const plan = compileActivityPlan({
       version: 3,
+      activity_category: "bike",
       segments: [
         {
           role: "activity",
           id: "70000000-0000-4000-8000-000000000031",
           name: "Partial bike",
-          activity_category: "bike",
           intervals: [
             {
               id: "70000000-0000-4000-8000-000000000032",

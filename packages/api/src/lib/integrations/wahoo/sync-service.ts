@@ -13,7 +13,7 @@ import {
 } from "@repo/core";
 import { encodeRouteCourseFit } from "@repo/core/server";
 import type { PublicActivityCategory } from "@repo/db";
-import type { AthletePerformanceTargetFactsReader } from "../../../application/performance-model/get-athlete-performance-model-as-of";
+import type { PublishedAthletePerformanceTargetsRead } from "../../../application/athlete-intelligence/published-athlete-state";
 import { logger } from "../../logger";
 import { hashPlannedActivityPayload } from "../../provider-sync/planned-activities/planned-activity-hash";
 import { parseStoredRouteFile } from "../../routes/route-file-helpers";
@@ -557,7 +557,9 @@ export class WahooSyncService {
   constructor(
     private readonly deps: {
       activateAccessToken?: (accessToken: string) => Promise<void>;
-      getPerformanceTargets: AthletePerformanceTargetFactsReader;
+      getPerformanceTargets: (input: {
+        profileId: string;
+      }) => Promise<PublishedAthletePerformanceTargetsRead>;
       repository: WahooRepository;
       storage: WahooSyncStorage;
       wahooClientFactory?: typeof createWahooClient;
@@ -1748,13 +1750,24 @@ export class WahooSyncService {
           retryable: false,
         });
       }
-      const profile = resolveWahooSyncMetrics(
-        await this.deps.getPerformanceTargets({
-          actorProfileId: profileId,
-          asOf: new Date(performanceModelAsOf),
-        }),
-        compiled.activity_category,
-      );
+      const publishedTargets = await this.deps.getPerformanceTargets({ profileId });
+      if (publishedTargets.status !== "available") {
+        return createSyncFailure({
+          category: "eligibility",
+          code: "missing_performance_model_context",
+          error: `Published performance targets are ${publishedTargets.status}.`,
+          retryable: publishedTargets.status === "stale",
+        });
+      }
+      if (publishedTargets.targets.asOf !== performanceModelAsOf) {
+        return {
+          success: true,
+          action: "no_change",
+          terminalOutcome: "superseded",
+          warnings: ["Queued Wahoo performance targets were superseded before execution."],
+        };
+      }
+      const profile = resolveWahooSyncMetrics(publishedTargets.targets, compiled.activity_category);
 
       // 3. Fetch Wahoo integration
       const integration = await this.repository.findWahooIntegrationByProfileId(profileId);

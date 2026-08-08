@@ -51,12 +51,12 @@ export function createMinimalActivityPlanStructure(
 ): EditableActivityPlanStructure {
   return {
     version: 3,
+    activity_category,
     segments: [
       {
         id: randomUUID(),
         name: activityName,
         role: "activity",
-        activity_category,
         intervals: [
           {
             id: randomUUID(),
@@ -94,26 +94,22 @@ function mapActivitySegments(
 ): EditableActivityPlanStructure {
   return {
     version: 3,
+    activity_category: structure.activity_category,
     segments: structure.segments.map((segment) =>
       segment.role === "activity" ? map(segment) : segment,
     ),
   };
 }
 
-function canUsePlanSegments(
-  segments: ActivityPlanSegment[],
-  activity_category: CanonicalActivityCategory,
-): boolean {
-  return segments.every(
-    (segment) => segment.role !== "activity" || segment.activity_category === activity_category,
-  );
-}
-
 const initialState = {
   name: generateDefaultActivityName(),
   description: "",
   activityCategory: "run" as CanonicalActivityCategory,
-  structure: { version: 3 as const, segments: [] as ActivityPlanSegment[] },
+  structure: {
+    version: 3 as const,
+    activity_category: "run" as CanonicalActivityCategory,
+    segments: [] as ActivityPlanSegment[],
+  },
   notes: "",
 };
 
@@ -124,50 +120,44 @@ export const useActivityPlanCreationStore = create<ActivityPlanCreationState>((s
   setActivityCategory: (activityCategory) =>
     set((state) => ({
       activityCategory,
-      structure: mapActivitySegments(state.structure, (segment) => ({
-        ...segment,
-        activity_category: activityCategory,
-      })),
+      structure: { ...state.structure, activity_category: activityCategory },
     })),
   setStructure: (structure) =>
     set((state) =>
-      canUsePlanSegments(structure.segments, state.activityCategory) ? { structure } : state,
+      structure.activity_category === state.activityCategory ? { structure } : state,
     ),
   setSegments: (segments) =>
-    set((state) =>
-      canUsePlanSegments(segments, state.activityCategory)
-        ? { structure: { version: 3, segments } }
-        : state,
-    ),
+    set((state) => ({
+      structure: { version: 3, activity_category: state.activityCategory, segments },
+    })),
   setNotes: (notes) => set({ notes }),
   addSegment: (segment) =>
-    set((state) =>
-      canUsePlanSegments([segment], state.activityCategory)
-        ? { structure: { version: 3, segments: [...state.structure.segments, segment] } }
-        : state,
-    ),
+    set((state) => ({
+      structure: {
+        version: 3,
+        activity_category: state.activityCategory,
+        segments: [...state.structure.segments, segment],
+      },
+    })),
   updateSegment: (segmentId, segment) =>
     set((state) => {
       const segments = state.structure.segments.map((item) =>
         item.id === segmentId ? segment : item,
       );
-      return canUsePlanSegments(segments, state.activityCategory)
-        ? { structure: { version: 3, segments } }
-        : state;
+      return { structure: { version: 3, activity_category: state.activityCategory, segments } };
     }),
   removeSegment: (segmentId) =>
     set((state) => ({
       structure: {
         version: 3,
+        activity_category: state.activityCategory,
         segments: state.structure.segments.filter((item) => item.id !== segmentId),
       },
     })),
   reorderSegments: (segments) =>
-    set((state) =>
-      canUsePlanSegments(segments, state.activityCategory)
-        ? { structure: { version: 3, segments } }
-        : state,
-    ),
+    set((state) => ({
+      structure: { version: 3, activity_category: state.activityCategory, segments },
+    })),
   addInterval: (interval, segmentId) =>
     set((state) => ({
       structure: mapActivitySegments(state.structure, (segment) =>

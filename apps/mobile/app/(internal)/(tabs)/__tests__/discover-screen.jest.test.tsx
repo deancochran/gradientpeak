@@ -460,8 +460,6 @@ describe("discover screen", () => {
     await waitFor(() => {
       expect(activityPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         {
-          includeSystemTemplates: true,
-          includeOwnOnly: false,
           includeEstimation: true,
           ownerScope: "all",
           search: "river",
@@ -527,8 +525,6 @@ describe("discover screen", () => {
       expect(screen.getByTestId("discover-filter-button-dot")).toBeTruthy();
       expect(activityPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         {
-          includeSystemTemplates: true,
-          includeOwnOnly: false,
           includeEstimation: true,
           ownerScope: "all",
           search: undefined,

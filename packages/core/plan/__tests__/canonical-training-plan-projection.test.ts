@@ -35,7 +35,6 @@ function candidate(
 }
 
 const projection: GoalAnchoredProjectionPlan = {
-  plan_type: "periodized",
   name: "10K",
   start_date: "2026-01-05",
   end_date: "2026-01-11",
@@ -108,9 +107,7 @@ describe("projectCanonicalTrainingPlan", () => {
     expect(first.status).toBe("resolved");
     if (first.status !== "resolved") throw new Error("expected resolved projection");
     expect(first.structure.sessions[0]?.activity_plan_id).toBe(runTemplateId);
-    expect(first.structure.builder_planning_snapshot?.scheduling.start_date).toBe(
-      projection.start_date,
-    );
+    expect(first.structure.builder_planning_snapshot?.scheduling).not.toHaveProperty("start_date");
     expect(first.structure.goal_blueprints?.[0]?.target_offset_days).toBe(6);
     expect(trainingPlanSchema.parse(first.structure)).toEqual(first.structure);
   });

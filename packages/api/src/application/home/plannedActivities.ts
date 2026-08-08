@@ -3,12 +3,11 @@ import { and, asc, eq, gte, lt } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import { type ActivityPlanExecutionDto, toActivityPlanExecutionDto } from "../../dto/activity-plan";
 import {
-  type ActivityPlanWithDerivedMetrics,
-  getActivityPlansDerivedMetrics,
-} from "../../utils/activity-plan-derived-metrics";
+  type ActivityPlanWithEstimate,
+  estimateActivityPlans,
+} from "../activity-plans/estimate-activity-plans";
 
 type HomeDb = ReturnType<typeof getRequiredDb>;
-type EstimationStore = Parameters<typeof getActivityPlansDerivedMetrics>[2];
 type HomeActivityPlan = typeof schema.activityPlans.$inferSelect & ActivityPlanExecutionDto;
 
 export type PlannedActivityRow = Pick<EventRow, "id" | "notes"> & {
@@ -19,7 +18,7 @@ export type PlannedActivityRow = Pick<EventRow, "id" | "notes"> & {
 };
 
 export type PlannedActivityWithEstimation = Omit<PlannedActivityRow, "activity_plan"> & {
-  activity_plan: ActivityPlanWithDerivedMetrics<HomeActivityPlan> | null;
+  activity_plan: ActivityPlanWithEstimate<HomeActivityPlan> | null;
 };
 
 export async function listPlannedActivitiesInRange(
@@ -62,7 +61,6 @@ export async function listPlannedActivitiesInRange(
 export async function loadPlannedActivitiesWithEstimations(
   db: HomeDb,
   input: {
-    estimationStore: EstimationStore;
     profileId: string;
     scheduledDateGte: string;
     scheduledDateLt: string;
@@ -87,12 +85,7 @@ export async function loadPlannedActivitiesWithEstimations(
     };
   }
 
-  const plansWithEstimation = await getActivityPlansDerivedMetrics(
-    plans,
-    db,
-    input.estimationStore,
-    input.profileId,
-  );
+  const plansWithEstimation = await estimateActivityPlans(plans, db, input.profileId);
   const plansMap = new Map(plansWithEstimation.map((plan) => [plan.id, plan]));
 
   const activitiesWithEstimations = plannedActivities.map((plannedActivity) => {

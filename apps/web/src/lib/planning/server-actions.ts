@@ -1,8 +1,5 @@
-import {
-  canonicalActivityCategorySchema,
-  dateOnlySchema,
-  scheduledDateTimeToIsoInstant,
-} from "@repo/core";
+import { canonicalActivityCategorySchema, dateOnlySchema } from "@repo/core";
+import { scheduledDateTimeToIsoInstant } from "@repo/core/calendar";
 import { redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
@@ -30,7 +27,7 @@ export const goalActionSchema = z.object({
 const deleteEventActionSchema = z.object({
   event_id: z.string().uuid(),
   redirectTo: z.string().optional(),
-  scope: z.enum(["single", "future", "series"]).default("single"),
+  scope: z.enum(["single", "series"]).default("single"),
 });
 
 export const updateEventActionSchema = z
@@ -42,11 +39,10 @@ export const updateEventActionSchema = z
     redirectTo: z.string().optional(),
     time: z.string().optional(),
     title: z.string().trim().min(1),
-    recurrence_count: z.coerce.number().int().min(1).max(52).optional(),
-    scope: z.enum(["single", "future", "series"]).default("single"),
+    scope: z.literal("single").default("single"),
   })
   .superRefine((value, context) => {
-    if (value.scope === "single" && !value.scheduled_date?.trim()) {
+    if (!value.scheduled_date?.trim()) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: "A date is required when updating one event.",
@@ -107,17 +103,6 @@ export function buildScopedCalendarEventUpdate(
   data: z.infer<typeof updateEventActionSchema>,
   existingEvent?: PlanningEvent,
 ) {
-  if (data.scope !== "single") {
-    return {
-      id: data.event_id,
-      patch: {
-        notes: data.notes?.trim() || null,
-        title: data.title,
-      },
-      scope: data.scope,
-    };
-  }
-
   if (!existingEvent || !data.scheduled_date) {
     throw new Error("A single event update requires its current event and scheduled date.");
   }
@@ -357,10 +342,9 @@ export const updateCalendarEventAction = createServerFn({ method: "POST" }).hand
 
     try {
       const caller = await createServerActionCaller();
-      const existingEvent =
-        parsedData.scope === "single"
-          ? ((await caller.events.getById({ id: parsedData.event_id })) as PlanningEvent)
-          : undefined;
+      const existingEvent = (await caller.events.getById({
+        id: parsedData.event_id,
+      })) as PlanningEvent;
 
       await caller.events.update(buildScopedCalendarEventUpdate(parsedData, existingEvent));
     } catch (error) {
@@ -387,7 +371,7 @@ export const updateCalendarEventAction = createServerFn({ method: "POST" }).hand
 
 export const attachCalendarActivityPlanAction = createServerFn({ method: "POST" }).handler(
   async ({ data }) => {
-    const redirectTo = getRedirectTarget(data, "/scheduled-activities");
+    const redirectTo = getRedirectTarget(data, "/calendar?view=agenda&scheduled=true");
     let parsedData: z.infer<typeof attachActivityPlanActionSchema>;
 
     try {
@@ -426,7 +410,7 @@ export const attachCalendarActivityPlanAction = createServerFn({ method: "POST" 
 
     throw redirect({
       href: buildFlashHref(
-        parsedData.redirectTo ?? `/scheduled-activities/${parsedData.event_id}`,
+        parsedData.redirectTo ?? `/calendar/events/${parsedData.event_id}`,
         parsedData.operation === "remove" ? "Activity plan removed" : "Activity plan attached",
         "success",
       ),
