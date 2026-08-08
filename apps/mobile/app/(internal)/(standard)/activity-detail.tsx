@@ -62,6 +62,13 @@ function formatDuration(seconds: number): string {
   return `${minutes}:${secs.toString().padStart(2, "0")}`;
 }
 
+function formatEffortValue(value: number, unit: string) {
+  if (unit === "watts") return `${Math.round(value)} W`;
+  if (unit === "bpm") return `${Math.round(value)} bpm`;
+  if (unit === "meters_per_second") return `${value.toFixed(2)} m/s`;
+  return `${value.toFixed(2)} ${unit}`;
+}
+
 const VISIBILITY_LABELS: Record<ContentVisibility, string> = {
   private: "Private",
   followers: "Followers",
@@ -348,6 +355,9 @@ function ActivityDetailScreen() {
     id ? { id } : skipToken,
     { enabled: !!id },
   );
+  const effortsQuery = api.activities.getEfforts.useQuery(id ? { id } : skipToken, {
+    enabled: !!id,
+  });
 
   const activity = activityData?.activity;
   const linkedActivityPlanId = activity?.activity_plans?.id;
@@ -427,7 +437,7 @@ function ActivityDetailScreen() {
     onSuccess: () => {
       queryClient.activities.invalidate();
       queryClient.home.getDashboard.invalidate();
-      queryClient.trends.invalidate();
+      queryClient.athleteIntelligence.getReadModel.invalidate();
       router.back();
     },
     onError: (error) => {
@@ -705,9 +715,11 @@ function ActivityDetailScreen() {
             <ActivityPlanComparison
               activityPlan={{
                 ...activity.activity_plans,
-                ...(linkedActivityPlan?.common_load === undefined
+                ...(linkedActivityPlan?.prescriptionQuantification === undefined
                   ? {}
-                  : { common_load: linkedActivityPlan.common_load }),
+                  : {
+                      common_load: linkedActivityPlan.prescriptionQuantification.summary.commonLoad,
+                    }),
               }}
               actualMetrics={{
                 duration: (activity.active_ms ?? activity.elapsed_ms) / 1000,
@@ -798,6 +810,45 @@ function ActivityDetailScreen() {
               </CardContent>
             </Card>
           )}
+
+          <Card testID="activity-derived-efforts">
+            <CardHeader>
+              <CardTitle>Derived Efforts</CardTitle>
+            </CardHeader>
+            <CardContent className="gap-3">
+              {effortsQuery.isLoading ? (
+                <ActivityIndicator size="small" className="text-primary" />
+              ) : effortsQuery.isError ? (
+                <Text className="text-sm text-destructive">
+                  Derived efforts could not be loaded.
+                </Text>
+              ) : effortsQuery.data?.length ? (
+                effortsQuery.data.map((effort) => (
+                  <View
+                    className="flex-row items-center justify-between gap-3 border-b border-border py-2 last:border-b-0"
+                    key={effort.id}
+                  >
+                    <View className="flex-1">
+                      <Text className="font-medium capitalize">
+                        {effort.activity_category} {effort.effort_type.replaceAll("_", " ")}
+                      </Text>
+                      <Text className="text-xs text-muted-foreground">
+                        {formatDuration(effort.duration_seconds)}
+                        {effort.distance_meters ? ` · ${effort.distance_meters} m` : ""}
+                      </Text>
+                    </View>
+                    <Text className="font-semibold">
+                      {formatEffortValue(effort.value, effort.unit)}
+                    </Text>
+                  </View>
+                ))
+              ) : (
+                <Text className="text-sm text-muted-foreground">
+                  No derived efforts are available for this activity.
+                </Text>
+              )}
+            </CardContent>
+          </Card>
 
           {activityCategory === "bike" && primaryActivitySegment?.status === "processing" ? (
             <VisualStateCard

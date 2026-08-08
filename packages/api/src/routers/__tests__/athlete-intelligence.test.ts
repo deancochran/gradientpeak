@@ -1,139 +1,48 @@
-import {
-  athleteIntelligenceProjectionSchema,
-  createUnavailableAthletePerformanceTargetFacts,
-} from "@repo/core";
+import { createUnavailableAthletePerformanceTargetFacts } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
+import { goalAssessmentResponseSchema } from "../../application/athlete-intelligence/goal-assessment";
 import type {
-  AthleteIntelligenceDataSource,
-  AthleteIntelligenceRows,
-} from "../../application/athlete-intelligence/model-reader";
-import { athleteIntelligenceRuntimeProjectionSchema } from "../../application/athlete-intelligence/projection-orchestrator";
-import { evaluateAthleteIntelligence } from "../../application/athlete-intelligence/read-model";
+  withAuthorizedAthleteReadAcrossOrganizations,
+  withResolvedAuthorizedAthleteReadAcrossOrganizations,
+} from "../../application/organizations/authorize-athlete-read";
 import { createRouterCaller } from "../../test/router";
-import {
-  createAthleteIntelligenceRouter,
-  resolveAccessibleGoalProfile,
-} from "../athlete-intelligence";
+import { createAthleteIntelligenceRouter, resolveGoalProfile } from "../athlete-intelligence";
 
 const OWNER_ID = "11111111-1111-4111-8111-111111111111";
 const COACH_ID = "22222222-2222-4222-8222-222222222222";
 const GOAL_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
-const unavailable = {
-  estimate: null,
-  unit: null,
-  uncertainty: 1,
-  state: "unknown",
-  missingDataState: "required_data_missing",
-  reasonCodes: ["missing"],
-  contributingSourceIds: [],
-} as const;
-
-function projection() {
-  const base = athleteIntelligenceProjectionSchema.parse({
-    contractVersion: "athlete-intelligence-projection-v1",
-    assessmentAsOf: "2026-07-10T12:00:00.000Z",
-    athleteId: OWNER_ID,
-    capability: {
-      heartRateReserve: unavailable,
-      effortCurves: [],
-      enduranceRecencyWeightedMinutes: unavailable,
-      durabilityBaselineRatio: unavailable,
-      activityCategorySpecificity: unavailable,
-    },
-    readiness: {
-      volumeTrend: unavailable,
-      frequencyTrend: unavailable,
-      recoveryContext: unavailable,
-    },
-    feasibility: {
-      policyVersion: "training-feasibility-v1",
-      timeCoverage: unavailable,
-      requiredSessionCoverage: unavailable,
-      compatibleScheduledMinutes: unavailable,
-      scheduleCoverage: unavailable,
-      constraints: {
-        hardRestConflicts: unavailable,
-        dailyDurationExcesses: unavailable,
-        dailySessionCapExcesses: unavailable,
-        doubleDayConflicts: unavailable,
-        sessionDurationExcesses: unavailable,
-        weeklyDurationExcesses: unavailable,
-        weeklySessionCapExcesses: unavailable,
-        activityCategoryOverrideExcesses: unavailable,
-        recoveryPreferenceConflicts: unavailable,
-      },
-    },
-    goalCoverage: [],
-    opportunities: { training: [], evidence: [] },
-    decisionGuidance: {
-      state: "unknown",
-      reasonCodes: [],
-      recommendedActions: [],
-      cautions: [],
-    },
-  });
-  const channel = {
-    result: unavailable,
-    coverage: { state: "unknown" as const, reasonCodes: unavailable.reasonCodes, sourceIds: [] },
-    calculationIdentity: "test",
-  };
-  const domainCoverage = {
-    metrics: { state: "complete" as const, reason: null },
-    activities: { state: "complete" as const, reason: null },
-    efforts: { state: "complete" as const, reason: null },
-    schedules: { state: "complete" as const, reason: null },
-  };
-  const generatedAt = "2026-07-10T12:00:00.000Z";
-  const stateVector = {
-    contractVersion: "athlete-state-vector-v1" as const,
-    athleteId: OWNER_ID,
-    assessmentAsOf: generatedAt,
-    internalResponse: channel,
-    externalWork: [],
-    mechanicalExposure: channel,
-    strengthExposure: channel,
-    wellnessContext: channel,
-    calendarContext: channel,
-    policyVersions: [],
-    domainCoverage,
-    limitations: [],
-    generatedAt,
-  };
-  return athleteIntelligenceRuntimeProjectionSchema.parse({
-    ...base,
-    explainability: {
-      assessment: {
-        at: generatedAt,
-        state: "unknown",
-        uncertainty: "unknown",
-      },
-      evidence: [],
-      limits: [],
-      coverage: [
-        { label: "Profile metrics", state: "complete" },
-        { label: "Recorded activities", state: "complete" },
-        { label: "Activity efforts", state: "complete" },
-        { label: "Availability data", state: "complete" },
-      ],
-      collectionPrompts: [],
-    },
-    runtimeContext: {
-      stateVector,
-    },
+function publishedAssessment() {
+  return goalAssessmentResponseSchema.parse({
+    stateRevision: 4,
+    computedAt: "2026-07-10T12:00:00.000Z",
+    freshness: "stale",
+    assessmentConfidence: 0.75,
+    rebuildStatus: "pending",
+    assessment: null,
   });
 }
 
 function caller(
-  evaluate = vi.fn(async () => projection()),
+  assessGoal = vi.fn(async () => publishedAssessment()),
   authenticated = true,
-  resolveAccessibleGoalProfile = vi.fn(async () => OWNER_ID),
+  resolveGoalProfile = vi.fn(async () => OWNER_ID),
   userId = OWNER_ID,
+  authorizeResolvedRead: typeof withResolvedAuthorizedAthleteReadAcrossOrganizations = resolvedConsentAuthorizer(
+    { state: "valid", scopes: ["goals"] },
+  ),
 ) {
-  const router = createAthleteIntelligenceRouter(evaluate, resolveAccessibleGoalProfile);
+  const router = createAthleteIntelligenceRouter(
+    assessGoal,
+    resolveGoalProfile,
+    undefined,
+    undefined,
+    authorizeResolvedRead,
+  );
   return {
-    evaluate,
+    assessGoal,
+    resolveGoalProfile,
     caller: createRouterCaller(router, {
       db: {},
       userId,
@@ -142,199 +51,321 @@ function caller(
   };
 }
 
-describe("athleteIntelligenceRouter.evaluate", () => {
+type ConsentState = "expired" | "missing" | "revoked" | "valid";
+
+function consentAuthorizer(input: {
+  state: ConsentState;
+  scopes: readonly ("goals" | "metrics")[];
+}) {
+  return vi.fn(
+    async (request: Parameters<typeof withAuthorizedAthleteReadAcrossOrganizations>[0]) => {
+      if (input.state !== "valid" || !input.scopes.includes(request.scope as "goals" | "metrics")) {
+        return { outcome: "deny" as const };
+      }
+      return {
+        outcome: "allow" as const,
+        organizationId: "33333333-3333-4333-8333-333333333333",
+        value: await request.read({} as never),
+      };
+    },
+  ) as unknown as typeof withAuthorizedAthleteReadAcrossOrganizations;
+}
+
+function resolvedConsentAuthorizer(input: {
+  state: ConsentState;
+  scopes: readonly ("goals" | "metrics")[];
+}) {
+  return vi.fn(
+    async (request: Parameters<typeof withResolvedAuthorizedAthleteReadAcrossOrganizations>[0]) => {
+      const athleteProfileId = await request.resolveAthleteProfileId({} as never);
+      if (!athleteProfileId) return { outcome: "not_found" as const };
+      if (
+        request.actorProfileId !== athleteProfileId &&
+        (input.state !== "valid" || !input.scopes.includes(request.scope as "goals" | "metrics"))
+      ) {
+        return { outcome: "deny" as const, athleteProfileId };
+      }
+      return {
+        outcome: "allow" as const,
+        athleteProfileId,
+        organizationId:
+          request.actorProfileId === athleteProfileId
+            ? null
+            : "33333333-3333-4333-8333-333333333333",
+        value: await request.read({} as never, athleteProfileId),
+      };
+    },
+  ) as unknown as typeof withResolvedAuthorizedAthleteReadAcrossOrganizations;
+}
+
+describe("athleteIntelligenceRouter.getGoalAssessment", () => {
+  it("does not expose the retired raw runtime evaluation procedure", () => {
+    const { caller: api } = caller();
+
+    expect("evaluate" in api).toBe(false);
+  });
+
   it("requires authentication", async () => {
     const { caller: unauthenticated } = caller(undefined, false);
-    await expect(unauthenticated.evaluate({ goalId: GOAL_ID })).rejects.toMatchObject({
+
+    await expect(unauthenticated.getGoalAssessment({ goalId: GOAL_ID })).rejects.toMatchObject({
       code: "UNAUTHORIZED",
     } satisfies Partial<TRPCError>);
   });
 
-  it("rejects invalid identifiers and unknown keys before delegation", async () => {
-    const { caller: api, evaluate } = caller();
-    await expect(api.evaluate({ goalId: "not-a-uuid" })).rejects.toMatchObject({
+  it("rejects invalid identifiers and unknown client planning inputs before delegation", async () => {
+    const { caller: api, assessGoal } = caller();
+
+    await expect(api.getGoalAssessment({ goalId: "not-a-uuid" })).rejects.toMatchObject({
       code: "BAD_REQUEST",
     } satisfies Partial<TRPCError>);
-    const inputWithUnknownKey = { goalId: GOAL_ID, unexpected: true };
-    await expect(api.evaluate(inputWithUnknownKey)).rejects.toMatchObject({
-      code: "BAD_REQUEST",
-    } satisfies Partial<TRPCError>);
-    expect(evaluate).not.toHaveBeenCalled();
+    await expect(
+      api.getGoalAssessment({ goalId: GOAL_ID, unexpected: true } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
+    await expect(
+      api.getGoalAssessment({ goalId: GOAL_ID, plannedSessions: [] } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
+    expect(assessGoal).not.toHaveBeenCalled();
   });
 
-  it("delegates with authenticated profile scope and returns the output schema", async () => {
-    const { caller: api, evaluate } = caller();
-    const result = await api.evaluate({ goalId: GOAL_ID });
-    expect(evaluate).toHaveBeenCalledOnce();
-    expect(evaluate).toHaveBeenCalledWith(
+  it("reads the published-state contract in the resolved athlete scope", async () => {
+    const { caller: api, assessGoal } = caller();
+
+    const result = await api.getGoalAssessment({ goalId: GOAL_ID });
+
+    expect(assessGoal).toHaveBeenCalledOnce();
+    expect(assessGoal).toHaveBeenCalledWith(
       expect.objectContaining({ profileId: OWNER_ID, goalId: GOAL_ID }),
     );
-    expect(athleteIntelligenceRuntimeProjectionSchema.parse(result)).toEqual(result);
+    expect(result).toEqual(publishedAssessment());
+    expect(goalAssessmentResponseSchema.parse(result)).toEqual(result);
+    expect(result).not.toHaveProperty("runtimeContext");
   });
 
-  it("evaluates an accessible athlete goal in the athlete profile scope for an active coach", async () => {
-    const evaluate = vi.fn(async () => projection());
-    const resolveAccessibleGoalProfile = vi.fn(async () => OWNER_ID);
-    const { caller: api } = caller(evaluate, true, resolveAccessibleGoalProfile, COACH_ID);
+  it("uses the accessible athlete profile for an active coach", async () => {
+    const assessGoal = vi.fn(async () => publishedAssessment());
+    const resolveGoalProfile = vi.fn(async () => OWNER_ID);
+    const authorizeRead = resolvedConsentAuthorizer({ state: "valid", scopes: ["goals"] });
+    const { caller: api } = caller(assessGoal, true, resolveGoalProfile, COACH_ID, authorizeRead);
 
-    await api.evaluate({ goalId: GOAL_ID });
+    await api.getGoalAssessment({ goalId: GOAL_ID });
 
-    expect(resolveAccessibleGoalProfile).toHaveBeenCalledWith(
-      expect.objectContaining({ goalId: GOAL_ID }),
-    );
-    expect(evaluate).toHaveBeenCalledWith(
+    expect(resolveGoalProfile).toHaveBeenCalledWith(expect.objectContaining({ goalId: GOAL_ID }));
+    expect(assessGoal).toHaveBeenCalledWith(
       expect.objectContaining({ goalId: GOAL_ID, profileId: OWNER_ID }),
     );
+    expect(authorizeRead).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorProfileId: COACH_ID,
+        scope: "goals",
+        resolveAthleteProfileId: expect.any(Function),
+        read: expect.any(Function),
+      }),
+    );
   });
 
-  it("resolves delegated goal access to the athlete profile and hides denied goals", async () => {
-    const goal = {
-      id: GOAL_ID,
-      profile_id: OWNER_ID,
-      target_date: "2026-09-01",
-      title: "Coach-visible goal",
-      priority: 8,
-      activity_category: "run" as const,
-      target_payload: { type: "consistency" as const, target_weeks: 8 },
-    };
-    const getGoal = vi.fn(async () => goal);
-    const assertAccess = vi.fn(async () => undefined);
-    const context = { session: { user: { id: COACH_ID } } } as never;
-
+  it("resolves a goal to its athlete profile", async () => {
+    const getGoalOwnerId = vi.fn(async () => OWNER_ID);
     await expect(
-      resolveAccessibleGoalProfile({
-        ctx: context,
+      resolveGoalProfile({
         db: {} as never,
         goalId: GOAL_ID,
-        getGoal,
-        assertAccess,
+        getGoalOwnerId,
       }),
     ).resolves.toBe(OWNER_ID);
-    expect(assertAccess).toHaveBeenCalledWith({ ctx: context, profileId: OWNER_ID });
-
-    assertAccess.mockRejectedValueOnce(
-      new TRPCError({ code: "FORBIDDEN", message: "No delegated access" }),
-    );
-    await expect(
-      resolveAccessibleGoalProfile({
-        ctx: context,
-        db: {} as never,
-        goalId: GOAL_ID,
-        getGoal,
-        assertAccess,
-      }),
-    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(getGoalOwnerId).toHaveBeenCalledWith({}, GOAL_ID);
   });
 
-  it("does not evaluate a goal outside the authenticated athlete scope", async () => {
-    const resolveAccessibleGoalProfile = vi.fn(async () => {
+  it.each([
+    "missing",
+    "revoked",
+    "expired",
+  ] as const)("does not perform the full goal read when goals consent is %s", async (state) => {
+    const fullGoalRead = vi.fn(async () => publishedAssessment());
+    const resolveGoalOwner = vi.fn(async () => OWNER_ID);
+    const authorizeRead = resolvedConsentAuthorizer({ state, scopes: ["goals"] });
+    const { caller: api } = caller(fullGoalRead, true, resolveGoalOwner, COACH_ID, authorizeRead);
+
+    await expect(api.getGoalAssessment({ goalId: GOAL_ID })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Goal not found",
+    });
+    expect(resolveGoalOwner).toHaveBeenCalledOnce();
+    expect(fullGoalRead).not.toHaveBeenCalled();
+  });
+
+  it("does not treat metrics-only consent as goals consent", async () => {
+    const assessGoal = vi.fn(async () => publishedAssessment());
+    const authorizeRead = resolvedConsentAuthorizer({ state: "valid", scopes: ["metrics"] });
+    const { caller: api } = caller(
+      assessGoal,
+      true,
+      vi.fn(async () => OWNER_ID),
+      COACH_ID,
+      authorizeRead,
+    );
+
+    await expect(api.getGoalAssessment({ goalId: GOAL_ID })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Goal not found",
+    });
+    expect(assessGoal).not.toHaveBeenCalled();
+  });
+
+  it("does not read published state for a goal outside the authenticated scope", async () => {
+    const resolveGoalProfile = vi.fn(async () => {
       throw new TRPCError({ code: "NOT_FOUND", message: "Goal not found" });
     });
-    const evaluate = vi.fn(async () => projection());
-    const { caller: api } = caller(evaluate, true, resolveAccessibleGoalProfile, COACH_ID);
+    const assessGoal = vi.fn(async () => publishedAssessment());
+    const { caller: api } = caller(assessGoal, true, resolveGoalProfile, COACH_ID);
 
-    await expect(api.evaluate({ goalId: GOAL_ID })).rejects.toMatchObject({ code: "NOT_FOUND" });
-    expect(evaluate).not.toHaveBeenCalled();
+    await expect(api.getGoalAssessment({ goalId: GOAL_ID })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    expect(assessGoal).not.toHaveBeenCalled();
   });
 
-  it("returns only curated explainability evidence without source identifiers or raw observations", async () => {
-    const result = await caller().caller.evaluate({ goalId: GOAL_ID });
-
-    expect(result.explainability).toEqual(
-      expect.objectContaining({
-        assessment: expect.objectContaining({ at: expect.any(String), state: "unknown" }),
-        evidence: [],
-      }),
-    );
-    expect(JSON.stringify(result.explainability)).not.toMatch(/activity:|metric:|rawObservation/);
-  });
-
-  it("rejects a client-supplied planning timezone", async () => {
-    const { caller: api, evaluate } = caller();
-    await expect(
-      api.evaluate({ goalId: GOAL_ID, planningTimezone: "America/New_York" } as never),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
-    expect(evaluate).not.toHaveBeenCalled();
-  });
-
-  it("preserves goal-not-found errors", async () => {
-    const evaluate = vi.fn(async () => {
+  it("preserves not-found errors from the published-state read boundary", async () => {
+    const assessGoal = vi.fn(async () => {
       throw new TRPCError({ code: "NOT_FOUND", message: "Goal not found" });
     });
-    const { caller: api } = caller(evaluate);
-    await expect(api.evaluate({ goalId: GOAL_ID })).rejects.toMatchObject({ code: "NOT_FOUND" });
-  });
+    const { caller: api } = caller(assessGoal);
 
-  it("performs no writes in the transport layer", async () => {
-    const evaluate = vi.fn(async () => projection());
-    const { caller: api } = caller(evaluate);
-    await api.evaluate({ goalId: GOAL_ID });
-    expect(evaluate).toHaveBeenCalledOnce();
-  });
-
-  it("materializes and evaluates through a typed read boundary without writes", async () => {
-    const failWrite = vi.fn(() => {
-      throw new Error("athlete intelligence evaluation must remain read-only");
+    await expect(api.getGoalAssessment({ goalId: GOAL_ID })).rejects.toMatchObject({
+      code: "NOT_FOUND",
     });
-    const db = {
-      insert: failWrite,
-      update: failWrite,
-      delete: failWrite,
-    } as unknown as Parameters<typeof evaluateAthleteIntelligence>[0]["db"];
-    const observedAt = new Date("2026-07-01T00:00:00.000Z");
-    const rows: AthleteIntelligenceRows = {
-      profile: {
-        id: OWNER_ID,
-        dob: new Date("1990-01-01T00:00:00.000Z"),
-        planningTimezone: "America/New_York",
-        preferredUnits: "metric",
-        updatedAt: observedAt,
-      },
-      metrics: [],
-      activities: [],
-      efforts: [],
-      performanceTargets: createUnavailableAthletePerformanceTargetFacts(
-        "2026-07-10T12:00:00.000Z",
-        OWNER_ID,
-      ),
-      completedObservationLoads: [],
-      goals: [
-        {
-          profileId: OWNER_ID,
-          id: GOAL_ID,
-          targetDate: "2026-09-01",
-          priority: 8,
-          activityCategory: "bike",
-          targetPayload: {
-            type: "threshold",
-            metric: "power",
-            activity_category: "bike",
-            value: 300,
-            test_duration_s: 3600,
-          },
-          createdAt: observedAt,
-          updatedAt: observedAt,
-        },
-      ],
-      trainingSettings: null,
-      schedule: [],
-      scheduleTruncated: false,
-    };
-    const dataSource: AthleteIntelligenceDataSource = {
-      read: vi.fn(async () => rows),
-    };
+  });
+});
 
-    const result = await evaluateAthleteIntelligence({
-      db,
-      dataSource,
+describe("athleteIntelligenceRouter.getReadModel", () => {
+  function athleteReadModel() {
+    const baseline = {
+      contractVersion: "athlete-state-projection-v1" as const,
+      athleteId: OWNER_ID,
+      stateRevision: 4,
+      asOf: "2026-07-01T12:00:00.000Z",
+      longTermLoad: 40,
+      recentLoad: 35,
+      loadBalance: 5,
+      evidenceConfidence: 0.75,
+      capabilities: [],
+      athleteAgeYears: null,
+    };
+    return {
+      contractVersion: "athlete-read-model-v1" as const,
       profileId: OWNER_ID,
-      goalId: GOAL_ID,
-      now: new Date("2026-07-10T12:00:00.000Z"),
-    });
+      asOf: "2026-07-10T12:00:00.000Z",
+      publishedRevision: 4,
+      algorithmVersion: "athlete-state-projection-v1",
+      publishedState: {
+        publishedAt: "2026-07-01T12:00:00.000Z",
+        baseline,
+        estimates: [],
+        performanceTargets: createUnavailableAthletePerformanceTargetFacts(
+          "2026-07-01T12:00:00.000Z",
+          OWNER_ID,
+        ),
+      },
+      status: {
+        freshness: "stale" as const,
+        rebuildStatus: "pending" as const,
+        importStatus: "active" as const,
+        sourceRevision: 5,
+        publishedRevision: 4,
+        coverage: { startAt: null, endAt: null, lastActivityAt: null },
+      },
+    };
+  }
 
-    expect(dataSource.read).toHaveBeenCalledOnce();
-    expect(failWrite).not.toHaveBeenCalled();
-    expect(result.athleteId).toBe(OWNER_ID);
-    expect(athleteIntelligenceRuntimeProjectionSchema.parse(result)).toEqual(result);
+  it("returns persisted publication time and the snapshot import fence for athlete self-access", async () => {
+    const readModel = vi.fn(async () => athleteReadModel());
+    const authorizeRead = consentAuthorizer({ state: "missing", scopes: [] });
+    const router = createAthleteIntelligenceRouter(
+      vi.fn(async () => publishedAssessment()),
+      vi.fn(async () => OWNER_ID),
+      readModel,
+      authorizeRead,
+    );
+    const api = createRouterCaller(router, { db: {}, userId: OWNER_ID });
+
+    await expect(
+      api.getReadModel({
+        sections: { publishedState: true, status: true },
+      }),
+    ).resolves.toEqual(expect.objectContaining({ publishedRevision: 4 }));
+    expect(readModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profileId: OWNER_ID,
+        sections: { publishedState: true, status: true },
+        now: expect.any(Date),
+      }),
+    );
+    expect(authorizeRead).not.toHaveBeenCalled();
+  });
+
+  it("allows a coach to read the full published baseline through valid metrics consent", async () => {
+    const readModel = vi.fn(async () => athleteReadModel());
+    const authorizeRead = consentAuthorizer({ state: "valid", scopes: ["metrics"] });
+    const router = createAthleteIntelligenceRouter(
+      vi.fn(async () => publishedAssessment()),
+      vi.fn(async () => OWNER_ID),
+      readModel,
+      authorizeRead,
+    );
+    const api = createRouterCaller(router, { db: {}, userId: COACH_ID });
+
+    await expect(
+      api.getReadModel({ profileId: OWNER_ID, sections: { publishedState: true } }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        publishedState: expect.objectContaining({
+          baseline: expect.objectContaining({ athleteId: OWNER_ID }),
+        }),
+      }),
+    );
+    expect(authorizeRead).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorProfileId: COACH_ID,
+        athleteProfileId: OWNER_ID,
+        scope: "metrics",
+      }),
+    );
+    expect(readModel).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    "missing",
+    "revoked",
+    "expired",
+  ] as const)("denies a coach full published state when metrics consent is %s", async (state) => {
+    const readModel = vi.fn(async () => athleteReadModel());
+    const router = createAthleteIntelligenceRouter(
+      vi.fn(async () => publishedAssessment()),
+      vi.fn(async () => OWNER_ID),
+      readModel,
+      consentAuthorizer({ state, scopes: ["metrics"] }),
+    );
+    const api = createRouterCaller(router, { db: {}, userId: COACH_ID });
+
+    await expect(
+      api.getReadModel({ profileId: OWNER_ID, sections: { publishedState: true } }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(readModel).not.toHaveBeenCalled();
+  });
+
+  it("does not treat goals-only consent as metrics consent", async () => {
+    const readModel = vi.fn(async () => athleteReadModel());
+    const router = createAthleteIntelligenceRouter(
+      vi.fn(async () => publishedAssessment()),
+      vi.fn(async () => OWNER_ID),
+      readModel,
+      consentAuthorizer({ state: "valid", scopes: ["goals"] }),
+    );
+    const api = createRouterCaller(router, { db: {}, userId: COACH_ID });
+
+    await expect(
+      api.getReadModel({ profileId: OWNER_ID, sections: { publishedState: true } }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(readModel).not.toHaveBeenCalled();
   });
 });

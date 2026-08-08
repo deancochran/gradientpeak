@@ -1,3 +1,5 @@
+import { providerHasCapability } from "@repo/core";
+
 export const wahooPlannedActivityRequiredScopes = [
   "plans_read",
   "plans_write",
@@ -17,6 +19,7 @@ export const wahooRouteMirrorRequiredScopes = [
 ] as const;
 
 export function hasWahooRouteMirrorScopes(scope: string | null | undefined): boolean {
+  if (!providerHasCapability("wahoo", "route_push")) return false;
   const granted = new Set((scope ?? "").split(/[\s,]+/).filter(Boolean));
   return wahooRouteMirrorRequiredScopes.every((required) => granted.has(required));
 }

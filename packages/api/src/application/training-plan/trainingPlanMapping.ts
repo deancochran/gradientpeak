@@ -11,7 +11,7 @@ type TrainingPlanWithIdentityFields = {
   id: string;
   is_system_template?: boolean | null;
   profile_id: string | null;
-  template_visibility?: string | null;
+  content_visibility: string;
 };
 
 type ProfileIdentityMap = Map<string, z.infer<typeof profileIdentitySchema>>;
@@ -22,12 +22,7 @@ export function mapTrainingPlanContentIdentity<T extends TrainingPlanWithIdentit
     content_type: "training_plan" as const,
     content_id: plan.id,
     owner_profile_id: plan.profile_id,
-    visibility:
-      plan.template_visibility === "private" || plan.template_visibility === "public"
-        ? plan.template_visibility
-        : plan.is_system_template
-          ? "public"
-          : "private",
+    visibility: plan.content_visibility,
   };
 }
 

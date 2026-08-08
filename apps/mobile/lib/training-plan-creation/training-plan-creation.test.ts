@@ -1,6 +1,7 @@
 import {
   canonicalTrainingPlanStructureSchema,
   createAthletePlanningContextFromSnapshot,
+  deriveDraftPlanProjection,
   deriveTrainingPlanCreationPreview,
   selectAthletePlanningContextFields,
   trainingPlanCreateInputSchema,
@@ -12,14 +13,8 @@ import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import { scoreActivityPlanFit } from "./activity-plan-fit";
 import { deriveActivityPlanPickerState } from "./activity-plan-picker";
 import {
-  createBackendPlanningRequestSnapshot,
-  deriveBackendPlanningState,
-  deriveScheduleInspectorBackendInsight,
   deriveTrainingPathChartFromActiveProjection,
   deriveTrainingPathProjectionStatus,
-  getBackendPlanningClientStatus,
-  getPlannedBackendPlanningOperations,
-  mapPlanningContextToPreviewCreationConfigInput,
   normalizeBackendPlanningPreview,
   selectActiveTrainingPlanProjection,
 } from "./backend-planning-client";
@@ -63,6 +58,54 @@ import {
 } from "./trainingPreferenceCapabilityMatrix";
 import { validateTrainingPlanBuilderState } from "./validation";
 import { deriveBuilderPlanCreationViewModel } from "./view-model";
+
+function authoritativeProjectionPreview() {
+  const projection = deriveDraftPlanProjection({
+    baseline: {
+      contractVersion: "athlete-state-projection-v1",
+      athleteId: "11111111-1111-4111-8111-111111111111",
+      stateRevision: 1,
+      asOf: "2026-01-01T00:00:00.000Z",
+      longTermLoad: 40,
+      recentLoad: 35,
+      loadBalance: 5,
+      evidenceConfidence: 0.8,
+      capabilities: [],
+      athleteAgeYears: 35,
+    },
+    planId: "22222222-2222-4222-8222-222222222222",
+    structure: {
+      version: 1,
+      sessions: [{ activity_plan_id: "33333333-3333-4333-8333-333333333333", offset_days: 1 }],
+      builder_planning_snapshot: {
+        version: 1,
+        plan_preferences: {
+          duration_weeks: 1,
+          weekly_session_count: 1,
+          target_weekly_hours: null,
+          rest_days_per_week: 6,
+        },
+        scheduling: { preferred_weekdays: [] },
+        goal_context: { selected_goals: [] },
+      },
+    },
+    activityPlans: [
+      {
+        activityPlanId: "33333333-3333-4333-8333-333333333333",
+        activityCategory: "run",
+        commonLoad: 50,
+      },
+    ],
+    planningTimezone: "UTC",
+    startDate: "2026-01-01",
+  });
+  if (projection.status !== "available") throw new Error("Expected projection fixture");
+  return {
+    status: "available" as const,
+    basePublishedRevision: 1,
+    simulation: projection.simulation,
+  };
+}
 
 describe("training plan creation domain", () => {
   it("validates profile goal sheet drafts before committing them", () => {
@@ -326,7 +369,7 @@ describe("training plan creation domain", () => {
       details: {
         name: "Schedule preview plan",
         description: "",
-        templateVisibility: "private" as const,
+        contentVisibility: "private" as const,
       },
       scheduling: {
         startDate: "2026-06-01",
@@ -377,7 +420,9 @@ describe("training plan creation domain", () => {
     expect(preview.checks.map((check) => check.code)).toEqual(
       expect.arrayContaining(["non_preferred_day", "hard_session_spacing"]),
     );
-    expect(payload.structure.builder_planning_snapshot?.scheduling.start_date).toBe("2026-06-01");
+    expect(payload.structure.builder_planning_snapshot?.scheduling).not.toHaveProperty(
+      "start_date",
+    );
     expect(JSON.stringify(payload)).not.toContain("scheduled_date");
   });
 
@@ -508,8 +553,6 @@ describe("training plan creation domain", () => {
       value: { value: 4, source: "manual_override" },
     });
     expect(projection.canUseStructureProposal).toBe(true);
-    expect(projection.backendPlanning.status.available).toBe(false);
-    expect(projection.backendPlanning.previewRequest.operation).toBe("previewCreationConfig");
     expect(JSON.stringify(toTrainingPlanCreatePayload(fixtures.readyState))).not.toContain(
       "planningContext",
     );
@@ -521,7 +564,7 @@ describe("training plan creation domain", () => {
         canSave: true,
         localBlockerCount: 0,
         mode: "create",
-        previewLifecycle: { status: "backend_preview_ready", snapshotToken: "token" },
+        previewLifecycle: { status: "backend_preview_ready" },
         saveLifecycle: { status: "commit_ready" },
       }),
     ).toMatchObject({ label: "Ready to create", status: "ready" });
@@ -666,11 +709,11 @@ describe("training plan creation domain", () => {
         prescriptionQuantification: assignedActivityPlan.prescriptionQuantification,
         structure: {
           version: 3,
+          activity_category: "bike",
           segments: [
             {
               id: "00000000-0000-4000-8000-000000000001",
               role: "activity",
-              activity_category: "bike",
               name: "Tempo ride",
               intervals: [
                 {
@@ -748,230 +791,6 @@ describe("training plan creation domain", () => {
     );
   });
 
-  it("reports the enabled backend planning preview capability truthfully", () => {
-    const fixtures = createTrainingPlanBuilderFixtures();
-    const context = createTrainingPlanPlanningContext(fixtures.readyState);
-
-    expect(getBackendPlanningClientStatus()).toEqual({
-      available: true,
-      enabledOperations: ["previewCreationConfig"],
-      reason: "Backend planning preview is enabled.",
-    });
-    expect(getPlannedBackendPlanningOperations()).toEqual(["previewCreationConfig"]);
-    expect(createBackendPlanningRequestSnapshot(context, "previewCreationConfig")).toEqual({
-      context,
-      operation: "previewCreationConfig",
-    });
-    expect(deriveBackendPlanningState(context)).toMatchObject({
-      plannedOperations: getPlannedBackendPlanningOperations(),
-      previewRequest: { context, operation: "previewCreationConfig" },
-    });
-    expect(deriveBackendPlanningState(context).status.reason).toBe("No goals configured.");
-    expect(deriveBackendPlanningState(context).contextFingerprint).toContain("anchorDate");
-  });
-
-  it("maps dated performance goals into backend preview creation-config input", () => {
-    const fixtures = createTrainingPlanBuilderFixtures();
-    const state = {
-      ...fixtures.readyState,
-      goalContext: {
-        selectedGoals: [
-          fixtures.localGoal({
-            title: "Race a fast 10K",
-            targetDate: "2026-03-01",
-            targetOffsetDays: 59,
-            activityCategory: "run",
-            objective: {
-              type: "event_performance",
-              activity_category: "run",
-              distance_m: 10_000,
-              target_time_s: 2700,
-            },
-          }),
-        ],
-      },
-      planPreferences: {
-        ...fixtures.readyState.planPreferences,
-        weeklySessionCount: 4,
-      },
-      scheduling: {
-        ...fixtures.readyState.scheduling,
-        startDate: fixtures.anchorDate,
-      },
-    };
-    const context = createTrainingPlanPlanningContext(state);
-
-    const result = mapPlanningContextToPreviewCreationConfigInput(context);
-
-    expect(result).toMatchObject({ ok: true });
-    if (!result.ok) throw new Error(result.reason);
-    expect(deriveBackendPlanningState(context).status).toEqual({
-      available: true,
-      enabledOperations: ["previewCreationConfig"],
-      reason: "Backend planning preview is enabled.",
-    });
-    expect(result.input.minimal_plan).toMatchObject({
-      plan_start_date: state.scheduling.startDate,
-      goals: [
-        {
-          name: "Race a fast 10K",
-          target_date: "2026-03-01",
-          priority: 10,
-          targets: [
-            {
-              target_type: "race_performance",
-              distance_m: 10_000,
-              target_time_s: 2700,
-              activity_category: "run",
-            },
-          ],
-        },
-      ],
-    });
-    expect(result.input.creation_input.user_values?.constraints).toMatchObject({
-      min_sessions_per_week: 3,
-      max_sessions_per_week: 4,
-      goal_difficulty_preference: "balanced",
-    });
-    expect(result.input.post_create_behavior).toEqual({ autonomous_mutation_enabled: false });
-  });
-
-  it("maps completion goals with explicit duration and duration-derived target dates", () => {
-    const fixtures = createTrainingPlanBuilderFixtures();
-    const state = {
-      ...fixtures.readyState,
-      goalContext: {
-        selectedGoals: [
-          fixtures.localGoal({
-            title: "Complete a 5K",
-            targetDate: null,
-            targetOffsetDays: null,
-            activityCategory: "run",
-            objective: {
-              type: "completion",
-              activity_category: "run",
-              distance_m: 5000,
-              duration_s: 2100,
-            },
-          }),
-        ],
-      },
-      planPreferences: {
-        ...fixtures.readyState.planPreferences,
-        durationWeeks: 4,
-        weeklySessionCount: 3,
-      },
-      scheduling: { ...fixtures.readyState.scheduling, startDate: fixtures.anchorDate },
-    };
-
-    const result = mapPlanningContextToPreviewCreationConfigInput(
-      createTrainingPlanPlanningContext(state),
-    );
-
-    expect(result).toMatchObject({ ok: true });
-    if (!result.ok) throw new Error(result.reason);
-    expect(result.input.minimal_plan.goals[0]).toMatchObject({
-      target_date: "2026-01-28",
-      targets: [
-        {
-          target_type: "race_performance",
-          distance_m: 5000,
-          target_time_s: 2100,
-          activity_category: "run",
-        },
-      ],
-    });
-    expect(result.input.creation_input.user_values?.constraints).toMatchObject({
-      min_sessions_per_week: 2,
-      max_sessions_per_week: 3,
-    });
-  });
-
-  it("does not infer completion goal duration for backend preview", () => {
-    const fixtures = createTrainingPlanBuilderFixtures();
-    const state = {
-      ...fixtures.readyState,
-      goalContext: {
-        selectedGoals: [
-          fixtures.localGoal({
-            title: "Complete a 5K",
-            targetDate: null,
-            targetOffsetDays: null,
-            activityCategory: "run",
-            objective: {
-              type: "completion",
-              activity_category: "run",
-              distance_m: 5000,
-            },
-          }),
-        ],
-      },
-      planPreferences: {
-        ...fixtures.readyState.planPreferences,
-        durationWeeks: 4,
-      },
-    };
-
-    expect(
-      mapPlanningContextToPreviewCreationConfigInput(createTrainingPlanPlanningContext(state)),
-    ).toMatchObject({
-      ok: false,
-      reason: 'Completion goal "Complete a 5K" needs a target duration before backend preview.',
-    });
-  });
-
-  it("returns specific backend preview mapping reasons for missing or unsupported goals", () => {
-    const fixtures = createTrainingPlanBuilderFixtures();
-
-    expect(
-      mapPlanningContextToPreviewCreationConfigInput(
-        createTrainingPlanPlanningContext({
-          ...fixtures.readyState,
-          goalContext: { selectedGoals: [] },
-        }),
-      ),
-    ).toMatchObject({ ok: false, reason: "No goals configured." });
-
-    expect(
-      mapPlanningContextToPreviewCreationConfigInput(
-        createTrainingPlanPlanningContext({
-          ...fixtures.readyState,
-          goalContext: {
-            selectedGoals: [
-              fixtures.localGoal({
-                title: "Train consistently",
-                targetDate: "2026-03-01",
-                targetOffsetDays: 59,
-                objective: { type: "consistency", target_sessions_per_week: 3 },
-              }),
-            ],
-          },
-        }),
-      ),
-    ).toMatchObject({
-      ok: false,
-      reason:
-        'Consistency goal "Train consistently" needs a backend target contract before authoritative preview.',
-    });
-  });
-
-  it("keeps backend preview input unavailable when goals cannot map to backend targets", () => {
-    const fixtures = createTrainingPlanBuilderFixtures();
-    const context = createTrainingPlanPlanningContext({
-      ...fixtures.readyState,
-      goalContext: {
-        selectedGoals: [fixtures.localGoal({ title: "Ride more consistently" })],
-      },
-    });
-
-    const result = mapPlanningContextToPreviewCreationConfigInput(context);
-    const planningState = deriveBackendPlanningState(context);
-
-    expect(result).toMatchObject({ ok: false });
-    expect(planningState.previewInput).toBeNull();
-    expect(planningState.status.reason).toContain("needs a target date or plan duration");
-  });
-
   it("creates a simplified projection facade over active projection internals", () => {
     const localChart = deriveTrainingPlanLocalProjection(
       createTrainingPlanBuilderFixtures().readyState,
@@ -1010,41 +829,15 @@ describe("training plan creation domain", () => {
       active: activeProjection,
       authoritative: null,
       inspectorInsight: null,
-      previewSnapshotToken: null,
     });
   });
 
-  it("normalizes backend preview response and prefers it when current", () => {
-    const backendPreview = normalizeBackendPlanningPreview({
-      projection_feasibility: { state: "aggressive", reasons: ["ramp too steep"] },
-      conflicts: {
-        is_blocking: false,
-        items: [{ code: "ramp", severity: "warning", message: "Ramp is high" }],
-      },
-      plan_preview: {
-        name: "Spring build",
-        start_date: "2026-01-01",
-        end_date: "2026-03-01",
-        goal_count: 1,
-        block_count: 3,
-      },
-      projection_chart: {
-        readiness_score: 72,
-        readiness_confidence: 0.84,
-        points: [{ date: "2026-01-01", longTermLoad: 42 }],
-      },
-      preview_snapshot: { version: "creation_preview_v2", token: "token-1" },
-    });
+  it("normalizes the authoritative projection and prefers it when current", () => {
+    const backendPreview = normalizeBackendPlanningPreview(authoritativeProjectionPreview());
 
     expect(backendPreview).toMatchObject({
       source: "backend",
-      readinessScore: 72,
-      readinessConfidence: 0.84,
-      feasibilityState: "aggressive",
-      feasibilityReasons: ["ramp too steep"],
-      previewSnapshotToken: "token-1",
-      conflicts: { isBlocking: false, items: [{ code: "ramp" }] },
-      planPreview: { name: "Spring build", goalCount: 1 },
+      simulation: expect.any(Object),
     });
     expect(
       selectActiveTrainingPlanProjection({
@@ -1053,7 +846,7 @@ describe("training plan creation domain", () => {
         isBackendInputStale: false,
         localChart: { weeks: [] },
       }),
-    ).toMatchObject({ source: "backend", readinessScore: 72 });
+    ).toMatchObject({ source: "backend" });
   });
 
   it("falls back to local projection when backend preview is stale or unavailable", () => {
@@ -1069,10 +862,7 @@ describe("training plan creation domain", () => {
     ).toMatchObject({ source: "local", chart: localChart });
     expect(
       selectActiveTrainingPlanProjection({
-        backendPreview: normalizeBackendPlanningPreview({
-          projection_chart: {},
-          preview_snapshot: { token: "t" },
-        }),
+        backendPreview: normalizeBackendPlanningPreview(authoritativeProjectionPreview()),
         backendPreviewEnabled: true,
         isBackendInputStale: true,
         localChart,
@@ -1080,69 +870,11 @@ describe("training plan creation domain", () => {
     ).toMatchObject({ source: "local", chart: localChart });
   });
 
-  it("adapts compatible backend projection points into the training path chart model", () => {
+  it("keeps the instant local chart tentative beside an authoritative server receipt", () => {
     const localChart = deriveTrainingPlanLocalProjection(
       createTrainingPlanBuilderFixtures().readyState,
     ).builderViewModel.dailyTrainingPathChart;
-    const backendPreview = normalizeBackendPlanningPreview({
-      projection_chart: {
-        points: [
-          {
-            date: "2026-01-05",
-            predicted_load: 40,
-            predicted_fitness_longTermLoad: 42,
-            predicted_fatigue_recentLoad: 48,
-            predicted_form_loadBalance: -6,
-            readiness_score: 70,
-          },
-          {
-            date: "2026-01-06",
-            predicted_load: 50,
-            predicted_fitness_longTermLoad: 43,
-            predicted_fatigue_recentLoad: 51,
-            predicted_form_loadBalance: -8,
-            readiness_score: 72,
-          },
-          {
-            date: "2026-01-12",
-            predicted_load: 60,
-            predicted_fitness_longTermLoad: 44,
-            predicted_fatigue_recentLoad: 52,
-            predicted_form_loadBalance: -8,
-            readiness_score: 73,
-          },
-        ],
-      },
-      preview_snapshot: { token: "token" },
-    });
-    if (!backendPreview) throw new Error("Expected backend preview");
-
-    const result = deriveTrainingPathChartFromActiveProjection({
-      activeProjection: backendPreview,
-      localChart,
-    });
-
-    expect(result.source).toBe("backend");
-    expect(result.chart.weeks).toHaveLength(2);
-    expect(result.chart.weeks[0]).toMatchObject({
-      weekStart: "2026-01-05",
-      weekEnd: "2026-01-11",
-      plannedLoad: 90,
-      scheduledFitness: null,
-      fatigue: null,
-      form: null,
-    });
-    expect(result.chart.domains.load[1]).toBeGreaterThan(90);
-  });
-
-  it("falls back to local chart when backend projection chart is malformed", () => {
-    const localChart = deriveTrainingPlanLocalProjection(
-      createTrainingPlanBuilderFixtures().readyState,
-    ).builderViewModel.dailyTrainingPathChart;
-    const backendPreview = normalizeBackendPlanningPreview({
-      projection_chart: { points: [{ date: "2026-01-05" }] },
-      preview_snapshot: { token: "token" },
-    });
+    const backendPreview = normalizeBackendPlanningPreview(authoritativeProjectionPreview());
     if (!backendPreview) throw new Error("Expected backend preview");
 
     expect(
@@ -1176,22 +908,7 @@ describe("training plan creation domain", () => {
       fallbackReason: "Goal is not mappable.",
     });
 
-    const backendProjection = normalizeBackendPlanningPreview({
-      projection_chart: {
-        readiness_score: 80,
-        points: [
-          {
-            date: "2026-01-05",
-            predicted_load: 40,
-            predicted_fitness_longTermLoad: 42,
-            predicted_fatigue_recentLoad: 47,
-            predicted_form_loadBalance: -5,
-            readiness_score: 80,
-          },
-        ],
-      },
-      preview_snapshot: { token: "token" },
-    });
+    const backendProjection = normalizeBackendPlanningPreview(authoritativeProjectionPreview());
     if (!backendProjection) throw new Error("Expected backend projection");
 
     expect(
@@ -1210,73 +927,6 @@ describe("training plan creation domain", () => {
       backendPreviewHasSnapshot: true,
       fallbackReason: null,
     });
-  });
-
-  it("derives backend schedule inspector insight from conflicts and feasibility", () => {
-    const conflictProjection = normalizeBackendPlanningPreview({
-      projection_feasibility: { state: "feasible", reasons: [] },
-      conflicts: {
-        is_blocking: false,
-        items: [
-          { code: "cluster", severity: "warning", message: "Hard activities are clustered." },
-        ],
-      },
-      projection_chart: { readiness_score: 80 },
-      preview_snapshot: { token: "token" },
-    });
-    if (!conflictProjection) throw new Error("Expected conflict projection");
-
-    expect(
-      deriveScheduleInspectorBackendInsight({
-        activeProjection: conflictProjection,
-        selectionLabel: "Threshold Intervals",
-      }),
-    ).toMatchObject({
-      source: "backend",
-      headline: "Backend projection flags a planning risk",
-      detail: "Threshold Intervals: Hard activities are clustered.",
-      riskLabel: "warning",
-      outcome: "Too fatigued",
-    });
-
-    const aggressiveProjection = normalizeBackendPlanningPreview({
-      projection_feasibility: { state: "aggressive", reasons: ["Ramp is too steep."] },
-      projection_chart: { readiness_score: 70 },
-      preview_snapshot: { token: "token" },
-    });
-    if (!aggressiveProjection) throw new Error("Expected aggressive projection");
-
-    expect(
-      deriveScheduleInspectorBackendInsight({ activeProjection: aggressiveProjection }),
-    ).toMatchObject({
-      headline: "Backend projection marks this plan as aggressive",
-      detail: "Ramp is too steep.",
-      riskLabel: "aggressive",
-      outcome: "Too fatigued",
-    });
-  });
-
-  it("derives backend schedule inspector support insight from readiness", () => {
-    const supportedProjection = normalizeBackendPlanningPreview({
-      projection_feasibility: { state: "feasible", reasons: [] },
-      projection_chart: { readiness_score: 82, readiness_confidence: 0.75 },
-      preview_snapshot: { token: "token" },
-    });
-    if (!supportedProjection) throw new Error("Expected supported projection");
-
-    expect(
-      deriveScheduleInspectorBackendInsight({ activeProjection: supportedProjection }),
-    ).toMatchObject({
-      headline: "This schedule is supporting the goal",
-      detail: "Projected readiness is 82 with 75% confidence.",
-      riskLabel: null,
-      outcome: "Better prepared",
-    });
-    expect(
-      deriveScheduleInspectorBackendInsight({
-        activeProjection: { source: "local", isAvailable: true, chart: {}, reason: "local" },
-      }),
-    ).toBeNull();
   });
 
   it("hides unknown optional athlete context fields until present or required", () => {
@@ -1865,7 +1515,7 @@ describe("training plan creation domain", () => {
     expect(trainingPlanFinalCreatePayloadSchema.parse(payload)).toEqual(payload);
     expect(payload.name).toBe(state.details.name.trim());
     expect(payload.description).toBe(state.details.description.trim() || null);
-    expect(payload.template_visibility).toBe(state.details.templateVisibility);
+    expect(payload.content_visibility).toBe(state.details.contentVisibility);
     for (const forbidden of [
       "scheduled_date",
       "session_type",
@@ -1946,7 +1596,7 @@ describe("training plan creation domain", () => {
         id: "11111111-1111-4111-8111-111111111111",
         name: "Existing plan",
         description: "Reusable structure",
-        template_visibility: "private",
+        content_visibility: "followers",
         structure: {
           version: 1,
           goal_blueprints: [
@@ -1970,7 +1620,7 @@ describe("training plan creation domain", () => {
         {
           id: "22222222-2222-4222-8222-222222222222",
           name: "Tempo intervals",
-          template_visibility: "public",
+          content_visibility: "public",
         },
       ],
     });
@@ -1979,7 +1629,11 @@ describe("training plan creation domain", () => {
     expect(state.details).toMatchObject({
       name: "Existing plan",
       description: "Reusable structure",
+      contentVisibility: "followers",
     });
+    expect(
+      toTrainingPlanUpdatePayload("11111111-1111-4111-8111-111111111111", state).content_visibility,
+    ).toBe("followers");
     expect(state.scheduling.startDate).toBe("2026-02-01");
     expect(state.goalContext.selectedGoals[0]).toMatchObject({
       title: "Race well",
@@ -1998,14 +1652,14 @@ describe("training plan creation domain", () => {
     });
   });
 
-  it("hydrates builder planning snapshot context for edit continuity", () => {
+  it("hydrates date-free builder planning snapshot context for edit continuity", () => {
     const state = createTrainingPlanBuilderStateFromExistingPlan({
       fallbackDate: "2026-02-01",
       plan: {
         id: "11111111-1111-4111-8111-111111111111",
         name: "Existing plan",
         description: "Reusable structure",
-        template_visibility: "private",
+        content_visibility: "private",
         structure: {
           version: 1,
           goal_blueprints: [{ title: "Fallback goal", priority: 10, activity_category: null }],
@@ -2018,7 +1672,6 @@ describe("training plan creation domain", () => {
               rest_days_per_week: 2,
             },
             scheduling: {
-              start_date: "2026-03-02",
               preferred_weekdays: [1, 2, 4, 6],
             },
             goal_context: {
@@ -2047,7 +1700,7 @@ describe("training plan creation domain", () => {
         {
           id: "22222222-2222-4222-8222-222222222222",
           name: "Tempo intervals",
-          template_visibility: "public",
+          content_visibility: "public",
         },
       ],
     });
@@ -2067,7 +1720,7 @@ describe("training plan creation domain", () => {
       taperStylePreference: null,
     });
     expect(state.scheduling).toMatchObject({
-      startDate: "2026-03-02",
+      startDate: "2026-02-01",
       preferredWeekdays: [1, 2, 4, 6],
     });
     expect(state.goalContext.selectedGoals[0]).toMatchObject({
@@ -2077,36 +1730,6 @@ describe("training plan creation domain", () => {
       targetOffsetDays: 55,
       priority: 7,
       activityCategory: "run",
-    });
-  });
-
-  it("persists backend planning provenance in the builder planning snapshot when provided", () => {
-    const fixtures = createTrainingPlanBuilderFixtures();
-
-    const createPayload = toTrainingPlanCreatePayload(fixtures.readyState, {
-      backendPlanning: {
-        projectionSource: "backend",
-        previewSnapshotToken: "snapshot-token",
-      },
-    });
-    const updatePayload = toTrainingPlanUpdatePayload(
-      "11111111-1111-4111-8111-111111111111",
-      fixtures.readyState,
-      {
-        backendPlanning: {
-          projectionSource: "local",
-          previewSnapshotToken: null,
-        },
-      },
-    );
-
-    expect(createPayload.structure.builder_planning_snapshot?.backend_planning).toEqual({
-      projection_source: "backend",
-      preview_snapshot_token: "snapshot-token",
-    });
-    expect(updatePayload.structure?.builder_planning_snapshot?.backend_planning).toEqual({
-      projection_source: "local",
-      preview_snapshot_token: null,
     });
   });
 

@@ -7,7 +7,11 @@ import {
   createUnavailableActivityPlanPlanningEstimate,
   summarizePlannedDay,
 } from "@repo/core";
-import type { EventReadRepository, PlannedDaySummaryActivityPlanRecord } from "../../repositories";
+import type {
+  EventReadRepository,
+  PlannedDaySummaryActivityPlanRecord,
+  PlannedDaySummaryEventRecord,
+} from "../../repositories";
 
 export const MAX_PLANNED_DAY_SUMMARY_EVENTS = 1_000;
 
@@ -40,6 +44,15 @@ export type PlannedDaySummaryResult = {
   };
 };
 
+export function getAvailablePlannedDaySummaryPlans(
+  events: PlannedDaySummaryEventRecord[],
+): PlannedDaySummaryActivityPlanRecord[] {
+  return events.flatMap((event) => {
+    const plan = event.activity_plan;
+    return plan && activityPlanStructureSchema.safeParse(plan.structure).success ? [plan] : [];
+  });
+}
+
 function unavailableEventQuantification(input: {
   activityCategory?: CanonicalActivityCategory;
   date: string;
@@ -56,24 +69,12 @@ function unavailableEventQuantification(input: {
   }).prescriptionQuantification;
 }
 
-export async function plannedDaySummaryUseCase(input: {
+export function summarizePlannedDayEvents(input: {
   date: string;
-  deriveMetrics: (
-    plans: PlannedDaySummaryActivityPlanRecord[],
-  ) => Promise<PlannedDaySummaryEstimatedPlan[]>;
-  profileId: string;
-  repository: Pick<EventReadRepository, "listOwnedPlannedEventsForDay">;
-}): Promise<PlannedDaySummaryResult> {
-  const events = await input.repository.listOwnedPlannedEventsForDay({
-    date: input.date,
-    limit: MAX_PLANNED_DAY_SUMMARY_EVENTS + 1,
-    profileId: input.profileId,
-  });
-
-  if (events.length > MAX_PLANNED_DAY_SUMMARY_EVENTS) {
-    throw new PlannedDaySummaryLimitExceededError();
-  }
-
+  estimates: PlannedDaySummaryEstimatedPlan[];
+  events: PlannedDaySummaryEventRecord[];
+}): PlannedDaySummaryResult {
+  const { events } = input;
   const classifiedEvents = events.map((event) => {
     const plan = event.activity_plan;
     return {
@@ -82,11 +83,7 @@ export async function plannedDaySummaryUseCase(input: {
       parsed: plan ? activityPlanStructureSchema.safeParse(plan.structure) : null,
     };
   });
-  const availablePlans = classifiedEvents.flatMap(({ parsed, plan }) =>
-    plan && parsed?.success ? [plan] : [],
-  );
-  const estimates = await input.deriveMetrics(availablePlans);
-  const estimatesByPlanId = new Map(estimates.map((plan) => [plan.id, plan]));
+  const estimatesByPlanId = new Map(input.estimates.map((plan) => [plan.id, plan]));
 
   let unavailablePlanCount = 0;
   let unlinkedPlanCount = 0;
@@ -123,20 +120,27 @@ export async function plannedDaySummaryUseCase(input: {
     }
 
     const estimate = estimatesByPlanId.get(plan.id);
-    const activitySegment = parsed.data.segments.find((segment) => segment.role === "activity");
-    const eventQuantification = estimate
-      ? bindPrescriptionQuantificationToScheduledEvent({
-          prescriptionQuantification: estimate.prescriptionQuantification,
-          eventId: event.id,
-        })
-      : unavailableEventQuantification({
-          date: input.date,
-          eventId: event.id,
-          planId: plan.id,
-          ...(activitySegment === undefined
-            ? {}
-            : { activityCategory: activitySegment.activity_category }),
-        });
+    let eventQuantification: ActivityPrescriptionQuantificationBundle;
+    try {
+      eventQuantification = estimate
+        ? bindPrescriptionQuantificationToScheduledEvent({
+            prescriptionQuantification: estimate.prescriptionQuantification,
+            eventId: event.id,
+          })
+        : unavailableEventQuantification({
+            date: input.date,
+            eventId: event.id,
+            planId: plan.id,
+            activityCategory: parsed.data.activity_category,
+          });
+    } catch {
+      eventQuantification = unavailableEventQuantification({
+        date: input.date,
+        eventId: event.id,
+        planId: plan.id,
+        activityCategory: parsed.data.activity_category,
+      });
+    }
     const eventAggregate = eventQuantification.summary;
     if (
       eventAggregate.duration.elapsed.status === "unavailable" ||
@@ -169,4 +173,26 @@ export async function plannedDaySummaryUseCase(input: {
       unlinkedPlanCount,
     },
   };
+}
+
+export async function plannedDaySummaryUseCase(input: {
+  date: string;
+  deriveMetrics: (
+    plans: PlannedDaySummaryActivityPlanRecord[],
+  ) => Promise<PlannedDaySummaryEstimatedPlan[]>;
+  profileId: string;
+  repository: Pick<EventReadRepository, "listOwnedPlannedEventsForDay">;
+}): Promise<PlannedDaySummaryResult> {
+  const events = await input.repository.listOwnedPlannedEventsForDay({
+    date: input.date,
+    limit: MAX_PLANNED_DAY_SUMMARY_EVENTS + 1,
+    profileId: input.profileId,
+  });
+
+  if (events.length > MAX_PLANNED_DAY_SUMMARY_EVENTS) {
+    throw new PlannedDaySummaryLimitExceededError();
+  }
+
+  const estimates = await input.deriveMetrics(getAvailablePlannedDaySummaryPlans(events));
+  return summarizePlannedDayEvents({ date: input.date, estimates, events });
 }

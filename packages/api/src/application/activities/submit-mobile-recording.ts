@@ -6,16 +6,11 @@ import {
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { activities, activityFileIngestions, activityPlans, profiles } from "@repo/db";
 import { and, eq } from "drizzle-orm";
-import type {
-  MobileRecordingSubmissionInput,
-  RecordingAcceptedArtifact,
-} from "../../contracts/recording-submission";
+import type { MobileRecordingSubmissionInput } from "../../contracts/recording-submission";
 import type { getRequiredDb } from "../../db";
 import { createContentAccessPermissions } from "../../permissions/content-access";
-import {
-  type ActivityArtifactStorage,
-  verifyAcceptedActivityArtifact,
-} from "../activity-file-ingestion/artifact-storage";
+import type { ActivityArtifactStorage } from "../activity-file-ingestion/artifact-storage";
+import { finalizeActivityArtifactIngestion } from "../activity-file-ingestion/finalize-activity-artifact-ingestion";
 import {
   loadAcceptedArtifactForClaim,
   MobileRecordingUploadError,
@@ -24,11 +19,7 @@ import {
   prepareMobileRecordingArtifact,
   retryMobileRecordingStagingCleanup,
 } from "../activity-file-ingestion/mobile-recording-upload";
-import {
-  type ActivityArtifactSubmission,
-  recordingSessionActivityId,
-  submitActivity,
-} from "./submit-activity";
+import { recordingSessionActivityId, submitActivity } from "./submit-activity";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
@@ -217,49 +208,10 @@ function assertReplayMatches(
   accepted: Awaited<ReturnType<typeof loadAcceptedSubmission>>,
 ) {
   if (!accepted) return;
-  if (input.artifactSource === "uploadedArtifact") {
-    if (accepted.ingestion.id !== input.uploadedArtifact.ingestionId) {
-      throw new MobileRecordingSubmissionError(
-        "conflict",
-        "Recording session is already bound to another upload claim",
-      );
-    }
-    return;
-  }
-  if (
-    accepted.acceptedArtifact.sha256 !== input.acceptedArtifact.sha256 ||
-    accepted.acceptedArtifact.byteSize !== input.acceptedArtifact.byteSize ||
-    accepted.acceptedArtifact.path !== input.acceptedArtifact.path
-  ) {
+  if (accepted.ingestion.id !== input.uploadedArtifact.ingestionId) {
     throw new MobileRecordingSubmissionError(
       "conflict",
-      "Recording session is already bound to another accepted artifact",
-    );
-  }
-}
-
-function toActivityArtifactSubmission(
-  artifact: RecordingAcceptedArtifact,
-): ActivityArtifactSubmission {
-  const { originalName, ...required } = artifact;
-  return originalName === undefined ? required : { ...required, originalName };
-}
-
-async function verifyCompatibilityArtifact(
-  storage: ActivityArtifactStorage,
-  profileId: string,
-  artifact: RecordingAcceptedArtifact,
-) {
-  try {
-    return await verifyAcceptedActivityArtifact(storage, {
-      profileId,
-      ...toActivityArtifactSubmission(artifact),
-    });
-  } catch (error) {
-    throw new MobileRecordingSubmissionError(
-      "artifact_invalid",
-      "Accepted recording artifact could not be verified",
-      { cause: error },
+      "Recording session is already bound to another upload claim",
     );
   }
 }
@@ -315,22 +267,11 @@ export async function submitMobileRecording(
     submission.content_visibility ?? (await loadDefaultContentVisibility(db, submission.profileId));
   const timing = aggregateSegmentTiming(segmentSet);
 
-  let prepared: Awaited<ReturnType<typeof prepareMobileRecordingArtifact>> | null = null;
-  let acceptedArtifact: ActivityArtifactSubmission;
-  if (submission.artifactSource === "uploadedArtifact") {
-    prepared = await prepareMobileRecordingArtifact(db, storage, {
-      profileId: submission.profileId,
-      recordingSessionId: submission.recordingSessionId,
-      ingestionId: submission.uploadedArtifact.ingestionId,
-    });
-    acceptedArtifact = toActivityArtifactSubmission(prepared.artifact);
-  } else {
-    acceptedArtifact = await verifyCompatibilityArtifact(
-      storage,
-      submission.profileId,
-      submission.acceptedArtifact,
-    );
-  }
+  const prepared = await prepareMobileRecordingArtifact(db, storage, {
+    profileId: submission.profileId,
+    recordingSessionId: submission.recordingSessionId,
+    ingestionId: submission.uploadedArtifact.ingestionId,
+  });
   if (prepared?.status === "ready") {
     const accepted = await loadAcceptedSubmission(db, replayInput);
     if (!accepted) {
@@ -350,56 +291,80 @@ export async function submitMobileRecording(
   const operationKey = mobileRecordingOperationKey(replayIdentity);
 
   try {
-    await submitActivity(db, {
-      requestedActivityId: activityId,
+    if (prepared.status !== "claimed") {
+      throw new MobileRecordingSubmissionError(
+        "submission_failed",
+        "Recording upload claim could not be finalized",
+      );
+    }
+    await finalizeActivityArtifactIngestion(db, {
       profileId: submission.profileId,
-      activityPlanId: resolvedActivityPlanId,
-      name: submission.name,
-      notes: submission.notes ?? null,
-      contentVisibility,
-      startedAt: new Date(submission.startedAt),
-      finishedAt: new Date(submission.finishedAt),
-      elapsedMs: segmentSet.elapsedMs,
-      activeMs: timing.activeMs,
-      movingMs: timing.movingMs,
-      timingCoverage: timing.timingCoverage,
-      segmentSet,
-      distanceMeters: submission.summary.distanceMeters,
-      calories: submission.summary.calories ?? null,
-      elevationGainMeters: submission.summary.elevationGainMeters ?? null,
-      avgHeartRate: null,
-      maxHeartRate: null,
-      avgPower: null,
-      maxPower: null,
-      avgCadence: null,
-      maxCadence: null,
-      avgSpeedMps: null,
-      maxSpeedMps: null,
-      normalizedSpeedMps: null,
-      avgTemperature: submission.summary.avgTemperature ?? null,
-      poolLengthMeters: submission.summary.poolLengthMeters ?? null,
-      deviceManufacturer: null,
-      deviceProduct: null,
-      laps: null,
-      mapBounds: null,
-      polyline: null,
-      analysis: {
-        efforts: [],
-        detectedLTHR: null,
-        ingestion: {
-          source: submission.source,
-          operationKey,
-          artifact: acceptedArtifact,
-          fileType: acceptedArtifact.format,
-          ...(prepared?.status === "claimed"
-            ? {
-                ingestionId: prepared.ingestion.id,
-                claimToken: prepared.claimToken,
-                stagingCleanupPending: true,
-              }
-            : {}),
-        },
-      },
+      storage,
+      bucket: prepared.staging.bucket,
+      stagingPath: prepared.staging.path,
+      bytes: prepared.staging.bytes,
+      format: prepared.staging.format,
+      mediaType: prepared.staging.mediaType,
+      ...(prepared.ingestion.expected_sha256
+        ? { expectedSha256: prepared.ingestion.expected_sha256 }
+        : {}),
+      parse: () => null,
+      submit: async ({ artifact }) =>
+        submitActivity(db, {
+          requestedActivityId: activityId,
+          profileId: submission.profileId,
+          activityPlanId: resolvedActivityPlanId,
+          name: submission.name,
+          notes: submission.notes ?? null,
+          contentVisibility,
+          startedAt: new Date(submission.startedAt),
+          finishedAt: new Date(submission.finishedAt),
+          elapsedMs: segmentSet.elapsedMs,
+          activeMs: timing.activeMs,
+          movingMs: timing.movingMs,
+          timingCoverage: timing.timingCoverage,
+          segmentSet,
+          distanceMeters: submission.summary.distanceMeters,
+          calories: submission.summary.calories ?? null,
+          elevationGainMeters: submission.summary.elevationGainMeters ?? null,
+          avgHeartRate: null,
+          maxHeartRate: null,
+          avgPower: null,
+          maxPower: null,
+          avgCadence: null,
+          maxCadence: null,
+          avgSpeedMps: null,
+          maxSpeedMps: null,
+          normalizedSpeedMps: null,
+          avgTemperature: submission.summary.avgTemperature ?? null,
+          poolLengthMeters: submission.summary.poolLengthMeters ?? null,
+          deviceManufacturer: null,
+          deviceProduct: null,
+          laps: null,
+          mapBounds: null,
+          polyline: null,
+          analysis: {
+            efforts: [],
+            detectedLTHR: null,
+            ingestion: {
+              source: submission.source,
+              operationKey,
+              artifact: {
+                sha256: artifact.sha256,
+                byteSize: artifact.byteSize,
+                bucket: artifact.bucket,
+                path: artifact.path,
+                mediaType: artifact.mediaType,
+                format: artifact.format,
+                originalName: null,
+              },
+              fileType: artifact.format,
+              ingestionId: prepared.ingestion.id,
+              claimToken: prepared.claimToken,
+              stagingCleanupPending: true,
+            },
+          },
+        }),
     });
   } catch (error) {
     const accepted = await loadAcceptedSubmission(db, replayInput);
@@ -407,7 +372,7 @@ export async function submitMobileRecording(
       assertReplayMatches(submission, accepted);
       return accepted;
     }
-    if (prepared?.status === "claimed" && submission.artifactSource === "uploadedArtifact") {
+    if (prepared.status === "claimed") {
       await markPreparedMobileRecordingArtifactFailed(db, {
         profileId: submission.profileId,
         recordingSessionId: submission.recordingSessionId,

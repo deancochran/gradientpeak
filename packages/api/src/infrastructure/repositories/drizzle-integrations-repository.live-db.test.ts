@@ -57,32 +57,12 @@ afterAll(async () => {
 });
 
 describe("Drizzle integrations credential reads", () => {
-  it("rejects plaintext credentials without rewriting them", async () => {
-    const owner = await seedCredentials({
-      accessToken: "legacy-access",
-      refreshToken: "legacy-refresh",
+  it("rejects plaintext credentials at the persistence boundary", async () => {
+    await expect(
+      seedCredentials({ accessToken: "legacy-access", refreshToken: "legacy-refresh" }),
+    ).rejects.toMatchObject({
+      cause: { constraint: "integration_credentials_access_token_envelope_check" },
     });
-    const repository = createIntegrationsRepositories(db);
-
-    await expect(
-      repository.integrations.findCredentialsByProfileIdAndProvider({
-        profileId: owner.profileId,
-        provider: "wahoo",
-      }),
-    ).rejects.toThrow("Provider credential must use the encrypted envelope");
-
-    await expect(
-      db
-        .select({
-          accessToken: integrationCredentials.access_token,
-          generation: integrationCredentials.generation,
-          refreshToken: integrationCredentials.refresh_token,
-        })
-        .from(integrationCredentials)
-        .where(eq(integrationCredentials.integration_id, owner.integrationId)),
-    ).resolves.toEqual([
-      { accessToken: "legacy-access", generation: 1, refreshToken: "legacy-refresh" },
-    ]);
   });
 
   it("decrypts current encrypted credential envelopes without changing generation", async () => {

@@ -1,3 +1,5 @@
+BEGIN;
+
 -- Fresh-only MVP baseline generated from the current Drizzle schema and reviewed local manual assets.
 
 CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA extensions;
@@ -98,8 +100,6 @@ CREATE TABLE "activities" (
 	"finished_at" timestamp with time zone NOT NULL,
 	"notes" text,
 	"content_visibility" text DEFAULT 'private' NOT NULL,
-	"provider" "integration_provider",
-	"external_id" text,
 	"elapsed_ms" bigint NOT NULL,
 	"active_ms" bigint,
 	"moving_ms" bigint,
@@ -108,6 +108,7 @@ CREATE TABLE "activities" (
 	"parser_version" text NOT NULL,
 	"decoded_contract_version" text NOT NULL,
 	"materializer_version" text NOT NULL,
+	"canonical_evidence_tier" text DEFAULT 'inferred_fallback' NOT NULL,
 	"segments_generated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"distance_meters" integer DEFAULT 0 NOT NULL,
 	"elevation_gain_meters" numeric(10, 2),
@@ -122,11 +123,8 @@ CREATE TABLE "activities" (
 	"avg_speed_mps" numeric(6, 2),
 	"max_speed_mps" numeric(6, 2),
 	"normalized_speed_mps" numeric(6, 2),
-	"normalized_graded_speed_mps" numeric(6, 2),
 	"avg_temperature" numeric,
 	"avg_swolf" numeric,
-	"efficiency_factor" numeric,
-	"aerobic_decoupling" numeric,
 	"pool_length_meters" numeric,
 	"total_strokes" integer,
 	"device_manufacturer" text,
@@ -134,6 +132,13 @@ CREATE TABLE "activities" (
 	"polyline" text,
 	"laps" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"map_bounds" jsonb,
+	"athlete_state_common_load" numeric,
+	"athlete_state_activity_category" text,
+	"athlete_state_evidence_confidence" numeric,
+	"athlete_state_capability_distance_meters" numeric,
+	"athlete_state_capability_duration_minutes" numeric,
+	"athlete_state_input_version" text,
+	"athlete_state_computed_at" timestamp with time zone,
 	CONSTRAINT "activities_id_profile_id_unique" UNIQUE("id","profile_id"),
 	CONSTRAINT "activities_content_visibility_check" CHECK ("activities"."content_visibility" in ('private', 'followers', 'public')),
 	CONSTRAINT "activities_distance_meters_check" CHECK ("activities"."distance_meters" >= 0),
@@ -141,12 +146,14 @@ CREATE TABLE "activities" (
 	CONSTRAINT "activities_active_ms_check" CHECK ("activities"."active_ms" is null or ("activities"."active_ms" >= 0 and "activities"."active_ms" <= "activities"."elapsed_ms")),
 	CONSTRAINT "activities_moving_ms_check" CHECK ("activities"."moving_ms" is null or ("activities"."moving_ms" >= 0 and "activities"."moving_ms" <= coalesce("activities"."active_ms", "activities"."elapsed_ms"))),
 	CONSTRAINT "activities_segments_revision_check" CHECK ("activities"."segments_revision" > 0),
+	CONSTRAINT "activities_canonical_evidence_tier_check" CHECK ("activities"."canonical_evidence_tier" in ('inferred_fallback', 'provider_summary', 'raw_samples', 'fit_artifact')),
 	CONSTRAINT "activities_timing_coverage_values_check" CHECK (("activities"."timing_coverage" = 'complete' and "activities"."active_ms" is not null and "activities"."moving_ms" is not null) or ("activities"."timing_coverage" in ('partial', 'unavailable') and "activities"."active_ms" is null and "activities"."moving_ms" is null)),
 	CONSTRAINT "activities_moving_time_check" CHECK ("activities"."moving_ms" is null or "activities"."active_ms" is null or "activities"."moving_ms" <= "activities"."active_ms"),
-	CONSTRAINT "activities_provider_identity_check" CHECK (("activities"."provider" is null) = ("activities"."external_id" is null)),
 	CONSTRAINT "activities_laps_array_check" CHECK (jsonb_typeof("activities"."laps") = 'array'),
 	CONSTRAINT "activities_laps_count_check" CHECK (jsonb_array_length("activities"."laps") <= 1000),
-	CONSTRAINT "activities_laps_size_check" CHECK (pg_column_size("activities"."laps") <= 1048576)
+	CONSTRAINT "activities_laps_size_check" CHECK (pg_column_size("activities"."laps") <= 1048576),
+	CONSTRAINT "activities_athlete_state_evidence_check" CHECK (("activities"."athlete_state_common_load" is null and "activities"."athlete_state_activity_category" is null and "activities"."athlete_state_evidence_confidence" is null and "activities"."athlete_state_input_version" is null and "activities"."athlete_state_computed_at" is null) or ("activities"."athlete_state_common_load" >= 0 and "activities"."athlete_state_activity_category" in ('run', 'bike', 'swim', 'strength', 'other') and "activities"."athlete_state_evidence_confidence" between 0 and 1 and btrim("activities"."athlete_state_input_version") <> '' and "activities"."athlete_state_computed_at" is not null)),
+	CONSTRAINT "activities_athlete_state_capability_check" CHECK (("activities"."athlete_state_capability_distance_meters" is null or "activities"."athlete_state_capability_distance_meters" >= 0) and ("activities"."athlete_state_capability_duration_minutes" is null or "activities"."athlete_state_capability_duration_minutes" >= 0))
 );
 
 CREATE TABLE "activity_artifact_links" (
@@ -195,10 +202,9 @@ CREATE TABLE "activity_artifacts" (
 CREATE TABLE "activity_efforts" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"created_at" timestamp with time zone NOT NULL,
-	"updated_at" timestamp with time zone,
 	"profile_id" uuid NOT NULL,
-	"activity_id" uuid,
-	"segment_id" uuid,
+	"activity_id" uuid NOT NULL,
+	"segment_id" uuid NOT NULL,
 	"recorded_at" timestamp with time zone NOT NULL,
 	"activity_category" text NOT NULL,
 	"effort_type" "effort_type" NOT NULL,
@@ -207,12 +213,11 @@ CREATE TABLE "activity_efforts" (
 	"start_offset" integer,
 	"unit" text NOT NULL,
 	"value" real NOT NULL,
-	"source" "evidence_observation_source",
-	"method" text,
-	"calculation_version" text,
+	"source" "evidence_observation_source" NOT NULL,
+	"method" text NOT NULL,
+	"calculation_version" text NOT NULL,
 	"quality_score" numeric,
-	"provenance" jsonb,
-	CONSTRAINT "activity_efforts_activity_segment_check" CHECK (("activity_efforts"."activity_id" is null and "activity_efforts"."segment_id" is null) or ("activity_efforts"."activity_id" is not null and "activity_efforts"."segment_id" is not null)),
+	"provenance" jsonb NOT NULL,
 	CONSTRAINT "activity_efforts_duration_seconds_bounds_check" CHECK ("activity_efforts"."duration_seconds" between 1 and 14400),
 	CONSTRAINT "activity_efforts_distance_meters_bounds_check" CHECK ("activity_efforts"."distance_meters" is null or "activity_efforts"."distance_meters" between 1 and 1000000),
 	CONSTRAINT "activity_efforts_value_finite_positive_check" CHECK ("activity_efforts"."value" > 0 and "activity_efforts"."value" not in ('NaN'::real, 'Infinity'::real, '-Infinity'::real)),
@@ -222,10 +227,10 @@ CREATE TABLE "activity_efforts" (
 	CONSTRAINT "activity_efforts_run_speed_bounds_check" CHECK ("activity_efforts"."activity_category" <> 'run' or "activity_efforts"."effort_type" <> 'speed' or ("activity_efforts"."value" >= 0.3 and "activity_efforts"."value" <= 13)),
 	CONSTRAINT "activity_efforts_swim_speed_bounds_check" CHECK ("activity_efforts"."activity_category" <> 'swim' or "activity_efforts"."effort_type" <> 'speed' or ("activity_efforts"."value" >= 0.1 and "activity_efforts"."value" <= 3)),
 	CONSTRAINT "activity_efforts_heart_rate_bounds_check" CHECK ("activity_efforts"."effort_type"::text <> 'heart_rate' or "activity_efforts"."value" between 30 and 240),
-	CONSTRAINT "activity_efforts_method_not_blank_check" CHECK ("activity_efforts"."method" is null or btrim("activity_efforts"."method") <> ''),
-	CONSTRAINT "activity_efforts_calculation_version_not_blank_check" CHECK ("activity_efforts"."calculation_version" is null or btrim("activity_efforts"."calculation_version") <> ''),
+	CONSTRAINT "activity_efforts_method_not_blank_check" CHECK (btrim("activity_efforts"."method") <> ''),
+	CONSTRAINT "activity_efforts_calculation_version_not_blank_check" CHECK (btrim("activity_efforts"."calculation_version") <> ''),
 	CONSTRAINT "activity_efforts_quality_score_range_check" CHECK ("activity_efforts"."quality_score" is null or ("activity_efforts"."quality_score" >= 0 and "activity_efforts"."quality_score" <= 1)),
-	CONSTRAINT "activity_efforts_provenance_object_check" CHECK ("activity_efforts"."provenance" is null or jsonb_typeof("activity_efforts"."provenance") = 'object')
+	CONSTRAINT "activity_efforts_provenance_object_check" CHECK (jsonb_typeof("activity_efforts"."provenance") = 'object')
 );
 
 CREATE TABLE "swimming_css_protocol_evidence" (
@@ -293,12 +298,6 @@ CREATE TABLE "activity_file_ingestions" (
 	"expected_byte_size" integer,
 	"expected_format" text,
 	"expected_media_type" text,
-	"accepted_sha256" text,
-	"accepted_byte_size" integer,
-	"accepted_bucket" text,
-	"accepted_path" text,
-	"accepted_media_type" text,
-	"accepted_format" text,
 	"uploaded_at" timestamp with time zone,
 	"staging_cleanup_pending" boolean DEFAULT false NOT NULL,
 	"staging_cleaned_at" timestamp with time zone,
@@ -319,13 +318,9 @@ CREATE TABLE "activity_file_ingestions" (
 	CONSTRAINT "activity_file_ingestions_operation_key_check" CHECK (btrim("activity_file_ingestions"."operation_key") <> ''),
 	CONSTRAINT "activity_file_ingestions_attempt_count_check" CHECK ("activity_file_ingestions"."attempt_count" >= 0),
 	CONSTRAINT "activity_file_ingestions_expected_size_check" CHECK ("activity_file_ingestions"."expected_byte_size" is null or "activity_file_ingestions"."expected_byte_size" > 0),
-	CONSTRAINT "activity_file_ingestions_accepted_size_check" CHECK ("activity_file_ingestions"."accepted_byte_size" is null or "activity_file_ingestions"."accepted_byte_size" > 0),
 	CONSTRAINT "activity_file_ingestions_expected_hash_check" CHECK ("activity_file_ingestions"."expected_sha256" is null or "activity_file_ingestions"."expected_sha256" ~ '^[0-9a-f]{64}$'),
-	CONSTRAINT "activity_file_ingestions_accepted_hash_check" CHECK ("activity_file_ingestions"."accepted_sha256" is null or "activity_file_ingestions"."accepted_sha256" ~ '^[0-9a-f]{64}$'),
 	CONSTRAINT "activity_file_ingestions_staging_metadata_check" CHECK (num_nonnulls("activity_file_ingestions"."staging_bucket", "activity_file_ingestions"."staging_path", "activity_file_ingestions"."expected_sha256", "activity_file_ingestions"."expected_byte_size", "activity_file_ingestions"."expected_format", "activity_file_ingestions"."expected_media_type") in (0, 6) and ("activity_file_ingestions"."staging_bucket" is null or (btrim("activity_file_ingestions"."staging_bucket") <> '' and btrim("activity_file_ingestions"."staging_path") <> '' and (("activity_file_ingestions"."expected_format" = 'fit' and "activity_file_ingestions"."expected_media_type" = 'application/vnd.ant.fit') or ("activity_file_ingestions"."expected_format" = 'gpx' and "activity_file_ingestions"."expected_media_type" = 'application/gpx+xml') or ("activity_file_ingestions"."expected_format" = 'tcx' and "activity_file_ingestions"."expected_media_type" = 'application/vnd.garmin.tcx+xml'))))),
-	CONSTRAINT "activity_file_ingestions_accepted_metadata_check" CHECK (num_nonnulls("activity_file_ingestions"."accepted_sha256", "activity_file_ingestions"."accepted_byte_size", "activity_file_ingestions"."accepted_bucket", "activity_file_ingestions"."accepted_path", "activity_file_ingestions"."accepted_media_type", "activity_file_ingestions"."accepted_format", "activity_file_ingestions"."uploaded_at") in (0, 7) and ("activity_file_ingestions"."accepted_sha256" is null or ("activity_file_ingestions"."status" = 'ready' and btrim("activity_file_ingestions"."accepted_bucket") <> '' and btrim("activity_file_ingestions"."accepted_path") <> '' and "activity_file_ingestions"."accepted_format" in ('fit', 'gpx', 'tcx') and "activity_file_ingestions"."accepted_path" = 'artifacts/sha256/' || "activity_file_ingestions"."profile_id"::text || '/' || "activity_file_ingestions"."accepted_sha256"))),
-	CONSTRAINT "activity_file_ingestions_claim_artifact_match_check" CHECK ("activity_file_ingestions"."expected_sha256" is null or "activity_file_ingestions"."accepted_sha256" is null or ("activity_file_ingestions"."accepted_sha256" = "activity_file_ingestions"."expected_sha256" and "activity_file_ingestions"."accepted_byte_size" = "activity_file_ingestions"."expected_byte_size" and "activity_file_ingestions"."accepted_bucket" = "activity_file_ingestions"."staging_bucket" and "activity_file_ingestions"."accepted_format" = "activity_file_ingestions"."expected_format" and "activity_file_ingestions"."accepted_media_type" = "activity_file_ingestions"."expected_media_type")),
-	CONSTRAINT "activity_file_ingestions_cleanup_state_check" CHECK ((not "activity_file_ingestions"."staging_cleanup_pending" or ("activity_file_ingestions"."status" = 'ready' and "activity_file_ingestions"."staging_path" is not null and "activity_file_ingestions"."accepted_path" is not null)) and ("activity_file_ingestions"."staging_cleaned_at" is null or (not "activity_file_ingestions"."staging_cleanup_pending" and "activity_file_ingestions"."staging_path" is not null)) and ("activity_file_ingestions"."staging_cleanup_error" is null or "activity_file_ingestions"."staging_cleanup_pending") and not ("activity_file_ingestions"."staging_cleaned_at" is not null and "activity_file_ingestions"."staging_cleanup_error" is not null)),
+	CONSTRAINT "activity_file_ingestions_cleanup_state_check" CHECK ((not "activity_file_ingestions"."staging_cleanup_pending" or ("activity_file_ingestions"."status" = 'ready' and "activity_file_ingestions"."staging_path" is not null and "activity_file_ingestions"."artifact_id" is not null)) and ("activity_file_ingestions"."staging_cleaned_at" is null or (not "activity_file_ingestions"."staging_cleanup_pending" and "activity_file_ingestions"."staging_path" is not null)) and ("activity_file_ingestions"."staging_cleanup_error" is null or "activity_file_ingestions"."staging_cleanup_pending") and not ("activity_file_ingestions"."staging_cleaned_at" is not null and "activity_file_ingestions"."staging_cleanup_error" is not null)),
 	CONSTRAINT "activity_file_ingestions_processing_claim_check" CHECK (("activity_file_ingestions"."status" = 'processing' and "activity_file_ingestions"."claim_token" is not null and "activity_file_ingestions"."lease_expires_at" is not null) or ("activity_file_ingestions"."status" <> 'processing' and "activity_file_ingestions"."claim_token" is null and "activity_file_ingestions"."lease_expires_at" is null))
 );
 
@@ -340,20 +335,18 @@ CREATE TABLE "activity_plans" (
 	"structure" jsonb NOT NULL,
 	"structure_hash" text NOT NULL,
 	"gps_recording_enabled" boolean DEFAULT true NOT NULL,
-	"template_visibility" text DEFAULT 'private' NOT NULL,
 	"content_visibility" text DEFAULT 'private' NOT NULL,
-	"import_provider" text,
-	"import_external_id" text,
 	"is_system_template" boolean DEFAULT false NOT NULL,
-	CONSTRAINT "activity_plans_structure_v3_check" CHECK (jsonb_typeof("activity_plans"."structure") = 'object' and "activity_plans"."structure"->>'version' = '3' and jsonb_typeof("activity_plans"."structure"->'segments') = 'array' and jsonb_array_length("activity_plans"."structure"->'segments') between 1 and 64 and pg_column_size("activity_plans"."structure") <= 1048576),
+	"system_content_key" text,
+	"system_content_version" integer,
+	"system_content_hash" text,
+	CONSTRAINT "activity_plans_structure_v3_check" CHECK (jsonb_typeof("activity_plans"."structure") = 'object' and "activity_plans"."structure"->>'version' = '3' and "activity_plans"."structure"->>'activity_category' in ('run', 'bike', 'swim', 'strength', 'other') and jsonb_typeof("activity_plans"."structure"->'segments') = 'array' and jsonb_array_length("activity_plans"."structure"->'segments') between 1 and 64 and pg_column_size("activity_plans"."structure") <= 1048576),
 	CONSTRAINT "activity_plans_structure_canonical_check" CHECK (public.activity_plan_structure_is_canonical("activity_plans"."structure")),
 	CONSTRAINT "activity_plans_structure_hash_check" CHECK ("activity_plans"."structure_hash" ~ '^v1:sha256:[0-9a-f]{64}$'),
-	CONSTRAINT "activity_plans_template_visibility_check" CHECK ("activity_plans"."template_visibility" = any(array['private'::text, 'followers'::text, 'public'::text])),
 	CONSTRAINT "activity_plans_content_visibility_check" CHECK ("activity_plans"."content_visibility" in ('private', 'followers', 'public')),
-	CONSTRAINT "activity_plans_import_provider_non_empty_check" CHECK ("activity_plans"."import_provider" is null or btrim("activity_plans"."import_provider") <> ''),
-	CONSTRAINT "activity_plans_import_external_id_non_empty_check" CHECK ("activity_plans"."import_external_id" is null or btrim("activity_plans"."import_external_id") <> ''),
-	CONSTRAINT "activity_plans_system_templates_public_check" CHECK ("activity_plans"."is_system_template" = false or ("activity_plans"."template_visibility" = 'public' and "activity_plans"."content_visibility" = 'public')),
-	CONSTRAINT "activity_plans_system_template_check" CHECK (("activity_plans"."is_system_template" = true and "activity_plans"."profile_id" is null) or ("activity_plans"."is_system_template" = false and "activity_plans"."profile_id" is not null))
+	CONSTRAINT "activity_plans_system_templates_public_check" CHECK ("activity_plans"."is_system_template" = false or "activity_plans"."content_visibility" = 'public'),
+	CONSTRAINT "activity_plans_system_template_check" CHECK (("activity_plans"."is_system_template" = true and "activity_plans"."profile_id" is null) or ("activity_plans"."is_system_template" = false and "activity_plans"."profile_id" is not null)),
+	CONSTRAINT "activity_plans_system_content_identity_check" CHECK (("activity_plans"."is_system_template" and "activity_plans"."system_content_key" is not null and btrim("activity_plans"."system_content_key") <> '' and "activity_plans"."system_content_version" > 0 and "activity_plans"."system_content_hash" ~ '^v1:sha256:[0-9a-f]{64}$') or (not "activity_plans"."is_system_template" and num_nonnulls("activity_plans"."system_content_key", "activity_plans"."system_content_version", "activity_plans"."system_content_hash") = 0))
 );
 
 CREATE TABLE "activity_routes" (
@@ -670,11 +663,11 @@ CREATE TABLE "group_events" (
 	"group_id" uuid NOT NULL,
 	"series_id" uuid,
 	"created_by_profile_id" uuid,
-	"title" text,
+	"title" text NOT NULL,
 	"description" text,
 	"starts_at" timestamp with time zone NOT NULL,
 	"ends_at" timestamp with time zone,
-	"timezone" text,
+	"timezone" text NOT NULL,
 	"recurrence_rule" text,
 	"recurrence_timezone" text,
 	"occurrence_key" text,
@@ -684,15 +677,13 @@ CREATE TABLE "group_events" (
 	"cancelled_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "group_events_title_non_empty" CHECK ("group_events"."title" is null or btrim("group_events"."title") <> ''),
-	CONSTRAINT "group_events_root_title_required" CHECK ("group_events"."series_id" is not null or "group_events"."title" is not null),
+	CONSTRAINT "group_events_title_non_empty" CHECK (btrim("group_events"."title") <> ''),
 	CONSTRAINT "group_events_time_window" CHECK ("group_events"."ends_at" is null or "group_events"."ends_at" > "group_events"."starts_at"),
 	CONSTRAINT "group_events_series_not_self" CHECK ("group_events"."series_id" is null or "group_events"."series_id" <> "group_events"."id"),
-	CONSTRAINT "group_events_timezone_non_empty" CHECK ("group_events"."timezone" is null or btrim("group_events"."timezone") <> ''),
+	CONSTRAINT "group_events_timezone_non_empty" CHECK (btrim("group_events"."timezone") <> ''),
 	CONSTRAINT "group_events_recurrence_rule_non_empty" CHECK ("group_events"."recurrence_rule" is null or btrim("group_events"."recurrence_rule") <> ''),
 	CONSTRAINT "group_events_recurrence_timezone_non_empty" CHECK ("group_events"."recurrence_timezone" is null or btrim("group_events"."recurrence_timezone") <> ''),
 	CONSTRAINT "group_events_recurrence_timezone_requires_rule" CHECK ("group_events"."recurrence_timezone" is null or "group_events"."recurrence_rule" is not null),
-	CONSTRAINT "group_events_recurring_series_timezone_required" CHECK ("group_events"."recurrence_rule" is null or "group_events"."timezone" is not null),
 	CONSTRAINT "group_events_occurrence_key_required" CHECK ("group_events"."series_id" is null or ("group_events"."occurrence_key" is not null and btrim("group_events"."occurrence_key") <> '')),
 	CONSTRAINT "group_events_location_name_non_empty" CHECK ("group_events"."location_name" is null or btrim("group_events"."location_name") <> '')
 );
@@ -778,7 +769,8 @@ CREATE TABLE "integration_resource_links" (
 	"provider_metadata" jsonb,
 	"payload_hash" text,
 	CONSTRAINT "integration_resource_links_internal_unique" UNIQUE("integration_id","resource_kind","internal_resource_id"),
-	CONSTRAINT "integration_resource_links_external_unique" UNIQUE("integration_id","resource_kind","external_id")
+	CONSTRAINT "integration_resource_links_external_unique" UNIQUE("integration_id","resource_kind","external_id"),
+	CONSTRAINT "integration_resource_links_no_activity_check" CHECK ("integration_resource_links"."resource_kind" <> 'activity')
 );
 
 CREATE TABLE "integrations" (
@@ -793,6 +785,7 @@ CREATE TABLE "integrations" (
 	"remote_revoked_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "integrations_id_profile_unique" UNIQUE("id","profile_id"),
 	CONSTRAINT "unique_integration_type" UNIQUE("profile_id","provider")
 );
 
@@ -1010,6 +1003,119 @@ CREATE TABLE "profile_metrics" (
 	CONSTRAINT "profile_metrics_provenance_object_check" CHECK ("profile_metrics"."provenance" is null or jsonb_typeof("profile_metrics"."provenance") = 'object')
 );
 
+CREATE TABLE "profile_athlete_state" (
+	"profile_id" uuid PRIMARY KEY NOT NULL,
+	"source_revision" bigint DEFAULT 0 NOT NULL,
+	"published_revision" bigint DEFAULT 0 NOT NULL,
+	"dirty_from_at" timestamp with time zone,
+	"fitness" numeric DEFAULT 0 NOT NULL,
+	"fatigue" numeric DEFAULT 0 NOT NULL,
+	"evidence_confidence" numeric DEFAULT 0 NOT NULL,
+	"coverage_start_at" timestamp with time zone,
+	"coverage_end_at" timestamp with time zone,
+	"last_activity_at" timestamp with time zone,
+	"algorithm_version" text DEFAULT 'athlete-state-projection-v1' NOT NULL,
+	"computed_at" timestamp with time zone,
+	"lease_token" uuid,
+	"lease_expires_at" timestamp with time zone,
+	"retry_after" timestamp with time zone,
+	"consecutive_failures" integer DEFAULT 0 NOT NULL,
+	"last_failure_code" text,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "profile_athlete_state_revision_check" CHECK ("profile_athlete_state"."source_revision" >= 0 and "profile_athlete_state"."published_revision" >= 0 and "profile_athlete_state"."published_revision" <= "profile_athlete_state"."source_revision"),
+	CONSTRAINT "profile_athlete_state_fitness_check" CHECK ("profile_athlete_state"."fitness" >= 0),
+	CONSTRAINT "profile_athlete_state_fatigue_check" CHECK ("profile_athlete_state"."fatigue" >= 0),
+	CONSTRAINT "profile_athlete_state_confidence_check" CHECK ("profile_athlete_state"."evidence_confidence" between 0 and 1),
+	CONSTRAINT "profile_athlete_state_lease_check" CHECK (num_nonnulls("profile_athlete_state"."lease_token", "profile_athlete_state"."lease_expires_at") in (0, 2)),
+	CONSTRAINT "profile_athlete_state_failures_check" CHECK ("profile_athlete_state"."consecutive_failures" >= 0),
+	CONSTRAINT "profile_athlete_state_algorithm_check" CHECK (btrim("profile_athlete_state"."algorithm_version") <> '')
+);
+
+CREATE TABLE "profile_performance_estimates" (
+	"profile_id" uuid NOT NULL,
+	"capability_kind" text NOT NULL,
+	"activity_category" text NOT NULL,
+	"value" numeric NOT NULL,
+	"unit" text NOT NULL,
+	"confidence" numeric NOT NULL,
+	"effective_at" timestamp with time zone NOT NULL,
+	"evidence_window_start_at" timestamp with time zone,
+	"evidence_window_end_at" timestamp with time zone,
+	"algorithm_version" text NOT NULL,
+	"source_revision" bigint NOT NULL,
+	"target_fact" jsonb,
+	"computed_at" timestamp with time zone NOT NULL,
+	CONSTRAINT "profile_performance_estimates_profile_id_capability_kind_activity_category_pk" PRIMARY KEY("profile_id","capability_kind","activity_category"),
+	CONSTRAINT "profile_performance_estimates_kind_check" CHECK (btrim("profile_performance_estimates"."capability_kind") <> ''),
+	CONSTRAINT "profile_performance_estimates_unit_check" CHECK (btrim("profile_performance_estimates"."unit") <> ''),
+	CONSTRAINT "profile_performance_estimates_value_check" CHECK ("profile_performance_estimates"."value" >= 0),
+	CONSTRAINT "profile_performance_estimates_confidence_check" CHECK ("profile_performance_estimates"."confidence" between 0 and 1),
+	CONSTRAINT "profile_performance_estimates_category_check" CHECK ("profile_performance_estimates"."activity_category" in ('run', 'bike', 'swim', 'strength', 'other')),
+	CONSTRAINT "profile_performance_estimates_algorithm_check" CHECK (btrim("profile_performance_estimates"."algorithm_version") <> ''),
+	CONSTRAINT "profile_performance_estimates_revision_check" CHECK ("profile_performance_estimates"."source_revision" >= 0)
+);
+
+CREATE TABLE "activity_import_runs" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"profile_id" uuid NOT NULL,
+	"integration_id" uuid,
+	"integration_generation" bigint,
+	"kind" text NOT NULL,
+	"status" text DEFAULT 'queued' NOT NULL,
+	"window_start_at" timestamp with time zone,
+	"window_end_at" timestamp with time zone,
+	"next_cursor" text,
+	"next_page" integer,
+	"discovered_count" integer DEFAULT 0 NOT NULL,
+	"imported_count" integer DEFAULT 0 NOT NULL,
+	"skipped_count" integer DEFAULT 0 NOT NULL,
+	"failed_count" integer DEFAULT 0 NOT NULL,
+	"material_change_count" integer DEFAULT 0 NOT NULL,
+	"material_effective_from_at" timestamp with time zone,
+	"earliest_activity_at" timestamp with time zone,
+	"latest_activity_at" timestamp with time zone,
+	"started_at" timestamp with time zone,
+	"completed_at" timestamp with time zone,
+	"last_error_code" text,
+	"superseded_by_run_id" uuid,
+	"superseded_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "activity_import_runs_id_profile_unique" UNIQUE("id","profile_id"),
+	CONSTRAINT "activity_import_runs_kind_check" CHECK ("activity_import_runs"."kind" in ('onboarding', 'history_sync', 'manual_sync')),
+	CONSTRAINT "activity_import_runs_status_check" CHECK ("activity_import_runs"."status" in ('queued', 'running', 'completed', 'failed', 'cancelled')),
+	CONSTRAINT "activity_import_runs_counts_check" CHECK ("activity_import_runs"."discovered_count" >= 0 and "activity_import_runs"."imported_count" >= 0 and "activity_import_runs"."skipped_count" >= 0 and "activity_import_runs"."failed_count" >= 0 and "activity_import_runs"."material_change_count" >= 0),
+	CONSTRAINT "activity_import_runs_next_page_check" CHECK ("activity_import_runs"."next_page" is null or "activity_import_runs"."next_page" >= 1),
+	CONSTRAINT "activity_import_runs_cursor_page_check" CHECK (num_nonnulls("activity_import_runs"."next_cursor", "activity_import_runs"."next_page") <= 1),
+	CONSTRAINT "activity_import_runs_integration_generation_check" CHECK (("activity_import_runs"."integration_id" is null) = ("activity_import_runs"."integration_generation" is null)),
+	CONSTRAINT "activity_import_runs_terminal_check" CHECK ("activity_import_runs"."status" not in ('completed', 'failed', 'cancelled') or "activity_import_runs"."completed_at" is not null),
+	CONSTRAINT "activity_import_runs_error_check" CHECK ("activity_import_runs"."last_error_code" is null or btrim("activity_import_runs"."last_error_code") <> ''),
+	CONSTRAINT "activity_import_runs_supersession_check" CHECK (num_nonnulls("activity_import_runs"."superseded_by_run_id", "activity_import_runs"."superseded_at") in (0, 2) and ("activity_import_runs"."superseded_by_run_id" is null or ("activity_import_runs"."status" = 'failed' and "activity_import_runs"."superseded_by_run_id" <> "activity_import_runs"."id")))
+);
+
+CREATE TABLE "activity_source_references" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"profile_id" uuid NOT NULL,
+	"activity_id" uuid NOT NULL,
+	"integration_id" uuid NOT NULL,
+	"provider" text NOT NULL,
+	"provider_external_id" text NOT NULL,
+	"provider_revision" text,
+	"origin_provider" text,
+	"origin_external_id" text,
+	"artifact_sha256" text,
+	"last_import_run_id" uuid,
+	"last_material_import_run_id" uuid,
+	"last_material_effective_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "activity_source_references_provider_unique" UNIQUE("profile_id","provider","provider_external_id"),
+	CONSTRAINT "activity_source_references_provider_check" CHECK (btrim("activity_source_references"."provider") <> '' and btrim("activity_source_references"."provider_external_id") <> ''),
+	CONSTRAINT "activity_source_references_origin_check" CHECK (("activity_source_references"."origin_provider" is null) = ("activity_source_references"."origin_external_id" is null)),
+	CONSTRAINT "activity_source_references_artifact_check" CHECK ("activity_source_references"."artifact_sha256" is null or "activity_source_references"."artifact_sha256" ~ '^[0-9a-f]{64}$'),
+	CONSTRAINT "activity_source_references_material_import_check" CHECK (("activity_source_references"."last_material_import_run_id" is null) = ("activity_source_references"."last_material_effective_at" is null))
+);
+
 CREATE TABLE "profile_training_settings" (
 	"profile_id" uuid PRIMARY KEY NOT NULL,
 	"settings" jsonb NOT NULL,
@@ -1047,6 +1153,7 @@ CREATE TABLE "provider_sync_jobs" (
 	"integration_id" uuid NOT NULL,
 	"provider" "integration_provider" NOT NULL,
 	"integration_generation" integer DEFAULT 1 NOT NULL,
+	"import_run_id" uuid,
 	"job_type" text NOT NULL,
 	"operation" text,
 	"resource_kind" "integration_resource_kind",
@@ -1120,17 +1227,25 @@ CREATE TABLE "training_plans" (
 	"description" text,
 	"structure" jsonb NOT NULL,
 	"structure_hash" text NOT NULL,
-	"template_visibility" text DEFAULT 'private' NOT NULL,
 	"content_visibility" text DEFAULT 'private' NOT NULL,
 	"is_system_template" boolean DEFAULT false NOT NULL,
+	"system_content_key" text,
+	"system_content_version" integer,
+	"system_content_hash" text,
 	"sessions_per_week_target" integer,
 	"duration_hours" numeric(12, 2),
+	"revision" integer DEFAULT 1 NOT NULL,
+	"validated_state_revision" bigint,
+	"validated_at" timestamp with time zone,
+	"projection_algorithm_version" text,
 	CONSTRAINT "training_plans_structure_v1_check" CHECK (jsonb_typeof("training_plans"."structure") = 'object' and "training_plans"."structure"->>'version' = '1' and jsonb_typeof("training_plans"."structure"->'sessions') = 'array' and jsonb_array_length("training_plans"."structure"->'sessions') > 0 and pg_column_size("training_plans"."structure") <= 1048576),
 	CONSTRAINT "training_plans_structure_hash_check" CHECK ("training_plans"."structure_hash" ~ '^v1:sha256:[0-9a-f]{64}$'),
-	CONSTRAINT "training_plans_template_visibility_check" CHECK ("training_plans"."template_visibility" = any(array['private'::text, 'followers'::text, 'public'::text])),
 	CONSTRAINT "training_plans_content_visibility_check" CHECK ("training_plans"."content_visibility" in ('private', 'followers', 'public')),
-	CONSTRAINT "training_plans_system_templates_public_check" CHECK ("training_plans"."is_system_template" = false or ("training_plans"."template_visibility" = 'public' and "training_plans"."content_visibility" = 'public')),
-	CONSTRAINT "training_plans_template_profile_check" CHECK (("training_plans"."is_system_template" = true and "training_plans"."profile_id" is null) or ("training_plans"."is_system_template" = false and "training_plans"."profile_id" is not null))
+	CONSTRAINT "training_plans_system_templates_public_check" CHECK ("training_plans"."is_system_template" = false or "training_plans"."content_visibility" = 'public'),
+	CONSTRAINT "training_plans_template_profile_check" CHECK (("training_plans"."is_system_template" = true and "training_plans"."profile_id" is null) or ("training_plans"."is_system_template" = false and "training_plans"."profile_id" is not null)),
+	CONSTRAINT "training_plans_system_content_identity_check" CHECK (("training_plans"."is_system_template" and "training_plans"."system_content_key" is not null and btrim("training_plans"."system_content_key") <> '' and "training_plans"."system_content_version" > 0 and "training_plans"."system_content_hash" ~ '^v1:sha256:[0-9a-f]{64}$') or (not "training_plans"."is_system_template" and num_nonnulls("training_plans"."system_content_key", "training_plans"."system_content_version", "training_plans"."system_content_hash") = 0)),
+	CONSTRAINT "training_plans_revision_check" CHECK ("training_plans"."revision" > 0),
+	CONSTRAINT "training_plans_projection_validation_check" CHECK (num_nonnulls("training_plans"."validated_state_revision", "training_plans"."validated_at", "training_plans"."projection_algorithm_version") in (0, 3) and ("training_plans"."validated_state_revision" is null or "training_plans"."validated_state_revision" >= 0) and ("training_plans"."projection_algorithm_version" is null or btrim("training_plans"."projection_algorithm_version") <> ''))
 );
 
 ALTER TABLE "accounts" ADD CONSTRAINT "accounts_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
@@ -1223,10 +1338,21 @@ ALTER TABLE "organizations" ADD CONSTRAINT "organizations_root_owner_membership_
 ALTER TABLE "profile_goals" ADD CONSTRAINT "profile_goals_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE no action ON UPDATE no action;
 ALTER TABLE "profile_metrics" ADD CONSTRAINT "profile_metrics_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "profile_metrics" ADD CONSTRAINT "profile_metrics_reference_activity_id_activities_id_fk" FOREIGN KEY ("reference_activity_id") REFERENCES "public"."activities"("id") ON DELETE set null ON UPDATE no action;
+ALTER TABLE "profile_athlete_state" ADD CONSTRAINT "profile_athlete_state_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "profile_performance_estimates" ADD CONSTRAINT "profile_performance_estimates_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "activity_import_runs" ADD CONSTRAINT "activity_import_runs_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "activity_import_runs" ADD CONSTRAINT "activity_import_runs_integration_profile_fkey" FOREIGN KEY ("integration_id","profile_id") REFERENCES "public"."integrations"("id","profile_id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "activity_import_runs" ADD CONSTRAINT "activity_import_runs_superseded_by_run_id_activity_import_runs_id_fk" FOREIGN KEY ("superseded_by_run_id") REFERENCES "public"."activity_import_runs"("id") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "activity_source_references" ADD CONSTRAINT "activity_source_references_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "activity_source_references" ADD CONSTRAINT "activity_source_references_integration_profile_fkey" FOREIGN KEY ("integration_id","profile_id") REFERENCES "public"."integrations"("id","profile_id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "activity_source_references" ADD CONSTRAINT "activity_source_references_activity_profile_fkey" FOREIGN KEY ("activity_id","profile_id") REFERENCES "public"."activities"("id","profile_id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "activity_source_references" ADD CONSTRAINT "activity_source_refs_last_import_run_profile_fk" FOREIGN KEY ("last_import_run_id","profile_id") REFERENCES "public"."activity_import_runs"("id","profile_id") ON DELETE set null ("last_import_run_id") ON UPDATE no action;
+ALTER TABLE "activity_source_references" ADD CONSTRAINT "activity_source_refs_material_import_run_profile_fk" FOREIGN KEY ("last_material_import_run_id","profile_id") REFERENCES "public"."activity_import_runs"("id","profile_id") ON DELETE set null ("last_material_import_run_id") ON UPDATE no action;
 ALTER TABLE "profile_training_settings" ADD CONSTRAINT "profile_training_settings_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE no action ON UPDATE no action;
 ALTER TABLE "profiles" ADD CONSTRAINT "profiles_id_fkey" FOREIGN KEY ("id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "provider_sync_jobs" ADD CONSTRAINT "provider_sync_jobs_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "provider_sync_jobs" ADD CONSTRAINT "provider_sync_jobs_integration_id_integrations_id_fk" FOREIGN KEY ("integration_id") REFERENCES "public"."integrations"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "provider_sync_jobs" ADD CONSTRAINT "provider_sync_jobs_import_run_profile_fkey" FOREIGN KEY ("import_run_id","profile_id") REFERENCES "public"."activity_import_runs"("id","profile_id") ON DELETE set null ("import_run_id") ON UPDATE no action;
 ALTER TABLE "provider_sync_state" ADD CONSTRAINT "provider_sync_state_integration_id_integrations_id_fk" FOREIGN KEY ("integration_id") REFERENCES "public"."integrations"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "provider_webhook_receipts" ADD CONSTRAINT "provider_webhook_receipts_integration_id_integrations_id_fk" FOREIGN KEY ("integration_id") REFERENCES "public"."integrations"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "provider_webhook_receipts" ADD CONSTRAINT "provider_webhook_receipts_job_id_provider_sync_jobs_id_fk" FOREIGN KEY ("job_id") REFERENCES "public"."provider_sync_jobs"("id") ON DELETE set null ON UPDATE no action;
@@ -1236,16 +1362,15 @@ CREATE INDEX "sessions_userId_idx" ON "sessions" USING btree ("user_id");
 CREATE INDEX "verifications_identifier_idx" ON "verifications" USING btree ("identifier");
 CREATE INDEX "idx_activities_activity_plan" ON "activities" USING btree ("activity_plan_id") WHERE "activities"."activity_plan_id" is not null;
 CREATE INDEX "idx_activities_profile_started" ON "activities" USING btree ("profile_id","started_at");
+CREATE INDEX "idx_activities_athlete_state_replay" ON "activities" USING btree ("profile_id","finished_at","id") WHERE "athlete_state_common_load" is not null and "athlete_state_activity_category" is not null and "athlete_state_evidence_confidence" is not null and "athlete_state_input_version" is not null and "athlete_state_computed_at" is not null;
 CREATE INDEX "idx_activities_started" ON "activities" USING btree ("started_at");
 CREATE INDEX "idx_activities_content_visibility" ON "activities" USING btree ("content_visibility");
-CREATE UNIQUE INDEX "idx_activities_provider_external_unique" ON "activities" USING btree ("provider","external_id") WHERE "activities"."provider" is not null and "activities"."external_id" is not null;
-CREATE INDEX "idx_activities_provider_external" ON "activities" USING btree ("provider","external_id") WHERE "activities"."external_id" is not null;
 CREATE UNIQUE INDEX "activity_artifact_links_current_source_unique" ON "activity_artifact_links" USING btree ("activity_id") WHERE "activity_artifact_links"."role" = 'source' and "activity_artifact_links"."is_current" = true;
 CREATE INDEX "idx_activity_artifact_links_artifact" ON "activity_artifact_links" USING btree ("artifact_id");
 CREATE INDEX "idx_activity_artifacts_profile" ON "activity_artifacts" USING btree ("profile_id");
 CREATE INDEX "idx_activity_efforts_activity_id" ON "activity_efforts" USING btree ("activity_id");
 CREATE INDEX "idx_activity_efforts_segment_id" ON "activity_efforts" USING btree ("segment_id");
-CREATE INDEX "idx_activity_efforts_profile_id" ON "activity_efforts" USING btree ("profile_id");
+CREATE INDEX "idx_activity_efforts_athlete_state_replay" ON "activity_efforts" USING btree ("profile_id","id");
 CREATE INDEX "idx_swimming_css_protocol_evidence_profile_observed" ON "swimming_css_protocol_evidence" USING btree ("profile_id","observed_at","id") WHERE "swimming_css_protocol_evidence"."status" = 'qualified';
 CREATE INDEX "idx_swimming_css_protocol_evidence_activity" ON "swimming_css_protocol_evidence" USING btree ("activity_id");
 CREATE INDEX "idx_swimming_css_protocol_evidence_source_artifact" ON "swimming_css_protocol_evidence" USING btree ("source_artifact_id");
@@ -1258,10 +1383,9 @@ CREATE INDEX "idx_activity_file_ingestions_provider_external" ON "activity_file_
 CREATE UNIQUE INDEX "activity_file_ingestions_profile_operation_unique" ON "activity_file_ingestions" USING btree ("profile_id","operation_key");
 CREATE INDEX "idx_activity_plans_profile_id" ON "activity_plans" USING btree ("profile_id") WHERE "activity_plans"."profile_id" is not null;
 CREATE INDEX "idx_activity_plans_system_templates" ON "activity_plans" USING btree ("is_system_template") WHERE "activity_plans"."is_system_template" = true;
-CREATE INDEX "idx_activity_plans_visibility" ON "activity_plans" USING btree ("template_visibility");
 CREATE INDEX "idx_activity_plans_content_visibility" ON "activity_plans" USING btree ("content_visibility");
 CREATE INDEX "idx_activity_plans_structure_categories" ON "activity_plans" USING gin ("structure" jsonb_path_ops);
-CREATE UNIQUE INDEX "idx_activity_plans_import_identity" ON "activity_plans" USING btree ("profile_id","import_provider","import_external_id") WHERE "activity_plans"."import_provider" is not null and "activity_plans"."import_external_id" is not null;
+CREATE UNIQUE INDEX "activity_plans_system_content_key_unique" ON "activity_plans" USING btree ("system_content_key") WHERE "activity_plans"."system_content_key" is not null;
 CREATE INDEX "idx_routes_profile_id" ON "activity_routes" USING btree ("profile_id") WHERE "activity_routes"."profile_id" is not null;
 CREATE INDEX "idx_routes_name" ON "activity_routes" USING btree ("name");
 CREATE INDEX "idx_routes_created_at" ON "activity_routes" USING btree ("created_at");
@@ -1362,6 +1486,17 @@ CREATE INDEX "idx_profile_metrics_profile" ON "profile_metrics" USING btree ("pr
 CREATE INDEX "idx_profile_metrics_recorded_at" ON "profile_metrics" USING btree ("recorded_at");
 CREATE INDEX "idx_profile_metrics_reference_activity" ON "profile_metrics" USING btree ("reference_activity_id") WHERE "profile_metrics"."reference_activity_id" is not null;
 CREATE INDEX "idx_profile_metrics_temporal_lookup" ON "profile_metrics" USING btree ("profile_id","metric_type","recorded_at");
+CREATE INDEX "profile_athlete_state_claim_idx" ON "profile_athlete_state" USING btree ("retry_after","dirty_from_at","updated_at");
+CREATE INDEX "profile_performance_estimates_profile_revision_idx" ON "profile_performance_estimates" USING btree ("profile_id","source_revision");
+CREATE INDEX "activity_import_runs_profile_status_updated_idx" ON "activity_import_runs" USING btree ("profile_id","status","updated_at");
+CREATE INDEX "activity_import_runs_integration_status_updated_idx" ON "activity_import_runs" USING btree ("integration_id","status","updated_at") WHERE "activity_import_runs"."integration_id" is not null;
+CREATE UNIQUE INDEX "activity_import_runs_running_bulk_profile_unique" ON "activity_import_runs" USING btree ("profile_id") WHERE "activity_import_runs"."status" = 'running' and "activity_import_runs"."kind" in ('onboarding', 'history_sync', 'manual_sync');
+CREATE UNIQUE INDEX "activity_source_references_origin_unique" ON "activity_source_references" USING btree ("profile_id","origin_provider","origin_external_id") WHERE "activity_source_references"."origin_provider" is not null and "activity_source_references"."origin_external_id" is not null;
+CREATE UNIQUE INDEX "activity_source_references_artifact_unique" ON "activity_source_references" USING btree ("profile_id","artifact_sha256") WHERE "activity_source_references"."artifact_sha256" is not null;
+CREATE INDEX "activity_source_references_activity_idx" ON "activity_source_references" USING btree ("activity_id");
+CREATE INDEX "activity_source_references_integration_idx" ON "activity_source_references" USING btree ("integration_id");
+CREATE INDEX "activity_source_references_import_run_idx" ON "activity_source_references" USING btree ("last_import_run_id") WHERE "activity_source_references"."last_import_run_id" is not null;
+CREATE INDEX "activity_source_references_material_import_run_idx" ON "activity_source_references" USING btree ("last_material_import_run_id") WHERE "activity_source_references"."last_material_import_run_id" is not null;
 CREATE UNIQUE INDEX "profiles_username_unique_idx" ON "profiles" USING btree ("username");
 CREATE UNIQUE INDEX "profiles_email_unique_idx" ON "profiles" USING btree ("email") WHERE "profiles"."email" is not null;
 CREATE UNIQUE INDEX "provider_sync_jobs_queue_sequence_key" ON "provider_sync_jobs" USING btree ("queue_sequence");
@@ -1370,6 +1505,7 @@ CREATE INDEX "idx_provider_sync_jobs_provider_profile_status" ON "provider_sync_
 CREATE INDEX "idx_provider_sync_jobs_dedupe_key" ON "provider_sync_jobs" USING btree ("dedupe_key");
 CREATE INDEX "idx_provider_sync_jobs_lane_status" ON "provider_sync_jobs" USING btree ("sync_lane_key","status","run_at");
 CREATE INDEX "idx_provider_sync_jobs_integration_id" ON "provider_sync_jobs" USING btree ("integration_id");
+CREATE INDEX "idx_provider_sync_jobs_import_run_id" ON "provider_sync_jobs" USING btree ("import_run_id") WHERE "provider_sync_jobs"."import_run_id" is not null;
 CREATE INDEX "idx_provider_sync_jobs_integration_generation_status" ON "provider_sync_jobs" USING btree ("integration_id","integration_generation","status");
 CREATE INDEX "idx_provider_sync_jobs_profile_id" ON "provider_sync_jobs" USING btree ("profile_id");
 CREATE INDEX "idx_provider_sync_jobs_supersedes_job_id" ON "provider_sync_jobs" USING btree ("supersedes_job_id") WHERE "provider_sync_jobs"."supersedes_job_id" is not null;
@@ -1381,8 +1517,8 @@ CREATE INDEX "idx_provider_webhook_receipts_integration_generation_status" ON "p
 CREATE INDEX "idx_training_plans_profile_id" ON "training_plans" USING btree ("profile_id") WHERE "training_plans"."profile_id" is not null;
 CREATE INDEX "idx_training_plans_is_system_template" ON "training_plans" USING btree ("is_system_template") WHERE "training_plans"."is_system_template" = true;
 CREATE INDEX "idx_training_plans_name" ON "training_plans" USING btree ("name");
-CREATE INDEX "idx_training_plans_visibility" ON "training_plans" USING btree ("template_visibility");
 CREATE INDEX "idx_training_plans_content_visibility" ON "training_plans" USING btree ("content_visibility");
+CREATE UNIQUE INDEX "training_plans_system_content_key_unique" ON "training_plans" USING btree ("system_content_key") WHERE "training_plans"."system_content_key" is not null;
 
 
 CREATE OR REPLACE FUNCTION "public"."activity_artifact_content_path"("target_profile_id" "uuid", "target_digest" "text") RETURNS "text"
@@ -1461,11 +1597,10 @@ CREATE OR REPLACE FUNCTION "public"."activity_plan_segment_is_canonical"("input"
       and public.activity_plan_jsonb_is_string(input -> 'name', 1, 100)
       and (input -> 'notes' is null or public.activity_plan_jsonb_is_string(input -> 'notes', 0, 1000))
       and public.activity_plan_duration_is_canonical(input -> 'duration', true)
-    when 'activity' then public.activity_plan_jsonb_has_exact_keys(input, array['id', 'name', 'role', 'activity_category', 'intervals'], array['notes'])
+    when 'activity' then public.activity_plan_jsonb_has_exact_keys(input, array['id', 'name', 'role', 'intervals'], array['notes'])
       and public.activity_plan_jsonb_is_uuid(input -> 'id')
       and public.activity_plan_jsonb_is_string(input -> 'name', 1, 100)
       and (input -> 'notes' is null or public.activity_plan_jsonb_is_string(input -> 'notes', 0, 1000))
-      and input ->> 'activity_category' in ('run', 'bike', 'swim', 'strength', 'other')
       and pg_catalog.jsonb_typeof(input -> 'intervals') = 'array'
       and pg_catalog.jsonb_array_length(input -> 'intervals') between 1 and 50
       and not exists (
@@ -1487,10 +1622,6 @@ CREATE OR REPLACE FUNCTION "public"."activity_plan_segment_is_canonical"("input"
               or not public.activity_plan_duration_is_canonical(step_value -> 'duration')
               or pg_catalog.jsonb_typeof(step_value -> 'targets') <> 'array'
               or pg_catalog.jsonb_array_length(step_value -> 'targets') not between 1 and 3
-              or exists (
-                select 1 from pg_catalog.jsonb_array_elements(step_value -> 'targets') target_value
-                where not public.activity_plan_target_is_canonical(target_value, input ->> 'activity_category')
-              )
           )
       )
     else false
@@ -1507,7 +1638,6 @@ declare
   step_value jsonb;
   seen_ids text[] := '{}'::text[];
   activity_category text;
-  activity_category_value text;
   prior_was_rest boolean := false;
   activity_count integer := 0;
   expanded_occurrences numeric := 0;
@@ -1519,10 +1649,12 @@ begin
   -- serialization headroom so a Core-valid document is not rejected here.
   if input is null
     or pg_catalog.octet_length(input::text) > 1200000
-    or not public.activity_plan_jsonb_has_exact_keys(input, array['version', 'segments'])
+    or not public.activity_plan_jsonb_has_exact_keys(input, array['version', 'activity_category', 'segments'])
     or input -> 'version' <> '3'::jsonb
+    or input ->> 'activity_category' not in ('run', 'bike', 'swim', 'strength', 'other')
     or pg_catalog.jsonb_typeof(input -> 'segments') <> 'array'
     or pg_catalog.jsonb_array_length(input -> 'segments') not between 1 and 64 then return false; end if;
+  activity_category := input ->> 'activity_category';
   for segment_value in select value from pg_catalog.jsonb_array_elements(input -> 'segments') loop
     if not public.activity_plan_segment_is_canonical(segment_value) then return false; end if;
     id_value := segment_value ->> 'id';
@@ -1535,8 +1667,6 @@ begin
     else
       prior_was_rest := false;
       activity_count := activity_count + 1;
-      activity_category_value := segment_value ->> 'activity_category';
-      if activity_category is null then activity_category := activity_category_value; elsif activity_category <> activity_category_value then return false; end if;
       for interval_value in select value from pg_catalog.jsonb_array_elements(segment_value -> 'intervals') loop
         id_value := interval_value ->> 'id';
         if id_value = any(seen_ids) then return false; end if;
@@ -1549,6 +1679,10 @@ begin
           if step_value -> 'duration' ->> 'type' = 'time' then
             explicit_timed_seconds := explicit_timed_seconds + (step_value -> 'duration' ->> 'seconds')::numeric * (interval_value ->> 'repetitions')::numeric;
           end if;
+          if exists (
+            select 1 from pg_catalog.jsonb_array_elements(step_value -> 'targets') target_value
+            where not public.activity_plan_target_is_canonical(target_value, activity_category)
+          ) then return false; end if;
         end loop;
       end loop;
     end if;
@@ -2518,8 +2652,7 @@ begin
   update public.activity_segments set source_artifact_id=null,source_session_index=null,source_message_index=null
     where source_artifact_id=target_id;
   update public.activity_file_ingestions set artifact_id=null,status='failed',claim_token=null,lease_expires_at=null,
-    accepted_sha256=null,accepted_byte_size=null,accepted_bucket=null,accepted_path=null,
-    accepted_media_type=null,accepted_format=null,uploaded_at=null,
+    uploaded_at=null,
     staging_cleanup_pending=false,staging_cleanup_error=null,
     failed_at=coalesce(failed_at,now()),last_error_code='artifact_deletion_requested',
     last_error_message='Accepted source artifact entered controlled deletion',updated_at=now()
@@ -3097,6 +3230,14 @@ ALTER TABLE "public"."profile_goals" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."profile_metrics" ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE "public"."activity_import_runs" ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE "public"."activity_source_references" ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE "public"."profile_athlete_state" ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE "public"."profile_performance_estimates" ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE "public"."profile_training_settings" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
@@ -3216,3 +3357,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON TABLES
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, authenticated;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO service_role;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
+
+COMMIT;

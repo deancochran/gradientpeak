@@ -147,7 +147,7 @@ function DraftHarness() {
       />
       <Pressable
         testID="metadata-set-public"
-        onPress={() => drafts.setDraftTemplateVisibility("public")}
+        onPress={() => drafts.setDraftContentVisibility("public")}
       />
       <Pressable testID="metadata-cancel" onPress={() => drafts.cancelDraftForSheet("metadata")} />
       <Text testID="metadata-apply-result">{metadataApplyResult ?? "pending"}</Text>
@@ -181,7 +181,7 @@ function renderDraftHarness({
       activityPlanSort={sort}
       planningConstraintFields={planningConstraintFields}
       planPreferences={basePlanPreferences}
-      planMetadata={{ name: "Plan", description: "", templateVisibility: "private" }}
+      planMetadata={{ name: "Plan", description: "", contentVisibility: "private" }}
       onApplyActivityFilters={onApplyActivityFilters}
       onApplyPlanningPreferences={onApplyPlanningPreferences}
       onApplyMetadata={onApplyMetadata}
@@ -289,7 +289,7 @@ describe("TrainingPlanBuilderSheetDraftsProvider", () => {
     expect(onApplyMetadata).toHaveBeenCalledWith({
       name: "Updated plan",
       description: "",
-      templateVisibility: "public",
+      contentVisibility: "public",
     });
   });
 

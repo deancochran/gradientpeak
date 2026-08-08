@@ -1,23 +1,15 @@
 import type { ProfileGoal } from "@repo/core";
-import { keepPreviousData } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
-import { addDaysToDateKey, toDateKey, toLocalDayStartIso } from "@/lib/calendar/dateMath";
+import { addDaysToDateKey } from "@/lib/calendar/dateMath";
 import { buildOpenEventRoute } from "@/lib/calendar/eventRouting";
-import {
-  attachSelectedGroupEventActivityPlans,
-  buildGroupEventsByDate,
-  type CalendarGroupEvent,
-  getSelectedGroupEventActivityPlanIds,
-} from "@/lib/calendar/groupEventPlans";
+import { buildGroupEventsByDate, type CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
 import { buildEventsByDate, type CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import { ROUTES } from "@/lib/constants/routes";
-import { useAutoPaginateInfiniteQuery } from "@/lib/hooks/useAutoPaginateInfiniteQuery";
 import { useLocalTodayKey } from "@/lib/hooks/useLocalTodayKey";
-import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useCalendarStore } from "@/lib/stores/calendar-store";
@@ -25,8 +17,7 @@ import type { CalendarDayListProps } from "./CalendarDayList";
 import type { CalendarActivity } from "./CalendarTimelineModel";
 import type { CalendarWeekDayIndicators } from "./CalendarWeekStrip";
 
-export const CALENDAR_EVENT_QUERY_LIMIT = 50;
-export const GROUP_CALENDAR_EVENT_QUERY_LIMIT = 50;
+export const CALENDAR_PROJECTION_LIMIT = 500;
 export const DAY_RANGE_BACKWARD = 21;
 export const DAY_RANGE_FORWARD = 119;
 export const DAY_RANGE_EXTENSION = 30;
@@ -63,24 +54,11 @@ function buildGoalsByDate(goals: ProfileGoal[]) {
   return map;
 }
 
-function toCalendarQueryDateTime(dateKey: string) {
-  return toLocalDayStartIso(dateKey);
-}
-
-function buildActivitiesByDate(activities: CalendarActivity[], linkedActivityIds: Set<string>) {
+function buildActivitiesByDate(activities: CalendarActivity[]) {
   const map = new Map<string, CalendarActivity[]>();
 
   for (const activity of activities) {
-    if (linkedActivityIds.has(activity.id) || !activity.started_at) {
-      continue;
-    }
-
-    const startedAt = new Date(activity.started_at);
-    if (Number.isNaN(startedAt.getTime())) {
-      continue;
-    }
-
-    const dateKey = toDateKey(startedAt);
+    const dateKey = activity.scheduled_date;
     const items = map.get(dateKey) ?? [];
     items.push(activity);
     map.set(dateKey, items);
@@ -170,114 +148,41 @@ export function useCalendarTimelineController() {
     setInitializedToday(true);
   }, [hydrated, initializedToday, setActiveDate, todayKey]);
 
-  const eventsQuery = api.events.list.useInfiniteQuery(
+  const eventsQuery = api.calendar.range.useQuery(
     {
-      date_from: toCalendarQueryDateTime(rangeStart),
-      date_to: toCalendarQueryDateTime(addDaysToDateKey(rangeEnd, 1)),
-      include_adhoc: true,
-      limit: CALENDAR_EVENT_QUERY_LIMIT,
+      startDate: rangeStart,
+      endDateExclusive: addDaysToDateKey(rangeEnd, 1),
+      includeAdhoc: true,
+      limit: CALENDAR_PROJECTION_LIMIT,
     },
     {
       ...scheduleAwareReadQueryOptions,
       enabled: eventsQueryEnabled,
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-      placeholderData: keepPreviousData,
     },
   );
-  useAutoPaginateInfiniteQuery({
-    enabled: eventsQueryEnabled,
-    hasNextPage: eventsQuery.hasNextPage,
-    isFetchingNextPage: eventsQuery.isFetchingNextPage,
-    fetchNextPage: eventsQuery.fetchNextPage,
-  });
 
   const events = useMemo(
-    () => (eventsQuery.data?.pages.flatMap((page) => page.items) ?? []) as CalendarEvent[],
-    [eventsQuery.data?.pages],
+    () => (eventsQuery.data?.items ?? []) as CalendarEvent[],
+    [eventsQuery.data?.items],
   );
-  const linkedActivityIds = useMemo(
-    () =>
-      new Set(events.map((event) => event.linked_activity_id).filter((id): id is string => !!id)),
-    [events],
-  );
-  const completedActivitiesQuery = api.activities.listPaginated.useInfiniteQuery(
-    {
-      date_from: toCalendarQueryDateTime(rangeStart),
-      date_to: toCalendarQueryDateTime(addDaysToDateKey(rangeEnd, 1)),
-      limit: 50,
-    },
-    {
-      ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled,
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-      placeholderData: keepPreviousData,
-    },
-  );
-  const { data: completedActivitiesData } = completedActivitiesQuery;
   const completedActivities = useMemo(
-    () =>
-      (completedActivitiesData?.pages.flatMap((page) => page.items) ?? []) as CalendarActivity[],
-    [completedActivitiesData?.pages],
+    () => (eventsQuery.data?.completedActivities?.items ?? []) as CalendarActivity[],
+    [eventsQuery.data?.completedActivities?.items],
   );
-
-  useAutoPaginateInfiniteQuery({
-    enabled: eventsQueryEnabled,
-    hasNextPage: completedActivitiesQuery.hasNextPage,
-    isFetchingNextPage: completedActivitiesQuery.isFetchingNextPage,
-    fetchNextPage: completedActivitiesQuery.fetchNextPage,
-  });
   const activitiesByDate = useMemo(
-    () => buildActivitiesByDate(completedActivities, linkedActivityIds),
-    [completedActivities, linkedActivityIds],
+    () => buildActivitiesByDate(completedActivities),
+    [completedActivities],
   );
   const eventsByDate = useMemo(() => buildEventsByDate(events), [events]);
-  const groupEventsQuery = api.groups.events.myCalendarGroupEvents.useInfiniteQuery(
-    {
-      includeCancelled: false,
-      startsAfter: toCalendarQueryDateTime(rangeStart),
-      startsBefore: toCalendarQueryDateTime(addDaysToDateKey(rangeEnd, 1)),
-      limit: GROUP_CALENDAR_EVENT_QUERY_LIMIT,
-    },
-    {
-      ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled,
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-      placeholderData: keepPreviousData,
-    },
-  );
-  useAutoPaginateInfiniteQuery({
-    enabled: eventsQueryEnabled,
-    hasNextPage: groupEventsQuery.hasNextPage,
-    isFetchingNextPage: groupEventsQuery.isFetchingNextPage,
-    fetchNextPage: groupEventsQuery.fetchNextPage,
-  });
   const groupEvents = useMemo(
-    () => groupEventsQuery.data?.pages.flatMap((page) => page.items) ?? [],
-    [groupEventsQuery.data?.pages],
+    () => (eventsQuery.data?.selectedGroupEvents?.items ?? []) as CalendarGroupEvent[],
+    [eventsQuery.data?.selectedGroupEvents?.items],
   );
-  const selectedGroupActivityPlanIds = useMemo(
-    () => getSelectedGroupEventActivityPlanIds(groupEvents),
-    [groupEvents],
+  const groupEventsByDate = useMemo(() => buildGroupEventsByDate(groupEvents), [groupEvents]);
+  const goalsByDate = useMemo(
+    () => buildGoalsByDate(eventsQuery.data?.goals?.items ?? []),
+    [eventsQuery.data?.goals?.items],
   );
-  const groupActivityPlansQuery = api.activityPlans.getManyByIds.useQuery(
-    { ids: selectedGroupActivityPlanIds },
-    {
-      ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled && selectedGroupActivityPlanIds.length > 0,
-      placeholderData: keepPreviousData,
-    },
-  );
-  const calendarGroupEvents = useMemo(
-    () =>
-      attachSelectedGroupEventActivityPlans(groupEvents, groupActivityPlansQuery.data?.items ?? []),
-    [groupActivityPlansQuery.data?.items, groupEvents],
-  );
-  const groupEventsByDate = useMemo(
-    () => buildGroupEventsByDate(calendarGroupEvents),
-    [calendarGroupEvents],
-  );
-  const profileGoals = useProfileGoals({ loadAllPages: true });
-  const goalsByDate = useMemo(() => buildGoalsByDate(profileGoals.goals), [profileGoals.goals]);
   const weekDayIndicators = useMemo(
     () =>
       buildWeekDayIndicators({ activitiesByDate, eventsByDate, goalsByDate, groupEventsByDate }),
@@ -459,12 +364,7 @@ export function useCalendarTimelineController() {
     () => format(new Date(`${visibleDateKey}T12:00:00`), "MMMM yyyy"),
     [visibleDateKey],
   );
-  const hasPartialError =
-    eventsQuery.isError ||
-    completedActivitiesQuery.isError ||
-    groupEventsQuery.isError ||
-    groupActivityPlansQuery.isError ||
-    profileGoals.isError;
+  const hasPartialError = eventsQuery.isError;
 
   return {
     dayListProps,
@@ -473,27 +373,14 @@ export function useCalendarTimelineController() {
     weekDayIndicators,
     selectedDateKey: visibleDateKey,
     todayKey,
-    loadingEvents:
-      !authReady ||
-      eventsQuery.isLoading ||
-      completedActivitiesQuery.isLoading ||
-      groupEventsQuery.isLoading,
-    hasActivitiesData:
-      Boolean(eventsQuery.data) ||
-      Boolean(completedActivitiesData) ||
-      Boolean(groupEventsQuery.data),
+    loadingEvents: !authReady || eventsQuery.isLoading,
+    hasActivitiesData: Boolean(eventsQuery.data),
     hasPartialError,
     onCreateEvent: handleCreateEvent,
     onJumpToday: handleJumpToday,
     onSelectWeekDate: handleSelectWeekDate,
     retryActivities: async () => {
-      await Promise.all([
-        eventsQuery.refetch(),
-        completedActivitiesQuery.refetch(),
-        groupEventsQuery.refetch(),
-        groupActivityPlansQuery.refetch(),
-        profileGoals.refetch(),
-      ]);
+      await eventsQuery.refetch();
     },
   };
 }

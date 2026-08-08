@@ -6,11 +6,13 @@ import type {
   activityArtifacts,
   activityEfforts,
   activityFileIngestions,
+  activityImportRuns,
   activityPlans,
   activityRouteDeletionReceipts,
   activityRoutes,
   activitySegments,
   activitySessionRpeEvidence,
+  activitySourceReferences,
   athleteConsentPolicyVersions,
   athleteDataSharingConsents,
   coachingAssignments,
@@ -39,8 +41,10 @@ import type {
   organizationMembershipRoleGrants,
   organizationMemberships,
   organizations,
+  profileAthleteState,
   profileGoals,
   profileMetrics,
+  profilePerformanceEstimates,
   profiles,
   profileTrainingSettings,
   providerSyncJobs,
@@ -117,6 +121,10 @@ export type TrainingPlanInsert = InferInsertModel<typeof trainingPlans>;
 
 export type ActivityRow = InferSelectModel<typeof activities>;
 export type ActivityInsert = InferInsertModel<typeof activities>;
+export type ActivityImportRunRow = InferSelectModel<typeof activityImportRuns>;
+export type ActivityImportRunInsert = InferInsertModel<typeof activityImportRuns>;
+export type ActivitySourceReferenceRow = InferSelectModel<typeof activitySourceReferences>;
+export type ActivitySourceReferenceInsert = InferInsertModel<typeof activitySourceReferences>;
 
 export type ActivityArtifactRow = InferSelectModel<typeof activityArtifacts>;
 export type ActivityArtifactInsert = InferInsertModel<typeof activityArtifacts>;
@@ -164,6 +172,10 @@ export type ProviderWebhookReceiptInsert = InferInsertModel<typeof providerWebho
 
 export type ProfileMetricRow = InferSelectModel<typeof profileMetrics>;
 export type ProfileMetricInsert = InferInsertModel<typeof profileMetrics>;
+export type ProfileAthleteStateRow = InferSelectModel<typeof profileAthleteState>;
+export type ProfileAthleteStateInsert = InferInsertModel<typeof profileAthleteState>;
+export type ProfilePerformanceEstimateRow = InferSelectModel<typeof profilePerformanceEstimates>;
+export type ProfilePerformanceEstimateInsert = InferInsertModel<typeof profilePerformanceEstimates>;
 
 export type ProfileTrainingSettingsRow = InferSelectModel<typeof profileTrainingSettings>;
 export type ProfileTrainingSettingsInsert = InferInsertModel<typeof profileTrainingSettings>;

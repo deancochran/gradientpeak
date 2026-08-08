@@ -7,6 +7,7 @@ import {
   activityArtifacts,
   activityFileIngestions,
   activitySegments,
+  activitySourceReferences,
   integrationResourceLinks,
   integrations,
   profiles,
@@ -430,21 +431,24 @@ describe("canonical activity persistence against PostgreSQL", () => {
     expect(stale).toMatchObject({ id: first.id, noOp: true });
     expect(newerRevisionWithSameArtifact).toMatchObject({ id: first.id, noOp: false });
     expect(current).toMatchObject({ id: first.id, noOp: false });
-    const imports = await db
-      .select()
-      .from(activities)
-      .where(eq(activities.external_id, externalId));
+    const imports = await db.select().from(activities).where(eq(activities.id, first.id));
     expect(imports).toHaveLength(1);
     expect(imports[0]).toMatchObject({
       id: first.id,
       name: "Provider revision two",
       segments_revision: 3,
     });
-    const [resource] = await db
+    const [sourceReference] = await db
       .select()
-      .from(integrationResourceLinks)
-      .where(eq(integrationResourceLinks.internal_resource_id, first.id));
-    expect(resource?.provider_updated_at?.toISOString()).toBe("2026-01-01T12:01:00.000Z");
+      .from(activitySourceReferences)
+      .where(eq(activitySourceReferences.activity_id, first.id));
+    expect(sourceReference?.provider_revision).toBe("2026-01-01T12:01:00.000Z");
+    await expect(
+      db
+        .select()
+        .from(integrationResourceLinks)
+        .where(eq(integrationResourceLinks.internal_resource_id, first.id)),
+    ).resolves.toEqual([]);
     const links = await db
       .select()
       .from(activityArtifactLinks)

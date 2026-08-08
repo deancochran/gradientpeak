@@ -44,11 +44,17 @@ function createTrainingPlanRow(overrides: Partial<TrainingPlanRow> = {}): Traini
     description: "Build fitness",
     structure: {},
     structure_hash: activityPlanStructureHash({}),
-    template_visibility: "private",
     content_visibility: "private",
     is_system_template: false,
+    system_content_key: null,
+    system_content_version: null,
+    system_content_hash: null,
     sessions_per_week_target: null,
     duration_hours: null,
+    revision: 1,
+    validated_state_revision: null,
+    validated_at: null,
+    projection_algorithm_version: null,
     ...overrides,
   };
 }
@@ -197,6 +203,11 @@ describe("drizzle-training-plan-repository", () => {
         description: "Sharpening",
         structure: { block: "peak" },
         structure_hash: activityPlanStructureHash({ block: "peak" }),
+        revision: expect.anything(),
+        updated_at: expect.any(Date),
+        validated_state_revision: null,
+        validated_at: null,
+        projection_algorithm_version: null,
       },
     });
   });
@@ -352,6 +363,11 @@ describe("drizzle-training-plan-repository", () => {
             inferred_state_snapshot: snapshot,
           },
         }),
+        revision: expect.anything(),
+        validated_state_revision: null,
+        validated_at: null,
+        projection_algorithm_version: null,
+        updated_at: expect.any(Date),
       },
     });
   });

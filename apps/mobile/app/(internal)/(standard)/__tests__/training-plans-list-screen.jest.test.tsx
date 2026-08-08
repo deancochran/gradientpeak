@@ -9,7 +9,7 @@ const plansState = [
     id: "plan-1",
     name: "Marathon Build",
     description: "16-week progression",
-    template_visibility: "private",
+    content_visibility: "private",
     activity_category: ["run"],
     sessions_per_week_target: 5,
     durationWeeks: { recommended: 16 },

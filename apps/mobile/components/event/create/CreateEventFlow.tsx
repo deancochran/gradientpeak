@@ -1,6 +1,4 @@
-import { Button } from "@repo/ui/components/button";
 import { Form } from "@repo/ui/components/form";
-import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -16,7 +14,6 @@ import {
 import { useWatch } from "react-hook-form";
 import { AccessibilityInfo } from "react-native";
 import { z } from "zod";
-import { AppFormModal } from "@/components/shared/AppFormModal";
 import { type ResourcePickerItem, ResourcePickerModal } from "@/components/shared/resource-picker";
 import { api } from "@/lib/api";
 import { getDeviceTimeZone, getEventScheduledDate } from "@/lib/calendar/eventSchedule";
@@ -44,7 +41,6 @@ import { isExistingEventActivityPlanEditable } from "./eventEditability";
 import { RepeatStep } from "./RepeatStep";
 
 type CreateEventStep = "main" | "repeat";
-type EventMutationScope = "single" | "future" | "series";
 
 const createEventMainFormSchema = z.object({
   allDay: z.boolean(),
@@ -88,10 +84,6 @@ type EditableEvent = {
   timezone?: string | null;
   title?: string | null;
 };
-
-function isRecurringEvent(event: EditableEvent | null | undefined) {
-  return !!(event?.series_id || event?.recurrence_rule || event?.recurrence?.rule);
-}
 
 function toDateOnly(value: Date) {
   return format(value, "yyyy-MM-dd");
@@ -274,8 +266,6 @@ export const CreateEventFlow = forwardRef<
   const [knownRoutes, setKnownRoutes] = useState<EventRouteSummary[]>([]);
   const [activityPlanPickerOpen, setActivityPlanPickerOpen] = useState(false);
   const [routePickerOpen, setRoutePickerOpen] = useState(false);
-  const [saveScopeModalVisible, setSaveScopeModalVisible] = useState(false);
-  const [pendingUpdateDraft, setPendingUpdateDraft] = useState<CreateEventDraft | null>(null);
   const form = useZodForm<EventFormValues>({
     schema: createEventMainFormSchema,
     defaultValues: toMainFormValues(draft),
@@ -560,13 +550,13 @@ export const CreateEventFlow = forwardRef<
     return true;
   };
 
-  const runUpdate = (nextDraft: CreateEventDraft, scope: EventMutationScope = "single") => {
+  const runUpdate = (nextDraft: CreateEventDraft) => {
     if (existingEventReadOnly) return;
     if (!updateEvent?.id || !validateDraft(nextDraft)) return;
     try {
       updateMutation.mutate({
         id: updateEvent.id,
-        scope,
+        scope: "single",
         patch: buildUpdatePatch(nextDraft),
       });
     } catch (error) {
@@ -581,14 +571,7 @@ export const CreateEventFlow = forwardRef<
   const submitCreate = () => {
     if (existingEventReadOnly) return;
     if (updateEvent) {
-      if (isRecurringEvent(updateEvent)) {
-        if (!validateDraft(draft)) return;
-        setPendingUpdateDraft(draft);
-        setSaveScopeModalVisible(true);
-        return;
-      }
-
-      runUpdate(draft, "single");
+      runUpdate(draft);
       return;
     }
 
@@ -681,11 +664,14 @@ export const CreateEventFlow = forwardRef<
           onOpenRoute={() => setRoutePickerOpen(true)}
           onRemoveActivityPlan={handleRemoveActivityPlan}
           onRemoveRoute={handleRemoveRoute}
-          onOpenRepeat={() => setStep("repeat")}
+          onOpenRepeat={() => {
+            if (!updateEvent) setStep("repeat");
+          }}
           onSubmit={submitCreate}
           selectedActivityPlan={selectedCreateActivityPlan}
           selectedRoute={selectedRoute}
           showFooterActions={showFooterActions}
+          showRepeat={!updateEvent}
           testIDPrefix={testIDPrefix}
           titleErrorMessage={titleErrorMessage}
         />
@@ -708,51 +694,6 @@ export const CreateEventFlow = forwardRef<
         onClose={() => setRoutePickerOpen(false)}
         onSelect={handleSelectRouteResource}
       />
-      {saveScopeModalVisible ? (
-        <AppFormModal
-          description="Choose how much of this recurring event series to update."
-          onClose={() => {
-            setSaveScopeModalVisible(false);
-            setPendingUpdateDraft(null);
-          }}
-          testID={`${testIDPrefix}-scope-modal`}
-          title="Recurring Event"
-        >
-          <Button
-            onPress={() => {
-              if (pendingUpdateDraft) runUpdate(pendingUpdateDraft, "single");
-              setSaveScopeModalVisible(false);
-              setPendingUpdateDraft(null);
-            }}
-            testID={`${testIDPrefix}-scope-single`}
-            variant="outline"
-          >
-            <Text className="text-foreground font-medium">This event only</Text>
-          </Button>
-          <Button
-            onPress={() => {
-              if (pendingUpdateDraft) runUpdate(pendingUpdateDraft, "future");
-              setSaveScopeModalVisible(false);
-              setPendingUpdateDraft(null);
-            }}
-            testID={`${testIDPrefix}-scope-future`}
-            variant="outline"
-          >
-            <Text className="text-foreground font-medium">This and future events</Text>
-          </Button>
-          <Button
-            onPress={() => {
-              if (pendingUpdateDraft) runUpdate(pendingUpdateDraft, "series");
-              setSaveScopeModalVisible(false);
-              setPendingUpdateDraft(null);
-            }}
-            testID={`${testIDPrefix}-scope-series`}
-            variant="outline"
-          >
-            <Text className="text-foreground font-medium">Entire series</Text>
-          </Button>
-        </AppFormModal>
-      ) : null}
     </>
   );
 });

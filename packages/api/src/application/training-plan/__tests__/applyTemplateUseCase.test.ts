@@ -4,11 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { TrainingPlanRepository } from "../../../repositories";
 import { applyTrainingPlanTemplateUseCase } from "../applyTemplateUseCase";
 
-const { enqueuePlannedActivitySyncAfterCalendarMutation } = vi.hoisted(() => ({
-  enqueuePlannedActivitySyncAfterCalendarMutation: vi.fn(async () => null),
+const { enqueueWahooPlannedActivitySyncAfterCalendarMutation } = vi.hoisted(() => ({
+  enqueueWahooPlannedActivitySyncAfterCalendarMutation: vi.fn(async () => null),
 }));
 vi.mock("../../../lib/provider-sync/planned-activities", () => ({
-  enqueuePlannedActivitySyncAfterCalendarMutation,
+  enqueueWahooPlannedActivitySyncAfterCalendarMutation,
 }));
 
 type TransactionClient = {
@@ -73,7 +73,7 @@ describe("applyTrainingPlanTemplateUseCase", () => {
       getAccessibleTrainingPlan: vi.fn(async () => ({
         id: "11111111-1111-4111-8111-111111111111",
         profile_id: null,
-        template_visibility: "public",
+        content_visibility: "public",
         is_system_template: true,
         structure: {
           id: "11111111-1111-4111-8111-111111111111",
@@ -212,10 +212,10 @@ describe("applyTrainingPlanTemplateUseCase", () => {
     expect(permissions.revokeEventGrants).toHaveBeenNthCalledWith(1, candidateIds[0]);
     expect(permissions.revokeEventGrants).toHaveBeenNthCalledWith(2, candidateIds[1]);
     expect(permissions.revokeEventGrants).not.toHaveBeenCalledWith(reusedBatchOtherPlanEventId);
-    expect(enqueuePlannedActivitySyncAfterCalendarMutation).toHaveBeenCalledWith(
+    expect(enqueueWahooPlannedActivitySyncAfterCalendarMutation).toHaveBeenCalledWith(
       expect.objectContaining({ eventIds: candidateIds, operation: "unsync" }),
     );
-    expect(enqueuePlannedActivitySyncAfterCalendarMutation).not.toHaveBeenCalledWith(
+    expect(enqueueWahooPlannedActivitySyncAfterCalendarMutation).not.toHaveBeenCalledWith(
       expect.objectContaining({ eventIds: expect.arrayContaining([reusedBatchOtherPlanEventId]) }),
     );
     expect(deletedIds).toEqual([candidateIds]);

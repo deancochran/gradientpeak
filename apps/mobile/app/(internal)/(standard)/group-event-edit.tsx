@@ -37,6 +37,19 @@ export default function GroupEventEditRoute() {
     );
   }
 
+  if (event.is_recurring_series) {
+    return (
+      <View className="flex-1 items-center justify-center bg-background p-6">
+        <Text className="text-center text-lg font-semibold text-foreground">
+          Series editing is unavailable
+        </Text>
+        <Text className="mt-2 text-center text-sm text-muted-foreground">
+          Edit an individual occurrence instead.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}

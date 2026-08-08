@@ -65,9 +65,8 @@ export * from "./activity-quantification"; // Canonical prescription/observation
 export * from "./activity-segments"; // Completed activity segment contracts
 export * from "./athlete-capabilities"; // Evidence-qualified continuous capabilities and limiters
 export * from "./athlete-intelligence"; // Deterministic athlete intelligence contracts and evaluation
+// Athlete-state plan simulation is re-exported through the plan boundary below.
 export * from "./bluetooth"; // Canonical BLE parsers
-// Performance curves (power, pace, HR)
-export * from "./calculations/curves";
 // ============================================================================
 // Performance Metrics Calculations
 export * from "./calculations/duration";
@@ -77,19 +76,15 @@ export * from "./coaching"; // Shared coaching roster adapters
 export * from "./contracts"; // Shared API contracts
 export * from "./cycling-performance"; // Evidence-first cycling duration-performance model
 // Heart rate test detection
-export * from "./detection/hr-tests";
 // Running test detection
-export * from "./detection/pace-tests";
 // ============================================================================
 // Test Effort Detection
 // ============================================================================
 // Power test detection
-export * from "./detection/power-tests";
 export * from "./duration"; // Canonical duration helpers
 // Root names retain their canonical date-only and activity-plan meanings.
 export { formatDuration } from "./duration/format";
 export * from "./duration-performance"; // Evidence-first cross-category duration/session performance
-export * from "./estimation"; // Ancillary estimates and explicit-Load projections
 export * from "./goals"; // Goal draft/payload helpers
 export * from "./groups"; // Group contracts, permissions, and display state
 export * from "./integrations"; // Provider capability registry and sync action helpers
@@ -119,7 +114,6 @@ export * from "./recurrence"; // Supported recurrence semantics and deterministi
 export * from "./route-files"; // Route upload formats, limits, schemas, and filename helpers
 export * from "./samples"; // Sample data for testing and development
 export * from "./schemas"; // Shared Zod schemas and domain types
-export { addDays } from "./schemas/training-plan-structure/helpers";
 export * from "./social"; // Social engagement entity taxonomy
 export * from "./training-timeline"; // Canonical training timeline read model
 export type {
@@ -145,7 +139,6 @@ export * as Bluetooth from "./bluetooth";
 export * as Calculations from "./calculations";
 export * as Coaching from "./coaching";
 export * as Duration from "./duration";
-export * as Estimation from "./estimation";
 export * as Estimators from "./estimators/index";
 export * as Load from "./load";
 export * as Messaging from "./messaging";

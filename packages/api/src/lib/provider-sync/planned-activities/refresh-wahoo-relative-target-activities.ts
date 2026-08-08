@@ -4,7 +4,7 @@ import type { DrizzleDbClient } from "@repo/db";
 import type { DrizzleTransactionClient } from "../../../db";
 import { hasWahooPlannedActivityScopes } from "../../integrations/wahoo/planned-activity-scopes";
 import { resolveWahooSyncMetrics } from "../../integrations/wahoo/sync-service";
-import { getPlannedActivitySyncPolicy } from "./planned-activity-policy";
+import { getWahooPlannedActivitySyncPolicy } from "./wahoo-planned-activity-policy";
 import {
   buildWahooPlannedActivityPublishJob,
   projectWahooPlannedActivity,
@@ -44,18 +44,18 @@ export async function enqueueWahooRelativeTargetRefreshes(input: {
     return { candidateCount: 0, queuedCount: 0 };
   }
 
-  const policy = getPlannedActivitySyncPolicy("wahoo");
-  if (!policy || policy.availabilityWindowDays === null) {
+  const policy = getWahooPlannedActivitySyncPolicy();
+  if (policy.availabilityWindowDays === null) {
     return { candidateCount: 0, queuedCount: 0 };
   }
   const startsAtLte = new Date(input.now);
   startsAtLte.setUTCDate(startsAtLte.getUTCDate() + policy.availabilityWindowDays);
 
-  const [{ createProviderSyncRepository }, { createWahooRepository }] = await Promise.all([
-    import("../../../infrastructure/repositories/drizzle-provider-sync-repository"),
+  const [{ createWahooSyncRepository }, { createWahooRepository }] = await Promise.all([
+    import("../../../infrastructure/repositories/drizzle-wahoo-sync-repository"),
     import("../../../infrastructure/repositories/drizzle-wahoo-repository"),
   ]);
-  const providerSyncRepository = createProviderSyncRepository({ db: input.db });
+  const providerSyncRepository = createWahooSyncRepository({ db: input.db });
   const wahooRepository = createWahooRepository({ db: input.transaction });
   const integration = await wahooRepository.findWahooIntegrationByProfileId(input.profileId);
   if (!integration || !hasWahooPlannedActivityScopes(integration.scope)) {
@@ -83,6 +83,7 @@ export async function enqueueWahooRelativeTargetRefreshes(input: {
         activityPlan: { ...event.activityPlan, structure: structure.data },
         eventId: event.eventId,
         startsAt: event.startsAt,
+        timezone: event.timezone,
       };
       const beforeProjection = projectWahooPlannedActivity({
         ...projectionInput,
@@ -104,7 +105,8 @@ export async function enqueueWahooRelativeTargetRefreshes(input: {
         input.transaction,
         buildWahooPlannedActivityPublishJob({
           integration,
-          performanceModelAsOf: input.now.toISOString(),
+          now: input.now.toISOString(),
+          performanceModelAsOf: input.afterTargetFacts.asOf,
           profileId: input.profileId,
           projection: afterProjection,
         }),

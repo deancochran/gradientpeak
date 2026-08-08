@@ -83,8 +83,7 @@ function runtimeSupportFor(id: string): RuntimeSupport {
     domain === "planning" ||
     domain === "calendar" ||
     domain === "agenda" ||
-    domain === "events" ||
-    domain === "scheduled-activities"
+    domain === "events"
   ) {
     return {
       runtimeBlocker:
@@ -136,7 +135,7 @@ function runtimeSupportFor(id: string): RuntimeSupport {
   if (domain === "integrations") {
     return {
       runtimeBlocker:
-        "The implemented provider behavior is runtime-unverified because it requires local seeded users and PROVIDER_OAUTH_TEST_ADAPTER=1; no real provider is contacted.",
+        "The implemented Wahoo behavior is runtime-unverified because it requires local seeded users and WAHOO_OAUTH_TEST_ADAPTER=1; no real provider is contacted.",
       spec: "integrations.spec.ts",
       support: ["../integrations/journey.ts"],
     };
@@ -198,9 +197,6 @@ function testTitleFor(id: string): string {
   }
   if (id === "agenda.create" || id === "events.recurrence") {
     return "agenda.create and events.recurrence persist a bounded series and honor delete scope";
-  }
-  if (id.startsWith("scheduled-activities.")) {
-    return "scheduled-activities.library and scheduled-activities.detail expose filters and persisted controls";
   }
   if (id.startsWith("goals.")) {
     return "goals.lifecycle and goals.intelligence persist exact owned goals";
@@ -482,21 +478,9 @@ export const mobileWebJourneyDomains: MobileWebJourneyDomain[] = [
       ),
       blocked(
         "events.recurrence",
-        "Recurring create/edit/delete scopes",
+        "Bounded recurring create plus occurrence and series cancellation",
         "needs-seed",
         "web recurrence controls",
-      ),
-      executable(
-        "scheduled-activities.library",
-        "Scheduled-activity list and filters",
-        "planning.spec.ts",
-        "persisted athlete schedule fixture",
-      ),
-      executable(
-        "scheduled-activities.detail",
-        "Detail, attach, reschedule and remove",
-        "planning.spec.ts",
-        "persisted scheduled-activity detail fixture",
       ),
       blocked(
         "goals.lifecycle",
@@ -706,7 +690,7 @@ export const mobileWebJourneyDomains: MobileWebJourneyDomain[] = [
   },
   {
     id: "metrics-efforts-trends",
-    title: "Profile metrics, efforts and trends",
+    title: "Profile metrics and trends",
     journeys: [
       blocked(
         "metrics.library-crud",
@@ -719,18 +703,6 @@ export const mobileWebJourneyDomains: MobileWebJourneyDomain[] = [
         "Source-preserving manual override",
         "needs-seed",
         "provider/activity metric seed",
-      ),
-      blocked(
-        "efforts.curves",
-        "Observed curves, evidence labels and ranges",
-        "needs-seed",
-        "mixed effort evidence seed",
-      ),
-      blocked(
-        "efforts.lifecycle",
-        "Create, override, linkage and delete policy",
-        "needs-seed",
-        "manual and sourced effort seed",
       ),
       blocked(
         "trends.analytics",

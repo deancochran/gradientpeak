@@ -4,7 +4,7 @@ import { createHost as mockCreateHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const navigateMock = jest.fn();
-const evaluateUseQueryMock = jest.fn(() => ({ data: undefined, isLoading: false }));
+const assessmentUseQueryMock = jest.fn(() => ({ data: undefined, isLoading: false }));
 const originalDateTimeFormat = Intl.DateTimeFormat;
 
 type StackScreenProps = {
@@ -214,7 +214,6 @@ jest.mock("@/lib/api", () => ({
   api: {
     useUtils: () => ({
       goals: { list: { invalidate: jest.fn() }, getById: { invalidate: jest.fn() } },
-      events: { list: { invalidate: jest.fn() } },
     }),
     goals: {
       getById: {
@@ -243,7 +242,7 @@ jest.mock("@/lib/api", () => ({
       getActivePlan: { useQuery: () => ({ data: { id: "plan-1" } }) },
     },
     athleteIntelligence: {
-      evaluate: { useQuery: evaluateUseQueryMock },
+      getGoalAssessment: { useQuery: assessmentUseQueryMock },
     },
   },
 }));
@@ -253,7 +252,7 @@ const GoalDetailScreen = require("../goal-detail").default;
 describe("goal detail persistence", () => {
   beforeEach(() => {
     navigateMock.mockClear();
-    evaluateUseQueryMock.mockClear();
+    assessmentUseQueryMock.mockClear();
     Object.defineProperty(Intl, "DateTimeFormat", {
       configurable: true,
       value: function DateTimeFormat() {
@@ -281,10 +280,13 @@ describe("goal detail persistence", () => {
     expect(navigateMock).toHaveBeenCalledWith("/goal-edit?id=goal-1");
   });
 
-  it("queries intelligence using the server-owned planning timezone", async () => {
+  it("queries the canonical goal assessment", async () => {
     renderNative(<GoalDetailScreen />);
 
-    expect(evaluateUseQueryMock).toHaveBeenLastCalledWith({ goalId: "goal-1" }, { enabled: true });
+    expect(assessmentUseQueryMock).toHaveBeenLastCalledWith(
+      { goalId: "goal-1" },
+      { enabled: true },
+    );
   });
 
   it("does not render legacy readiness or outcome forecast claims", async () => {

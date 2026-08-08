@@ -14,8 +14,7 @@ function getSafeOnboardingErrorMessage(error: unknown): string {
 
 export const loadOnboardingOptions = createServerFn({ method: "GET" }).handler(async () => {
   const caller = await createServerActionCaller();
-  const [imported, integrations, invitations, groups, people] = await Promise.allSettled([
-    caller.onboarding.getImportedOnboardingValues(),
+  const [integrations, invitations, groups, people] = await Promise.allSettled([
     caller.integrations.getSyncOverview(),
     caller.groups.myInvitations({ limit: 5 }),
     caller.groups.listDiscoverable({ limit: 5 }),
@@ -23,7 +22,14 @@ export const loadOnboardingOptions = createServerFn({ method: "GET" }).handler(a
   ]);
 
   return {
-    imported: imported.status === "fulfilled" ? imported.value : null,
+    setupData:
+      integrations.status === "fulfilled" && integrations.value[0]
+        ? {
+            profile: integrations.value[0].setupData.profile,
+            sources: integrations.value[0].setupData.sources,
+            values: integrations.value[0].setupData.values,
+          }
+        : null,
     integrations:
       integrations.status === "fulfilled"
         ? integrations.value.map((item) => ({

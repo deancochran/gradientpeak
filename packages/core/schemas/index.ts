@@ -2,7 +2,6 @@ import { z } from "zod";
 import { activityPlanInputSchema } from "./activity_payload";
 import { contentVisibilitySchema } from "./content_visibility";
 import {
-  minimalTrainingPlanCreateSchema,
   trainingPlanCreateSchema,
   trainingPlanGoalSchema,
   trainingPlanGoalTargetSchema,
@@ -82,7 +81,7 @@ export const trainingPlanCreateInputSchema = z.object({
   name: z.string().min(1, "Plan name is required").max(255, "Plan name is too long"),
   description: z.string().max(1000, "Description is too long").optional().nullable(),
   structure: trainingPlanCreateSchema, // Validates structure without ID requirement
-  template_visibility: contentVisibilitySchema.optional(),
+  content_visibility: contentVisibilitySchema.optional(),
   is_active: z.boolean().optional(),
 });
 
@@ -92,8 +91,4 @@ export const trainingPlanGoalTargetInputSchema = trainingPlanGoalTargetSchema;
 
 export const trainingPlanGoalInputSchema = trainingPlanGoalSchema.omit({
   id: true,
-});
-
-export const trainingPlanMinimalCreateInputSchema = z.object({
-  structure: minimalTrainingPlanCreateSchema,
 });

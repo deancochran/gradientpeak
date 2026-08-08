@@ -83,26 +83,4 @@ describe("TrainingPreferencesEditor", () => {
       }),
     });
   });
-
-  it("keeps event-route delivery opt-in off until the athlete enables and saves it", async () => {
-    mocks.save.mockResolvedValueOnce({
-      settings: { ...defaultAthletePreferenceProfile, wahooEventRouteDeliveryEnabled: true },
-    });
-    render(<TrainingPreferencesEditor />);
-
-    const deliveryToggle = screen.getByRole("checkbox", {
-      name: /send routes for upcoming one-off group events i’m attending to wahoo/i,
-    });
-    expect((deliveryToggle as HTMLInputElement).checked).toBe(false);
-
-    fireEvent.click(deliveryToggle);
-    fireEvent.click(screen.getByRole("button", { name: "Save preferences" }));
-
-    await waitFor(() =>
-      expect(mocks.save).toHaveBeenCalledWith({
-        profile_id: PROFILE_ID,
-        settings: expect.objectContaining({ wahooEventRouteDeliveryEnabled: true }),
-      }),
-    );
-  });
 });

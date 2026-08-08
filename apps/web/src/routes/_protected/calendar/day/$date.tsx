@@ -42,30 +42,31 @@ export const Route = createFileRoute("/_protected/calendar/day/$date")({
 function CalendarDayPage() {
   const { date: routeDate } = Route.useParams();
   const { month, view } = Route.useSearch();
-  const profileQuery = api.profiles.get.useQuery();
-  const eventsQuery = api.events.list.useQuery({
-    date_from: routeDate,
-    date_to: routeDate,
-    include_adhoc: true,
-    limit: 100,
-  });
-  const plannedDaySummaryQuery = api.events.plannedDaySummary.useQuery({ date: routeDate });
-  const goalsQuery = api.goals.list.useQuery(
-    {
-      profile_id: profileQuery.data?.id ?? "00000000-0000-0000-0000-000000000000",
-      limit: 200,
-    },
-    { enabled: Boolean(profileQuery.data?.id) },
-  );
+  const eventsQuery = api.calendar.day.useQuery({ date: routeDate });
 
   const events = useMemo(
     () => ((eventsQuery.data?.items ?? []) as PlanningEvent[]).slice().sort(compareEventsByStart),
     [eventsQuery.data?.items],
   );
   const goals = useMemo(
-    () => (goalsQuery.data?.items ?? []).filter((goal) => goal.target_date === routeDate),
-    [goalsQuery.data?.items, routeDate],
+    () => (eventsQuery.data?.goals?.items ?? []).filter((goal) => goal.target_date === routeDate),
+    [eventsQuery.data?.goals?.items, routeDate],
   );
+  const completedActivities = useMemo(
+    () =>
+      (eventsQuery.data?.completedActivities?.items ?? []).filter(
+        (activity) => activity.scheduled_date === routeDate,
+      ),
+    [eventsQuery.data?.completedActivities?.items, routeDate],
+  );
+  const selectedGroupEvents = useMemo(
+    () =>
+      (eventsQuery.data?.selectedGroupEvents?.items ?? []).filter(
+        (event) => event.scheduled_date === routeDate,
+      ),
+    [eventsQuery.data?.selectedGroupEvents?.items, routeDate],
+  );
+  const agendaCount = events.length + completedActivities.length + selectedGroupEvents.length;
 
   return (
     <div className="space-y-6">
@@ -136,25 +137,21 @@ function CalendarDayPage() {
       ) : null}
 
       <PlannedDaySummary
-        {...(plannedDaySummaryQuery.data === undefined
+        {...(eventsQuery.data?.plannedLoadSummary === undefined
           ? {}
-          : { data: plannedDaySummaryQuery.data })}
-        error={plannedDaySummaryQuery.isError}
-        isLoading={plannedDaySummaryQuery.isLoading}
-        onRetry={() => plannedDaySummaryQuery.refetch()}
+          : { data: eventsQuery.data.plannedLoadSummary })}
+        error={eventsQuery.isError}
+        isLoading={eventsQuery.isLoading}
+        onRetry={() => eventsQuery.refetch()}
       />
 
-      {eventsQuery.isError || goalsQuery.isError ? (
+      {eventsQuery.isError ? (
         <div
           role="alert"
           className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/40 p-4"
         >
           <p className="text-sm">The day agenda could not be fully loaded.</p>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void Promise.all([eventsQuery.refetch(), goalsQuery.refetch()])}
-          >
+          <Button size="sm" variant="outline" onClick={() => void eventsQuery.refetch()}>
             Retry
           </Button>
         </div>
@@ -164,16 +161,54 @@ function CalendarDayPage() {
         <CardHeader>
           <CardTitle>Agenda</CardTitle>
           <CardDescription>
-            {events.length === 0
+            {agendaCount === 0
               ? "Nothing scheduled yet."
-              : `${events.length} scheduled event${events.length === 1 ? "" : "s"}`}
+              : `${agendaCount} calendar item${agendaCount === 1 ? "" : "s"}`}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {eventsQuery.isLoading ? (
             <p className="text-sm text-muted-foreground">Loading day agenda...</p>
-          ) : events.length > 0 ? (
+          ) : agendaCount > 0 ? (
             <div className="space-y-3">
+              {selectedGroupEvents.map((event) => (
+                <a
+                  className="block rounded-xl border p-4 transition-colors hover:border-primary hover:bg-accent/40"
+                  href={`/groups/events/${event.id}`}
+                  key={`group-${event.id}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium">{event.title}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {event.group?.name ?? "Group event"} · {formatEventTimeRange(event)}
+                      </p>
+                    </div>
+                    <Badge variant="outline">Group</Badge>
+                  </div>
+                </a>
+              ))}
+              {completedActivities.map((activity) => (
+                <a
+                  className="block rounded-xl border p-4 transition-colors hover:border-primary hover:bg-accent/40"
+                  href={`/activities/${activity.id}`}
+                  key={`activity-${activity.id}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium">{activity.name?.trim() || "Completed activity"}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {new Date(activity.started_at).toLocaleTimeString([], {
+                          hour: "numeric",
+                          minute: "2-digit",
+                          timeZone: eventsQuery.data?.timezone ?? "UTC",
+                        })}
+                      </p>
+                    </div>
+                    <Badge>Completed</Badge>
+                  </div>
+                </a>
+              ))}
               {events.map((event) => (
                 <Link
                   key={event.id}

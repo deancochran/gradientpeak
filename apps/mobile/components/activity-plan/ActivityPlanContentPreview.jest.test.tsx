@@ -31,11 +31,11 @@ const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padSta
 
 const structure = {
   version: 3,
+  activity_category: "run",
   segments: [
     {
       id: id(1),
       role: "activity",
-      activity_category: "run",
       name: "Tempo run",
       intervals: [
         {
@@ -85,11 +85,11 @@ describe("ActivityPlanContentPreview", () => {
         plan={{
           structure: {
             version: 3,
+            activity_category: "swim",
             segments: [
               {
                 id: id(10),
                 role: "activity",
-                activity_category: "swim",
                 name: "Swim",
                 intervals: [
                   {
@@ -125,11 +125,11 @@ describe("ActivityPlanContentPreview", () => {
         plan={{
           structure: {
             version: 3,
+            activity_category: "run",
             segments: [
               {
                 id: id(20),
                 role: "activity",
-                activity_category: "run",
                 name: "Run",
                 intervals: [
                   {

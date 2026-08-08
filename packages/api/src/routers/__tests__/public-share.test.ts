@@ -114,11 +114,11 @@ describe("publicShareRouter", () => {
     const id = "00000000-0000-4000-8000-000000000010";
     const structure = activityPlanStructureSchema.parse({
       version: 3,
+      activity_category: "run",
       segments: [
         {
           id: "00000000-0000-4000-8000-000000000011",
           role: "activity",
-          activity_category: "run",
           name: "Run",
           intervals: [
             {
@@ -147,7 +147,7 @@ describe("publicShareRouter", () => {
         structure,
         structure_hash: `v1:sha256:${"a".repeat(64)}`,
         gps_recording_enabled: true,
-        template_visibility: "public",
+        content_visibility: "public",
         is_system_template: false,
         created_at: new Date("2026-07-16T12:00:00.000Z"),
         updated_at: new Date("2026-07-16T12:00:00.000Z"),

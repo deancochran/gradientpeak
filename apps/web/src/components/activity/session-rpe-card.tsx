@@ -85,11 +85,10 @@ export function SessionRpeCard({
         utils.activities.getById.invalidate({ id: activityId }),
         utils.activities.listPaginated.invalidate(),
         utils.activities.dailyCommonLoadObservations.invalidate(),
-        utils.activities.commonLoadHistory.invalidate(),
         utils.home.getDashboard.invalidate(),
-        utils.trends.invalidate(),
+        utils.athleteIntelligence.getReadModel.invalidate(),
         utils.trainingPlans.getEffectiveLoad.invalidate(),
-        utils.trainingPlans.getCurrentStatus.invalidate(),
+        utils.trainingPlans.preview.invalidate(),
       ]);
       toast.success(isCorrection ? "Session RPE correction saved." : "Session RPE saved.");
     },

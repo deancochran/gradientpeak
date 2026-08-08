@@ -2,7 +2,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 import type { PublicIntegrationProvider } from "@repo/db";
 
-import type { ResolvedProviderOAuthConfig } from "./oauth-config";
+import type { ResolvedWahooOAuthConfig } from "./oauth-config";
 
 function base64Url(value: Buffer): string {
   return value.toString("base64url");
@@ -37,7 +37,7 @@ function signLocalPayload(payload: string, secret: string): string {
 
 export function issueLocalOAuthAuthorizationCode(input: {
   challenge: string;
-  config: ResolvedProviderOAuthConfig;
+  config: ResolvedWahooOAuthConfig;
   now?: number;
   provider: PublicIntegrationProvider;
 }): string {
@@ -60,7 +60,7 @@ export function issueLocalOAuthAuthorizationCode(input: {
 
 export function redeemLocalOAuthAuthorizationCode(input: {
   code: string;
-  config: ResolvedProviderOAuthConfig;
+  config: ResolvedWahooOAuthConfig;
   now?: number;
   provider: PublicIntegrationProvider;
   verifier: string;

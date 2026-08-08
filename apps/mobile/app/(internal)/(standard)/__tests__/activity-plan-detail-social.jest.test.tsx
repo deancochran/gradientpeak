@@ -190,9 +190,7 @@ jest.mock("@/lib/utils/durationConversion", () => ({ __esModule: true, getDurati
 jest.mock("@repo/core", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/core"),
-  buildEstimationContext: () => ({}),
   decodePolyline: () => null,
-  estimateActivity: () => null,
   formatDurationSec: (seconds: number) => `${seconds}s`,
   getStepIntensityColor: () => "#000000",
 }));

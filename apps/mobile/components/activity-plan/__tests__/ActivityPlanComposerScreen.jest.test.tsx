@@ -46,8 +46,8 @@ jest.mock("@/components/shared/AppBottomSheet", () => ({
 }));
 jest.mock("@/lib/api", () => ({
   api: {
-    profiles: {
-      getPerformanceTargets: { useQuery: () => ({ data: undefined }) },
+    athleteIntelligence: {
+      getReadModel: { useQuery: () => ({ data: undefined }) },
     },
   },
 }));

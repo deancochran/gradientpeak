@@ -33,10 +33,8 @@ describe("ActivityPlanComposer", () => {
       name: "Web tempo",
       structure: {
         version: 3,
-        segments: [
-          { activity_category: "bike", role: "activity" },
-          { activity_category: "bike", role: "activity" },
-        ],
+        activity_category: "bike",
+        segments: [{ role: "activity" }, { role: "activity" }],
       },
     });
     expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("route_id");

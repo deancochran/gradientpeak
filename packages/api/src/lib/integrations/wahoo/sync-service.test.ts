@@ -1,6 +1,18 @@
 import * as core from "@repo/core";
 import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("./planned-activity-scopes", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./planned-activity-scopes")>();
+  return {
+    ...actual,
+    hasWahooRouteMirrorScopes: (scope: string | null | undefined) => {
+      const granted = new Set((scope ?? "").split(/\s+/).filter(Boolean));
+      return ["routes_read", "routes_write", "offline_data"].every((value) => granted.has(value));
+    },
+  };
+});
+
 import { hashPlannedActivityPayload } from "../../provider-sync/planned-activities/planned-activity-hash";
 import { getWahooProjectionSnapshot } from "./plan-converter";
 import {
@@ -44,9 +56,9 @@ function planWithRelativeTarget(type: "%FTP" | "%ThresholdHR", activityCategory:
   const template = core.SYSTEM_TEMPLATES[0];
   if (!template) throw new Error("Expected a system template fixture");
   const structure = structuredClone(template.structure);
+  structure.activity_category = activityCategory;
   for (const segment of structure.segments) {
     if (segment.role !== "activity") continue;
-    segment.activity_category = activityCategory;
     for (const interval of segment.intervals) {
       for (const step of interval.steps) step.targets = [{ type, intensity: 80 }];
     }
@@ -100,6 +112,8 @@ function syncFixture(
     repository?: Record<string, unknown>;
     routeContent?: string | null;
     routeId?: string | null;
+    startsAt?: string;
+    timezone?: string;
     wahooClient?: Record<string, unknown>;
   } = {},
 ) {
@@ -143,7 +157,8 @@ function syncFixture(
       },
       id: "event-1",
       routeId: input.routeId ?? null,
-      startsAt: "2026-07-29T12:00:00.000Z",
+      startsAt: input.startsAt ?? "2026-07-29T12:00:00.000Z",
+      timezone: input.timezone ?? "UTC",
     }),
     getOwnedRouteForMirror: vi.fn().mockResolvedValue({
       description: "Ridge loop",
@@ -188,9 +203,10 @@ function syncFixture(
     updateRoute: vi.fn().mockResolvedValue(remoteRoute()),
     ...input.wahooClient,
   };
-  const getPerformanceTargets = vi
-    .fn()
-    .mockResolvedValue(input.performanceTargets ?? performanceTargets());
+  const getPerformanceTargets = vi.fn().mockResolvedValue({
+    status: "available",
+    targets: input.performanceTargets ?? performanceTargets(),
+  });
   const service = new WahooSyncService({
     getPerformanceTargets,
     repository: repository as never,
@@ -208,7 +224,8 @@ function syncFixture(
   const execution = {
     performanceModelAsOf,
     expectedIntegrationGeneration: 3,
-    expectedStartsAt: "2026-07-29T12:00:00.000Z",
+    expectedStartsAt: input.startsAt ?? "2026-07-29T12:00:00.000Z",
+    expectedTimezone: input.timezone ?? "UTC",
     integrationId: "integration-1",
     signal: new AbortController().signal,
   };
@@ -377,7 +394,7 @@ describe("WahooSyncService group event route delivery", () => {
 });
 
 describe("WahooSyncService planned-activity validation", () => {
-  it("rejects a durable mixed-plan job before provider projection or effects", async () => {
+  it("rejects a durable legacy segment-category job before provider projection or effects", async () => {
     const capability = vi
       .spyOn(core, "getProviderCapabilityUnavailableReason")
       .mockReturnValue(null);
@@ -386,9 +403,10 @@ describe("WahooSyncService planned-activity validation", () => {
     const source: core.ActivityPlanStructure = structuredClone(template.structure);
     const sourceSegment = source.segments.find((segment) => segment.role === "activity");
     if (!sourceSegment) throw new Error("Expected an activity segment fixture");
-    const duplicateSegment = structuredClone(sourceSegment);
-    duplicateSegment.activity_category =
-      duplicateSegment.activity_category === "run" ? "bike" : "run";
+    const duplicateSegment = {
+      ...structuredClone(sourceSegment),
+      activity_category: source.activity_category === "run" ? "bike" : "run",
+    };
     const repository = {
       findWahooIntegrationByProfileId: vi.fn(),
       getEventResourceLink: vi.fn().mockResolvedValue(null),
@@ -405,7 +423,10 @@ describe("WahooSyncService planned-activity validation", () => {
       })),
     };
     const service = new WahooSyncService({
-      getPerformanceTargets: vi.fn().mockResolvedValue(performanceTargets()),
+      getPerformanceTargets: vi.fn().mockResolvedValue({
+        status: "available",
+        targets: performanceTargets(),
+      }),
       repository: repository as never,
       storage: { downloadRouteGpx: vi.fn() },
     });
@@ -457,8 +478,7 @@ describe("WahooSyncService planned-activity reconciliation", () => {
 
     expect(wahooClient.createWorkout).toHaveBeenCalledTimes(1);
     expect(getPerformanceTargets).toHaveBeenCalledWith({
-      actorProfileId: "profile-1",
-      asOf: new Date(performanceModelAsOf),
+      profileId: "profile-1",
     });
     expect(wahooClient.createWorkout).toHaveBeenCalledWith(
       expect.objectContaining({ externalId: "event-1", planId: 42 }),
@@ -472,6 +492,25 @@ describe("WahooSyncService planned-activity reconciliation", () => {
         integrationId: "integration-1",
         profileId: "profile-1",
       }),
+    );
+  });
+
+  it("serializes a DST-crossed event in its persisted zone with an explicit offset", async () => {
+    const { execution, service, wahooClient } = syncFixture({
+      startsAt: "2026-03-09T13:30:00.000Z",
+      timezone: "America/New_York",
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1", execution)).resolves.toMatchObject({
+      action: "created",
+      success: true,
+    });
+
+    expect(wahooClient.createWorkout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scheduledDate: "2026-03-09T09:30:00.000-04:00",
+      }),
+      execution.signal,
     );
   });
 

@@ -2,11 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../server-action-api", () => ({ createServerActionCaller: vi.fn() }));
 
-import {
-  buildScopedCalendarEventUpdate,
-  goalActionSchema,
-  updateEventActionSchema,
-} from "./server-actions";
+import { goalActionSchema, updateEventActionSchema } from "./server-actions";
 
 const eventId = "00000000-0000-4000-8000-000000000001";
 
@@ -37,18 +33,14 @@ describe("calendar event update server action", () => {
     ).toBe(false);
   });
 
-  it("accepts omitted schedule fields for non-single updates without building a schedule patch", () => {
-    const parsed = updateEventActionSchema.parse({
-      event_id: eventId,
-      notes: "  Update the series notes  ",
-      scope: "future",
-      title: "Updated event",
-    });
-
-    expect(buildScopedCalendarEventUpdate(parsed)).toEqual({
-      id: eventId,
-      patch: { notes: "Update the series notes", title: "Updated event" },
-      scope: "future",
-    });
+  it.each(["future", "series"])("rejects removed %s-scope editing", (scope) => {
+    expect(
+      updateEventActionSchema.safeParse({
+        event_id: eventId,
+        notes: "Update the series notes",
+        scope,
+        title: "Updated event",
+      }).success,
+    ).toBe(false);
   });
 });

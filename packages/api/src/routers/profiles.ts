@@ -1,15 +1,6 @@
-import {
-  athletePerformanceOverviewSchema,
-  athletePerformanceTargetFactsSchema,
-  parseDateOfBirth,
-  profilePatchInputSchema,
-  projectAthletePerformanceOverview,
-  projectAthletePerformanceTargetFacts,
-} from "@repo/core";
-import { resolveProfileZones } from "@repo/core/zones";
+import { parseDateOfBirth, profilePatchInputSchema } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { getAthletePerformanceModelAsOf } from "../application/performance-model/get-athlete-performance-model-as-of";
 import {
   ensureProfileExists,
   getPublicProfileById,
@@ -21,7 +12,6 @@ import {
   updateProfile,
 } from "../application/profiles/updateProfile";
 import { getRequiredDb } from "../db";
-import { createAthletePerformanceModelRepository } from "../repositories/athlete-performance-model-repository";
 import { compareAndSwapOwnedProfileMedia } from "../repositories/profile-update-repository";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
@@ -37,47 +27,8 @@ const profileMediaCompareAndSwapInputSchema = z
   })
   .strict();
 const profileMediaCompareAndSwapResultSchema = z.object({ success: z.literal(true) }).strict();
-const performanceModelAsOfInputSchema = z.object({ asOf: z.string().datetime() }).strict();
 
 export const profilesRouter = createTRPCRouter({
-  getPerformanceModel: protectedProcedure
-    .input(performanceModelAsOfInputSchema)
-    .output(athletePerformanceOverviewSchema)
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const asOf = new Date(input.asOf);
-      try {
-        const model = await getAthletePerformanceModelAsOf(
-          { athleteId: ctx.session.user.id, asOf },
-          createAthletePerformanceModelRepository(db),
-        );
-        return projectAthletePerformanceOverview(model);
-      } catch {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to fetch athlete performance overview",
-        });
-      }
-    }),
-  getPerformanceTargets: protectedProcedure
-    .input(performanceModelAsOfInputSchema)
-    .output(athletePerformanceTargetFactsSchema)
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const asOf = new Date(input.asOf);
-      try {
-        const model = await getAthletePerformanceModelAsOf(
-          { athleteId: ctx.session.user.id, asOf },
-          createAthletePerformanceModelRepository(db),
-        );
-        return projectAthletePerformanceTargetFacts(model);
-      } catch {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to fetch athlete performance targets",
-        });
-      }
-    }),
   get: protectedProcedure.query(async ({ ctx }) => {
     const db = getRequiredDb(ctx);
 
@@ -218,30 +169,6 @@ export const profilesRouter = createTRPCRouter({
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to update profile image",
-        });
-      }
-    }),
-
-  getZones: protectedProcedure
-    .input(z.object({ asOf: z.string().datetime() }).strict())
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-
-      try {
-        const model = await getAthletePerformanceModelAsOf(
-          { athleteId: ctx.session.user.id, asOf: new Date(input.asOf) },
-          createAthletePerformanceModelRepository(db),
-        );
-        const zones = resolveProfileZones(projectAthletePerformanceTargetFacts(model));
-        return zones;
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to get training zones",
         });
       }
     }),

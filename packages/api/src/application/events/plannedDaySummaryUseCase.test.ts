@@ -20,13 +20,13 @@ import {
   plannedDaySummaryUseCase,
 } from "./plannedDaySummaryUseCase";
 
-function structure(activity_categories: Array<"bike" | "run">) {
+function structure(activity_category: "bike" | "run", segmentCount = 1) {
   return {
     version: 3,
-    segments: activity_categories.map((activity_category, index) => ({
+    activity_category,
+    segments: Array.from({ length: segmentCount }, (_, index) => ({
       id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
       role: "activity" as const,
-      activity_category,
       name: activity_category,
       intervals: [
         {
@@ -140,22 +140,13 @@ async function summarize(
           common_load: commonLoad(72),
         };
         const aggregate = estimate.common_load;
-        const parsedStructure = structure(["bike"]);
+        const parsedStructure = structure("bike");
         const sourceStructure =
           typeof plan.structure === "object" && plan.structure !== null
             ? plan.structure
             : parsedStructure;
         const activityCategory =
-          "segments" in sourceStructure && Array.isArray(sourceStructure.segments)
-            ? sourceStructure.segments.find(
-                (segment) =>
-                  typeof segment === "object" &&
-                  segment !== null &&
-                  "role" in segment &&
-                  segment.role === "activity" &&
-                  "activity_category" in segment,
-              )?.activity_category
-            : undefined;
+          "activity_category" in sourceStructure ? sourceStructure.activity_category : undefined;
         const category = activityCategory === "run" ? "run" : "bike";
         const method = category === "run" ? "run_pace_threshold" : "power_threshold";
         const quality = {
@@ -333,8 +324,8 @@ describe("plannedDaySummaryUseCase", () => {
   });
 
   it("aggregates two same-day Bike and Run plans with stable activity_categories and known values", async () => {
-    const bike = plan("plan-bike", structure(["bike"]));
-    const run = plan("plan-run", structure(["run"]));
+    const bike = plan("plan-bike", structure("bike"));
+    const run = plan("plan-run", structure("run"));
     const { result } = await summarize([event("bike", bike), event("run", run)], {
       "plan-bike": { estimated_duration: 3600, common_load: commonLoad(80) },
       "plan-run": { estimated_duration: 1800, common_load: commonLoad(40) },
@@ -352,7 +343,7 @@ describe("plannedDaySummaryUseCase", () => {
   });
 
   it("contributes a repeated same-category plan only once to activity_categories", async () => {
-    const bike = plan("plan-bike", structure(["bike"]));
+    const bike = plan("plan-bike", structure("bike"));
     const { result } = await summarize([event("bike-1", bike), event("bike-2", bike)]);
 
     expect(result.summary.activity_categories).toEqual(["bike"]);
@@ -376,8 +367,8 @@ describe("plannedDaySummaryUseCase", () => {
   });
 
   it("keeps aggregate estimates unknown rather than converting them to zero", async () => {
-    const bike = plan("plan-bike", structure(["bike"]));
-    const run = plan("plan-run", structure(["run"]));
+    const bike = plan("plan-bike", structure("bike"));
+    const run = plan("plan-run", structure("run"));
     const { result } = await summarize([event("bike", bike), event("run", run)], {
       "plan-bike": { estimated_duration: null, common_load: commonLoad(80, "partial") },
       "plan-run": { estimated_duration: 1800, common_load: commonLoad(null, "unavailable") },
@@ -389,7 +380,13 @@ describe("plannedDaySummaryUseCase", () => {
   });
 
   it("counts mixed stored plans as unavailable", async () => {
-    const legacy = plan("plan-legacy", structure(["bike", "run"]));
+    const legacy = plan("plan-legacy", {
+      version: 3,
+      segments: structure("bike", 2).segments.map((segment, index) => ({
+        ...segment,
+        activity_category: index === 0 ? "bike" : "run",
+      })),
+    });
     const { result } = await summarize([event("legacy", legacy)]);
 
     expect(result.summary).toMatchObject({
@@ -423,8 +420,8 @@ describe("plannedDaySummaryUseCase", () => {
   });
 
   it("uses scheduled and completed Events' planned estimates after the repository excludes cancelled Events", async () => {
-    const bike = plan("plan-bike", structure(["bike"]));
-    const run = plan("plan-run", structure(["run"]));
+    const bike = plan("plan-bike", structure("bike"));
+    const run = plan("plan-run", structure("run"));
     const { result } = await summarize([event("scheduled", bike), event("completed", run)], {
       "plan-bike": { estimated_duration: 3600, common_load: commonLoad(80) },
       "plan-run": { estimated_duration: 1800, common_load: commonLoad(40) },

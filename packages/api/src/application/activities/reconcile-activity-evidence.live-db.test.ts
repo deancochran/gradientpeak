@@ -94,8 +94,6 @@ async function seedActivity(profileId: string) {
       decoded_contract_version: "test-decoded-v1",
       materializer_version: "test-materializer-v1",
       segments_generated_at: seededAt,
-      provider: "wahoo",
-      external_id: randomUUID(),
     });
     await tx.insert(activityArtifacts).values(artifact);
     await tx.insert(activityArtifactLinks).values({
@@ -154,8 +152,6 @@ async function seedRepeatedBikeSegmentActivity(profileId: string) {
       decoded_contract_version: "test-decoded-v1",
       materializer_version: "test-materializer-v1",
       segments_generated_at: seededAt,
-      provider: "wahoo",
-      external_id: randomUUID(),
     });
     await tx.insert(activityArtifacts).values(artifact);
     await tx.insert(activityArtifactLinks).values({
@@ -217,7 +213,6 @@ function generatedCyclingEfforts(input: {
     return {
       id,
       created_at: seededAt,
-      updated_at: seededAt,
       profile_id: input.profileId,
       activity_id: input.activityId,
       segment_id: input.segmentId,
@@ -271,7 +266,6 @@ function repeatedSegmentCyclingEfforts(input: {
       return {
         id,
         created_at: seededAt,
-        updated_at: seededAt,
         profile_id: input.profileId,
         activity_id: input.activityId,
         segment_id: segment.id,
@@ -449,7 +443,7 @@ describe("reconcileGeneratedActivityEvidence against PostgreSQL", () => {
     ]);
   });
 
-  it("keeps effort row/provenance identity valid across import and reanalysis", async () => {
+  it("makes exact reprocessing idempotent and replaces changed effort evidence", async () => {
     const profileId = await seedProfile();
     const activity = await seedActivity(profileId);
     const repository = createAthletePerformanceModelRepository(db);
@@ -489,6 +483,31 @@ describe("reconcileGeneratedActivityEvidence against PostgreSQL", () => {
     }
 
     await db.transaction(async (tx) => {
+      await reconcileGeneratedActivityEvidence(tx, {
+        activityId: activity.id,
+        profileId,
+        efforts: generatedCyclingEfforts({
+          activityId: activity.id,
+          profileId,
+          segmentId: activity.segmentId,
+        }),
+        detectedLTHR: null,
+        now: new Date("2026-07-30T12:02:30.000Z"),
+      });
+    });
+    const redeliveredRows = await db
+      .select()
+      .from(activityEfforts)
+      .where(eq(activityEfforts.activity_id, activity.id));
+    const byDurationThenId = (
+      left: (typeof initialRows)[number],
+      right: (typeof initialRows)[number],
+    ) => left.duration_seconds - right.duration_seconds || left.id.localeCompare(right.id);
+    expect([...redeliveredRows].sort(byDurationThenId)).toEqual(
+      [...initialRows].sort(byDurationThenId),
+    );
+
+    await db.transaction(async (tx) => {
       await tx
         .update(activities)
         .set({ segments_revision: 2 })
@@ -524,9 +543,8 @@ describe("reconcileGeneratedActivityEvidence against PostgreSQL", () => {
       .select()
       .from(activityEfforts)
       .where(eq(activityEfforts.activity_id, activity.id));
-    expect(reanalyzedRows.map((row) => row.id).sort()).toEqual(
-      initialRows.map((row) => row.id).sort(),
-    );
+    const initialIds = new Set(initialRows.map((row) => row.id));
+    expect(reanalyzedRows.every((row) => !initialIds.has(row.id))).toBe(true);
     for (const row of reanalyzedRows) {
       expect(row.provenance).toMatchObject({ observation_id: row.id });
     }
@@ -756,7 +774,7 @@ describe("reconcileGeneratedActivityEvidence against PostgreSQL", () => {
     expect(changedModel.heartRate.bike.lthr).toMatchObject({ status: "available", valueBpm: 174 });
   });
 
-  it("keeps same-duration effort identities stable across repeated same-category segments", async () => {
+  it("replaces changed same-duration efforts independently across repeated segments", async () => {
     const profileId = await seedProfile();
     const activity = await seedRepeatedBikeSegmentActivity(profileId);
     const repository = createAthletePerformanceModelRepository(db);
@@ -820,7 +838,9 @@ describe("reconcileGeneratedActivityEvidence against PostgreSQL", () => {
       .where(eq(activityEfforts.activity_id, activity.id));
     expect(reanalyzedRows).toHaveLength(4);
     for (const row of reanalyzedRows) {
-      expect(row.id).toBe(observationIdByIdentity.get(`${row.segment_id}:${row.duration_seconds}`));
+      expect(row.id).not.toBe(
+        observationIdByIdentity.get(`${row.segment_id}:${row.duration_seconds}`),
+      );
       expect(row.provenance).toMatchObject({
         observation_id: row.id,
         activity_id: activity.id,

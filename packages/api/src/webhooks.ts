@@ -4,23 +4,22 @@
  */
 
 export { submitImportedActivityArtifact } from "./application/activity-file-ingestion/submit-imported-activity-artifact";
-export {
-  createAthletePerformanceModelReader,
-  createAthletePerformanceTargetFactsReader,
-} from "./application/performance-model/get-athlete-performance-model-as-of";
-export { createProviderSyncRepository, createWahooRepository } from "./infrastructure/repositories";
+export { AthleteStateWorkerService } from "./application/athlete-intelligence/athlete-state-worker";
+export { readPublishedAthletePerformanceTargets } from "./application/athlete-intelligence/published-athlete-state";
+export { createWahooRepository, createWahooSyncRepository } from "./infrastructure/repositories";
+export { isWahooIntegrationEnabled } from "./lib/integrations/oauth-config";
 export {
   createActivityImporter,
   createWahooImportActivityFileStorage,
 } from "./lib/integrations/wahoo/activity-importer";
 export type { WahooWorkoutSummary } from "./lib/integrations/wahoo/client";
 export { createWahooRouteStorage, WahooSyncService } from "./lib/integrations/wahoo/sync-service";
-export {
-  getProcessProviderSyncLimiter,
-  ProviderSyncConcurrencyLimiter,
-} from "./lib/provider-sync/job-execution";
 export { WahooActivityHistoryJobService } from "./lib/provider-sync/wahoo-activity-history-job-service";
+export {
+  getProcessWahooSyncLimiter,
+  WahooSyncConcurrencyLimiter,
+} from "./lib/provider-sync/wahoo-job-execution";
 export { WahooSyncJobService } from "./lib/provider-sync/wahoo-job-service";
 export { createWahooStagingCleanupReservation } from "./lib/provider-sync/wahoo-staging-cleanup";
 export { WahooWebhookJobService } from "./lib/provider-sync/wahoo-webhook-job-service";
-export { createAthletePerformanceModelRepository } from "./repositories";
+export { createActivityImportRepository } from "./repositories/activity-import-repository";

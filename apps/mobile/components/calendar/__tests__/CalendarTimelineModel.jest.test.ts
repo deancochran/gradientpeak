@@ -18,9 +18,14 @@ function objectRowKeys(sourceOrder: "forward" | "reverse") {
     { id: "event-b", starts_at: equalTime },
   ];
   const activities = [
-    { id: "activity-early", started_at: "2026-05-01T08:00:00.000Z" },
-    { id: "activity-a", started_at: equalTime },
-    { id: "activity-b", started_at: equalTime },
+    {
+      id: "activity-early",
+      name: "Early",
+      scheduled_date: dateKey,
+      started_at: "2026-05-01T08:00:00.000Z",
+    },
+    { id: "activity-a", name: "A", scheduled_date: dateKey, started_at: equalTime },
+    { id: "activity-b", name: "B", scheduled_date: dateKey, started_at: equalTime },
   ];
   const ordered = <T>(items: T[]) => (sourceOrder === "reverse" ? [...items].reverse() : items);
 

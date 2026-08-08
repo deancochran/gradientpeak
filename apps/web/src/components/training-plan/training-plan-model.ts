@@ -23,6 +23,17 @@ export function buildTrainingPlanStructure(
         offset_days: session.offsetDays,
         ...(session.title.trim() ? { event_overrides: { title: session.title.trim() } } : {}),
       })),
+    builder_planning_snapshot: {
+      version: 1,
+      plan_preferences: {
+        duration_weeks: null,
+        weekly_session_count: null,
+        target_weekly_hours: null,
+        rest_days_per_week: null,
+      },
+      scheduling: { preferred_weekdays: [] },
+      goal_context: { selected_goals: [] },
+    },
   });
 }
 

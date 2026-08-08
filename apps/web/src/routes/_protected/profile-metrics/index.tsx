@@ -1,3 +1,4 @@
+import { projectAthletePerformanceTargetOverview } from "@repo/core";
 import { isActivityDerivedThresholdMetricType } from "@repo/core/athlete-inputs";
 import type { ProfileMetricType } from "@repo/core/schemas/profile-metrics";
 import type { PreferredUnitSystem } from "@repo/core/units";
@@ -104,7 +105,6 @@ function ProfileMetricsPage() {
   const { user } = useAuth();
   const { unitSystem } = useViewingUserPreferredUnitSystem();
   const utils = api.useUtils();
-  const [performanceModelAsOf] = useState(() => new Date().toISOString());
   const [selectedMetricType, setSelectedMetricType] = useState<ProfileMetricType>("weight_kg");
   const [editorTarget, setEditorTarget] = useState<MetricEditorTarget | null>(null);
   const [deleteMetric, setDeleteMetric] = useState<ProfileMetricRow | null>(null);
@@ -112,9 +112,25 @@ function ProfileMetricsPage() {
     { limit: 50 },
     { getNextPageParam: (lastPage) => lastPage.nextCursor },
   );
-  const performanceModelQuery = api.profiles.getPerformanceModel.useQuery({
-    asOf: performanceModelAsOf,
-  });
+  const publishedStateQuery = api.athleteIntelligence.getReadModel.useQuery(
+    {
+      profileId: user?.id ?? "",
+      sections: { publishedState: true, status: true },
+    },
+    { enabled: !!user?.id },
+  );
+  const performanceOverview =
+    publishedStateQuery.data?.status?.freshness === "fresh" &&
+    publishedStateQuery.data.publishedState?.performanceTargets
+      ? projectAthletePerformanceTargetOverview(
+          publishedStateQuery.data.publishedState.performanceTargets,
+        )
+      : undefined;
+  const performanceStateError = publishedStateQuery.error?.message
+    ? publishedStateQuery.error.message
+    : publishedStateQuery.data && !performanceOverview
+      ? `Published performance state is ${publishedStateQuery.data.status?.freshness ?? "unavailable"}.`
+      : null;
   useEffect(() => {
     if (metricsQuery.hasNextPage && !metricsQuery.isFetchingNextPage) {
       void metricsQuery.fetchNextPage();
@@ -184,12 +200,10 @@ function ProfileMetricsPage() {
       />
 
       <PerformanceModelSummary
-        error={performanceModelQuery.error?.message ?? null}
-        isLoading={performanceModelQuery.isLoading}
-        onRetry={() => void performanceModelQuery.refetch()}
-        {...(performanceModelQuery.data !== undefined
-          ? { overview: performanceModelQuery.data }
-          : {})}
+        error={performanceStateError}
+        isLoading={publishedStateQuery.isLoading}
+        onRetry={() => void publishedStateQuery.refetch()}
+        {...(performanceOverview === undefined ? {} : { overview: performanceOverview })}
       />
 
       {metricsQuery.isError ? (

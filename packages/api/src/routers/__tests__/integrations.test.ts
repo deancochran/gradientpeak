@@ -3,12 +3,12 @@ import { z } from "zod";
 
 const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 const STATE_ID = "55555555-5555-4555-8555-555555555555";
-const INTEGRATION_ID = "77777777-7777-4777-8777-777777777777";
 
 const mocks = vi.hoisted(() => ({
   getProviderSyncOverview: vi.fn(),
   syncIntegrationNow: vi.fn(),
   refreshSetupData: vi.fn(),
+  getSetupData: vi.fn(),
   providerSyncRepository: { requestWahooDisconnect: vi.fn() },
   repositories: {
     integrations: { deleteByProfileIdAndProvider: vi.fn(), listByProfileId: vi.fn() },
@@ -20,8 +20,11 @@ vi.mock("../../application/integrations", () => ({
   getProviderSyncOverview: mocks.getProviderSyncOverview,
   syncIntegrationNow: mocks.syncIntegrationNow,
 }));
-vi.mock("../../application/onboarding-provider-enrichment", () => ({
-  OnboardingProviderEnrichmentService: class {
+vi.mock("../../application/wahoo-profile-setup-service", () => ({
+  WahooProfileSetupService: class {
+    getSetupData(...args: Parameters<typeof mocks.getSetupData>) {
+      return mocks.getSetupData(...args);
+    }
     refreshSetupData(...args: Parameters<typeof mocks.refreshSetupData>) {
       return mocks.refreshSetupData(...args);
     }
@@ -29,7 +32,7 @@ vi.mock("../../application/onboarding-provider-enrichment", () => ({
 }));
 vi.mock("../../infrastructure/repositories", () => ({
   createIntegrationsRepositories: vi.fn(() => mocks.repositories),
-  createProviderSyncRepository: vi.fn(() => mocks.providerSyncRepository),
+  createWahooSyncRepository: vi.fn(() => mocks.providerSyncRepository),
 }));
 vi.mock("@repo/db", () => ({
   publicIntegrationProviderSchema: z.enum(["strava", "wahoo", "trainingpeaks", "garmin", "zwift"]),
@@ -66,39 +69,26 @@ describe("integrationsRouter", () => {
     process.env.WAHOO_CLIENT_SECRET = "wahoo-client-secret";
     mocks.repositories.oauthStates.deleteExpired.mockResolvedValue(0);
     mocks.repositories.integrations.listByProfileId.mockResolvedValue([]);
+    mocks.getProviderSyncOverview.mockResolvedValue([]);
+    mocks.getSetupData.mockResolvedValue({
+      profile: { dob: null, gender: null, onboarded: false },
+      sources: {},
+      values: {},
+    });
   });
 
   afterEach(() => {
     process.env = { ...originalEnv };
   });
 
-  it("exposes only the six live integration leaves", () => {
+  it("exposes only the five live integration leaves", () => {
     expect(Object.keys(integrationsRouter._def.procedures).sort()).toEqual([
       "disconnect",
       "getAuthUrl",
       "getSyncOverview",
-      "list",
       "refreshSetupData",
       "syncNow",
     ]);
-  });
-
-  it("preserves list cleanup and its public row contract", async () => {
-    mocks.repositories.integrations.listByProfileId.mockResolvedValue([
-      {
-        id: INTEGRATION_ID,
-        profile_id: PROFILE_ID,
-        provider: "wahoo",
-        external_id: "42",
-        created_at: new Date("2026-04-01T10:00:00.000Z"),
-        updated_at: new Date("2026-04-01T11:00:00.000Z"),
-      },
-    ]);
-    await expect(createCaller().list()).resolves.toHaveLength(1);
-    expect(mocks.repositories.oauthStates.deleteExpired).toHaveBeenCalledWith({
-      profileId: PROFILE_ID,
-      now: expect.any(Date),
-    });
   });
 
   it("preserves getAuthUrl and disconnect contracts", async () => {
@@ -161,13 +151,22 @@ describe("integrationsRouter", () => {
     expect(mocks.repositories.oauthStates.create).not.toHaveBeenCalled();
   });
 
-  it("preserves a recoverable unqueued sync result at the public boundary", async () => {
+  it("rejects an unqueued sync result at the public boundary", async () => {
     mocks.syncIntegrationNow.mockResolvedValue({ jobId: null, queued: false, setupRefresh: null });
 
-    await expect(createCaller().syncNow({ provider: "wahoo" })).resolves.toEqual({
-      jobId: null,
-      queued: false,
-      setupRefresh: null,
+    await expect(createCaller().syncNow({ provider: "wahoo" })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Sync now result was invalid",
     });
+  });
+
+  it("rejects setup refresh for a disabled adapter before invoking the service", async () => {
+    delete process.env.WAHOO_CLIENT_ID;
+    delete process.env.WAHOO_CLIENT_SECRET;
+
+    await expect(createCaller().refreshSetupData({ provider: "wahoo" })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    expect(mocks.refreshSetupData).not.toHaveBeenCalled();
   });
 });

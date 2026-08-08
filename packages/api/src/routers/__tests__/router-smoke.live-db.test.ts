@@ -3,7 +3,7 @@ import { db, pool } from "@repo/db/client";
 import { activityRoutes, events, profiles, users } from "@repo/db/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import { eventsRouter } from "../events";
+import { calendarRouter } from "../events";
 import { routesRouter } from "../routes";
 
 type SeedState = {
@@ -134,7 +134,7 @@ describe("router live-db smoke", () => {
     );
   });
 
-  it("events.list succeeds against the migrated local database", async () => {
+  it("calendar.range succeeds against the migrated local database", async () => {
     const { email, seedState } = await seedUserProfile();
     const eventId = randomUUID();
     seedState.eventId = eventId;
@@ -156,14 +156,14 @@ describe("router live-db smoke", () => {
       updated_at: new Date("2026-04-01T09:00:00.000Z"),
     });
 
-    const caller = eventsRouter.createCaller(
+    const caller = calendarRouter.createCaller(
       createCallerContext(seedState.profileId, email) as any,
     );
-    const result = await caller.list({
-      include_adhoc: true,
+    const result = await caller.range({
+      includeAdhoc: true,
       limit: 20,
-      date_from: "2026-04-01",
-      date_to: "2026-04-03",
+      startDate: "2026-04-01",
+      endDateExclusive: "2026-04-04",
     });
 
     expect(result.items).toEqual(

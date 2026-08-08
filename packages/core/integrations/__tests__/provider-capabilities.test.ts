@@ -6,7 +6,7 @@ import {
   getProviderSyncMode,
   getProvidersWithCapability,
   integrationProviderIdValues,
-  isProviderRuntimeEnabled,
+  isProviderActivityHistoryReconciliationTarget,
   providerCapabilityRegistry,
   providerHasCapability,
 } from "../provider-capabilities";
@@ -19,22 +19,18 @@ describe("provider capability registry", () => {
   });
 
   it("marks Wahoo as the MVP file-first activity import provider", () => {
-    expect(isProviderRuntimeEnabled("wahoo")).toBe(true);
     expect(providerHasCapability("wahoo", "activity_history_read")).toBe(true);
     expect(providerHasCapability("wahoo", "activity_file_download")).toBe(true);
     expect(providerHasCapability("wahoo", "activity_file_format_fit")).toBe(true);
     expect(getProviderSyncMode("wahoo", "activity_history_read")).toBe("automatic");
+    expect(isProviderActivityHistoryReconciliationTarget("wahoo")).toBe(true);
+    expect(isProviderActivityHistoryReconciliationTarget("strava")).toBe(false);
   });
 
-  it("keeps future provider contracts without exposing scaffold runtimes", () => {
-    expect(
-      providerCapabilityRegistry
-        .filter((provider) => isProviderRuntimeEnabled(provider.id))
-        .map((provider) => provider.id),
-    ).toEqual(["wahoo"]);
-    expect(
-      providerCapabilityRegistry.find((provider) => provider.id === "strava")?.runtimeStatus,
-    ).toBe("scaffold");
+  it("does not encode runtime enablement separately from server configuration", () => {
+    expect(providerCapabilityRegistry.every((provider) => !("runtimeStatus" in provider))).toBe(
+      true,
+    );
     expect(providerHasCapability("trainingpeaks", "planned_activity_push")).toBe(false);
     expect(getProviderSyncMode("trainingpeaks", "planned_activity_push")).toBe("unsupported");
   });

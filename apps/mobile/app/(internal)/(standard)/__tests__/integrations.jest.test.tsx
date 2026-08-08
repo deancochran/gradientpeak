@@ -4,6 +4,7 @@ import { createHost } from "../../../../test/mock-components";
 import { act, fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const backMock = jest.fn();
+const pushMock = jest.fn();
 const refetchMock = jest.fn();
 let integrationOverviewErrorMock: Error | null = null;
 let integrationOverviewMock: unknown[] | undefined;
@@ -29,7 +30,7 @@ jest.mock("react-native", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
-  useRouter: () => ({ back: backMock }),
+  useRouter: () => ({ back: backMock, push: pushMock }),
 }));
 
 jest.mock("expo-constants", () => ({
@@ -69,14 +70,31 @@ jest.mock("@/lib/api", () => ({
         list: { invalidate: jest.fn(async () => undefined) },
       },
     }),
-    integrations: {
-      list: {
+    profiles: {
+      get: {
+        useQuery: () => ({ data: { id: "11111111-1111-4111-8111-111111111111" } }),
+      },
+    },
+    athleteIntelligence: {
+      getReadModel: {
         useQuery: () => ({
-          data: [{ provider: "strava" }],
-          refetch: refetchMock,
-          isLoading: false,
+          data: {
+            contractVersion: "athlete-read-model-v1",
+            profileId: "11111111-1111-4111-8111-111111111111",
+            asOf: "2026-08-01T12:00:00.000Z",
+            publishedRevision: 1,
+            algorithmVersion: "athlete-state-projection-v1",
+            publishedState: { publishedAt: "2026-08-01T12:00:00.000Z" },
+            status: {
+              freshness: "fresh",
+              rebuildStatus: "fresh",
+              importStatus: "complete",
+            },
+          },
         }),
       },
+    },
+    integrations: {
       getSyncOverview: {
         useQuery: () => ({
           data:
@@ -92,7 +110,9 @@ jest.mock("@/lib/api", () => ({
                       lastSucceededAt: null,
                       queuedJobId: null,
                       status: "unsupported",
+                      importRun: null,
                     },
+                    athleteState: { status: "unavailable", revision: null },
                     plannedActivities: {
                       lastError: null,
                       lastFailedAt: null,
@@ -131,7 +151,9 @@ jest.mock("@/lib/api", () => ({
                       lastSucceededAt: null,
                       queuedJobId: null,
                       status: "idle",
+                      importRun: null,
                     },
+                    athleteState: { status: "current", revision: 1 },
                     plannedActivities: {
                       lastError: null,
                       lastFailedAt: null,
@@ -170,7 +192,9 @@ jest.mock("@/lib/api", () => ({
                       lastSucceededAt: null,
                       queuedJobId: null,
                       status: "failed",
+                      importRun: null,
                     },
+                    athleteState: { status: "failed_incomplete", revision: 1 },
                     plannedActivities: {
                       lastError: null,
                       lastFailedAt: null,
@@ -277,6 +301,7 @@ const IntegrationsScreen = require("../integrations").default;
 describe("integrations screen", () => {
   beforeEach(() => {
     backMock.mockReset();
+    pushMock.mockReset();
     refetchMock.mockReset();
     integrationOverviewErrorMock = null;
     integrationOverviewMock = undefined;
@@ -307,7 +332,9 @@ describe("integrations screen", () => {
           lastSucceededAt: null,
           queuedJobId: null,
           status: "idle",
+          importRun: null,
         },
+        athleteState: { status: "unavailable", revision: null },
         plannedActivities: {
           lastError: null,
           lastFailedAt: null,

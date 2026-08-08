@@ -2,7 +2,6 @@ import type {
   BeginMobileRecordingUploadInput,
   BeginMobileRecordingUploadOutput,
   MobileRecordingSubmissionRequest,
-  RecordingAcceptedArtifact,
 } from "@repo/api/recording-submission";
 import {
   canonicalActivityCategorySchema,
@@ -91,7 +90,6 @@ export type CreateFromRecordingSummaryResult = {
     status?: string;
     source?: string;
   };
-  acceptedArtifact?: RecordingAcceptedArtifact;
 };
 
 export type UploadToSignedUrlResult = {

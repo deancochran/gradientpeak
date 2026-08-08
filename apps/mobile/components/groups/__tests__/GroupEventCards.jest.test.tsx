@@ -1,6 +1,6 @@
 import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
-import { GroupEventCard } from "../GroupEventCards";
+import { formatGroupEventDateRange, GroupEventCard } from "../GroupEventCards";
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -33,6 +33,7 @@ const event = {
   description: "Steady endurance pace.",
   starts_at: "2026-08-01T09:00:00.000Z",
   ends_at: "2026-08-01T11:00:00.000Z",
+  timezone: "UTC",
   location_name: "Clubhouse",
   cancelled_at: null,
   activity_plan_id: null,
@@ -47,6 +48,17 @@ const event = {
 } as Parameters<typeof GroupEventCard>[0]["event"];
 
 describe("GroupEventCard", () => {
+  it("formats event wall time in the organizer zone", () => {
+    const label = formatGroupEventDateRange({
+      starts_at: "2026-06-01T10:30:00.000Z",
+      ends_at: "2026-06-01T11:30:00.000Z",
+      timezone: "Pacific/Kiritimati",
+    });
+
+    expect(label).toContain("12:30 AM");
+    expect(label).toContain("1:30 AM");
+  });
+
   it("exposes a default identity and accessible navigation action", () => {
     const onPress = jest.fn();
     renderNative(<GroupEventCard event={event} onPress={onPress} />);

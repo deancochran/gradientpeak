@@ -47,7 +47,7 @@ function useVerifyReliableMutationInference() {
   type _ContextIsNotAny = Expect<Equal<IsAny<InferredContext>, false>>;
 
   const mutateReturn = mutation.mutate({
-    provider: "strava",
+    provider: "wahoo",
     redirectUri: "gradientpeak://integrations",
   });
   type _MutateReturnIsExact = Expect<Equal<typeof mutateReturn, void>>;

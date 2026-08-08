@@ -10,6 +10,7 @@ const activitiesListUseInfiniteQueryMock = jest.fn((_input?: unknown, _options?:
   fetchNextPage: jest.fn(async () => undefined),
   refetch: jest.fn(async () => undefined),
 }));
+let localSearchParamsMock: { importRunId?: string } = {};
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -25,6 +26,7 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: { Screen: createHost("StackScreen") },
+  useLocalSearchParams: () => localSearchParamsMock,
 }));
 
 jest.mock("@gorhom/bottom-sheet", () => ({
@@ -149,6 +151,7 @@ const ActivitiesListScreen = require("../activities-list").default;
 describe("activities list screen filters", () => {
   beforeEach(() => {
     activitiesListUseInfiniteQueryMock.mockClear();
+    localSearchParamsMock = {};
   });
 
   it("includes multisport in the default query", () => {
@@ -157,6 +160,7 @@ describe("activities list screen filters", () => {
     expect(activitiesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
       {
         limit: 20,
+        importRunId: undefined,
         search: undefined,
         activity_category: undefined,
         composition_mode: "include_multisport",
@@ -165,6 +169,20 @@ describe("activities list screen filters", () => {
       },
       expect.objectContaining({ getNextPageParam: expect.any(Function) }),
     );
+  });
+
+  it("filters the activity list to a valid imported batch route parameter", () => {
+    const importRunId = "77777777-7777-4777-8777-777777777777";
+    localSearchParamsMock = { importRunId };
+
+    renderNative(<ActivitiesListScreen />);
+
+    expect(activitiesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ importRunId }),
+      expect.any(Object),
+    );
+    expect(screen.getByText("Imported activity batch")).toBeTruthy();
+    expect(screen.getByText("No matching results")).toBeTruthy();
   });
 
   it("applies and resets the multisport composition filter", () => {

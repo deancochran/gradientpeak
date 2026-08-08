@@ -9,8 +9,8 @@ const { mutate } = vi.hoisted(() => ({ mutate: vi.fn() }));
 vi.mock("../../lib/api/client", () => ({
   api: {
     useUtils: () => ({ events: { invalidate: vi.fn() } }),
-    events: {
-      list: {
+    calendar: {
+      range: {
         useQuery: () => ({
           data: {
             items: [
@@ -26,6 +26,8 @@ vi.mock("../../lib/api/client", () => ({
           isLoading: false,
         }),
       },
+    },
+    events: {
       update: {
         useMutation: () => ({ isPending: false, mutate }),
       },

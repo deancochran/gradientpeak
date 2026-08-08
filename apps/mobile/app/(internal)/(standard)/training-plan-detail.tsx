@@ -69,7 +69,7 @@ type GroupedMicrocycleSessions = {
 };
 
 type TrainingPlanDetail = {
-  content_visibility?: string | null;
+  content_visibility?: "private" | "followers" | "public";
   created_at: string | Date;
   description?: string | null;
   duration_hours?: number | null;
@@ -83,7 +83,10 @@ type TrainingPlanDetail = {
   sessions_per_week_target?: number | null;
   structure: unknown;
   structure_hash: string;
-  template_visibility?: string | null;
+  editor?: {
+    revision: number;
+    structureHash: string;
+  } | null;
   updated_at?: string | Date;
 };
 
@@ -291,6 +294,15 @@ export default function TrainingPlanOverview() {
   const plan = isTrainingPlanDetail(planCandidate) ? planCandidate : undefined;
   const loadingPlan = isSystemTemplateId ? isLoadingTemplate : snapshot.isLoadingSharedDependencies;
   const isOwnedByUser = plan?.profile_id === profile?.id;
+  const publishedStateQuery = api.athleteIntelligence.getReadModel.useQuery(
+    isOwnedByUser && profile?.id
+      ? {
+          profileId: profile.id,
+          sections: { status: true, currentBaseline: { includePlanningContext: false } },
+        }
+      : skipToken,
+    { enabled: isOwnedByUser && Boolean(profile?.id), refetchOnWindowFocus: false },
+  );
 
   const [refreshing, setRefreshing] = React.useState(false);
   const [showActivityPicker, setShowActivityPicker] = React.useState(false);
@@ -411,16 +423,7 @@ export default function TrainingPlanOverview() {
       },
     );
 
-  const updatePlanStructureMutation = api.trainingPlans.update.useMutation({
-    onSuccess: async () => {
-      await Promise.all([invalidateTrainingPlanQueries(utils), snapshot.refetchAll()]);
-      setStatusModal({
-        title: "Session updated",
-        description: "Training plan structure was saved.",
-      });
-      setShowActivityPicker(false);
-      setSelectedSessionRow(null);
-    },
+  const commitPlanMutation = api.trainingPlans.commit.useMutation({
     onError: (error) => {
       setStatusModal({
         title: "Update failed",
@@ -702,13 +705,50 @@ export default function TrainingPlanOverview() {
       }
 
       if (!plan.structure_hash) throw new Error("Refresh the training plan before editing it.");
-      await updatePlanStructureMutation.mutateAsync({
-        id: plan.id,
-        expectedStructureHash: plan.structure_hash,
-        structure: persistedTrainingPlanStructureSchema.parse(nextStructure),
+      const publishedRevision = publishedStateQuery.data?.publishedRevision;
+      if (publishedRevision === null || publishedRevision === undefined) {
+        setStatusModal({
+          title: "Update unavailable",
+          description: "Refresh athlete state before changing this session assignment.",
+        });
+        return;
+      }
+      const persistedStructure = persistedTrainingPlanStructureSchema.parse(nextStructure);
+      const { id: _planId, ...structure } = persistedStructure;
+      if (!plan.editor) throw new Error("Refresh the training plan before editing it.");
+      const result = await commitPlanMutation.mutateAsync({
+        kind: "update",
+        basePublishedRevision: publishedRevision,
+        draft: {
+          planId: plan.id,
+          expectedRevision: plan.editor.revision,
+          expectedStructureHash: plan.editor.structureHash,
+          name: plan.name,
+          description: plan.description ?? null,
+          contentVisibility: plan.content_visibility,
+          structure,
+          previewStartDate:
+            publishedStateQuery.data?.currentBaseline?.currentPlanningDate ??
+            new Date().toISOString().slice(0, 10),
+        },
       });
+      if (result.status === "stale") {
+        await Promise.all([publishedStateQuery.refetch(), snapshot.refetchAll()]);
+        setStatusModal({
+          title: "Plan changed",
+          description: "The plan or athlete state changed. Review the refreshed plan and retry.",
+        });
+        return;
+      }
+      await Promise.all([invalidateTrainingPlanQueries(utils), snapshot.refetchAll()]);
+      setStatusModal({
+        title: "Session updated",
+        description: "Training plan structure was saved.",
+      });
+      setShowActivityPicker(false);
+      setSelectedSessionRow(null);
     },
-    [plan?.id, plan?.structure, plan?.structure_hash, updatePlanStructureMutation],
+    [plan, publishedStateQuery, snapshot, commitPlanMutation, utils],
   );
 
   const handleOpenActivityPickerForSession = useCallback((sessionRow: StructureSessionRow) => {
@@ -1019,7 +1059,7 @@ export default function TrainingPlanOverview() {
                   selectedSessionRow={selectedSessionRow}
                   showActivityPicker={showActivityPicker}
                   title="Sessions"
-                  updatePlanStructurePending={updatePlanStructureMutation.isPending}
+                  updatePlanStructurePending={commitPlanMutation.isPending}
                 />
                 {isLoadingLinkedPlans ? (
                   <Text className="text-sm text-muted-foreground">
@@ -1129,14 +1169,14 @@ export default function TrainingPlanOverview() {
           description="This session will no longer reference an activity plan."
           onClose={() => setPendingActivityRemovalSession(null)}
           primaryAction={{
-            label: updatePlanStructureMutation.isPending ? "Removing..." : "Remove Linked Activity",
+            label: commitPlanMutation.isPending ? "Removing..." : "Remove Linked Activity",
             onPress: () => {
               void commitSessionActivityPlan(pendingActivityRemovalSession, null);
               setPendingActivityRemovalSession(null);
             },
             testID: "training-plan-remove-linked-activity-confirm",
             variant: "destructive",
-            disabled: updatePlanStructureMutation.isPending,
+            disabled: commitPlanMutation.isPending,
           }}
           secondaryAction={{
             label: "Cancel",

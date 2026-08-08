@@ -84,9 +84,8 @@ async function normalizeSeededActivityPlanHash(client: PoolClient) {
     content_visibility: string;
     structure: unknown;
     structure_hash: string;
-    template_visibility: string;
   }>(
-    `select "structure", "structure_hash", "template_visibility", "content_visibility"
+    `select "structure", "structure_hash", "content_visibility"
      from "activity_plans" where "id" = $1 limit 1`,
     [TEST_ACTIVITY_PLAN_ID],
   );
@@ -99,7 +98,7 @@ async function normalizeSeededActivityPlanHash(client: PoolClient) {
   }
   await client.query(
     `update "activity_plans"
-     set "structure_hash" = $2, "template_visibility" = 'public', "content_visibility" = 'public'
+     set "structure_hash" = $2, "content_visibility" = 'public'
      where "id" = $1`,
     [TEST_ACTIVITY_PLAN_ID, structureHash(parsed.data)],
   );
@@ -133,14 +132,9 @@ export async function prepareTrainingPlanPrerequisites() {
     try {
       await restorePool.query(
         `update "activity_plans"
-         set "structure_hash" = $2, "template_visibility" = $3, "content_visibility" = $4
+         set "structure_hash" = $2, "content_visibility" = $3
          where "id" = $1`,
-        [
-          TEST_ACTIVITY_PLAN_ID,
-          original.structure_hash,
-          original.template_visibility,
-          original.content_visibility,
-        ],
+        [TEST_ACTIVITY_PLAN_ID, original.structure_hash, original.content_visibility],
       );
       await restorePool.query('update "profiles" set "planning_timezone" = $2 where "id" = $1', [
         profileId,
@@ -188,10 +182,10 @@ export async function withTrainingPlanLibraryFixture(
     await client.query(
       `insert into "training_plans" (
         "id", "profile_id", "name", "description", "structure", "structure_hash",
-        "template_visibility", "content_visibility", "is_system_template"
+        "content_visibility", "is_system_template"
       ) values
-        (gen_random_uuid(), $1, $2, 'Owned browser-library fixture', $4::jsonb, $5, 'private', 'private', false),
-        (gen_random_uuid(), null, $3, 'System browser-library fixture', $4::jsonb, $5, 'public', 'public', true)`,
+        (gen_random_uuid(), $1, $2, 'Owned browser-library fixture', $4::jsonb, $5, 'private', false),
+        (gen_random_uuid(), null, $3, 'System browser-library fixture', $4::jsonb, $5, 'public', true)`,
       [
         profileId,
         names.ownedName,
@@ -208,12 +202,11 @@ export async function withTrainingPlanLibraryFixture(
       if (originalActivityPlan) {
         await client.query(
           `update "activity_plans"
-           set "structure_hash" = $2, "template_visibility" = $3, "content_visibility" = $4
+           set "structure_hash" = $2, "content_visibility" = $3
            where "id" = $1`,
           [
             TEST_ACTIVITY_PLAN_ID,
             originalActivityPlan.structure_hash,
-            originalActivityPlan.template_visibility,
             originalActivityPlan.content_visibility,
           ],
         );

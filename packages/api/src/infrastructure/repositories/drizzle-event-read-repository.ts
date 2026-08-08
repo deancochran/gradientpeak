@@ -1,4 +1,4 @@
-import { getScheduledDateKey } from "@repo/core/utils/schedule-date";
+import { getCalendarDateInIanaZone, scheduledDateTimeToIsoInstant } from "@repo/core/calendar";
 import { type DrizzleDbClient, schema } from "@repo/db";
 import {
   and,
@@ -23,7 +23,6 @@ import {
 } from "../../application/training-plan/current-planning-week";
 import { toActivityPlanExecutionDto } from "../../dto/activity-plan";
 import type { EventReadRepository } from "../../repositories";
-import { createAthletePerformanceModelRepository } from "../../repositories/athlete-performance-model-repository";
 
 type EventReadDb = {
   execute: unknown;
@@ -160,11 +159,7 @@ export function createEventReadRepository(
   dbInput: EventReadDb | { db: EventReadDb },
 ): EventReadRepository {
   const db = resolveDb(dbInput) as DrizzleDbClient;
-  const performanceModelRepository = createAthletePerformanceModelRepository(db);
-
   return {
-    readAthletePerformanceEvidenceSnapshot: (input) =>
-      performanceModelRepository.readAthletePerformanceEvidenceSnapshot(input),
     async getEffectivePlanLoadInputs({
       asOf,
       endDate: requestedEndDate,
@@ -214,7 +209,7 @@ export function createEventReadRepository(
         };
       }
       const { startDate, endDate } = range;
-      const planningDate = getScheduledDateKey(asOf.toISOString(), planningTimezone);
+      const planningDate = getCalendarDateInIanaZone(asOf.toISOString(), planningTimezone);
       const envelopeStart = getPlanningDateRange({
         startDate: addCalendarDays(startDate, -1),
         endDate: addCalendarDays(startDate, -1),
@@ -417,6 +412,61 @@ export function createEventReadRepository(
       }));
     },
 
+    async listCalendarCompletedActivities({ limit, profileId, startedAtGte, startedAtLt }) {
+      const rows = await db
+        .select({
+          active_ms: schema.activities.active_ms,
+          distance_meters: schema.activities.distance_meters,
+          elapsed_ms: schema.activities.elapsed_ms,
+          id: schema.activities.id,
+          name: schema.activities.name,
+          started_at: schema.activities.started_at,
+        })
+        .from(schema.activities)
+        .where(
+          and(
+            eq(schema.activities.profile_id, profileId),
+            gte(schema.activities.started_at, new Date(startedAtGte)),
+            lt(schema.activities.started_at, new Date(startedAtLt)),
+          ),
+        )
+        .orderBy(asc(schema.activities.started_at), asc(schema.activities.id))
+        .limit(limit);
+
+      return rows.map((row) => ({ ...row, started_at: row.started_at.toISOString() }));
+    },
+
+    async listCalendarGoals({ endDateExclusive, limit, profileId, startDate }) {
+      return db
+        .select({
+          activity_category: schema.profileGoals.activity_category,
+          id: schema.profileGoals.id,
+          priority: schema.profileGoals.priority,
+          profile_id: schema.profileGoals.profile_id,
+          target_date: schema.profileGoals.target_date,
+          target_payload: schema.profileGoals.target_payload,
+          title: schema.profileGoals.title,
+        })
+        .from(schema.profileGoals)
+        .where(
+          and(
+            eq(schema.profileGoals.profile_id, profileId),
+            gte(schema.profileGoals.target_date, startDate),
+            lt(schema.profileGoals.target_date, endDateExclusive),
+          ),
+        )
+        .orderBy(asc(schema.profileGoals.target_date), asc(schema.profileGoals.id))
+        .limit(limit);
+    },
+
+    async listCalendarGroupActivityPlans({ activityPlanIds }) {
+      if (activityPlanIds.length === 0) return [];
+      return db
+        .select()
+        .from(schema.activityPlans)
+        .where(inArray(schema.activityPlans.id, activityPlanIds));
+    },
+
     async listPlannedEventDatesInRange({ profileId, startsAtGte, startsAtLte }) {
       const rows = await db
         .select({ starts_at: schema.events.starts_at })
@@ -541,49 +591,6 @@ export function createEventReadRepository(
       };
     },
 
-    async getEstimationInputs({ asOfIso, profileId, routeIds }) {
-      const asOf = new Date(asOfIso);
-      const routes =
-        routeIds.length > 0
-          ? await db
-              .select({
-                id: schema.activityRoutes.id,
-                distance_meters: schema.activityRoutes.total_distance,
-                total_ascent: schema.activityRoutes.total_ascent,
-                total_descent: schema.activityRoutes.total_descent,
-                updated_at: schema.activityRoutes.updated_at,
-              })
-              .from(schema.activityRoutes)
-              .where(
-                and(
-                  inArray(schema.activityRoutes.id, routeIds),
-                  or(
-                    eq(schema.activityRoutes.profile_id, profileId),
-                    eq(schema.activityRoutes.is_public, true),
-                    eq(schema.activityRoutes.is_system_template, true),
-                    sql`exists (
-                       select 1
-                       from content_access_grants
-                      where content_access_grants.content_type = 'activity_route'
-                        and content_access_grants.content_id = ${schema.activityRoutes.id}
-                        and content_access_grants.grantee_profile_id = ${profileId}::uuid
-                        and content_access_grants.access_level in ('read', 'read_geometry')
-                        and content_access_grants.revoked_at is null
-                        and (content_access_grants.expires_at is null or content_access_grants.expires_at > ${asOf})
-                    )`,
-                  ),
-                ),
-              )
-          : [];
-
-      return {
-        routes: routes.map((route) => ({
-          ...route,
-          updated_at: route.updated_at.toISOString(),
-        })),
-      };
-    },
-
     async getAccessibleTrainingPlanProjection({
       endDateExclusiveIso,
       profileId,
@@ -658,7 +665,6 @@ export function createEventReadRepository(
           avg_speed_mps: schema.activities.avg_speed_mps,
           max_speed_mps: schema.activities.max_speed_mps,
           normalized_speed_mps: schema.activities.normalized_speed_mps,
-          normalized_graded_speed_mps: schema.activities.normalized_graded_speed_mps,
         })
         .from(schema.activities)
         .where(
@@ -705,12 +711,47 @@ export function createEventReadRepository(
 
       if (input.dateFrom) {
         const scheduleDateFrom = input.dateFrom.slice(0, 10);
-        conditions.push(gte(schema.events.scheduled_date, scheduleDateFrom));
+        if (input.planningTimezone) {
+          const startsAtFrom = new Date(
+            scheduledDateTimeToIsoInstant({
+              scheduledDate: scheduleDateFrom,
+              time: "00:00",
+              timeZone: input.planningTimezone,
+            }),
+          );
+          const planningDateLowerBound = or(
+            and(
+              eq(schema.events.all_day, true),
+              gte(schema.events.scheduled_date, scheduleDateFrom),
+            ),
+            and(eq(schema.events.all_day, false), gte(schema.events.starts_at, startsAtFrom)),
+          );
+          if (!planningDateLowerBound) throw new Error("Planning date lower bound is required");
+          conditions.push(planningDateLowerBound);
+        } else {
+          conditions.push(gte(schema.events.scheduled_date, scheduleDateFrom));
+        }
       }
 
       if (input.dateTo) {
         const scheduleDateTo = input.dateTo.slice(0, 10);
-        conditions.push(lt(schema.events.scheduled_date, scheduleDateTo));
+        if (input.planningTimezone) {
+          const startsAtTo = new Date(
+            scheduledDateTimeToIsoInstant({
+              scheduledDate: scheduleDateTo,
+              time: "00:00",
+              timeZone: input.planningTimezone,
+            }),
+          );
+          const planningDateUpperBound = or(
+            and(eq(schema.events.all_day, true), lt(schema.events.scheduled_date, scheduleDateTo)),
+            and(eq(schema.events.all_day, false), lt(schema.events.starts_at, startsAtTo)),
+          );
+          if (!planningDateUpperBound) throw new Error("Planning date upper bound is required");
+          conditions.push(planningDateUpperBound);
+        } else {
+          conditions.push(lt(schema.events.scheduled_date, scheduleDateTo));
+        }
       }
 
       if (input.cursor) {

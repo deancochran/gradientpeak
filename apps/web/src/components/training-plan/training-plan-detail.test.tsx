@@ -15,30 +15,14 @@ const mocks = vi.hoisted(() => ({
     structure_hash: "hash",
     structure: { version: 1, sessions: [] },
     is_system_template: false,
-    template_visibility: "private",
+    content_visibility: "private",
+    editor: {
+      revision: 1,
+      structureHash: `v1:sha256:${"a".repeat(64)}`,
+      validation: { status: "current" },
+    },
   },
   removeAppliedScheduleMutation: vi.fn(),
-  weeklyData: [
-    {
-      weekStart: "2026-03-01",
-      planAlignment: {
-        status: "partial",
-        score: 82,
-        assessableSessions: 2,
-        totalSessions: 3,
-        unverifiedSessions: 1,
-      },
-    },
-  ] as Array<{
-    weekStart: string;
-    planAlignment: {
-      status: "available" | "partial" | "unavailable";
-      score: number | null;
-      assessableSessions: number;
-      totalSessions: number;
-      unverifiedSessions: number;
-    };
-  }>,
 }));
 
 vi.mock("../../lib/api/client", () => ({
@@ -48,16 +32,7 @@ vi.mock("../../lib/api/client", () => ({
     trainingPlans: {
       get: { useQuery: () => ({ data: mocks.plan, error: null, isLoading: false }) },
       getActivePlan: { useQuery: () => ({ data: mocks.activePlan }) },
-      getInsightTimeline: { useQuery: () => ({ data: null, error: null, isLoading: false }) },
-      getWeeklySummary: {
-        useQuery: () => ({
-          data: mocks.weeklyData,
-          error: null,
-          isLoading: false,
-        }),
-      },
-      update: { useMutation: mocks.mutation },
-      duplicate: { useMutation: mocks.mutation },
+      commit: { useMutation: mocks.mutation },
       removeAppliedSchedule: {
         useMutation: () => ({ isPending: false, mutateAsync: mocks.removeAppliedScheduleMutation }),
       },
@@ -71,14 +46,13 @@ vi.mock("../../lib/api/client", () => ({
   },
 }));
 
-describe("TrainingPlanDetail plan alignment", () => {
+describe("TrainingPlanDetail", () => {
   afterEach(() => {
-    mocks.weeklyData = [];
     mocks.activePlan = null;
     mocks.removeAppliedScheduleMutation.mockReset();
   });
 
-  it("shows alignment evidence and never invents a zero score", () => {
+  it("shows the authoritative projection status", () => {
     render(
       <TrainingPlanDetail
         planId="plan-1"
@@ -87,39 +61,8 @@ describe("TrainingPlanDetail plan alignment", () => {
         onOpenDuplicate={vi.fn()}
       />,
     );
-    expect(screen.getByText("Plan alignment")).toBeTruthy();
-    expect(screen.getAllByText(/82%/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/2 of 3 sessions assessed/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/1 unverified/).length).toBeGreaterThan(0);
-    expect(screen.queryByText("0% adherence")).toBeNull();
-  });
-
-  it("renders unavailable alignment as an em dash rather than zero percent", () => {
-    mocks.weeklyData = [
-      {
-        weekStart: "2026-03-01",
-        planAlignment: {
-          status: "unavailable",
-          score: null,
-          assessableSessions: 0,
-          totalSessions: 0,
-          unverifiedSessions: 0,
-        },
-      },
-    ];
-
-    render(
-      <TrainingPlanDetail
-        planId="plan-1"
-        onDeleted={vi.fn()}
-        onEdit={vi.fn()}
-        onOpenDuplicate={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("—")).toBeTruthy();
-    expect(screen.getAllByText(/0 of 0 sessions assessed/).length).toBeGreaterThan(0);
-    expect(screen.queryByText("0%")).toBeNull();
+    expect(screen.getByText("Projection status")).toBeTruthy();
+    expect(screen.getByText("current")).toBeTruthy();
   });
 
   it("removes the active schedule with the displayed plan and active batch IDs", async () => {

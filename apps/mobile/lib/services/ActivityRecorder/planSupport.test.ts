@@ -7,7 +7,6 @@ const activitySegment = (activityCategory: "run" | "bike", value: number) => ({
   id: id(value),
   role: "activity" as const,
   name: activityCategory,
-  activity_category: activityCategory,
   intervals: [
     {
       id: id(value + 100),
@@ -25,24 +24,36 @@ const activitySegment = (activityCategory: "run" | "bike", value: number) => ({
   ],
 });
 
-const plan = (segments: unknown) => ({ name: "Plan", structure: { version: 3, segments } });
+const plan = (activity_category: "run" | "bike", segments: unknown) => ({
+  name: "Plan",
+  structure: { version: 3, activity_category, segments },
+});
 
 describe("getMobileRecordingPlanSupport", () => {
   it("supports a single-activity-category plan", () => {
-    expect(getMobileRecordingPlanSupport(plan([activitySegment("run", 1)])).supported).toBe(true);
+    expect(getMobileRecordingPlanSupport(plan("run", [activitySegment("run", 1)])).supported).toBe(
+      true,
+    );
   });
 
   it("supports repeated activity segments in the same category", () => {
     const support = getMobileRecordingPlanSupport(
-      plan([activitySegment("run", 1), activitySegment("run", 2)]),
+      plan("run", [activitySegment("run", 1), activitySegment("run", 2)]),
     );
     expect(support).toMatchObject({ supported: true, activity_category: "run" });
   });
 
-  it("rejects mixed-category plans", () => {
-    const support = getMobileRecordingPlanSupport(
-      plan([activitySegment("run", 1), activitySegment("bike", 2)]),
-    );
+  it("rejects legacy segment-category plans", () => {
+    const support = getMobileRecordingPlanSupport({
+      name: "Legacy plan",
+      structure: {
+        version: 3,
+        segments: [
+          { ...activitySegment("run", 1), activity_category: "run" },
+          { ...activitySegment("bike", 2), activity_category: "bike" },
+        ],
+      },
+    });
     expect(support).toMatchObject({
       supported: false,
       reason: "invalid_structure",

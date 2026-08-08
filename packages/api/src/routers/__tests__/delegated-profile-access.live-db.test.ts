@@ -82,6 +82,27 @@ async function activeRelationship(coachId: string, athleteId: string) {
   return { engagementId, membershipId, organizationId };
 }
 
+async function seedGoalsConsent(
+  relationship: { engagementId: string; organizationId: string },
+  athleteId: string,
+) {
+  const policyVersionId = randomUUID();
+  await db.execute(sql`
+    insert into athlete_consent_policy_versions
+      (id, scope_key, effective_from, jurisdiction, terms_text, content_digest)
+    values
+      (${policyVersionId}::uuid, 'goals', now() - interval '1 second', 'US',
+       'Goals sharing terms', ${`sha256:${policyVersionId}`} )
+  `);
+  await db.execute(sql`
+    insert into athlete_data_sharing_consents
+      (organization_id, engagement_id, athlete_profile_id, scope_key, policy_version_id, granted_by_profile_id)
+    values
+      (${relationship.organizationId}::uuid, ${relationship.engagementId}::uuid, ${athleteId}::uuid,
+       'goals', ${policyVersionId}::uuid, ${athleteId}::uuid)
+  `);
+}
+
 function goalInput(profileId: string, title: string) {
   return {
     profile_id: profileId,
@@ -108,16 +129,20 @@ async function readPersistedState(profileId: string, goalId: string) {
   return { settings: settings.rows[0]?.settings, title: goals.rows[0]?.title };
 }
 
-async function waitForRelationshipLock(timeoutMs = 2_000) {
+async function waitForRelationshipLock(blockerPid: number, timeoutMs = 2_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const result = await pool.query<{ count: number }>(`
+    const result = await pool.query<{ count: number }>(
+      `
       select count(*)::int as count
       from pg_stat_activity
       where datname = current_database()
         and wait_event_type = 'Lock'
         and query ilike '%coaching_assignments%'
-    `);
+        and $1 = any(pg_blocking_pids(pid))
+    `,
+      [blockerPid],
+    );
     if (Number(result.rows[0]?.count) > 0) return;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
@@ -222,32 +247,37 @@ afterEach(async () => {
 afterAll(async () => pool.end());
 
 describe("delegated profile write revocation through appRouter", () => {
-  it("uses the production goal resolver for active-coach intelligence and hides denied goals", async () => {
+  it("uses the production goal resolver for published athlete state and hides denied goals", async () => {
     const athleteId = await seedProfile("Intelligence athlete");
     const coachId = await seedProfile("Intelligence coach");
     const unrelatedId = await seedProfile("Unrelated intelligence caller");
-    await activeRelationship(coachId, athleteId);
+    const relationship = await activeRelationship(coachId, athleteId);
+    await seedGoalsConsent(relationship, athleteId);
     const owner = await createCaller(athleteId);
     const coach = await createCaller(coachId);
     const unrelated = await createCaller(unrelatedId);
     const goal = await owner.goals.create(goalInput(athleteId, "Coach-visible intelligence goal"));
 
-    await expect(coach.athleteIntelligence.evaluate({ goalId: goal.id })).resolves.toMatchObject({
-      athleteId,
-    });
-    await expect(unrelated.athleteIntelligence.evaluate({ goalId: goal.id })).rejects.toMatchObject(
-      { code: "NOT_FOUND" },
-    );
     await expect(
-      coach.athleteIntelligence.evaluate({ goalId: randomUUID() }),
+      coach.athleteIntelligence.getGoalAssessment({ goalId: goal.id }),
+    ).resolves.toMatchObject({
+      freshness: "unavailable",
+      rebuildStatus: "unavailable",
+      assessment: null,
+    });
+    await expect(
+      unrelated.athleteIntelligence.getGoalAssessment({ goalId: goal.id }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(
+      coach.athleteIntelligence.getGoalAssessment({ goalId: randomUUID() }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
 
     await expect(
       coach.profileAccess.revoke({ coach_id: coachId, athlete_id: athleteId }),
     ).resolves.toEqual({ revoked: true });
-    await expect(coach.athleteIntelligence.evaluate({ goalId: goal.id })).rejects.toMatchObject({
-      code: "NOT_FOUND",
-    });
+    await expect(
+      coach.athleteIntelligence.getGoalAssessment({ goalId: goal.id }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("persists owner and active coach writes, then fails closed for every revoked delegated mutation", async () => {
@@ -336,6 +366,7 @@ describe("delegated profile write revocation through appRouter", () => {
     const relationship = await activeRelationship(coachId, athleteId);
     const coach = await createCaller(coachId);
     const held = await pool.connect();
+    const blockerPid = Number((await held.query("select pg_backend_pid() as pid")).rows[0]?.pid);
     let committed = false;
 
     try {
@@ -347,7 +378,7 @@ describe("delegated profile write revocation through appRouter", () => {
         profile_id: athleteId,
         settings: defaultAthletePreferenceProfile,
       });
-      await waitForRelationshipLock();
+      await waitForRelationshipLock(blockerPid);
       const revoke = coach.profileAccess.revoke({ coach_id: coachId, athlete_id: athleteId });
 
       await held.query("commit");
@@ -371,6 +402,7 @@ describe("delegated profile write revocation through appRouter", () => {
     const relationship = await activeRelationship(coachId, athleteId);
     const coach = await createCaller(coachId);
     const held = await pool.connect();
+    const blockerPid = Number((await held.query("select pg_backend_pid() as pid")).rows[0]?.pid);
     let committed = false;
 
     try {
@@ -379,7 +411,7 @@ describe("delegated profile write revocation through appRouter", () => {
         relationship.engagementId,
       ]);
       const revoke = coach.profileAccess.revoke({ coach_id: coachId, athlete_id: athleteId });
-      await waitForRelationshipLock();
+      await waitForRelationshipLock(blockerPid);
       const write = coach.goals.create(goalInput(athleteId, "Blocked by revoke"));
 
       await held.query("commit");

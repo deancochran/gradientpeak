@@ -1,4 +1,3 @@
-import { keepPreviousData } from "@tanstack/react-query";
 import { act } from "@testing-library/react-native/pure";
 import React from "react";
 import type { ReactTestInstance } from "react-test-renderer";
@@ -13,10 +12,7 @@ import { fireEvent, renderNative, screen } from "../../../../test/render-native"
 
 const pushMock = jest.fn();
 const replaceMock = jest.fn();
-const eventsListUseQueryMock = jest.fn();
-const activitiesListUseQueryMock = jest.fn();
-const groupEventsListUseQueryMock = jest.fn();
-const activityPlansGetManyUseQueryMock = jest.fn();
+const calendarRangeUseQueryMock = jest.fn();
 const mockFlatListScrollToIndex = jest.fn();
 const mockFlatListScrollToOffset = jest.fn();
 const utilsEventsInvalidateMock = jest.fn(async () => undefined);
@@ -148,21 +144,6 @@ jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
   useAuthStore: <T,>(selector: (state: AuthStoreFixture) => T) =>
     selector({ ready: mockAuthReady, session: { user: { id: "profile-1" } } }),
-}));
-
-jest.mock("@/lib/hooks/useProfileGoals", () => ({
-  __esModule: true,
-  useProfileGoals: () => ({
-    goals: [
-      {
-        id: "goal-1",
-        title: "Spring A Race",
-        target_date: today,
-      },
-    ],
-    isError: false,
-    refetch: jest.fn(async () => undefined),
-  }),
 }));
 
 jest.mock("@/lib/hooks/useLocalTodayKey", () => ({
@@ -327,192 +308,142 @@ jest.mock("@/lib/api", () => ({
         invalidate: utilsEventsInvalidateMock,
       },
     }),
-    events: {
-      list: {
-        useInfiniteQuery: (input?: unknown, options?: unknown) =>
-          eventsListUseQueryMock(input, options) ?? {
-            data: {
-              pages: [
-                {
-                  items: [
-                    {
-                      id: "event-1",
-                      event_type: "custom",
-                      title: "Track activity",
-                      description: "Fast reps on the oval.",
-                      scheduled_date: today,
-                      starts_at: `${today}T05:00:00.000`,
-                      ends_at: `${today}T06:30:00.000`,
-                      all_day: false,
-                      notes: "Bring spikes",
-                    },
-                    {
-                      id: "event-2",
-                      event_type: "planned",
-                      title: "Tempo Builder",
-                      scheduled_date: today,
-                      starts_at: `${today}T06:30:00.000`,
-                      all_day: false,
-                      completed: false,
-                      activity_plan: {
-                        id: "plan-1",
-                        name: "Tempo Builder",
-                        description: "Progressive tempo with a strong finish.",
-                        activity_category: "run",
-                        prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
-                          durationSeconds: 3_600,
-                          load: 67.24,
-                        }),
-                        structure: {
-                          version: 3,
-                          segments: [
-                            {
-                              id: "00000000-0000-4000-8000-000000000001",
-                              role: "activity",
-                              activity_category: "run",
-                              name: "Track activity",
-                              intervals: [
-                                {
-                                  id: "00000000-0000-4000-8000-000000000002",
-                                  name: "Main set",
-                                  repetitions: 1,
-                                  steps: [
-                                    {
-                                      id: "00000000-0000-4000-8000-000000000003",
-                                      name: "Warmup",
-                                      duration: { type: "time", seconds: 600 },
-                                      targets: [{ type: "%MaxHR", intensity: 55 }],
-                                    },
-                                    {
-                                      id: "00000000-0000-4000-8000-000000000004",
-                                      name: "Tempo",
-                                      duration: { type: "time", seconds: 1800 },
-                                      targets: [{ type: "%MaxHR", intensity: 92 }],
-                                    },
-                                    {
-                                      id: "00000000-0000-4000-8000-000000000005",
-                                      name: "Cooldown",
-                                      duration: { type: "time", seconds: 600 },
-                                      targets: [{ type: "%MaxHR", intensity: 45 }],
-                                    },
-                                  ],
-                                },
-                              ],
-                            },
-                          ],
-                        },
+    calendar: {
+      range: {
+        useQuery: (input?: unknown, options?: unknown) => {
+          return (
+            calendarRangeUseQueryMock(input, options) ?? {
+              data: {
+                items: [
+                  {
+                    id: "event-1",
+                    event_type: "custom",
+                    title: "Track activity",
+                    description: "Fast reps on the oval.",
+                    scheduled_date: today,
+                    starts_at: `${today}T05:00:00.000`,
+                    ends_at: `${today}T06:30:00.000`,
+                    all_day: false,
+                    notes: "Bring spikes",
+                  },
+                  {
+                    id: "event-2",
+                    event_type: "planned",
+                    title: "Tempo Builder",
+                    scheduled_date: today,
+                    starts_at: `${today}T06:30:00.000`,
+                    all_day: false,
+                    completed: false,
+                    activity_plan: {
+                      id: "plan-1",
+                      name: "Tempo Builder",
+                      description: "Progressive tempo with a strong finish.",
+                      activity_category: "run",
+                      prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+                        durationSeconds: 3_600,
+                        load: 67.24,
+                      }),
+                      structure: {
+                        version: 3,
+                        segments: [
+                          {
+                            id: "00000000-0000-4000-8000-000000000001",
+                            role: "activity",
+                            activity_category: "run",
+                            name: "Track activity",
+                            intervals: [
+                              {
+                                id: "00000000-0000-4000-8000-000000000002",
+                                name: "Main set",
+                                repetitions: 1,
+                                steps: [
+                                  {
+                                    id: "00000000-0000-4000-8000-000000000003",
+                                    name: "Warmup",
+                                    duration: { type: "time", seconds: 600 },
+                                    targets: [{ type: "%MaxHR", intensity: 55 }],
+                                  },
+                                  {
+                                    id: "00000000-0000-4000-8000-000000000004",
+                                    name: "Tempo",
+                                    duration: { type: "time", seconds: 1800 },
+                                    targets: [{ type: "%MaxHR", intensity: 92 }],
+                                  },
+                                  {
+                                    id: "00000000-0000-4000-8000-000000000005",
+                                    name: "Cooldown",
+                                    duration: { type: "time", seconds: 600 },
+                                    targets: [{ type: "%MaxHR", intensity: 45 }],
+                                  },
+                                ],
+                              },
+                            ],
+                          },
+                        ],
                       },
                     },
-                    {
-                      id: "event-3",
-                      event_type: "custom",
-                      title: "Mobility session",
-                      description: "Gentle evening mobility.",
-                      scheduled_date: "2026-03-24",
-                      starts_at: "2026-03-24T18:00:00.000",
-                      all_day: false,
-                    },
-                    {
-                      id: "event-4",
-                      event_type: "rest_day",
-                      title: "Legacy rest day",
-                      scheduled_date: "2026-03-25",
-                      all_day: true,
-                    },
-                    {
-                      id: "event-5",
-                      event_type: "imported",
-                      title: "Imported ride",
-                      description: "Pulled in from provider sync.",
-                      scheduled_date: today,
-                      starts_at: `${today}T14:00:00.000`,
-                      all_day: false,
-                    },
-                  ],
-                  nextCursor: undefined,
-                },
-              ],
-            },
-            fetchNextPage: jest.fn(async () => undefined),
-            hasNextPage: false,
-            isError: false,
-            isFetchingNextPage: false,
-            isLoading: false,
-            refetch: jest.fn(async () => undefined),
-          },
-      },
-    },
-    groups: {
-      events: {
-        myCalendarGroupEvents: {
-          useInfiniteQuery: (input?: unknown, options?: unknown) =>
-            groupEventsListUseQueryMock(input, options) ?? {
-              data: { pages: [{ items: [], nextCursor: undefined }] },
-              fetchNextPage: jest.fn(async () => undefined),
-              hasNextPage: false,
-              isError: false,
-              isFetchingNextPage: false,
-              isLoading: false,
-              error: null,
-              refetch: jest.fn(async () => undefined),
-            },
-        },
-      },
-    },
-    activityPlans: {
-      getManyByIds: {
-        useQuery: (input?: unknown, options?: unknown) =>
-          activityPlansGetManyUseQueryMock(input, options) ?? {
-            data: { items: [] },
-            isError: false,
-            isLoading: false,
-            error: null,
-            refetch: jest.fn(async () => undefined),
-          },
-      },
-    },
-    activities: {
-      listPaginated: {
-        useInfiniteQuery: (input?: unknown, options?: unknown) =>
-          activitiesListUseQueryMock(input, options) ?? {
-            data: {
-              pages: [
-                {
+                  },
+                  {
+                    id: "event-3",
+                    event_type: "custom",
+                    title: "Mobility session",
+                    description: "Gentle evening mobility.",
+                    scheduled_date: "2026-03-24",
+                    starts_at: "2026-03-24T18:00:00.000",
+                    all_day: false,
+                  },
+                  {
+                    id: "event-4",
+                    event_type: "rest_day",
+                    title: "Legacy rest day",
+                    scheduled_date: "2026-03-25",
+                    all_day: true,
+                  },
+                  {
+                    id: "event-5",
+                    event_type: "imported",
+                    title: "Imported ride",
+                    description: "Pulled in from provider sync.",
+                    scheduled_date: today,
+                    starts_at: `${today}T14:00:00.000`,
+                    all_day: false,
+                  },
+                ],
+                completedActivities: {
                   items: [
                     {
                       id: "activity-1",
                       name: "Morning miles",
-                      type: "run",
+                      scheduled_date: today,
                       started_at: `${today}T11:00:00.000Z`,
                       duration_seconds: 2700,
                       distance_meters: 8000,
-                      moving_seconds: 2600,
-                      avg_heart_rate: 145,
-                      avg_power: null,
-                      avg_cadence: 86,
-                      elevation_gain_meters: 45,
-                      calories: 520,
-                      polyline: null,
-                      activity_file_path: null,
-                      likes_count: 0,
-                      comments_count: 0,
-                      has_liked: false,
                       derived: {
                         observationQuantification: createObservationQuantificationBundleFixture(),
-                        computed_as_of: `${today}T11:45:00.000Z`,
                       },
                     },
                   ],
+                  truncated: false,
                 },
-              ],
-            },
-            fetchNextPage: jest.fn(async () => undefined),
-            hasNextPage: false,
-            isFetchingNextPage: false,
-            isError: false,
-            isLoading: false,
-            refetch: jest.fn(async () => undefined),
-          },
+                goals: {
+                  items: [{ id: "goal-1", title: "Spring A Race", target_date: today }],
+                  truncated: false,
+                },
+                selectedGroupEvents: {
+                  items: [],
+                  truncated: false,
+                },
+                plannedLoadSummaries: {
+                  items: [],
+                  truncated: false,
+                },
+              },
+              isError: false,
+              isLoading: false,
+              refetch: jest.fn(async () => undefined),
+            }
+          );
+        },
       },
     },
   },
@@ -520,11 +451,10 @@ jest.mock("@/lib/api", () => ({
 
 const CalendarScreenWithErrorBoundary = require("../calendar").default;
 const {
-  CALENDAR_EVENT_QUERY_LIMIT,
+  CALENDAR_PROJECTION_LIMIT,
   DAY_RANGE_BACKWARD,
   DAY_RANGE_EXTENSION,
   DAY_RANGE_FORWARD,
-  GROUP_CALENDAR_EVENT_QUERY_LIMIT,
   buildDayQueryWindow,
   ensureDayQueryWindowCovers,
 } = require("@/components/calendar/useCalendarTimelineController");
@@ -543,6 +473,26 @@ function getHostByType(rendered: ReturnType<typeof renderNative>, type: string) 
   return (rendered as typeof rendered & HostQueries).UNSAFE_getByType(type);
 }
 
+function calendarProjectionQuery(input: {
+  completedActivities?: unknown[];
+  goals?: unknown[];
+  items?: unknown[];
+  selectedGroupEvents?: unknown[];
+}) {
+  return {
+    data: {
+      items: input.items ?? [],
+      completedActivities: { items: input.completedActivities ?? [], truncated: false },
+      goals: { items: input.goals ?? [], truncated: false },
+      selectedGroupEvents: { items: input.selectedGroupEvents ?? [], truncated: false },
+      plannedLoadSummaries: { items: [], truncated: false },
+    },
+    isError: false,
+    isLoading: false,
+    refetch: jest.fn(async () => undefined),
+  };
+}
+
 describe("calendar day timeline screen", () => {
   beforeAll(() => {
     jest.useFakeTimers();
@@ -558,49 +508,25 @@ describe("calendar day timeline screen", () => {
     useCalendarStore = createCalendarStore();
     mockAuthReady = true;
     mockTodayKey = today;
-    eventsListUseQueryMock.mockReset();
-    activitiesListUseQueryMock.mockReset();
-    groupEventsListUseQueryMock.mockReset();
-    activityPlansGetManyUseQueryMock.mockReset();
+    calendarRangeUseQueryMock.mockReset();
     mockFlatListScrollToIndex.mockClear();
     mockFlatListScrollToOffset.mockClear();
   });
 
-  it("keeps previous calendar data visible while the query window changes", () => {
+  it("requests one bounded calendar projection for the visible window", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
-    expect(eventsListUseQueryMock).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ placeholderData: keepPreviousData }),
+    expect(calendarRangeUseQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: CALENDAR_PROJECTION_LIMIT }),
+      expect.not.objectContaining({ getNextPageParam: expect.anything() }),
     );
   });
 
   it("shows loading rather than an error while auth is still initializing", () => {
     mockAuthReady = false;
-    eventsListUseQueryMock.mockReturnValue({
+    calendarRangeUseQueryMock.mockReturnValue({
       data: undefined,
-      fetchNextPage: jest.fn(async () => undefined),
-      hasNextPage: false,
       isError: false,
-      isFetchingNextPage: false,
-      isLoading: false,
-      refetch: jest.fn(async () => undefined),
-    });
-    activitiesListUseQueryMock.mockReturnValue({
-      data: undefined,
-      fetchNextPage: jest.fn(async () => undefined),
-      hasNextPage: false,
-      isError: false,
-      isFetchingNextPage: false,
-      isLoading: false,
-      refetch: jest.fn(async () => undefined),
-    });
-    groupEventsListUseQueryMock.mockReturnValue({
-      data: undefined,
-      fetchNextPage: jest.fn(async () => undefined),
-      hasNextPage: false,
-      isError: false,
-      isFetchingNextPage: false,
       isLoading: false,
       refetch: jest.fn(async () => undefined),
     });
@@ -799,36 +725,27 @@ describe("calendar day timeline screen", () => {
   });
 
   it("keeps completed activity load fields visible when derived values are unavailable", () => {
-    activitiesListUseQueryMock.mockReturnValue({
-      data: {
-        pages: [
+    calendarRangeUseQueryMock.mockReturnValue(
+      calendarProjectionQuery({
+        completedActivities: [
           {
-            items: [
-              {
-                id: "activity-missing-load",
-                name: "Easy spin",
-                type: "bike",
-                started_at: `${today}T13:00:00.000Z`,
-                duration_seconds: 1800,
-                distance_meters: 9000,
-                derived: {
-                  observationQuantification: createObservationQuantificationBundleFixture({
-                    activityCategory: "bike",
-                    durationSeconds: 1_800,
-                    status: "unsupported",
-                  }),
-                },
-              },
-            ],
+            id: "activity-missing-load",
+            name: "Easy spin",
+            scheduled_date: today,
+            started_at: `${today}T13:00:00.000Z`,
+            duration_seconds: 1800,
+            distance_meters: 9000,
+            derived: {
+              observationQuantification: createObservationQuantificationBundleFixture({
+                activityCategory: "bike",
+                durationSeconds: 1_800,
+                status: "unsupported",
+              }),
+            },
           },
         ],
-      },
-      fetchNextPage: jest.fn(async () => undefined),
-      hasNextPage: false,
-      isFetchingNextPage: false,
-      isLoading: false,
-      refetch: jest.fn(async () => undefined),
-    });
+      }),
+    );
 
     renderNative(<CalendarScreenWithErrorBoundary />);
 
@@ -844,34 +761,24 @@ describe("calendar day timeline screen", () => {
   });
 
   it("marks partial completed common Load and Intensity as incomplete", () => {
-    activitiesListUseQueryMock.mockReturnValue({
-      data: {
-        pages: [
+    calendarRangeUseQueryMock.mockReturnValue(
+      calendarProjectionQuery({
+        completedActivities: [
           {
-            items: [
-              {
-                id: "activity-partial-load",
-                name: "Patchy tempo",
-                type: "run",
-                started_at: `${today}T13:00:00.000Z`,
-                duration_seconds: 3600,
-                derived: {
-                  observationQuantification: createObservationQuantificationBundleFixture({
-                    status: "partial",
-                  }),
-                },
-              },
-            ],
+            id: "activity-partial-load",
+            name: "Patchy tempo",
+            scheduled_date: today,
+            started_at: `${today}T13:00:00.000Z`,
+            duration_seconds: 3600,
+            derived: {
+              observationQuantification: createObservationQuantificationBundleFixture({
+                status: "partial",
+              }),
+            },
           },
         ],
-      },
-      fetchNextPage: jest.fn(async () => undefined),
-      hasNextPage: false,
-      isFetchingNextPage: false,
-      isError: false,
-      isLoading: false,
-      refetch: jest.fn(async () => undefined),
-    });
+      }),
+    );
 
     renderNative(<CalendarScreenWithErrorBoundary />);
 
@@ -884,49 +791,30 @@ describe("calendar day timeline screen", () => {
   });
 
   it("renders selected group activity-plan common Load without legacy estimates", () => {
-    groupEventsListUseQueryMock.mockReturnValue({
-      data: {
-        pages: [
+    calendarRangeUseQueryMock.mockReturnValue(
+      calendarProjectionQuery({
+        selectedGroupEvents: [
           {
-            items: [
-              {
-                id: "group-event-load",
-                title: "Club tempo",
-                starts_at: `${today}T15:00:00.000Z`,
-                activity_plan_id: "group-plan-load",
-                viewerRsvp: { status: "accepted" },
-                group: { name: "Tuesday crew" },
-              },
-            ],
-            nextCursor: undefined,
+            id: "group-event-load",
+            title: "Club tempo",
+            scheduled_date: today,
+            starts_at: `${today}T15:00:00.000Z`,
+            activity_plan_id: "group-plan-load",
+            viewerRsvp: { status: "accepted" },
+            group: { name: "Tuesday crew" },
+            selectedActivityPlan: {
+              id: "group-plan-load",
+              name: "Group tempo plan",
+              activity_category: "run",
+              prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+                durationSeconds: 3_600,
+                load: 56.25,
+              }),
+            },
           },
         ],
-      },
-      fetchNextPage: jest.fn(async () => undefined),
-      hasNextPage: false,
-      isFetchingNextPage: false,
-      isError: false,
-      isLoading: false,
-      refetch: jest.fn(async () => undefined),
-    });
-    activityPlansGetManyUseQueryMock.mockReturnValue({
-      data: {
-        items: [
-          {
-            id: "group-plan-load",
-            name: "Group tempo plan",
-            activity_category: "run",
-            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
-              durationSeconds: 3_600,
-              load: 56.25,
-            }),
-          },
-        ],
-      },
-      isError: false,
-      isLoading: false,
-      refetch: jest.fn(async () => undefined),
-    });
+      }),
+    );
 
     renderNative(<CalendarScreenWithErrorBoundary />);
 
@@ -1018,10 +906,10 @@ describe("calendar day timeline screen", () => {
 
     renderNative(<CalendarScreenWithErrorBoundary />);
 
-    expect(eventsListUseQueryMock).toHaveBeenLastCalledWith(
+    expect(calendarRangeUseQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        date_from: "2026-03-02T05:00:00.000Z",
-        date_to: "2026-07-21T04:00:00.000Z",
+        startDate: "2026-03-02",
+        endDateExclusive: "2026-07-21",
       }),
       expect.anything(),
     );
@@ -1077,98 +965,50 @@ describe("calendar day timeline screen", () => {
     );
   });
 
-  it("renders personal events returned on later cursor pages", () => {
-    eventsListUseQueryMock.mockReturnValue({
-      data: {
-        pages: [
-          { items: [], nextCursor: "page-2" },
+  it("renders personal events returned by the bounded projection", () => {
+    calendarRangeUseQueryMock.mockReturnValue(
+      calendarProjectionQuery({
+        items: [
           {
-            items: [
-              {
-                id: "event-page-2",
-                event_type: "custom",
-                title: "Later page event",
-                scheduled_date: today,
-                starts_at: `${today}T16:00:00.000`,
-                all_day: false,
-              },
-            ],
-            nextCursor: undefined,
+            id: "event-page-2",
+            event_type: "custom",
+            title: "Projected event",
+            scheduled_date: today,
+            starts_at: `${today}T16:00:00.000`,
+            all_day: false,
           },
         ],
-      },
-      fetchNextPage: jest.fn(async () => undefined),
-      hasNextPage: false,
-      isError: false,
-      isFetchingNextPage: false,
-      isLoading: false,
-      refetch: jest.fn(async () => undefined),
-    });
+      }),
+    );
 
     renderNative(<CalendarScreenWithErrorBoundary />);
 
     expect(screen.getByTestId("calendar-event-row-event-page-2")).toBeTruthy();
   });
 
-  it("continues personal and group event cursor queries", () => {
-    const fetchNextEventsPage = jest.fn(async () => undefined);
-    const fetchNextGroupEventsPage = jest.fn(async () => undefined);
-    eventsListUseQueryMock.mockReturnValue({
-      data: { pages: [{ items: [], nextCursor: "event-page-2" }] },
-      fetchNextPage: fetchNextEventsPage,
-      hasNextPage: true,
-      isError: false,
-      isFetchingNextPage: false,
-      isLoading: false,
-      refetch: jest.fn(async () => undefined),
-    });
-    groupEventsListUseQueryMock.mockReturnValue({
-      data: { pages: [{ items: [], nextCursor: "group-page-2" }] },
-      fetchNextPage: fetchNextGroupEventsPage,
-      hasNextPage: true,
-      isError: false,
-      isFetchingNextPage: false,
-      isLoading: false,
-      refetch: jest.fn(async () => undefined),
-    });
-
+  it("uses the bounded server projection size", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
-    expect(fetchNextEventsPage).toHaveBeenCalledTimes(1);
-    expect(fetchNextGroupEventsPage).toHaveBeenCalledTimes(1);
-  });
-
-  it("uses bounded cursor page sizes for personal and group events", () => {
-    renderNative(<CalendarScreenWithErrorBoundary />);
-
-    expect(CALENDAR_EVENT_QUERY_LIMIT).toBe(50);
-    expect(GROUP_CALENDAR_EVENT_QUERY_LIMIT).toBe(50);
-    expect(eventsListUseQueryMock).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 50 }),
-      expect.objectContaining({ getNextPageParam: expect.any(Function) }),
-    );
-    expect(groupEventsListUseQueryMock).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 50 }),
-      expect.objectContaining({ getNextPageParam: expect.any(Function) }),
+    expect(CALENDAR_PROJECTION_LIMIT).toBe(500);
+    expect(calendarRangeUseQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 500 }),
+      expect.not.objectContaining({ getNextPageParam: expect.anything() }),
     );
   });
 
-  it("shows a retryable warning when one calendar source fails", () => {
+  it("shows a retryable warning when the calendar projection fails", () => {
     const refetch = jest.fn(async () => undefined);
-    groupEventsListUseQueryMock.mockReturnValue({
-      data: { pages: [{ items: [], nextCursor: undefined }] },
-      fetchNextPage: jest.fn(async () => undefined),
-      hasNextPage: false,
+    calendarRangeUseQueryMock.mockReturnValue({
+      data: undefined,
       isError: true,
-      isFetchingNextPage: false,
       isLoading: false,
       refetch,
     });
 
     renderNative(<CalendarScreenWithErrorBoundary />);
-    fireEvent.press(screen.getByLabelText("Retry loading calendar items"));
+    fireEvent.press(screen.getByText("Retry"));
 
-    expect(screen.getByTestId("calendar-partial-error")).toBeTruthy();
+    expect(screen.getByText("Unable to load calendar events right now.")).toBeTruthy();
     expect(refetch).toHaveBeenCalled();
   });
 
@@ -1188,10 +1028,10 @@ describe("calendar day timeline screen", () => {
       list.props.onEndReached();
     });
 
-    expect(eventsListUseQueryMock).toHaveBeenLastCalledWith(
+    expect(calendarRangeUseQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        date_from: "2026-04-01T04:00:00.000Z",
-        date_to: "2026-08-20T04:00:00.000Z",
+        startDate: "2026-04-01",
+        endDateExclusive: "2026-08-20",
       }),
       expect.anything(),
     );
@@ -1205,10 +1045,10 @@ describe("calendar day timeline screen", () => {
       list.props.onStartReached();
     });
 
-    expect(eventsListUseQueryMock).toHaveBeenLastCalledWith(
+    expect(calendarRangeUseQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        date_from: "2026-01-31T05:00:00.000Z",
-        date_to: "2026-06-21T04:00:00.000Z",
+        startDate: "2026-01-31",
+        endDateExclusive: "2026-06-21",
       }),
       expect.anything(),
     );

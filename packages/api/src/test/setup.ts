@@ -6,3 +6,5 @@ process.env.DATABASE_URL ??= TEST_DATABASE_URL;
 process.env.NEXT_PRIVATE_SUPABASE_URL ??= TEST_SUPABASE_URL;
 process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY ??= TEST_SUPABASE_SERVICE_ROLE_KEY;
 process.env.PROVIDER_TOKEN_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
+process.env.WAHOO_CLIENT_ID ??= "test-wahoo-client-id";
+process.env.WAHOO_CLIENT_SECRET ??= "test-wahoo-client-secret";

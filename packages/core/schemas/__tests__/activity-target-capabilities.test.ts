@@ -17,11 +17,11 @@ function createStructure(
 ): ActivityPlanStructure {
   return activityPlanStructureSchema.parse({
     version: 3,
+    activity_category,
     segments: [
       {
         id: "00000000-0000-4000-8000-000000000001",
         role: "activity",
-        activity_category,
         name: "Activity",
         intervals: [
           {
@@ -120,10 +120,11 @@ describe("activity target capabilities", () => {
     ).toBe(false);
   });
 
-  it("validates update schemas from segment-owned activity_category authority", () => {
+  it("validates update schemas from root activity_category authority", () => {
     const result = activityPlanUpdateSchema.safeParse({
       structure: {
         version: 3,
+        activity_category: "swim",
         segments: [
           {
             ...createStructure([{ type: "RPE", intensity: 5 }], "swim").segments[0],

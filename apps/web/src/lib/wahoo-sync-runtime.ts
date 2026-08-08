@@ -1,13 +1,15 @@
 import {
+  AthleteStateWorkerService,
   createActivityImporter,
-  createAthletePerformanceModelRepository,
-  createAthletePerformanceTargetFactsReader,
-  createProviderSyncRepository,
+  createActivityImportRepository,
   createWahooImportActivityFileStorage,
   createWahooRepository,
   createWahooRouteStorage,
   createWahooStagingCleanupReservation,
-  getProcessProviderSyncLimiter,
+  createWahooSyncRepository,
+  getProcessWahooSyncLimiter,
+  isWahooIntegrationEnabled,
+  readPublishedAthletePerformanceTargets,
   submitImportedActivityArtifact,
   WahooActivityHistoryJobService,
   WahooSyncJobService,
@@ -18,7 +20,7 @@ import { schema } from "@repo/db";
 import { db } from "@repo/db/client";
 import { createClient } from "@supabase/supabase-js";
 import { and, eq } from "drizzle-orm";
-import { getProviderSyncRequestTimeoutMs } from "../../scripts/provider-sync-config.mjs";
+import { getWahooSyncRequestTimeoutMs } from "../../scripts/wahoo-sync-config.mjs";
 import { createBoundedFetch } from "./bounded-fetch";
 
 const serverSupabaseUrl =
@@ -34,7 +36,7 @@ export function getWahooDrainConfig() {
     concurrency: boundedInteger(process.env.WAHOO_PROVIDER_SYNC_CONCURRENCY, 4, 16),
     leaseMs: boundedInteger(process.env.WAHOO_PROVIDER_SYNC_LEASE_MS, 10 * 60_000, 30 * 60_000),
     limit: boundedInteger(process.env.WAHOO_PROVIDER_SYNC_DRAIN_LIMIT, 20, 100),
-    requestTimeoutMs: getProviderSyncRequestTimeoutMs(process.env),
+    requestTimeoutMs: getWahooSyncRequestTimeoutMs(process.env),
   };
 }
 
@@ -70,8 +72,9 @@ export function createSupabaseWahooRouteStorage(storage: RouteStorageClient) {
 }
 
 export function createWahooSyncRuntime() {
+  if (!isWahooIntegrationEnabled()) throw new Error("Wahoo integration is disabled");
   const config = getWahooDrainConfig();
-  const executionLimiter = getProcessProviderSyncLimiter(config.concurrency);
+  const executionLimiter = getProcessWahooSyncLimiter(config.concurrency);
   const serverSupabaseSecretKey = process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY;
   if (!serverSupabaseUrl || !serverSupabaseSecretKey) {
     throw new Error("Wahoo sync runtime requires server-side Supabase configuration");
@@ -90,10 +93,10 @@ export function createWahooSyncRuntime() {
   const supabase = createBoundedSupabaseClient();
 
   const wahooRepository = createWahooRepository({ db });
-  const providerSyncRepository = createProviderSyncRepository({ db });
-  const getPerformanceTargets = createAthletePerformanceTargetFactsReader(
-    createAthletePerformanceModelRepository(db),
-  );
+  const providerSyncRepository = createWahooSyncRepository({ db });
+  const activityImportRepository = createActivityImportRepository(db);
+  const getPerformanceTargets = ({ profileId }: { profileId: string }) =>
+    readPublishedAthletePerformanceTargets({ db, profileId });
   const importer = createActivityImporter({
     allowedActivityFileHosts: process.env.WAHOO_ACTIVITY_FILE_ALLOWED_HOSTS?.split(",")
       .map((host) => host.trim())
@@ -122,6 +125,8 @@ export function createWahooSyncRuntime() {
         activity,
         artifactSha256: options.artifactSha256,
         beforePersist: options.beforePersist,
+        ...(options.importRunId ? { importRunId: options.importRunId } : {}),
+        ...(options.deferAthleteStateRefresh ? { deferAthleteStateRefresh: true } : {}),
         parsedActivity,
       }),
     activityFileStorage: createWahooImportActivityFileStorage({
@@ -171,6 +176,7 @@ export function createWahooSyncRuntime() {
   return {
     activityHistoryJobs: new WahooActivityHistoryJobService({
       executionLimiter,
+      importRuns: activityImportRepository,
       importer,
       providerSyncRepository,
       wahooRepository,
@@ -195,3 +201,11 @@ export function createWahooSyncRuntime() {
     wahooRepository,
   };
 }
+
+export function createAthleteStateRuntime() {
+  return {
+    athleteStateJobs: new AthleteStateWorkerService({ db }),
+  };
+}
+
+export { isWahooIntegrationEnabled };

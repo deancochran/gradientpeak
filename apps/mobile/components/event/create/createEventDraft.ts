@@ -136,11 +136,6 @@ export function buildCreateEventInput(
 
 export function buildUpdatePatch(draft: CreateEventDraft) {
   const notes = draft.notes.trim() ? draft.notes.trim() : null;
-  const recurrence = buildRecurrenceFromFrequency(
-    draft.recurrenceFrequency,
-    draft.recurrenceEndDate,
-    draft.timezone,
-  );
 
   if (draft.mode === "planned") {
     return {
@@ -148,7 +143,6 @@ export function buildUpdatePatch(draft: CreateEventDraft) {
       all_day: true,
       event_type: "planned" as const,
       notes,
-      recurrence,
       route_id: draft.routeId,
       scheduled_date: draft.scheduledDate,
       starts_at: `${draft.scheduledDate}T00:00:00.000Z`,
@@ -166,7 +160,6 @@ export function buildUpdatePatch(draft: CreateEventDraft) {
     all_day: draft.allDay,
     event_type: draft.eventType,
     notes,
-    recurrence,
     route_id: draft.routeId,
     scheduled_date: draft.scheduledDate,
     starts_at: draft.allDay

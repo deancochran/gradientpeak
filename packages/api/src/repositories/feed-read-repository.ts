@@ -65,7 +65,6 @@ const feedActivityRowSchema = z
     avg_speed_mps: nullableNumericSchema.optional(),
     max_speed_mps: nullableNumericSchema.optional(),
     normalized_speed_mps: nullableNumericSchema.optional(),
-    normalized_graded_speed_mps: nullableNumericSchema.optional(),
     ingestion_status: z.string().nullable().optional(),
     ingestion_last_error_message: z.string().nullable().optional(),
     content_visibility: z.enum(["private", "followers", "public"]),
@@ -198,7 +197,7 @@ export async function listFeedActivityRows(
       a.avg_heart_rate,
       a.max_heart_rate, a.avg_power, a.max_power, a.avg_cadence, a.avg_speed_mps,
       a.max_speed_mps, a.normalized_speed_mps,
-      a.normalized_graded_speed_mps, a.elevation_gain_meters, a.calories, a.polyline,
+      a.elevation_gain_meters, a.calories, a.polyline,
        a.content_visibility, a.created_at,
       p.username as profile_username, p.avatar_url as profile_avatar_url,
       afi.status as ingestion_status, afi.last_error_message as ingestion_last_error_message

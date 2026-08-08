@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   calculateGradeAdjustedSpeedSeries,
   calculateGradedSpeed,
-  calculateNGP,
   calculateRunningNormalizedGradedPace,
   createRunningNormalizedGradedPaceAccumulator,
   getCostFactor,
@@ -159,11 +158,6 @@ describe("running Normalized Graded Pace numerical trust v1", () => {
       reason: "no_samples",
       valueMetersPerSecond: null,
     });
-  });
-
-  it("never turns unavailable adjusted-speed normalization into numeric zero", () => {
-    expect(calculateNGP([], [])).toBeNull();
-    expect(calculateNGP([4, 4], [0, 1])).toBeNull();
   });
 
   it("rejects unsafe parallel-array and numeric evidence", () => {

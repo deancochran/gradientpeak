@@ -8,11 +8,11 @@ function structureWithTargets(
 ) {
   return {
     version: 3,
+    activity_category: "bike",
     segments: [
       {
         id: id(1),
         role: "activity",
-        activity_category: "bike",
         name: "Work",
         intervals: [
           {
@@ -67,9 +67,10 @@ describe("deriveActivityPlanPresentation", () => {
     expect(model?.occurrences[1]?.intensityLabel).toBe("watts 300");
   });
 
-  it("rejects mixed-category and transition structures", () => {
+  it("rejects legacy segment categories and transition structures", () => {
     const model = deriveActivityPlanPresentation({
       version: 3,
+      activity_category: "run",
       segments: [
         {
           id: id(20),
@@ -138,6 +139,8 @@ describe("deriveActivityPlanPresentation", () => {
   });
 
   it("returns null for invalid structures", () => {
-    expect(deriveActivityPlanPresentation({ version: 3, segments: [] })).toBeNull();
+    expect(
+      deriveActivityPlanPresentation({ version: 3, activity_category: "run", segments: [] }),
+    ).toBeNull();
   });
 });

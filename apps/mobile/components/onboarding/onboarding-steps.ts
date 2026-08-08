@@ -11,8 +11,7 @@ import {
 import type { StepConfig } from "./types";
 
 export function getOnboardingSteps(options: {
-  providerSyncStarted: boolean;
-  canContinueProviderSync: boolean;
+  canContinueWahooSetup: boolean;
   isUsernameAvailable: boolean;
 }): StepConfig[] {
   return [
@@ -28,7 +27,7 @@ export function getOnboardingSteps(options: {
       canSkip: true,
       component: ConnectAndImportStep,
       shouldShow: () => true,
-      isValid: () => options.canContinueProviderSync,
+      isValid: () => options.canContinueWahooSetup,
     },
     {
       id: "training_baseline",

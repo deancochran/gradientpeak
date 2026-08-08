@@ -35,7 +35,6 @@ type SearchDestination = {
   to:
     | "/"
     | "/activities"
-    | "/activity-efforts"
     | "/calendar"
     | "/messages"
     | "/plan"
@@ -48,7 +47,6 @@ type SearchDestination = {
 const SEARCH_DESTINATIONS: SearchDestination[] = [
   { icon: Home, label: "Home", to: "/" },
   { icon: Activity, label: "Activities", to: "/activities" },
-  { icon: Activity, label: "Activity Efforts", to: "/activity-efforts" },
   { icon: TrendingUp, label: "Profile Metrics", to: "/profile-metrics" },
   { icon: Map, label: "Routes", to: "/routes" },
   { icon: Circle, label: "Record", to: "/record" },

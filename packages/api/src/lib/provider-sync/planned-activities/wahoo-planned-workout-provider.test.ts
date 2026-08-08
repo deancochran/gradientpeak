@@ -30,9 +30,9 @@ function planWithRelativeTarget(type: "%FTP" | "%ThresholdHR", activityCategory:
   const template = SYSTEM_TEMPLATES[0];
   if (!template) throw new Error("Expected a system template fixture");
   const structure = structuredClone(template.structure);
+  structure.activity_category = activityCategory;
   for (const segment of structure.segments) {
     if (segment.role !== "activity") continue;
-    segment.activity_category = activityCategory;
     for (const interval of segment.intervals) {
       for (const step of interval.steps) step.targets = [{ type, intensity: 80 }];
     }
@@ -49,6 +49,7 @@ function providerFixture(
     routeId?: string | null;
     scope?: string;
     startsAt?: string;
+    timezone?: string;
     performanceTargets?: AthletePerformanceTargetFacts;
   } = {},
 ) {
@@ -72,12 +73,14 @@ function providerFixture(
       id: "event-1",
       routeId: overrides.routeId ?? null,
       startsAt: overrides.startsAt ?? "2026-07-29T12:00:00.000Z",
+      timezone: overrides.timezone ?? "UTC",
     }),
     getEventResourceLink: vi.fn().mockResolvedValue(overrides.existingLink ?? null),
   };
-  const getPerformanceTargets = vi
-    .fn()
-    .mockResolvedValue(overrides.performanceTargets ?? performanceTargets());
+  const getPerformanceTargets = vi.fn().mockResolvedValue({
+    status: "available",
+    targets: overrides.performanceTargets ?? performanceTargets(),
+  });
   return {
     enqueueJob,
     provider: new WahooPlannedActivityProvider({
@@ -129,11 +132,11 @@ describe("WahooPlannedActivityProvider", () => {
       projectionSnapshot: expect.objectContaining({
         plan: expect.objectContaining({ header: expect.objectContaining({ ftp: 250 }) }),
       }),
-      startsAt: "2026-07-29T12:00:00.000Z",
+      startsAt: "2026-07-29T12:00:00.000+00:00",
+      timezone: "UTC",
     });
     expect(getPerformanceTargets).toHaveBeenCalledWith({
-      actorProfileId: "profile-1",
-      asOf: operationTime,
+      profileId: "profile-1",
     });
   });
 
@@ -149,7 +152,35 @@ describe("WahooPlannedActivityProvider", () => {
     );
   });
 
-  it("keeps provider desired-state hashing stable when only model evaluation time changes", async () => {
+  it("queues a DST-crossed event with its event-local wall time and explicit offset", async () => {
+    const { enqueueJob, provider } = providerFixture({
+      startsAt: "2026-03-09T13:30:00.000Z",
+      timezone: "America/New_York",
+    });
+
+    await provider.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" });
+
+    expect(enqueueJob.mock.calls[0]?.[0].payload).toMatchObject({
+      startsAt: "2026-03-09T09:30:00.000-04:00",
+      timezone: "America/New_York",
+    });
+  });
+
+  it("uses the explicit standard-time offset after New York fall-back", async () => {
+    const { enqueueJob, provider } = providerFixture({
+      startsAt: "2026-11-02T14:30:00.000Z",
+      timezone: "America/New_York",
+    });
+
+    await provider.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" });
+
+    expect(enqueueJob.mock.calls[0]?.[0].payload).toMatchObject({
+      startsAt: "2026-11-02T09:30:00.000-05:00",
+      timezone: "America/New_York",
+    });
+  });
+
+  it("keeps provider desired state and model authority stable when only enqueue time changes", async () => {
     const first = providerFixture({ now: operationTime });
     const second = providerFixture({ now: new Date(operationTime.getTime() + 60_000) });
 
@@ -159,7 +190,7 @@ describe("WahooPlannedActivityProvider", () => {
     expect(first.enqueueJob.mock.calls[0]?.[0].payloadHash).toBe(
       second.enqueueJob.mock.calls[0]?.[0].payloadHash,
     );
-    expect(first.enqueueJob.mock.calls[0]?.[0].payload.performanceModelAsOf).not.toBe(
+    expect(first.enqueueJob.mock.calls[0]?.[0].payload.performanceModelAsOf).toBe(
       second.enqueueJob.mock.calls[0]?.[0].payload.performanceModelAsOf,
     );
   });
@@ -208,7 +239,7 @@ describe("WahooPlannedActivityProvider", () => {
       }),
     );
     expect(enqueueJob.mock.calls[0]?.[0].payload).toMatchObject({
-      startsAt: "2026-07-29T06:00:00.000Z",
+      startsAt: "2026-07-29T06:00:00.000+00:00",
     });
   });
 
@@ -285,10 +316,8 @@ describe("WahooPlannedActivityProvider", () => {
   });
 
   it("queues unsync when an existing export is edited to an unsupported activity category", async () => {
-    const unsupported = SYSTEM_TEMPLATES.find((template) =>
-      template.structure.segments.some(
-        (segment) => segment.role === "activity" && segment.activity_category === "strength",
-      ),
+    const unsupported = SYSTEM_TEMPLATES.find(
+      (template) => template.structure.activity_category === "strength",
     );
     if (!unsupported) throw new Error("Expected a strength system template fixture");
     const { enqueueJob, provider } = providerFixture({

@@ -680,6 +680,15 @@ function heartRateFactEvidenceValue(
   } as z.infer<typeof athleteContextEvidenceValueSchema>;
 }
 
+function maximumHeartRateFactEvidenceValue(performanceTargets: AthletePerformanceTargetFacts) {
+  const available = (["bike", "run", "swim"] as const)
+    .map((category) => performanceTargets.heartRate[category].maxHr)
+    .filter((fact) => fact.status === "available" && fact.valueBpm !== null)
+    .sort((left, right) => (right.valueBpm ?? 0) - (left.valueBpm ?? 0));
+  const selected = available[0];
+  return selected ? heartRateFactEvidenceValue(selected) : emptyEvidenceValue("bpm");
+}
+
 function trainingStatusEvidenceValue(
   value: number | null | undefined,
   unit: string,
@@ -756,10 +765,13 @@ export function createAthletePlanningContextFromSnapshot(
       planningThresholdPaceSecondsPerKm,
       swimmingCssSecondsPer100m,
       restingHeartRateBpm: metricEvidenceValue(snapshot.profileMetrics, "resting_hr", "bpm"),
-      maxHeartRateBpm: metricEvidenceValue(snapshot.profileMetrics, "max_hr", "bpm"),
+      // Current calibration authority is the published estimate set. A raw
+      // profile_metrics observation may remain in history but never wins here.
+      maxHeartRateBpm: maximumHeartRateFactEvidenceValue(performanceTargets),
       thresholdHeartRateBpm: heartRateFactEvidenceValue(performanceTargets.heartRate.bike.lthr),
       hrvRmssdMs: metricEvidenceValue(snapshot.profileMetrics, "hrv_rmssd", "ms"),
-      vo2Max: metricEvidenceValue(snapshot.profileMetrics, "vo2_max", "ml/kg/min"),
+      // VO2 remains unavailable until the published estimate contract carries it.
+      vo2Max: emptyEvidenceValue("ml/kg/min"),
       currentFitnessLongTermLoad: trainingStatusEvidenceValue(
         snapshot.currentFitness?.longTermLoad,
         "Load",

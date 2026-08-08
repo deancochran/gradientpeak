@@ -6,9 +6,10 @@ import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 
 export type CalendarActivity = {
   id: string;
-  name?: string | null;
+  name: string | null;
   type?: string | null;
-  started_at?: string | Date | null;
+  started_at: string;
+  scheduled_date: string;
   distance_meters?: number | null;
   duration_seconds?: number | null;
   derived?: {

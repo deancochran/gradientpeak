@@ -83,15 +83,15 @@ export function parseDateOnly(value: string | undefined): string | undefined {
   return DATE_ONLY_PATTERN.test(trimmed) ? trimmed : undefined;
 }
 
-export function parseDateOnlyToDate(value: string | undefined, fallback = new Date()): Date {
+export function parseDateOnlyToDate(value: string | undefined): Date | undefined {
   const normalized = parseDateOnly(value);
   if (!normalized) {
-    return fallback;
+    return undefined;
   }
 
   const parsed = new Date(`${normalized}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) {
-    return fallback;
+    return undefined;
   }
 
   return parsed;

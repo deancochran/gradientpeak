@@ -1,3 +1,4 @@
+import { formatIsoInstantInIanaZone, scheduledDateTimeToIsoInstant } from "@repo/core/calendar";
 import type {
   CreateOneOffGroupEventInput,
   CreateRecurringEventSeriesInput,
@@ -15,7 +16,6 @@ import {
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
-import { format } from "date-fns";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
 import { Pressable, View } from "react-native";
 import { z } from "zod";
@@ -66,28 +66,6 @@ export type GroupEventFormHandle = {
   submit: () => void;
 };
 
-function toDateKey(value: Date) {
-  return format(value, "yyyy-MM-dd");
-}
-
-function toTimeKey(value: Date) {
-  return format(value, "HH:mm");
-}
-
-function buildIso(date: string, time: string) {
-  const [year, month, day] = date.split("-").map(Number);
-  const [hours, minutes] = time.split(":").map(Number);
-  return new Date(
-    year ?? 1970,
-    (month ?? 1) - 1,
-    day ?? 1,
-    hours ?? 0,
-    minutes ?? 0,
-    0,
-    0,
-  ).toISOString();
-}
-
 function parseRecurrenceFrequency(rule?: string | null): RecurrenceFrequency {
   const normalized = rule?.toUpperCase() ?? "";
   if (normalized.includes("FREQ=DAILY")) return "daily";
@@ -107,19 +85,25 @@ function buildRecurrenceRule(frequency: RecurrenceFrequency, endDate: string) {
   return `FREQ=${frequency.toUpperCase()};UNTIL=${endDate.replace(/-/g, "")}T235959Z`;
 }
 
-function toFormValues(event?: GroupEventDetail | null): GroupEventFormValues {
-  const startsAt = event ? new Date(event.starts_at) : new Date(Date.now() + 24 * 60 * 60 * 1000);
-  const endsAt = event?.ends_at ? new Date(event.ends_at) : null;
+function toFormValues(
+  event: GroupEventDetail | null | undefined,
+  timezone: string,
+): GroupEventFormValues {
+  const startsAt = formatIsoInstantInIanaZone(
+    event?.starts_at ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    timezone,
+  );
+  const endsAt = event?.ends_at ? formatIsoInstantInIanaZone(event.ends_at, timezone) : null;
 
   return {
-    date: toDateKey(Number.isNaN(startsAt.getTime()) ? new Date() : startsAt),
+    date: startsAt.slice(0, 10),
     description: event?.description ?? "",
-    endsTime: endsAt && !Number.isNaN(endsAt.getTime()) ? toTimeKey(endsAt) : null,
+    endsTime: endsAt?.slice(11, 16) ?? null,
     locationName: event?.location_name ?? "",
     recurrenceEndDate: parseRecurrenceEndDate(event?.recurrence_rule) || null,
     recurrenceFrequency: parseRecurrenceFrequency(event?.recurrence_rule),
     routeId: event?.route_id ?? null,
-    startsTime: toTimeKey(Number.isNaN(startsAt.getTime()) ? new Date() : startsAt),
+    startsTime: startsAt.slice(11, 16),
     title: event?.title ?? "",
   };
 }
@@ -150,9 +134,10 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
     },
     ref,
   ) {
+    const timezone = event?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
     const form = useZodForm({
       schema: groupEventFormSchema,
-      defaultValues: toFormValues(event),
+      defaultValues: toFormValues(event, timezone),
     });
     const [recurrenceFrequency, routeId] = form.watch(["recurrenceFrequency", "routeId"]);
     const [selectedActivityPlan, setSelectedActivityPlan] =
@@ -166,9 +151,9 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
     );
 
     useEffect(() => {
-      form.reset(toFormValues(event));
+      form.reset(toFormValues(event, timezone));
       setSelectedActivityPlan(toSelectedActivityPlan(event));
-    }, [event, form]);
+    }, [event, form, timezone]);
 
     const selectRoute = (item: ResourcePickerItem) => {
       form.setValue("routeId", item.id, { shouldDirty: true });
@@ -193,8 +178,25 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
           return;
         }
 
-        const startsAt = buildIso(values.date, values.startsTime);
-        const endsAt = values.endsTime ? buildIso(values.date, values.endsTime) : null;
+        let startsAt: string;
+        let endsAt: string | null;
+        try {
+          startsAt = scheduledDateTimeToIsoInstant({
+            scheduledDate: values.date,
+            time: values.startsTime,
+            timeZone: timezone,
+          });
+          endsAt = values.endsTime
+            ? scheduledDateTimeToIsoInstant({
+                scheduledDate: values.date,
+                time: values.endsTime,
+                timeZone: timezone,
+              })
+            : null;
+        } catch (error) {
+          setErrorMessage(error instanceof Error ? error.message : "Choose valid event times.");
+          return;
+        }
         if (endsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
           setErrorMessage("End time must be after start time.");
           return;
@@ -206,7 +208,7 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
           description: values.description.trim() || null,
           startsAt,
           endsAt,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC",
+          timezone,
           locationName: values.locationName.trim() || null,
           routeId: values.routeId,
           activityPlanId: selectedActivityPlan?.activityPlanId ?? null,
@@ -239,7 +241,7 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
 
         await onSubmit({ groupId, ...payload });
       },
-      [event, groupId, isRecurringCreate, onSubmit, selectedActivityPlan],
+      [event, groupId, isRecurringCreate, onSubmit, selectedActivityPlan, timezone],
     );
 
     const handleSubmit = form.handleSubmit(submitForm);
@@ -404,6 +406,7 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
                 />
               </View>
             </View>
+            <Text className="text-xs text-muted-foreground">Times use {timezone}.</Text>
             <FormTextField
               control={form.control}
               label="Location"

@@ -27,8 +27,8 @@ import {
   canonicalActivityCategoryValues,
 } from "../schemas/activity-category";
 import {
-  type StoredHeartRateDurationEvidence,
-  storedHeartRateDurationEvidenceSchema,
+  type HeartRateDurationEvidence,
+  heartRateDurationEvidenceSchema,
 } from "../zones/heart-rate-duration";
 import { calculateHRZoneDistribution } from "../zones/hr";
 import { getTrainingIntensityZone } from "../zones/intensity";
@@ -91,9 +91,9 @@ export type ActivityAnalysisStreams = {
   speed?: AggregatedStream | null;
 };
 
-export const activityHeartRateDistributionSchema = storedHeartRateDurationEvidenceSchema;
+export const activityHeartRateDistributionSchema = heartRateDurationEvidenceSchema;
 
-export type ActivityHeartRateDistribution = StoredHeartRateDurationEvidence;
+export type ActivityHeartRateDistribution = HeartRateDurationEvidence;
 
 type AnalyzeActivityDerivedMetricsInput = {
   activity: ActivitySummaryForAnalysis;
@@ -461,11 +461,10 @@ function resolveEligibleDurationSeconds(activity: ActivitySummaryForAnalysis): n
 }
 
 /**
- * Versioned HR evidence carries the stream interval denominator used to build
- * its buckets. Activity active time can be supplied independently by a
- * provider, so use that evidence denominator only when the segment's elapsed
- * boundary can contain it. Legacy bucket-only evidence still uses active time
- * as its denominator.
+ * HR evidence carries the stream interval denominator used to build its
+ * buckets. Activity active time can be supplied independently by a provider,
+ * so use that evidence denominator only when the segment's elapsed boundary
+ * can contain it.
  */
 type HeartRateEvidenceDurationResolution =
   | { status: "resolved"; durationSeconds: number }
@@ -476,7 +475,7 @@ function resolveHeartRateEvidenceDuration(input: {
   distribution: ActivityHeartRateDistribution | null | undefined;
 }): HeartRateEvidenceDurationResolution {
   const parsed = activityHeartRateDistributionSchema.safeParse(input.distribution);
-  if (!parsed.success || !("calculationVersion" in parsed.data)) {
+  if (!parsed.success) {
     return { status: "resolved", durationSeconds: input.activity.duration_seconds };
   }
 

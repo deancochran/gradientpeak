@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   eventsError: false,
   eventsLoading: false,
   events: [] as Array<Record<string, unknown>>,
+  completedActivities: [] as Array<Record<string, unknown>>,
+  groupEvents: [] as Array<Record<string, unknown>>,
   plannedDaySummary: undefined as Record<string, unknown> | undefined,
   summaryError: false,
   summaryLoading: false,
@@ -48,24 +50,22 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("../../../../lib/api/client", () => ({
   api: {
-    profiles: { get: { useQuery: () => ({ data: { id: "profile-1" } }) } },
-    goals: { list: { useQuery: () => ({ data: { items: [] }, isError: false }) } },
-    events: {
-      list: {
-        useQuery: () => ({
-          data: { items: mocks.events },
-          isError: mocks.eventsError,
-          isLoading: mocks.eventsLoading,
-          refetch: vi.fn(),
-        }),
-      },
-      plannedDaySummary: {
+    calendar: {
+      day: {
         useQuery: (input: Record<string, unknown>) => {
           mocks.summaryInputs.push(input);
           return {
-            data: mocks.plannedDaySummary,
-            isError: mocks.summaryError,
-            isLoading: mocks.summaryLoading,
+            data: {
+              items: mocks.events,
+              completedActivities: { items: mocks.completedActivities, truncated: false },
+              goals: { items: [], truncated: false },
+              selectedGroupEvents: { items: mocks.groupEvents, truncated: false },
+              plannedLoadSummary: mocks.plannedDaySummary,
+              timezone: "America/New_York",
+            },
+            isError: mocks.eventsError || mocks.summaryError,
+            isLoading: mocks.eventsLoading || mocks.summaryLoading,
+            error: mocks.eventsError || mocks.summaryError ? new Error("Calendar failed") : null,
             refetch: mocks.summaryRefetch,
           };
         },
@@ -78,6 +78,8 @@ beforeEach(() => {
   mocks.eventsError = false;
   mocks.eventsLoading = false;
   mocks.events = [];
+  mocks.completedActivities = [];
+  mocks.groupEvents = [];
   mocks.plannedDaySummary = undefined;
   mocks.summaryError = false;
   mocks.summaryLoading = false;
@@ -123,7 +125,39 @@ describe("CalendarDayPage planned workload", () => {
     expect(screen.getByText("1 Event")).toBeTruthy();
     expect(screen.getByText("Bike intervals")).toBeTruthy();
     expect(screen.getByText("Cancelled run")).toBeTruthy();
-    expect(screen.getByText("2 scheduled events")).toBeTruthy();
+    expect(screen.getByText("2 calendar items")).toBeTruthy();
+  });
+
+  it("renders completed activities and selected group events from the day projection", () => {
+    mocks.completedActivities = [
+      {
+        id: "activity-1",
+        name: "Morning ride",
+        scheduled_date: "2026-07-27",
+        started_at: "2026-07-27T10:00:00.000Z",
+      },
+    ];
+    mocks.groupEvents = [
+      {
+        id: "group-event-1",
+        title: "Club run",
+        scheduled_date: "2026-07-27",
+        starts_at: "2026-07-27T12:00:00.000Z",
+        ends_at: null,
+        timezone: "America/New_York",
+        group: { name: "River Club" },
+      },
+    ];
+
+    render(<CalendarDayPage />);
+
+    expect(screen.getByRole("link", { name: /Morning ride/i }).getAttribute("href")).toBe(
+      "/activities/activity-1",
+    );
+    expect(screen.getByRole("link", { name: /Club run/i }).getAttribute("href")).toBe(
+      "/groups/events/group-event-1",
+    );
+    expect(screen.getByText("2 calendar items")).toBeTruthy();
   });
 
   it("keeps loaded Event cards visible when the complete summary endpoint fails and retries it separately", () => {
@@ -132,7 +166,7 @@ describe("CalendarDayPage planned workload", () => {
 
     render(<CalendarDayPage />);
 
-    expect(screen.getByRole("alert").textContent).toContain("Planned workload could not be loaded");
+    expect(screen.getByText("Planned workload could not be loaded.")).toBeTruthy();
     expect(screen.getByText("Run easy")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry planned workload" }));
     expect(mocks.summaryRefetch).toHaveBeenCalledOnce();

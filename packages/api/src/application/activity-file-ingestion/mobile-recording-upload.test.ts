@@ -57,12 +57,6 @@ function ingestion(overrides: Partial<ActivityFileIngestionRow> = {}): ActivityF
     expected_byte_size: BYTES.byteLength,
     expected_format: "fit",
     expected_media_type: "application/vnd.ant.fit",
-    accepted_sha256: null,
-    accepted_byte_size: null,
-    accepted_bucket: null,
-    accepted_path: null,
-    accepted_media_type: null,
-    accepted_format: null,
     uploaded_at: null,
     staging_cleanup_pending: false,
     staging_cleaned_at: null,
@@ -112,6 +106,15 @@ describe("mobile recording upload application", () => {
     repository.markMobileRecordingStagingCleaned.mockResolvedValue(true);
     repository.recordMobileRecordingStagingCleanupFailure.mockResolvedValue(true);
     repository.listPendingMobileRecordingStagingCleanup.mockResolvedValue([]);
+    repository.loadAcceptedActivityArtifact.mockResolvedValue({
+      digest: SHA256,
+      byte_size: BYTES.byteLength,
+      bucket: "activity-files",
+      path: `artifacts/sha256/${PROFILE_ID}/${SHA256}`,
+      media_type: "application/vnd.ant.fit",
+      format: "fit",
+      original_name: null,
+    });
   });
 
   it("creates a durable claim from deterministic server-owned storage metadata", async () => {
@@ -159,7 +162,7 @@ describe("mobile recording upload application", () => {
     ).rejects.toMatchObject({ code: "claim_conflict" });
   });
 
-  it("claims, verifies, and promotes bytes without trusting client metadata", async () => {
+  it("claims and verifies staging bytes without trusting client metadata", async () => {
     const pending = ingestion();
     const claimed = ingestion({
       status: "processing",
@@ -179,10 +182,10 @@ describe("mobile recording upload application", () => {
     expect(result).toMatchObject({
       status: "claimed",
       claimToken: CLAIM_TOKEN,
-      artifact: {
-        sha256: SHA256,
-        byteSize: BYTES.byteLength,
+      staging: {
         bucket: "activity-files",
+        path: pending.staging_path,
+        bytes: BYTES,
         mediaType: "application/vnd.ant.fit",
         format: "fit",
       },
@@ -192,10 +195,7 @@ describe("mobile recording upload application", () => {
       path: pending.staging_path,
       maxBytes: BYTES.byteLength,
     });
-    expect(fake.upload).toHaveBeenCalledWith(`artifacts/sha256/${PROFILE_ID}/${SHA256}`, BYTES, {
-      contentType: "application/vnd.ant.fit",
-      upsert: false,
-    });
+    expect(fake.upload).not.toHaveBeenCalled();
     expect(repository.markMobileRecordingUploadFailed).not.toHaveBeenCalled();
   });
 
@@ -228,16 +228,10 @@ describe("mobile recording upload application", () => {
   });
 
   it("keeps failed staging cleanup durable and retries it idempotently", async () => {
-    const acceptedPath = `artifacts/sha256/${PROFILE_ID}/${SHA256}`;
     const ready = ingestion({
       activity_id: recordingSessionActivityId(PROFILE_ID, SESSION_ID),
+      artifact_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       status: "ready",
-      accepted_sha256: SHA256,
-      accepted_byte_size: BYTES.byteLength,
-      accepted_bucket: "activity-files",
-      accepted_path: acceptedPath,
-      accepted_media_type: "application/vnd.ant.fit",
-      accepted_format: "fit",
       uploaded_at: new Date("2026-07-24T12:00:00.000Z"),
       staging_cleanup_pending: true,
     });
@@ -269,8 +263,8 @@ describe("mobile recording upload application", () => {
 
   it("drains bounded cleanup rows independently of submission replay", async () => {
     const ready = ingestion({
+      artifact_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       status: "ready",
-      accepted_path: `artifacts/sha256/${PROFILE_ID}/${SHA256}`,
       staging_cleanup_pending: true,
     });
     repository.listPendingMobileRecordingStagingCleanup.mockResolvedValue([ready]);

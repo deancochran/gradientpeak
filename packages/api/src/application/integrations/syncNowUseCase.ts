@@ -1,83 +1,58 @@
 import { providerHasCapability } from "@repo/core";
-import { type DrizzleDbClient, type PublicIntegrationProvider, schema } from "@repo/db";
+import { type DrizzleDbClient, schema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, asc, eq, gte, isNotNull, lte } from "drizzle-orm";
 import type { DrizzleTransactionClient } from "../../db";
 import {
   createIntegrationsRepositories,
-  createProviderSyncRepository,
+  createWahooSyncRepository,
 } from "../../infrastructure/repositories";
+import { hasWahooPlannedActivityScopes } from "../../lib/integrations/wahoo/planned-activity-scopes";
 import {
-  hasWahooPlannedActivityScopes,
-  hasWahooRouteMirrorScopes,
-} from "../../lib/integrations/wahoo/planned-activity-scopes";
-import { logger } from "../../lib/logger";
-import { enqueueWahooGroupEventRouteDeliveryReconcile } from "../../lib/provider-sync/event-delivery/wahoo-group-event-route-delivery";
-import { enqueueWahooOwnedRouteReconcile } from "../../lib/provider-sync/owned-routes";
-import {
-  enqueuePlannedActivitySyncAfterCalendarMutation,
-  type PlannedActivityQueueResult,
+  enqueueWahooPlannedActivitySyncAfterCalendarMutation,
+  type WahooPlannedActivityQueueResult,
 } from "../../lib/provider-sync/planned-activities";
-import type { ProviderSyncRepository } from "../../repositories/provider-sync-repository";
-import { OnboardingProviderEnrichmentService } from "../onboarding-provider-enrichment";
-import { supportsActivityHistorySync } from "./syncOverviewUseCase";
+import type { WahooSyncRepository } from "../../repositories/wahoo-sync-repository";
+import { WahooProfileSetupService } from "../wahoo-profile-setup-service";
+import {
+  admitWahooReconciliation,
+  type WahooReconciliationAdmission,
+} from "./wahoo-reconciliation-admission";
 
 const wahooActivityHistoryJobType = "wahoo.activity_history_reconcile";
 
-function isProviderSyncPersistenceUnavailable(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return (
-    message.includes("provider_sync_jobs") ||
-    message.includes("provider_sync_state") ||
-    message.includes("Failed query")
-  );
-}
-
-export async function enqueueActivityHistoryReconcile(input: {
-  integrationId: string;
-  profileId: string;
-  provider: PublicIntegrationProvider;
-  providerSyncRepository: ProviderSyncRepository;
+export async function enqueueWahooActivityHistoryReconcile(input: {
+  admission: Extract<WahooReconciliationAdmission, { admitted: true }>;
+  providerSyncRepository: WahooSyncRepository;
   transaction?: DrizzleTransactionClient;
-  trigger: "connect" | "manual";
 }) {
-  if (input.provider !== "wahoo" || !supportsActivityHistorySync(input.provider)) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "Activity history sync is not available for this provider",
-    });
+  if (input.admission.target !== "activity_history") {
+    throw new Error("Wahoo activity history requires an admitted history target");
   }
 
-  try {
-    const jobInput = {
-      dedupeKey: `provider-history-reconcile:${input.integrationId}:activity`,
-      integrationId: input.integrationId,
-      jobType: wahooActivityHistoryJobType,
-      payload: { trigger: input.trigger, windowMonths: 12 },
-      profileId: input.profileId,
-      provider: "wahoo",
-      resourceKind: "activity",
-      runAt: new Date().toISOString(),
-    } as const;
-    const job = input.transaction
-      ? await input.providerSyncRepository.enqueueJobInTransaction(input.transaction, jobInput)
-      : await input.providerSyncRepository.enqueueJob(jobInput);
+  const jobInput = {
+    dedupeKey: `wahoo-history-reconcile:${input.admission.integrationId}:${input.admission.generation}`,
+    integrationGeneration: input.admission.generation,
+    integrationId: input.admission.integrationId,
+    jobType: wahooActivityHistoryJobType,
+    payload: { trigger: input.admission.trigger },
+    profileId: input.admission.profileId,
+    provider: "wahoo",
+    resourceKind: "activity",
+    runAt: new Date().toISOString(),
+    syncLaneKey: `wahoo:${input.admission.integrationId}:activity-history`,
+  } as const;
+  const job = input.transaction
+    ? await input.providerSyncRepository.enqueueJobInTransaction(input.transaction, jobInput)
+    : await input.providerSyncRepository.enqueueJob(jobInput);
 
-    return { jobId: job.id, queued: job.status === "queued" };
-  } catch (error) {
-    if (input.transaction || !isProviderSyncPersistenceUnavailable(error)) throw error;
-
-    logger.warn("Provider sync jobs are unavailable; skipping activity history enqueue", {
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
-    return { jobId: null, queued: false };
-  }
+  return { jobId: job.id, queued: job.status === "queued" };
 }
 
 async function refreshProviderSetupForSyncNow(input: {
   profileId: string;
-  provider: PublicIntegrationProvider;
-  service: OnboardingProviderEnrichmentService;
+  provider: "wahoo";
+  service: WahooProfileSetupService;
 }) {
   if (!providerHasCapability(input.provider, "profile_enrichment_read")) return null;
 
@@ -94,8 +69,11 @@ async function refreshProviderSetupForSyncNow(input: {
 export async function syncIntegrationNow(input: {
   db: DrizzleDbClient;
   profileId: string;
-  provider: PublicIntegrationProvider;
+  provider: "wahoo";
 }) {
+  if (input.provider !== "wahoo") {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Provider integration is disabled" });
+  }
   const repositories = createIntegrationsRepositories(input.db);
   const integration = await repositories.integrations.findByProfileIdAndProvider({
     profileId: input.profileId,
@@ -110,50 +88,34 @@ export async function syncIntegrationNow(input: {
     profileId: input.profileId,
     provider: input.provider,
   });
-  const grantedScopes = new Set((grant?.scope ?? "").split(/[\s,]+/).filter(Boolean));
-  if (
-    input.provider === "wahoo" &&
-    (!grantedScopes.has("workouts_read") || !grantedScopes.has("offline_data"))
-  ) {
+  const historyAdmission = admitWahooReconciliation({
+    integration,
+    scope: grant?.scope,
+    target: "activity_history",
+    trigger: "manual",
+  });
+  if (!historyAdmission.admitted) {
     throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Reconnect this integration to grant the scopes required for history sync",
+      code: historyAdmission.reason === "runtime_disabled" ? "NOT_FOUND" : "FORBIDDEN",
+      message:
+        historyAdmission.reason === "missing_scope"
+          ? "Reconnect this integration to grant the scopes required for history sync"
+          : "Wahoo activity history sync is not available",
     });
   }
 
   const setupRefresh = await refreshProviderSetupForSyncNow({
     profileId: input.profileId,
     provider: input.provider,
-    service: new OnboardingProviderEnrichmentService({ db: input.db }),
+    service: new WahooProfileSetupService({ db: input.db }),
   });
-  const historySync = await enqueueActivityHistoryReconcile({
-    integrationId: integration.id,
-    profileId: input.profileId,
-    provider: input.provider,
-    providerSyncRepository: createProviderSyncRepository({ db: input.db }),
-    trigger: "manual",
+  const historySync = await enqueueWahooActivityHistoryReconcile({
+    admission: historyAdmission,
+    providerSyncRepository: createWahooSyncRepository({ db: input.db }),
   });
 
-  let plannedActivitySync: PlannedActivityQueueResult | null = null;
-  let groupEventRouteDeliverySync: { jobId: string; queued: boolean } | null = null;
-  let ownedRouteSync: { jobId: string; queued: boolean } | null = null;
+  let plannedActivitySync: WahooPlannedActivityQueueResult | null = null;
   if (input.provider === "wahoo") {
-    if (hasWahooRouteMirrorScopes(grant?.scope)) {
-      ownedRouteSync = await enqueueWahooOwnedRouteReconcile({
-        integrationGeneration: integration.generation,
-        integrationId: integration.id,
-        profileId: input.profileId,
-        providerSyncRepository: createProviderSyncRepository({ db: input.db }),
-        trigger: "manual",
-      });
-      groupEventRouteDeliverySync = await enqueueWahooGroupEventRouteDeliveryReconcile({
-        integrationGeneration: integration.generation,
-        integrationId: integration.id,
-        profileId: input.profileId,
-        providerSyncRepository: createProviderSyncRepository({ db: input.db }),
-        trigger: "manual",
-      });
-    }
     if (!hasWahooPlannedActivityScopes(grant?.scope)) {
       plannedActivitySync = {
         affectedCount: 0,
@@ -183,7 +145,7 @@ export async function syncIntegrationNow(input: {
         )
         .orderBy(asc(schema.events.starts_at), asc(schema.events.id))
         .limit(100);
-      plannedActivitySync = await enqueuePlannedActivitySyncAfterCalendarMutation({
+      plannedActivitySync = await enqueueWahooPlannedActivitySyncAfterCalendarMutation({
         db: input.db,
         eventIds: events.map((event) => event.id),
         operation: "publish",
@@ -193,8 +155,6 @@ export async function syncIntegrationNow(input: {
   }
   return {
     ...historySync,
-    groupEventRouteDeliverySync,
-    ownedRouteSync,
     setupRefresh,
     plannedActivitySync,
   };

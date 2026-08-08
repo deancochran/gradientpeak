@@ -100,6 +100,11 @@ export async function invalidateGoalQueries(
   if (options.includeGoalDetail !== false && options.goalId) {
     refreshTasks.push(utils.goals.getById.invalidate({ id: options.goalId }));
   }
+  if (options.goalId) {
+    refreshTasks.push(
+      utils.athleteIntelligence.getGoalAssessment.invalidate({ goalId: options.goalId }),
+    );
+  }
 
   await Promise.all(refreshTasks);
 }

@@ -37,7 +37,7 @@ function GoalDetailPage() {
     { enabled: Boolean(goalId), retry: false },
   );
   const goal = goalQuery.data;
-  const intelligenceQuery = api.athleteIntelligence.evaluate.useQuery(
+  const assessmentQuery = api.athleteIntelligence.getGoalAssessment.useQuery(
     { goalId },
     { enabled: Boolean(goal) },
   );
@@ -103,10 +103,10 @@ function GoalDetailPage() {
         </CardContent>
       </Card>
       <GoalIntelligenceCard
-        {...(intelligenceQuery.data !== undefined ? { intelligence: intelligenceQuery.data } : {})}
-        isError={intelligenceQuery.isError}
-        isLoading={intelligenceQuery.isLoading}
-        onRetry={() => void intelligenceQuery.refetch()}
+        {...(assessmentQuery.data !== undefined ? { assessment: assessmentQuery.data } : {})}
+        isError={assessmentQuery.isError}
+        isLoading={assessmentQuery.isLoading}
+        onRetry={() => void assessmentQuery.refetch()}
       />
     </div>
   );

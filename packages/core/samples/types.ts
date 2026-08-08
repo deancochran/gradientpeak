@@ -13,13 +13,9 @@ export interface SystemActivityPlanTemplate {
   structure: ActivityPlanStructure;
 }
 
-/** Derives the sole activity_category from a validated canonical ActivityPlan structure. */
+/** Reads the sole root activity_category from a validated canonical ActivityPlan structure. */
 export function deriveSystemActivityTemplateActivityCategory(
   structure: ActivityPlanStructure,
 ): CanonicalActivityCategory {
-  const activitySegment = structure.segments.find((segment) => segment.role === "activity");
-  if (!activitySegment) {
-    throw new Error("System activity template structure must contain an activity segment.");
-  }
-  return activitySegment.activity_category;
+  return structure.activity_category;
 }

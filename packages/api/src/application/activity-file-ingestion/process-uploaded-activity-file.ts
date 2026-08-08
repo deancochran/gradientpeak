@@ -10,7 +10,7 @@ import { and, eq } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import { getActivityArtifactStorageService } from "../../storage-service";
 import type { ActivityArtifactSubmission } from "../activities/submit-activity";
-import { cleanupActivityArtifactStaging, promoteActivityArtifact } from "./artifact-storage";
+import { finalizeActivityArtifactIngestion } from "./finalize-activity-artifact-ingestion";
 import {
   ActivityFileIngestionClaimLostError,
   markFailed,
@@ -169,16 +169,6 @@ async function loadOwnedActivityFileIngestion(
   return ownerRow;
 }
 
-async function promoteArtifact(input: ProcessUploadedActivityFileInput, data: Uint8Array) {
-  return promoteActivityArtifact(getActivityArtifactStorageService(), {
-    profileId: input.userId,
-    bucket: "activity-files",
-    stagingPath: input.activityFilePath,
-    bytes: data,
-    format: input.fileType,
-  });
-}
-
 export async function advanceUploadedIngestion(
   db: DbClient,
   input: ProcessUploadedActivityFileInput,
@@ -228,45 +218,54 @@ export async function processUploadedActivityFile<TParsedData>(
     if (!processingIngestion.claim_token) {
       throw new TRPCError({ code: "CONFLICT", message: "Activity file ingestion claim was lost" });
     }
-    claimToken = processingIngestion.claim_token;
+    const activeClaimToken = processingIngestion.claim_token;
+    claimToken = activeClaimToken;
 
     const { data } = await deps.readStoredActivityFile({
       activityFilePath: input.activityFilePath,
       removeOnParseFailure: false,
     });
-    const artifact = await promoteArtifact(input, data);
-    const parsedData = deps.decodeActivityFile({
-      data,
-      activityFilePath: input.activityFilePath,
-      fileType: input.fileType,
+    const storage = getActivityArtifactStorageService();
+    return await finalizeActivityArtifactIngestion(db, {
+      profileId: input.userId,
+      storage,
+      bucket: "activity-files",
+      stagingPath: input.activityFilePath,
+      bytes: data,
+      format: input.fileType,
+      parse: () =>
+        deps.decodeActivityFile({
+          data,
+          activityFilePath: input.activityFilePath,
+          fileType: input.fileType,
+        }),
+      submit: async ({ parsedData, artifact }) => {
+        await deps.upsertExistingActivityFileEnrichment(db, {
+          activity,
+          artifact,
+          ingestion: processingIngestion,
+          claimToken: activeClaimToken,
+          parsedData,
+        });
+
+        const readyIngestion =
+          (await db.query.activityFileIngestions.findFirst({
+            where: and(
+              eq(activityFileIngestions.id, input.ingestionId),
+              eq(activityFileIngestions.profile_id, input.userId),
+            ),
+          })) ?? processingIngestion;
+
+        const updatedActivity =
+          (await db.query.activities.findFirst({ where: eq(activities.id, input.activityId) })) ??
+          activity;
+
+        return {
+          activity: updatedActivity,
+          ingestion: readyIngestion,
+        };
+      },
     });
-
-    await deps.upsertExistingActivityFileEnrichment(db, {
-      activity,
-      artifact,
-      ingestion: processingIngestion,
-      claimToken: processingIngestion.claim_token,
-      parsedData,
-    });
-
-    const readyIngestion =
-      (await db.query.activityFileIngestions.findFirst({
-        where: and(
-          eq(activityFileIngestions.id, input.ingestionId),
-          eq(activityFileIngestions.profile_id, input.userId),
-        ),
-      })) ?? processingIngestion;
-
-    const updatedActivity =
-      (await db.query.activities.findFirst({ where: eq(activities.id, input.activityId) })) ??
-      activity;
-
-    await cleanupActivityArtifactStaging(getActivityArtifactStorageService(), artifact);
-
-    return {
-      activity: updatedActivity,
-      ingestion: readyIngestion,
-    };
   } catch (error) {
     deps.logger.error("Activity file processing failed", getErrorDetails(error));
     const safeError = toClientSafeError(error);

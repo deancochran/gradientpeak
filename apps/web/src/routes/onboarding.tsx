@@ -41,7 +41,7 @@ export const Route = createFileRoute("/onboarding")({
   },
   loader: async () => {
     const options = await loadOnboardingOptions();
-    if (options.imported?.profile.onboarded) throw redirect({ to: "/" });
+    if (options.setupData?.profile.onboarded) throw redirect({ to: "/" });
     return options;
   },
   component: OnboardingPage,
@@ -56,7 +56,7 @@ const intents = [
   ["coach_group", "Coach or manage"],
   ["explore", "Just exploring"],
 ] as const;
-const providers = ["strava", "wahoo", "trainingpeaks", "garmin", "zwift"] as const;
+const providers = ["wahoo"] as const;
 
 function SourceSelect({ field, defaultValue }: { field: string; defaultValue?: string }) {
   return (
@@ -149,9 +149,9 @@ function OnboardingPage() {
     flashType,
     redirect: redirectTo,
   } = Route.useSearch() as { flash?: string; flashType?: RouteFlashType; redirect?: string };
-  const imported = data.imported;
-  const importedSource = (field: keyof NonNullable<typeof imported>["sources"]) =>
-    imported?.sources[field]?.label;
+  const setupData = data.setupData;
+  const importedSource = (field: keyof NonNullable<typeof setupData>["sources"]) =>
+    setupData?.sources[field]?.label;
   const dobSource = importedSource("dob");
   const genderSource = importedSource("gender");
   const weightSource = importedSource("weight_kg");
@@ -328,8 +328,8 @@ function OnboardingPage() {
                 </p>
               </div>
               <BaselineField
-                {...(imported?.values.dob !== undefined
-                  ? { defaultValue: imported.values.dob }
+                {...(setupData?.values.dob !== undefined
+                  ? { defaultValue: setupData.values.dob }
                   : {})}
                 field="dob"
                 label="Date of birth"
@@ -341,7 +341,7 @@ function OnboardingPage() {
                   <Label htmlFor="gender">Gender</Label>
                   <select
                     className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    defaultValue={imported?.values.gender ?? ""}
+                    defaultValue={setupData?.values.gender ?? ""}
                     id="gender"
                     name="gender"
                   >
@@ -357,8 +357,8 @@ function OnboardingPage() {
                 />
               </div>
               <BaselineField
-                {...(imported?.values.weight_kg !== undefined
-                  ? { defaultValue: imported.values.weight_kg }
+                {...(setupData?.values.weight_kg !== undefined
+                  ? { defaultValue: setupData.values.weight_kg }
                   : {})}
                 field="weight_kg"
                 label="Weight (kg)"

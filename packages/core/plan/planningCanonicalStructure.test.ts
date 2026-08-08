@@ -75,9 +75,7 @@ function createContext(overrides: Partial<PlanningContext> = {}): PlanningContex
 
 describe("planningCanonicalStructure", () => {
   it("maps planning context into canonical reusable training plan structure", () => {
-    const structure = mapPlanningContextToCanonicalTrainingPlanStructure(createContext(), {
-      backendPlanning: { projectionSource: "local", previewSnapshotToken: null },
-    });
+    const structure = mapPlanningContextToCanonicalTrainingPlanStructure(createContext());
 
     expect(structure).toMatchObject({
       version: 1,
@@ -98,12 +96,7 @@ describe("planningCanonicalStructure", () => {
           rest_days_per_week: null,
         },
         scheduling: {
-          start_date: "2026-01-01",
           preferred_weekdays: [1, 3, 5],
-        },
-        backend_planning: {
-          projection_source: "local",
-          preview_snapshot_token: null,
         },
       },
       sessions: [
@@ -135,7 +128,7 @@ describe("planningCanonicalStructure", () => {
       context,
       name: "  Base Builder  ",
       description: "  Keep it steady  ",
-      templateVisibility: "public",
+      contentVisibility: "followers",
     });
     const updatePayload = mapPlanningContextToTrainingPlanUpdateInput({
       context,
@@ -148,7 +141,7 @@ describe("planningCanonicalStructure", () => {
       name: "Base Builder",
       description: "Keep it steady",
       is_active: true,
-      template_visibility: "public",
+      content_visibility: "followers",
       structure: { version: 1 },
     });
     expect(updatePayload).toMatchObject({
@@ -157,6 +150,6 @@ describe("planningCanonicalStructure", () => {
       description: null,
       structure: { version: 1 },
     });
-    expect(updatePayload.template_visibility).toBeUndefined();
+    expect(updatePayload.content_visibility).toBeUndefined();
   });
 });

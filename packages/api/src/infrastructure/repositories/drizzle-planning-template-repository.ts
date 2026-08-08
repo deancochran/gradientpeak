@@ -94,7 +94,7 @@ export function createPlanningTemplateRepository(db: DrizzleDbClient): PlanningT
       select id, structure, structure_hash, gps_recording_enabled
       from activity_plans
       where is_system_template = true
-        and template_visibility = 'public'
+        and content_visibility = 'public'
       order by id asc
     `);
     return rows(result)
@@ -130,7 +130,7 @@ export function createPlanningTemplateRepository(db: DrizzleDbClient): PlanningT
             requested.map((id) => sql`${id}::uuid`),
             sql`, `,
           )})
-            and (template_visibility = 'public' or is_system_template = true)
+            and (content_visibility = 'public' or is_system_template = true)
           order by id asc
           for update
         `);

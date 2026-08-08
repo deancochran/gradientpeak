@@ -15,8 +15,8 @@ import {
   countAvailableTrainingDays,
   diffDateOnlyUtcDays,
   type GoalAnchoredProjectionPlan,
+  type GoalProjectionInput,
   type InferredStateSnapshot,
-  type MinimalTrainingPlanCreate,
   mapAthletePreferencesToCreationDefaults,
   normalizeCreationConfig,
   type PreviewReadinessSnapshot,
@@ -42,7 +42,7 @@ type LocalPreviewResult = {
 };
 
 type LocalPreviewInput = {
-  minimalPlan: MinimalTrainingPlanCreate;
+  projectionInput: GoalProjectionInput;
   creationInput: CreationNormalizationInput;
   profileSettings?: AthleteTrainingSettings;
   profileGoals?: ProfileGoal[];
@@ -55,12 +55,12 @@ type LocalPreviewInput = {
 
 type ExpandedProjectionPlan = GoalAnchoredProjectionPlan;
 
-export function buildExpandedPlanFromMinimalGoal(
-  minimalPlan: MinimalTrainingPlanCreate,
+export function buildGoalProjectionPlan(
+  projectionInput: GoalProjectionInput,
   input?: { startingLongTermLoad?: number; preferenceProfile?: AthleteTrainingSettings },
 ): ExpandedProjectionPlan {
   return buildGoalAnchoredProjectionPlan({
-    minimalPlan,
+    projectionInput,
     startingLongTermLoad: input?.startingLongTermLoad,
     preferenceProfile: input?.preferenceProfile,
   });
@@ -86,7 +86,7 @@ export function computeLocalCreationPreview(input: LocalPreviewInput): LocalPrev
   });
 
   const effectiveStartingCtl = input.startingLongTermLoadOverride;
-  const expandedPlan = buildExpandedPlanFromMinimalGoal(input.minimalPlan, {
+  const expandedPlan = buildGoalProjectionPlan(input.projectionInput, {
     startingLongTermLoad: effectiveStartingCtl,
     preferenceProfile: input.profileSettings,
   });

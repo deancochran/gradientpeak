@@ -12,6 +12,27 @@ assert.ok(distanceMeters, "activity_efforts.distance_meters must exist");
 assert.equal(distanceMeters.dataType, "number");
 assert.equal(distanceMeters.notNull, false);
 
+const columns = new Map(config.columns.map((column) => [column.name, column]));
+for (const requiredColumn of [
+  "activity_id",
+  "segment_id",
+  "source",
+  "method",
+  "calculation_version",
+  "provenance",
+]) {
+  assert.equal(
+    columns.get(requiredColumn)?.notNull,
+    true,
+    `activity_efforts.${requiredColumn} must be required derived evidence`,
+  );
+}
+assert.equal(
+  columns.has("updated_at"),
+  false,
+  "immutable activity_efforts has no update timestamp",
+);
+
 const checkNames = new Set(config.checks.map((constraint) => constraint.name));
 assert.ok(checkNames.has("activity_efforts_distance_meters_bounds_check"));
 assert.ok(checkNames.has("activity_efforts_supported_combination_check"));

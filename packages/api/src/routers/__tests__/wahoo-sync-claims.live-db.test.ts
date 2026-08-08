@@ -1,0 +1,1483 @@
+import { randomUUID } from "node:crypto";
+import { db, pool } from "@repo/db/client";
+import {
+  integrationCredentials,
+  integrations,
+  oauthStates,
+  profiles,
+  providerSyncJobs,
+  providerSyncState,
+  providerWebhookReceipts,
+  users,
+} from "@repo/db/schema";
+import { eq } from "drizzle-orm";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { handleOAuthCallback } from "../../application/integrations/oauthCallbackUseCase";
+import { getProviderSyncOverview } from "../../application/integrations/syncOverviewUseCase";
+import {
+  createIntegrationsRepositories,
+  createWahooSyncRepository,
+} from "../../infrastructure/repositories";
+import { getWahooOAuthConfig } from "../../lib/integrations/oauth-config";
+import {
+  createOAuthCodeChallenge,
+  deriveOAuthCodeVerifier,
+  issueLocalOAuthAuthorizationCode,
+} from "../../lib/integrations/oauth-pkce";
+import { createOAuthStateBinding } from "../../lib/integrations/oauth-state-binding";
+import { encryptProviderToken } from "../../lib/provider-token-crypto";
+
+const userIds: string[] = [];
+const testProviderTokenKey = Buffer.alloc(32, 7).toString("base64");
+
+function futureBase(offsetMs: number) {
+  return Date.now() + 86_400_000 + offsetMs;
+}
+
+async function seedOwner() {
+  const userId = randomUUID();
+  const integrationId = randomUUID();
+  const now = new Date();
+  userIds.push(userId);
+  await db.insert(users).values({
+    id: userId,
+    email: `${userId}@gradientpeak.test`,
+    emailVerified: true,
+    name: "Provider Sync Claim Test",
+  });
+  await db.insert(profiles).values({
+    created_at: now,
+    email: `${userId}@gradientpeak.test`,
+    id: userId,
+    is_public: false,
+    updated_at: now,
+  });
+  await db.insert(integrations).values({
+    created_at: now,
+    external_id: randomUUID(),
+    id: integrationId,
+    profile_id: userId,
+    provider: "wahoo",
+    updated_at: now,
+  });
+  return { integrationId, profileId: userId };
+}
+
+async function seedRunningJob(input: {
+  integrationId: string;
+  lockExpiresAt: Date;
+  profileId: string;
+  provider?: "strava" | "wahoo";
+  workerId: string;
+}) {
+  const jobId = randomUUID();
+  const now = new Date();
+  await db.insert(providerSyncJobs).values({
+    attempt: 1,
+    created_at: now,
+    id: jobId,
+    integration_id: input.integrationId,
+    job_type: `${input.provider ?? "wahoo"}.publish_event`,
+    last_error: "previous failure",
+    locked_at: now,
+    locked_by: input.workerId,
+    lock_expires_at: input.lockExpiresAt,
+    max_attempts: 3,
+    payload: {},
+    priority: 100,
+    profile_id: input.profileId,
+    provider: input.provider ?? "wahoo",
+    run_at: now,
+    status: "running",
+    sync_lane_key: `complete-with-state-${jobId}`,
+    updated_at: now,
+  });
+  return jobId;
+}
+
+beforeEach(() => {
+  vi.stubEnv("PROVIDER_TOKEN_ENCRYPTION_KEY", testProviderTokenKey);
+});
+
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  const userId = userIds.pop();
+  if (userId) await db.delete(users).where(eq(users.id, userId));
+});
+
+afterAll(async () => {
+  await pool.end();
+});
+
+describe("provider sync PostgreSQL claims", () => {
+  it("atomically advances desired state only for the current leased worker", async () => {
+    const owner = await seedOwner();
+    const repository = createWahooSyncRepository({ db });
+    const workerId = `worker:${randomUUID()}`;
+    const jobId = await seedRunningJob({
+      integrationId: owner.integrationId,
+      lockExpiresAt: new Date(Date.now() + 60_000),
+      profileId: owner.profileId,
+      workerId,
+    });
+    const latestPayload = {
+      eventId: randomUUID(),
+      operation: "publish",
+      projectionHash: "latest-projection",
+      projectionSnapshot: { plan: { header: { ftp: 275 }, intervals: [] } },
+    };
+
+    await expect(
+      repository.updateRunningJobDesiredState({
+        expectedIntegrationGeneration: 1,
+        id: jobId,
+        integrationId: owner.integrationId,
+        payload: latestPayload,
+        payloadHash: "latest-payload-hash",
+        profileId: owner.profileId,
+        provider: "wahoo",
+        workerId,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      db.select().from(providerSyncJobs).where(eq(providerSyncJobs.id, jobId)),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        payload: latestPayload,
+        payload_hash: "latest-payload-hash",
+        status: "running",
+      }),
+    ]);
+
+    await expect(
+      repository.updateRunningJobDesiredState({
+        expectedIntegrationGeneration: 1,
+        id: jobId,
+        integrationId: owner.integrationId,
+        payload: { ...latestPayload, projectionHash: "unowned-change" },
+        payloadHash: "unowned-payload-hash",
+        profileId: owner.profileId,
+        provider: "wahoo",
+        workerId: `other:${randomUUID()}`,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      db.select().from(providerSyncJobs).where(eq(providerSyncJobs.id, jobId)),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        payload: latestPayload,
+        payload_hash: "latest-payload-hash",
+      }),
+    ]);
+  });
+
+  it.each([
+    ["expired lease", -60_000, false],
+    ["wrong ownership", 60_000, true],
+  ] as const)("does not complete a job or write sync state for %s", async (_name, leaseOffsetMs, useWrongWorker) => {
+    const owner = await seedOwner();
+    const repository = createWahooSyncRepository({ db });
+    const workerId = `worker:${randomUUID()}`;
+    const jobId = await seedRunningJob({
+      integrationId: owner.integrationId,
+      lockExpiresAt: new Date(Date.now() + leaseOffsetMs),
+      profileId: owner.profileId,
+      workerId,
+    });
+    const resource = `completion-fence-${randomUUID()}`;
+    const beforeJob = await db
+      .select()
+      .from(providerSyncJobs)
+      .where(eq(providerSyncJobs.id, jobId));
+
+    await expect(
+      repository.completeJobWithSyncState({
+        highWatermark: "2026-07-20T12:00:00.000Z",
+        id: jobId,
+        integrationId: owner.integrationId,
+        metadata: { source: "completion-fence-test" },
+        provider: "wahoo",
+        resource,
+        workerId: useWrongWorker ? `other:${randomUUID()}` : workerId,
+      }),
+    ).resolves.toBe(false);
+
+    expect(await db.select().from(providerSyncJobs).where(eq(providerSyncJobs.id, jobId))).toEqual(
+      beforeJob,
+    );
+    expect(
+      await db
+        .select()
+        .from(providerSyncState)
+        .where(eq(providerSyncState.integration_id, owner.integrationId)),
+    ).toEqual([]);
+  });
+
+  it("atomically fails an owned current-generation job and writes failure sync state", async () => {
+    const owner = await seedOwner();
+    const repository = createWahooSyncRepository({ db });
+    const workerId = `worker:${randomUUID()}`;
+    const jobId = await seedRunningJob({
+      integrationId: owner.integrationId,
+      lockExpiresAt: new Date(Date.now() + 60_000),
+      profileId: owner.profileId,
+      workerId,
+    });
+    const resource = `failure-fence-${randomUUID()}`;
+    const nextRunAt = new Date(Date.now() + 300_000).toISOString();
+
+    await expect(
+      repository.failJobWithSyncState({
+        expectedIntegrationGeneration: 1,
+        id: jobId,
+        integrationId: owner.integrationId,
+        lastError: "activity_history_failed",
+        nextRunAt,
+        provider: "wahoo",
+        resource,
+        status: "failed",
+        workerId,
+      }),
+    ).resolves.toBe(true);
+
+    await expect(
+      db.select().from(providerSyncJobs).where(eq(providerSyncJobs.id, jobId)),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        last_error: "activity_history_failed",
+        locked_by: null,
+        status: "failed",
+      }),
+    ]);
+    await expect(
+      db.select().from(providerSyncState).where(eq(providerSyncState.resource, resource)),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        consecutive_failures: 1,
+        last_error: "activity_history_failed",
+      }),
+    ]);
+  });
+
+  it("does not fail a job or write sync state after its integration generation changes", async () => {
+    const owner = await seedOwner();
+    const repository = createWahooSyncRepository({ db });
+    const workerId = `worker:${randomUUID()}`;
+    const jobId = await seedRunningJob({
+      integrationId: owner.integrationId,
+      lockExpiresAt: new Date(Date.now() + 60_000),
+      profileId: owner.profileId,
+      workerId,
+    });
+    const resource = `stale-failure-fence-${randomUUID()}`;
+    await db
+      .update(integrations)
+      .set({ generation: 2, updated_at: new Date() })
+      .where(eq(integrations.id, owner.integrationId));
+    const beforeJob = await db
+      .select()
+      .from(providerSyncJobs)
+      .where(eq(providerSyncJobs.id, jobId));
+
+    await expect(
+      repository.failJobWithSyncState({
+        expectedIntegrationGeneration: 1,
+        id: jobId,
+        integrationId: owner.integrationId,
+        lastError: "activity_history_failed",
+        provider: "wahoo",
+        resource,
+        status: "failed",
+        workerId,
+      }),
+    ).resolves.toBe(false);
+
+    expect(await db.select().from(providerSyncJobs).where(eq(providerSyncJobs.id, jobId))).toEqual(
+      beforeJob,
+    );
+    expect(
+      await db.select().from(providerSyncState).where(eq(providerSyncState.resource, resource)),
+    ).toEqual([]);
+  });
+
+  it("does not complete a job for a different integration owned by the same profile", async () => {
+    const owner = await seedOwner();
+    const otherIntegrationId = randomUUID();
+    const now = new Date();
+    await db.insert(integrations).values({
+      created_at: now,
+      external_id: randomUUID(),
+      id: otherIntegrationId,
+      profile_id: owner.profileId,
+      provider: "strava",
+      updated_at: now,
+    });
+    const repository = createWahooSyncRepository({ db });
+    const workerId = `worker:${randomUUID()}`;
+    const jobId = await seedRunningJob({
+      integrationId: owner.integrationId,
+      lockExpiresAt: new Date(Date.now() + 60_000),
+      profileId: owner.profileId,
+      workerId,
+    });
+    const resource = `integration-fence-${randomUUID()}`;
+    const beforeJob = await db
+      .select()
+      .from(providerSyncJobs)
+      .where(eq(providerSyncJobs.id, jobId));
+
+    await expect(
+      repository.completeJobWithSyncState({
+        highWatermark: "2026-07-20T12:00:00.000Z",
+        id: jobId,
+        integrationId: otherIntegrationId,
+        metadata: { source: "integration-fence-test" },
+        provider: "wahoo",
+        resource,
+        workerId,
+      }),
+    ).resolves.toBe(false);
+
+    expect(await db.select().from(providerSyncJobs).where(eq(providerSyncJobs.id, jobId))).toEqual(
+      beforeJob,
+    );
+    expect(
+      await db.select().from(providerSyncState).where(eq(providerSyncState.resource, resource)),
+    ).toEqual([]);
+  });
+
+  it("does not complete a job when the caller provider differs from the job", async () => {
+    const owner = await seedOwner();
+    const integrationId = randomUUID();
+    const now = new Date();
+    await db.insert(integrations).values({
+      created_at: now,
+      external_id: randomUUID(),
+      id: integrationId,
+      profile_id: owner.profileId,
+      provider: "strava",
+      updated_at: now,
+    });
+    const repository = createWahooSyncRepository({ db });
+    const workerId = `worker:${randomUUID()}`;
+    const jobId = await seedRunningJob({
+      integrationId,
+      lockExpiresAt: new Date(Date.now() + 60_000),
+      profileId: owner.profileId,
+      provider: "strava",
+      workerId,
+    });
+    const resource = `provider-fence-${randomUUID()}`;
+    const beforeJob = await db
+      .select()
+      .from(providerSyncJobs)
+      .where(eq(providerSyncJobs.id, jobId));
+
+    await expect(
+      repository.completeJobWithSyncState({
+        highWatermark: "2026-07-20T12:00:00.000Z",
+        id: jobId,
+        integrationId,
+        metadata: { source: "provider-fence-test" },
+        provider: "wahoo",
+        resource,
+        workerId,
+      }),
+    ).resolves.toBe(false);
+
+    expect(await db.select().from(providerSyncJobs).where(eq(providerSyncJobs.id, jobId))).toEqual(
+      beforeJob,
+    );
+    expect(
+      await db.select().from(providerSyncState).where(eq(providerSyncState.resource, resource)),
+    ).toEqual([]);
+  });
+
+  it("rolls job completion back when the sync-state upsert fails", async () => {
+    const owner = await seedOwner();
+    const repository = createWahooSyncRepository({ db });
+    const workerId = `worker:${randomUUID()}`;
+    const jobId = await seedRunningJob({
+      integrationId: owner.integrationId,
+      lockExpiresAt: new Date(Date.now() + 60_000),
+      profileId: owner.profileId,
+      workerId,
+    });
+    const resource = `rollback-${randomUUID()}`;
+    const identifierSuffix = randomUUID().replaceAll("-", "");
+    const functionName = `pss_fail_fn_${identifierSuffix}`;
+    const triggerName = `pss_fail_trg_${identifierSuffix}`;
+    await db.insert(providerSyncState).values({
+      consecutive_failures: 7,
+      created_at: new Date("2026-06-01T10:00:00.000Z"),
+      high_watermark: new Date("2026-06-02T10:00:00.000Z"),
+      integration_id: owner.integrationId,
+      last_error: "recognizable previous failure",
+      last_sync_failed_at: new Date("2026-06-05T10:00:00.000Z"),
+      last_sync_started_at: new Date("2026-06-04T10:00:00.000Z"),
+      last_sync_succeeded_at: new Date("2026-05-30T10:00:00.000Z"),
+      metadata: { marker: "preexisting", nested: { preserved: true } },
+      provider: "wahoo",
+      resource,
+      sync_mode: "push_windowed",
+      updated_at: new Date("2026-06-03T10:00:00.000Z"),
+    });
+    const beforeJob = await db
+      .select()
+      .from(providerSyncJobs)
+      .where(eq(providerSyncJobs.id, jobId));
+    const beforeState = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.integration_id, owner.integrationId));
+
+    try {
+      await pool.query(`
+        create function public."${functionName}"() returns trigger
+        language plpgsql as $$
+        begin
+          raise exception 'forced provider sync state failure';
+        end
+        $$
+      `);
+      await pool.query(`
+        create trigger "${triggerName}"
+        before update on public.provider_sync_state
+        for each row when (new.resource = '${resource}')
+        execute function public."${functionName}"()
+      `);
+
+      await expect(
+        repository.completeJobWithSyncState({
+          highWatermark: "2026-07-20T12:00:00.000Z",
+          id: jobId,
+          integrationId: owner.integrationId,
+          metadata: { source: "rollback-test" },
+          provider: "wahoo",
+          resource,
+          workerId,
+        }),
+      ).rejects.toThrow();
+
+      expect(
+        await db.select().from(providerSyncJobs).where(eq(providerSyncJobs.id, jobId)),
+      ).toEqual(beforeJob);
+      expect(
+        await db
+          .select()
+          .from(providerSyncState)
+          .where(eq(providerSyncState.integration_id, owner.integrationId)),
+      ).toEqual(beforeState);
+    } finally {
+      try {
+        await pool.query(`drop trigger if exists "${triggerName}" on public.provider_sync_state`);
+      } finally {
+        await pool.query(`drop function if exists public."${functionName}"()`);
+      }
+    }
+  });
+
+  it("persists job completion and sync state together", async () => {
+    const owner = await seedOwner();
+    const repository = createWahooSyncRepository({ db });
+    const workerId = `worker:${randomUUID()}`;
+    const jobId = await seedRunningJob({
+      integrationId: owner.integrationId,
+      lockExpiresAt: new Date(Date.now() + 60_000),
+      profileId: owner.profileId,
+      workerId,
+    });
+    const highWatermark = "2026-07-20T12:00:00.000Z";
+    const resource = `success-${randomUUID()}`;
+
+    await expect(
+      repository.completeJobWithSyncState({
+        highWatermark,
+        id: jobId,
+        integrationId: owner.integrationId,
+        metadata: { source: "success-test" },
+        provider: "wahoo",
+        resource,
+        workerId,
+      }),
+    ).resolves.toBe(true);
+
+    expect(
+      await db
+        .select({
+          lastError: providerSyncJobs.last_error,
+          lockExpiresAt: providerSyncJobs.lock_expires_at,
+          lockedAt: providerSyncJobs.locked_at,
+          lockedBy: providerSyncJobs.locked_by,
+          status: providerSyncJobs.status,
+        })
+        .from(providerSyncJobs)
+        .where(eq(providerSyncJobs.id, jobId)),
+    ).toEqual([
+      {
+        lastError: null,
+        lockExpiresAt: null,
+        lockedAt: null,
+        lockedBy: null,
+        status: "completed",
+      },
+    ]);
+    expect(
+      await db
+        .select({
+          consecutiveFailures: providerSyncState.consecutive_failures,
+          highWatermark: providerSyncState.high_watermark,
+          integrationId: providerSyncState.integration_id,
+          metadata: providerSyncState.metadata,
+          provider: providerSyncState.provider,
+          resource: providerSyncState.resource,
+          syncMode: providerSyncState.sync_mode,
+        })
+        .from(providerSyncState)
+        .where(eq(providerSyncState.integration_id, owner.integrationId)),
+    ).toEqual([
+      {
+        consecutiveFailures: 0,
+        highWatermark: new Date(highWatermark),
+        integrationId: owner.integrationId,
+        metadata: { source: "success-test" },
+        provider: "wahoo",
+        resource,
+        syncMode: "push_windowed",
+      },
+    ]);
+  });
+
+  it("consumes one OAuth state with one atomic credential write", async () => {
+    const owner = await seedOwner();
+    await db.delete(integrations).where(eq(integrations.id, owner.integrationId));
+    const state = randomUUID();
+    await db.insert(oauthStates).values({
+      created_at: new Date(),
+      expires_at: new Date(Date.now() + 60_000),
+      id: randomUUID(),
+      mobile_redirect_uri: "gradientpeak://integrations",
+      profile_id: owner.profileId,
+      provider: "wahoo",
+      state,
+    });
+    const repository = createIntegrationsRepositories(db).integrations;
+    const input = {
+      accessToken: "access-token",
+      expectedIntegration: { kind: "absent" as const },
+      expiresAt: new Date(Date.now() + 3_600_000),
+      externalId: "wahoo-account",
+      now: new Date(),
+      profileId: owner.profileId,
+      provider: "wahoo" as const,
+      refreshToken: "refresh-token",
+      scope: "workouts_read",
+      state,
+    };
+
+    const results = await Promise.all([
+      repository.upsertFromOAuthState(input),
+      repository.upsertFromOAuthState(input),
+    ]);
+
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(await db.select().from(oauthStates).where(eq(oauthStates.state, state))).toHaveLength(0);
+    const storedIntegrations = await db
+      .select()
+      .from(integrations)
+      .where(eq(integrations.profile_id, owner.profileId));
+    expect(storedIntegrations).toHaveLength(1);
+    const storedIntegration = storedIntegrations[0];
+    if (!storedIntegration) throw new Error("Expected stored integration");
+    expect(
+      await db
+        .select()
+        .from(integrationCredentials)
+        .where(eq(integrationCredentials.integration_id, storedIntegration.id)),
+    ).toHaveLength(1);
+  });
+
+  it("rolls OAuth state consumption back when credential protection fails", async () => {
+    const owner = await seedOwner();
+    await db.delete(integrations).where(eq(integrations.id, owner.integrationId));
+    const state = randomUUID();
+    await db.insert(oauthStates).values({
+      created_at: new Date(),
+      expires_at: new Date(Date.now() + 60_000),
+      id: randomUUID(),
+      mobile_redirect_uri: "gradientpeak://integrations",
+      profile_id: owner.profileId,
+      provider: "wahoo",
+      state,
+    });
+    const repository = createIntegrationsRepositories(db).integrations;
+    vi.stubEnv("PROVIDER_TOKEN_ENCRYPTION_KEY", "invalid");
+
+    await expect(
+      repository.upsertFromOAuthState({
+        accessToken: "access-token",
+        expectedIntegration: { kind: "absent" },
+        expiresAt: null,
+        externalId: "wahoo-account",
+        now: new Date(),
+        profileId: owner.profileId,
+        provider: "wahoo",
+        refreshToken: "refresh-token",
+        scope: null,
+        state,
+      }),
+    ).rejects.toThrow("PROVIDER_TOKEN_ENCRYPTION_KEY");
+    expect(await db.select().from(oauthStates).where(eq(oauthStates.state, state))).toHaveLength(1);
+    expect(
+      await db.select().from(integrations).where(eq(integrations.profile_id, owner.profileId)),
+    ).toHaveLength(0);
+  });
+
+  it("rolls OAuth credentials and the initial history job back in one transaction", async () => {
+    const owner = await seedOwner();
+    await db.delete(integrations).where(eq(integrations.id, owner.integrationId));
+    const state = randomUUID();
+    const dedupeKey = `provider-history-reconcile:${randomUUID()}:activity`;
+    await db.insert(oauthStates).values({
+      created_at: new Date(),
+      expires_at: new Date(Date.now() + 60_000),
+      id: randomUUID(),
+      mobile_redirect_uri: "gradientpeak://integrations",
+      profile_id: owner.profileId,
+      provider: "wahoo",
+      state,
+    });
+    const integrationRepository = createIntegrationsRepositories(db).integrations;
+    const providerSyncRepository = createWahooSyncRepository({ db });
+
+    await expect(
+      db.transaction(async (tx) => {
+        const integration = await integrationRepository.upsertFromOAuthStateInTransaction(tx, {
+          accessToken: "access-token",
+          expectedIntegration: { kind: "absent" },
+          expiresAt: new Date(Date.now() + 3_600_000),
+          externalId: "wahoo-account",
+          now: new Date(),
+          profileId: owner.profileId,
+          provider: "wahoo",
+          refreshToken: "refresh-token",
+          scope: "workouts_read offline_data",
+          state,
+        });
+        if (!integration) throw new Error("Expected OAuth state to be consumed");
+        await providerSyncRepository.enqueueJobInTransaction(tx, {
+          dedupeKey,
+          integrationId: integration.id,
+          jobType: "wahoo.activity_history_reconcile",
+          payload: { trigger: "connect" },
+          profileId: owner.profileId,
+          provider: "wahoo",
+          resourceKind: "activity",
+          runAt: new Date().toISOString(),
+        });
+        throw new Error("force shared transaction rollback");
+      }),
+    ).rejects.toThrow("force shared transaction rollback");
+
+    expect(await db.select().from(oauthStates).where(eq(oauthStates.state, state))).toHaveLength(1);
+    expect(
+      await db.select().from(integrations).where(eq(integrations.profile_id, owner.profileId)),
+    ).toHaveLength(0);
+    expect(
+      await db.select().from(providerSyncJobs).where(eq(providerSyncJobs.dedupe_key, dedupeKey)),
+    ).toHaveLength(0);
+  });
+
+  it("persists bounded sync failure categories and ignores pre-category diagnostics", async () => {
+    const owner = await seedOwner();
+    const repository = createWahooSyncRepository({ db });
+    const workerId = `worker:${randomUUID()}`;
+    const jobId = await seedRunningJob({
+      integrationId: owner.integrationId,
+      lockExpiresAt: new Date(Date.now() + 60_000),
+      profileId: owner.profileId,
+      workerId,
+    });
+    const canary = "wahoo-id-9182 token=canary https://provider.test/private/workout/secret-name";
+
+    await expect(
+      repository.markJobFailed({
+        id: jobId,
+        lastError: canary,
+        status: "failed",
+        workerId,
+      }),
+    ).resolves.toBe(true);
+    await repository.updateSyncStateAfterFailure({
+      integrationId: owner.integrationId,
+      lastError: canary,
+      provider: "wahoo",
+      resource: "historical_activities",
+    });
+
+    expect(
+      await db
+        .select({ lastError: providerSyncJobs.last_error })
+        .from(providerSyncJobs)
+        .where(eq(providerSyncJobs.id, jobId)),
+    ).toEqual([{ lastError: "provider_sync_failed" }]);
+    expect(
+      await db
+        .select({ lastError: providerSyncState.last_error })
+        .from(providerSyncState)
+        .where(eq(providerSyncState.integration_id, owner.integrationId)),
+    ).toEqual([{ lastError: "provider_sync_failed" }]);
+
+    // Simulate a persisted diagnostic from before bounded categories were enforced.
+    await db
+      .update(providerSyncState)
+      .set({ last_error: canary })
+      .where(eq(providerSyncState.integration_id, owner.integrationId));
+    const overview = await getProviderSyncOverview({ db, profileId: owner.profileId });
+    const publicJson = JSON.stringify(overview);
+    expect(publicJson).not.toContain("Provider sync failed");
+    expect(publicJson).not.toContain(canary);
+    expect(publicJson).not.toContain("wahoo-id-9182");
+    expect(publicJson).not.toContain("token=canary");
+    expect(publicJson).not.toContain("provider.test");
+    expect(publicJson).not.toContain("secret-name");
+  });
+
+  it("derives the reconnect overview and primary action from the durable credential marker", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("WAHOO_OAUTH_TEST_ADAPTER", "1");
+    const owner = await seedOwner();
+    await db.insert(integrationCredentials).values({
+      access_token: encryptProviderToken("access-token"),
+      integration_id: owner.integrationId,
+      reconnect_required_at: new Date(),
+      refresh_token: encryptProviderToken("refresh-token"),
+    });
+    const overview = await getProviderSyncOverview({ db, profileId: owner.profileId });
+    expect(overview.find((provider) => provider.provider === "wahoo")).toMatchObject({
+      primaryAction: "reconnect",
+      providerHealth: { status: "needs_reconnect" },
+      summary: { health: "needs_reconnect" },
+    });
+  });
+
+  it("returns callback failure without committing credentials or a queued history job", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("WAHOO_OAUTH_TEST_ADAPTER", "1");
+    const owner = await seedOwner();
+    await db.delete(integrations).where(eq(integrations.id, owner.integrationId));
+    const state = randomUUID();
+    const config = getWahooOAuthConfig();
+    if (!config) throw new Error("Expected local OAuth adapter configuration");
+    const binding = createOAuthStateBinding({ config, provider: "wahoo", state });
+    await db.insert(oauthStates).values({
+      callback_uri: binding.callbackUri,
+      created_at: new Date(),
+      expires_at: new Date(Date.now() + 60_000),
+      id: randomUUID(),
+      mobile_redirect_uri: "http://localhost:3000/integrations",
+      profile_id: owner.profileId,
+      provider: "wahoo",
+      state,
+      requested_scope: binding.requestedScope,
+      verifier_hash: binding.verifierHash,
+    });
+    const code = issueLocalOAuthAuthorizationCode({
+      challenge: createOAuthCodeChallenge(
+        deriveOAuthCodeVerifier({ clientSecret: config.clientSecret, provider: "wahoo", state }),
+      ),
+      config,
+      provider: "wahoo",
+    });
+    const realWahooSyncRepository = createWahooSyncRepository({ db });
+    const failingWahooSyncRepository = {
+      ...realWahooSyncRepository,
+      async enqueueJobInTransaction(transaction, input) {
+        await realWahooSyncRepository.enqueueJobInTransaction(transaction, input);
+        throw new Error("injected enqueue failure after insert");
+      },
+    } satisfies typeof realWahooSyncRepository;
+
+    const result = await handleOAuthCallback({
+      code,
+      error: null,
+      fallbackRedirect: "http://localhost:3000/integrations",
+      provider: "wahoo",
+      providerSyncRepository: failingWahooSyncRepository,
+      repositories: createIntegrationsRepositories(db),
+      runInTransaction: (operation) => db.transaction(operation),
+      state,
+    });
+
+    const redirect = new URL(result.redirectUrl);
+    expect(redirect.searchParams.get("error")).toBe("store_integration_failed");
+    expect(redirect.searchParams.get("success")).toBeNull();
+    expect(
+      await db.select().from(integrations).where(eq(integrations.profile_id, owner.profileId)),
+    ).toHaveLength(0);
+    expect(
+      await db
+        .select({ id: integrationCredentials.integration_id })
+        .from(integrationCredentials)
+        .innerJoin(integrations, eq(integrations.id, integrationCredentials.integration_id))
+        .where(eq(integrations.profile_id, owner.profileId)),
+    ).toHaveLength(0);
+    expect(
+      await db
+        .select()
+        .from(providerSyncJobs)
+        .where(eq(providerSyncJobs.profile_id, owner.profileId)),
+    ).toHaveLength(0);
+    // The provider code was redeemed, so terminal state cleanup remains intentionally one-time.
+    expect(await db.select().from(oauthStates).where(eq(oauthStates.state, state))).toHaveLength(0);
+  });
+
+  it("rejects malformed provider identity before PostgreSQL credential persistence or enqueue", async () => {
+    vi.stubEnv("WAHOO_CLIENT_ID", "live-db-wahoo-client");
+    vi.stubEnv("WAHOO_CLIENT_SECRET", "live-db-wahoo-secret");
+    const owner = await seedOwner();
+    await db.delete(integrations).where(eq(integrations.id, owner.integrationId));
+    const state = randomUUID();
+    const config = getWahooOAuthConfig();
+    if (!config) throw new Error("Expected Wahoo OAuth configuration");
+    const binding = createOAuthStateBinding({ config, provider: "wahoo", state });
+    await db.insert(oauthStates).values({
+      callback_uri: binding.callbackUri,
+      created_at: new Date(),
+      expires_at: new Date(Date.now() + 60_000),
+      id: randomUUID(),
+      mobile_redirect_uri: "http://localhost:3000/integrations",
+      profile_id: owner.profileId,
+      provider: "wahoo",
+      requested_scope: binding.requestedScope,
+      state,
+      verifier_hash: binding.verifierHash,
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ access_token: "access-token", athlete: { id: " " } }), {
+        status: 200,
+      }),
+    );
+
+    const result = await handleOAuthCallback({
+      code: "provider-code",
+      error: null,
+      fallbackRedirect: "http://localhost:3000/integrations",
+      provider: "wahoo",
+      providerSyncRepository: createWahooSyncRepository({ db }),
+      repositories: createIntegrationsRepositories(db),
+      runInTransaction: (operation) => db.transaction(operation),
+      state,
+    });
+
+    expect(new URL(result.redirectUrl).searchParams.get("error")).toBe("provider_identity_failed");
+    expect(
+      await db.select().from(integrations).where(eq(integrations.profile_id, owner.profileId)),
+    ).toHaveLength(0);
+    expect(
+      await db
+        .select()
+        .from(providerSyncJobs)
+        .where(eq(providerSyncJobs.profile_id, owner.profileId)),
+    ).toHaveLength(0);
+  });
+
+  it("coalesces concurrent enqueues with the same dedupe key into one active job", async () => {
+    const owner = await seedOwner();
+    const repository = createWahooSyncRepository({ db });
+    const dedupeKey = `concurrent-${randomUUID()}`;
+    const input = {
+      dedupeKey,
+      integrationId: owner.integrationId,
+      jobType: "wahoo.activity_history_reconcile",
+      payload: { eventId: randomUUID() },
+      profileId: owner.profileId,
+      provider: "wahoo" as const,
+      runAt: new Date(futureBase(0)).toISOString(),
+    };
+
+    const enqueued = await Promise.all(
+      Array.from({ length: 8 }, () => repository.enqueueJob(input)),
+    );
+
+    expect(new Set(enqueued.map((job) => job.id)).size).toBe(1);
+    const active = await pool.query<{ id: string }>(
+      `select id from public.provider_sync_jobs
+       where dedupe_key = $1 and status in ('queued', 'running')`,
+      [dedupeKey],
+    );
+    expect(active.rows).toEqual([{ id: enqueued[0]?.id }]);
+  });
+
+  it("maps queue sequence and filters listJobs to the requested event and provider", async () => {
+    const owner = await seedOwner();
+    const repository = createWahooSyncRepository({ db });
+    const eventId = randomUUID();
+    const unrelatedEventId = randomUUID();
+    const first = await repository.enqueueJob({
+      dedupeKey: `first-${eventId}`,
+      integrationId: owner.integrationId,
+      internalResourceId: eventId,
+      jobType: "wahoo.activity_history_reconcile",
+      payload: { eventId },
+      profileId: owner.profileId,
+      provider: "wahoo",
+      runAt: new Date(futureBase(120_000)).toISOString(),
+    });
+    const newest = await repository.enqueueJob({
+      dedupeKey: `newest-${eventId}`,
+      integrationId: owner.integrationId,
+      internalResourceId: eventId,
+      jobType: "wahoo.activity_history_reconcile",
+      payload: { eventId },
+      profileId: owner.profileId,
+      provider: "wahoo",
+      runAt: new Date(futureBase(60_000)).toISOString(),
+    });
+    await repository.enqueueJob({
+      dedupeKey: `unrelated-${unrelatedEventId}`,
+      integrationId: owner.integrationId,
+      internalResourceId: unrelatedEventId,
+      jobType: "wahoo.activity_history_reconcile",
+      payload: { eventId: unrelatedEventId },
+      profileId: owner.profileId,
+      provider: "wahoo",
+      runAt: new Date(futureBase(180_000)).toISOString(),
+    });
+
+    const jobs = await repository.listJobs({
+      internalResourceId: eventId,
+      limit: 2,
+      order: "newest_authority",
+      profileId: owner.profileId,
+      provider: "wahoo",
+    });
+
+    expect(jobs.map((job) => job.id)).toEqual([newest.id, first.id]);
+    expect(jobs.every((job) => job.internalResourceId === eventId)).toBe(true);
+    expect(jobs.every((job) => job.provider === "wahoo")).toBe(true);
+    expect(jobs.map((job) => job.queueSequence)).toEqual([expect.any(Number), expect.any(Number)]);
+    expect(jobs[0]?.queueSequence).toBeGreaterThan(jobs[1]?.queueSequence ?? Number.MAX_VALUE);
+  });
+
+  it("coalesces an unchanged running intent and queues one successor for concurrent payload changes", async () => {
+    const owner = await seedOwner();
+    const repository = createWahooSyncRepository({ db });
+    const eventId = randomUUID();
+    const lane = `event-${eventId}`;
+    const workerId = `worker-${randomUUID()}`;
+    const runAt = new Date().toISOString();
+    const initialInput = {
+      dedupeKey: `publish-${eventId}`,
+      integrationId: owner.integrationId,
+      jobType: "wahoo.activity_history_reconcile",
+      operation: "publish",
+      payload: { eventId, operation: "publish" },
+      payloadHash: "publish-v1",
+      profileId: owner.profileId,
+      provider: "wahoo" as const,
+      runAt,
+      syncLaneKey: lane,
+    };
+    const running = await repository.enqueueJob(initialInput);
+    await repository.claimDueJobs({
+      limit: 1,
+      lockExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+      now: new Date().toISOString(),
+      provider: "wahoo",
+      profileId: owner.profileId,
+      workerId,
+    });
+
+    await expect(repository.enqueueJob(initialInput)).resolves.toEqual({
+      id: running.id,
+      status: "running",
+    });
+
+    const changedInput = { ...initialInput, payloadHash: "publish-v2" };
+    const successors = await Promise.all(
+      Array.from({ length: 8 }, () => repository.enqueueJob(changedInput)),
+    );
+    expect(new Set(successors.map((job) => job.id)).size).toBe(1);
+    expect(successors.every((job) => job.status === "queued")).toBe(true);
+    expect(successors[0]?.id).not.toBe(running.id);
+
+    const active = await pool.query<{ id: string; payload_hash: string; status: string }>(
+      `select id, payload_hash, status from public.provider_sync_jobs
+       where sync_lane_key = $1 and status in ('queued', 'running') order by queue_sequence`,
+      [lane],
+    );
+    expect(active.rows).toEqual([
+      { id: running.id, payload_hash: "publish-v1", status: "running" },
+      { id: successors[0]?.id, payload_hash: "publish-v2", status: "queued" },
+    ]);
+  });
+
+  it("retains different resources as ordered successors in a shared lane", async () => {
+    const owner = await seedOwner();
+    const repository = createWahooSyncRepository({ db });
+    const lane = `shared-${randomUUID()}`;
+    const runAt = new Date().toISOString();
+    const workerId = `worker-${randomUUID()}`;
+    const eventA = randomUUID();
+    const eventB = randomUUID();
+    const eventC = randomUUID();
+    const enqueue = (eventId: string, operation: "publish" | "unsync") =>
+      repository.enqueueJob({
+        dedupeKey: `${operation}-${eventId}`,
+        integrationId: owner.integrationId,
+        internalResourceId: eventId,
+        jobType: "wahoo.activity_history_reconcile",
+        operation,
+        payload: { eventId, operation },
+        payloadHash: `${operation}-${eventId}`,
+        profileId: owner.profileId,
+        provider: "wahoo",
+        resourceKind: "event",
+        runAt,
+        syncLaneKey: lane,
+      });
+
+    const running = await enqueue(eventA, "publish");
+    await repository.claimDueJobs({
+      jobTypes: ["wahoo.activity_history_reconcile"],
+      limit: 1,
+      lockExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+      now: new Date().toISOString(),
+      provider: "wahoo",
+      profileId: owner.profileId,
+      workerId,
+    });
+    const second = await enqueue(eventB, "publish");
+    const third = await enqueue(eventC, "publish");
+    const revisedSecond = await enqueue(eventB, "unsync");
+
+    expect(revisedSecond.id).toBe(second.id);
+    const active = await pool.query<{
+      id: string;
+      internal_resource_id: string;
+      operation: string;
+      status: string;
+    }>(
+      `select id, internal_resource_id, operation, status
+       from public.provider_sync_jobs
+       where sync_lane_key = $1 and status in ('queued', 'running') order by queue_sequence`,
+      [lane],
+    );
+    expect(active.rows).toEqual([
+      {
+        id: running.id,
+        internal_resource_id: eventA,
+        operation: "publish",
+        status: "running",
+      },
+      {
+        id: second.id,
+        internal_resource_id: eventB,
+        operation: "unsync",
+        status: "queued",
+      },
+      {
+        id: third.id,
+        internal_resource_id: eventC,
+        operation: "publish",
+        status: "queued",
+      },
+    ]);
+  });
+
+  it("keeps one latest-intent successor for publish-unsync-publish while publish is running", async () => {
+    const owner = await seedOwner();
+    const repository = createWahooSyncRepository({ db });
+    const eventId = randomUUID();
+    const lane = `event-${eventId}`;
+    const publishDedupe = `publish-${eventId}`;
+    const runAt = new Date().toISOString();
+    const workerId = `worker-${randomUUID()}`;
+    const runningPublish = await repository.enqueueJob({
+      dedupeKey: publishDedupe,
+      integrationId: owner.integrationId,
+      jobType: "wahoo.activity_history_reconcile",
+      operation: "publish",
+      payload: { eventId, operation: "publish" },
+      payloadHash: "publish-v1",
+      profileId: owner.profileId,
+      provider: "wahoo",
+      runAt,
+      syncLaneKey: lane,
+    });
+    const claimed = await repository.claimDueJobs({
+      jobTypes: ["wahoo.activity_history_reconcile"],
+      limit: 1,
+      lockExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+      now: new Date().toISOString(),
+      provider: "wahoo",
+      profileId: owner.profileId,
+      workerId,
+    });
+    expect(claimed.map((job) => job.id)).toEqual([runningPublish.id]);
+
+    const unsyncSuccessor = await repository.enqueueJob({
+      dedupeKey: `unsync-${eventId}`,
+      integrationId: owner.integrationId,
+      jobType: "wahoo.activity_history_reconcile",
+      operation: "unsync",
+      payload: { eventId, operation: "unsync" },
+      payloadHash: "unsync-v1",
+      profileId: owner.profileId,
+      provider: "wahoo",
+      runAt,
+      syncLaneKey: lane,
+    });
+    const latestPublish = await repository.enqueueJob({
+      dedupeKey: publishDedupe,
+      integrationId: owner.integrationId,
+      jobType: "wahoo.activity_history_reconcile",
+      operation: "publish",
+      payload: { eventId, operation: "publish" },
+      payloadHash: "publish-v2",
+      profileId: owner.profileId,
+      provider: "wahoo",
+      runAt,
+      syncLaneKey: lane,
+    });
+
+    expect(latestPublish).toEqual({ id: unsyncSuccessor.id, status: "queued" });
+    const active = await pool.query<{
+      dedupe_key: string;
+      id: string;
+      operation: string;
+      payload_hash: string;
+      status: string;
+    }>(
+      `select id, dedupe_key, operation, payload_hash, status
+       from public.provider_sync_jobs
+       where sync_lane_key = $1 and status in ('queued', 'running') order by queue_sequence`,
+      [lane],
+    );
+    expect(active.rows).toEqual([
+      {
+        dedupe_key: publishDedupe,
+        id: runningPublish.id,
+        operation: "publish",
+        payload_hash: "publish-v1",
+        status: "running",
+      },
+      {
+        dedupe_key: publishDedupe,
+        id: unsyncSuccessor.id,
+        operation: "publish",
+        payload_hash: "publish-v2",
+        status: "queued",
+      },
+    ]);
+
+    expect(
+      await repository.claimDueJobs({
+        limit: 1,
+        lockExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+        now: new Date().toISOString(),
+        provider: "wahoo",
+        profileId: owner.profileId,
+        workerId: `blocked-${randomUUID()}`,
+      }),
+    ).toEqual([]);
+    expect(await repository.markJobSucceeded(runningPublish.id, workerId)).toBe(true);
+    const successorClaim = await repository.claimDueJobs({
+      limit: 1,
+      lockExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+      now: new Date().toISOString(),
+      provider: "wahoo",
+      profileId: owner.profileId,
+      workerId: `successor-${randomUUID()}`,
+    });
+    expect(successorClaim).toMatchObject([
+      {
+        id: unsyncSuccessor.id,
+        operation: "publish",
+        payloadHash: "publish-v2",
+        status: "running",
+      },
+    ]);
+  });
+
+  it("orders concurrent inserts by the canonical queue_sequence", async () => {
+    const owner = await seedOwner();
+    const repository = createWahooSyncRepository({ db });
+    const oldJobId = randomUUID();
+    const newJobId = randomUUID();
+    const lane = `mixed-${randomUUID()}`;
+    const insert = `
+      insert into public.provider_sync_jobs (
+        id, created_at, updated_at, profile_id, integration_id, provider,
+        job_type, sync_lane_key, status, priority, run_at, attempt, max_attempts,
+        payload
+       ) values ($1, now(), now(), $2, $3, 'wahoo', 'wahoo.activity_history_reconcile',
+        $4, 'queued', 100, now(), 0, 3, '{}'::jsonb)
+    `;
+    const newWorkerInsert = insert
+      .replace("payload\n", "payload, queue_sequence\n")
+      .replace("'{}'::jsonb)", "'{}'::jsonb, $5)");
+    await Promise.all([
+      pool.query(insert, [oldJobId, owner.profileId, owner.integrationId, lane]),
+      pool.query(newWorkerInsert, [
+        newJobId,
+        owner.profileId,
+        owner.integrationId,
+        lane,
+        9_999_999,
+      ]),
+    ]);
+
+    const ordered = await pool.query<{ id: string; queue_sequence: string }>(
+      `select id, queue_sequence::text
+       from public.provider_sync_jobs where id = any($1::uuid[]) order by queue_sequence`,
+      [[oldJobId, newJobId]],
+    );
+    expect(ordered.rows).toHaveLength(2);
+    expect(Number(ordered.rows[0]?.queue_sequence)).toBeLessThan(
+      Number(ordered.rows[1]?.queue_sequence),
+    );
+
+    const claimed = await repository.claimDueJobs({
+      limit: 2,
+      lockExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+      now: new Date().toISOString(),
+      provider: "wahoo",
+      profileId: owner.profileId,
+      workerId: "mixed-version-worker",
+    });
+    expect(claimed.map((job) => job.id)).toEqual([ordered.rows[0]?.id]);
+  });
+
+  it("uses immutable queue_sequence as lane precedence and run_at only for head eligibility", async () => {
+    const owner = await seedOwner();
+    const repository = createWahooSyncRepository({ db });
+    const base = futureBase(0);
+    const headId = randomUUID();
+    const laterId = randomUUID();
+    await db.insert(providerSyncJobs).values([
+      {
+        attempt: 0,
+        created_at: new Date(base),
+        id: headId,
+        integration_id: owner.integrationId,
+        job_type: "wahoo.activity_history_reconcile",
+        payload: {},
+        max_attempts: 3,
+        priority: 100,
+        profile_id: owner.profileId,
+        provider: "wahoo",
+        run_at: new Date(base + 60_000),
+        sync_lane_key: "test-lane",
+        status: "queued",
+        updated_at: new Date(base),
+      },
+      {
+        attempt: 0,
+        created_at: new Date(base),
+        id: laterId,
+        integration_id: owner.integrationId,
+        job_type: "wahoo.activity_history_reconcile",
+        payload: {},
+        max_attempts: 3,
+        priority: 1,
+        profile_id: owner.profileId,
+        provider: "wahoo",
+        run_at: new Date(base - 60_000),
+        sync_lane_key: "test-lane",
+        status: "queued",
+        updated_at: new Date(base),
+      },
+    ]);
+
+    await expect(
+      repository.claimDueJobs({
+        limit: 2,
+        lockExpiresAt: new Date(base + 300_000).toISOString(),
+        now: new Date(base).toISOString(),
+        provider: "wahoo",
+        profileId: owner.profileId,
+        workerId: "eligibility-worker",
+      }),
+    ).resolves.toEqual([]);
+
+    await db
+      .update(providerSyncJobs)
+      .set({ run_at: new Date(base - 30_000) })
+      .where(eq(providerSyncJobs.id, headId));
+    const claimed = await repository.claimDueJobs({
+      limit: 2,
+      lockExpiresAt: new Date(base + 300_000).toISOString(),
+      now: new Date(base).toISOString(),
+      provider: "wahoo",
+      profileId: owner.profileId,
+      workerId: "ordering-worker",
+    });
+    expect(claimed.map((job) => job.id)).toEqual([headId]);
+    expect(await repository.markJobSucceeded(headId, "ordering-worker")).toBe(true);
+
+    const next = await repository.claimDueJobs({
+      limit: 1,
+      lockExpiresAt: new Date(base + 300_000).toISOString(),
+      now: new Date(base).toISOString(),
+      provider: "wahoo",
+      profileId: owner.profileId,
+      workerId: "next-worker",
+    });
+    expect(next.map((job) => job.id)).toEqual([laterId]);
+  });
+
+  it("reclaims expired leases and fences the stale worker from finalizing", async () => {
+    const owner = await seedOwner();
+    const repository = createWahooSyncRepository({ db });
+    const base = futureBase(3_600_000);
+    const jobId = randomUUID();
+    await db.insert(providerSyncJobs).values({
+      attempt: 0,
+      created_at: new Date(base),
+      id: jobId,
+      integration_id: owner.integrationId,
+      job_type: "wahoo.activity_history_reconcile",
+      payload: {},
+      max_attempts: 3,
+      priority: 100,
+      profile_id: owner.profileId,
+      provider: "wahoo",
+      run_at: new Date(base - 1_000),
+      sync_lane_key: "lease-test-lane",
+      status: "queued",
+      updated_at: new Date(base),
+    });
+
+    const oldWorker = `old:${randomUUID()}`;
+    const newWorker = `new:${randomUUID()}`;
+    expect(oldWorker).not.toBe(newWorker);
+    await repository.claimDueJobs({
+      limit: 1,
+      lockExpiresAt: new Date(base + 1_000).toISOString(),
+      now: new Date(base).toISOString(),
+      provider: "wahoo",
+      profileId: owner.profileId,
+      workerId: oldWorker,
+    });
+    const reclaimed = await repository.claimDueJobs({
+      limit: 1,
+      lockExpiresAt: new Date(base + 20_000).toISOString(),
+      now: new Date(base + 2_000).toISOString(),
+      provider: "wahoo",
+      profileId: owner.profileId,
+      workerId: newWorker,
+    });
+    expect(reclaimed[0]).toMatchObject({ id: jobId, staleLockRecovered: true });
+    expect(await repository.markJobSucceeded(jobId, oldWorker)).toBe(false);
+    expect(
+      await repository.renewJobLease({
+        id: jobId,
+        lockExpiresAt: new Date(base + 30_000).toISOString(),
+        workerId: newWorker,
+      }),
+    ).toBe(true);
+    expect(await repository.markJobSucceeded(jobId, newWorker)).toBe(true);
+  });
+
+  it("atomically fences stale webhook receipt and job finalization after lease loss", async () => {
+    const owner = await seedOwner();
+    const repository = createWahooSyncRepository({ db });
+    const base = futureBase(7_200_000);
+    const jobId = randomUUID();
+    const receiptId = randomUUID();
+    await db.insert(providerSyncJobs).values({
+      attempt: 0,
+      created_at: new Date(base),
+      id: jobId,
+      integration_id: owner.integrationId,
+      job_type: "wahoo.process_webhook_receipt",
+      max_attempts: 3,
+      payload: { receiptId },
+      priority: 100,
+      profile_id: owner.profileId,
+      provider: "wahoo",
+      run_at: new Date(base - 1_000),
+      status: "queued",
+      sync_lane_key: `webhook-${receiptId}`,
+      updated_at: new Date(base),
+    });
+    await db.insert(providerWebhookReceipts).values({
+      created_at: new Date(base),
+      event_type: "workout_summary",
+      id: receiptId,
+      integration_id: owner.integrationId,
+      integration_generation: 1,
+      job_id: jobId,
+      payload: { event_type: "workout_summary", user: { id: 42 } },
+      processing_status: "pending",
+      provider: "wahoo",
+      received_at: new Date(base),
+    });
+
+    const staleWorker = `stale:${randomUUID()}`;
+    const ownerWorker = `owner:${randomUUID()}`;
+    await repository.claimDueJobs({
+      limit: 1,
+      lockExpiresAt: new Date(base + 1_000).toISOString(),
+      now: new Date(base).toISOString(),
+      provider: "wahoo",
+      profileId: owner.profileId,
+      workerId: staleWorker,
+    });
+    await repository.claimDueJobs({
+      limit: 1,
+      lockExpiresAt: new Date(base + 20_000).toISOString(),
+      now: new Date(base + 2_000).toISOString(),
+      provider: "wahoo",
+      profileId: owner.profileId,
+      workerId: ownerWorker,
+    });
+    expect(
+      await repository.renewJobLease({
+        id: jobId,
+        lockExpiresAt: new Date(base + 30_000).toISOString(),
+        workerId: staleWorker,
+      }),
+    ).toBe(false);
+    expect(
+      await repository.finalizeWebhookReceiptJob({
+        jobId,
+        jobStatus: "completed",
+        receiptId,
+        receiptStatus: "processed",
+        workerId: staleWorker,
+      }),
+    ).toBe(false);
+
+    const [stillPending] = await db
+      .select({
+        jobStatus: providerSyncJobs.status,
+        receiptStatus: providerWebhookReceipts.processing_status,
+      })
+      .from(providerSyncJobs)
+      .innerJoin(providerWebhookReceipts, eq(providerWebhookReceipts.job_id, providerSyncJobs.id))
+      .where(eq(providerSyncJobs.id, jobId));
+    expect(stillPending).toEqual({ jobStatus: "running", receiptStatus: "pending" });
+
+    expect(
+      await repository.finalizeWebhookReceiptJob({
+        jobId,
+        jobStatus: "completed",
+        receiptId,
+        receiptStatus: "processed",
+        workerId: ownerWorker,
+      }),
+    ).toBe(true);
+    const [consistent] = await db
+      .select({
+        jobStatus: providerSyncJobs.status,
+        receiptStatus: providerWebhookReceipts.processing_status,
+      })
+      .from(providerSyncJobs)
+      .innerJoin(providerWebhookReceipts, eq(providerWebhookReceipts.job_id, providerSyncJobs.id))
+      .where(eq(providerSyncJobs.id, jobId));
+    expect(consistent).toEqual({ jobStatus: "completed", receiptStatus: "processed" });
+  });
+});

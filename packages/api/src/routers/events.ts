@@ -1,19 +1,22 @@
 import {
   activityPlanStructureSchema,
-  addDaysDateOnlyUtc,
   type EventLifecycle,
   type EventRecurrence,
   eventCreateSchema,
   eventMutationScopeSchema,
   type eventTypeInputSchema,
   eventUpdateSchema,
-  formatDateOnlyInTimeZone,
-  getScheduledDateKey,
   ianaTimezoneSchema,
   materializeRecurrenceOccurrences,
+  parseProfileGoalRecord,
+  profileGoalRecordSchema,
+} from "@repo/core";
+import {
+  addDaysDateOnlyUtc,
+  getCalendarDateInIanaZone,
   parseDateOnlyUtc,
   scheduledDateTimeToIsoInstant,
-} from "@repo/core";
+} from "@repo/core/calendar";
 import type {
   ActivityRow,
   EventRow,
@@ -26,14 +29,20 @@ import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import {
+  estimateActivityPlan,
+  estimateActivityPlans,
+} from "../application/activity-plans/estimate-activity-plans";
+import {
   createEventUseCase,
   deleteEventUseCase,
-  enqueueProviderPlannedActivityJobs,
+  enqueueWahooPlannedActivityJobs,
   MAX_PLANNED_DAY_SUMMARY_EVENTS,
   PlannedDaySummaryLimitExceededError,
   plannedDaySummaryUseCase,
+  summarizePlannedDayEvents,
   updateEventUseCase,
 } from "../application/events";
+import { readSelectedGroupEventsForCalendar } from "../application/groups/groupEventViews";
 import type { Context } from "../context";
 import { type DrizzleTransactionClient, getRequiredDb } from "../db";
 import {
@@ -46,16 +55,12 @@ import {
   createEventReadRepository,
   createEventWriteRepository,
 } from "../infrastructure/repositories";
-import { getEventPlannedActivityProviderStatuses } from "../lib/provider-sync/planned-activities";
 import { createContentAccessPermissions } from "../permissions/content-access";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import {
-  getActivityPlanDerivedMetrics,
-  getActivityPlansDerivedMetrics,
-} from "../utils/activity-plan-derived-metrics";
 import { loadProfileIdentityMap, type ProfileIdentity } from "../utils/profile-identity";
 
 type EventLifecycleStatus = "scheduled" | "completed" | "cancelled" | "expired";
+const CALENDAR_PROJECTION_SOURCE_LIMIT = 500;
 
 function getEventCompletionRepository(ctx: Context) {
   return createEventCompletionRepository(getRequiredDb(ctx));
@@ -91,7 +96,6 @@ type InsightRefreshHint = {
 
 type DbEventType = PublicEventType;
 type CoreEventType = z.infer<typeof eventTypeInputSchema>;
-type EventMutationScope = z.infer<typeof eventMutationScopeSchema>;
 type EventCreateInput = z.infer<typeof eventCreateSchema>;
 type EventUpdateInput = z.infer<typeof eventUpdateSchema>;
 type NormalizedEventCreateInput = {
@@ -259,33 +263,51 @@ const reconcileHistoricalCompletionsInputSchema = z
   })
   .strict();
 
-const eventListSchema = z
+const calendarDateKeySchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must use YYYY-MM-DD")
+  .refine((value) => {
+    const parsed = parseDateOnlyUtc(value);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  }, "Date must be a valid calendar date");
+
+const calendarRangeInputSchema = z
   .object({
-    event_types: z
+    startDate: calendarDateKeySchema,
+    endDateExclusive: calendarDateKeySchema,
+    eventTypes: z
       .array(z.enum(["custom", "imported", "planned", "race_target"]))
       .min(1)
       .optional(),
-    activity_category: z.string().optional(),
-    activity_plan_id: z.string().optional(),
-    training_plan_id: z.string().uuid().optional(),
-    include_adhoc: z.boolean().default(true),
-    date_from: z.string().optional(),
-    date_to: z.string().optional(),
-    limit: z.number().min(1).max(500).default(20),
+    activityCategory: z.enum(["run", "bike", "swim", "strength", "other"]).optional(),
+    activityPlanId: z.string().uuid().optional(),
+    trainingPlanId: z.string().uuid().optional(),
+    includeAdhoc: z.boolean().default(true),
+    limit: z.number().int().min(1).max(500).default(100),
     cursor: z.string().optional(),
-    direction: z.enum(["forward", "backward"]).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, context) => {
+    const start = parseDateOnlyUtc(input.startDate);
+    const end = parseDateOnlyUtc(input.endDateExclusive);
+    const days = (end.getTime() - start.getTime()) / 86_400_000;
+    if (days <= 0 || days > 366)
+      context.addIssue({
+        code: "custom",
+        path: ["endDateExclusive"],
+        message: "Calendar ranges must cover 1-366 planning days",
+      });
+  });
 
-const plannedDaySummaryInputSchema = z
+const calendarDayInputSchema = z
   .object({
-    date: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must use YYYY-MM-DD")
-      .refine((value) => {
-        const parsed = parseDateOnlyUtc(value);
-        return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
-      }, "Date must be a valid calendar date"),
+    date: calendarDateKeySchema,
+    eventTypes: z
+      .array(z.enum(["custom", "imported", "planned", "race_target"]))
+      .min(1)
+      .optional(),
+    activityCategory: z.enum(["run", "bike", "swim", "strength", "other"]).optional(),
+    trainingPlanId: z.string().uuid().optional(),
   })
   .strict();
 
@@ -327,20 +349,8 @@ function toDayStartIso(dateValue: string, planningTimezone = "UTC"): string {
   });
 }
 
-function toRangeStartIso(dateValue: string, planningTimezone?: string): string {
-  return dateOnlyPattern.test(dateValue.trim())
-    ? toDayStartIso(dateValue, planningTimezone)
-    : toCanonicalInstantIso(dateValue);
-}
-
 function toNextDayStartIso(dateValue: string, planningTimezone = "UTC"): string {
   return toDayStartIso(addDaysDateOnlyUtc(toDateKey(dateValue), 1), planningTimezone);
-}
-
-function toRangeEndIso(dateValue: string, planningTimezone?: string): string {
-  return dateOnlyPattern.test(dateValue.trim())
-    ? toNextDayStartIso(dateValue, planningTimezone)
-    : toCanonicalInstantIso(dateValue);
 }
 
 async function getRequiredProfilePlanningTimezone(
@@ -416,7 +426,7 @@ function buildMaterializedRecurrenceOccurrences(input: {
   const startDay =
     weekdayToRRuleDay[
       new Date(
-        `${getScheduledDateKey(input.startsAt, input.recurrence.timezone)}T00:00:00.000Z`,
+        `${getCalendarDateInIanaZone(input.startsAt, input.recurrence.timezone)}T00:00:00.000Z`,
       ).getUTCDay()
     ];
   const byDay = tokens.get("BYDAY") ?? startDay;
@@ -536,46 +546,10 @@ async function enrichEventsWithActivityPlanIdentity<
   })) as T[];
 }
 
-async function countVisibleOwnedEventsInRange(
-  repository: ReturnType<typeof getEventReadRepository>,
-  input: Pick<
-    Parameters<ReturnType<typeof getEventReadRepository>["listOwnedEvents"]>[0],
-    "profileId" | "dateFrom" | "dateTo"
-  >,
-): Promise<number> {
-  let cursor: { startsAt: string; id: string } | undefined;
-  let count = 0;
-  const pageSize = 500;
-
-  while (true) {
-    const batch = (await repository.listOwnedEvents({
-      ...input,
-      includeAdhoc: true,
-      limit: pageSize,
-      ...(cursor === undefined ? {} : { cursor }),
-    })) as PlannedEventRecord[] | null;
-
-    const rows = batch ?? [];
-    if (rows.length === 0) break;
-
-    count += rows.length;
-
-    if (rows.length < pageSize) break;
-
-    const lastRow = rows[rows.length - 1];
-    if (!lastRow) break;
-
-    cursor = {
-      startsAt: toCanonicalInstantIso(lastRow.starts_at),
-      id: lastRow.id,
-    };
-  }
-
-  return count;
-}
-
-function countUniqueScheduledDates(events: Array<Pick<PlannedEventRecord, "starts_at">>): number {
-  return new Set(events.map((event) => toDateKey(event.starts_at))).size;
+function countUniqueScheduledDates(
+  events: Array<Pick<PlannedEventRecord, "scheduled_date">>,
+): number {
+  return new Set(events.map((event) => event.scheduled_date)).size;
 }
 
 function buildCompletedSignature(dateKey: string, activityPlanId: string): string {
@@ -610,12 +584,16 @@ async function addEventLifecycleStatus<
   },
 >(
   events: T[],
-  ctx: { repository: ReturnType<typeof createEventReadRepository>; profileId: string },
+  ctx: {
+    repository: ReturnType<typeof createEventReadRepository>;
+    profileId: string;
+    planningTimezone: string;
+  },
 ): Promise<Array<T & { status: EventLifecycleStatus }>> {
   if (events.length === 0) return [];
 
   const statusContext: EventStatusContext = {
-    todayDateKey: toDateKey(new Date().toISOString()),
+    todayDateKey: getCalendarDateInIanaZone(new Date().toISOString(), ctx.planningTimezone),
   };
 
   return events.map((event) => ({
@@ -719,39 +697,14 @@ function normalizeEventCreateInput(input: EventCreateInput): NormalizedEventCrea
     sourceProvider: null,
     // Custom and race payloads may omit the date, so derive their canonical
     // schedule anchor once at this write boundary.
-    scheduledDate: input.scheduled_date ?? getScheduledDateKey(input.starts_at, input.timezone),
+    scheduledDate:
+      input.scheduled_date ?? getCalendarDateInIanaZone(input.starts_at, input.timezone),
     startsAt: toCanonicalInstantIso(input.starts_at),
     status,
     timezone: input.timezone,
     title: input.title,
     trainingPlanId: null,
   };
-}
-
-function _applyScopeFilters(
-  query: any,
-  existingEvent: PlannedEventRecord,
-  scope: EventMutationScope,
-): any {
-  if (scope === "single") {
-    return query.eq("id", existingEvent.id);
-  }
-
-  const seriesId = existingEvent.series_id;
-  if (!seriesId) {
-    // TODO(events-router): Support scope expansion directly from recurrence_rule
-    // for non-materialized series. Current DB contract relies on series_id.
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: `Mutation scope "${scope}" requires an event series`,
-    });
-  }
-
-  if (scope === "future") {
-    return query.eq("series_id", seriesId).gte("starts_at", existingEvent.starts_at);
-  }
-
-  return query.eq("series_id", seriesId);
 }
 
 type ReconciliationEventCandidate = Pick<
@@ -811,6 +764,218 @@ function compareActivitiesForReconciliation(
   return aId.localeCompare(bId);
 }
 
+async function readPersonalCalendarRange(
+  ctx: Context,
+  profileId: string,
+  input: z.infer<typeof calendarRangeInputSchema>,
+) {
+  const repository = getEventReadRepository(ctx);
+  const planningTimezone = await getRequiredProfilePlanningTimezone(ctx, profileId);
+  const [cursorDate, cursorId] = input.cursor ? input.cursor.split("_") : [];
+  let listedEvents;
+  try {
+    listedEvents = await repository.listOwnedEvents({
+      profileId,
+      limit: input.limit + 1,
+      includeAdhoc: input.includeAdhoc,
+      dateFrom: input.startDate,
+      dateTo: input.endDateExclusive,
+      planningTimezone,
+      ...(input.trainingPlanId === undefined ? {} : { trainingPlanId: input.trainingPlanId }),
+      ...(input.activityPlanId === undefined ? {} : { activityPlanId: input.activityPlanId }),
+      ...(input.activityCategory === undefined ? {} : { activityCategory: input.activityCategory }),
+      ...(input.eventTypes === undefined
+        ? {}
+        : { eventTypes: [...new Set(input.eventTypes.map(toDbEventType))] }),
+      ...(cursorDate && cursorId
+        ? { cursor: { startsAt: toCanonicalInstantIso(cursorDate), id: cursorId } }
+        : {}),
+    });
+  } catch (error) {
+    toSafeStoredActivityPlanError(error);
+  }
+  const rows = listedEvents ?? [];
+  const hasMore = rows.length > input.limit;
+  const projectedRows = (rows.slice(0, input.limit) as PlannedEventRecord[]).map((event) => ({
+    ...event,
+    scheduled_date: event.all_day
+      ? event.scheduled_date
+      : getCalendarDateInIanaZone(event.starts_at, planningTimezone),
+  }));
+  const events = mapEvents(projectedRows);
+  const plans = events
+    .map((event) => event.activity_plan)
+    .filter((plan): plan is NonNullable<typeof plan> => plan !== null);
+  const estimated = await estimateActivityPlans(plans, getRequiredDb(ctx), profileId);
+  const plansById = new Map(estimated.map((plan) => [plan.id, plan]));
+  const enriched = (await enrichEventsWithActivityPlanIdentity(
+    getRequiredDb(ctx),
+    events.map((event) => ({
+      ...event,
+      activity_plan: event.activity_plan
+        ? ((plansById.get(event.activity_plan.id) as typeof event.activity_plan | undefined) ??
+          event.activity_plan)
+        : null,
+    })),
+  )) as typeof events;
+  const items = await addEventLifecycleStatus(enriched, {
+    repository,
+    profileId,
+    planningTimezone,
+  });
+  const startAt = toDayStartIso(input.startDate, planningTimezone);
+  const endsAtExclusive = toDayStartIso(input.endDateExclusive, planningTimezone);
+  const [activityRows, goalRows, selectedGroupEvents] = await Promise.all([
+    repository.listCalendarCompletedActivities({
+      limit: CALENDAR_PROJECTION_SOURCE_LIMIT + 1,
+      profileId,
+      startedAtGte: startAt,
+      startedAtLt: endsAtExclusive,
+    }),
+    repository.listCalendarGoals({
+      endDateExclusive: input.endDateExclusive,
+      limit: CALENDAR_PROJECTION_SOURCE_LIMIT + 1,
+      profileId,
+      startDate: input.startDate,
+    }),
+    readSelectedGroupEventsForCalendar({
+      db: getRequiredDb(ctx),
+      profileId,
+      startDate: input.startDate,
+      endDateExclusive: input.endDateExclusive,
+      limit: CALENDAR_PROJECTION_SOURCE_LIMIT,
+    }),
+  ]);
+  const linkedActivityIds = new Set(
+    items.map((event) => event.linked_activity_id).filter((id): id is string => Boolean(id)),
+  );
+  const visibleActivityRows = activityRows
+    .filter((activity) => !linkedActivityIds.has(activity.id))
+    .slice(0, CALENDAR_PROJECTION_SOURCE_LIMIT);
+  const completedActivities = visibleActivityRows.map((activity) => ({
+    id: activity.id,
+    name: activity.name,
+    started_at: activity.started_at,
+    scheduled_date: getCalendarDateInIanaZone(activity.started_at, planningTimezone),
+    distance_meters: activity.distance_meters,
+    duration_seconds: Math.round((activity.active_ms ?? activity.elapsed_ms) / 1000),
+  }));
+  const goals = profileGoalRecordSchema
+    .array()
+    .parse(goalRows.slice(0, CALENDAR_PROJECTION_SOURCE_LIMIT))
+    .map(parseProfileGoalRecord);
+  const groupActivityPlanIds = Array.from(
+    new Set(
+      selectedGroupEvents.items
+        .map((event) => event.activity_plan_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  const groupActivityPlanRows = await repository.listCalendarGroupActivityPlans({
+    activityPlanIds: groupActivityPlanIds,
+  });
+  const groupActivityPlans = await estimateActivityPlans(
+    groupActivityPlanRows,
+    getRequiredDb(ctx),
+    profileId,
+  );
+  const groupActivityPlanById = new Map(groupActivityPlans.map((plan) => [plan.id, plan]));
+  const groupEvents = selectedGroupEvents.items.map((event) => ({
+    ...event,
+    scheduled_date: getCalendarDateInIanaZone(event.starts_at, event.timezone),
+    selectedActivityPlan: event.activity_plan_id
+      ? (groupActivityPlanById.get(event.activity_plan_id) ?? null)
+      : null,
+    selectedActivityPlanOptionLabel: event.activity_plan_id
+      ? (groupActivityPlanById.get(event.activity_plan_id)?.name ?? null)
+      : null,
+    selectedActivityPlanTentative: false,
+  }));
+  const plannedEventsByDate = new Map<
+    string,
+    Array<{
+      activity_plan: PlannedEventRecord["activity_plan"];
+      activity_plan_id: string | null;
+      id: string;
+      starts_at: string;
+    }>
+  >();
+  for (const event of projectedRows) {
+    if (
+      event.event_type !== "planned" ||
+      (event.status !== "scheduled" && event.status !== "completed") ||
+      !event.scheduled_date
+    ) {
+      continue;
+    }
+    const dayEvents = plannedEventsByDate.get(event.scheduled_date) ?? [];
+    dayEvents.push({
+      activity_plan: event.activity_plan,
+      activity_plan_id: event.activity_plan_id,
+      id: event.id,
+      starts_at: event.starts_at,
+    });
+    plannedEventsByDate.set(event.scheduled_date, dayEvents);
+  }
+  const plannedLoadSummaries = Array.from(plannedEventsByDate.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([date, dayEvents]) => ({
+      date,
+      timezone: planningTimezone,
+      ...summarizePlannedDayEvents({ date, estimates: estimated, events: dayEvents }),
+    }));
+  const last = items.at(-1);
+  return {
+    contractVersion: "calendar-projection-v1" as const,
+    startDate: input.startDate,
+    endDateExclusive: input.endDateExclusive,
+    timezone: planningTimezone,
+    items,
+    completedActivities: {
+      items: completedActivities,
+      truncated: activityRows.length > CALENDAR_PROJECTION_SOURCE_LIMIT,
+    },
+    goals: {
+      items: goals,
+      truncated: goalRows.length > CALENDAR_PROJECTION_SOURCE_LIMIT,
+    },
+    selectedGroupEvents: {
+      items: groupEvents,
+      truncated: selectedGroupEvents.truncated,
+    },
+    plannedLoadSummaries: {
+      items: plannedLoadSummaries,
+      truncated: hasMore,
+    },
+    nextCursor: hasMore && last ? `${toCanonicalInstantIso(last.starts_at)}_${last.id}` : undefined,
+  };
+}
+
+async function readPersonalCalendarDaySummary(
+  ctx: Context,
+  profileId: string,
+  date: string,
+  planningTimezone: string,
+) {
+  try {
+    const result = await plannedDaySummaryUseCase({
+      date,
+      profileId,
+      repository: getEventReadRepository(ctx),
+      deriveMetrics: async (plans) => estimateActivityPlans(plans, getRequiredDb(ctx), profileId),
+    });
+    return { date, timezone: planningTimezone, ...result };
+  } catch (error) {
+    if (error instanceof PlannedDaySummaryLimitExceededError) {
+      throw new TRPCError({
+        code: "PAYLOAD_TOO_LARGE",
+        message: `Day summary exceeds the ${MAX_PLANNED_DAY_SUMMARY_EVENTS}-event limit`,
+      });
+    }
+    throw error;
+  }
+}
+
 export const eventsRouter = createTRPCRouter({
   getById: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
@@ -836,10 +1001,9 @@ export const eventsRouter = createTRPCRouter({
       const event = mapEventSafely(data as PlannedEventRecord);
 
       if (event.activity_plan) {
-        const planWithEstimation = await getActivityPlanDerivedMetrics(
+        const planWithEstimation = await estimateActivityPlan(
           event.activity_plan,
           getRequiredDb(ctx),
-          eventReadRepository,
           ctx.session.user.id,
         );
         const [eventWithOwner] = await enrichEventsWithActivityPlanIdentity(getRequiredDb(ctx), [
@@ -859,97 +1023,6 @@ export const eventsRouter = createTRPCRouter({
       return event;
     }),
 
-  getProviderSyncStatus: protectedProcedure
-    .input(z.object({ eventId: z.string().uuid() }))
-    .query(async ({ ctx, input }) => {
-      const eventReadRepository = getEventReadRepository(ctx);
-      let event;
-      try {
-        event = await eventReadRepository.getOwnedEventById({
-          eventId: input.eventId,
-          profileId: ctx.session.user.id,
-        });
-      } catch (error) {
-        toSafeStoredActivityPlanError(error);
-      }
-
-      if (!event) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Event not found",
-        });
-      }
-
-      return {
-        eventId: input.eventId,
-        plannedActivitySync: await getEventPlannedActivityProviderStatuses({
-          db: getRequiredDb(ctx),
-          eventId: input.eventId,
-          profileId: ctx.session.user.id,
-        }),
-      };
-    }),
-
-  getToday: protectedProcedure.query(async ({ ctx }) => {
-    const eventReadRepository = getEventReadRepository(ctx);
-    const planningTimezone = await getRequiredProfilePlanningTimezone(ctx, ctx.session.user.id);
-    const today = formatDateOnlyInTimeZone(new Date(), planningTimezone);
-    const tomorrow = addDaysDateOnlyUtc(today, 1);
-
-    let data;
-    try {
-      data = await eventReadRepository.listOwnedEvents({
-        profileId: ctx.session.user.id,
-        dateFrom: toDayStartIso(today, planningTimezone),
-        dateTo: toDayStartIso(tomorrow, planningTimezone),
-        includeAdhoc: true,
-        limit: 500,
-      });
-    } catch (error) {
-      toSafeStoredActivityPlanError(error);
-    }
-
-    const events = mapEvents(data as PlannedEventRecord[] | null);
-
-    if (events.length > 0) {
-      const plans = events
-        .map((event) => event.activity_plan)
-        .filter((plan): plan is NonNullable<typeof plan> => plan !== null);
-
-      const plansWithEstimation = await getActivityPlansDerivedMetrics(
-        plans,
-        getRequiredDb(ctx),
-        eventReadRepository,
-        ctx.session.user.id,
-      );
-
-      const plansMap = new Map(plansWithEstimation.map((plan) => [plan.id, plan]));
-      return (await enrichEventsWithActivityPlanIdentity(
-        getRequiredDb(ctx),
-        events.map((event) => ({
-          ...event,
-          activity_plan: event.activity_plan ? plansMap.get(event.activity_plan.id) : null,
-        })) as typeof events,
-      )) as typeof events;
-    }
-
-    return events;
-  }),
-
-  getWeekCount: protectedProcedure.query(async ({ ctx }) => {
-    const eventReadRepository = getEventReadRepository(ctx);
-    const planningTimezone = await getRequiredProfilePlanningTimezone(ctx, ctx.session.user.id);
-    const today = formatDateOnlyInTimeZone(new Date(), planningTimezone);
-    const startOfWeek = addDaysDateOnlyUtc(today, -parseDateOnlyUtc(today).getUTCDay());
-    const endOfWeek = addDaysDateOnlyUtc(startOfWeek, 7);
-
-    return countVisibleOwnedEventsInRange(eventReadRepository, {
-      profileId: ctx.session.user.id,
-      dateFrom: toDayStartIso(startOfWeek, planningTimezone),
-      dateTo: toDayStartIso(endOfWeek, planningTimezone),
-    });
-  }),
-
   create: protectedProcedure.input(eventCreateInputSchema).mutation(async ({ ctx, input }) => {
     return createEventUseCase({
       ctx,
@@ -958,7 +1031,7 @@ export const eventsRouter = createTRPCRouter({
         assertRestDayWritesBlocked,
         buildInsightRefreshHint,
         buildMaterializedRecurrenceOccurrences,
-        enqueueProviderPlannedActivityJobs,
+        enqueueWahooPlannedActivityJobs,
         ensurePersistableRecurrence,
         getContentPermissions,
         getEventWriteRepository,
@@ -976,9 +1049,7 @@ export const eventsRouter = createTRPCRouter({
       dependencies: {
         assertRestDayWritesBlocked,
         buildInsightRefreshHint,
-        buildMaterializedRecurrenceOccurrences,
-        enqueueProviderPlannedActivityJobs,
-        ensurePersistableRecurrence,
+        enqueueWahooPlannedActivityJobs,
         getContentPermissions,
         getEventCompletionRepository,
         getEventWriteRepository,
@@ -1001,7 +1072,7 @@ export const eventsRouter = createTRPCRouter({
       input,
       dependencies: {
         buildInsightRefreshHint,
-        enqueueProviderPlannedActivityJobs,
+        enqueueWahooPlannedActivityJobs,
         getContentPermissions,
         getEventCompletionRepository,
         toCoreEventType,
@@ -1341,142 +1412,9 @@ export const eventsRouter = createTRPCRouter({
           skipped_event_ids: skippedEventIds.slice(0, 20),
         },
         cache_tags:
-          input.dry_run || updatedEventIds.length === 0
-            ? []
-            : ["events.list", "events.today", "events.weekCount", "events.byWeek"],
+          input.dry_run || updatedEventIds.length === 0 ? [] : ["calendar.range", "calendar.day"],
         insight_refresh_hints: uniqueInsightRefreshHints,
       };
-    }),
-
-  list: protectedProcedure.input(eventListSchema).query(async ({ ctx, input }) => {
-    const eventReadRepository = getEventReadRepository(ctx);
-    const limit = input.limit;
-    const [cursorDate, cursorId] = input.cursor ? input.cursor.split("_") : [];
-    const planningTimezone =
-      (input.date_from && dateOnlyPattern.test(input.date_from.trim())) ||
-      (input.date_to && dateOnlyPattern.test(input.date_to.trim()))
-        ? await getRequiredProfilePlanningTimezone(ctx, ctx.session.user.id)
-        : undefined;
-
-    let listedEvents;
-    try {
-      const activityCategory = input.activity_category as
-        | "run"
-        | "bike"
-        | "swim"
-        | "strength"
-        | "other"
-        | undefined;
-      const dateFrom = input.date_from
-        ? toRangeStartIso(input.date_from, planningTimezone)
-        : undefined;
-      const dateTo = input.date_to ? toRangeEndIso(input.date_to, planningTimezone) : undefined;
-      const eventTypes =
-        input.event_types && input.event_types.length > 0
-          ? [...new Set(input.event_types.map((eventType) => toDbEventType(eventType)))]
-          : undefined;
-      const cursor =
-        cursorDate && cursorId
-          ? { startsAt: toCanonicalInstantIso(cursorDate), id: cursorId }
-          : undefined;
-
-      listedEvents = await eventReadRepository.listOwnedEvents({
-        profileId: ctx.session.user.id,
-        limit: limit + 1,
-        includeAdhoc: input.include_adhoc,
-        ...(input.training_plan_id === undefined ? {} : { trainingPlanId: input.training_plan_id }),
-        ...(input.activity_plan_id === undefined ? {} : { activityPlanId: input.activity_plan_id }),
-        ...(activityCategory === undefined ? {} : { activityCategory }),
-        ...(dateFrom === undefined ? {} : { dateFrom }),
-        ...(dateTo === undefined ? {} : { dateTo }),
-        ...(eventTypes === undefined ? {} : { eventTypes }),
-        ...(cursor === undefined ? {} : { cursor }),
-      });
-    } catch (error) {
-      toSafeStoredActivityPlanError(error);
-    }
-    const rows = listedEvents ?? [];
-    const hasMore = rows.length > limit;
-
-    const events = mapEvents(rows.slice(0, limit) as PlannedEventRecord[]);
-
-    const itemsWithPlans = events.filter(
-      (
-        item,
-      ): item is typeof item & {
-        activity_plan: NonNullable<typeof item.activity_plan>;
-      } => item.activity_plan != null,
-    );
-
-    let itemsWithEstimation = events;
-    if (itemsWithPlans.length > 0) {
-      const plansWithEstimation = await getActivityPlansDerivedMetrics(
-        itemsWithPlans.map((event) => event.activity_plan),
-        getRequiredDb(ctx),
-        eventReadRepository,
-        ctx.session.user.id,
-      );
-
-      const plansMap = new Map(plansWithEstimation.map((plan) => [plan.id, plan]));
-      itemsWithEstimation = events.map((event) => ({
-        ...event,
-        activity_plan: event.activity_plan
-          ? (plansMap.get(event.activity_plan.id) as unknown as typeof event.activity_plan) ||
-            event.activity_plan
-          : null,
-      })) as typeof events;
-    }
-
-    itemsWithEstimation = (await enrichEventsWithActivityPlanIdentity(
-      getRequiredDb(ctx),
-      itemsWithEstimation as typeof itemsWithEstimation,
-    )) as typeof itemsWithEstimation;
-
-    let nextCursor: string | undefined;
-    if (hasMore && events.length > 0) {
-      const lastItem = events[events.length - 1];
-      if (!lastItem) throw new Error("Unexpected error");
-      nextCursor = `${toCanonicalInstantIso(lastItem.starts_at)}_${lastItem.id}`;
-    }
-
-    const itemsWithStatus = await addEventLifecycleStatus(itemsWithEstimation, {
-      repository: eventReadRepository,
-      profileId: ctx.session.user.id,
-    });
-
-    return {
-      items: itemsWithStatus,
-      nextCursor,
-    };
-  }),
-
-  plannedDaySummary: protectedProcedure
-    .input(plannedDaySummaryInputSchema)
-    .query(async ({ ctx, input }) => {
-      const planningTimezone = await getRequiredProfilePlanningTimezone(ctx, ctx.session.user.id);
-      try {
-        const result = await plannedDaySummaryUseCase({
-          date: input.date,
-          profileId: ctx.session.user.id,
-          repository: getEventReadRepository(ctx),
-          deriveMetrics: async (plans) =>
-            getActivityPlansDerivedMetrics(
-              plans,
-              getRequiredDb(ctx),
-              getEventReadRepository(ctx),
-              ctx.session.user.id,
-            ),
-        });
-        return { date: input.date, timezone: planningTimezone, ...result };
-      } catch (error) {
-        if (error instanceof PlannedDaySummaryLimitExceededError) {
-          throw new TRPCError({
-            code: "PAYLOAD_TOO_LARGE",
-            message: `Day summary exceeds the ${MAX_PLANNED_DAY_SUMMARY_EVENTS}-event limit`,
-          });
-        }
-        throw error;
-      }
     }),
 
   validateConstraints: protectedProcedure
@@ -1558,27 +1496,23 @@ export const eventsRouter = createTRPCRouter({
             !!plan,
         );
 
-      const allDerivedPlans = await getActivityPlansDerivedMetrics(
+      const allDerivedPlans = await estimateActivityPlans(
         [...currentWeekPlans, activityPlan],
         db,
-        eventReadRepository,
         ctx.session.user.id,
         { asOf },
       );
       const currentWeekDerivedPlans = allDerivedPlans.slice(0, currentWeekPlans.length);
       const currentWeeklyLoad = currentWeekDerivedPlans.reduce<number | null>((sum, plan) => {
-        const load = plan.common_load;
-        return sum === null || (load.status !== "available" && load.status !== "complete")
-          ? null
-          : sum + load.load;
+        const load = plan.prescriptionQuantification.summary.commonLoad;
+        return sum === null || load.status !== "complete" ? null : sum + load.load;
       }, 0);
 
-      const newActivityDerivedPlan = allDerivedPlans[currentWeekPlans.length]!;
+      const newActivityDerivedPlan = allDerivedPlans[currentWeekPlans.length];
+      const newActivityCommonLoad =
+        newActivityDerivedPlan?.prescriptionQuantification?.summary.commonLoad;
       const newLoad =
-        newActivityDerivedPlan?.common_load?.status === "available" ||
-        newActivityDerivedPlan?.common_load?.status === "complete"
-          ? newActivityDerivedPlan.common_load.load
-          : null;
+        newActivityCommonLoad?.status === "complete" ? newActivityCommonLoad.load : null;
       const newWeeklyLoad =
         currentWeeklyLoad === null || newLoad === null ? null : currentWeeklyLoad + newLoad;
 
@@ -1700,61 +1634,37 @@ export const eventsRouter = createTRPCRouter({
           restDaysStatus === "warning",
       };
     }),
+});
 
-  listByWeek: protectedProcedure
-    .input(
-      z.object({
-        weekStart: z.string(),
-        weekEnd: z.string(),
-      }),
-    )
-    .query(async ({ ctx, input }) => {
-      const eventReadRepository = getEventReadRepository(ctx);
-      let data;
-      try {
-        data = await eventReadRepository.listOwnedEvents({
-          profileId: ctx.session.user.id,
-          dateFrom: toDayStartIso(input.weekStart),
-          dateTo: toNextDayStartIso(input.weekEnd),
-          includeAdhoc: true,
-          limit: 500,
-        });
-      } catch (error) {
-        toSafeStoredActivityPlanError(error);
-      }
-
-      const events = mapEvents(data as PlannedEventRecord[] | null);
-      if (events.length > 0) {
-        const plans = events
-          .map((event) => event.activity_plan)
-          .filter((plan): plan is NonNullable<typeof plan> => plan !== null);
-
-        const plansWithEstimation = await getActivityPlansDerivedMetrics(
-          plans,
-          getRequiredDb(ctx),
-          eventReadRepository,
-          ctx.session.user.id,
-        );
-
-        const plansMap = new Map(plansWithEstimation.map((plan) => [plan.id, plan]));
-        const itemsWithEstimation = events.map((event) => ({
-          ...event,
-          activity_plan: event.activity_plan ? plansMap.get(event.activity_plan.id) : null,
-        }));
-
-        const itemsWithStatus = await addEventLifecycleStatus(itemsWithEstimation, {
-          repository: eventReadRepository,
-          profileId: ctx.session.user.id,
-        });
-
-        return itemsWithStatus;
-      }
-
-      const itemsWithStatus = await addEventLifecycleStatus(events, {
-        repository: eventReadRepository,
-        profileId: ctx.session.user.id,
-      });
-
-      return itemsWithStatus;
-    }),
+/** Date-keyed personal schedule projections. Event identity and mutations remain on eventsRouter. */
+export const calendarRouter = createTRPCRouter({
+  range: protectedProcedure
+    .input(calendarRangeInputSchema)
+    .query(({ ctx, input }) => readPersonalCalendarRange(ctx, ctx.session.user.id, input)),
+  day: protectedProcedure.input(calendarDayInputSchema).query(async ({ ctx, input }) => {
+    const result = await readPersonalCalendarRange(ctx, ctx.session.user.id, {
+      startDate: input.date,
+      endDateExclusive: addDaysDateOnlyUtc(input.date, 1),
+      eventTypes: input.eventTypes,
+      activityCategory: input.activityCategory,
+      trainingPlanId: input.trainingPlanId,
+      includeAdhoc: true,
+      limit: 500,
+    });
+    return {
+      contractVersion: result.contractVersion,
+      date: input.date,
+      timezone: result.timezone,
+      items: result.items,
+      completedActivities: result.completedActivities,
+      goals: result.goals,
+      selectedGroupEvents: result.selectedGroupEvents,
+      plannedLoadSummary: await readPersonalCalendarDaySummary(
+        ctx,
+        ctx.session.user.id,
+        input.date,
+        result.timezone,
+      ),
+    };
+  }),
 });

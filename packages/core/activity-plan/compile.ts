@@ -27,7 +27,6 @@ export function compileValidatedActivityPlan(
   structure: ActivityPlanStructure,
 ): CompiledActivityPlan {
   const occurrences: CompiledActivityPlanOccurrence[] = [];
-  let activity_category: CanonicalActivityCategory | undefined;
   let explicitTimedDurationSeconds = 0;
 
   structure.segments.forEach((segment, segmentIndex) => {
@@ -52,14 +51,6 @@ export function compileValidatedActivityPlan(
       return;
     }
 
-    if (activity_category === undefined) {
-      activity_category = segment.activity_category;
-    } else if (activity_category !== segment.activity_category) {
-      throw new Error(
-        "Validated activity plan must contain activity segments for exactly one activity_category.",
-      );
-    }
-
     segment.intervals.forEach((interval, intervalIndex) => {
       for (let repeatIteration = 0; repeatIteration < interval.repetitions; repeatIteration += 1) {
         interval.steps.forEach((step, stepIndex) => {
@@ -77,7 +68,7 @@ export function compileValidatedActivityPlan(
             segmentId: segment.id,
             segmentIndex,
             role: "activity",
-            activity_category: segment.activity_category,
+            activity_category: structure.activity_category,
             intervalId: interval.id,
             intervalIndex,
             stepId: step.id,
@@ -92,14 +83,10 @@ export function compileValidatedActivityPlan(
     });
   });
 
-  if (activity_category === undefined) {
-    throw new Error("Validated activity plan must contain an activity segment.");
-  }
-
   return {
     compilerVersion: ACTIVITY_PLAN_COMPILER_VERSION,
     structureVersion: 3,
-    activity_category,
+    activity_category: structure.activity_category,
     occurrences,
     explicitTimedDurationSeconds,
   };

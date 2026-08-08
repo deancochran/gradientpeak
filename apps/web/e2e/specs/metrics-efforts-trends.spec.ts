@@ -28,10 +28,10 @@ async function activateControl(page: Page, target: Locator, useTouch: boolean) {
 
 test.skip(
   !process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY,
-  "metrics, efforts, and trends E2E requires a service-role credential for the confirmed athlete fixture.",
+  "metrics and trends E2E requires a service-role credential for the confirmed athlete fixture.",
 );
 
-test("athlete can manage metric history and inspect read-only effort and trend evidence", async ({
+test("athlete can manage metric history and inspect trend evidence", async ({
   athletePage,
 }, testInfo) => {
   test.setTimeout(90_000);
@@ -84,30 +84,6 @@ test("athlete can manage metric history and inspect read-only effort and trend e
     await expect(updatedMetricRow).toHaveCount(0);
     await expect(providerMetricRow).toBeVisible();
 
-    await athletePage.goto("/activity-efforts");
-    await expect(athletePage.getByRole("heading", { name: "Activity efforts" })).toBeVisible();
-    await expect(athletePage.getByText(/modeled and review data are excluded/i)).toBeVisible();
-
-    const observedRow = athletePage.getByRole("row").filter({ hasText: "310 W" });
-    await expect(observedRow.getByText("provider", { exact: true })).toBeVisible();
-    await expect(observedRow.getByText("observed", { exact: true })).toBeVisible();
-    const modeledRow = athletePage.getByRole("row").filter({ hasText: "300 W" });
-    await expect(modeledRow.getByText("derived", { exact: true })).toBeVisible();
-    await expect(modeledRow.getByText("modeled", { exact: true })).toBeVisible();
-    const reviewRow = athletePage.getByRole("row").filter({ hasText: "290 W" });
-    await expect(reviewRow.getByText("manual", { exact: true })).toBeVisible();
-    await expect(reviewRow.getByText("review", { exact: true })).toBeVisible();
-    await expect(athletePage.getByText("Calculated", { exact: true })).toHaveCount(3);
-    await expect(athletePage.getByRole("button", { name: /add effort/i })).toHaveCount(0);
-
-    await athletePage.goto("/activity-efforts/new");
-    await expect(
-      athletePage.getByText("Activity efforts are read-only", { exact: true }),
-    ).toBeVisible();
-    await expect(
-      athletePage.getByText(/manual effort creation is no longer available/i),
-    ).toBeVisible();
-
     await athletePage.goto("/trends");
     await expect(athletePage.getByRole("heading", { name: "Trends" })).toBeVisible();
     await activateControl(
@@ -136,7 +112,7 @@ test("athlete can manage metric history and inspect read-only effort and trend e
   }
 });
 
-test("imperial viewers see canonical metric, effort, and trend evidence in preferred units", async ({
+test("imperial viewers see canonical metric and trend evidence in preferred units", async ({
   athletePage,
 }, testInfo) => {
   test.setTimeout(90_000);
@@ -170,20 +146,6 @@ test("imperial viewers see canonical metric, effort, and trend evidence in prefe
     await expect(athletePage.getByRole("row").filter({ hasText: "165.3 lb" })).toBeVisible();
     await expect.poll(() => fixture.getLatestManualWeightValue()).toBe(75);
 
-    await athletePage.goto("/activity-efforts");
-    await expect(athletePage.getByRole("heading", { name: "Activity efforts" })).toBeVisible();
-    await activateControl(
-      athletePage,
-      athletePage.getByRole("button", { name: /Run speed/ }),
-      useTouch,
-    );
-    const runEffortRow = athletePage.getByRole("row").filter({ hasText: "6:42 /mi" });
-    await expect(runEffortRow.getByText("provider", { exact: true })).toBeVisible();
-    await expect(runEffortRow.getByText("observed", { exact: true })).toBeVisible();
-    await expect(
-      athletePage.getByRole("img", { name: /Run pace observed duration curve.*6:42 \/mi/i }),
-    ).toBeVisible();
-
     await athletePage.goto("/trends");
     await expect(athletePage.getByRole("heading", { name: "Trends" })).toBeVisible();
     await activateControl(
@@ -195,28 +157,4 @@ test("imperial viewers see canonical metric, effort, and trend evidence in prefe
   } finally {
     await fixture.cleanup();
   }
-});
-
-test("activity effort transport failures render a retryable error instead of an empty state", async ({
-  athletePage,
-}) => {
-  const trpcPattern = "**/api/trpc/**";
-  await athletePage.route(trpcPattern, async (route) => {
-    if (route.request().url().includes("activityEfforts.getForProfile")) {
-      await route.abort();
-      return;
-    }
-    await route.continue();
-  });
-  await athletePage.goto("/activity-efforts");
-  await expect(athletePage.getByRole("alert")).toContainText(
-    "Activity efforts could not be loaded",
-    { timeout: 15_000 },
-  );
-  await expect(athletePage.getByText("No efforts recorded at this duration.")).toHaveCount(0);
-
-  await athletePage.unroute(trpcPattern);
-  await athletePage.getByRole("button", { name: "Retry activity efforts" }).click();
-  await expect(athletePage.getByRole("button", { name: /Bike power/ })).toBeVisible();
-  await expect(athletePage.getByRole("alert")).toHaveCount(0);
 });

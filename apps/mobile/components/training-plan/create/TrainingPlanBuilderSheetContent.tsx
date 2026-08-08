@@ -1,4 +1,8 @@
-import type { ActivityPlanPlanningEstimate, TrainingPreferenceValidationIssue } from "@repo/core";
+import type {
+  ActivityPlanPlanningEstimate,
+  ContentVisibility,
+  TrainingPreferenceValidationIssue,
+} from "@repo/core";
 import {
   isAthletePlanningContextEditableFieldKey,
   validatePlanningPreferencesConsistency,
@@ -64,7 +68,7 @@ type TrainingPlanBuilderSheetDraftsContextValue = {
   planningPreferenceIssues: TrainingPreferenceValidationIssue[];
   planningPreferencesForm: UseFormReturn<TrainingPlanBuilderPlanPreferences>;
   metadataForm: UseFormReturn<TrainingPlanMetadataFormValues>;
-  draftTemplateVisibility: "private" | "public";
+  draftContentVisibility: ContentVisibility;
   applyActivityFiltersDraft: () => void;
   applyPlanningPreferencesDraft: () => void;
   applyMetadataDraft: () => boolean;
@@ -78,7 +82,7 @@ type TrainingPlanBuilderSheetDraftsContextValue = {
     fieldKey: TrainingPlanPreferenceFieldKey,
     value: number | null,
   ) => void;
-  setDraftTemplateVisibility: Dispatch<SetStateAction<"private" | "public">>;
+  setDraftContentVisibility: Dispatch<SetStateAction<ContentVisibility>>;
   setDraftActivityPlanCategoryFilter: Dispatch<SetStateAction<ActivityCategoryFilter>>;
   setDraftActivityPlanSort: Dispatch<SetStateAction<ActivityPlanSort>>;
 };
@@ -96,7 +100,7 @@ type TrainingPlanBuilderSheetDraftsProviderProps = {
   planMetadata: {
     name: string;
     description: string;
-    templateVisibility: "private" | "public";
+    contentVisibility: ContentVisibility;
   };
   onApplyActivityFilters: (filters: {
     categoryFilter: ActivityCategoryFilter;
@@ -104,7 +108,7 @@ type TrainingPlanBuilderSheetDraftsProviderProps = {
   }) => void;
   onApplyPlanningPreferences: (preferences: TrainingPlanBuilderPlanPreferences) => void;
   onApplyMetadata: (
-    metadata: TrainingPlanMetadataFormValues & { templateVisibility: "private" | "public" },
+    metadata: TrainingPlanMetadataFormValues & { contentVisibility: ContentVisibility },
   ) => void;
 };
 
@@ -125,8 +129,8 @@ export function TrainingPlanBuilderSheetDraftsProvider({
     defaultValues: { name: planMetadata.name, description: planMetadata.description },
     mode: "onChange",
   });
-  const [draftTemplateVisibility, setDraftTemplateVisibility] = useState(
-    planMetadata.templateVisibility,
+  const [draftContentVisibility, setDraftContentVisibility] = useState(
+    planMetadata.contentVisibility,
   );
   const planningPreferencesForm = useZodForm({
     schema: trainingPlanBuilderPlanPreferencesSchema,
@@ -173,8 +177,8 @@ export function TrainingPlanBuilderSheetDraftsProvider({
 
   const prepareMetadataDraft = useCallback(() => {
     metadataForm.reset({ name: planMetadata.name, description: planMetadata.description });
-    setDraftTemplateVisibility(planMetadata.templateVisibility);
-  }, [metadataForm, planMetadata.description, planMetadata.name, planMetadata.templateVisibility]);
+    setDraftContentVisibility(planMetadata.contentVisibility);
+  }, [metadataForm, planMetadata.description, planMetadata.name, planMetadata.contentVisibility]);
 
   useEffect(() => {
     if (activeSheet === "metadata") {
@@ -274,9 +278,9 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       }
       return false;
     }
-    onApplyMetadata({ ...result.data, templateVisibility: draftTemplateVisibility });
+    onApplyMetadata({ ...result.data, contentVisibility: draftContentVisibility });
     return true;
-  }, [draftTemplateVisibility, metadataForm, onApplyMetadata]);
+  }, [draftContentVisibility, metadataForm, onApplyMetadata]);
 
   const value = useMemo<TrainingPlanBuilderSheetDraftsContextValue>(
     () => ({
@@ -291,7 +295,7 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       planningPreferenceIssues,
       planningPreferencesForm,
       metadataForm,
-      draftTemplateVisibility,
+      draftContentVisibility,
       applyActivityFiltersDraft,
       applyPlanningPreferencesDraft,
       applyMetadataDraft,
@@ -302,7 +306,7 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       resetActivityFiltersDraft,
       addPlanningConstraintDraft,
       updatePlanningConstraintDraft,
-      setDraftTemplateVisibility,
+      setDraftContentVisibility,
       setDraftActivityPlanCategoryFilter,
       setDraftActivityPlanSort,
     }),
@@ -316,7 +320,7 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       canSavePlanningPreferences,
       canSaveMetadata,
       metadataForm,
-      draftTemplateVisibility,
+      draftContentVisibility,
       applyActivityFiltersDraft,
       applyPlanningPreferencesDraft,
       applyMetadataDraft,
@@ -346,7 +350,7 @@ export function useTrainingPlanBuilderSheetDrafts() {
 }
 
 function TrainingPlanBuilderMetadataSheetContent() {
-  const { draftTemplateVisibility, metadataForm, setDraftTemplateVisibility } =
+  const { draftContentVisibility, metadataForm, setDraftContentVisibility } =
     useTrainingPlanBuilderSheetDrafts();
 
   return (
@@ -375,9 +379,14 @@ function TrainingPlanBuilderMetadataSheetContent() {
               accessibilityRole="radiogroup"
               className="flex-row gap-2"
             >
-              {(["private", "public"] as const).map((visibility) => {
-                const selected = draftTemplateVisibility === visibility;
-                const label = visibility === "public" ? "Public" : "Private";
+              {(["private", "followers", "public"] as const).map((visibility) => {
+                const selected = draftContentVisibility === visibility;
+                const label =
+                  visibility === "public"
+                    ? "Public"
+                    : visibility === "followers"
+                      ? "Followers"
+                      : "Private";
                 return (
                   <Pressable
                     accessibilityLabel={`${label} training plan`}
@@ -387,7 +396,7 @@ function TrainingPlanBuilderMetadataSheetContent() {
                       selected ? "border-primary bg-primary/10" : "border-border"
                     }`}
                     key={visibility}
-                    onPress={() => setDraftTemplateVisibility(visibility)}
+                    onPress={() => setDraftContentVisibility(visibility)}
                   >
                     <Text
                       className={`text-sm font-medium ${
@@ -401,8 +410,8 @@ function TrainingPlanBuilderMetadataSheetContent() {
               })}
             </View>
             <Text className="text-xs text-muted-foreground">
-              Public plans can be discovered by other athletes. Private plans remain visible only to
-              you.
+              Public plans can be discovered by anyone. Followers plans are shared with followers;
+              private plans remain visible only to you.
             </Text>
           </View>
         </View>

@@ -7,8 +7,7 @@ const mocks = vi.hoisted(() => ({
   enqueueJob: vi.fn(),
   findByProfileIdAndProvider: vi.fn(),
   findGrantByProfileIdAndProvider: vi.fn(),
-  enqueueWahooOwnedRouteReconcile: vi.fn(),
-  enqueuePlannedActivitySyncAfterCalendarMutation: vi.fn(),
+  enqueueWahooPlannedActivitySyncAfterCalendarMutation: vi.fn(),
   refreshSetupData: vi.fn(),
 }));
 
@@ -19,11 +18,11 @@ vi.mock("../../infrastructure/repositories", () => ({
       findGrantByProfileIdAndProvider: mocks.findGrantByProfileIdAndProvider,
     },
   })),
-  createProviderSyncRepository: vi.fn(() => ({ enqueueJob: mocks.enqueueJob })),
+  createWahooSyncRepository: vi.fn(() => ({ enqueueJob: mocks.enqueueJob })),
 }));
 
-vi.mock("../onboarding-provider-enrichment", () => ({
-  OnboardingProviderEnrichmentService: class {
+vi.mock("../wahoo-profile-setup-service", () => ({
+  WahooProfileSetupService: class {
     refreshSetupData(...args: unknown[]) {
       return mocks.refreshSetupData(...args);
     }
@@ -31,12 +30,8 @@ vi.mock("../onboarding-provider-enrichment", () => ({
 }));
 
 vi.mock("../../lib/provider-sync/planned-activities", () => ({
-  enqueuePlannedActivitySyncAfterCalendarMutation:
-    mocks.enqueuePlannedActivitySyncAfterCalendarMutation,
-}));
-
-vi.mock("../../lib/provider-sync/owned-routes", () => ({
-  enqueueWahooOwnedRouteReconcile: mocks.enqueueWahooOwnedRouteReconcile,
+  enqueueWahooPlannedActivitySyncAfterCalendarMutation:
+    mocks.enqueueWahooPlannedActivitySyncAfterCalendarMutation,
 }));
 
 import { syncIntegrationNow } from "./syncNowUseCase";
@@ -49,7 +44,13 @@ describe("syncIntegrationNow", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.findByProfileIdAndProvider.mockResolvedValue({ generation: 3, id: INTEGRATION_ID });
+    mocks.findByProfileIdAndProvider.mockResolvedValue({
+      generation: 3,
+      id: INTEGRATION_ID,
+      lifecycle_status: "active",
+      profile_id: PROFILE_ID,
+      provider: "wahoo",
+    });
     mocks.findGrantByProfileIdAndProvider.mockResolvedValue({
       expires_at: null,
       scope: "workouts_read offline_data",
@@ -65,15 +66,11 @@ describe("syncIntegrationNow", () => {
       id: "66666666-6666-4666-8666-666666666666",
       status: "queued",
     });
-    mocks.enqueuePlannedActivitySyncAfterCalendarMutation.mockResolvedValue({
+    mocks.enqueueWahooPlannedActivitySyncAfterCalendarMutation.mockResolvedValue({
       affectedCount: 1,
       operation: "publish",
       queued: true,
       success: true,
-    });
-    mocks.enqueueWahooOwnedRouteReconcile.mockResolvedValue({
-      jobId: "88888888-8888-4888-8888-888888888888",
-      queued: true,
     });
   });
 
@@ -100,15 +97,17 @@ describe("syncIntegrationNow", () => {
     expect(mocks.enqueueJob).not.toHaveBeenCalled();
   });
 
-  it("returns a recoverable unqueued result when queue persistence is unavailable", async () => {
-    mocks.enqueueJob.mockRejectedValue(new Error("Failed query: provider_sync_jobs unavailable"));
+  it("propagates queue persistence failure instead of reporting successful sync admission", async () => {
+    const failure = new Error("Failed query: provider_sync_jobs unavailable");
+    mocks.enqueueJob.mockRejectedValue(failure);
 
     await expect(
       syncIntegrationNow({ db: {} as never, profileId: PROFILE_ID, provider: "wahoo" }),
-    ).resolves.toMatchObject({ jobId: null, queued: false });
+    ).rejects.toBe(failure);
     expect(mocks.enqueueJob).toHaveBeenCalledWith(
       expect.objectContaining({
-        dedupeKey: `provider-history-reconcile:${INTEGRATION_ID}:activity`,
+        dedupeKey: `wahoo-history-reconcile:${INTEGRATION_ID}:3`,
+        integrationGeneration: 3,
         profileId: PROFILE_ID,
         provider: "wahoo",
       }),
@@ -135,35 +134,11 @@ describe("syncIntegrationNow", () => {
     });
 
     expect(limit).toHaveBeenCalledWith(100);
-    expect(mocks.enqueuePlannedActivitySyncAfterCalendarMutation).toHaveBeenCalledWith({
+    expect(mocks.enqueueWahooPlannedActivitySyncAfterCalendarMutation).toHaveBeenCalledWith({
       db,
       eventIds: ["event-1"],
       operation: "publish",
       profileId: PROFILE_ID,
-    });
-  });
-
-  it("queues an owned-route reconciliation when route-library grants are ready", async () => {
-    mocks.findGrantByProfileIdAndProvider.mockResolvedValue({
-      expires_at: null,
-      scope: "workouts_read routes_read routes_write offline_data",
-    });
-
-    await expect(
-      syncIntegrationNow({ db: {} as never, profileId: PROFILE_ID, provider: "wahoo" }),
-    ).resolves.toMatchObject({
-      ownedRouteSync: {
-        jobId: "88888888-8888-4888-8888-888888888888",
-        queued: true,
-      },
-    });
-
-    expect(mocks.enqueueWahooOwnedRouteReconcile).toHaveBeenCalledWith({
-      integrationGeneration: 3,
-      integrationId: INTEGRATION_ID,
-      profileId: PROFILE_ID,
-      providerSyncRepository: expect.any(Object),
-      trigger: "manual",
     });
   });
 
@@ -180,6 +155,6 @@ describe("syncIntegrationNow", () => {
       },
     });
     expect(db.select).not.toHaveBeenCalled();
-    expect(mocks.enqueuePlannedActivitySyncAfterCalendarMutation).not.toHaveBeenCalled();
+    expect(mocks.enqueueWahooPlannedActivitySyncAfterCalendarMutation).not.toHaveBeenCalled();
   });
 });

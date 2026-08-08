@@ -34,16 +34,12 @@ export function createActivityPlanInterval(name = "Main set"): ActivityPlanInter
   };
 }
 
-export function createActivityPlanSegment(
-  role: ActivityPlanSegmentRole,
-  activity_category: CanonicalActivityCategory = "run",
-): ActivityPlanSegment {
+export function createActivityPlanSegment(role: ActivityPlanSegmentRole): ActivityPlanSegment {
   if (role === "activity") {
     return {
       id: id(),
       role,
       name: "Main activity",
-      activity_category,
       intervals: [createActivityPlanInterval()],
     };
   }
@@ -59,9 +55,7 @@ export function createActivityPlanSegment(
 export function getActivityPlanActivityCategory(
   structure: EditableActivityPlanStructure,
 ): CanonicalActivityCategory {
-  return (
-    structure.segments.find((segment) => segment.role === "activity")?.activity_category ?? "run"
-  );
+  return structure.activity_category;
 }
 
 export function hasIncompatibleTargets(
@@ -92,11 +86,11 @@ export function applyActivityPlanActivityCategory(
 ): EditableActivityPlanStructure {
   return {
     version: 3,
+    activity_category,
     segments: structure.segments.map((segment) => {
       if (segment.role !== "activity") return segment;
       return {
         ...segment,
-        activity_category: activity_category,
         intervals: segment.intervals.map((interval) => ({
           ...interval,
           steps: interval.steps.map((step) => ({
@@ -122,7 +116,7 @@ export function applyActivityPlanActivityCategory(
 export function createActivityPlanStructure(
   activity_category: CanonicalActivityCategory = "run",
 ): EditableActivityPlanStructure {
-  return { version: 3, segments: [createActivityPlanSegment("activity", activity_category)] };
+  return { version: 3, activity_category, segments: [createActivityPlanSegment("activity")] };
 }
 
 export function parseActivityPlanStructure(value: unknown): ActivityPlanStructure {
@@ -136,6 +130,7 @@ export function updateActivitySegment(
 ): EditableActivityPlanStructure {
   return {
     version: 3,
+    activity_category: structure.activity_category,
     segments: structure.segments.map((segment) =>
       segment.id === segmentId ? update(segment) : segment,
     ),
@@ -149,6 +144,7 @@ export function updateActivityInterval(
 ): EditableActivityPlanStructure {
   return {
     version: 3,
+    activity_category: structure.activity_category,
     segments: structure.segments.map((segment) =>
       segment.role === "activity"
         ? {

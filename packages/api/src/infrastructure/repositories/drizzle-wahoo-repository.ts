@@ -12,6 +12,7 @@ import type {
   WahooEventResourceProviderMetadata,
   WahooRepository,
 } from "../../repositories";
+import { attachActivitySourceReference } from "../../repositories/activity-source-reference-repository";
 
 function toIsoString(value: Date | null): string | null {
   return value ? value.toISOString() : null;
@@ -95,6 +96,104 @@ export function wahooGroupEventRouteDeliveryResourceLinkOwnershipPredicate(
 
 export function createWahooRepository({ db }: CreateWahooRepositoryOptions): WahooRepository {
   return {
+    async applyProfileEnrichmentIfAbsent(input) {
+      return db.transaction(async (tx) => {
+        const [activeIntegration] = await tx
+          .select({ id: schema.integrations.id })
+          .from(schema.integrations)
+          .where(
+            wahooActiveIntegrationGenerationPredicate({
+              expectedIntegrationGeneration: input.expectedIntegrationGeneration,
+              integrationId: input.integrationId,
+              profileId: input.profileId,
+            }),
+          )
+          .limit(1)
+          .for("share");
+        if (!activeIntegration) throw new Error("integration_generation_inactive");
+
+        const [profile] = await tx
+          .select({ dob: schema.profiles.dob, gender: schema.profiles.gender })
+          .from(schema.profiles)
+          .where(eq(schema.profiles.id, input.profileId))
+          .limit(1)
+          .for("update");
+        if (!profile) throw new Error("profile_not_found");
+
+        const fieldsFilled: Array<"dob" | "gender" | "weight_kg"> = [];
+        const fieldsKept: Array<"dob" | "gender" | "weight_kg"> = [];
+        const profileUpdate: {
+          dob?: Date;
+          gender?: "male" | "female" | "other";
+          updated_at?: Date;
+        } = {};
+
+        if (input.dob) {
+          if (profile.dob === null) {
+            profileUpdate.dob = input.dob;
+            fieldsFilled.push("dob");
+          } else {
+            fieldsKept.push("dob");
+          }
+        }
+        if (input.gender) {
+          if (profile.gender === null) {
+            profileUpdate.gender = input.gender;
+            fieldsFilled.push("gender");
+          } else {
+            fieldsKept.push("gender");
+          }
+        }
+        if (profileUpdate.dob || profileUpdate.gender) {
+          profileUpdate.updated_at = new Date();
+          await tx
+            .update(schema.profiles)
+            .set(profileUpdate)
+            .where(eq(schema.profiles.id, input.profileId));
+        }
+
+        if (input.weightKg !== undefined) {
+          const [existingWeight] = await tx
+            .select({ id: schema.profileMetrics.id })
+            .from(schema.profileMetrics)
+            .where(
+              and(
+                eq(schema.profileMetrics.profile_id, input.profileId),
+                eq(schema.profileMetrics.metric_type, "weight_kg"),
+              ),
+            )
+            .limit(1);
+          if (existingWeight) {
+            fieldsKept.push("weight_kg");
+          } else {
+            const now = new Date();
+            await tx.insert(schema.profileMetrics).values({
+              id: randomUUID(),
+              calculation_version: "wahoo-profile-enrichment-v1",
+              created_at: now,
+              method: "provider_profile_import",
+              metric_type: "weight_kg",
+              notes: "Imported from Wahoo",
+              profile_id: input.profileId,
+              provenance: {
+                integration_generation: input.expectedIntegrationGeneration,
+                integration_id: input.integrationId,
+                provider: "wahoo",
+              },
+              recorded_at: now,
+              source: "provider",
+              unit: "kg",
+              updated_at: now,
+              value: input.weightKg,
+            });
+            fieldsFilled.push("weight_kg");
+          }
+        }
+
+        return { fieldsFilled, fieldsKept };
+      });
+    },
+
     async createEventResourceLink(input) {
       await db.transaction(async (tx) => {
         const [active] = await tx
@@ -383,69 +482,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
       return row ?? null;
     },
 
-    async findImportedActivityLinkByExternalId({ externalId, integrationId }) {
-      const [row] = await db
-        .select({
-          activityId: schema.integrationResourceLinks.internal_resource_id,
-          linkId: schema.integrationResourceLinks.id,
-          profileId: schema.activities.profile_id,
-          activityFilePath: schema.activityArtifacts.path,
-          activityFileSize: schema.activityArtifacts.byte_size,
-          artifactId: schema.activityArtifacts.id,
-          artifactSha256: schema.activityArtifacts.digest,
-          providerRevision: schema.activityArtifactLinks.provider_revision,
-          materializerVersion: schema.activities.materializer_version,
-          segmentsRevision: schema.activities.segments_revision,
-          timingCoverage: schema.activities.timing_coverage,
-          hasSwimSegment: sql<boolean>`exists (
-            select 1 from ${schema.activitySegments}
-            where ${schema.activitySegments.activity_id} = ${schema.integrationResourceLinks.internal_resource_id}
-              and ${schema.activitySegments.profile_id} = ${schema.activities.profile_id}
-              and ${schema.activitySegments.role} = 'activity'
-              and ${schema.activitySegments.activity_category} = 'swim'
-          )`,
-          analysisReady: sql<boolean>`exists (
-            select 1 from ${schema.activityFileIngestions}
-            where ${schema.activityFileIngestions.activity_id} = ${schema.integrationResourceLinks.internal_resource_id}
-              and ${schema.activityFileIngestions.source} = 'provider_sync'
-              and ${schema.activityFileIngestions.status} = 'ready'
-          )`,
-        })
-        .from(schema.integrationResourceLinks)
-        .innerJoin(
-          schema.activities,
-          eq(schema.activities.id, schema.integrationResourceLinks.internal_resource_id),
-        )
-        .leftJoin(
-          schema.activityArtifactLinks,
-          and(
-            eq(schema.activityArtifactLinks.activity_id, schema.activities.id),
-            eq(schema.activityArtifactLinks.profile_id, schema.activities.profile_id),
-            eq(schema.activityArtifactLinks.role, "source"),
-            eq(schema.activityArtifactLinks.is_current, true),
-          ),
-        )
-        .leftJoin(
-          schema.activityArtifacts,
-          and(
-            eq(schema.activityArtifacts.id, schema.activityArtifactLinks.artifact_id),
-            eq(schema.activityArtifacts.profile_id, schema.activities.profile_id),
-            eq(schema.activityArtifacts.availability, "accepted"),
-          ),
-        )
-        .where(
-          and(
-            eq(schema.integrationResourceLinks.integration_id, integrationId),
-            eq(schema.integrationResourceLinks.resource_kind, "activity"),
-            eq(schema.integrationResourceLinks.external_id, externalId),
-          ),
-        )
-        .limit(1);
-
-      return row ?? null;
-    },
-
-    async findImportedActivityByProviderExternalId({ externalId, provider }) {
+    async findImportedActivityByProviderExternalId({ externalId, profileId, provider }) {
       const [row] = await db
         .select({
           activityId: schema.activities.id,
@@ -454,7 +491,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           activityFileSize: schema.activityArtifacts.byte_size,
           artifactId: schema.activityArtifacts.id,
           artifactSha256: schema.activityArtifacts.digest,
-          providerRevision: schema.activityArtifactLinks.provider_revision,
+          providerRevision: schema.activitySourceReferences.provider_revision,
           materializerVersion: schema.activities.materializer_version,
           segmentsRevision: schema.activities.segments_revision,
           timingCoverage: schema.activities.timing_coverage,
@@ -472,7 +509,14 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
               and ${schema.activityFileIngestions.status} = 'ready'
           )`,
         })
-        .from(schema.activities)
+        .from(schema.activitySourceReferences)
+        .innerJoin(
+          schema.activities,
+          and(
+            eq(schema.activities.id, schema.activitySourceReferences.activity_id),
+            eq(schema.activities.profile_id, schema.activitySourceReferences.profile_id),
+          ),
+        )
         .leftJoin(
           schema.activityArtifactLinks,
           and(
@@ -492,8 +536,9 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         )
         .where(
           and(
-            eq(schema.activities.provider, provider),
-            eq(schema.activities.external_id, externalId),
+            eq(schema.activitySourceReferences.profile_id, profileId),
+            eq(schema.activitySourceReferences.provider, provider),
+            eq(schema.activitySourceReferences.provider_external_id, externalId),
           ),
         )
         .limit(1);
@@ -501,7 +546,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
       return row ?? null;
     },
 
-    async createImportedActivityResourceLink(input) {
+    async enrichImportedActivitySourceReference(input) {
       await db.transaction(async (tx) => {
         const [activeIntegration] = await tx
           .select({ id: schema.integrations.id })
@@ -518,28 +563,23 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           .limit(1)
           .for("share");
         if (!activeIntegration) throw new Error("integration_generation_inactive");
-        await tx
-          .insert(schema.integrationResourceLinks)
-          .values({
-            id: randomUUID(),
-            created_at: new Date(),
-            external_id: input.externalId,
-            integration_id: input.integrationId,
-            internal_resource_id: input.activityId,
-            profile_id: input.profileId,
-            provider: input.provider,
-            provider_updated_at: input.providerUpdatedAt ? new Date(input.providerUpdatedAt) : null,
-            resource_kind: "activity",
-            synced_at: new Date(),
-            updated_at: new Date(),
-          })
-          .onConflictDoNothing({
-            target: [
-              schema.integrationResourceLinks.integration_id,
-              schema.integrationResourceLinks.resource_kind,
-              schema.integrationResourceLinks.external_id,
-            ],
-          });
+        const attached = await attachActivitySourceReference(tx, {
+          profileId: input.profileId,
+          activityId: input.activityId,
+          integrationId: input.integrationId,
+          provider: input.provider,
+          providerExternalId: input.externalId,
+          providerRevision: input.providerUpdatedAt,
+          artifactSha256: input.artifactSha256,
+          ...(input.importRunId === undefined ? {} : { importRunId: input.importRunId }),
+          ...(input.originProvider === undefined ? {} : { originProvider: input.originProvider }),
+          ...(input.originExternalId === undefined
+            ? {}
+            : { originExternalId: input.originExternalId }),
+          ...(input.originTrust === undefined ? {} : { originTrust: input.originTrust }),
+        });
+        if (attached.activityId !== input.activityId)
+          throw new Error("Provider activity source resolved to a different canonical activity");
       });
     },
 
@@ -610,6 +650,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         .select({
           id: schema.events.id,
           startsAt: schema.events.starts_at,
+          timezone: schema.events.timezone,
           activityPlan: {
             id: schema.activityPlans.id,
             name: schema.activityPlans.name,
@@ -647,6 +688,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         id: row.id,
         routeId: row.routeId,
         startsAt: row.startsAt.toISOString(),
+        timezone: row.timezone,
         activityPlan,
       };
     },
@@ -996,6 +1038,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         .select({
           eventId: schema.events.id,
           startsAt: schema.events.starts_at,
+          timezone: schema.events.timezone,
           activityPlan: {
             description: schema.activityPlans.description,
             id: schema.activityPlans.id,
@@ -1056,6 +1099,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         activityPlan: row.activityPlan,
         eventId: row.eventId,
         startsAt: row.startsAt.toISOString(),
+        timezone: row.timezone,
       }));
     },
 

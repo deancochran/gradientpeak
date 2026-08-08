@@ -1,0 +1,94 @@
+import { Button } from "@repo/ui/components/button";
+import { Text } from "@repo/ui/components/text";
+import { ActivityIndicator, View } from "react-native";
+import type { TrainingPlanBuilderController } from "./useTrainingPlanBuilderController";
+
+type PublishedProjection =
+  TrainingPlanBuilderController["builder"]["derived"]["publishedProjection"];
+
+export function BuilderPublishedProjectionCard({
+  onRetry,
+  projection,
+}: {
+  onRetry: () => void;
+  projection: PublishedProjection;
+}) {
+  return (
+    <View
+      className="gap-3 rounded-xl border border-border bg-card p-4"
+      testID="published-projection-card"
+    >
+      <View>
+        <Text className="text-sm font-semibold text-foreground">Tentative draft projection</Text>
+        <Text className="text-xs text-muted-foreground">
+          Preview only. Server validation remains authoritative when you save.
+        </Text>
+      </View>
+      {projection.status === "loading" ? (
+        <View
+          accessibilityLabel="Loading athlete baseline projection"
+          accessibilityRole="progressbar"
+          className="flex-row items-center gap-2"
+        >
+          <ActivityIndicator size="small" />
+          <Text className="text-sm text-muted-foreground">Loading athlete baseline…</Text>
+        </View>
+      ) : projection.status === "error" ? (
+        <View accessibilityLiveRegion="assertive" accessibilityRole="alert" className="gap-2">
+          <Text className="text-sm text-destructive">Projection could not be loaded.</Text>
+          <Button
+            accessibilityLabel="Retry athlete baseline projection"
+            onPress={onRetry}
+            variant="outline"
+          >
+            <Text>Retry projection</Text>
+          </Button>
+        </View>
+      ) : projection.status === "unavailable" ? (
+        <Text accessibilityRole="text" className="text-sm text-muted-foreground">
+          Projection unavailable until published state and canonical activity loads exist.
+        </Text>
+      ) : (
+        <View className="gap-3">
+          {projection.status === "stale" ? (
+            <Text
+              accessibilityLiveRegion="assertive"
+              accessibilityRole="alert"
+              className="text-sm text-amber-700"
+            >
+              {projection.importStatus === "active"
+                ? "Using stale published state while activity history imports."
+                : projection.importStatus === "failed"
+                  ? "Using stale published state because an activity history import failed."
+                  : "Using stale published state while a rebuild is pending."}
+            </Text>
+          ) : null}
+          <View className="flex-row flex-wrap gap-2">
+            <Metric label="Fitness" value={projection.simulation.projectedState.longTermLoad} />
+            <Metric label="Fatigue" value={projection.simulation.projectedState.recentLoad} />
+            <Metric label="Form" value={projection.simulation.projectedState.loadBalance} />
+            <Metric
+              label="Readiness"
+              value={projection.simulation.goalAssessment?.readiness ?? null}
+            />
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: number | null }) {
+  return (
+    <View
+      accessibilityLabel={`${label}: ${value === null ? "Unavailable" : value.toFixed(1)}`}
+      accessibilityRole="text"
+      className="min-w-24 flex-1 rounded-lg bg-muted p-3"
+    >
+      <Text className="text-xs text-muted-foreground">{label}</Text>
+      <Text className="text-base font-semibold text-foreground">
+        {value === null ? "Unavailable" : value.toFixed(1)}
+      </Text>
+    </View>
+  );
+}

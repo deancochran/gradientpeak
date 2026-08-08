@@ -44,7 +44,7 @@ export function getActivityTargetCompatibilityIssues(input: {
         step.targets.forEach((target, targetIndex) => {
           if (
             isTargetTypePermittedForActivity({
-              activityCategory: segment.activity_category,
+              activityCategory: input.structure.activity_category,
               targetType: target.type,
             })
           ) {
@@ -52,7 +52,7 @@ export function getActivityTargetCompatibilityIssues(input: {
           }
 
           issues.push({
-            activityCategory: segment.activity_category,
+            activityCategory: input.structure.activity_category,
             targetType: target.type,
             path: [
               ...pathPrefix,
@@ -66,7 +66,7 @@ export function getActivityTargetCompatibilityIssues(input: {
               targetIndex,
               "type",
             ],
-            message: `Target type ${target.type} is not permitted for ${segment.activity_category} activity plans. Allowed targets: ${getPermissibleTargetTypes(segment.activity_category).join(", ")}.`,
+            message: `Target type ${target.type} is not permitted for ${input.structure.activity_category} activity plans. Allowed targets: ${getPermissibleTargetTypes(input.structure.activity_category).join(", ")}.`,
           });
         });
       });

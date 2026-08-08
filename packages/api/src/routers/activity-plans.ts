@@ -15,25 +15,23 @@ import {
 import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, gt, gte, ilike, inArray, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  type ActivityPlanWithEstimate,
+  estimateActivityPlan,
+  estimateActivityPlans,
+} from "../application/activity-plans/estimate-activity-plans";
 import { activityPlanStructureHash } from "../application/activity-plans/structure-hash";
-import { enqueueProviderPlannedActivityJobs } from "../application/events";
+import { enqueueWahooPlannedActivityJobs } from "../application/events";
 import { getRequiredDb } from "../db";
-import { createEventReadRepository } from "../infrastructure/repositories";
 import { createContentAccessPermissions } from "../permissions/content-access";
 import { getLikeStats, loadLikeStats } from "../repositories/like-stats";
 import { captureApiError } from "../telemetry";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import {
-  type ActivityPlanWithDerivedMetrics,
-  getActivityPlanDerivedMetrics,
-  getActivityPlansDerivedMetrics,
-} from "../utils/activity-plan-derived-metrics";
-import { computePlanMetrics } from "../utils/estimation-helpers";
 import { loadProfileIdentityMap, type profileIdentitySchema } from "../utils/profile-identity";
 
 // Input schemas for queries
 const uuidSchema = z.string().uuid();
-const templateVisibilitySchema = z.enum(["private", "followers", "public"]);
+const contentVisibilitySchema = z.enum(["private", "followers", "public"]);
 const activityCategoryFilterSchema = z.union([publicActivityCategorySchema, z.literal("all")]);
 const activityCategoryFiltersSchema = z.array(publicActivityCategorySchema).min(1).max(10);
 const activityPlanCursorSchema = z.string().superRefine((value, ctx) => {
@@ -60,18 +58,15 @@ const activityPlanCursorSchema = z.string().superRefine((value, ctx) => {
 
 const listActivityPlansSchema = z
   .object({
-    includeOwnOnly: z.boolean().default(true),
-    includeSystemTemplates: z.boolean().default(false),
     includeEstimation: z.boolean().default(true),
-    ownerScope: z.enum(["own", "system", "public", "discoverable", "all"]).optional(),
-    visibility: templateVisibilitySchema.optional(),
+    ownerScope: z.enum(["own", "system", "public", "discoverable", "all"]),
+    visibility: contentVisibilitySchema.optional(),
     activityCategory: activityCategoryFilterSchema.optional(),
     activityCategories: activityCategoryFiltersSchema.optional(),
     search: z.string().optional(),
     sort_by: z.enum(["newest", "oldest"]).optional(),
     limit: z.number().min(1).max(100).default(20),
     cursor: activityPlanCursorSchema.optional(),
-    direction: z.enum(["forward", "backward"]).optional(),
   })
   .strict();
 
@@ -95,7 +90,7 @@ const activityPlanRowSchema = publicActivityPlansRowSchema
     created_at: z.date(),
     structure: activityPlanStructureSchema,
     updated_at: z.date(),
-    content_visibility: templateVisibilitySchema.default("private"),
+    content_visibility: contentVisibilitySchema.default("private"),
   })
   .strict();
 
@@ -112,13 +107,13 @@ function validateStructure(structure: unknown) {
 const createActivityPlanInput = activityPlanCreateSchema.safeExtend({
   gps_recording_enabled: z.boolean().default(true),
   structure: activityPlanStructureSchema,
-  template_visibility: templateVisibilitySchema.optional(),
+  content_visibility: contentVisibilitySchema.optional(),
 });
 
 const updateActivityPlanInput = activityPlanUpdateSchema.safeExtend({
   gps_recording_enabled: z.boolean().optional(),
   structure: activityPlanStructureSchema.optional(),
-  template_visibility: templateVisibilitySchema.optional(),
+  content_visibility: contentVisibilitySchema.optional(),
 });
 
 const updateActivityPlanWithIdInput = updateActivityPlanInput
@@ -140,56 +135,30 @@ const updateActivityPlanWithIdInput = updateActivityPlanInput
   });
 
 function serializeActivityPlanRow(row: ActivityPlanRow | unknown) {
-  if (
-    row &&
-    typeof row === "object" &&
-    !("content_visibility" in row) &&
-    "template_visibility" in row
-  ) {
-    return serializedActivityPlanSchema.parse({
-      ...row,
-      content_visibility: (row as { template_visibility?: unknown }).template_visibility,
-    });
-  }
-
   return serializedActivityPlanSchema.parse(row);
 }
 
 function toPublicActivityPlan<T extends { structure: unknown }>(plan: T) {
   const parsed = activityPlanStructureSchema.safeParse(plan.structure);
-  const activitySegment = parsed.success
-    ? parsed.data.segments.find((segment) => segment.role === "activity")
-    : undefined;
-  if (!activitySegment)
+  if (!parsed.success)
     throw new TRPCError({
       code: "INTERNAL_SERVER_ERROR",
       message: "Stored activity plan is not valid",
     });
   return {
     ...plan,
-    activity_category: activitySegment.activity_category,
+    activity_category: parsed.data.activity_category,
   };
 }
 
 type SerializedActivityPlan = z.output<typeof serializedActivityPlanSchema>;
-type EstimatedActivityPlan = ActivityPlanWithDerivedMetrics<SerializedActivityPlan>;
+type EstimatedActivityPlan = ActivityPlanWithEstimate<SerializedActivityPlan>;
 type DiscoverListActivityPlan = SerializedActivityPlan &
-  Partial<
-    Pick<
-      EstimatedActivityPlan,
-      | "estimated_calories"
-      | "estimated_zones"
-      | "confidence"
-      | "confidence_score"
-      | "estimate_computed_at"
-      | "estimate_last_accessed_at"
-      | "estimate_source"
-      | "estimator_version"
-      | "prescriptionQuantification"
-      | "duration_estimate"
-      | "common_load"
-    >
-  >;
+  Partial<Pick<EstimatedActivityPlan, "prescriptionQuantification">>;
+
+function withPrescriptionQuantificationOnly<T extends Partial<EstimatedActivityPlan>>(plan: T) {
+  return plan;
+}
 
 function buildAccessiblePlanCondition(userId: string) {
   return or(
@@ -226,10 +195,7 @@ function buildOwnedPlanCondition(userId: string) {
   return eq(activityPlans.profile_id, userId);
 }
 
-function resolvePlanContentVisibility(plan: {
-  content_visibility?: string | null;
-  template_visibility?: string | null;
-}): ContentVisibility {
+function resolvePlanContentVisibility(plan: { content_visibility: string }): ContentVisibility {
   if (
     plan.content_visibility === "public" ||
     plan.content_visibility === "followers" ||
@@ -238,15 +204,7 @@ function resolvePlanContentVisibility(plan: {
     return plan.content_visibility;
   }
 
-  if (
-    plan.template_visibility === "public" ||
-    plan.template_visibility === "followers" ||
-    plan.template_visibility === "private"
-  ) {
-    return plan.template_visibility;
-  }
-
-  return "private";
+  throw new Error("Activity plan has invalid content visibility");
 }
 
 function activityPlanAccessInput(plan: ActivityPlanRow) {
@@ -302,8 +260,7 @@ function withIdentityFields<
   T extends {
     id: string;
     profile_id: string | null;
-    template_visibility?: string | null;
-    content_visibility?: string | null;
+    content_visibility: string;
   },
 >(plan: T) {
   return {
@@ -329,10 +286,9 @@ function buildCreateValues(
   input: z.infer<typeof createActivityPlanInput>,
   profileId: string,
   defaultContentVisibility: "private" | "followers" | "public",
-  _metrics: Awaited<ReturnType<typeof computePlanMetrics>>,
 ): ActivityPlanInsert {
   const now = new Date();
-  const templateVisibility = input.template_visibility ?? defaultContentVisibility;
+  const contentVisibility = input.content_visibility ?? defaultContentVisibility;
   return {
     id: randomUUID(),
     created_at: now,
@@ -344,10 +300,7 @@ function buildCreateValues(
     structure: input.structure,
     structure_hash: activityPlanStructureHash(input.structure),
     gps_recording_enabled: input.gps_recording_enabled,
-    template_visibility: templateVisibility,
-    content_visibility: templateVisibility,
-    import_provider: null,
-    import_external_id: null,
+    content_visibility: contentVisibility,
     is_system_template: false,
   };
 }
@@ -355,22 +308,9 @@ function buildCreateValues(
 export const activityPlansRouter = createTRPCRouter({
   list: protectedProcedure.input(listActivityPlansSchema).query(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
-    const estimationStore = createEventReadRepository(db);
     const limit = input.limit;
 
-    const ownerScope =
-      input.ownerScope ??
-      (input.includeOwnOnly && !input.includeSystemTemplates
-        ? "own"
-        : !input.includeOwnOnly && input.includeSystemTemplates
-          ? "system"
-          : input.includeOwnOnly && input.includeSystemTemplates
-            ? "all"
-            : "none");
-
-    if (ownerScope === "none") {
-      return { items: [], nextCursor: undefined };
-    }
+    const ownerScope = input.ownerScope;
 
     const conditions = [];
 
@@ -402,7 +342,7 @@ export const activityPlansRouter = createTRPCRouter({
         or(
           ...[...requestedCategories].map(
             (activity_category) =>
-              sql`${activityPlans.structure} @> ${JSON.stringify({ segments: [{ role: "activity", activity_category }] })}::jsonb`,
+              sql`${activityPlans.structure} @> ${JSON.stringify({ activity_category })}::jsonb`,
           ),
         ),
       );
@@ -498,16 +438,8 @@ export const activityPlansRouter = createTRPCRouter({
     const planIds = items.map((plan) => plan.id);
     const itemsWithOptionalEstimationPromise: Promise<DiscoverListActivityPlan[]> =
       input.includeEstimation
-        ? getActivityPlansDerivedMetrics(items, db, estimationStore, ctx.session.user.id)
-        : Promise.resolve(
-            items.map((plan) => ({
-              ...plan,
-              estimated_calories: undefined,
-              estimated_zones: undefined,
-              confidence: undefined,
-              confidence_score: undefined,
-            })),
-          );
+        ? estimateActivityPlans(items, db, ctx.session.user.id)
+        : Promise.resolve(items.map((plan) => ({ ...plan })));
     const likeStatsPromise = loadLikeStats(db, {
       entityType: "activity_plan",
       entityIds: planIds,
@@ -539,7 +471,12 @@ export const activityPlansRouter = createTRPCRouter({
 
     return {
       items: itemsWithOptionalEstimation.map((plan) => ({
-        ...toPublicActivityPlan(withOwnerIdentity(withIdentityFields(plan), profileIdentityMap)),
+        ...toPublicActivityPlan(
+          withOwnerIdentity(
+            withIdentityFields(withPrescriptionQuantificationOnly(plan)),
+            profileIdentityMap,
+          ),
+        ),
         ...getLikeStats(likeStats, plan.id),
       })),
       nextCursor,
@@ -548,7 +485,6 @@ export const activityPlansRouter = createTRPCRouter({
 
   getById: protectedProcedure.input(activityPlanIdInputSchema).query(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
-    const estimationStore = createEventReadRepository(db);
     const userId = ctx.session.user.id;
 
     const [rawPlanRow] = await db
@@ -583,12 +519,7 @@ export const activityPlansRouter = createTRPCRouter({
       });
     }
 
-    const planWithEstimation = await getActivityPlanDerivedMetrics(
-      plan,
-      db,
-      estimationStore,
-      userId,
-    );
+    const planWithEstimation = await estimateActivityPlan(plan, db, userId);
 
     const [likeStats, profileIdentityMap] = await Promise.all([
       loadLikeStats(db, {
@@ -601,7 +532,10 @@ export const activityPlansRouter = createTRPCRouter({
 
     return {
       ...toPublicActivityPlan(
-        withOwnerIdentity(withIdentityFields(planWithEstimation), profileIdentityMap),
+        withOwnerIdentity(
+          withIdentityFields(withPrescriptionQuantificationOnly(planWithEstimation)),
+          profileIdentityMap,
+        ),
       ),
       ...getLikeStats(likeStats, input.id),
     };
@@ -611,7 +545,6 @@ export const activityPlansRouter = createTRPCRouter({
     .input(getManyActivityPlansByIdsSchema)
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      const estimationStore = createEventReadRepository(db);
       const userId = ctx.session.user.id;
       const ids = Array.from(new Set(input.ids));
 
@@ -632,12 +565,7 @@ export const activityPlansRouter = createTRPCRouter({
         .map((id) => planById.get(id))
         .filter((plan): plan is SerializedActivityPlan => !!plan);
 
-      const itemsWithEstimation = await getActivityPlansDerivedMetrics(
-        orderedPlans,
-        db,
-        estimationStore,
-        userId,
-      );
+      const itemsWithEstimation = await estimateActivityPlans(orderedPlans, db, userId);
       const planIds = itemsWithEstimation.map((plan) => plan.id);
 
       const [likeStats, profileIdentityMap] = await Promise.all([
@@ -654,7 +582,12 @@ export const activityPlansRouter = createTRPCRouter({
 
       return {
         items: itemsWithEstimation.map((plan) => ({
-          ...toPublicActivityPlan(withOwnerIdentity(withIdentityFields(plan), profileIdentityMap)),
+          ...toPublicActivityPlan(
+            withOwnerIdentity(
+              withIdentityFields(withPrescriptionQuantificationOnly(plan)),
+              profileIdentityMap,
+            ),
+          ),
           ...getLikeStats(likeStats, plan.id),
         })),
       };
@@ -662,7 +595,6 @@ export const activityPlansRouter = createTRPCRouter({
 
   create: protectedProcedure.input(createActivityPlanInput).mutation(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
-    const estimationStore = createEventReadRepository(db);
     try {
       validateStructure(input.structure);
     } catch (validationError) {
@@ -673,12 +605,6 @@ export const activityPlansRouter = createTRPCRouter({
       });
     }
 
-    const metrics = await computePlanMetrics(
-      { structure: input.structure },
-      estimationStore,
-      ctx.session.user.id,
-    );
-
     const defaultContentVisibility = await getProfileDefaultContentVisibility(
       db,
       ctx.session.user.id,
@@ -686,7 +612,7 @@ export const activityPlansRouter = createTRPCRouter({
 
     const [createdRow] = await db
       .insert(activityPlans)
-      .values(buildCreateValues(input, ctx.session.user.id, defaultContentVisibility, metrics))
+      .values(buildCreateValues(input, ctx.session.user.id, defaultContentVisibility))
       .returning();
 
     if (!createdRow) {
@@ -696,10 +622,9 @@ export const activityPlansRouter = createTRPCRouter({
       });
     }
 
-    const planWithEstimation = await getActivityPlanDerivedMetrics(
+    const planWithEstimation = await estimateActivityPlan(
       serializeActivityPlanRow(createdRow),
       db,
-      estimationStore,
       ctx.session.user.id,
     );
 
@@ -710,7 +635,6 @@ export const activityPlansRouter = createTRPCRouter({
     .input(updateActivityPlanWithIdInput)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      const estimationStore = createEventReadRepository(db);
       const { id, expectedStructureHash, ...updates } = input;
 
       const [existingRow] = await db
@@ -756,15 +680,6 @@ export const activityPlansRouter = createTRPCRouter({
         }
       }
 
-      const metricsUpdates: Partial<ActivityPlanInsert> = {};
-      if (updates.structure) {
-        await computePlanMetrics(
-          { structure: updates.structure },
-          estimationStore,
-          ctx.session.user.id,
-        );
-      }
-
       const updateValues: Partial<ActivityPlanInsert> = {
         updated_at: new Date(),
         name: updates.name,
@@ -780,9 +695,7 @@ export const activityPlansRouter = createTRPCRouter({
           ? activityPlanStructureHash(updates.structure)
           : undefined,
         gps_recording_enabled: updates.gps_recording_enabled,
-        template_visibility: updates.template_visibility,
-        content_visibility: updates.template_visibility,
-        ...metricsUpdates,
+        content_visibility: updates.content_visibility,
       };
 
       const [updatedRow] = await db
@@ -830,7 +743,7 @@ export const activityPlansRouter = createTRPCRouter({
 
         if (linkedEvents.length > 0) {
           try {
-            plannedActivitySync = await enqueueProviderPlannedActivityJobs(ctx, {
+            plannedActivitySync = await enqueueWahooPlannedActivityJobs(ctx, {
               eventIds: linkedEvents.map((event) => event.id),
               operation: "publish",
             });
@@ -847,10 +760,9 @@ export const activityPlansRouter = createTRPCRouter({
         }
       }
 
-      const planWithEstimation = await getActivityPlanDerivedMetrics(
+      const planWithEstimation = await estimateActivityPlan(
         serializeActivityPlanRow(updatedRow),
         db,
-        estimationStore,
         ctx.session.user.id,
       );
 
@@ -892,7 +804,7 @@ export const activityPlansRouter = createTRPCRouter({
     let plannedActivitySync = null;
     if (linkedEvents.length > 0) {
       try {
-        plannedActivitySync = await enqueueProviderPlannedActivityJobs(ctx, {
+        plannedActivitySync = await enqueueWahooPlannedActivityJobs(ctx, {
           eventIds: linkedEvents.map((event) => event.id),
           operation: "unsync",
         });
@@ -934,8 +846,6 @@ export const activityPlansRouter = createTRPCRouter({
     .input(duplicateActivityPlanInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      const estimationStore = createEventReadRepository(db);
-
       const [originalRow] = await db
         .select()
         .from(activityPlans)
@@ -960,12 +870,6 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      await computePlanMetrics(
-        { structure: originalPlan.structure },
-        estimationStore,
-        ctx.session.user.id,
-      );
-
       const now = new Date();
       const [duplicatedRow] = await db
         .insert(activityPlans)
@@ -980,9 +884,7 @@ export const activityPlansRouter = createTRPCRouter({
           structure_hash: activityPlanStructureHash(originalPlan.structure),
           gps_recording_enabled: originalPlan.gps_recording_enabled,
           profile_id: ctx.session.user.id,
-          template_visibility: "private",
-          import_provider: null,
-          import_external_id: null,
+          content_visibility: "private",
           is_system_template: false,
         })
         .returning();
@@ -994,10 +896,9 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      const planWithEstimation = await getActivityPlanDerivedMetrics(
+      const planWithEstimation = await estimateActivityPlan(
         serializeActivityPlanRow(duplicatedRow),
         db,
-        estimationStore,
         ctx.session.user.id,
       );
 

@@ -1,11 +1,11 @@
-import { buildPerformanceOverviewFixture } from "@repo/core/testing/performance-model";
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import React from "react";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
-const mockPerformanceModelRefetch = jest.fn();
-const mockPerformanceModelUseQuery = jest.fn();
+const mockPublishedStateRefetch = jest.fn();
+const mockPublishedStateUseQuery = jest.fn();
 let mockDateRange = "all";
 let mockProfileMetricItems = [
   {
@@ -84,6 +84,11 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
   useAppNavigate: () => pushMock,
 }));
 
+jest.mock("@/lib/hooks/useAuth", () => ({
+  __esModule: true,
+  useAuth: () => ({ user: { id: "user-1" } }),
+}));
+
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
@@ -105,9 +110,9 @@ jest.mock("@/lib/api", () => ({
         }),
       },
     },
-    profiles: {
-      getPerformanceModel: {
-        useQuery: mockPerformanceModelUseQuery,
+    athleteIntelligence: {
+      getReadModel: {
+        useQuery: mockPublishedStateUseQuery,
       },
     },
   },
@@ -144,13 +149,22 @@ describe("profile metrics list screen", () => {
 
   beforeEach(() => {
     pushMock.mockReset();
-    mockPerformanceModelRefetch.mockReset();
-    mockPerformanceModelUseQuery.mockReset();
-    mockPerformanceModelUseQuery.mockReturnValue({
-      data: buildPerformanceOverviewFixture({ asOf: "2026-07-31T12:00:00.000Z" }),
+    mockPublishedStateRefetch.mockReset();
+    mockPublishedStateUseQuery.mockReset();
+    const performanceTargets = buildPerformanceTargetFactsFixture({
+      asOf: "2026-07-31T12:00:00.000Z",
+      planningThresholdPowerWatts: 285,
+      planningThresholdPaceSecondsPerKm: 240,
+      swimmingCssSecondsPer100m: 95,
+    });
+    mockPublishedStateUseQuery.mockReturnValue({
+      data: {
+        status: { freshness: "fresh", rebuildStatus: "fresh" },
+        publishedState: { publishedAt: performanceTargets.asOf, performanceTargets },
+      },
       error: null,
       isLoading: false,
-      refetch: mockPerformanceModelRefetch,
+      refetch: mockPublishedStateRefetch,
     });
     mockDateRange = "all";
     mockProfileMetricItems = [
@@ -190,7 +204,7 @@ describe("profile metrics list screen", () => {
     expect(screen.getByTestId("profile-metric-type-lthr")).toBeTruthy();
   });
 
-  it("loads and renders the explicit-as-of performance model summary", () => {
+  it("loads and renders the published performance target summary", () => {
     renderNative(<ProfileMetricsListScreen />);
 
     expect(screen.getByTestId("performance-model-summary")).toBeTruthy();
@@ -198,9 +212,10 @@ describe("profile metrics list screen", () => {
     expect(screen.getByTestId("performance-model-run")).toBeTruthy();
     expect(screen.getByTestId("performance-model-swim")).toBeTruthy();
     expect(screen.getByTestId("performance-model-item-bike_five_second_power")).toBeTruthy();
-    expect(mockPerformanceModelUseQuery).toHaveBeenCalledWith({
-      asOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
-    });
+    expect(mockPublishedStateUseQuery).toHaveBeenCalledWith(
+      { profileId: "user-1", sections: { publishedState: true, status: true } },
+      { enabled: true },
+    );
   });
 
   it("shows the latest value from the selected date range", () => {

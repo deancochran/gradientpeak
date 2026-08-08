@@ -5,8 +5,6 @@ export const planningJourneyIds = [
   "calendar.navigation",
   "agenda.create",
   "events.recurrence",
-  "scheduled-activities.library",
-  "scheduled-activities.detail",
   "goals.lifecycle",
   "goals.intelligence",
 ] as const;

@@ -40,8 +40,6 @@ function TrainingPlansListScreen() {
   } = api.trainingPlans.list.useInfiniteQuery(
     {
       ownerScope: "own",
-      includeOwnOnly: true,
-      includeSystemTemplates: false,
       search: searchQuery.trim() || undefined,
       visibility: visibilityFilter ?? undefined,
       limit: 25,

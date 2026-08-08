@@ -9,31 +9,27 @@ import {
   GoalAgendaCard,
   PlannedAgendaEventCard,
 } from "@/components/calendar/AgendaCards";
+import type { CalendarActivity } from "@/components/calendar/CalendarTimelineModel";
 import { PlannedDaySummary } from "@/components/calendar/PlannedDaySummary";
 import { announcePlannedDaySummaryRetryStatus } from "@/components/calendar/plannedDaySummaryAccessibility";
 import { GroupEventCard } from "@/components/groups/GroupEventCards";
+import { ActivityCard } from "@/components/shared/ActivityCard";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { parseDateKey, toDateKeyInTimeZone } from "@/lib/calendar/dateMath";
 import { buildOpenEventRoute } from "@/lib/calendar/eventRouting";
-import {
-  attachSelectedGroupEventActivityPlans,
-  getSelectedGroupEventActivityPlanIds,
-} from "@/lib/calendar/groupEventPlans";
+import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
 import { buildEventsByDate, type CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import { resolvePlanningDayQueryRange } from "@/lib/calendar/planningQueryRange";
 import { buildTimelineEvents, buildTimelineEventsByDate } from "@/lib/calendar/timelineEvents";
 import { ROUTES } from "@/lib/constants/routes";
 import { markEstimated } from "@/lib/estimatedMetrics";
-import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useCalendarStore } from "@/lib/stores/calendar-store";
 
-const CALENDAR_DAY_QUERY_LIMIT = 100;
 const DORMANT_DATE_KEY = "1970-01-01";
-const DORMANT_INSTANT = "1970-01-01T00:00:00.000Z";
 
 function formatCalendarDayTitle(dateKey: string, todayKey: string) {
   const date = parseDateKey(dateKey);
@@ -163,76 +159,41 @@ export default function CalendarDayScreen() {
     if (dateKey) setActiveDate(dateKey);
   }, [dateKey, setActiveDate]);
 
-  const { data, isLoading, error, refetch } = api.events.list.useQuery(
-    {
-      date_from: dateKey ?? DORMANT_DATE_KEY,
-      date_to: dateKey ?? DORMANT_DATE_KEY,
-      include_adhoc: true,
-      limit: CALENDAR_DAY_QUERY_LIMIT,
-    },
-    {
-      ...scheduleAwareReadQueryOptions,
-      enabled: dayQueriesEnabled,
-      placeholderData: keepPreviousData,
-    },
-  );
-  const plannedDaySummaryQuery = api.events.plannedDaySummary.useQuery(
+  const { data, isLoading, error, refetch } = api.calendar.day.useQuery(
     { date: dateKey ?? DORMANT_DATE_KEY },
     {
       ...scheduleAwareReadQueryOptions,
       enabled: dayQueriesEnabled,
-    },
-  );
-  const plannedDaySummaryData =
-    plannedDaySummaryQuery.data?.date === dateKey ? plannedDaySummaryQuery.data : undefined;
-  const plannedDaySummaryLoading =
-    plannedDaySummaryQuery.isLoading ||
-    (dayQueriesEnabled && !plannedDaySummaryData && !plannedDaySummaryQuery.isError);
-
-  const events = useMemo(() => (data?.items ?? []) as CalendarEvent[], [data?.items]);
-  const groupEventsQuery = api.groups.events.myCalendarGroupEvents.useQuery(
-    {
-      includeCancelled: false,
-      startsAfter: planningDayRange?.startsAfter ?? DORMANT_INSTANT,
-      startsBefore: planningDayRange?.endsAtInclusive ?? DORMANT_INSTANT,
-      limit: CALENDAR_DAY_QUERY_LIMIT,
-    },
-    {
-      ...scheduleAwareReadQueryOptions,
-      enabled: dayQueriesEnabled,
-    },
-  );
-  const groupEvents = useMemo(
-    () => groupEventsQuery.data?.items ?? [],
-    [groupEventsQuery.data?.items],
-  );
-  const selectedGroupActivityPlanIds = useMemo(
-    () => getSelectedGroupEventActivityPlanIds(groupEvents),
-    [groupEvents],
-  );
-  const groupActivityPlansQuery = api.activityPlans.getManyByIds.useQuery(
-    { ids: selectedGroupActivityPlanIds },
-    {
-      ...scheduleAwareReadQueryOptions,
-      enabled: dayQueriesEnabled && selectedGroupActivityPlanIds.length > 0,
       placeholderData: keepPreviousData,
     },
   );
+  const plannedDaySummaryData =
+    data?.plannedLoadSummary?.date === dateKey ? data.plannedLoadSummary : undefined;
+  const plannedDaySummaryLoading =
+    isLoading || (dayQueriesEnabled && !plannedDaySummaryData && !error);
+
+  const events = useMemo(() => (data?.items ?? []) as CalendarEvent[], [data?.items]);
   const visibleGroupEvents = useMemo(
+    () => (data?.selectedGroupEvents?.items ?? []) as CalendarGroupEvent[],
+    [data?.selectedGroupEvents?.items],
+  );
+  const visibleCompletedActivities = useMemo(
     () =>
-      attachSelectedGroupEventActivityPlans(groupEvents, groupActivityPlansQuery.data?.items ?? []),
-    [groupActivityPlansQuery.data?.items, groupEvents],
+      ((data?.completedActivities?.items ?? []) as CalendarActivity[]).filter(
+        (activity) => activity.scheduled_date === dateKey,
+      ),
+    [data?.completedActivities?.items, dateKey],
   );
   const eventsByDate = useMemo(() => buildEventsByDate(events), [events]);
-  const profileGoals = useProfileGoals();
+  const goals = data?.goals?.items ?? [];
   const timelineEvents = useMemo(
     () =>
       buildTimelineEvents({
         calendarEvents: events,
-        goals: profileGoals.goals,
+        goals,
         todayKey: todayKey ?? "",
       }),
-    [events, profileGoals.goals, todayKey],
+    [events, goals, todayKey],
   );
   const timelineEventsByDate = useMemo(
     () => buildTimelineEventsByDate(timelineEvents),
@@ -257,11 +218,12 @@ export default function CalendarDayScreen() {
     [visibleEvents],
   );
   const goalsOnDate = useMemo(
-    () => profileGoals.goals.filter((goal) => goal.target_date === dateKey),
-    [dateKey, profileGoals.goals],
+    () => goals.filter((goal) => goal.target_date === dateKey),
+    [dateKey, goals],
   );
   const isRestDay =
     visibleGroupEvents.length === 0 &&
+    visibleCompletedActivities.length === 0 &&
     !visibleTimelineEvents.some(
       (event) =>
         event.type === "planned_activity" ||
@@ -328,12 +290,18 @@ export default function CalendarDayScreen() {
     navigateTo({ pathname: "/group-event-detail", params: { groupEventId: eventId } } as never);
   };
 
-  const hasAgendaEvents = visibleEvents.length > 0 || visibleGroupEvents.length > 0;
-  const agendaEventCount = visibleEvents.length + visibleGroupEvents.length;
-  const isAgendaInitiallyLoading =
-    (isLoading || groupEventsQuery.isLoading) && !data && !groupEventsQuery.data;
-  const hasAgendaInitialError =
-    (error || groupEventsQuery.error) && !data && !groupEventsQuery.data;
+  const handleOpenActivity = (activityId: string) => {
+    navigateTo(`/activity-detail?id=${activityId}` as never);
+  };
+
+  const hasAgendaEvents =
+    visibleEvents.length > 0 ||
+    visibleGroupEvents.length > 0 ||
+    visibleCompletedActivities.length > 0;
+  const agendaEventCount =
+    visibleEvents.length + visibleGroupEvents.length + visibleCompletedActivities.length;
+  const isAgendaInitiallyLoading = isLoading && !data;
+  const hasAgendaInitialError = Boolean(error && !data);
   const [agendaRetryStatus, setAgendaRetryStatus] = useState<string | null>(null);
   const [isRetryingAgenda, setIsRetryingAgenda] = useState(false);
 
@@ -348,7 +316,7 @@ export default function CalendarDayScreen() {
     setIsRetryingAgenda(true);
     announceAgendaRetryStatus("Retrying day agenda.");
     try {
-      await Promise.all([refetch(), groupEventsQuery.refetch()]);
+      await refetch();
       announceAgendaRetryStatus("Day agenda retry finished.");
     } catch {
       announceAgendaRetryStatus("Day agenda retry failed. The error remains available.");
@@ -411,9 +379,9 @@ export default function CalendarDayScreen() {
 
           <PlannedDaySummary
             {...(plannedDaySummaryData === undefined ? {} : { data: plannedDaySummaryData })}
-            error={plannedDaySummaryQuery.isError}
+            error={Boolean(error)}
             isLoading={plannedDaySummaryLoading}
-            onRetry={() => plannedDaySummaryQuery.refetch()}
+            onRetry={() => refetch()}
           />
 
           {goalsOnDate.length > 0 ? (
@@ -497,6 +465,29 @@ export default function CalendarDayScreen() {
                       }
                       onPress={() => handleOpenGroupEvent(event.id)}
                       testID={`calendar-day-group-event-${event.id}`}
+                    />
+                  ))}
+
+                  {visibleCompletedActivities.map((activity) => (
+                    <ActivityCard
+                      key={activity.id}
+                      activity={{
+                        id: activity.id,
+                        name: activity.name,
+                        started_at: activity.started_at,
+                        ...(activity.distance_meters === undefined
+                          ? {}
+                          : { distance_meters: activity.distance_meters }),
+                        ...(activity.duration_seconds === undefined
+                          ? {}
+                          : { elapsed_seconds: activity.duration_seconds }),
+                      }}
+                      dateMode="none"
+                      onPress={() => handleOpenActivity(activity.id)}
+                      showLike={false}
+                      showNotes={false}
+                      showVisualPreview={false}
+                      testID={`calendar-day-completed-activity-${activity.id}`}
                     />
                   ))}
 

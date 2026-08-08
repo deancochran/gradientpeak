@@ -6,12 +6,12 @@ import {
 } from "../trainingPlanMapping";
 
 describe("training plan response mapping", () => {
-  it("preserves explicit template visibility and content identity", () => {
+  it("preserves explicit content visibility and content identity", () => {
     expect(
       mapTrainingPlanContentIdentity({
         id: "plan-1",
         profile_id: "profile-1",
-        template_visibility: "public",
+        content_visibility: "public",
       }),
     ).toMatchObject({
       content_type: "training_plan",
@@ -21,12 +21,13 @@ describe("training plan response mapping", () => {
     });
   });
 
-  it("defaults system templates to public and ordinary plans to private", () => {
+  it("maps canonical system and ordinary plan visibility", () => {
     expect(
       mapTrainingPlanContentIdentity({
         id: "system-plan",
         profile_id: null,
         is_system_template: true,
+        content_visibility: "public",
       }).visibility,
     ).toBe("public");
 
@@ -34,6 +35,7 @@ describe("training plan response mapping", () => {
       mapTrainingPlanContentIdentity({
         id: "private-plan",
         profile_id: "profile-1",
+        content_visibility: "private",
       }).visibility,
     ).toBe("private");
   });
@@ -54,7 +56,7 @@ describe("training plan response mapping", () => {
     const plan = {
       id: "plan-1",
       profile_id: "owner-1",
-      template_visibility: "public",
+      content_visibility: "public",
       structure: {
         version: 1,
         builder_planning_snapshot: { version: 1, private: true },
@@ -79,7 +81,7 @@ describe("training plan response mapping", () => {
     const plan = {
       id: "plan-1",
       profile_id: "owner-1",
-      template_visibility: "public",
+      content_visibility: "public",
       structure: { builder_planning_snapshot: { version: 1 } },
     };
 

@@ -34,7 +34,6 @@ describe("standard layout activity-plan route declarations", () => {
 
     expect(screen.getByTestId("stack-screen-activity-plan-detail")).toBeTruthy();
     expect(screen.getByTestId("stack-screen-create-activity-plan")).toBeTruthy();
-    expect(screen.getByTestId("stack-screen-scheduled-activities-list")).toBeTruthy();
     expect(screen.queryByTestId("stack-screen-create-activity-plan-structure")).toBeNull();
     expect(screen.queryByTestId("stack-screen-create-activity-plan-repeat")).toBeNull();
   });

@@ -14,7 +14,7 @@ export async function handleOAuthCallbackRequest({
   const canUseLocalWebFallback = ["127.0.0.1", "localhost"].includes(requestUrl.hostname);
   const fallbackRedirect =
     process.env.NODE_ENV !== "production" &&
-    process.env.PROVIDER_OAUTH_TEST_ADAPTER === "1" &&
+    process.env.WAHOO_OAUTH_TEST_ADAPTER === "1" &&
     searchParams.get("test_return") === "web" &&
     canUseLocalWebFallback
       ? `${requestUrl.origin}/integrations?integration=failed`

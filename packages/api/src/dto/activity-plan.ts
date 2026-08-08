@@ -25,10 +25,8 @@ export function toActivityPlanExecutionDto<T extends { structure: unknown }>(
   if (!parsed.success) {
     throw new InvalidStoredActivityPlanError();
   }
-  const activitySegment = parsed.data.segments.find((segment) => segment.role === "activity");
-  if (!activitySegment) throw new InvalidStoredActivityPlanError();
   const execution = activityPlanExecutionDtoSchema.parse({
-    activity_category: activitySegment.activity_category,
+    activity_category: parsed.data.activity_category,
   });
 
   return {

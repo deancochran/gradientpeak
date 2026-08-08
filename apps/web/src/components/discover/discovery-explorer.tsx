@@ -60,8 +60,6 @@ export function DiscoveryExplorer({ initialQuery = "" }: { initialQuery?: string
   const activityPlans = api.activityPlans.list.useInfiniteQuery(
     {
       ownerScope: "discoverable",
-      includeOwnOnly: false,
-      includeSystemTemplates: true,
       includeEstimation: true,
       search: search || undefined,
       activityCategory: activityPlanCategory

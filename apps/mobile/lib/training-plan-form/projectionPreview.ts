@@ -1,4 +1,4 @@
-import { canonicalizeMinimalTrainingPlanCreate } from "@repo/core/plan/canonicalization";
+import { canonicalizeGoalProjectionInput } from "@repo/core/plan/goalProjectionInput";
 import type { ProjectionChartPayload } from "@repo/core/plan/projectionTypes";
 import { normalizeTrainingLoadTimelinePoint } from "@repo/core/plan/trainingLoadTimeline";
 import {
@@ -88,7 +88,7 @@ function toGoalTargets(
   }
 }
 
-export function toPreviewMinimalPlan(snapshot: TrainingPlanSnapshot) {
+export function toGoalProjectionInput(snapshot: TrainingPlanSnapshot) {
   const datedGoals = (snapshot.profileGoals ?? [])
     .filter(
       (goal): goal is typeof goal & { target_date: string } =>
@@ -119,7 +119,7 @@ export function toPreviewMinimalPlan(snapshot: TrainingPlanSnapshot) {
     snapshot.plan?.created_at?.slice(0, 10) ??
     toDateKey(new Date());
 
-  return canonicalizeMinimalTrainingPlanCreate({
+  return canonicalizeGoalProjectionInput({
     goals: datedGoals,
     plan_start_date: planStartDate,
   });
@@ -130,8 +130,8 @@ export function buildTrainingPreferencesProjectionPreview(input: {
   fitnessHistory: FitnessHistoryPoint[];
   snapshot: TrainingPlanSnapshot;
 }) {
-  const minimalPlan = toPreviewMinimalPlan(input.snapshot);
-  if (!minimalPlan) {
+  const projectionInput = toGoalProjectionInput(input.snapshot);
+  if (!projectionInput) {
     return {
       previewIdealCurve: [],
       projectionChart: null as ProjectionChartPayload | null,
@@ -161,7 +161,7 @@ export function buildTrainingPreferencesProjectionPreview(input: {
 
   try {
     const preview = computeLocalCreationPreview({
-      minimalPlan,
+      projectionInput,
       creationInput: {},
       profileSettings: resolvedDraft,
       profileGoals: input.snapshot.profileGoals ?? [],
@@ -192,7 +192,13 @@ export function buildTrainingPreferencesLoadTimeline(input: {
   scheduledWindowStart?: string | null;
   scheduledWindowEnd?: string | null;
 }) {
-  const baselineTimeline = input.snapshot.insightTimeline?.timeline ?? [];
+  const baselineTimeline = (input.snapshot.actualCurveData?.dataPoints ?? []).map((point) => ({
+    date: point.date,
+    completed_load: point.dailyLoad,
+    scheduled_load: 0,
+    recommended_load: null as number | null,
+    adherence_score: 0,
+  }));
   const baselineByDate = new Map(baselineTimeline.map((point) => [point.date, point]));
   const previewByDate = new Map(
     (input.projectionChart?.points ?? []).map((point) => [point.date, point]),
@@ -237,8 +243,6 @@ export function buildTrainingPreferencesLoadTimeline(input: {
         tentative_scheduled_common_load: tentativeScheduledLoad,
         completed_common_load: baseline?.completed_load ?? null,
         adherence_score: baseline?.adherence_score ?? 0,
-        boundary_state: baseline?.boundary_state,
-        boundary_reasons: baseline?.boundary_reasons,
         source: {
           recommended: previewPoint ? "goal_projection" : "baseline",
           scheduled: "calendar",

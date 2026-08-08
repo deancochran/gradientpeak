@@ -1,5 +1,6 @@
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
-import { Stack } from "expo-router";
+import { Text } from "@repo/ui/components/text";
+import { Stack, useLocalSearchParams } from "expo-router";
 import { Activity } from "lucide-react-native";
 import { useState } from "react";
 import { View } from "react-native";
@@ -20,6 +21,17 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 function ActivitiesScreen() {
+  const params = useLocalSearchParams<{ importRunId?: string | string[] }>();
+  const rawImportRunId = Array.isArray(params.importRunId)
+    ? params.importRunId[0]
+    : params.importRunId;
+  const importRunId =
+    rawImportRunId &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      rawImportRunId,
+    )
+      ? rawImportRunId
+      : undefined;
   const navigateTo = useAppNavigate();
   const { profile, user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
@@ -48,6 +60,7 @@ function ActivitiesScreen() {
   } = api.activities.listPaginated.useInfiniteQuery(
     {
       limit,
+      importRunId,
       search: searchQuery.trim() || undefined,
       activity_category: categoryFilter ?? undefined,
       composition_mode: includeMultisport ? "include_multisport" : "single_only",
@@ -70,7 +83,10 @@ function ActivitiesScreen() {
   const hasMore = activitiesData?.pages[activitiesData.pages.length - 1]?.hasMore || false;
   const total = activitiesData?.pages[0]?.total || 0;
   const hasActiveFilter =
-    searchQuery.trim().length > 0 || categoryFilter !== null || !includeMultisport;
+    searchQuery.trim().length > 0 ||
+    categoryFilter !== null ||
+    !includeMultisport ||
+    Boolean(importRunId);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -116,6 +132,11 @@ function ActivitiesScreen() {
         }}
         testIDPrefix="activities-list"
       />
+      {importRunId ? (
+        <View className="border-b border-border/50 px-4 py-2">
+          <Text className="text-sm font-medium text-foreground">Imported activity batch</Text>
+        </View>
+      ) : null}
       <ResourceList
         testID="activities-list-content"
         contentContainerClassName="gap-4 p-4 pb-6"

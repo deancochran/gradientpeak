@@ -54,7 +54,7 @@
       "project": "apps/mobile/tsconfig.json"
     }
   ],
-  "total": 1937,
+  "total": 1931,
   "buckets": [
     {
       "flag": "exactOptionalPropertyTypes",
@@ -1515,20 +1515,6 @@
     {
       "flag": "exactOptionalPropertyTypes",
       "project": "apps/mobile/tsconfig.json",
-      "path": "packages/api/src/application/training-plan/previewCreationConfigUseCase.ts",
-      "code": 2379,
-      "count": 2
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "packages/api/src/infrastructure/repositories/drizzle-provider-sync-repository.ts",
-      "code": 2375,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
       "path": "packages/api/src/infrastructure/repositories/drizzle-training-plan-repository.ts",
       "code": 2379,
       "count": 1
@@ -1538,6 +1524,13 @@
       "project": "apps/mobile/tsconfig.json",
       "path": "packages/api/src/infrastructure/repositories/drizzle-wahoo-repository.ts",
       "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/mobile/tsconfig.json",
+      "path": "packages/api/src/infrastructure/repositories/drizzle-wahoo-sync-repository.ts",
+      "code": 2375,
       "count": 1
     },
     {
@@ -2796,20 +2789,6 @@
     {
       "flag": "exactOptionalPropertyTypes",
       "project": "apps/web/tsconfig.json",
-      "path": "packages/api/src/application/training-plan/previewCreationConfigUseCase.ts",
-      "code": 2379,
-      "count": 2
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/web/tsconfig.json",
-      "path": "packages/api/src/infrastructure/repositories/drizzle-provider-sync-repository.ts",
-      "code": 2375,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/web/tsconfig.json",
       "path": "packages/api/src/infrastructure/repositories/drizzle-training-plan-repository.ts",
       "code": 2379,
       "count": 1
@@ -2819,6 +2798,13 @@
       "project": "apps/web/tsconfig.json",
       "path": "packages/api/src/infrastructure/repositories/drizzle-wahoo-repository.ts",
       "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "apps/web/tsconfig.json",
+      "path": "packages/api/src/infrastructure/repositories/drizzle-wahoo-sync-repository.ts",
+      "code": 2375,
       "count": 1
     },
     {
@@ -3867,20 +3853,6 @@
     {
       "flag": "exactOptionalPropertyTypes",
       "project": "packages/api/tsconfig.json",
-      "path": "packages/api/src/application/training-plan/previewCreationConfigUseCase.ts",
-      "code": 2379,
-      "count": 2
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "packages/api/tsconfig.json",
-      "path": "packages/api/src/infrastructure/repositories/drizzle-provider-sync-repository.ts",
-      "code": 2375,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "packages/api/tsconfig.json",
       "path": "packages/api/src/infrastructure/repositories/drizzle-training-plan-repository.ts",
       "code": 2379,
       "count": 1
@@ -3890,6 +3862,13 @@
       "project": "packages/api/tsconfig.json",
       "path": "packages/api/src/infrastructure/repositories/drizzle-wahoo-repository.ts",
       "code": 2322,
+      "count": 1
+    },
+    {
+      "flag": "exactOptionalPropertyTypes",
+      "project": "packages/api/tsconfig.json",
+      "path": "packages/api/src/infrastructure/repositories/drizzle-wahoo-sync-repository.ts",
+      "code": 2375,
       "count": 1
     },
     {

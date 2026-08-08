@@ -50,7 +50,6 @@ jest.mock("@repo/api/client", () => ({
   __esModule: true,
   invalidatePostActivityIngestionQueries: (...args: unknown[]) =>
     (invalidatePostActivityIngestionQueriesMock as jest.Mock)(...args),
-  queryKeys: { activities: { detail: (id: string) => ["activity", id] } },
 }));
 
 jest.mock("expo-file-system", () => ({
@@ -217,7 +216,6 @@ describe("useActivitySubmission", () => {
       expect.objectContaining({
         name: "Queued ride",
         executionManifest,
-        artifactSource: "uploadedArtifact",
         uploadedArtifact: { ingestionId: "ingestion-1" },
         source: "mobile_recording",
       }),

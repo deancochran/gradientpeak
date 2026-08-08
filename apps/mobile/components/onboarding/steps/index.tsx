@@ -1,9 +1,9 @@
 import {
   createEmptyGoalDraft,
-  estimateMaxHRFromDOB,
   formatWeightForDisplay,
   getGoalDraftQualityFeedback,
 } from "@repo/core";
+import { estimateMaxHRFromDOB } from "@repo/core/estimators";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Form, FormTextField } from "@repo/ui/components/form";
@@ -326,20 +326,20 @@ export const ProfileAndIntentStep = (props: StepProps) => (
   </View>
 );
 
-export const IntegrationsStep = ({ onRefreshIntegrations }: StepProps) => {
+export const IntegrationsStep = ({
+  integrationOverview,
+  integrationOverviewError,
+  integrationOverviewLoading,
+  onRefreshIntegrations,
+}: StepProps) => {
   const [statusModal, setStatusModal] = useState<null | { title: string; description: string }>(
     null,
   );
   const [pendingProvider, setPendingProvider] = useState<IntegrationProvider | null>(null);
   const getAuthUrlMutation = api.integrations.getAuthUrl.useMutation();
-  const {
-    data: syncOverview,
-    error: syncOverviewError,
-    isLoading,
-    refetch: refetchSyncOverview,
-  } = api.integrations.getSyncOverview.useQuery(undefined);
 
   const handleConnect = async (providerKey: IntegrationProvider) => {
+    if (providerKey !== "wahoo") return;
     setPendingProvider(providerKey);
     try {
       const redirectUri = getMobileRedirectUri();
@@ -353,8 +353,7 @@ export const IntegrationsStep = ({ onRefreshIntegrations }: StepProps) => {
       if (result.type === "success") {
         const outcome = parseIntegrationOAuthCallback(result.url);
         if (outcome?.status === "connected") {
-          await refetchSyncOverview();
-          onRefreshIntegrations?.();
+          await onRefreshIntegrations?.();
         }
         setStatusModal(
           outcome ?? {
@@ -377,14 +376,16 @@ export const IntegrationsStep = ({ onRefreshIntegrations }: StepProps) => {
       <Text className="text-muted-foreground mb-4">Sync your activities automatically.</Text>
 
       <IntegrationProviderList
-        error={syncOverviewError}
-        integrations={syncOverview ?? []}
-        isLoading={isLoading}
+        {...(integrationOverviewError === undefined ? {} : { error: integrationOverviewError })}
+        integrations={integrationOverview ?? []}
+        {...(integrationOverviewLoading === undefined
+          ? {}
+          : { isLoading: integrationOverviewLoading })}
         onConnect={(provider) => {
           void handleConnect(provider);
         }}
         pendingByProvider={pendingProvider ? { [pendingProvider]: "connect" } : {}}
-        onRetry={refetchSyncOverview}
+        {...(onRefreshIntegrations === undefined ? {} : { onRetry: onRefreshIntegrations })}
       />
       {statusModal ? (
         <AppConfirmModal
@@ -403,56 +404,35 @@ export const IntegrationsStep = ({ onRefreshIntegrations }: StepProps) => {
   );
 };
 
-export const ProviderSyncStep = ({
-  providerSyncStatus,
-  onRetryProviderSync,
-  onClearProviderRequirement,
-}: StepProps) => {
-  const status = providerSyncStatus?.status ?? "idle";
-  const isRecoverable = status === "failed" || status === "timed_out";
+export const WahooSetupStep = ({ wahooSetupStatus, onRetryWahooSetup }: StepProps) => {
+  const status = wahooSetupStatus?.status ?? "idle";
+  const isRecoverable = status === "failed";
 
   return (
     <View className="gap-4">
-      <Text className="text-xl font-semibold mb-2">Syncing connected accounts</Text>
+      <Text className="text-xl font-semibold mb-2">Refreshing Wahoo setup data</Text>
       <Text className="text-muted-foreground mb-2">
-        We&apos;re importing setup fields from connected services before showing the manual review
-        steps.
+        We&apos;re importing available Wahoo profile fields before showing the manual review steps.
       </Text>
 
       <Card>
         <CardContent className="pt-6 gap-3">
-          {(providerSyncStatus?.providers ?? []).map((provider) => (
-            <View key={provider.provider} className="gap-1">
-              <View className="flex-row items-center justify-between">
-                <Text className="font-semibold capitalize text-foreground">
-                  {provider.provider}
-                </Text>
-                <Text className="text-sm text-muted-foreground capitalize">
-                  {provider.status.replace(/_/g, " ")}
-                </Text>
-              </View>
-              {provider.message ? (
-                <Text className="text-xs text-muted-foreground">{provider.message}</Text>
-              ) : null}
-              {(provider.status === "failed" || provider.status === "timed_out") &&
-              provider.blocking ? (
-                <Button
-                  variant="outline"
-                  onPress={() => onClearProviderRequirement?.(provider.provider)}
-                  testID={`onboarding-clear-${provider.provider}-requirement`}
-                >
-                  <Text>Remove from onboarding</Text>
-                </Button>
-              ) : null}
-            </View>
-          ))}
+          <View className="flex-row items-center justify-between">
+            <Text className="font-semibold text-foreground">Wahoo</Text>
+            <Text className="text-sm text-muted-foreground capitalize">
+              {status.replace(/_/g, " ")}
+            </Text>
+          </View>
+          {wahooSetupStatus?.lastError ? (
+            <Text className="text-xs text-muted-foreground">{wahooSetupStatus.lastError}</Text>
+          ) : null}
         </CardContent>
       </Card>
 
       {isRecoverable ? (
         <Button
           variant="outline"
-          onPress={onRetryProviderSync}
+          onPress={onRetryWahooSetup}
           testID="onboarding-provider-sync-retry"
         >
           <Text>Retry sync</Text>
@@ -463,12 +443,12 @@ export const ProviderSyncStep = ({
 };
 
 export const ConnectAndImportStep = (props: StepProps) => {
-  const hasProviderSync = props.providerSyncStatus && props.providerSyncStatus.status !== "idle";
+  const hasWahooSetup = props.wahooSetupStatus && props.wahooSetupStatus.status !== "idle";
 
   return (
     <View className="gap-8">
       <IntegrationsStep {...props} />
-      {hasProviderSync ? <ProviderSyncStep {...props} /> : null}
+      {hasWahooSetup ? <WahooSetupStep {...props} /> : null}
     </View>
   );
 };

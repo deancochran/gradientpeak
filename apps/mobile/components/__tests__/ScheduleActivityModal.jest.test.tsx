@@ -430,7 +430,7 @@ describe("ScheduleActivityModal", () => {
     });
   });
 
-  it("requires a scope choice before editing a recurring occurrence", () => {
+  it("edits a recurring occurrence with single-occurrence scope", () => {
     existingActivityData = {
       id: "event-1",
       scheduled_date: "2026-03-23",
@@ -446,44 +446,14 @@ describe("ScheduleActivityModal", () => {
 
     renderNative(<ScheduleActivityModal visible onClose={jest.fn()} eventId="event-1" />);
 
-    expect(screen.getByTestId("schedule-submit-button").props.disabled).toBe(true);
-    expect(updateMutateMock).not.toHaveBeenCalled();
-
-    fireEvent.press(screen.getByTestId("schedule-edit-scope-future"));
+    expect(screen.getByTestId("schedule-submit-button").props.disabled).toBe(false);
+    expect(screen.queryByTestId("schedule-edit-scope-future")).toBeNull();
     fireEvent.press(screen.getByTestId("schedule-submit-button"));
 
     expect(updateMutateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "event-1",
-        scope: "future",
-      }),
-    );
-  });
-
-  it("uses a provided edit scope without prompting for recurring occurrences", () => {
-    existingActivityData = {
-      id: "event-1",
-      scheduled_date: "2026-03-23",
-      starts_at: "2026-03-23T09:00:00.000Z",
-      all_day: false,
-      notes: "Bring gels",
-      recurrence_rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=4;BYDAY=MO",
-      activity_plan: {
-        id: "plan-1",
-      },
-    };
-
-    renderNative(
-      <ScheduleActivityModal visible onClose={jest.fn()} eventId="event-1" editScope="series" />,
-    );
-
-    fireEvent.press(screen.getByTestId("schedule-submit-button"));
-
-    expect(screen.queryByTestId("schedule-edit-scope-single")).toBeNull();
-    expect(updateMutateMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: "event-1",
-        scope: "series",
+        scope: "single",
       }),
     );
   });

@@ -53,12 +53,12 @@ function singleStepPlan(input: {
   return compileActivityPlan(
     activityPlanStructureSchema.parse({
       version: 3,
+      activity_category: input.activityCategory,
       segments: [
         {
           role: "activity",
           id: "30000000-0000-4000-8000-000000000001",
           name: "Activity",
-          activity_category: input.activityCategory,
           intervals: [
             {
               id: "30000000-0000-4000-8000-000000000002",
@@ -109,12 +109,12 @@ describe("duration module", () => {
   it("separates active, rest, distance, and open semantics", () => {
     const compiled = compileActivityPlan({
       version: 3,
+      activity_category: "run",
       segments: [
         {
           role: "activity",
           id: ids[0],
           name: "Run",
-          activity_category: "run",
           intervals: [
             {
               id: ids[1],

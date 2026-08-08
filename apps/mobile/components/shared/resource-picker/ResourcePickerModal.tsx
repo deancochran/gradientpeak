@@ -18,7 +18,6 @@ import type { ResourcePickerItem, ResourcePickerScope } from "./resourcePickerTy
 
 type ActivityPlanQueryOptions = {
   includeEstimation?: boolean;
-  includeSystemTemplates?: boolean;
   limit?: number;
   ownerScope?: "all" | "own";
 };
@@ -122,7 +121,6 @@ export function ResourcePickerModal({
   const activityPlanQuery = api.activityPlans.list.useInfiniteQuery(
     {
       includeEstimation: activityPlanQueryOptions?.includeEstimation ?? true,
-      includeSystemTemplates: activityPlanQueryOptions?.includeSystemTemplates ?? true,
       limit: activityPlanQueryOptions?.limit ?? PAGE_SIZE,
       ownerScope: activityPlanQueryOptions?.ownerScope ?? "all",
       search: hasSearch ? debouncedSearch : undefined,

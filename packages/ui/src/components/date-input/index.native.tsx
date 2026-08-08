@@ -31,7 +31,7 @@ function DateInput({
   value,
 }: DateInputProps) {
   const [isPickerVisible, setIsPickerVisible] = useState(false);
-  const [draftDate, setDraftDate] = useState(() => parseDateOnlyToDate(value));
+  const [draftDate, setDraftDate] = useState<Date | null>(() => parseDateOnlyToDate(value) ?? null);
   const disabledRef = useRef(disabled);
 
   useEffect(() => {
@@ -40,7 +40,7 @@ function DateInput({
 
   const selectedDate = useMemo(() => parseDateOnlyToDate(value), [value]);
   const usesModalPresentation = pickerPresentation === "modal";
-  const formattedValue = value ? format(selectedDate, "EEE, MMM d, yyyy") : placeholder;
+  const formattedValue = selectedDate ? format(selectedDate, "EEE, MMM d, yyyy") : placeholder;
   const fieldHint = [
     required ? "Required" : undefined,
     accessibilityHint ?? "Opens date picker. Format yyyy-mm-dd",
@@ -81,9 +81,11 @@ function DateInput({
       return;
     }
 
+    const initialDate = selectedDate ?? new Date();
+
     if (usesModalPresentation && Platform.OS === "android") {
       DateTimePickerAndroid.open({
-        value: selectedDate,
+        value: initialDate,
         mode: "date",
         minimumDate,
         maximumDate,
@@ -96,9 +98,7 @@ function DateInput({
       return;
     }
 
-    if (usesModalPresentation) {
-      setDraftDate(selectedDate);
-    }
+    setDraftDate(initialDate);
 
     setIsPickerVisible(true);
   };
@@ -148,7 +148,7 @@ function DateInput({
           minimumDate={minimumDate}
           mode="date"
           onChange={handleInlineDateChange}
-          value={selectedDate}
+          value={draftDate ?? selectedDate ?? new Date()}
         />
       ) : null}
       {usesModalPresentation && Platform.OS !== "android" && isPickerVisible ? (
@@ -170,7 +170,7 @@ function DateInput({
                     setDraftDate(nextDate);
                   }
                 }}
-                value={draftDate}
+                value={draftDate ?? selectedDate ?? new Date()}
               />
               <View className="flex-row justify-end gap-2">
                 <Button variant="outline" onPress={() => setIsPickerVisible(false)}>
@@ -182,7 +182,9 @@ function DateInput({
                       return;
                     }
 
-                    onChange(formatDateOnly(draftDate));
+                    if (draftDate) {
+                      onChange(formatDateOnly(draftDate));
+                    }
                     setIsPickerVisible(false);
                   }}
                 >

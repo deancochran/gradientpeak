@@ -11,6 +11,7 @@ import {
   integrationCredentials,
   integrationResourceLinks,
   integrations,
+  profileAthleteState,
   profileMetrics,
   profiles,
   providerSyncJobs,
@@ -24,10 +25,11 @@ import {
   submitActivity,
 } from "../../../application/activities/submit-activity";
 import { activityPlanStructureHash } from "../../../application/activity-plans/structure-hash";
+import { AthleteStateWorkerService } from "../../../application/athlete-intelligence/athlete-state-worker";
 import { wahooProjectionSnapshotSchema } from "../../integrations/wahoo/plan-converter";
 import { wahooPlannedActivityRequiredScopes } from "../../integrations/wahoo/planned-activity-scopes";
 import { encryptProviderToken } from "../../provider-token-crypto";
-import { enqueuePlannedActivitySyncAfterCalendarMutation } from "./calendar-mutation-sync";
+import { enqueueWahooPlannedActivitySyncAfterCalendarMutation } from "./wahoo-calendar-mutation-sync";
 
 const profileIds: string[] = [];
 const providerTokenKey = Buffer.alloc(32, 11).toString("base64");
@@ -38,6 +40,13 @@ type Owner = { integrationId: string; profileId: string };
 
 function addDays(date: Date, days: number) {
   return new Date(date.getTime() + days * 86_400_000);
+}
+
+async function publishDueAthleteState(now: Date) {
+  await new AthleteStateWorkerService({ db }).processDueJobs({
+    limit: 1,
+    now: new Date(now.getTime() + 60_000),
+  });
 }
 
 function cyclingEfforts(input: {
@@ -117,6 +126,7 @@ async function seedOwner(): Promise<Owner> {
   await db.insert(profiles).values({
     id: profileId,
     email,
+    planning_timezone: "UTC",
     created_at: now,
     updated_at: now,
   });
@@ -133,6 +143,17 @@ async function seedOwner(): Promise<Owner> {
     access_token: encryptProviderToken("target-refresh-access"),
     refresh_token: encryptProviderToken("target-refresh-refresh"),
     scope: plannedActivityScope,
+  });
+  await db.insert(profileAthleteState).values({
+    profile_id: profileId,
+    source_revision: 1,
+    published_revision: 1,
+    dirty_from_at: null,
+    fitness: 0,
+    fatigue: 0,
+    evidence_confidence: 1,
+    algorithm_version: "athlete-state-projection-v1",
+    computed_at: now,
   });
   return { integrationId, profileId };
 }
@@ -334,7 +355,7 @@ async function seedPlannedActivity(input: {
 }
 
 async function enqueueInitialPublish(owner: Owner, eventId: string) {
-  const result = await enqueuePlannedActivitySyncAfterCalendarMutation({
+  const result = await enqueueWahooPlannedActivitySyncAfterCalendarMutation({
     db,
     eventIds: [eventId],
     operation: "publish",
@@ -469,6 +490,7 @@ describe("Wahoo relative-target refresh after accepted activity evidence", () =>
         powerScale: 1,
       }),
     );
+    await publishDueAthleteState(now);
     const plannedActivity = await seedPlannedActivity({
       owner,
       startsAt: addDays(now, 2),
@@ -528,6 +550,7 @@ describe("Wahoo relative-target refresh after accepted activity evidence", () =>
       db,
       lthrSubmission({ completedAt: new Date(now.getTime() - 10_800_000), lthrBpm: 180, owner }),
     );
+    await publishDueAthleteState(now);
     const plannedActivity = await seedPlannedActivity({
       owner,
       startsAt: addDays(now, 2),
@@ -569,6 +592,7 @@ describe("Wahoo relative-target refresh after accepted activity evidence", () =>
         owner,
       }),
     );
+    await publishDueAthleteState(now);
     const plannedActivity = await seedPlannedActivity({
       owner,
       startsAt: addDays(now, 2),
@@ -614,6 +638,7 @@ describe("Wahoo relative-target refresh after accepted activity evidence", () =>
       db,
       lthrSubmission({ completedAt: new Date(now.getTime() - 10_800_000), lthrBpm: 170, owner }),
     );
+    await publishDueAthleteState(now);
     const absolute = await seedPlannedActivity({
       owner,
       startsAt: addDays(now, 2),

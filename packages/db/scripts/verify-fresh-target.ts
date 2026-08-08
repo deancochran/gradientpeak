@@ -50,6 +50,152 @@ async function assertCanonicalActivityCategories(target: {
   `);
 }
 
+async function expectConstraintViolation(
+  target: {
+    query: <Row extends Record<string, unknown>>(
+      text: string,
+      values?: unknown[],
+    ) => Promise<{ rows: Row[] }>;
+  },
+  statement: string,
+  expected: { code: "23503" | "23505" | "23514"; constraint: string },
+) {
+  try {
+    await target.query(statement);
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? error.code : null;
+    const constraint =
+      error && typeof error === "object" && "constraint" in error ? error.constraint : null;
+    if (code === expected.code && constraint === expected.constraint) return;
+    throw error;
+  }
+  throw new Error(`expected ${expected.constraint} to reject the activity identity fixture`);
+}
+
+async function assertActivitySourceIdentityContract(target: {
+  query: <Row extends Record<string, unknown>>(
+    text: string,
+    values?: unknown[],
+  ) => Promise<{ rows: Row[] }>;
+}) {
+  const legacyColumns = await target.query<{ column_name: string }>(`
+    select column_name
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'activities'
+      and column_name in ('provider', 'external_id')
+  `);
+  if (legacyColumns.rows.length !== 0) {
+    throw new Error("canonical activities retain legacy provider identity columns");
+  }
+  const resourceKinds = await target.query<{ enumlabel: string }>(`
+    select enum_value.enumlabel
+    from pg_catalog.pg_type enum_type
+    join pg_catalog.pg_namespace namespace on namespace.oid = enum_type.typnamespace
+    join pg_catalog.pg_enum enum_value on enum_value.enumtypid = enum_type.oid
+    where namespace.nspname = 'public'
+      and enum_type.typname = 'integration_resource_kind'
+    order by enum_value.enumsortorder
+  `);
+  if (!resourceKinds.rows.some(({ enumlabel }) => enumlabel === "activity")) {
+    throw new Error("integration_resource_kind must retain the neutral activity enum value");
+  }
+
+  await target.query(`
+    insert into auth.users (id, email, raw_user_meta_data)
+    values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'source-owner-2@example.test', '{}'::jsonb);
+    insert into public.profiles (id)
+    values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa') on conflict do nothing;
+    insert into public.integrations (id, profile_id, provider, external_id)
+    values
+      ('77777777-7777-4777-8777-777777777771', '11111111-1111-4111-8111-111111111111', 'wahoo', 'source-owner-1'),
+      ('77777777-7777-4777-8777-777777777772', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'wahoo', 'source-owner-2');
+    insert into public.activities (
+      id, profile_id, name, started_at, finished_at, elapsed_ms, active_ms, moving_ms,
+      timing_coverage, parser_version, decoded_contract_version, materializer_version
+    ) values (
+      '77777777-7777-4777-8777-777777777773', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'source owner fixture', now(), now() + interval '1 second', 1000, 1000, 1000,
+      'complete', 'fixture', 'fixture', 'fixture'
+    );
+    insert into public.activity_segments (
+      id, activity_id, profile_id, ordinal, role, activity_category, start_offset_ms, end_offset_ms,
+      summary, timing_coverage, active_ms, moving_ms, parser_version, materializer_version
+    ) values (
+      '77777777-7777-4777-8777-777777777770', '77777777-7777-4777-8777-777777777773',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 0, 'activity', 'bike', 0, 1000,
+      '{"version":"1","timing":{"timingCoverage":"complete","activeMs":1000,"movingMs":1000}}'::jsonb,
+      'complete', 1000, 1000, 'fixture', 'fixture'
+    );
+    insert into public.activity_source_references (
+      id, profile_id, activity_id, integration_id, provider, provider_external_id
+    ) values
+      (
+        '77777777-7777-4777-8777-777777777774',
+        '11111111-1111-4111-8111-111111111111',
+        '22222222-2222-4222-8222-222222222222',
+        '77777777-7777-4777-8777-777777777771', 'wahoo', 'shared-provider-id'
+      ),
+      (
+        '77777777-7777-4777-8777-777777777775',
+        'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        '77777777-7777-4777-8777-777777777773',
+        '77777777-7777-4777-8777-777777777772', 'wahoo', 'shared-provider-id'
+      );
+  `);
+  await expectConstraintViolation(
+    target,
+    `insert into public.activity_source_references (
+      id, profile_id, activity_id, integration_id, provider, provider_external_id
+    ) values (
+      '77777777-7777-4777-8777-777777777776',
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+      '77777777-7777-4777-8777-777777777771', 'wahoo', 'shared-provider-id'
+    )`,
+    { code: "23505", constraint: "activity_source_references_provider_unique" },
+  );
+  await expectConstraintViolation(
+    target,
+    `insert into public.activity_source_references (
+      id, profile_id, activity_id, integration_id, provider, provider_external_id
+    ) values (
+      '77777777-7777-4777-8777-777777777777',
+      '11111111-1111-4111-8111-111111111111',
+      '77777777-7777-4777-8777-777777777773',
+      '77777777-7777-4777-8777-777777777771', 'wahoo', 'cross-profile-activity'
+    )`,
+    { code: "23503", constraint: "activity_source_references_activity_profile_fkey" },
+  );
+  await expectConstraintViolation(
+    target,
+    `insert into public.activity_source_references (
+      id, profile_id, activity_id, integration_id, provider, provider_external_id
+    ) values (
+      '77777777-7777-4777-8777-777777777778',
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+      '77777777-7777-4777-8777-777777777772', 'wahoo', 'cross-profile-integration'
+    )`,
+    { code: "23503", constraint: "activity_source_references_integration_profile_fkey" },
+  );
+  await expectConstraintViolation(
+    target,
+    `insert into public.integration_resource_links (
+      id, profile_id, integration_id, provider, resource_kind, internal_resource_id, external_id
+    ) values (
+      '77777777-7777-4777-8777-777777777779',
+      '11111111-1111-4111-8111-111111111111',
+      '77777777-7777-4777-8777-777777777771', 'wahoo', 'activity',
+      '22222222-2222-4222-8222-222222222222', 'forbidden-activity-link'
+    )`,
+    { code: "23514", constraint: "integration_resource_links_no_activity_check" },
+  );
+  console.log(
+    "[db:activity-source-identity] sole identity, profile ownership, scoped uniqueness, and link fence passed",
+  );
+}
+
 async function assertStrictlyPositiveActivityEfforts(target: {
   query: <Row extends Record<string, unknown>>(
     text: string,
@@ -59,12 +205,16 @@ async function assertStrictlyPositiveActivityEfforts(target: {
   try {
     await target.query(`
       insert into public.activity_efforts (
-        id, created_at, profile_id, recorded_at, activity_category,
-        effort_type, duration_seconds, unit, value, source
+        id, created_at, profile_id, activity_id, segment_id, recorded_at, activity_category,
+        effort_type, duration_seconds, start_offset, unit, value, source, method,
+        calculation_version, provenance
       ) values (
         '44444444-4444-4444-8444-444444444440', now(),
-        '11111111-1111-4111-8111-111111111111', now(), 'bike',
-        'power', 1200, 'watts', 0, 'manual'
+        'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        '77777777-7777-4777-8777-777777777773',
+        '77777777-7777-4777-8777-777777777770', now(), 'bike',
+        'power', 1, 0, 'watts', 0, 'test', 'fresh_target_constraint',
+        'test-v1', '{"observation_id":"44444444-4444-4444-8444-444444444440"}'::jsonb
       )
     `);
   } catch (error) {
@@ -457,6 +607,30 @@ async function assertRouteStorageLifecycle(target: {
   }
 }
 
+async function assertProfileObservationsDoNotInvalidateAthleteState(target: {
+  query: <Row extends Record<string, unknown>>(
+    text: string,
+    values?: unknown[],
+  ) => Promise<{ rows: Row[] }>;
+}) {
+  const triggers = await target.query<{ tgname: string }>(`
+    select tgname
+    from pg_catalog.pg_trigger
+    where not tgisinternal
+      and tgrelid in (
+        'public.profile_metrics'::regclass,
+        'public.swimming_css_protocol_evidence'::regclass
+      )
+      and tgname in (
+        'profile_metrics_bump_athlete_state_source_revision',
+        'swimming_css_bump_athlete_state_source_revision'
+      )
+  `);
+  if (triggers.rows.length > 0) {
+    throw new Error("profile observations must not invalidate athlete state");
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2);
   await withDisposableDatabase(args, "fresh_verify", async (target, targetUrl) => {
@@ -464,10 +638,12 @@ async function main() {
     const baseline = requireFreshBaseline();
     await applySqlFile(target, baseline.sourcePath);
     await assertCanonicalActivityCategories(target);
+    await assertActivitySourceIdentityContract(target);
     await assertStrictlyPositiveActivityEfforts(target);
     await assertProfileGoalConstraints(target);
     await assertArtifactLifecycleFunctionPrivileges(target);
     await assertRouteStorageLifecycle(target);
+    await assertProfileObservationsDoNotInvalidateAthleteState(target);
 
     const env = {
       ...process.env,

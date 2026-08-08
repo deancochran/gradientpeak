@@ -114,7 +114,10 @@ export type HeartRateCalibrationCandidateRow = Pick<
   | "calculation_version"
   | "provenance"
   | "reference_activity_id"
-> & { activity_category: "bike" | "run" | "swim" };
+> & {
+  activity_category: "bike" | "run" | "swim";
+  reference_activity_finished_at?: Date;
+};
 
 const cssEffort400 = alias(activityEfforts, "css_effort_400");
 const cssEffort200 = alias(activityEfforts, "css_effort_200");
@@ -154,6 +157,7 @@ export type SwimmingCssProtocolPerformanceRow = Pick<
   | "status"
   | "timing_basis"
 > & {
+  activity_finished_at?: Date;
   activity_pool_length_meters: number | null;
   activity_segments_revision: number;
   artifact_availability: string;
@@ -227,6 +231,7 @@ const cssProtocolProjection = {
   effort_200_end_offset_ms: swimmingCssProtocolEvidence.effort_200_end_offset_ms,
   calculation_version: swimmingCssProtocolEvidence.calculation_version,
   activity_segments_revision: activities.segments_revision,
+  activity_finished_at: activities.finished_at,
   activity_pool_length_meters: activities.pool_length_meters,
   current_artifact_id: activityArtifactLinks.artifact_id,
   current_artifact_profile_id: activityArtifactLinks.profile_id,
@@ -923,6 +928,7 @@ export function createAthletePerformanceModelRepository(
           eq(activityEfforts.method, "activity_file_best_effort"),
           eq(activityEfforts.calculation_version, BEST_EFFORT_CALCULATION_VERSION),
           eq(activitySegments.segment_revision, activities.segments_revision),
+          lte(activities.finished_at, input.asOf),
           gte(activityEfforts.recorded_at, cutoff),
           lte(activityEfforts.recorded_at, input.asOf),
           input.excludedActivityId === undefined
@@ -951,6 +957,7 @@ export function createAthletePerformanceModelRepository(
         eq(swimmingCssProtocolEvidence.profile_id, input.athleteId),
         gte(swimmingCssProtocolEvidence.observed_at, cutoff),
         lte(swimmingCssProtocolEvidence.observed_at, input.asOf),
+        lte(activities.finished_at, input.asOf),
         input.excludedActivityId === undefined
           ? undefined
           : ne(swimmingCssProtocolEvidence.activity_id, input.excludedActivityId),
@@ -986,8 +993,16 @@ export function createAthletePerformanceModelRepository(
         calculation_version: profileMetrics.calculation_version,
         provenance: profileMetrics.provenance,
         reference_activity_id: profileMetrics.reference_activity_id,
+        reference_activity_finished_at: activities.finished_at,
       })
       .from(profileMetrics)
+      .innerJoin(
+        activities,
+        and(
+          eq(activities.id, profileMetrics.reference_activity_id),
+          eq(activities.profile_id, profileMetrics.profile_id),
+        ),
+      )
       .where(
         and(
           eq(profileMetrics.profile_id, input.athleteId),
@@ -996,6 +1011,7 @@ export function createAthletePerformanceModelRepository(
           eq(profileMetrics.method, method),
           eq(profileMetrics.calculation_version, calculationVersion),
           lte(profileMetrics.recorded_at, input.asOf),
+          lte(activities.finished_at, input.asOf),
           input.excludedActivityId === undefined
             ? undefined
             : ne(profileMetrics.reference_activity_id, input.excludedActivityId),
@@ -1006,6 +1022,7 @@ export function createAthletePerformanceModelRepository(
               on activity.id = segment.activity_id
              and activity.profile_id = segment.profile_id
              and activity.segments_revision = segment.segment_revision
+             and activity.finished_at <= ${input.asOf}
             join ${activityArtifactLinks} current_link
               on current_link.activity_id = segment.activity_id
              and current_link.profile_id = segment.profile_id
@@ -1080,6 +1097,7 @@ export function createAthletePerformanceModelRepository(
         artifact_owner_profile_id: activityArtifacts.profile_id,
         artifact_availability: activityArtifacts.availability,
         activity_pool_length_meters: activities.pool_length_meters,
+        activity_finished_at: activities.finished_at,
       })
       .from(activityEfforts)
       .innerJoin(
@@ -1127,6 +1145,7 @@ export function createAthletePerformanceModelRepository(
           eq(activitySegments.segment_revision, activities.segments_revision),
           gte(activityEfforts.recorded_at, earliestCutoff),
           lte(activityEfforts.recorded_at, latestAsOf),
+          lte(activities.finished_at, latestAsOf),
         ),
       )
       .orderBy(desc(activityEfforts.recorded_at), desc(activityEfforts.id))
@@ -1156,6 +1175,7 @@ export function createAthletePerformanceModelRepository(
         inArray(swimmingCssProtocolEvidence.profile_id, profileIds),
         gte(swimmingCssProtocolEvidence.observed_at, earliestCutoff),
         lte(swimmingCssProtocolEvidence.observed_at, latestAsOf),
+        lte(activities.finished_at, latestAsOf),
       ),
       ATHLETE_PERFORMANCE_BATCH_ROW_LIMIT + 1,
     );
@@ -1190,8 +1210,16 @@ export function createAthletePerformanceModelRepository(
         calculation_version: profileMetrics.calculation_version,
         provenance: profileMetrics.provenance,
         reference_activity_id: profileMetrics.reference_activity_id,
+        reference_activity_finished_at: activities.finished_at,
       })
       .from(profileMetrics)
+      .innerJoin(
+        activities,
+        and(
+          eq(activities.id, profileMetrics.reference_activity_id),
+          eq(activities.profile_id, profileMetrics.profile_id),
+        ),
+      )
       .where(
         and(
           inArray(profileMetrics.profile_id, profileIds),
@@ -1200,6 +1228,7 @@ export function createAthletePerformanceModelRepository(
           eq(profileMetrics.method, method),
           eq(profileMetrics.calculation_version, calculationVersion),
           lte(profileMetrics.recorded_at, latestAsOf),
+          lte(activities.finished_at, latestAsOf),
           sql`exists (
             select 1
             from ${activitySegments} segment
@@ -1207,6 +1236,7 @@ export function createAthletePerformanceModelRepository(
               on activity.id = segment.activity_id
              and activity.profile_id = segment.profile_id
              and activity.segments_revision = segment.segment_revision
+             and activity.finished_at <= ${latestAsOf}
             join ${activityArtifactLinks} current_link
               on current_link.activity_id = segment.activity_id
              and current_link.profile_id = segment.profile_id
@@ -1300,11 +1330,15 @@ export function createAthletePerformanceModelRepository(
                 row.profile_id === input.athleteId &&
                 row.recorded_at.getTime() >= cutoff &&
                 row.recorded_at.getTime() <= input.asOf.getTime() &&
+                row.activity_finished_at.getTime() <= input.asOf.getTime() &&
                 (input.excludedActivityId === undefined ||
                   row.activity_id !== input.excludedActivityId),
             );
+            const canonicalRows = matches.map(
+              ({ activity_finished_at: _finishedAt, ...row }) => row,
+            );
             return {
-              rows: matches.slice(0, DURATION_PERFORMANCE_MAX_INPUT_EFFORTS),
+              rows: canonicalRows.slice(0, DURATION_PERFORMANCE_MAX_INPUT_EFFORTS),
               truncated:
                 batch.truncated || matches.length >= ATHLETE_PERFORMANCE_EFFORT_QUERY_LIMIT,
             };
@@ -1317,6 +1351,8 @@ export function createAthletePerformanceModelRepository(
               (row) =>
                 row.profile_id === input.athleteId &&
                 row.recorded_at.getTime() <= input.asOf.getTime() &&
+                row.reference_activity_finished_at !== undefined &&
+                row.reference_activity_finished_at.getTime() <= input.asOf.getTime() &&
                 (input.excludedActivityId === undefined ||
                   row.reference_activity_id !== input.excludedActivityId),
             );
@@ -1334,6 +1370,8 @@ export function createAthletePerformanceModelRepository(
                 row.profile_id === input.athleteId &&
                 row.observed_at.getTime() >= cutoff &&
                 row.observed_at.getTime() <= input.asOf.getTime() &&
+                row.activity_finished_at !== undefined &&
+                row.activity_finished_at.getTime() <= input.asOf.getTime() &&
                 (input.excludedActivityId === undefined ||
                   row.activity_id !== input.excludedActivityId),
             );

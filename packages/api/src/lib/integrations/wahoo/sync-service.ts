@@ -11,9 +11,10 @@ import {
   compileActivityPlan,
   getAvailablePerformanceTargetValue,
 } from "@repo/core";
+import { canonicalUtcInstant, formatIsoInstantInIanaZone } from "@repo/core/calendar";
 import { encodeRouteCourseFit } from "@repo/core/server";
 import type { PublicActivityCategory } from "@repo/db";
-import type { AthletePerformanceTargetFactsReader } from "../../../application/performance-model/get-athlete-performance-model-as-of";
+import type { PublishedAthletePerformanceTargetsRead } from "../../../application/athlete-intelligence/published-athlete-state";
 import { logger } from "../../logger";
 import { hashPlannedActivityPayload } from "../../provider-sync/planned-activities/planned-activity-hash";
 import { parseStoredRouteFile } from "../../routes/route-file-helpers";
@@ -174,6 +175,7 @@ interface WahooRepository {
     id: string;
     routeId: string | null;
     startsAt: string;
+    timezone: string;
   } | null>;
   getOwnedRouteForMirror(input: { profileId: string; routeId: string }): Promise<{
     description: string | null;
@@ -324,6 +326,8 @@ type WahooActivityPlanRelation =
 type WahooPlannedEvent = {
   id: string;
   starts_at: string;
+  scheduled_starts_at: string;
+  timezone: string;
   activity_plan: WahooActivityPlan;
   routeId: string | null;
 };
@@ -486,6 +490,23 @@ function workoutMatchesDesiredState(
   );
 }
 
+export function serializeWahooScheduledStart(startsAt: string, timeZone: string): string {
+  const canonicalInstant = canonicalUtcInstant(startsAt);
+  const instant = new Date(canonicalInstant);
+  const localMinute = formatIsoInstantInIanaZone(canonicalInstant, timeZone);
+  const instantAtMinute =
+    instant.getTime() - instant.getUTCSeconds() * 1_000 - instant.getUTCMilliseconds();
+  const localAsUtc = Date.parse(`${localMinute}:00.000Z`);
+  const offsetMinutes = Math.round((localAsUtc - instantAtMinute) / 60_000);
+  const offsetSign = offsetMinutes < 0 ? "-" : "+";
+  const absoluteOffset = Math.abs(offsetMinutes);
+  const offsetHours = String(Math.floor(absoluteOffset / 60)).padStart(2, "0");
+  const offsetRemainder = String(absoluteOffset % 60).padStart(2, "0");
+  const seconds = String(instant.getUTCSeconds()).padStart(2, "0");
+  const milliseconds = String(instant.getUTCMilliseconds()).padStart(3, "0");
+  return `${localMinute}:${seconds}.${milliseconds}${offsetSign}${offsetHours}:${offsetRemainder}`;
+}
+
 type EnsurePlanResult = { success: true; plan: WahooPlan } | { success: false; result: SyncResult };
 
 type EnsureWorkoutResult =
@@ -557,7 +578,9 @@ export class WahooSyncService {
   constructor(
     private readonly deps: {
       activateAccessToken?: (accessToken: string) => Promise<void>;
-      getPerformanceTargets: AthletePerformanceTargetFactsReader;
+      getPerformanceTargets: (input: {
+        profileId: string;
+      }) => Promise<PublishedAthletePerformanceTargetsRead>;
       repository: WahooRepository;
       storage: WahooSyncStorage;
       wahooClientFactory?: typeof createWahooClient;
@@ -1624,6 +1647,7 @@ export class WahooSyncService {
       performanceModelAsOf?: string;
       expectedProjectionHash?: string;
       expectedStartsAt?: string;
+      expectedTimezone?: string;
       expectedIntegrationGeneration?: number;
       integrationId?: string;
       queuedProjectionSnapshot?: WahooProjectionSnapshot;
@@ -1727,15 +1751,28 @@ export class WahooSyncService {
       const normalizedPlanned: WahooPlannedEvent = {
         id: planned.id,
         starts_at: planned.startsAt,
+        scheduled_starts_at: serializeWahooScheduledStart(planned.startsAt, planned.timezone),
+        timezone: planned.timezone,
         activity_plan: activityPlan,
         routeId: planned.routeId,
       };
-      if (execution?.expectedStartsAt && execution.expectedStartsAt !== planned.startsAt) {
+      if (
+        execution?.expectedStartsAt &&
+        Date.parse(execution.expectedStartsAt) !== Date.parse(planned.startsAt)
+      ) {
         return {
           success: true,
           action: "no_change",
           terminalOutcome: "superseded",
           warnings: ["Queued Wahoo schedule was superseded before execution."],
+        };
+      }
+      if (execution?.expectedTimezone && execution.expectedTimezone !== planned.timezone) {
+        return {
+          success: true,
+          action: "no_change",
+          terminalOutcome: "superseded",
+          warnings: ["Queued Wahoo event timezone was superseded before execution."],
         };
       }
 
@@ -1748,13 +1785,24 @@ export class WahooSyncService {
           retryable: false,
         });
       }
-      const profile = resolveWahooSyncMetrics(
-        await this.deps.getPerformanceTargets({
-          actorProfileId: profileId,
-          asOf: new Date(performanceModelAsOf),
-        }),
-        compiled.activity_category,
-      );
+      const publishedTargets = await this.deps.getPerformanceTargets({ profileId });
+      if (publishedTargets.status !== "available") {
+        return createSyncFailure({
+          category: "eligibility",
+          code: "missing_performance_model_context",
+          error: `Published performance targets are ${publishedTargets.status}.`,
+          retryable: publishedTargets.status === "stale",
+        });
+      }
+      if (publishedTargets.targets.asOf !== performanceModelAsOf) {
+        return {
+          success: true,
+          action: "no_change",
+          terminalOutcome: "superseded",
+          warnings: ["Queued Wahoo performance targets were superseded before execution."],
+        };
+      }
+      const profile = resolveWahooSyncMetrics(publishedTargets.targets, compiled.activity_category);
 
       // 3. Fetch Wahoo integration
       const integration = await this.repository.findWahooIntegrationByProfileId(profileId);
@@ -2423,7 +2471,7 @@ export class WahooSyncService {
         durationMinutes,
         name: planned.activity_plan.name,
         planId: plan.id,
-        scheduledDate: scheduledDate.toISOString(),
+        scheduledDate: planned.scheduled_starts_at,
         workoutTypeId,
       },
       eventId: planned.id,
@@ -2645,7 +2693,7 @@ export class WahooSyncService {
         durationMinutes,
         name: planned.activity_plan.name,
         planId,
-        scheduledDate: new Date(planned.starts_at).toISOString(),
+        scheduledDate: planned.scheduled_starts_at,
         workoutTypeId,
       },
       eventId: planned.id,

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { PublicIntegrationProvider } from "@repo/db";
-import type { ResolvedProviderOAuthConfig } from "./oauth-config";
+import type { ResolvedWahooOAuthConfig } from "./oauth-config";
 import { deriveOAuthCodeVerifier } from "./oauth-pkce";
 
 export function getOAuthCallbackUrl(provider: PublicIntegrationProvider): string {
@@ -16,7 +16,7 @@ export function normalizeOAuthScopes(scopes: readonly string[]): string {
 }
 
 export function createOAuthStateBinding(input: {
-  config: ResolvedProviderOAuthConfig;
+  config: ResolvedWahooOAuthConfig;
   provider: PublicIntegrationProvider;
   state: string;
 }) {

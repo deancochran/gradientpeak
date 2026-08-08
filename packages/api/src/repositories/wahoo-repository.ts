@@ -53,6 +53,17 @@ export type WahooEventResourceLinkGenerationGuard = {
 };
 
 export interface WahooRepository {
+  applyProfileEnrichmentIfAbsent(input: {
+    dob?: Date;
+    expectedIntegrationGeneration: number;
+    gender?: "male" | "female" | "other";
+    integrationId: string;
+    profileId: string;
+    weightKg?: number;
+  }): Promise<{
+    fieldsFilled: Array<"dob" | "gender" | "weight_kg">;
+    fieldsKept: Array<"dob" | "gender" | "weight_kg">;
+  }>;
   createEventResourceLink(input: {
     eventId: string;
     externalId: string;
@@ -104,26 +115,9 @@ export interface WahooRepository {
     integrationGeneration: number;
     integrationId: string;
   }): Promise<{ profileId: string } | null>;
-  findImportedActivityLinkByExternalId(input: {
-    externalId: string;
-    integrationId: string;
-  }): Promise<{
-    activityId: string;
-    linkId: string;
-    profileId: string;
-    activityFilePath: string | null;
-    activityFileSize: number | null;
-    artifactId: string | null;
-    artifactSha256: string | null;
-    providerRevision: string | null;
-    analysisReady: boolean;
-    materializerVersion: string | null;
-    segmentsRevision: number;
-    timingCoverage: "complete" | "partial" | "unavailable";
-    hasSwimSegment: boolean;
-  } | null>;
   findImportedActivityByProviderExternalId(input: {
     externalId: string;
+    profileId: string;
     provider: "wahoo";
   }): Promise<{
     activityId: string;
@@ -139,14 +133,19 @@ export interface WahooRepository {
     timingCoverage: "complete" | "partial" | "unavailable";
     hasSwimSegment: boolean;
   } | null>;
-  createImportedActivityResourceLink(input: {
+  enrichImportedActivitySourceReference(input: {
     activityId: string;
+    artifactSha256: string;
     externalId: string;
-    integrationId: string;
+    importRunId?: string;
     integrationGeneration: number;
+    integrationId: string;
     profileId: string;
     provider: "wahoo";
     providerUpdatedAt: string | null;
+    originProvider?: string;
+    originExternalId?: string;
+    originTrust?: "trusted_provider_origin";
   }): Promise<void>;
   findLinkedPlannedEventId(input: {
     profileId: string;
@@ -170,6 +169,7 @@ export interface WahooRepository {
     id: string;
     routeId: string | null;
     startsAt: string;
+    timezone: string;
   } | null>;
   getOwnedRouteForMirror(input: { profileId: string; routeId: string }): Promise<{
     description: string | null;
@@ -239,6 +239,7 @@ export interface WahooRepository {
       };
       eventId: string;
       startsAt: string;
+      timezone: string;
     }>
   >;
   listOwnedRoutesForMirror(input: {

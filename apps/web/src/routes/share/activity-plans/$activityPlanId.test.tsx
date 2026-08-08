@@ -33,9 +33,9 @@ describe("PublicActivityPlanPage", () => {
         name: "Tempo run",
         owner: { name: "Avery", username: "avery" },
         structure: {
+          activity_category: "run",
           segments: [
             {
-              activity_category: "run",
               id: id(1),
               intervals: [
                 {

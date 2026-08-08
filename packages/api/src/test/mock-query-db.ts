@@ -36,6 +36,7 @@ type SqlQueryLike = {
 };
 
 type QueryBuilder = {
+  for?: ReturnType<typeof vi.fn>;
   from?: ReturnType<typeof vi.fn>;
   groupBy?: ReturnType<typeof vi.fn>;
   innerJoin?: ReturnType<typeof vi.fn>;
@@ -241,6 +242,7 @@ export function createQueryMapDbMock(queryMap: QueryMap = {}) {
         orderBy: vi.fn(() => builder),
         groupBy: vi.fn(() => builder),
         limit: vi.fn(() => builder),
+        for: vi.fn(() => builder),
       },
       () => {
         callLog.push({ table: tableName, operation: "select" });

@@ -8,7 +8,6 @@ import { sanitizeTrainingPlanForViewer } from "./trainingPlanMapping";
 
 type TrainingPlanTemplateListInput = TrainingPlanTemplateListFilters & {
   cursor?: string;
-  direction?: "forward" | "backward";
   limit: number;
 };
 

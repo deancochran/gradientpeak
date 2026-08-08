@@ -31,11 +31,120 @@ function createSummary(id: number) {
 }
 
 function createDeps() {
+  let importRun = {
+    id: "import-run-1",
+    profile_id: "profile-1",
+    integration_id: "integration-1" as string | null,
+    integration_generation: 1 as number | null,
+    kind: "history_sync" as "history_sync" | "manual_sync" | "onboarding",
+    status: "queued" as "completed" | "failed" | "queued" | "running",
+    window_start_at: new Date("1900-01-01T00:00:00.000Z") as Date | null,
+    window_end_at: new Date("2026-04-03T12:00:00.000Z") as Date | null,
+    next_cursor: null,
+    next_page: 1 as number | null,
+    discovered_count: 0,
+    imported_count: 0,
+    skipped_count: 0,
+    failed_count: 0,
+    earliest_activity_at: null as Date | null,
+    latest_activity_at: null as Date | null,
+    started_at: null as Date | null,
+    completed_at: null as Date | null,
+    last_error_code: null as string | null,
+    created_at: new Date("2026-04-03T12:00:00.000Z"),
+    updated_at: new Date("2026-04-03T12:00:00.000Z"),
+  };
+  const importRuns = {
+    create: vi.fn(
+      async (input: {
+        kind: "history_sync" | "manual_sync" | "onboarding";
+        profileId: string;
+        integrationId?: string;
+        integrationGeneration?: number;
+        windowStartAt?: Date;
+        windowEndAt?: Date;
+        nextPage?: number;
+        now?: Date;
+      }) => {
+        importRun = {
+          ...importRun,
+          profile_id: input.profileId,
+          integration_id: input.integrationId ?? null,
+          integration_generation: input.integrationGeneration ?? null,
+          kind: input.kind,
+          window_start_at: input.windowStartAt ?? null,
+          window_end_at: input.windowEndAt ?? null,
+          next_page: input.nextPage ?? null,
+          created_at: input.now ?? new Date(),
+        };
+        return importRun;
+      },
+    ),
+    start: vi.fn(async (_id: string, now = new Date()) => {
+      importRun = { ...importRun, status: "running", started_at: now, updated_at: now };
+      return importRun;
+    }),
+    resume: vi.fn(async (_id: string, now = new Date()) => {
+      importRun = { ...importRun, status: "running", completed_at: null, updated_at: now };
+      return importRun;
+    }),
+    read: vi.fn(async (id: string) => (id === importRun.id ? importRun : null)),
+    recordPageCommitted: vi.fn(
+      async (input: {
+        discovered: number;
+        imported: number;
+        skipped: number;
+        failed: number;
+        earliestActivityAt: Date | null;
+        latestActivityAt: Date | null;
+        nextPage?: number | null;
+        now?: Date;
+      }) => {
+        importRun = {
+          ...importRun,
+          discovered_count: importRun.discovered_count + input.discovered,
+          imported_count: importRun.imported_count + input.imported,
+          skipped_count: importRun.skipped_count + input.skipped,
+          failed_count: importRun.failed_count + input.failed,
+          earliest_activity_at:
+            input.earliestActivityAt &&
+            (!importRun.earliest_activity_at ||
+              input.earliestActivityAt < importRun.earliest_activity_at)
+              ? input.earliestActivityAt
+              : importRun.earliest_activity_at,
+          latest_activity_at:
+            input.latestActivityAt &&
+            (!importRun.latest_activity_at || input.latestActivityAt > importRun.latest_activity_at)
+              ? input.latestActivityAt
+              : importRun.latest_activity_at,
+          next_page: input.nextPage ?? null,
+          updated_at: input.now ?? new Date(),
+        };
+        return importRun;
+      },
+    ),
+    complete: vi.fn(async (_id: string, now = new Date()) => {
+      importRun = { ...importRun, status: "completed", completed_at: now, next_page: null };
+      return importRun;
+    }),
+    fail: vi.fn(async (_id: string, errorCode: string, now = new Date()) => {
+      importRun = {
+        ...importRun,
+        status: "failed",
+        completed_at: now,
+        last_error_code: errorCode,
+      };
+      return importRun;
+    }),
+    recordPage: vi.fn(),
+  };
   return {
+    getImportRun: () => importRun,
     importer: {
       importWorkoutSummary: vi.fn(),
     },
     providerSyncRepository: {
+      bindJobImportRun: vi.fn().mockResolvedValue(true),
       claimDueJobs: vi.fn(),
       completeJobWithSyncState: vi.fn().mockResolvedValue(true),
       failJobWithSyncState: vi.fn().mockResolvedValue(true),
@@ -43,8 +152,13 @@ function createDeps() {
       markJobFailed: vi.fn(),
       markJobSucceeded: vi.fn(),
       renewJobLease: vi.fn().mockResolvedValue(true),
+      continueJob: vi.fn().mockResolvedValue(true),
       updateSyncStateAfterFailure: vi.fn(),
       updateSyncStateAfterRun: vi.fn(),
+    },
+    importRuns,
+    setImportRun: (run: typeof importRun) => {
+      importRun = run;
     },
     wahooClient: {
       getWorkoutSummary: vi.fn(),
@@ -96,6 +210,30 @@ describe("WahooActivityHistoryJobService", () => {
     vi.restoreAllMocks();
   });
 
+  it("defers a queued bulk import when another profile import owns serialization", async () => {
+    const deps = createDeps();
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([historyJob()]);
+    deps.providerSyncRepository.isIntegrationGenerationActive.mockResolvedValue(true);
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
+    deps.importRuns.start.mockImplementationOnce(async () => null as never);
+    const service = new WahooActivityHistoryJobService({
+      importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
+      providerSyncRepository: deps.providerSyncRepository as never,
+      wahooClientFactory: () => deps.wahooClient,
+      wahooRepository: deps.wahooRepository,
+    });
+
+    await expect(service.processDueJobs({ workerId: "worker-1" })).resolves.toEqual({
+      completed: 1,
+      failed: 0,
+      processed: 1,
+    });
+    expect(deps.providerSyncRepository.continueJob).toHaveBeenCalledOnce();
+    expect(deps.wahooClient.listWorkoutSummaries).not.toHaveBeenCalled();
+    expect(deps.importRuns.fail).not.toHaveBeenCalled();
+  });
+
   it("reconciles history using refreshed and persisted credentials", async () => {
     const deps = createDeps();
     vi.useFakeTimers();
@@ -109,7 +247,7 @@ describe("WahooActivityHistoryJobService", () => {
         internalResourceId: null,
         jobType: "wahoo.activity_history_reconcile",
         maxAttempts: 5,
-        payload: { trigger: "connect", windowMonths: 12 },
+        payload: { trigger: "connect" },
         profileId: "profile-1",
         provider: "wahoo",
         resourceKind: "activity",
@@ -150,6 +288,7 @@ describe("WahooActivityHistoryJobService", () => {
     const service = new WahooActivityHistoryJobService({
       activateAccessToken: vi.fn(async () => undefined),
       importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
       providerSyncRepository: deps.providerSyncRepository as never,
       refreshAccessToken,
       wahooClientFactory,
@@ -166,7 +305,7 @@ describe("WahooActivityHistoryJobService", () => {
       endDate: "2026-04-03T12:00:00.000Z",
       page: 1,
       perPage: 30,
-      startDate: "2025-04-03T12:00:00.000Z",
+      startDate: "1900-01-01T00:00:00.000Z",
     });
     expect(deps.wahooClient.listWorkoutSummaries).toHaveBeenCalledTimes(2);
     expect(deps.wahooClient.getWorkoutSummary).toHaveBeenCalledWith("456");
@@ -187,6 +326,8 @@ describe("WahooActivityHistoryJobService", () => {
     expect(deps.importer.importWorkoutSummary).toHaveBeenCalledWith(77, createSummary(123), {
       integrationGeneration: 1,
       integrationId: "integration-1",
+      importRunId: "import-run-1",
+      deferAthleteStateRefresh: true,
       signal: expect.any(AbortSignal),
     });
     expect(deps.providerSyncRepository.completeJobWithSyncState).toHaveBeenCalledWith({
@@ -200,8 +341,9 @@ describe("WahooActivityHistoryJobService", () => {
           highWatermark: "2026-04-03T12:00:00.000Z",
           itemCount: 50,
           pageCount: 2,
-          start: "2025-04-03T12:00:00.000Z",
-          version: 2,
+          start: "1900-01-01T00:00:00.000Z",
+          importRunId: "import-run-1",
+          version: 3,
         },
       },
       provider: "wahoo",
@@ -210,18 +352,19 @@ describe("WahooActivityHistoryJobService", () => {
     });
   });
 
-  it("clamps an end-of-month history window to the target month's last day", async () => {
+  it("uses the persisted full-history import window", async () => {
     const deps = createDeps();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-31T12:00:00.000Z"));
     deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
-      historyJob({ trigger: "scheduled", windowMonths: 1 }),
+      historyJob({ trigger: "scheduled" }),
     ]);
     deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
     deps.wahooClient.listWorkoutSummaries.mockResolvedValue({ sourceCount: 0, summaries: [] });
     const service = new WahooActivityHistoryJobService({
       activateAccessToken: vi.fn(async () => undefined),
       importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
       providerSyncRepository: deps.providerSyncRepository as never,
       wahooClientFactory: () => deps.wahooClient,
       wahooRepository: deps.wahooRepository,
@@ -236,13 +379,133 @@ describe("WahooActivityHistoryJobService", () => {
       endDate: "2026-03-31T12:00:00.000Z",
       page: 1,
       perPage: 30,
-      startDate: "2026-02-28T12:00:00.000Z",
+      startDate: "1900-01-01T00:00:00.000Z",
     });
     expect(deps.providerSyncRepository.completeJobWithSyncState).toHaveBeenCalledWith(
       expect.objectContaining({
         metadata: {
           activityHistoryCoverage: expect.objectContaining({
-            start: "2026-02-28T12:00:00.000Z",
+            start: "1900-01-01T00:00:00.000Z",
+          }),
+        },
+      }),
+    );
+  });
+
+  it("completes a terminal-page run after a crash without refetching or recounting", async () => {
+    const deps = createDeps();
+    const persistedTerminalRun = {
+      ...deps.getImportRun(),
+      discovered_count: 31,
+      imported_count: 29,
+      material_change_count: 17,
+      next_page: null,
+      skipped_count: 2,
+      status: "running" as const,
+    };
+    deps.setImportRun(persistedTerminalRun);
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
+      historyJob({ trigger: "scheduled", importRunId: "import-run-1" }),
+    ]);
+    deps.providerSyncRepository.isIntegrationGenerationActive.mockResolvedValue(true);
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
+    const service = new WahooActivityHistoryJobService({
+      importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
+      providerSyncRepository: deps.providerSyncRepository as never,
+      wahooClientFactory: () => deps.wahooClient,
+      wahooRepository: deps.wahooRepository,
+    });
+
+    await expect(service.processDueJobs({ workerId: "worker-1" })).resolves.toEqual({
+      completed: 1,
+      failed: 0,
+      processed: 1,
+    });
+
+    expect(deps.wahooClient.listWorkoutSummaries).not.toHaveBeenCalled();
+    expect(deps.importer.importWorkoutSummary).not.toHaveBeenCalled();
+    expect(deps.importRuns.recordPageCommitted).not.toHaveBeenCalled();
+    expect(deps.importRuns.complete).toHaveBeenCalledTimes(1);
+    expect(deps.getImportRun()).toMatchObject({
+      discovered_count: 31,
+      imported_count: 29,
+      material_change_count: 17,
+      skipped_count: 2,
+      status: "completed",
+    });
+    expect(deps.providerSyncRepository.completeJobWithSyncState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: {
+          activityHistoryCoverage: expect.objectContaining({ itemCount: 31 }),
+        },
+      }),
+    );
+  });
+
+  it("retries finalization after terminal import commit without refetching or recounting", async () => {
+    const deps = createDeps();
+    const persistedTerminalRun = {
+      ...deps.getImportRun(),
+      discovered_count: 31,
+      imported_count: 29,
+      material_change_count: 17,
+      next_page: null,
+      skipped_count: 2,
+      status: "running" as const,
+    };
+    deps.setImportRun(persistedTerminalRun);
+    deps.providerSyncRepository.claimDueJobs
+      .mockResolvedValueOnce([historyJob({ trigger: "scheduled", importRunId: "import-run-1" })])
+      .mockResolvedValueOnce([
+        { ...historyJob({ trigger: "scheduled", importRunId: "import-run-1" }), attempt: 2 },
+      ]);
+    deps.providerSyncRepository.isIntegrationGenerationActive.mockResolvedValue(true);
+    deps.providerSyncRepository.completeJobWithSyncState.mockRejectedValueOnce(
+      new Error("coverage persistence failed"),
+    );
+    deps.providerSyncRepository.failJobWithSyncState.mockResolvedValue(true);
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
+    const service = new WahooActivityHistoryJobService({
+      importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
+      providerSyncRepository: deps.providerSyncRepository as never,
+      wahooClientFactory: () => deps.wahooClient,
+      wahooRepository: deps.wahooRepository,
+    });
+
+    await expect(service.processDueJobs({ workerId: "worker-1" })).resolves.toEqual({
+      completed: 0,
+      failed: 1,
+      processed: 1,
+    });
+    const countsAfterFirstAttempt = {
+      discovered_count: deps.getImportRun().discovered_count,
+      imported_count: deps.getImportRun().imported_count,
+      skipped_count: deps.getImportRun().skipped_count,
+    };
+
+    await expect(service.processDueJobs({ workerId: "worker-1" })).resolves.toEqual({
+      completed: 1,
+      failed: 0,
+      processed: 1,
+    });
+
+    expect(deps.wahooClient.listWorkoutSummaries).not.toHaveBeenCalled();
+    expect(deps.importer.importWorkoutSummary).not.toHaveBeenCalled();
+    expect(deps.importRuns.recordPageCommitted).not.toHaveBeenCalled();
+    expect(deps.importRuns.complete).toHaveBeenCalledTimes(2);
+    expect(deps.getImportRun()).toMatchObject({
+      ...countsAfterFirstAttempt,
+      status: "completed",
+    });
+    expect(deps.providerSyncRepository.completeJobWithSyncState).toHaveBeenCalledTimes(2);
+    expect(deps.providerSyncRepository.completeJobWithSyncState).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        metadata: {
+          activityHistoryCoverage: expect.objectContaining({
+            importRunId: "import-run-1",
+            itemCount: 31,
           }),
         },
       }),
@@ -260,7 +523,7 @@ describe("WahooActivityHistoryJobService", () => {
         internalResourceId: null,
         jobType: "wahoo.activity_history_reconcile",
         maxAttempts: 5,
-        payload: { trigger: "scheduled", windowMonths: 12 },
+        payload: { trigger: "scheduled" },
         profileId: "profile-1",
         provider: "wahoo",
         resourceKind: "activity",
@@ -283,6 +546,7 @@ describe("WahooActivityHistoryJobService", () => {
     deps.providerSyncRepository.failJobWithSyncState.mockResolvedValueOnce(true);
     const service = new WahooActivityHistoryJobService({
       importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
       providerSyncRepository: deps.providerSyncRepository as never,
       wahooClientFactory: () => deps.wahooClient,
       wahooRepository: deps.wahooRepository,
@@ -330,6 +594,7 @@ describe("WahooActivityHistoryJobService", () => {
     );
     const service = new WahooActivityHistoryJobService({
       importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
       providerSyncRepository: deps.providerSyncRepository as never,
       wahooClientFactory: () => deps.wahooClient,
       wahooRepository: deps.wahooRepository,
@@ -363,6 +628,7 @@ describe("WahooActivityHistoryJobService", () => {
     const service = new WahooActivityHistoryJobService({
       activateAccessToken: vi.fn(),
       importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
       providerSyncRepository: deps.providerSyncRepository as never,
       refreshAccessToken: vi.fn().mockRejectedValue(new WahooAuthorizationResetRequiredError()),
       wahooClientFactory: () => deps.wahooClient,
@@ -425,6 +691,7 @@ describe("WahooActivityHistoryJobService", () => {
 
     const service = new WahooActivityHistoryJobService({
       importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
       providerSyncRepository: deps.providerSyncRepository as never,
       wahooClientFactory: () => deps.wahooClient,
       wahooRepository: deps.wahooRepository,
@@ -452,6 +719,47 @@ describe("WahooActivityHistoryJobService", () => {
     );
   });
 
+  it.each([
+    ["missing", undefined, "missing_started_at"],
+    ["invalid", "not-a-date", "invalid_started_at"],
+  ] as const)("dead-letters %s imported started_at without a wall-clock fallback", async (_, startedAt, lastError) => {
+    const deps = createDeps();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([historyJob()]);
+    deps.providerSyncRepository.markJobFailed.mockResolvedValue(true);
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
+    deps.wahooClient.listWorkoutSummaries.mockResolvedValue({
+      sourceCount: 1,
+      summaries: [{ ...createSummary(123), started_at: startedAt }],
+    });
+
+    const service = new WahooActivityHistoryJobService({
+      importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
+      providerSyncRepository: deps.providerSyncRepository as never,
+      wahooClientFactory: () => deps.wahooClient,
+      wahooRepository: deps.wahooRepository,
+    });
+
+    await expect(service.processDueJobs({ workerId: "worker-1" })).resolves.toEqual({
+      completed: 0,
+      failed: 1,
+      processed: 1,
+    });
+    expect(deps.importer.importWorkoutSummary).not.toHaveBeenCalled();
+    expect(deps.wahooClient.getWorkoutSummary).not.toHaveBeenCalled();
+    expect(deps.importRuns.recordPageCommitted).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepository.completeJobWithSyncState).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepository.failJobWithSyncState).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepository.markJobFailed).toHaveBeenCalledWith({
+      id: "job-1",
+      lastError,
+      status: "dead_lettered",
+      workerId: expect.stringMatching(/^worker-1:/),
+    });
+  });
+
   it("no-ops safely when the integration was disconnected before processing", async () => {
     const deps = createDeps();
     deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
@@ -475,6 +783,7 @@ describe("WahooActivityHistoryJobService", () => {
 
     const service = new WahooActivityHistoryJobService({
       importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
       providerSyncRepository: deps.providerSyncRepository as never,
       wahooClientFactory: () => deps.wahooClient,
       wahooRepository: deps.wahooRepository,
@@ -518,6 +827,7 @@ describe("WahooActivityHistoryJobService", () => {
 
     const service = new WahooActivityHistoryJobService({
       importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
       providerSyncRepository: deps.providerSyncRepository as never,
       wahooClientFactory: () => deps.wahooClient,
       wahooRepository: deps.wahooRepository,
@@ -538,7 +848,7 @@ describe("WahooActivityHistoryJobService", () => {
     expect(deps.importer.importWorkoutSummary).not.toHaveBeenCalled();
   });
 
-  it("terminates at the documented total and records exact v2 coverage metadata", async () => {
+  it("terminates at the documented total and records import-run coverage metadata", async () => {
     const deps = createDeps();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
@@ -549,6 +859,7 @@ describe("WahooActivityHistoryJobService", () => {
       .mockResolvedValueOnce({ page: 2, sourceCount: 1, summaries: [], total: 31 });
     const service = new WahooActivityHistoryJobService({
       importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
       providerSyncRepository: deps.providerSyncRepository as never,
       wahooClientFactory: () => deps.wahooClient,
       wahooRepository: deps.wahooRepository,
@@ -566,7 +877,8 @@ describe("WahooActivityHistoryJobService", () => {
           activityHistoryCoverage: expect.objectContaining({
             itemCount: 31,
             pageCount: 2,
-            version: 2,
+            importRunId: "import-run-1",
+            version: 3,
           }),
         },
       }),
@@ -586,6 +898,7 @@ describe("WahooActivityHistoryJobService", () => {
     });
     const service = new WahooActivityHistoryJobService({
       importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
       providerSyncRepository: deps.providerSyncRepository as never,
       wahooClientFactory: () => deps.wahooClient,
       wahooRepository: deps.wahooRepository,
@@ -600,7 +913,7 @@ describe("WahooActivityHistoryJobService", () => {
   it.each([
     ["a total beyond the budget", 721],
     ["no terminal evidence", null],
-  ])("fails retryably after 24 full pages with %s", async (_case, total) => {
+  ])("continues resumably after bounded per-lease work with %s", async (_case, total) => {
     const deps = createDeps();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
@@ -612,29 +925,29 @@ describe("WahooActivityHistoryJobService", () => {
     deps.providerSyncRepository.failJobWithSyncState.mockResolvedValue(true);
     const service = new WahooActivityHistoryJobService({
       importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
       providerSyncRepository: deps.providerSyncRepository as never,
       wahooClientFactory: () => deps.wahooClient,
       wahooRepository: deps.wahooRepository,
     });
 
     await expect(service.processDueJobs({ workerId: "worker-1" })).resolves.toEqual({
-      completed: 0,
-      failed: 1,
+      completed: 1,
+      failed: 0,
       processed: 1,
     });
-    expect(deps.wahooClient.listWorkoutSummaries).toHaveBeenCalledTimes(24);
+    expect(deps.wahooClient.listWorkoutSummaries).toHaveBeenCalledTimes(4);
     expect(deps.importer.importWorkoutSummary).not.toHaveBeenCalled();
     expect(deps.providerSyncRepository.completeJobWithSyncState).not.toHaveBeenCalled();
-    expect(deps.providerSyncRepository.failJobWithSyncState).toHaveBeenCalledWith(
-      expect.objectContaining({
-        lastError: "activity_history_budget_exceeded",
-        nextRunAt: "2026-04-03T12:05:00.000Z",
-        status: "failed",
-      }),
+    expect(deps.providerSyncRepository.continueJob).toHaveBeenCalledWith(
+      expect.objectContaining({ importRunId: "import-run-1", payload: expect.any(Object) }),
+    );
+    expect(deps.importRuns.recordPageCommitted).toHaveBeenLastCalledWith(
+      expect.objectContaining({ nextPage: 5 }),
     );
   });
 
-  it("accepts page 24 when the documented total is exactly 720", async () => {
+  it("does not impose the former 720-item total cap", async () => {
     const deps = createDeps();
     deps.providerSyncRepository.claimDueJobs.mockResolvedValue([historyJob()]);
     deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
@@ -643,6 +956,7 @@ describe("WahooActivityHistoryJobService", () => {
     );
     const service = new WahooActivityHistoryJobService({
       importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
       providerSyncRepository: deps.providerSyncRepository as never,
       wahooClientFactory: () => deps.wahooClient,
       wahooRepository: deps.wahooRepository,
@@ -651,26 +965,24 @@ describe("WahooActivityHistoryJobService", () => {
     await expect(service.processDueJobs({ workerId: "worker-1" })).resolves.toMatchObject({
       completed: 1,
     });
-    expect(deps.wahooClient.listWorkoutSummaries).toHaveBeenCalledTimes(24);
-    expect(deps.providerSyncRepository.completeJobWithSyncState).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: {
-          activityHistoryCoverage: expect.objectContaining({ itemCount: 720, pageCount: 24 }),
-        },
-      }),
-    );
+    expect(deps.wahooClient.listWorkoutSummaries).toHaveBeenCalledTimes(4);
+    expect(deps.providerSyncRepository.continueJob).toHaveBeenCalledOnce();
+    expect(deps.providerSyncRepository.completeJobWithSyncState).not.toHaveBeenCalled();
   });
 
   it.each([
-    0, 1.5, 25,
-  ])("dead-letters malformed windowMonths %s before provider calls", async (windowMonths) => {
+    0,
+    1.5,
+    {},
+  ])("dead-letters malformed import-run identity before provider calls", async (importRunId) => {
     const deps = createDeps();
     deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
-      historyJob({ trigger: "scheduled", windowMonths }),
+      historyJob({ trigger: "scheduled", importRunId }),
     ]);
     deps.providerSyncRepository.markJobFailed.mockResolvedValue(true);
     const service = new WahooActivityHistoryJobService({
       importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
       providerSyncRepository: deps.providerSyncRepository as never,
       wahooClientFactory: () => deps.wahooClient,
       wahooRepository: deps.wahooRepository,
@@ -687,11 +999,60 @@ describe("WahooActivityHistoryJobService", () => {
   });
 
   it.each([
+    ["a missing run", null],
+    ["a cross-profile run", { profile_id: "profile-2" }],
+    ["a cross-integration run", { integration_id: "integration-2" }],
+    ["a stale-generation run", { integration_generation: 2 }],
+  ])("dead-letters %s before credential or provider I/O", async (_case, override) => {
+    const deps = createDeps();
+    const existing = await deps.importRuns.read("import-run-1");
+    if (!existing) throw new Error("Expected import-run fixture");
+    deps.importRuns.read.mockResolvedValueOnce(
+      override === null ? null : { ...existing, ...override },
+    );
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
+      historyJob({ trigger: "scheduled", importRunId: "import-run-1" }),
+    ]);
+    deps.providerSyncRepository.isIntegrationGenerationActive.mockResolvedValue(true);
+    deps.providerSyncRepository.markJobFailed.mockResolvedValue(true);
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
+    const activateAccessToken = vi.fn(async () => undefined);
+    const refreshAccessToken = vi.fn();
+    const wahooClientFactory = vi.fn(() => deps.wahooClient);
+    const service = new WahooActivityHistoryJobService({
+      activateAccessToken,
+      importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
+      providerSyncRepository: deps.providerSyncRepository as never,
+      refreshAccessToken,
+      wahooClientFactory,
+      wahooRepository: deps.wahooRepository,
+    });
+
+    await expect(service.processDueJobs({ workerId: "worker-1" })).resolves.toEqual({
+      completed: 0,
+      failed: 1,
+      processed: 1,
+    });
+    expect(deps.providerSyncRepository.markJobFailed).toHaveBeenCalledWith({
+      id: "job-1",
+      lastError: "Invalid activity import run identity",
+      status: "dead_lettered",
+      workerId: expect.stringMatching(/^worker-1:/),
+    });
+    expect(deps.importRuns.fail).not.toHaveBeenCalled();
+    expect(activateAccessToken).not.toHaveBeenCalled();
+    expect(refreshAccessToken).not.toHaveBeenCalled();
+    expect(wahooClientFactory).not.toHaveBeenCalled();
+    expect(deps.importer.importWorkoutSummary).not.toHaveBeenCalled();
+  });
+
+  it.each([
     ["the initial authority check", 1, 0, 0, 0, 0],
     ["credential refresh", 3, 0, 0, 1, 0],
     ["the history list", 5, 1, 0, 1, 0],
     ["the detail lookup", 7, 1, 1, 1, 0],
-    ["the import boundary", 6, 1, 0, 1, 0],
+    ["the post-import authority check", 6, 1, 0, 1, 1],
     ["finalization", 7, 1, 0, 1, 1],
   ])("stops all subsequent work when disconnect linearizes after %s", async (_boundary, falseOnGuard, expectedLists, expectedDetails, expectedRefreshes, expectedImports) => {
     const deps = createDeps();
@@ -748,6 +1109,7 @@ describe("WahooActivityHistoryJobService", () => {
     const service = new WahooActivityHistoryJobService({
       activateAccessToken: vi.fn(async () => undefined),
       importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
       providerSyncRepository: deps.providerSyncRepository as never,
       refreshAccessToken,
       wahooClientFactory: () => deps.wahooClient,
@@ -775,6 +1137,7 @@ describe("WahooActivityHistoryJobService", () => {
     deps.providerSyncRepository.markJobSucceeded.mockResolvedValue(false);
     const service = new WahooActivityHistoryJobService({
       importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
       providerSyncRepository: deps.providerSyncRepository as never,
       wahooClientFactory: () => deps.wahooClient,
       wahooRepository: deps.wahooRepository,
@@ -828,6 +1191,7 @@ describe("WahooActivityHistoryJobService", () => {
     deps.providerSyncRepository.failJobWithSyncState.mockResolvedValue(true);
     const service = new WahooActivityHistoryJobService({
       importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
       providerSyncRepository: deps.providerSyncRepository as never,
       wahooClientFactory: () => deps.wahooClient,
       wahooRepository: deps.wahooRepository,

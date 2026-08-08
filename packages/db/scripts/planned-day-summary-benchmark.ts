@@ -1,11 +1,9 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import {
   applySqlFile,
   bootstrapSupabaseSchemas,
   withDisposableDatabase,
 } from "./_disposable-target";
-import { dbPackageRoot } from "./_helpers";
+import { requireFreshBaseline } from "./baseline-workflow";
 
 const ownerId = "00000000-0000-4000-8000-000000000001";
 const otherId = "00000000-0000-4000-8000-000000000002";
@@ -64,21 +62,9 @@ function assertBoundedIndexedPlan(name: string, explain: Explain) {
   return metrics;
 }
 
-const policy = JSON.parse(
-  readFileSync(resolve(dbPackageRoot, "migration-policy.json"), "utf8"),
-) as { authorityDirectory: string; activeLedgerFile: string };
-const ledger = JSON.parse(
-  readFileSync(resolve(dbPackageRoot, policy.activeLedgerFile), "utf8"),
-) as { entries: Array<{ version: string; name: string }> };
-
 await withDisposableDatabase(process.argv.slice(2), "planned_day_summary_benchmark", async (db) => {
   await bootstrapSupabaseSchemas(db);
-  for (const entry of ledger.entries) {
-    await applySqlFile(
-      db,
-      resolve(dbPackageRoot, policy.authorityDirectory, `${entry.version}_${entry.name}.sql`),
-    );
-  }
+  await applySqlFile(db, requireFreshBaseline().sourcePath);
   await db.query(
     "insert into auth.users (id, email, raw_user_meta_data) values ($1, 'owner@example.test', '{}'::jsonb), ($2, 'other@example.test', '{}'::jsonb)",
     [ownerId, otherId],

@@ -1,7 +1,14 @@
 import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { act, renderHook, waitFor } from "@testing-library/react-native";
+import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
+import { createDefaultTrainingPlanBuilderState } from "./defaults";
 
-const mockPreviewQuery = {
+const mockPreviewQuery: {
+  data: unknown;
+  error: Error | null;
+  isFetching: boolean;
+  isLoading: boolean;
+} = {
   data: undefined,
   error: null,
   isFetching: false,
@@ -11,8 +18,11 @@ const mockPreviewQuery = {
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
+    useUtils: () => ({
+      trainingPlans: { invalidate: jest.fn() },
+    }),
     trainingPlans: {
-      previewCreationConfig: { useQuery: () => mockPreviewQuery },
+      preview: { useQuery: () => mockPreviewQuery },
     },
   },
 }));
@@ -38,24 +48,55 @@ jest.mock("./useTrainingPlanCreationQueries", () => ({
 function createQueryState() {
   return {
     profileQuery: {
-      data: { dob: null, gender: null, preferred_units: "metric" },
-    },
-    performanceTargetsQuery: {
-      data: undefined as ReturnType<typeof createPerformanceTargets> | undefined,
-      isError: true,
-    },
-    profileMetricsQuery: { data: { items: [] as never[] } },
-    activityEffortsQuery: { data: [] as never[] },
-    currentTrainingStatusQuery: {
-      data: { asOf: "2026-06-01T00:00:00.000Z", currentLoadStatus: null },
+      data: { dob: null, gender: null, preferred_units: "metric", planning_timezone: "UTC" },
+      isError: false,
       isLoading: false,
+    },
+    creationContextQuery: {
+      data: undefined as ReturnType<typeof creationContext> | undefined,
     },
     profileGoalsQuery: { data: undefined },
     activityPlansQuery: { data: { pages: [] as never[] } },
     editPlanQuery: { data: undefined, isLoading: false, refetch: jest.fn() },
-    linkedActivityPlansQuery: { data: undefined, isLoading: false },
-    createPlanMutation: { isPending: false, mutateAsync: jest.fn() },
-    updatePlanMutation: { isPending: false, mutateAsync: jest.fn() },
+    linkedActivityPlansQuery: {
+      data: undefined,
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    },
+    publishedStateQuery: {
+      data: projectionBaseline(null, 0, 0),
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(),
+    },
+    commitPlanMutation: { isPending: false, mutateAsync: jest.fn() },
+  };
+}
+
+function creationContext(asOf: string, planningThresholdPowerWatts = 250) {
+  const initial = createDefaultTrainingPlanBuilderState().athleteContext;
+  const planningContext = {
+    ...initial,
+    physiology: {
+      ...initial.physiology,
+      planningThresholdPowerWatts: {
+        ...initial.physiology.planningThresholdPowerWatts,
+        value: planningThresholdPowerWatts,
+        source: "profile" as const,
+      },
+    },
+    performanceTargets: createPerformanceTargets(asOf, planningThresholdPowerWatts),
+  };
+  return {
+    asOf,
+    publishedState: { publishedAt: asOf },
+    currentBaseline: {
+      baseline: null,
+      planningContext,
+      planningTimezone: "UTC",
+    },
   };
 }
 
@@ -86,9 +127,8 @@ describe("useTrainingPlanCreationService performance target hydration", () => {
 
     mockQueries = {
       ...mockQueries,
-      performanceTargetsQuery: {
-        data: createPerformanceTargets("2026-06-01T00:00:01.000Z"),
-        isError: false,
+      creationContextQuery: {
+        data: creationContext("2026-06-01T00:00:01.000Z"),
       },
     };
     hook.rerender({});
@@ -104,7 +144,18 @@ describe("useTrainingPlanCreationService performance target hydration", () => {
     const firstTargets = createPerformanceTargets("2026-06-01T00:00:01.000Z");
     mockQueries = {
       ...mockQueries,
-      performanceTargetsQuery: { data: firstTargets, isError: false },
+      creationContextQuery: {
+        data: {
+          ...creationContext("2026-06-01T00:00:01.000Z"),
+          currentBaseline: {
+            ...creationContext("2026-06-01T00:00:01.000Z").currentBaseline,
+            planningContext: {
+              ...creationContext("2026-06-01T00:00:01.000Z").currentBaseline.planningContext,
+              performanceTargets: firstTargets,
+            },
+          },
+        },
+      },
     };
     const hook = renderHook(() => useTrainingPlanCreationService());
 
@@ -124,16 +175,141 @@ describe("useTrainingPlanCreationService performance target hydration", () => {
 
     mockQueries = {
       ...mockQueries,
-      performanceTargetsQuery: {
-        data: createPerformanceTargets("2026-06-01T00:00:02.000Z"),
-        isError: false,
+      creationContextQuery: {
+        data: creationContext("2026-06-01T00:00:02.000Z"),
       },
     };
     hook.rerender({});
 
     expect(hook.result.current.state.athleteContext.body.weightKg.value).toBe(81);
     expect(hook.result.current.state.athleteContext.performanceTargets.asOf).toBe(
-      firstTargets.asOf,
+      "2026-06-01T00:00:02.000Z",
     );
   });
 });
+
+describe("useTrainingPlanCreationService published projection", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockQueries = createQueryState();
+    mockQueries.creationContextQuery.data = creationContext("2026-06-01T00:00:01.000Z");
+    mockQueries.publishedStateQuery.data = projectionBaseline(4, 40, 30);
+    mockPreviewQuery.data = {
+      status: "available",
+      simulation: {},
+    };
+    mockPreviewQuery.error = null;
+  });
+
+  it("simulates the canonical client draft from the published baseline", async () => {
+    const hook = renderHook(() => useTrainingPlanCreationService());
+
+    act(() => {
+      hook.result.current.actions.updateDetails({ name: "Projected plan" });
+      const session = hook.result.current.actions.addSession(1);
+      hook.result.current.actions.assignActivityPlan(session.localId, projectedActivityPlan());
+    });
+
+    await waitFor(() => {
+      expect(hook.result.current.derived.publishedProjection.status).toBe("available");
+    });
+    const projection = hook.result.current.derived.publishedProjection;
+    if (projection.status !== "available") throw new Error("Expected available projection");
+    expect(projection.simulation.projectedState.recentLoad).not.toBe(30);
+    expect(projection.simulation.projectedState.stateRevision).toBe(4);
+  });
+
+  it("preserves the draft and re-simulates after a typed stale save", async () => {
+    mockQueries.commitPlanMutation.mutateAsync.mockResolvedValue({
+      status: "stale",
+      reason: "state_revision",
+      currentPublishedRevision: 5,
+      currentPlanRevision: null,
+      currentPlanStructureHash: null,
+    });
+    const onCreated = jest.fn();
+    const hook = renderHook(() => useTrainingPlanCreationService({ onCreated }));
+
+    act(() => {
+      hook.result.current.actions.updateDetails({ name: "Draft retained" });
+      const session = hook.result.current.actions.addSession(1);
+      hook.result.current.actions.assignActivityPlan(session.localId, projectedActivityPlan());
+    });
+    await waitFor(() => expect(hook.result.current.derived.savePlan.canSave).toBe(true));
+    await act(async () => hook.result.current.derived.savePlan.execute());
+
+    expect(mockQueries.commitPlanMutation.mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "create",
+        basePublishedRevision: 4,
+        draft: expect.objectContaining({ name: "Draft retained" }),
+      }),
+    );
+    expect(mockQueries.commitPlanMutation.mutateAsync.mock.calls[0]?.[0]).not.toHaveProperty(
+      "plannedSessions",
+    );
+    expect(hook.result.current.state.details.name).toBe("Draft retained");
+    expect(hook.result.current.state.structure.sessions).toHaveLength(1);
+    expect(hook.result.current.derived.projectionConflict).toContain("draft was preserved");
+    expect(mockQueries.publishedStateQuery.refetch).toHaveBeenCalled();
+    expect(onCreated).not.toHaveBeenCalled();
+
+    mockQueries = {
+      ...mockQueries,
+      publishedStateQuery: {
+        ...mockQueries.publishedStateQuery,
+        data: projectionBaseline(5, 55, 45),
+      },
+    };
+    hook.rerender({});
+    await waitFor(() => {
+      const projection = hook.result.current.derived.publishedProjection;
+      expect(projection.status).toBe("available");
+      if (projection.status === "available")
+        expect(projection.simulation.baseStateRevision).toBe(5);
+    });
+    expect(hook.result.current.state.details.name).toBe("Draft retained");
+  });
+});
+
+function projectionBaseline(revision: number | null, longTermLoad: number, recentLoad: number) {
+  const baseline =
+    revision === null
+      ? null
+      : {
+          contractVersion: "athlete-state-projection-v1" as const,
+          athleteId: "44444444-4444-4444-8444-444444444444",
+          stateRevision: revision,
+          asOf: "2026-08-01T00:00:00.000Z",
+          longTermLoad,
+          recentLoad,
+          loadBalance: longTermLoad - recentLoad,
+          evidenceConfidence: 0.8,
+          capabilities: [],
+          athleteAgeYears: 35,
+        };
+  return {
+    publishedRevision: revision,
+    status: {
+      freshness: revision === null ? ("unavailable" as const) : ("fresh" as const),
+      rebuildStatus: revision === null ? ("unavailable" as const) : ("fresh" as const),
+      importStatus: "complete" as const,
+    },
+    currentBaseline: { baseline, planningContext: null, planningTimezone: "UTC" },
+  };
+}
+
+function projectedActivityPlan() {
+  return {
+    id: "22222222-2222-4222-8222-222222222222",
+    name: "Tempo run",
+    published: true,
+    accessible: true,
+    prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+      activityCategory: "run",
+      durationSeconds: 3_600,
+      id: "22222222-2222-4222-8222-222222222222",
+      load: 80,
+    }),
+  };
+}

@@ -92,6 +92,109 @@ export const profiles = pgTable(
   ],
 );
 
+export const profileAthleteState = pgTable(
+  "profile_athlete_state",
+  {
+    profile_id: uuid("profile_id")
+      .primaryKey()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    source_revision: bigint("source_revision", { mode: "number" }).default(0).notNull(),
+    published_revision: bigint("published_revision", { mode: "number" }).default(0).notNull(),
+    dirty_from_at: timestamp("dirty_from_at", { withTimezone: true, mode: "date" }),
+    fitness: numeric("fitness", { mode: "number" }).default(0).notNull(),
+    fatigue: numeric("fatigue", { mode: "number" }).default(0).notNull(),
+    evidence_confidence: numeric("evidence_confidence", { mode: "number" }).default(0).notNull(),
+    coverage_start_at: timestamp("coverage_start_at", { withTimezone: true, mode: "date" }),
+    coverage_end_at: timestamp("coverage_end_at", { withTimezone: true, mode: "date" }),
+    last_activity_at: timestamp("last_activity_at", { withTimezone: true, mode: "date" }),
+    algorithm_version: text("algorithm_version").notNull().default("athlete-state-projection-v1"),
+    computed_at: timestamp("computed_at", { withTimezone: true, mode: "date" }),
+    lease_token: uuid("lease_token"),
+    lease_expires_at: timestamp("lease_expires_at", { withTimezone: true, mode: "date" }),
+    retry_after: timestamp("retry_after", { withTimezone: true, mode: "date" }),
+    consecutive_failures: integer("consecutive_failures").default(0).notNull(),
+    last_failure_code: text("last_failure_code"),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("profile_athlete_state_claim_idx").on(
+      table.retry_after,
+      table.dirty_from_at,
+      table.updated_at,
+    ),
+    check(
+      "profile_athlete_state_revision_check",
+      sql`${table.source_revision} >= 0 and ${table.published_revision} >= 0 and ${table.published_revision} <= ${table.source_revision}`,
+    ),
+    check("profile_athlete_state_fitness_check", sql`${table.fitness} >= 0`),
+    check("profile_athlete_state_fatigue_check", sql`${table.fatigue} >= 0`),
+    check(
+      "profile_athlete_state_confidence_check",
+      sql`${table.evidence_confidence} between 0 and 1`,
+    ),
+    check(
+      "profile_athlete_state_lease_check",
+      sql`num_nonnulls(${table.lease_token}, ${table.lease_expires_at}) in (0, 2)`,
+    ),
+    check("profile_athlete_state_failures_check", sql`${table.consecutive_failures} >= 0`),
+    check("profile_athlete_state_algorithm_check", sql`btrim(${table.algorithm_version}) <> ''`),
+  ],
+);
+
+export const profilePerformanceEstimates = pgTable(
+  "profile_performance_estimates",
+  {
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    capability_kind: text("capability_kind").notNull(),
+    activity_category: text("activity_category", {
+      enum: canonicalActivityCategoryDbValues,
+    }).notNull(),
+    value: numeric("value", { mode: "number" }).notNull(),
+    unit: text("unit").notNull(),
+    confidence: numeric("confidence", { mode: "number" }).notNull(),
+    effective_at: timestamp("effective_at", { withTimezone: true, mode: "date" }).notNull(),
+    evidence_window_start_at: timestamp("evidence_window_start_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    evidence_window_end_at: timestamp("evidence_window_end_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    algorithm_version: text("algorithm_version").notNull(),
+    source_revision: bigint("source_revision", { mode: "number" }).notNull(),
+    target_fact: jsonb("target_fact"),
+    computed_at: timestamp("computed_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.profile_id, table.capability_kind, table.activity_category] }),
+    index("profile_performance_estimates_profile_revision_idx").on(
+      table.profile_id,
+      table.source_revision,
+    ),
+    check("profile_performance_estimates_kind_check", sql`btrim(${table.capability_kind}) <> ''`),
+    check("profile_performance_estimates_unit_check", sql`btrim(${table.unit}) <> ''`),
+    check("profile_performance_estimates_value_check", sql`${table.value} >= 0`),
+    check(
+      "profile_performance_estimates_confidence_check",
+      sql`${table.confidence} between 0 and 1`,
+    ),
+    check(
+      "profile_performance_estimates_category_check",
+      sql`${table.activity_category} in ('run', 'bike', 'swim', 'strength', 'other')`,
+    ),
+    check(
+      "profile_performance_estimates_algorithm_check",
+      sql`btrim(${table.algorithm_version}) <> ''`,
+    ),
+    check("profile_performance_estimates_revision_check", sql`${table.source_revision} >= 0`),
+  ],
+);
+
 export const groups = pgTable(
   "groups",
   {
@@ -759,20 +862,18 @@ export const activityPlans = pgTable(
     structure: jsonb("structure").notNull(),
     structure_hash: text("structure_hash").notNull(),
     gps_recording_enabled: boolean("gps_recording_enabled").notNull().default(true),
-    template_visibility: text("template_visibility", { enum: ["private", "followers", "public"] })
-      .notNull()
-      .default("private"),
     content_visibility: text("content_visibility", { enum: ["private", "followers", "public"] })
       .notNull()
       .default("private"),
-    import_provider: text("import_provider"),
-    import_external_id: text("import_external_id"),
     is_system_template: boolean("is_system_template").notNull().default(false),
+    system_content_key: text("system_content_key"),
+    system_content_version: integer("system_content_version"),
+    system_content_hash: text("system_content_hash"),
   },
   (table) => [
     check(
       "activity_plans_structure_v3_check",
-      sql`jsonb_typeof(${table.structure}) = 'object' and ${table.structure}->>'version' = '3' and jsonb_typeof(${table.structure}->'segments') = 'array' and jsonb_array_length(${table.structure}->'segments') between 1 and 64 and pg_column_size(${table.structure}) <= 1048576`,
+      sql`jsonb_typeof(${table.structure}) = 'object' and ${table.structure}->>'version' = '3' and ${table.structure}->>'activity_category' in ('run', 'bike', 'swim', 'strength', 'other') and jsonb_typeof(${table.structure}->'segments') = 'array' and jsonb_array_length(${table.structure}->'segments') between 1 and 64 and pg_column_size(${table.structure}) <= 1048576`,
     ),
     check(
       "activity_plans_structure_canonical_check",
@@ -783,44 +884,35 @@ export const activityPlans = pgTable(
       sql`${table.structure_hash} ~ '^v1:sha256:[0-9a-f]{64}$'`,
     ),
     check(
-      "activity_plans_template_visibility_check",
-      sql`${table.template_visibility} = any(array['private'::text, 'followers'::text, 'public'::text])`,
-    ),
-    check(
       "activity_plans_content_visibility_check",
       sql`${table.content_visibility} in ('private', 'followers', 'public')`,
     ),
     check(
-      "activity_plans_import_provider_non_empty_check",
-      sql`${table.import_provider} is null or btrim(${table.import_provider}) <> ''`,
-    ),
-    check(
-      "activity_plans_import_external_id_non_empty_check",
-      sql`${table.import_external_id} is null or btrim(${table.import_external_id}) <> ''`,
-    ),
-    check(
       "activity_plans_system_templates_public_check",
-      sql`${table.is_system_template} = false or (${table.template_visibility} = 'public' and ${table.content_visibility} = 'public')`,
+      sql`${table.is_system_template} = false or ${table.content_visibility} = 'public'`,
     ),
     check(
       "activity_plans_system_template_check",
       sql`(${table.is_system_template} = true and ${table.profile_id} is null) or (${table.is_system_template} = false and ${table.profile_id} is not null)`,
     ),
+    check(
+      "activity_plans_system_content_identity_check",
+      sql`(${table.is_system_template} and ${table.system_content_key} is not null and btrim(${table.system_content_key}) <> '' and ${table.system_content_version} > 0 and ${table.system_content_hash} ~ '^v1:sha256:[0-9a-f]{64}$') or (not ${table.is_system_template} and num_nonnulls(${table.system_content_key}, ${table.system_content_version}, ${table.system_content_hash}) = 0)`,
+    ),
+    uniqueIndex("activity_plans_system_content_key_unique")
+      .on(table.system_content_key)
+      .where(sql`${table.system_content_key} is not null`),
     index("idx_activity_plans_profile_id")
       .on(table.profile_id)
       .where(sql`${table.profile_id} is not null`),
     index("idx_activity_plans_system_templates")
       .on(table.is_system_template)
       .where(sql`${table.is_system_template} = true`),
-    index("idx_activity_plans_visibility").on(table.template_visibility),
     index("idx_activity_plans_content_visibility").on(table.content_visibility),
     index("idx_activity_plans_structure_categories").using(
       "gin",
       table.structure.op("jsonb_path_ops"),
     ),
-    uniqueIndex("idx_activity_plans_import_identity")
-      .on(table.profile_id, table.import_provider, table.import_external_id)
-      .where(sql`${table.import_provider} is not null and ${table.import_external_id} is not null`),
   ],
 );
 
@@ -837,11 +929,11 @@ export const groupEvents = pgTable(
     created_by_profile_id: uuid("created_by_profile_id").references(() => profiles.id, {
       onDelete: "set null",
     }),
-    title: text("title"),
+    title: text("title").notNull(),
     description: text("description"),
     starts_at: timestamp("starts_at", { withTimezone: true, mode: "date" }).notNull(),
     ends_at: timestamp("ends_at", { withTimezone: true, mode: "date" }),
-    timezone: text("timezone"),
+    timezone: text("timezone").notNull(),
     recurrence_rule: text("recurrence_rule"),
     recurrence_timezone: text("recurrence_timezone"),
     occurrence_key: text("occurrence_key"),
@@ -878,14 +970,7 @@ export const groupEvents = pgTable(
     index("idx_group_events_activity_plan_id")
       .on(table.activity_plan_id)
       .where(sql`${table.activity_plan_id} is not null`),
-    check(
-      "group_events_title_non_empty",
-      sql`${table.title} is null or btrim(${table.title}) <> ''`,
-    ),
-    check(
-      "group_events_root_title_required",
-      sql`${table.series_id} is not null or ${table.title} is not null`,
-    ),
+    check("group_events_title_non_empty", sql`btrim(${table.title}) <> ''`),
     check(
       "group_events_time_window",
       sql`${table.ends_at} is null or ${table.ends_at} > ${table.starts_at}`,
@@ -894,10 +979,7 @@ export const groupEvents = pgTable(
       "group_events_series_not_self",
       sql`${table.series_id} is null or ${table.series_id} <> ${table.id}`,
     ),
-    check(
-      "group_events_timezone_non_empty",
-      sql`${table.timezone} is null or btrim(${table.timezone}) <> ''`,
-    ),
+    check("group_events_timezone_non_empty", sql`btrim(${table.timezone}) <> ''`),
     check(
       "group_events_recurrence_rule_non_empty",
       sql`${table.recurrence_rule} is null or btrim(${table.recurrence_rule}) <> ''`,
@@ -909,10 +991,6 @@ export const groupEvents = pgTable(
     check(
       "group_events_recurrence_timezone_requires_rule",
       sql`${table.recurrence_timezone} is null or ${table.recurrence_rule} is not null`,
-    ),
-    check(
-      "group_events_recurring_series_timezone_required",
-      sql`${table.recurrence_rule} is null or ${table.timezone} is not null`,
     ),
     check(
       "group_events_occurrence_key_required",
@@ -998,15 +1076,19 @@ export const trainingPlans = pgTable(
     description: text("description"),
     structure: jsonb("structure").notNull(),
     structure_hash: text("structure_hash").notNull(),
-    template_visibility: text("template_visibility", { enum: ["private", "followers", "public"] })
-      .notNull()
-      .default("private"),
     content_visibility: text("content_visibility", { enum: ["private", "followers", "public"] })
       .notNull()
       .default("private"),
     is_system_template: boolean("is_system_template").notNull().default(false),
+    system_content_key: text("system_content_key"),
+    system_content_version: integer("system_content_version"),
+    system_content_hash: text("system_content_hash"),
     sessions_per_week_target: integer("sessions_per_week_target"),
     duration_hours: numeric("duration_hours", { precision: 12, scale: 2, mode: "number" }),
+    revision: integer("revision").default(1).notNull(),
+    validated_state_revision: bigint("validated_state_revision", { mode: "number" }),
+    validated_at: timestamp("validated_at", { withTimezone: true, mode: "date" }),
+    projection_algorithm_version: text("projection_algorithm_version"),
   },
   (table) => [
     check(
@@ -1018,20 +1100,28 @@ export const trainingPlans = pgTable(
       sql`${table.structure_hash} ~ '^v1:sha256:[0-9a-f]{64}$'`,
     ),
     check(
-      "training_plans_template_visibility_check",
-      sql`${table.template_visibility} = any(array['private'::text, 'followers'::text, 'public'::text])`,
-    ),
-    check(
       "training_plans_content_visibility_check",
       sql`${table.content_visibility} in ('private', 'followers', 'public')`,
     ),
     check(
       "training_plans_system_templates_public_check",
-      sql`${table.is_system_template} = false or (${table.template_visibility} = 'public' and ${table.content_visibility} = 'public')`,
+      sql`${table.is_system_template} = false or ${table.content_visibility} = 'public'`,
     ),
     check(
       "training_plans_template_profile_check",
       sql`(${table.is_system_template} = true and ${table.profile_id} is null) or (${table.is_system_template} = false and ${table.profile_id} is not null)`,
+    ),
+    check(
+      "training_plans_system_content_identity_check",
+      sql`(${table.is_system_template} and ${table.system_content_key} is not null and btrim(${table.system_content_key}) <> '' and ${table.system_content_version} > 0 and ${table.system_content_hash} ~ '^v1:sha256:[0-9a-f]{64}$') or (not ${table.is_system_template} and num_nonnulls(${table.system_content_key}, ${table.system_content_version}, ${table.system_content_hash}) = 0)`,
+    ),
+    uniqueIndex("training_plans_system_content_key_unique")
+      .on(table.system_content_key)
+      .where(sql`${table.system_content_key} is not null`),
+    check("training_plans_revision_check", sql`${table.revision} > 0`),
+    check(
+      "training_plans_projection_validation_check",
+      sql`num_nonnulls(${table.validated_state_revision}, ${table.validated_at}, ${table.projection_algorithm_version}) in (0, 3) and (${table.validated_state_revision} is null or ${table.validated_state_revision} >= 0) and (${table.projection_algorithm_version} is null or btrim(${table.projection_algorithm_version}) <> '')`,
     ),
     index("idx_training_plans_profile_id")
       .on(table.profile_id)
@@ -1040,7 +1130,6 @@ export const trainingPlans = pgTable(
       .on(table.is_system_template)
       .where(sql`${table.is_system_template} = true`),
     index("idx_training_plans_name").on(table.name),
-    index("idx_training_plans_visibility").on(table.template_visibility),
     index("idx_training_plans_content_visibility").on(table.content_visibility),
   ],
 );
@@ -1260,8 +1349,6 @@ export const activities = pgTable(
     content_visibility: text("content_visibility", { enum: ["private", "followers", "public"] })
       .notNull()
       .default("private"),
-    provider: integrationProviderEnum("provider"),
-    external_id: text("external_id"),
     elapsed_ms: bigint("elapsed_ms", { mode: "number" }).notNull(),
     active_ms: bigint("active_ms", { mode: "number" }),
     moving_ms: bigint("moving_ms", { mode: "number" }),
@@ -1274,6 +1361,11 @@ export const activities = pgTable(
     parser_version: text("parser_version").notNull(),
     decoded_contract_version: text("decoded_contract_version").notNull(),
     materializer_version: text("materializer_version").notNull(),
+    canonical_evidence_tier: text("canonical_evidence_tier", {
+      enum: ["inferred_fallback", "provider_summary", "raw_samples", "fit_artifact"],
+    })
+      .notNull()
+      .default("inferred_fallback"),
     segments_generated_at: timestamp("segments_generated_at", {
       withTimezone: true,
       mode: "date",
@@ -1305,16 +1397,9 @@ export const activities = pgTable(
       scale: 2,
       mode: "number",
     }),
-    normalized_graded_speed_mps: numeric("normalized_graded_speed_mps", {
-      precision: 6,
-      scale: 2,
-      mode: "number",
-    }),
     // Canonical temperature is Celsius. Provider-unit conversion happens before persistence.
     avg_temperature: numeric("avg_temperature", { mode: "number" }),
     avg_swolf: numeric("avg_swolf", { mode: "number" }),
-    efficiency_factor: numeric("efficiency_factor", { mode: "number" }),
-    aerobic_decoupling: numeric("aerobic_decoupling", { mode: "number" }),
     pool_length_meters: numeric("pool_length_meters", { mode: "number" }),
     total_strokes: integer("total_strokes"),
     device_manufacturer: text("device_manufacturer"),
@@ -1322,6 +1407,25 @@ export const activities = pgTable(
     polyline: text("polyline"),
     laps: jsonb("laps").$type<unknown[]>().notNull().default([]),
     map_bounds: jsonb("map_bounds"),
+    athlete_state_common_load: numeric("athlete_state_common_load", { mode: "number" }),
+    athlete_state_activity_category: text("athlete_state_activity_category", {
+      enum: canonicalActivityCategoryDbValues,
+    }),
+    athlete_state_evidence_confidence: numeric("athlete_state_evidence_confidence", {
+      mode: "number",
+    }),
+    athlete_state_capability_distance_meters: numeric("athlete_state_capability_distance_meters", {
+      mode: "number",
+    }),
+    athlete_state_capability_duration_minutes: numeric(
+      "athlete_state_capability_duration_minutes",
+      { mode: "number" },
+    ),
+    athlete_state_input_version: text("athlete_state_input_version"),
+    athlete_state_computed_at: timestamp("athlete_state_computed_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
   },
   (table) => [
     unique("activities_id_profile_id_unique").on(table.id, table.profile_id),
@@ -1329,6 +1433,11 @@ export const activities = pgTable(
       .on(table.activity_plan_id)
       .where(sql`${table.activity_plan_id} is not null`),
     index("idx_activities_profile_started").on(table.profile_id, table.started_at),
+    index("idx_activities_athlete_state_replay")
+      .on(table.profile_id, table.finished_at, table.id)
+      .where(
+        sql`${table.athlete_state_common_load} is not null and ${table.athlete_state_activity_category} is not null and ${table.athlete_state_evidence_confidence} is not null and ${table.athlete_state_input_version} is not null and ${table.athlete_state_computed_at} is not null`,
+      ),
     index("idx_activities_started").on(table.started_at),
     index("idx_activities_content_visibility").on(table.content_visibility),
     check(
@@ -1347,6 +1456,10 @@ export const activities = pgTable(
     ),
     check("activities_segments_revision_check", sql`${table.segments_revision} > 0`),
     check(
+      "activities_canonical_evidence_tier_check",
+      sql`${table.canonical_evidence_tier} in ('inferred_fallback', 'provider_summary', 'raw_samples', 'fit_artifact')`,
+    ),
+    check(
       "activities_timing_coverage_values_check",
       sql`(${table.timing_coverage} = 'complete' and ${table.active_ms} is not null and ${table.moving_ms} is not null) or (${table.timing_coverage} in ('partial', 'unavailable') and ${table.active_ms} is null and ${table.moving_ms} is null)`,
     ),
@@ -1354,19 +1467,17 @@ export const activities = pgTable(
       "activities_moving_time_check",
       sql`${table.moving_ms} is null or ${table.active_ms} is null or ${table.moving_ms} <= ${table.active_ms}`,
     ),
-    check(
-      "activities_provider_identity_check",
-      sql`(${table.provider} is null) = (${table.external_id} is null)`,
-    ),
     check("activities_laps_array_check", sql`jsonb_typeof(${table.laps}) = 'array'`),
     check("activities_laps_count_check", sql`jsonb_array_length(${table.laps}) <= 1000`),
     check("activities_laps_size_check", sql`pg_column_size(${table.laps}) <= 1048576`),
-    uniqueIndex("idx_activities_provider_external_unique")
-      .on(table.provider, table.external_id)
-      .where(sql`${table.provider} is not null and ${table.external_id} is not null`),
-    index("idx_activities_provider_external")
-      .on(table.provider, table.external_id)
-      .where(sql`${table.external_id} is not null`),
+    check(
+      "activities_athlete_state_load_check",
+      sql`${table.athlete_state_common_load} is null or ${table.athlete_state_common_load} >= 0`,
+    ),
+    check(
+      "activities_athlete_state_confidence_check",
+      sql`${table.athlete_state_evidence_confidence} is null or ${table.athlete_state_evidence_confidence} between 0 and 1`,
+    ),
   ],
 );
 
@@ -1633,12 +1744,6 @@ export const activityFileIngestions = pgTable(
     expected_byte_size: integer("expected_byte_size"),
     expected_format: text("expected_format"),
     expected_media_type: text("expected_media_type"),
-    accepted_sha256: text("accepted_sha256"),
-    accepted_byte_size: integer("accepted_byte_size"),
-    accepted_bucket: text("accepted_bucket"),
-    accepted_path: text("accepted_path"),
-    accepted_media_type: text("accepted_media_type"),
-    accepted_format: text("accepted_format"),
     uploaded_at: timestamp("uploaded_at", { withTimezone: true, mode: "date" }),
     staging_cleanup_pending: boolean("staging_cleanup_pending").notNull().default(false),
     staging_cleaned_at: timestamp("staging_cleaned_at", { withTimezone: true, mode: "date" }),
@@ -1689,32 +1794,16 @@ export const activityFileIngestions = pgTable(
       sql`${table.expected_byte_size} is null or ${table.expected_byte_size} > 0`,
     ),
     check(
-      "activity_file_ingestions_accepted_size_check",
-      sql`${table.accepted_byte_size} is null or ${table.accepted_byte_size} > 0`,
-    ),
-    check(
       "activity_file_ingestions_expected_hash_check",
       sql`${table.expected_sha256} is null or ${table.expected_sha256} ~ '^[0-9a-f]{64}$'`,
-    ),
-    check(
-      "activity_file_ingestions_accepted_hash_check",
-      sql`${table.accepted_sha256} is null or ${table.accepted_sha256} ~ '^[0-9a-f]{64}$'`,
     ),
     check(
       "activity_file_ingestions_staging_metadata_check",
       sql`num_nonnulls(${table.staging_bucket}, ${table.staging_path}, ${table.expected_sha256}, ${table.expected_byte_size}, ${table.expected_format}, ${table.expected_media_type}) in (0, 6) and (${table.staging_bucket} is null or (btrim(${table.staging_bucket}) <> '' and btrim(${table.staging_path}) <> '' and ((${table.expected_format} = 'fit' and ${table.expected_media_type} = 'application/vnd.ant.fit') or (${table.expected_format} = 'gpx' and ${table.expected_media_type} = 'application/gpx+xml') or (${table.expected_format} = 'tcx' and ${table.expected_media_type} = 'application/vnd.garmin.tcx+xml'))))`,
     ),
     check(
-      "activity_file_ingestions_accepted_metadata_check",
-      sql`num_nonnulls(${table.accepted_sha256}, ${table.accepted_byte_size}, ${table.accepted_bucket}, ${table.accepted_path}, ${table.accepted_media_type}, ${table.accepted_format}, ${table.uploaded_at}) in (0, 7) and (${table.accepted_sha256} is null or (${table.status} = 'ready' and btrim(${table.accepted_bucket}) <> '' and btrim(${table.accepted_path}) <> '' and ${table.accepted_format} in ('fit', 'gpx', 'tcx') and ${table.accepted_path} = 'artifacts/sha256/' || ${table.profile_id}::text || '/' || ${table.accepted_sha256}))`,
-    ),
-    check(
-      "activity_file_ingestions_claim_artifact_match_check",
-      sql`${table.expected_sha256} is null or ${table.accepted_sha256} is null or (${table.accepted_sha256} = ${table.expected_sha256} and ${table.accepted_byte_size} = ${table.expected_byte_size} and ${table.accepted_bucket} = ${table.staging_bucket} and ${table.accepted_format} = ${table.expected_format} and ${table.accepted_media_type} = ${table.expected_media_type})`,
-    ),
-    check(
       "activity_file_ingestions_cleanup_state_check",
-      sql`(not ${table.staging_cleanup_pending} or (${table.status} = 'ready' and ${table.staging_path} is not null and ${table.accepted_path} is not null)) and (${table.staging_cleaned_at} is null or (not ${table.staging_cleanup_pending} and ${table.staging_path} is not null)) and (${table.staging_cleanup_error} is null or ${table.staging_cleanup_pending}) and not (${table.staging_cleaned_at} is not null and ${table.staging_cleanup_error} is not null)`,
+      sql`(not ${table.staging_cleanup_pending} or (${table.status} = 'ready' and ${table.staging_path} is not null and ${table.artifact_id} is not null)) and (${table.staging_cleaned_at} is null or (not ${table.staging_cleanup_pending} and ${table.staging_path} is not null)) and (${table.staging_cleanup_error} is null or ${table.staging_cleanup_pending}) and not (${table.staging_cleaned_at} is not null and ${table.staging_cleanup_error} is not null)`,
     ),
     check(
       "activity_file_ingestions_processing_claim_check",
@@ -1746,12 +1835,13 @@ export const activityEfforts = pgTable(
   {
     id: uuid("id").primaryKey(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }),
     profile_id: uuid("profile_id")
       .notNull()
       .references(() => profiles.id),
-    activity_id: uuid("activity_id").references(() => activities.id, { onDelete: "cascade" }),
-    segment_id: uuid("segment_id"),
+    activity_id: uuid("activity_id")
+      .notNull()
+      .references(() => activities.id, { onDelete: "cascade" }),
+    segment_id: uuid("segment_id").notNull(),
     recorded_at: timestamp("recorded_at", { withTimezone: true, mode: "date" }).notNull(),
     activity_category: text("activity_category", { enum: canonicalActivityCategoryDbValues })
       .notNull()
@@ -1762,11 +1852,11 @@ export const activityEfforts = pgTable(
     start_offset: integer("start_offset"),
     unit: text("unit").notNull(),
     value: real("value").notNull(),
-    source: evidenceObservationSourceEnum("source"),
-    method: text("method"),
-    calculation_version: text("calculation_version"),
+    source: evidenceObservationSourceEnum("source").notNull(),
+    method: text("method").notNull(),
+    calculation_version: text("calculation_version").notNull(),
     quality_score: numeric("quality_score", { mode: "number" }),
-    provenance: jsonb("provenance"),
+    provenance: jsonb("provenance").notNull(),
   },
   (table) => [
     foreignKey({
@@ -1781,11 +1871,7 @@ export const activityEfforts = pgTable(
     }).onDelete("cascade"),
     index("idx_activity_efforts_activity_id").on(table.activity_id),
     index("idx_activity_efforts_segment_id").on(table.segment_id),
-    index("idx_activity_efforts_profile_id").on(table.profile_id),
-    check(
-      "activity_efforts_activity_segment_check",
-      sql`(${table.activity_id} is null and ${table.segment_id} is null) or (${table.activity_id} is not null and ${table.segment_id} is not null)`,
-    ),
+    index("idx_activity_efforts_athlete_state_replay").on(table.profile_id, table.id),
     check(
       "activity_efforts_duration_seconds_bounds_check",
       sql`${table.duration_seconds} between 1 and 14400`,
@@ -1822,13 +1908,10 @@ export const activityEfforts = pgTable(
       "activity_efforts_heart_rate_bounds_check",
       sql`${table.effort_type}::text <> 'heart_rate' or ${table.value} between 30 and 240`,
     ),
-    check(
-      "activity_efforts_method_not_blank_check",
-      sql`${table.method} is null or btrim(${table.method}) <> ''`,
-    ),
+    check("activity_efforts_method_not_blank_check", sql`btrim(${table.method}) <> ''`),
     check(
       "activity_efforts_calculation_version_not_blank_check",
-      sql`${table.calculation_version} is null or btrim(${table.calculation_version}) <> ''`,
+      sql`btrim(${table.calculation_version}) <> ''`,
     ),
     check(
       "activity_efforts_quality_score_range_check",
@@ -1836,7 +1919,7 @@ export const activityEfforts = pgTable(
     ),
     check(
       "activity_efforts_provenance_object_check",
-      sql`${table.provenance} is null or jsonb_typeof(${table.provenance}) = 'object'`,
+      sql`jsonb_typeof(${table.provenance}) = 'object'`,
     ),
   ],
 );
@@ -2069,6 +2152,7 @@ export const integrations = pgTable(
       .notNull(),
   },
   (table) => [
+    unique("integrations_id_profile_unique").on(table.id, table.profile_id),
     unique("unique_integration_type").on(table.profile_id, table.provider),
     uniqueIndex("integrations_provider_external_id_unique")
       .on(table.provider, table.external_id)
@@ -2381,6 +2465,206 @@ export const integrationResourceLinks = pgTable(
       table.internal_resource_id,
     ),
     index("idx_integration_resource_links_provider_external").on(table.provider, table.external_id),
+    check(
+      "integration_resource_links_no_activity_check",
+      sql`${table.resource_kind} <> 'activity'`,
+    ),
+  ],
+);
+
+export const activityImportRuns = pgTable(
+  "activity_import_runs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    integration_id: uuid("integration_id"),
+    integration_generation: bigint("integration_generation", { mode: "number" }),
+    kind: text("kind", {
+      enum: ["onboarding", "history_sync", "manual_sync"],
+    }).notNull(),
+    status: text("status", {
+      enum: ["queued", "running", "completed", "failed", "cancelled"],
+    })
+      .notNull()
+      .default("queued"),
+    window_start_at: timestamp("window_start_at", { withTimezone: true, mode: "date" }),
+    window_end_at: timestamp("window_end_at", { withTimezone: true, mode: "date" }),
+    next_cursor: text("next_cursor"),
+    next_page: integer("next_page"),
+    discovered_count: integer("discovered_count").notNull().default(0),
+    imported_count: integer("imported_count").notNull().default(0),
+    skipped_count: integer("skipped_count").notNull().default(0),
+    failed_count: integer("failed_count").notNull().default(0),
+    material_change_count: integer("material_change_count").notNull().default(0),
+    material_effective_from_at: timestamp("material_effective_from_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    earliest_activity_at: timestamp("earliest_activity_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    latest_activity_at: timestamp("latest_activity_at", { withTimezone: true, mode: "date" }),
+    started_at: timestamp("started_at", { withTimezone: true, mode: "date" }),
+    completed_at: timestamp("completed_at", { withTimezone: true, mode: "date" }),
+    last_error_code: text("last_error_code"),
+    superseded_by_run_id: uuid("superseded_by_run_id").references(
+      (): AnyPgColumn => activityImportRuns.id,
+      { onDelete: "restrict" },
+    ),
+    superseded_at: timestamp("superseded_at", { withTimezone: true, mode: "date" }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("activity_import_runs_id_profile_unique").on(table.id, table.profile_id),
+    foreignKey({
+      columns: [table.integration_id, table.profile_id],
+      foreignColumns: [integrations.id, integrations.profile_id],
+      name: "activity_import_runs_integration_profile_fkey",
+    }).onDelete("cascade"),
+    index("activity_import_runs_profile_status_updated_idx").on(
+      table.profile_id,
+      table.status,
+      table.updated_at,
+    ),
+    index("activity_import_runs_integration_status_updated_idx")
+      .on(table.integration_id, table.status, table.updated_at)
+      .where(sql`${table.integration_id} is not null`),
+    uniqueIndex("activity_import_runs_running_bulk_profile_unique")
+      .on(table.profile_id)
+      .where(
+        sql`${table.status} = 'running' and ${table.kind} in ('onboarding', 'history_sync', 'manual_sync')`,
+      ),
+    check(
+      "activity_import_runs_kind_check",
+      sql`${table.kind} in ('onboarding', 'history_sync', 'manual_sync')`,
+    ),
+    check(
+      "activity_import_runs_status_check",
+      sql`${table.status} in ('queued', 'running', 'completed', 'failed', 'cancelled')`,
+    ),
+    check(
+      "activity_import_runs_counts_check",
+      sql`${table.discovered_count} >= 0 and ${table.imported_count} >= 0 and ${table.skipped_count} >= 0 and ${table.failed_count} >= 0 and ${table.material_change_count} >= 0`,
+    ),
+    check(
+      "activity_import_runs_next_page_check",
+      sql`${table.next_page} is null or ${table.next_page} >= 1`,
+    ),
+    check(
+      "activity_import_runs_cursor_page_check",
+      sql`num_nonnulls(${table.next_cursor}, ${table.next_page}) <= 1`,
+    ),
+    check(
+      "activity_import_runs_integration_generation_check",
+      sql`(${table.integration_id} is null) = (${table.integration_generation} is null)`,
+    ),
+    check(
+      "activity_import_runs_terminal_check",
+      sql`${table.status} not in ('completed', 'failed', 'cancelled') or ${table.completed_at} is not null`,
+    ),
+    check(
+      "activity_import_runs_error_check",
+      sql`${table.last_error_code} is null or btrim(${table.last_error_code}) <> ''`,
+    ),
+    check(
+      "activity_import_runs_supersession_check",
+      sql`num_nonnulls(${table.superseded_by_run_id}, ${table.superseded_at}) in (0, 2) and (${table.superseded_by_run_id} is null or (${table.status} = 'failed' and ${table.superseded_by_run_id} <> ${table.id}))`,
+    ),
+  ],
+);
+
+export const activitySourceReferences = pgTable(
+  "activity_source_references",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    activity_id: uuid("activity_id").notNull(),
+    integration_id: uuid("integration_id").notNull(),
+    provider: text("provider").notNull(),
+    provider_external_id: text("provider_external_id").notNull(),
+    provider_revision: text("provider_revision"),
+    origin_provider: text("origin_provider"),
+    origin_external_id: text("origin_external_id"),
+    artifact_sha256: text("artifact_sha256"),
+    last_import_run_id: uuid("last_import_run_id"),
+    last_material_import_run_id: uuid("last_material_import_run_id"),
+    last_material_effective_at: timestamp("last_material_effective_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.integration_id, table.profile_id],
+      foreignColumns: [integrations.id, integrations.profile_id],
+      name: "activity_source_references_integration_profile_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.activity_id, table.profile_id],
+      foreignColumns: [activities.id, activities.profile_id],
+      name: "activity_source_references_activity_profile_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.last_import_run_id, table.profile_id],
+      foreignColumns: [activityImportRuns.id, activityImportRuns.profile_id],
+      name: "activity_source_refs_last_import_run_profile_fk",
+    }).onDelete("set null"),
+    foreignKey({
+      columns: [table.last_material_import_run_id, table.profile_id],
+      foreignColumns: [activityImportRuns.id, activityImportRuns.profile_id],
+      name: "activity_source_refs_material_import_run_profile_fk",
+    }).onDelete("set null"),
+    unique("activity_source_references_provider_unique").on(
+      table.profile_id,
+      table.provider,
+      table.provider_external_id,
+    ),
+    uniqueIndex("activity_source_references_origin_unique")
+      .on(table.profile_id, table.origin_provider, table.origin_external_id)
+      .where(sql`${table.origin_provider} is not null and ${table.origin_external_id} is not null`),
+    uniqueIndex("activity_source_references_artifact_unique")
+      .on(table.profile_id, table.artifact_sha256)
+      .where(sql`${table.artifact_sha256} is not null`),
+    index("activity_source_references_activity_idx").on(table.activity_id),
+    index("activity_source_references_integration_idx").on(table.integration_id),
+    index("activity_source_references_import_run_idx")
+      .on(table.last_import_run_id)
+      .where(sql`${table.last_import_run_id} is not null`),
+    index("activity_source_references_material_import_run_idx")
+      .on(table.last_material_import_run_id)
+      .where(sql`${table.last_material_import_run_id} is not null`),
+    check(
+      "activity_source_references_provider_check",
+      sql`btrim(${table.provider}) <> '' and btrim(${table.provider_external_id}) <> ''`,
+    ),
+    check(
+      "activity_source_references_origin_check",
+      sql`(${table.origin_provider} is null) = (${table.origin_external_id} is null)`,
+    ),
+    check(
+      "activity_source_references_artifact_check",
+      sql`${table.artifact_sha256} is null or ${table.artifact_sha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "activity_source_references_material_import_check",
+      sql`(${table.last_material_import_run_id} is null) = (${table.last_material_effective_at} is null)`,
+    ),
   ],
 );
 
@@ -2444,6 +2728,7 @@ export const providerSyncJobs = pgTable(
       .references(() => integrations.id, { onDelete: "cascade" }),
     provider: integrationProviderEnum("provider").notNull(),
     integration_generation: integer("integration_generation").notNull().default(1),
+    import_run_id: uuid("import_run_id"),
     job_type: text("job_type").notNull(),
     operation: text("operation"),
     resource_kind: integrationResourceKindEnum("resource_kind"),
@@ -2464,6 +2749,11 @@ export const providerSyncJobs = pgTable(
     locked_by: text("locked_by"),
   },
   (table) => [
+    foreignKey({
+      columns: [table.import_run_id, table.profile_id],
+      foreignColumns: [activityImportRuns.id, activityImportRuns.profile_id],
+      name: "provider_sync_jobs_import_run_profile_fkey",
+    }).onDelete("set null"),
     uniqueIndex("provider_sync_jobs_queue_sequence_key").on(table.queue_sequence),
     index("idx_provider_sync_jobs_status_run_at_priority").on(
       table.status,
@@ -2478,6 +2768,9 @@ export const providerSyncJobs = pgTable(
     index("idx_provider_sync_jobs_dedupe_key").on(table.dedupe_key),
     index("idx_provider_sync_jobs_lane_status").on(table.sync_lane_key, table.status, table.run_at),
     index("idx_provider_sync_jobs_integration_id").on(table.integration_id),
+    index("idx_provider_sync_jobs_import_run_id")
+      .on(table.import_run_id)
+      .where(sql`${table.import_run_id} is not null`),
     index("idx_provider_sync_jobs_integration_generation_status").on(
       table.integration_id,
       table.integration_generation,

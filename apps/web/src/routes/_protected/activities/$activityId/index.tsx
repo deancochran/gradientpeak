@@ -88,6 +88,13 @@ function getVisibilityLabel(visibility: ContentVisibility) {
   return VISIBILITY_OPTIONS.find((option) => option.value === visibility)?.label ?? "Private";
 }
 
+function formatEffortValue(value: number, unit: string) {
+  if (unit === "watts") return `${Math.round(value)} W`;
+  if (unit === "bpm") return `${Math.round(value)} bpm`;
+  if (unit === "meters_per_second") return `${value.toFixed(2)} m/s`;
+  return `${value.toFixed(2)} ${unit}`;
+}
+
 export const Route = createFileRoute("/_protected/activities/$activityId/")({
   component: ActivityDetailPage,
 });
@@ -103,6 +110,7 @@ function ActivityDetailPage() {
   const [failedLikeIntent, setFailedLikeIntent] = useState<boolean | null>(null);
   const [deleteFailed, setDeleteFailed] = useState(false);
   const activityQuery = api.activities.getById.useQuery({ id: activityId });
+  const effortsQuery = api.activities.getEfforts.useQuery({ id: activityId });
   const activity = activityQuery.data?.activity;
   const derived = activityQuery.data?.derived;
   const categoryDisplay = deriveActivityCategoryDisplay(activity?.segments ?? []);
@@ -486,6 +494,47 @@ function ActivityDetailPage() {
           Segment analysis failed: {normalizedPowerAnalysis.segment.reason}
         </p>
       ) : null}
+
+      <Card data-testid="activity-derived-efforts">
+        <CardHeader>
+          <CardTitle aria-level={2} role="heading">
+            Derived efforts
+          </CardTitle>
+          <CardDescription>
+            Best efforts calculated from this activity's canonical segments.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {effortsQuery.isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading derived efforts…</p>
+          ) : effortsQuery.isError ? (
+            <p className="text-sm text-destructive" role="alert">
+              Derived efforts could not be loaded.
+            </p>
+          ) : effortsQuery.data?.length ? (
+            <ul className="divide-y">
+              {effortsQuery.data.map((effort) => (
+                <li className="flex items-center justify-between gap-4 py-3" key={effort.id}>
+                  <div>
+                    <p className="font-medium capitalize">
+                      {effort.activity_category} {effort.effort_type.replaceAll("_", " ")}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {formatDuration(effort.duration_seconds)}
+                      {effort.distance_meters ? ` · ${effort.distance_meters} m` : ""}
+                    </p>
+                  </div>
+                  <p className="font-semibold">{formatEffortValue(effort.value, effort.unit)}</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No derived efforts are available for this activity.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
         <EntityMapCard

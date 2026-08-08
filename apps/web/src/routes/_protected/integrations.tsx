@@ -1,6 +1,7 @@
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import { skipToken } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { useEffect } from "react";
@@ -21,8 +22,52 @@ function formatStatus(value: string) {
   return value.replaceAll("_", " ");
 }
 
+function athleteStateCopy(status: string) {
+  switch (status) {
+    case "pending":
+      return "Activities imported; state pending";
+    case "rebuilding":
+      return "State rebuilding";
+    case "current":
+    case "fresh":
+      return "State current";
+    case "failed_incomplete":
+      return "History incomplete after failed import";
+    default:
+      return "State unavailable";
+  }
+}
+
+function activityHistoryCopy(status: string) {
+  switch (status) {
+    case "queued":
+      return "Activities queued";
+    case "importing":
+      return "Activities importing";
+    case "synced":
+      return "Activities imported";
+    case "failed":
+      return "History import failed";
+    case "unsupported":
+      return "History import unsupported";
+    default:
+      return "Ready to import";
+  }
+}
+
 function IntegrationsPage() {
+  const navigate = Route.useNavigate();
   const utils = api.useUtils();
+  const profileQuery = api.profiles.get.useQuery();
+  const publishedStateQuery = api.athleteIntelligence.getReadModel.useQuery(
+    profileQuery.data
+      ? {
+          profileId: profileQuery.data.id,
+          sections: { publishedState: true, status: true },
+        }
+      : skipToken,
+    { enabled: Boolean(profileQuery.data) },
+  );
   const overviewQuery = api.integrations.getSyncOverview.useQuery(undefined, {
     refetchInterval: (query) => {
       return getIntegrationPollingInterval(query.state.data);
@@ -43,14 +88,13 @@ function IntegrationsPage() {
   const refreshSetupMutation = api.integrations.refreshSetupData.useMutation({
     onSuccess: async () => {
       await utils.integrations.getSyncOverview.invalidate();
-      toast.success("Setup data refreshed");
+      toast.success("Setup data refresh queued");
     },
     onError: () => toast.error("Unable to refresh setup data"),
   });
   const disconnectMutation = api.integrations.disconnect.useMutation({
     onSuccess: async () => {
       await utils.integrations.getSyncOverview.invalidate();
-      await utils.integrations.list.invalidate();
       toast.success("Disconnecting integration");
     },
     onError: () => toast.error("Unable to disconnect integration"),
@@ -76,7 +120,7 @@ function IntegrationsPage() {
   const integrations = overviewQuery.data ?? [];
   const hasCachedData = integrations.length > 0;
 
-  const connect = async (provider: (typeof integrations)[number]["provider"]) => {
+  const connect = async (provider: "wahoo") => {
     const redirectUri = `${window.location.origin}/integrations`;
     try {
       const result = await getAuthUrlMutation.mutateAsync({ provider, redirectUri });
@@ -129,7 +173,24 @@ function IntegrationsPage() {
           </Card>
         ) : (
           <div className="grid gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Athlete state</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <StatusBlock
+                  label="Published baseline"
+                  status={athleteStateCopy(
+                    publishedStateQuery.data?.status?.importStatus === "failed"
+                      ? "failed_incomplete"
+                      : (publishedStateQuery.data?.status?.rebuildStatus ?? "unavailable"),
+                  )}
+                  detail={`Published: ${formatSyncDate(publishedStateQuery.data?.publishedState?.publishedAt ?? null)}`}
+                />
+              </CardContent>
+            </Card>
             {integrations.map((integration) => {
+              const importRun = integration.activityHistory.importRun;
               const isMutating =
                 getAuthUrlMutation.isPending ||
                 syncNowMutation.isPending ||
@@ -160,7 +221,7 @@ function IntegrationsPage() {
                     <div className="grid gap-3 text-sm sm:grid-cols-3">
                       <StatusBlock
                         label="Activity history"
-                        status={integration.activityHistory.status}
+                        status={activityHistoryCopy(integration.activityHistory.status)}
                         detail={`Last synced: ${formatSyncDate(integration.activityHistory.lastSucceededAt)}`}
                       />
                       <StatusBlock
@@ -191,7 +252,7 @@ function IntegrationsPage() {
                         <Button
                           variant="outline"
                           disabled={isMutating}
-                          onClick={() => void connect(integration.provider)}
+                          onClick={() => void connect("wahoo")}
                         >
                           {integration.primaryAction === "reconnect" ? "Reconnect" : "Connect"}
                         </Button>
@@ -200,7 +261,7 @@ function IntegrationsPage() {
                         <Button
                           variant="outline"
                           disabled={isMutating}
-                          onClick={() => syncNowMutation.mutate({ provider: integration.provider })}
+                          onClick={() => syncNowMutation.mutate({ provider: "wahoo" })}
                         >
                           Sync now
                         </Button>
@@ -209,9 +270,7 @@ function IntegrationsPage() {
                         <Button
                           variant="outline"
                           disabled={isMutating}
-                          onClick={() =>
-                            refreshSetupMutation.mutate({ provider: integration.provider })
-                          }
+                          onClick={() => refreshSetupMutation.mutate({ provider: "wahoo" })}
                         >
                           Refresh setup data
                         </Button>
@@ -226,11 +285,25 @@ function IntegrationsPage() {
                                 `Disconnect ${integration.label}? Your GradientPeak data stays. Sync stops.`,
                               )
                             ) {
-                              disconnectMutation.mutate({ provider: integration.provider });
+                              disconnectMutation.mutate({ provider: "wahoo" });
                             }
                           }}
                         >
                           Disconnect
+                        </Button>
+                      ) : null}
+                      {importRun ? (
+                        <Button
+                          onClick={() =>
+                            void navigate({
+                              to: "/activities",
+                              search: { importRunId: importRun.id },
+                            })
+                          }
+                          type="button"
+                          variant="ghost"
+                        >
+                          View imported activities
                         </Button>
                       ) : null}
                     </div>
@@ -256,7 +329,7 @@ function StatusBlock({ label, status, detail }: { label: string; status: string;
   return (
     <div className="rounded-lg border border-border p-3">
       <p className="font-medium">{label}</p>
-      <p className="capitalize text-muted-foreground">{formatStatus(status)}</p>
+      <p className="text-muted-foreground">{formatStatus(status)}</p>
       <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
     </div>
   );

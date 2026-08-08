@@ -9,12 +9,12 @@
  * - ✅ Network retry
  *
  * BEFORE:
- * const mutation = api.activities.create.useMutation({
+ * const mutation = api.activities.update.useMutation({
  *   onSuccess: () => utils.activities.invalidate()
  * });
  *
  * AFTER:
- * const mutation = useReliableMutation(api.activities.create, {
+ * const mutation = useReliableMutation(api.activities.update, {
  *   invalidate: [utils.activities]
  * });
  *

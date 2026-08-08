@@ -1,3 +1,4 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -8,42 +9,48 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 
-type GoalIntelligence = {
-  explainability: {
-    assessment: { at: string; state: string; uncertainty: string };
-    collectionPrompts: readonly { destination: string; label: string }[];
-    coverage: readonly { label: string; state: string }[];
-    evidence: readonly { label: string; observedAt: string; type: string }[];
-    limits: readonly { id: string; label: string; reasons: readonly string[]; state: string }[];
-  };
-};
+type GoalAssessment = inferRouterOutputs<AppRouter>["athleteIntelligence"]["getGoalAssessment"];
+
+function formatLabel(value: string) {
+  return value.replaceAll("_", " ");
+}
+
+function formatScore(value: number) {
+  return Math.round(value).toString();
+}
 
 export function GoalIntelligenceCard({
-  intelligence,
+  assessment,
   isError,
   isLoading,
   onRetry,
 }: {
-  intelligence?: GoalIntelligence;
+  assessment?: GoalAssessment;
   isError: boolean;
   isLoading: boolean;
   onRetry: () => void;
 }) {
+  const readiness = assessment?.assessment;
   return (
     <Card data-testid="goal-intelligence">
       <CardHeader>
-        <CardTitle>Evidence &amp; limits</CardTitle>
+        <CardTitle>Goal readiness</CardTitle>
         <CardDescription>
-          Goal intelligence with explicit uncertainty and evidence coverage.
+          Readiness from your latest published athlete state, with freshness and confidence shown
+          separately.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading assessment details...</p>
+          <p className="text-sm text-muted-foreground">Loading readiness assessment...</p>
         ) : null}
         {isError ? (
           <div role="alert" className="space-y-3 rounded-xl border border-destructive/40 p-4">
-            <p className="text-sm">Assessment details could not be refreshed.</p>
+            <p className="text-sm">
+              {assessment
+                ? "The displayed assessment may be stale because it could not be refreshed."
+                : "Readiness could not be refreshed."}
+            </p>
             <Button
               data-testid="goal-intelligence-retry"
               type="button"
@@ -51,88 +58,57 @@ export function GoalIntelligenceCard({
               variant="outline"
               onClick={onRetry}
             >
-              Retry intelligence
+              Retry readiness
             </Button>
           </div>
         ) : null}
-        {intelligence ? (
+        {assessment ? (
           <>
             <div className="flex flex-wrap gap-2">
-              <Badge>{intelligence.explainability.assessment.state.replaceAll("_", " ")}</Badge>
-              <Badge variant="outline">
-                {intelligence.explainability.assessment.uncertainty} uncertainty
+              <Badge>{readiness ? formatLabel(readiness.status) : "unavailable"}</Badge>
+              <Badge variant={assessment.freshness === "fresh" ? "secondary" : "outline"}>
+                {assessment.freshness} state
               </Badge>
-              <Badge variant="secondary">As of {intelligence.explainability.assessment.at}</Badge>
+              <Badge variant="outline">
+                {Math.round(assessment.assessmentConfidence * 100)}% confidence
+              </Badge>
+              <Badge variant="secondary">As of {assessment.computedAt}</Badge>
             </div>
-            <section className="space-y-2">
-              <h2 className="text-sm font-medium">Evidence used</h2>
-              {intelligence.explainability.evidence.length ? (
-                intelligence.explainability.evidence.map((item) => (
-                  <p
-                    key={`${item.label}:${item.observedAt}`}
-                    className="text-sm text-muted-foreground"
-                  >
-                    {item.label} · {item.type.replaceAll("_", " ")} · {item.observedAt}
-                  </p>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">No evidence was used.</p>
-              )}
-            </section>
-            <section className="space-y-2">
-              <h2 className="text-sm font-medium">Limits</h2>
-              {intelligence.explainability.limits.length ? (
-                intelligence.explainability.limits.map((limit) => (
-                  <div key={limit.id} className="rounded-xl border p-3 text-sm">
-                    <p className="font-medium">
-                      {limit.label} · {limit.state.replaceAll("_", " ")}
+            {readiness ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <Score label="Readiness" value={readiness.readiness} />
+                  <Score label="Fitness" value={readiness.fitnessScore} />
+                  <Score label="Specificity" value={readiness.specificityScore} />
+                  <Score label="Fatigue pressure" value={readiness.fatiguePenalty} />
+                </div>
+                <section className="space-y-2">
+                  <h2 className="text-sm font-medium">Why this assessment</h2>
+                  {readiness.reasonCodes.map((reason) => (
+                    <p key={reason} className="text-sm text-muted-foreground">
+                      {formatLabel(reason)}
                     </p>
-                    {limit.reasons.map((reason) => (
-                      <p key={reason} className="mt-1 text-muted-foreground">
-                        {reason}
-                      </p>
-                    ))}
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">No assessment limits were reported.</p>
-              )}
-            </section>
-            <section className="space-y-2">
-              <h2 className="text-sm font-medium">Coverage</h2>
-              {intelligence.explainability.coverage.length ? (
-                intelligence.explainability.coverage.map((coverage) => (
-                  <p key={coverage.label} className="text-sm text-muted-foreground">
-                    {coverage.label}: {coverage.state}
-                  </p>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">No coverage details are available.</p>
-              )}
-            </section>
-            {intelligence.explainability.collectionPrompts.length ? (
-              <div className="flex flex-wrap gap-2" data-testid="goal-collection-prompts">
-                {intelligence.explainability.collectionPrompts.map((prompt) => (
-                  <Button asChild key={prompt.destination} size="sm" variant="outline">
-                    <a
-                      href={prompt.destination === "profile_metrics" ? "/settings" : "/activities"}
-                    >
-                      {prompt.label}
-                    </a>
-                  </Button>
-                ))}
-              </div>
+                  ))}
+                </section>
+              </>
             ) : (
-              <p
-                className="text-sm text-muted-foreground"
-                data-testid="goal-collection-prompts-empty"
-              >
-                No collection prompts are available.
+              <p className="text-sm text-muted-foreground">
+                A complete athlete-state baseline has not been published yet. Rebuild status:{" "}
+                {formatLabel(assessment.rebuildStatus)}.
               </p>
             )}
           </>
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+function Score({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl border p-3">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 text-xl font-semibold">{formatScore(value)}</p>
+    </div>
   );
 }

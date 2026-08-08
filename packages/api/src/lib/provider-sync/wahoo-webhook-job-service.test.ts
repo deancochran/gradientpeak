@@ -7,6 +7,7 @@ function createDeps() {
       importWorkoutSummary: vi.fn(),
     },
     providerSyncRepository: {
+      bindJobImportRun: vi.fn().mockResolvedValue(true),
       claimDueJobs: vi.fn(),
       enqueueJob: vi.fn(),
       finalizeWebhookReceiptJob: vi.fn().mockResolvedValue(true),
@@ -29,10 +30,12 @@ function createDeps() {
 
 describe("WahooWebhookJobService", () => {
   it.each([
-    "stale parser",
-    "stale decoded contract",
-    "stale materializer",
-  ])("dead-letters a %s result on its first attempt without retrying", async () => {
+    ["stale parser", "unsupported_persisted_version"],
+    ["stale decoded contract", "unsupported_persisted_version"],
+    ["stale materializer", "unsupported_persisted_version"],
+    ["missing provider start time", "missing_started_at"],
+    ["invalid provider start time", "invalid_started_at"],
+  ] as const)("dead-letters a %s result on its first attempt without retrying", async (_, reason) => {
     const deps = createDeps();
     deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
       {
@@ -55,8 +58,8 @@ describe("WahooWebhookJobService", () => {
     });
     deps.importer.importWorkoutSummary.mockResolvedValue({
       success: false,
-      error: "Wahoo activity has non-current persisted versions",
-      failureReason: "unsupported_persisted_version",
+      error: "Wahoo activity cannot be imported",
+      failureReason: reason,
     });
 
     await expect(
@@ -67,7 +70,7 @@ describe("WahooWebhookJobService", () => {
     expect(deps.providerSyncRepository.finalizeWebhookReceiptJob).toHaveBeenCalledWith({
       jobId: "job-1",
       jobStatus: "dead_lettered",
-      lastError: "unsupported_persisted_version",
+      lastError: reason,
       receiptId: "receipt-1",
       receiptStatus: "failed",
       workerId: expect.stringMatching(/^worker-1:/),
@@ -238,7 +241,11 @@ describe("WahooWebhookJobService", () => {
     expect(deps.importer.importWorkoutSummary).toHaveBeenCalledWith(
       42,
       { id: 99, duration_total_accum: 1200 },
-      { integrationGeneration: 1, integrationId: "integration-1", signal: expect.any(AbortSignal) },
+      {
+        integrationGeneration: 1,
+        integrationId: "integration-1",
+        signal: expect.any(AbortSignal),
+      },
     );
     expect(deps.providerSyncRepository.finalizeWebhookReceiptJob).toHaveBeenCalledWith({
       jobId: "job-1",
@@ -248,6 +255,56 @@ describe("WahooWebhookJobService", () => {
       workerId: expect.stringMatching(/^worker-1:/),
     });
     expect(deps.providerSyncRepository.markWebhookReceiptProcessed).not.toHaveBeenCalled();
+  });
+
+  it("retries from receipt/job durability when finalization fails after a material commit", async () => {
+    const deps = createDeps();
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
+      {
+        attempt: 1,
+        id: "job-1",
+        integrationId: "integration-1",
+        integrationGeneration: 1,
+        jobType: "wahoo.process_webhook_receipt",
+        maxAttempts: 5,
+        payload: { receiptId: "receipt-1" },
+        profileId: "profile-1",
+        provider: "wahoo",
+        runAt: "2026-04-01T12:00:00.000Z",
+        status: "running",
+      },
+    ]);
+    deps.providerSyncRepository.getWebhookReceipt.mockResolvedValue({
+      id: "receipt-1",
+      payload: {
+        event_type: "workout_summary",
+        user: { id: 42 },
+        workout_summary: { id: 99, started_at: "2026-04-01T10:00:00.000Z" },
+      },
+    });
+    deps.importer.importWorkoutSummary.mockResolvedValue({
+      success: true,
+      activityId: "activity-1",
+    });
+    deps.providerSyncRepository.finalizeWebhookReceiptJob.mockRejectedValueOnce(
+      new Error("receipt_finalization_failed"),
+    );
+
+    await expect(
+      new WahooWebhookJobService(deps as never).processDueJobs({ workerId: "worker-1" }),
+    ).resolves.toEqual({ completed: 0, failed: 1, processed: 1 });
+    expect(deps.importer.importWorkoutSummary).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ id: 99 }),
+      {
+        integrationGeneration: 1,
+        integrationId: "integration-1",
+        signal: expect.any(AbortSignal),
+      },
+    );
+    expect(deps.providerSyncRepository.finalizeWebhookReceiptJob).toHaveBeenLastCalledWith(
+      expect.objectContaining({ jobStatus: "failed", receiptStatus: "failed" }),
+    );
   });
 
   it("fences a receipt when disconnect commits while the receipt is being loaded", async () => {

@@ -618,7 +618,7 @@ describe("socialRouter", () => {
             {
               id: trainingPlanId,
               ownerProfileId: null,
-              templateVisibility: "public",
+              contentVisibility: "public",
               isSystem: true,
             },
           ],

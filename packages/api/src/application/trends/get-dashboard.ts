@@ -141,7 +141,7 @@ export type BuildDerivedSummaries = (input: {
   store: ActivityAnalysisStore;
 }) => Promise<DerivedSummaryMap>;
 
-export async function getTrendsDashboard({
+export async function getTrendsDashboardProjection({
   buildDerivedSummaries,
   repository,
   store,
@@ -212,12 +212,24 @@ export async function getTrendsDashboard({
     };
   });
 
-  return trendsDashboardOutputSchema.parse({
-    volume: buildVolumeTrends(normalized, groupBy, derived),
-    performance: {
-      dataPoints: performanceDataPoints,
-    },
-    zones: buildZoneDistributionTrends(normalized, derived),
-    consistency: buildConsistencyMetrics(normalized, startDate, endDate),
-  });
+  return {
+    activities,
+    derived,
+    normalized,
+    dashboard: trendsDashboardOutputSchema.parse({
+      volume: buildVolumeTrends(normalized, groupBy, derived),
+      performance: {
+        dataPoints: performanceDataPoints,
+      },
+      zones: buildZoneDistributionTrends(normalized, derived),
+      consistency: buildConsistencyMetrics(normalized, startDate, endDate),
+    }),
+  };
+}
+
+export async function getTrendsDashboard(
+  input: Parameters<typeof getTrendsDashboardProjection>[0],
+) {
+  const projection = await getTrendsDashboardProjection(input);
+  return "kind" in projection ? projection : projection.dashboard;
 }

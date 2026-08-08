@@ -150,6 +150,7 @@ export function CreateEventMainStep({
   selectedActivityPlan,
   selectedRoute,
   showFooterActions = true,
+  showRepeat = true,
   testIDPrefix,
   titleErrorMessage,
 }: {
@@ -170,6 +171,7 @@ export function CreateEventMainStep({
   selectedActivityPlan: ActivityPlanListItem | null;
   selectedRoute: EventRouteSummary | null;
   showFooterActions?: boolean;
+  showRepeat?: boolean;
   testIDPrefix: string;
   titleErrorMessage?: string | null;
 }) {
@@ -291,12 +293,14 @@ export function CreateEventMainStep({
               pickerPresentation="modal"
               testId={`${testIDPrefix}-start-date-button`}
             />
-            <SummaryRow
-              label="Repeat"
-              onPress={onOpenRepeat}
-              testID={`${testIDPrefix}-repeat-row`}
-              value={repeatLabel(draft.recurrenceFrequency, draft.recurrenceEndDate)}
-            />
+            {showRepeat ? (
+              <SummaryRow
+                label="Repeat"
+                onPress={onOpenRepeat}
+                testID={`${testIDPrefix}-repeat-row`}
+                value={repeatLabel(draft.recurrenceFrequency, draft.recurrenceEndDate)}
+              />
+            ) : null}
             <FormTextField
               control={control}
               label="Title"
@@ -346,12 +350,14 @@ export function CreateEventMainStep({
               switchLabel="All day"
               testId={`${testIDPrefix}-all-day-switch`}
             />
-            <SummaryRow
-              label="Repeat"
-              onPress={onOpenRepeat}
-              testID={`${testIDPrefix}-repeat-row`}
-              value={repeatLabel(draft.recurrenceFrequency, draft.recurrenceEndDate)}
-            />
+            {showRepeat ? (
+              <SummaryRow
+                label="Repeat"
+                onPress={onOpenRepeat}
+                testID={`${testIDPrefix}-repeat-row`}
+                value={repeatLabel(draft.recurrenceFrequency, draft.recurrenceEndDate)}
+              />
+            ) : null}
           </>
         )}
 

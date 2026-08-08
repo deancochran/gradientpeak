@@ -1,5 +1,4 @@
 import { keepPreviousData, skipToken } from "@tanstack/react-query";
-import { useRef } from "react";
 import { api } from "@/lib/api";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
@@ -11,35 +10,15 @@ const ACTIVITY_PLAN_PICKER_PAGE_SIZE = 25;
 export function useTrainingPlanCreationQueries({
   activityPlanPicker,
   mode = "create",
-  onCreated,
   onCreateError,
-  onUpdated,
   onUpdateError,
   planId,
 }: UseTrainingPlanCreationServiceOptions) {
   const utils = api.useUtils();
-  const performanceModelAsOf = useRef(new Date().toISOString()).current;
   const isEditMode = mode === "edit" && !!planId;
   const shouldLoadCreateContext = mode === "create";
 
-  const profileQuery = api.profiles.get.useQuery(undefined, {
-    enabled: shouldLoadCreateContext,
-  });
-  const performanceTargetsQuery = api.profiles.getPerformanceTargets.useQuery(
-    { asOf: performanceModelAsOf },
-    { enabled: shouldLoadCreateContext },
-  );
-  const profileMetricsQuery = api.profileMetrics.list.useQuery(
-    { limit: 50 },
-    { enabled: shouldLoadCreateContext },
-  );
-  const activityEffortsQuery = api.activityEfforts.getForProfile.useQuery(undefined, {
-    enabled: shouldLoadCreateContext,
-  });
-  const currentTrainingStatusQuery = api.trainingPlans.getCurrentStatus.useQuery(undefined, {
-    enabled: shouldLoadCreateContext,
-    refetchOnWindowFocus: false,
-  });
+  const profileQuery = api.profiles.get.useQuery();
   const profileGoalsQuery = useProfileGoals({
     enabled: shouldLoadCreateContext,
     loadAllPages: true,
@@ -67,6 +46,21 @@ export function useTrainingPlanCreationQueries({
     refetchOnWindowFocus: false,
     retry: false,
   });
+  const projectionProfileId = profileQuery.data?.id;
+  const publishedStateQuery = api.athleteIntelligence.getReadModel.useQuery(
+    projectionProfileId
+      ? {
+          profileId: projectionProfileId,
+          sections: {
+            publishedState: true,
+            status: true,
+            currentBaseline: { includePlanningContext: true },
+          },
+        }
+      : skipToken,
+    { enabled: Boolean(projectionProfileId), refetchOnWindowFocus: false },
+  );
+  const creationContextQuery = publishedStateQuery;
   const editPlanActivityPlanIds = getTrainingPlanStructureActivityPlanIds(
     editPlanQuery.data?.structure,
   );
@@ -77,38 +71,22 @@ export function useTrainingPlanCreationQueries({
     },
   );
 
-  const createPlanMutation = useReliableMutation(api.trainingPlans.create, {
+  const commitPlanMutation = useReliableMutation(api.trainingPlans.commit, {
     invalidate: [utils.trainingPlans],
     silent: true,
-    onSuccess: (createdPlan) => {
-      onCreated?.(createdPlan);
-    },
     onError: (error) => {
-      onCreateError?.(error);
-    },
-  });
-  const updatePlanMutation = useReliableMutation(api.trainingPlans.update, {
-    invalidate: [utils.trainingPlans],
-    silent: true,
-    onSuccess: (updatedPlan) => {
-      onUpdated?.(updatedPlan);
-    },
-    onError: async (error) => {
-      if (error.data?.code === "CONFLICT") await editPlanQuery.refetch();
-      onUpdateError?.(error);
+      if (isEditMode) onUpdateError?.(error);
+      else onCreateError?.(error);
     },
   });
   return {
     profileQuery,
-    performanceTargetsQuery,
-    profileMetricsQuery,
-    activityEffortsQuery,
-    currentTrainingStatusQuery,
+    creationContextQuery,
     profileGoalsQuery,
     activityPlansQuery,
     editPlanQuery,
     linkedActivityPlansQuery,
-    createPlanMutation,
-    updatePlanMutation,
+    publishedStateQuery,
+    commitPlanMutation,
   };
 }

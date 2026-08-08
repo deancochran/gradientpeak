@@ -1,9 +1,5 @@
-import {
-  activityPlanStructureSchema,
-  type EventLifecycle,
-  type EventRecurrence,
-  getScheduledDateKey,
-} from "@repo/core";
+import { activityPlanStructureSchema, type EventLifecycle } from "@repo/core";
+import { getCalendarDateInIanaZone } from "@repo/core/calendar";
 import type { PublicEventStatus } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import type { Context } from "../../context";
@@ -15,7 +11,7 @@ import {
   EventCurrentPlanUpdateConflict,
   EventPlanReplacementCompletionConflict,
 } from "../../infrastructure/repositories/drizzle-event-write-repository";
-import type { PlannedActivityQueueResult } from "../../lib/provider-sync/planned-activities";
+import type { WahooPlannedActivityQueueResult } from "../../lib/provider-sync/planned-activities";
 import type { createContentAccessPermissions } from "../../permissions/content-access";
 import type { EventWriteEventRecord } from "../../repositories";
 
@@ -27,7 +23,6 @@ type ProtectedContext = Context & {
 
 type CoreEventType = "planned" | "race_target" | "custom" | "imported";
 type DbEventType = "planned" | "race_target" | "custom" | "imported";
-type EventMutationScope = "single" | "future" | "series";
 
 type NormalizedEventUpdatePatch = {
   activity_plan_id?: string | null;
@@ -35,7 +30,6 @@ type NormalizedEventUpdatePatch = {
   training_plan_id?: string | null;
   notes?: string | null;
   event_type?: CoreEventType;
-  recurrence?: EventRecurrence | null;
   lifecycle?: EventLifecycle;
   title?: string;
   description?: string | null;
@@ -44,12 +38,6 @@ type NormalizedEventUpdatePatch = {
   starts_at?: string;
   ends_at?: string | null;
   scheduled_date?: string;
-};
-
-type MaterializedOccurrence = {
-  startsAt: string;
-  endsAt: string | null;
-  occurrenceKey: string;
 };
 
 type MappedEvent = {
@@ -71,16 +59,10 @@ type UpdateEventUseCaseDependencies<TInput, TMappedEvent extends MappedEvent> = 
     changedDate?: string | null;
     changeAt?: string;
   }) => unknown;
-  buildMaterializedRecurrenceOccurrences: (input: {
-    startsAt: string;
-    endsAt: string | null;
-    recurrence: EventRecurrence;
-  }) => MaterializedOccurrence[];
-  enqueueProviderPlannedActivityJobs: (
+  enqueueWahooPlannedActivityJobs: (
     ctx: ProtectedContext,
     input: { eventIds: string[]; operation: "publish" | "unsync"; profileId?: string },
-  ) => Promise<PlannedActivityQueueResult | null>;
-  ensurePersistableRecurrence: (recurrence: EventRecurrence | null | undefined) => void;
+  ) => Promise<WahooPlannedActivityQueueResult | null>;
   getContentPermissions: (ctx: Context) => ContentPermissions;
   getEventCompletionRepository: (
     ctx: Context,
@@ -101,7 +83,7 @@ type UpdateEventUseCaseDependencies<TInput, TMappedEvent extends MappedEvent> = 
 };
 
 export async function updateEventUseCase<
-  TInput extends { id: string; scope?: EventMutationScope },
+  TInput extends { id: string; scope?: "single" },
   TMappedEvent extends MappedEvent,
 >(input: {
   ctx: ProtectedContext;
@@ -110,7 +92,7 @@ export async function updateEventUseCase<
 }) {
   const { ctx, dependencies } = input;
   const id = input.input.id;
-  const scope = input.input.scope ?? "single";
+  const scope = "single" as const;
   const eventWriteRepository = dependencies.getEventWriteRepository(ctx);
   const completionRepository = dependencies.getEventCompletionRepository(ctx);
   const permissions = dependencies.getContentPermissions(ctx);
@@ -152,35 +134,6 @@ export async function updateEventUseCase<
   const isPlannedLikeEvent = existingEventType === "planned" || targetEventType === "planned";
   const hasCompletionLinkage =
     existingEvent.linked_activity_id !== null || existingEvent.status === "completed";
-
-  dependencies.ensurePersistableRecurrence(patch.recurrence);
-
-  if (patch.recurrence !== undefined && scope === "single") {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "Recurrence updates require future or series scope",
-    });
-  }
-
-  if (scope !== "single") {
-    if (!existingEvent.series_id && !existingEvent.recurrence_rule) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: `Mutation scope "${scope}" requires an event series`,
-      });
-    }
-
-    if (
-      scheduledDate !== undefined ||
-      patch.starts_at !== undefined ||
-      patch.ends_at !== undefined
-    ) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: "Date/time updates are only supported with single scope",
-      });
-    }
-  }
 
   const nextActivityPlanId =
     patch.activity_plan_id !== undefined ? patch.activity_plan_id : existingEvent.activity_plan_id;
@@ -306,18 +259,12 @@ export async function updateEventUseCase<
       ? { scheduled_date: scheduledDate }
       : patch.starts_at !== undefined
         ? {
-            scheduled_date: getScheduledDateKey(
+            scheduled_date: getCalendarDateInIanaZone(
               patch.starts_at,
               patch.timezone ?? existingEvent.timezone,
             ),
           }
         : {}),
-    ...(patch.recurrence !== undefined
-      ? {
-          recurrence_rule: patch.recurrence?.rule ?? null,
-          recurrence_timezone: patch.recurrence?.timezone ?? null,
-        }
-      : {}),
   };
 
   if (scheduledDate !== undefined && nextAllDay) {
@@ -380,57 +327,6 @@ export async function updateEventUseCase<
     });
   }
 
-  if (patch.recurrence) {
-    try {
-      const existingSeriesRows = await eventWriteRepository.listOwnedEventsForSeries({
-        anchorEvent: representative,
-        profileId: ctx.session.user.id,
-      });
-
-      if (existingSeriesRows.length <= 1) {
-        const occurrences = dependencies.buildMaterializedRecurrenceOccurrences({
-          startsAt: representative.starts_at,
-          endsAt: representative.ends_at,
-          recurrence: patch.recurrence,
-        });
-
-        for (const occurrence of occurrences.slice(1)) {
-          const occurrenceData = await eventWriteRepository.createOwnedEvent({
-            profileId: ctx.session.user.id,
-            eventType: representative.event_type,
-            title: representative.title,
-            allDay: representative.all_day,
-            timezone: representative.timezone,
-            scheduledDate:
-              representative.event_type === "planned"
-                ? occurrence.startsAt.slice(0, 10)
-                : getScheduledDateKey(occurrence.startsAt, representative.timezone),
-            startsAt: occurrence.startsAt,
-            endsAt: occurrence.endsAt,
-            status: representative.status,
-            activityPlanId: representative.activity_plan_id,
-            trainingPlanId: representative.training_plan_id,
-            notes: representative.notes,
-            description: representative.description,
-            recurrenceRule: representative.recurrence_rule,
-            recurrenceTimezone: representative.recurrence_timezone,
-            routeId: representative.route_id ?? null,
-            seriesId: representative.series_id ?? representative.id,
-            occurrenceKey: occurrence.occurrenceKey,
-            originalStartsAt: occurrence.startsAt,
-            sourceProvider: representative.source_provider,
-          });
-          updatedRows.push(occurrenceData);
-        }
-      }
-    } catch (error) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: error instanceof Error ? error.message : "Failed to materialize recurring events",
-      });
-    }
-  }
-
   const event = dependencies.mapEvent(representative);
 
   if (permissions) {
@@ -448,7 +344,7 @@ export async function updateEventUseCase<
     );
   }
 
-  let plannedActivitySyncResult: PlannedActivityQueueResult | null = null;
+  let plannedActivitySyncResult: WahooPlannedActivityQueueResult | null = null;
   const updatedPlannedEventIds = updatedRows
     .filter((row) => row.event_type === "planned" && row.activity_plan_id && row.route_id === null)
     .map((row) => row.id);
@@ -465,11 +361,11 @@ export async function updateEventUseCase<
     try {
       plannedActivitySyncResult =
         updatedPlannedEventIds.length > 0
-          ? await dependencies.enqueueProviderPlannedActivityJobs(ctx, {
+          ? await dependencies.enqueueWahooPlannedActivityJobs(ctx, {
               eventIds: updatedPlannedEventIds,
               operation: "publish",
             })
-          : await dependencies.enqueueProviderPlannedActivityJobs(ctx, {
+          : await dependencies.enqueueWahooPlannedActivityJobs(ctx, {
               eventIds: removedPlannedEventIds,
               operation: "unsync",
             });

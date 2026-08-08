@@ -14,7 +14,6 @@ export type TrainingPlanProjectionFacade = {
   active: ActiveTrainingPlanProjection;
   authoritative: BackendPreviewProjection | null;
   inspectorInsight: ScheduleInspectorBackendInsight | null;
-  previewSnapshotToken: string | null;
 };
 
 export function createTrainingPlanProjectionFacade({
@@ -38,6 +37,5 @@ export function createTrainingPlanProjectionFacade({
     active: activeProjection,
     authoritative: authoritativeProjection,
     inspectorInsight,
-    previewSnapshotToken: authoritativeProjection?.previewSnapshotToken ?? null,
   };
 }

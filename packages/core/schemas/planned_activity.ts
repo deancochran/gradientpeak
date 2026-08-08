@@ -88,7 +88,7 @@ export const eventTypeInputSchema = eventTypeSchema;
 export const editableEventTypeSchema = z.enum(["planned", "race_target", "custom"]);
 export const editableEventTypeInputSchema = editableEventTypeSchema;
 
-export const eventMutationScopeSchema = z.enum(["single", "future", "series"]);
+export const eventMutationScopeSchema = z.enum(["single", "series"]);
 
 export const iCalRRuleSchema = z
   .string()
@@ -363,17 +363,10 @@ export const editableEventDetailsAndSchedulePatchSchema = requireNonEmptyPatch(
   }
 });
 
-export const editableEventRecurrenceOnlyPatchSchema = z
-  .object({
-    recurrence: persistableEventRecurrenceSchema.nullable(),
-  })
-  .strict();
-
 export const editableEventPatchSchema = z.union([
   editableEventDetailsAndSchedulePatchSchema,
   editableEventDetailsOnlyPatchSchema,
   editableEventScheduleOnlyPatchSchema,
-  editableEventRecurrenceOnlyPatchSchema,
 ]);
 
 export const customEventCreateSchema = z
@@ -429,18 +422,10 @@ export const eventCreateSchema = z.discriminatedUnion("event_type", [
 export const eventUpdateSchema = z
   .object({
     id: z.string().uuid("Invalid event ID"),
-    scope: eventMutationScopeSchema.default("single"),
+    scope: z.literal("single").default("single"),
     patch: editableEventPatchSchema,
   })
-  .superRefine((mutation, ctx) => {
-    if ("recurrence" in mutation.patch && mutation.scope === "single") {
-      ctx.addIssue({
-        code: "custom",
-        path: ["scope"],
-        message: 'scope must be "future" or "series" when updating recurrence',
-      });
-    }
-  });
+  .strict();
 
 export const importedEventLifecycleMutationSchema = z.object({
   id: z.string().uuid("Invalid event ID"),
@@ -489,7 +474,6 @@ export const plannedActivityUpdateSchema = z.object({
     .optional(),
   notes: z.string().max(2000, "Notes are too long").nullable().optional(),
   event_type: editableEventTypeInputSchema.optional(),
-  recurrence: persistableEventRecurrenceSchema.nullable().optional(),
   lifecycle: eventLifecycleSchema.optional(),
 });
 
@@ -501,7 +485,7 @@ export const plannedActivityRescheduleSchema = z.object({
   id: z.string().uuid("Invalid planned activity ID"),
   new_date: z.string().refine((val) => !Number.isNaN(Date.parse(val)), "Invalid date format"),
   reason: z.string().max(500, "Reason is too long").optional(),
-  scope: eventMutationScopeSchema.default("single"),
+  scope: z.literal("single").default("single"),
 });
 
 /**

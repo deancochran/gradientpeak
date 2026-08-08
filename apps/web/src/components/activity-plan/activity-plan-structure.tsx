@@ -40,7 +40,7 @@ export function ActivityPlanStructure({ structure }: { structure: unknown }) {
                 <h3 className="font-semibold">{segment.name}</h3>
                 <Badge variant="secondary">{segment.role}</Badge>
                 {segment.role === "activity" ? (
-                  <Badge variant="outline">{segment.activity_category}</Badge>
+                  <Badge variant="outline">{parsed.data.activity_category}</Badge>
                 ) : null}
               </div>
               {segment.role === "activity" ? (

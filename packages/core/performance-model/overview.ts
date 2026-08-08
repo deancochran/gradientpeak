@@ -5,6 +5,7 @@ import {
   athletePerformanceModelSnapshotSchema,
   type HeartRateCalibrationFact,
 } from "./contracts";
+import type { AthletePerformanceTargetFacts } from "./projections";
 
 const overviewConfidenceSchema = z.enum(["high", "medium", "low", "unavailable"]);
 const overviewFreshnessSchema = z.enum(["current", "stale", "unavailable"]);
@@ -312,6 +313,59 @@ export function projectAthletePerformanceOverview(
       ...categoryHeartRateOverview({
         facts: snapshot.heartRate.swim,
         asOf: snapshot.asOf,
+        activityLabel: "swimming",
+      }),
+    },
+  });
+}
+
+/** Projects the persisted target authority without requiring a duplicate full model snapshot. */
+export function projectAthletePerformanceTargetOverview(
+  input: AthletePerformanceTargetFacts,
+): AthletePerformanceOverview {
+  const unavailable = () => unavailableOverviewItem({ freshness: "unavailable", showAction: true });
+  return athletePerformanceOverviewSchema.parse({
+    bike: {
+      fiveSecondPower: unavailable(),
+      planningThresholdPower: projectOutcome({
+        outcome: input.cycling.planningThresholdPower,
+        asOf: input.asOf,
+        formatValue: (value) => `${formatInteger(value)} W`,
+        availableTrainingImpact: "Sets cycling power zones and cycling power targets.",
+      }),
+      estimatedThresholdDuration: unavailable(),
+      durationRetention: unavailable(),
+      ...categoryHeartRateOverview({
+        facts: input.heartRate.bike,
+        asOf: input.asOf,
+        activityLabel: "cycling",
+      }),
+    },
+    run: {
+      planningThresholdPace: projectOutcome({
+        outcome: input.running.planningThresholdPace,
+        asOf: input.asOf,
+        formatValue: (value) => formatPace(value, "min/km"),
+        availableTrainingImpact: "Sets running pace targets.",
+      }),
+      durationRetention: unavailable(),
+      ...categoryHeartRateOverview({
+        facts: input.heartRate.run,
+        asOf: input.asOf,
+        activityLabel: "running",
+      }),
+    },
+    swim: {
+      cssPace: projectOutcome({
+        outcome: input.swimming.css,
+        asOf: input.asOf,
+        formatValue: (value) => formatPace(value, "min/100m"),
+        availableTrainingImpact: "Sets swim pace targets.",
+        showAction: false,
+      }),
+      ...categoryHeartRateOverview({
+        facts: input.heartRate.swim,
+        asOf: input.asOf,
         activityLabel: "swimming",
       }),
     },

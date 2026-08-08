@@ -50,12 +50,12 @@ const ids = {
 };
 const plan = {
   version: 3 as const,
+  activity_category: "run" as const,
   segments: [
     {
       id: ids.segment,
       role: "activity" as const,
       name: "Run",
-      activity_category: "run" as const,
       intervals: [
         {
           id: ids.interval,

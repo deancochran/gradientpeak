@@ -205,7 +205,7 @@ describe("group event detail route", () => {
     expect(screen.queryByTestId("group-event-detail-copy-series-plans")).toBeNull();
   });
 
-  it("offers separate edit actions for the occurrence and series", () => {
+  it("offers occurrence editing without exposing series editing", () => {
     renderNative(<GroupEventDetailRoute />);
 
     fireEvent.press(screen.getByTestId("group-event-detail-edit"));
@@ -214,11 +214,7 @@ describe("group event detail route", () => {
       params: { groupEventId: "99999999-9999-4999-8999-999999999999" },
     });
 
-    fireEvent.press(screen.getByTestId("group-event-detail-edit-series"));
-    expect(routerPushMock).toHaveBeenCalledWith({
-      pathname: "/group-event-edit",
-      params: { groupEventId: "88888888-8888-4888-8888-888888888888" },
-    });
+    expect(screen.queryByTestId("group-event-detail-edit-series")).toBeNull();
   });
 
   it("exposes cancel from the management menu for recurring occurrences", () => {

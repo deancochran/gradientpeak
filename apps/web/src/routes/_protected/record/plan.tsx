@@ -12,6 +12,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { CalendarDays, Check, Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api } from "../../../lib/api/client";
+import { getTodayDateKey } from "../../../lib/planning";
 import { useTimerOnlyRecording } from "../../../lib/recording/provider";
 import {
   formatScheduledTime,
@@ -34,7 +35,8 @@ export function RecordPlanPage() {
   const [categoryFilter, setCategoryFilter] = useState<"all" | typeof launcher.activity_category>(
     "all",
   );
-  const { data: events = [], isLoading, error } = api.events.getToday.useQuery();
+  const { data, isLoading, error } = api.calendar.day.useQuery({ date: getTodayDateKey() });
+  const events = data?.items ?? [];
 
   const filteredEvents = useMemo(() => {
     const query = searchText.trim().toLowerCase();

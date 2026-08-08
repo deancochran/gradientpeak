@@ -3,12 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import { createQueryMapDbMock, type QueryMap, type QueryResult } from "../../test/mock-query-db";
 import { trainingPlansRouter } from "../planning/training-plans";
 
-const { enqueuePlannedActivitySyncAfterCalendarMutation } = vi.hoisted(() => ({
-  enqueuePlannedActivitySyncAfterCalendarMutation: vi.fn(),
+const { enqueueWahooPlannedActivitySyncAfterCalendarMutation } = vi.hoisted(() => ({
+  enqueueWahooPlannedActivitySyncAfterCalendarMutation: vi.fn(),
 }));
 
-vi.mock("../../lib/provider-sync/planned-activities/calendar-mutation-sync", () => ({
-  enqueuePlannedActivitySyncAfterCalendarMutation,
+vi.mock("../../lib/provider-sync/planned-activities/wahoo-calendar-mutation-sync", () => ({
+  enqueueWahooPlannedActivitySyncAfterCalendarMutation,
 }));
 
 function createCaller(queryMap: QueryMap) {
@@ -105,7 +105,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
           description: null,
           profile_id: "profile-123",
           is_system_template: false,
-          template_visibility: "private",
+          content_visibility: "private",
           sessions_per_week_target: 4,
           duration_hours: 9,
           structure: {},
@@ -169,7 +169,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
             description: null,
             profile_id: "profile-123",
             is_system_template: false,
-            template_visibility: "private",
+            content_visibility: "private",
             sessions_per_week_target: 4,
             duration_hours: 9,
             structure: {},
@@ -183,7 +183,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
             description: null,
             profile_id: "template-owner",
             is_system_template: false,
-            template_visibility: "public",
+            content_visibility: "public",
             sessions_per_week_target: 4,
             duration_hours: 9,
             structure: {
@@ -211,7 +211,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
             description: null,
             profile_id: "profile-123",
             is_system_template: false,
-            template_visibility: "private",
+            content_visibility: "private",
             sessions_per_week_target: 4,
             duration_hours: 9,
             structure: {},
@@ -265,7 +265,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
             description: null,
             profile_id: "template-owner",
             is_system_template: false,
-            template_visibility: "public",
+            content_visibility: "public",
             sessions_per_week_target: 4,
             duration_hours: 9,
             structure: {
@@ -353,7 +353,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
           description: null,
           profile_id: "template-owner",
           is_system_template: false,
-          template_visibility: "public",
+          content_visibility: "public",
           sessions_per_week_target: 3,
           duration_hours: 4,
           structure: {
@@ -396,7 +396,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
       expect.any(String),
     ]);
     expect(new Set(insertedRows.map((row) => row.id)).size).toBe(3);
-    expect(enqueuePlannedActivitySyncAfterCalendarMutation).toHaveBeenCalledWith(
+    expect(enqueueWahooPlannedActivitySyncAfterCalendarMutation).toHaveBeenCalledWith(
       expect.objectContaining({
         eventIds: ["swim-event", "bike-event", "run-event"],
         operation: "publish",
@@ -434,7 +434,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
             description: null,
             profile_id: "template-owner",
             is_system_template: false,
-            template_visibility: "public",
+            content_visibility: "public",
             sessions_per_week_target: 4,
             duration_hours: 9,
             structure: {
@@ -494,7 +494,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
             description: null,
             profile_id: "template-owner",
             is_system_template: false,
-            template_visibility: "public",
+            content_visibility: "public",
             sessions_per_week_target: 4,
             duration_hours: 9,
             structure: {
@@ -538,7 +538,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
             description: null,
             profile_id: "template-owner",
             is_system_template: false,
-            template_visibility: "public",
+            content_visibility: "public",
             structure: {
               start_date: "2026-01-01",
               sessions: [{ offset_days: 0, title: "Unlinked planned session" }],
@@ -577,7 +577,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
             description: null,
             profile_id: null,
             is_system_template: true,
-            template_visibility: "public",
+            content_visibility: "public",
             sessions_per_week_target: 4,
             duration_hours: 9,
             structure: {
@@ -635,7 +635,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
             description: null,
             profile_id: null,
             is_system_template: true,
-            template_visibility: "public",
+            content_visibility: "public",
             sessions_per_week_target: 4,
             duration_hours: 9,
             structure: {
@@ -703,7 +703,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
               description: null,
               profile_id: "template-owner",
               is_system_template: false,
-              template_visibility: "public",
+              content_visibility: "public",
               sessions_per_week_target: 4,
               duration_hours: 9,
               structure: {
@@ -766,7 +766,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
               description: null,
               profile_id: "template-owner",
               is_system_template: false,
-              template_visibility: "public",
+              content_visibility: "public",
               sessions_per_week_target: 4,
               duration_hours: 9,
               structure: {
@@ -836,7 +836,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
   });
 
   it("does not delete a schedule batch when the transactional unsync enqueue fails", async () => {
-    enqueuePlannedActivitySyncAfterCalendarMutation.mockResolvedValueOnce({
+    enqueueWahooPlannedActivitySyncAfterCalendarMutation.mockResolvedValueOnce({
       error: "queue unavailable",
       queued: false,
       success: false,
@@ -852,7 +852,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
       }),
     ).rejects.toThrow("Failed to enqueue planned activity unsync jobs");
 
-    expect(enqueuePlannedActivitySyncAfterCalendarMutation).toHaveBeenCalledWith(
+    expect(enqueueWahooPlannedActivitySyncAfterCalendarMutation).toHaveBeenCalledWith(
       expect.objectContaining({
         eventIds: ["event-1"],
         operation: "unsync",

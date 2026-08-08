@@ -50,7 +50,10 @@ function CreateGroupEventPage() {
                     : await createMutation.mutateAsync({ groupId, ...value });
                   if (!result.event)
                     throw new Error("The event was created without a readable result.");
-                  await utils.groups.events.invalidate();
+                  await Promise.all([
+                    utils.groups.events.invalidate(),
+                    utils.calendar.invalidate(),
+                  ]);
                   toast.success(value.recurrenceRule ? "Recurring event created" : "Event created");
                   void navigate({
                     to: "/groups/events/$groupEventId",

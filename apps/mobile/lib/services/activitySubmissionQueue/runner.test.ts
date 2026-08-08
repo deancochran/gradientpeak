@@ -254,7 +254,6 @@ describe("activity submission queue runner", () => {
       finishedAt: "2026-01-01T11:00:00.000Z",
       activityPlanId: undefined,
       executionManifest,
-      artifactSource: "uploadedArtifact",
       uploadedArtifact: { ingestionId: "ingestion-1" },
       summary: { distanceMeters: 25000, calories: 500 },
       source: "mobile_recording",
@@ -357,15 +356,6 @@ describe("activity submission queue runner", () => {
         sha256: "a".repeat(64),
         format: "fit" as const,
         mediaType: "application/vnd.ant.fit",
-        acceptedArtifact: {
-          sha256: "a".repeat(64),
-          byteSize: 1024,
-          bucket: "activity-files",
-          path: `artifacts/sha256/profile-1/${"a".repeat(64)}`,
-          mediaType: "application/vnd.ant.fit",
-          format: "fit" as const,
-          originalName: null,
-        },
       })),
     });
 

@@ -7,7 +7,7 @@ import {
   calculateCyclingNormalizedPower,
 } from "@repo/core/calculations";
 import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
-import type { StoredHeartRateDurationEvidence } from "@repo/core/zones";
+import type { HeartRateDurationEvidence } from "@repo/core/zones";
 import { describe, expect, it, vi } from "vitest";
 import type {
   ActivityAnalysisContextEvidenceRequest,
@@ -63,7 +63,7 @@ function segment(
   activity_category: "bike" | "run" | "swim" | "strength" | "other",
   start: number,
   end: number,
-  heartRateDistribution?: StoredHeartRateDurationEvidence,
+  heartRateDistribution?: HeartRateDurationEvidence,
 ) {
   const normalizedPowerResult =
     activity_category === "bike"
@@ -102,6 +102,39 @@ function segment(
       heartRateDistribution,
     },
   };
+}
+
+function heartRateEvidence(
+  coverageSeconds: number,
+  buckets: Array<{ bpm: number; seconds: number }>,
+): HeartRateDurationEvidence {
+  const eligibleDurationSeconds = 3600;
+  const partial = coverageSeconds < eligibleDurationSeconds;
+  const evidence = {
+    calculationVersion: "heart-rate-zone-duration-v1" as const,
+    coverageSeconds,
+    eligibleDurationSeconds,
+    sourceTimeCoverage: coverageSeconds / eligibleDurationSeconds,
+    timeWeightedAverageBpm:
+      buckets.reduce((sum, bucket) => sum + bucket.bpm * bucket.seconds, 0) / coverageSeconds,
+    buckets,
+    diagnostics: {
+      sourceSampleCount: 0,
+      acceptedTimestampCount: 0,
+      contributingIntervalCount: 0,
+      observedSpanSeconds: eligibleDurationSeconds,
+      pausedDurationSeconds: 0,
+      excludedGapDurationSeconds: 0,
+      excludedMissingDurationSeconds: eligibleDurationSeconds - coverageSeconds,
+      excludedInvalidDurationSeconds: 0,
+      duplicateTimestampCount: 0,
+      reversedTimestampCount: 0,
+      invalidTimestampCount: 0,
+    },
+  };
+  return partial
+    ? { ...evidence, status: "partial", reason: "source_incomplete" }
+    : { ...evidence, status: "available" };
 }
 
 function activity(
@@ -1178,21 +1211,15 @@ describe("segment-derived activity analysis", () => {
   it.each([
     {
       name: "full",
-      distribution: {
-        coverageSeconds: 3600,
-        buckets: [
-          { bpm: 110, seconds: 1800 },
-          { bpm: 150, seconds: 1800 },
-        ],
-      },
+      distribution: heartRateEvidence(3600, [
+        { bpm: 110, seconds: 1800 },
+        { bpm: 150, seconds: 1800 },
+      ]),
       expected: { status: "available", contributingDurationSeconds: 3600 },
     },
     {
       name: "partial",
-      distribution: {
-        coverageSeconds: 1800,
-        buckets: [{ bpm: 150, seconds: 1800 }],
-      },
+      distribution: heartRateEvidence(1800, [{ bpm: 150, seconds: 1800 }]),
       expected: {
         status: "unavailable",
         contributingDurationSeconds: 1800,
@@ -1230,7 +1257,7 @@ describe("segment-derived activity analysis", () => {
   });
 
   it("uses versioned HR evidence duration when a Wahoo-style active summary differs", async () => {
-    const distribution: StoredHeartRateDurationEvidence = {
+    const distribution: HeartRateDurationEvidence = {
       status: "available",
       calculationVersion: "heart-rate-zone-duration-v1",
       coverageSeconds: 1_800,
@@ -1280,7 +1307,7 @@ describe("segment-derived activity analysis", () => {
   });
 
   it("uses bounded versioned HR intervals when provider active timing is unavailable", async () => {
-    const distribution: StoredHeartRateDurationEvidence = {
+    const distribution: HeartRateDurationEvidence = {
       status: "partial",
       reason: "source_incomplete",
       calculationVersion: "heart-rate-zone-duration-v1",
@@ -1345,7 +1372,7 @@ describe("segment-derived activity analysis", () => {
   });
 
   it("keeps duration unavailable when versioned HR evidence has no contributing intervals", async () => {
-    const distribution: StoredHeartRateDurationEvidence = {
+    const distribution: HeartRateDurationEvidence = {
       status: "unavailable",
       reason: "no_contributing_intervals",
       calculationVersion: "heart-rate-zone-duration-v1",
@@ -1399,7 +1426,7 @@ describe("segment-derived activity analysis", () => {
   });
 
   it("does not let HR-derived duration authorize direct power Load", async () => {
-    const distribution: StoredHeartRateDurationEvidence = {
+    const distribution: HeartRateDurationEvidence = {
       status: "available",
       calculationVersion: "heart-rate-zone-duration-v1",
       coverageSeconds: 60,

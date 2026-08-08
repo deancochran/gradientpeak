@@ -40,7 +40,11 @@ function EditGroupEventPage() {
           void group.refetch();
         }}
       >
-        {event && group.data?.viewer.canCreateGroupEvent ? (
+        {event?.is_recurring_series ? (
+          <p role="alert">
+            Recurring series editing is unavailable. Edit an individual occurrence instead.
+          </p>
+        ) : event && group.data?.viewer.canCreateGroupEvent ? (
           <Card>
             <CardHeader>
               <CardTitle>Event details</CardTitle>
@@ -66,7 +70,10 @@ function EditGroupEventPage() {
                   };
                   if (event.is_recurring_occurrence) await occurrenceMutation.mutateAsync(payload);
                   else await updateMutation.mutateAsync(payload);
-                  await utils.groups.events.invalidate();
+                  await Promise.all([
+                    utils.groups.events.invalidate(),
+                    utils.calendar.invalidate(),
+                  ]);
                   toast.success("Event updated");
                   void navigate({ to: "/groups/events/$groupEventId", params: { groupEventId } });
                 }}

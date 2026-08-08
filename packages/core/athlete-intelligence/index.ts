@@ -1,4 +1,3 @@
-export * from "./athlete-state";
 export * from "./calculation-result-contracts";
 export * from "./canonical-json";
 export * from "./evidence";
@@ -18,4 +17,5 @@ export * from "./policies/projection";
 export * from "./policies/training-feasibility";
 export * from "./policy-descriptors";
 export * from "./projection-contracts";
+export * from "./state-projection";
 export * from "./uncertainty";

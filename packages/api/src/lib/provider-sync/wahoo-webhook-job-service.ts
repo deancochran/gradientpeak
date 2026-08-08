@@ -1,11 +1,12 @@
 import crypto from "node:crypto";
-import type { ProviderSyncRepository, WahooRepository } from "../../repositories";
+import type { WahooRepository, WahooSyncRepository } from "../../repositories";
+import { isWahooIntegrationEnabled } from "../integrations/oauth-config";
 import type { WahooActivityImporter } from "../integrations/wahoo/activity-importer";
 import {
-  createProviderSyncWorkerId,
-  executeProviderSyncJobs,
-  type ProviderSyncConcurrencyLimiter,
-} from "./job-execution";
+  createWahooSyncWorkerId,
+  executeWahooSyncJobs,
+  type WahooSyncConcurrencyLimiter,
+} from "./wahoo-job-execution";
 
 const WAHOO_WEBHOOK_RECEIPT_JOB = "wahoo.process_webhook_receipt";
 
@@ -36,7 +37,8 @@ function isWebhookJobPayload(value: unknown): value is WahooWebhookReceiptJobPay
     value &&
       typeof value === "object" &&
       "receiptId" in value &&
-      typeof value.receiptId === "string",
+      typeof value.receiptId === "string" &&
+      Object.keys(value).every((key) => key === "receiptId"),
   );
 }
 
@@ -58,8 +60,8 @@ export class WahooWebhookJobService {
   constructor(
     private readonly deps: {
       importer: WahooActivityImporter;
-      executionLimiter?: ProviderSyncConcurrencyLimiter;
-      providerSyncRepository: ProviderSyncRepository;
+      executionLimiter?: WahooSyncConcurrencyLimiter;
+      providerSyncRepository: WahooSyncRepository;
       wahooRepository: WahooRepository;
     },
   ) {}
@@ -96,6 +98,7 @@ export class WahooWebhookJobService {
   async storeAndEnqueueReceipt(
     payload: WahooWebhookPayload,
   ): Promise<WahooWebhookReceiptQueueResult> {
+    if (!isWahooIntegrationEnabled()) throw new Error("Wahoo integration is disabled");
     const providerAccountId = payload.user.id.toString();
     const providerEventId =
       payload.event_type === "workout_summary" && payload.workout_summary?.id != null
@@ -156,6 +159,7 @@ export class WahooWebhookJobService {
     recovered: number;
     skipped: number;
   }> {
+    if (!isWahooIntegrationEnabled()) return { recovered: 0, skipped: 0 };
     const receipts = await this.deps.providerSyncRepository.listWebhookReceipts({
       limit: input.limit ?? 25,
       provider: "wahoo",
@@ -212,6 +216,7 @@ export class WahooWebhookJobService {
     limit?: number;
     workerId?: string;
   }): Promise<{ completed: number; failed: number; processed: number }> {
+    if (!isWahooIntegrationEnabled()) return { completed: 0, failed: 0, processed: 0 };
     await this.recoverPendingReceipts({ limit: input.limit ?? 10 });
 
     const concurrency = Math.max(1, Math.floor(input.concurrency ?? 4));
@@ -220,7 +225,7 @@ export class WahooWebhookJobService {
     if (capacity === 0) return { completed: 0, failed: 0, processed: 0 };
     const now = new Date().toISOString();
     const leaseMs = input.leaseMs ?? 5 * 60_000;
-    const workerId = createProviderSyncWorkerId(input.workerId ?? "wahoo-webhook-worker");
+    const workerId = createWahooSyncWorkerId(input.workerId ?? "wahoo-webhook-worker");
 
     try {
       const jobs = await this.deps.providerSyncRepository.claimDueJobs({
@@ -232,7 +237,7 @@ export class WahooWebhookJobService {
         workerId,
       });
 
-      return await executeProviderSyncJobs({
+      return await executeWahooSyncJobs({
         concurrency: capacity,
         getEndingQueueTelemetry: () =>
           this.deps.providerSyncRepository.getQueueTelemetry?.({
@@ -243,7 +248,6 @@ export class WahooWebhookJobService {
         jobFamily: "webhooks",
         jobs,
         leaseRenewIntervalMs: Math.max(1_000, Math.floor(leaseMs / 3)),
-        provider: "wahoo",
         renewLease: (job) =>
           this.deps.providerSyncRepository.renewJobLease({
             id: job.id,
@@ -328,11 +332,15 @@ export class WahooWebhookJobService {
               },
             );
             if (!result.success) {
-              if (result.failureReason === "unsupported_persisted_version") {
+              if (
+                result.failureReason === "missing_started_at" ||
+                result.failureReason === "invalid_started_at" ||
+                result.failureReason === "unsupported_persisted_version"
+              ) {
                 const finalized = await this.deps.providerSyncRepository.finalizeWebhookReceiptJob({
                   jobId: job.id,
                   jobStatus: "dead_lettered",
-                  lastError: "unsupported_persisted_version",
+                  lastError: result.failureReason,
                   receiptId: receipt.id,
                   receiptStatus: "failed",
                   workerId,

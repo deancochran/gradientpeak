@@ -65,10 +65,12 @@ export default function OnboardingScreen() {
           <CurrentStep
             data={flow.data}
             fieldSources={flow.fieldSources}
-            onClearProviderRequirement={flow.clearProviderRequirement}
+            integrationOverview={flow.integrationOverview}
+            integrationOverviewError={flow.integrationOverviewError}
+            integrationOverviewLoading={flow.integrationOverviewLoading}
             onRefreshIntegrations={flow.refreshIntegrationState}
-            onRetryProviderSync={flow.retryProviderSync}
-            providerSyncStatus={flow.providerSyncStatus}
+            onRetryWahooSetup={flow.retryWahooSetup}
+            wahooSetupStatus={flow.wahooSetupStatus}
             updateData={flow.updateData}
             usernameAvailability={flow.usernameAvailability}
           />
@@ -77,7 +79,7 @@ export default function OnboardingScreen() {
         <View className="px-6 py-4 border-t border-border/50 bg-background flex-row gap-4">
           <Button
             className={`flex-1 ${!flow.canSkipStep ? "opacity-50" : ""}`}
-            disabled={flow.isBusy || !flow.canSkipStep || flow.isProviderSyncBlocking}
+            disabled={flow.isBusy || !flow.canSkipStep || flow.isWahooSetupBlocking}
             onPress={flow.handleSkip}
             testID="onboarding-skip-button"
             variant="ghost"
@@ -86,7 +88,7 @@ export default function OnboardingScreen() {
           </Button>
           <Button
             className={`flex-[2] ${!flow.isStepValid ? "opacity-50" : ""}`}
-            disabled={flow.isBusy || flow.isProviderSyncBlocking || !flow.isStepValid}
+            disabled={flow.isBusy || flow.isWahooSetupBlocking || !flow.isStepValid}
             onPress={flow.handleNext}
             testID={flow.isLastStep ? "onboarding-finish-button" : "onboarding-next-button"}
           >

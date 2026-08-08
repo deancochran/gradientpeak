@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import {
   type ActivityObservationQuantificationBundle,
   createObservationQuantificationBundle,
+  isProviderActivityHistoryReconciliationTarget,
 } from "@repo/core";
+import { scheduledDateTimeToIsoInstant } from "@repo/core/calendar";
 import {
   aggregateCommonLoadEnvelopes,
   COMMON_LOAD_HISTORY_BASIS,
@@ -16,7 +18,6 @@ import {
   type CommonLoadHistoryResult,
   replayCommonLoadHistory,
 } from "@repo/core/load";
-import { scheduledDateTimeToIsoInstant } from "@repo/core/utils/schedule-date";
 import { activities, integrations, providerSyncState } from "@repo/db";
 import { and, asc, eq, gte, inArray, lt } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
@@ -26,7 +27,6 @@ import {
   loadActivitySegmentsByActivityId,
   type SegmentDerivedSummary,
 } from "../../lib/activity-analysis";
-import { supportsActivityHistorySync } from "../integrations/syncOverviewUseCase";
 
 export const commonLoadHistoryActivityLimit = 10_000;
 
@@ -52,7 +52,7 @@ async function hasCompleteActivitySourceCoverage(
     .from(integrations)
     .where(eq(integrations.profile_id, input.profileId));
   const relevant = integrationRows.filter((integration) =>
-    supportsActivityHistorySync(integration.provider),
+    isProviderActivityHistoryReconciliationTarget(integration.provider),
   );
   // Neither a never-completed first sync nor a disconnected provider (whose
   // integration/state rows are deleted) proves that this history window is zero.

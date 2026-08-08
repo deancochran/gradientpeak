@@ -155,7 +155,6 @@ function cssSourceRows(input: {
   }): typeof activityEfforts.$inferInsert => ({
     id: source.id,
     created_at: seededAt,
-    updated_at: seededAt,
     profile_id: input.profileId,
     activity_id: input.activityId,
     segment_id: source.segmentId,
@@ -211,7 +210,10 @@ function cssSourceRows(input: {
   return { effortRows, segmentRows };
 }
 
-async function seedActivity(profileId: string) {
+async function seedActivity(
+  profileId: string,
+  finishedAt = new Date(startedAt.getTime() + 510_000),
+) {
   const activityId = randomUUID();
   const artifact = acceptedArtifact(profileId, "a");
   const source = cssSourceRows({
@@ -226,7 +228,7 @@ async function seedActivity(profileId: string) {
       profile_id: profileId,
       name: "Canonical 400 m / 200 m CSS protocol",
       started_at: startedAt,
-      finished_at: new Date(startedAt.getTime() + 510_000),
+      finished_at: finishedAt,
       elapsed_ms: 510_000,
       active_ms: 470_000,
       moving_ms: 470_000,
@@ -285,6 +287,34 @@ afterEach(async () => {
 afterAll(async () => pool.end());
 
 describe("canonical swimming CSS protocol persistence", () => {
+  it("excludes qualified CSS evidence while its parent activity finishes after as-of", async () => {
+    const profileId = await seedProfile();
+    const { activityId, source } = await seedActivity(
+      profileId,
+      new Date("2026-07-22T00:00:00.000Z"),
+    );
+    await db.transaction((tx) =>
+      reconcileGeneratedActivityEvidence(tx, {
+        activityId,
+        profileId,
+        efforts: source.effortRows,
+        detectedLTHR: null,
+        now: seededAt,
+      }),
+    );
+
+    const repository = createAthletePerformanceModelRepository(db);
+    const asOf = new Date("2026-07-21T00:00:00.000Z");
+    const snapshot = await repository.readAthletePerformanceEvidenceSnapshot({
+      athleteId: profileId,
+      asOf,
+    });
+    const model = await getAthletePerformanceModelAsOf({ athleteId: profileId, asOf }, repository);
+
+    expect(snapshot.swimmingCssProtocolRead.rows).toHaveLength(0);
+    expect(model.categories.swim.css).toMatchObject({ status: "unavailable" });
+  });
+
   it("qualifies through generated activity-evidence reconciliation without rewriting source methods", async () => {
     const profileId = await seedProfile();
     const { activityId, source } = await seedActivity(profileId);

@@ -32,16 +32,16 @@ const homeMocks = vi.hoisted(() => ({
   })),
   summarizeSegmentQuantification: vi.fn(),
   buildWorkloadEnvelopes: vi.fn(),
-  calculateAge: vi.fn(),
+  calculateDateOfBirthAge: vi.fn(),
   calculateRollingTrainingQuality: vi.fn(),
   createActivityAnalysisStore: vi.fn(),
   createEventReadRepository: vi.fn(),
-  getActivityPlansDerivedMetrics: vi.fn(),
+  estimateActivityPlans: vi.fn(),
   getLoadBalanceStatus: vi.fn(),
   getEffectivePlanLoad: vi.fn(),
   loadActivitySegmentsByActivityId: vi.fn(),
   replayTrainingLoadByDate: vi.fn(),
-  readCurrentProfileCommonLoadHistory: vi.fn(),
+  readAthleteReadModel: vi.fn(),
 }));
 
 vi.mock("@repo/core", async (importOriginal) => {
@@ -55,7 +55,7 @@ vi.mock("@repo/core", async (importOriginal) => {
 
 vi.mock("@repo/core/profile/date-of-birth", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/core/profile/date-of-birth")>();
-  return { ...actual, calculateAge: homeMocks.calculateAge };
+  return { ...actual, calculateDateOfBirthAge: homeMocks.calculateDateOfBirthAge };
 });
 
 vi.mock("@repo/core/load", async (importOriginal) => {
@@ -67,8 +67,8 @@ vi.mock("@repo/core/load", async (importOriginal) => {
   };
 });
 
-vi.mock("../../application/activities/read-current-profile-common-load-history", () => ({
-  readCurrentProfileCommonLoadHistory: homeMocks.readCurrentProfileCommonLoadHistory,
+vi.mock("../../application/athlete-intelligence/athlete-read-model", () => ({
+  readAthleteReadModel: homeMocks.readAthleteReadModel,
 }));
 
 vi.mock("../../application/training-plan", () => ({
@@ -96,12 +96,15 @@ vi.mock("../../lib/features", () => ({
   },
 }));
 
-vi.mock("../../utils/activity-plan-derived-metrics", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../utils/activity-plan-derived-metrics")>();
+vi.mock("../../application/activity-plans/estimate-activity-plans", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("../../application/activity-plans/estimate-activity-plans")
+    >();
 
   return {
     ...actual,
-    getActivityPlansDerivedMetrics: homeMocks.getActivityPlansDerivedMetrics,
+    estimateActivityPlans: homeMocks.estimateActivityPlans,
   };
 });
 
@@ -194,12 +197,12 @@ function buildActivityPlan(id: string, name: string, activity_category: "bike" |
     gps_recording_enabled: true,
     structure: {
       version: 3 as const,
+      activity_category,
       segments: [
         {
           id: "10000000-0000-4000-8000-000000000001",
           name,
           role: "activity" as const,
-          activity_category,
           intervals: [
             {
               id: "20000000-0000-4000-8000-000000000001",
@@ -500,15 +503,22 @@ describe("homeRouter", () => {
             .flatMap((summary) => summary.observationQuantification.members),
         }),
     );
-    homeMocks.readCurrentProfileCommonLoadHistory.mockResolvedValue({
-      computedAt: "2026-04-03T12:00:00.000Z",
-      planningTimezone: "UTC",
-      currentPlanningDate: "2026-04-03",
-      result: {
-        status: "unavailable",
-        policyVersion: "common_load_history_v1",
-        reason: "insufficient_history",
-        context: { requiredDays: 84, receivedDays: 0 },
+    homeMocks.readAthleteReadModel.mockResolvedValue({
+      contractVersion: "athlete-read-model-v1",
+      profileId: "11111111-1111-4111-8111-111111111111",
+      asOf: "2026-04-03T12:00:00.000Z",
+      publishedRevision: 1,
+      algorithmVersion: "athlete-state-projection-v1",
+      currentBaseline: { currentPlanningDate: "2026-04-03", planningTimezone: "UTC" },
+      loadHistory: {
+        publishedRevision: 1,
+        algorithmVersion: "athlete-state-projection-v1",
+        result: {
+          status: "unavailable",
+          policyVersion: "common_load_history_v1",
+          reason: "insufficient_history",
+          context: { requiredDays: 84, receivedDays: 0 },
+        },
       },
     });
     homeMocks.getEffectivePlanLoad.mockResolvedValue({
@@ -550,7 +560,7 @@ describe("homeRouter", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
 
-    homeMocks.calculateAge.mockReturnValue(36);
+    homeMocks.calculateDateOfBirthAge.mockReturnValue(36);
     homeMocks.calculateRollingTrainingQuality.mockReturnValue(0.84);
     homeMocks.getLoadBalanceStatus.mockReturnValue("negative_balance");
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
@@ -641,7 +651,7 @@ describe("homeRouter", () => {
         version: "1",
       },
     });
-    homeMocks.getActivityPlansDerivedMetrics.mockImplementation(async (plans: Array<any>) =>
+    homeMocks.estimateActivityPlans.mockImplementation(async (plans: Array<any>) =>
       plans.map((plan) => {
         const durationSeconds = plan.id === "plan-1" ? 3600 : 2400;
         const distanceMeters = plan.id === "plan-1" ? 20_000 : 12_000;
@@ -884,7 +894,7 @@ describe("homeRouter", () => {
       user_gender: "female",
       training_quality: 0.84,
     });
-    expect(homeMocks.getActivityPlansDerivedMetrics).toHaveBeenCalledOnce();
+    expect(homeMocks.estimateActivityPlans).toHaveBeenCalledOnce();
   });
 
   it("includes activities completed after presentation midnight on the profile's current day", async () => {
@@ -961,7 +971,7 @@ describe("homeRouter", () => {
       seriesIdentity: { activity_category: "bike", method: "power_threshold" },
     });
     homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
-    homeMocks.getActivityPlansDerivedMetrics.mockImplementation(async (plans: Array<any>) => plans);
+    homeMocks.estimateActivityPlans.mockImplementation(async (plans: Array<any>) => plans);
 
     const { caller } = createCaller({
       select: {
@@ -1019,7 +1029,7 @@ describe("homeRouter", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
 
-    homeMocks.calculateAge.mockReturnValue(36);
+    homeMocks.calculateDateOfBirthAge.mockReturnValue(36);
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
     homeMocks.createActivityAnalysisStore.mockReturnValue({ kind: "analysis-store" });
     homeMocks.buildDynamicStressSeries.mockResolvedValue({
@@ -1027,7 +1037,7 @@ describe("homeRouter", () => {
       byDate: new Map(),
     });
     homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
-    homeMocks.getActivityPlansDerivedMetrics.mockResolvedValue([]);
+    homeMocks.estimateActivityPlans.mockResolvedValue([]);
 
     const { caller } = createCaller({
       select: {
@@ -1085,7 +1095,7 @@ describe("homeRouter", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
 
-    homeMocks.calculateAge.mockReturnValue(36);
+    homeMocks.calculateDateOfBirthAge.mockReturnValue(36);
     homeMocks.calculateRollingTrainingQuality.mockReturnValue(0.84);
     homeMocks.getLoadBalanceStatus.mockReturnValue("near_balance");
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
@@ -1094,7 +1104,7 @@ describe("homeRouter", () => {
       byActivityId: new Map([["activity-today", { tss: 50, intensity_factor: 0.9 }]]),
       byDate: new Map([["2026-04-03", 50]]),
     });
-    homeMocks.getActivityPlansDerivedMetrics.mockImplementation(async (plans: Array<any>) =>
+    homeMocks.estimateActivityPlans.mockImplementation(async (plans: Array<any>) =>
       plans.map((plan) => {
         const quantification = testQuantification({
           id: plan.id,

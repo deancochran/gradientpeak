@@ -6,10 +6,12 @@ import {
   activityArtifacts,
   activityEfforts,
   activityFileIngestions,
+  activityImportRuns,
   activityPlans,
   activityRoutes,
   activitySegments,
   activitySessionRpeEvidence,
+  activitySourceReferences,
   athleteConsentPolicyVersions,
   athleteDataSharingConsents,
   coachingAssignments,
@@ -37,8 +39,10 @@ import {
   organizationMembershipRoleGrants,
   organizationMemberships,
   organizations,
+  profileAthleteState,
   profileGoals,
   profileMetrics,
+  profilePerformanceEstimates,
   profiles,
   profileTrainingSettings,
   providerSyncJobs,
@@ -48,7 +52,7 @@ import {
   trainingPlans,
 } from "./tables";
 
-export const profilesRelations = relations(profiles, ({ many }) => ({
+export const profilesRelations = relations(profiles, ({ one, many }) => ({
   activities: many(activities),
   activityArtifacts: many(activityArtifacts),
   activitySegments: many(activitySegments),
@@ -81,6 +85,10 @@ export const profilesRelations = relations(profiles, ({ many }) => ({
   coachingEngagements: many(coachingEngagements),
   profileGoals: many(profileGoals),
   profileMetrics: many(profileMetrics),
+  athleteState: one(profileAthleteState),
+  performanceEstimates: many(profilePerformanceEstimates),
+  activityImportRuns: many(activityImportRuns),
+  activitySourceReferences: many(activitySourceReferences),
   providerSyncJobs: many(providerSyncJobs),
   providerWebhookReceipts: many(providerWebhookReceipts),
   profileTrainingSettings: many(profileTrainingSettings),
@@ -311,6 +319,23 @@ export const trainingPlansRelations = relations(trainingPlans, ({ one, many }) =
   events: many(events),
 }));
 
+export const profileAthleteStateRelations = relations(profileAthleteState, ({ one }) => ({
+  profile: one(profiles, {
+    fields: [profileAthleteState.profile_id],
+    references: [profiles.id],
+  }),
+}));
+
+export const profilePerformanceEstimatesRelations = relations(
+  profilePerformanceEstimates,
+  ({ one }) => ({
+    profile: one(profiles, {
+      fields: [profilePerformanceEstimates.profile_id],
+      references: [profiles.id],
+    }),
+  }),
+);
+
 export const eventsRelations = relations(events, ({ one, many }) => ({
   profile: one(profiles, {
     fields: [events.profile_id],
@@ -362,6 +387,7 @@ export const activitiesRelations = relations(activities, ({ one, many }) => ({
   sessionRpeEvidence: many(activitySessionRpeEvidence),
   fileIngestions: many(activityFileIngestions),
   artifactLinks: many(activityArtifactLinks),
+  sourceReferences: many(activitySourceReferences),
   segments: many(activitySegments),
   swimmingCssProtocolEvidence: many(swimmingCssProtocolEvidence),
 }));
@@ -495,6 +521,8 @@ export const integrationsRelations = relations(integrations, ({ one, many }) => 
   }),
   events: many(events),
   resourceLinks: many(integrationResourceLinks),
+  activityImportRuns: many(activityImportRuns),
+  activitySourceReferences: many(activitySourceReferences),
   syncJobs: many(providerSyncJobs),
   syncState: many(providerSyncState),
   webhookReceipts: many(providerWebhookReceipts),
@@ -540,6 +568,49 @@ export const providerSyncJobsRelations = relations(providerSyncJobs, ({ one }) =
   integration: one(integrations, {
     fields: [providerSyncJobs.integration_id],
     references: [integrations.id],
+  }),
+  importRun: one(activityImportRuns, {
+    fields: [providerSyncJobs.import_run_id, providerSyncJobs.profile_id],
+    references: [activityImportRuns.id, activityImportRuns.profile_id],
+  }),
+}));
+
+export const activityImportRunsRelations = relations(activityImportRuns, ({ one, many }) => ({
+  profile: one(profiles, {
+    fields: [activityImportRuns.profile_id],
+    references: [profiles.id],
+  }),
+  integration: one(integrations, {
+    fields: [activityImportRuns.integration_id, activityImportRuns.profile_id],
+    references: [integrations.id, integrations.profile_id],
+  }),
+  sourceReferences: many(activitySourceReferences),
+  syncJobs: many(providerSyncJobs),
+}));
+
+export const activitySourceReferencesRelations = relations(activitySourceReferences, ({ one }) => ({
+  profile: one(profiles, {
+    fields: [activitySourceReferences.profile_id],
+    references: [profiles.id],
+  }),
+  activity: one(activities, {
+    fields: [activitySourceReferences.activity_id],
+    references: [activities.id],
+  }),
+  integration: one(integrations, {
+    fields: [activitySourceReferences.integration_id, activitySourceReferences.profile_id],
+    references: [integrations.id, integrations.profile_id],
+  }),
+  lastImportRun: one(activityImportRuns, {
+    fields: [activitySourceReferences.last_import_run_id, activitySourceReferences.profile_id],
+    references: [activityImportRuns.id, activityImportRuns.profile_id],
+  }),
+  lastMaterialImportRun: one(activityImportRuns, {
+    fields: [
+      activitySourceReferences.last_material_import_run_id,
+      activitySourceReferences.profile_id,
+    ],
+    references: [activityImportRuns.id, activityImportRuns.profile_id],
   }),
 }));
 
@@ -670,6 +741,8 @@ export const relationsSchema = {
   groupEventRsvpsRelations,
   activityRoutesRelations,
   activityPlansRelations,
+  activityImportRunsRelations,
+  activitySourceReferencesRelations,
   trainingPlansRelations,
   eventsRelations,
   activitiesRelations,
@@ -688,6 +761,8 @@ export const relationsSchema = {
   profileTrainingSettingsRelations,
   profileGoalsRelations,
   profileMetricsRelations,
+  profileAthleteStateRelations,
+  profilePerformanceEstimatesRelations,
   oauthStatesRelations,
   integrationResourceLinksRelations,
   likesRelations,

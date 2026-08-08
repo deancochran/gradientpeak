@@ -4,12 +4,9 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
   CommonLoadUnavailable,
-  flattenProfileMetricPages,
-  getFailedTrendSources,
   getTrendDistanceDisplay,
   getTrendSpeedDisplay,
-  retryFailedTrendQueries,
-  TrendPartialFailure,
+  TrendReadModelFailure,
 } from "./trends-dashboard";
 
 describe("CommonLoadUnavailable", () => {
@@ -39,65 +36,16 @@ describe("preferred-unit trend presentation", () => {
     expect(getTrendSpeedDisplay(10, "imperial")).toMatchObject({ label: "mph" });
     expect(getTrendSpeedDisplay(10, "imperial").value).toBeCloseTo(22.37, 2);
   });
-
-  it("combines paginated profile history before selecting a metric", () => {
-    const firstPage = Array.from({ length: 50 }, (_, index) => ({
-      id: `resting-hr-${index}`,
-      metric_type: "resting_hr",
-    }));
-    const pages = [
-      { items: firstPage },
-      { items: [{ id: "weight-51", metric_type: "weight_kg" }] },
-    ];
-
-    const weightRows = flattenProfileMetricPages(pages).filter(
-      (row) => row.metric_type === "weight_kg",
-    );
-
-    expect(weightRows).toEqual([{ id: "weight-51", metric_type: "weight_kg" }]);
-  });
 });
 
-describe("getFailedTrendSources", () => {
-  it("returns only independently failed analytics sources", () => {
-    expect(
-      getFailedTrendSources([
-        { isError: false, name: "Dashboard" },
-        { isError: true, name: "Training load" },
-        { isError: false, name: "Dashboard" },
-        { isError: true, name: "Peak power" },
-      ]),
-    ).toEqual(["Training load", "Peak power"]);
-  });
-
-  it("retries failed sources without refetching successful analytics", async () => {
-    const successfulRefetch = vi.fn(async () => undefined);
-    const failedRefetch = vi.fn(async () => undefined);
-
-    await retryFailedTrendQueries([
-      { isError: false, refetch: successfulRefetch },
-      { isError: true, refetch: failedRefetch },
-    ]);
-
-    expect(failedRefetch).toHaveBeenCalledOnce();
-    expect(successfulRefetch).not.toHaveBeenCalled();
-  });
-
-  it("keeps successful analytics visible while offering an observable partial-source retry", () => {
+describe("TrendReadModelFailure", () => {
+  it("offers one retry for the canonical athlete read model", () => {
     const onRetry = vi.fn();
-    render(
-      <TrendPartialFailure
-        failedSources={["Training load", "Peak power"]}
-        isRetrying={false}
-        onRetry={onRetry}
-      />,
-    );
+    render(<TrendReadModelFailure isRetrying={false} onRetry={onRetry} />);
 
-    expect(screen.getByText("Some analytics are unavailable")).toBeTruthy();
-    expect(
-      screen.getByText("Showing successful sources. Unavailable: Training load, Peak power."),
-    ).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Retry unavailable" }));
+    expect(screen.getByText("Analytics are unavailable")).toBeTruthy();
+    expect(screen.getByText(/athlete read model could not be loaded/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry analytics" }));
     expect(onRetry).toHaveBeenCalledOnce();
   });
 });

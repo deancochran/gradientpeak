@@ -105,7 +105,7 @@ function formatEventTimeRange(event: {
   return `${formatTime(start, event.starts_at)} - ${formatTime(end, event.ends_at)}`;
 }
 
-type EventMutationScope = "single" | "future" | "series";
+type EventMutationScope = "single" | "series";
 
 function EventStatusPill({ label }: { label: string }) {
   return (
@@ -221,7 +221,6 @@ export default function EventDetailScreen() {
   const createEventFlowRef = useRef<CreateEventFlowHandle>(null);
   const { Stack } = require("expo-router") as typeof import("expo-router");
   const queryClient = useQueryClient();
-  const utils = api.useUtils();
   const {
     id,
     mode,
@@ -301,10 +300,7 @@ export default function EventDetailScreen() {
   });
   const updateEventMutation = api.events.update.useMutation({
     onSuccess: async () => {
-      await Promise.all([
-        utils.events.invalidate(),
-        refreshScheduleViews(queryClient, "eventMutation"),
-      ]);
+      await refreshScheduleViews(queryClient, "eventMutation");
     },
   });
 
@@ -722,13 +718,6 @@ export default function EventDetailScreen() {
               variant="outline"
             >
               <Text className="text-foreground font-medium">This event only</Text>
-            </Button>
-            <Button
-              onPress={() => handleSelectDeleteScope("future")}
-              testID="event-detail-delete-scope-future"
-              variant="outline"
-            >
-              <Text className="text-foreground font-medium">This and future events</Text>
             </Button>
             <Button
               onPress={() => handleSelectDeleteScope("series")}

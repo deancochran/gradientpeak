@@ -1,6 +1,10 @@
-import { createAthletePlanningContextFromSnapshot, diffDateOnlyUtcDays } from "@repo/core";
+import {
+  type AthletePlanningContext,
+  deriveDraftPlanProjection,
+  diffDateOnlyUtcDays,
+} from "@repo/core";
 import { skipToken } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 import { deriveActivityPlanPickerState } from "./activity-plan-picker";
@@ -12,13 +16,8 @@ import {
   createTrainingPlanBuilderStateFromExistingPlan,
   getTrainingPlanStructureActivityPlanIds,
   toTrainingPlanCreatePayload,
-  toTrainingPlanUpdatePayload,
+  toTrainingPlanStructure,
 } from "./mappers";
-import {
-  type MobilePlanningTargetHydrationSource,
-  resolveMobilePlanningPerformanceTargets,
-  shouldReplaceMobilePlanningAthleteContext,
-} from "./performance-targets";
 import {
   deriveTrainingPlanCreationSession,
   deriveTrainingPlanReadinessPresentation,
@@ -44,11 +43,78 @@ import { useTrainingPlanCreationQueries } from "./useTrainingPlanCreationQueries
 
 const createLocalId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-function toProvenanceRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  return Object.fromEntries(Object.entries(value));
+function preserveLocalAthleteContextOverrides(
+  current: AthletePlanningContext,
+  incoming: AthletePlanningContext,
+): AthletePlanningContext {
+  const keepOverride = <T extends { overridden: boolean }>(local: T, next: T) =>
+    local.overridden ? local : next;
+  return {
+    ...incoming,
+    demographics: {
+      ...incoming.demographics,
+      ageYears: keepOverride(current.demographics.ageYears, incoming.demographics.ageYears),
+    },
+    body: {
+      heightCm: keepOverride(current.body.heightCm, incoming.body.heightCm),
+      weightKg: keepOverride(current.body.weightKg, incoming.body.weightKg),
+      bmi: keepOverride(current.body.bmi, incoming.body.bmi),
+      bodyFatPercentage: keepOverride(
+        current.body.bodyFatPercentage,
+        incoming.body.bodyFatPercentage,
+      ),
+    },
+    physiology: {
+      planningThresholdPowerWatts: keepOverride(
+        current.physiology.planningThresholdPowerWatts,
+        incoming.physiology.planningThresholdPowerWatts,
+      ),
+      planningThresholdPaceSecondsPerKm: keepOverride(
+        current.physiology.planningThresholdPaceSecondsPerKm,
+        incoming.physiology.planningThresholdPaceSecondsPerKm,
+      ),
+      swimmingCssSecondsPer100m: keepOverride(
+        current.physiology.swimmingCssSecondsPer100m,
+        incoming.physiology.swimmingCssSecondsPer100m,
+      ),
+      restingHeartRateBpm: keepOverride(
+        current.physiology.restingHeartRateBpm,
+        incoming.physiology.restingHeartRateBpm,
+      ),
+      maxHeartRateBpm: keepOverride(
+        current.physiology.maxHeartRateBpm,
+        incoming.physiology.maxHeartRateBpm,
+      ),
+      thresholdHeartRateBpm: keepOverride(
+        current.physiology.thresholdHeartRateBpm,
+        incoming.physiology.thresholdHeartRateBpm,
+      ),
+      hrvRmssdMs: keepOverride(current.physiology.hrvRmssdMs, incoming.physiology.hrvRmssdMs),
+      vo2Max: keepOverride(current.physiology.vo2Max, incoming.physiology.vo2Max),
+      currentFitnessLongTermLoad: keepOverride(
+        current.physiology.currentFitnessLongTermLoad,
+        incoming.physiology.currentFitnessLongTermLoad,
+      ),
+      currentFatigueRecentLoad: keepOverride(
+        current.physiology.currentFatigueRecentLoad,
+        incoming.physiology.currentFatigueRecentLoad,
+      ),
+      currentFormLoadBalance: keepOverride(
+        current.physiology.currentFormLoadBalance,
+        incoming.physiology.currentFormLoadBalance,
+      ),
+    },
+    wellness: {
+      sleepHours: keepOverride(current.wellness.sleepHours, incoming.wellness.sleepHours),
+      hydrationLevel: keepOverride(
+        current.wellness.hydrationLevel,
+        incoming.wellness.hydrationLevel,
+      ),
+      stressScore: keepOverride(current.wellness.stressScore, incoming.wellness.stressScore),
+      sorenessLevel: keepOverride(current.wellness.sorenessLevel, incoming.wellness.sorenessLevel),
+      wellnessScore: keepOverride(current.wellness.wellnessScore, incoming.wellness.wellnessScore),
+    },
+  };
 }
 
 function toBuilderGoalTargetOffset(anchorDate: string, targetDate: string | null) {
@@ -104,20 +170,21 @@ export function useTrainingPlanCreationService({
   const [state, dispatch] = useReducer(trainingPlanBuilderReducer, undefined, () =>
     createDefaultTrainingPlanBuilderState(),
   );
-  const hydratedAthleteContextSourceRef = useRef<MobilePlanningTargetHydrationSource | null>(null);
+  const [persistedPlanId, setPersistedPlanId] = useState<string | null>(null);
+  const [projectionConflict, setProjectionConflict] = useState<string | null>(null);
+  const draftProjectionPlanId = useRef("00000000-0000-4000-8000-000000000001").current;
+  const projectionPlanId = planId ?? persistedPlanId;
+  const hydratedCreationContextAsOfRef = useRef<string | null>(null);
   const hydratedEditPlanIdRef = useRef<string | null>(null);
   const {
     profileQuery,
-    performanceTargetsQuery,
-    profileMetricsQuery,
-    activityEffortsQuery,
-    currentTrainingStatusQuery,
+    creationContextQuery,
     profileGoalsQuery,
     activityPlansQuery,
     editPlanQuery,
     linkedActivityPlansQuery,
-    createPlanMutation,
-    updatePlanMutation,
+    publishedStateQuery,
+    commitPlanMutation,
   } = useTrainingPlanCreationQueries({
     activityPlanPicker,
     mode,
@@ -132,102 +199,25 @@ export function useTrainingPlanCreationService({
   useEffect(() => {
     if (
       isEditMode ||
-      !profileQuery.data ||
-      !profileMetricsQuery.data ||
-      !activityEffortsQuery.data ||
-      !currentTrainingStatusQuery.data ||
-      currentTrainingStatusQuery.isLoading ||
-      (!performanceTargetsQuery.data && !performanceTargetsQuery.isError)
-    ) {
-      return;
-    }
-
-    const operationAsOf =
-      performanceTargetsQuery.data?.asOf ?? currentTrainingStatusQuery.data.asOf;
-    const hydrationSource = performanceTargetsQuery.data ? "canonical" : "unavailable";
-    const hydratedSource = hydratedAthleteContextSourceRef.current;
-    // Hydrate once, except that a canonical recovery may replace the fail-closed fallback.
-    // Ordinary refetches must not erase builder-owned athlete-context edits.
-    if (
-      !shouldReplaceMobilePlanningAthleteContext({
-        hydratedSource,
-        nextSource: hydrationSource,
-      })
+      !creationContextQuery.data ||
+      !creationContextQuery.data.currentBaseline ||
+      !creationContextQuery.data.currentBaseline.planningContext ||
+      hydratedCreationContextAsOfRef.current ===
+        (creationContextQuery.data.publishedState?.publishedAt ?? creationContextQuery.data.asOf)
     ) {
       return;
     }
 
     dispatch({
       type: "athleteContext.replace",
-      athleteContext: createAthletePlanningContextFromSnapshot({
-        asOf: operationAsOf,
-        performanceTargets: resolveMobilePlanningPerformanceTargets({
-          snapshot: performanceTargetsQuery.data,
-          fallbackAsOf: operationAsOf,
-        }),
-        profile: {
-          dob: profileQuery.data.dob,
-          gender:
-            profileQuery.data.gender === "male" ||
-            profileQuery.data.gender === "female" ||
-            profileQuery.data.gender === "other"
-              ? profileQuery.data.gender
-              : null,
-          preferred_units: profileQuery.data.preferred_units,
-        },
-        profileMetrics: profileMetricsQuery.data.items.map((metric) => ({
-          metric_type: metric.metric_type,
-          value: metric.value,
-          unit: metric.unit,
-          recorded_at: metric.recorded_at,
-          notes: metric.notes,
-          reference_activity_id: metric.reference_activity_id,
-          source: metric.source,
-          method: metric.method,
-          calculation_version: metric.calculation_version,
-          quality_score: metric.quality_score,
-          provenance: toProvenanceRecord(metric.provenance),
-        })),
-        activityEfforts: activityEffortsQuery.data
-          .filter(
-            (effort): effort is typeof effort & { effort_type: "power" | "speed" } =>
-              effort.effort_type === "power" || effort.effort_type === "speed",
-          )
-          .map((effort) => ({
-            activity_category: effort.activity_category,
-            effort_type: effort.effort_type,
-            duration_seconds: effort.duration_seconds,
-            value: effort.value,
-            unit: effort.unit,
-            recorded_at: effort.recorded_at,
-            activity_id: effort.activity_id,
-            source: effort.source,
-            method: effort.method,
-            calculation_version: effort.calculation_version,
-            quality_score: effort.quality_score,
-            provenance: toProvenanceRecord(effort.provenance),
-          })),
-        currentFitness: currentTrainingStatusQuery.data?.currentLoadStatus
-          ? {
-              longTermLoad: currentTrainingStatusQuery.data.currentLoadStatus.longTermLoad,
-              recentLoad: currentTrainingStatusQuery.data.currentLoadStatus.recentLoad,
-              loadBalance: currentTrainingStatusQuery.data.currentLoadStatus.loadBalance,
-              recorded_at: currentTrainingStatusQuery.data.currentLoadStatus.recordedAt,
-            }
-          : null,
-      }),
+      athleteContext: preserveLocalAthleteContextOverrides(
+        state.athleteContext,
+        creationContextQuery.data.currentBaseline.planningContext,
+      ),
     });
-    hydratedAthleteContextSourceRef.current = hydrationSource;
-  }, [
-    activityEffortsQuery.data,
-    currentTrainingStatusQuery.data,
-    currentTrainingStatusQuery.isLoading,
-    isEditMode,
-    performanceTargetsQuery.data,
-    performanceTargetsQuery.isError,
-    profileMetricsQuery.data,
-    profileQuery.data,
-  ]);
+    hydratedCreationContextAsOfRef.current =
+      creationContextQuery.data.publishedState?.publishedAt ?? creationContextQuery.data.asOf;
+  }, [creationContextQuery.data, isEditMode, state.athleteContext]);
 
   useEffect(() => {
     if (!isEditMode || !planId || !editPlanQuery.data) {
@@ -270,20 +260,103 @@ export function useTrainingPlanCreationService({
     ].map((activityPlan) => [activityPlan.id, activityPlan] as const);
     return Object.fromEntries(entries);
   }, [activityPlansQuery.data?.pages, linkedActivityPlansQuery.data?.items]);
+  const publishedProjection = useMemo(() => {
+    if (publishedStateQuery.isLoading || profileQuery.isLoading)
+      return { status: "loading" as const };
+    if (publishedStateQuery.isError || profileQuery.isError) return { status: "error" as const };
+    const baseline = publishedStateQuery.data?.currentBaseline?.baseline;
+    if (!baseline) return { status: "unavailable" as const };
+    let structure: ReturnType<typeof toTrainingPlanStructure>;
+    try {
+      structure = toTrainingPlanStructure(state);
+    } catch {
+      return { status: "unavailable" as const };
+    }
+    const activityPlans = state.structure.sessions.flatMap((session) => {
+      const plan = session.activityPlan;
+      const load = plan?.prescriptionQuantification?.summary.commonLoad;
+      const category = plan?.prescriptionQuantification?.members[0]?.activity_category;
+      return plan && load && load.status !== "unavailable" && load.load !== null && category
+        ? [{ activityPlanId: plan.id, activityCategory: category, commonLoad: load.load }]
+        : [];
+    });
+    const planningTimezone =
+      creationContextQuery.data?.currentBaseline?.planningTimezone ??
+      profileQuery.data?.planning_timezone ??
+      "UTC";
+    const result = deriveDraftPlanProjection({
+      baseline,
+      planId: projectionPlanId ?? draftProjectionPlanId,
+      structure,
+      activityPlans,
+      planningTimezone,
+      startDate: state.scheduling.startDate,
+    });
+    if (result.status === "unavailable")
+      return { status: "unavailable" as const, reason: result.reason };
+    return {
+      status:
+        publishedStateQuery.data?.status?.freshness === "stale"
+          ? ("stale" as const)
+          : ("available" as const),
+      importStatus: publishedStateQuery.data?.status?.importStatus ?? "complete",
+      simulation: result.simulation,
+    };
+  }, [
+    draftProjectionPlanId,
+    profileQuery.data?.planning_timezone,
+    profileQuery.isError,
+    profileQuery.isLoading,
+    creationContextQuery.data?.currentBaseline?.planningTimezone,
+    publishedStateQuery.data?.currentBaseline?.baseline,
+    publishedStateQuery.data?.status?.freshness,
+    publishedStateQuery.data?.status?.importStatus,
+    publishedStateQuery.isError,
+    publishedStateQuery.isLoading,
+    projectionPlanId,
+    state,
+  ]);
   const localProjection = useMemo(
     () => deriveTrainingPlanLocalProjection(state, activityPlansById),
     [activityPlansById, state],
   );
   const { structureProposal } = localProjection;
-  const debouncedBackendPlanningFingerprint = useDebouncedValue(
-    localProjection.backendPlanning.contextFingerprint,
+  const authoritativePreviewInput = useMemo(() => {
+    try {
+      const payload = toTrainingPlanCreatePayload(state);
+      const commonDraft = {
+        name: payload.name,
+        description: payload.description ?? null,
+        contentVisibility: payload.content_visibility,
+        structure: toTrainingPlanStructure(state),
+        previewStartDate: state.scheduling.startDate,
+      };
+      if (mode !== "edit" || !planId) return { kind: "create" as const, draft: commonDraft };
+      const editor = editPlanQuery.data?.editor;
+      if (!editor) return null;
+      return {
+        kind: "update" as const,
+        draft: {
+          ...commonDraft,
+          planId,
+          expectedRevision: editor.revision,
+          expectedStructureHash: editor.structureHash,
+        },
+      };
+    } catch {
+      return null;
+    }
+  }, [editPlanQuery.data?.editor, mode, planId, state]);
+  const authoritativePreviewFingerprint = JSON.stringify(authoritativePreviewInput);
+  const debouncedAuthoritativePreviewFingerprint = useDebouncedValue(
+    authoritativePreviewFingerprint,
     500,
   );
   const backendPreviewInput =
-    debouncedBackendPlanningFingerprint === localProjection.backendPlanning.contextFingerprint
-      ? localProjection.backendPlanning.previewInput
+    debouncedAuthoritativePreviewFingerprint === authoritativePreviewFingerprint
+      ? authoritativePreviewInput
       : null;
-  const backendPlanningPreviewQuery = api.trainingPlans.previewCreationConfig.useQuery(
+  const backendPlanningPreviewQuery = api.trainingPlans.preview.useQuery(
     backendPreviewInput ?? skipToken,
     {
       enabled: backendPreviewInput !== null,
@@ -297,11 +370,16 @@ export function useTrainingPlanCreationService({
     [backendPlanningPreviewQuery.data],
   );
   const isBackendPlanningInputStale =
-    debouncedBackendPlanningFingerprint !== localProjection.backendPlanning.contextFingerprint;
+    debouncedAuthoritativePreviewFingerprint !== authoritativePreviewFingerprint;
   const planningSession = useMemo(
     () =>
       deriveTrainingPlanCreationSession({
         authoritativeProjection,
+        authoritativePreviewInputAvailable: authoritativePreviewInput !== null,
+        authoritativePreviewReason:
+          authoritativePreviewInput === null
+            ? "Published athlete state and a valid draft are required for authoritative preview."
+            : "Authoritative projection preview is available.",
         backendPreviewInputEnabled: backendPreviewInput !== null,
         isBackendPlanningInputStale,
         localProjection,
@@ -313,6 +391,7 @@ export function useTrainingPlanCreationService({
       }),
     [
       authoritativeProjection,
+      authoritativePreviewInput,
       backendPreviewInput,
       backendPlanningPreviewQuery.error,
       backendPlanningPreviewQuery.isFetching,
@@ -347,47 +426,77 @@ export function useTrainingPlanCreationService({
     [state.anchorDate],
   );
 
-  const createPlan = useCallback(async () => {
-    await createPlanMutation.mutateAsync(
-      toTrainingPlanCreatePayload(state, {
-        backendPlanning: {
-          projectionSource:
-            previewLifecycle.status === "backend_preview_ready" ? "backend" : "local",
-          previewSnapshotToken:
-            previewLifecycle.status === "backend_preview_ready"
-              ? previewLifecycle.snapshotToken
-              : null,
-        },
-      }),
-    );
-  }, [createPlanMutation, previewLifecycle, state]);
-
-  const updatePlan = useCallback(async () => {
-    if (!planId) {
-      throw new Error("Missing training plan id for update.");
+  const persistAndValidatePlan = useCallback(async () => {
+    setProjectionConflict(null);
+    const existingPlanId = planId ?? persistedPlanId;
+    const basePublishedRevision = publishedStateQuery.data?.publishedRevision;
+    if (basePublishedRevision === null || basePublishedRevision === undefined) {
+      setProjectionConflict("Published athlete state is unavailable. Refresh and retry.");
+      return;
     }
-    const expectedStructureHash = editPlanQuery.data?.structure_hash;
-    if (!expectedStructureHash) {
-      throw new Error("Refresh the training plan before saving changes.");
+    try {
+      const payload = toTrainingPlanCreatePayload(state);
+      const commonDraft = {
+        name: payload.name,
+        description: payload.description ?? null,
+        contentVisibility: payload.content_visibility,
+        structure: toTrainingPlanStructure(state),
+        previewStartDate: state.scheduling.startDate,
+      };
+      const editor = editPlanQuery.data?.editor;
+      if (existingPlanId && !editor) {
+        setProjectionConflict("The persisted plan changed. Refresh before retrying.");
+        return;
+      }
+      const result = await commitPlanMutation.mutateAsync(
+        existingPlanId && editor
+          ? {
+              kind: "update",
+              basePublishedRevision,
+              draft: {
+                ...commonDraft,
+                planId: existingPlanId,
+                expectedRevision: editor.revision,
+                expectedStructureHash: editor.structureHash,
+              },
+            }
+          : { kind: "create", basePublishedRevision, draft: commonDraft },
+      );
+      if (result.status === "stale") {
+        setProjectionConflict(
+          result.reason === "state_revision" || result.reason === "state_unavailable"
+            ? "Athlete state changed while saving. Your draft was preserved and re-simulated against the refreshed baseline."
+            : "The persisted plan changed while saving. Your draft was preserved; review the refreshed plan and retry.",
+        );
+        await Promise.all([publishedStateQuery.refetch(), editPlanQuery.refetch()]);
+        return;
+      }
+      setPersistedPlanId(result.planId);
+      const savedPlan = { id: result.planId };
+      if (mode === "edit") onUpdated?.(savedPlan);
+      else onCreated?.(savedPlan);
+    } catch (error) {
+      setProjectionConflict(
+        error instanceof Error ? error.message : "Could not save and validate this plan.",
+      );
     }
-    await updatePlanMutation.mutateAsync({
-      ...toTrainingPlanUpdatePayload(planId, state, {
-        backendPlanning: {
-          projectionSource:
-            previewLifecycle.status === "backend_preview_ready" ? "backend" : "local",
-          previewSnapshotToken:
-            previewLifecycle.status === "backend_preview_ready"
-              ? previewLifecycle.snapshotToken
-              : null,
-        },
-      }),
-      expectedStructureHash,
-    });
-  }, [editPlanQuery.data?.structure_hash, planId, previewLifecycle, state, updatePlanMutation]);
+  }, [
+    commitPlanMutation,
+    editPlanQuery,
+    mode,
+    onCreated,
+    onUpdated,
+    persistedPlanId,
+    planId,
+    publishedStateQuery,
+    state,
+  ]);
 
   const savePlan = useMemo(() => {
     const readiness = deriveTrainingPlanReadinessPresentation({
-      canSave: localProjection.saveReadiness.canSave,
+      canSave:
+        localProjection.saveReadiness.canSave &&
+        (publishedProjection.status === "available" || publishedProjection.status === "stale"),
       localBlockerCount: localProjection.saveReadiness.blockers.length,
       mode,
       previewLifecycle,
@@ -396,10 +505,12 @@ export function useTrainingPlanCreationService({
     return {
       mode,
       label: mode === "edit" ? "Save" : "Create",
-      canSave: localProjection.saveReadiness.canSave,
+      canSave:
+        localProjection.saveReadiness.canSave &&
+        (publishedProjection.status === "available" || publishedProjection.status === "stale"),
       blockers: localProjection.saveReadiness.blockers,
       degradedReason: null,
-      isPending: createPlanMutation.isPending || updatePlanMutation.isPending,
+      isPending: commitPlanMutation.isPending,
       previewLifecycle,
       readiness: {
         ...readiness,
@@ -407,18 +518,17 @@ export function useTrainingPlanCreationService({
       },
       route: "canonical" as const,
       saveLifecycle: activeSaveLifecycle,
-      execute: mode === "edit" ? updatePlan : createPlan,
+      execute: persistAndValidatePlan,
     };
   }, [
     activeSaveLifecycle,
-    createPlan,
-    createPlanMutation.isPending,
+    commitPlanMutation.isPending,
     localProjection.saveReadiness.blockers,
     localProjection.saveReadiness.canSave,
     mode,
+    persistAndValidatePlan,
     previewLifecycle,
-    updatePlan,
-    updatePlanMutation.isPending,
+    publishedProjection.status,
   ]);
   const viewModel = useMemo(
     () => ({
@@ -468,7 +578,7 @@ export function useTrainingPlanCreationService({
     state,
     mode,
     profileGoalsQuery,
-    currentTrainingStatusQuery,
+    currentTrainingStatusQuery: creationContextQuery,
     activityPlansQuery,
     editPlanQuery,
     linkedActivityPlansQuery,
@@ -493,16 +603,17 @@ export function useTrainingPlanCreationService({
         isStaleInput: isBackendPlanningInputStale,
       },
       projection,
+      projectionConflict,
+      publishedProjection,
       savePlan,
       viewModel,
     },
     queries: {
       profile: profileQuery,
-      performanceTargets: performanceTargetsQuery,
-      profileMetrics: profileMetricsQuery,
-      activityEfforts: activityEffortsQuery,
+      creationContext: creationContextQuery,
       profileGoals: profileGoalsQuery,
       activityPlans: activityPlansQuery,
+      publishedState: publishedStateQuery,
     },
     actions,
   };

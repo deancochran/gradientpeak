@@ -137,8 +137,10 @@ describe("backend endpoint performance", () => {
     expect(budgets).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ path: "profiles.get", type: "query" }),
-        expect.objectContaining({ path: "events.list", type: "query" }),
-        expect.objectContaining({ path: "trainingPlans.create", type: "mutation" }),
+        expect.objectContaining({ path: "calendar.range", type: "query" }),
+        expect.objectContaining({ path: "calendar.day", type: "query" }),
+        expect.objectContaining({ path: "trainingPlans.preview", type: "query" }),
+        expect.objectContaining({ path: "trainingPlans.commit", type: "mutation" }),
         expect.objectContaining({ path: "groups.events.list", type: "query" }),
       ]),
     );

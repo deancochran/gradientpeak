@@ -1,4 +1,8 @@
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
+import {
+  createVersionedSystemContentDefinition,
+  type VersionedSystemContentDefinition,
+} from "./content-identity";
 import { SAMPLE_INDOOR_TRAINER_ACTIVITIES } from "./indoor-bike-activity";
 import { SAMPLE_INDOOR_STRENGTH_ACTIVITIES } from "./indoor-strength";
 import { SAMPLE_INDOOR_SWIM_ACTIVITIES } from "./indoor-swim";
@@ -14,6 +18,7 @@ import {
   type SystemActivityPlanTemplate,
 } from "./types";
 
+export * from "./content-identity";
 // Export individual activity category modules
 export * from "./indoor-bike-activity";
 export * from "./indoor-strength";
@@ -148,6 +153,32 @@ export const SYSTEM_TEMPLATES: SystemTemplate[] = [
   ...otherTemplates,
   ...multisportComponentTemplates,
 ];
+
+export type SystemActivityTemplateDefinition = VersionedSystemContentDefinition<SystemTemplate>;
+
+export async function getSystemActivityTemplateDefinitions(): Promise<
+  SystemActivityTemplateDefinition[]
+> {
+  return Promise.all(
+    SYSTEM_TEMPLATES.map((content) =>
+      createVersionedSystemContentDefinition({
+        key: `activity-plan:${content.id}`,
+        content,
+      }),
+    ),
+  );
+}
+
+export async function getSystemTrainingPlanDefinitions() {
+  return Promise.all(
+    ALL_SAMPLE_PLANS.map((content) =>
+      createVersionedSystemContentDefinition({
+        key: `training-plan:${content.id}`,
+        content,
+      }),
+    ),
+  );
+}
 
 /**
  * Get templates filtered by activity_category

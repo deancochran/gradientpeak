@@ -23,7 +23,6 @@ const activitySegment = (activity_category: "run" | "bike", value: number) => ({
   id: id(value),
   role: "activity" as const,
   name: activity_category,
-  activity_category,
   intervals: [
     {
       id: id(value + 100),
@@ -41,15 +40,26 @@ const activitySegment = (activity_category: "run" | "bike", value: number) => ({
   ],
 });
 
-const plan = (segments: unknown, idValue = "plan-1") =>
+const plan = (activity_category: "run" | "bike", segments: unknown, idValue = "plan-1") =>
   ({
     id: idValue,
     name: "Tempo",
-    structure: { version: 3, segments },
+    structure: { version: 3, activity_category, segments },
   }) as unknown as RecordingServiceActivityPlan & { id: string };
 
-const singleActivityCategoryPlan = () => plan([activitySegment("bike", 1)]);
-const multisportPlan = () => plan([activitySegment("run", 1), activitySegment("bike", 2)]);
+const singleActivityCategoryPlan = () => plan("bike", [activitySegment("bike", 1)]);
+const multisportPlan = () =>
+  ({
+    id: "plan-1",
+    name: "Tempo",
+    structure: {
+      version: 3,
+      segments: [
+        { ...activitySegment("run", 1), activity_category: "run" },
+        { ...activitySegment("bike", 2), activity_category: "bike" },
+      ],
+    },
+  }) as unknown as RecordingServiceActivityPlan & { id: string };
 
 describe("handleRecordingObjectAction", () => {
   it("returns to the recorder after attaching a plan", async () => {

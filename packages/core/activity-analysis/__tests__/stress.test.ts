@@ -193,7 +193,29 @@ describe("activity analysis Common Load", () => {
         recentEfforts: [],
         profile: {},
       },
-      heartRateDistribution: { coverageSeconds: 1800, buckets: [{ bpm: 150, seconds: 1800 }] },
+      heartRateDistribution: {
+        status: "partial",
+        reason: "source_incomplete",
+        calculationVersion: "heart-rate-zone-duration-v1",
+        coverageSeconds: 1800,
+        eligibleDurationSeconds: 3600,
+        sourceTimeCoverage: 0.5,
+        timeWeightedAverageBpm: 150,
+        buckets: [{ bpm: 150, seconds: 1800 }],
+        diagnostics: {
+          sourceSampleCount: 0,
+          acceptedTimestampCount: 0,
+          contributingIntervalCount: 0,
+          observedSpanSeconds: 3600,
+          pausedDurationSeconds: 0,
+          excludedGapDurationSeconds: 0,
+          excludedMissingDurationSeconds: 1800,
+          excludedInvalidDurationSeconds: 0,
+          duplicateTimestampCount: 0,
+          reversedTimestampCount: 0,
+          invalidTimestampCount: 0,
+        },
+      },
     });
 
     expect(derived.stress.common_load).toMatchObject({

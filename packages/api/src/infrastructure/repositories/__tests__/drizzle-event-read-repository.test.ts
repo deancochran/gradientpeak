@@ -39,11 +39,11 @@ function createEventRow(overrides: Record<string, unknown> = {}) {
 function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
   const structure = {
     version: 3,
+    activity_category: "bike",
     segments: [
       {
         id: "22222222-2222-4222-8222-222222222222",
         role: "activity",
-        activity_category: "bike",
         name: "Bike",
         intervals: [
           {
@@ -76,6 +76,9 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
     route_id: "route-1",
     is_public: false,
     is_system_template: false,
+    system_content_key: null,
+    system_content_version: null,
+    system_content_hash: null,
     source_provider: null,
     external_id: null,
     duration_seconds: null,
@@ -101,7 +104,6 @@ function createActivityRow(overrides: Record<string, unknown> = {}) {
     avg_speed_mps: 7.9,
     max_speed_mps: 14.1,
     normalized_speed_mps: 8.2,
-    normalized_graded_speed_mps: 8.4,
     ...overrides,
   } as const;
 }
@@ -331,27 +333,6 @@ describe("drizzle-event-read-repository", () => {
     expect(recommendationQuery?.params).not.toEqual(expect.arrayContaining(["2026-07-25"]));
   });
 
-  it("uses supplied asOf for route access-grant expiry while reading current route facts", async () => {
-    const { db, selects } = createSelectCaptureDb({
-      activity_routes: [],
-    });
-    const repository = createEventReadRepository(db);
-    const asOfIso = "2026-04-19T12:34:56.000Z";
-
-    await repository.getEstimationInputs({
-      asOfIso,
-      profileId: "profile-1",
-      routeIds: ["route-1"],
-    });
-
-    const routeWhere = selects.find((select) => select.table === "activity_routes")?.whereArg;
-    const query = toQuery(routeWhere);
-    expect(query.sql).toContain("content_access_grants.expires_at > $");
-    expect(query.sql).not.toContain("now() ");
-    expect(query.params).toContainEqual(new Date(asOfIso));
-    expect(selects.map((select) => select.table)).toEqual(["activity_routes"]);
-  });
-
   it("fetches validate constraint plans by id after router permission checks", async () => {
     const { db, selects } = createSelectCaptureDb({
       training_plans: [{ id: "training-plan-1", structure: { block: "build" } }],
@@ -398,56 +379,6 @@ describe("drizzle-event-read-repository", () => {
     expect(activityPlanWhereSql).not.toContain('"activity_plans"."profile_id"');
     expect(activityPlanWhereSql).not.toContain('"activity_plans"."is_system_template"');
     expect(selectedTables).not.toContain("activity_efforts");
-  });
-
-  it("serializes route estimation inputs and skips persistence when no route ids are provided", async () => {
-    const withRoutes = createEventReadRepository(
-      createQueryMapDbMock({
-        activity_routes: {
-          data: [
-            {
-              id: "route-1",
-              distance_meters: 42000,
-              total_ascent: 510,
-              total_descent: 505,
-              updated_at: new Date("2026-04-19T11:00:00.000Z"),
-            },
-          ],
-          error: null,
-        },
-      }).db,
-    );
-    const withoutRoutesMock = createQueryMapDbMock({});
-    const withoutRoutes = createEventReadRepository(withoutRoutesMock.db);
-
-    await expect(
-      withRoutes.getEstimationInputs({
-        asOfIso: "2026-05-01T00:00:00.000Z",
-        profileId: "profile-1",
-        routeIds: ["route-1"],
-      }),
-    ).resolves.toEqual({
-      routes: [
-        {
-          id: "route-1",
-          distance_meters: 42000,
-          total_ascent: 510,
-          total_descent: 505,
-          updated_at: "2026-04-19T11:00:00.000Z",
-        },
-      ],
-    });
-
-    await expect(
-      withoutRoutes.getEstimationInputs({
-        asOfIso: "2026-05-01T00:00:00.000Z",
-        profileId: "profile-1",
-        routeIds: [],
-      }),
-    ).resolves.toEqual({
-      routes: [],
-    });
-    expect(withoutRoutesMock.callLog).toEqual([]);
   });
 
   it("returns an accessible training plan projection with serialized planned and actual times", async () => {
@@ -870,6 +801,31 @@ describe("drizzle-event-read-repository", () => {
     expect(whereSql).toContain('"events"."starts_at" >');
     expect(whereSql).toContain('"events"."id" >');
     expect(whereSql).toContain('"activity_plans"."structure" @>');
+  });
+
+  it("uses planning-zone instants for timed events while preserving all-day date keys", async () => {
+    const { db, selects } = createSelectCaptureDb({ events: [createEventRow()] });
+    const repository = createEventReadRepository(db);
+
+    await repository.listOwnedEvents({
+      profileId: "profile-1",
+      limit: 25,
+      includeAdhoc: true,
+      dateFrom: "2026-03-08",
+      dateTo: "2026-03-09",
+      planningTimezone: "America/New_York",
+    });
+
+    const where = selects[0]?.whereArg;
+    const whereSql = toSql(where);
+    const params = toQuery(where).params;
+    expect(whereSql).toContain('"events"."all_day" =');
+    expect(whereSql).toContain('"events"."scheduled_date" >=');
+    expect(whereSql).toContain('"events"."scheduled_date" <');
+    expect(whereSql).toContain('"events"."starts_at" >=');
+    expect(whereSql).toContain('"events"."starts_at" <');
+    expect(params).toContain("2026-03-08T05:00:00.000Z");
+    expect(params).toContain("2026-03-09T04:00:00.000Z");
   });
 
   it("scopes planned-day summaries to active/completed planned work before ordering and bounding", async () => {

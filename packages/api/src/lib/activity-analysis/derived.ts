@@ -88,8 +88,7 @@ export type ActivityWithSegments = Pick<
   Partial<
     Pick<
       ActivityRow,
-      | "provider"
-      | "external_id"
+      | "canonical_evidence_tier"
       | "segments_revision"
       | "parser_version"
       | "decoded_contract_version"
@@ -552,24 +551,20 @@ function buildSegmentDerivedSummary(input: {
   const timing = summary.timing;
   const sourceArtifactId = segment.source_artifact_id ?? null;
   const sourceSessionIndex = segment.source_session_index ?? null;
+  const providerSummary = activity.canonical_evidence_tier === "provider_summary";
   const sourceCapability =
-    sourceArtifactId !== null
-      ? "activity_file"
-      : activity.provider
-        ? "provider_summary"
-        : "unknown";
+    sourceArtifactId !== null ? "activity_file" : providerSummary ? "provider_summary" : "unknown";
   const distanceBasis =
     sourceSessionIndex !== null
       ? "session_summary"
       : sourceArtifactId !== null
         ? "artifact_summary"
-        : activity.provider
+        : providerSummary
           ? "provider_summary"
           : "unknown";
   const providerTimingIsAmbiguous =
     sourceArtifactId !== null &&
-    activity.provider !== null &&
-    activity.provider !== undefined &&
+    providerSummary &&
     timing.timingCoverage === "partial" &&
     "activeMs" in timing &&
     timing.activeMs !== undefined &&
@@ -578,7 +573,7 @@ function buildSegmentDerivedSummary(input: {
     ? "unknown"
     : sourceArtifactId !== null
       ? "activity_file"
-      : activity.provider
+      : providerSummary
         ? "provider_summary"
         : "unknown";
   const timingBasis =
@@ -592,8 +587,8 @@ function buildSegmentDerivedSummary(input: {
     source: {
       activityId: activity.id,
       segmentId: segment.id,
-      provider: activity.provider ?? null,
-      externalId: activity.external_id ?? null,
+      provider: null,
+      externalId: null,
       artifactId: sourceArtifactId,
       capability: sourceCapability,
       parserVersion: segment.parser_version ?? activity.parser_version ?? null,

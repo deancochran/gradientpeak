@@ -19,6 +19,7 @@ import {
   activityArtifacts,
   activityFileIngestions,
   activityPlans,
+  activitySourceReferences,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, asc, count, desc, eq, gte, ilike, lt, lte, or, sql } from "drizzle-orm";
@@ -51,6 +52,7 @@ type ActivityCategory = NonNullable<ActivitySegmentReadRow["activity_category"]>
 export type ActivityListQueryInput = {
   limit: number;
   cursor?: string;
+  importRunId?: string;
   activity_category?: ActivityCategory;
   composition_mode: ActivityCompositionMode;
   search?: string;
@@ -176,13 +178,7 @@ function decorateActivity(
   activity: ActivityReadRow,
   matchedCategorySummary: MatchedCategorySummary | null = null,
 ) {
-  const {
-    segments: _segments,
-    normalized_graded_speed_mps: _normalizedGradedSpeedMetersPerSecond,
-    efficiency_factor: _efficiencyFactor,
-    aerobic_decoupling: _aerobicDecoupling,
-    ...publicActivity
-  } = activity;
+  const { segments: _segments, ...publicActivity } = activity;
   return {
     ...publicActivity,
     ...describeActivityComposition(activity.segments),
@@ -237,6 +233,15 @@ export async function listActivitiesForProfile({
 }) {
   const offset = parseIndexCursor(input.cursor);
   const conditions = [eq(activities.profile_id, profileId)];
+  if (input.importRunId)
+    conditions.push(
+      sql`exists (
+        select 1 from ${activitySourceReferences} source_reference
+        where source_reference.activity_id = ${activities.id}
+          and source_reference.profile_id = ${profileId}
+          and source_reference.last_import_run_id = ${input.importRunId}
+      )`,
+    );
   const compositionCondition = buildActivityCompositionCondition({
     activityId: activities.id,
     ...(input.activity_category === undefined

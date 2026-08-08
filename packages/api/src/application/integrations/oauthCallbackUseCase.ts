@@ -1,10 +1,7 @@
 import type { PublicIntegrationProvider } from "@repo/db";
 import { z } from "zod";
 import type { DrizzleTransactionClient } from "../../db";
-import {
-  getProviderOAuthConfig,
-  isSupportedOAuthProvider,
-} from "../../lib/integrations/oauth-config";
+import { getWahooOAuthConfig, isSupportedOAuthProvider } from "../../lib/integrations/oauth-config";
 import {
   deriveOAuthCodeVerifier,
   redeemLocalOAuthAuthorizationCode,
@@ -12,19 +9,17 @@ import {
 import { createOAuthStateBinding } from "../../lib/integrations/oauth-state-binding";
 import { activateWahooAccessToken } from "../../lib/integrations/wahoo/client";
 import { isWahooTokenLimitRejection } from "../../lib/integrations/wahoo/oauth-errors";
-import { hasWahooRouteMirrorScopes } from "../../lib/integrations/wahoo/planned-activity-scopes";
 import { logger } from "../../lib/logger";
-import { enqueueWahooGroupEventRouteDeliveryReconcile } from "../../lib/provider-sync/event-delivery/wahoo-group-event-route-delivery";
-import { enqueueWahooOwnedRouteReconcile } from "../../lib/provider-sync/owned-routes";
+import { enqueueWahooProfileEnrichment } from "../../lib/provider-sync/wahoo-profile-enrichment";
 import {
   IntegrationDisconnectPendingError,
   IntegrationLifecycleChangedError,
   type IntegrationsRepositories,
   type OAuthIntegrationExpectation,
 } from "../../repositories/integrations-repository";
-import type { ProviderSyncRepository } from "../../repositories/provider-sync-repository";
-import { enqueueActivityHistoryReconcile } from "./syncNowUseCase";
-import { supportsActivityHistorySync } from "./syncOverviewUseCase";
+import type { WahooSyncRepository } from "../../repositories/wahoo-sync-repository";
+import { enqueueWahooActivityHistoryReconcile } from "./syncNowUseCase";
+import { admitWahooReconciliation } from "./wahoo-reconciliation-admission";
 
 export type HandleOAuthCallbackInput = {
   code: string | null;
@@ -32,7 +27,7 @@ export type HandleOAuthCallbackInput = {
   fallbackRedirect: string;
   provider: string;
   repositories: IntegrationsRepositories;
-  providerSyncRepository: ProviderSyncRepository;
+  providerSyncRepository: WahooSyncRepository;
   runInTransaction: <T>(
     operation: (transaction: DrizzleTransactionClient) => Promise<T>,
   ) => Promise<T>;
@@ -147,7 +142,7 @@ async function exchangeCodeForTokens(
   code: string,
   state: string,
 ): Promise<OAuthTokenResponse> {
-  const config = getProviderOAuthConfig(provider);
+  const config = provider === "wahoo" ? getWahooOAuthConfig() : null;
   if (!config)
     throw new OAuthTokenExchangeError("OAuth credentials are not configured", "not_configured");
   const codeVerifier = deriveOAuthCodeVerifier({
@@ -215,7 +210,7 @@ async function resolveProviderIdentity(
   tokens: OAuthTokenResponse,
 ): Promise<{ externalId: string; requiresActivation: boolean }> {
   const tokenExternalId = resolveTokenExternalId(tokens);
-  const config = getProviderOAuthConfig(provider);
+  const config = provider === "wahoo" ? getWahooOAuthConfig() : null;
   if (provider !== "wahoo" || config?.adapter === "local-test") {
     if (tokenExternalId) return { externalId: tokenExternalId, requiresActivation: false };
     throw new OAuthProviderIdentityError();
@@ -285,7 +280,7 @@ export async function handleOAuthCallback({
       status: 302,
     };
   }
-  const config = getProviderOAuthConfig(provider);
+  const config = getWahooOAuthConfig();
   const expectedBinding = config ? createOAuthStateBinding({ config, provider, state }) : null;
   if (
     !expectedBinding ||
@@ -408,6 +403,7 @@ export async function handleOAuthCallback({
   let integration: Awaited<
     ReturnType<IntegrationsRepositories["integrations"]["upsertFromOAuthState"]>
   >;
+  const grantedScope = tokens.scope || storedState.requested_scope;
   try {
     integration = await runInTransaction(async (transaction) => {
       const storedIntegration = await repositories.integrations.upsertFromOAuthStateInTransaction(
@@ -422,36 +418,42 @@ export async function handleOAuthCallback({
           accessToken: tokens.access_token,
           refreshToken: tokens.refresh_token || null,
           expiresAt: tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : null,
-          scope: tokens.scope || null,
+          scope: grantedScope,
         },
       );
-      if (storedIntegration && provider === "wahoo" && supportsActivityHistorySync(provider)) {
-        await enqueueActivityHistoryReconcile({
-          integrationId: storedIntegration.id,
-          profileId: storedState.profile_id,
-          provider,
-          providerSyncRepository,
-          transaction,
+      if (storedIntegration) {
+        const historyAdmission = admitWahooReconciliation({
+          integration: storedIntegration,
+          scope: grantedScope,
+          target: "activity_history",
           trigger: "connect",
         });
-        if (hasWahooRouteMirrorScopes(tokens.scope)) {
-          await enqueueWahooOwnedRouteReconcile({
-            integrationGeneration: storedIntegration.generation,
-            integrationId: storedIntegration.id,
-            profileId: storedState.profile_id,
-            providerSyncRepository,
-            transaction,
-            trigger: "connect",
-          });
-          await enqueueWahooGroupEventRouteDeliveryReconcile({
-            integrationGeneration: storedIntegration.generation,
-            integrationId: storedIntegration.id,
-            profileId: storedState.profile_id,
-            providerSyncRepository,
-            transaction,
-            trigger: "connect",
-          });
+        if (!historyAdmission.admitted) {
+          throw new Error(
+            `Wahoo history reconciliation was not admitted: ${historyAdmission.reason}`,
+          );
         }
+        await enqueueWahooActivityHistoryReconcile({
+          admission: historyAdmission,
+          providerSyncRepository,
+          transaction,
+        });
+        const profileAdmission = admitWahooReconciliation({
+          integration: storedIntegration,
+          scope: grantedScope,
+          target: "profile_enrichment",
+          trigger: "connect",
+        });
+        if (!profileAdmission.admitted) {
+          throw new Error(
+            `Wahoo profile reconciliation was not admitted: ${profileAdmission.reason}`,
+          );
+        }
+        await enqueueWahooProfileEnrichment({
+          admission: profileAdmission,
+          providerSyncRepository,
+          transaction,
+        });
       }
       return storedIntegration;
     });

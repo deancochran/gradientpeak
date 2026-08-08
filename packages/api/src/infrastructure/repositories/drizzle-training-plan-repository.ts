@@ -194,7 +194,7 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
         sessions_per_week_target,
         duration_hours,
         is_system_template,
-        template_visibility,
+        content_visibility,
         created_at,
         updated_at,
         profile_id
@@ -270,7 +270,6 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
           structure: canonicalStructure,
           structure_hash: activityPlanStructureHash(canonicalStructure),
           profile_id: input.profileId,
-          template_visibility: input.contentVisibility,
           content_visibility: input.contentVisibility,
         })
         .returning();
@@ -450,6 +449,11 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
           description: input.description,
           structure,
           structure_hash: activityPlanStructureHash(structure),
+          revision: sql`${schema.trainingPlans.revision} + 1`,
+          updated_at: new Date(),
+          validated_state_revision: null,
+          validated_at: null,
+          projection_algorithm_version: null,
         })
         .where(
           and(
@@ -514,6 +518,11 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
         .set({
           structure: nextStructure as TrainingPlanInsert["structure"],
           structure_hash: activityPlanStructureHash(nextStructure),
+          revision: sql`${schema.trainingPlans.revision} + 1`,
+          validated_state_revision: null,
+          validated_at: null,
+          projection_algorithm_version: null,
+          updated_at: new Date(),
         })
         .where(
           and(

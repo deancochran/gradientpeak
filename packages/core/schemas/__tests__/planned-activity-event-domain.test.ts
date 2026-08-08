@@ -122,7 +122,7 @@ describe("planned activity event domain schemas", () => {
     const parsed = importedEventLifecycleMutationSchema.safeParse({
       id: "97247f32-4dd2-45e3-9f4f-6768f2e6e2df",
       event_type: "imported",
-      scope: "future",
+      scope: "series",
       lifecycle: {
         status: "cancelled",
         cancelled: {
@@ -134,16 +134,16 @@ describe("planned activity event domain schemas", () => {
     expect(parsed.success).toBe(true);
   });
 
-  it("validates mutation scope enum on reschedule", () => {
+  it("retains only single-occurrence and whole-series cancellation scopes", () => {
     expect(eventMutationScopeSchema.safeParse("single").success).toBe(true);
-    expect(eventMutationScopeSchema.safeParse("future").success).toBe(true);
+    expect(eventMutationScopeSchema.safeParse("future").success).toBe(false);
     expect(eventMutationScopeSchema.safeParse("series").success).toBe(true);
     expect(eventMutationScopeSchema.safeParse("all").success).toBe(false);
 
     const parsed = plannedActivityRescheduleSchema.safeParse({
       id: "2f3e7214-35ca-4ef5-a8ef-ef4f3efb1d15",
       new_date: "2026-03-04T09:00:00.000Z",
-      scope: "series",
+      scope: "single",
     });
 
     expect(parsed.success).toBe(true);
@@ -158,7 +158,7 @@ describe("planned activity event domain schemas", () => {
     expect(parsed.success).toBe(false);
   });
 
-  it("requires recurrence updates to target future or series scope only", () => {
+  it("rejects recurrence-rule editing for every mutation scope", () => {
     const recurrence = {
       rule: "FREQ=WEEKLY;INTERVAL=1",
       timezone: "UTC",
@@ -170,7 +170,7 @@ describe("planned activity event domain schemas", () => {
         scope: "future",
         patch: { recurrence },
       }).success,
-    ).toBe(true);
+    ).toBe(false);
 
     expect(
       eventUpdateSchema.safeParse({
@@ -178,7 +178,7 @@ describe("planned activity event domain schemas", () => {
         scope: "series",
         patch: { recurrence: null },
       }).success,
-    ).toBe(true);
+    ).toBe(false);
 
     expect(
       eventUpdateSchema.safeParse({
@@ -192,7 +192,7 @@ describe("planned activity event domain schemas", () => {
   it("keeps recurrence patches separate from details and schedule patches", () => {
     const parsed = eventUpdateSchema.safeParse({
       id: "e4e9d401-49dc-4f14-b8ab-2da517f7db1b",
-      scope: "future",
+      scope: "single",
       patch: {
         title: "Updated title",
         recurrence: {

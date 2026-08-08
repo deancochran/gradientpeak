@@ -12,6 +12,7 @@ import {
   type LoadSeriesIdentity,
   loadSeriesIdentitySchema,
 } from "@repo/core";
+import { formatDateOnlyUtc } from "@repo/core/calendar";
 
 export type LoadSource = "common_load" | "none";
 type WorkloadRejectionReason =
@@ -45,8 +46,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 function dateKeys(startDate: Date, endDate: Date): string[] {
   const keys: string[] = [];
   for (let time = startDate.getTime(); time <= endDate.getTime(); time += DAY_MS) {
-    const key = new Date(time).toISOString().split("T")[0];
-    if (key) keys.push(key);
+    keys.push(formatDateOnlyUtc(new Date(time)));
   }
   return keys;
 }
@@ -96,9 +96,7 @@ export function buildCanonicalDailyLoads(
       return;
     }
     sawCanonicalQuantification = true;
-    const date = activity.started_at
-      ? new Date(activity.started_at).toISOString().split("T")[0]
-      : undefined;
+    const date = activity.started_at ? formatDateOnlyUtc(new Date(activity.started_at)) : undefined;
     if (!date || !dateSet.has(date)) return;
     allMembers.push(...parsed.members);
     membersByDate.set(date, [...(membersByDate.get(date) ?? []), ...parsed.members]);

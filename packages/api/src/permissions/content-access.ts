@@ -146,7 +146,6 @@ export function createContentAccessPermissions(db: DrizzleQueryExecutor) {
         .select({
           id: schema.activityPlans.id,
           ownerProfileId: schema.activityPlans.profile_id,
-          templateVisibility: schema.activityPlans.template_visibility,
           contentVisibility: schema.activityPlans.content_visibility,
           isSystem: schema.activityPlans.is_system_template,
         })
@@ -193,7 +192,6 @@ export function createContentAccessPermissions(db: DrizzleQueryExecutor) {
         .select({
           id: schema.trainingPlans.id,
           ownerProfileId: schema.trainingPlans.profile_id,
-          templateVisibility: schema.trainingPlans.template_visibility,
           contentVisibility: schema.trainingPlans.content_visibility,
           isSystem: schema.trainingPlans.is_system_template,
         })

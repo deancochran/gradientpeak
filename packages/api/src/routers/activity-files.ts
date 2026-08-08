@@ -217,19 +217,12 @@ async function ensureActivityFilesBucketExists() {
   }
 }
 
-const manualHistoricalImportProvenanceSchema = z.object({
-  import_source: z.literal("manual_historical"),
-  import_file_type: z.enum(["fit", "gpx", "tcx"]),
-  import_original_file_name: z.string().trim().min(1, "Original file name is required"),
-});
-
 const processActivityFileInput = z
   .object({
     activityFilePath: activityStoragePathSchema,
     name: z.string().trim().min(1, "Activity name is required"),
     notes: z.string().trim().optional(),
     content_visibility: contentVisibilitySchema.optional(),
-    importProvenance: manualHistoricalImportProvenanceSchema.optional(),
   })
   .strict();
 
@@ -296,6 +289,62 @@ function getErrorDetails(error: unknown) {
     errorStack: undefined,
     errorName: undefined,
   };
+}
+
+type ManualActivityImportTransportFailure = {
+  code: TRPCError["code"];
+  message: string;
+  stableCode: string;
+};
+
+function manualActivityImportTransportFailure(
+  error: unknown,
+): ManualActivityImportTransportFailure {
+  if (error instanceof TRPCError) {
+    if (error.code === "BAD_REQUEST") {
+      return {
+        code: "BAD_REQUEST",
+        message: "Unable to parse activity file",
+        stableCode: "parse_failed",
+      };
+    }
+    if (error.code === "CONFLICT") {
+      return {
+        code: "CONFLICT",
+        message: "Activity file import is already being processed",
+        stableCode: "claim_conflict",
+      };
+    }
+    if (error.code === "FORBIDDEN") {
+      return {
+        code: "FORBIDDEN",
+        message: "Access denied: You can only process your own activity files",
+        stableCode: "ownership_denied",
+      };
+    }
+    if (error.code === "NOT_FOUND") {
+      return {
+        code: "NOT_FOUND",
+        message: "Activity file import was not found",
+        stableCode: "import_not_found",
+      };
+    }
+  }
+  return {
+    code: "INTERNAL_SERVER_ERROR",
+    message: "Activity file processing failed",
+    stableCode: "process_failed",
+  };
+}
+
+function logManualActivityImportFailure(
+  operation: "prepare_upload" | "process",
+  failure: ManualActivityImportTransportFailure,
+) {
+  logger.error(`manual_activity_import.${operation}.${failure.stableCode}`, {
+    error_code: failure.code,
+    outcome: failure.code === "INTERNAL_SERVER_ERROR" ? "unexpected_error" : "expected_error",
+  });
 }
 
 function isOwnedActivityFilePath(userId: string, filePath: string): boolean {
@@ -646,7 +695,11 @@ export const activityFilesRouter = createTRPCRouter({
           ...input,
         });
         if (claim.status === "ready") {
-          return beginMobileRecordingUploadOutputSchema.parse(claim);
+          return beginMobileRecordingUploadOutputSchema.parse({
+            status: "ready",
+            ingestionId: claim.ingestionId,
+            activityId: claim.activityId,
+          });
         }
 
         await ensureActivityFilesBucketExists();
@@ -664,10 +717,6 @@ export const activityFilesRouter = createTRPCRouter({
           status: claim.status,
           ingestionId: claim.ingestionId,
           activityId: claim.activityId,
-          byteSize: claim.byteSize,
-          sha256: claim.sha256,
-          format: claim.format,
-          mediaType: claim.mediaType,
           signedUrl: signedUpload.signedUrl,
           token: signedUpload.token,
         });
@@ -769,16 +818,16 @@ export const activityFilesRouter = createTRPCRouter({
           path: signedUploadData.path,
           filePath: filePath, // Return the full path so the client knows where it went
         };
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
-        logger.error("Get signed upload URL error", getErrorDetails(error));
-        throw new TRPCError({
+      } catch {
+        const failure: ManualActivityImportTransportFailure = {
           code: "INTERNAL_SERVER_ERROR",
-          message: `Failed to generate upload URL: ${getErrorMessage(error)}`,
-          cause: error,
+          message: "Unable to prepare activity file upload",
+          stableCode: "prepare_failed",
+        };
+        logManualActivityImportFailure("prepare_upload", failure);
+        throw new TRPCError({
+          code: failure.code,
+          message: failure.message,
         });
       }
     }),
@@ -789,7 +838,7 @@ export const activityFilesRouter = createTRPCRouter({
   processActivityFile: protectedProcedure
     .input(processActivityFileInput)
     .mutation(async ({ ctx, input }) => {
-      const { activityFilePath, name, notes, content_visibility, importProvenance } = input;
+      const { activityFilePath, name, notes, content_visibility } = input;
       const userId = ctx.session?.user?.id;
       const db = getRequiredDb(ctx);
 
@@ -801,11 +850,7 @@ export const activityFilesRouter = createTRPCRouter({
       }
 
       try {
-        logger.debug("[processActivityFile] Starting activity file processing", {
-          activityFilePath,
-          userId,
-          name,
-        });
+        logger.debug("manual_activity_import.process.started");
 
         if (!isOwnedActivityFilePath(userId, activityFilePath)) {
           throw new TRPCError({
@@ -822,7 +867,7 @@ export const activityFilesRouter = createTRPCRouter({
             name,
             ...(notes === undefined ? {} : { notes }),
             ...(content_visibility === undefined ? {} : { contentVisibility: content_visibility }),
-            originalName: importProvenance?.import_original_file_name ?? null,
+            originalName: activityFilePath.split("/").at(-1)?.replace(/^\d+_/, "") ?? null,
             fileType: getActivityFileTypeFromPath(activityFilePath),
           },
           {
@@ -839,27 +884,11 @@ export const activityFilesRouter = createTRPCRouter({
           activity: serializeActivityDates(result.activity),
         };
       } catch (error) {
-        // T-316: Handle errors with proper TRPCError types
-        if (error instanceof TRPCError) {
-          logger.error("[processActivityFile] TRPCError caught", {
-            code: error.code,
-            message: error.message,
-          });
-          throw error;
-        }
-
-        // Log unexpected errors with full context
-        logger.error("[processActivityFile] Unexpected error", {
-          ...getErrorDetails(error),
-          activityFilePath,
-          userId,
-          name,
-        });
-
+        const failure = manualActivityImportTransportFailure(error);
+        logManualActivityImportFailure("process", failure);
         throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `Activity file processing failed: ${getErrorMessage(error)}`,
-          cause: error,
+          code: failure.code,
+          message: failure.message,
         });
       }
     }),

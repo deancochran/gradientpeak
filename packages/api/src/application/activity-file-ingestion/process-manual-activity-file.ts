@@ -19,11 +19,8 @@ import {
   analyzeParsedActivityFile,
   type ParsedActivityFileForAnalysis,
 } from "./analyze-parsed-activity-file";
-import {
-  type ActivityArtifactStorage,
-  cleanupActivityArtifactStaging,
-  promoteActivityArtifact,
-} from "./artifact-storage";
+import { type ActivityArtifactStorage, cleanupActivityArtifactStaging } from "./artifact-storage";
+import { finalizeActivityArtifactIngestion } from "./finalize-activity-artifact-ingestion";
 import {
   ActivityFileIngestionClaimLostError,
   createActivityFileIngestion,
@@ -70,10 +67,6 @@ export interface ProcessManualActivityFileDependencies {
 
 function digest(bytes: Uint8Array) {
   return createHash("sha256").update(bytes).digest("hex");
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error && error.message ? error.message : "Unknown error";
 }
 
 function safeFailure(error: unknown) {
@@ -142,9 +135,9 @@ async function markManualIngestionFailed(
       errorCode: failure.code,
       errorMessage: failure.message,
     });
-  } catch (markError) {
-    deps.logger.error("Failed to mark manual activity ingestion failed", {
-      error: errorMessage(markError),
+  } catch {
+    deps.logger.error("manual_activity_import.mark_failed.process_failed", {
+      outcome: "unexpected_error",
     });
   }
 }
@@ -192,88 +185,95 @@ export async function processManualActivityFile(
     if (!claimToken) {
       throw new TRPCError({ code: "CONFLICT", message: "Activity file ingestion claim was lost" });
     }
-    const promoted = await promoteActivityArtifact(deps.storage, {
+    const activeClaimToken = claimToken;
+    return await finalizeActivityArtifactIngestion(db, {
       profileId: input.profileId,
+      storage: deps.storage,
       bucket: "activity-files",
       stagingPath: input.activityFilePath,
       bytes: stored.data,
       format: input.fileType,
       ...(stored.activityFile.type === undefined ? {} : { mediaType: stored.activityFile.type }),
-    });
-    const parsedData = deps.decodeActivityFile({
-      data: stored.data,
-      activityFilePath: input.activityFilePath,
-      fileType: input.fileType,
-    });
-    const artifactId = activityArtifactId(input.profileId, promoted.sha256, promoted.byteSize);
-    const analysis = await analyzeParsedActivityFile(db, {
-      profileId: input.profileId,
-      activityId,
-      parsedData,
-      artifactId,
-    });
-    const contentVisibility =
-      input.contentVisibility ??
-      (await deps.getProfileDefaultContentVisibility(db, input.profileId));
-    await submitActivity(db, {
-      requestedActivityId: activityId,
-      profileId: input.profileId,
-      name: input.name,
-      notes: input.notes || null,
-      contentVisibility,
-      startedAt: analysis.startedAt,
-      finishedAt: analysis.activityCompletedAt,
-      elapsedMs: analysis.summaryValues.elapsed_ms,
-      activeMs: analysis.summaryValues.active_ms,
-      movingMs: analysis.summaryValues.moving_ms,
-      timingCoverage: analysis.summaryValues.timing_coverage,
-      distanceMeters: analysis.summaryValues.distance_meters ?? 0,
-      calories: analysis.summaryValues.calories,
-      elevationGainMeters: analysis.summaryValues.elevation_gain_meters,
-      avgHeartRate: analysis.summaryValues.avg_heart_rate,
-      maxHeartRate: analysis.summaryValues.max_heart_rate,
-      avgPower: analysis.summaryValues.avg_power,
-      maxPower: analysis.summaryValues.max_power,
-      avgCadence: analysis.summaryValues.avg_cadence,
-      maxCadence: analysis.summaryValues.max_cadence,
-      avgSpeedMps: analysis.summaryValues.avg_speed_mps,
-      maxSpeedMps: analysis.summaryValues.max_speed_mps,
-      normalizedSpeedMps: analysis.summaryValues.normalized_speed_mps,
-      avgTemperature: analysis.summaryValues.avg_temperature,
-      poolLengthMeters: analysis.summaryValues.pool_length_meters,
-      totalStrokes: analysis.summaryValues.total_strokes,
-      avgSwolf: analysis.summaryValues.avg_swolf,
-      deviceManufacturer: parsedData.metadata.manufacturer,
-      deviceProduct: parsedData.metadata.product,
-      laps: parsedData.laps ?? null,
-      mapBounds: analysis.geometry.mapBounds,
-      polyline: analysis.geometry.polyline,
-      analysis: {
-        efforts: analysis.effortsToInsert,
-        detectedLTHR: analysis.detectedLTHR,
-        ingestion: {
-          source: "manual_import",
-          operationKey,
-          ingestionId: ingestion.id,
-          claimToken,
-          artifact: { ...promoted, originalName: input.originalName ?? null },
-        },
+      parse: () =>
+        deps.decodeActivityFile({
+          data: stored.data,
+          activityFilePath: input.activityFilePath,
+          fileType: input.fileType,
+        }),
+      submit: async ({ parsedData, artifact: promoted }) => {
+        const artifactId = activityArtifactId(input.profileId, promoted.sha256, promoted.byteSize);
+        const analysis = await analyzeParsedActivityFile(db, {
+          profileId: input.profileId,
+          activityId,
+          parsedData,
+          artifactId,
+        });
+        const contentVisibility =
+          input.contentVisibility ??
+          (await deps.getProfileDefaultContentVisibility(db, input.profileId));
+        await submitActivity(db, {
+          requestedActivityId: activityId,
+          profileId: input.profileId,
+          name: input.name,
+          notes: input.notes || null,
+          contentVisibility,
+          startedAt: analysis.startedAt,
+          finishedAt: analysis.activityCompletedAt,
+          elapsedMs: analysis.summaryValues.elapsed_ms,
+          activeMs: analysis.summaryValues.active_ms,
+          movingMs: analysis.summaryValues.moving_ms,
+          timingCoverage: analysis.summaryValues.timing_coverage,
+          distanceMeters: analysis.summaryValues.distance_meters ?? 0,
+          calories: analysis.summaryValues.calories,
+          elevationGainMeters: analysis.summaryValues.elevation_gain_meters,
+          avgHeartRate: analysis.summaryValues.avg_heart_rate,
+          maxHeartRate: analysis.summaryValues.max_heart_rate,
+          avgPower: analysis.summaryValues.avg_power,
+          maxPower: analysis.summaryValues.max_power,
+          avgCadence: analysis.summaryValues.avg_cadence,
+          maxCadence: analysis.summaryValues.max_cadence,
+          avgSpeedMps: analysis.summaryValues.avg_speed_mps,
+          maxSpeedMps: analysis.summaryValues.max_speed_mps,
+          normalizedSpeedMps: analysis.summaryValues.normalized_speed_mps,
+          avgTemperature: analysis.summaryValues.avg_temperature,
+          poolLengthMeters: analysis.summaryValues.pool_length_meters,
+          totalStrokes: analysis.summaryValues.total_strokes,
+          avgSwolf: analysis.summaryValues.avg_swolf,
+          deviceManufacturer: parsedData.metadata.manufacturer,
+          deviceProduct: parsedData.metadata.product,
+          laps: parsedData.laps ?? null,
+          mapBounds: analysis.geometry.mapBounds,
+          polyline: analysis.geometry.polyline,
+          analysis: {
+            efforts: analysis.effortsToInsert,
+            detectedLTHR: analysis.detectedLTHR,
+            ingestion: {
+              source: "manual_import",
+              operationKey,
+              ingestionId: ingestion.id,
+              claimToken: activeClaimToken,
+              artifact: { ...promoted, originalName: input.originalName ?? null },
+            },
+          },
+          segmentSet: analysis.segmentSet,
+        });
+        const activity = await loadOwnedActivity(db, input.profileId, activityId);
+        if (!activity) throw new Error("Failed to load created activity record");
+        const ready =
+          (await db.query.activityFileIngestions.findFirst({
+            where: and(
+              eq(activityFileIngestions.profile_id, input.profileId),
+              eq(activityFileIngestions.operation_key, operationKey),
+            ),
+          })) ?? claimed;
+        return { activity, ingestion: ready };
       },
-      segmentSet: analysis.segmentSet,
     });
-    const activity = await loadOwnedActivity(db, input.profileId, activityId);
-    if (!activity) throw new Error("Failed to load created activity record");
-    const ready =
-      (await db.query.activityFileIngestions.findFirst({
-        where: and(
-          eq(activityFileIngestions.profile_id, input.profileId),
-          eq(activityFileIngestions.operation_key, operationKey),
-        ),
-      })) ?? claimed;
-    await cleanupActivityArtifactStaging(deps.storage, promoted);
-    return { activity, ingestion: ready };
   } catch (error) {
-    deps.logger.error("Manual activity file processing failed", { error: errorMessage(error) });
+    const failure = safeFailure(error);
+    deps.logger.error(`manual_activity_import.process.${failure.code}`, {
+      outcome: failure.code === "parse_failed" ? "expected_error" : "unexpected_error",
+    });
     const claimLost = error instanceof ActivityFileIngestionClaimLostError;
     if (!(claimLost || (isTrpcError(error) && error.code === "CONFLICT"))) {
       await markManualIngestionFailed(db, deps, {

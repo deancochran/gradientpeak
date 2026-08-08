@@ -4,6 +4,7 @@ import type { TrainingPlanOwnerScope, TrainingPlanRepository } from "../../repos
 import { getLikeStats, loadLikeStats } from "../../repositories/like-stats";
 import { buildIndexPageInfo, parseIndexCursor } from "../../utils/index-cursor";
 import { loadProfileIdentityMap } from "../../utils/profile-identity";
+import { getTrainingPlanEditorMetadata } from "./projection-planning";
 import {
   mapTrainingPlanContentIdentity,
   mapTrainingPlanOwnerIdentity,
@@ -11,34 +12,13 @@ import {
   serializeTrainingPlanForViewer,
 } from "./trainingPlanMapping";
 
-type TrainingPlanListOwnerScope = TrainingPlanOwnerScope | "none";
-
 type TrainingPlanListInput = {
   cursor?: string;
-  direction?: "forward" | "backward";
-  includeOwnOnly?: boolean;
-  includeSystemTemplates?: boolean;
   limit: number;
-  ownerScope?: TrainingPlanOwnerScope;
+  ownerScope: TrainingPlanOwnerScope;
   search?: string;
   visibility?: "private" | "followers" | "public";
 };
-
-function resolveOwnerScope(input: TrainingPlanListInput): TrainingPlanListOwnerScope {
-  if (input.ownerScope) {
-    return input.ownerScope;
-  }
-
-  const includeOwnOnly = input.includeOwnOnly ?? true;
-  const includeSystemTemplates = input.includeSystemTemplates ?? false;
-  return includeOwnOnly
-    ? includeSystemTemplates
-      ? "all"
-      : "own"
-    : includeSystemTemplates
-      ? "system"
-      : "none";
-}
 
 export async function getTrainingPlanUseCase(input: {
   db: DrizzleDbClient;
@@ -56,7 +36,15 @@ export async function getTrainingPlanUseCase(input: {
       throw new TRPCError({ code: "NOT_FOUND", message: "Training plan not found" });
     }
 
-    return serializeTrainingPlanForViewer({ ...input, plan });
+    const serialized = await serializeTrainingPlanForViewer({ ...input, plan });
+    return {
+      ...serialized,
+      editor: await getTrainingPlanEditorMetadata({
+        db: input.db,
+        profileId: input.profileId,
+        plan,
+      }),
+    };
   }
 
   const activePlanLookup = await input.repository.getActivePlanFromFutureEvents(input.profileId);
@@ -64,7 +52,10 @@ export async function getTrainingPlanUseCase(input: {
     return null;
   }
 
-  return serializeTrainingPlanForViewer({ ...input, plan: activePlanLookup.trainingPlan });
+  return {
+    ...(await serializeTrainingPlanForViewer({ ...input, plan: activePlanLookup.trainingPlan })),
+    editor: null,
+  };
 }
 
 export async function getTrainingPlanByIdUseCase(input: {
@@ -82,10 +73,7 @@ export async function listTrainingPlansUseCase(input: {
   query: TrainingPlanListInput;
   repository: TrainingPlanRepository;
 }) {
-  const ownerScope = resolveOwnerScope(input.query);
-  if (ownerScope === "none") {
-    return { items: [], total: 0, hasMore: false, nextCursor: undefined };
-  }
+  const ownerScope = input.query.ownerScope;
 
   const offset = parseIndexCursor(input.query.cursor);
   const data = await input.repository.listTrainingPlans({

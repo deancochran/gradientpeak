@@ -1,5 +1,6 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
+import { skipToken } from "@tanstack/react-query";
 import Constants from "expo-constants";
 import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
@@ -37,6 +38,13 @@ export default function IntegrationsScreen() {
   );
 
   const utils = api.useUtils();
+  const profileQuery = api.profiles.get.useQuery();
+  const publishedStateQuery = api.athleteIntelligence.getReadModel.useQuery(
+    profileQuery.data
+      ? { profileId: profileQuery.data.id, sections: { publishedState: true, status: true } }
+      : skipToken,
+    { enabled: Boolean(profileQuery.data) },
+  );
   const {
     data: syncOverview,
     error: syncOverviewError,
@@ -63,10 +71,7 @@ export default function IntegrationsScreen() {
   const getAuthUrlMutation = useReliableMutation(api.integrations.getAuthUrl, {
     silent: true,
   });
-  const invalidateIntegrations = [
-    () => utils.integrations.getSyncOverview.invalidate(),
-    () => utils.integrations.list.invalidate(),
-  ];
+  const invalidateIntegrations = [() => utils.integrations.getSyncOverview.invalidate()];
   const disconnectMutation = useReliableMutation(api.integrations.disconnect, {
     invalidate: invalidateIntegrations,
     success: "Disconnecting",
@@ -79,7 +84,6 @@ export default function IntegrationsScreen() {
         if (!outcome) return;
 
         void utils.integrations.getSyncOverview.invalidate();
-        void utils.integrations.list.invalidate();
         refetchSyncOverview();
         setStatusModal({ title: outcome.title, description: outcome.description });
       } catch (err) {
@@ -109,6 +113,7 @@ export default function IntegrationsScreen() {
   }, [handleClose]);
 
   const handleConnect = async (provider: IntegrationProvider) => {
+    if (provider !== "wahoo") return;
     setPendingByProvider((prev) => ({ ...prev, [provider]: "connect" }));
 
     try {
@@ -127,13 +132,18 @@ export default function IntegrationsScreen() {
       console.error("OAuth initiation error:", error);
       setStatusModal({ title: "Issue", description: "Could not start connection." });
     } finally {
-      setPendingByProvider((prev) => ({ ...prev, [provider]: undefined }));
+      setPendingByProvider((prev) => {
+        const next = { ...prev };
+        delete next[provider];
+        return next;
+      });
     }
   };
 
   const confirmDisconnect = async () => {
     if (!disconnectingProvider) return;
     const provider = disconnectingProvider.provider;
+    if (provider !== "wahoo") return;
     setPendingByProvider((prev) => ({ ...prev, [provider]: "disconnect" }));
     try {
       await disconnectMutation.mutateAsync({ provider });
@@ -143,7 +153,11 @@ export default function IntegrationsScreen() {
       console.error("Disconnect error:", error);
       setStatusModal({ title: "Issue", description: "Could not disconnect." });
     } finally {
-      setPendingByProvider((prev) => ({ ...prev, [provider]: undefined }));
+      setPendingByProvider((prev) => {
+        const next = { ...prev };
+        delete next[provider];
+        return next;
+      });
     }
   };
 
@@ -164,11 +178,15 @@ export default function IntegrationsScreen() {
         <IntegrationProviderList
           error={syncOverviewError}
           integrations={syncOverview ?? []}
+          {...(publishedStateQuery.data ? { publishedState: publishedStateQuery.data } : {})}
           isLoading={integrationsLoading}
           onConnect={(provider) => {
             void handleConnect(provider);
           }}
           onDisconnect={setDisconnectingProvider}
+          onViewImportedActivities={(importRunId) =>
+            router.push({ pathname: "/activities-list", params: { importRunId } })
+          }
           pendingByProvider={pendingByProvider}
           onRetry={refetchSyncOverview}
         />

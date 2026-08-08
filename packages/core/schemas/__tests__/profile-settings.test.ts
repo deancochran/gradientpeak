@@ -61,13 +61,6 @@ const canonicalProfile = athletePreferenceProfileSchema.parse({
   },
 });
 
-describe("Wahoo event-route delivery preference", () => {
-  it("defaults missing persisted preferences to disabled", () => {
-    expect(canonicalProfile.wahooEventRouteDeliveryEnabled).toBe(false);
-    expect(defaultAthletePreferenceProfile.wahooEventRouteDeliveryEnabled).toBe(false);
-  });
-});
-
 const capabilitySnapshot = athleteCapabilitySnapshotSchema.parse({
   activity_category_slices: {
     run: {
@@ -127,7 +120,6 @@ describe("athletePreferenceProfileSchema", () => {
     expect(parsed.training_style.strength_integration_priority).toBe(0.45);
     expect(parsed.recovery_preferences.systemic_fatigue_tolerance).toBe(0.65);
     expect(Object.keys(parsed)).toEqual([
-      "wahooEventRouteDeliveryEnabled",
       "availability",
       "dose_limits",
       "training_style",

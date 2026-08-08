@@ -35,8 +35,6 @@ export type ProviderConfigurableAction = z.infer<typeof providerConfigurableActi
 export const providerSyncModeSchema = z.enum(["automatic", "manual", "unsupported"]);
 export type ProviderSyncMode = z.infer<typeof providerSyncModeSchema>;
 
-export type ProviderRuntimeStatus = "enabled" | "scaffold";
-
 export type ProviderPlannedActivityMaturity = "available" | "evidence_gated";
 
 export type ProviderPlannedActivityCapability = {
@@ -55,7 +53,6 @@ export type ProviderCapabilityDefinition = {
   id: IntegrationProviderId;
   label: string;
   plannedActivities: ProviderPlannedActivityCapability;
-  runtimeStatus: ProviderRuntimeStatus;
   syncModes: Partial<Record<ProviderCapability, Exclude<ProviderSyncMode, "unsupported">>>;
 };
 
@@ -88,7 +85,6 @@ const providerCapabilityMap = {
     id: "wahoo",
     label: "Wahoo",
     plannedActivities: wahooPlannedActivities,
-    runtimeStatus: "enabled",
     capabilities: [
       "profile_enrichment_read",
       "activity_history_read",
@@ -114,7 +110,6 @@ const providerCapabilityMap = {
     id: "strava",
     label: "Strava",
     plannedActivities: evidenceGatedPlannedActivities,
-    runtimeStatus: "scaffold",
     capabilities: ["activity_history_read", "completed_activity_push", "webhook_activity_updates"],
     syncModes: {
       activity_history_read: "manual",
@@ -126,7 +121,6 @@ const providerCapabilityMap = {
     id: "trainingpeaks",
     label: "TrainingPeaks",
     plannedActivities: evidenceGatedPlannedActivities,
-    runtimeStatus: "scaffold",
     capabilities: [],
     syncModes: {},
   },
@@ -134,7 +128,6 @@ const providerCapabilityMap = {
     id: "garmin",
     label: "Garmin",
     plannedActivities: evidenceGatedPlannedActivities,
-    runtimeStatus: "scaffold",
     capabilities: ["activity_history_read"],
     syncModes: {
       activity_history_read: "manual",
@@ -144,7 +137,6 @@ const providerCapabilityMap = {
     id: "zwift",
     label: "Zwift",
     plannedActivities: evidenceGatedPlannedActivities,
-    runtimeStatus: "scaffold",
     capabilities: [],
     syncModes: {},
   },
@@ -164,10 +156,6 @@ export function getProviderPlannedActivityCapability(
   provider: IntegrationProviderId,
 ): ProviderPlannedActivityCapability {
   return getProviderCapabilityDefinition(provider).plannedActivities;
-}
-
-export function isProviderRuntimeEnabled(provider: IntegrationProviderId): boolean {
-  return getProviderCapabilityDefinition(provider).runtimeStatus === "enabled";
 }
 
 export function providerHasCapability(
@@ -224,4 +212,14 @@ export function getConfigurableProviderActions(
   }
 
   return Array.from(actions);
+}
+
+/** Static product target only; API runtime admission still owns enablement, grants, and fences. */
+export function isProviderActivityHistoryReconciliationTarget(
+  provider: IntegrationProviderId,
+): boolean {
+  return (
+    providerHasCapability(provider, "activity_history_read") &&
+    providerHasCapability(provider, "activity_file_download")
+  );
 }

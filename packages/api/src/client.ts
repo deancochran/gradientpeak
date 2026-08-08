@@ -23,7 +23,6 @@ export {
   invalidateQueries,
   invalidateSchedulingQueries,
   isSchedulingSensitiveQueryKey,
-  queryKeys,
   SCHEDULING_REFRESH_CONTRACT,
   updateQueryData,
 } from "./query-client";

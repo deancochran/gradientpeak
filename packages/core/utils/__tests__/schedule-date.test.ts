@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  getScheduledDateKey,
+  endOfScheduledDateToIsoInstant,
+  formatIsoInstantInIanaZone,
+  getCalendarDateInIanaZone,
   isValidIanaTimeZone,
   scheduledDateTimeToIsoInstant,
 } from "../schedule-date";
@@ -12,12 +14,41 @@ describe("schedule-date helpers", () => {
     expect(isValidIanaTimeZone("Mars/Olympus_Mons")).toBe(false);
   });
 
-  it("derives date anchors in the requested zone and falls back to UTC", () => {
-    expect(getScheduledDateKey("2026-03-01T12:00:00.000Z", "Pacific/Auckland")).toBe("2026-03-02");
-    expect(getScheduledDateKey("2026-03-01T01:00:00.000Z", "America/Los_Angeles")).toBe(
+  it("derives date anchors only in a valid requested zone", () => {
+    expect(getCalendarDateInIanaZone("2026-03-01T12:00:00.000Z", "Pacific/Auckland")).toBe(
+      "2026-03-02",
+    );
+    expect(getCalendarDateInIanaZone("2026-03-01T01:00:00.000Z", "America/Los_Angeles")).toBe(
       "2026-02-28",
     );
-    expect(getScheduledDateKey("2026-03-01T01:00:00.000Z", "Invalid/Zone")).toBe("2026-03-01");
+    expect(() => getCalendarDateInIanaZone("2026-03-01T01:00:00.000Z", "Invalid/Zone")).toThrow(
+      RangeError,
+    );
+  });
+
+  it("round-trips wall time across the extreme supported UTC offsets", () => {
+    for (const fixture of [
+      {
+        instant: "2026-06-01T10:30:00.000Z",
+        timeZone: "Pacific/Kiritimati",
+        wallTime: "2026-06-02T00:30",
+      },
+      {
+        instant: "2026-06-02T11:30:00.000Z",
+        timeZone: "Pacific/Pago_Pago",
+        wallTime: "2026-06-02T00:30",
+      },
+    ]) {
+      expect(formatIsoInstantInIanaZone(fixture.instant, fixture.timeZone)).toBe(fixture.wallTime);
+      const [scheduledDate, time] = fixture.wallTime.split("T");
+      expect(
+        scheduledDateTimeToIsoInstant({
+          scheduledDate: scheduledDate ?? "",
+          time: time ?? "",
+          timeZone: fixture.timeZone,
+        }),
+      ).toBe(fixture.instant);
+    }
   });
 
   it("converts an unambiguous wall time to its ISO instant", () => {
@@ -28,6 +59,27 @@ describe("schedule-date helpers", () => {
         timeZone: "America/Los_Angeles",
       }),
     ).toBe("2026-01-15T17:30:00.000Z");
+  });
+
+  it("resolves east-of-UTC and DST date ends to their numerical instants", () => {
+    expect(
+      endOfScheduledDateToIsoInstant({
+        scheduledDate: "2026-09-01",
+        timeZone: "Asia/Tokyo",
+      }),
+    ).toBe("2026-09-01T14:59:59.999Z");
+    expect(
+      endOfScheduledDateToIsoInstant({
+        scheduledDate: "2026-03-08",
+        timeZone: "America/Los_Angeles",
+      }),
+    ).toBe("2026-03-09T06:59:59.999Z");
+    expect(
+      endOfScheduledDateToIsoInstant({
+        scheduledDate: "2026-11-01",
+        timeZone: "America/Los_Angeles",
+      }),
+    ).toBe("2026-11-02T07:59:59.999Z");
   });
 
   it("rejects invalid inputs and DST gaps or folds", () => {

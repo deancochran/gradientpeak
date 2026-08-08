@@ -35,9 +35,24 @@ afterEach(() => {
 });
 
 describe("Wahoo webhook boundary", () => {
+  it("returns not found without reading or persisting when Wahoo is disabled", async () => {
+    const getToken = vi.fn(() => TOKEN);
+    const storeAndEnqueueReceipt = vi.fn();
+    const handler = createWahooWebhookPostHandler({
+      isEnabled: () => false,
+      getToken,
+      storeAndEnqueueReceipt,
+    });
+
+    expect((await handler(request(payload()))).status).toBe(404);
+    expect(getToken).not.toHaveBeenCalled();
+    expect(storeAndEnqueueReceipt).not.toHaveBeenCalled();
+  });
+
   it("requires receiver configuration", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const handler = createWahooWebhookPostHandler({
+      isEnabled: () => true,
       getToken: () => undefined,
       storeAndEnqueueReceipt: vi.fn(),
     });
@@ -48,6 +63,7 @@ describe("Wahoo webhook boundary", () => {
   it("rejects oversized payloads before persistence", async () => {
     const storeAndEnqueueReceipt = vi.fn();
     const handler = createWahooWebhookPostHandler({
+      isEnabled: () => true,
       getToken: () => TOKEN,
       maxBodyBytes: 8,
       storeAndEnqueueReceipt,
@@ -59,6 +75,7 @@ describe("Wahoo webhook boundary", () => {
 
   it("validates supplied signatures and requires a valid payload token", async () => {
     const handler = createWahooWebhookPostHandler({
+      isEnabled: () => true,
       getToken: () => TOKEN,
       storeAndEnqueueReceipt: vi.fn(),
     });
@@ -75,6 +92,7 @@ describe("Wahoo webhook boundary", () => {
   it("accepts the documented payload token when no signature header is supplied", async () => {
     const storeAndEnqueueReceipt = vi.fn().mockResolvedValue(undefined);
     const handler = createWahooWebhookPostHandler({
+      isEnabled: () => true,
       getToken: () => TOKEN,
       storeAndEnqueueReceipt,
     });
@@ -93,6 +111,7 @@ describe("Wahoo webhook boundary", () => {
 
   it("rejects malformed JSON and invalid payload shape", async () => {
     const handler = createWahooWebhookPostHandler({
+      isEnabled: () => true,
       getToken: () => TOKEN,
       storeAndEnqueueReceipt: vi.fn(),
     });
@@ -110,6 +129,7 @@ describe("Wahoo webhook boundary", () => {
       .mockRejectedValueOnce(new Error("database unavailable"));
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const handler = createWahooWebhookPostHandler({
+      isEnabled: () => true,
       getToken: () => TOKEN,
       storeAndEnqueueReceipt,
     });

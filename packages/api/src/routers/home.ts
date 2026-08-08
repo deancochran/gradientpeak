@@ -3,7 +3,6 @@ import {
   activityPlanPrescriptionQuantificationBundleSchema,
   activityPlanStructureSchema,
   activityPrescriptionQuantificationBundleSchema,
-  addDaysDateOnlyUtc,
   bindPrescriptionQuantificationToScheduledEvent,
   calculateRollingTrainingQuality,
   canonicalActivityCategorySchema,
@@ -15,16 +14,20 @@ import {
   loadSeriesIdentitySchema,
 } from "@repo/core";
 import {
+  addDaysDateOnlyUtc,
+  getCalendarDateInIanaZone,
+  isValidIanaTimeZone,
+} from "@repo/core/calendar";
+import {
   commonLoadAggregateSchema,
   commonLoadHistoryResultSchema,
   commonLoadResultSchema,
 } from "@repo/core/load";
-import { calculateAge } from "@repo/core/profile/date-of-birth";
-import { getScheduledDateKey, isValidIanaTimeZone } from "@repo/core/utils/schedule-date";
+import { calculateDateOfBirthAge, formatDateOfBirth } from "@repo/core/profile/date-of-birth";
 import { schema, type TrainingPlanRow } from "@repo/db";
 import { and, asc, eq, gte, isNotNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
-import { readCurrentProfileCommonLoadHistory } from "../application/activities/read-current-profile-common-load-history";
+import { readAthleteReadModel } from "../application/athlete-intelligence/athlete-read-model";
 import {
   loadPlannedActivitiesWithEstimations,
   type PlannedActivityWithEstimation,
@@ -77,11 +80,7 @@ function scheduledQuantification(item: PlannedActivityWithEstimation, asOf: Date
 
 export function getPlanCategoryComposition(structure: unknown) {
   const parsed = activityPlanStructureSchema.safeParse(structure);
-  return parsed.success
-    ? parsed.data.segments.flatMap((segment) =>
-        segment.role === "activity" ? [segment.activity_category] : [],
-      )
-    : [];
+  return parsed.success ? [parsed.data.activity_category] : [];
 }
 
 export function getScheduleExecutionPresentation(plan: { activity_category: string } | null) {
@@ -415,12 +414,28 @@ export const homeRouter = createTRPCRouter({
       const db = getRequiredDb(ctx);
       const estimationStore = createEventReadRepository(db);
       const userId = ctx.session.user.id;
-      const commonLoadHistory = await readCurrentProfileCommonLoadHistory({
+      const athleteReadModel = await readAthleteReadModel({
         db,
         profileId: userId,
+        sections: {
+          status: true,
+          currentBaseline: { includePlanningContext: false },
+          loadHistory: true,
+        },
       });
+      const commonLoadHistory =
+        athleteReadModel.loadHistory?.result ??
+        commonLoadHistoryResultSchema.parse({
+          status: "unavailable",
+          policyVersion: "common_load_history_v1",
+          reason: "invalid_input",
+          context: {
+            path: "publishedRevision",
+            message: "Current published athlete state is required for Common Load history",
+          },
+        });
       const availableCommonLoadHistory =
-        commonLoadHistory.result.status === "available" ? commonLoadHistory.result : null;
+        commonLoadHistory.status === "available" ? commonLoadHistory : null;
       const latestCommonLoadPoint = availableCommonLoadHistory?.points.at(-1) ?? null;
       const now = new Date();
 
@@ -438,7 +453,7 @@ export const homeRouter = createTRPCRouter({
       const profileTimezone = profile?.planning_timezone?.trim();
       const planningTimezone =
         profileTimezone && isValidIanaTimeZone(profileTimezone) ? profileTimezone : "UTC";
-      const todayDate = getScheduledDateKey(now.toISOString(), planningTimezone);
+      const todayDate = getCalendarDateInIanaZone(now.toISOString(), planningTimezone);
       // Presentation uses the profile-local midnight, while completed-activity
       // reads extend through that same local day's end.
       const todayRange = getPlanningDateRange({
@@ -449,7 +464,9 @@ export const homeRouter = createTRPCRouter({
       const today = todayRange.startInstant;
       const endOfToday = new Date(todayRange.endExclusiveInstant.getTime() - 1);
 
-      const userAge = calculateAge(profile?.dob?.toISOString() ?? null);
+      const userAge = profile?.dob
+        ? (calculateDateOfBirthAge(formatDateOfBirth(profile.dob), now) ?? undefined)
+        : undefined;
       const userGender =
         profile?.gender === "male" || profile?.gender === "female" ? profile.gender : null;
       const effectiveAge = featureFlags.personalizationAgeConstants ? userAge : undefined;
@@ -556,7 +573,6 @@ export const homeRouter = createTRPCRouter({
       // So we fetch from startOfWeek to scheduleEnd
       const { plannedActivities, activitiesWithEstimations } =
         await loadPlannedActivitiesWithEstimations(db, {
-          estimationStore,
           profileId: userId,
           scheduledDateGte: currentWeek.startDate,
           scheduledDateLt: scheduleEndDate,
@@ -564,7 +580,7 @@ export const homeRouter = createTRPCRouter({
 
       // --- 6. Primary fitness trends use the canonical daily common Load history. ---
       const commonHistoryPoints =
-        commonLoadHistory.result.status === "available" ? commonLoadHistory.result.points : [];
+        commonLoadHistory.status === "available" ? commonLoadHistory.points : [];
       const fitnessTrends = commonHistoryPoints
         .filter((point) => point.date >= chartStartDate)
         .map((point) => ({
@@ -580,7 +596,7 @@ export const homeRouter = createTRPCRouter({
       const uniqueActivityDays = new Set(
         activities
           .map((activity) =>
-            getScheduledDateKey(activity.started_at.toISOString(), planningTimezone),
+            getCalendarDateInIanaZone(activity.started_at.toISOString(), planningTimezone),
           )
           .filter(Boolean),
       );
@@ -602,7 +618,7 @@ export const homeRouter = createTRPCRouter({
       // --- 8. Weekly Summary (Planned vs Actual) ---
       // Actuals
       const weeklyActuals = activities.filter((activity) => {
-        const activityDate = getScheduledDateKey(
+        const activityDate = getCalendarDateInIanaZone(
           activity.started_at.toISOString(),
           planningTimezone,
         );
@@ -685,7 +701,8 @@ export const homeRouter = createTRPCRouter({
         const paDate = pa.scheduled_date.split("T")[0];
         const hasActivity = activities.some(
           (activity) =>
-            getScheduledDateKey(activity.started_at.toISOString(), planningTimezone) === paDate,
+            getCalendarDateInIanaZone(activity.started_at.toISOString(), planningTimezone) ===
+            paDate,
         );
         if (hasActivity) {
           completedActivityMap.set(pa.id, true);
@@ -729,7 +746,7 @@ export const homeRouter = createTRPCRouter({
 
       // --- 11. Calculate Projected Fitness (Future CTL based on plan) ---
       const projectionDays = 42; // Project 42 days into future
-      const projectionStartDate = commonLoadHistory.currentPlanningDate;
+      const projectionStartDate = athleteReadModel.currentBaseline?.currentPlanningDate ?? null;
       const projectionEndDate = projectionStartDate
         ? addDaysDateOnlyUtc(projectionStartDate, projectionDays)
         : null;
@@ -780,7 +797,7 @@ export const homeRouter = createTRPCRouter({
               name: plan.name || "Active Plan",
             }
           : null,
-        commonLoadHistory: commonLoadHistory.result,
+        commonLoadHistory,
         currentLoadStatus:
           latestCommonLoadPoint === null || availableCommonLoadHistory === null
             ? null

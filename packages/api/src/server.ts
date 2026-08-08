@@ -7,7 +7,7 @@ import {
 } from "./application/integrations";
 import {
   createIntegrationsRepositories,
-  createProviderSyncRepository,
+  createWahooSyncRepository,
 } from "./infrastructure/repositories";
 
 export type { HandleOAuthCallbackResult };
@@ -20,7 +20,7 @@ export function handleOAuthCallback({ db, ...input }: HandleOAuthCallbackRequest
   return handleOAuthCallbackUseCase({
     ...input,
     repositories: createIntegrationsRepositories(db),
-    providerSyncRepository: createProviderSyncRepository({ db }),
+    providerSyncRepository: createWahooSyncRepository({ db }),
     runInTransaction: (operation) => db.transaction(operation),
   });
 }

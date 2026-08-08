@@ -11,7 +11,7 @@ type SystemTrainingPlanRow = {
   sessions_per_week_target: number;
   duration_hours: number;
   is_system_template: boolean;
-  template_visibility: string;
+  content_visibility: string;
   created_at: string;
   updated_at: string;
 };
@@ -27,7 +27,7 @@ function toTrainingPlanRow(plan: SamplePlan): SystemTrainingPlanRow {
     sessions_per_week_target: plan.sessions_per_week_target,
     duration_hours: plan.duration_hours,
     is_system_template: true,
-    template_visibility: "public",
+    content_visibility: "public",
     created_at: "2026-03-13T00:00:00.000Z",
     updated_at: "2026-03-13T00:00:00.000Z",
   };

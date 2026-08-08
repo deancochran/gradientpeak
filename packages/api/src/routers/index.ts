@@ -7,17 +7,18 @@ import {
   profileSettingsRouter,
   profilesRouter,
 } from "./account";
-import {
-  activitiesRouter,
-  activityEffortsRouter,
-  activityFilesRouter,
-  routesRouter,
-} from "./activity";
+import { activitiesRouter, activityFilesRouter, routesRouter } from "./activity";
 import { athleteIntelligenceRouter } from "./athlete-intelligence";
 import { groupsRouter } from "./groups";
-import { homeRouter, trendsRouter } from "./insights";
+import { homeRouter } from "./insights";
 import { organizationsRouter } from "./organizations";
-import { activityPlansRouter, eventsRouter, goalsRouter, trainingPlansRouter } from "./planning";
+import {
+  activityPlansRouter,
+  calendarRouter,
+  eventsRouter,
+  goalsRouter,
+  trainingPlansRouter,
+} from "./planning";
 import { integrationsRouter, storageRouter } from "./platform";
 import { publicShareRouter } from "./public-share";
 import { feedRouter, messagingRouter, notificationsRouter, socialRouter } from "./social/index";
@@ -30,8 +31,8 @@ export const appRouter = createTRPCRouter({
   profileMetrics: profileMetricsRouter,
   profileAccess: profileAccessRouter,
   activities: activitiesRouter,
-  activityEfforts: activityEffortsRouter,
   activityPlans: activityPlansRouter,
+  calendar: calendarRouter,
   events: eventsRouter,
   goals: goalsRouter,
   activityFiles: activityFilesRouter,
@@ -41,7 +42,6 @@ export const appRouter = createTRPCRouter({
   trainingPlans: trainingPlansRouter,
   routes: routesRouter,
   social: socialRouter,
-  trends: trendsRouter,
   storage: storageRouter,
   home: homeRouter,
   feed: feedRouter,

@@ -4,6 +4,8 @@ import { activityPlanStructureSchema } from "../../activity-plan";
 
 import {
   ALL_SAMPLE_PLANS,
+  getSystemActivityTemplateDefinitions,
+  getSystemTrainingPlanDefinitions,
   OTHER_LONG_ENDURANCE_ELLIPTICAL,
   OTHER_THRESHOLD_ROW,
   SAMPLE_MULTISPORT_COMPONENT_ACTIVITIES,
@@ -29,6 +31,22 @@ function required<T>(value: T | undefined, message: string): T {
 }
 
 describe("system activity-template catalog", () => {
+  it("exposes stable, versioned, deterministic content definitions", async () => {
+    const firstActivityDefinitions = await getSystemActivityTemplateDefinitions();
+    const secondActivityDefinitions = await getSystemActivityTemplateDefinitions();
+    const trainingDefinitions = await getSystemTrainingPlanDefinitions();
+
+    expect(firstActivityDefinitions).toEqual(secondActivityDefinitions);
+    expect(firstActivityDefinitions).toHaveLength(SYSTEM_TEMPLATES.length);
+    expect(trainingDefinitions).toHaveLength(ALL_SAMPLE_PLANS.length);
+    const definitions = [...firstActivityDefinitions, ...trainingDefinitions];
+    expect(new Set(definitions.map((definition) => definition.key)).size).toBe(definitions.length);
+    expect(definitions.every((definition) => definition.version === 1)).toBe(true);
+    expect(
+      definitions.every((definition) => /^v1:sha256:[0-9a-f]{64}$/.test(definition.contentHash)),
+    ).toBe(true);
+  });
+
   it("builds a normalized catalog for every current system template", () => {
     const catalog = buildSystemActivityTemplateCatalog();
 

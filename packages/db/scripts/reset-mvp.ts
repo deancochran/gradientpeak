@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 
 import { pathToFileURL } from "node:url";
-import { defaultLocalDatabaseUrl, prepareDbEnv, runSupabaseCli } from "./_helpers";
+import { defaultLocalDatabaseUrl, prepareDbEnv, runPnpmExec, runSupabaseCli } from "./_helpers";
 import { requireFreshBaseline } from "./baseline-workflow";
 
 export function assertMvpResetSafe(databaseUrl: string) {
@@ -27,10 +27,16 @@ export function resetMvp(
   run: (args: string[]) => void = (args) => {
     runSupabaseCli(args);
   },
+  runSeed: (args: string[]) => void = (args) => {
+    runPnpmExec(args);
+  },
 ) {
   assertMvpResetSafe(databaseUrl);
   requireFreshBaseline();
   run(["db", "reset", "--local"]);
+  runSeed(["tsx", "scripts/seed-templates.ts"]);
+  runSeed(["tsx", "scripts/seed-training-plan-templates.ts"]);
+  runSeed(["tsx", "scripts/verify-system-content-seed.ts"]);
 }
 
 function main() {
@@ -38,7 +44,9 @@ function main() {
     throw new Error("db:reset:mvp accepts no target or Supabase CLI flags");
   }
   resetMvp();
-  console.log("[db:reset:mvp] repository-managed local MVP baseline reset completed");
+  console.log(
+    "[db:reset:mvp] repository-managed local MVP baseline and Core system content reset completed",
+  );
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

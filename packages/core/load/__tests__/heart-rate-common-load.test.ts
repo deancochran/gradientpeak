@@ -6,7 +6,7 @@ import { calculateCyclingNormalizedPower } from "../../calculations/normalized-p
 import { buildPerformanceTargetFactsFixture } from "../../performance-model/__tests__/fixtures/target-facts";
 import {
   calculateHeartRateDuration,
-  type StoredHeartRateDurationEvidence,
+  type HeartRateDurationEvidence,
 } from "../../zones/heart-rate-duration";
 import {
   aggregateCommonLoad,
@@ -23,7 +23,7 @@ function finalHeartRateLoad(input: {
   durationSeconds: number;
   elapsedSeconds?: number;
   includeElapsed?: boolean;
-  distribution?: StoredHeartRateDurationEvidence;
+  distribution?: HeartRateDurationEvidence;
   lthrBpm?: number | null;
   includeQuality?: boolean;
   stale?: boolean;
@@ -109,7 +109,7 @@ describe("Phase 5 final HR Common Load contract", () => {
   });
 
   it("uses bounded versioned HR evidence duration when provider active time differs", () => {
-    const distribution: StoredHeartRateDurationEvidence = {
+    const distribution: HeartRateDurationEvidence = {
       status: "available",
       calculationVersion: "heart-rate-zone-duration-v1",
       coverageSeconds: 1_800,
@@ -149,7 +149,7 @@ describe("Phase 5 final HR Common Load contract", () => {
   });
 
   it("rejects versioned HR evidence that exceeds the segment elapsed boundary", () => {
-    const distribution: StoredHeartRateDurationEvidence = {
+    const distribution: HeartRateDurationEvidence = {
       status: "available",
       calculationVersion: "heart-rate-zone-duration-v1",
       coverageSeconds: 1_800,
@@ -183,7 +183,7 @@ describe("Phase 5 final HR Common Load contract", () => {
   });
 
   it("uses active duration as the evidence boundary when elapsed duration is omitted", () => {
-    const distribution: StoredHeartRateDurationEvidence = {
+    const distribution: HeartRateDurationEvidence = {
       status: "available",
       calculationVersion: "heart-rate-zone-duration-v1",
       coverageSeconds: 1_800,
@@ -218,25 +218,6 @@ describe("Phase 5 final HR Common Load contract", () => {
       method: "heart_rate_zones",
       contributingDurationSeconds: 1_800,
       load: 50,
-      intensity: 1,
-    });
-  });
-
-  it("continues to normalize legacy HR evidence against active duration", () => {
-    expect(
-      finalHeartRateLoad({
-        samples: [],
-        durationSeconds: 2_400,
-        elapsedSeconds: 3_600,
-        distribution: {
-          coverageSeconds: 2_400,
-          buckets: [{ bpm: fixtures.heartRate.lthrBpm, seconds: 2_400 }],
-        },
-      }),
-    ).toMatchObject({
-      status: "available",
-      method: "heart_rate_zones",
-      contributingDurationSeconds: 2_400,
       intensity: 1,
     });
   });

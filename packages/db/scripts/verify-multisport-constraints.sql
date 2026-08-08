@@ -2,7 +2,10 @@ do $$
 declare
   profile uuid;
   activity uuid := 'cccccccc-cccc-4ccc-accc-cccccccccccc';
-  segment uuid := 'dddddddd-dddd-4ddd-addd-dddddddddddd';
+  run_segment uuid := 'dddddddd-dddd-4ddd-addd-ddddddddddd1';
+  bike_segment uuid := 'dddddddd-dddd-4ddd-addd-ddddddddddd2';
+  swim_segment uuid := 'dddddddd-dddd-4ddd-addd-ddddddddddd3';
+  strength_segment uuid := 'dddddddd-dddd-4ddd-addd-ddddddddddd4';
   artifact_one uuid := 'eeeeeeee-eeee-4eee-aeee-eeeeeeeeeee1';
   artifact_two uuid := 'eeeeeeee-eeee-4eee-aeee-eeeeeeeeeee2';
   disposable_artifact uuid := 'eeeeeeee-eeee-4eee-aeee-eeeeeeeeeee3';
@@ -14,7 +17,7 @@ begin
   if profile is null then raise exception 'constraint fixture requires a profile'; end if;
   insert into public.activities(id,profile_id,name,started_at,finished_at,elapsed_ms,active_ms,moving_ms,
     timing_coverage,parser_version,decoded_contract_version,materializer_version)
-  values(activity,profile,'constraint fixture',now(),now()+interval '1 second',1000,1000,1000,
+  values(activity,profile,'constraint fixture',now(),now()+interval '80 minutes',4800000,4800000,4800000,
     'complete','fixture','fixture','fixture');
   insert into public.activity_artifacts(id,profile_id,digest,byte_size,bucket,path,media_type,format)
   values
@@ -31,8 +34,15 @@ begin
   end if;
   insert into public.activity_segments(id,activity_id,profile_id,ordinal,role,activity_category,start_offset_ms,end_offset_ms,
     source_artifact_id,summary,summary_version,timing_coverage,active_ms,moving_ms,parser_version,materializer_version)
-  values(segment,activity,profile,0,'activity','run',0,1000,artifact_two,
-    '{"version":1,"timing":{"timingCoverage":"complete","activeMs":1000,"movingMs":1000}}',1,'complete',1000,1000,'fixture','fixture');
+  values
+    (run_segment,activity,profile,0,'activity','run',0,1200000,artifact_two,
+      '{"version":1,"timing":{"timingCoverage":"complete","activeMs":1200000,"movingMs":1200000}}',1,'complete',1200000,1200000,'fixture','fixture'),
+    (bike_segment,activity,profile,1,'activity','bike',1200000,2400000,artifact_two,
+      '{"version":1,"timing":{"timingCoverage":"complete","activeMs":1200000,"movingMs":1200000}}',1,'complete',1200000,1200000,'fixture','fixture'),
+    (swim_segment,activity,profile,2,'activity','swim',2400000,3600000,artifact_two,
+      '{"version":1,"timing":{"timingCoverage":"complete","activeMs":1200000,"movingMs":1200000}}',1,'complete',1200000,1200000,'fixture','fixture'),
+    (strength_segment,activity,profile,3,'activity','strength',3600000,4800000,artifact_two,
+      '{"version":1,"timing":{"timingCoverage":"complete","activeMs":1200000,"movingMs":1200000}}',1,'complete',1200000,1200000,'fixture','fixture');
   perform public.validate_activity_segment_set(activity);
 
   begin
@@ -44,7 +54,7 @@ begin
   end;
   begin
     update public.activity_segments set timing_coverage='unavailable',active_ms=null,moving_ms=null,
-      summary='{"version":1,"timing":{"timingCoverage":"unavailable"}}' where id=segment;
+      summary='{"version":1,"timing":{"timingCoverage":"unavailable"}}' where id=run_segment;
     set constraints activity_segments_validate_set immediate;
     raise exception 'complete parent accepted unavailable segment timing';
   exception when others then
@@ -52,103 +62,119 @@ begin
   end;
   begin
     insert into public.activity_efforts(id,created_at,profile_id,activity_id,segment_id,recorded_at,
-      activity_category,effort_type,duration_seconds,start_offset,unit,value)
-    values(gen_random_uuid(),now(),profile,activity,segment,now(),'bike','power',1,0,'watts',100);
+      activity_category,effort_type,duration_seconds,start_offset,unit,value,
+      source,method,calculation_version,provenance)
+    values(gen_random_uuid(),now(),profile,activity,run_segment,now(),'bike','power',1,0,'watts',100,
+      'derived','fixture','fixture','{}');
     raise exception 'effort category mismatch was accepted';
   exception when others then
     if sqlerrm='effort category mismatch was accepted' then raise; end if;
   end;
-  insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-    effort_type,duration_seconds,distance_meters,unit,value)
+  insert into public.activity_efforts(id,created_at,profile_id,activity_id,segment_id,recorded_at,
+    activity_category,effort_type,duration_seconds,distance_meters,start_offset,unit,value,
+    source,method,calculation_version,provenance)
   values
-    (gen_random_uuid(),now(),profile,now(),'bike','heart_rate',60,null,'bpm',30),
-    (gen_random_uuid(),now(),profile,now(),'run','heart_rate',300,null,'bpm',240),
-    (gen_random_uuid(),now(),profile,now(),'swim','heart_rate',600,400,'bpm',150),
-    (gen_random_uuid(),now(),profile,now(),'swim','speed',300,1000000,'meters_per_second',1.5);
+    (gen_random_uuid(),now(),profile,activity,bike_segment,now(),'bike','heart_rate',60,null,1200,'bpm',30,'derived','fixture','fixture','{}'),
+    (gen_random_uuid(),now(),profile,activity,run_segment,now(),'run','heart_rate',300,null,0,'bpm',240,'derived','fixture','fixture','{}'),
+    (gen_random_uuid(),now(),profile,activity,swim_segment,now(),'swim','heart_rate',600,400,2400,'bpm',150,'derived','fixture','fixture','{}'),
+    (gen_random_uuid(),now(),profile,activity,swim_segment,now(),'swim','speed',300,1000000,2400,'meters_per_second',1.5,'derived','fixture','fixture','{}');
   begin
-    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-      effort_type,duration_seconds,unit,value)
-    values(gen_random_uuid(),now(),profile,now(),'strength','heart_rate',60,'bpm',150);
+    insert into public.activity_efforts(id,created_at,profile_id,activity_id,segment_id,recorded_at,
+      activity_category,effort_type,duration_seconds,start_offset,unit,value,source,method,calculation_version,provenance)
+    values(gen_random_uuid(),now(),profile,activity,strength_segment,now(),'strength','heart_rate',60,3600,'bpm',150,
+      'derived','fixture','fixture','{}');
     raise exception 'unsupported heart-rate category was accepted';
   exception when others then
     if sqlerrm='unsupported heart-rate category was accepted' then raise; end if;
   end;
   begin
-    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-      effort_type,duration_seconds,unit,value)
-    values(gen_random_uuid(),now(),profile,now(),'bike','power',60,'W',150);
+    insert into public.activity_efforts(id,created_at,profile_id,activity_id,segment_id,recorded_at,
+      activity_category,effort_type,duration_seconds,start_offset,unit,value,source,method,calculation_version,provenance)
+    values(gen_random_uuid(),now(),profile,activity,bike_segment,now(),'bike','power',60,1200,'W',150,
+      'derived','fixture','fixture','{}');
     raise exception 'legacy power unit was accepted';
   exception when others then
     if sqlerrm='legacy power unit was accepted' then raise; end if;
   end;
   begin
-    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-      effort_type,duration_seconds,unit,value)
-    values(gen_random_uuid(),now(),profile,now(),'run','heart_rate',60,'watts',150);
+    insert into public.activity_efforts(id,created_at,profile_id,activity_id,segment_id,recorded_at,
+      activity_category,effort_type,duration_seconds,start_offset,unit,value,source,method,calculation_version,provenance)
+    values(gen_random_uuid(),now(),profile,activity,run_segment,now(),'run','heart_rate',60,0,'watts',150,
+      'derived','fixture','fixture','{}');
     raise exception 'incompatible heart-rate unit was accepted';
   exception when others then
     if sqlerrm='incompatible heart-rate unit was accepted' then raise; end if;
   end;
   begin
-    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-      effort_type,duration_seconds,unit,value)
-    values(gen_random_uuid(),now(),profile,now(),'run','heart_rate',60,'bpm',29);
+    insert into public.activity_efforts(id,created_at,profile_id,activity_id,segment_id,recorded_at,
+      activity_category,effort_type,duration_seconds,start_offset,unit,value,source,method,calculation_version,provenance)
+    values(gen_random_uuid(),now(),profile,activity,run_segment,now(),'run','heart_rate',60,0,'bpm',29,
+      'derived','fixture','fixture','{}');
     raise exception 'below-bound heart-rate effort was accepted';
   exception when others then
     if sqlerrm='below-bound heart-rate effort was accepted' then raise; end if;
   end;
   begin
-    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-      effort_type,duration_seconds,unit,value)
-    values(gen_random_uuid(),now(),profile,now(),'run','heart_rate',60,'bpm',241);
+    insert into public.activity_efforts(id,created_at,profile_id,activity_id,segment_id,recorded_at,
+      activity_category,effort_type,duration_seconds,start_offset,unit,value,source,method,calculation_version,provenance)
+    values(gen_random_uuid(),now(),profile,activity,run_segment,now(),'run','heart_rate',60,0,'bpm',241,
+      'derived','fixture','fixture','{}');
     raise exception 'above-bound heart-rate effort was accepted';
   exception when others then
     if sqlerrm='above-bound heart-rate effort was accepted' then raise; end if;
   end;
   begin
-    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-      effort_type,duration_seconds,distance_meters,unit,value)
-    values(gen_random_uuid(),now(),profile,now(),'swim','speed',300,0,'meters_per_second',1.5);
+    insert into public.activity_efforts(id,created_at,profile_id,activity_id,segment_id,recorded_at,
+      activity_category,effort_type,duration_seconds,distance_meters,start_offset,unit,value,
+      source,method,calculation_version,provenance)
+    values(gen_random_uuid(),now(),profile,activity,swim_segment,now(),'swim','speed',300,0,2400,'meters_per_second',1.5,
+      'derived','fixture','fixture','{}');
     raise exception 'zero effort distance was accepted';
   exception when others then
     if sqlerrm='zero effort distance was accepted' then raise; end if;
   end;
   begin
-    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-      effort_type,duration_seconds,distance_meters,unit,value)
-    values(gen_random_uuid(),now(),profile,now(),'swim','speed',300,1000001,'meters_per_second',1.5);
+    insert into public.activity_efforts(id,created_at,profile_id,activity_id,segment_id,recorded_at,
+      activity_category,effort_type,duration_seconds,distance_meters,start_offset,unit,value,
+      source,method,calculation_version,provenance)
+    values(gen_random_uuid(),now(),profile,activity,swim_segment,now(),'swim','speed',300,1000001,2400,'meters_per_second',1.5,
+      'derived','fixture','fixture','{}');
     raise exception 'above-bound effort distance was accepted';
   exception when others then
     if sqlerrm='above-bound effort distance was accepted' then raise; end if;
   end;
   begin
-    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-      effort_type,duration_seconds,unit,value)
-    values(gen_random_uuid(),now(),profile,now(),'bike','power',1200,'watts',0);
+    insert into public.activity_efforts(id,created_at,profile_id,activity_id,segment_id,recorded_at,
+      activity_category,effort_type,duration_seconds,start_offset,unit,value,source,method,calculation_version,provenance)
+    values(gen_random_uuid(),now(),profile,activity,bike_segment,now(),'bike','power',1200,1200,'watts',0,
+      'derived','fixture','fixture','{}');
     raise exception 'zero effort was accepted';
   exception when others then
     if sqlerrm='zero effort was accepted' then raise; end if;
   end;
   begin
-    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-      effort_type,duration_seconds,unit,value)
-    values(gen_random_uuid(),now(),profile,now(),'bike','power',1200,'watts','NaN'::real);
+    insert into public.activity_efforts(id,created_at,profile_id,activity_id,segment_id,recorded_at,
+      activity_category,effort_type,duration_seconds,start_offset,unit,value,source,method,calculation_version,provenance)
+    values(gen_random_uuid(),now(),profile,activity,bike_segment,now(),'bike','power',1200,1200,'watts','NaN'::real,
+      'derived','fixture','fixture','{}');
     raise exception 'NaN effort was accepted';
   exception when others then
     if sqlerrm='NaN effort was accepted' then raise; end if;
   end;
   begin
-    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-      effort_type,duration_seconds,unit,value)
-    values(gen_random_uuid(),now(),profile,now(),'bike','power',1200,'watts','Infinity'::real);
+    insert into public.activity_efforts(id,created_at,profile_id,activity_id,segment_id,recorded_at,
+      activity_category,effort_type,duration_seconds,start_offset,unit,value,source,method,calculation_version,provenance)
+    values(gen_random_uuid(),now(),profile,activity,bike_segment,now(),'bike','power',1200,1200,'watts','Infinity'::real,
+      'derived','fixture','fixture','{}');
     raise exception 'positive infinity effort was accepted';
   exception when others then
     if sqlerrm='positive infinity effort was accepted' then raise; end if;
   end;
   begin
-    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-      effort_type,duration_seconds,unit,value)
-    values(gen_random_uuid(),now(),profile,now(),'bike','power',1200,'watts','-Infinity'::real);
+    insert into public.activity_efforts(id,created_at,profile_id,activity_id,segment_id,recorded_at,
+      activity_category,effort_type,duration_seconds,start_offset,unit,value,source,method,calculation_version,provenance)
+    values(gen_random_uuid(),now(),profile,activity,bike_segment,now(),'bike','power',1200,1200,'watts','-Infinity'::real,
+      'derived','fixture','fixture','{}');
     raise exception 'negative infinity effort was accepted';
   exception when others then
     if sqlerrm='negative infinity effort was accepted' then raise; end if;
@@ -179,24 +205,18 @@ begin
     raise exception 'authorized artifact purge failed';
   end if;
   insert into public.activity_file_ingestions(
-    activity_id,artifact_id,profile_id,source,operation_key,status,
-    accepted_sha256,accepted_byte_size,accepted_bucket,accepted_path,
-    accepted_media_type,accepted_format,uploaded_at
+    activity_id,artifact_id,profile_id,source,operation_key,status,uploaded_at
   ) values(
-    activity,artifact_two,profile,'manual_import','constraint-artifact-deletion','ready',
-    digest_two,1,'activity-files','artifacts/sha256/'||profile||'/'||digest_two,
-    'application/octet-stream','fit',now()
+    activity,artifact_two,profile,'manual_import','constraint-artifact-deletion','ready',now()
   );
   perform public.request_activity_artifact_deletion(artifact_two);
   if exists(
     select 1 from public.activity_file_ingestions
     where operation_key='constraint-artifact-deletion'
-      and (status<>'failed' or artifact_id is not null or accepted_sha256 is not null
-        or accepted_byte_size is not null or accepted_bucket is not null or accepted_path is not null
-        or accepted_media_type is not null or accepted_format is not null or uploaded_at is not null
+      and (status<>'failed' or artifact_id is not null or uploaded_at is not null
         or last_error_code<>'artifact_deletion_requested')
   ) then
-    raise exception 'artifact deletion did not clear accepted ingestion metadata';
+    raise exception 'artifact deletion did not revoke ingestion artifact identity';
   end if;
   if exists(select 1 from public.activity_artifact_links where artifact_id=artifact_two)
     or exists(select 1 from public.activity_segments where source_artifact_id=artifact_two) then

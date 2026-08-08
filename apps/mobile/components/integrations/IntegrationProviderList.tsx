@@ -8,15 +8,18 @@ import { Pressable, View } from "react-native";
 import type { IntegrationProvider } from "@/lib/constants/integrations";
 
 type IntegrationOutputs = inferRouterOutputs<AppRouter>["integrations"];
+type AthleteReadModel = inferRouterOutputs<AppRouter>["athleteIntelligence"]["getReadModel"];
 
 export type IntegrationOverviewItem = IntegrationOutputs["getSyncOverview"][number];
 
 type IntegrationProviderListProps = {
   integrations: IntegrationOverviewItem[];
+  publishedState?: AthleteReadModel;
   error?: unknown;
   isLoading?: boolean;
   onConnect: (provider: IntegrationProvider) => void;
   onDisconnect?: (integration: IntegrationOverviewItem) => void;
+  onViewImportedActivities?: (importRunId: string) => void;
   pendingByProvider?: Partial<Record<IntegrationProvider, "connect" | "disconnect">>;
   onRetry?: () => unknown;
 };
@@ -53,16 +56,54 @@ function getProviderError(overview: IntegrationOverviewItem) {
   );
 }
 
+function athleteStateCopy(state: AthleteReadModel | undefined) {
+  if (state?.status?.importStatus === "failed") return "History incomplete after failed import";
+  switch (state?.status?.rebuildStatus) {
+    case "pending":
+      return "Activities imported; state pending";
+    case "rebuilding":
+      return "State rebuilding";
+    case "fresh":
+      return "State current";
+    default:
+      return "State unavailable";
+  }
+}
+
+function activityHistoryCopy(status: IntegrationOverviewItem["activityHistory"]["status"]) {
+  switch (status) {
+    case "queued":
+      return "Activities queued";
+    case "importing":
+      return "Activities importing";
+    case "synced":
+      return "Activities imported";
+    case "failed":
+      return "History import failed";
+    case "unsupported":
+      return "History import unsupported";
+    default:
+      return "Ready to import";
+  }
+}
+
 export function IntegrationProviderList({
   integrations,
+  publishedState,
   error,
   isLoading = false,
   onConnect,
   onDisconnect,
+  onViewImportedActivities,
   pendingByProvider = {},
   onRetry,
 }: IntegrationProviderListProps) {
-  const visibleIntegrations = integrations.filter((integration) => integration.configured);
+  const visibleIntegrations = integrations.filter(
+    (integration) =>
+      integration.configured ||
+      integration.connected ||
+      integration.providerHealth.status === "disconnecting",
+  );
   const readyCount = visibleIntegrations.filter(
     (integration) => integration.providerHealth.status === "connected",
   ).length;
@@ -113,6 +154,12 @@ export function IntegrationProviderList({
       ) : null}
 
       <View className="gap-2">
+        <View className="rounded-2xl border border-border bg-card px-4 py-3">
+          <Text className="text-sm font-semibold text-foreground">Athlete state</Text>
+          <Text className="mt-1 text-xs text-muted-foreground">
+            {athleteStateCopy(publishedState)}
+          </Text>
+        </View>
         {visibleIntegrations.map((integration) => {
           const pendingAction = pendingByProvider[integration.provider];
           const isDisconnecting = integration.providerHealth.status === "disconnecting";
@@ -141,6 +188,28 @@ export function IntegrationProviderList({
                   <Text className="mt-1 text-xs text-muted-foreground">
                     {integration.summary.subtitle}
                   </Text>
+                  <Text className="mt-1 text-xs text-muted-foreground">
+                    {activityHistoryCopy(integration.activityHistory.status)}
+                  </Text>
+                  {integration.activityHistory.importRun ? (
+                    <Text className="mt-1 text-xs text-muted-foreground">
+                      {integration.activityHistory.importRun.importedCount} imported
+                    </Text>
+                  ) : null}
+                  {integration.activityHistory.importRun && onViewImportedActivities ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      className="mt-2 self-start py-1"
+                      onPress={() =>
+                        onViewImportedActivities(integration.activityHistory.importRun?.id ?? "")
+                      }
+                      testID={`integration-view-import-${integration.provider}`}
+                    >
+                      <Text className="text-xs font-semibold text-primary">
+                        View imported activities
+                      </Text>
+                    </Pressable>
+                  ) : null}
                 </View>
 
                 {isPending ? (

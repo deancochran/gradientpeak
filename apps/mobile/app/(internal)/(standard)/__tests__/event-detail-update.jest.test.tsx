@@ -239,10 +239,6 @@ jest.mock("@/lib/api", () => ({
 }));
 
 describe("event detail update screen", () => {
-  function getDateInput(rendered: ReturnType<typeof renderNative>, id: string) {
-    return rendered.getByTestId(id);
-  }
-
   beforeEach(() => {
     jest.clearAllMocks();
     eventDetailData.recurrence_rule = null;
@@ -287,107 +283,13 @@ describe("event detail update screen", () => {
     });
   });
 
-  it("asks for recurring save scope before mutating", async () => {
+  it("edits only the selected recurring occurrence without exposing series controls", async () => {
     eventDetailData.recurrence_rule = "FREQ=WEEKLY;UNTIL=20260530T235959Z";
 
-    const rendered = renderNative(<EventDetailUpdateScreen />);
+    renderNative(<EventDetailUpdateScreen />);
 
     fireEvent(screen.getByTestId("event-detail-update-title-input"), "changeText", "Updated Event");
-    await act(async () => {
-      getDateInput(rendered, "event-detail-update-start-date-button").props.onChange("2026-04-30");
-    });
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
-    });
-
-    await waitFor(() => {
-      expect(screen.getByTestId("event-detail-update-scope-modal")).toBeTruthy();
-    });
-    expect(updateEventMutateMock).not.toHaveBeenCalled();
-
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-scope-future"));
-    });
-
-    await waitFor(() => {
-      expect(updateEventMutateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: "event-1",
-          scope: "future",
-          patch: expect.objectContaining({
-            title: "Updated Event",
-          }),
-        }),
-      );
-    });
-  });
-
-  it("passes the selected entire-series scope for recurring edits", async () => {
-    eventDetailData.recurrence_rule = "FREQ=WEEKLY;UNTIL=20260530T235959Z";
-
-    renderNative(<EventDetailUpdateScreen />);
-
-    fireEvent(screen.getByTestId("event-detail-update-title-input"), "changeText", "Series Title");
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
-    });
-
-    expect(updateEventMutateMock).not.toHaveBeenCalled();
-
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-scope-series"));
-    });
-
-    await waitFor(() => {
-      expect(updateEventMutateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: "event-1",
-          scope: "series",
-          patch: expect.objectContaining({
-            title: "Series Title",
-          }),
-        }),
-      );
-    });
-  });
-
-  it("requires an end date before saving a recurring series", async () => {
-    renderNative(<EventDetailUpdateScreen />);
-
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-repeat-row"));
-    });
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-recurrence-weekly"));
-    });
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-repeat-done-button"));
-    });
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
-    });
-
-    expect(screen.getByText("Choose when this repeating series should end.")).toBeTruthy();
-    expect(updateEventMutateMock).not.toHaveBeenCalled();
-  });
-
-  it("saves recurrence presets through the event editor", async () => {
-    const rendered = renderNative(<EventDetailUpdateScreen />);
-
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-repeat-row"));
-    });
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-recurrence-weekly"));
-    });
-    await act(async () => {
-      getDateInput(rendered, "event-detail-update-recurrence-end-date-button").props.onChange(
-        "2026-04-30",
-      );
-    });
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-repeat-done-button"));
-    });
+    expect(screen.queryByTestId("event-detail-update-repeat-row")).toBeNull();
     await act(async () => {
       fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
     });
@@ -398,17 +300,14 @@ describe("event detail update screen", () => {
           id: "event-1",
           scope: "single",
           patch: expect.objectContaining({
-            recurrence: {
-              rule: "FREQ=WEEKLY;UNTIL=20260430T235959Z",
-              timezone: "UTC",
-            },
+            title: "Updated Event",
           }),
         }),
       );
     });
   });
 
-  it("asks for save scope when editing a materialized occurrence override without its own recurrence rule", async () => {
+  it("edits a materialized occurrence override with single-occurrence scope", async () => {
     eventDetailData.series_id = "series-1";
     eventDetailData.occurrence_key = "2026-03-23";
     eventDetailData.original_starts_at = "2026-03-23T09:00:00.000Z";
@@ -425,19 +324,10 @@ describe("event detail update screen", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId("event-detail-update-scope-modal")).toBeTruthy();
-    });
-    expect(updateEventMutateMock).not.toHaveBeenCalled();
-
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-scope-series"));
-    });
-
-    await waitFor(() => {
       expect(updateEventMutateMock).toHaveBeenCalledWith(
         expect.objectContaining({
           id: "event-1",
-          scope: "series",
+          scope: "single",
           patch: expect.objectContaining({
             title: "Override Title",
           }),

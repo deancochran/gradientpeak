@@ -116,10 +116,30 @@ async function seedPlanFixture() {
 
 async function readEventDates(eventIds: string[]) {
   const rows = await db
-    .select({ id: events.id, scheduled_date: events.scheduled_date, starts_at: events.starts_at })
+    .select({
+      ends_at: events.ends_at,
+      id: events.id,
+      scheduled_date: events.scheduled_date,
+      starts_at: events.starts_at,
+      timezone: events.timezone,
+    })
     .from(events)
     .where(inArray(events.id, eventIds));
   return new Map(rows.map((row) => [row.id, row]));
+}
+
+function localWallTime(value: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+    minute: "2-digit",
+    month: "2-digit",
+    timeZone,
+    year: "numeric",
+  }).formatToParts(value);
+  const fields = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${fields.year}-${fields.month}-${fields.day}T${fields.hour}:${fields.minute}`;
 }
 
 afterEach(async () => {
@@ -162,6 +182,134 @@ describe("trainingPlans.reorderActivities live DB", () => {
       "2026-08-03T00:00:00.000Z",
     );
     expect(dates.get(fixture.secondEventId)?.scheduled_date).toBe("2026-08-04");
+  });
+
+  it("preserves New York start and end wall times across spring-forward", async () => {
+    const fixture = await seedPlanFixture();
+    await db
+      .update(events)
+      .set({
+        all_day: false,
+        ends_at: new Date("2026-03-07T16:00:00.000Z"),
+        scheduled_date: "2026-03-07",
+        starts_at: new Date("2026-03-07T14:30:00.000Z"),
+        timezone: "America/New_York",
+      })
+      .where(eq(events.id, fixture.firstEventId));
+
+    await createCaller(fixture.ownerId).reorderActivities({
+      training_plan_id: fixture.planId,
+      changes: [
+        {
+          event_id: fixture.firstEventId,
+          expected_scheduled_date: "2026-03-07",
+          requested_scheduled_date: "2026-03-09",
+        },
+      ],
+    });
+    const event = (await readEventDates([fixture.firstEventId])).get(fixture.firstEventId);
+
+    expect(event?.scheduled_date).toBe("2026-03-09");
+    expect(event?.starts_at.toISOString()).toBe("2026-03-09T13:30:00.000Z");
+    expect(event?.ends_at?.toISOString()).toBe("2026-03-09T15:00:00.000Z");
+    expect(localWallTime(event?.starts_at as Date, "America/New_York")).toBe("2026-03-09T09:30");
+    expect(localWallTime(event?.ends_at as Date, "America/New_York")).toBe("2026-03-09T11:00");
+  });
+
+  it("preserves New York start and end wall times across fall-back", async () => {
+    const fixture = await seedPlanFixture();
+    await db
+      .update(events)
+      .set({
+        all_day: false,
+        ends_at: new Date("2026-10-31T15:00:00.000Z"),
+        scheduled_date: "2026-10-31",
+        starts_at: new Date("2026-10-31T13:30:00.000Z"),
+        timezone: "America/New_York",
+      })
+      .where(eq(events.id, fixture.firstEventId));
+
+    await createCaller(fixture.ownerId).reorderActivities({
+      training_plan_id: fixture.planId,
+      changes: [
+        {
+          event_id: fixture.firstEventId,
+          expected_scheduled_date: "2026-10-31",
+          requested_scheduled_date: "2026-11-02",
+        },
+      ],
+    });
+    const event = (await readEventDates([fixture.firstEventId])).get(fixture.firstEventId);
+
+    expect(event?.scheduled_date).toBe("2026-11-02");
+    expect(event?.starts_at.toISOString()).toBe("2026-11-02T14:30:00.000Z");
+    expect(event?.ends_at?.toISOString()).toBe("2026-11-02T16:00:00.000Z");
+    expect(localWallTime(event?.starts_at as Date, "America/New_York")).toBe("2026-11-02T09:30");
+    expect(localWallTime(event?.ends_at as Date, "America/New_York")).toBe("2026-11-02T11:00");
+  });
+
+  it("rejects a target date whose New York end wall time falls in the spring gap", async () => {
+    const fixture = await seedPlanFixture();
+    await db
+      .update(events)
+      .set({
+        all_day: false,
+        ends_at: new Date("2026-03-07T07:30:00.000Z"),
+        scheduled_date: "2026-03-07",
+        starts_at: new Date("2026-03-07T06:30:00.000Z"),
+        timezone: "America/New_York",
+      })
+      .where(eq(events.id, fixture.firstEventId));
+
+    await expect(
+      createCaller(fixture.ownerId).reorderActivities({
+        training_plan_id: fixture.planId,
+        changes: [
+          {
+            event_id: fixture.firstEventId,
+            expected_scheduled_date: "2026-03-07",
+            requested_scheduled_date: "2026-03-08",
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    const event = (await readEventDates([fixture.firstEventId])).get(fixture.firstEventId);
+    expect(event?.scheduled_date).toBe("2026-03-07");
+    expect(event?.starts_at.toISOString()).toBe("2026-03-07T06:30:00.000Z");
+    expect(event?.ends_at?.toISOString()).toBe("2026-03-07T07:30:00.000Z");
+  });
+
+  it("rejects a target date whose New York start wall time falls in the fall fold", async () => {
+    const fixture = await seedPlanFixture();
+    await db
+      .update(events)
+      .set({
+        all_day: false,
+        ends_at: null,
+        scheduled_date: "2026-10-31",
+        starts_at: new Date("2026-10-31T05:30:00.000Z"),
+        timezone: "America/New_York",
+      })
+      .where(eq(events.id, fixture.firstEventId));
+
+    await expect(
+      createCaller(fixture.ownerId).reorderActivities({
+        training_plan_id: fixture.planId,
+        changes: [
+          {
+            event_id: fixture.firstEventId,
+            expected_scheduled_date: "2026-10-31",
+            requested_scheduled_date: "2026-11-01",
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    const event = (await readEventDates([fixture.firstEventId])).get(fixture.firstEventId);
+    expect(event?.scheduled_date).toBe("2026-10-31");
+    expect(event?.starts_at.toISOString()).toBe("2026-10-31T05:30:00.000Z");
+    expect(event?.ends_at).toBeNull();
   });
 
   it("does not let another actor manage the plan", async () => {

@@ -8,13 +8,19 @@ import {
   trainingPlanSchema,
   type trainingPlanUpdateInputSchema,
 } from "@repo/core";
+import {
+  addDaysDateOnlyUtc,
+  diffDateOnlyUtcDays,
+  formatIsoInstantInIanaZone,
+  scheduledDateTimeToIsoInstant,
+} from "@repo/core/calendar";
 import { schema, type TrainingPlanRow } from "@repo/db";
 import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { logger } from "../../lib/logger";
-import { enqueuePlannedActivitySyncAfterCalendarMutation } from "../../lib/provider-sync/planned-activities";
+import { enqueueWahooPlannedActivitySyncAfterCalendarMutation } from "../../lib/provider-sync/planned-activities";
 import type {
   LockedPlanningTemplateRow,
   PlanningTemplateRepository,
@@ -30,7 +36,7 @@ type TrainingPlanCreateInput = z.infer<typeof trainingPlanCreateInputSchema>;
 type TrainingPlanUpdateInput = z.infer<typeof trainingPlanUpdateInputSchema> & {
   id: string;
   expectedStructureHash: string;
-  template_visibility?: "private" | "followers" | "public";
+  content_visibility?: "private" | "followers" | "public";
 };
 
 export type TrainingPlanActivityDateChange = {
@@ -73,7 +79,7 @@ function parseTrainingPlanCreateStructureOrThrow(input: {
   });
 }
 
-function requirePublishedLinkedActivityPlans(input: {
+export function requirePublishedLinkedActivityPlans(input: {
   rows: LockedPlanningTemplateRow[];
   structure: z.infer<typeof trainingPlanSchema>;
 }) {
@@ -125,21 +131,6 @@ function requirePublishedLinkedActivityPlans(input: {
   }
 }
 
-async function enqueuePlannedActivitySyncForCalendarWrite(input: {
-  db: DrizzleDbClient;
-  eventIds: string[];
-  operation: "publish" | "unsync";
-  profileId: string;
-}) {
-  try {
-    await enqueuePlannedActivitySyncAfterCalendarMutation(input);
-  } catch (error) {
-    logger.error("Failed to enqueue planned activity sync after calendar write", {
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
-  }
-}
-
 async function insertTrainingPlan(input: {
   db: TrainingPlanTransactionClient;
   values: {
@@ -147,7 +138,7 @@ async function insertTrainingPlan(input: {
     description: string | null;
     structure: Record<string, unknown>;
     profileId: string;
-    templateVisibility?: "private" | "followers" | "public";
+    contentVisibility?: "private" | "followers" | "public";
   };
 }): Promise<TrainingPlanRow> {
   const result = await input.db.execute(sql<TrainingPlanRow>`
@@ -158,7 +149,6 @@ async function insertTrainingPlan(input: {
       structure,
       structure_hash,
       profile_id,
-      template_visibility,
       content_visibility
     )
     values (
@@ -168,8 +158,7 @@ async function insertTrainingPlan(input: {
       ${JSON.stringify(input.values.structure)}::jsonb,
       ${activityPlanStructureHash(input.values.structure)},
       ${input.values.profileId}::uuid,
-      ${input.values.templateVisibility ?? "private"},
-      ${input.values.templateVisibility ?? "private"}
+      ${input.values.contentVisibility ?? "private"}
     )
     returning *
   `);
@@ -205,19 +194,21 @@ async function updateOwnedTrainingPlanRow(input: {
   description?: string | null;
   structure?: Record<string, unknown>;
   expectedStructureHash: string;
-  templateVisibility?: "private" | "followers" | "public";
+  contentVisibility?: "private" | "followers" | "public";
 }): Promise<TrainingPlanRow | null> {
-  const updates = [sql`updated_at = now()`];
+  const updates = [sql`updated_at = now()`, sql`revision = revision + 1`];
 
   if (input.name !== undefined) updates.push(sql`name = ${input.name}`);
   if (input.description !== undefined) updates.push(sql`description = ${input.description}`);
   if (input.structure !== undefined) {
     updates.push(sql`structure = ${JSON.stringify(input.structure)}::jsonb`);
     updates.push(sql`structure_hash = ${activityPlanStructureHash(input.structure)}`);
+    updates.push(sql`validated_state_revision = null`);
+    updates.push(sql`validated_at = null`);
+    updates.push(sql`projection_algorithm_version = null`);
   }
-  if (input.templateVisibility !== undefined) {
-    updates.push(sql`template_visibility = ${input.templateVisibility}`);
-    updates.push(sql`content_visibility = ${input.templateVisibility}`);
+  if (input.contentVisibility !== undefined) {
+    updates.push(sql`content_visibility = ${input.contentVisibility}`);
   }
 
   const result = await input.db.execute(sql<TrainingPlanRow>`
@@ -302,7 +293,7 @@ export async function createTrainingPlanUseCase(input: {
           description: input.values.description ?? null,
           structure: structureWithId,
           profileId: input.profileId,
-          templateVisibility: input.values.template_visibility ?? defaultContentVisibility,
+          contentVisibility: input.values.content_visibility ?? defaultContentVisibility,
         },
       });
     },
@@ -316,7 +307,7 @@ export async function updateTrainingPlanUseCase(input: {
   repository: TrainingPlanRepository;
   values: TrainingPlanUpdateInput;
 }) {
-  const { id, expectedStructureHash, template_visibility, ...updates } = input.values;
+  const { id, expectedStructureHash, content_visibility, ...updates } = input.values;
   const submittedStructure =
     updates.structure === undefined
       ? undefined
@@ -367,7 +358,7 @@ export async function updateTrainingPlanUseCase(input: {
         description: updates.description,
         expectedStructureHash,
         structure,
-        templateVisibility: template_visibility,
+        contentVisibility: content_visibility,
       });
     },
   );
@@ -406,6 +397,98 @@ export async function reorderTrainingPlanActivitiesUseCase(input: {
       });
     }
 
+    const lockedEvents = await tx.execute(
+      sql<{
+        ends_at: Date | string | null;
+        event_id: string;
+        expected_scheduled_date: string;
+        requested_scheduled_date: string;
+        starts_at: Date | string;
+        timezone: string;
+      }>`
+        with requested_changes as (
+          select *
+          from jsonb_to_recordset(${JSON.stringify(input.changes)}::jsonb) as change(
+            event_id uuid,
+            expected_scheduled_date text,
+            requested_scheduled_date text
+          )
+        )
+        select
+          event.id as event_id,
+          event.starts_at,
+          event.ends_at,
+          event.timezone,
+          change.expected_scheduled_date,
+          change.requested_scheduled_date
+        from events as event
+        inner join requested_changes as change on change.event_id = event.id
+        where event.profile_id = ${input.profileId}::uuid
+          and event.training_plan_id = ${input.trainingPlanId}::uuid
+          and event.event_type = 'planned'
+          and event.activity_plan_id is not null
+          and event.status <> 'completed'
+          and event.linked_activity_id is null
+          and event.read_only is not true
+          and event.scheduled_date = change.expected_scheduled_date
+        for update of event
+      `,
+    );
+    const lockedRows = getSqlRows<{
+      ends_at: Date | string | null;
+      event_id: string;
+      expected_scheduled_date: string;
+      requested_scheduled_date: string;
+      starts_at: Date | string;
+      timezone: string;
+    }>(lockedEvents);
+    if (lockedRows.length !== input.changes.length) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "Scheduled activities changed or are no longer eligible; reload and try again",
+      });
+    }
+
+    try {
+      for (const event of lockedRows) {
+        const localStart = formatIsoInstantInIanaZone(
+          new Date(event.starts_at).toISOString(),
+          event.timezone,
+        );
+        const [sourceStartDate, startTime] = localStart.split("T");
+        if (!sourceStartDate || !startTime) throw new RangeError("Invalid local start time");
+        scheduledDateTimeToIsoInstant({
+          scheduledDate: event.requested_scheduled_date,
+          time: startTime,
+          timeZone: event.timezone,
+        });
+
+        if (event.ends_at) {
+          const localEnd = formatIsoInstantInIanaZone(
+            new Date(event.ends_at).toISOString(),
+            event.timezone,
+          );
+          const [sourceEndDate, endTime] = localEnd.split("T");
+          if (!sourceEndDate || !endTime) throw new RangeError("Invalid local end time");
+          scheduledDateTimeToIsoInstant({
+            scheduledDate: addDaysDateOnlyUtc(
+              event.requested_scheduled_date,
+              diffDateOnlyUtcDays(sourceStartDate, sourceEndDate),
+            ),
+            time: endTime,
+            timeZone: event.timezone,
+          });
+        }
+      }
+    } catch (error) {
+      if (!(error instanceof RangeError)) throw error;
+      throw new TRPCError({
+        code: "CONFLICT",
+        message:
+          "Requested activity date creates an ambiguous or nonexistent local time; choose another date or time",
+      });
+    }
+
     const updateResult = await tx.execute(sql<{ id: string }>`
       with requested_changes as (
         select *
@@ -418,12 +501,20 @@ export async function reorderTrainingPlanActivitiesUseCase(input: {
       update events as event
       set
         scheduled_date = change.requested_scheduled_date,
-        starts_at = event.starts_at
-          + ((change.requested_scheduled_date::date - change.expected_scheduled_date::date) * interval '1 day'),
+        starts_at = (
+          change.requested_scheduled_date::date
+          + (event.starts_at at time zone event.timezone)::time
+        ) at time zone event.timezone,
         ends_at = case
           when event.ends_at is null then null
-          else event.ends_at
-            + ((change.requested_scheduled_date::date - change.expected_scheduled_date::date) * interval '1 day')
+          else (
+            change.requested_scheduled_date::date
+            + (
+              (event.ends_at at time zone event.timezone)::date
+              - (event.starts_at at time zone event.timezone)::date
+            )
+            + (event.ends_at at time zone event.timezone)::time
+          ) at time zone event.timezone
         end,
         updated_at = now()
       from requested_changes as change
@@ -446,15 +537,33 @@ export async function reorderTrainingPlanActivitiesUseCase(input: {
         message: "Scheduled activities changed or are no longer eligible; reload and try again",
       });
     }
+    await tx.execute(sql`
+      update training_plans
+      set revision = revision + 1,
+          validated_state_revision = null,
+          validated_at = null,
+          projection_algorithm_version = null,
+          updated_at = now()
+      where id = ${input.trainingPlanId}::uuid
+        and profile_id = ${input.profileId}::uuid
+    `);
 
-    return updatedRows.map((row) => row.id);
-  });
+    const updatedEventIds = updatedRows.map((row) => row.id);
+    const syncResult = await enqueueWahooPlannedActivitySyncAfterCalendarMutation({
+      db: input.db,
+      eventIds: updatedEventIds,
+      operation: "publish",
+      profileId: input.profileId,
+      transaction: tx,
+    });
+    if (syncResult && !syncResult.success) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to queue planned activity synchronization",
+      });
+    }
 
-  await enqueuePlannedActivitySyncForCalendarWrite({
-    db: input.db,
-    eventIds: updatedEventIds,
-    operation: "publish",
-    profileId: input.profileId,
+    return updatedEventIds;
   });
 
   return {
@@ -493,7 +602,7 @@ export async function deleteTrainingPlanUseCase(input: {
         ),
       )
       .for("update");
-    const syncResult = await enqueuePlannedActivitySyncAfterCalendarMutation({
+    const syncResult = await enqueueWahooPlannedActivitySyncAfterCalendarMutation({
       db: input.db,
       eventIds: plannedEvents.map((event) => event.id),
       operation: "unsync",
@@ -566,56 +675,11 @@ export async function duplicateTrainingPlanUseCase(input: {
           description: sourcePlan.description ?? null,
           structure: duplicatedStructure,
           profileId: input.profileId,
-          templateVisibility: "private",
+          contentVisibility: "private",
         },
       });
     },
   );
 
   return mapTrainingPlanContentIdentity(data);
-}
-
-export async function applyQuickAdjustmentUseCase(input: {
-  adjustedStructure: z.infer<typeof trainingPlanSchema>;
-  db: DrizzleDbClient;
-  expectedStructureHash: string;
-  id: string;
-  planningTemplateRepository: PlanningTemplateRepository;
-  profileId: string;
-  repository: TrainingPlanRepository;
-}) {
-  const existing = await input.repository.getOwnedTrainingPlan({
-    id: input.id,
-    profileId: input.profileId,
-  });
-
-  if (!existing) {
-    throw new TRPCError({
-      code: "NOT_FOUND",
-      message: "Training plan not found or you don't have permission to edit it",
-    });
-  }
-  if (existing.structure_hash !== input.expectedStructureHash) {
-    throw new TRPCError({ code: "CONFLICT", message: "STALE_STRUCTURE_HASH" });
-  }
-
-  const data = await input.planningTemplateRepository.withLockedPublishedTemplates(
-    input.adjustedStructure.sessions.map((session) => session.activity_plan_id),
-    async ({ db, rows }) => {
-      requirePublishedLinkedActivityPlans({ rows, structure: input.adjustedStructure });
-      return updateOwnedTrainingPlanRow({
-        db,
-        id: input.id,
-        expectedStructureHash: input.expectedStructureHash,
-        profileId: input.profileId,
-        structure: input.adjustedStructure,
-      });
-    },
-  );
-
-  if (!data) {
-    throw new TRPCError({ code: "CONFLICT", message: "STALE_STRUCTURE_HASH" });
-  }
-
-  return data;
 }

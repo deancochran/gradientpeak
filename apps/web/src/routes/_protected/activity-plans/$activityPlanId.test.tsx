@@ -43,15 +43,17 @@ vi.mock("../../../lib/api/client", () => ({
       duplicate: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
       delete: { useMutation: () => ({ isPending: false, mutateAsync: vi.fn() }) },
     },
-    events: {
-      create: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
-      delete: { useMutation: () => ({ isPending: false, mutate: vi.fn(), mutateAsync: vi.fn() }) },
-      list: {
+    calendar: {
+      range: {
         useQuery: (input: unknown) => {
           mocks.eventListInput = input;
           return { data: { items: [] }, isLoading: false, isError: false };
         },
       },
+    },
+    events: {
+      create: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
+      delete: { useMutation: () => ({ isPending: false, mutate: vi.fn(), mutateAsync: vi.fn() }) },
       update: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
     },
     social: { toggleLike: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) } },
@@ -90,9 +92,9 @@ describe("ActivityPlanDetailPage invalid plan", () => {
     expect(screen.getByText("Activity plan unavailable")).toBeTruthy();
     expect(screen.queryByText("Read-only structure")).toBeNull();
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
-    expect(mocks.eventListInput).toEqual({
-      activity_plan_id: "invalid-plan",
-      include_adhoc: true,
+    expect(mocks.eventListInput).toMatchObject({
+      activityPlanId: "invalid-plan",
+      includeAdhoc: true,
       limit: 100,
     });
   });

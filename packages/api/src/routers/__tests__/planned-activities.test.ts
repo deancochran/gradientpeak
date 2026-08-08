@@ -1,15 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@repo/core", async () => {
-  const actual = await vi.importActual<typeof import("@repo/core")>("@repo/core");
-
-  return {
-    ...actual,
-    buildEstimationContext: vi.fn((input: unknown) => input),
-    estimateActivity: vi.fn(() => ({ tss: 90 })),
-  };
-});
-
 vi.mock("../../infrastructure/repositories", () => ({
   createEventReadRepository: vi.fn((db: MockDb) => db.readRepository),
   createEventWriteRepository: vi.fn(() => ({
@@ -23,7 +13,7 @@ vi.mock("../../infrastructure/repositories", () => ({
     clearLinkedCompletionForEvent: vi.fn(async () => undefined),
     listLinkedCompletedActivitiesForTrainingPlan: vi.fn(async () => []),
   })),
-  createProviderSyncRepository: vi.fn(() => ({
+  createWahooSyncRepository: vi.fn(() => ({
     enqueueJob: vi.fn(async () => ({ id: "job-1", status: "queued" })),
     touchSyncState: vi.fn(async () => undefined),
   })),
@@ -76,7 +66,6 @@ function createSupabaseMock(results: Record<string, QueryResult>) {
 type MockDb = {
   insert: ReturnType<typeof vi.fn>;
   readRepository: {
-    getEstimationInputs: (input: unknown) => Promise<unknown>;
     getValidateConstraintsInputs: (input: unknown) => Promise<unknown>;
     listOwnedEvents: (input: unknown) => Promise<unknown[]>;
     listPlannedEventDatesInRange: (input: unknown) => Promise<unknown[]>;
@@ -108,9 +97,6 @@ function createEventsCaller(results: Record<string, QueryResult>) {
   const db: MockDb = {
     insert: createDrizzleInsertMock(),
     readRepository: {
-      getEstimationInputs: vi.fn(async () => ({
-        routes: [],
-      })),
       getValidateConstraintsInputs: vi.fn(async () => ({
         trainingPlan: results.training_plans?.data ?? null,
         activityPlan: results.activity_plans?.data ?? null,

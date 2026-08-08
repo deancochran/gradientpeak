@@ -120,7 +120,7 @@ const scheduleActivityModalFormSchema = z.object({
 });
 type ScheduleActivityModalFormInput = z.input<typeof scheduleActivityModalFormSchema>;
 type ScheduleActivityModalFormOutput = z.output<typeof scheduleActivityModalFormSchema>;
-type EditScope = "single" | "future" | "series";
+type EditScope = "single";
 
 interface ScheduleActivityModalProps {
   visible: boolean;
@@ -137,23 +137,6 @@ interface ScheduleActivityModalProps {
 
   // Training plan context (for constraint validation)
   trainingPlanId?: string;
-
-  // Recurrence scope for edit mode updates
-  editScope?: EditScope;
-}
-
-function isRecurringEvent(event: unknown) {
-  if (!event || typeof event !== "object") {
-    return false;
-  }
-
-  const record = event as Record<string, unknown>;
-  const recurrence = record.recurrence;
-  return !!(
-    record.series_id ||
-    record.recurrence_rule ||
-    (recurrence && typeof recurrence === "object" && "rule" in recurrence && recurrence.rule)
-  );
 }
 
 function toDateOnlyString(value: Date): string {
@@ -300,7 +283,6 @@ export function ScheduleActivityModal({
   eventId,
   preselectedDate,
   trainingPlanId,
-  editScope,
 }: ScheduleActivityModalProps) {
   const { resolvedTheme } = useTheme();
   const isEditMode = !!eventId;
@@ -324,7 +306,6 @@ export function ScheduleActivityModal({
   });
 
   const [showConstraintDetails, setShowConstraintDetails] = useState(false);
-  const [localEditScope, setLocalEditScope] = useState<EditScope | null>(null);
   const [recurrence, setRecurrence] = useState<WeeklyCountRecurrence>({
     ...DEFAULT_WEEKLY_COUNT_RECURRENCE,
   });
@@ -381,7 +362,6 @@ export function ScheduleActivityModal({
     if (!visible) {
       form.reset();
       setShowConstraintDetails(false);
-      setLocalEditScope(null);
       setRecurrence({ ...DEFAULT_WEEKLY_COUNT_RECURRENCE });
     }
   }, [visible, form]);
@@ -413,9 +393,6 @@ export function ScheduleActivityModal({
   }, [isEditMode, form]);
 
   const queryClient = useQueryClient();
-  const existingActivityIsRecurring = isRecurringEvent(existingActivity);
-  const recurringEditRequiresScope = isEditMode && existingActivityIsRecurring && !editScope;
-  const resolvedEditScope = editScope ?? localEditScope;
 
   const createMutation = api.events.create.useMutation();
 
@@ -458,13 +435,7 @@ export function ScheduleActivityModal({
     }
     if (isEditMode) {
       if (existingPlanReadOnly) return;
-      if (recurringEditRequiresScope && !resolvedEditScope) {
-        const message = "Choose whether to update one event, future events, or the entire series.";
-        setRootFormError(form, new Error(message), message);
-        return;
-      }
-
-      await submitEditWithScope(data, resolvedEditScope ?? "single");
+      await submitEditWithScope(data, "single");
       return;
     }
 
@@ -524,8 +495,7 @@ export function ScheduleActivityModal({
     !isSubmitting &&
     !existingPlanReadOnly &&
     !isWeeklyLoadUnavailable &&
-    (selectedPlanIsExecutable || preservesExistingPlan) &&
-    (!recurringEditRequiresScope || !!localEditScope);
+    (selectedPlanIsExecutable || preservesExistingPlan);
   const validationSummary = !trainingPlanId
     ? null
     : validationError
@@ -728,54 +698,6 @@ export function ScheduleActivityModal({
                         pickerPresentation="modal"
                         testId="scheduled-time-button"
                       />
-                    </View>
-                  ) : null}
-
-                  {recurringEditRequiresScope ? (
-                    <View className="gap-2 rounded-xl border border-border bg-card px-3 py-3">
-                      <View className="gap-1">
-                        <Text className="text-sm font-semibold text-foreground">
-                          Apply changes to
-                        </Text>
-                        <Text className="text-xs text-muted-foreground">
-                          This activity repeats. Choose the part of the series to update before
-                          saving.
-                        </Text>
-                      </View>
-                      <View className="gap-2">
-                        {(
-                          [
-                            ["single", "This event only"],
-                            ["future", "This and future events"],
-                            ["series", "Entire series"],
-                          ] as const
-                        ).map(([scope, label]) => {
-                          const selected = localEditScope === scope;
-                          return (
-                            <Pressable
-                              key={scope}
-                              accessibilityRole="radio"
-                              accessibilityState={{ checked: selected }}
-                              className={`rounded-lg border px-3 py-2 ${
-                                selected
-                                  ? "border-primary bg-primary/10"
-                                  : "border-border bg-background"
-                              }`}
-                              disabled={isSubmitting}
-                              onPress={() => setLocalEditScope(scope)}
-                              testID={`schedule-edit-scope-${scope}`}
-                            >
-                              <Text
-                                className={`text-sm font-medium ${
-                                  selected ? "text-primary" : "text-foreground"
-                                }`}
-                              >
-                                {label}
-                              </Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
                     </View>
                   ) : null}
                 </View>

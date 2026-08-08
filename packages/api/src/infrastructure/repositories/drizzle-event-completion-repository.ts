@@ -15,14 +15,6 @@ function applyDeleteScopeFilters(input: {
 
   const seriesId = (input.anchorEvent.series_id ?? input.anchorEvent.id) as string;
 
-  if (input.scope === "future") {
-    return and(
-      ...baseConditions,
-      or(eq(schema.events.id, seriesId), eq(schema.events.series_id, seriesId)),
-      gte(schema.events.starts_at, new Date(input.anchorEvent.starts_at)),
-    );
-  }
-
   return and(
     ...baseConditions,
     or(eq(schema.events.id, seriesId), eq(schema.events.series_id, seriesId)),

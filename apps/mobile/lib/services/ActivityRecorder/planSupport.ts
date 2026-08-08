@@ -27,12 +27,9 @@ export function getMobileRecordingPlanSupport(
     if (!parsed.success) {
       return { supported: false, reason: "invalid_structure", message: INVALID_PLAN_MESSAGE };
     }
-    const activity = parsed.data.segments.find((segment) => segment.role === "activity");
-    if (!activity)
-      return { supported: false, reason: "invalid_structure", message: INVALID_PLAN_MESSAGE };
     return {
       supported: true,
-      activity_category: activity.activity_category,
+      activity_category: parsed.data.activity_category,
     };
   } catch {
     return { supported: false, reason: "invalid_structure", message: INVALID_PLAN_MESSAGE };

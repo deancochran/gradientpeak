@@ -3,7 +3,6 @@ import { activityPlanStructureSchema, materializeRecurrenceOccurrences } from "@
 import {
   createOneOffGroupEventInputSchema,
   createRecurringEventSeriesInputSchema,
-  GROUP_EVENT_RSVP_STATUSES,
   listOneOffGroupEventsInputSchema,
   rsvpEventSeriesInputSchema,
   rsvpOneOffGroupEventInputSchema,
@@ -35,14 +34,8 @@ import {
   serializeSeriesRsvp,
 } from "../../application/groups/groupEventViews";
 import { getRequiredDb } from "../../db";
-import {
-  enqueueWahooGroupEventRouteDeliveryForAcceptedRecipients,
-  enqueueWahooGroupEventRouteDeliveryForProfile,
-  resolveCancelledGroupEventRouteDeliveries,
-} from "../../lib/provider-sync/event-delivery/wahoo-group-event-route-delivery";
 import { createTRPCRouter, protectedProcedure } from "../../trpc";
 import {
-  GROUP_ACCESS_LEVEL_PUBLIC,
   GROUP_MEMBERSHIP_STATUS_ACTIVE,
   getActiveGroupMembership,
   getCurrentProfileId,
@@ -62,9 +55,7 @@ const seriesOccurrencesInputSchema = groupEventIdInputSchema.extend({
   cursor: z.string().min(1).nullable().optional(),
   limit: z.number().int().min(1).max(50).default(20),
 });
-const myCalendarGroupEventsInputSchema = listOneOffGroupEventsInputSchema.omit({ groupId: true });
-
-const GROUP_EVENT_RSVP_STATUS_ACCEPTED = GROUP_EVENT_RSVP_STATUSES[0];
+const myUpcomingGroupEventsInputSchema = listOneOffGroupEventsInputSchema.omit({ groupId: true });
 
 type MaterializedGroupEventOccurrence = {
   endsAt: string | null;
@@ -170,20 +161,13 @@ function pageResult<T>(items: T[], limit: number, getCursor: (item: T) => string
 function canUseActivityPlanForGroupEvent(
   activityPlan: Pick<
     typeof activityPlans.$inferSelect,
-    "profile_id" | "content_visibility" | "template_visibility" | "is_system_template"
+    "profile_id" | "content_visibility" | "is_system_template"
   >,
   profileId: string,
 ) {
-  const visibility =
-    activityPlan.content_visibility === "public" ||
-    activityPlan.content_visibility === "followers" ||
-    activityPlan.content_visibility === "private"
-      ? activityPlan.content_visibility
-      : activityPlan.template_visibility;
-
   return (
     activityPlan.profile_id === profileId ||
-    visibility === "public" ||
+    activityPlan.content_visibility === "public" ||
     activityPlan.is_system_template
   );
 }
@@ -210,7 +194,6 @@ async function assertActivityPlansAvailableForGroupEvent(
       id: activityPlans.id,
       profile_id: activityPlans.profile_id,
       content_visibility: activityPlans.content_visibility,
-      template_visibility: activityPlans.template_visibility,
       is_system_template: activityPlans.is_system_template,
       structure: activityPlans.structure,
     })
@@ -392,6 +375,15 @@ function assertSeriesOccurrence(event: GroupEventRow) {
   }
 }
 
+function assertOneOffEvent(event: GroupEventRow) {
+  if (event.series_id !== null || event.recurrence_rule !== null) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Recurring group events must be changed through an occurrence action",
+    });
+  }
+}
+
 export const groupEventsRouter = createTRPCRouter({
   list: protectedProcedure.input(listOneOffGroupEventsInputSchema).query(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
@@ -426,7 +418,7 @@ export const groupEventsRouter = createTRPCRouter({
   }),
 
   myUpcomingGroupEvents: protectedProcedure
-    .input(myCalendarGroupEventsInputSchema)
+    .input(myUpcomingGroupEventsInputSchema)
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const profileId = await getCurrentProfileId(db, ctx.session.user.id);
@@ -509,7 +501,7 @@ export const groupEventsRouter = createTRPCRouter({
           description: input.description ?? null,
           starts_at: new Date(input.startsAt),
           ends_at: parseDateTime(input.endsAt),
-          timezone: input.timezone ?? null,
+          timezone: input.timezone,
           location_name: input.locationName ?? null,
           route_id: input.routeId ?? null,
           activity_plan_id: input.activityPlanId ?? null,
@@ -582,14 +574,14 @@ export const groupEventsRouter = createTRPCRouter({
                 series_id: createdEvent.id,
                 occurrence_key: occurrence.occurrenceKey,
                 created_by_profile_id: profileId,
-                title: null,
-                description: null,
+                title: input.title,
+                description: input.description ?? null,
                 starts_at: new Date(occurrence.startsAt),
                 ends_at: parseDateTime(occurrence.endsAt),
-                timezone: null,
-                location_name: null,
-                route_id: null,
-                activity_plan_id: null,
+                timezone: input.timezone,
+                location_name: input.locationName ?? null,
+                route_id: input.routeId ?? null,
+                activity_plan_id: input.activityPlanId ?? null,
               })),
             )
             .onConflictDoNothing();
@@ -647,6 +639,7 @@ export const groupEventsRouter = createTRPCRouter({
       const db = getRequiredDb(ctx);
       const profileId = await getCurrentProfileId(db, ctx.session.user.id);
       const { event: existingEvent } = await getGroupEventWithActiveGroup(db, input.groupEventId);
+      assertOneOffEvent(existingEvent);
       await requireGroupAdmin(db, existingEvent.group_id, profileId);
       await assertGroupEventResourcesAvailable(db, {
         activityPlanId: input.activityPlanId,
@@ -662,7 +655,7 @@ export const groupEventsRouter = createTRPCRouter({
             ...(input.description !== undefined ? { description: input.description ?? null } : {}),
             ...(input.startsAt !== undefined ? { starts_at: new Date(input.startsAt) } : {}),
             ...(input.endsAt !== undefined ? { ends_at: parseDateTime(input.endsAt) } : {}),
-            ...(input.timezone !== undefined ? { timezone: input.timezone ?? null } : {}),
+            timezone: input.timezone,
             ...(input.locationName !== undefined
               ? { location_name: input.locationName ?? null }
               : {}),
@@ -677,17 +670,6 @@ export const groupEventsRouter = createTRPCRouter({
           })
           .where(eq(groupEvents.id, input.groupEventId))
           .returning();
-        const routeDeliverySourceId = updatedEvent?.route_id ?? existingEvent.route_id;
-        if (input.routeId !== undefined && updatedEvent && routeDeliverySourceId) {
-          await enqueueWahooGroupEventRouteDeliveryForAcceptedRecipients({
-            db,
-            eventId: updatedEvent.id,
-            expectedEventUpdatedAt: updatedEvent.updated_at.toISOString(),
-            groupId: updatedEvent.group_id,
-            sourceRouteId: routeDeliverySourceId,
-            transaction: tx,
-          });
-        }
         return [updatedEvent];
       });
 
@@ -720,7 +702,7 @@ export const groupEventsRouter = createTRPCRouter({
             ...(input.description !== undefined ? { description: input.description ?? null } : {}),
             ...(input.startsAt !== undefined ? { starts_at: new Date(input.startsAt) } : {}),
             ...(input.endsAt !== undefined ? { ends_at: parseDateTime(input.endsAt) } : {}),
-            ...(input.timezone !== undefined ? { timezone: input.timezone ?? null } : {}),
+            timezone: input.timezone,
             ...(input.locationName !== undefined
               ? { location_name: input.locationName ?? null }
               : {}),
@@ -735,17 +717,6 @@ export const groupEventsRouter = createTRPCRouter({
           })
           .where(eq(groupEvents.id, input.groupEventId))
           .returning();
-        const routeDeliverySourceId = updatedEvent?.route_id ?? existingEvent.route_id;
-        if (input.routeId !== undefined && updatedEvent && routeDeliverySourceId) {
-          await enqueueWahooGroupEventRouteDeliveryForAcceptedRecipients({
-            db,
-            eventId: updatedEvent.id,
-            expectedEventUpdatedAt: updatedEvent.updated_at.toISOString(),
-            groupId: updatedEvent.group_id,
-            sourceRouteId: routeDeliverySourceId,
-            transaction: tx,
-          });
-        }
         return [updatedEvent];
       });
 
@@ -788,38 +759,6 @@ export const groupEventsRouter = createTRPCRouter({
         groupId: existingEvent.group_id,
       });
 
-      let seriesRouteId =
-        cancelledEvents.find((candidate) => candidate.id === seriesId)?.route_id ?? null;
-      if (!seriesRouteId && cancelledEvent.series_id) {
-        const [series] = await tx
-          .select({ routeId: groupEvents.route_id })
-          .from(groupEvents)
-          .where(eq(groupEvents.id, cancelledEvent.series_id))
-          .limit(1);
-        seriesRouteId = series?.routeId ?? null;
-      }
-      const affectedById = new Map(cancelledEvents.map((candidate) => [candidate.id, candidate]));
-      const routeDeliveries = resolveCancelledGroupEventRouteDeliveries(
-        cancelledEvents.map((candidate) => ({
-          eventId: candidate.id,
-          routeId: candidate.route_id,
-          seriesId: candidate.series_id,
-        })),
-        seriesRouteId,
-      );
-      for (const delivery of routeDeliveries) {
-        const affectedEvent = affectedById.get(delivery.eventId);
-        if (!affectedEvent) continue;
-        await enqueueWahooGroupEventRouteDeliveryForAcceptedRecipients({
-          db,
-          eventId: affectedEvent.id,
-          expectedEventUpdatedAt: affectedEvent.updated_at.toISOString(),
-          groupId: affectedEvent.group_id,
-          sourceRouteId: delivery.sourceRouteId,
-          transaction: tx,
-        });
-      }
-
       return [cancelledEvent];
     });
 
@@ -849,16 +788,6 @@ export const groupEventsRouter = createTRPCRouter({
                 eq(groupEventRsvps.profile_id, profileId),
               ),
             );
-          if (event.route_id) {
-            await enqueueWahooGroupEventRouteDeliveryForProfile({
-              db,
-              eventId: event.id,
-              expectedEventUpdatedAt: event.updated_at.toISOString(),
-              profileId,
-              sourceRouteId: event.route_id,
-              transaction: tx,
-            });
-          }
         });
 
         const [serializedEvent] = await serializeGroupEventsForViewer(db, [event], profileId);
@@ -886,16 +815,6 @@ export const groupEventsRouter = createTRPCRouter({
           })
           .returning();
 
-        if (event.route_id) {
-          await enqueueWahooGroupEventRouteDeliveryForProfile({
-            db,
-            eventId: event.id,
-            expectedEventUpdatedAt: event.updated_at.toISOString(),
-            profileId,
-            sourceRouteId: event.route_id,
-            transaction: tx,
-          });
-        }
         return [storedRsvp];
       });
 
@@ -958,106 +877,5 @@ export const groupEventsRouter = createTRPCRouter({
         }),
         rsvp: serializeSeriesRsvp(rsvp as GroupEventSeriesRsvpRow),
       };
-    }),
-
-  myCalendarGroupEvents: protectedProcedure
-    .input(myCalendarGroupEventsInputSchema)
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const profileId = await getCurrentProfileId(db, ctx.session.user.id);
-      const cursorFilter = await getGroupEventCursorFilter(db, null, input.cursor);
-
-      const occurrenceRsvpRows = await db
-        .select({ event: groupEvents })
-        .from(groupEventRsvps)
-        .innerJoin(groupEvents, eq(groupEvents.id, groupEventRsvps.group_event_id))
-        .innerJoin(groups, eq(groups.id, groupEvents.group_id))
-        .leftJoin(
-          groupMemberships,
-          and(eq(groupMemberships.group_id, groups.id), eq(groupMemberships.profile_id, profileId)),
-        )
-        .where(
-          and(
-            eq(groupEventRsvps.profile_id, profileId),
-            eq(groupEventRsvps.status, GROUP_EVENT_RSVP_STATUS_ACCEPTED),
-            isNull(groups.deleted_at),
-            or(
-              eq(groups.access_level, GROUP_ACCESS_LEVEL_PUBLIC),
-              eq(groupMemberships.status, GROUP_MEMBERSHIP_STATUS_ACTIVE),
-            ),
-            input.includeCancelled ? undefined : isNull(groupEvents.cancelled_at),
-            // Series roots are scheduling templates; calendar lists should show concrete events.
-            or(isNull(groupEvents.recurrence_rule), isNotNull(groupEvents.series_id)),
-            input.startsAfter ? gte(groupEvents.starts_at, new Date(input.startsAfter)) : undefined,
-            input.startsBefore
-              ? lte(groupEvents.starts_at, new Date(input.startsBefore))
-              : undefined,
-            cursorFilter,
-          ),
-        )
-        .orderBy(asc(groupEvents.starts_at), asc(groupEvents.id))
-        .limit(input.limit + 1);
-
-      const seriesOccurrenceRows = await db
-        .select({ event: groupEvents })
-        .from(groupEventSeriesRsvps)
-        .innerJoin(
-          groupEvents,
-          eq(groupEvents.series_id, groupEventSeriesRsvps.group_event_series_id),
-        )
-        .innerJoin(groups, eq(groups.id, groupEvents.group_id))
-        .leftJoin(
-          groupMemberships,
-          and(eq(groupMemberships.group_id, groups.id), eq(groupMemberships.profile_id, profileId)),
-        )
-        .leftJoin(
-          groupEventRsvps,
-          and(
-            eq(groupEventRsvps.group_event_id, groupEvents.id),
-            eq(groupEventRsvps.profile_id, profileId),
-          ),
-        )
-        .where(
-          and(
-            eq(groupEventSeriesRsvps.profile_id, profileId),
-            eq(groupEventSeriesRsvps.status, GROUP_EVENT_RSVP_STATUS_ACCEPTED),
-            isNotNull(groupEvents.series_id),
-            isNull(groups.deleted_at),
-            or(
-              eq(groups.access_level, GROUP_ACCESS_LEVEL_PUBLIC),
-              eq(groupMemberships.status, GROUP_MEMBERSHIP_STATUS_ACTIVE),
-            ),
-            // A declined or tentative occurrence RSVP overrides accepted series RSVP calendar inclusion.
-            or(
-              isNull(groupEventRsvps.profile_id),
-              eq(groupEventRsvps.status, GROUP_EVENT_RSVP_STATUS_ACCEPTED),
-            ),
-            input.includeCancelled ? undefined : isNull(groupEvents.cancelled_at),
-            gte(
-              groupEvents.starts_at,
-              input.startsAfter ? new Date(input.startsAfter) : new Date(),
-            ),
-            input.startsBefore
-              ? lte(groupEvents.starts_at, new Date(input.startsBefore))
-              : undefined,
-            cursorFilter,
-          ),
-        )
-        .orderBy(asc(groupEvents.starts_at), asc(groupEvents.id))
-        .limit(input.limit + 1);
-
-      const eventById = new Map<string, GroupEventRow>();
-      for (const row of [...occurrenceRsvpRows, ...seriesOccurrenceRows]) {
-        eventById.set(row.event.id, row.event);
-      }
-      const rows = Array.from(eventById.values())
-        .sort((a, b) => {
-          const startsAtDiff = a.starts_at.getTime() - b.starts_at.getTime();
-          return startsAtDiff !== 0 ? startsAtDiff : a.id.localeCompare(b.id);
-        })
-        .slice(0, input.limit + 1);
-
-      const items = await serializeGroupEventsForViewer(db, rows, profileId);
-      return pageResult(items, input.limit, (event) => event.id);
     }),
 });

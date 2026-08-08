@@ -16,18 +16,15 @@ import Svg, { Circle, Line, Path } from "react-native-svg";
 import { CompactInsightCard } from "@/components/shared";
 import { AppBottomSheet } from "@/components/shared/AppBottomSheet";
 import { api } from "@/lib/api";
-import { useCommonLoadHistory } from "@/lib/hooks/useCommonLoadHistory";
 import { useTheme } from "@/lib/stores/theme-store";
 import { getResolvedThemeScale, type ResolvedThemeMode } from "@/lib/theme";
 import { buildActivityCalendarCells } from "@/lib/trends/activityCalendar";
 import {
-  buildActivityInsights,
-  buildProfileInsights,
   formatNumber,
+  hydrateTrendInsights,
   type Insight,
   type InsightPoint,
   type Tone,
-  toIsoDate,
 } from "@/lib/trends/insights";
 
 /** Resolves semantic theme colors for native props that cannot consume class tokens. */
@@ -60,26 +57,6 @@ export function getTrendsLoadState({
     showFullError: hasError && insightCount === 0 && !showInitialLoading,
     showPartialError: hasError && insightCount > 0,
   };
-}
-
-export function hasResolvedCommonLoad(status: string): boolean {
-  return status === "available" || status === "unavailable";
-}
-
-type RefetchableTrendSource = { refetch: () => Promise<unknown> };
-
-export function refetchTrendsSources(sources: {
-  commonLoad: RefetchableTrendSource;
-  dashboard: RefetchableTrendSource;
-  peakPower: RefetchableTrendSource;
-  profileMetrics: RefetchableTrendSource;
-}) {
-  return Promise.all([
-    sources.profileMetrics.refetch(),
-    sources.dashboard.refetch(),
-    sources.commonLoad.refetch(),
-    sources.peakPower.refetch(),
-  ]);
 }
 
 function getInsightPointKey(point: InsightPoint) {
@@ -1151,66 +1128,37 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
     return {
       startDate: start,
       endDate: end,
-      start_date: toIsoDate(start),
-      end_date: toIsoDate(end),
     };
   }, []);
 
-  const profileMetrics = api.profileMetrics.list.useQuery({
-    start_date: range.startDate,
-    end_date: range.endDate,
-    limit: 50,
+  const readModel = api.athleteIntelligence.getReadModel.useQuery({
+    sections: {
+      trendInsights: {
+        startAt: range.startDate.toISOString(),
+        endAt: range.endDate.toISOString(),
+        groupBy: "week",
+        peakMetric: "power",
+        peakLimit: 5,
+        observationLimit: 200,
+      },
+    },
   });
-  const dashboard = api.trends.getDashboard.useQuery({
-    start_date: range.start_date,
-    end_date: range.end_date,
-    groupBy: "week",
-  });
-  const commonLoad = useCommonLoadHistory();
-  const peakPower = api.trends.getPeakPerformances.useQuery({ metric: "power", limit: 5 });
-
   const handleRefresh = React.useCallback(async () => {
     setRefreshing(true);
     try {
-      await refetchTrendsSources({
-        commonLoad,
-        dashboard,
-        peakPower,
-        profileMetrics,
-      });
+      await readModel.refetch();
     } finally {
       setRefreshing(false);
     }
-  }, [profileMetrics, dashboard, commonLoad, peakPower]);
+  }, [readModel]);
 
-  const isLoading =
-    profileMetrics.isLoading || dashboard.isLoading || commonLoad.isLoading || peakPower.isLoading;
-  const hasError = profileMetrics.error || dashboard.error || commonLoad.error || peakPower.error;
+  const isLoading = readModel.isLoading;
+  const hasError = readModel.error;
 
   const insights = React.useMemo(() => {
-    const metricInsights = buildProfileInsights(profileMetrics.data?.items ?? []);
-    const activityInsights = buildActivityInsights({
-      volume: dashboard.data?.volume,
-      load:
-        commonLoad.status === "available"
-          ? { status: commonLoad.status, data: commonLoad.data }
-          : commonLoad.status === "unavailable"
-            ? { status: commonLoad.status, reason: commonLoad.reason }
-            : { status: commonLoad.status },
-      consistency: dashboard.data?.consistency,
-      performance: dashboard.data?.performance,
-      zones: dashboard.data?.zones,
-      peakPower: peakPower.data,
-    });
-    return [...metricInsights, ...activityInsights];
-  }, [profileMetrics.data?.items, dashboard.data, commonLoad, peakPower.data]);
-  const resolvedSourceCount = [
-    profileMetrics.data,
-    dashboard.data,
-    hasResolvedCommonLoad(commonLoad.status) ? commonLoad.status : undefined,
-    peakPower.data,
-  ].filter((data) => data !== undefined).length;
-  const hasLoadedSource = resolvedSourceCount > 0;
+    return hydrateTrendInsights(readModel.data?.trendInsights?.items ?? []);
+  }, [readModel.data?.trendInsights?.items]);
+  const hasLoadedSource = readModel.data?.trendInsights !== undefined;
   const { showInitialLoading, showFullError, showPartialError } = getTrendsLoadState({
     hasError: Boolean(hasError),
     hasLoadedSource,

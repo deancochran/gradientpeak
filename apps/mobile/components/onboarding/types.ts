@@ -6,6 +6,7 @@ import type {
 } from "@repo/core";
 import type { ComponentType } from "react";
 import type { AthleteBaselineFieldSource } from "@/components/athlete-baseline";
+import type { IntegrationOverviewItem } from "@/components/integrations/IntegrationProviderList";
 import type { CompactTrainingPreferencesValue } from "@/components/settings/training-preferences/compactTrainingPreferences";
 
 export type TrainingPreferencesHydrationStatus = "loading" | "ready" | "error";
@@ -72,15 +73,10 @@ export type OnboardingFieldSources = Partial<
   Record<keyof OnboardingData, AthleteBaselineFieldSource>
 >;
 
-export interface ProviderSyncStatus {
-  status: "idle" | "queued" | "running" | "succeeded" | "partial" | "failed" | "timed_out";
+export interface WahooSetupStatus {
+  status: "idle" | "refreshing" | "refreshed" | "failed" | "unsupported";
   canContinue: boolean;
-  providers: Array<{
-    provider: IntegrationProvider;
-    status: string;
-    blocking: boolean;
-    message?: string;
-  }>;
+  lastError: string | null;
 }
 
 export interface StepConfig {
@@ -102,10 +98,12 @@ export interface StepProps {
     },
   ) => void;
   fieldSources?: OnboardingFieldSources;
-  providerSyncStatus?: ProviderSyncStatus;
-  onRetryProviderSync?: () => void;
-  onRefreshIntegrations?: () => void;
-  onClearProviderRequirement?: (provider: IntegrationProvider) => void;
+  wahooSetupStatus?: WahooSetupStatus;
+  onRetryWahooSetup?: () => void;
+  integrationOverview?: IntegrationOverviewItem[];
+  integrationOverviewError?: unknown;
+  integrationOverviewLoading?: boolean;
+  onRefreshIntegrations?: () => unknown;
   usernameAvailability?: {
     available?: boolean;
     isError: boolean;

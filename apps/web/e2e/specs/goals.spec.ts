@@ -118,31 +118,23 @@ test("goals.lifecycle and goals.intelligence persist exact owned goals", async (
     await expect(athletePage.getByText(/no goals match these filters/i)).toBeVisible();
 
     const intelligenceResponse = athletePage.waitForResponse((response) =>
-      response.url().includes("athleteIntelligence.evaluate"),
+      response.url().includes("athleteIntelligence.getGoalAssessment"),
     );
     await athletePage.goto(`/goals/${firstId}`);
     const response = await intelligenceResponse;
     expect(
       response.ok(),
-      `athleteIntelligence.evaluate failed with HTTP ${response.status()}`,
+      `athleteIntelligence.getGoalAssessment failed with HTTP ${response.status()}`,
     ).toBe(true);
     await expect(athletePage.getByTestId("goal-intelligence")).toBeVisible();
     await expect(
       athletePage.getByText(/consistency target: 5 sessions per week for 12 weeks/i),
     ).toBeVisible();
-    await expect(athletePage.getByText("Evidence & limits", { exact: true })).toBeVisible();
-    await expect(athletePage.getByText(/uncertainty$/i)).toBeVisible({ timeout: 15_000 });
+    await expect(athletePage.getByText("Goal readiness", { exact: true })).toBeVisible();
+    await expect(athletePage.getByText(/% confidence$/i)).toBeVisible({ timeout: 15_000 });
     await expect(athletePage.getByText(/^As of /i)).toBeVisible();
-    await expect(athletePage.getByRole("heading", { name: "Evidence used" })).toBeVisible();
-    await expect(athletePage.getByRole("heading", { name: "Limits" })).toBeVisible();
-    await expect(athletePage.getByRole("heading", { name: "Coverage" })).toBeVisible();
-    await expect(
-      athletePage
-        .getByTestId("goal-collection-prompts-empty")
-        .or(athletePage.getByTestId("goal-collection-prompts")),
-    ).toBeVisible();
 
-    const intelligenceFailure = abortProcedure("athleteIntelligence.evaluate");
+    const intelligenceFailure = abortProcedure("athleteIntelligence.getGoalAssessment");
     await athletePage.route(trpcPattern, intelligenceFailure);
     await athletePage.reload();
     await expect(athletePage.getByRole("heading", { name: firstTitle })).toBeVisible();
@@ -151,7 +143,7 @@ test("goals.lifecycle and goals.intelligence persist exact owned goals", async (
     });
     await athletePage.unroute(trpcPattern, intelligenceFailure);
     const intelligenceRetry = athletePage.waitForResponse((retryResponse) =>
-      retryResponse.url().includes("athleteIntelligence.evaluate"),
+      retryResponse.url().includes("athleteIntelligence.getGoalAssessment"),
     );
     await athletePage.getByTestId("goal-intelligence-retry").click();
     expect((await intelligenceRetry).ok()).toBe(true);

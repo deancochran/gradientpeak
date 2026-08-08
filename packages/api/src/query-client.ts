@@ -6,45 +6,33 @@ const SCHEDULING_QUERY_STALE_TIME = 30 * 1000;
 
 export const SCHEDULING_REFRESH_CONTRACT = {
   eventMutation: [
-    ["events", "list"],
+    ["calendar", "range"],
+    ["calendar", "day"],
     ["events", "getById"],
-    ["events", "getToday"],
     ["events", "validateConstraints"],
     ["trainingPlans", "list"],
     ["trainingPlans", "getActivePlan"],
     ["trainingPlans", "get"],
-    ["trainingPlans", "getCurrentStatus"],
-    ["trainingPlans", "getInsightTimeline"],
-    ["trainingPlans", "getActualCurve"],
-    ["trainingPlans", "getIdealCurve"],
-    ["trainingPlans", "getWeeklySummary"],
+    ["trainingPlans", "preview"],
   ],
   eventDeletionMutation: [
-    ["events", "list"],
-    ["events", "getToday"],
+    ["calendar", "range"],
+    ["calendar", "day"],
     ["events", "validateConstraints"],
     ["trainingPlans", "list"],
     ["trainingPlans", "getActivePlan"],
     ["trainingPlans", "get"],
-    ["trainingPlans", "getCurrentStatus"],
-    ["trainingPlans", "getInsightTimeline"],
-    ["trainingPlans", "getActualCurve"],
-    ["trainingPlans", "getIdealCurve"],
-    ["trainingPlans", "getWeeklySummary"],
+    ["trainingPlans", "preview"],
   ],
   trainingPlanSchedulingMutation: [
-    ["events", "list"],
+    ["calendar", "range"],
+    ["calendar", "day"],
     ["events", "getById"],
-    ["events", "getToday"],
     ["events", "validateConstraints"],
     ["trainingPlans", "list"],
     ["trainingPlans", "getActivePlan"],
     ["trainingPlans", "get"],
-    ["trainingPlans", "getCurrentStatus"],
-    ["trainingPlans", "getInsightTimeline"],
-    ["trainingPlans", "getActualCurve"],
-    ["trainingPlans", "getIdealCurve"],
-    ["trainingPlans", "getWeeklySummary"],
+    ["trainingPlans", "preview"],
   ],
 } as const;
 
@@ -100,16 +88,25 @@ export async function invalidateSchedulingQueries(
 }
 
 export async function invalidatePostActivityIngestionQueries(queryClient: QueryClient) {
+  const paths = [
+    ["activities", "listPaginated"],
+    ["calendar", "range"],
+    ["calendar", "day"],
+    ["events", "getById"],
+    ["athleteIntelligence", "getReadModel"],
+    ["trainingPlans", "getActivePlan"],
+  ] as const;
   await Promise.all([
-    queryClient.invalidateQueries({ queryKey: queryKeys.activities.lists() }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.trainingPlans.status() }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.events.all }),
+    ...paths.map((path) =>
+      queryClient.invalidateQueries({
+        predicate: (query) => matchesQueryPath(query.queryKey, path),
+      }),
+    ),
     queryClient.invalidateQueries({
       predicate: (query) =>
         query.queryKey[0] === "home" ||
         (Array.isArray(query.queryKey) && query.queryKey[0]?.[0] === "home"),
     }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.trends.all() }),
   ]);
 }
 
@@ -213,82 +210,13 @@ export function createQueryClient() {
 }
 
 /**
- * Query key factory for consistent query key generation.
- * Use these to ensure query keys are consistent across the app.
- *
- * @example
- * const { data } = trpc.activities.listPaginated.useQuery(
- *   { limit: 10 },
- *   { queryKey: queryKeys.activities.list({ limit: 10 }) }
- * );
- */
-export const queryKeys = {
-  // Activity-related query keys
-  activities: {
-    all: ["activities"] as const,
-    lists: () => [...queryKeys.activities.all, "list"] as const,
-    list: (filters: Record<string, unknown>) => [...queryKeys.activities.lists(), filters] as const,
-    details: () => [...queryKeys.activities.all, "detail"] as const,
-    detail: (id: string) => [...queryKeys.activities.details(), id] as const,
-  },
-
-  // Training plan query keys
-  trainingPlans: {
-    all: ["trainingPlans"] as const,
-    lists: () => [...queryKeys.trainingPlans.all, "list"] as const,
-    list: (filters: Record<string, unknown>) =>
-      [...queryKeys.trainingPlans.lists(), filters] as const,
-    details: () => [...queryKeys.trainingPlans.all, "detail"] as const,
-    detail: (id: string) => [...queryKeys.trainingPlans.details(), id] as const,
-    status: () => [...queryKeys.trainingPlans.all, "status"] as const,
-    weeklySummary: (planId: string) =>
-      [...queryKeys.trainingPlans.all, "weeklySummary", planId] as const,
-    curve: (planId: string, type: "actual" | "ideal") =>
-      [...queryKeys.trainingPlans.all, "curve", planId, type] as const,
-  },
-
-  // Events query keys
-  events: {
-    all: ["events"] as const,
-    lists: () => [...queryKeys.events.all, "list"] as const,
-    list: (filters: Record<string, unknown>) => [...queryKeys.events.lists(), filters] as const,
-    details: () => [...queryKeys.events.all, "detail"] as const,
-    detail: (id: string) => [...queryKeys.events.details(), id] as const,
-    today: () => [...queryKeys.events.all, "today"] as const,
-    weekCount: () => [...queryKeys.events.all, "weekCount"] as const,
-    constraints: (filters: Record<string, unknown>) =>
-      [...queryKeys.events.all, "constraints", filters] as const,
-    byWeek: (weekStart: string, weekEnd: string) =>
-      [...queryKeys.events.all, "byWeek", weekStart, weekEnd] as const,
-  },
-
-  // Profile query keys
-  profile: {
-    all: ["profile"] as const,
-    current: () => [...queryKeys.profile.all, "current"] as const,
-  },
-
-  // Home dashboard query keys
-  home: {
-    all: ["home"] as const,
-    dashboard: (filters?: Record<string, unknown>) =>
-      [...queryKeys.home.all, "dashboard", filters] as const,
-  },
-
-  // Trends query keys
-  trends: {
-    all: () => ["trends"] as const,
-  },
-} as const;
-
-/**
  * Helper function to invalidate specific queries after mutations.
  * Use this in mutation onSuccess callbacks for granular cache invalidation.
  *
  * @example
- * const mutation = trpc.activities.create.useMutation({
+ * const mutation = trpc.activities.update.useMutation({
  *   onSuccess: () => {
- *     invalidateQueries(queryClient, queryKeys.activities.all);
+ *     invalidateQueries(queryClient, [["activities", "listPaginated"]]);
  *   }
  * });
  */
@@ -305,7 +233,7 @@ export function invalidateQueries(queryClient: QueryClient, queryKey: readonly u
  *   onMutate: async (variables) => {
  *     await updateQueryData(
  *       queryClient,
- *       queryKeys.activities.detail(variables.id),
+ *       [["activities", "getById"], { input: { id: variables.id }, type: "query" }],
  *       (old) => ({ ...old, ...variables })
  *     );
  *   }

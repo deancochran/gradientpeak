@@ -166,11 +166,6 @@ export const webJourneyCoverageManifest = {
     direct("scheduled_activities.event_update"),
     direct("planning.calendar_tab"),
   ),
-  "scheduled-activities.library": entry(direct("scheduled_activities.list")),
-  "scheduled-activities.detail": entry(
-    direct("scheduled_activities.event_detail"),
-    direct("scheduled_activities.event_update"),
-  ),
   "goals.lifecycle": entry(direct("goals.detail"), direct("planning.plan_tab")),
   "goals.intelligence": entry(direct("goals.detail"), direct("planning.plan_tab")),
 
@@ -204,7 +199,12 @@ export const webJourneyCoverageManifest = {
       "The registry has no training-plan social feature; profile detail owns the actor relationship.",
     ),
   ),
-  "training-plans.reorder": entry(direct("training_plans.reorder_activities")),
+  "training-plans.reorder": entry(
+    approximate(
+      "training_plans.detail",
+      "Mobile no longer exposes the retired standalone reorder route; plan detail is the owning planning surface.",
+    ),
+  ),
   "training-preferences": entry(direct("profile.training_preferences")),
 
   // Completed activities and imports
@@ -226,33 +226,13 @@ export const webJourneyCoverageManifest = {
     direct("scheduled_activities.event_detail"),
     direct("routes.detail"),
   ),
-  "routes.record-entry": entry(direct("record.route"), direct("record.route_preview")),
+  "routes.record-entry": entry(direct("record.session")),
 
-  // Metrics, efforts, and trends
+  // Metrics and trends
   "metrics.library-crud": entry(direct("profile.metrics_list"), direct("profile.metric_detail")),
   "metrics.override": entry(direct("profile.metrics_list"), direct("profile.metric_detail")),
-  "efforts.curves": entry(direct("activity_efforts.list"), direct("activity_efforts.detail")),
-  "efforts.lifecycle": entry(direct("activity_efforts.list"), direct("activity_efforts.detail")),
-  "trends.analytics": entry(
-    approximate(
-      "profile.metrics_list",
-      "The registry has no trends feature; metric history is the nearest analytics source surface.",
-    ),
-    approximate(
-      "profile.metric_detail",
-      "The registry has no trends feature; metric detail is the nearest evidence surface.",
-    ),
-  ),
-  "trends.partial-retry": entry(
-    approximate(
-      "profile.metrics_list",
-      "The registry has no trends feature; metric history is the nearest analytics source surface.",
-    ),
-    approximate(
-      "profile.metric_detail",
-      "The registry has no trends feature; metric detail is the nearest evidence surface.",
-    ),
-  ),
+  "trends.analytics": entry(direct("profile.trends")),
+  "trends.partial-retry": entry(direct("profile.trends")),
 
   // Profile and settings
   "profile.hub": entry(
@@ -306,12 +286,7 @@ export const webJourneyCoverageManifest = {
     direct("record.session"),
     direct("record.submit"),
   ),
-  "recording.plan-route": entry(
-    direct("record.plan"),
-    direct("record.route"),
-    direct("record.route_preview"),
-    direct("record.session"),
-  ),
+  "recording.plan-route": entry(direct("record.session")),
   "recording.refresh": entry(direct("record.session")),
   "recording.cross-tab": entry(direct("record.session")),
   "recording.finish": entry(direct("record.session"), direct("record.submit")),

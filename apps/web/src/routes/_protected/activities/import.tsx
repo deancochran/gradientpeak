@@ -1,5 +1,4 @@
 import { invalidatePostActivityIngestionQueries } from "@repo/api/client";
-import { buildManualActivityImportProvenance } from "@repo/core/activity-files";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { useQueryClient } from "@tanstack/react-query";
@@ -85,7 +84,6 @@ export function ActivityImportPage() {
       setPhase("processing");
       const result = await processActivityFileMutation.mutateAsync({
         activityFilePath: signedUrlData.filePath,
-        importProvenance: buildManualActivityImportProvenance(values.file.name),
         name: values.name,
         notes: values.notes ?? undefined,
       });

@@ -1,6 +1,12 @@
-import { GROUP_EVENT_RSVP_STATUSES, resolveGroupEventFallbackFields } from "@repo/core/groups";
-import { groupEventRsvps, groupEventSeriesRsvps, groupEvents, type groups } from "@repo/db";
-import { and, count, eq, inArray } from "drizzle-orm";
+import { GROUP_EVENT_RSVP_STATUSES } from "@repo/core/groups";
+import {
+  groupEventRsvps,
+  groupEventSeriesRsvps,
+  groupEvents,
+  groupMemberships,
+  groups,
+} from "@repo/db";
+import { and, asc, count, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 
 const GROUP_EVENT_RSVP_STATUS_ACCEPTED = GROUP_EVENT_RSVP_STATUSES[0];
@@ -12,6 +18,9 @@ export type GroupEventSummaryGroupRow = Pick<
   typeof groups.$inferSelect,
   "id" | "name" | "slug" | "avatar_url"
 >;
+
+const ACTIVE_GROUP_MEMBERSHIP = "active";
+const PUBLIC_GROUP_ACCESS = "public";
 
 function toIsoString(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
@@ -47,47 +56,25 @@ export function serializeGroupEvent(
     acceptedRsvpCount: number;
     group?: GroupEventSummaryGroupRow | null;
     viewerRsvp: GroupEventRsvpRow | null;
-    series?: GroupEventRow | null;
     viewerSeriesRsvp?: GroupEventSeriesRsvpRow | null;
   },
 ) {
-  const resolved = resolveGroupEventFallbackFields(
-    {
-      title: event.title,
-      description: event.description,
-      timezone: event.timezone,
-      locationName: event.location_name,
-      routeId: event.route_id,
-      activityPlanId: event.activity_plan_id,
-    },
-    input.series
-      ? {
-          title: input.series.title,
-          description: input.series.description,
-          timezone: input.series.timezone,
-          locationName: input.series.location_name,
-          routeId: input.series.route_id,
-          activityPlanId: input.series.activity_plan_id,
-        }
-      : null,
-  );
-
   return {
     id: event.id,
     group_id: event.group_id,
     series_id: event.series_id,
     occurrence_key: event.occurrence_key,
     created_by_profile_id: event.created_by_profile_id,
-    title: resolved.title,
-    description: resolved.description,
+    title: event.title,
+    description: event.description,
     starts_at: toIsoString(event.starts_at),
     ends_at: event.ends_at ? toIsoString(event.ends_at) : null,
-    timezone: resolved.timezone,
+    timezone: event.timezone,
     recurrence_rule: event.recurrence_rule,
     recurrence_timezone: event.recurrence_timezone,
-    location_name: resolved.locationName,
-    route_id: resolved.routeId,
-    activity_plan_id: resolved.activityPlanId,
+    location_name: event.location_name,
+    route_id: event.route_id,
+    activity_plan_id: event.activity_plan_id,
     group: input.group
       ? {
           id: input.group.id,
@@ -123,10 +110,7 @@ export async function serializeGroupEventsForViewer(
     .filter((event) => event.series_id === null && event.recurrence_rule !== null)
     .map((event) => event.id);
   const seriesRsvpIds = Array.from(new Set([...seriesIds, ...recurringSeriesRootIds]));
-  const [seriesRows, rsvps, seriesRsvps, acceptedRsvpCounts] = await Promise.all([
-    seriesIds.length > 0
-      ? db.select().from(groupEvents).where(inArray(groupEvents.id, seriesIds))
-      : Promise.resolve([]),
+  const [rsvps, seriesRsvps, acceptedRsvpCounts] = await Promise.all([
     db
       .select()
       .from(groupEventRsvps)
@@ -167,18 +151,15 @@ export async function serializeGroupEventsForViewer(
   for (const row of acceptedRsvpCounts) {
     acceptedRsvpCountByEventId.set(row.group_event_id, row.acceptedRsvpCount);
   }
-  const seriesById = new Map(seriesRows.map((series) => [series.id, series]));
   const seriesRsvpBySeriesId = new Map(
     seriesRsvps.map((rsvp) => [rsvp.group_event_series_id, rsvp]),
   );
 
   return events.map((event) => {
-    const series = event.series_id ? (seriesById.get(event.series_id) ?? null) : null;
     return serializeGroupEvent(event, {
       acceptedRsvpCount: acceptedRsvpCountByEventId.get(event.id) ?? 0,
       group: input.groupById?.get(event.group_id) ?? null,
       viewerRsvp: rsvpByEventId.get(event.id) ?? null,
-      series,
       viewerSeriesRsvp: seriesRsvpBySeriesId.get(event.series_id ?? event.id) ?? null,
     });
   });
@@ -199,4 +180,108 @@ export async function getAcceptedRsvpCount(
     );
 
   return rsvps.length;
+}
+
+/**
+ * Calendar projection source for group events the viewer explicitly selected.
+ * Group membership/public visibility is checked independently from personal-event ownership.
+ */
+export async function readSelectedGroupEventsForCalendar(input: {
+  db: ReturnType<typeof getRequiredDb>;
+  profileId: string;
+  startDate: string;
+  endDateExclusive: string;
+  limit: number;
+}) {
+  const visibility = or(
+    eq(groups.access_level, PUBLIC_GROUP_ACCESS),
+    eq(groupMemberships.status, ACTIVE_GROUP_MEMBERSHIP),
+  );
+  const occurrenceRsvpRows = await input.db
+    .select({ event: groupEvents, group: groups })
+    .from(groupEventRsvps)
+    .innerJoin(groupEvents, eq(groupEvents.id, groupEventRsvps.group_event_id))
+    .innerJoin(groups, eq(groups.id, groupEvents.group_id))
+    .leftJoin(
+      groupMemberships,
+      and(
+        eq(groupMemberships.group_id, groups.id),
+        eq(groupMemberships.profile_id, input.profileId),
+      ),
+    )
+    .where(
+      and(
+        eq(groupEventRsvps.profile_id, input.profileId),
+        eq(groupEventRsvps.status, GROUP_EVENT_RSVP_STATUS_ACCEPTED),
+        isNull(groups.deleted_at),
+        visibility,
+        isNull(groupEvents.cancelled_at),
+        or(isNull(groupEvents.recurrence_rule), isNotNull(groupEvents.series_id)),
+        sql`(${groupEvents.starts_at} at time zone ${groupEvents.timezone})::date >= ${input.startDate}::date`,
+        sql`(${groupEvents.starts_at} at time zone ${groupEvents.timezone})::date < ${input.endDateExclusive}::date`,
+      ),
+    )
+    .orderBy(asc(groupEvents.starts_at), asc(groupEvents.id))
+    .limit(input.limit + 1);
+
+  const seriesOccurrenceRows = await input.db
+    .select({ event: groupEvents, group: groups })
+    .from(groupEventSeriesRsvps)
+    .innerJoin(groupEvents, eq(groupEvents.series_id, groupEventSeriesRsvps.group_event_series_id))
+    .innerJoin(groups, eq(groups.id, groupEvents.group_id))
+    .leftJoin(
+      groupMemberships,
+      and(
+        eq(groupMemberships.group_id, groups.id),
+        eq(groupMemberships.profile_id, input.profileId),
+      ),
+    )
+    .leftJoin(
+      groupEventRsvps,
+      and(
+        eq(groupEventRsvps.group_event_id, groupEvents.id),
+        eq(groupEventRsvps.profile_id, input.profileId),
+      ),
+    )
+    .where(
+      and(
+        eq(groupEventSeriesRsvps.profile_id, input.profileId),
+        eq(groupEventSeriesRsvps.status, GROUP_EVENT_RSVP_STATUS_ACCEPTED),
+        isNotNull(groupEvents.series_id),
+        isNull(groups.deleted_at),
+        visibility,
+        or(
+          isNull(groupEventRsvps.profile_id),
+          eq(groupEventRsvps.status, GROUP_EVENT_RSVP_STATUS_ACCEPTED),
+        ),
+        isNull(groupEvents.cancelled_at),
+        sql`(${groupEvents.starts_at} at time zone ${groupEvents.timezone})::date >= ${input.startDate}::date`,
+        sql`(${groupEvents.starts_at} at time zone ${groupEvents.timezone})::date < ${input.endDateExclusive}::date`,
+      ),
+    )
+    .orderBy(asc(groupEvents.starts_at), asc(groupEvents.id))
+    .limit(input.limit + 1);
+
+  const rowById = new Map<string, (typeof occurrenceRsvpRows)[number]>();
+  for (const row of [...occurrenceRsvpRows, ...seriesOccurrenceRows]) {
+    rowById.set(row.event.id, row);
+  }
+  const rows = Array.from(rowById.values()).sort((left, right) => {
+    const startsAt = left.event.starts_at.getTime() - right.event.starts_at.getTime();
+    return startsAt || left.event.id.localeCompare(right.event.id);
+  });
+  const truncated = rows.length > input.limit;
+  const visibleRows = rows.slice(0, input.limit);
+  const groupById = new Map<string, GroupEventSummaryGroupRow>();
+  for (const row of visibleRows) groupById.set(row.group.id, row.group);
+
+  return {
+    items: await serializeGroupEventsForViewer(
+      input.db,
+      visibleRows.map((row) => row.event),
+      input.profileId,
+      { groupById },
+    ),
+    truncated,
+  };
 }
