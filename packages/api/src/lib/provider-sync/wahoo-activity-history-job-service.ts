@@ -2,6 +2,7 @@ import type { ProviderSyncRepository, WahooIntegrationRecord } from "../../repos
 import type { WahooActivityImporter } from "../integrations/wahoo/activity-importer";
 import {
   activateWahooAccessToken,
+  isValidWahooWorkoutStartedAt,
   refreshWahooAccessToken,
   WahooClient,
   type WahooTokenRefreshResult,
@@ -29,6 +30,12 @@ const MAX_HISTORY_WORKOUTS = 720;
 class StaleIntegrationGenerationError extends Error {
   constructor() {
     super("integration_generation_inactive");
+  }
+}
+
+class InvalidWahooWorkoutStartedAtError extends Error {
+  constructor() {
+    super("invalid_wahoo_activity_started_at");
   }
 }
 
@@ -278,7 +285,7 @@ export class WahooActivityHistoryJobService {
                       ...detail,
                       workout_id: summary.workout_id ?? detail.workout_id,
                       workout: summary.workout ?? detail.workout,
-                      started_at: detail.started_at ?? summary.started_at,
+                      started_at: summary.started_at,
                     };
                   })();
               await assertActive();
@@ -337,12 +344,16 @@ export class WahooActivityHistoryJobService {
             }
             const authorizationResetRequired =
               error instanceof WahooAuthorizationResetRequiredError;
+            const invalidStartedAt = error instanceof InvalidWahooWorkoutStartedAtError;
             const lastError = authorizationResetRequired
               ? WAHOO_AUTHORIZATION_RESET_REQUIRED_MESSAGE
-              : error instanceof Error && error.message === "activity_history_budget_exceeded"
-                ? "activity_history_budget_exceeded"
-                : "activity_history_failed";
-            const shouldDeadLetter = authorizationResetRequired || job.attempt >= job.maxAttempts;
+              : invalidStartedAt
+                ? "invalid_wahoo_activity_started_at"
+                : error instanceof Error && error.message === "activity_history_budget_exceeded"
+                  ? "activity_history_budget_exceeded"
+                  : "activity_history_failed";
+            const shouldDeadLetter =
+              authorizationResetRequired || invalidStartedAt || job.attempt >= job.maxAttempts;
             const nextRunAt = shouldDeadLetter
               ? undefined
               : addMinutes(now, Math.min(job.attempt * 5, 60));
@@ -383,6 +394,11 @@ export class WahooActivityHistoryJobService {
         perPage: DEFAULT_PAGE_SIZE,
       });
       await assertActive();
+      if (
+        pageResult.summaries.some((summary) => !isValidWahooWorkoutStartedAt(summary.started_at))
+      ) {
+        throw new InvalidWahooWorkoutStartedAtError();
+      }
       if (pageResult.page !== undefined && pageResult.page !== page) {
         throw new Error("activity_history_budget_exceeded");
       }

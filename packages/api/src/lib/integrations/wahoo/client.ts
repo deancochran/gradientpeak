@@ -133,6 +133,10 @@ export interface WahooWorkoutSummary {
   edited: boolean;
 }
 
+export function isValidWahooWorkoutStartedAt(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
 function isValidWahooWorkout(value: unknown): value is WahooWorkout {
   if (!value || typeof value !== "object") return false;
   const workout = value as Record<string, unknown>;

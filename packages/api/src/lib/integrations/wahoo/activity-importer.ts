@@ -19,7 +19,7 @@ import {
 } from "../../provider-sync/imported-activity";
 import type { WahooStagingCleanupReservation } from "../../provider-sync/wahoo-staging-cleanup";
 import type { WahooActivityType } from "./activity-type-utils";
-import type { WahooWorkoutSummary } from "./client";
+import { isValidWahooWorkoutStartedAt, type WahooWorkoutSummary } from "./client";
 
 interface WahooRepository {
   findImportedActivityLinkByExternalId(input: {
@@ -287,6 +287,9 @@ export class WahooActivityImporter {
     summary: WahooWorkoutSummary,
     options: { integrationGeneration: number; integrationId: string; signal?: AbortSignal },
   ): Promise<ImportResult> {
+    if (!isValidWahooWorkoutStartedAt(summary.started_at)) {
+      return { success: false, error: "Wahoo activity started_at is missing or invalid" };
+    }
     let ownedStagePath: string | null = null;
     let completed = false;
     let stage: WahooActivityImportStage = "resolve_integration";
@@ -858,13 +861,10 @@ export class WahooActivityImporter {
    * the actual start time, or we'd fetch it from the Wahoo workout details
    */
   private calculateStartTime(summary: WahooWorkoutSummary): string {
-    if (summary.started_at) {
-      return summary.started_at;
+    if (!isValidWahooWorkoutStartedAt(summary.started_at)) {
+      throw new Error("Wahoo activity started_at is missing or invalid");
     }
-
-    const now = new Date();
-    const startTime = new Date(now.getTime() - toNumber(summary.duration_total_accum) * 1000);
-    return startTime.toISOString();
+    return summary.started_at;
   }
 }
 

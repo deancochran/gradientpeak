@@ -1217,43 +1217,38 @@ describe("activity-importer", () => {
     );
   });
 
-  it("uses a deterministic fallback start time when started_at is missing", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
-
+  it.each([
+    undefined,
+    "not-a-timestamp",
+  ])("rejects a missing or invalid started_at before any I/O (%s)", async (started_at) => {
     const repository = createRepositoryMock();
     const activityFileStorage = { uploadActivityFile: vi.fn() };
     const importer = createTestImporter({
       activityFileStorage,
       repository,
       submitActivity: repository.submitActivity,
-      activityFileParser: vi.fn().mockReturnValue({
-        metadata: { startTime: new Date("2026-04-03T11:45:00.000Z"), type: "cycling" },
-        summary: { totalTime: 900, totalDistance: 0 },
-        records: [],
-        laps: [],
-      }),
     });
-    const fitBytes = new TextEncoder().encode("fit-binary-data");
-    fetchMock.mockResolvedValueOnce(activityFileResponse(fitBytes));
 
     await expect(
       importer.importWorkoutSummary(
         77,
         createSummary({
-          started_at: undefined,
-          duration_total_accum: 900,
+          started_at,
         }),
       ),
-    ).resolves.toMatchObject({ success: true });
+    ).resolves.toEqual({
+      success: false,
+      error: "Wahoo activity started_at is missing or invalid",
+    });
 
-    expect(repository.submitActivity).toHaveBeenCalledWith(
-      expect.objectContaining({
-        startedAt: "2026-04-03T11:45:00.000Z",
-        finishedAt: "2026-04-03T12:00:00.000Z",
-      }),
-      expect.any(Object),
-      expect.objectContaining({ artifactSha256: sha256(fitBytes) }),
-    );
+    expect(repository.findWahooIntegrationByExternalId).not.toHaveBeenCalled();
+    expect(repository.findImportedActivityLinkByExternalId).not.toHaveBeenCalled();
+    expect(repository.findImportedActivityByProviderExternalId).not.toHaveBeenCalled();
+    expect(repository.findLinkedPlannedEventId).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(activityFileStorage.uploadActivityFile).not.toHaveBeenCalled();
+    expect(defaultActivityFileParser).not.toHaveBeenCalled();
+    expect(repository.submitActivity).not.toHaveBeenCalled();
+    expect(repository.createImportedActivityResourceLink).not.toHaveBeenCalled();
   });
 });

@@ -210,6 +210,76 @@ describe("WahooActivityHistoryJobService", () => {
     });
   });
 
+  it("rejects an invalid list started_at before detail lookup and preserves the list timestamp", async () => {
+    const deps = createDeps();
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([historyJob()]);
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
+    deps.wahooClient.listWorkoutSummaries.mockResolvedValue({
+      sourceCount: 1,
+      summaries: [{ ...createSummary(123), file: undefined, started_at: undefined }],
+    });
+    deps.wahooClient.getWorkoutSummary.mockResolvedValue({
+      ...createSummary(123),
+      started_at: "2026-04-04T10:00:00.000Z",
+    });
+
+    const service = new WahooActivityHistoryJobService({
+      importer: deps.importer as never,
+      providerSyncRepository: deps.providerSyncRepository as never,
+      wahooClientFactory: () => deps.wahooClient,
+      wahooRepository: deps.wahooRepository,
+    });
+
+    await expect(service.processDueJobs({ workerId: "worker-1" })).resolves.toEqual({
+      completed: 0,
+      failed: 1,
+      processed: 1,
+    });
+
+    expect(deps.wahooClient.getWorkoutSummary).not.toHaveBeenCalled();
+    expect(deps.importer.importWorkoutSummary).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepository.completeJobWithSyncState).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepository.failJobWithSyncState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastError: "invalid_wahoo_activity_started_at",
+        status: "dead_lettered",
+      }),
+    );
+  });
+
+  it("never lets detail started_at override the valid list timestamp", async () => {
+    const deps = createDeps();
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([historyJob()]);
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
+    deps.wahooClient.listWorkoutSummaries.mockResolvedValue({
+      sourceCount: 1,
+      summaries: [{ ...createSummary(123), file: undefined }],
+    });
+    deps.wahooClient.getWorkoutSummary.mockResolvedValue({
+      ...createSummary(123),
+      started_at: "2026-04-04T10:00:00.000Z",
+    });
+    deps.importer.importWorkoutSummary.mockResolvedValue({
+      success: true,
+      activityId: "activity-1",
+    });
+
+    const service = new WahooActivityHistoryJobService({
+      importer: deps.importer as never,
+      providerSyncRepository: deps.providerSyncRepository as never,
+      wahooClientFactory: () => deps.wahooClient,
+      wahooRepository: deps.wahooRepository,
+    });
+
+    await service.processDueJobs({ workerId: "worker-1" });
+
+    expect(deps.importer.importWorkoutSummary).toHaveBeenCalledWith(
+      77,
+      expect.objectContaining({ started_at: "2026-04-03T10:00:00.000Z" }),
+      expect.any(Object),
+    );
+  });
+
   it("clamps an end-of-month history window to the target month's last day", async () => {
     const deps = createDeps();
     vi.useFakeTimers();
