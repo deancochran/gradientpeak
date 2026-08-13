@@ -8,9 +8,7 @@ export type TimelineEventType =
   | "completed_activity"
   | "goal"
   | "race"
-  | "custom"
-  | "imported"
-  | "rest_day";
+  | "custom";
 
 export type TimelineEventStatus =
   | "planned"
@@ -19,8 +17,7 @@ export type TimelineEventStatus =
   | "cancelled"
   | "skipped"
   | "rescheduled"
-  | "scheduled"
-  | "read_only";
+  | "scheduled";
 
 export type TimelineEventSourceType = "calendar_event" | "profile_goal";
 
@@ -83,11 +80,7 @@ function classifyCalendarEventType(event: CalendarEvent): TimelineEventType {
     return "custom";
   }
 
-  if (event.event_type === "rest_day") {
-    return "rest_day";
-  }
-
-  return "imported";
+  return "custom";
 }
 
 function getTimelineColor(type: TimelineEventType): string {
@@ -99,8 +92,6 @@ function getTimelineColor(type: TimelineEventType): string {
     case "goal":
     case "race":
       return "violet";
-    case "rest_day":
-      return "slate";
     default:
       return "blue";
   }
@@ -137,10 +128,6 @@ function getCalendarEventStatus({
     return "unverified";
   }
 
-  if (type === "imported") {
-    return "read_only";
-  }
-
   return type === "planned_activity" ? "planned" : "scheduled";
 }
 
@@ -151,10 +138,6 @@ function getCalendarEventTitle(event: CalendarEvent, type: TimelineEventType): s
 
   if (type === "race") {
     return event.title ?? "Race target";
-  }
-
-  if (type === "rest_day") {
-    return event.title ?? "Rest day";
   }
 
   return event.title ?? "Timeline event";

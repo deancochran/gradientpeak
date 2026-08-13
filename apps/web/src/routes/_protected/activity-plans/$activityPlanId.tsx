@@ -20,7 +20,7 @@ import {
 } from "@repo/ui/components/card";
 import { DateInput } from "@repo/ui/components/date-input";
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowLeft, CalendarDays, Copy, Loader2, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, CalendarDays, Copy, Loader2, Pencil, Printer, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -32,8 +32,6 @@ import {
   LikeToggleButton,
   OwnerSummary,
 } from "../../../components/protected/activity-route-primitives";
-import { useAuth } from "../../../components/providers/auth-provider";
-import { getActivityPlanMetricSummary } from "../../../lib/activity-plan-presentation";
 import { formatDate } from "../../../lib/activity-route-helpers";
 import { api } from "../../../lib/api/client";
 import { getTodayDateKey, shiftDateKey } from "../../../lib/planning";
@@ -43,11 +41,13 @@ export const Route = createFileRoute("/_protected/activity-plans/$activityPlanId
 });
 
 function ActivityPlanDetailPage() {
-  const { user } = useAuth();
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
   const { activityPlanId } = Route.useParams();
   const planQuery = api.activityPlans.getById.useQuery({ id: activityPlanId }, { retry: false });
+  const performanceTargetsQuery = api.athleteIntelligence.getReadModel.useQuery({
+    sections: { publishedState: true },
+  });
   const today = getTodayDateKey();
   const scheduleQuery = api.calendar.range.useQuery({
     startDate: today,
@@ -60,29 +60,33 @@ function ActivityPlanDetailPage() {
   const [liked, setLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(0);
   const [scheduleDate, setScheduleDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const plan = planQuery.data;
+  const detail = planQuery.data?.detail;
+  const edit = planQuery.data?.edit;
   const scheduledEvents = (scheduleQuery.data?.items ?? []).filter(
-    (event) => event.status === "scheduled",
+    (item) =>
+      item.kind === "planned_activity" &&
+      item.status === "scheduled" &&
+      item.plan?.id === activityPlanId,
   );
   const scheduledEvent = scheduledEvents[0];
-  const isOwner = user?.id === plan?.profile_id;
-  const hasCanonicalStructure = activityPlanStructureSchema.safeParse(plan?.structure).success;
+  const isOwner = detail?.capabilities.canEdit ?? false;
+  const hasCanonicalStructure = activityPlanStructureSchema.safeParse(detail?.structure).success;
 
   useEffect(() => {
-    setLiked(plan?.has_liked ?? false);
-    setLikesCount(plan?.likes_count ?? 0);
-  }, [plan?.has_liked, plan?.likes_count]);
+    setLiked(detail?.engagement.viewerHasLiked ?? false);
+    setLikesCount(detail?.engagement.likes ?? 0);
+  }, [detail?.engagement.likes, detail?.engagement.viewerHasLiked]);
 
   useEffect(() => {
-    if (scheduledEvent?.scheduled_date) {
-      setScheduleDate(scheduledEvent.scheduled_date.slice(0, 10));
+    if (scheduledEvent?.calendarDate) {
+      setScheduleDate(scheduledEvent.calendarDate);
     }
-  }, [scheduledEvent?.scheduled_date]);
+  }, [scheduledEvent?.calendarDate]);
 
   const toggleLike = api.social.toggleLike.useMutation({
     onError: () => {
-      setLiked(plan?.has_liked ?? false);
-      setLikesCount(plan?.likes_count ?? 0);
+      setLiked(detail?.engagement.viewerHasLiked ?? false);
+      setLikesCount(detail?.engagement.likes ?? 0);
       toast.error("Like update failed");
     },
   });
@@ -145,17 +149,6 @@ function ActivityPlanDetailPage() {
     onError: (error) => toast.error(error.message || "Activity plan could not be deleted"),
   });
 
-  const deleteWithDependencyRecovery = async () => {
-    try {
-      for (const event of scheduledEvents) {
-        await removeSchedule.mutateAsync({ id: event.id });
-      }
-      await deletePlan.mutateAsync({ id: activityPlanId });
-    } catch {
-      // Each mutation reports a user-visible error while preserving the plan for recovery.
-    }
-  };
-
   if (planQuery.isLoading) {
     return (
       <div className="flex min-h-64 items-center justify-center">
@@ -164,7 +157,7 @@ function ActivityPlanDetailPage() {
     );
   }
 
-  if (planQuery.isError || !planQuery.data || !hasCanonicalStructure) {
+  if (planQuery.isError || !planQuery.data || !detail || !hasCanonicalStructure) {
     return (
       <Card className="mx-auto max-w-2xl border-destructive/30">
         <CardHeader>
@@ -188,19 +181,26 @@ function ActivityPlanDetailPage() {
     );
   }
 
-  if (editing && plan) {
+  if (editing && edit) {
     return (
       <div className="container mx-auto max-w-6xl space-y-6 py-4">
         <ActivityPlanComposer
-          initial={plan}
+          initial={{
+            name: edit.name,
+            description: edit.description,
+            notes: edit.notes,
+            structure: edit.structure,
+            gps_recording_enabled: edit.gpsRecordingEnabled,
+            content_visibility: edit.contentVisibility,
+          }}
           mode="edit"
           onCancel={() => setEditing(false)}
           onSave={(values) =>
             updatePlan
               .mutateAsync({
                 ...values,
-                expectedStructureHash: plan.structure_hash,
-                id: plan.id,
+                expectedStructureHash: edit.structureHash,
+                id: edit.id,
               })
               .then(() => undefined)
           }
@@ -210,15 +210,16 @@ function ActivityPlanDetailPage() {
     );
   }
 
-  if (!plan) return null;
-  const metrics = getActivityPlanMetricSummary({
-    prescriptionQuantification: plan.prescriptionQuantification,
-    structure: plan.structure,
-  });
+  if (!detail) return null;
+  const metrics = detail.metrics.map((metric) =>
+    metric.status === "unavailable"
+      ? `${metric.label} unavailable`
+      : `${metric.label} ${metric.unit === "ratio" ? metric.value.toFixed(2) : Math.round(metric.value)}`,
+  );
 
   return (
-    <div className="container mx-auto max-w-5xl space-y-6 py-4">
-      <Button asChild size="sm" variant="ghost">
+    <div className="container mx-auto max-w-5xl space-y-6 py-4 print:max-w-none print:py-0">
+      <Button asChild className="print:hidden" size="sm" variant="ghost">
         <a href="/activity-plans">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to activity plans
@@ -227,7 +228,10 @@ function ActivityPlanDetailPage() {
 
       <DetailPageIntro
         actions={
-          <>
+          <div className="flex flex-wrap gap-2 print:hidden">
+            <Button onClick={() => window.print()} type="button" variant="outline">
+              <Printer className="mr-2 h-4 w-4" /> Print / Save as PDF
+            </Button>
             <LikeToggleButton
               count={likesCount}
               liked={liked}
@@ -235,13 +239,15 @@ function ActivityPlanDetailPage() {
                 const next = !liked;
                 setLiked(next);
                 setLikesCount((count) => (next ? count + 1 : Math.max(0, count - 1)));
-                toggleLike.mutate({ entity_id: plan.id, entity_type: "activity_plan" });
+                toggleLike.mutate({ entity_id: detail.id, entity_type: "activity_plan" });
               }}
               pending={toggleLike.isPending}
             />
             <Button
               disabled={duplicatePlan.isPending}
-              onClick={() => duplicatePlan.mutate({ id: plan.id, newName: `${plan.name} (Copy)` })}
+              onClick={() =>
+                duplicatePlan.mutate({ id: detail.id, newName: `${detail.name} (Copy)` })
+              }
               type="button"
               variant="outline"
             >
@@ -269,32 +275,32 @@ function ActivityPlanDetailPage() {
                     <AlertDialogTitle>Delete activity plan?</AlertDialogTitle>
                     <AlertDialogDescription>
                       {scheduledEvents.length > 0
-                        ? `This plan has ${scheduledEvents.length} scheduled ${scheduledEvents.length === 1 ? "session" : "sessions"}. They will be removed first so deletion can recover safely.`
-                        : "This permanently removes the plan from your library."}
+                        ? "This plan has linked scheduled sessions. Remove every linked session before deleting the plan."
+                        : "This permanently removes the plan from your library. Deletion will be blocked if any linked schedule exists."}
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
-                      disabled={removeSchedule.isPending || deletePlan.isPending}
-                      onClick={() => void deleteWithDependencyRecovery()}
+                      disabled={deletePlan.isPending}
+                      onClick={() => deletePlan.mutate({ id: activityPlanId })}
                     >
-                      {scheduledEvents.length > 0 ? "Remove schedules and delete" : "Delete plan"}
+                      Delete plan
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
             ) : null}
-          </>
+          </div>
         }
-        badges={[plan.activity_category]}
-        description={plan.description || "Reusable structured activity plan."}
+        badges={[detail.activityCategory]}
+        description={detail.description || "Reusable structured activity plan."}
         eyebrow="Activity plan"
-        title={plan.name}
+        title={detail.name}
       />
 
-      <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-        <Card>
+      <div className="grid gap-6 lg:grid-cols-[2fr_1fr] print:block">
+        <Card className="print:hidden">
           <CardHeader>
             <CardTitle>Plan summary</CardTitle>
             <CardDescription>
@@ -304,10 +310,10 @@ function ActivityPlanDetailPage() {
           <CardContent className="space-y-5">
             <div className="flex flex-wrap gap-2">
               <span className="rounded-full border px-2 py-0.5 text-xs font-medium capitalize">
-                {plan.activity_category}
+                {detail.activityCategory}
               </span>
               <span className="rounded-full border px-2 py-0.5 text-xs font-medium">
-                {plan.content_visibility}
+                {detail.visibility}
               </span>
             </div>
             {metrics.length ? (
@@ -324,11 +330,11 @@ function ActivityPlanDetailPage() {
                 Duration, common Load, and Intensity are unavailable for this plan.
               </p>
             )}
-            {plan.notes ? (
+            {detail.notes ? (
               <div>
                 <h2 className="font-semibold">Notes</h2>
                 <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
-                  {plan.notes}
+                  {detail.notes}
                 </p>
               </div>
             ) : null}
@@ -343,31 +349,34 @@ function ActivityPlanDetailPage() {
             <dl className="space-y-4 text-sm">
               <div>
                 <dt className="text-muted-foreground">Created</dt>
-                <dd className="font-medium">{formatDate(plan.created_at)}</dd>
+                <dd className="font-medium">{formatDate(detail.createdAt)}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">Recording</dt>
                 <dd className="font-medium">
-                  {plan.gps_recording_enabled ? "GPS-capable on supported devices" : "Timer only"}
+                  {detail.gpsRecordingEnabled ? "GPS-capable on supported devices" : "Timer only"}
                 </dd>
               </div>
             </dl>
           </CardContent>
         </Card>
 
-        <div className="space-y-6">
-          <OwnerSummary owner={plan.owner} />
+        <div className="space-y-6 print:hidden">
+          <OwnerSummary owner={detail.owner} />
         </div>
       </div>
 
-      <ActivityPlanStructure structure={plan.structure} />
+      <ActivityPlanStructure
+        performanceTargets={performanceTargetsQuery.data?.publishedState?.performanceTargets}
+        structure={detail.structure}
+      />
 
-      <Card data-testid="activity-plan-schedule">
+      <Card className="print:hidden" data-testid="activity-plan-schedule">
         <CardHeader>
           <CardTitle>{scheduledEvent ? "Reschedule activity" : "Schedule activity"}</CardTitle>
           <CardDescription>
             {scheduledEvent
-              ? `Currently scheduled for ${scheduledEvent.scheduled_date}.`
+              ? `Currently scheduled for ${scheduledEvent.calendarDate}.`
               : "Add this reusable plan to your calendar."}
           </CardDescription>
         </CardHeader>
@@ -390,10 +399,10 @@ function ActivityPlanDetailPage() {
                 });
               } else {
                 createSchedule.mutate({
-                  activity_plan_id: plan.id,
+                  activity_plan_id: detail.id,
                   event_type: "planned",
                   scheduled_date: scheduleDate,
-                  title: plan.name,
+                  title: detail.name,
                 });
               }
             }}
@@ -415,7 +424,9 @@ function ActivityPlanDetailPage() {
         </CardContent>
       </Card>
 
-      <ActivityPlanComments planId={plan.id} />
+      <div className="print:hidden">
+        <ActivityPlanComments planId={detail.id} />
+      </div>
     </div>
   );
 }

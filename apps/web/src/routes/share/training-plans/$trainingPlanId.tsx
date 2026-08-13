@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/ca
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { CalendarDays } from "lucide-react";
 
-import { describeStructure, loadPublicTrainingPlan } from "../../../lib/public-share";
+import { loadPublicTrainingPlan } from "../../../lib/public-share";
 
 export const Route = createFileRoute("/share/training-plans/$trainingPlanId")({
   loader: async ({ params }) => {
@@ -64,7 +64,7 @@ function PublicTrainingPlanPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2">
-          <Detail label="Structure" value={describeStructure(trainingPlan.structure)} />
+          <Detail label="Structure" value={trainingPlan.structure_summary} />
           <Detail
             label="Sessions per week"
             value={trainingPlan.sessions_per_week_target?.toString() ?? "Not specified"}

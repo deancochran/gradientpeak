@@ -1,4 +1,6 @@
 import { isValidIanaTimeZone } from "@repo/core/calendar";
+import { reconcileOnboardingStatus } from "../../application/onboarding/readiness";
+import type { getRequiredDb } from "../../db";
 import type { WahooRepository, WahooSyncRepository } from "../../repositories";
 import { isWahooIntegrationEnabled } from "../integrations/oauth-config";
 import {
@@ -127,6 +129,7 @@ export class WahooSyncJobService {
   constructor(
     private readonly deps: {
       providerSyncRepository: WahooSyncRepository;
+      db?: ReturnType<typeof getRequiredDb>;
       executionLimiter?: WahooSyncConcurrencyLimiter;
       /** Required to drain planned activity jobs; omitted deployments fail closed. */
       syncService?: WahooSyncService;
@@ -271,6 +274,12 @@ export class WahooSyncJobService {
                 resource: enrichmentResource,
                 workerId,
               });
+              if (finalized && job.payload.trigger === "onboarding" && this.deps.db) {
+                await reconcileOnboardingStatus({
+                  db: this.deps.db,
+                  profileId: job.profileId,
+                }).catch(() => undefined);
+              }
               return finalized ? "completed" : "failed";
             } catch (error) {
               if (error instanceof Error && error.message === "integration_generation_inactive") {

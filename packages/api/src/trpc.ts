@@ -98,6 +98,10 @@ const t = initTRPC.context<Context>().create({
         error.cause instanceof ZodError
           ? z.flattenError(error.cause as ZodError<Record<string, unknown>>)
           : null,
+      applicationErrorCode:
+        error.cause instanceof Error && error.cause.name === "OnboardingPendingOAuthError"
+          ? "ONBOARDING_PENDING_OAUTH"
+          : null,
     },
   }),
 });

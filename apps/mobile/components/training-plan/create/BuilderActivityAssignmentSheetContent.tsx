@@ -1,8 +1,8 @@
-import type { ActivityPlanPlanningEstimate } from "@repo/core";
+import type { ActivityPlanPlanningEstimate, ActivityPlanSummary } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { useCallback, useMemo } from "react";
 import { View } from "react-native";
-import { type ActivityPlan, ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { FilterChip, IndexSearchBar } from "@/components/shared/IndexSearchBar";
 import { SearchableBottomSheetList } from "@/components/shared/SearchableBottomSheetList";
 
@@ -25,7 +25,7 @@ const ACTIVITY_CATEGORY_OPTIONS = [
 
 type BuilderActivityAssignmentSheetContentProps = {
   activityPlanEstimateById: Map<string, ActivityPlanPlanningEstimate>;
-  activityPlanItems: ActivityPlan[];
+  activityPlanItems: ActivityPlanSummary[];
   activityPlanSort: ActivityPlanSort;
   categoryFilter: ActivityCategoryFilter;
   hasNextPage?: boolean;
@@ -35,12 +35,11 @@ type BuilderActivityAssignmentSheetContentProps = {
   onFetchNextPage: () => void;
   onOpenFilters: () => void;
   onSearchChange: (value: string) => void;
-  onSelectActivityPlan: (activityPlan: ActivityPlan) => void;
+  onSelectActivityPlan: (activityPlan: ActivityPlanSummary) => void;
   searchQuery: string;
 };
 
 export function BuilderActivityAssignmentSheetContent({
-  activityPlanEstimateById,
   activityPlanItems,
   hasNextPage,
   isFetchingNextPage,
@@ -48,26 +47,17 @@ export function BuilderActivityAssignmentSheetContent({
   onFetchNextPage,
   onSelectActivityPlan,
 }: BuilderActivityAssignmentSheetContentProps) {
-  const activityPlanItemsWithEstimates = useMemo(
-    () =>
-      activityPlanItems.map((activityPlan) =>
-        withEstimateQuantification(
-          activityPlan,
-          activityPlanEstimateById.get(activityPlan.id) ?? null,
-        ),
-      ),
-    [activityPlanEstimateById, activityPlanItems],
-  );
+  const activityPlanItemsWithEstimates = useMemo(() => activityPlanItems, [activityPlanItems]);
   const activityPlanById = useMemo(
     () =>
       new Map(activityPlanItems.map((activityPlan) => [activityPlan.id, activityPlan] as const)),
     [activityPlanItems],
   );
   const renderActivityPlan = useCallback(
-    (item: ActivityPlan) => (
+    (item: ActivityPlanSummary) => (
       <View className="pb-3">
         <ActivityPlanCard
-          activityPlan={item}
+          plan={item}
           onPress={() => onSelectActivityPlan(activityPlanById.get(item.id) ?? item)}
           testID={`training-plan-builder-activity-row-${item.id}`}
           variant="compact"
@@ -123,17 +113,6 @@ export function BuilderActivityAssignmentSheetHeader({
       testIDPrefix="training-plan-builder-activity-picker"
     />
   );
-}
-
-function withEstimateQuantification(
-  activityPlan: ActivityPlan,
-  estimate: ActivityPlanPlanningEstimate | null,
-): ActivityPlan {
-  if (!estimate) return activityPlan;
-  return {
-    ...activityPlan,
-    prescriptionQuantification: estimate.prescriptionQuantification,
-  };
 }
 
 type BuilderActivityFiltersSheetContentProps = {

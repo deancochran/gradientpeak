@@ -1,8 +1,12 @@
+import { reconcileOnboardingStatus } from "../../application/onboarding/readiness";
+import { finalizePerformanceCalibrationsAfterHistoryImport } from "../../application/performance-model/reconcile-performance-calibrations";
+import type { getRequiredDb } from "../../db";
 import type { WahooIntegrationRecord, WahooSyncRepository } from "../../repositories";
 import type { createActivityImportRepository } from "../../repositories/activity-import-repository";
 import { isWahooIntegrationEnabled } from "../integrations/oauth-config";
 import {
   getWahooActivityStartedAtFailureReason,
+  type WahooActivityImportErrorCode,
   type WahooActivityImporter,
 } from "../integrations/wahoo/activity-importer";
 import {
@@ -46,8 +50,15 @@ class PermanentActivityHistoryError extends Error {
   }
 }
 
+class ActivityHistoryImportError extends Error {
+  constructor(public readonly code: WahooActivityImportErrorCode) {
+    super(code);
+    this.name = ActivityHistoryImportError.name;
+  }
+}
+
 type WahooActivityHistoryPayload = {
-  trigger: "connect" | "manual" | "scheduled";
+  trigger: "connect" | "manual" | "onboarding" | "scheduled";
   importRunId?: string;
 };
 
@@ -80,6 +91,7 @@ function isActivityHistoryPayload(value: unknown): value is WahooActivityHistory
       "trigger" in value &&
       (value.trigger === "connect" ||
         value.trigger === "manual" ||
+        value.trigger === "onboarding" ||
         value.trigger === "scheduled") &&
       (!("importRunId" in value) ||
         value.importRunId === undefined ||
@@ -102,6 +114,8 @@ export class WahooActivityHistoryJobService {
       importRuns: ReturnType<typeof createActivityImportRepository>;
       executionLimiter?: WahooSyncConcurrencyLimiter;
       providerSyncRepository: WahooSyncRepository;
+      db?: ReturnType<typeof getRequiredDb>;
+      reconcileOnboardingStatus?: typeof reconcileOnboardingStatus;
       refreshAccessToken?: (refreshToken: string) => Promise<WahooTokenRefreshResult>;
       wahooClientFactory?: (integration: WahooIntegrationRecord) => WahooWorkoutSummaryClient;
       wahooRepository: {
@@ -186,6 +200,7 @@ export class WahooActivityHistoryJobService {
             });
             return finalized === false ? "failed" : "dead_lettered";
           }
+          const activityHistoryPayload = job.payload;
 
           let activeImportRunId: string | undefined;
           let importRunCompleted = false;
@@ -221,11 +236,12 @@ export class WahooActivityHistoryJobService {
               ? await this.deps.importRuns.read(job.payload.importRunId)
               : null;
             if (
-              job.payload.importRunId &&
-              (!run ||
-                run.profile_id !== job.profileId ||
-                run.integration_id !== job.integrationId ||
-                run.integration_generation !== generation)
+              (job.importRunId ?? null) !== (job.payload.importRunId ?? null) ||
+              (job.payload.importRunId &&
+                (!run ||
+                  run.profile_id !== job.profileId ||
+                  run.integration_id !== job.integrationId ||
+                  run.integration_generation !== generation))
             ) {
               const finalized = await this.deps.providerSyncRepository.markJobFailed({
                 id: job.id,
@@ -267,7 +283,7 @@ export class WahooActivityHistoryJobService {
                 integrationId: job.integrationId,
                 integrationGeneration: generation,
                 kind:
-                  job.payload.trigger === "connect"
+                  job.payload.trigger === "onboarding"
                     ? "onboarding"
                     : job.payload.trigger === "manual"
                       ? "manual_sync"
@@ -332,6 +348,7 @@ export class WahooActivityHistoryJobService {
                 expectedIntegrationGeneration: job.integrationGeneration ?? 1,
                 highWatermark: historyEnd,
                 id: job.id,
+                importRunId: completedRun.id,
                 integrationId: job.integrationId,
                 metadata: {
                   activityHistoryCoverage: {
@@ -351,13 +368,34 @@ export class WahooActivityHistoryJobService {
                 resource: WAHOO_ACTIVITY_HISTORY_RESOURCE,
                 workerId,
               });
+            const reconcileCompletedOnboarding = async () => {
+              if (activityHistoryPayload.trigger !== "onboarding" || !this.deps.db) return;
+              try {
+                await (this.deps.reconcileOnboardingStatus ?? reconcileOnboardingStatus)({
+                  db: this.deps.db,
+                  profileId: job.profileId,
+                });
+              } catch {
+                // Import completion and coverage are already durable. A later completed-run
+                // replay, athlete-state publication, or authenticated reconcileStatus call
+                // converges this idempotent lifecycle projection.
+                logger.warn("Wahoo onboarding reconciliation pending", {
+                  jobFamily: "activity_history",
+                  operation: "reconcile_onboarding",
+                  outcome: "unexpected_error",
+                  provider: "wahoo",
+                });
+              }
+            };
             if (run.status === "completed") {
               importRunCompleted = true;
               const finalized = await completeHistoryJob(
                 run,
                 Math.max(1, Math.ceil(run.discovered_count / DEFAULT_PAGE_SIZE)),
               );
-              return finalized === false ? "failed" : "completed";
+              if (finalized === false) return "failed";
+              await reconcileCompletedOnboarding();
+              return "completed";
             }
             if (run.status !== "running") throw new Error("activity_import_run_unavailable");
             const client = (this.deps.wahooClientFactory ?? createDefaultWahooClient)(
@@ -385,6 +423,7 @@ export class WahooActivityHistoryJobService {
               let imported = 0;
               let skipped = 0;
               let failed = 0;
+              let firstFailureCode: WahooActivityImportErrorCode | null = null;
               let earliestTimestamp: number | null = null;
               let latestTimestamp: number | null = null;
               for (const summary of pageResult.summaries) {
@@ -435,6 +474,7 @@ export class WahooActivityHistoryJobService {
                 await assertActive();
                 if (!result.success) {
                   failed += 1;
+                  firstFailureCode ??= result.errorCode ?? "activity_import_failed";
                   logger.warn("Wahoo activity history summary import failed", {
                     jobFamily: "activity_history",
                     provider: "wahoo",
@@ -451,7 +491,9 @@ export class WahooActivityHistoryJobService {
                     ? startedAtTimestamp
                     : Math.max(latestTimestamp, startedAtTimestamp);
               }
-              if (failed > 0) throw new Error("activity_history_import_failed");
+              if (failed > 0) {
+                throw new ActivityHistoryImportError(firstFailureCode ?? "activity_import_failed");
+              }
               terminal =
                 (pageResult.total !== undefined &&
                   pageResult.total !== null &&
@@ -486,7 +528,17 @@ export class WahooActivityHistoryJobService {
               });
               return continued ? "completed" : "failed";
             }
-            const completedRun = await this.deps.importRuns.complete(run.id, new Date());
+            const completionNow = new Date();
+            const completedRun = await this.deps.importRuns.complete(
+              run.id,
+              completionNow,
+              (tx, lockedRun) =>
+                finalizePerformanceCalibrationsAfterHistoryImport(tx, {
+                  profileId: lockedRun.profile_id,
+                  asOf: lockedRun.window_end_at ?? completionNow,
+                  now: completionNow,
+                }).then(() => undefined),
+            );
             if (!completedRun) throw new Error("activity_import_run_completion_lost");
             run = completedRun;
             importRunCompleted = true;
@@ -495,6 +547,7 @@ export class WahooActivityHistoryJobService {
               Math.max(page, Math.ceil(run.discovered_count / DEFAULT_PAGE_SIZE), 1),
             );
             if (finalized === false) return "failed";
+            await reconcileCompletedOnboarding();
             logger.info("Wahoo activity history import completed", {
               discoveredCount: boundedImportTelemetryCount(run.discovered_count),
               importedCount: boundedImportTelemetryCount(run.imported_count),
@@ -508,7 +561,11 @@ export class WahooActivityHistoryJobService {
             if (activeImportRunId && !importRunCompleted)
               await this.deps.importRuns.fail(
                 activeImportRunId,
-                error instanceof Error ? error.message : "activity_history_failed",
+                error instanceof ActivityHistoryImportError
+                  ? error.code
+                  : error instanceof PermanentActivityHistoryError
+                    ? error.code
+                    : "activity_history_failed",
               );
             if (signal.aborted) return "failed";
             if (error instanceof StaleIntegrationGenerationError) {
@@ -528,7 +585,9 @@ export class WahooActivityHistoryJobService {
             }
             const lastError = authorizationResetRequired
               ? WAHOO_AUTHORIZATION_RESET_REQUIRED_MESSAGE
-              : "activity_history_failed";
+              : error instanceof ActivityHistoryImportError
+                ? error.code
+                : "activity_history_failed";
             const shouldDeadLetter = authorizationResetRequired || job.attempt >= job.maxAttempts;
             logger.warn("Wahoo activity history import did not complete", {
               jobFamily: "activity_history",

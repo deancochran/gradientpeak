@@ -131,6 +131,31 @@ export function buildPerformanceModelSnapshotFixture(
       other: emptySessionModel("other"),
     },
     heartRate: unavailableTargets.heartRate,
+    calibrations:
+      bike.parameters.planningThresholdPower.status === "unavailable"
+        ? []
+        : [
+            {
+              id: "fixture-bike-threshold-calibration",
+              identity: { metricKey: "threshold_power", activityCategory: "bike" },
+              value: bike.parameters.planningThresholdPower.value.watts,
+              unit: "watts",
+              effectiveAt: recordedAt,
+              expiresAt: new Date(Date.parse(recordedAt) + 90 * 86_400_000).toISOString(),
+              policyVersion: "performance-calibration-v1",
+              selectionDiagnostics: {
+                selectedEvidenceIds: bike.parameters.planningThresholdPower.sourceEvidenceIds,
+                selectedActivityIds: bike.parameters.planningThresholdPower.sourceEvidenceIds.map(
+                  (evidenceId) => `activity-for-${evidenceId}`,
+                ),
+                evidenceCount: bike.parameters.planningThresholdPower.sourceEvidenceIds.length,
+                selectionReason: "independent_confirmation",
+                trend: "stable",
+                tolerance: 0.03,
+                policyVersion: "performance-calibration-v1",
+              },
+            },
+          ],
   });
 }
 
@@ -178,6 +203,7 @@ export function buildPerformanceTargetFactsFixture(
       : {
           ...fact,
           status: "available" as const,
+          calibrationState: "confirmed" as const,
           value,
           calculationVersion,
           sourceEvidenceIds: [evidenceId],
@@ -204,6 +230,7 @@ export function buildPerformanceTargetFactsFixture(
       : {
           ...fact,
           status: "available" as const,
+          calibrationState: "confirmed" as const,
           valueBpm,
           observedAt: input.heartRateObservedAt ?? asOf,
           expiresAt,

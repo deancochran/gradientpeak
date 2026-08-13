@@ -27,8 +27,24 @@ type SerializedActivityTime = Pick<ActivityRow, "activity_plan_id" | "id"> & {
 };
 export type CalendarCompletedActivityRecord = Pick<
   ActivityRow,
-  "active_ms" | "distance_meters" | "elapsed_ms" | "id" | "name"
-> & { started_at: string };
+  | "active_ms"
+  | "content_visibility"
+  | "distance_meters"
+  | "elapsed_ms"
+  | "finished_at"
+  | "id"
+  | "name"
+  | "notes"
+  | "polyline"
+  | "profile_id"
+> & {
+  activity_category: "run" | "bike" | "swim" | "strength" | "other" | null;
+  comments_count: number;
+  has_liked: boolean;
+  likes_count: number;
+  profile: { avatar_url: string | null; username: string | null };
+  started_at: string;
+};
 export type CalendarGoalRecord = {
   activity_category: string;
   id: string;
@@ -120,7 +136,7 @@ type ProjectionPlannedActivity = Pick<EventRow, "training_plan_id"> & {
 type ProjectionTrainingPlan = Pick<TrainingPlanRow, "id" | "structure">;
 
 export interface EventReadRepository {
-  /** Profile-owned facts for the server-side effective Plan Load projection. */
+  /** Profile-owned and active-membership facts for the server-side effective Plan Load projection. */
   getEffectivePlanLoadInputs(input: {
     asOf: Date;
     endDate?: string;
@@ -169,7 +185,10 @@ export interface EventReadRepository {
     profileId: string;
     startDate: string;
   }): Promise<CalendarGoalRecord[]>;
-  listCalendarGroupActivityPlans(input: { activityPlanIds: string[] }): Promise<ActivityPlanRow[]>;
+  listCalendarGroupActivityPlans(input: {
+    activityPlanIds: string[];
+    profileId: string;
+  }): Promise<ActivityPlanRow[]>;
   listPlannedEventDatesInRange(input: {
     profileId: string;
     startsAtGte: string;

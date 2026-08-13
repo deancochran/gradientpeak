@@ -1,4 +1,4 @@
-import type { ActivityPrescriptionQuantificationBundle } from "@repo/core";
+import type { ActivityPlanDetail, ActivityPlanSummary } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { DateInput } from "@repo/ui/components/date-input";
@@ -18,7 +18,7 @@ import { TimeInput } from "@repo/ui/components/time-input";
 import { format } from "date-fns";
 import type { FieldValues, UseFormReturn } from "react-hook-form";
 import { Pressable, View } from "react-native";
-import { type ActivityPlan, ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { ClearFieldAction } from "@/components/shared/ClearFieldAction";
 import { EmptyState, ErrorState, LoadingState } from "@/components/shared/ScreenState";
 import { SearchField } from "@/components/shared/SearchField";
@@ -27,18 +27,7 @@ import { eventDateForEditor, getDeviceTimeZone } from "@/lib/calendar/eventSched
 export type CreateEventType = "custom" | "planned";
 export type EventRecurrenceFrequency = "none" | "daily" | "weekly" | "monthly";
 
-export type ActivityPlanListItem = {
-  id: string;
-  name: string;
-  activity_category: string;
-  structure?: unknown;
-  description?: string | null;
-  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
-};
-
-function toActivityPlanCardData(plan: ActivityPlanListItem): ActivityPlan {
-  return plan;
-}
+export type ActivityPlanListItem = ActivityPlanSummary | ActivityPlanDetail;
 
 export function toDateOnly(value: Date) {
   return format(value, "yyyy-MM-dd");
@@ -287,7 +276,7 @@ export function EventEditorCard({
                   <View className="gap-2" testID={`${testIDPrefix}-selected-activity-plan`}>
                     <Text className="text-xs font-medium text-muted-foreground">Selected plan</Text>
                     <ActivityPlanCard
-                      activityPlan={toActivityPlanCardData(selectedCreateActivityPlan)}
+                      plan={selectedCreateActivityPlan}
                       testID={`${testIDPrefix}-selected-activity-plan-card`}
                       variant="compact"
                     />
@@ -313,7 +302,7 @@ export function EventEditorCard({
                           className={isSelected ? "rounded-2xl border-2 border-primary" : undefined}
                         >
                           <ActivityPlanCard
-                            activityPlan={toActivityPlanCardData(plan)}
+                            plan={plan}
                             onPress={() => onSelectActivityPlan(plan.id)}
                             testID={`${testIDPrefix}-activity-plan-option-${plan.id}`}
                             variant="compact"

@@ -30,8 +30,8 @@ async function quarantineFailedPromotion(
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtext(${`${profileId}:${promoted.sha256}`}))`,
     );
-    const [acceptedArtifact] = await tx
-      .select({ availability: activityArtifacts.availability })
+    const [existingArtifact] = await tx
+      .select({ availability: activityArtifacts.availability, id: activityArtifacts.id })
       .from(activityArtifacts)
       .where(
         and(
@@ -43,8 +43,10 @@ async function quarantineFailedPromotion(
         ),
       )
       .limit(1);
-    if (acceptedArtifact?.availability === "accepted") return null;
-    await tx
+    if (existingArtifact?.availability === "accepted") return null;
+    if (existingArtifact?.availability === "deletion_pending") return existingArtifact.id;
+    if (existingArtifact?.availability === "deleted") return null;
+    const [quarantined] = await tx
       .insert(activityArtifacts)
       .values({
         id: artifactId,
@@ -59,9 +61,40 @@ async function quarantineFailedPromotion(
         availability: "deletion_pending",
         deletion_requested_at: new Date(),
       })
-      .onConflictDoNothing();
-    return artifactId;
+      .onConflictDoNothing()
+      .returning({ id: activityArtifacts.id });
+    if (quarantined) return quarantined.id;
+
+    // A distinct immutable-key conflict means another accepted/shared object won.
+    // Never infer cleanup authority merely from the deterministic candidate ID.
+    const [racedArtifact] = await tx
+      .select({ availability: activityArtifacts.availability, id: activityArtifacts.id })
+      .from(activityArtifacts)
+      .where(
+        and(
+          eq(activityArtifacts.profile_id, profileId),
+          eq(activityArtifacts.bucket, promoted.bucket),
+          eq(activityArtifacts.path, promoted.path),
+          eq(activityArtifacts.digest, promoted.sha256),
+          eq(activityArtifacts.byte_size, promoted.byteSize),
+        ),
+      )
+      .limit(1);
+    return racedArtifact?.availability === "deletion_pending" ? racedArtifact.id : null;
   });
+}
+
+async function stillOwnsFailedPromotionCleanup(
+  db: DbClient,
+  artifactId: string,
+  profileId: string,
+) {
+  const [artifact] = await db
+    .select({ availability: activityArtifacts.availability })
+    .from(activityArtifacts)
+    .where(and(eq(activityArtifacts.id, artifactId), eq(activityArtifacts.profile_id, profileId)))
+    .limit(1);
+  return artifact?.availability === "deletion_pending";
 }
 
 async function cleanupUnpromotedStaging(
@@ -134,10 +167,19 @@ export async function finalizeActivityArtifactIngestion<TParsed, TResult>(
     const deletionArtifactId = await quarantineFailedPromotion(db, promoted, input.profileId);
     if (deletionArtifactId) {
       try {
-        await cleanupOwnedPromotedActivityArtifact(input.storage, promoted);
-        await db.execute(
-          sql`select public.finalize_activity_artifact_deletion(${deletionArtifactId}::uuid, true)`,
-        );
+        // Recheck after quarantine commits and immediately before the destructive
+        // storage effect. Another accepted/shared lifecycle state always wins.
+        if (await stillOwnsFailedPromotionCleanup(db, deletionArtifactId, input.profileId)) {
+          await cleanupOwnedPromotedActivityArtifact(input.storage, promoted);
+          if (await stillOwnsFailedPromotionCleanup(db, deletionArtifactId, input.profileId)) {
+            await db.execute(
+              sql`select public.finalize_activity_artifact_deletion(${deletionArtifactId}::uuid, true)`,
+            );
+            await db.execute(
+              sql`select public.purge_deleted_activity_artifact(${deletionArtifactId}::uuid)`,
+            );
+          }
+        }
       } catch {
         // The deletion_pending row is durable repair authority. Never log path,
         // digest, or provider identity from this shared failure boundary.

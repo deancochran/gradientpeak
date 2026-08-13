@@ -45,6 +45,7 @@ import {
   matchedCategorySortValue,
   summarizeMatchedCategory,
 } from "./activity-discovery";
+import { toActivityDetailDisplay, toActivityDisplayModel } from "./activity-display";
 
 type Db = ReturnType<typeof getRequiredDb>;
 type ActivityCategory = NonNullable<ActivitySegmentReadRow["activity_category"]>;
@@ -178,7 +179,19 @@ function decorateActivity(
   activity: ActivityReadRow,
   matchedCategorySummary: MatchedCategorySummary | null = null,
 ) {
-  const { segments: _segments, ...publicActivity } = activity;
+  const {
+    performance_target_snapshot: _performanceTargetSnapshot,
+    segments: _segments,
+    athlete_state_common_load: _athleteStateCommonLoad,
+    athlete_state_activity_category: _athleteStateActivityCategory,
+    athlete_state_evidence_confidence: _athleteStateEvidenceConfidence,
+    athlete_state_capability_distance_meters: _athleteStateCapabilityDistanceMeters,
+    athlete_state_capability_duration_minutes: _athleteStateCapabilityDurationMinutes,
+    athlete_state_input_version: _athleteStateInputVersion,
+    athlete_state_computed_at: _athleteStateComputedAt,
+    canonical_evidence_tier: _canonicalEvidenceTier,
+    ...publicActivity
+  } = activity;
   return {
     ...publicActivity,
     ...describeActivityComposition(activity.segments),
@@ -375,8 +388,8 @@ export async function listActivitiesForProfile({
           entityIds: page.map(({ activity }) => activity.id),
           viewerProfileId: profileId,
         });
-        const items = page.map(({ activity, derived, matchedCategorySummary }) =>
-          mapActivityToListDerivedResponse({
+        const items = page.map(({ activity, derived, matchedCategorySummary }) => {
+          const item = mapActivityToListDerivedResponse({
             activity: {
               ...decorateActivity(activity, matchedCategorySummary),
               likes_count: getLikeStats(likeStats, activity.id).likes_count,
@@ -384,8 +397,9 @@ export async function listActivitiesForProfile({
             has_liked: getLikeStats(likeStats, activity.id).has_liked,
             derived,
             segment_loads: segmentDerivedByActivityId.get(activity.id) ?? [],
-          }),
-        );
+          });
+          return toActivityDisplayModel({ activity: item, viewerId: profileId });
+        });
         return {
           items,
           total,
@@ -462,7 +476,7 @@ export async function listActivitiesForProfile({
   });
   const items = data.map((activity) => {
     const derivedSegments = segmentDerivedByActivityId.get(activity.id);
-    return mapActivityToListDerivedResponse({
+    const item = mapActivityToListDerivedResponse({
       activity: {
         ...decorateActivity(
           activity,
@@ -480,6 +494,7 @@ export async function listActivitiesForProfile({
       derived: derived.get(activity.id) ?? null,
       segment_loads: derivedSegments ?? [],
     });
+    return toActivityDisplayModel({ activity: item, viewerId: profileId });
   });
   return {
     items,
@@ -665,46 +680,68 @@ export async function getActivityByIdForViewer({
     derived: resolvedDerived,
     segment_loads: ownedAnalysis?.segments ?? [],
   });
-  return {
-    ...response,
+  const display = toActivityDisplayModel({
     activity: {
       ...response.activity,
-      segments: activity.segments.map((segment) => ({
-        id: segment.id,
-        activity_id: segment.activity_id,
-        ordinal: segment.ordinal,
-        role: segment.role,
-        activity_category: segment.activity_category,
-        start_offset_ms: segment.start_offset_ms,
-        end_offset_ms: segment.end_offset_ms,
-        source_artifact_id: segment.source_artifact_id,
-        source_session_index: segment.source_session_index,
-        source_message_index: segment.source_message_index,
-        raw_type_string: segment.raw_type_string,
-        raw_type_integer: segment.raw_type_integer,
-        raw_sport_string: segment.raw_sport_string,
-        raw_sport_integer: segment.raw_sport_integer,
-        raw_sub_sport_string: segment.raw_sub_sport_string,
-        raw_sub_sport_integer: segment.raw_sub_sport_integer,
-        timing_coverage: segment.timing_coverage,
-        active_ms: segment.active_ms,
-        moving_ms: segment.moving_ms,
-        ...createAnalyzedActivitySegmentAnalysis(segment.summary),
-      })),
-      current_artifact: currentArtifact,
-      ingestion: ingestion ?? null,
-      effective_session_rpe: effectiveSessionRpe
-        ? {
-            id: effectiveSessionRpe.id,
-            rpe: effectiveSessionRpe.rpe,
-            scale: effectiveSessionRpe.scale,
-            scale_version: effectiveSessionRpe.scaleVersion,
-            source: effectiveSessionRpe.source,
-            recorded_at: effectiveSessionRpe.recordedAt,
-            corrected_at: effectiveSessionRpe.correctedAt,
-            provenance: effectiveSessionRpe.provenance,
-          }
-        : null,
+      derived: response.derived,
+      has_liked: response.has_liked,
+    },
+    viewerId,
+  });
+  const activityDetailSource: Parameters<typeof toActivityDetailDisplay>[0]["activity"] = {
+    ...response.activity,
+    activity_plans: response.activity.activity_plans ?? null,
+    segments: activity.segments.map((segment) => ({
+      id: segment.id,
+      activity_id: segment.activity_id,
+      ordinal: segment.ordinal,
+      role: segment.role,
+      activity_category: segment.activity_category,
+      start_offset_ms: segment.start_offset_ms,
+      end_offset_ms: segment.end_offset_ms,
+      source_artifact_id: segment.source_artifact_id,
+      source_session_index: segment.source_session_index,
+      source_message_index: segment.source_message_index,
+      raw_type_string: segment.raw_type_string,
+      raw_type_integer: segment.raw_type_integer,
+      raw_sport_string: segment.raw_sport_string,
+      raw_sport_integer: segment.raw_sport_integer,
+      raw_sub_sport_string: segment.raw_sub_sport_string,
+      raw_sub_sport_integer: segment.raw_sub_sport_integer,
+      timing_coverage: segment.timing_coverage,
+      active_ms: segment.active_ms,
+      moving_ms: segment.moving_ms,
+      ...createAnalyzedActivitySegmentAnalysis(segment.summary),
+    })),
+    current_artifact: currentArtifact
+      ? {
+          id: currentArtifact.id,
+          format: currentArtifact.format,
+          original_name: currentArtifact.original_name,
+          availability: "accepted",
+        }
+      : null,
+    ingestion: ingestion ?? null,
+    effective_session_rpe: effectiveSessionRpe
+      ? {
+          id: effectiveSessionRpe.id,
+          rpe: effectiveSessionRpe.rpe,
+          scale: "borg_cr10",
+          scale_version: "1",
+          source: effectiveSessionRpe.source,
+          recorded_at: effectiveSessionRpe.recordedAt,
+          corrected_at: effectiveSessionRpe.correctedAt,
+        }
+      : null,
+  };
+  return {
+    detail: toActivityDetailDisplay({
+      display,
+      activity: activityDetailSource,
+    }),
+    analysis: {
+      derived: response.derived,
+      segmentLoads: response.segment_loads,
     },
   };
 }

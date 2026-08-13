@@ -15,7 +15,7 @@ export const Route = createFileRoute("/_protected/groups/events/$groupEventId/")
   component: GroupEventDetailPage,
 });
 
-type RsvpStatus = "accepted" | "declined" | "tentative";
+type RsvpStatus = "declined";
 
 function GroupEventDetailPage() {
   const { groupEventId } = Route.useParams();
@@ -51,7 +51,7 @@ function GroupEventDetailPage() {
   const mutationError = rsvpMutation.error ?? seriesRsvpMutation.error ?? cancelMutation.error;
   const canManage = Boolean(group.data?.viewer.canCreateGroupEvent);
   const seriesId = event?.series_id ?? (event?.is_recurring_series ? event.id : null);
-  const effectiveRsvp = event?.viewerRsvp?.status ?? event?.viewerSeriesRsvp?.status ?? null;
+  const effectiveRsvp = event?.viewerRsvp?.status ?? event?.viewerSeriesRsvp?.status ?? "going";
 
   const setOccurrenceRsvp = (status: RsvpStatus | null) =>
     rsvpMutation.mutate(
@@ -238,7 +238,7 @@ function GroupEventDetailPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-sm text-muted-foreground">
-                  Effective response: {effectiveRsvp ?? "none"}
+                  Effective response: {effectiveRsvp}
                   {event.viewerRsvp
                     ? " (this date overrides the series)"
                     : event.viewerSeriesRsvp
@@ -246,65 +246,49 @@ function GroupEventDetailPage() {
                       : ""}
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {(["accepted", "tentative", "declined"] as const).map((status) => (
-                    <Button
-                      aria-pressed={event.viewerRsvp?.status === status}
-                      disabled={rsvpMutation.isPending || Boolean(event.cancelled_at)}
-                      key={status}
-                      onClick={() => setOccurrenceRsvp(status)}
-                      type="button"
-                      variant={event.viewerRsvp?.status === status ? "default" : "outline"}
-                    >
-                      {status === "accepted"
-                        ? "Going"
-                        : status === "tentative"
-                          ? "Tentative"
-                          : "Decline"}
-                    </Button>
-                  ))}
-                  {event.viewerRsvp ? (
+                  {effectiveRsvp === "declined" ? (
                     <Button
                       disabled={rsvpMutation.isPending}
                       onClick={() => setOccurrenceRsvp(null)}
                       type="button"
-                      variant="ghost"
+                      variant="default"
                     >
-                      Clear date RSVP
+                      Restore Going
                     </Button>
-                  ) : null}
+                  ) : (
+                    <Button
+                      disabled={rsvpMutation.isPending || Boolean(event.cancelled_at)}
+                      onClick={() => setOccurrenceRsvp("declined")}
+                      type="button"
+                      variant="outline"
+                    >
+                      Decline
+                    </Button>
+                  )}
                 </div>
                 {seriesId ? (
                   <div className="space-y-2 border-t pt-3">
                     <p className="font-medium">Apply to the recurring series</p>
                     <div className="flex flex-wrap gap-2">
-                      {(["accepted", "tentative", "declined"] as const).map((status) => (
-                        <Button
-                          aria-pressed={event.viewerSeriesRsvp?.status === status}
-                          disabled={seriesRsvpMutation.isPending || Boolean(event.cancelled_at)}
-                          key={status}
-                          onClick={() => setSeriesRsvp(status)}
-                          type="button"
-                          variant={
-                            event.viewerSeriesRsvp?.status === status ? "secondary" : "outline"
-                          }
-                        >
-                          {status === "accepted"
-                            ? "Going to series"
-                            : status === "tentative"
-                              ? "Tentative for series"
-                              : "Decline series"}
-                        </Button>
-                      ))}
-                      {event.viewerSeriesRsvp ? (
+                      {event.viewerSeriesRsvp?.status === "declined" ? (
                         <Button
                           disabled={seriesRsvpMutation.isPending}
                           onClick={() => setSeriesRsvp(null)}
                           type="button"
-                          variant="ghost"
+                          variant="default"
                         >
-                          Clear series RSVP
+                          Restore Going for series
                         </Button>
-                      ) : null}
+                      ) : (
+                        <Button
+                          disabled={seriesRsvpMutation.isPending || Boolean(event.cancelled_at)}
+                          onClick={() => setSeriesRsvp("declined")}
+                          type="button"
+                          variant="outline"
+                        >
+                          Decline series
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ) : null}

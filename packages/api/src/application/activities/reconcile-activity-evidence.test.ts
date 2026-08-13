@@ -66,7 +66,6 @@ describe("planGeneratedActivityEvidenceReconciliation", () => {
   it("makes identical redelivery a no-op and preserves immutable evidence", () => {
     const plan = planGeneratedActivityEvidenceReconciliation({
       existingEfforts: [effort({})],
-      existingMetrics: [],
       generated: generated([effort({ id: "redelivery-random-id" })]),
     });
 
@@ -78,7 +77,6 @@ describe("planGeneratedActivityEvidenceReconciliation", () => {
   it("treats PostgreSQL real output precision as identical evidence", () => {
     const plan = planGeneratedActivityEvidenceReconciliation({
       existingEfforts: [effort({ value: 373.333 })],
-      existingMetrics: [],
       generated: generated([effort({ id: "redelivery-random-id", value: 373.3333333333333 })]),
     });
 
@@ -90,7 +88,6 @@ describe("planGeneratedActivityEvidenceReconciliation", () => {
   it("replaces changed generated evidence instead of updating an observation", () => {
     const plan = planGeneratedActivityEvidenceReconciliation({
       existingEfforts: [effort({})],
-      existingMetrics: [],
       generated: generated(),
     });
 
@@ -109,7 +106,6 @@ describe("planGeneratedActivityEvidenceReconciliation", () => {
     const futureRecordedAt = new Date("2026-08-08T09:00:00.000Z");
     const plan = planGeneratedActivityEvidenceReconciliation({
       existingEfforts: [],
-      existingMetrics: [],
       generated: generated([effort({ id: "future-effort", recorded_at: futureRecordedAt })]),
     });
 
@@ -128,7 +124,6 @@ describe("planGeneratedActivityEvidenceReconciliation", () => {
     });
     const plan = planGeneratedActivityEvidenceReconciliation({
       existingEfforts: [],
-      existingMetrics: [],
       generated: generated([cssEffort]),
     });
 
@@ -141,93 +136,13 @@ describe("planGeneratedActivityEvidenceReconciliation", () => {
     ]);
   });
 
-  it("never updates or deletes manual effort and LTHR evidence", () => {
+  it("never writes calibration candidates into profile_metrics", () => {
     const manualEffort = effort({ id: "manual-effort", source: "manual" });
-    const manualMetric = {
-      id: "manual-metric",
-      metric_type: "lthr",
-      method: "activity_file_lthr_detection",
-      source: "manual",
-    } as never;
     const plan = planGeneratedActivityEvidenceReconciliation({
       existingEfforts: [manualEffort],
-      existingMetrics: [manualMetric],
-      generated: generated([]),
-    });
-
-    expect(plan.effortDeleteIds).toEqual([]);
-    expect(plan.metricDeleteIds).toEqual([]);
-    expect(plan.metricUpdate).toBeNull();
-  });
-
-  it("updates generated LTHR in place and deletes only duplicate generated rows", () => {
-    const generatedMetric = (id: string) =>
-      ({
-        id,
-        metric_type: "lthr",
-        method: "activity_file_lthr_detection",
-        source: "derived",
-      }) as never;
-    const plan = planGeneratedActivityEvidenceReconciliation({
-      existingEfforts: [],
-      existingMetrics: [generatedMetric("metric-1"), generatedMetric("metric-2")],
       generated: { ...generated([]), detectedLTHR: detectedLthr(172) },
     });
 
-    expect(plan.metricInsert).toBeNull();
-    expect(plan.metricUpdate).toEqual(expect.objectContaining({ id: "metric-1" }));
-    expect(plan.metricDeleteIds).toEqual(["metric-2"]);
-  });
-
-  it("converges reprocessing one activity on its existing generated LTHR row", () => {
-    const existingMetric = {
-      id: "metric-165",
-      metric_type: "lthr",
-      method: "activity_file_lthr_detection",
-      source: "derived",
-    } as never;
-
-    const plan = planGeneratedActivityEvidenceReconciliation({
-      existingEfforts: [],
-      existingMetrics: [existingMetric],
-      generated: { ...generated([]), detectedLTHR: detectedLthr(165) },
-    });
-
-    expect(plan.metricInsert).toBeNull();
-    expect(plan.metricDeleteIds).toEqual([]);
-    expect(plan.metricUpdate).toEqual(
-      expect.objectContaining({
-        id: "metric-165",
-        values: expect.objectContaining({ value: 165, reference_activity_id: "activity-1" }),
-      }),
-    );
-  });
-
-  it("allows separate activities to retain 175 and 165 generated observations", () => {
-    const first = planGeneratedActivityEvidenceReconciliation({
-      existingEfforts: [],
-      existingMetrics: [],
-      generated: {
-        ...generated([]),
-        activityId: "activity-175",
-        detectedLTHR: detectedLthr(175, "activity-175"),
-      },
-    });
-    const second = planGeneratedActivityEvidenceReconciliation({
-      existingEfforts: [],
-      existingMetrics: [],
-      generated: {
-        ...generated([]),
-        activityId: "activity-165",
-        detectedLTHR: detectedLthr(165, "activity-165"),
-      },
-    });
-
-    expect(first.metricInsert).toEqual(
-      expect.objectContaining({ value: 175, reference_activity_id: "activity-175" }),
-    );
-    expect(second.metricInsert).toEqual(
-      expect.objectContaining({ value: 165, reference_activity_id: "activity-165" }),
-    );
+    expect(plan.effortDeleteIds).toEqual([]);
   });
 });

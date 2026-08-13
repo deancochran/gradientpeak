@@ -8,7 +8,7 @@ export function formatCommonLoad(value: number | null | undefined) {
 export function summarizeTrainingLoadComparison(load: TrainingLoadComparison) {
   return {
     planned: formatCommonLoad(load.plannedLoad),
-    scheduled: formatCommonLoad(sumAvailableLoads(load.scheduledLoad, load.tentativeScheduledLoad)),
+    scheduled: formatCommonLoad(load.scheduledLoad),
     completed: formatCommonLoad(load.completedLoad),
     remaining: formatCommonLoad(load.remainingLoad),
     delta:
@@ -16,8 +16,4 @@ export function summarizeTrainingLoadComparison(load: TrainingLoadComparison) {
         ? "—"
         : `${load.deltaLoad >= 0 ? "+" : ""}${Math.round(load.deltaLoad)} Common Load`,
   };
-}
-
-function sumAvailableLoads(left: number | null, right: number | null): number | null {
-  return left === null || right === null ? null : left + right;
 }

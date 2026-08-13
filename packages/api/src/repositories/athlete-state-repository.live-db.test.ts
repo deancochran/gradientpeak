@@ -1337,7 +1337,7 @@ describe("athlete state persistence", () => {
     const profileId = await seedProfile();
     const integrationId = await seedIntegration(profileId, "wahoo");
     const effectiveAt = new Date("2026-08-01T10:00:00.000Z");
-    const activityId = await seedActivity({ profileId, finishedAt: effectiveAt });
+    await seedActivity({ profileId, finishedAt: effectiveAt });
     const imports = createActivityImportRepository(db);
     const run = await imports.create({
       profileId,
@@ -1351,14 +1351,13 @@ describe("athlete state persistence", () => {
     await db.insert(profileMetrics).values({
       id: randomUUID(),
       profile_id: profileId,
-      metric_type: "lthr",
+      metric_type: "weight_kg",
       recorded_at: effectiveAt,
-      unit: "bpm",
-      value: 170,
-      reference_activity_id: activityId,
-      source: "derived",
-      method: "activity_file_lthr_detection",
-      calculation_version: "activity-file-lthr-v1",
+      unit: "kg",
+      value: 70,
+      source: "manual",
+      method: "manual_entry",
+      calculation_version: "profile-metric-v1",
     });
     await expect(
       db.select().from(profileAthleteState).where(eq(profileAthleteState.profile_id, profileId)),
@@ -2004,6 +2003,7 @@ describe("athlete state persistence", () => {
       now: firstNow,
     });
     await imports.start(run.id, firstNow);
+    await markRunMaterial(run.id, new Date("2026-01-01T00:00:00.000Z"));
     await expect(
       claimNextAthleteState(db, { now: firstNow, leaseMilliseconds: 60_000, profileId }),
     ).resolves.toBeNull();
@@ -2013,7 +2013,7 @@ describe("athlete state persistence", () => {
       leaseMilliseconds: 60_000,
       profileId,
     });
-    expect(failedImportClaim?.sourceRevision).toBe(1);
+    expect(failedImportClaim?.sourceRevision).toBe(2);
     if (!failedImportClaim) throw new Error("Expected failed-import available-data claim");
     await expect(
       publishAthleteState(db, {
@@ -2032,9 +2032,9 @@ describe("athlete state persistence", () => {
       }),
     ).resolves.toBe(true);
     await expect(readPublishedReadModel(profileId, firstNow)).resolves.toMatchObject({
-      publishedRevision: 1,
+      publishedRevision: 2,
       status: { freshness: "stale", rebuildStatus: "failed" },
-      currentBaseline: { baseline: expect.objectContaining({ stateRevision: 1 }) },
+      currentBaseline: { baseline: expect.objectContaining({ stateRevision: 2 }) },
     });
     await imports.resume(run.id, firstNow);
     await imports.recordPageCommitted({
@@ -2055,13 +2055,13 @@ describe("athlete state persistence", () => {
       .select()
       .from(profileAthleteState)
       .where(eq(profileAthleteState.profile_id, profileId));
-    expect(afterImport?.source_revision).toBe(2);
+    expect(afterImport?.source_revision).toBe(3);
     const claim = await claimNextAthleteState(db, {
       now: firstNow,
       leaseMilliseconds: 60_000,
       profileId,
     });
-    expect(claim?.sourceRevision).toBe(2);
+    expect(claim?.sourceRevision).toBe(3);
     if (!claim) throw new Error("Expected athlete-state claim");
     await expect(
       publishAthleteState(db, {
@@ -2121,7 +2121,7 @@ describe("athlete state persistence", () => {
       .from(profileAthleteState)
       .where(eq(profileAthleteState.profile_id, profileId));
     expect(afterMetric).toEqual(beforeMetric);
-    expect(afterMetric[0]?.sourceRevision).toBe(2);
+    expect(afterMetric[0]?.sourceRevision).toBe(3);
 
     await db.transaction((tx) =>
       markAthleteStateDirty(tx, {
@@ -2175,6 +2175,73 @@ describe("athlete state persistence", () => {
     await markRunMaterial(blocker.id, new Date("2026-01-02T00:00:00.000Z"));
     await imports.complete(blocker.id, firstNow);
     await expect(publishAthleteState(db, attempted)).resolves.toBe(false);
+  });
+
+  it("marks committed history dirty and rebuilds a stale baseline after an import failure", async () => {
+    const profileId = await seedProfile();
+    const integrationId = await seedIntegration(profileId, "wahoo");
+    const now = new Date("2026-01-03T00:00:00.000Z");
+    const imports = createActivityImportRepository(db);
+    const run = await imports.create({
+      profileId,
+      integrationId,
+      integrationGeneration: 1,
+      kind: "history_sync",
+      nextPage: 2,
+      now,
+    });
+    await imports.start(run.id, now);
+    await markRunMaterial(run.id, new Date("2026-01-01T00:00:00.000Z"));
+
+    await imports.fail(run.id, "activity_history_import_failed", now);
+
+    await expect(
+      db
+        .select({
+          publishedRevision: profileAthleteState.published_revision,
+          sourceRevision: profileAthleteState.source_revision,
+        })
+        .from(profileAthleteState)
+        .where(eq(profileAthleteState.profile_id, profileId)),
+    ).resolves.toEqual([{ publishedRevision: 0, sourceRevision: 1 }]);
+
+    await expect(new AthleteStateWorkerService({ db }).processDueJobs({ now })).resolves.toEqual({
+      completed: 1,
+      failed: 0,
+      processed: 1,
+    });
+    await expect(readPublishedReadModel(profileId, now)).resolves.toMatchObject({
+      publishedRevision: 1,
+      status: { freshness: "stale", rebuildStatus: "failed" },
+      currentBaseline: { baseline: expect.objectContaining({ stateRevision: 1 }) },
+    });
+  });
+
+  it("does not create an athlete-state rebuild for a failed import without material history", async () => {
+    const profileId = await seedProfile();
+    const integrationId = await seedIntegration(profileId, "wahoo");
+    const now = new Date("2026-01-03T00:00:00.000Z");
+    const imports = createActivityImportRepository(db);
+    const run = await imports.create({
+      profileId,
+      integrationId,
+      integrationGeneration: 1,
+      kind: "history_sync",
+      nextPage: 1,
+      now,
+    });
+    await imports.start(run.id, now);
+
+    await imports.fail(run.id, "provider_unavailable", now);
+
+    await expect(
+      db.select().from(profileAthleteState).where(eq(profileAthleteState.profile_id, profileId)),
+    ).resolves.toEqual([]);
+    await expect(new AthleteStateWorkerService({ db }).processDueJobs({ now })).resolves.toEqual({
+      completed: 0,
+      failed: 0,
+      processed: 0,
+    });
   });
 
   it("publishes one state refresh after a 501-activity onboarding import", async () => {

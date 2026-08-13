@@ -18,6 +18,7 @@ export type HandleOAuthCallbackRequest = Omit<
 
 export function handleOAuthCallback({ db, ...input }: HandleOAuthCallbackRequest) {
   return handleOAuthCallbackUseCase({
+    db,
     ...input,
     repositories: createIntegrationsRepositories(db),
     providerSyncRepository: createWahooSyncRepository({ db }),

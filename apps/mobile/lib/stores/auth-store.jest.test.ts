@@ -24,7 +24,7 @@ const profile: AuthProfile = {
   bio: null,
   dob: null,
   gender: null,
-  onboarded: false,
+  onboarding_status: "provider_selection",
   is_public: false,
   username: null,
   preferred_units: null,

@@ -69,7 +69,7 @@ describeDisposable("organization access against a disposable migrated PostgreSQL
           email,
           full_name: label,
           username: `${label}-${id.slice(0, 8)}`,
-          onboarded: true,
+          onboarding_status: "completed",
           is_public: false,
           created_at: now,
           updated_at: now,

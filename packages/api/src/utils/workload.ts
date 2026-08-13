@@ -12,17 +12,31 @@ import {
   type LoadSeriesIdentity,
   loadSeriesIdentitySchema,
 } from "@repo/core";
-import { formatDateOnlyUtc } from "@repo/core/calendar";
+import {
+  addDaysDateOnlyUtc,
+  getCalendarDateInIanaZone,
+  isValidIanaTimeZone,
+} from "@repo/core/calendar";
+import { z } from "zod";
 
 export type LoadSource = "common_load" | "none";
 type WorkloadRejectionReason =
   | "duplicate_subject"
   | "incompatible_common_load_identity"
-  | "incomplete_common_load"
-  | "missing_quantification";
+  | "missing_quantification"
+  | "source_integrity_unavailable";
+
+export type ActivitySourceIntegrity = "trusted" | "missing" | "invalid";
+
+export type ActivitySourceEvidence = {
+  currentArtifactIds: readonly string[];
+  providerReferences: ReadonlyArray<{ provider: string; externalId: string }>;
+};
 
 export interface CanonicalLoadActivity {
   started_at?: string | null;
+  /** Derived from persisted current source links or provider source references. */
+  sourceIntegrity?: ActivitySourceIntegrity;
   /** Parsed at this read-model boundary so stale model/version identities fail closed. */
   observationQuantification?: unknown;
 }
@@ -39,14 +53,82 @@ export interface CanonicalDailyLoads {
 export interface WorkloadBuildOptions {
   /** Dates known to have complete capture and no load. Unknown dates must not be supplied here. */
   knownRestDates?: string[];
+  /** Profile-local calendar zone. UTC is the deterministic compatibility default. */
+  planningTimezone?: string;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const strictActivityTimestampSchema = z.string().datetime({ offset: true });
 
-function dateKeys(startDate: Date, endDate: Date): string[] {
+export function resolveActivitySourceIntegrity(input: {
+  evidence: ActivitySourceEvidence;
+  observationQuantification: unknown;
+}): ActivitySourceIntegrity {
+  const artifactCount = input.evidence.currentArtifactIds.length;
+  const providerCount = input.evidence.providerReferences.length;
+  if (artifactCount === 0 && providerCount === 0) return "missing";
+  // A trusted source is one unambiguous persisted binding. Validate this before
+  // inspecting quantification because absent or malformed quantification must
+  // never turn mixed/multiple source evidence into a trusted known zero.
+  if ((artifactCount > 0 && providerCount > 0) || artifactCount > 1 || providerCount > 1) {
+    return "invalid";
+  }
+
+  const bundle = activityObservationQuantificationBundleSchema.safeParse(
+    input.observationQuantification,
+  );
+  // Source integrity and quantification compatibility are separate gates. The
+  // workload parser remains responsible for rejecting malformed identities.
+  if (!bundle.success) return "trusted";
+
+  for (const member of bundle.data.members) {
+    const provenance = member.completedProvenance;
+    if (provenance.source === "activity_file") {
+      if (
+        provenance.artifactIdentity === null ||
+        input.evidence.currentArtifactIds.length !== 1 ||
+        input.evidence.providerReferences.length !== 0 ||
+        input.evidence.currentArtifactIds[0] !== provenance.artifactIdentity
+      ) {
+        return "invalid";
+      }
+    } else if (provenance.source === "provider_summary") {
+      const identity = provenance.providerIdentity;
+      if (
+        identity === null ||
+        identity.externalId === null ||
+        input.evidence.currentArtifactIds.length !== 0 ||
+        input.evidence.providerReferences.length !== 1 ||
+        input.evidence.providerReferences[0]?.provider !== identity.provider ||
+        input.evidence.providerReferences[0]?.externalId !== identity.externalId
+      ) {
+        return "invalid";
+      }
+    } else {
+      // Recording and unknown provenance have no persisted source binding at
+      // this read boundary, so they must never be treated as trusted.
+      return "invalid";
+    }
+  }
+  return "trusted";
+}
+
+function planningTimezone(options: WorkloadBuildOptions): string {
+  const timezone = options.planningTimezone ?? "UTC";
+  if (!isValidIanaTimeZone(timezone)) {
+    throw new RangeError("planningTimezone must be a valid IANA zone");
+  }
+  return timezone;
+}
+
+function dateKeys(startDate: Date, endDate: Date, timezone: string): string[] {
+  if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime())) {
+    throw new RangeError("workload date bounds must be valid instants");
+  }
+  const start = getCalendarDateInIanaZone(startDate.toISOString(), timezone);
+  const end = getCalendarDateInIanaZone(endDate.toISOString(), timezone);
   const keys: string[] = [];
-  for (let time = startDate.getTime(); time <= endDate.getTime(); time += DAY_MS) {
-    keys.push(formatDateOnlyUtc(new Date(time)));
+  for (let date = start; date <= end; date = addDaysDateOnlyUtc(date, 1)) {
+    keys.push(date);
   }
   return keys;
 }
@@ -55,7 +137,14 @@ function parseObservationMembers(
   activity: CanonicalLoadActivity,
 ):
   | { status: "available"; members: ActivityObservationQuantification[] }
+  | { status: "known_zero" }
   | { status: "unavailable"; reason: WorkloadRejectionReason } {
+  if (activity.sourceIntegrity !== "trusted") {
+    return { status: "unavailable", reason: "source_integrity_unavailable" };
+  }
+  if (activity.observationQuantification == null) {
+    return { status: "known_zero" };
+  }
   const bundle = activityObservationQuantificationBundleSchema.safeParse(
     activity.observationQuantification,
   );
@@ -68,7 +157,7 @@ function parseObservationMembers(
     };
   }
   if (bundle.data.members.length === 0) {
-    return { status: "unavailable", reason: "missing_quantification" };
+    return { status: "known_zero" };
   }
   return { status: "available", members: bundle.data.members };
 }
@@ -79,36 +168,43 @@ export function buildCanonicalDailyLoads(
   endDate: Date,
   options: WorkloadBuildOptions = {},
 ): CanonicalDailyLoads {
-  const dates = dateKeys(startDate, endDate);
+  const timezone = planningTimezone(options);
+  const dates = dateKeys(startDate, endDate, timezone);
   const dateSet = new Set(dates);
   const knownRestDates = new Set(options.knownRestDates ?? []);
+  const knownZeroDates = new Set<string>();
   const membersByDate = new Map<string, ActivityObservationQuantification[]>();
   const allMembers: ActivityObservationQuantification[] = [];
   let complete = true;
   let rejectionReason: WorkloadRejectionReason | null = null;
   let sawCanonicalQuantification = false;
 
-  const add = (activity: CanonicalLoadActivity) => {
+  const add = (activity: CanonicalLoadActivity, date: string) => {
     const parsed = parseObservationMembers(activity);
+    if (parsed.status === "known_zero") {
+      knownZeroDates.add(date);
+      return;
+    }
     if (parsed.status === "unavailable") {
       complete = false;
       rejectionReason ??= parsed.reason;
       return;
     }
     sawCanonicalQuantification = true;
-    const date = activity.started_at ? formatDateOnlyUtc(new Date(activity.started_at)) : undefined;
-    if (!date || !dateSet.has(date)) return;
     allMembers.push(...parsed.members);
     membersByDate.set(date, [...(membersByDate.get(date) ?? []), ...parsed.members]);
   };
 
   for (const activity of activities) {
-    if (!activity.started_at || Number.isNaN(new Date(activity.started_at).getTime())) {
+    const timestamp = strictActivityTimestampSchema.safeParse(activity.started_at);
+    if (!timestamp.success) {
       complete = false;
       rejectionReason ??= "missing_quantification";
       continue;
     }
-    add(activity);
+    const date = getCalendarDateInIanaZone(timestamp.data, timezone);
+    if (!dateSet.has(date)) continue;
+    add(activity, date);
   }
 
   try {
@@ -131,8 +227,7 @@ export function buildCanonicalDailyLoads(
         complete = false;
         rejectionReason ??= "incompatible_common_load_identity";
       } else if (commonLoad.status !== "complete") {
-        complete = false;
-        rejectionReason ??= "incomplete_common_load";
+        knownZeroDates.add(date);
       } else {
         valuesByDate.set(date, commonLoad.load);
       }
@@ -147,7 +242,7 @@ export function buildCanonicalDailyLoads(
     sourceDefinition: COMMON_RELATIVE_LOAD_MODEL,
   });
   const series =
-    valuesByDate.size === 0
+    valuesByDate.size === 0 && knownZeroDates.size === 0
       ? []
       : [
           {
@@ -155,6 +250,7 @@ export function buildCanonicalDailyLoads(
             observations: dates.map<LoadDayObservation>((date) => {
               const value = valuesByDate.get(date);
               if (value !== undefined) return { date, state: "observed", value };
+              if (knownZeroDates.has(date)) return { date, state: "known_zero", value: 0 };
               if (knownRestDates.has(date)) return { date, state: "known_zero", value: 0 };
               return { date, state: "unknown", value: null };
             }),

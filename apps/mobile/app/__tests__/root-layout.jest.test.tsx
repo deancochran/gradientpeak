@@ -25,7 +25,7 @@ const initializeAuthMock = jest.fn(async () => undefined);
 const authState = {
   authState: "authenticated-verified",
   userStatus: "verified",
-  onboardingStatus: true,
+  onboardingStatus: "completed",
   isAuthenticated: true,
   isFullyLoaded: true,
   user: { id: "user-1", email: "athlete@example.com" },
@@ -218,7 +218,7 @@ describe("root layout auth guard", () => {
     Object.assign(authState, {
       authState: "authenticated-verified",
       userStatus: "verified",
-      onboardingStatus: true,
+      onboardingStatus: "completed",
       isAuthenticated: true,
       isFullyLoaded: true,
       user: { id: "user-1", email: "athlete@example.com" },
@@ -269,7 +269,7 @@ describe("root layout auth guard", () => {
   });
 
   it("redirects verified users without onboarding to onboarding", async () => {
-    authState.onboardingStatus = false;
+    authState.onboardingStatus = "processing";
     segmentsValue = ["(internal)", "(tabs)"];
 
     renderNative(<RootLayout />);

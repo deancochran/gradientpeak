@@ -247,7 +247,7 @@ export function CreateEventMainStep({
                       {draft.activityPlanId ? "Change" : "Choose"}
                     </Text>
                   </Pressable>
-                  {draft.activityPlanId && onRemoveActivityPlan ? (
+                  {draft.activityPlanId && draft.routeId && onRemoveActivityPlan ? (
                     <Pressable
                       accessibilityLabel="Detach activity plan"
                       onPress={onRemoveActivityPlan}
@@ -261,7 +261,7 @@ export function CreateEventMainStep({
               </View>
               {selectedActivityPlan ? (
                 <ActivityPlanCard
-                  activityPlan={selectedActivityPlan}
+                  plan={selectedActivityPlan}
                   onPress={onOpenActivityPlan}
                   testID={`${testIDPrefix}-selected-activity-plan`}
                   variant="compact"
@@ -293,14 +293,6 @@ export function CreateEventMainStep({
               pickerPresentation="modal"
               testId={`${testIDPrefix}-start-date-button`}
             />
-            {showRepeat ? (
-              <SummaryRow
-                label="Repeat"
-                onPress={onOpenRepeat}
-                testID={`${testIDPrefix}-repeat-row`}
-                value={repeatLabel(draft.recurrenceFrequency, draft.recurrenceEndDate)}
-              />
-            ) : null}
             <FormTextField
               control={control}
               label="Title"

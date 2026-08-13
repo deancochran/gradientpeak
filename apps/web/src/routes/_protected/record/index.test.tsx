@@ -6,9 +6,20 @@ import { Route } from "./index";
 
 const mocks = vi.hoisted(() => ({
   configure: vi.fn(() => true),
-  event: undefined as undefined | { activity_plan_id: string | null; activity_plan: unknown },
+  event: undefined as
+    | undefined
+    | {
+        activity_plan_id: string | null;
+        activityPlanSummary: unknown;
+      },
   eventRefetch: vi.fn(),
   eventQueryState: { isError: false, isLoading: false, isSuccess: true },
+  history: [] as Array<{
+    finishedAt: string;
+    recordingSessionId: string;
+    review: { name: string };
+    snapshot: { activity: { activity_category: string } };
+  }>,
   navigate: vi.fn(),
   search: { activity_category: "bike" as const, eventId: "event-direct", gps: "off" as const },
 }));
@@ -45,7 +56,7 @@ vi.mock("../../../lib/recording/provider", () => ({
     discardRecoveredDraft: vi.fn(),
     error: null,
     hasRecoveredDraft: false,
-    history: [],
+    history: mocks.history,
     hydrationStatus: "ready",
     resume: vi.fn(),
     state: { reducer: { lifecycle: "idle", snapshot: null } },
@@ -62,19 +73,63 @@ beforeEach(() => {
   mocks.eventQueryState.isError = false;
   mocks.eventQueryState.isLoading = false;
   mocks.eventQueryState.isSuccess = true;
+  mocks.history = [];
   mocks.navigate.mockClear();
 });
 
 afterEach(cleanup);
 
+const validRunStructure = {
+  version: 3,
+  activity_category: "run",
+  segments: [
+    {
+      id: "00000000-0000-4000-8000-000000000001",
+      role: "activity",
+      name: "Run",
+      intervals: [
+        {
+          id: "00000000-0000-4000-8000-000000000002",
+          name: "Work",
+          repetitions: 1,
+          steps: [
+            {
+              id: "00000000-0000-4000-8000-000000000003",
+              name: "Run",
+              duration: { type: "time", seconds: 600 },
+              targets: [{ type: "RPE", intensity: 5 }],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
 describe("RecordPage direct event launch", () => {
+  it("uses category and date labels instead of stored names in local recording history", () => {
+    mocks.history = [
+      {
+        finishedAt: "2026-01-02T10:00:00.000Z",
+        recordingSessionId: "recording-1",
+        review: { name: "Private stored recording name" },
+        snapshot: { activity: { activity_category: "run" } },
+      },
+    ];
+    const RecordPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<RecordPage />);
+
+    expect(screen.getByText("run activity")).toBeTruthy();
+    expect(screen.queryByText("Private stored recording name")).toBeNull();
+  });
+
   it("fail-closes an invalid nested plan and offers change or detach recovery", () => {
     mocks.event = {
       activity_plan_id: "invalid-plan",
-      activity_plan: {
+      activityPlanSummary: {
         id: "invalid-plan",
         name: "Invalid plan",
-        activity_category: null,
+        activityCategory: null,
         structure: { version: 3, segments: [{ activity_category: "run", role: "activity" }] },
       },
     };
@@ -95,7 +150,7 @@ describe("RecordPage direct event launch", () => {
   });
 
   it("fail-closes a linked plan whose DTO relationship is unavailable", () => {
-    mocks.event = { activity_plan_id: "missing-plan", activity_plan: null };
+    mocks.event = { activity_plan_id: "missing-plan", activityPlanSummary: null };
     const RecordPage = (Route as unknown as { component: React.ComponentType }).component;
     render(<RecordPage />);
 
@@ -128,14 +183,11 @@ describe("RecordPage direct event launch", () => {
   it("starts a canonical plan using its valid ID and activity_category", () => {
     mocks.event = {
       activity_plan_id: "repeat-run",
-      activity_plan: {
+      activityPlanSummary: {
         id: "repeat-run",
         name: "Double run",
-        activity_category: "run",
-        structure: {
-          version: 3,
-          segments: [{ activity_category: "run" }, { activity_category: "run" }],
-        },
+        activityCategory: "run",
+        structure: validRunStructure,
       },
     };
     const RecordPage = (Route as unknown as { component: React.ComponentType }).component;

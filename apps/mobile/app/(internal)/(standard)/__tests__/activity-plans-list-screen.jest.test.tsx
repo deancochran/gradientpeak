@@ -13,6 +13,11 @@ const activityPlansListUseQueryMock = jest.fn((_input?: unknown) => ({
         activity_category: "bike",
         content_visibility: "private",
         owner: { id: "owner-1", username: "Owner", avatar_url: null },
+        summary: {
+          id: "plan-1",
+          name: "Tempo Ride",
+          owner: { id: "owner-1", username: "Owner", avatarUrl: null },
+        },
       },
     ],
   },
@@ -39,7 +44,7 @@ type FlatListProps = {
 
 type ActivityPlanCardNode = {
   props: {
-    activityPlan: ActivityPlan;
+    plan: ActivityPlan;
     variant?: string;
   };
 };
@@ -199,7 +204,7 @@ describe("activity plans list screen", () => {
       "ActivityPlanCard",
     );
 
-    expect(activityPlanCard.props.activityPlan.owner).toEqual(
+    expect(activityPlanCard.props.plan.owner).toEqual(
       expect.objectContaining({
         id: "owner-1",
         username: "Owner",

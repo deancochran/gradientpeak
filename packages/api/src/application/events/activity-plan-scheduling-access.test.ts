@@ -55,7 +55,6 @@ describe("ActivityPlan scheduling access", () => {
           buildInsightRefreshHint: () => null,
           buildMaterializedRecurrenceOccurrences: () => [],
           enqueueWahooPlannedActivityJobs: vi.fn(async () => null),
-          ensurePersistableRecurrence: () => undefined,
           getContentPermissions: () => access,
           getEventWriteRepository: () => writeRepository,
           mapEvent: (event) => event as any,
@@ -68,7 +67,6 @@ describe("ActivityPlan scheduling access", () => {
             notes: null,
             routeId: null,
             scheduledDate: "2026-03-12",
-            sourceProvider: null,
             startsAt: "2026-03-12T09:00:00.000Z",
             status: "scheduled" as const,
             timezone: "UTC",
@@ -100,7 +98,6 @@ describe("ActivityPlan scheduling access", () => {
                 recurrence_timezone: null,
                 route_id: null,
                 series_id: null,
-                source_provider: null,
                 starts_at: "2026-03-12T09:00:00.000Z",
                 status: "scheduled",
                 timezone: "UTC",
@@ -117,9 +114,7 @@ describe("ActivityPlan scheduling access", () => {
           toCoreEventType: (eventType) => eventType,
           toDateKey: (value) => value.slice(0, 10),
           toDayStartIso: (value) => `${value}T00:00:00.000Z`,
-          toDbEventType: (eventType) => eventType,
           toNextDayStartIso: (value) => `${value}T00:00:00.000Z`,
-          toPersistableEventStatus: () => "scheduled",
         },
       }),
     ).resolves.toMatchObject({ id: "event-1" });
@@ -131,6 +126,52 @@ describe("ActivityPlan scheduling access", () => {
     );
     expect(getActivityPlanById).toHaveBeenCalledTimes(2);
     expect(getAccessibleActivityPlan).not.toHaveBeenCalled();
+  });
+
+  it("rejects instant schedule fields for an existing planned session", async () => {
+    const updateOwnedEventsForScope = vi.fn();
+    const existing = {
+      ...createdEvent(),
+      all_day: true,
+      ends_at: "2026-03-13T00:00:00.000Z",
+      linked_activity_id: null,
+      route_id: null,
+      starts_at: "2026-03-12T00:00:00.000Z",
+      status: "scheduled" as const,
+      timezone: "UTC",
+    };
+
+    await expect(
+      updateEventUseCase({
+        ctx: { session: { user: { id: profileId } } } as any,
+        input: { id: existing.id },
+        dependencies: {
+          assertRestDayWritesBlocked: () => undefined,
+          buildInsightRefreshHint: () => null,
+          enqueueWahooPlannedActivityJobs: vi.fn(async () => null),
+          getContentPermissions: () => null,
+          getEventCompletionRepository: () => ({
+            getOwnedEventForCompletion: vi.fn(async () => existing),
+          }),
+          getEventWriteRepository: () => ({ updateOwnedEventsForScope }),
+          hasInstantChanged: () => true,
+          mapEvent: (event: unknown) => event,
+          normalizeEventUpdatePatch: () => ({
+            patch: { starts_at: "2026-03-12T09:00:00.000Z" },
+            scheduledDate: undefined,
+          }),
+          toCoreEventType: (eventType: "planned" | "race_target" | "custom") => eventType,
+          toDateKey: (value: string) => value.slice(0, 10),
+          toDayStartIso: (value: string) => `${value}T00:00:00.000Z`,
+          toNextDayStartIso: (value: string) => `${value}T00:00:00.000Z`,
+        } as any,
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Planned sessions accept calendar-date schedule updates only",
+    });
+
+    expect(updateOwnedEventsForScope).not.toHaveBeenCalled();
   });
 
   it("denies scheduling before loading a plan row", async () => {
@@ -148,13 +189,11 @@ describe("ActivityPlan scheduling access", () => {
           buildInsightRefreshHint: () => null,
           buildMaterializedRecurrenceOccurrences: () => [],
           enqueueWahooPlannedActivityJobs: vi.fn(async () => null),
-          ensurePersistableRecurrence: () => undefined,
           getContentPermissions: () => access,
           getEventWriteRepository: () => writeRepository,
           mapEvent: (event: unknown) => event as any,
           normalizeEventCreateInput: () => ({ activityPlanId, eventType: "planned" as const }),
-          toDbEventType: (eventType: "planned" | "race_target" | "custom" | "imported") =>
-            eventType,
+          toDbEventType: (eventType: "planned" | "race_target" | "custom") => eventType,
         } as any,
       }),
     ).rejects.toThrow("Activity plan not found or not accessible");

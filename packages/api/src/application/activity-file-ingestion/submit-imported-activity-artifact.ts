@@ -1,4 +1,8 @@
-import type { ContentVisibility, StandardActivity } from "@repo/core";
+import {
+  activityLapRecordListSchema,
+  type ContentVisibility,
+  type StandardActivity,
+} from "@repo/core";
 import { MAX_ACTIVITY_FILE_SIZE_BYTES } from "@repo/core/activity-files";
 import { activitySourceReferences, profiles } from "@repo/db";
 import { and, eq } from "drizzle-orm";
@@ -15,6 +19,16 @@ import { analyzeParsedActivityFile } from "./analyze-parsed-activity-file";
 import { finalizeActivityArtifactIngestion } from "./finalize-activity-artifact-ingestion";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
+
+export class ImportedActivityAnalysisError extends Error {
+  constructor(
+    public readonly code: "activity_analysis_failed" | "activity_laps_invalid",
+    cause: unknown,
+  ) {
+    super(code, { cause });
+    this.name = "ImportedActivityAnalysisError";
+  }
+}
 
 function valueOrNull(value: number | null | undefined): number | null {
   return value ?? null;
@@ -91,14 +105,19 @@ export async function submitImportedActivityArtifact(
         artifactSha256,
         artifactByteSize,
       );
-      const analysis = await analyzeParsedActivityFile(db, {
-        activityId,
-        profileId: input.activity.profileId,
-        parsedData,
-        artifactId,
-        providerActiveDurationSeconds: input.activity.providerActiveDurationSeconds,
-        provider: input.activity.provider,
-      });
+      let analysis: Awaited<ReturnType<typeof analyzeParsedActivityFile>>;
+      try {
+        analysis = await analyzeParsedActivityFile(db, {
+          activityId,
+          profileId: input.activity.profileId,
+          parsedData,
+          artifactId,
+          providerActiveDurationSeconds: input.activity.providerActiveDurationSeconds,
+          provider: input.activity.provider,
+        });
+      } catch (error) {
+        throw new ImportedActivityAnalysisError("activity_analysis_failed", error);
+      }
       const summary = analysis.summaryValues;
       const contentVisibility =
         input.activity.contentVisibility ??
@@ -135,7 +154,15 @@ export async function submitImportedActivityArtifact(
         avgSwolf: valueOrNull(summary.avg_swolf),
         deviceManufacturer: parsedData.metadata.manufacturer,
         deviceProduct: parsedData.metadata.product,
-        laps: parsedData.laps ?? null,
+        laps: (() => {
+          const laps = parsedData.laps ?? null;
+          if (laps === null) return null;
+          try {
+            return activityLapRecordListSchema.parse(laps);
+          } catch (error) {
+            throw new ImportedActivityAnalysisError("activity_laps_invalid", error);
+          }
+        })(),
         mapBounds: analysis.geometry.mapBounds,
         polyline: analysis.geometry.polyline,
         providerProvenance: {

@@ -15,7 +15,7 @@ export function getWahooProfileEnrichmentResource(
 }
 
 export type WahooProfileEnrichmentPayload = {
-  trigger: "connect" | "manual";
+  trigger: "connect" | "manual" | "onboarding";
 };
 
 export function isWahooProfileEnrichmentPayload(
@@ -27,7 +27,7 @@ export function isWahooProfileEnrichmentPayload(
       !Array.isArray(value) &&
       Object.keys(value).length === 1 &&
       "trigger" in value &&
-      (value.trigger === "connect" || value.trigger === "manual"),
+      (value.trigger === "connect" || value.trigger === "manual" || value.trigger === "onboarding"),
   );
 }
 

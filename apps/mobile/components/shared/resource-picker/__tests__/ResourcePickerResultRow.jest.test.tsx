@@ -1,5 +1,8 @@
-import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
+import {
+  createActivityPlanStructure,
+  createActivityPlanSummary,
+} from "../../../../test/activity-plan-projection-fixture";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 import {
@@ -73,12 +76,7 @@ describe("ResourcePickerResultRow", () => {
       <ResourcePickerResultRow
         isSelected
         item={{
-          activityPlanCardData: {
-            activity_category: "run",
-            id: "plan-1",
-            name: "Tempo Builder",
-            structure: { version: 3, segments: [] },
-          },
+          activityPlan: createActivityPlanSummary({ id: "plan-1", name: "Tempo Builder" }),
           id: "plan-1",
           name: "Tempo Builder",
           presentation: "canonical",
@@ -90,7 +88,7 @@ describe("ResourcePickerResultRow", () => {
 
     const activityPlanCard = screen.getByTestId("resource-picker-activity-plan-card");
     expect(activityPlanCard.props.variant).toBe("compact");
-    expect(activityPlanCard.props.cardData.structure).toEqual({ version: 3, segments: [] });
+    expect(activityPlanCard.props.plan).toEqual(expect.objectContaining({ id: "plan-1" }));
     expect(screen.getByTestId("resource-picker-result-selected-plan-1")).toBeTruthy();
     fireEvent.press(screen.getByTestId("resource-picker-result-plan-1"));
     expect(onPress).toHaveBeenCalledTimes(1);
@@ -160,24 +158,18 @@ describe("ResourcePickerResultRow", () => {
   });
 
   it("maps every current query result to its canonical card presentation", () => {
-    const prescriptionQuantification = createPrescriptionQuantificationBundleFixture({
+    const plan = createActivityPlanSummary({
+      id: "plan-2",
+      name: "Endurance",
       activityCategory: "bike",
+      structure: createActivityPlanStructure("bike"),
     });
-    expect(
-      mapActivityPlanToResourcePickerItem({
+    expect(mapActivityPlanToResourcePickerItem(plan)).toMatchObject({
+      activityPlan: {
+        activityCategory: "bike",
         id: "plan-2",
         name: "Endurance",
-        activity_category: "bike",
-        prescriptionQuantification,
-        structure: { version: 3, segments: [] },
-      }),
-    ).toMatchObject({
-      activityPlanCardData: {
-        activity_category: "bike",
-        id: "plan-2",
-        name: "Endurance",
-        prescriptionQuantification,
-        structure: { version: 3, segments: [] },
+        structure: expect.objectContaining({ activity_category: "bike" }),
       },
       presentation: "canonical",
     });

@@ -2,6 +2,7 @@ import { relations } from "drizzle-orm";
 
 import {
   activities,
+  activityAnalysisRevisions,
   activityArtifactLinks,
   activityArtifacts,
   activityEfforts,
@@ -39,6 +40,10 @@ import {
   organizationMembershipRoleGrants,
   organizationMemberships,
   organizations,
+  performanceCalibrationEvidence,
+  performanceCalibrationModelInputs,
+  performanceCalibrationSelectionEvidence,
+  performanceCalibrations,
   profileAthleteState,
   profileGoals,
   profileMetrics,
@@ -54,6 +59,7 @@ import {
 
 export const profilesRelations = relations(profiles, ({ one, many }) => ({
   activities: many(activities),
+  activityAnalysisRevisions: many(activityAnalysisRevisions),
   activityArtifacts: many(activityArtifacts),
   activitySegments: many(activitySegments),
   activityFileIngestions: many(activityFileIngestions),
@@ -87,6 +93,8 @@ export const profilesRelations = relations(profiles, ({ one, many }) => ({
   profileMetrics: many(profileMetrics),
   athleteState: one(profileAthleteState),
   performanceEstimates: many(profilePerformanceEstimates),
+  performanceCalibrationEvidence: many(performanceCalibrationEvidence),
+  performanceCalibrations: many(performanceCalibrations),
   activityImportRuns: many(activityImportRuns),
   activitySourceReferences: many(activitySourceReferences),
   providerSyncJobs: many(providerSyncJobs),
@@ -178,7 +186,7 @@ export const athleteConsentPolicyVersionsRelations = relations(
 
 export const athleteDataSharingConsentsRelations = relations(
   athleteDataSharingConsents,
-  ({ one }) => ({
+  ({ one, many }) => ({
     engagement: one(coachingEngagements, {
       fields: [athleteDataSharingConsents.engagement_id],
       references: [coachingEngagements.id],
@@ -336,6 +344,95 @@ export const profilePerformanceEstimatesRelations = relations(
   }),
 );
 
+export const performanceCalibrationEvidenceRelations = relations(
+  performanceCalibrationEvidence,
+  ({ one, many }) => ({
+    profile: one(profiles, {
+      fields: [performanceCalibrationEvidence.profile_id],
+      references: [profiles.id],
+    }),
+    selections: many(performanceCalibrationSelectionEvidence),
+    modelInputs: many(performanceCalibrationModelInputs),
+  }),
+);
+
+export const performanceCalibrationModelInputsRelations = relations(
+  performanceCalibrationModelInputs,
+  ({ one }) => ({
+    evidence: one(performanceCalibrationEvidence, {
+      fields: [
+        performanceCalibrationModelInputs.calibration_evidence_id,
+        performanceCalibrationModelInputs.profile_id,
+        performanceCalibrationModelInputs.metric_key,
+        performanceCalibrationModelInputs.activity_category,
+      ],
+      references: [
+        performanceCalibrationEvidence.id,
+        performanceCalibrationEvidence.profile_id,
+        performanceCalibrationEvidence.metric_key,
+        performanceCalibrationEvidence.activity_category,
+      ],
+    }),
+  }),
+);
+
+export const performanceCalibrationsRelations = relations(
+  performanceCalibrations,
+  ({ one, many }) => ({
+    profile: one(profiles, {
+      fields: [performanceCalibrations.profile_id],
+      references: [profiles.id],
+    }),
+    supersedes: one(performanceCalibrations, {
+      relationName: "performanceCalibrationSupersession",
+      fields: [performanceCalibrations.supersedes_id],
+      references: [performanceCalibrations.id],
+    }),
+    supersededBy: many(performanceCalibrations, {
+      relationName: "performanceCalibrationSupersession",
+    }),
+    supportingEvidence: many(performanceCalibrationSelectionEvidence),
+  }),
+);
+
+export const performanceCalibrationSelectionEvidenceRelations = relations(
+  performanceCalibrationSelectionEvidence,
+  ({ one }) => ({
+    calibration: one(performanceCalibrations, {
+      fields: [
+        performanceCalibrationSelectionEvidence.calibration_id,
+        performanceCalibrationSelectionEvidence.profile_id,
+        performanceCalibrationSelectionEvidence.metric_key,
+        performanceCalibrationSelectionEvidence.activity_category,
+      ],
+      references: [
+        performanceCalibrations.id,
+        performanceCalibrations.profile_id,
+        performanceCalibrations.metric_key,
+        performanceCalibrations.activity_category,
+      ],
+    }),
+    evidence: one(performanceCalibrationEvidence, {
+      fields: [
+        performanceCalibrationSelectionEvidence.evidence_id,
+        performanceCalibrationSelectionEvidence.profile_id,
+        performanceCalibrationSelectionEvidence.metric_key,
+        performanceCalibrationSelectionEvidence.activity_category,
+      ],
+      references: [
+        performanceCalibrationEvidence.id,
+        performanceCalibrationEvidence.profile_id,
+        performanceCalibrationEvidence.metric_key,
+        performanceCalibrationEvidence.activity_category,
+      ],
+    }),
+    profile: one(profiles, {
+      fields: [performanceCalibrationSelectionEvidence.profile_id],
+      references: [profiles.id],
+    }),
+  }),
+);
+
 export const eventsRelations = relations(events, ({ one, many }) => ({
   profile: one(profiles, {
     fields: [events.profile_id],
@@ -359,10 +456,6 @@ export const eventsRelations = relations(events, ({ one, many }) => ({
   route: one(activityRoutes, {
     fields: [events.route_id],
     references: [activityRoutes.id],
-  }),
-  integration: one(integrations, {
-    fields: [events.integration_account_id],
-    references: [integrations.id],
   }),
   series: one(events, {
     relationName: "eventRecurrenceSeriesOccurrences",
@@ -390,7 +483,22 @@ export const activitiesRelations = relations(activities, ({ one, many }) => ({
   sourceReferences: many(activitySourceReferences),
   segments: many(activitySegments),
   swimmingCssProtocolEvidence: many(swimmingCssProtocolEvidence),
+  analysisRevisions: many(activityAnalysisRevisions),
 }));
+
+export const activityAnalysisRevisionsRelations = relations(
+  activityAnalysisRevisions,
+  ({ one }) => ({
+    activity: one(activities, {
+      fields: [activityAnalysisRevisions.activity_id, activityAnalysisRevisions.profile_id],
+      references: [activities.id, activities.profile_id],
+    }),
+    profile: one(profiles, {
+      fields: [activityAnalysisRevisions.profile_id],
+      references: [profiles.id],
+    }),
+  }),
+);
 
 export const activityArtifactsRelations = relations(activityArtifacts, ({ one, many }) => ({
   profile: one(profiles, {
@@ -763,6 +871,10 @@ export const relationsSchema = {
   profileMetricsRelations,
   profileAthleteStateRelations,
   profilePerformanceEstimatesRelations,
+  performanceCalibrationEvidenceRelations,
+  performanceCalibrationModelInputsRelations,
+  performanceCalibrationSelectionEvidenceRelations,
+  performanceCalibrationsRelations,
   oauthStatesRelations,
   integrationResourceLinksRelations,
   likesRelations,

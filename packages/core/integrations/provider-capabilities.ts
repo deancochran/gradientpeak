@@ -2,15 +2,19 @@ import { z } from "zod";
 import type { ActivityPlanDuration, ActivityPlanTarget } from "../activity-plan";
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
 
-export const integrationProviderIdValues = [
+export const persistentIntegrationSourceIdValues = [
   "wahoo",
   "strava",
   "trainingpeaks",
   "garmin",
   "zwift",
 ] as const;
-export const integrationProviderIdSchema = z.enum(integrationProviderIdValues);
-export type IntegrationProviderId = z.infer<typeof integrationProviderIdSchema>;
+export const persistentIntegrationSourceIdSchema = z.enum(persistentIntegrationSourceIdValues);
+export type PersistentIntegrationSourceId = z.infer<typeof persistentIntegrationSourceIdSchema>;
+
+export const executableIntegrationProviderIdValues = ["wahoo"] as const;
+export const executableIntegrationProviderIdSchema = z.enum(executableIntegrationProviderIdValues);
+export type ExecutableIntegrationProviderId = z.infer<typeof executableIntegrationProviderIdSchema>;
 
 export const providerCapabilityValues = [
   "profile_enrichment_read",
@@ -18,7 +22,6 @@ export const providerCapabilityValues = [
   "activity_file_download",
   "activity_file_format_fit",
   "planned_activity_push",
-  "completed_activity_push",
   "route_push",
   "webhook_activity_updates",
 ] as const;
@@ -35,7 +38,7 @@ export type ProviderConfigurableAction = z.infer<typeof providerConfigurableActi
 export const providerSyncModeSchema = z.enum(["automatic", "manual", "unsupported"]);
 export type ProviderSyncMode = z.infer<typeof providerSyncModeSchema>;
 
-export type ProviderPlannedActivityMaturity = "available" | "evidence_gated";
+export type ProviderPlannedActivityMaturity = "available";
 
 export type ProviderPlannedActivityCapability = {
   maturity: ProviderPlannedActivityMaturity;
@@ -46,12 +49,26 @@ export type ProviderPlannedActivityCapability = {
   supportsMultipleTargets: boolean;
 };
 
+export const providerOnboardingPresentationSchema = z
+  .object({
+    summary: z.string().min(1).max(160),
+    evidence: z
+      .object({
+        activityHistory: z.boolean(),
+        profileDetails: z.boolean(),
+      })
+      .strict(),
+  })
+  .strict();
+export type ProviderOnboardingPresentation = z.infer<typeof providerOnboardingPresentationSchema>;
+
 export type ProviderCapabilityDefinition = {
   capabilities: readonly ProviderCapability[];
   /** A stable, user-safe explanation for capabilities deliberately withheld. */
   unavailableReasons?: Partial<Record<ProviderCapability, string>>;
-  id: IntegrationProviderId;
+  id: ExecutableIntegrationProviderId;
   label: string;
+  onboarding: ProviderOnboardingPresentation;
   plannedActivities: ProviderPlannedActivityCapability;
   syncModes: Partial<Record<ProviderCapability, Exclude<ProviderSyncMode, "unsupported">>>;
 };
@@ -71,19 +88,14 @@ const wahooPlannedActivities = {
   supportsMultipleTargets: false,
 } as const satisfies ProviderPlannedActivityCapability;
 
-const evidenceGatedPlannedActivities = {
-  maturity: "evidence_gated",
-  supportedDurations: [],
-  supportedActivityCategories: [],
-  supportedTargets: [],
-  supportsBoundaries: false,
-  supportsMultipleTargets: false,
-} as const satisfies ProviderPlannedActivityCapability;
-
 const providerCapabilityMap = {
   wahoo: {
     id: "wahoo",
     label: "Wahoo",
+    onboarding: {
+      summary: "Import profile details and activity history from your Wahoo account.",
+      evidence: { activityHistory: true, profileDetails: true },
+    },
     plannedActivities: wahooPlannedActivities,
     capabilities: [
       "profile_enrichment_read",
@@ -106,67 +118,35 @@ const providerCapabilityMap = {
         "Wahoo route push is disabled because uncertain create outcomes cannot be reconciled under the documented API.",
     },
   },
-  strava: {
-    id: "strava",
-    label: "Strava",
-    plannedActivities: evidenceGatedPlannedActivities,
-    capabilities: ["activity_history_read", "completed_activity_push", "webhook_activity_updates"],
-    syncModes: {
-      activity_history_read: "manual",
-      completed_activity_push: "manual",
-      webhook_activity_updates: "automatic",
-    },
-  },
-  trainingpeaks: {
-    id: "trainingpeaks",
-    label: "TrainingPeaks",
-    plannedActivities: evidenceGatedPlannedActivities,
-    capabilities: [],
-    syncModes: {},
-  },
-  garmin: {
-    id: "garmin",
-    label: "Garmin",
-    plannedActivities: evidenceGatedPlannedActivities,
-    capabilities: ["activity_history_read"],
-    syncModes: {
-      activity_history_read: "manual",
-    },
-  },
-  zwift: {
-    id: "zwift",
-    label: "Zwift",
-    plannedActivities: evidenceGatedPlannedActivities,
-    capabilities: [],
-    syncModes: {},
-  },
-} as const satisfies Record<IntegrationProviderId, ProviderCapabilityDefinition>;
+} as const satisfies Record<ExecutableIntegrationProviderId, ProviderCapabilityDefinition>;
 
-export const providerCapabilityRegistry = integrationProviderIdValues.map(
+export const providerCapabilityRegistry = executableIntegrationProviderIdValues.map(
   (provider) => providerCapabilityMap[provider],
 ) satisfies readonly ProviderCapabilityDefinition[];
 
 export function getProviderCapabilityDefinition(
-  provider: IntegrationProviderId,
+  provider: ExecutableIntegrationProviderId,
 ): ProviderCapabilityDefinition {
   return providerCapabilityMap[provider];
 }
 
 export function getProviderPlannedActivityCapability(
-  provider: IntegrationProviderId,
+  provider: ExecutableIntegrationProviderId,
 ): ProviderPlannedActivityCapability {
   return getProviderCapabilityDefinition(provider).plannedActivities;
 }
 
 export function providerHasCapability(
-  provider: IntegrationProviderId,
+  provider: ExecutableIntegrationProviderId,
   capability: ProviderCapability,
 ): boolean {
-  return getProviderCapabilityDefinition(provider).capabilities.includes(capability);
+  return (providerCapabilityMap[provider].capabilities as readonly ProviderCapability[]).includes(
+    capability,
+  );
 }
 
 export function getProviderCapabilityUnavailableReason(
-  provider: IntegrationProviderId,
+  provider: ExecutableIntegrationProviderId,
   capability: ProviderCapability,
 ): string | null {
   const definition = getProviderCapabilityDefinition(provider);
@@ -176,14 +156,14 @@ export function getProviderCapabilityUnavailableReason(
 }
 
 export function getProvidersWithCapability(
-  providers: readonly IntegrationProviderId[],
+  providers: readonly ExecutableIntegrationProviderId[],
   capability: ProviderCapability,
-): IntegrationProviderId[] {
+): ExecutableIntegrationProviderId[] {
   return providers.filter((provider) => providerHasCapability(provider, capability));
 }
 
 export function getProviderSyncMode(
-  provider: IntegrationProviderId,
+  provider: ExecutableIntegrationProviderId,
   capability: ProviderCapability,
 ): ProviderSyncMode {
   const definition = getProviderCapabilityDefinition(provider);
@@ -198,7 +178,7 @@ export function getProviderSyncMode(
 }
 
 export function getConfigurableProviderActions(
-  provider: IntegrationProviderId,
+  provider: ExecutableIntegrationProviderId,
 ): ProviderConfigurableAction[] {
   const actions = new Set<ProviderConfigurableAction>(["disconnect"]);
   const canSyncNow =
@@ -216,7 +196,7 @@ export function getConfigurableProviderActions(
 
 /** Static product target only; API runtime admission still owns enablement, grants, and fences. */
 export function isProviderActivityHistoryReconciliationTarget(
-  provider: IntegrationProviderId,
+  provider: ExecutableIntegrationProviderId,
 ): boolean {
   return (
     providerHasCapability(provider, "activity_history_read") &&

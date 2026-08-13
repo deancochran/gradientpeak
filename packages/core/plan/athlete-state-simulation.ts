@@ -223,7 +223,7 @@ export function deriveProjectedPlanStimuli(input: {
   });
 }
 
-/** One versioned projection authority shared by tentative clients and authoritative API saves. */
+/** One versioned projection authority shared by clients and authoritative API saves. */
 export function deriveDraftPlanProjection(input: {
   baseline: AthleteStateBaseline;
   planId: string;

@@ -1,5 +1,4 @@
 import { projectAthletePerformanceTargetOverview } from "@repo/core";
-import { isActivityDerivedThresholdMetricType } from "@repo/core/athlete-inputs";
 import type { ProfileMetricType } from "@repo/core/schemas/profile-metrics";
 import type { PreferredUnitSystem } from "@repo/core/units";
 import {
@@ -155,8 +154,6 @@ function ProfileMetricsPage() {
     profileMetricGroups[0].metrics[0];
   const selectedRows = groupedMetrics.get(selectedOption.type) ?? [];
   const latestMetric = selectedRows[0];
-  const selectedIsThreshold = isActivityDerivedThresholdMetricType(selectedOption.type);
-
   const createMutation = api.profileMetrics.create.useMutation({
     onSuccess: async () => {
       await utils.profileMetrics.invalidate();
@@ -182,17 +179,15 @@ function ProfileMetricsPage() {
     <div className="container mx-auto max-w-6xl space-y-6 py-4">
       <DetailPageIntro
         actions={
-          selectedIsThreshold ? null : (
-            <Button
-              onClick={() =>
-                setEditorTarget({ mode: "create", metric: { metric_type: selectedMetricType } })
-              }
-              type="button"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Add measurement
-            </Button>
-          )
+          <Button
+            onClick={() =>
+              setEditorTarget({ mode: "create", metric: { metric_type: selectedMetricType } })
+            }
+            type="button"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add measurement
+          </Button>
         }
         description="Trends now live with profile metrics: pick a measurement, inspect the chart, then edit or delete records from the table below."
         eyebrow="Profile"
@@ -319,7 +314,6 @@ function ProfileMetricsPage() {
                   onDelete={setDeleteMetric}
                   onEdit={(metric) => setEditorTarget({ metric, mode: "edit" })}
                   onOverride={(metric) => setEditorTarget({ metric, mode: "override" })}
-                  readOnly={selectedIsThreshold}
                   rows={selectedRows}
                   unitSystem={unitSystem}
                 />
@@ -387,7 +381,6 @@ function MetricRowsTable({
   onDelete,
   onEdit,
   onOverride,
-  readOnly,
   rows,
   unitSystem,
 }: {
@@ -395,7 +388,6 @@ function MetricRowsTable({
   onDelete: (row: ProfileMetricRow) => void;
   onEdit: (row: ProfileMetricRow) => void;
   onOverride: (row: ProfileMetricRow) => void;
-  readOnly?: boolean;
   rows: ProfileMetricRow[];
   unitSystem: PreferredUnitSystem;
 }) {
@@ -424,9 +416,9 @@ function MetricRowsTable({
             const manual = isManualProfileMetric(row.source);
             return (
               <TableRow
-                className={manual && !readOnly ? "cursor-pointer" : undefined}
+                className={manual ? "cursor-pointer" : undefined}
                 key={row.id}
-                onClick={() => manual && !readOnly && onEdit(row)}
+                onClick={() => manual && onEdit(row)}
               >
                 <TableCell>{formatDateTime(row.recorded_at)}</TableCell>
                 <TableCell className="whitespace-nowrap font-medium">
@@ -444,9 +436,7 @@ function MetricRowsTable({
                   {row.notes || "-"}
                 </TableCell>
                 <TableCell className="text-right">
-                  {readOnly ? (
-                    <span className="text-xs text-muted-foreground">Calculated</span>
-                  ) : manual ? (
+                  {manual ? (
                     <Button
                       onClick={(event) => {
                         event.stopPropagation();

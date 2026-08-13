@@ -1,5 +1,6 @@
 import { act, waitFor } from "@testing-library/react-native";
 import React from "react";
+import { createActivityPlanSummary } from "../../../../test/activity-plan-projection-fixture";
 import { createHost } from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
 
@@ -250,15 +251,12 @@ describe("activity plan detail social orchestration", () => {
   });
 
   it("toggles like through the social mutation", () => {
-    localSearchParamsMock.template = JSON.stringify({
-      id: "11111111-1111-1111-1111-111111111111",
-      name: "Tempo Builder",
-      activity_category: "run",
-      profile_id: "profile-1",
-      structure: { intervals: [] },
-      has_liked: false,
-      likes_count: 0,
-    });
+    localSearchParamsMock.template = JSON.stringify(
+      createActivityPlanSummary({
+        id: "11111111-1111-1111-1111-111111111111",
+        name: "Tempo Builder",
+      }),
+    );
 
     renderNative(<ActivityPlanDetail />);
 
@@ -272,32 +270,13 @@ describe("activity plan detail social orchestration", () => {
     });
   });
 
-  it("shows an alert instead of liking an unsaved template", () => {
-    localSearchParamsMock.template = JSON.stringify({
-      name: "Draft Template",
-      activity_category: "run",
-      profile_id: "profile-1",
-      structure: { intervals: [] },
-    });
-
-    renderNative(<ActivityPlanDetail />);
-
-    act(() => {
-      screen.getByTestId("activity-plan-like-button").props.onPress();
-    });
-
-    expect(nativeAlertMock).toHaveBeenCalledWith("Error", "Cannot like this item - invalid ID");
-    expect(toggleLikeMutateMock).not.toHaveBeenCalled();
-  });
-
   it("adds a trimmed comment and clears via success flow", async () => {
-    localSearchParamsMock.template = JSON.stringify({
-      id: "11111111-1111-1111-1111-111111111111",
-      name: "Tempo Builder",
-      activity_category: "run",
-      profile_id: "profile-1",
-      structure: { intervals: [] },
-    });
+    localSearchParamsMock.template = JSON.stringify(
+      createActivityPlanSummary({
+        id: "11111111-1111-1111-1111-111111111111",
+        name: "Tempo Builder",
+      }),
+    );
 
     renderNative(<ActivityPlanDetail />);
 

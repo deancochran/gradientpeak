@@ -84,7 +84,7 @@ describe("system training-plan router parity", () => {
   it("listTemplates preserves canonical system-plan payloads", async () => {
     const caller = createCaller(rows);
 
-    await expect(caller.listTemplates({ limit: 25 })).resolves.toMatchObject({
+    await expect(caller.listTemplates({ direction: "forward", limit: 25 })).resolves.toMatchObject({
       items: expectedTemplates,
     });
   });

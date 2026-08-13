@@ -34,7 +34,7 @@ async function seedProfile() {
     email,
     full_name: "Ingestion Live DB Test",
     username: `ingestion-${id.slice(0, 8)}`,
-    onboarded: true,
+    onboarding_status: "completed",
     is_public: false,
     planning_timezone: "UTC",
     created_at: now,

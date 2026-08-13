@@ -42,7 +42,6 @@ export const effectiveScheduledItemSchema = z
     scheduledItemId: identitySchema,
     scheduledDate: calendarDateSchema,
     status: z.enum(["active", "cancelled"]),
-    tentative: z.boolean(),
     linkedCompletedActivityId: identitySchema.nullable(),
     commonLoad: commonLoadEnvelopeSchema,
   })
@@ -214,10 +213,7 @@ export const effectiveCompositionResultSchema = z.discriminatedUnion("status", [
       status: z.literal("composed"),
       ...compositionContextShape,
       items: z.array(effectiveCompositionItemSchema),
-      tentativeItems: z.array(composedScheduledItemSchema),
       aggregate: effectiveLoadAggregateSchema,
-      tentativeAggregate: commonLoadAggregateSchema,
-      includingTentativeAggregate: effectiveLoadAggregateSchema,
     })
     .strict(),
   z
@@ -323,7 +319,6 @@ export function composeEffectivePlanLoad(
   }
 
   const items: EffectiveCompositionItem[] = [];
-  const tentativeItems: z.infer<typeof composedScheduledItemSchema>[] = [];
 
   for (const scheduled of [...parsed.scheduledItems].sort((left, right) =>
     left.scheduledItemId.localeCompare(right.scheduledItemId),
@@ -345,8 +340,7 @@ export function composeEffectivePlanLoad(
       date: scheduled.scheduledDate,
       commonLoad: scheduled.commonLoad,
     };
-    if (scheduled.tentative) tentativeItems.push(composed);
-    else items.push(composed);
+    items.push(composed);
   }
 
   for (const completed of [...parsed.completedActivities].sort((left, right) =>
@@ -369,14 +363,7 @@ export function composeEffectivePlanLoad(
     status: "composed" as const,
     ...context,
     items,
-    tentativeItems,
     aggregate: effectiveAggregate(items, parsed.scheduledSource, parsed.completedSource),
-    tentativeAggregate: aggregateCommonLoadEnvelopes(tentativeItems.map((item) => item.commonLoad)),
-    includingTentativeAggregate: effectiveAggregate(
-      [...items, ...tentativeItems],
-      parsed.scheduledSource,
-      parsed.completedSource,
-    ),
   };
   return effectiveCompositionResultSchema.parse(result);
 }

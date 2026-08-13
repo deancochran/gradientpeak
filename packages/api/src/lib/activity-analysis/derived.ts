@@ -9,6 +9,7 @@ import {
   COMMON_RELATIVE_LOAD_VERSION,
   type CommonLoadResult,
   commonLoadResultSchema,
+  completedActivityPerformanceTargetSnapshotSchema,
   completedSegmentSummarySchema,
   createObservationQuantificationBundle,
   type LoadSeriesIdentity,
@@ -93,6 +94,7 @@ export type ActivityWithSegments = Pick<
       | "parser_version"
       | "decoded_contract_version"
       | "materializer_version"
+      | "performance_target_snapshot"
     >
   > & { segments: ActivitySegmentReadRow[] };
 
@@ -679,6 +681,8 @@ export async function buildActivitySegmentDerivedSummaries(input: {
   profileId: string;
   activities: ActivityWithSegments[];
   computedAsOf?: Date;
+  /** Explicit current-source snapshots used by the manual historical reprocessor. */
+  performanceTargetsByActivityId?: ReadonlyMap<string, AthletePerformanceTargetFacts>;
 }): Promise<SegmentDerivedSummary[]> {
   const { store, profileId, activities } = input;
   const computedAsOf = (input.computedAsOf ?? new Date()).toISOString();
@@ -705,14 +709,55 @@ export async function buildActivitySegmentDerivedSummaries(input: {
     Awaited<ReturnType<ActivityAnalysisStore["getContextSnapshot"]>>
   >();
   let performanceTargetsByRequest = new Map<string, AthletePerformanceTargetFacts>();
-  if (store.getPerformanceTargetsForRequests) {
+  const performanceTargetsByActivityId = new Map<string, AthletePerformanceTargetFacts>(
+    input.performanceTargetsByActivityId,
+  );
+  if (
+    input.performanceTargetsByActivityId === undefined &&
+    store.getPerformanceTargetSelectionsForActivities
+  ) {
+    const selections = await store.getPerformanceTargetSelectionsForActivities({
+      profileId,
+      activities: activities.map((activity) => ({
+        activityId: activity.id,
+        ...(activity.segments_revision === undefined
+          ? {}
+          : { segmentsRevision: activity.segments_revision }),
+      })),
+    });
+    for (const [activityId, selection] of selections) {
+      performanceTargetsByActivityId.set(activityId, selection.performanceTargets);
+    }
+  }
+  for (const activity of activities) {
+    if (performanceTargetsByActivityId.has(activity.id)) continue;
+    const originalSnapshot =
+      activity.performance_target_snapshot === undefined ||
+      activity.performance_target_snapshot === null
+        ? null
+        : completedActivityPerformanceTargetSnapshotSchema.parse(
+            activity.performance_target_snapshot,
+          );
+    if (originalSnapshot) {
+      if (originalSnapshot.targets.athleteId !== activity.profile_id) {
+        throw new Error("Original activity performance target owner does not match the activity");
+      }
+      performanceTargetsByActivityId.set(activity.id, originalSnapshot.targets);
+    }
+  }
+  const unresolvedRequests = requests.filter(
+    (request) =>
+      request.activityIdToExclude === undefined ||
+      !performanceTargetsByActivityId.has(request.activityIdToExclude),
+  );
+  if (store.getPerformanceTargetsForRequests && unresolvedRequests.length > 0) {
     performanceTargetsByRequest = await loadBatchedPerformanceTargets({
       load: store.getPerformanceTargetsForRequests,
-      requests,
+      requests: unresolvedRequests,
     });
-  } else if (store.getPerformanceTargetsAsOf) {
+  } else if (store.getPerformanceTargetsAsOf && unresolvedRequests.length > 0) {
     const targets = await Promise.all(
-      requests.map((request) =>
+      unresolvedRequests.map((request) =>
         store.getPerformanceTargetsAsOf?.({
           asOf: request.asOf,
           profileId: request.profileId,
@@ -722,7 +767,7 @@ export async function buildActivitySegmentDerivedSummaries(input: {
         }),
       ),
     );
-    requests.forEach((request, index) => {
+    unresolvedRequests.forEach((request, index) => {
       const targetFacts = targets[index];
       if (targetFacts) performanceTargetsByRequest.set(contextRequestKey(request), targetFacts);
     });
@@ -774,7 +819,9 @@ export async function buildActivitySegmentDerivedSummaries(input: {
         activityTimestamp: startedAt,
         activityId: activity.id,
       });
-      const performanceTargets = performanceTargetsByRequest.get(requestKey);
+      const performanceTargets =
+        performanceTargetsByActivityId.get(activity.id) ??
+        performanceTargetsByRequest.get(requestKey);
       const context =
         performanceTargets === undefined
           ? resolvedContext

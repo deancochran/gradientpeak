@@ -19,7 +19,7 @@ export const TEST_USERS = {
     // biome-ignore lint/security/noSecrets: Public local-only test actor fallback, overridable by environment.
     password: process.env.E2E_COACH_PASSWORD ?? "PlaywrightPass123!",
     emailVerified: true,
-    onboarded: true,
+    onboardingStatus: "completed",
     storageState: fileURLToPath(new URL("../../test-results/.auth/coach.json", import.meta.url)),
     username: "playwright_coach",
   },
@@ -30,7 +30,7 @@ export const TEST_USERS = {
     // biome-ignore lint/security/noSecrets: Public local-only test actor fallback, overridable by environment.
     password: process.env.E2E_ATHLETE_PASSWORD ?? "PlaywrightPass123!",
     emailVerified: true,
-    onboarded: true,
+    onboardingStatus: "completed",
     storageState: fileURLToPath(new URL("../../test-results/.auth/athlete.json", import.meta.url)),
     username: "playwright_athlete",
   },
@@ -41,7 +41,7 @@ export const TEST_USERS = {
     // biome-ignore lint/security/noSecrets: Public local-only test actor fallback, overridable by environment.
     password: process.env.E2E_ONBOARDING_PASSWORD ?? "PlaywrightPass123!",
     emailVerified: true,
-    onboarded: false,
+    onboardingStatus: "provider_selection",
     storageState: fileURLToPath(
       new URL("../../test-results/.auth/onboarding.json", import.meta.url),
     ),
@@ -54,7 +54,7 @@ export const TEST_USERS = {
     // biome-ignore lint/security/noSecrets: Public local-only test actor fallback, overridable by environment.
     password: process.env.E2E_PROFILE_PASSWORD ?? "PlaywrightPass123!",
     emailVerified: true,
-    onboarded: true,
+    onboardingStatus: "completed",
     storageState: fileURLToPath(new URL("../../test-results/.auth/profile.json", import.meta.url)),
     username: "playwright_profile",
   },
@@ -65,7 +65,7 @@ export const TEST_USERS = {
     // biome-ignore lint/security/noSecrets: Public local-only test actor fallback, overridable by environment.
     password: process.env.E2E_UNVERIFIED_PASSWORD ?? "PlaywrightPass123!",
     emailVerified: false,
-    onboarded: false,
+    onboardingStatus: "provider_selection",
     storageState: fileURLToPath(
       new URL("../../test-results/.auth/unverified.json", import.meta.url),
     ),
@@ -396,20 +396,20 @@ async function resetActorProfileState(role: TestUserRole) {
 
     await pool.query(
       `insert into "profiles" (
-        "id", "email", "onboarded", "username", "full_name", "is_public", "default_content_visibility"
+        "id", "email", "onboarding_status", "username", "full_name", "is_public", "default_content_visibility"
       ) values ($1, $2, $3, $4, $5, false, 'private')
       on conflict ("id") do update set
         "email" = excluded."email",
-        "onboarded" = excluded."onboarded",
+        "onboarding_status" = excluded."onboarding_status",
         "username" = excluded."username",
         "full_name" = excluded."full_name",
         "updated_at" = now()`,
       [
         userId,
         actor.email,
-        actor.onboarded,
+        actor.onboardingStatus,
         actor.username,
-        actor.onboarded ? `${actor.firstName} ${actor.lastName}` : null,
+        actor.onboardingStatus === "completed" ? `${actor.firstName} ${actor.lastName}` : null,
       ],
     );
 

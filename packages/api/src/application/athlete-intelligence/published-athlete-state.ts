@@ -95,17 +95,29 @@ function buildPublishedPerformanceTargets(
   const targets = createUnavailableAthletePerformanceTargetFacts(computedAt, profileId);
   for (const estimate of estimates) {
     if (estimate.target_fact === null || estimate.target_fact === undefined) continue;
-    if (estimate.capability_kind === "bike_ftp") {
+    if (estimate.capability_kind === "threshold_power" && estimate.activity_category === "bike") {
       targets.cycling.planningThresholdPower = planningThresholdPowerFactSchema.parse(
         estimate.target_fact,
       );
-    } else if (estimate.capability_kind === "run_threshold_pace") {
+    } else if (
+      estimate.capability_kind === "threshold_speed" &&
+      estimate.activity_category === "run"
+    ) {
       targets.running.planningThresholdPace = planningThresholdPaceFactSchema.parse(
         estimate.target_fact,
       );
-    } else if (estimate.capability_kind === "swim_css") {
+    } else if (
+      estimate.capability_kind === "threshold_speed" &&
+      estimate.activity_category === "swim"
+    ) {
       targets.swimming.css = swimmingCssFactSchema.parse(estimate.target_fact);
     } else {
+      if (estimate.capability_kind === "threshold_heart_rate") {
+        if (estimate.activity_category !== "bike" && estimate.activity_category !== "run") continue;
+        const fact = heartRateCalibrationFactSchema.parse(estimate.target_fact);
+        targets.heartRate[estimate.activity_category].lthr = fact;
+        continue;
+      }
       const match = /^(bike|run|swim)_(lthr|max_hr)$/.exec(estimate.capability_kind);
       if (!match) continue;
       const category = match[1] as "bike" | "run" | "swim";
@@ -185,10 +197,12 @@ export async function readPublishedAthleteStateSnapshot(input: {
           fromDay: formatDateOnlyInTimeZone(current.state.computed_at as Date, planningTimezone),
           toDay: currentPlanningDate,
         }).state;
+  const futureDirty =
+    current.state.dirty_from_at !== null && current.state.dirty_from_at.getTime() > now.getTime();
   const freshness =
     blockingImport === null &&
-    current.state.source_revision === current.state.published_revision &&
-    current.state.dirty_from_at === null
+    (current.state.source_revision === current.state.published_revision || futureDirty) &&
+    (current.state.dirty_from_at === null || futureDirty)
       ? "fresh"
       : "stale";
   const rebuildStatus =
@@ -198,7 +212,7 @@ export async function readPublishedAthleteStateSnapshot(input: {
         ? "pending"
         : current.state.lease_token !== null
           ? "rebuilding"
-          : current.state.source_revision > current.state.published_revision
+          : current.state.source_revision > current.state.published_revision && !futureDirty
             ? current.state.last_failure_code
               ? "failed"
               : "pending"
@@ -248,10 +262,18 @@ export async function readPublishedAthletePerformanceTargets(input: {
     createUnavailableAthletePerformanceTargetFacts(asOf, input.profileId);
 
   if (!snapshot.performanceTargets || snapshot.revisions.published === null) {
-    return { status: "unavailable" as const, targets };
+    return { status: "unavailable" as const, targets, publishedRevision: null };
   }
   if (snapshot.freshness !== "fresh") {
-    return { status: "stale" as const, targets };
+    return {
+      status: "stale" as const,
+      targets,
+      publishedRevision: snapshot.revisions.published,
+    };
   }
-  return { status: "available" as const, targets };
+  return {
+    status: "available" as const,
+    targets,
+    publishedRevision: snapshot.revisions.published,
+  };
 }

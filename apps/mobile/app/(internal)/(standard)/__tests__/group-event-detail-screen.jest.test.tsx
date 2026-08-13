@@ -301,7 +301,7 @@ describe("group event detail route", () => {
     await waitFor(() => {
       expect(rsvpEventSeriesMock).toHaveBeenCalledWith({
         groupEventSeriesId: "33333333-3333-4333-8333-333333333333",
-        status: "accepted",
+        status: null,
       });
     });
     expect(refetchMock).toHaveBeenCalled();

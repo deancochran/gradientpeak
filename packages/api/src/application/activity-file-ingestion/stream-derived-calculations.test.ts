@@ -125,6 +125,25 @@ describe("canonical activity-file best-effort evidence", () => {
     });
   });
 
+  it("persists exact run calibration-window variability diagnostics", () => {
+    const row = calculationsFor({
+      activityCategory: "run",
+      segmentEndOffsetSeconds: 1_800,
+      records: Array.from({ length: 1_801 }, (_, second) => ({
+        timestamp: new Date(second * 1_000),
+        speed: 4,
+        altitude: 0,
+      })),
+    }).effortsToInsert.find((effort) => effort.duration_seconds === 1_800);
+
+    expect(row?.provenance).toMatchObject({
+      source_series: "grade_adjusted_speed",
+      output_window_coverage: 1,
+      maximum_gap_seconds: 1,
+      output_coefficient_of_variation: 0,
+    });
+  });
+
   it("retains exact pool-segment observations as CSS protocol source efforts", () => {
     const calculation = calculateActivityFileStreamDerivedCalculations({
       ...base,

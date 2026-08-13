@@ -1,28 +1,29 @@
 import {
   type AthletePlanningContext,
-  deriveDraftPlanProjection,
   diffDateOnlyUtcDays,
+  selectAthletePlanningContextFields,
 } from "@repo/core";
 import { skipToken } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 import { deriveActivityPlanPickerState } from "./activity-plan-picker";
-import { normalizeBackendPlanningPreview } from "./backend-planning-client";
-import { createTrainingPlanBuilderActions } from "./builder-actions";
-import { createDefaultTrainingPlanBuilderState } from "./defaults";
-import { subscribeToTrainingPlanGoalCreation } from "./goalCreationHandoff";
 import {
+  deriveTrainingPathChartFromBackendProjection,
+  normalizeBackendPlanningPreview,
+} from "./backend-planning-client";
+import { createTrainingPlanBuilderActions } from "./builder-actions";
+import { deriveBuilderPlanPresentation } from "./builder-presentation";
+import {
+  buildCanonicalTrainingPlanDraft,
   createTrainingPlanBuilderStateFromExistingPlan,
   getTrainingPlanStructureActivityPlanIds,
-  toTrainingPlanCreatePayload,
-  toTrainingPlanStructure,
-} from "./mappers";
-import {
-  deriveTrainingPlanCreationSession,
-  deriveTrainingPlanReadinessPresentation,
-} from "./planning-session-engine";
+} from "./canonical-draft";
+import { createDefaultTrainingPlanBuilderState } from "./defaults";
+import { subscribeToTrainingPlanGoalCreation } from "./goalCreationHandoff";
+import { selectTrainingPlanPreferenceFields } from "./preferences-context";
 import { trainingPlanBuilderReducer } from "./reducer";
+import { selectBuilderSummary } from "./selectors";
 import type {
   TrainingPlanCreationProfileGoalSnapshot,
   UseTrainingPlanCreationServiceOptions,
@@ -33,7 +34,6 @@ export type {
   UseTrainingPlanCreationServiceOptions,
 } from "./service-types";
 
-import { deriveTrainingPlanLocalProjection } from "./local-projection";
 import type {
   TrainingPlanBuilderGoalBlueprint,
   TrainingPlanBuilderSession,
@@ -172,8 +172,6 @@ export function useTrainingPlanCreationService({
   );
   const [persistedPlanId, setPersistedPlanId] = useState<string | null>(null);
   const [projectionConflict, setProjectionConflict] = useState<string | null>(null);
-  const draftProjectionPlanId = useRef("00000000-0000-4000-8000-000000000001").current;
-  const projectionPlanId = planId ?? persistedPlanId;
   const hydratedCreationContextAsOfRef = useRef<string | null>(null);
   const hydratedEditPlanIdRef = useRef<string | null>(null);
   const {
@@ -253,82 +251,11 @@ export function useTrainingPlanCreationService({
     });
   }, [state.anchorDate]);
 
-  const activityPlansById = useMemo(() => {
-    const entries = [
-      ...(activityPlansQuery.data?.pages.flatMap((page) => page.items) ?? []),
-      ...(linkedActivityPlansQuery.data?.items ?? []),
-    ].map((activityPlan) => [activityPlan.id, activityPlan] as const);
-    return Object.fromEntries(entries);
-  }, [activityPlansQuery.data?.pages, linkedActivityPlansQuery.data?.items]);
-  const publishedProjection = useMemo(() => {
-    if (publishedStateQuery.isLoading || profileQuery.isLoading)
-      return { status: "loading" as const };
-    if (publishedStateQuery.isError || profileQuery.isError) return { status: "error" as const };
-    const baseline = publishedStateQuery.data?.currentBaseline?.baseline;
-    if (!baseline) return { status: "unavailable" as const };
-    let structure: ReturnType<typeof toTrainingPlanStructure>;
-    try {
-      structure = toTrainingPlanStructure(state);
-    } catch {
-      return { status: "unavailable" as const };
-    }
-    const activityPlans = state.structure.sessions.flatMap((session) => {
-      const plan = session.activityPlan;
-      const load = plan?.prescriptionQuantification?.summary.commonLoad;
-      const category = plan?.prescriptionQuantification?.members[0]?.activity_category;
-      return plan && load && load.status !== "unavailable" && load.load !== null && category
-        ? [{ activityPlanId: plan.id, activityCategory: category, commonLoad: load.load }]
-        : [];
-    });
-    const planningTimezone =
-      creationContextQuery.data?.currentBaseline?.planningTimezone ??
-      profileQuery.data?.planning_timezone ??
-      "UTC";
-    const result = deriveDraftPlanProjection({
-      baseline,
-      planId: projectionPlanId ?? draftProjectionPlanId,
-      structure,
-      activityPlans,
-      planningTimezone,
-      startDate: state.scheduling.startDate,
-    });
-    if (result.status === "unavailable")
-      return { status: "unavailable" as const, reason: result.reason };
-    return {
-      status:
-        publishedStateQuery.data?.status?.freshness === "stale"
-          ? ("stale" as const)
-          : ("available" as const),
-      importStatus: publishedStateQuery.data?.status?.importStatus ?? "complete",
-      simulation: result.simulation,
-    };
-  }, [
-    draftProjectionPlanId,
-    profileQuery.data?.planning_timezone,
-    profileQuery.isError,
-    profileQuery.isLoading,
-    creationContextQuery.data?.currentBaseline?.planningTimezone,
-    publishedStateQuery.data?.currentBaseline?.baseline,
-    publishedStateQuery.data?.status?.freshness,
-    publishedStateQuery.data?.status?.importStatus,
-    publishedStateQuery.isError,
-    publishedStateQuery.isLoading,
-    projectionPlanId,
-    state,
-  ]);
-  const localProjection = useMemo(
-    () => deriveTrainingPlanLocalProjection(state, activityPlansById),
-    [activityPlansById, state],
-  );
-  const { structureProposal } = localProjection;
   const authoritativePreviewInput = useMemo(() => {
     try {
-      const payload = toTrainingPlanCreatePayload(state);
+      const draft = buildCanonicalTrainingPlanDraft(state);
       const commonDraft = {
-        name: payload.name,
-        description: payload.description ?? null,
-        contentVisibility: payload.content_visibility,
-        structure: toTrainingPlanStructure(state),
+        ...draft,
         previewStartDate: state.scheduling.startDate,
       };
       if (mode !== "edit" || !planId) return { kind: "create" as const, draft: commonDraft };
@@ -371,37 +298,97 @@ export function useTrainingPlanCreationService({
   );
   const isBackendPlanningInputStale =
     debouncedAuthoritativePreviewFingerprint !== authoritativePreviewFingerprint;
-  const planningSession = useMemo(
+  const trainingPathChartProjection = useMemo(
     () =>
-      deriveTrainingPlanCreationSession({
-        authoritativeProjection,
-        authoritativePreviewInputAvailable: authoritativePreviewInput !== null,
-        authoritativePreviewReason:
-          authoritativePreviewInput === null
-            ? "Published athlete state and a valid draft are required for authoritative preview."
-            : "Authoritative projection preview is available.",
-        backendPreviewInputEnabled: backendPreviewInput !== null,
-        isBackendPlanningInputStale,
-        localProjection,
-        previewQuery: {
-          error: backendPlanningPreviewQuery.error,
-          isFetching: backendPlanningPreviewQuery.isFetching,
-          isLoading: backendPlanningPreviewQuery.isLoading,
-        },
+      deriveTrainingPathChartFromBackendProjection({
+        backendPreview:
+          isBackendPlanningInputStale || backendPlanningPreviewQuery.isFetching
+            ? null
+            : authoritativeProjection,
+        startDate: state.scheduling.startDate,
       }),
     [
       authoritativeProjection,
-      authoritativePreviewInput,
-      backendPreviewInput,
-      backendPlanningPreviewQuery.error,
       backendPlanningPreviewQuery.isFetching,
-      backendPlanningPreviewQuery.isLoading,
       isBackendPlanningInputStale,
-      localProjection,
+      state.scheduling.startDate,
     ],
   );
-  const { previewLifecycle, projection, saveLifecycle } = planningSession;
-  const activeSaveLifecycle = mode === "edit" ? saveLifecycle.update : saveLifecycle.create;
+  const previewLifecycle = useMemo(() => {
+    if (authoritativePreviewInput === null) {
+      return {
+        status: "backend_input_unavailable" as const,
+        reason: "A valid canonical draft is required for preview.",
+      };
+    }
+    if (
+      isBackendPlanningInputStale ||
+      backendPlanningPreviewQuery.isLoading ||
+      backendPlanningPreviewQuery.isFetching
+    ) {
+      return { status: "backend_preview_pending" as const };
+    }
+    if (backendPlanningPreviewQuery.error) {
+      return {
+        status: "backend_preview_failed" as const,
+        reason: backendPlanningPreviewQuery.error.message,
+      };
+    }
+    return authoritativeProjection
+      ? { status: "backend_preview_ready" as const }
+      : {
+          status: "backend_preview_unavailable" as const,
+          reason: "Published athlete state or the persisted plan revision changed.",
+        };
+  }, [
+    authoritativePreviewInput,
+    authoritativeProjection,
+    backendPlanningPreviewQuery.error,
+    backendPlanningPreviewQuery.isFetching,
+    backendPlanningPreviewQuery.isLoading,
+    isBackendPlanningInputStale,
+  ]);
+  const projection = useMemo(
+    () => ({
+      chart: trainingPathChartProjection.chart,
+      source: trainingPathChartProjection.source,
+    }),
+    [trainingPathChartProjection],
+  );
+  const authoritativeProjectionState = useMemo(() => {
+    if (backendPlanningPreviewQuery.error) return { status: "error" as const };
+    if (
+      authoritativePreviewInput === null ||
+      (!authoritativeProjection && !backendPlanningPreviewQuery.isFetching)
+    ) {
+      return { status: "unavailable" as const };
+    }
+    if (
+      isBackendPlanningInputStale ||
+      backendPlanningPreviewQuery.isLoading ||
+      backendPlanningPreviewQuery.isFetching ||
+      !authoritativeProjection
+    ) {
+      return { status: "loading" as const };
+    }
+    return {
+      status:
+        publishedStateQuery.data?.status?.freshness === "stale"
+          ? ("stale" as const)
+          : ("available" as const),
+      importStatus: publishedStateQuery.data?.status?.importStatus ?? "complete",
+      simulation: authoritativeProjection.simulation,
+    };
+  }, [
+    authoritativePreviewInput,
+    authoritativeProjection,
+    backendPlanningPreviewQuery.error,
+    backendPlanningPreviewQuery.isFetching,
+    backendPlanningPreviewQuery.isLoading,
+    isBackendPlanningInputStale,
+    publishedStateQuery.data?.status?.freshness,
+    publishedStateQuery.data?.status?.importStatus,
+  ]);
   const activityPlanPickerState = useMemo(() => {
     return deriveActivityPlanPickerState({
       athleteContext: state.athleteContext,
@@ -428,6 +415,10 @@ export function useTrainingPlanCreationService({
 
   const persistAndValidatePlan = useCallback(async () => {
     setProjectionConflict(null);
+    if (previewLifecycle.status !== "backend_preview_ready") {
+      setProjectionConflict("Wait for the authoritative preview before saving this draft.");
+      return;
+    }
     const existingPlanId = planId ?? persistedPlanId;
     const basePublishedRevision = publishedStateQuery.data?.publishedRevision;
     if (basePublishedRevision === null || basePublishedRevision === undefined) {
@@ -435,12 +426,9 @@ export function useTrainingPlanCreationService({
       return;
     }
     try {
-      const payload = toTrainingPlanCreatePayload(state);
+      const draft = buildCanonicalTrainingPlanDraft(state);
       const commonDraft = {
-        name: payload.name,
-        description: payload.description ?? null,
-        contentVisibility: payload.content_visibility,
-        structure: toTrainingPlanStructure(state),
+        ...draft,
         previewStartDate: state.scheduling.startDate,
       };
       const editor = editPlanQuery.data?.editor;
@@ -488,27 +476,41 @@ export function useTrainingPlanCreationService({
     onUpdated,
     persistedPlanId,
     planId,
+    previewLifecycle.status,
     publishedStateQuery,
     state,
   ]);
 
   const savePlan = useMemo(() => {
-    const readiness = deriveTrainingPlanReadinessPresentation({
-      canSave:
-        localProjection.saveReadiness.canSave &&
-        (publishedProjection.status === "available" || publishedProjection.status === "stale"),
-      localBlockerCount: localProjection.saveReadiness.blockers.length,
-      mode,
-      previewLifecycle,
-      saveLifecycle: activeSaveLifecycle,
-    });
+    const canSave = previewLifecycle.status === "backend_preview_ready";
+    const readiness = canSave
+      ? {
+          detail:
+            mode === "edit"
+              ? "The authoritative preview is ready to save."
+              : "The authoritative preview is ready to create.",
+          label: mode === "edit" ? "Ready to save" : "Ready to create",
+          status: "ready" as const,
+        }
+      : previewLifecycle.status === "backend_preview_pending"
+        ? {
+            detail: "The authoritative preview is updating.",
+            label: "Updating preview",
+            status: "pending" as const,
+          }
+        : {
+            detail:
+              "reason" in previewLifecycle
+                ? previewLifecycle.reason
+                : "The authoritative preview is unavailable.",
+            label: "Preview required",
+            status: "blocked" as const,
+          };
     return {
       mode,
       label: mode === "edit" ? "Save" : "Create",
-      canSave:
-        localProjection.saveReadiness.canSave &&
-        (publishedProjection.status === "available" || publishedProjection.status === "stale"),
-      blockers: localProjection.saveReadiness.blockers,
+      canSave,
+      blockers: canSave ? [] : [{ message: readiness.detail }],
       degradedReason: null,
       isPending: commitPlanMutation.isPending,
       previewLifecycle,
@@ -517,48 +519,37 @@ export function useTrainingPlanCreationService({
         detail: `Save readiness: ${readiness.detail}`,
       },
       route: "canonical" as const,
-      saveLifecycle: activeSaveLifecycle,
       execute: persistAndValidatePlan,
     };
-  }, [
-    activeSaveLifecycle,
-    commitPlanMutation.isPending,
-    localProjection.saveReadiness.blockers,
-    localProjection.saveReadiness.canSave,
-    mode,
-    persistAndValidatePlan,
-    previewLifecycle,
-    publishedProjection.status,
-  ]);
+  }, [commitPlanMutation.isPending, mode, persistAndValidatePlan, previewLifecycle]);
+  const summary = useMemo(() => selectBuilderSummary(state), [state]);
+  const builderPresentation = useMemo(() => deriveBuilderPlanPresentation(state), [state]);
+  const athleteContextFields = useMemo(
+    () => selectAthletePlanningContextFields(state.athleteContext),
+    [state.athleteContext],
+  );
+  const planningConstraintFields = useMemo(
+    () => selectTrainingPlanPreferenceFields(state.planPreferences),
+    [state.planPreferences],
+  );
   const viewModel = useMemo(
     () => ({
       strategy: {
         state,
-        viewModel: localProjection.builderViewModel,
+        viewModel: builderPresentation,
         projection,
-        canUseStructureProposal: localProjection.canUseStructureProposal,
-        structureProposal: localProjection.structureProposal,
       },
       schedule: {
         state,
-        viewModel: localProjection.builderViewModel,
-        schedulingPreview: localProjection.schedulingPreview,
+        viewModel: builderPresentation,
         projection,
       },
       sheets: {
-        planningConstraintFields: localProjection.planningConstraintFields,
+        planningConstraintFields,
         planPreferences: state.planPreferences,
       },
     }),
-    [
-      localProjection.builderViewModel,
-      localProjection.canUseStructureProposal,
-      localProjection.planningConstraintFields,
-      localProjection.schedulingPreview,
-      localProjection.structureProposal,
-      projection,
-      state,
-    ],
+    [builderPresentation, planningConstraintFields, projection, state],
   );
 
   const actions = useMemo(
@@ -568,10 +559,9 @@ export function useTrainingPlanCreationService({
         state,
         createLocalId,
         createSession,
-        structureProposalSessions: structureProposal.sessions,
         toSelectedGoalBlueprint: mapProfileGoalToSelectedBlueprint,
       }),
-    [mapProfileGoalToSelectedBlueprint, state, structureProposal.sessions],
+    [mapProfileGoalToSelectedBlueprint, state],
   );
 
   return {
@@ -593,7 +583,9 @@ export function useTrainingPlanCreationService({
           linkedActivityPlansQuery.isLoading) ||
         hydratedEditPlanIdRef.current !== planId),
     derived: {
-      ...localProjection,
+      athleteContextFields,
+      planningConstraintFields,
+      summary,
       backendPlanningPreview: {
         data: backendPlanningPreviewQuery.data,
         error: backendPlanningPreviewQuery.error,
@@ -604,7 +596,7 @@ export function useTrainingPlanCreationService({
       },
       projection,
       projectionConflict,
-      publishedProjection,
+      authoritativeProjectionState,
       savePlan,
       viewModel,
     },

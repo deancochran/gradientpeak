@@ -49,7 +49,6 @@ export function FeedList({ onCommentPress }: FeedListProps) {
           onCommentPress={onCommentPress ? () => onCommentPress(item.id) : undefined}
           onPress={() => navigateTo(`/activity-detail?id=${item.id}`)}
           showLike
-          variant="list"
         />
       )}
     />

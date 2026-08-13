@@ -84,7 +84,7 @@ function getMetricLabel(metricType: string) {
 
 function getMetricIcon(metricType: string) {
   if (metricType.includes("weight")) return Scale;
-  if (metricType.includes("hr") || metricType.includes("hrv") || metricType.includes("lthr")) {
+  if (metricType.includes("hr") || metricType.includes("hrv")) {
     return HeartPulse;
   }
   return TrendingUp;
@@ -478,11 +478,9 @@ export default function ProfileMetricsListScreen() {
                 const delta =
                   group.latest && group.previous ? group.latest.value - group.previous.value : null;
                 const summary = group.latest
-                  ? section.id === "load_calibration"
-                    ? `${formatMetricSource(group.latest.source)} • ${formatDate(group.latest.recorded_at)}`
-                    : delta === null
-                      ? `${group.records.length} records`
-                      : `${delta > 0 ? "+" : ""}${delta.toFixed(1)} since last`
+                  ? delta === null
+                    ? `${group.records.length} records`
+                    : `${delta > 0 ? "+" : ""}${delta.toFixed(1)} since last`
                   : "No records yet";
                 return (
                   <CompactInsightCard

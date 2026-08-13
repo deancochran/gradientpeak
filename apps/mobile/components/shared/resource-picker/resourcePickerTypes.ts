@@ -1,18 +1,6 @@
-export type ResourcePickerScope = "activityPlans" | "routes";
+import type { ActivityPlanDetail, ActivityPlanSummary } from "@repo/core";
 
-export type ResourcePickerActivityPlanCardData = {
-  activity_category: string;
-  createdAt?: string | null;
-  description?: string | null;
-  estimatedDuration?: number | null;
-  hasLiked?: boolean | null;
-  id: string;
-  likesCount?: number | null;
-  name: string;
-  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
-  structure?: unknown;
-  updatedAt?: string | null;
-};
+export type ResourcePickerScope = "activityPlans" | "routes";
 
 export type ResourcePickerRouteCardData = {
   activity_category?: string | null;
@@ -46,7 +34,7 @@ type ResourcePickerItemBase = {
 /** A picker result backed by one of the canonical resource cards. */
 export type ResourcePickerCanonicalItem =
   | (ResourcePickerItemBase & {
-      activityPlanCardData: ResourcePickerActivityPlanCardData;
+      activityPlan: ActivityPlanSummary | ActivityPlanDetail;
       presentation: "canonical";
     })
   | (ResourcePickerItemBase & {
@@ -63,5 +51,3 @@ export type ResourcePickerExternalItem = ResourcePickerItemBase & {
 };
 
 export type ResourcePickerItem = ResourcePickerCanonicalItem | ResourcePickerExternalItem;
-
-import type { ActivityPrescriptionQuantificationBundle } from "@repo/core";

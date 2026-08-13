@@ -239,7 +239,9 @@ jest.mock("@/lib/api", () => ({
       delete: { useMutation: () => ({ isPending: false, mutate: jest.fn() }) },
     },
     trainingPlans: {
-      getActivePlan: { useQuery: () => ({ data: { id: "plan-1" } }) },
+      getPlanTabProjection: {
+        useQuery: () => ({ data: { currentScheduledPlan: { id: "plan-1" } } }),
+      },
     },
     athleteIntelligence: {
       getGoalAssessment: { useQuery: assessmentUseQueryMock },

@@ -2,18 +2,18 @@ import {
   athleteStateBaselineSchema,
   createAthletePlanningContextFromSnapshot,
   createUnavailableAthletePerformanceTargetFacts,
+  simulateTrainingPlan,
 } from "@repo/core";
 import React from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
-import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
 import { publishTrainingPlanGoalCreation } from "@/lib/training-plan-creation/goalCreationHandoff";
+import { createActivityPlanSummary } from "../../../../test/activity-plan-projection-fixture";
 import { act, fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 import { TrainingPlanBuilderScreen } from "../TrainingPlanBuilderScreen";
 import { getBuilderSheetPresentation } from "../TrainingPlanBuilderSheets";
 
 const activityPlanCardProps: Array<{
-  activity?: { name?: string };
-  activityPlan?: { name?: string };
+  plan?: { name?: string };
 }> = [];
 const trainingPathChartProps: unknown[] = [];
 const FIXTURE_NOW = new Date(Date.UTC(2026, 5, 15, 12));
@@ -33,17 +33,12 @@ const LATEST_WEIGHT_RECORDED_AT = fixtureIsoDateTime(-14);
 const RECENT_POWER_EFFORT_RECORDED_AT = fixtureIsoDateTime(-36);
 const FUTURE_GOAL_TARGET_DATE = fixtureIsoDate(78);
 
-const activityPlan = {
+const activityPlan = createActivityPlanSummary({
   id: "11111111-1111-4111-8111-111111111111",
   name: "Aerobic builder",
-  created_at: ACTIVITY_PLAN_CREATED_AT,
-  content_visibility: "public",
-  is_system_template: false,
-  prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
-    durationSeconds: 3_600,
-    id: "11111111-1111-4111-8111-111111111111",
-  }),
-};
+  createdAt: ACTIVITY_PLAN_CREATED_AT,
+  visibility: "public",
+});
 
 let mockAuthoritativePreviewData: unknown;
 let mockAuthoritativePreviewError: Error | null;
@@ -119,6 +114,21 @@ const projectionBaseline = {
     planningContext: null as unknown,
   },
 };
+const authoritativeSimulation = simulateTrainingPlan({
+  baseline: projectionBaseline.currentBaseline.baseline,
+  plannedSessions: [
+    {
+      kind: "projected",
+      sourceId: "plan:sessions.0",
+      scheduledAt: FIXTURE_NOW.toISOString(),
+      activityCategory: "bike",
+      commonLoad: 70,
+    },
+  ],
+  simulationAt: FIXTURE_NOW.toISOString(),
+  planningTimezone: "UTC",
+  goal: null,
+});
 const creationContext = {
   asOf: FIXTURE_NOW.toISOString(),
   profileId: "44444444-4444-4444-8444-444444444444",
@@ -231,18 +241,16 @@ jest.mock("@repo/ui/components/text", () => ({
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
   ActivityPlanCard: (props: {
-    activity?: { name?: string };
-    activityPlan?: { name?: string };
+    plan?: { name?: string };
     onPress?: () => void;
     testID?: string;
   }) => {
     activityPlanCardProps.push({
-      ...(props.activity === undefined ? {} : { activity: props.activity }),
-      ...(props.activityPlan === undefined ? {} : { activityPlan: props.activityPlan }),
+      ...(props.plan === undefined ? {} : { plan: props.plan }),
     });
     return (
       <Pressable onPress={props.onPress} testID={props.testID ?? "activity-plan-card"}>
-        <Text>{props.activityPlan?.name ?? props.activity?.name}</Text>
+        <Text>{props.plan?.name}</Text>
       </Pressable>
     );
   },
@@ -395,11 +403,6 @@ jest.mock("../BuilderSessionEditorSheetContent", () => ({
   ),
 }));
 
-jest.mock("../BuilderSchedulePreviewSheetContent", () => ({
-  __esModule: true,
-  BuilderSchedulePreviewContent: () => <View testID="builder-schedule-preview-modal" />,
-}));
-
 jest.mock("@/components/shared/AppBottomSheet", () => ({
   __esModule: true,
   APP_BOTTOM_SHEET_PRESENTATIONS: {
@@ -435,26 +438,20 @@ jest.mock("@/components/shared/AppBottomSheet", () => ({
 jest.mock("../BuilderStrategyComposer", () => ({
   __esModule: true,
   BuilderStrategyComposer: ({
-    canUseStructureProposal,
     onAddActivity,
-    onApplyStructureProposal,
     onEditMetadata,
     onOpenAthleteContext,
     onOpenGoals,
     onOpenPlanningConstraints,
-    onOpenSchedulePreview,
     renderBelowChart,
     planningBriefRows,
     state,
   }: {
-    canUseStructureProposal: boolean;
     onAddActivity: () => void;
-    onApplyStructureProposal: () => void;
     onEditMetadata?: () => void;
     onOpenAthleteContext?: () => void;
     onOpenGoals?: () => void;
     onOpenPlanningConstraints?: () => void;
-    onOpenSchedulePreview: () => void;
     renderBelowChart?: (context: { selectedDayPoint: null }) => React.ReactNode;
     planningBriefRows: Array<{ key: string; label: string; value: string }>;
     state: { details: { name?: string } };
@@ -472,9 +469,6 @@ jest.mock("../BuilderStrategyComposer", () => ({
       <Pressable onPress={onOpenPlanningConstraints}>
         <Text>Preferences</Text>
       </Pressable>
-      <Pressable onPress={onOpenSchedulePreview}>
-        <Text>Schedule preview</Text>
-      </Pressable>
       <View testID="builder-configuration-rows">
         {planningBriefRows.map((row) => (
           <View key={row.key} accessibilityLabel={`${row.label}: ${row.value}`} />
@@ -483,11 +477,6 @@ jest.mock("../BuilderStrategyComposer", () => ({
       <Pressable onPress={onAddActivity}>
         <Text>Add activity</Text>
       </Pressable>
-      {canUseStructureProposal ? (
-        <Pressable onPress={onApplyStructureProposal}>
-          <Text>Use suggested schedule</Text>
-        </Pressable>
-      ) : null}
       {renderBelowChart?.({ selectedDayPoint: null })}
     </View>
   ),
@@ -735,7 +724,7 @@ describe("TrainingPlanBuilderScreen", () => {
     renderNative(<TrainingPlanBuilderScreen />);
 
     expect(screen.getByTestId("builder-configuration-rows")).toBeTruthy();
-    expect(screen.getByLabelText(/Plan goals: No goals selected/)).toBeTruthy();
+    expect(screen.getByLabelText(/Goals: No goals selected/)).toBeTruthy();
     expect(screen.getByLabelText(/Schedule:/)).toBeTruthy();
   });
 
@@ -786,13 +775,6 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(screen.queryByText("Start date")).toBeNull();
   });
 
-  it("keeps schedule preview available on the main composer", () => {
-    renderNative(<TrainingPlanBuilderScreen />);
-
-    fireEvent.press(screen.getByText("Schedule preview"));
-    expect(screen.getByTestId("builder-schedule-preview-modal")).toBeTruthy();
-  });
-
   it("opens activity assignment from the schedule editor", () => {
     renderNative(<TrainingPlanBuilderScreen />);
 
@@ -814,7 +796,7 @@ describe("TrainingPlanBuilderScreen", () => {
   it("routes create through the canonical mutation and preserves the authored payload", async () => {
     mockAuthoritativePreviewData = {
       status: "available",
-      simulation: {},
+      simulation: authoritativeSimulation,
     };
     renderNative(<TrainingPlanBuilderScreen />);
 
@@ -871,7 +853,7 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(mockMutations.create.mock.calls[0]?.[0]).not.toHaveProperty("plannedSessions");
   });
 
-  it("allows authoritative commit when preview feedback is unavailable", async () => {
+  it("blocks authoritative commit when preview feedback is unavailable", async () => {
     mockAuthoritativePreviewError = new Error("offline");
     renderNative(<TrainingPlanBuilderScreen />);
 
@@ -889,8 +871,8 @@ describe("TrainingPlanBuilderScreen", () => {
     });
     fireEvent.press(screen.getByText("Create"));
 
-    await waitFor(() => expect(mockMutations.create).toHaveBeenCalledTimes(1));
-    expect(screen.getByText("Preview unavailable")).toBeTruthy();
+    expect(mockMutations.create).not.toHaveBeenCalled();
+    expect(screen.getByText("Projection could not be loaded.")).toBeTruthy();
   });
 
   it("surfaces performance-model context failures and retries its query", () => {

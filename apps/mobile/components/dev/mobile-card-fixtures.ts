@@ -1,34 +1,63 @@
+import { activityDisplayModelSchema, activityPlanSummarySchema } from "@repo/core";
+
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 
 export const mobileCardFixtures = {
-  activity: {
+  activity: activityDisplayModelSchema.parse({
+    contractVersion: "activity-display-v1",
     id: "fixture-activity",
-    name: "River tempo run",
-    activity_categories: ["run"],
-    started_at: "2026-07-19T12:00:00.000Z",
-    distance_meters: 10_000,
-    elapsed_seconds: 3_420,
-    likes_count: 12,
-    comments_count: 3,
-    has_liked: false,
+    href: "/activities/fixture-activity",
+    owner: { id: "fixture-owner", username: "runner", avatarUrl: null },
+    time: { startedAt: "2026-07-19T12:00:00.000Z", finishedAt: null },
+    activityComposition: { kind: "single", categories: ["run"] },
+    title: "River tempo run",
     notes: "Controlled tempo with a progressive finish.",
-    polyline: "_p~iF~ps|U_ulLnnqC_mqNvxq`@",
-    derived: { observationQuantification: null },
-  },
-  activityPlan: {
+    metrics: [
+      {
+        key: "distance",
+        label: "Distance",
+        status: "available",
+        value: 10_000,
+        unit: "meters",
+        reason: null,
+      },
+      {
+        key: "elapsed_duration",
+        label: "Elapsed",
+        status: "available",
+        value: 3_420,
+        unit: "seconds",
+        reason: null,
+      },
+    ],
+    visibility: "public",
+    engagement: { likes: 12, comments: 3, viewerHasLiked: false },
+    capabilities: {
+      canLike: true,
+      canComment: true,
+      canShare: true,
+      canEdit: false,
+      canDelete: false,
+      hasRoute: true,
+    },
+  }),
+  activityPlan: activityPlanSummarySchema.parse({
+    contractVersion: "activity-plan-summary-v1",
     id: "fixture-activity-plan",
+    href: "/activity-plans/fixture-activity-plan",
     name: "Progressive tempo builder",
     description: "Warm up, build through three efforts, and finish easy.",
-    activity_category: "run",
-    created_at: "2026-07-19T12:00:00.000Z",
-    prescriptionQuantification: null,
+    createdAt: "2026-07-19T12:00:00.000Z",
+    updatedAt: "2026-07-19T12:00:00.000Z",
+    owner: { id: "fixture-owner", username: "runner", avatarUrl: null },
+    activityCategory: "run",
     structure: {
       version: 3,
+      activity_category: "run",
       segments: [
         {
           id: id(1),
           role: "activity",
-          activity_category: "run",
           name: "Tempo run",
           intervals: [
             {
@@ -60,7 +89,19 @@ export const mobileCardFixtures = {
         },
       ],
     },
-  },
+    metrics: [],
+    visibility: "public",
+    isSystemTemplate: false,
+    engagement: { likes: 0, viewerHasLiked: false },
+    capabilities: {
+      canLike: true,
+      canEdit: false,
+      canDelete: false,
+      canDuplicate: true,
+      canSchedule: true,
+      canRecord: true,
+    },
+  }),
   trainingPlan: {
     id: "fixture-training-plan",
     name: "Eight-week 10K build",

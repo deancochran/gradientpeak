@@ -55,7 +55,8 @@
       "react-native": "./src/components/popover/index.native.tsx"
     },
     "./components/progress": {
-      "react-native": "./src/components/progress/index.native.tsx"
+      "react-native": "./src/components/progress/index.native.tsx",
+      "default": "./src/components/progress/index.web.tsx"
     },
     "./components/radio-group": {
       "react-native": "./src/components/radio-group/index.native.tsx",
@@ -172,7 +173,6 @@
     "@rn-primitives/menubar": "^1.5.2",
     "@rn-primitives/popover": "^1.5.2",
     "@rn-primitives/portal": "^1.5.2",
-    "@rn-primitives/progress": "^1.5.2",
     "@rn-primitives/radio-group": "^1.5.2",
     "@rn-primitives/select": "^1.5.2",
     "@rn-primitives/separator": "^1.5.2",

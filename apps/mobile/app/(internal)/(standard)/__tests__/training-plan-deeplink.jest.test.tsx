@@ -25,7 +25,7 @@ type TrainingPlanFixture = {
   activity_category?: string[];
   experienceLevel?: string[];
 };
-type ActivePlanFixture = { id: string; schedule_batch_id?: string };
+type ActivePlanFixture = { id: string; scheduleBatchId?: string };
 type ApplyTemplateResult = {
   applied_plan_id: string;
   scheduled_sessions_created: number;
@@ -161,8 +161,8 @@ jest.mock("@/lib/api", () => ({
       getTemplate: {
         useQuery: () => ({ data: null, isLoading: false }),
       },
-      getActivePlan: {
-        useQuery: () => ({ data: mockActivePlanData }),
+      getPlanTabProjection: {
+        useQuery: () => ({ data: { currentScheduledPlan: mockActivePlanData } }),
       },
       removeAppliedSchedule: {
         useMutation: () => ({
@@ -262,10 +262,6 @@ jest.mock("react-native", () => ({
   },
 }));
 
-jest.mock("@/components/training-plan/UpcomingActivitiesCard", () => ({
-  __esModule: true,
-  UpcomingActivitiesCard: createHost("UpcomingActivitiesCard"),
-}));
 jest.mock("@/components/training-plan/TrainingPlanKpiRow", () => ({
   __esModule: true,
   TrainingPlanKpiRow: createHost("TrainingPlanKpiRow"),
@@ -941,7 +937,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     mockLocalSearchParams.id = "active-plan-2";
     mockActivePlanData = {
       id: "active-plan-2",
-      schedule_batch_id: "33333333-3333-4333-8333-333333333333",
+      scheduleBatchId: "33333333-3333-4333-8333-333333333333",
     };
 
     renderPlan();

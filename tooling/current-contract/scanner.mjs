@@ -946,14 +946,140 @@ const deletedFiles = [
   "apps/mobile/app/(internal)/(standard)/create-activity-plan-repeat.tsx",
   "apps/mobile/app/(internal)/(standard)/create-activity-plan-structure.tsx",
   "apps/mobile/components/charts/FitnessProjectionChart.tsx",
+  "apps/mobile/components/training-plan/modals/AddActivityModal.tsx",
+  "apps/mobile/components/training-plan/modals/components/ConstraintValidator.tsx",
   "apps/mobile/components/training-plan/AdvancedConfigSheet.tsx",
   "apps/mobile/lib/auth/auth-client.ts",
   "apps/mobile/lib/auth/request-auth.ts",
   "apps/mobile/lib/services/ActivityRecorder/coreRecorderObserver.ts",
   "apps/mobile/lib/utils/plan/dateGrouping.ts",
+  "apps/mobile/components/settings/TrainingPreferencesProjectionPreview.tsx",
+  "apps/mobile/components/training-plan/create/BuilderLoadProjectionSummary.tsx",
+  "apps/mobile/components/training-plan/create/BuilderPublishedProjectionCard.tsx",
+  "apps/mobile/components/training-plan/create/BuilderSchedulePreviewSheetContent.tsx",
+  "apps/mobile/components/training-plan/create/SinglePageForm.tsx",
+  "apps/mobile/lib/training-plan-creation/local-projection.ts",
+  "apps/mobile/lib/training-plan-creation/planning-session-engine.ts",
+  "apps/mobile/lib/training-plan-creation/planning-session.ts",
+  "apps/mobile/lib/training-plan-creation/scheduling-preview.ts",
+  "apps/mobile/lib/training-plan-creation/structure-proposal.ts",
+  "apps/mobile/lib/training-plan-creation/validation.ts",
+  "apps/mobile/lib/training-plan-creation/view-model.ts",
+  "apps/mobile/lib/training-plan-form/localPreview.ts",
+  "apps/mobile/lib/training-plan-form/projectionPreview.ts",
+  "packages/core/plan/deriveCreationSuggestions.ts",
+  "packages/core/plan/formValidation.ts",
+  "packages/core/plan/planningProjection.ts",
+  "packages/core/plan/trainingPlanCreationPreview.ts",
+  "packages/core/plan/trainingPlanCreationValidation.ts",
+  "packages/core/plan/trainingPlanSchedulingPreview.ts",
+  "packages/core/plan/trainingPlanStructureProposal.ts",
+  "packages/core/plan/planningCanonicalStructure.ts",
+  "packages/core/plan/planningContext.ts",
+  "packages/core/contracts/training-plan-creation/index.ts",
+  "packages/core/contracts/training-plan-creation/schemas.ts",
+  "apps/mobile/lib/training-plan-creation/mappers.ts",
+  "apps/mobile/lib/training-plan-creation/planning-context.ts",
+  "apps/mobile/lib/training-plan-creation/schemas.ts",
+  "packages/api/src/routers/planning/training-plans/effective-load.ts",
+  "apps/web/src/components/training-plan/training-plan-activity-reorder.tsx",
+  "apps/web/src/routes/_protected/training-plans/reorder.tsx",
 ];
 
 const pathScopedRetiredSymbolChecks = [
+  {
+    paths: ["packages/core/schemas/planned_activity.ts"],
+    patterns: [
+      [
+        /\b(?:eventRecurrenceExceptionSchema|persistableEventRecurrenceSchema|eventLifecycleSchema|importedEventDomainSchema|importedEventLifecycleMutationSchema|importedEventSourceMetadataSchema|plannedActivityUpdateSchema|plannedActivityRescheduleSchema)\b/,
+        "removed event compatibility contract",
+      ],
+      [/\b(?:read_only|rest_day)\b|["']imported["']/, "removed event compatibility value"],
+    ],
+  },
+  {
+    paths: ["packages/core/athlete-inputs/profile-metrics.ts"],
+    patterns: [[/["']lthr["']/, "removed profile-metric LTHR authority"]],
+  },
+  {
+    paths: ["packages/core/schemas/index.ts"],
+    patterns: [[/\bis_active\s*:/, "removed training-plan write is_active field"]],
+  },
+  {
+    paths: ["packages/api/src/routers/events.ts"],
+    patterns: [[/\bvalidateConstraints\s*:/, "removed event constraint preflight route"]],
+  },
+  {
+    paths: ["packages/api/src/routers/activity-plans.ts"],
+    patterns: [[/\bincludeEstimation\b/, "removed activity-plan estimation flag"]],
+  },
+  {
+    paths: ["packages/api/src/routers/planning/training-plans/base.ts"],
+    patterns: [
+      [/\bgetById\s*:/, "removed training-plan getById alias"],
+      [/\bgetActivePlan\s*:/, "removed training-plan active-plan read"],
+      [/\breorderActivities\s*:/, "removed training-plan schedule reorder proxy"],
+    ],
+  },
+  {
+    paths: ["packages/api/src/routers/planning/training-plans/index.ts"],
+    patterns: [[/\bgetEffectiveLoad\s*:/, "removed training-plan effective-load route"]],
+  },
+  {
+    paths: ["packages/api/src/application/training-plan/crudUseCases.ts"],
+    patterns: [[/\bgetTrainingPlanByIdUseCase\b/, "removed training-plan read alias"]],
+  },
+  {
+    paths: ["packages/api/src/application/training-plan/appliedScheduleUseCases.ts"],
+    patterns: [[/\bgetActivePlanUseCase\b/, "removed training-plan active-plan use case"]],
+  },
+  {
+    paths: ["packages/api/src/query-client.ts"],
+    patterns: [
+      [/\["trainingPlans",\s*"getActivePlan"\]/, "removed training-plan active-plan cache key"],
+      [/\["events",\s*"validateConstraints"\]/, "removed event constraint preflight cache key"],
+    ],
+  },
+  {
+    paths: ["apps/mobile/components/ScheduleActivityModal.tsx"],
+    patterns: [
+      [/\brecurrence\b/, "removed planned-session recurrence UI"],
+      [/\btrainingPlanId\b/, "removed client-authored training-plan schedule linkage"],
+    ],
+  },
+  {
+    paths: ["packages/db/src/schema/enums.ts"],
+    patterns: [
+      [/eventTypeEnum[^;]*["']imported["']/, "removed imported event enum value"],
+      [/profileMetricTypeEnum[^;]*["']lthr["']/, "removed profile-metric LTHR enum value"],
+    ],
+  },
+  {
+    paths: ["packages/db/src/schema/tables.ts"],
+    patterns: [
+      [
+        /\b(?:read_only|source_provider|integration_account_id|external_calendar_id|external_event_id)\s*:/,
+        "removed event compatibility column",
+      ],
+    ],
+  },
+  {
+    paths: ["packages/db/supabase/migrations/20260730000000_mvp_baseline.sql"],
+    patterns: [
+      [
+        /CREATE TYPE "public"\."event_type"[^;]*'imported'/,
+        "removed imported event baseline enum value",
+      ],
+      [
+        /CREATE TYPE "public"\."profile_metric_type"[^;]*'lthr'/,
+        "removed profile-metric LTHR baseline enum value",
+      ],
+      [
+        /CREATE TABLE "events" \((?:(?!\n\);)[\s\S])*?"(?:read_only|source_provider|integration_account_id|external_calendar_id|external_event_id|lifecycle|recurrence|payload)"\s+(?:boolean|text|uuid|jsonb)/,
+        "removed event compatibility baseline column",
+      ],
+    ],
+  },
   {
     paths: ["packages/core/activity-segments/completed-segment-schema.ts"],
     patterns: [
@@ -1034,6 +1160,77 @@ const pathScopedRetiredSymbolChecks = [
         /\b(?:PlannedActivityExportCompatibility|getPlannedActivityExportCompatibility)\b/,
         "removed planned export compatibility facade",
       ],
+      [
+        /\b(?:deriveCreationSuggestions|validateTrainingPlanForm|derivePlanningProjection|deriveTrainingPlanCreationPreview|validateTrainingPlanCreationInput|deriveTrainingPlanSchedulingPreview|deriveTrainingPlanStructureProposal)\b/,
+        "removed local training-plan preview or validation API",
+      ],
+    ],
+  },
+  {
+    paths: ["packages/core/integrations/provider-capabilities.ts"],
+    patterns: [
+      [/\bIntegrationProviderId\b/, "removed broad executable provider identity alias"],
+      [
+        /\b(?:strava|trainingpeaks|garmin|zwift)\s*:\s*\{/,
+        "removed non-Wahoo executable provider capability definition",
+      ],
+      [
+        /\bevidenceGatedPlannedActivities\b|["']evidence_gated["']|["']completed_activity_push["']/,
+        "removed unsupported-provider readiness placeholder",
+      ],
+    ],
+  },
+  {
+    directory: "packages",
+    patterns: [
+      [
+        /\b(?:getProviderCapabilityDefinition|getProviderPlannedActivityCapability|providerHasCapability|getProviderCapabilityUnavailableReason|getProviderSyncMode|getConfigurableProviderActions|isProviderActivityHistoryReconciliationTarget)\(\s*["'](?:strava|trainingpeaks|garmin|zwift)["']/,
+        "unsupported provider passed to executable capability helper",
+      ],
+      [
+        /\bgetProvidersWithCapability\(\s*\[[^\]]*["'](?:strava|trainingpeaks|garmin|zwift)["']/,
+        "unsupported provider passed to executable capability helper",
+      ],
+    ],
+  },
+  {
+    directory: "apps",
+    patterns: [
+      [
+        /\b(?:getProviderCapabilityDefinition|getProviderPlannedActivityCapability|providerHasCapability|getProviderCapabilityUnavailableReason|getProviderSyncMode|getConfigurableProviderActions|isProviderActivityHistoryReconciliationTarget)\(\s*["'](?:strava|trainingpeaks|garmin|zwift)["']/,
+        "unsupported provider passed to executable capability helper",
+      ],
+      [
+        /\bgetProvidersWithCapability\(\s*\[[^\]]*["'](?:strava|trainingpeaks|garmin|zwift)["']/,
+        "unsupported provider passed to executable capability helper",
+      ],
+    ],
+  },
+  {
+    directory: "packages/api/src/application/training-plan",
+    patterns: [
+      [
+        /\breorderTrainingPlanActivitiesUseCase\b/,
+        "removed training-plan schedule reorder use case",
+      ],
+    ],
+  },
+  {
+    directory: "apps/web",
+    patterns: [
+      [
+        /\b(?:createScheduleAndReorderTrainingPlan|TrainingPlanActivityReorder)\b|trainingPlans\.reorderActivities|training-plans\.reorder|\/training-plans\/reorder/,
+        "removed training-plan schedule reorder surface",
+      ],
+    ],
+  },
+  {
+    paths: ["packages/core/contracts/index.ts", "packages/core/schemas/form-schemas.ts"],
+    patterns: [
+      [
+        /\b(?:creationConfigValueSchema|creationNormalizationInputSchema|postCreateBehaviorSchema|trainingPlanCreationProvenanceFormSchema|trainingPlanCreationConfigFormSchema)\b|\.\/training-plan-creation/,
+        "removed training-plan creation wrapper contract",
+      ],
     ],
   },
   {
@@ -1090,6 +1287,15 @@ const pathScopedRetiredSymbolChecks = [
       ],
       [/\bResourcePickerSelectionItem\b/, "removed resource-picker compatibility item"],
       [/\blegacy_read_only\b/, "removed legacy composer state"],
+    ],
+  },
+  {
+    directory: "apps/mobile/lib",
+    patterns: [
+      [
+        /\b(?:computeLocalCreationPreview|buildTrainingPreferencesProjectionPreview|deriveDraftPlanProjection|selectSaveReadiness|selectActiveTrainingPlanProjection|deriveTrainingPathProjectionStatus)\b/,
+        "removed local training-plan preview or save-readiness path",
+      ],
     ],
   },
   {

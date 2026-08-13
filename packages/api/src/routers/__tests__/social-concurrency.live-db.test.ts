@@ -31,7 +31,7 @@ async function seedProfile(label: string, isPublic: boolean) {
     username: `${label}-${id.slice(0, 8)}`,
     language: "en",
     preferred_units: "metric",
-    onboarded: true,
+    onboarding_status: "completed",
     is_public: isPublic,
     created_at: now,
     updated_at: now,

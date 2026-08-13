@@ -1,6 +1,5 @@
 import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import type { TrainingPlanBuilderGoalBlueprint, TrainingPlanBuilderState } from "./types";
-import { validateTrainingPlanBuilderState } from "./validation";
 
 export type TrainingPlanBuilderSummary = {
   sessionCount: number;
@@ -43,13 +42,5 @@ export function selectBuilderSummary(state: TrainingPlanBuilderState): TrainingP
         total + (getActivityPlanQuantitySummary(session.activityPlan).durationSeconds ?? 0),
       0,
     ),
-  };
-}
-
-export function selectSaveReadiness(state: TrainingPlanBuilderState) {
-  const validation = validateTrainingPlanBuilderState(state);
-  return {
-    canSave: validation.blockers.length === 0,
-    blockers: validation.blockers,
   };
 }

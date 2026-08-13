@@ -12,7 +12,6 @@ import {
 describe("profile metric presentation", () => {
   it("exposes every canonical metric exactly once in the requested groups", () => {
     expect(profileMetricGroups.map((group) => group.label)).toEqual([
-      "Heart-rate calibration",
       "Supporting Physiology",
       "Recovery",
       "Body/Aerobic",
@@ -24,7 +23,7 @@ describe("profile metric presentation", () => {
   });
 
   it("formats canonical profile metrics in athlete-facing units", () => {
-    expect(formatProfileMetricDisplayValue({ metric_type: "lthr", value: 165 })).toBe("165 bpm");
+    expect(formatProfileMetricDisplayValue({ metric_type: "max_hr", value: 195 })).toBe("195 bpm");
     expect(
       formatProfileMetricDisplayValue({
         metric_type: "weight_kg",

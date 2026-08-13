@@ -1,12 +1,17 @@
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import type React from "react";
+import { createElement } from "react";
 import { TrainingPathLoadChartSection } from "./TrainingPathLoadChartSection";
+
+const mockDailyChartProps: Array<Record<string, unknown>> = [];
 
 jest.mock("./DailyTrainingAdjustmentChart", () => {
   const ReactRuntime = jest.requireActual("react") as typeof React;
   return {
-    DailyTrainingAdjustmentChart: ({ testID }: { testID?: string }) =>
-      ReactRuntime.createElement("View", { testID }),
+    DailyTrainingAdjustmentChart: (props: { testID?: string }) => {
+      mockDailyChartProps.push(props);
+      return ReactRuntime.createElement("View", { testID: props.testID });
+    },
   };
 });
 
@@ -27,6 +32,10 @@ jest.mock("@/components/shared/AppFormModal", () => {
 });
 
 describe("TrainingPathLoadChartSection", () => {
+  beforeEach(() => {
+    mockDailyChartProps.length = 0;
+  });
+
   it("keeps an existing chart mounted while a wider date range loads", () => {
     const props = {
       dailyPoints: [
@@ -107,7 +116,6 @@ describe("TrainingPathLoadChartSection", () => {
           label: "Jul 13",
           completedLoad: null,
           plannedLoad: null,
-          tentativePlannedLoad: null,
           targetLoad: 500,
           fitness: null,
           scheduledFitness: null,
@@ -160,56 +168,170 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.queryByTestId("weekly-training-path-chart")).toBeNull();
   });
 
-  it("keeps the primary legend visible and exposes 44-point chart controls", () => {
+  it("renders only the range selector and factual chart legend", () => {
     render(
       <TrainingPathLoadChartSection
         dailyPoints={[
           { date: "2026-06-02", effectiveLoadStatus: "complete", effectiveRemainingLoad: 50 },
         ]}
-        onOpenSettings={jest.fn()}
       />,
     );
 
     expect(screen.getByTestId("training-path-primary-legend")).toBeTruthy();
     expect(screen.getByText("Planned")).toBeTruthy();
     expect(screen.getByText("Completed")).toBeTruthy();
-    expect(screen.getByText("Tentative")).toBeTruthy();
     expect(screen.queryByText("Recommended")).toBeNull();
-    expect(screen.queryByText("Completed, load unavailable")).toBeNull();
-    expect(screen.queryByText("Actual fitness")).toBeNull();
+    expect(screen.getAllByText("Actual fitness").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Planned fitness projection")).toBeTruthy();
+    expect(screen.getAllByText("Actual fatigue").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Planned fatigue projection")).toBeTruthy();
+    expect(screen.queryByTestId("training-path-metric-dropdown-trigger")).toBeNull();
+    expect(screen.queryByText("Intensity")).toBeNull();
+    expect(
+      screen.getByTestId("training-path-range-dropdown-daily").props.accessibilityState,
+    ).toEqual({ disabled: false, selected: true });
+    expect(screen.getByTestId("training-path-range-dropdown-trigger")).toHaveTextContent(
+      "Daily Training",
+    );
 
     const helpButton = screen.getByTestId("training-path-legend-button");
-    const settingsButton = screen.getByTestId("training-path-settings-button");
     expect(helpButton.props.className).toContain("h-11 w-11");
-    expect(settingsButton.props.className).toContain("h-11 w-11");
+    expect(screen.queryByTestId("training-path-settings-button")).toBeNull();
 
     fireEvent.press(helpButton);
     expect(screen.getByTestId("training-path-legend-modal")).toBeTruthy();
-    expect(screen.getByText("Completed, Common Load unavailable")).toBeTruthy();
-    expect(screen.getByText("✓")).toBeTruthy();
-    expect(screen.getByText("Actual fitness")).toBeTruthy();
-    expect(screen.getByText("Projected fitness")).toBeTruthy();
-    expect(screen.queryByText("Target fitness")).toBeNull();
-    expect(screen.getByText("Selected day")).toBeTruthy();
-    expect(screen.queryByText("Today")).toBeNull();
-    expect(screen.queryByText("Goal")).toBeNull();
+    expect(screen.getAllByText("Actual fitness")).toHaveLength(3);
+    expect(screen.getAllByText("Planned fitness projection")).toHaveLength(2);
+    expect(screen.queryByText("Recommended projection")).toBeNull();
   });
 
-  it("explains an unavailable completed load beside the chart when it is present", () => {
+  it("aggregates only the loaded bounded window when the range changes", () => {
+    const onViewDetails = jest.fn();
     render(
       <TrainingPathLoadChartSection
         dailyPoints={[
           {
-            date: "2026-06-02",
-            effectiveLoadStatus: "unavailable",
-            effectiveLoad: null,
-            hasCompletedActivityWithoutLoad: true,
+            date: "2026-06-29",
+            effectiveLoadStatus: "complete",
+            effectiveCompletedLoad: 10,
+            effectiveRemainingLoad: 20,
+            plannedLoad: 30,
+          },
+          {
+            date: "2026-07-01",
+            effectiveLoadStatus: "complete",
+            effectiveCompletedLoad: 5,
+            effectiveRemainingLoad: 15,
           },
         ]}
+        onViewDetails={onViewDetails}
       />,
     );
 
-    expect(screen.getByText("Completed, Common Load unavailable")).toBeTruthy();
-    expect(screen.getByText("✓")).toBeTruthy();
+    fireEvent.press(screen.getByTestId("training-path-range-dropdown-weekly"));
+    expect(mockDailyChartProps.at(-1)).toMatchObject({
+      range: "weekly",
+      points: [expect.objectContaining({ date: "2026-06-29", effectiveCompletedLoad: 15 })],
+    });
+
+    fireEvent.press(screen.getByTestId("training-path-range-dropdown-monthly"));
+    expect(mockDailyChartProps.at(-1)).toMatchObject({
+      range: "monthly",
+      points: [
+        expect.objectContaining({ date: "2026-06-01", effectiveCompletedLoad: 10 }),
+        expect.objectContaining({ date: "2026-07-01", effectiveCompletedLoad: 5 }),
+      ],
+    });
+    expect(screen.getByText("Monthly totals use the loaded, bounded Plan window.")).toBeTruthy();
+    fireEvent.press(screen.getByTestId("training-path-view-details"));
+    expect(onViewDetails).toHaveBeenCalledWith({ period: "month", anchorDate: "2026-06-01" });
+  });
+
+  it("maps a controlled persisted range to the selected ledger period and factual summary", () => {
+    const onViewDetails = jest.fn();
+    const onChartRangeChange = jest.fn();
+    render(
+      <TrainingPathLoadChartSection
+        chartRange="weekly"
+        dailyPoints={[
+          {
+            date: "2026-06-29",
+            effectiveLoadStatus: "partial",
+            effectiveCompletedLoad: 10,
+            effectiveRemainingLoad: 20,
+            plannedLoad: 30,
+            fitnessCtl: 40,
+            scheduledFitnessCtl: 42,
+            actualFatigueAtl: 44,
+            scheduledFatigueAtl: 46,
+          },
+        ]}
+        onChartRangeChange={onChartRangeChange}
+        onViewDetails={onViewDetails}
+      />,
+    );
+
+    expect(screen.getByTestId("training-path-range-dropdown-trigger")).toHaveTextContent(
+      "Weekly Training",
+    );
+    expect(screen.getByTestId("training-path-period-summary")).toBeTruthy();
+    expect(screen.getByText("Week · Jun 29")).toBeTruthy();
+    expect(screen.getByText("Partial data")).toBeTruthy();
+    expect(screen.getByLabelText("Completed load: 10")).toBeTruthy();
+    expect(screen.getByLabelText("Planned load: 30")).toBeTruthy();
+    fireEvent.press(screen.getByTestId("training-path-view-details"));
+    expect(onViewDetails).toHaveBeenCalledWith({ period: "week", anchorDate: "2026-06-29" });
+    fireEvent.press(screen.getByTestId("training-path-range-dropdown-monthly"));
+    expect(onChartRangeChange).toHaveBeenCalledWith("monthly");
+  });
+
+  it("does not render the Plan activity/event feed beneath the analytical chart", () => {
+    render(
+      <TrainingPathLoadChartSection
+        dailyPoints={[{ date: "2026-06-02", effectiveRemainingLoad: 20 }]}
+        renderBelowChart={() => createElement("Text", null, "Activity and event feed")}
+      />,
+    );
+
+    expect(screen.queryByText("Activity and event feed")).toBeNull();
+  });
+
+  it("never renders recommendation layers for goal-backed data", () => {
+    const modelWithoutGoal = {
+      domains: { fitness: [0, 100] as [number, number], load: [0, 100] as [number, number] },
+      emptyState: null,
+      goalMarkers: [],
+      selectedWeekSummary: null,
+      todayKey: "2026-06-29",
+      weeks: [],
+    };
+    const modelWithGoal = {
+      ...modelWithoutGoal,
+      goalMarkers: [
+        { id: "goal-1", label: "Race", targetDate: "2026-07-01", weekStart: "2026-06-29" },
+      ],
+    };
+    const dailyPoints = [
+      {
+        date: "2026-06-29",
+        effectiveRemainingLoad: 20,
+        recommendedLoadStatus: "complete" as const,
+        recommendedLoad: 30,
+        targetFitnessCtl: 42,
+      },
+    ];
+    const { rerender } = render(
+      <TrainingPathLoadChartSection dailyPoints={dailyPoints} model={modelWithoutGoal} />,
+    );
+
+    expect(screen.queryByText("Recommended")).toBeNull();
+    expect(screen.queryByText("Recommended projection")).toBeNull();
+    expect(mockDailyChartProps.at(-1)).not.toHaveProperty("showRecommendedProjection");
+
+    rerender(<TrainingPathLoadChartSection dailyPoints={dailyPoints} model={modelWithGoal} />);
+
+    expect(screen.queryByText("Recommended")).toBeNull();
+    expect(screen.queryByText("Recommended projection")).toBeNull();
+    expect(mockDailyChartProps.at(-1)).not.toHaveProperty("showRecommendedProjection");
   });
 });

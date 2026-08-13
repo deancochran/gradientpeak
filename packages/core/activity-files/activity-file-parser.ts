@@ -2,8 +2,10 @@ import { DOMParser } from "@xmldom/xmldom";
 import { parseFitFileWithSDK } from "../lib/fit-sdk-parser";
 import type { ActivityRecord, StandardActivity } from "../types/normalization";
 import { calculateRouteStats } from "../utils/polyline";
+import { ActivityFileParseError } from "./activity-file-errors";
 
 export type ActivityFileType = "fit" | "gpx" | "tcx";
+export { ActivityFileParseError } from "./activity-file-errors";
 
 export function inferActivityFileType(fileName?: string, content?: string): ActivityFileType {
   const extension = fileName?.split(".").pop()?.trim().toLowerCase();
@@ -18,7 +20,7 @@ export function inferActivityFileType(fileName?: string, content?: string): Acti
     if (trimmed.startsWith("<?xml") || trimmed.includes("<gpx")) return "gpx";
   }
 
-  throw new Error("Unsupported activity file type");
+  throw new ActivityFileParseError("unsupported_format");
 }
 
 export function parseActivityFile(input: {
@@ -31,7 +33,7 @@ export function parseActivityFile(input: {
 
   if (fileType === "fit") {
     if (typeof input.data === "string") {
-      throw new Error("FIT activity files must be parsed from binary data");
+      throw new ActivityFileParseError("unsupported_format");
     }
     return parseFitFileWithSDK(input.data);
   }
@@ -43,17 +45,17 @@ export function parseActivityFile(input: {
 function parseGpxActivity(gpxContent: string): StandardActivity {
   const doc = parseXml(gpxContent, "GPX");
   if (doc.documentElement.nodeName !== "gpx") {
-    throw new Error("Invalid GPX activity file: root element must be <gpx>");
+    throw new ActivityFileParseError("corrupt_artifact");
   }
   const tracks = doc.getElementsByTagName("trk");
   if (tracks.length !== 1 || !tracks[0]) {
-    throw new Error("GPX activity files must contain exactly one <trk> activity");
+    throw new ActivityFileParseError("corrupt_artifact");
   }
   const track = tracks[0];
 
   const records = collectGpxRecords(track);
   if (records.length === 0) {
-    throw new Error("No valid activity records found in GPX file");
+    throw new ActivityFileParseError("corrupt_artifact");
   }
 
   return buildXmlActivity({
@@ -66,17 +68,17 @@ function parseGpxActivity(gpxContent: string): StandardActivity {
 function parseTcxActivity(tcxContent: string): StandardActivity {
   const doc = parseXml(tcxContent, "TCX");
   if (!doc.documentElement.nodeName.toLowerCase().endsWith("trainingcenterdatabase")) {
-    throw new Error("Invalid TCX activity file: root element must be <TrainingCenterDatabase>");
+    throw new ActivityFileParseError("corrupt_artifact");
   }
 
   const activities = doc.getElementsByTagName("Activity");
   if (activities.length !== 1 || !activities[0]) {
-    throw new Error("TCX activity files must contain exactly one <Activity>");
+    throw new ActivityFileParseError("corrupt_artifact");
   }
   const activity = activities[0];
   const records = collectTcxRecords(activity);
   if (records.length === 0) {
-    throw new Error("No valid activity records found in TCX file");
+    throw new ActivityFileParseError("corrupt_artifact");
   }
 
   const type =
@@ -95,7 +97,7 @@ function parseTcxActivity(tcxContent: string): StandardActivity {
 function parseXml(content: string, label: string): Document {
   const doc = new DOMParser().parseFromString(content, "text/xml");
   if (doc.getElementsByTagName("parsererror")[0]) {
-    throw new Error(`Invalid ${label} activity file: XML parsing error`);
+    throw new ActivityFileParseError("corrupt_artifact");
   }
   return doc;
 }

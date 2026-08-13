@@ -74,7 +74,6 @@ function scheduled(
     scheduledItemId,
     scheduledDate,
     status: "active",
-    tentative: false,
     linkedCompletedActivityId: null,
     commonLoad,
     ...overrides,
@@ -328,23 +327,20 @@ describe("effective Plan Load composition", () => {
     });
   });
 
-  it("excludes tentative work from default and aggregates it as a separate overlay", () => {
+  it("composes every active scheduled item into the effective load", () => {
     const result = composed(
       composeEffectivePlanLoad(
         input({
           scheduledItems: [
             scheduled("firm", "2026-07-22", available(3600, 1)),
-            scheduled("tentative", "2026-07-23", available(1800, 0.5), { tentative: true }),
+            scheduled("second", "2026-07-23", available(1800, 0.5)),
           ],
         }),
       ),
     );
 
-    expect(result.items).toHaveLength(1);
-    expect(result.tentativeItems.map((item) => item.scheduledItemId)).toEqual(["tentative"]);
-    expect(result.aggregate).toMatchObject({ status: "complete", commonLoad: { load: 100 } });
-    expect(result.tentativeAggregate).toMatchObject({ status: "complete", load: 12.5 });
-    expect(result.includingTentativeAggregate).toMatchObject({
+    expect(result.items).toHaveLength(2);
+    expect(result.aggregate).toMatchObject({
       status: "complete",
       commonLoad: { load: 112.5 },
     });

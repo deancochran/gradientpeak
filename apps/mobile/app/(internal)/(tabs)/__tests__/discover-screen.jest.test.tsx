@@ -13,15 +13,11 @@ type ResourceCardProps = {
   variant?: string;
 };
 const activityPlanCardMock = jest.fn(
-  ({
-    activityPlan,
-    onPress,
-    variant,
-  }: ResourceCardProps & { activityPlan: { id: string; name: string } }) =>
+  ({ plan, onPress, variant }: ResourceCardProps & { plan: { id: string; name: string } }) =>
     React.createElement(
       "Pressable",
-      { onPress, testID: `activity-plan-${activityPlan.id}`, variant },
-      React.createElement("Text", null, activityPlan.name),
+      { onPress, testID: `activity-plan-${plan.id}`, variant },
+      React.createElement("Text", null, plan.name),
     ),
 );
 const trainingPlanCardMock = jest.fn(
@@ -460,7 +456,6 @@ describe("discover screen", () => {
     await waitFor(() => {
       expect(activityPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         {
-          includeEstimation: true,
           ownerScope: "all",
           search: "river",
           activityCategories: undefined,
@@ -525,7 +520,6 @@ describe("discover screen", () => {
       expect(screen.getByTestId("discover-filter-button-dot")).toBeTruthy();
       expect(activityPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         {
-          includeEstimation: true,
           ownerScope: "all",
           search: undefined,
           activityCategories: ["run", "bike"],

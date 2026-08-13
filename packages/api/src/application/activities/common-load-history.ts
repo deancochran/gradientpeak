@@ -18,8 +18,16 @@ import {
   type CommonLoadHistoryResult,
   replayCommonLoadHistory,
 } from "@repo/core/load";
-import { activities, integrations, providerSyncState } from "@repo/db";
+import {
+  activities,
+  activityArtifactLinks,
+  activityArtifacts,
+  activitySourceReferences,
+  integrations,
+  providerSyncState,
+} from "@repo/db";
 import { and, asc, eq, gte, inArray, lt } from "drizzle-orm";
+import { z } from "zod";
 import type { getRequiredDb } from "../../db";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
 import {
@@ -27,13 +35,44 @@ import {
   loadActivitySegmentsByActivityId,
   type SegmentDerivedSummary,
 } from "../../lib/activity-analysis";
+import { type ActivitySourceEvidence, resolveActivitySourceIntegrity } from "../../utils/workload";
 
 export const commonLoadHistoryActivityLimit = 10_000;
+const strictCoverageTimestampSchema = z.string().datetime({ offset: true });
+
+function parseStrictCoverageTimestamp(value: unknown): number {
+  if (typeof value !== "string" || !strictCoverageTimestampSchema.safeParse(value).success) {
+    return Number.NaN;
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.exec(
+    value,
+  );
+  if (!match) return Number.NaN;
+  const [, year, month, day, hour, minute, second, fraction, offset] = match;
+  if (!offset) return Number.NaN;
+  const offsetMinutes =
+    offset === "Z" ? 0 : Number(offset.slice(0, 3)) * 60 + Number(offset.slice(4));
+  const milliseconds = fraction ? Number(`0${fraction}`) * 1000 : 0;
+  const localTime = Date.UTC(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+    milliseconds,
+  );
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && timestamp === localTime - offsetMinutes * 60_000
+    ? timestamp
+    : Number.NaN;
+}
 
 type Db = ReturnType<typeof getRequiredDb>;
-type ActivityIdentity = { id: string; started_at: Date };
+type ActivityIdentity = { id: string; started_at: Date; sourceEvidence?: ActivitySourceEvidence };
 type ActivityContribution = {
-  observationQuantification: ActivityObservationQuantificationBundle;
+  coverageStatus: "complete" | "partial";
+  observationQuantification: ActivityObservationQuantificationBundle | null;
   fingerprint: string;
 };
 
@@ -51,8 +90,10 @@ async function hasCompleteActivitySourceCoverage(
     .select({ id: integrations.id, provider: integrations.provider })
     .from(integrations)
     .where(eq(integrations.profile_id, input.profileId));
-  const relevant = integrationRows.filter((integration) =>
-    isProviderActivityHistoryReconciliationTarget(integration.provider),
+  const relevant = integrationRows.filter(
+    (integration) =>
+      integration.provider === "wahoo" &&
+      isProviderActivityHistoryReconciliationTarget(integration.provider),
   );
   // Neither a never-completed first sync nor a disconnected provider (whose
   // integration/state rows are deleted) proves that this history window is zero.
@@ -104,10 +145,8 @@ async function hasCompleteActivitySourceCoverage(
       coverage && typeof coverage === "object" && !Array.isArray(coverage) ? coverage : null;
     const coverageStartValue = record === null ? null : Reflect.get(record, "start");
     const coverageEndValue = record === null ? null : Reflect.get(record, "end");
-    const coverageStart =
-      typeof coverageStartValue === "string" ? Date.parse(coverageStartValue) : Number.NaN;
-    const coverageEnd =
-      typeof coverageEndValue === "string" ? Date.parse(coverageEndValue) : Number.NaN;
+    const coverageStart = parseStrictCoverageTimestamp(coverageStartValue);
+    const coverageEnd = parseStrictCoverageTimestamp(coverageEndValue);
     return (
       sync !== undefined &&
       sync.lastSucceededAt !== null &&
@@ -194,16 +233,45 @@ function unavailableWindow(input: {
 function parseActivitySegments(
   summaries: readonly SegmentDerivedSummary[],
   calculationAsOf: string,
+  sourceEvidence: ActivitySourceEvidence | undefined,
 ): ActivityContribution | null {
-  if (summaries.length === 0) return null;
+  if (!sourceEvidence) return null;
+  if (summaries.length === 0) {
+    if (
+      resolveActivitySourceIntegrity({
+        evidence: sourceEvidence,
+        observationQuantification: null,
+      }) !== "trusted"
+    ) {
+      return null;
+    }
+    return {
+      coverageStatus: "partial",
+      observationQuantification: null,
+      fingerprint: fingerprint([
+        "trusted-unquantified-activity-contribution",
+        ...sourceEvidence.currentArtifactIds.toSorted(),
+        ...sourceEvidence.providerReferences
+          .map((reference) => `${reference.provider}:${reference.externalId}`)
+          .toSorted(),
+      ]),
+    };
+  }
   const observationQuantification = createObservationQuantificationBundle({
     members: summaries.flatMap((summary) => summary.observationQuantification.members),
     summaryScope: "components",
   });
+  if (
+    resolveActivitySourceIntegrity({
+      evidence: sourceEvidence,
+      observationQuantification,
+    }) !== "trusted"
+  ) {
+    return null;
+  }
   const aggregate = observationQuantification.summary;
   const calculationCutoff = Date.parse(calculationAsOf);
   if (
-    aggregate.commonLoad.status !== "complete" ||
     observationQuantification.members.some((member) => {
       const computedAt = member.calculationIdentity.computedAt;
       return computedAt === null || Date.parse(computedAt) > calculationCutoff;
@@ -212,9 +280,12 @@ function parseActivitySegments(
     return null;
   }
   return {
+    coverageStatus: aggregate.commonLoad.status === "complete" ? "complete" : "partial",
     observationQuantification,
     fingerprint: fingerprint([
-      "activity-contribution",
+      aggregate.commonLoad.status === "complete"
+        ? "quantified-activity-contribution"
+        : "known-zero-activity-contribution",
       aggregate.subjectIdentity.fingerprint,
       aggregate.evidenceIdentity.fingerprint,
       aggregate.calculationIdentity.fingerprint,
@@ -274,7 +345,11 @@ export function buildCommonLoadHistoryObservations(input: {
     }
 
     const activitySegmentResults = dailyActivities.map((activity) =>
-      parseActivitySegments(summariesByActivity.get(activity.id) ?? [], input.calculatedAsOf),
+      parseActivitySegments(
+        summariesByActivity.get(activity.id) ?? [],
+        input.calculatedAsOf,
+        activity.sourceEvidence,
+      ),
     );
     if (activitySegmentResults.some((result) => result === null)) {
       return {
@@ -288,9 +363,37 @@ export function buildCommonLoadHistoryObservations(input: {
         evidenceFingerprints: [],
       };
     }
-    const quantifiedContributions = activitySegmentResults.flatMap((contribution) =>
+    const contributions = activitySegmentResults.flatMap((contribution) =>
       contribution === null ? [] : [contribution],
     );
+    const quantifiedContributions = contributions.filter(
+      (
+        contribution,
+      ): contribution is ActivityContribution & {
+        observationQuantification: ActivityObservationQuantificationBundle;
+      } =>
+        contribution.coverageStatus === "complete" &&
+        contribution.observationQuantification !== null,
+    );
+    const dailyCoverageStatus = contributions.some(
+      (contribution) => contribution.coverageStatus === "partial",
+    )
+      ? "partial"
+      : coverageStatus;
+    const evidenceFingerprints = contributions
+      .map((contribution) => contribution.fingerprint)
+      .sort();
+    if (quantifiedContributions.length === 0) {
+      return {
+        state: "known_zero",
+        date,
+        model: COMMON_RELATIVE_LOAD_MODEL,
+        version: COMMON_RELATIVE_LOAD_VERSION,
+        calculatedAsOf: input.calculatedAsOf,
+        coverageStatus: dailyCoverageStatus,
+        evidenceFingerprints,
+      };
+    }
     createObservationQuantificationBundle({
       members: quantifiedContributions.flatMap(
         (contribution) => contribution.observationQuantification.members,
@@ -309,10 +412,8 @@ export function buildCommonLoadHistoryObservations(input: {
         version: COMMON_RELATIVE_LOAD_VERSION,
         calculatedAsOf: input.calculatedAsOf,
         reason: "common_load_unavailable",
-        coverageStatus,
-        evidenceFingerprints: quantifiedContributions
-          .map((contribution) => contribution.fingerprint)
-          .sort(),
+        coverageStatus: dailyCoverageStatus,
+        evidenceFingerprints,
       };
     }
     return {
@@ -321,13 +422,11 @@ export function buildCommonLoadHistoryObservations(input: {
       model: COMMON_RELATIVE_LOAD_MODEL,
       version: COMMON_RELATIVE_LOAD_VERSION,
       calculatedAsOf: input.calculatedAsOf,
-      coverageStatus,
+      coverageStatus: dailyCoverageStatus,
       aggregate: {
         ...aggregate,
       },
-      evidenceFingerprints: quantifiedContributions
-        .map((contribution) => contribution.fingerprint)
-        .sort(),
+      evidenceFingerprints,
     };
   });
 }
@@ -390,11 +489,78 @@ export async function getCommonLoadHistory(input: {
           return activity.started_at < input.asOf && date >= startDate && date <= endDate;
         });
 
-        const segments = await loadActivitySegmentsByActivityId(
-          tx,
-          windowActivityRows.map((activity) => activity.id),
-        );
-        const activitiesWithSegments = windowActivityRows.map((activity) => ({
+        const activityIds = windowActivityRows.map((activity) => activity.id);
+        const currentArtifactRows =
+          activityIds.length === 0
+            ? []
+            : await tx
+                .select({
+                  activityId: activityArtifactLinks.activity_id,
+                  artifactId: activityArtifactLinks.artifact_id,
+                })
+                .from(activityArtifactLinks)
+                .innerJoin(
+                  activityArtifacts,
+                  and(
+                    eq(activityArtifacts.id, activityArtifactLinks.artifact_id),
+                    eq(activityArtifacts.profile_id, activityArtifactLinks.profile_id),
+                    eq(activityArtifacts.availability, "accepted"),
+                  ),
+                )
+                .where(
+                  and(
+                    eq(activityArtifactLinks.profile_id, input.profileId),
+                    inArray(activityArtifactLinks.activity_id, activityIds),
+                    eq(activityArtifactLinks.role, "source"),
+                    eq(activityArtifactLinks.is_current, true),
+                  ),
+                );
+        const providerReferenceRows =
+          activityIds.length === 0
+            ? []
+            : await tx
+                .select({
+                  activityId: activitySourceReferences.activity_id,
+                  provider: activitySourceReferences.provider,
+                  externalId: activitySourceReferences.provider_external_id,
+                })
+                .from(activitySourceReferences)
+                .where(
+                  and(
+                    eq(activitySourceReferences.profile_id, input.profileId),
+                    inArray(activitySourceReferences.activity_id, activityIds),
+                  ),
+                );
+        const sourceEvidenceByActivity = new Map<
+          string,
+          {
+            currentArtifactIds: string[];
+            providerReferences: Array<{ provider: string; externalId: string }>;
+          }
+        >();
+        const sourceEvidenceFor = (activityId: string) => {
+          const existing = sourceEvidenceByActivity.get(activityId);
+          if (existing) return existing;
+          const created = { currentArtifactIds: [], providerReferences: [] };
+          sourceEvidenceByActivity.set(activityId, created);
+          return created;
+        };
+        for (const row of currentArtifactRows) {
+          sourceEvidenceFor(row.activityId).currentArtifactIds.push(row.artifactId);
+        }
+        for (const row of providerReferenceRows) {
+          sourceEvidenceFor(row.activityId).providerReferences.push({
+            provider: row.provider,
+            externalId: row.externalId,
+          });
+        }
+        const sourcedActivityRows = windowActivityRows.map((activity) => ({
+          ...activity,
+          sourceEvidence: sourceEvidenceByActivity.get(activity.id),
+        }));
+
+        const segments = await loadActivitySegmentsByActivityId(tx, activityIds);
+        const activitiesWithSegments = sourcedActivityRows.map((activity) => ({
           ...activity,
           segments: segments.get(activity.id) ?? [],
         }));
@@ -403,6 +569,16 @@ export async function getCommonLoadHistory(input: {
           profileId: input.profileId,
           activities: activitiesWithSegments,
           computedAsOf: input.asOf,
+        });
+        const observations = buildCommonLoadHistoryObservations({
+          activities: sourcedActivityRows,
+          calculatedAsOf,
+          segmentSummaries,
+          currentPlanningDate: input.currentPlanningDate,
+          evidenceScopeFingerprint,
+          planningTimezone: input.planningTimezone,
+          coverageStatus: "complete",
+          replayDays: COMMON_LOAD_HISTORY_MATURE_DAYS,
         });
         return replayCommonLoadHistory({
           basis: COMMON_LOAD_HISTORY_BASIS,
@@ -413,16 +589,15 @@ export async function getCommonLoadHistory(input: {
           },
           currentPlanningDate: input.currentPlanningDate,
           planningTimezone: input.planningTimezone,
-          observations: buildCommonLoadHistoryObservations({
-            activities: windowActivityRows,
-            calculatedAsOf,
-            segmentSummaries,
-            currentPlanningDate: input.currentPlanningDate,
-            evidenceScopeFingerprint,
-            planningTimezone: input.planningTimezone,
-            coverageStatus: "complete",
-            replayDays: COMMON_LOAD_HISTORY_MATURE_DAYS,
-          }),
+          // Core's current replay output only admits complete days. These partial
+          // markers describe known activities whose accepted numeric contribution
+          // is zero, not incomplete provider/source history; their evidence remains
+          // in the replay identity while quantified contributions stay unchanged.
+          observations: observations.map((observation) =>
+            observation.coverageStatus === "partial"
+              ? { ...observation, coverageStatus: "complete" as const }
+              : observation,
+          ),
         });
       },
       { isolationLevel: "repeatable read", accessMode: "read only" },

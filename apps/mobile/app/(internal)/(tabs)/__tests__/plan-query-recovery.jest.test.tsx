@@ -45,6 +45,11 @@ jest.mock("@/components/plan/training-path/usePlanTrainingPathData", () => ({
   }),
 }));
 jest.mock("@/lib/performance", () => ({ usePerformanceScreenReady: jest.fn() }));
+jest.mock("@/lib/stores/planDisplayPreferences", () => ({
+  usePlanDisplayPreferences: (
+    selector: (state: { hydrated: true; range: "daily"; setRange: jest.Mock }) => unknown,
+  ) => selector({ hydrated: true, range: "daily", setRange: jest.fn() }),
+}));
 jest.mock("@/lib/stores/trainingPreferencesSheetStore", () => ({
   useTrainingPreferencesSheetStore: () => jest.fn(),
 }));
@@ -56,6 +61,7 @@ it("retains usable plan data and retries partial failures", () => {
   renderNative(<Plan />);
   expect(screen.getByText("Some plan details could not be refreshed")).toBeTruthy();
   expect(screen.getByTestId("training-path")).toBeTruthy();
+  expect(screen.getAllByTestId("plan-query-error")).toHaveLength(1);
   fireEvent.press(screen.getByTestId("plan-query-retry"));
   expect(refresh).toHaveBeenCalled();
 });
@@ -64,4 +70,6 @@ it("labels a full load failure accurately", () => {
   hasUsableData = false;
   renderNative(<Plan />);
   expect(screen.getByText("Your plan could not be loaded")).toBeTruthy();
+  expect(screen.queryByTestId("training-path")).toBeNull();
+  expect(screen.getAllByTestId("plan-query-error")).toHaveLength(1);
 });

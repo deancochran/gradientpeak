@@ -119,7 +119,6 @@ const renderEditor = (
     onAddSessionAtOffset: jest.fn(),
     onDuplicateSession: jest.fn(),
     onMoveSessionByDays: jest.fn(),
-    onOpenSchedulePreview: jest.fn(),
     onPressSession: jest.fn(),
     onRemoveSession: jest.fn(),
     projection: {},

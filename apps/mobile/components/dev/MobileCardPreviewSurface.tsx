@@ -37,9 +37,9 @@ export function MobileCardPreviewSurface() {
       </PreviewSection>
 
       <PreviewSection testID="mobile-card-activity-plan" title="Activity plan">
-        <ActivityPlanCard activityPlan={fixtures.activityPlan} onPress={noOp} />
+        <ActivityPlanCard plan={fixtures.activityPlan} onPress={noOp} />
         <ActivityPlanCard
-          activityPlan={fixtures.activityPlan}
+          plan={fixtures.activityPlan}
           onPress={noOp}
           testID="mobile-card-activity-plan-compact"
           variant="compact"

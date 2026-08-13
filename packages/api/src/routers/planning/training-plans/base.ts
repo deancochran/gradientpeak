@@ -1,14 +1,13 @@
 import {
   canonicalActivityCategorySchema,
-  dateOnlySchema,
+  planningLedgerRequestSchema,
+  planningLedgerSchema,
   templateApplyInputSchema,
 } from "@repo/core";
 import { z } from "zod";
 import {
   applyTrainingPlanTemplateUseCase,
   deleteTrainingPlanUseCase,
-  getActivePlanUseCase,
-  getTrainingPlanByIdUseCase,
   getTrainingPlanTemplateUseCase,
   getTrainingPlanUseCase,
   listTrainingPlansUseCase,
@@ -17,8 +16,8 @@ import {
   planTabProjectionSchema,
   readPlanTabProjection,
   removeAppliedScheduleUseCase,
-  reorderTrainingPlanActivitiesUseCase,
 } from "../../../application/training-plan";
+import { readPlanningLedger } from "../../../application/training-plan/planningLedgerService";
 import {
   commitTrainingPlan,
   previewTrainingPlan,
@@ -35,40 +34,6 @@ import { indexCursorSchema } from "../../../utils/index-cursor";
 
 const trainingPlanContentVisibilitySchema = z.enum(["private", "followers", "public"]);
 
-const reorderTrainingPlanActivitiesInputSchema = z
-  .object({
-    training_plan_id: z.string().uuid(),
-    changes: z
-      .array(
-        z
-          .object({
-            event_id: z.string().uuid(),
-            expected_scheduled_date: dateOnlySchema,
-            requested_scheduled_date: dateOnlySchema,
-          })
-          .strict()
-          .refine((change) => change.expected_scheduled_date !== change.requested_scheduled_date, {
-            message: "Requested activity date must differ from the expected date",
-          }),
-      )
-      .min(1)
-      .max(100),
-  })
-  .strict()
-  .superRefine((input, context) => {
-    const eventIds = new Set<string>();
-    input.changes.forEach((change, index) => {
-      if (eventIds.has(change.event_id)) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Activity event IDs must be unique",
-          path: ["changes", index, "event_id"],
-        });
-      }
-      eventIds.add(change.event_id);
-    });
-  });
-
 const applicationScopedScheduleInputSchema = z
   .object({
     schedule_batch_id: z.string().uuid(),
@@ -77,6 +42,17 @@ const applicationScopedScheduleInputSchema = z
   .strict();
 
 export const trainingPlansProcedures = {
+  getPlanningLedger: protectedProcedure
+    .input(planningLedgerRequestSchema)
+    .output(planningLedgerSchema)
+    .query(({ ctx, input }) =>
+      readPlanningLedger({
+        db: getRequiredDb(ctx),
+        profileId: ctx.session.user.id,
+        request: input,
+      }),
+    ),
+
   getPlanTabProjection: protectedProcedure
     .input(planTabProjectionInputSchema)
     .output(planTabProjectionSchema)
@@ -111,12 +87,12 @@ export const trainingPlansProcedures = {
     ),
 
   get: protectedProcedure
-    .input(z.object({ id: z.string().uuid().optional() }).optional())
+    .input(z.object({ id: z.string().uuid() }).strict())
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       return getTrainingPlanUseCase({
         db,
-        id: input?.id,
+        id: input.id,
         profileId: ctx.session.user.id,
         repository: createTrainingPlanRepository(db),
       });
@@ -131,6 +107,7 @@ export const trainingPlansProcedures = {
           search: z.string().trim().max(80).optional(),
           limit: z.number().int().min(1).max(50).default(25),
           cursor: indexCursorSchema.optional(),
+          direction: z.enum(["forward", "backward"]).optional(),
         })
         .strict(),
     )
@@ -149,18 +126,6 @@ export const trainingPlansProcedures = {
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       return deleteTrainingPlanUseCase({
-        db,
-        id: input.id,
-        profileId: ctx.session.user.id,
-        repository: createTrainingPlanRepository(db),
-      });
-    }),
-
-  getById: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      return getTrainingPlanByIdUseCase({
         db,
         id: input.id,
         profileId: ctx.session.user.id,
@@ -191,6 +156,7 @@ export const trainingPlansProcedures = {
             .optional(),
           limit: z.number().int().min(1).max(50).default(25),
           cursor: indexCursorSchema.optional(),
+          direction: z.enum(["forward", "backward"]).optional(),
         })
         .strict(),
     )
@@ -243,23 +209,4 @@ export const trainingPlansProcedures = {
         trainingPlanId: input.training_plan_id,
       });
     }),
-
-  reorderActivities: protectedProcedure
-    .input(reorderTrainingPlanActivitiesInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      return reorderTrainingPlanActivitiesUseCase({
-        changes: input.changes,
-        db,
-        profileId: ctx.session.user.id,
-        trainingPlanId: input.training_plan_id,
-      });
-    }),
-
-  getActivePlan: protectedProcedure.query(async ({ ctx }) =>
-    getActivePlanUseCase({
-      profileId: ctx.session.user.id,
-      repository: createTrainingPlanRepository(getRequiredDb(ctx)),
-    }),
-  ),
 };

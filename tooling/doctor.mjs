@@ -5,6 +5,20 @@ import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:net";
 
 const checks = [];
+const laneFlagIndex = process.argv.indexOf("--lane");
+const lane = laneFlagIndex === -1 ? "all" : process.argv[laneFlagIndex + 1];
+const supportedLanes = new Set(["all", "dev", "web", "mobile", "db", "e2e"]);
+
+if (!supportedLanes.has(lane)) {
+  console.error(
+    `Unknown lane ${JSON.stringify(lane)}. Use one of: ${[...supportedLanes].join(", ")}.`,
+  );
+  process.exit(2);
+}
+
+const requiresLocalDatabase = ["all", "dev", "web", "db", "e2e"].includes(lane);
+const requiresWebEnv = ["all", "dev", "web", "e2e"].includes(lane);
+const requiresMobileEnv = ["all", "dev", "mobile", "e2e"].includes(lane);
 
 function addCheck(name, status, message, required = false) {
   checks.push({ name, status, message, required });
@@ -21,9 +35,17 @@ function commandOutput(command, args = []) {
 }
 
 function commandExists(command) {
-  const lookup = process.platform === "win32" ? "where" : "command";
-  const args = process.platform === "win32" ? [command] : ["-v", command];
+  const lookup = process.platform === "win32" ? "where" : "which";
+  const args = [command];
   return commandOutput(lookup, args) !== null;
+}
+
+function commandSucceeds(command, args = []) {
+  return commandOutput(command, args) !== null;
+}
+
+function workspaceCommandExists(workspace, command) {
+  return commandSucceeds("pnpm", ["--filter", workspace, "exec", command, "--version"]);
 }
 
 function readJson(path) {
@@ -38,10 +60,6 @@ function readMiseTools() {
       match[2],
     ]),
   );
-}
-
-function versionMajor(version) {
-  return version.replace(/^v/, "").split(".")[0];
 }
 
 async function isPortAvailable(port) {
@@ -59,10 +77,10 @@ const packageJson = readJson("package.json");
 const miseTools = readMiseTools();
 
 const expectedNode = miseTools.node;
-const actualNode = process.version;
+const actualNode = process.version.replace(/^v/, "");
 addCheck(
   "Node",
-  versionMajor(actualNode) === expectedNode ? "pass" : "fail",
+  actualNode === expectedNode ? "pass" : "fail",
   `expected ${expectedNode} from mise.toml, found ${actualNode}`,
   true,
 );
@@ -77,12 +95,26 @@ addCheck(
 );
 
 for (const tool of ["supabase", "docker"]) {
+  const required = requiresLocalDatabase;
+  const available =
+    tool === "supabase" ? workspaceCommandExists("@repo/db", tool) : commandExists(tool);
   addCheck(
     tool,
-    commandExists(tool) ? "pass" : "warn",
-    commandExists(tool)
+    available ? "pass" : required ? "fail" : "warn",
+    available
       ? `${tool} is available`
-      : `${tool} is missing; local Supabase workflows may not run`,
+      : `${tool} is missing; the ${lane} lane requires local Supabase`,
+    required,
+  );
+}
+
+if (commandExists("docker")) {
+  const daemonAvailable = commandSucceeds("docker", ["info"]);
+  addCheck(
+    "Docker daemon",
+    daemonAvailable ? "pass" : requiresLocalDatabase ? "fail" : "warn",
+    daemonAvailable ? "running" : "not available; start Docker before using a local Supabase lane",
+    requiresLocalDatabase,
   );
 }
 
@@ -97,13 +129,13 @@ for (const tool of ["maestro", "adb", "ngrok"]) {
 }
 
 const envPairs = [
-  ["apps/web/.env.local", "apps/web/.env.example"],
-  ["apps/mobile/.env", "apps/mobile/.env.example"],
-  ["apps/mobile/.env.e2e", "apps/mobile/.env.e2e.example"],
-  ["packages/db/.env", "packages/db/.env.example"],
+  ["apps/web/.env.local", "apps/web/.env.example", requiresWebEnv],
+  ["apps/mobile/.env", "apps/mobile/.env.example", requiresMobileEnv],
+  ["apps/mobile/.env.e2e", "apps/mobile/.env.e2e.example", lane === "e2e"],
+  ["packages/db/.env", "packages/db/.env.example", false],
 ];
 
-for (const [localPath, examplePath] of envPairs) {
+for (const [localPath, examplePath, required] of envPairs) {
   if (!existsSync(examplePath)) {
     addCheck(examplePath, "fail", "missing checked-in env template", true);
     continue;
@@ -111,10 +143,11 @@ for (const [localPath, examplePath] of envPairs) {
   addCheck(examplePath, "pass", "env template exists");
   addCheck(
     localPath,
-    existsSync(localPath) ? "pass" : "warn",
+    existsSync(localPath) ? "pass" : required ? "fail" : "warn",
     existsSync(localPath)
       ? "local env file exists"
       : `copy ${examplePath} when this surface is needed`,
+    required,
   );
 }
 
@@ -138,4 +171,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log("\nDoctor completed. Warnings are optional/local workflow notes.");
+console.log(`\nDoctor completed for the ${lane} lane. Warnings are optional workflow notes.`);

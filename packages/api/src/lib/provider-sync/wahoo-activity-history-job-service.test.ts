@@ -179,6 +179,7 @@ function historyJob(payload: Record<string, unknown> = { trigger: "scheduled" })
     id: "job-1",
     integrationGeneration: 1,
     integrationId: "integration-1",
+    importRunId: typeof payload.importRunId === "string" ? payload.importRunId : null,
     internalResourceId: null,
     jobType: "wahoo.activity_history_reconcile",
     maxAttempts: 5,
@@ -334,6 +335,7 @@ describe("WahooActivityHistoryJobService", () => {
       expectedIntegrationGeneration: 1,
       highWatermark: "2026-04-03T12:00:00.000Z",
       id: "job-1",
+      importRunId: "import-run-1",
       integrationId: "integration-1",
       metadata: {
         activityHistoryCoverage: {
@@ -513,6 +515,88 @@ describe("WahooActivityHistoryJobService", () => {
     );
   });
 
+  it("reconciles onboarding when a retry finds its exact import run completed", async () => {
+    const deps = createDeps();
+    deps.setImportRun({
+      ...deps.getImportRun(),
+      completed_at: new Date("2026-04-03T12:00:00.000Z"),
+      discovered_count: 31,
+      imported_count: 29,
+      kind: "onboarding",
+      next_page: null,
+      skipped_count: 2,
+      status: "completed",
+    });
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
+      historyJob({ trigger: "onboarding", importRunId: "import-run-1" }),
+    ]);
+    deps.providerSyncRepository.isIntegrationGenerationActive.mockResolvedValue(true);
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
+    const reconcile = vi.fn().mockResolvedValue({ status: "review" });
+    const service = new WahooActivityHistoryJobService({
+      db: {} as never,
+      importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
+      providerSyncRepository: deps.providerSyncRepository as never,
+      reconcileOnboardingStatus: reconcile as never,
+      wahooClientFactory: () => deps.wahooClient,
+      wahooRepository: deps.wahooRepository,
+    });
+
+    await expect(service.processDueJobs({ workerId: "worker-1" })).resolves.toEqual({
+      completed: 1,
+      failed: 0,
+      processed: 1,
+    });
+
+    expect(reconcile).toHaveBeenCalledWith({ db: {}, profileId: "profile-1" });
+    expect(deps.wahooClient.listWorkoutSummaries).not.toHaveBeenCalled();
+    expect(deps.importRuns.complete).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepository.completeJobWithSyncState).toHaveBeenCalledOnce();
+  });
+
+  it("preserves completed work when completed-run onboarding reconciliation is transiently unavailable", async () => {
+    const deps = createDeps();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    deps.setImportRun({
+      ...deps.getImportRun(),
+      completed_at: new Date("2026-04-03T12:00:00.000Z"),
+      kind: "onboarding",
+      next_page: null,
+      status: "completed",
+    });
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
+      historyJob({ trigger: "onboarding", importRunId: "import-run-1" }),
+    ]);
+    deps.providerSyncRepository.isIntegrationGenerationActive.mockResolvedValue(true);
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
+    const reconcile = vi.fn().mockRejectedValue(new Error("temporarily unavailable"));
+    const service = new WahooActivityHistoryJobService({
+      db: {} as never,
+      importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
+      providerSyncRepository: deps.providerSyncRepository as never,
+      reconcileOnboardingStatus: reconcile as never,
+      wahooClientFactory: () => deps.wahooClient,
+      wahooRepository: deps.wahooRepository,
+    });
+
+    await expect(service.processDueJobs({ workerId: "worker-1" })).resolves.toEqual({
+      completed: 1,
+      failed: 0,
+      processed: 1,
+    });
+
+    expect(reconcile).toHaveBeenCalledOnce();
+    expect(deps.importRuns.fail).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepository.failJobWithSyncState).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith("Wahoo onboarding reconciliation pending", {
+      operation: "reconcile_onboarding",
+      outcome: "unexpected_error",
+      provider: "wahoo",
+    });
+  });
+
   it("keeps the job retryable when atomic completion and coverage persistence fails", async () => {
     const deps = createDeps();
     deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
@@ -575,6 +659,7 @@ describe("WahooActivityHistoryJobService", () => {
       {
         ...historyJob(),
         attempt: 2,
+        importRunId: "import-run-1",
         payload: { importRunId: "import-run-1", trigger: "scheduled" },
       },
     ]);
@@ -728,7 +813,7 @@ describe("WahooActivityHistoryJobService", () => {
         expectedIntegrationGeneration: 1,
         id: "job-1",
         integrationId: "integration-1",
-        lastError: "activity_history_failed",
+        lastError: "activity_import_failed",
         provider: "wahoo",
         resource: "historical_activities",
         status: "failed",

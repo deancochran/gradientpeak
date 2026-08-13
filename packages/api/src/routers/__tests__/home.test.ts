@@ -14,33 +14,15 @@ import {
 } from "@repo/core";
 import { type CommonLoadResult, calculateAvailableCommonLoad } from "@repo/core/load";
 import { schema } from "@repo/db";
-import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const homeMocks = vi.hoisted(() => ({
-  buildDailyTssByDateSeries: vi.fn(),
-  buildDynamicStressSeries: vi.fn(),
-  summarizeSegmentCommonLoad: vi.fn((summaries, activityIds) => ({
-    status: "complete",
-    load: summaries.reduce(
-      (total: number, summary: { activity_id: string; common_load?: { load?: number | null } }) =>
-        activityIds.has(summary.activity_id) && summary.common_load?.load !== null
-          ? total + (summary.common_load?.load ?? 0)
-          : total,
-      0,
-    ),
-  })),
-  summarizeSegmentQuantification: vi.fn(),
   buildWorkloadEnvelopes: vi.fn(),
-  calculateDateOfBirthAge: vi.fn(),
   calculateRollingTrainingQuality: vi.fn(),
-  createActivityAnalysisStore: vi.fn(),
   createEventReadRepository: vi.fn(),
   estimateActivityPlans: vi.fn(),
   getLoadBalanceStatus: vi.fn(),
   getEffectivePlanLoad: vi.fn(),
-  loadActivitySegmentsByActivityId: vi.fn(),
-  replayTrainingLoadByDate: vi.fn(),
   readAthleteReadModel: vi.fn(),
 }));
 
@@ -53,20 +35,6 @@ vi.mock("@repo/core", async (importOriginal) => {
   };
 });
 
-vi.mock("@repo/core/profile/date-of-birth", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@repo/core/profile/date-of-birth")>();
-  return { ...actual, calculateDateOfBirthAge: homeMocks.calculateDateOfBirthAge };
-});
-
-vi.mock("@repo/core/load", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@repo/core/load")>();
-  return {
-    ...actual,
-    buildDailyTssByDateSeries: homeMocks.buildDailyTssByDateSeries,
-    replayTrainingLoadByDate: homeMocks.replayTrainingLoadByDate,
-  };
-});
-
 vi.mock("../../application/athlete-intelligence/athlete-read-model", () => ({
   readAthleteReadModel: homeMocks.readAthleteReadModel,
 }));
@@ -76,15 +44,7 @@ vi.mock("../../application/training-plan", () => ({
 }));
 
 vi.mock("../../infrastructure/repositories", () => ({
-  createActivityAnalysisStore: homeMocks.createActivityAnalysisStore,
   createEventReadRepository: homeMocks.createEventReadRepository,
-}));
-
-vi.mock("../../lib/activity-analysis", () => ({
-  buildDynamicStressSeries: homeMocks.buildDynamicStressSeries,
-  summarizeSegmentCommonLoad: homeMocks.summarizeSegmentCommonLoad,
-  summarizeSegmentQuantification: homeMocks.summarizeSegmentQuantification,
-  loadActivitySegmentsByActivityId: homeMocks.loadActivitySegmentsByActivityId,
 }));
 
 vi.mock("../../lib/features", () => ({
@@ -108,14 +68,21 @@ vi.mock("../../application/activity-plans/estimate-activity-plans", async (impor
   };
 });
 
-vi.mock("../../utils/workload", () => ({
+vi.mock("../../utils/workload", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../utils/workload")>()),
   buildWorkloadEnvelopes: homeMocks.buildWorkloadEnvelopes,
 }));
 
 import { listPlannedActivitiesInRange } from "../../application/home/plannedActivities";
 import { homeRouter } from "../home";
 
-type TableName = "activities" | "events" | "profiles" | "profileTrainingSettings";
+type TableName =
+  | "activities"
+  | "activityArtifactLinks"
+  | "activitySourceReferences"
+  | "events"
+  | "profiles"
+  | "profileTrainingSettings";
 
 type DbPlan = {
   execute?: Array<Array<Record<string, unknown>>>;
@@ -126,6 +93,8 @@ function getTableName(table: unknown): TableName {
   if (table === schema.profiles) return "profiles";
   if (table === schema.events) return "events";
   if (table === schema.activities) return "activities";
+  if (table === schema.activityArtifactLinks) return "activityArtifactLinks";
+  if (table === schema.activitySourceReferences) return "activitySourceReferences";
   if (table === schema.profileTrainingSettings) return "profileTrainingSettings";
   throw new Error(`Unhandled table: ${String(table)}`);
 }
@@ -136,6 +105,8 @@ function createDbMock(plan: DbPlan = {}) {
     profiles: [...(plan.select?.profiles ?? [])],
     events: [...(plan.select?.events ?? [])],
     activities: [...(plan.select?.activities ?? [])],
+    activityArtifactLinks: [...(plan.select?.activityArtifactLinks ?? [])],
+    activitySourceReferences: [...(plan.select?.activitySourceReferences ?? [])],
     profileTrainingSettings: [...(plan.select?.profileTrainingSettings ?? [])],
   } satisfies Record<TableName, Array<unknown[]>>;
   const executeQueue = [...(plan.execute ?? [])];
@@ -244,25 +215,6 @@ function buildCanonicalTrainingPlanStructure() {
   };
 }
 
-function completeCommonLoad(load: number, contributingDurationSeconds: number) {
-  return {
-    model: "gradientpeak_relative_load" as const,
-    version: "1" as const,
-    status: "complete" as const,
-    load,
-    intensity: Math.sqrt(load / (100 * (contributingDurationSeconds / 3600))),
-    contributingDurationSeconds,
-    knownDurationSeconds: contributingDurationSeconds,
-    contributingActivityCount: 1,
-    partialActivityCount: 0,
-    unavailableActivityCount: 0,
-    unknownDurationActivityCount: 0,
-    totalActivityCount: 1,
-    activityCountCoverage: 1,
-    knownDurationCoverage: 1,
-  };
-}
-
 function availableCommonLoad(
   load: number,
   contributingDurationSeconds: number,
@@ -307,6 +259,7 @@ function testQuantification(input: {
   id: string;
   kind: "observation";
   load: CommonLoadResult;
+  providerExternalId?: string;
 }): ActivityObservationQuantification;
 function testQuantification(input: {
   activityCategory?: "bike" | "run";
@@ -315,6 +268,7 @@ function testQuantification(input: {
   id: string;
   kind: "prescription";
   load: CommonLoadResult;
+  providerExternalId?: string;
 }): ActivityPrescriptionQuantification;
 function testQuantification(input: {
   activityCategory?: "bike" | "run";
@@ -323,9 +277,11 @@ function testQuantification(input: {
   id: string;
   kind: "observation" | "prescription";
   load: CommonLoadResult;
+  providerExternalId?: string;
 }) {
   const evidenceRole = input.kind === "observation" ? "measured" : "prescribed";
   const segmentId = `${input.id}-segment`;
+  const providerExternalId = input.providerExternalId ?? `wahoo-${input.id}`;
   const subjectIdentity =
     input.kind === "observation"
       ? createCompletedActivityQuantificationSubjectIdentity({ activityId: input.id })
@@ -338,8 +294,11 @@ function testQuantification(input: {
   const shared = {
     subjectIdentity,
     evidenceIdentity: createActivityQuantificationEvidenceIdentity({
-      evidenceType: input.kind === "observation" ? "segment_facts" : "plan_revision",
-      sourceIds: input.kind === "observation" ? [input.id, segmentId] : [input.id],
+      evidenceType: input.kind === "observation" ? "provider_summary" : "plan_revision",
+      sourceIds:
+        input.kind === "observation"
+          ? [input.id, segmentId, "wahoo", providerExternalId]
+          : [input.id],
       revisionFingerprint: `revision-${input.id}`,
       details: { kind: input.kind, id: input.id },
     }),
@@ -394,9 +353,12 @@ function testQuantification(input: {
         completedProvenance: {
           activityId: input.id,
           segmentId,
-          source: "unknown",
+          source: "provider_summary",
           artifactIdentity: null,
-          providerIdentity: null,
+          providerIdentity: {
+            provider: "wahoo",
+            externalId: providerExternalId,
+          },
           segmentRevision: null,
           observedAt: input.load.computedAsOf,
           computedAt: input.load.computedAsOf,
@@ -489,20 +451,6 @@ describe("planned Home activity rows", () => {
 
 describe("homeRouter", () => {
   beforeEach(() => {
-    homeMocks.summarizeSegmentQuantification.mockImplementation(
-      (
-        summaries: Array<{
-          activity_id: string;
-          observationQuantification: ReturnType<typeof createObservationQuantificationBundle>;
-        }>,
-        activityIds: Set<string>,
-      ) =>
-        createObservationQuantificationBundle({
-          members: summaries
-            .filter((summary) => activityIds.has(summary.activity_id))
-            .flatMap((summary) => summary.observationQuantification.members),
-        }),
-    );
     homeMocks.readAthleteReadModel.mockResolvedValue({
       contractVersion: "athlete-read-model-v1",
       profileId: "11111111-1111-4111-8111-111111111111",
@@ -510,6 +458,7 @@ describe("homeRouter", () => {
       publishedRevision: 1,
       algorithmVersion: "athlete-state-projection-v1",
       currentBaseline: { currentPlanningDate: "2026-04-03", planningTimezone: "UTC" },
+      activityAnalytics: { status: "unavailable", reason: "row_limit_exceeded" },
       loadHistory: {
         publishedRevision: 1,
         algorithmVersion: "athlete-state-projection-v1",
@@ -528,27 +477,6 @@ describe("homeRouter", () => {
       version: "1",
       sourceCounts: { activities: 0, events: 0 },
     });
-    homeMocks.loadActivitySegmentsByActivityId.mockImplementation(
-      async (_db: unknown, activityIds: string[]) =>
-        new Map(
-          activityIds.map((activityId) => [
-            activityId,
-            [
-              {
-                id: `${activityId}-segment`,
-                role: "activity",
-                activity_category: "bike",
-                ordinal: 0,
-                summary: {
-                  version: 1,
-                  timing: { timingCoverage: "unavailable" },
-                  normalizedPowerWatts: 247.5,
-                },
-              },
-            ],
-          ]),
-        ),
-    );
   });
 
   afterEach(() => {
@@ -560,17 +488,16 @@ describe("homeRouter", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
 
-    homeMocks.calculateDateOfBirthAge.mockReturnValue(36);
     homeMocks.calculateRollingTrainingQuality.mockReturnValue(0.84);
     homeMocks.getLoadBalanceStatus.mockReturnValue("negative_balance");
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
-    homeMocks.createActivityAnalysisStore.mockReturnValue({ kind: "analysis-store" });
     const yesterdayQuantification = testQuantification({
       id: "activity-yesterday-segment",
       kind: "observation",
       load: availableCommonLoad(30, 1800),
       durationSeconds: 1800,
       distanceMeters: 10_000,
+      providerExternalId: "wahoo-yesterday",
     });
     const todayQuantifications = [
       testQuantification({
@@ -579,6 +506,7 @@ describe("homeRouter", () => {
         load: availableCommonLoad(20, 1800),
         durationSeconds: 1800,
         distanceMeters: 5000,
+        providerExternalId: "wahoo-today",
       }),
       testQuantification({
         id: "activity-today-segment-2",
@@ -586,69 +514,54 @@ describe("homeRouter", () => {
         load: availableCommonLoad(30, 1800),
         durationSeconds: 1800,
         distanceMeters: 10_000,
+        providerExternalId: "wahoo-today",
       }),
     ];
-    homeMocks.buildDynamicStressSeries.mockResolvedValue({
-      byActivityId: new Map([
-        [
-          "activity-today",
-          {
-            tss: 50,
-            intensity_factor: 0.9,
-            common_load: completeCommonLoad(50, 3600),
-            observationQuantification: createObservationQuantificationBundle({
-              members: todayQuantifications,
-            }),
+    homeMocks.readAthleteReadModel.mockResolvedValue({
+      contractVersion: "athlete-read-model-v1",
+      profileId: "11111111-1111-4111-8111-111111111111",
+      asOf: "2026-04-03T12:00:00.000Z",
+      publishedRevision: 1,
+      algorithmVersion: "athlete-state-projection-v1",
+      currentBaseline: {
+        currentPlanningDate: "2026-04-03",
+        planningTimezone: "UTC",
+        planningContext: {
+          demographics: { ageYears: { value: 36 }, gender: "female" },
+        },
+      },
+      loadHistory: {
+        publishedRevision: 1,
+        algorithmVersion: "athlete-state-projection-v1",
+        result: {
+          status: "unavailable",
+          policyVersion: "common_load_history_v1",
+          reason: "insufficient_history",
+          context: { requiredDays: 84, receivedDays: 0 },
+        },
+      },
+      activityAnalytics: {
+        status: "available",
+        dashboard: {
+          performance: {
+            dataPoints: [
+              {
+                activityId: "activity-yesterday",
+                date: "2026-04-02T07:00:00.000Z",
+                observationQuantification: createObservationQuantificationBundle({
+                  members: [yesterdayQuantification],
+                }),
+              },
+              {
+                activityId: "activity-today",
+                date: "2026-04-03T07:00:00.000Z",
+                observationQuantification: createObservationQuantificationBundle({
+                  members: todayQuantifications,
+                }),
+              },
+            ],
           },
-        ],
-        [
-          "activity-yesterday",
-          {
-            tss: 30,
-            intensity_factor: 0.82,
-            common_load: yesterdayQuantification.commonLoad,
-            observationQuantification: createObservationQuantificationBundle({
-              members: [yesterdayQuantification],
-            }),
-          },
-        ],
-      ]),
-      byDate: new Map([
-        ["2026-04-02", 30],
-        ["2026-04-03", 50],
-      ]),
-      segmentSummaries: [
-        {
-          activity_id: "activity-yesterday",
-          tss: 30,
-          common_load: yesterdayQuantification.commonLoad,
-          observationQuantification: createObservationQuantificationBundle({
-            members: [yesterdayQuantification],
-          }),
         },
-        {
-          activity_id: "activity-today",
-          tss: 20,
-          common_load: todayQuantifications[0]?.commonLoad,
-          observationQuantification: createObservationQuantificationBundle({
-            members: todayQuantifications[0] ? [todayQuantifications[0]] : [],
-          }),
-        },
-        {
-          activity_id: "activity-today",
-          tss: 30,
-          common_load: todayQuantifications[1]?.commonLoad,
-          observationQuantification: createObservationQuantificationBundle({
-            members: todayQuantifications[1] ? [todayQuantifications[1]] : [],
-          }),
-        },
-      ],
-      complete: true,
-      seriesIdentity: {
-        activity_category: "bike",
-        method: "power_threshold",
-        source: "activity_analysis",
-        version: "1",
       },
     });
     homeMocks.estimateActivityPlans.mockImplementation(async (plans: Array<any>) =>
@@ -676,7 +589,7 @@ describe("homeRouter", () => {
     );
     homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
 
-    const { caller } = createCaller({
+    const { caller, db } = createCaller({
       select: {
         profiles: [[{ dob: new Date("1990-06-15T00:00:00.000Z"), gender: "female" }]],
         events: [
@@ -691,16 +604,20 @@ describe("homeRouter", () => {
               id: "planned-today",
               activity_plan_id: "11111111-1111-4111-8111-111111111111",
               starts_at: new Date("2026-04-03T08:00:00.000Z"),
+              linked_activity_id: "activity-today",
               notes: null,
               scheduled_date: "2026-04-03",
+              status: "completed",
               activity_plan: buildActivityPlan("plan-1", "Threshold Ride", "bike"),
             },
             {
               id: "planned-tomorrow",
               activity_plan_id: "22222222-2222-4222-8222-222222222222",
               starts_at: new Date("2026-04-04T08:00:00.000Z"),
+              linked_activity_id: null,
               notes: null,
               scheduled_date: "2026-04-04",
+              status: "scheduled",
               activity_plan: buildActivityPlan("plan-2", "Recovery Run", "run"),
             },
           ],
@@ -709,16 +626,20 @@ describe("homeRouter", () => {
               id: "planned-today",
               activity_plan_id: "11111111-1111-4111-8111-111111111111",
               starts_at: new Date("2026-04-03T08:00:00.000Z"),
+              linked_activity_id: "activity-today",
               notes: null,
               scheduled_date: "2026-04-03",
+              status: "completed",
               activity_plan: buildActivityPlan("plan-1", "Threshold Ride", "bike"),
             },
             {
               id: "planned-tomorrow",
               activity_plan_id: "22222222-2222-4222-8222-222222222222",
               starts_at: new Date("2026-04-04T08:00:00.000Z"),
+              linked_activity_id: null,
               notes: null,
               scheduled_date: "2026-04-04",
+              status: "scheduled",
               activity_plan: buildActivityPlan("plan-2", "Recovery Run", "run"),
             },
           ],
@@ -763,6 +684,20 @@ describe("homeRouter", () => {
             },
           ],
         ],
+        activitySourceReferences: [
+          [
+            {
+              activityId: "activity-yesterday",
+              provider: "wahoo",
+              externalId: "wahoo-yesterday",
+            },
+            {
+              activityId: "activity-today",
+              provider: "wahoo",
+              externalId: "wahoo-today",
+            },
+          ],
+        ],
         profileTrainingSettings: [
           [
             {
@@ -795,13 +730,29 @@ describe("homeRouter", () => {
 
     const result = await caller.getDashboard({ days: 2 });
 
-    expect(homeMocks.buildDynamicStressSeries).toHaveBeenCalledWith(
+    expect(homeMocks.readAthleteReadModel).toHaveBeenCalledWith(
       expect.objectContaining({
-        activities: expect.arrayContaining([
-          expect.objectContaining({ id: "activity-yesterday" }),
-          expect.objectContaining({ id: "activity-today" }),
-        ]),
+        sections: expect.objectContaining({
+          currentBaseline: { includePlanningContext: true },
+          activityAnalytics: expect.objectContaining({ groupBy: "day" }),
+        }),
       }),
+    );
+    expect(db.whereCalls.some((call) => call.table === "activities")).toBe(false);
+    expect(homeMocks.buildWorkloadEnvelopes).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          started_at: "2026-04-02T07:00:00.000Z",
+          sourceIntegrity: "trusted",
+        }),
+        expect.objectContaining({
+          started_at: "2026-04-03T07:00:00.000Z",
+          sourceIntegrity: "trusted",
+        }),
+      ]),
+      expect.any(Date),
+      expect.any(Date),
+      { planningTimezone: "UTC" },
     );
 
     expect(homeMocks.getEffectivePlanLoad).toHaveBeenCalledWith(
@@ -878,7 +829,6 @@ describe("homeRouter", () => {
     expect(result.schedule[0]).not.toHaveProperty("activityCategories");
     expect(result.schedule[0]).not.toHaveProperty("activityKind");
     expect(result.projectedLoad).toEqual([]);
-    expect(homeMocks.replayTrainingLoadByDate).not.toHaveBeenCalled();
     expect(result).not.toHaveProperty("projectedFitness");
     expect(result).not.toHaveProperty("idealFitnessCurve");
     expect(result).not.toHaveProperty("goalMetrics");
@@ -897,46 +847,36 @@ describe("homeRouter", () => {
     expect(homeMocks.estimateActivityPlans).toHaveBeenCalledOnce();
   });
 
-  it("includes activities completed after presentation midnight on the profile's current day", async () => {
+  it("requests canonical activity analytics through the current instant without a raw activity read", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T18:00:00.000Z"));
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
-    homeMocks.createActivityAnalysisStore.mockReturnValue({ kind: "analysis-store" });
-    homeMocks.buildDynamicStressSeries.mockResolvedValue({
-      byActivityId: new Map(),
-      segmentSummaries: [],
-      complete: false,
-      seriesIdentity: null,
-    });
     homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
 
     const { caller, db } = createCaller({
       select: {
-        profiles: [[{ dob: null, gender: null, planning_timezone: "America/Los_Angeles" }]],
         events: [[], [], []],
-        activities: [[]],
       },
     });
 
     await caller.getDashboard({ days: 1 });
 
-    const activityQuery = new PgDialect().sqlToQuery(
-      db.whereCalls.find((call: { table: TableName }) => call.table === "activities")?.where as any,
+    expect(homeMocks.readAthleteReadModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sections: expect.objectContaining({
+          activityAnalytics: expect.objectContaining({
+            endAt: "2026-04-03T18:00:00.000Z",
+          }),
+        }),
+      }),
     );
-    expect(
-      activityQuery.params.some(
-        (param) =>
-          (param instanceof Date ? param.getTime() : Date.parse(String(param))) ===
-          new Date("2026-04-04T06:59:59.999Z").getTime(),
-      ),
-    ).toBe(true);
+    expect(db.whereCalls.some((call) => call.table === "activities")).toBe(false);
   });
 
-  it("uses profile-local date keys for an east-of-UTC dashboard day", async () => {
+  it("does not complete a planned session from an unrelated same-day activity", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T15:30:00.000Z"));
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
-    homeMocks.createActivityAnalysisStore.mockReturnValue({ kind: "analysis-store" });
     const localQuantification = testQuantification({
       id: "activity-local-today-segment",
       kind: "observation",
@@ -944,38 +884,40 @@ describe("homeRouter", () => {
       durationSeconds: 3600,
       distanceMeters: 15_000,
     });
-    homeMocks.buildDynamicStressSeries.mockResolvedValue({
-      byActivityId: new Map([
-        [
-          "activity-local-today",
-          {
-            tss: 50,
-            common_load: localQuantification.commonLoad,
-            observationQuantification: createObservationQuantificationBundle({
-              members: [localQuantification],
-            }),
+    homeMocks.readAthleteReadModel.mockResolvedValue({
+      contractVersion: "athlete-read-model-v1",
+      profileId: "11111111-1111-4111-8111-111111111111",
+      asOf: "2026-04-03T15:30:00.000Z",
+      publishedRevision: 1,
+      algorithmVersion: "athlete-state-projection-v1",
+      currentBaseline: {
+        currentPlanningDate: "2026-04-04",
+        planningTimezone: "Asia/Tokyo",
+        planningContext: null,
+      },
+      loadHistory: null,
+      activityAnalytics: {
+        status: "available",
+        dashboard: {
+          performance: {
+            dataPoints: [
+              {
+                activityId: "activity-local-today",
+                date: "2026-04-03T15:15:00.000Z",
+                observationQuantification: createObservationQuantificationBundle({
+                  members: [localQuantification],
+                }),
+              },
+            ],
           },
-        ],
-      ]),
-      segmentSummaries: [
-        {
-          activity_id: "activity-local-today",
-          tss: 50,
-          common_load: localQuantification.commonLoad,
-          observationQuantification: createObservationQuantificationBundle({
-            members: [localQuantification],
-          }),
         },
-      ],
-      complete: true,
-      seriesIdentity: { activity_category: "bike", method: "power_threshold" },
+      },
     });
     homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
     homeMocks.estimateActivityPlans.mockImplementation(async (plans: Array<any>) => plans);
 
     const { caller } = createCaller({
       select: {
-        profiles: [[{ dob: null, gender: null, planning_timezone: "Asia/Tokyo" }]],
         events: [
           [],
           [
@@ -983,31 +925,11 @@ describe("homeRouter", () => {
               id: "planned-local-today",
               activity_plan_id: "11111111-1111-4111-8111-111111111111",
               starts_at: new Date("2026-04-03T15:00:00.000Z"),
+              linked_activity_id: null,
               notes: null,
               scheduled_date: "2026-04-04",
+              status: "scheduled",
               activity_plan: buildActivityPlan("plan-1", "Tokyo Ride", "bike"),
-            },
-          ],
-        ],
-        activities: [
-          [
-            {
-              id: "activity-local-today",
-              profile_id: "11111111-1111-4111-8111-111111111111",
-              started_at: new Date("2026-04-03T15:15:00.000Z"),
-              finished_at: new Date("2026-04-03T16:15:00.000Z"),
-              elapsed_ms: 3_600_000,
-              active_ms: 3_600_000,
-              moving_ms: 3_500_000,
-              timing_coverage: "complete",
-              distance_meters: 15000,
-              avg_heart_rate: 145,
-              max_heart_rate: 170,
-              avg_power: 220,
-              max_power: 340,
-              avg_speed_mps: 6.2,
-              max_speed_mps: 10.4,
-              normalized_speed_mps: 6.5,
             },
           ],
         ],
@@ -1021,7 +943,7 @@ describe("homeRouter", () => {
       expect.objectContaining({ id: "planned-local-today", date: "2026-04-04", isToday: true }),
     ]);
     expect(result.todaysActivity).toEqual(
-      expect.objectContaining({ id: "planned-local-today", isCompleted: true }),
+      expect.objectContaining({ id: "planned-local-today", isCompleted: false }),
     );
   });
 
@@ -1029,13 +951,7 @@ describe("homeRouter", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
 
-    homeMocks.calculateDateOfBirthAge.mockReturnValue(36);
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
-    homeMocks.createActivityAnalysisStore.mockReturnValue({ kind: "analysis-store" });
-    homeMocks.buildDynamicStressSeries.mockResolvedValue({
-      byActivityId: new Map(),
-      byDate: new Map(),
-    });
     homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
     homeMocks.estimateActivityPlans.mockResolvedValue([]);
 
@@ -1066,13 +982,6 @@ describe("homeRouter", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
-    homeMocks.createActivityAnalysisStore.mockReturnValue({ kind: "analysis-store" });
-    homeMocks.buildDynamicStressSeries.mockResolvedValue({
-      byActivityId: new Map(),
-      segmentSummaries: [],
-      complete: false,
-      seriesIdentity: null,
-    });
     homeMocks.buildWorkloadEnvelopes.mockReturnValue({
       acwr: { current: 1.1, previous: 0.9 },
       monotony: { current: 1.4 },
@@ -1095,15 +1004,9 @@ describe("homeRouter", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
 
-    homeMocks.calculateDateOfBirthAge.mockReturnValue(36);
     homeMocks.calculateRollingTrainingQuality.mockReturnValue(0.84);
     homeMocks.getLoadBalanceStatus.mockReturnValue("near_balance");
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
-    homeMocks.createActivityAnalysisStore.mockReturnValue({ kind: "analysis-store" });
-    homeMocks.buildDynamicStressSeries.mockResolvedValue({
-      byActivityId: new Map([["activity-today", { tss: 50, intensity_factor: 0.9 }]]),
-      byDate: new Map([["2026-04-03", 50]]),
-    });
     homeMocks.estimateActivityPlans.mockImplementation(async (plans: Array<any>) =>
       plans.map((plan) => {
         const quantification = testQuantification({
@@ -1210,13 +1113,6 @@ describe("homeRouter", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
-    homeMocks.createActivityAnalysisStore.mockReturnValue({ kind: "analysis-store" });
-    homeMocks.buildDynamicStressSeries.mockResolvedValue({
-      byActivityId: new Map(),
-      segmentSummaries: [],
-      complete: false,
-      seriesIdentity: null,
-    });
     homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
 
     const { caller } = createCaller({

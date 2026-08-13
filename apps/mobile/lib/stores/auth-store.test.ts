@@ -15,7 +15,7 @@ describe("auth store profile contract", () => {
       // @ts-expect-error Social response fields are not part of profiles.get.
       void profile.followers_count;
       // @ts-expect-error Partial or stale profile DTOs cannot enter auth state.
-      setProfile({ id: "profile-1", onboarded: true });
+      setProfile({ id: "profile-1", onboarding_status: "completed" });
     };
     void assertRejectedShapes;
   });

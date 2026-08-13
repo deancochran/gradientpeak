@@ -1,4 +1,4 @@
-import type { ActivityPlanPlanningEstimate } from "@repo/core";
+import type { ActivityPlanPlanningEstimate, ActivityPlanSummary } from "@repo/core";
 import { Form, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
@@ -8,7 +8,7 @@ import { useCallback, useEffect } from "react";
 import { useWatch } from "react-hook-form";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import { z } from "zod";
-import { type ActivityPlan, ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import type { ResourceMetric } from "@/components/shared/ResourceCardPrimitives";
 import { shouldUseAccessibleBuilderLayout } from "@/components/training-plan/create/responsiveLayout";
 import { TrainingPlanEventCard } from "@/components/training-plan/TrainingPlanEventCard";
@@ -43,7 +43,7 @@ type TrainingPlanBuilderEventCardProps = {
 };
 
 type TrainingPlanBuilderEventEditorProps = {
-  activityPlan?: ActivityPlan | null;
+  activityPlan?: ActivityPlanSummary | null;
   event: TrainingPlanBuilderSession;
   onChange: (event: TrainingPlanBuilderSession) => void;
   onDuplicate: (eventId: string) => void;
@@ -282,14 +282,18 @@ export function TrainingPlanBuilderEventEditor({
   );
   const updateOverride = useCallback(
     (field: keyof TrainingPlanBuilderEventOverrides, value: string) => {
-      updateEvent({
-        eventOverrides: compactOverrides({
-          ...event.eventOverrides,
-          [field]: value,
-        }),
+      const eventOverrides = compactOverrides({
+        ...event.eventOverrides,
+        [field]: value,
       });
+      if (eventOverrides) {
+        updateEvent({ eventOverrides });
+        return;
+      }
+      const { eventOverrides: _removed, ...eventWithoutOverrides } = event;
+      onChange(eventWithoutOverrides);
     },
-    [event.eventOverrides, updateEvent],
+    [event, onChange, updateEvent],
   );
   const selectedWeekdayIndex = getBuilderWeekdayIndex(event.offsetDays);
   const weekOffset = Math.floor(event.offsetDays / 7) * 7;
@@ -326,17 +330,6 @@ export function TrainingPlanBuilderEventEditor({
   const moveWeek = (deltaWeeks: number) => {
     updateEvent({ offsetDays: Math.max(0, event.offsetDays + deltaWeeks * 7) });
   };
-  const fallbackActivity = event.activityPlan
-    ? {
-        id: event.activityPlan.id,
-        name: event.activityPlan.name,
-        activity_category: "other" as const,
-        estimatedDuration:
-          getActivityPlanQuantitySummary(event.activityPlan).durationSeconds ?? undefined,
-        prescriptionQuantification: event.activityPlan.prescriptionQuantification,
-      }
-    : null;
-
   return (
     <View className="gap-4 pb-1" testID="builder-session-editor-modal">
       <Form {...activityTitleForm}>
@@ -353,7 +346,7 @@ export function TrainingPlanBuilderEventEditor({
       {activityPlan ? (
         <View className="gap-2">
           <ActivityPlanCard
-            activityPlan={activityPlan}
+            plan={activityPlan}
             testID="builder-session-editor-activity"
             variant="compact"
           />
@@ -367,13 +360,14 @@ export function TrainingPlanBuilderEventEditor({
             <Text className="text-xs font-semibold text-primary">Reassign activity</Text>
           </Pressable>
         </View>
-      ) : fallbackActivity ? (
+      ) : event.activityPlan ? (
         <View className="gap-2">
-          <ActivityPlanCard
-            cardData={fallbackActivity}
-            testID="builder-session-editor-activity"
-            variant="compact"
-          />
+          <View className="rounded-2xl border border-border bg-muted/20 px-4 py-3">
+            <Text className="font-medium text-foreground">{event.activityPlan.name}</Text>
+            <Text className="mt-1 text-xs text-muted-foreground">
+              Plan details are unavailable. Reassign to load a current projection.
+            </Text>
+          </View>
           <Pressable
             accessibilityLabel="Reassign activity"
             accessibilityRole="button"

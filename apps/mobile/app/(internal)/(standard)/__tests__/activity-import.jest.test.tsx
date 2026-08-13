@@ -267,7 +267,7 @@ describe("activity import screen", () => {
 
   afterAll(() => consoleErrorSpy.mockRestore());
 
-  it("uses native MIME filters and validates required canonical fields", async () => {
+  it("uses native MIME filters and hides required activity-name persistence metadata", async () => {
     renderNative(<ActivityImportScreen />);
 
     await act(async () => {
@@ -288,12 +288,12 @@ describe("activity import screen", () => {
       }),
     );
 
-    fireEvent.changeText(screen.getByTestId("activity-import-name-input"), " ");
+    expect(screen.queryByTestId("activity-import-name-input")).toBeNull();
+    expect(screen.queryByText("Activity name")).toBeNull();
     fireEvent.changeText(screen.getByTestId("activity-import-notes-input"), "n".repeat(5001));
     await act(async () => {
       fireEvent.press(screen.getByTestId("activity-import-submit-button"));
     });
-    expect(screen.getByText("Activity name is required")).toBeTruthy();
     expect(screen.getByText("Notes must be at most 5000 characters")).toBeTruthy();
     expect(getSignedUrlMock).not.toHaveBeenCalled();
   });
@@ -308,13 +308,12 @@ describe("activity import screen", () => {
     });
 
     expect(screen.getByText("morning-ride.fit")).toBeTruthy();
-    expect(screen.getByDisplayValue("morning-ride")).toBeTruthy();
+    expect(screen.queryByTestId("activity-import-name-input")).toBeNull();
   });
 
-  it("updates only a previous auto name on replace and preserves a manual name on replace/remove", async () => {
+  it("updates the hidden derived persistence name when replacing a file", async () => {
     renderNative(<ActivityImportScreen />);
     await chooseFile();
-    expect(screen.getByDisplayValue("morning-ride")).toBeTruthy();
 
     await chooseFile({
       name: "evening-run.gpx",
@@ -322,20 +321,14 @@ describe("activity import screen", () => {
       uri: "file:///evening-run.gpx",
       mimeType: "application/gpx+xml",
     });
-    expect(screen.getByDisplayValue("evening-run")).toBeTruthy();
-
-    fireEvent.changeText(screen.getByTestId("activity-import-name-input"), "Archive favorite");
-    await chooseFile({
-      name: "pool-session.tcx",
-      size: 8192,
-      uri: "file:///pool-session.tcx",
-      mimeType: "application/vnd.garmin.tcx+xml",
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("activity-import-submit-button"));
     });
-    expect(screen.getByDisplayValue("Archive favorite")).toBeTruthy();
-
-    fireEvent.press(screen.getByTestId("activity-import-file-input-clear"));
-    expect(screen.queryByText("pool-session.tcx")).toBeNull();
-    expect(screen.getByDisplayValue("Archive favorite")).toBeTruthy();
+    await waitFor(() =>
+      expect(processActivityFileMock).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "evening-run" }),
+      ),
+    );
   });
 
   it.each([
@@ -384,7 +377,7 @@ describe("activity import screen", () => {
 
     expect(screen.getByText("Step 1 of 3: Preparing upload…")).toBeTruthy();
     expect(screen.getByTestId("activity-import-file-input").props.disabled).toBe(true);
-    expect(screen.getByTestId("activity-import-name-input").props.editable).toBe(false);
+    expect(screen.queryByTestId("activity-import-name-input")).toBeNull();
     expect(screen.getByTestId("activity-import-notes-input").props.editable).toBe(false);
     expect(screen.getByTestId("activity-import-submit-button").props.disabled).toBe(true);
 
@@ -439,7 +432,6 @@ describe("activity import screen", () => {
     uploadToSignedUrlMock.mockResolvedValueOnce({ success: false, error: "network unavailable" });
     renderNative(<ActivityImportScreen />);
     await chooseFile();
-    fireEvent.changeText(screen.getByTestId("activity-import-name-input"), "Retry Ride");
 
     await act(async () => {
       fireEvent.press(screen.getByTestId("activity-import-submit-button"));
@@ -450,7 +442,6 @@ describe("activity import screen", () => {
       ),
     ).toBeTruthy();
     expect(screen.getByText("morning-ride.fit")).toBeTruthy();
-    expect(screen.getByDisplayValue("Retry Ride")).toBeTruthy();
 
     fireEvent.changeText(screen.getByTestId("activity-import-notes-input"), "Retrying");
     expect(
@@ -469,7 +460,6 @@ describe("activity import screen", () => {
   it("shows generic recovery without logging raw manual-import failures", async () => {
     const privateCanaries = [
       "file:///private/dean-private.fit",
-      "Dean Private Ride",
       "https://storage.test/upload?token=super-secret-token",
     ] as const;
     processActivityFileMock.mockRejectedValueOnce(new Error(privateCanaries.join(" ")));
@@ -480,7 +470,6 @@ describe("activity import screen", () => {
       name: "dean-private.fit",
       uri: privateCanaries[0],
     });
-    fireEvent.changeText(screen.getByTestId("activity-import-name-input"), privateCanaries[1]);
 
     await act(async () => {
       fireEvent.press(screen.getByTestId("activity-import-submit-button"));
@@ -548,7 +537,6 @@ describe("activity import screen", () => {
   it("submits the canonical payload, invalidates caches, and navigates", async () => {
     renderNative(<ActivityImportScreen />);
     await chooseFile();
-    fireEvent.changeText(screen.getByTestId("activity-import-name-input"), "  Morning Ride  ");
     fireEvent.changeText(screen.getByTestId("activity-import-notes-input"), "  From archive  ");
 
     await act(async () => {
@@ -558,7 +546,7 @@ describe("activity import screen", () => {
     await waitFor(() => {
       expect(processActivityFileMock).toHaveBeenCalledWith({
         activityFilePath: "activities/user/uploads/123_morning-ride.fit",
-        name: "Morning Ride",
+        name: "morning-ride",
         notes: "From archive",
       });
       expect(invalidatePostActivityIngestionQueriesMock).toHaveBeenCalled();

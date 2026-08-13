@@ -7,10 +7,8 @@ import {
   redeemLocalOAuthAuthorizationCode,
 } from "../../lib/integrations/oauth-pkce";
 import { createOAuthStateBinding } from "../../lib/integrations/oauth-state-binding";
-import { activateWahooAccessToken } from "../../lib/integrations/wahoo/client";
 import { isWahooTokenLimitRejection } from "../../lib/integrations/wahoo/oauth-errors";
 import { logger } from "../../lib/logger";
-import { enqueueWahooProfileEnrichment } from "../../lib/provider-sync/wahoo-profile-enrichment";
 import {
   IntegrationDisconnectPendingError,
   IntegrationLifecycleChangedError,
@@ -18,10 +16,10 @@ import {
   type OAuthIntegrationExpectation,
 } from "../../repositories/integrations-repository";
 import type { WahooSyncRepository } from "../../repositories/wahoo-sync-repository";
-import { enqueueWahooActivityHistoryReconcile } from "./syncNowUseCase";
-import { admitWahooReconciliation } from "./wahoo-reconciliation-admission";
+import { getProviderOperationAdapter } from "./provider-operation-runtime";
 
 export type HandleOAuthCallbackInput = {
+  db?: import("@repo/db").DrizzleDbClient;
   code: string | null;
   error: string | null;
   fallbackRedirect: string;
@@ -55,7 +53,7 @@ const oauthTokenResponseSchema = z
     id: providerIdentifierSchema,
   })
   .passthrough();
-type OAuthTokenResponse = z.infer<typeof oauthTokenResponseSchema>;
+export type ProviderOAuthTokenResponse = z.infer<typeof oauthTokenResponseSchema>;
 
 const oauthRejectionSchema = z
   .object({
@@ -125,7 +123,7 @@ function buildRedirectUrl(baseUrl: string, params: Record<string, string | null 
   return redirectUrl.toString();
 }
 
-function parseOAuthTokenResponse(value: unknown): OAuthTokenResponse {
+function parseOAuthTokenResponse(value: unknown): ProviderOAuthTokenResponse {
   const parsed = oauthTokenResponseSchema.safeParse(value);
   if (!parsed.success) {
     const hasMalformedProviderIdentifier = parsed.error.issues.some((issue) =>
@@ -137,11 +135,11 @@ function parseOAuthTokenResponse(value: unknown): OAuthTokenResponse {
   return parsed.data;
 }
 
-async function exchangeCodeForTokens(
+export async function exchangeWahooOAuthCode(
   provider: PublicIntegrationProvider,
   code: string,
   state: string,
-): Promise<OAuthTokenResponse> {
+): Promise<ProviderOAuthTokenResponse> {
   const config = provider === "wahoo" ? getWahooOAuthConfig() : null;
   if (!config)
     throw new OAuthTokenExchangeError("OAuth credentials are not configured", "not_configured");
@@ -193,7 +191,7 @@ async function exchangeCodeForTokens(
   return parseOAuthTokenResponse(await response.json());
 }
 
-function resolveTokenExternalId(tokens: OAuthTokenResponse): string | null {
+function resolveTokenExternalId(tokens: ProviderOAuthTokenResponse): string | null {
   const externalId =
     tokens.athlete?.id?.toString() ||
     tokens.user?.id?.toString() ||
@@ -205,9 +203,9 @@ function resolveTokenExternalId(tokens: OAuthTokenResponse): string | null {
 
 const wahooUserProfileSchema = z.object({ id: providerIdentifierSchema }).passthrough();
 
-async function resolveProviderIdentity(
+export async function resolveWahooOAuthIdentity(
   provider: PublicIntegrationProvider,
-  tokens: OAuthTokenResponse,
+  tokens: ProviderOAuthTokenResponse,
 ): Promise<{ externalId: string; requiresActivation: boolean }> {
   const tokenExternalId = resolveTokenExternalId(tokens);
   const config = provider === "wahoo" ? getWahooOAuthConfig() : null;
@@ -242,6 +240,7 @@ async function resolveProviderIdentity(
 
 export async function handleOAuthCallback({
   code,
+  db,
   error,
   fallbackRedirect,
   provider,
@@ -251,6 +250,13 @@ export async function handleOAuthCallback({
   state,
 }: HandleOAuthCallbackInput): Promise<HandleOAuthCallbackResult> {
   if (!isSupportedOAuthProvider(provider)) {
+    return {
+      redirectUrl: buildRedirectUrl(fallbackRedirect, { error: "invalid_provider" }),
+      status: 302,
+    };
+  }
+  const providerAdapter = getProviderOperationAdapter(provider);
+  if (!providerAdapter || !providerAdapter.isConfigured()) {
     return {
       redirectUrl: buildRedirectUrl(fallbackRedirect, { error: "invalid_provider" }),
       status: 302,
@@ -361,12 +367,12 @@ export async function handleOAuthCallback({
     };
   }
 
-  let tokens: OAuthTokenResponse;
+  let tokens: ProviderOAuthTokenResponse;
   let externalId: string;
   let requiresActivation: boolean;
   try {
-    tokens = await exchangeCodeForTokens(provider, code, state);
-    ({ externalId, requiresActivation } = await resolveProviderIdentity(provider, tokens));
+    tokens = await providerAdapter.exchangeOAuthCode({ code, state });
+    ({ externalId, requiresActivation } = await providerAdapter.resolveOAuthIdentity(tokens));
   } catch (caughtError) {
     if (caughtError instanceof OAuthProviderIdentityError) {
       logger.warn("OAuth callback provider identity validation failed", { provider });
@@ -388,11 +394,12 @@ export async function handleOAuthCallback({
     await cleanupState();
     return {
       redirectUrl: buildRedirectUrl(mobileRedirectUri, {
-        error:
-          caughtError instanceof OAuthTokenExchangeError &&
-          caughtError.detail === "wahoo_token_limit_exceeded"
-            ? "wahoo_token_limit_exceeded"
-            : "token_exchange_failed",
+        error: providerAdapter.connectFailureCode(
+          caughtError instanceof OAuthTokenExchangeError ? caughtError.detail : undefined,
+        ),
+        error_message: providerAdapter.normalizeConnectFailure(
+          caughtError instanceof OAuthTokenExchangeError ? caughtError.detail : undefined,
+        ).message,
         integration: "failed",
         provider,
       }),
@@ -422,37 +429,22 @@ export async function handleOAuthCallback({
         },
       );
       if (storedIntegration) {
-        const historyAdmission = admitWahooReconciliation({
-          integration: storedIntegration,
+        await providerAdapter.enqueueConnectedProfileWork({
+          db: db ?? ({} as import("@repo/db").DrizzleDbClient),
+          integration: {
+            id: storedIntegration.id,
+            generation: storedIntegration.generation,
+            provider,
+            lifecycleStatus: storedIntegration.lifecycle_status as
+              | "active"
+              | "disconnect_pending"
+              | "disconnected",
+          },
+          profileId: storedState.profile_id,
           scope: grantedScope,
-          target: "activity_history",
-          trigger: "connect",
-        });
-        if (!historyAdmission.admitted) {
-          throw new Error(
-            `Wahoo history reconciliation was not admitted: ${historyAdmission.reason}`,
-          );
-        }
-        await enqueueWahooActivityHistoryReconcile({
-          admission: historyAdmission,
-          providerSyncRepository,
           transaction,
-        });
-        const profileAdmission = admitWahooReconciliation({
-          integration: storedIntegration,
-          scope: grantedScope,
-          target: "profile_enrichment",
-          trigger: "connect",
-        });
-        if (!profileAdmission.admitted) {
-          throw new Error(
-            `Wahoo profile reconciliation was not admitted: ${profileAdmission.reason}`,
-          );
-        }
-        await enqueueWahooProfileEnrichment({
-          admission: profileAdmission,
-          providerSyncRepository,
-          transaction,
+          enqueueJob: (input) =>
+            providerSyncRepository.enqueueJobInTransaction(transaction, input as never),
         });
       }
       return storedIntegration;
@@ -485,9 +477,9 @@ export async function handleOAuthCallback({
       status: 302,
     };
   }
-  if (provider === "wahoo" && requiresActivation) {
+  if (requiresActivation) {
     try {
-      await activateWahooAccessToken(tokens.access_token);
+      await providerAdapter.activateOAuthCredential(tokens.access_token);
     } catch (caughtError) {
       // Credentials and the history-reconcile job are already durable. Let that job retry the same
       // token rather than turning a temporary provider failure into another OAuth token issuance.

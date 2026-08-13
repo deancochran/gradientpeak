@@ -8,19 +8,12 @@ import {
   trainingPlanSchema,
   type trainingPlanUpdateInputSchema,
 } from "@repo/core";
-import {
-  addDaysDateOnlyUtc,
-  diffDateOnlyUtcDays,
-  formatIsoInstantInIanaZone,
-  scheduledDateTimeToIsoInstant,
-} from "@repo/core/calendar";
-import { schema, type TrainingPlanRow } from "@repo/db";
+import type { TrainingPlanRow } from "@repo/db";
 import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
-import { and, eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import type { z } from "zod";
 import { logger } from "../../lib/logger";
-import { enqueueWahooPlannedActivitySyncAfterCalendarMutation } from "../../lib/provider-sync/planned-activities";
 import type {
   LockedPlanningTemplateRow,
   PlanningTemplateRepository,
@@ -30,19 +23,11 @@ import type {
 import { activityPlanStructureHash } from "../activity-plans/structure-hash";
 import { mapTrainingPlanContentIdentity } from "./trainingPlanMapping";
 
-const plannedEventType = "planned" as const;
-
 type TrainingPlanCreateInput = z.infer<typeof trainingPlanCreateInputSchema>;
 type TrainingPlanUpdateInput = z.infer<typeof trainingPlanUpdateInputSchema> & {
   id: string;
   expectedStructureHash: string;
   content_visibility?: "private" | "followers" | "public";
-};
-
-export type TrainingPlanActivityDateChange = {
-  event_id: string;
-  expected_scheduled_date: string;
-  requested_scheduled_date: string;
 };
 
 function getSqlRows<T>(result: unknown) {
@@ -374,204 +359,6 @@ export async function updateTrainingPlanUseCase(input: {
   return data;
 }
 
-export async function reorderTrainingPlanActivitiesUseCase(input: {
-  changes: TrainingPlanActivityDateChange[];
-  db: DrizzleDbClient;
-  profileId: string;
-  trainingPlanId: string;
-}) {
-  const updatedEventIds = await input.db.transaction(async (tx) => {
-    const ownedPlan = await tx.execute(sql<{ id: string }>`
-      select id
-      from training_plans
-      where id = ${input.trainingPlanId}::uuid
-        and profile_id = ${input.profileId}::uuid
-        and is_system_template = false
-      for update
-    `);
-
-    if (getSqlRows<{ id: string }>(ownedPlan).length !== 1) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "Training plan not found or you don't have permission to reorder it",
-      });
-    }
-
-    const lockedEvents = await tx.execute(
-      sql<{
-        ends_at: Date | string | null;
-        event_id: string;
-        expected_scheduled_date: string;
-        requested_scheduled_date: string;
-        starts_at: Date | string;
-        timezone: string;
-      }>`
-        with requested_changes as (
-          select *
-          from jsonb_to_recordset(${JSON.stringify(input.changes)}::jsonb) as change(
-            event_id uuid,
-            expected_scheduled_date text,
-            requested_scheduled_date text
-          )
-        )
-        select
-          event.id as event_id,
-          event.starts_at,
-          event.ends_at,
-          event.timezone,
-          change.expected_scheduled_date,
-          change.requested_scheduled_date
-        from events as event
-        inner join requested_changes as change on change.event_id = event.id
-        where event.profile_id = ${input.profileId}::uuid
-          and event.training_plan_id = ${input.trainingPlanId}::uuid
-          and event.event_type = 'planned'
-          and event.activity_plan_id is not null
-          and event.status <> 'completed'
-          and event.linked_activity_id is null
-          and event.read_only is not true
-          and event.scheduled_date = change.expected_scheduled_date
-        for update of event
-      `,
-    );
-    const lockedRows = getSqlRows<{
-      ends_at: Date | string | null;
-      event_id: string;
-      expected_scheduled_date: string;
-      requested_scheduled_date: string;
-      starts_at: Date | string;
-      timezone: string;
-    }>(lockedEvents);
-    if (lockedRows.length !== input.changes.length) {
-      throw new TRPCError({
-        code: "CONFLICT",
-        message: "Scheduled activities changed or are no longer eligible; reload and try again",
-      });
-    }
-
-    try {
-      for (const event of lockedRows) {
-        const localStart = formatIsoInstantInIanaZone(
-          new Date(event.starts_at).toISOString(),
-          event.timezone,
-        );
-        const [sourceStartDate, startTime] = localStart.split("T");
-        if (!sourceStartDate || !startTime) throw new RangeError("Invalid local start time");
-        scheduledDateTimeToIsoInstant({
-          scheduledDate: event.requested_scheduled_date,
-          time: startTime,
-          timeZone: event.timezone,
-        });
-
-        if (event.ends_at) {
-          const localEnd = formatIsoInstantInIanaZone(
-            new Date(event.ends_at).toISOString(),
-            event.timezone,
-          );
-          const [sourceEndDate, endTime] = localEnd.split("T");
-          if (!sourceEndDate || !endTime) throw new RangeError("Invalid local end time");
-          scheduledDateTimeToIsoInstant({
-            scheduledDate: addDaysDateOnlyUtc(
-              event.requested_scheduled_date,
-              diffDateOnlyUtcDays(sourceStartDate, sourceEndDate),
-            ),
-            time: endTime,
-            timeZone: event.timezone,
-          });
-        }
-      }
-    } catch (error) {
-      if (!(error instanceof RangeError)) throw error;
-      throw new TRPCError({
-        code: "CONFLICT",
-        message:
-          "Requested activity date creates an ambiguous or nonexistent local time; choose another date or time",
-      });
-    }
-
-    const updateResult = await tx.execute(sql<{ id: string }>`
-      with requested_changes as (
-        select *
-        from jsonb_to_recordset(${JSON.stringify(input.changes)}::jsonb) as change(
-          event_id uuid,
-          expected_scheduled_date text,
-          requested_scheduled_date text
-        )
-      )
-      update events as event
-      set
-        scheduled_date = change.requested_scheduled_date,
-        starts_at = (
-          change.requested_scheduled_date::date
-          + (event.starts_at at time zone event.timezone)::time
-        ) at time zone event.timezone,
-        ends_at = case
-          when event.ends_at is null then null
-          else (
-            change.requested_scheduled_date::date
-            + (
-              (event.ends_at at time zone event.timezone)::date
-              - (event.starts_at at time zone event.timezone)::date
-            )
-            + (event.ends_at at time zone event.timezone)::time
-          ) at time zone event.timezone
-        end,
-        updated_at = now()
-      from requested_changes as change
-      where event.id = change.event_id
-        and event.profile_id = ${input.profileId}::uuid
-        and event.training_plan_id = ${input.trainingPlanId}::uuid
-        and event.event_type = 'planned'
-        and event.activity_plan_id is not null
-        and event.status <> 'completed'
-        and event.linked_activity_id is null
-        and event.read_only is not true
-        and event.scheduled_date = change.expected_scheduled_date
-      returning event.id
-    `);
-    const updatedRows = getSqlRows<{ id: string }>(updateResult);
-
-    if (updatedRows.length !== input.changes.length) {
-      throw new TRPCError({
-        code: "CONFLICT",
-        message: "Scheduled activities changed or are no longer eligible; reload and try again",
-      });
-    }
-    await tx.execute(sql`
-      update training_plans
-      set revision = revision + 1,
-          validated_state_revision = null,
-          validated_at = null,
-          projection_algorithm_version = null,
-          updated_at = now()
-      where id = ${input.trainingPlanId}::uuid
-        and profile_id = ${input.profileId}::uuid
-    `);
-
-    const updatedEventIds = updatedRows.map((row) => row.id);
-    const syncResult = await enqueueWahooPlannedActivitySyncAfterCalendarMutation({
-      db: input.db,
-      eventIds: updatedEventIds,
-      operation: "publish",
-      profileId: input.profileId,
-      transaction: tx,
-    });
-    if (syncResult && !syncResult.success) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to queue planned activity synchronization",
-      });
-    }
-
-    return updatedEventIds;
-  });
-
-  return {
-    affected_count: updatedEventIds.length,
-    affected_event_ids: updatedEventIds,
-  };
-}
-
 export async function deleteTrainingPlanUseCase(input: {
   db: DrizzleDbClient;
   id: string;
@@ -590,44 +377,11 @@ export async function deleteTrainingPlanUseCase(input: {
     });
   }
 
-  await input.db.transaction(async (tx) => {
-    const plannedEvents = await tx
-      .select({ id: schema.events.id })
-      .from(schema.events)
-      .where(
-        and(
-          eq(schema.events.event_type, plannedEventType),
-          eq(schema.events.profile_id, input.profileId),
-          eq(schema.events.training_plan_id, input.id),
-        ),
-      )
-      .for("update");
-    const syncResult = await enqueueWahooPlannedActivitySyncAfterCalendarMutation({
-      db: input.db,
-      eventIds: plannedEvents.map((event) => event.id),
-      operation: "unsync",
-      profileId: input.profileId,
-      transaction: tx,
-    });
-    if (syncResult && !syncResult.success) {
-      throw new Error(syncResult.error ?? "Failed to enqueue planned activity cleanup");
-    }
-
-    await tx
-      .delete(schema.events)
-      .where(
-        and(
-          eq(schema.events.event_type, plannedEventType),
-          eq(schema.events.profile_id, input.profileId),
-          eq(schema.events.training_plan_id, input.id),
-        ),
-      );
-    await tx.execute(sql`
-      delete from training_plans
-      where id = ${input.id}::uuid
-        and profile_id = ${input.profileId}::uuid
-    `);
-  });
+  await input.db.execute(sql`
+    delete from training_plans
+    where id = ${input.id}::uuid
+      and profile_id = ${input.profileId}::uuid
+  `);
 
   return { success: true };
 }

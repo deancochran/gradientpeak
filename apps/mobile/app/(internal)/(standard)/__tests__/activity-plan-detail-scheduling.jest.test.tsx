@@ -1,5 +1,9 @@
 import { act, waitFor } from "@testing-library/react-native";
 import React from "react";
+import {
+  createActivityPlanDetail,
+  createActivityPlanSummary,
+} from "../../../../test/activity-plan-projection-fixture";
 import { createHost } from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
 
@@ -171,7 +175,10 @@ jest.mock("@/lib/api", () => ({
     }),
     activityPlans: {
       getById: {
-        useQuery: () => ({ data: fetchedPlanMock.current, isLoading: false }),
+        useQuery: () => ({
+          data: fetchedPlanMock.current ? { detail: fetchedPlanMock.current, edit: null } : null,
+          isLoading: false,
+        }),
       },
       duplicate: {
         useMutation: (options: DuplicateMutationOptions) => ({
@@ -307,14 +314,12 @@ describe("activity plan detail scheduling", () => {
   });
 
   it("opens event creation for a schedulable template plan", () => {
-    localSearchParamsMock.template = JSON.stringify({
-      id: "11111111-1111-1111-1111-111111111111",
-      name: "Tempo Builder",
-      activity_category: "run",
-      activity_categories: ["run"],
-      profile_id: "profile-1",
-      structure: { intervals: [] },
-    });
+    localSearchParamsMock.template = JSON.stringify(
+      createActivityPlanSummary({
+        id: "11111111-1111-1111-1111-111111111111",
+        name: "Tempo Builder",
+      }),
+    );
 
     renderNative(<ActivityPlanDetail />);
 
@@ -332,37 +337,21 @@ describe("activity plan detail scheduling", () => {
     });
   });
 
-  it("shows a visible alert instead of silently doing nothing for an unsaved template", () => {
-    localSearchParamsMock.template = JSON.stringify({
-      name: "Draft Template",
-      activity_category: "run",
-      activity_categories: ["run"],
-      profile_id: "profile-1",
-      structure: { intervals: [] },
-    });
-
-    renderNative(<ActivityPlanDetail />);
-
-    act(() => {
-      screen.getByTestId("activity-plan-options-schedule").props.onPress();
-    });
-
-    expect(nativeAlertMock).toHaveBeenCalledWith(
-      "Scheduling unavailable",
-      "Create this activity plan first, then schedule it from its detail screen.",
-    );
-    expect(routerMock.navigate).not.toHaveBeenCalled();
-  });
-
   it("opens event creation directly for a shared public template", async () => {
-    localSearchParamsMock.template = JSON.stringify({
-      id: "11111111-1111-1111-1111-111111111111",
-      name: "Shared Builder",
-      activity_category: "run",
-      activity_categories: ["run"],
-      profile_id: "another-profile",
-      structure: { intervals: [] },
-    });
+    localSearchParamsMock.template = JSON.stringify(
+      createActivityPlanSummary({
+        id: "11111111-1111-1111-1111-111111111111",
+        name: "Shared Builder",
+        capabilities: {
+          canLike: true,
+          canEdit: false,
+          canDelete: false,
+          canDuplicate: true,
+          canSchedule: true,
+          canRecord: true,
+        },
+      }),
+    );
 
     renderNative(<ActivityPlanDetail />);
 
@@ -382,14 +371,12 @@ describe("activity plan detail scheduling", () => {
   });
 
   it("duplicates a shared activity plan into the owned detail flow", async () => {
-    localSearchParamsMock.template = JSON.stringify({
-      id: "11111111-1111-1111-1111-111111111111",
-      name: "Tempo Builder",
-      activity_category: "run",
-      activity_categories: ["run"],
-      profile_id: "template-owner",
-      structure: { intervals: [] },
-    });
+    localSearchParamsMock.template = JSON.stringify(
+      createActivityPlanSummary({
+        id: "11111111-1111-1111-1111-111111111111",
+        name: "Tempo Builder",
+      }),
+    );
 
     renderNative(<ActivityPlanDetail />);
 
@@ -424,14 +411,10 @@ describe("activity plan detail scheduling", () => {
   });
 
   it("opens event creation immediately for a routed owned plan", async () => {
-    fetchedPlanMock.current = {
+    fetchedPlanMock.current = createActivityPlanDetail({
       id: "owned-plan-1",
       name: "Owned Builder",
-      activity_category: "run",
-      activity_categories: ["run"],
-      profile_id: "profile-1",
-      structure: { intervals: [] },
-    };
+    });
     localSearchParamsMock.planId = "owned-plan-1";
     localSearchParamsMock.action = "schedule";
 
@@ -450,14 +433,10 @@ describe("activity plan detail scheduling", () => {
   });
 
   it("opens event editing immediately for a routed scheduled activity", async () => {
-    fetchedPlanMock.current = {
+    fetchedPlanMock.current = createActivityPlanDetail({
       id: "owned-plan-1",
       name: "Owned Builder",
-      activity_category: "run",
-      activity_categories: ["run"],
-      profile_id: "profile-1",
-      structure: { intervals: [] },
-    };
+    });
     localSearchParamsMock.planId = "owned-plan-1";
     localSearchParamsMock.eventId = "event-1";
     localSearchParamsMock.action = "schedule";
@@ -472,14 +451,10 @@ describe("activity plan detail scheduling", () => {
   });
 
   it("navigates to event creation when scheduling a fetched plan", () => {
-    fetchedPlanMock.current = {
+    fetchedPlanMock.current = createActivityPlanDetail({
       id: "owned-plan-1",
       name: "Owned Builder",
-      activity_category: "run",
-      activity_categories: ["run"],
-      profile_id: "profile-1",
-      structure: { intervals: [] },
-    };
+    });
 
     renderNative(<ActivityPlanDetail />);
 
@@ -497,14 +472,10 @@ describe("activity plan detail scheduling", () => {
   });
 
   it("hides schedule actions when the plan is opened from an event", () => {
-    fetchedPlanMock.current = {
+    fetchedPlanMock.current = createActivityPlanDetail({
       id: "owned-plan-1",
       name: "Owned Builder",
-      activity_category: "run",
-      activity_categories: ["run"],
-      profile_id: "profile-1",
-      structure: { intervals: [] },
-    };
+    });
     localSearchParamsMock.planId = "owned-plan-1";
     localSearchParamsMock.eventId = "event-1";
 
@@ -516,15 +487,14 @@ describe("activity plan detail scheduling", () => {
   });
 
   it("shows the new summary-first detail context and hides placeholder share UI", () => {
-    localSearchParamsMock.template = JSON.stringify({
-      id: "11111111-1111-1111-1111-111111111111",
-      name: "Tempo Builder",
-      activity_category: "run",
-      profile_id: "profile-1",
-      description: "Controlled tempo intervals.",
-      notes: "Keep the recoveries honest.",
-      structure: { intervals: [] },
-    });
+    localSearchParamsMock.template = JSON.stringify(
+      createActivityPlanDetail({
+        id: "11111111-1111-1111-1111-111111111111",
+        name: "Tempo Builder",
+        description: "Controlled tempo intervals.",
+        notes: "Keep the recoveries honest.",
+      }),
+    );
 
     renderNative(<ActivityPlanDetail />);
 

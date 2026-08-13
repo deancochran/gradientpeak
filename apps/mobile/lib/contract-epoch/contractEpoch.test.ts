@@ -74,6 +74,7 @@ describe("contract epoch initialization", () => {
     }
     expect(fixture.values.get("server-url-override")).toBe("preserved");
     expect(CONTRACT_EPOCH_RESET_STORAGE_KEYS).not.toContain("server-url-override");
+    expect(CONTRACT_EPOCH_RESET_STORAGE_KEYS).toContain("gradientpeak-plan-display-preferences");
   });
 
   it("is a no-op when the persisted marker exactly matches", async () => {

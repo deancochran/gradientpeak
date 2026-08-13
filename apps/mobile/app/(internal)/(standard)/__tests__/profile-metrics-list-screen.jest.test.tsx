@@ -17,8 +17,8 @@ let mockProfileMetricItems = [
   },
   {
     id: "metric-2",
-    metric_type: "lthr",
-    value: 168,
+    metric_type: "max_hr",
+    value: 195,
     unit: "bpm",
     recorded_at: "2000-03-03T00:00:00.000Z",
   },
@@ -177,8 +177,8 @@ describe("profile metrics list screen", () => {
       },
       {
         id: "metric-2",
-        metric_type: "lthr",
-        value: 168,
+        metric_type: "max_hr",
+        value: 195,
         unit: "bpm",
         recorded_at: "2000-03-03T00:00:00.000Z",
       },
@@ -197,11 +197,10 @@ describe("profile metrics list screen", () => {
   it("groups every metric under its semantic section", () => {
     renderNative(<ProfileMetricsListScreen />);
 
-    expect(screen.getByTestId("profile-metric-section-load_calibration")).toBeTruthy();
     expect(screen.getByTestId("profile-metric-section-supporting_physiology")).toBeTruthy();
     expect(screen.getByTestId("profile-metric-section-recovery")).toBeTruthy();
     expect(screen.getByTestId("profile-metric-section-body_aerobic")).toBeTruthy();
-    expect(screen.getByTestId("profile-metric-type-lthr")).toBeTruthy();
+    expect(screen.getByTestId("profile-metric-type-max_hr")).toBeTruthy();
   });
 
   it("loads and renders the published performance target summary", () => {

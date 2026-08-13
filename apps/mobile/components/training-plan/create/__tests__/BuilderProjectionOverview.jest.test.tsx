@@ -51,7 +51,6 @@ const chartReview = {
         scheduledFitness: 42,
         targetFitness: 43,
         targetLoad: 200,
-        tentativePlannedLoad: 20,
         weekEnd: "2026-07-19",
         weekStart: "2026-07-13",
       },
@@ -68,7 +67,6 @@ const chartReview = {
         scheduledFitness: 48,
         targetFitness: 49,
         targetLoad: 260,
-        tentativePlannedLoad: 0,
         weekEnd: "2026-07-26",
         weekStart: "2026-07-20",
       },
@@ -99,11 +97,8 @@ describe("BuilderProjectionOverview", () => {
   it("is the projection surface rendered by the production strategy composer", () => {
     const props = {
       chartReview,
-      canUseStructureProposal: true,
       saveReadiness: { detail: "Ready to review", label: "Review plan", status: "review" },
       onAddActivity: jest.fn(),
-      onApplyStructureProposal: jest.fn(),
-      onOpenSchedulePreview: jest.fn(),
       planningBriefRows: [
         {
           key: "athleteContext",
@@ -148,15 +143,10 @@ describe("BuilderProjectionOverview", () => {
 
   it("keeps schedule setup visible and wires its primary actions", () => {
     const onAddActivity = jest.fn();
-    const onApplyStructureProposal = jest.fn();
-    const onOpenSchedulePreview = jest.fn();
     const props = {
       chartReview,
-      canUseStructureProposal: true,
       saveReadiness: { detail: "Ready to review", label: "Review plan", status: "review" },
       onAddActivity,
-      onApplyStructureProposal,
-      onOpenSchedulePreview,
       planningBriefRows: [
         {
           key: "athleteContext",
@@ -204,19 +194,13 @@ describe("BuilderProjectionOverview", () => {
     expect(screen.getByTestId("builder-readiness")).toBeTruthy();
     expect(screen.getByText("Review plan")).toBeTruthy();
     fireEvent.press(screen.getByText("Add activity"));
-    fireEvent.press(screen.getByLabelText("Use suggested schedule"));
-    fireEvent.press(screen.getByTestId("builder-configuration-schedulePreview"));
 
     expect(onAddActivity).toHaveBeenCalledTimes(1);
-    expect(onApplyStructureProposal).toHaveBeenCalledTimes(1);
-    expect(onOpenSchedulePreview).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Use schedule")).toBeTruthy();
     expect(screen.queryByText("Schedule preview")).toBeNull();
 
     rerender(
       <BuilderStrategyComposer
         {...props}
-        canUseStructureProposal={false}
         state={{
           ...props.state,
           structure: { sessions: [{ activityPlan: null, localId: "session-1", offsetDays: 0 }] },
@@ -225,7 +209,6 @@ describe("BuilderProjectionOverview", () => {
     );
 
     expect(screen.getByText("Needs assignment")).toBeTruthy();
-    expect(screen.queryByLabelText("Use suggested schedule")).toBeNull();
     expect(screen.getByTestId("builder-add-activity").props.className).toContain("w-full");
 
     rerender(

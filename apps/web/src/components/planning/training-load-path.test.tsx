@@ -2,46 +2,92 @@
 
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { createActivityQuantificationBundle } from "../../test-support/activity-quantification";
-
 import { TrainingLoadPath } from "./training-load-path";
 
-const quantification = createActivityQuantificationBundle({
-  id: "plan-1",
-  load: 100,
-  nativeIntensity: 100,
-});
-
 describe("TrainingLoadPath", () => {
-  it("exposes scheduled firm rows by their scheduled item ID", () => {
+  it("renders scheduled firm work from the single Plan-tab projection DTO", () => {
     render(
       <TrainingLoadPath
-        effectiveLoad={{
-          status: "available",
-          sourceCoverage: {
-            activities: { status: "complete" },
-            scheduledItems: { status: "complete" },
-          },
-          effective: {
-            status: "available",
-            firmItems: [
+        projection={{
+          contractVersion: "plan-tab-projection-v1",
+          asOf: "2026-07-25T12:00:00.000Z",
+          planningTimezone: "UTC",
+          today: "2026-07-25",
+          currentScheduledPlan: null,
+          timeline: {
+            startDate: "2026-07-20",
+            endDate: "2026-07-26",
+            today: "2026-07-25",
+            days: [
               {
                 date: "2026-07-25",
-                kind: "scheduled",
-                scheduledItemId: "00000000-0000-4000-8000-000000000001",
-                commonLoad: quantification.summary.commonLoad,
-                prescriptionQuantification: quantification,
+                load: {
+                  plannedLoad: 100,
+                  scheduledLoad: 100,
+                  completedLoad: 0,
+                  remainingLoad: 100,
+                  recommendedLoad: null,
+                  deltaLoad: null,
+                },
+                scheduledItems: [
+                  {
+                    id: "00000000-0000-4000-8000-000000000001",
+                    source: "training_plan",
+                    date: "2026-07-25",
+                    title: "Aerobic ride",
+                    activityCategory: "bike",
+                    plannedLoad: 100,
+                    status: "planned",
+                  },
+                ],
+                completedItems: [],
+                annotations: [],
+              },
+            ],
+            weeks: [
+              {
+                weekStart: "2026-07-20",
+                weekEnd: "2026-07-26",
+                load: {
+                  plannedLoad: 100,
+                  scheduledLoad: 100,
+                  completedLoad: 0,
+                  remainingLoad: 100,
+                  recommendedLoad: null,
+                  deltaLoad: null,
+                },
+                dayCount: 7,
+                trainingDayCount: 1,
               },
             ],
           },
+          dayLoads: {},
+          fitness: { actual: [], scheduled: [], recommended: [] },
+          recommendationPoints: [],
+          ledgerItems: [],
+          sourceCoverage: {
+            activities: {
+              startDate: "2026-07-20",
+              endDate: "2026-07-26",
+              status: "complete",
+            },
+            scheduledItems: {
+              startDate: "2026-07-20",
+              endDate: "2026-07-26",
+              status: "complete",
+            },
+          },
+          goalMarkers: [],
+          publishedRevision: 4,
+          algorithmVersion: "athlete-state-projection-v1",
         }}
       />,
     );
 
-    const item = document.querySelector(
-      '[data-scheduled-item-id="00000000-0000-4000-8000-000000000001"]',
-    );
-    expect(item).toBeTruthy();
-    expect(screen.getByText("Common Load 100")).toBeTruthy();
+    expect(
+      document.querySelector('[data-scheduled-item-id="00000000-0000-4000-8000-000000000001"]'),
+    ).toBeTruthy();
+    expect(screen.getAllByText("Common Load 100").length).toBeGreaterThan(0);
+    expect(screen.getByText(/for 2026-07-20–2026-07-26 in UTC/)).toBeTruthy();
   });
 });

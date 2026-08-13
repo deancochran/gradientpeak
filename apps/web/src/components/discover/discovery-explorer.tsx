@@ -60,10 +60,9 @@ export function DiscoveryExplorer({ initialQuery = "" }: { initialQuery?: string
   const activityPlans = api.activityPlans.list.useInfiniteQuery(
     {
       ownerScope: "discoverable",
-      includeEstimation: true,
       search: search || undefined,
-      activityCategory: activityPlanCategory
-        ? (activityPlanCategory as "run" | "bike" | "swim" | "strength" | "other")
+      activityCategories: activityPlanCategory
+        ? [activityPlanCategory as "run" | "bike" | "swim" | "strength" | "other"]
         : undefined,
       sort_by: activitySort as "newest" | "oldest",
       limit: 20,
@@ -429,6 +428,13 @@ function DiscoveryCard({ scope, item }: { scope: WebDiscoverScope; item: Discove
         ) : null}
         {scope === "groups" && item.member_count !== undefined ? (
           <p>{item.member_count} members</p>
+        ) : null}
+        {scope === "activityPlans" ? (
+          <Button asChild size="sm" variant="outline">
+            <Link to="/activity-plans/$activityPlanId" params={{ activityPlanId: item.id }}>
+              View activity plan
+            </Link>
+          </Button>
         ) : null}
         {scope === "routes" ? (
           <Button asChild size="sm" variant="outline">

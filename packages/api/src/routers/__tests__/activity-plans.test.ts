@@ -1,4 +1,4 @@
-import { activityPlans, contentAccessGrants, events, likes, profiles } from "@repo/db";
+import { activityPlans, contentAccessGrants, events, groupEvents, likes, profiles } from "@repo/db";
 import type { TRPCError } from "@trpc/server";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -41,7 +41,13 @@ vi.mock("../../application/activity-plans/estimate-activity-plans", async (impor
 import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import { activityPlansRouter } from "../activity-plans";
 
-type MockTableName = "activity_plans" | "content_access_grants" | "events" | "likes" | "profiles";
+type MockTableName =
+  | "activity_plans"
+  | "content_access_grants"
+  | "events"
+  | "group_events"
+  | "likes"
+  | "profiles";
 type MockOperation = "select" | "insert" | "update" | "delete";
 
 type MockRows = unknown[];
@@ -141,6 +147,10 @@ function resolveTableName(table: unknown): MockTableName {
     return "events";
   }
 
+  if (table === groupEvents) {
+    return "group_events";
+  }
+
   if (table === contentAccessGrants) {
     return "content_access_grants";
   }
@@ -174,6 +184,7 @@ function createDbMock(state: MockDbState = {}) {
       groupBy: async () => nextRows("select", table),
       orderBy: () => builder,
       limit: () => builder,
+      for: () => builder,
       offset: async () => nextRows("select", table),
       then: (onFulfilled: (value: unknown[]) => unknown) =>
         Promise.resolve(nextRows("select", table)).then(onFulfilled),
@@ -182,62 +193,65 @@ function createDbMock(state: MockDbState = {}) {
     return builder;
   };
 
-  return {
-    db: {
-      select: () => ({
-        from: (table: unknown) => {
-          const tableName = resolveTableName(table);
-          const call: DbCall = { operation: "select", table: tableName };
+  const db: any = {
+    select: () => ({
+      from: (table: unknown) => {
+        const tableName = resolveTableName(table);
+        const call: DbCall = { operation: "select", table: tableName };
+        callLog.push(call);
+        return createSelectBuilder(tableName, call);
+      },
+    }),
+    insert: (table: unknown) => {
+      const tableName = resolveTableName(table);
+      return {
+        values: (payload: unknown) => {
+          const call: DbCall = { operation: "insert", table: tableName, payload };
           callLog.push(call);
-          return createSelectBuilder(tableName, call);
+          type InsertBuilder = {
+            onConflictDoUpdate: (conflict: unknown) => InsertBuilder;
+            returning: () => Promise<MockRows>;
+          };
+          const builder: InsertBuilder = {
+            onConflictDoUpdate: (conflict: unknown) => {
+              call.conflict = conflict;
+              return builder;
+            },
+            returning: async () => nextRows("insert", tableName, payload),
+          };
+          return builder;
         },
-      }),
-      insert: (table: unknown) => {
-        const tableName = resolveTableName(table);
-        return {
-          values: (payload: unknown) => {
-            const call: DbCall = { operation: "insert", table: tableName, payload };
-            callLog.push(call);
-            type InsertBuilder = {
-              onConflictDoUpdate: (conflict: unknown) => InsertBuilder;
-              returning: () => Promise<MockRows>;
-            };
-            const builder: InsertBuilder = {
-              onConflictDoUpdate: (conflict: unknown) => {
-                call.conflict = conflict;
-                return builder;
-              },
-              returning: async () => nextRows("insert", tableName, payload),
-            };
-            return builder;
-          },
-        };
-      },
-      update: (table: unknown) => {
-        const tableName = resolveTableName(table);
-        return {
-          set: (payload: unknown) => {
-            callLog.push({ operation: "update", table: tableName, payload });
-            return {
-              where: () => ({
-                returning: async () => nextRows("update", tableName),
-              }),
-            };
-          },
-        };
-      },
-      delete: (table: unknown) => {
-        const tableName = resolveTableName(table);
-        return {
-          where: () => {
-            callLog.push({ operation: "delete", table: tableName });
-            return {
-              returning: async () => nextRows("delete", tableName),
-            };
-          },
-        };
-      },
+      };
     },
+    update: (table: unknown) => {
+      const tableName = resolveTableName(table);
+      return {
+        set: (payload: unknown) => {
+          callLog.push({ operation: "update", table: tableName, payload });
+          return {
+            where: () => ({
+              returning: async () => nextRows("update", tableName),
+            }),
+          };
+        },
+      };
+    },
+    delete: (table: unknown) => {
+      const tableName = resolveTableName(table);
+      return {
+        where: () => {
+          callLog.push({ operation: "delete", table: tableName });
+          return {
+            returning: async () => nextRows("delete", tableName),
+          };
+        },
+      };
+    },
+  };
+  db.transaction = async (callback: (tx: typeof db) => Promise<unknown>) => callback(db);
+
+  return {
+    db,
     callLog,
   };
 }
@@ -305,19 +319,27 @@ describe("activityPlansRouter", () => {
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({
+      contractVersion: "activity-plan-summary-v1",
       id: firstPlan.id,
-      has_liked: true,
-      likes_count: 4,
-      content_type: "activity_plan",
-      owner_profile_id: USER_ID,
+      engagement: { viewerHasLiked: true, likes: 4 },
       owner: {
         id: USER_ID,
         username: "Owner",
-        avatar_url: "https://example.com/avatar.png",
+        avatarUrl: "https://example.com/avatar.png",
       },
+      activityCategory: "bike",
       visibility: "private",
+      capabilities: { canEdit: true, canDelete: true },
     });
-    expect(result.items[0]).toHaveProperty("prescriptionQuantification");
+    expect(result.items[0]?.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "elapsed_duration",
+          status: "available",
+          value: 1800,
+        }),
+      ]),
+    );
     expect(result.items[0]).not.toHaveProperty("common_load");
     expect(result.items[0]).not.toHaveProperty("duration_estimate");
     expect(result.items[0]).not.toHaveProperty("confidence");
@@ -426,7 +448,7 @@ describe("activityPlansRouter", () => {
     const result = await caller.list({ ownerScope: "own", activityCategories: ["run"], limit: 20 });
 
     expect(result.items.map((item) => item.id)).toEqual([runPlan.id]);
-    expect(result.items[0]).toMatchObject({ activity_category: "run" });
+    expect(result.items[0]).toMatchObject({ activityCategory: "run" });
     expect(result.items[0]).not.toHaveProperty("sport");
   });
 
@@ -456,7 +478,7 @@ describe("activityPlansRouter", () => {
     const result = await caller.list({ ownerScope: "own", activityCategories: ["run"], limit: 20 });
 
     expect(result.items).toHaveLength(20);
-    expect(result.items.every((item) => item.activity_category === "run")).toBe(true);
+    expect(result.items.every((item) => item.activityCategory === "run")).toBe(true);
     expect(result.nextCursor).toBeDefined();
     expect(
       callLog.filter((call) => call.operation === "select" && call.table === "activity_plans"),
@@ -503,7 +525,7 @@ describe("activityPlansRouter", () => {
     const result = await caller.list({ ownerScope: "own", limit: 20 });
 
     expect(result.items[0]).toMatchObject({
-      activity_category: "bike",
+      activityCategory: "bike",
     });
   });
 
@@ -625,10 +647,10 @@ describe("activityPlansRouter", () => {
     });
 
     expect(result.items.map((item) => item.id)).toEqual([ownPlan.id, publicPlan.id]);
-    expect(result.items[0]?.has_liked).toBe(true);
-    expect(result.items[0]?.likes_count).toBe(2);
-    expect(result.items[1]?.has_liked).toBe(false);
-    expect(result.items[1]?.likes_count).toBe(0);
+    expect(result.items[0]?.engagement.viewerHasLiked).toBe(true);
+    expect(result.items[0]?.engagement.likes).toBe(2);
+    expect(result.items[1]?.engagement.viewerHasLiked).toBe(false);
+    expect(result.items[1]?.engagement.likes).toBe(0);
     expect(result.items[0]?.owner?.id).toBe(USER_ID);
     expect(result.items[1]?.owner?.id).toBe(OTHER_USER_ID);
   });
@@ -976,6 +998,8 @@ describe("activityPlansRouter", () => {
     const { caller, callLog } = createCaller({
       state: {
         "select:activity_plans": [[ownedPlan]],
+        "select:events": [[]],
+        "select:group_events": [[]],
         "delete:activity_plans": [[{ id: "77777777-7777-4777-8777-777777777777" }]],
       },
     });
@@ -987,31 +1011,63 @@ describe("activityPlansRouter", () => {
     expect(result).not.toHaveProperty("wahooSync");
   });
 
-  it("delete enqueues unsync for linked future planned events before allowing FK set-null", async () => {
+  it("delete rejects every linked schedule without relying on a 100-item client page", async () => {
     const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
-    const eventRows = [{ id: "event-1" }, { id: "event-2" }];
-    plannedActivitySyncState.enqueueWahooPlannedActivityJobs.mockResolvedValue({
-      affectedCount: 2,
-      operation: "unsync",
-      queued: true,
-      success: true,
-    });
+    const eventRows = Array.from({ length: 101 }, (_, index) => ({ id: `event-${index + 1}` }));
     const { caller, callLog } = createCaller({
       state: {
         "select:activity_plans": [[ownedPlan]],
         "select:events": [eventRows],
-        "delete:activity_plans": [[{ id: "77777777-7777-4777-8777-777777777777" }]],
       },
     });
 
-    const result = await caller.delete({ id: "77777777-7777-4777-8777-777777777777" });
+    await expect(
+      caller.delete({ id: "77777777-7777-4777-8777-777777777777" }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "Remove all linked scheduled events before deleting this activity plan",
+    } as Partial<TRPCError>);
+    expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(0);
+    expect(plannedActivitySyncState.enqueueWahooPlannedActivityJobs).not.toHaveBeenCalled();
+  });
 
-    expect(plannedActivitySyncState.enqueueWahooPlannedActivityJobs).toHaveBeenCalledWith(
-      expect.anything(),
-      { eventIds: ["event-1", "event-2"], operation: "unsync" },
-    );
-    expect(callLog.some((call) => call.operation === "delete")).toBe(true);
-    expect(result.plannedActivitySync).toMatchObject({ operation: "unsync", success: true });
+  it("delete rejects a cross-owner event reference without filtering by event owner", async () => {
+    const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[ownedPlan]],
+        "select:events": [[{ id: "event-1", profile_id: OTHER_USER_ID }]],
+      },
+    });
+
+    await expect(caller.delete({ id: ownedPlan.id })).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "Remove all linked scheduled events before deleting this activity plan",
+    } as Partial<TRPCError>);
+
+    const eventQuery = callLog.find((call) => call.table === "events" && call.where)?.where;
+    expect(eventQuery).toBeDefined();
+    expect(pgDialect.sqlToQuery(eventQuery as never).sql).not.toContain('"events"."profile_id"');
+    expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(0);
+  });
+
+  it("delete rejects a group-event reference and leaves the plan intact", async () => {
+    const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[ownedPlan]],
+        "select:events": [[]],
+        "select:group_events": [[{ id: "group-event-1" }]],
+      },
+    });
+
+    await expect(caller.delete({ id: ownedPlan.id })).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "Remove all linked scheduled events before deleting this activity plan",
+    } as Partial<TRPCError>);
+
+    expect(callLog.some((call) => call.table === "group_events")).toBe(true);
+    expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(0);
   });
 
   it("delete rejects an unowned plan without querying events or enqueueing unsync", async () => {
@@ -1030,15 +1086,8 @@ describe("activityPlansRouter", () => {
     expect(plannedActivitySyncState.enqueueWahooPlannedActivityJobs).not.toHaveBeenCalled();
   });
 
-  it("delete keeps the plan when unsync enqueue reports failure", async () => {
+  it("delete leaves the plan intact when a linked-schedule conflict is found", async () => {
     const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
-    plannedActivitySyncState.enqueueWahooPlannedActivityJobs.mockResolvedValue({
-      affectedCount: 1,
-      error: "provider queue unavailable",
-      operation: "unsync",
-      queued: false,
-      success: false,
-    });
     const { caller, callLog } = createCaller({
       state: {
         "select:activity_plans": [[ownedPlan]],
@@ -1050,32 +1099,27 @@ describe("activityPlansRouter", () => {
       caller.delete({ id: "77777777-7777-4777-8777-777777777777" }),
     ).rejects.toMatchObject({
       code: "CONFLICT",
-      message: "Activity plan cannot be deleted until linked device activities can be unsynced",
+      message: "Remove all linked scheduled events before deleting this activity plan",
     } as Partial<TRPCError>);
 
     expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(0);
   });
 
-  it("delete keeps the plan when unsync enqueue throws", async () => {
+  it("delete surfaces an unexpected transactional failure without reporting success", async () => {
     const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
-    plannedActivitySyncState.enqueueWahooPlannedActivityJobs.mockRejectedValue(
-      new Error("provider queue unavailable"),
-    );
     const { caller, callLog } = createCaller({
       state: {
         "select:activity_plans": [[ownedPlan]],
-        "select:events": [[{ id: "event-1" }]],
+        "select:events": [[]],
+        "delete:activity_plans": [[]],
       },
     });
 
-    await expect(
-      caller.delete({ id: "77777777-7777-4777-8777-777777777777" }),
-    ).rejects.toMatchObject({
-      code: "CONFLICT",
-      message: "Activity plan cannot be deleted until linked device activities can be unsynced",
-    } as Partial<TRPCError>);
+    await expect(caller.delete({ id: "77777777-7777-4777-8777-777777777777" })).rejects.toThrow(
+      "Activity plan changed during deletion",
+    );
 
-    expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(0);
+    expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(1);
   });
 
   it("delete rejects unexpected input fields", async () => {

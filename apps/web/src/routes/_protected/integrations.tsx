@@ -106,13 +106,10 @@ function IntegrationsPage() {
     if (!outcome) return;
 
     if (outcome === "connected") toast.success("Integration connected");
-    else if (url.searchParams.get("error") === "wahoo_token_limit_exceeded") {
-      toast.error(
-        "Wahoo has too many active GradientPeak authorizations. Revoke GradientPeak in Wahoo, then try again.",
-      );
-    } else toast.error("Integration connection failed");
+    else toast.error(url.searchParams.get("error_message") ?? "Integration connection failed");
     url.searchParams.delete("error");
     url.searchParams.delete("integration");
+    url.searchParams.delete("error_message");
     url.searchParams.delete("provider");
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
   }, []);
@@ -120,7 +117,7 @@ function IntegrationsPage() {
   const integrations = overviewQuery.data ?? [];
   const hasCachedData = integrations.length > 0;
 
-  const connect = async (provider: "wahoo") => {
+  const connect = async (provider: (typeof integrations)[number]["provider"]) => {
     const redirectUri = `${window.location.origin}/integrations`;
     try {
       const result = await getAuthUrlMutation.mutateAsync({ provider, redirectUri });
@@ -252,7 +249,7 @@ function IntegrationsPage() {
                         <Button
                           variant="outline"
                           disabled={isMutating}
-                          onClick={() => void connect("wahoo")}
+                          onClick={() => void connect(integration.provider)}
                         >
                           {integration.primaryAction === "reconnect" ? "Reconnect" : "Connect"}
                         </Button>
@@ -261,7 +258,7 @@ function IntegrationsPage() {
                         <Button
                           variant="outline"
                           disabled={isMutating}
-                          onClick={() => syncNowMutation.mutate({ provider: "wahoo" })}
+                          onClick={() => syncNowMutation.mutate({ provider: integration.provider })}
                         >
                           Sync now
                         </Button>
@@ -270,7 +267,9 @@ function IntegrationsPage() {
                         <Button
                           variant="outline"
                           disabled={isMutating}
-                          onClick={() => refreshSetupMutation.mutate({ provider: "wahoo" })}
+                          onClick={() =>
+                            refreshSetupMutation.mutate({ provider: integration.provider })
+                          }
                         >
                           Refresh setup data
                         </Button>
@@ -285,7 +284,7 @@ function IntegrationsPage() {
                                 `Disconnect ${integration.label}? Your GradientPeak data stays. Sync stops.`,
                               )
                             ) {
-                              disconnectMutation.mutate({ provider: "wahoo" });
+                              disconnectMutation.mutate({ provider: integration.provider });
                             }
                           }}
                         >

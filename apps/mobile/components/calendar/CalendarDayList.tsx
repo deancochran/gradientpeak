@@ -1,4 +1,4 @@
-import type { ProfileGoal } from "@repo/core";
+import type { CalendarProjectionItem } from "@repo/core";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   FlatList,
@@ -11,13 +11,7 @@ import {
   type ViewToken,
 } from "react-native";
 import Animated, { runOnJS, useAnimatedScrollHandler } from "react-native-reanimated";
-import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
-import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
-import {
-  buildCalendarTimelineRows,
-  type CalendarActivity,
-  type CalendarTimelineRow,
-} from "./CalendarTimelineModel";
+import { buildCalendarTimelineRows, type CalendarTimelineRow } from "./CalendarTimelineModel";
 import { CalendarDayHeaderRow, CalendarScheduleObjectRow } from "./CalendarTimelineRows";
 
 const AnimatedCalendarFlatList = Animated.createAnimatedComponent(FlatList<CalendarTimelineRow>);
@@ -35,19 +29,13 @@ export type CalendarDayListProps = {
   todayKey: string;
   scrollTargetDateKey: string | null;
   scrollTargetVersion: number;
-  activitiesByDate: Map<string, CalendarActivity[]>;
-  eventsByDate: Map<string, CalendarEvent[]>;
-  groupEventsByDate: Map<string, CalendarGroupEvent[]>;
-  goalsByDate: Map<string, ProfileGoal[]>;
+  itemsByDate: Map<string, CalendarProjectionItem[]>;
   onReachStart: () => void;
   onReachEnd: () => void;
   onVisibleDayChange: (dateKey: string) => void;
   onVisibleDaySettled: (dateKey: string) => void;
   onPressDay: (dateKey: string) => void;
-  onPressActivity: (activity: CalendarActivity) => void;
-  onPressEvent: (event: CalendarEvent) => void;
-  onPressGroupEvent: (event: CalendarGroupEvent) => void;
-  onPressGoal: (goal: ProfileGoal) => void;
+  onPressItem: (item: CalendarProjectionItem) => void;
 };
 
 export function CalendarDayList(props: CalendarDayListProps) {
@@ -73,21 +61,11 @@ export function CalendarDayList(props: CalendarDayListProps) {
   const { rows, stickyHeaderIndices } = useMemo(
     () =>
       buildCalendarTimelineRows({
-        activitiesByDate: props.activitiesByDate,
+        itemsByDate: props.itemsByDate,
         rangeStart: props.rangeStart,
         rangeEnd: props.rangeEnd,
-        eventsByDate: props.eventsByDate,
-        groupEventsByDate: props.groupEventsByDate,
-        goalsByDate: props.goalsByDate,
       }),
-    [
-      props.activitiesByDate,
-      props.eventsByDate,
-      props.goalsByDate,
-      props.groupEventsByDate,
-      props.rangeEnd,
-      props.rangeStart,
-    ],
+    [props.itemsByDate, props.rangeEnd, props.rangeStart],
   );
 
   const latestRowsRef = useRef(rows);
@@ -312,25 +290,9 @@ export function CalendarDayList(props: CalendarDayListProps) {
         );
       }
 
-      return (
-        <CalendarScheduleObjectRow
-          object={item.object}
-          onPressActivity={props.onPressActivity}
-          onPressEvent={props.onPressEvent}
-          onPressGroupEvent={props.onPressGroupEvent}
-          onPressGoal={props.onPressGoal}
-        />
-      );
+      return <CalendarScheduleObjectRow object={item.object} onPress={props.onPressItem} />;
     },
-    [
-      props.onPressDay,
-      props.onPressActivity,
-      props.onPressEvent,
-      props.onPressGroupEvent,
-      props.onPressGoal,
-      props.selectedDateKey,
-      props.todayKey,
-    ],
+    [props.onPressDay, props.onPressItem, props.selectedDateKey, props.todayKey],
   );
 
   const handleScrollToIndexFailed = useCallback(

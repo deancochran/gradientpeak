@@ -1,6 +1,5 @@
-import { activityPlanStructureSchema, type EventLifecycle } from "@repo/core";
+import { activityPlanStructureSchema } from "@repo/core";
 import { getCalendarDateInIanaZone } from "@repo/core/calendar";
-import type { PublicEventStatus } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import type { Context } from "../../context";
 import type {
@@ -21,16 +20,13 @@ type ProtectedContext = Context & {
   };
 };
 
-type CoreEventType = "planned" | "race_target" | "custom" | "imported";
-type DbEventType = "planned" | "race_target" | "custom" | "imported";
+type CoreEventType = "planned" | "race_target" | "custom";
+type DbEventType = "planned" | "race_target" | "custom";
 
 type NormalizedEventUpdatePatch = {
   activity_plan_id?: string | null;
   route_id?: string | null;
-  training_plan_id?: string | null;
   notes?: string | null;
-  event_type?: CoreEventType;
-  lifecycle?: EventLifecycle;
   title?: string;
   description?: string | null;
   all_day?: boolean;
@@ -44,8 +40,10 @@ type MappedEvent = {
   activity_plan_id: string | null;
   event_type: CoreEventType;
   id: string;
+  linked_activity_id: string | null;
   route_id: string | null;
   scheduled_date: string;
+  status: "scheduled" | "completed" | "cancelled";
   training_plan_id: string | null;
   updated_at: string;
 };
@@ -77,9 +75,7 @@ type UpdateEventUseCaseDependencies<TInput, TMappedEvent extends MappedEvent> = 
   toCoreEventType: (eventType: DbEventType) => CoreEventType;
   toDateKey: (value: string) => string;
   toDayStartIso: (dateValue: string) => string;
-  toDbEventType: (eventType: CoreEventType) => DbEventType;
   toNextDayStartIso: (dateValue: string) => string;
-  toPersistableEventStatus: (lifecycle: EventLifecycle | undefined) => PublicEventStatus;
 };
 
 export async function updateEventUseCase<
@@ -114,17 +110,21 @@ export async function updateEventUseCase<
 
   dependencies.assertRestDayWritesBlocked(existingEventType, "update");
 
-  if (existingEventType === "imported") {
+  const { patch, scheduledDate } = dependencies.normalizeEventUpdatePatch(input.input);
+  const targetEventType = existingEventType;
+
+  if (
+    existingEventType === "planned" &&
+    (patch.starts_at !== undefined ||
+      patch.ends_at !== undefined ||
+      patch.timezone !== undefined ||
+      patch.all_day !== undefined)
+  ) {
     throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Imported events are read-only",
+      code: "BAD_REQUEST",
+      message: "Planned sessions accept calendar-date schedule updates only",
     });
   }
-
-  const { patch, scheduledDate } = dependencies.normalizeEventUpdatePatch(input.input);
-  const targetEventType = patch.event_type ?? existingEventType;
-
-  dependencies.assertRestDayWritesBlocked(targetEventType, "update");
 
   const hasScheduledDateMove =
     scheduledDate !== undefined && scheduledDate !== existingEvent.scheduled_date;
@@ -209,28 +209,6 @@ export async function updateEventUseCase<
     }
   }
 
-  if (typeof patch.training_plan_id === "string") {
-    if (permissions) {
-      await permissions.requireRead(
-        ctx.session.user.id,
-        { type: "training_plan", id: patch.training_plan_id },
-        "Training plan not found or not accessible",
-      );
-    } else {
-      const trainingPlan = await eventWriteRepository.getOwnedTrainingPlan({
-        profileId: ctx.session.user.id,
-        trainingPlanId: patch.training_plan_id,
-      });
-
-      if (!trainingPlan) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Training plan not found or not accessible",
-        });
-      }
-    }
-  }
-
   const nextAllDay = patch.all_day !== undefined ? Boolean(patch.all_day) : existingEvent.all_day;
   if (scheduledDate !== undefined && !nextAllDay && patch.starts_at === undefined) {
     throw new TRPCError({
@@ -239,20 +217,13 @@ export async function updateEventUseCase<
     });
   }
   const eventUpdates: Record<string, unknown> = {
-    ...(patch.event_type !== undefined
-      ? { event_type: dependencies.toDbEventType(patch.event_type) }
-      : {}),
     ...(patch.activity_plan_id !== undefined ? { activity_plan_id: patch.activity_plan_id } : {}),
     ...(patch.route_id !== undefined ? { route_id: patch.route_id } : {}),
     ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
-    ...(patch.lifecycle !== undefined
-      ? { status: dependencies.toPersistableEventStatus(patch.lifecycle) }
-      : {}),
     ...(patch.title !== undefined ? { title: patch.title } : {}),
     ...(patch.description !== undefined ? { description: patch.description } : {}),
     ...(patch.all_day !== undefined ? { all_day: patch.all_day } : {}),
     ...(patch.timezone !== undefined ? { timezone: patch.timezone } : {}),
-    ...(patch.training_plan_id !== undefined ? { training_plan_id: patch.training_plan_id } : {}),
     ...(patch.starts_at !== undefined ? { starts_at: patch.starts_at } : {}),
     ...(patch.ends_at !== undefined ? { ends_at: patch.ends_at } : {}),
     ...(scheduledDate !== undefined

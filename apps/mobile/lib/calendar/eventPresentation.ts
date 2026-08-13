@@ -54,7 +54,7 @@ function getNonCompletionState(
 /** Completion truth for calendar events requires a persisted activity identity. */
 export function isAuthoritativeCompletedCalendarEvent(event: CalendarEvent): boolean {
   if (getNonCompletionState(event)) return false;
-  return Boolean(event.linked_activity_id || event.event_type === "imported");
+  return Boolean(event.linked_activity_id);
 }
 
 export function getPlannedRecordingState(event: CalendarEvent): PlannedRecordingState {
@@ -93,10 +93,6 @@ export function getEventCommonLoadMeta(event: CalendarEvent): string[] {
   ];
 }
 
-export function isEditableEvent(event: CalendarEvent): boolean {
-  return event.event_type !== "imported" && event.event_type !== "rest_day";
-}
-
 export function isRecurringEvent(event: CalendarEvent): boolean {
   return !!(event.series_id || event.recurrence_rule || event.recurrence?.rule);
 }
@@ -108,7 +104,6 @@ export function getEventTitle(event: CalendarEvent): string {
 
   if (event.event_type === "race_target") return event.title || "Race target";
   if (event.event_type === "custom") return event.title || "Custom event";
-  if (event.event_type === "imported") return event.title || "Imported event";
   return event.title || "Scheduled event";
 }
 
@@ -116,10 +111,9 @@ export function getEventTimeLabel(event: CalendarEvent): string {
   if (event.all_day) return "All day";
   if (event.starts_at) {
     const preservesActivityInstant =
-      event.event_type === "imported" ||
-      (event.event_type === "planned" &&
-        hasActivityPlan(event) &&
-        isAuthoritativeCompletedCalendarEvent(event));
+      event.event_type === "planned" &&
+      hasActivityPlan(event) &&
+      isAuthoritativeCompletedCalendarEvent(event);
     return preservesActivityInstant
       ? format(new Date(event.starts_at), "h:mm a")
       : formatEventTime(event.starts_at, event.timezone);
@@ -167,10 +161,6 @@ export function getEventStatusLabel(event: CalendarEvent): string | null {
 
   if (recordingState === "unverified") {
     return "Unverified";
-  }
-
-  if (event.event_type === "imported") {
-    return "Read-only";
   }
 
   if (isRecurringEvent(event)) {

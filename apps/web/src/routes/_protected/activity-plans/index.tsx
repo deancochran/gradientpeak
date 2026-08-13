@@ -14,7 +14,6 @@ import { toast } from "sonner";
 
 import { ActivityPlanComposer } from "../../../components/activity-plan/activity-plan-composer";
 import { DetailPageIntro } from "../../../components/protected/activity-route-primitives";
-import { getActivityPlanMetricSummary } from "../../../lib/activity-plan-presentation";
 import { api } from "../../../lib/api/client";
 
 const categoryOptions = [
@@ -40,7 +39,6 @@ function ActivityPlansPage() {
   const plansQuery = api.activityPlans.list.useInfiniteQuery(
     {
       activityCategories: activity_category === "all" ? undefined : [activity_category],
-      includeEstimation: true,
       limit: 20,
       ownerScope: "own",
       search: search.trim() || undefined,
@@ -164,10 +162,12 @@ function ActivityPlansPage() {
               </div>
             ) : (
               plans.map((plan) => {
-                const metrics = getActivityPlanMetricSummary({
-                  prescriptionQuantification: plan.prescriptionQuantification,
-                  structure: plan.structure,
-                });
+                const summary = plan;
+                const metrics = summary.metrics.map((metric) =>
+                  metric.status === "unavailable"
+                    ? `${metric.label} unavailable`
+                    : `${metric.label} ${metric.unit === "ratio" ? metric.value.toFixed(2) : Math.round(metric.value)}`,
+                );
                 return (
                   <button
                     className="w-full rounded-2xl border bg-card p-5 text-left transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -183,13 +183,13 @@ function ActivityPlansPage() {
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <h2 className="text-lg font-semibold">{plan.name}</h2>
+                        <h2 className="text-lg font-semibold">{summary.name}</h2>
                         <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                          {plan.description || "No description provided."}
+                          {summary.description || "No description provided."}
                         </p>
                       </div>
                       <span className="rounded-full border px-2 py-0.5 text-xs font-medium capitalize">
-                        {plan.activity_category}
+                        {summary.activityCategory}
                       </span>
                     </div>
                     {metrics.length ? (

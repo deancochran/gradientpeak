@@ -12,7 +12,6 @@ export function getBuilderSheetTitle(input: {
   if (activeSheet === "goals") return "Goals";
   if (activeSheet === "localGoalCreate") return "Create Plan Goal";
   if (activeSheet === "preferences") return "Preferences";
-  if (activeSheet === "schedulePreview") return "Schedule preview";
   if (activeSheet === "session") return "Activity";
   if (activeSheet === "activityAssignment") {
     return selectedSession?.activityPlan ? "Change activity" : "Assign activity";
@@ -36,9 +35,6 @@ export function getBuilderSheetDescription(input: {
   if (activeSheet === "localGoalCreate") return "Create a goal for this plan only.";
   if (activeSheet === "preferences") {
     return "Set optional limits for this plan.";
-  }
-  if (activeSheet === "schedulePreview") {
-    return "Review relative Week/Day placement before applying the plan.";
   }
   if (activeSheet === "session") return undefined;
   if (activeSheet === "activityAssignment") {

@@ -19,23 +19,9 @@ export const profileMetricTypeSchema = z.enum([
   "soreness_level",
   "wellness_score",
   "max_hr",
-  "lthr",
 ]);
 
 export type ProfileMetricType = z.infer<typeof profileMetricTypeSchema>;
-
-export const activityDerivedThresholdMetricTypes = [
-  "lthr",
-] as const satisfies readonly ProfileMetricType[];
-
-export type ActivityDerivedThresholdMetricType =
-  (typeof activityDerivedThresholdMetricTypes)[number];
-
-export function isActivityDerivedThresholdMetricType(
-  metricType: ProfileMetricType,
-): metricType is ActivityDerivedThresholdMetricType {
-  return metricType === "lthr";
-}
 
 export type ProfileMetricInputKind = "weight" | "integer" | "decimal" | "percent" | "scale";
 
@@ -161,16 +147,6 @@ export const profileMetricDefinitions = {
     max: 250,
     decimals: 0,
     defaultValue: 185,
-  },
-  lthr: {
-    type: "lthr",
-    label: "Threshold heart rate",
-    unit: "bpm",
-    inputKind: "integer",
-    min: 80,
-    max: 220,
-    decimals: 0,
-    defaultValue: 165,
   },
 } as const satisfies Record<ProfileMetricType, ProfileMetricDefinition>;
 

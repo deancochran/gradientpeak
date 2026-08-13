@@ -1,3 +1,4 @@
+import { createActivityPlanSummary } from "../../../test/activity-plan-projection-fixture";
 import { createHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 
@@ -13,7 +14,7 @@ type ActivityPlanFixture = {
 };
 
 const activityPlansState = {
-  items: [] as ActivityPlanFixture[],
+  items: [] as ReturnType<typeof createActivityPlanSummary>[],
   isLoading: false,
   error: null as Error | null,
 };
@@ -50,11 +51,11 @@ jest.mock("lucide-react-native", () => ({
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
   ActivityPlanCard: ({
-    activityPlan,
+    plan,
     onPress,
     testID,
   }: {
-    activityPlan: ActivityPlanFixture;
+    plan: ActivityPlanFixture;
     onPress?: () => void;
     testID?: string;
   }) => {
@@ -63,7 +64,7 @@ jest.mock("@/components/shared/ActivityPlanCard", () => ({
     return React.createElement(
       "Pressable",
       { onPress, testID },
-      React.createElement("Text", null, activityPlan?.name),
+      React.createElement("Text", null, plan?.name),
     );
   },
 }));
@@ -117,7 +118,7 @@ jest.mock("@/lib/api", () => ({
 
 describe("CalendarPlannedActivityPickerModal", () => {
   beforeEach(() => {
-    activityPlansState.items = [
+    const plans: ActivityPlanFixture[] = [
       {
         id: "favorite-1",
         name: "Favorite Long Run",
@@ -193,6 +194,25 @@ describe("CalendarPlannedActivityPickerModal", () => {
         updated_at: "2026-02-20T00:00:00.000Z",
       },
     ];
+    activityPlansState.items = plans.map(
+      ({ activity_category, estimated_duration, has_liked, likes_count, updated_at, ...plan }) =>
+        createActivityPlanSummary({
+          ...plan,
+          activityCategory: activity_category as "run" | "bike" | "swim" | "strength",
+          engagement: { likes: likes_count ?? 0, viewerHasLiked: has_liked ?? false },
+          metrics: [
+            {
+              key: "elapsed_duration",
+              label: "Duration",
+              value: estimated_duration,
+              unit: "seconds",
+              status: "available",
+              reason: null,
+            },
+          ],
+          updatedAt: updated_at,
+        }),
+    );
     activityPlansState.isLoading = false;
     activityPlansState.error = null;
   });

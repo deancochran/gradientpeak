@@ -207,7 +207,7 @@ function performanceTargetQuality(
     | AthletePerformanceTargetFacts["swimming"]["css"],
 ): ActivityCalibrationQuality | null {
   if (
-    fact.status !== "available" ||
+    getAvailablePerformanceTargetValue(fact) === null ||
     fact.sourceEvidenceIds.length === 0 ||
     fact.evidenceTime.observedThrough === null
   )
@@ -216,8 +216,8 @@ function performanceTargetQuality(
     source: "modeled",
     observed_at: fact.evidenceTime.observedThrough,
     valid_at: fact.evidenceTime.computedAt,
-    confidence: fact.confidence,
-    stale: false,
+    confidence: fact.confidence === "unavailable" ? "unknown" : fact.confidence,
+    stale: fact.calibrationState === "stale",
     estimate: true,
     calculation_version: fact.calculationVersion,
     evidence_fingerprint: fact.sourceEvidenceIds.join(":"),
@@ -233,7 +233,7 @@ function heartRateFactQuality(
     observed_at: fact.observedAt,
     valid_at: fact.observedAt,
     confidence: "high",
-    stale: false,
+    stale: fact.calibrationState === "stale",
     estimate: false,
     calculation_version: fact.calculationVersion,
     evidence_fingerprint: fact.sourceEvidenceId,
@@ -825,16 +825,6 @@ function resolveDirectCommonLoad(input: {
     });
   }
   provenance.evidenceFingerprint = input.evidenceFingerprint;
-  if (provenance.quality.stale) {
-    return unavailableCommonLoad({
-      activity_category: input.activity_category,
-      computedAsOf: input.computedAsOf,
-      contributingDurationSeconds: input.durationSeconds,
-      reason: "stale_threshold",
-      method,
-      provenance,
-    });
-  }
   if (input.resolved.rawIntensityFactor > 1.5 || input.resolved.rawIntensityFactor < 0) {
     return unavailableCommonLoad({
       activity_category: input.activity_category,
@@ -922,16 +912,6 @@ function resolveHeartRateCommonLoad(input: {
     });
   }
   provenance.evidenceFingerprint = input.evidenceFingerprint;
-  if (provenance.quality.stale) {
-    return unavailableCommonLoad({
-      activity_category: input.activity_category,
-      computedAsOf: input.computedAsOf,
-      contributingDurationSeconds: input.durationSeconds,
-      reason: "stale_threshold",
-      method,
-      provenance,
-    });
-  }
   if (input.distribution == null) {
     return unavailableCommonLoad({
       activity_category: input.activity_category,

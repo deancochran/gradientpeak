@@ -3,25 +3,20 @@ import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { useState } from "react";
 import { View } from "react-native";
-import { type ActivityPlan, ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { AppFormModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import type { GroupEventDetail, GroupEventSeriesOccurrence } from "@/lib/groups";
 import {
-  formatAcceptedRsvpCount,
+  formatGoingCount,
   formatGroupEventDateRange,
   GroupEventCard,
   GroupEventOwnerRow,
 } from "./GroupEventCards";
 
-type GroupEventDetailWithActivityPlan = GroupEventDetail & {
-  activity_plan?: ActivityPlan | null;
-};
-
 function formatRsvpStatus(status: GroupEventRsvpStatus | null) {
-  if (status === "accepted") return "Going";
   if (status === "declined") return "Declined";
-  return "Tentative";
+  return "Going";
 }
 
 export function GroupEventActivityPlanOptionsSection({
@@ -35,15 +30,10 @@ export function GroupEventActivityPlanOptionsSection({
   const activityPlansQuery = api.activityPlans.getManyByIds.useQuery(
     { ids: activityPlanId ? [activityPlanId] : [] },
     {
-      enabled: Boolean(
-        activityPlanId && !(event as GroupEventDetailWithActivityPlan).activity_plan,
-      ),
+      enabled: Boolean(activityPlanId),
     },
   );
-  const activityPlan =
-    (event as GroupEventDetailWithActivityPlan).activity_plan ??
-    activityPlansQuery.data?.items[0] ??
-    null;
+  const activityPlan = activityPlansQuery.data?.items[0] ?? null;
 
   if (!activityPlanId) return null;
 
@@ -60,7 +50,7 @@ export function GroupEventActivityPlanOptionsSection({
       ) : null}
       {activityPlan ? (
         <ActivityPlanCard
-          activityPlan={activityPlan as unknown as ActivityPlan}
+          plan={activityPlan}
           onPress={() => onActivityPlanPress?.(activityPlan.id)}
           variant="compact"
         />
@@ -91,14 +81,14 @@ export function GroupEventRsvpPanel({
           <Text className="text-base font-semibold text-foreground">Your RSVP</Text>
           <Text className="text-sm text-muted-foreground">{formatRsvpStatus(status)}</Text>
         </View>
-        {status ? (
+        {status === "declined" ? (
           <Button
             disabled={isSubmitting || Boolean(event.cancelled_at)}
             onPress={() => onRsvp?.(null)}
             size="sm"
             variant="ghost"
           >
-            <Text className="text-xs font-semibold text-muted-foreground">Clear</Text>
+            <Text className="text-xs font-semibold text-muted-foreground">Restore Going</Text>
           </Button>
         ) : null}
       </View>
@@ -106,25 +96,17 @@ export function GroupEventRsvpPanel({
         <Button
           className="flex-1"
           disabled={isSubmitting || Boolean(event.cancelled_at)}
-          onPress={() => onRsvp?.("tentative")}
-          variant={status === "tentative" || !status ? "secondary" : "outline"}
-        >
-          <Text className="text-sm font-semibold text-foreground">Tentative</Text>
-        </Button>
-        <Button
-          className="flex-1"
-          disabled={isSubmitting || Boolean(event.cancelled_at)}
-          onPress={() => onRsvp?.("accepted")}
-          variant={status === "accepted" ? "default" : "outline"}
+          onPress={() => onRsvp?.(null)}
+          variant={status === null ? "default" : "outline"}
         >
           <Text
             className={
-              status === "accepted"
+              status === null
                 ? "text-sm font-semibold text-primary-foreground"
                 : "text-sm font-semibold text-foreground"
             }
           >
-            {isSubmitting ? "Saving..." : "Going"}
+            Going
           </Text>
         </Button>
         <Button
@@ -200,24 +182,17 @@ export function GroupEventSeriesRsvpPanel({
             </Text>
             <Button
               disabled={isSubmitting || Boolean(event.cancelled_at)}
-              onPress={() => handleSeriesRsvp("tentative")}
-              variant={status === "tentative" || !status ? "secondary" : "outline"}
-            >
-              <Text className="text-sm font-semibold text-foreground">Tentative for series</Text>
-            </Button>
-            <Button
-              disabled={isSubmitting || Boolean(event.cancelled_at)}
-              onPress={() => handleSeriesRsvp("accepted")}
-              variant={status === "accepted" ? "default" : "outline"}
+              onPress={() => handleSeriesRsvp(null)}
+              variant={status === null ? "default" : "outline"}
             >
               <Text
                 className={
-                  status === "accepted"
+                  status === null
                     ? "text-sm font-semibold text-primary-foreground"
                     : "text-sm font-semibold text-foreground"
                 }
               >
-                {isSubmitting ? "Saving..." : "Going to series"}
+                Going to series
               </Text>
             </Button>
             <Button
@@ -235,14 +210,14 @@ export function GroupEventSeriesRsvpPanel({
                 Decline series
               </Text>
             </Button>
-            {status ? (
+            {status === "declined" ? (
               <Button
                 disabled={isSubmitting || Boolean(event.cancelled_at)}
                 onPress={() => handleSeriesRsvp(null)}
                 variant="ghost"
               >
                 <Text className="text-sm font-semibold text-muted-foreground">
-                  Clear series RSVP
+                  Restore Going for series
                 </Text>
               </Button>
             ) : null}
@@ -381,7 +356,7 @@ export function GroupEventDetailScreen({
             </View>
             <View className="shrink-0 rounded-full bg-muted px-3 py-1">
               <Text className="text-sm font-semibold text-muted-foreground">
-                {formatAcceptedRsvpCount(event.acceptedRsvpCount)}
+                {formatGoingCount(event.acceptedRsvpCount)}
               </Text>
             </View>
           </View>

@@ -56,6 +56,7 @@
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
     "seed-system-routes": "tsx scripts/seed-system-routes.ts",
+    "reprocess-profile-activity-analysis": "tsx scripts/reprocess-profile-activity-analysis.ts",
     "test": "vitest run",
     "test:live-db": "vitest run --config vitest.live-db.config.ts",
     "verify:api": "pnpm check-types && pnpm test"

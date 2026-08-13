@@ -24,10 +24,7 @@ export function BuilderProjectionOverview({
 
     const startFitness = finite(first.fitness) ? first.fitness : first.scheduledFitness;
     const endFitness = finite(last.scheduledFitness) ? last.scheduledFitness : last.fitness;
-    const peakPlannedLoad = Math.max(
-      0,
-      ...weeks.map((week) => (week.plannedLoad ?? 0) + (week.tentativePlannedLoad ?? 0)),
-    );
+    const peakPlannedLoad = Math.max(0, ...weeks.map((week) => week.plannedLoad ?? 0));
     const peakTargetLoad = Math.max(0, ...weeks.map((week) => week.targetLoad ?? 0));
     const loadScale = Math.max(1, peakPlannedLoad, peakTargetLoad);
     const goal = chartReview.chart.goalMarkers[0];
@@ -89,7 +86,7 @@ export function BuilderProjectionOverview({
             importantForAccessibility="no-hide-descendants"
           >
             {model.visibleWeeks.map((week) => {
-              const planned = (week.plannedLoad ?? 0) + (week.tentativePlannedLoad ?? 0);
+              const planned = week.plannedLoad ?? 0;
               return (
                 <View
                   key={week.weekStart}

@@ -83,37 +83,6 @@ export async function createEditAndReloadTrainingPlan(page: Page, testInfo: Test
   return name;
 }
 
-export async function createScheduleAndReorderTrainingPlan(page: Page, testInfo: TestInfo) {
-  const plan = await createPlan(page, testInfo, "Reorder training plan");
-  await resetLocalAuthRateLimits();
-  await page.getByRole("button", { name: "Apply to schedule" }).click();
-  await expect(page.getByText("Plan scheduled.")).toBeVisible();
-  await page.goto("/training-plans/reorder");
-  const planActivities = page.locator(`[data-training-plan-id="${plan.id}"]`);
-  await expect(planActivities).toHaveCount(2);
-  const datesBefore = await planActivities.locator("time").allTextContents();
-  const nextButtons = planActivities.getByRole("button", { name: "Next day" });
-  await expect(nextButtons).toHaveCount(2);
-  await nextButtons.nth(0).click();
-  await nextButtons.nth(1).click();
-  await page.getByRole("button", { name: "Save order" }).click();
-  await expect(page.getByText("Activity schedule saved.")).toBeVisible();
-  await page.reload();
-  const reloadedPlanActivities = page.locator(`[data-training-plan-id="${plan.id}"]`);
-  await expect(reloadedPlanActivities).toHaveCount(2);
-  const datesAfter = await reloadedPlanActivities.locator("time").allTextContents();
-  expect(datesBefore).toHaveLength(2);
-  expect(datesAfter).toEqual(
-    datesBefore.map((date) => {
-      const next = new Date(`${date}T12:00:00.000Z`);
-      next.setUTCDate(next.getUTCDate() + 1);
-      return next.toISOString().slice(0, 10);
-    }),
-  );
-  await expectNoHorizontalOverflow(page);
-  return plan.name;
-}
-
 export async function saveAndRestoreTrainingPreferences(page: Page) {
   await page.goto("/training-preferences");
   await expect(page.getByRole("heading", { name: "Training preferences" })).toBeVisible();

@@ -224,13 +224,12 @@ describe("getEffectivePlanLoad", () => {
     activityPlanMetrics.estimateActivityPlans.mockResolvedValue([]);
   });
 
-  it("accepts a server-derived current week or a bounded date range and tentative server-item overlay", () => {
+  it("accepts a server-derived current week or a bounded date range", () => {
     expect(getEffectivePlanLoadInputSchema.safeParse({}).success).toBe(true);
     expect(
       getEffectivePlanLoadInputSchema.safeParse({
         startDate: "2026-07-23",
         endDate: "2026-07-24",
-        tentativeScheduledItemIds: ["4cf55f6b-7599-49bc-bb62-c0b94c58ba3e"],
       }).success,
     ).toBe(true);
     expect(
@@ -411,6 +410,71 @@ describe("getEffectivePlanLoad", () => {
       status: "available",
       effective: {
         firmItems: [{ kind: "scheduled", scheduledItemId: "event-1", date: "2026-07-21" }],
+      },
+    });
+  });
+
+  it("quantifies a default-going group event as normal scheduled load", async () => {
+    const activityPlanId = "22222222-2222-4222-8222-222222222222";
+    const groupEventId = "11111111-1111-4111-8111-111111111111";
+    const prescriptionQuantification = createActivityPlanPrescriptionQuantificationBundle({
+      members: [
+        quantification({ commonLoad: availableLoad(), id: activityPlanId, kind: "prescription" }),
+      ],
+    });
+    const getEffectivePlanLoadInputs = vi.fn().mockResolvedValue({
+      activities: [],
+      events: [
+        {
+          id: groupEventId,
+          activity_plan: { id: activityPlanId },
+          activity_plan_id: activityPlanId,
+          linked_activity_id: null,
+          scheduled_date: "2026-07-21",
+          starts_at: "2026-07-21T07:00:00.000Z",
+          status: "scheduled",
+          training_plan_id: null,
+        },
+      ],
+      recommendationEvents: [],
+      recommendationSource: { scheduleBatchId: null, status: "complete", trainingPlanId: null },
+      planningTimezone: "UTC",
+      resolvedRange: { startDate: "2026-07-20", endDate: "2026-07-26" },
+      sourceCounts: { activities: 0, events: 1 },
+      sourceCoverage: {
+        activities: { startDate: "2026-07-20", endDate: "2026-07-26", status: "complete" },
+        scheduledItems: { startDate: "2026-07-20", endDate: "2026-07-26", status: "complete" },
+      },
+    });
+    activityAnalysis.loadActivitySegmentsByActivityId.mockResolvedValue(new Map());
+    activityAnalysis.buildActivityDerivedSummaries.mockResolvedValue({
+      parent: new Map(),
+      segments: [],
+    });
+    activityPlanMetrics.estimateActivityPlans.mockResolvedValue([
+      { id: activityPlanId, prescriptionQuantification },
+    ]);
+
+    const result = await getEffectivePlanLoad({
+      asOf: new Date("2026-07-20T12:00:00.000Z"),
+      db: {} as never,
+      profileId: "profile-1",
+      repository: { getEffectivePlanLoadInputs } as never,
+      request: { startDate: "2026-07-20", endDate: "2026-07-26" },
+    });
+
+    expect(result).toMatchObject({
+      status: "available",
+      remaining: { status: "complete", load: 50 },
+      effective: {
+        firmItems: [
+          {
+            kind: "scheduled",
+            scheduledItemId: groupEventId,
+            date: "2026-07-21",
+            commonLoad: { status: "complete", load: 50 },
+          },
+        ],
       },
     });
   });

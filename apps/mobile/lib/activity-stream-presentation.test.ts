@@ -69,14 +69,27 @@ describe("activity stream presentation", () => {
     });
     expect(result.distributions.map(({ title }) => title)).toEqual([
       "Heart Rate Zones",
-      "Power Zones",
       "Run Pace Zones",
-      "Swim Pace Zones",
     ]);
     expect(result.distributions[0]?.zones).toEqual([{ zone: 2, time: 180, label: "Zone 2" }]);
     expect(result.distributions[0]?.qualityCopy).toContain("80% coverage");
-    expect(result.distributions[1]?.qualityCopy).toContain("coverage is too low");
-    expect(result.distributions[3]?.qualityCopy).toContain("Not applicable");
+  });
+
+  it("includes power zones for cycling activities with power-zone evidence", () => {
+    const result = presentActivityStreamAnalysis({
+      ...analysis,
+      activity_category: "bike",
+      distributions: {
+        ...analysis.distributions,
+        power: { ...distribution, threshold: 250 },
+      },
+    });
+
+    expect(result.distributions.map(({ title }) => title)).toEqual([
+      "Heart Rate Zones",
+      "Power Zones",
+    ]);
+    expect(result.distributions[1]?.zones).toEqual([{ zone: 2, time: 180, label: "Zone 2" }]);
   });
 
   it("provides explicit artifact state copy", () => {

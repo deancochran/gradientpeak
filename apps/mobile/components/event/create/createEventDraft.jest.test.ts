@@ -25,24 +25,16 @@ describe("buildCreateEventInput", () => {
         notes: "Threshold work",
         routeId: null,
         routeName: null,
-        recurrenceEndDate: null,
-        recurrenceFrequency: "none",
         scheduledDate: "2026-06-02",
-        timezone: "UTC",
         title: "Tempo Builder",
       }),
     ).toEqual({
       activity_plan_id: "11111111-1111-4111-8111-111111111111",
-      all_day: true,
       event_type: "planned",
-      lifecycle: { status: "scheduled" },
       notes: "Threshold work",
-      read_only: false,
       route_id: null,
       scheduled_date: "2026-06-02",
-      timezone: "UTC",
       title: "Tempo Builder",
-      training_plan_id: undefined,
     });
   });
 
@@ -58,10 +50,7 @@ describe("buildCreateEventInput", () => {
         notes: "",
         routeId,
         routeName,
-        recurrenceEndDate: null,
-        recurrenceFrequency: "none",
         scheduledDate: "2026-06-02",
-        timezone: "UTC",
         title: "",
       }),
     ).toEqual(
@@ -82,10 +71,7 @@ describe("buildCreateEventInput", () => {
         notes: "",
         routeId: null,
         routeName: null,
-        recurrenceEndDate: null,
-        recurrenceFrequency: "none",
         scheduledDate: "2026-06-02",
-        timezone: "UTC",
         title: "",
       }),
     ).toThrow("Choose an activity plan, a route, or both");
@@ -106,10 +92,7 @@ describe("buildCreateEventInput", () => {
       notes: "",
       routeId: "route-3",
       routeName: "Hill Loop",
-      recurrenceEndDate: null,
-      recurrenceFrequency: "none" as const,
       scheduledDate: "2026-06-02",
-      timezone: "UTC",
       title: "Hill Loop",
     };
     expect(buildUpdatePatch(routeOnly)).toEqual(
@@ -128,10 +111,7 @@ describe("buildCreateEventInput", () => {
       notes: "",
       routeId: "route-1",
       routeName: "River Loop",
-      recurrenceEndDate: null,
-      recurrenceFrequency: "none" as const,
       scheduledDate: "2026-06-02",
-      timezone: "UTC",
       title: "Tempo Builder",
     };
     const routeOnly = removeActivityPlanFromDraft(combined);
@@ -140,13 +120,12 @@ describe("buildCreateEventInput", () => {
     expect(buildUpdatePatch(routeOnly)).toEqual(
       expect.objectContaining({
         activity_plan_id: null,
-        event_type: "planned",
         route_id: "route-1",
       }),
     );
   });
 
-  it("converts a plan-only event to custom when its plan is removed", () => {
+  it("preserves a plan-only event when removing its only executable link", () => {
     const planOnly = removeActivityPlanFromDraft({
       activityPlanId: "plan-1",
       activityPlanName: "Tempo Builder",
@@ -154,16 +133,13 @@ describe("buildCreateEventInput", () => {
       notes: "",
       routeId: null,
       routeName: null,
-      recurrenceEndDate: null,
-      recurrenceFrequency: "none",
       scheduledDate: "2026-06-02",
-      timezone: "UTC",
       title: "Tempo Builder",
     });
 
-    expect(planOnly).toEqual(expect.objectContaining({ mode: "custom", routeId: null }));
+    expect(planOnly).toEqual(expect.objectContaining({ mode: "planned", routeId: null }));
     expect(buildUpdatePatch(planOnly)).toEqual(
-      expect.objectContaining({ activity_plan_id: null, event_type: "custom", route_id: null }),
+      expect.objectContaining({ activity_plan_id: "plan-1", route_id: null }),
     );
   });
 });

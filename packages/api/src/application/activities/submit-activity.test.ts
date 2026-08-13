@@ -12,7 +12,6 @@ import {
   activityFileIngestions,
   activitySegments,
   activitySourceReferences,
-  profileMetrics,
 } from "@repo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { getRequiredDb } from "../../db";
@@ -37,6 +36,19 @@ vi.mock("../athlete-intelligence/athlete-state-evidence", () => ({
     materialChanged: false,
   }),
 }));
+
+vi.mock("../athlete-intelligence/published-athlete-state", async () => {
+  const { createUnavailableAthletePerformanceTargetFacts } = await import("@repo/core");
+  return {
+    readPublishedAthletePerformanceTargets: vi.fn(
+      async ({ profileId, now }: { profileId: string; now: Date }) => ({
+        status: "unavailable" as const,
+        publishedRevision: null,
+        targets: createUnavailableAthletePerformanceTargetFacts(now.toISOString(), profileId),
+      }),
+    ),
+  };
+});
 
 describe("recordingSessionActivityId", () => {
   it("returns a stable profile-scoped UUID", () => {
@@ -366,6 +378,7 @@ function createDb(
   return {
     db: { transaction } as unknown as DbClient,
     committed,
+    getActivityRow: () => activityRow,
     insertedValues,
     updatedValues,
     transaction,
@@ -410,6 +423,30 @@ function createInput(): ActivitySubmission {
 }
 
 describe("submitActivity", () => {
+  it("captures the published target authority on a newly completed activity", async () => {
+    const { db, insertedValues } = createDb(undefined, null);
+
+    await submitActivity(db, createInput());
+
+    const insertedActivity = insertedValues.find(({ table }) => table === activities)?.values as
+      | Record<string, unknown>
+      | undefined;
+    expect(insertedActivity?.performance_target_snapshot).toMatchObject({
+      contractVersion: "completed-activity-performance-target-snapshot-v1",
+      publishedRevision: null,
+      publicationStatus: "unavailable",
+      targets: {
+        athleteId: "profile-1",
+        cycling: {
+          planningThresholdPower: {
+            calibrationState: "unavailable",
+            calibrationId: null,
+          },
+        },
+      },
+    });
+  });
+
   it("rejects generated efforts that cross or mismatch segment boundaries", async () => {
     const { db, committed } = createDb(undefined, null);
     await expect(
@@ -439,7 +476,12 @@ describe("submitActivity", () => {
           detectedLTHR: null,
         },
       }),
-    ).rejects.toThrow("exactly one bike segment without crossing boundaries");
+    ).rejects.toMatchObject({
+      cause: expect.objectContaining({
+        message: expect.stringContaining("exactly one bike segment without crossing boundaries"),
+      }),
+      message: "activity_effort_segment_mismatch",
+    });
     expect(committed).toEqual([]);
   });
 
@@ -1049,26 +1091,65 @@ describe("submitActivity", () => {
       detectedLTHR: detectedLthr(170),
     });
     expect(committed).toEqual(
-      expect.arrayContaining([
-        activities,
-        activities,
-        activities,
-        activities,
-        activityEfforts,
-        profileMetrics,
-      ]),
+      expect.arrayContaining([activities, activities, activities, activities, activityEfforts]),
     );
     expect(committed).toContain(activities);
-    expect(insertedValues.find(({ table }) => table === profileMetrics)?.values).toMatchObject({
-      value: 170,
-      recorded_at: new Date("2026-01-01T11:00:00Z"),
-      calculation_version: "activity-file-lthr-v1",
-      provenance: {
-        activity_id: "activity-1",
-        segment_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-        source_effort_calculation_version: "best-effort-extraction-v1",
-        window_coverage: 1,
-      },
+    expect(insertedValues.some(({ table }) => String(table).includes("profile_metrics"))).toBe(
+      false,
+    );
+  });
+
+  it("cannot replace the target snapshot captured when an activity was completed", async () => {
+    const capturedSnapshot = {
+      contractVersion: "completed-activity-performance-target-snapshot-v1",
+      capturedAt: "2026-08-09T10:00:00.000Z",
+      publishedRevision: 7,
+      publicationStatus: "ready",
+      targets: { athleteId: "profile-1" },
+    };
+    const existingActivity = {
+      id: "activity-1",
+      profile_id: "profile-1",
+      activity_plan_id: "plan-1",
+      name: "Recorded",
+      notes: null,
+      started_at: new Date("2026-08-09T09:00:00.000Z"),
+      finished_at: new Date("2026-08-09T10:00:00.000Z"),
+      elapsed_ms: 3_600_000,
+      active_ms: 3_600_000,
+      moving_ms: 3_600_000,
+      timing_coverage: "complete",
+      segments_revision: 1,
+      canonical_evidence_tier: "provider_summary",
+      content_visibility: "private",
+      performance_target_snapshot: capturedSnapshot,
+    };
+    const submitted = createDb(undefined, existingActivity);
+
+    await submitActivity(submitted.db, {
+      kind: "enrich",
+      segmentSet,
+      activityId: "activity-1",
+      profileId: "profile-1",
+      deviceManufacturer: null,
+      deviceProduct: null,
+      summaryValues: {
+        elapsed_ms: 3_600_000,
+        performance_target_snapshot: {
+          contractVersion: "completed-activity-performance-target-snapshot-v1",
+          capturedAt: "2026-08-10T10:00:00.000Z",
+          publishedRevision: 8,
+          publicationStatus: "ready",
+          targets: { athleteId: "profile-1", replacement: true },
+        },
+      } as never,
+      efforts: [],
+      detectedLTHR: null,
+    });
+
+    expect(submitted.updatedValues.at(0)?.values).not.toHaveProperty("performance_target_snapshot");
+    expect(submitted.getActivityRow()).toMatchObject({
+      performance_target_snapshot: capturedSnapshot,
     });
   });
 
@@ -1085,7 +1166,7 @@ describe("submitActivity", () => {
       efforts: [],
       detectedLTHR: null,
     });
-    const omittedSet = omitted.updatedValues.at(-1)?.values as Record<string, unknown>;
+    const omittedSet = omitted.updatedValues.at(0)?.values as Record<string, unknown>;
     expect(omittedSet).not.toHaveProperty("laps");
     expect(omittedSet).not.toHaveProperty("map_bounds");
     expect(omittedSet).not.toHaveProperty("polyline");
@@ -1105,7 +1186,7 @@ describe("submitActivity", () => {
       efforts: [],
       detectedLTHR: null,
     });
-    expect(cleared.updatedValues.at(-1)?.values).toMatchObject({
+    expect(cleared.updatedValues.at(0)?.values).toMatchObject({
       laps: [],
       map_bounds: null,
       polyline: null,
@@ -1192,7 +1273,10 @@ describe("submitActivity", () => {
 
   it("rolls back without partial persistence when a projection write fails", async () => {
     const { db, committed } = createDb(activities);
-    await expect(submitActivity(db, createInput())).rejects.toThrow("write failed");
+    await expect(submitActivity(db, createInput())).rejects.toMatchObject({
+      cause: expect.objectContaining({ message: "write failed" }),
+      message: "activity_parent_persistence_failed",
+    });
     expect(committed).toEqual([]);
   });
 
@@ -1228,7 +1312,10 @@ describe("submitActivity", () => {
         ],
         detectedLTHR: null,
       }),
-    ).rejects.toThrow("write failed");
+    ).rejects.toMatchObject({
+      cause: expect.objectContaining({ message: "write failed" }),
+      message: "activity_effort_reconciliation_invalid",
+    });
     expect(committed).toEqual([]);
   });
 

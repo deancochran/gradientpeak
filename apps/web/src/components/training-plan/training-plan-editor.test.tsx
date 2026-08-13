@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   baselineQuery: {} as Record<string, unknown>,
   create: vi.fn(),
   invalidate: vi.fn(),
+  previewState: "available" as "available" | "error" | "loading" | "unavailable",
   refetchBaseline: vi.fn(),
 }));
 
@@ -37,21 +38,31 @@ vi.mock("../../lib/api/client", () => ({
         useQuery: () => ({ data: undefined, error: null, isLoading: false, refetch: vi.fn() }),
       },
       preview: {
-        useQuery: (input: unknown) => ({
-          data:
-            input && typeof input === "object"
-              ? {
-                  status: "available",
-                  basePublishedRevision: mocks.baselineQuery.data
-                    ? (mocks.baselineQuery.data as { publishedRevision: number }).publishedRevision
-                    : 4,
-                  simulation: {},
-                }
-              : undefined,
-          error: null,
-          isFetching: false,
-          isLoading: false,
-        }),
+        useQuery: (input: unknown) => {
+          const enabled = Boolean(input && typeof input === "object");
+          return {
+            data:
+              enabled && mocks.previewState === "available"
+                ? {
+                    status: "available",
+                    basePublishedRevision: mocks.baselineQuery.data
+                      ? (mocks.baselineQuery.data as { publishedRevision: number })
+                          .publishedRevision
+                      : 4,
+                    simulation: {
+                      projectedState: { longTermLoad: 42, recentLoad: 36, loadBalance: 6 },
+                      goalAssessment: null,
+                    },
+                  }
+                : enabled && mocks.previewState === "unavailable"
+                  ? { status: "unavailable" }
+                  : undefined,
+            error: enabled && mocks.previewState === "error" ? new Error("preview offline") : null,
+            isFetching: enabled && mocks.previewState === "loading",
+            isLoading: enabled && mocks.previewState === "loading",
+            refetch: vi.fn(),
+          };
+        },
       },
       commit: {
         useMutation: () => ({ isPending: false, mutateAsync: mocks.create }),
@@ -65,10 +76,14 @@ vi.mock("../../lib/api/client", () => ({
               {
                 id: "11111111-1111-4111-8111-111111111111",
                 name: "Aerobic ride",
-                prescriptionQuantification: {
-                  members: [{ activity_category: "bike" }],
-                  summary: { commonLoad: { status: "complete", load: 80 } },
-                },
+                activityCategory: "bike",
+                metrics: [
+                  {
+                    key: "common_load",
+                    status: "available",
+                    value: 80,
+                  },
+                ],
               },
             ],
           },
@@ -82,6 +97,7 @@ vi.mock("../../lib/api/client", () => ({
 
 beforeEach(() => {
   mocks.baselineQuery = baselineQuery(4, 40, 30);
+  mocks.previewState = "available";
   mocks.create.mockResolvedValue({ status: "saved", planId });
 });
 
@@ -91,7 +107,7 @@ afterEach(() => {
 });
 
 describe("TrainingPlanEditor", () => {
-  it("fetches the published baseline, simulates the draft, and saves only persisted identity", async () => {
+  it("requests the authoritative draft projection and saves only persisted identity", async () => {
     const onSaved = vi.fn();
     render(<TrainingPlanEditor onSaved={onSaved} />);
 
@@ -144,25 +160,19 @@ describe("TrainingPlanEditor", () => {
     expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Retained draft");
   });
 
-  it("announces loading, error, and unavailable projection states", () => {
-    mocks.baselineQuery = {
-      ...baselineQuery(4, 40, 30),
-      data: undefined,
-      isLoading: true,
-    };
+  it("announces loading, error, and unavailable authoritative preview states", () => {
+    mocks.previewState = "loading";
     const view = render(<TrainingPlanEditor onSaved={vi.fn()} />);
-    expect(screen.getByRole("status").textContent).toContain("Loading athlete baseline");
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Base plan" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add activity" }));
+    expect(screen.getByRole("status").textContent).toContain("Validating this draft");
 
-    mocks.baselineQuery = {
-      ...baselineQuery(4, 40, 30),
-      data: undefined,
-      error: new Error("offline"),
-    };
+    mocks.previewState = "error";
     view.rerender(<TrainingPlanEditor onSaved={vi.fn()} />);
     expect(screen.getByRole("status").textContent).toContain("Projection could not be loaded");
     expect(screen.getByRole("button", { name: "Retry projection" })).toBeTruthy();
 
-    mocks.baselineQuery = baselineQuery(null, 0, 0);
+    mocks.previewState = "unavailable";
     view.rerender(<TrainingPlanEditor onSaved={vi.fn()} />);
     expect(screen.getByRole("status").textContent).toContain("Projection unavailable");
   });

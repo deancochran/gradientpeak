@@ -1,11 +1,11 @@
-import type { ActivityPlan } from "@/components/shared/ActivityPlanCard";
+import type { ActivityPlanSummary } from "@repo/core";
 import { AppBottomSheetContent } from "@/components/shared/AppBottomSheet";
 import { TrainingPlanBuilderEventEditor } from "@/components/training-plan/create/TrainingPlanBuilderEventCard";
 import type { TrainingPlanBuilderSession } from "@/lib/training-plan-creation/types";
 
 type BuilderSessionEditorContentProps = {
   session: TrainingPlanBuilderSession;
-  activityPlan?: ActivityPlan | null;
+  activityPlan?: ActivityPlanSummary | null;
   onChange: (session: TrainingPlanBuilderSession) => void;
   onDuplicate: (sessionId: string) => void;
   onOpenActivityPicker: (sessionId: string) => void;

@@ -46,6 +46,7 @@ export type WahooSyncJobRecord = {
   id: string;
   integrationId: string;
   integrationGeneration?: number;
+  importRunId?: string | null;
   internalResourceId: string | null;
   jobType: string;
   lastError: string | null;
@@ -134,6 +135,7 @@ export interface WahooSyncRepository {
     highWatermark: string;
     id: string;
     integrationId: string;
+    importRunId?: string;
     metadata: Record<string, unknown>;
     provider: "wahoo";
     resource: string;

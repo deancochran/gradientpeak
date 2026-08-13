@@ -1,5 +1,8 @@
 import { renderHook } from "@testing-library/react-native";
-import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
+import {
+  createActivityPlanDetail,
+  createActivityPlanSummary,
+} from "../../../test/activity-plan-projection-fixture";
 
 jest.mock("@/lib/utils/durationConversion", () => ({
   __esModule: true,
@@ -17,22 +20,23 @@ describe("useActivityPlanDetailViewModel", () => {
           activity_category: "bike",
           structure: {},
         }),
-        fetchedPlan: {
-          id: "db-plan",
-          activity_category: "swim",
-          structure: {},
-        },
+        fetchedPlan: createActivityPlanDetail({ id: "db-plan", activityCategory: "swim" }),
         formatDuration: (seconds) => `${seconds / 60}m`,
         isScheduled: true,
         plannedActivity: {
-          activity_plan: {
+          activityPlanSummary: createActivityPlanSummary({
             id: "planned-plan",
-            activity_category: "run",
-            profile_id: "profile-1",
-            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
-              durationSeconds: 3_600,
-              id: "planned-plan",
-            }),
+            activityCategory: "run",
+            metrics: [
+              {
+                key: "elapsed_duration",
+                label: "Duration",
+                value: 3_600,
+                unit: "seconds",
+                status: "available",
+                reason: null,
+              },
+            ],
             structure: {
               version: 3,
               activity_category: "run",
@@ -59,7 +63,7 @@ describe("useActivityPlanDetailViewModel", () => {
                 },
               ],
             },
-          },
+          }),
         },
         profile: { id: "profile-1" },
         template: JSON.stringify({
@@ -70,7 +74,7 @@ describe("useActivityPlanDetailViewModel", () => {
       }),
     );
 
-    expect(result.current.activityPlan.id).toBe("planned-plan");
+    expect(result.current.activityPlan?.id).toBe("planned-plan");
     expect(result.current.durationLabel).toBe("60m");
     expect(result.current.steps).toHaveLength(2);
     expect(result.current.detailBadges).toEqual(["run", "Scheduled"]);

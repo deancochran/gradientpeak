@@ -163,12 +163,17 @@ describe("useActivityPlanForm", () => {
     const structure = validStructure();
     getByIdMock.mockReturnValue({
       data: {
-        id: "plan-1",
-        name: "Existing plan",
-        description: null,
-        notes: null,
-        structure,
-        structure_hash: "a".repeat(64),
+        detail: null,
+        edit: {
+          id: "plan-1",
+          name: "Existing plan",
+          description: null,
+          notes: null,
+          structure,
+          structureHash: "a".repeat(64),
+          gpsRecordingEnabled: true,
+          contentVisibility: "private",
+        },
       },
       isLoading: false,
     } as never);

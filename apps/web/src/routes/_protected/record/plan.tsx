@@ -36,15 +36,15 @@ export function RecordPlanPage() {
     "all",
   );
   const { data, isLoading, error } = api.calendar.day.useQuery({ date: getTodayDateKey() });
-  const events = data?.items ?? [];
+  const events = data?.projection.items ?? [];
 
   const filteredEvents = useMemo(() => {
     const query = searchText.trim().toLowerCase();
 
     return events.filter((event) => {
-      const plan = event.activity_plan;
+      const plan = event.plan;
       const activity_category = normalizeRecordingActivityCategory(
-        plan?.activity_category ?? null,
+        plan?.activityCategory ?? null,
         "other",
       );
       const matchesCategory = categoryFilter === "all" || activity_category === categoryFilter;
@@ -53,17 +53,17 @@ export function RecordPlanPage() {
         plan?.name?.toLowerCase().includes(query) ||
         plan?.description?.toLowerCase().includes(query);
 
-      return Boolean(plan?.activity_category) && matchesCategory && Boolean(matchesQuery);
+      return Boolean(plan?.activityCategory) && matchesCategory && Boolean(matchesQuery);
     });
   }, [categoryFilter, events, searchText]);
 
   const attachPlan = (eventId: string) => {
     if (identityLocked) return;
     const event = events.find((candidate) => candidate.id === eventId);
-    const plan = event?.activity_plan;
-    if (!plan?.activity_category) return;
+    const plan = event?.plan;
+    if (!plan?.activityCategory) return;
     const activity_category = normalizeRecordingActivityCategory(
-      plan.activity_category,
+      plan.activityCategory,
       launcher.activity_category,
     );
 
@@ -182,8 +182,8 @@ export function RecordPlanPage() {
 
       <div className="grid gap-4">
         {filteredEvents.map((event) => {
-          const plan = event.activity_plan;
-          if (!plan?.activity_category) {
+          const plan = event.plan;
+          if (!plan?.activityCategory) {
             return null;
           }
 
@@ -200,8 +200,8 @@ export function RecordPlanPage() {
                     </CardDescription>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline">{plan.activity_category}</Badge>
-                    <Badge variant="outline">{formatScheduledTime(event.scheduled_date)}</Badge>
+                    <Badge variant="outline">{plan.activityCategory}</Badge>
+                    <Badge variant="outline">{formatScheduledTime(event.calendarDate)}</Badge>
                   </div>
                 </div>
               </CardHeader>

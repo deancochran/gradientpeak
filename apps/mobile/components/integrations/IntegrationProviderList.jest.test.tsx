@@ -19,6 +19,10 @@ function createIntegration(
     connected: false,
     integrationId: null,
     label: "Wahoo",
+    onboarding: {
+      summary: "Import profile details and activity history from your Wahoo account.",
+      evidence: { activityHistory: true, profileDetails: true },
+    },
     plannedActivities: {
       lastError: null,
       lastFailedAt: null,
@@ -33,7 +37,7 @@ function createIntegration(
       lastError: null,
       lastFailedAt: null,
       lastSucceededAt: null,
-      profile: { dob: null, gender: null, onboarded: false },
+      profile: { dob: null, gender: null, onboarding_status: "provider_selection" },
       sources: {},
       status: "idle",
       values: {},

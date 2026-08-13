@@ -3,7 +3,6 @@ import type {
   AthletePlanningContextFieldOverride,
   CanonicalActivityCategory,
 } from "@repo/core";
-import { addDaysDateOnlyUtc } from "@repo/core";
 import type { Dispatch } from "react";
 import {
   addTrainingPlanPreferenceField,
@@ -22,12 +21,6 @@ import type {
   TrainingPlanBuilderState,
 } from "./types";
 
-type StructureProposalSession = {
-  offsetDays: number;
-  label: string;
-  intent?: TrainingPlanBuilderSession["intent"];
-};
-
 export function createTrainingPlanBuilderActions(input: {
   dispatch: Dispatch<TrainingPlanBuilderAction>;
   state: TrainingPlanBuilderState;
@@ -37,7 +30,6 @@ export function createTrainingPlanBuilderActions(input: {
     intent?: TrainingPlanBuilderSession["intent"],
   ) => TrainingPlanBuilderSession;
   createLocalId: () => string;
-  structureProposalSessions: StructureProposalSession[];
   toSelectedGoalBlueprint: (goal: {
     id: string;
     title: string;
@@ -47,7 +39,7 @@ export function createTrainingPlanBuilderActions(input: {
     objective?: TrainingPlanBuilderGoalBlueprint["objective"];
   }) => TrainingPlanBuilderGoalBlueprint;
 }) {
-  const { createLocalId, createSession, dispatch, state, structureProposalSessions } = input;
+  const { createLocalId, createSession, dispatch, state } = input;
 
   return {
     updateDetails: (patch: Partial<typeof state.details>) =>
@@ -78,18 +70,6 @@ export function createTrainingPlanBuilderActions(input: {
       });
       return session;
     },
-    addProposedStructure: () => {
-      for (const proposalSession of structureProposalSessions) {
-        dispatch({
-          type: "session.add",
-          session: createSession(
-            proposalSession.offsetDays,
-            proposalSession.label,
-            proposalSession.intent,
-          ),
-        });
-      }
-    },
     assignActivityPlan: (sessionId: string, activityPlan: TrainingPlanActivityPlanFacts | null) =>
       dispatch({ type: "session.assignActivityPlan", sessionId, activityPlan }),
     updateSession: (session: TrainingPlanBuilderSession) =>
@@ -97,19 +77,6 @@ export function createTrainingPlanBuilderActions(input: {
     removeSession: (sessionId: string) => dispatch({ type: "session.remove", sessionId }),
     updateScheduleStartDate: (startDate: string) =>
       dispatch({ type: "scheduling.startDateUpdate", startDate }),
-    togglePreferredScheduleWeekday: (weekday: number) =>
-      dispatch({ type: "scheduling.togglePreferredWeekday", weekday }),
-    moveSessionToScheduleDate: (sessionId: string, date: string) =>
-      dispatch({ type: "scheduling.moveSessionToDate", sessionId, date }),
-    moveSessionByDays: (sessionId: string, currentDate: string, days: number) =>
-      dispatch({
-        type: "scheduling.moveSessionToDate",
-        sessionId,
-        date: addDaysDateOnlyUtc(currentDate, days),
-      }),
-    clearSessionScheduleDateOverride: (sessionId: string) =>
-      dispatch({ type: "scheduling.clearSessionDateOverride", sessionId }),
-    shiftSchedulePreview: (days: number) => dispatch({ type: "scheduling.shiftPlan", days }),
     updateSessionEventOverrides: (
       sessionId: string,
       eventOverrides: TrainingPlanBuilderEventOverrides | undefined,

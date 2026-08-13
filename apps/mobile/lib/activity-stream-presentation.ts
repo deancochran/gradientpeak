@@ -17,6 +17,16 @@ const DISTRIBUTIONS = [
   { key: "swim_pace", title: "Swim Pace Zones" },
 ] as const;
 
+function isRelevantDistribution(
+  activityCategory: ActivityStreamAnalysis["activity_category"],
+  key: StreamZonePresentation["key"],
+) {
+  if (key === "heart_rate") return true;
+  if (key === "power") return activityCategory === "bike";
+  if (key === "run_pace") return activityCategory === "run";
+  return activityCategory === "swim";
+}
+
 export function getStreamUnavailableCopy(reason: StreamAnalysisInsufficientReason | null): string {
   switch (reason) {
     case "invalid_timestamps":
@@ -59,7 +69,9 @@ export function presentActivityStreamAnalysis(analysis: ActivityStreamAnalysis) 
           ? getStreamUnavailableCopy(analysis.heart_rate_load.reason)
           : `LTHR-normalized from accepted stream intervals${analysis.heart_rate_load.lthr_bpm ? ` (${analysis.heart_rate_load.lthr_bpm} bpm LTHR)` : ""}.`,
     },
-    distributions: DISTRIBUTIONS.map(({ key, title }): StreamZonePresentation => {
+    distributions: DISTRIBUTIONS.filter(({ key }) =>
+      isRelevantDistribution(analysis.activity_category, key),
+    ).map(({ key, title }): StreamZonePresentation => {
       const distribution = analysis.distributions[key];
       return {
         key,

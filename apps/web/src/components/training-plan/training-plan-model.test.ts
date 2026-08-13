@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  buildActivityReorderInput,
   buildTrainingPlanStructure,
-  moveScheduledActivity,
   summarizeTrainingPlan,
   toTrainingPlanSessionDrafts,
 } from "./training-plan-model";
@@ -46,47 +44,5 @@ describe("training plan web model", () => {
     expect(() =>
       buildTrainingPlanStructure([{ activityPlanId: "not-a-uuid", offsetDays: 0, title: "Run" }]),
     ).toThrow();
-  });
-
-  it("returns a new optimistic activity snapshot without mutating rollback data", () => {
-    const activities = [
-      { id: "a", scheduled_date: "2026-07-20" },
-      { id: "b", scheduled_date: "2026-07-21" },
-    ];
-
-    const moved = moveScheduledActivity(activities, "a", 1);
-
-    expect(moved).toEqual([
-      { id: "a", scheduled_date: "2026-07-21" },
-      { id: "b", scheduled_date: "2026-07-21" },
-    ]);
-    expect(activities[0]?.scheduled_date).toBe("2026-07-20");
-  });
-
-  it("builds one atomic reorder request with expected and requested dates", () => {
-    const original = [
-      { id: "a", scheduled_date: "2026-07-20", training_plan_id: activityPlanId },
-      { id: "b", scheduled_date: "2026-07-21", training_plan_id: activityPlanId },
-    ];
-    const next = [
-      { id: "a", scheduled_date: "2026-07-22", training_plan_id: activityPlanId },
-      { id: "b", scheduled_date: "2026-07-23", training_plan_id: activityPlanId },
-    ];
-
-    expect(buildActivityReorderInput(original, next)).toEqual({
-      training_plan_id: activityPlanId,
-      changes: [
-        {
-          event_id: "a",
-          expected_scheduled_date: "2026-07-20",
-          requested_scheduled_date: "2026-07-22",
-        },
-        {
-          event_id: "b",
-          expected_scheduled_date: "2026-07-21",
-          requested_scheduled_date: "2026-07-23",
-        },
-      ],
-    });
   });
 });

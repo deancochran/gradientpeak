@@ -185,7 +185,7 @@ export const profileSettingsFormSchema = z.object({
   cover_url: optionalUrlSchema,
   preferred_units: preferredUnitSystemSchema.optional().nullable(),
   language: z.string().max(10).optional().nullable(),
-  onboarded: z.boolean().optional().nullable(),
+  onboarding_status: z.enum(["provider_selection", "processing", "review", "completed"]).optional(),
 });
 
 export type ProfileSettingsFormData = z.infer<typeof profileSettingsFormSchema>;

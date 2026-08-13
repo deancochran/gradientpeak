@@ -13,7 +13,7 @@ type ProtectedContext = Context & {
   };
 };
 
-type CoreEventType = "planned" | "race_target" | "custom" | "imported";
+type CoreEventType = "planned" | "race_target" | "custom";
 
 type NormalizedCreateInput = {
   activityPlanId: string | null;
@@ -25,11 +25,8 @@ type NormalizedCreateInput = {
   recurrence?: {
     rule: string;
     timezone: string;
-    exdates?: string[];
-    exceptions?: unknown[];
   } | null;
   routeId: string | null;
-  sourceProvider: string | null;
   scheduledDate: string;
   startsAt: string;
   status: PublicEventStatus;
@@ -80,7 +77,6 @@ type CreateEventUseCaseDependencies<
     ctx: ProtectedContext,
     input: { eventIds: string[]; operation: "publish" | "unsync"; profileId?: string },
   ) => Promise<WahooPlannedActivityQueueResult | null>;
-  ensurePersistableRecurrence: (recurrence: TNormalized["recurrence"]) => void;
   getContentPermissions: (ctx: Context) => ContentPermissions;
   getEventWriteRepository: (ctx: Context) => ReturnType<typeof createEventWriteRepository>;
   mapEvent: (event: unknown) => TMappedEvent;
@@ -105,16 +101,7 @@ export async function createEventUseCase<
 
   dependencies.assertRestDayWritesBlocked(normalizedEventType, "create");
 
-  if (normalizedEventType === "imported") {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Imported events are managed by integrations",
-    });
-  }
-
   const recurrence = normalizedCreate.recurrence;
-  dependencies.ensurePersistableRecurrence(recurrence as TNormalized["recurrence"]);
-
   if (
     normalizedEventType === "planned" &&
     !normalizedCreate.activityPlanId &&
@@ -237,7 +224,6 @@ export async function createEventUseCase<
       recurrenceRule: recurrence?.rule ?? null,
       recurrenceTimezone: recurrence?.timezone ?? null,
       routeId: normalizedCreate.routeId,
-      sourceProvider: normalizedCreate.sourceProvider,
     };
 
     createdEvents = (await eventWriteRepository.createOwnedEvents({

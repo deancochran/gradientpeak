@@ -28,13 +28,14 @@ function renderForm(props: Partial<React.ComponentProps<typeof ActivityImportFor
 }
 
 describe("ActivityImportForm", () => {
-  it("validates canonical metadata and submits the actual browser File", async () => {
+  it("derives required persistence metadata without exposing an activity-name field", async () => {
     const onSubmit = vi.fn();
     const file = activityFile("morning-ride.fit");
     const { selectFile, submit } = renderForm({ onSubmit });
 
     selectFile(file);
-    expect((screen.getByLabelText("Activity name") as HTMLInputElement).value).toBe("morning-ride");
+    expect(screen.queryByLabelText("Activity name")).toBeNull();
+    expect(screen.queryByTestId("activity-import-name-input")).toBeNull();
     submit();
 
     await waitFor(() => {
@@ -64,36 +65,32 @@ describe("ActivityImportForm", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("updates an auto-derived name on replacement and preserves a manual name", async () => {
-    const { selectFile } = renderForm();
-    const nameInput = screen.getByLabelText("Activity name") as HTMLInputElement;
+  it("updates the hidden derived persistence name when the file is replaced", async () => {
+    const onSubmit = vi.fn();
+    const { selectFile, submit } = renderForm({ onSubmit });
 
     selectFile(activityFile("first.fit"));
-    expect(nameInput.value).toBe("first");
     expect(screen.getByRole("button", { name: "Replace file for Activity file" })).toBeTruthy();
 
     selectFile(activityFile("replacement.GPX"));
-    await waitFor(() => expect(nameInput.value).toBe("replacement"));
-
-    fireEvent.change(nameInput, { target: { value: "My manual title" } });
-    selectFile(activityFile("third.tcx"));
-    await waitFor(() => expect(nameInput.value).toBe("My manual title"));
+    submit();
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ name: "replacement" })),
+    );
   });
 
-  it("removes an auto-derived name with its file and permits a direct replacement", async () => {
+  it("removes the file and permits a direct replacement", async () => {
     const { selectFile } = renderForm();
-    const nameInput = screen.getByLabelText("Activity name") as HTMLInputElement;
 
     selectFile(activityFile("first.fit"));
     fireEvent.click(screen.getByRole("button", { name: "Remove first.fit" }));
 
     await waitFor(() => {
       expect(screen.queryByText(/first\.fit \(/)).toBeNull();
-      expect(nameInput.value).toBe("");
     });
 
     selectFile(activityFile("next.fit"));
-    expect(nameInput.value).toBe("next");
+    expect(screen.getByText(/next\.fit \(/)).toBeTruthy();
   });
 
   it.each([
@@ -120,14 +117,16 @@ describe("ActivityImportForm", () => {
     );
   });
 
-  it("shows name validation without discarding the selected file", async () => {
-    const { selectFile, submit } = renderForm();
+  it("keeps required activity persistence metadata out of the rendered form", async () => {
+    const onSubmit = vi.fn();
+    const { selectFile, submit } = renderForm({ onSubmit });
     selectFile(activityFile("activity.fit"));
-    fireEvent.change(screen.getByLabelText("Activity name"), { target: { value: "   " } });
     submit();
 
-    expect(await screen.findByText("Activity name is required")).toBeTruthy();
-    expect(screen.getByText(/activity\.fit \(/)).toBeTruthy();
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ name: "activity" })),
+    );
+    expect(screen.queryByText("Activity name is required")).toBeNull();
   });
 
   it("preserves values for retry after a root error and clears that error on edits", async () => {
@@ -142,13 +141,19 @@ describe("ActivityImportForm", () => {
     submit();
 
     expect((await screen.findByRole("alert", { name: "" })).textContent).toContain(
-      "Temporary processing failure",
+      "The activity file could not be imported. Check the file and try again.",
     );
     expect(screen.getByText(/retry\.fit \(/)).toBeTruthy();
     expect((screen.getByLabelText("Notes") as HTMLTextAreaElement).value).toBe("Keep these notes");
 
     fireEvent.change(screen.getByLabelText("Notes"), { target: { value: "Retry notes" } });
-    await waitFor(() => expect(screen.queryByText("Temporary processing failure")).toBeNull());
+    await waitFor(() =>
+      expect(
+        screen.queryByText(
+          "The activity file could not be imported. Check the file and try again.",
+        ),
+      ).toBeNull(),
+    );
     submit();
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
   });
@@ -163,7 +168,7 @@ describe("ActivityImportForm", () => {
 
     expect(screen.getByText(label, { selector: "p" }).textContent).toContain(label);
     expect((screen.getByLabelText("Activity file") as HTMLInputElement).disabled).toBe(true);
-    expect((screen.getByLabelText("Activity name") as HTMLInputElement).disabled).toBe(true);
+    expect(screen.queryByLabelText("Activity name")).toBeNull();
     expect((screen.getByLabelText("Notes") as HTMLTextAreaElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(
       true,

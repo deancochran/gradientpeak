@@ -31,6 +31,7 @@ export const WEB_STORY_COMPONENTS = [
   "pace-input",
   "pace-seconds-field",
   "percent-slider-input",
+  "progress",
   "radio-group",
   "recurrence-fields",
   "resizable",

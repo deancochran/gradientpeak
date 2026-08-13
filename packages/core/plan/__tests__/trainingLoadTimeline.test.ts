@@ -11,7 +11,6 @@ describe("training load timeline", () => {
       date: "2026-07-09",
       recommended_common_load: 90.04,
       scheduled_common_load: 75,
-      tentative_scheduled_common_load: 10,
       completed_common_load: 30,
     });
 
@@ -19,7 +18,6 @@ describe("training load timeline", () => {
       date: "2026-07-09",
       recommended_common_load: 90,
       scheduled_common_load: 75,
-      tentative_scheduled_common_load: 10,
       completed_common_load: 30,
     });
     expect(point).not.toHaveProperty("legacy_load_metric");
@@ -30,6 +28,15 @@ describe("training load timeline", () => {
       trainingLoadTimelineInputPointSchema.safeParse({
         date: "2026-07-09",
         legacy_load_metric: 90,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects the removed tentative load field", () => {
+    expect(
+      trainingLoadTimelineInputPointSchema.safeParse({
+        date: "2026-07-09",
+        tentative_scheduled_common_load: 10,
       }).success,
     ).toBe(false);
   });

@@ -139,8 +139,14 @@ describe("groups.events router", () => {
       select: [
         [{ id: VIEWER_ID }],
         [{ event: buildGroupEventRow(), group: buildGroupRow() }],
-        [buildGroupEventRsvpRow()],
-        [{ group_event_id: EVENT_ID, acceptedRsvpCount: 2 }],
+        [],
+        [],
+        [
+          { group_id: GROUP_ID, profile_id: VIEWER_ID },
+          { group_id: GROUP_ID, profile_id: "66666666-6666-4666-8666-666666666666" },
+        ],
+        [],
+        [],
       ],
     });
     const caller = createCaller(mock.db);
@@ -155,9 +161,28 @@ describe("groups.events router", () => {
         name: "Gradient Peak Club",
         slug: "gradient-peak-club",
       },
-      acceptedRsvpCount: 2,
-      viewerRsvp: { status: "accepted" },
+      acceptedRsvpCount: 0,
+      viewerRsvp: null,
     });
+  });
+
+  it("omits an upcoming event after the active member declines it", async () => {
+    const mock = createDbMock({
+      select: [
+        [{ id: VIEWER_ID }],
+        [{ event: buildGroupEventRow(), group: buildGroupRow() }],
+        [buildGroupEventRsvpRow({ status: "declined" })],
+        [],
+        [{ group_id: GROUP_ID, profile_id: VIEWER_ID }],
+        [buildGroupEventRsvpRow({ status: "declined" })],
+        [],
+      ],
+    });
+    const caller = createCaller(mock.db);
+
+    const result = await caller.events.myUpcomingGroupEvents({ startsAfter: NOW.toISOString() });
+
+    expect(result.items).toEqual([]);
   });
 
   it("blocks members-only event detail for non-members", async () => {
@@ -565,7 +590,7 @@ describe("groups.events router", () => {
     const caller = createCaller(mock.db);
 
     await expect(
-      caller.events.rsvp({ groupEventId: EVENT_ID, status: "accepted" }),
+      caller.events.rsvp({ groupEventId: EVENT_ID, status: "declined" }),
     ).rejects.toMatchObject({
       code: "FORBIDDEN",
       message: "Active group membership required to RSVP",
@@ -573,8 +598,8 @@ describe("groups.events router", () => {
     expect(mock.insertCalls).toHaveLength(0);
   });
 
-  it("accepts an event RSVP without selected activity plan handling", async () => {
-    const acceptedRsvp = buildGroupEventRsvpRow();
+  it("stores a decline without selected activity plan handling", async () => {
+    const acceptedRsvp = buildGroupEventRsvpRow({ status: "declined" });
     const mock = createDbMock({
       select: [
         [{ id: VIEWER_ID }],
@@ -586,18 +611,18 @@ describe("groups.events router", () => {
     });
     const caller = createCaller(mock.db);
 
-    const result = await caller.events.rsvp({ groupEventId: EVENT_ID, status: "accepted" });
+    const result = await caller.events.rsvp({ groupEventId: EVENT_ID, status: "declined" });
 
     expect(result.rsvp).toMatchObject({
       group_event_id: EVENT_ID,
       profile_id: VIEWER_ID,
-      status: "accepted",
+      status: "declined",
     });
     expect(mock.insertCalls[0]).toMatchObject({ table: groupEventRsvps });
     expect(mock.insertCalls[0]?.values).toMatchObject({
       group_event_id: EVENT_ID,
       profile_id: VIEWER_ID,
-      status: "accepted",
+      status: "declined",
     });
   });
 
@@ -651,7 +676,7 @@ describe("groups.events router", () => {
       route_id: "99999999-9999-4999-8999-999999999999",
       is_recurring_occurrence: true,
       activity_plan_id: ACTIVITY_PLAN_ID,
-      viewerSeriesRsvp: { group_event_series_id: seriesId, status: "accepted" },
+      viewerSeriesRsvp: null,
     });
   });
 
@@ -715,7 +740,7 @@ describe("groups.events router", () => {
     });
 
     expect(result.rsvp).toBeNull();
-    expect(result.event.viewerSeriesRsvp).toBeNull();
+    expect(result.event?.viewerSeriesRsvp).toBeNull();
     expect(mock.deleteCalls[0]).toMatchObject({ table: groupEventSeriesRsvps });
     expect(mock.insertCalls).toHaveLength(0);
   });
@@ -731,7 +756,7 @@ describe("groups.events router", () => {
     const caller = createCaller(mock.db);
 
     await expect(
-      caller.events.rsvpEventSeries({ groupEventSeriesId: EVENT_ID, status: "accepted" }),
+      caller.events.rsvpEventSeries({ groupEventSeriesId: EVENT_ID, status: "declined" }),
     ).rejects.toMatchObject({
       code: "BAD_REQUEST",
       message: "Group event is not a recurring series",

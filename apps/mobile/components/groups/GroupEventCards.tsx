@@ -42,7 +42,7 @@ export function formatGroupEventDateRange(
   return `${startLabel} - ${endLabel}`;
 }
 
-export function formatAcceptedRsvpCount(count: number) {
+export function formatGoingCount(count: number) {
   return `${count} going`;
 }
 
@@ -120,11 +120,9 @@ export function GroupEventCard({
 }: GroupEventCardProps) {
   const status = event.cancelled_at
     ? "Cancelled"
-    : event.viewerRsvp?.status === "accepted"
-      ? "Going"
-      : event.viewerRsvp?.status === "declined"
-        ? "Declined"
-        : "Tentative";
+    : event.viewerRsvp?.status === "declined" || event.viewerSeriesRsvp?.status === "declined"
+      ? "Declined"
+      : "Going";
 
   return (
     <TouchableOpacity
@@ -196,7 +194,7 @@ export function GroupEventCard({
         ) : null}
 
         <Text className="text-xs font-medium text-muted-foreground">
-          {formatAcceptedRsvpCount(event.acceptedRsvpCount)}
+          {formatGoingCount(event.acceptedRsvpCount)}
         </Text>
 
         {event.description && variant !== "compact" ? (

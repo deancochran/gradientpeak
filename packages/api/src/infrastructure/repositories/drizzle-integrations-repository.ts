@@ -1,7 +1,7 @@
 import type { DrizzleDbClient } from "@repo/db";
 import { schema } from "@repo/db";
 import { and, eq, gt, lt, sql } from "drizzle-orm";
-import type { DrizzleQueryExecutor } from "../../db";
+import type { DrizzleQueryExecutor, DrizzleTransactionClient } from "../../db";
 import {
   decryptNullableProviderToken,
   decryptProviderToken,
@@ -12,13 +12,15 @@ import {
   IntegrationLifecycleChangedError,
   type IntegrationsRepositories,
 } from "../../repositories";
+import { lockOnboardingProfile } from "../../repositories/onboarding-lifecycle-repository";
+import { lockProfileAdvisoryFence } from "../../repositories/profile-advisory-fence";
 
 type OAuthIntegrationUpsertInput = Parameters<
   IntegrationsRepositories["integrations"]["upsertFromOAuthState"]
 >[0];
 
 async function upsertFromOAuthState(
-  db: DrizzleQueryExecutor,
+  db: DrizzleTransactionClient,
   {
     state,
     now,
@@ -32,6 +34,11 @@ async function upsertFromOAuthState(
     expectedIntegration,
   }: OAuthIntegrationUpsertInput,
 ) {
+  await lockProfileAdvisoryFence(db, profileId);
+  const profile = await lockOnboardingProfile(db, profileId);
+  if (profile.onboarding_status === "processing" || profile.onboarding_status === "review") {
+    throw new IntegrationLifecycleChangedError();
+  }
   const [consumedState] = await db
     .delete(schema.oauthStates)
     .where(

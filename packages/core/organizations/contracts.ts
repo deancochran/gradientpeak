@@ -1,11 +1,8 @@
 import { z } from "zod";
 
-import {
-  profileMetricObservationSourceSchema,
-  profileMetricTypeSchema,
-} from "../athlete-inputs/profile-metrics";
+import { athletePerformanceTargetFactsSchema } from "../performance-model";
 import { canonicalActivityCategorySchema } from "../schemas/activity-category";
-import { eventLifecycleStatusSchema } from "../schemas/planned_activity";
+import { eventStatusSchema } from "../schemas/planned_activity";
 import { preferredUnitSystemSchema } from "../units";
 import {
   ATHLETE_READ_ACCESS_DENIAL_REASONS,
@@ -151,8 +148,7 @@ export type OrganizationOperationRoleEligibilityDecision = z.infer<
   typeof organizationOperationRoleEligibilityDecisionSchema
 >;
 
-const coachingCalendarEventStatusSchema = eventLifecycleStatusSchema.exclude(["deleted"]);
-const coachingPerformanceMetricTypeSchema = profileMetricTypeSchema.extract(["lthr"]);
+const coachingCalendarEventStatusSchema = eventStatusSchema;
 
 export const basicProfileScopeProjectionSchema = z
   .object({
@@ -209,20 +205,7 @@ export const activitiesScopeProjectionSchema = z
 
 export const metricsScopeProjectionSchema = z
   .object({
-    metrics: z
-      .array(
-        z
-          .object({
-            metricId: uuidSchema,
-            metricKey: coachingPerformanceMetricTypeSchema,
-            value: z.number().finite().nonnegative(),
-            unit: z.string().trim().min(1).max(40),
-            measuredAt: instantSchema,
-            provenance: profileMetricObservationSourceSchema,
-          })
-          .strict(),
-      )
-      .readonly(),
+    performanceTargets: athletePerformanceTargetFactsSchema,
   })
   .strict()
   .readonly();
@@ -278,7 +261,7 @@ export const athleteReadScopeProjectionFields = {
   basic_profile: ["profileId", "displayName", "avatarReference", "timezone", "preferredUnits"],
   training: ["activePlan", "plannedEvents"],
   activities: ["activities"],
-  metrics: ["metrics"],
+  metrics: ["performanceTargets"],
   goals: ["goals"],
   calendar: ["events"],
 } as const satisfies Record<(typeof ATHLETE_READ_SCOPES)[number], readonly string[]>;

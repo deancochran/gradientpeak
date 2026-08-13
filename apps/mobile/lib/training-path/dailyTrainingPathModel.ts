@@ -7,7 +7,6 @@ import type {
 type DailyTrainingLoadAdjustment = {
   date: string;
   plannedLoad: number | null;
-  tentativePlannedLoad: number | null;
   completedLoad: number | null;
   targetLoad: number | null;
   actualOrScheduledLoad: number | null;
@@ -28,7 +27,6 @@ type WeeklyTrainingLoadAdjustment = {
   weekEndDate: string;
   points: DailyTrainingLoadAdjustment[];
   plannedLoad: number | null;
-  tentativePlannedLoad: number | null;
   completedLoad: number | null;
   targetLoad: number | null;
   actualOrScheduledLoad: number | null;
@@ -65,14 +63,12 @@ function normalizeDailyTrainingLoadAdjustments(input: {
   return dates.map((date) => {
     const raw = pointsByDate.get(date);
     const plannedLoad = finiteNonnegativeNumber(raw?.plannedLoad);
-    const tentativePlannedLoad = finiteNonnegativeNumber(raw?.tentativePlannedLoad);
     const completedLoad = finiteNonnegativeNumber(raw?.completedLoad);
     const targetLoad = finiteNonnegativeNumber(raw?.targetLoad);
     const remainingScheduledLoad =
       raw?.remainingScheduledLoad === undefined
-        ? deriveLoad(
-            [plannedLoad, tentativePlannedLoad, completedLoad],
-            (planned, tentative, completed) => Math.max(0, planned + tentative - completed),
+        ? deriveLoad([plannedLoad, completedLoad], (planned, completed) =>
+            Math.max(0, planned - completed),
           )
         : finiteNonnegativeNumber(raw.remainingScheduledLoad);
     const actualOrScheduledLoad =
@@ -86,7 +82,6 @@ function normalizeDailyTrainingLoadAdjustments(input: {
     return {
       date,
       plannedLoad,
-      tentativePlannedLoad,
       completedLoad,
       targetLoad,
       actualOrScheduledLoad,
@@ -94,10 +89,7 @@ function normalizeDailyTrainingLoadAdjustments(input: {
         [actualOrScheduledLoad, targetLoad],
         (actual, target) => actual - target,
       ),
-      plannedDelta: deriveLoad(
-        [plannedLoad, tentativePlannedLoad, targetLoad],
-        (planned, tentative, target) => planned + tentative - target,
-      ),
+      plannedDelta: deriveLoad([plannedLoad, targetLoad], (planned, target) => planned - target),
     };
   });
 }
@@ -117,7 +109,6 @@ function aggregateDailyTrainingLoadAdjustmentsToWeeks(
         values.reduce((total, value) => total + value, 0),
       );
     const plannedLoad = sum((point) => point.plannedLoad);
-    const tentativePlannedLoad = sum((point) => point.tentativePlannedLoad);
     const targetLoad = sum((point) => point.targetLoad);
     const actualOrScheduledLoad = sum((point) => point.actualOrScheduledLoad);
 
@@ -126,7 +117,6 @@ function aggregateDailyTrainingLoadAdjustmentsToWeeks(
       weekEndDate,
       points: weekPoints,
       plannedLoad,
-      tentativePlannedLoad,
       completedLoad: sum((point) => point.completedLoad),
       targetLoad,
       actualOrScheduledLoad,
@@ -134,10 +124,7 @@ function aggregateDailyTrainingLoadAdjustmentsToWeeks(
         [actualOrScheduledLoad, targetLoad],
         (actual, target) => actual - target,
       ),
-      plannedDelta: deriveLoad(
-        [plannedLoad, tentativePlannedLoad, targetLoad],
-        (planned, tentative, target) => planned + tentative - target,
-      ),
+      plannedDelta: deriveLoad([plannedLoad, targetLoad], (planned, target) => planned - target),
     });
   }
   return buckets;
@@ -189,7 +176,6 @@ export type TrainingPathDailyLoadInput = {
   date: string;
   completed_common_load?: number | null;
   scheduled_common_load?: number | null;
-  tentative_scheduled_common_load?: number | null;
   recommended_common_load?: number | null;
 };
 
@@ -322,14 +308,12 @@ export function buildDailyTrainingAdjustmentPointsFromTrainingPathData(input: {
       const targetFitness = targetFitnessByDate.get(date);
       const scheduledFitness = scheduledFitnessByDate.get(date);
       const plannedLoad = normalizeLoad(load?.scheduled_common_load);
-      const tentativePlannedLoad = normalizeLoad(load?.tentative_scheduled_common_load);
       const completedLoad = normalizeLoad(load?.completed_common_load);
       const targetLoad = normalizeLoad(load?.recommended_common_load);
 
       return {
         date,
         plannedLoad,
-        tentativePlannedLoad,
         completedLoad,
         targetLoad,
         fitnessCtl: fitness?.longTermLoad ?? null,

@@ -3,6 +3,7 @@ import {
   type AthletePerformanceTargetFacts,
   athletePerformanceTargetFactsSchema,
   createUnavailableAthletePerformanceTargetFacts,
+  getAvailablePerformanceTargetValue,
 } from "../performance-model";
 import { canonicalActivityCategorySchema } from "../schemas/activity-category";
 import { preferredUnitSystemSchema } from "../units";
@@ -658,7 +659,7 @@ function performanceTargetEvidenceValue(
     | AthletePerformanceTargetFacts["running"]["planningThresholdPace"]
     | AthletePerformanceTargetFacts["swimming"]["css"],
 ) {
-  const value = fact.status === "available" ? fact.value : null;
+  const value = getAvailablePerformanceTargetValue(fact);
   return {
     value,
     source: value === null ? "unknown" : "activity_effort",

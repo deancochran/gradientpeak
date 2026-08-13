@@ -30,7 +30,7 @@ export function getSafeAppRedirectTarget(
     return fallback;
   }
 
-  if (redirectTarget.startsWith("/")) {
+  if (redirectTarget.startsWith("/") && !redirectTarget.startsWith("//")) {
     return redirectTarget;
   }
 

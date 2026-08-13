@@ -57,7 +57,8 @@ export async function getFeedForViewer({
     buildFeedPage({
       rows: activities,
       limit: input.limit,
-      mapRow: (activity) => mapFeedActivity(activity, { commentCounts, derivedMap, likeStats }),
+      mapRow: (activity) =>
+        mapFeedActivity(activity, { commentCounts, derivedMap, likeStats, viewerId }),
     }),
   );
 }

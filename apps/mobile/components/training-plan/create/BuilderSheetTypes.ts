@@ -4,7 +4,6 @@ export type BuilderSheet =
   | "goals"
   | "localGoalCreate"
   | "preferences"
-  | "schedulePreview"
   | "session"
   | "activityAssignment"
   | "activityFilters";

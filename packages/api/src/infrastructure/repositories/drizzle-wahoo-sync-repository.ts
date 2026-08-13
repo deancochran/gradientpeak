@@ -1,7 +1,9 @@
 import { schema } from "@repo/db";
-import { and, asc, desc, eq, gt, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { isWahooIntegrationEnabled } from "../../lib/integrations/oauth-config";
 import { decryptProviderToken } from "../../lib/provider-token-crypto";
+import { lockOnboardingProfile } from "../../repositories/onboarding-lifecycle-repository";
+import { lockProfileAdvisoryFence } from "../../repositories/profile-advisory-fence";
 import type {
   CreateWahooSyncRepositoryOptions,
   WahooSyncJobRecord,
@@ -16,10 +18,104 @@ function getSqlRows<T>(result: unknown) {
   return ((result as { rows?: T[] }).rows ?? []) as T[];
 }
 
+export class OnboardingProviderWorkConflictError extends Error {
+  constructor() {
+    super("Existing provider work must finish before onboarding processing can start");
+    this.name = OnboardingProviderWorkConflictError.name;
+  }
+}
+
+function getJobTrigger(payload: unknown): unknown {
+  return payload && typeof payload === "object" && !Array.isArray(payload) && "trigger" in payload
+    ? payload.trigger
+    : undefined;
+}
+
+export function onboardingJobIdentityMatches(
+  job: {
+    integrationGeneration: number;
+    integrationId: string;
+    internalResourceId: string | null;
+    jobType: string;
+    operation: string | null;
+    payloadHash: string | null;
+    payloadMatches: boolean;
+    profileId: string;
+    provider: string;
+    resourceKind: WahooSyncJobRecord["resourceKind"];
+  },
+  input: Parameters<WahooSyncRepository["enqueueJobInTransaction"]>[1],
+  integrationGeneration: number,
+) {
+  return (
+    job.profileId === input.profileId &&
+    job.provider === input.provider &&
+    job.integrationId === input.integrationId &&
+    job.integrationGeneration === integrationGeneration &&
+    job.jobType === input.jobType &&
+    job.operation === (input.operation ?? null) &&
+    job.resourceKind === (input.resourceKind ?? null) &&
+    job.internalResourceId === (input.internalResourceId ?? null) &&
+    job.payloadHash === (input.payloadHash ?? null) &&
+    job.payloadMatches
+  );
+}
+
+export function assertOnboardingJobOwnership(
+  job: Parameters<typeof onboardingJobIdentityMatches>[0],
+  input: Parameters<typeof onboardingJobIdentityMatches>[1],
+  integrationGeneration: number,
+) {
+  if (
+    getJobTrigger(input.payload) === "onboarding" &&
+    !onboardingJobIdentityMatches(job, input, integrationGeneration)
+  ) {
+    throw new OnboardingProviderWorkConflictError();
+  }
+}
+
 /** Only durable, provider-neutral failure categories may cross the job/state boundary. */
 function toBoundedWahooSyncError(value: string): string {
   const normalized = value.trim().toLowerCase();
   if (normalized === "activity_history_failed") return "activity_history_failed";
+  if (normalized === "activity_import_failed") return "activity_import_failed";
+  if (normalized === "activity_analysis_initial_segments_invalid")
+    return "activity_analysis_initial_segments_invalid";
+  if (normalized === "activity_analysis_failed") return "activity_analysis_failed";
+  if (normalized === "activity_analysis_persisted_segments_invalid")
+    return "activity_analysis_persisted_segments_invalid";
+  if (normalized === "activity_analysis_segments_invalid")
+    return "activity_analysis_segments_invalid";
+  if (normalized === "activity_artifact_lifecycle_pending")
+    return "activity_artifact_lifecycle_pending";
+  if (normalized === "activity_artifact_persistence_failed")
+    return "activity_artifact_persistence_failed";
+  if (normalized === "activity_athlete_state_evidence_invalid")
+    return "activity_athlete_state_evidence_invalid";
+  if (normalized === "activity_calibration_evidence_invalid")
+    return "activity_calibration_evidence_invalid";
+  if (normalized === "activity_effort_segment_mismatch") return "activity_effort_segment_mismatch";
+  if (normalized === "activity_effort_reconciliation_invalid")
+    return "activity_effort_reconciliation_invalid";
+  if (normalized === "activity_ingestion_conflict") return "activity_ingestion_conflict";
+  if (normalized === "activity_ingestion_persistence_failed")
+    return "activity_ingestion_persistence_failed";
+  if (normalized === "activity_material_evidence_marker_failed")
+    return "activity_material_evidence_marker_failed";
+  if (normalized === "activity_parent_persistence_failed")
+    return "activity_parent_persistence_failed";
+  if (normalized === "activity_laps_invalid") return "activity_laps_invalid";
+  if (normalized === "activity_performance_snapshot_invalid")
+    return "activity_performance_snapshot_invalid";
+  if (normalized === "activity_persistence_invariant_failed")
+    return "activity_persistence_invariant_failed";
+  if (normalized === "activity_segments_invalid") return "activity_segments_invalid";
+  if (normalized === "activity_segment_persistence_failed")
+    return "activity_segment_persistence_failed";
+  if (normalized === "activity_source_reference_failed") return "activity_source_reference_failed";
+  if (normalized === "activity_validation_failed") return "activity_validation_failed";
+  if (normalized === "activity_persistence_failed") return "activity_persistence_failed";
+  if (normalized === "unsupported_persisted_version") return "unsupported_persisted_version";
   if (
     normalized === "invalid wahoo activity history job payload" ||
     normalized === "invalid wahoo job payload"
@@ -49,6 +145,7 @@ type WahooSyncJobSqlRow = {
   id: string;
   integrationId: string;
   integrationGeneration: number;
+  importRunId?: string | null;
   internalResourceId: string | null;
   jobType: string;
   lastError: string | null;
@@ -93,6 +190,15 @@ export function createWahooSyncRepository({
             eq(schema.providerSyncJobs.locked_by, workerId),
             gt(schema.providerSyncJobs.lock_expires_at, new Date()),
             eq(schema.providerSyncJobs.integration_generation, expectedIntegrationGeneration),
+            isNull(schema.providerSyncJobs.import_run_id),
+            sql`${schema.providerSyncJobs.payload}->>'importRunId' is null`,
+            sql`exists (
+              select 1 from activity_import_runs run
+              where run.id = ${importRunId}::uuid
+                and run.profile_id = ${schema.providerSyncJobs.profile_id}
+                and run.integration_id = ${schema.providerSyncJobs.integration_id}
+                and run.integration_generation = ${schema.providerSyncJobs.integration_generation}
+            )`,
           ),
         )
         .returning({ id: schema.providerSyncJobs.id });
@@ -173,6 +279,7 @@ export function createWahooSyncRepository({
       expectedIntegrationGeneration,
       id,
       integrationId,
+      importRunId,
       metadata,
       provider,
       resource,
@@ -195,6 +302,19 @@ export function createWahooSyncRepository({
               eq(schema.providerSyncJobs.id, id),
               eq(schema.providerSyncJobs.integration_id, integrationId),
               eq(schema.providerSyncJobs.provider, provider),
+              importRunId === undefined
+                ? undefined
+                : and(
+                    eq(schema.providerSyncJobs.import_run_id, importRunId),
+                    sql`${schema.providerSyncJobs.payload}->>'importRunId' = ${importRunId}`,
+                    sql`exists (
+                      select 1 from activity_import_runs run
+                      where run.id = ${importRunId}::uuid
+                        and run.profile_id = ${schema.providerSyncJobs.profile_id}
+                        and run.integration_id = ${schema.providerSyncJobs.integration_id}
+                        and run.integration_generation = ${schema.providerSyncJobs.integration_generation}
+                    )`,
+                  ),
               eq(schema.providerSyncJobs.status, "running"),
               eq(schema.providerSyncJobs.locked_by, workerId),
               gt(schema.providerSyncJobs.lock_expires_at, now),
@@ -391,6 +511,10 @@ export function createWahooSyncRepository({
               operation: schema.providerSyncJobs.operation,
               payloadHash: schema.providerSyncJobs.payload_hash,
               payloadMatches: sql<boolean>`${schema.providerSyncJobs.payload} = ${JSON.stringify(input.payload)}::jsonb`,
+              profileId: schema.providerSyncJobs.profile_id,
+              provider: schema.providerSyncJobs.provider,
+              integrationId: schema.providerSyncJobs.integration_id,
+              integrationGeneration: schema.providerSyncJobs.integration_generation,
               resourceKind: schema.providerSyncJobs.resource_kind,
               status: schema.providerSyncJobs.status,
             })
@@ -412,9 +536,14 @@ export function createWahooSyncRepository({
               job.internalResourceId === (input.internalResourceId ?? null) &&
               job.resourceKind === (input.resourceKind ?? null),
           );
+          if (getJobTrigger(input.payload) === "onboarding") {
+            for (const activeJob of activeLaneJobs) {
+              assertOnboardingJobOwnership(activeJob, input, integrationGeneration);
+            }
+          }
           const queuedJob = coalescibleQueuedJobs[0];
-
           if (queuedJob) {
+            assertOnboardingJobOwnership(queuedJob, input, integrationGeneration);
             await tx
               .update(schema.providerSyncJobs)
               .set(desiredQueuedValues)
@@ -431,6 +560,7 @@ export function createWahooSyncRepository({
           }
 
           const runningJob = activeLaneJobs.find((job) => job.status === "running");
+          if (runningJob) assertOnboardingJobOwnership(runningJob, input, integrationGeneration);
           if (
             runningJob &&
             runningJob.jobType === input.jobType &&
@@ -446,7 +576,20 @@ export function createWahooSyncRepository({
 
         if (shouldCheckDedupe && input.dedupeKey) {
           const [existing] = await tx
-            .select({ id: schema.providerSyncJobs.id, status: schema.providerSyncJobs.status })
+            .select({
+              id: schema.providerSyncJobs.id,
+              status: schema.providerSyncJobs.status,
+              jobType: schema.providerSyncJobs.job_type,
+              operation: schema.providerSyncJobs.operation,
+              payloadHash: schema.providerSyncJobs.payload_hash,
+              payloadMatches: sql<boolean>`${schema.providerSyncJobs.payload} = ${JSON.stringify(input.payload)}::jsonb`,
+              profileId: schema.providerSyncJobs.profile_id,
+              provider: schema.providerSyncJobs.provider,
+              integrationId: schema.providerSyncJobs.integration_id,
+              integrationGeneration: schema.providerSyncJobs.integration_generation,
+              internalResourceId: schema.providerSyncJobs.internal_resource_id,
+              resourceKind: schema.providerSyncJobs.resource_kind,
+            })
             .from(schema.providerSyncJobs)
             .where(
               and(
@@ -461,6 +604,7 @@ export function createWahooSyncRepository({
             .for("update");
 
           if (existing) {
+            assertOnboardingJobOwnership(existing, input, integrationGeneration);
             if (existing.status === "queued") {
               await tx
                 .update(schema.providerSyncJobs)
@@ -563,6 +707,7 @@ export function createWahooSyncRepository({
             provider_sync_jobs.id,
             provider_sync_jobs.integration_id as "integrationId",
             provider_sync_jobs.integration_generation as "integrationGeneration",
+            provider_sync_jobs.import_run_id as "importRunId",
             provider_sync_jobs.internal_resource_id as "internalResourceId",
             provider_sync_jobs.job_type as "jobType",
             provider_sync_jobs.last_error as "lastError",
@@ -603,6 +748,11 @@ export function createWahooSyncRepository({
 
     async requestWahooDisconnect({ profileId }) {
       return db.transaction(async (tx) => {
+        await lockProfileAdvisoryFence(tx, profileId);
+        const profile = await lockOnboardingProfile(tx, profileId);
+        if (profile.onboarding_status === "processing" || profile.onboarding_status === "review") {
+          throw new Error("Integration changes are unavailable during onboarding processing");
+        }
         const now = new Date();
         const [integration] = await tx
           .select()
@@ -1351,6 +1501,19 @@ export function createWahooSyncRepository({
             eq(schema.providerSyncJobs.status, "running"),
             eq(schema.providerSyncJobs.locked_by, workerId),
             gt(schema.providerSyncJobs.lock_expires_at, new Date()),
+            importRunId === undefined
+              ? isNull(schema.providerSyncJobs.import_run_id)
+              : and(
+                  eq(schema.providerSyncJobs.import_run_id, importRunId),
+                  sql`${schema.providerSyncJobs.payload}->>'importRunId' = ${importRunId}`,
+                  sql`exists (
+                    select 1 from activity_import_runs run
+                    where run.id = ${importRunId}::uuid
+                      and run.profile_id = ${schema.providerSyncJobs.profile_id}
+                      and run.integration_id = ${schema.providerSyncJobs.integration_id}
+                      and run.integration_generation = ${schema.providerSyncJobs.integration_generation}
+                  )`,
+                ),
             sql`exists (
               select 1 from integrations where integrations.id = ${schema.providerSyncJobs.integration_id}
                 and integrations.lifecycle_status = 'active'

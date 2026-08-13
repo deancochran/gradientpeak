@@ -1,3 +1,4 @@
+import { simulateTrainingPlan } from "@repo/core";
 import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { act, renderHook, waitFor } from "@testing-library/react-native";
 import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
@@ -188,20 +189,17 @@ describe("useTrainingPlanCreationService performance target hydration", () => {
   });
 });
 
-describe("useTrainingPlanCreationService published projection", () => {
+describe("useTrainingPlanCreationService authoritative projection", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockQueries = createQueryState();
     mockQueries.creationContextQuery.data = creationContext("2026-06-01T00:00:01.000Z");
     mockQueries.publishedStateQuery.data = projectionBaseline(4, 40, 30);
-    mockPreviewQuery.data = {
-      status: "available",
-      simulation: {},
-    };
+    mockPreviewQuery.data = canonicalPreview(4, 40, 30);
     mockPreviewQuery.error = null;
   });
 
-  it("simulates the canonical client draft from the published baseline", async () => {
+  it("uses the authoritative server preview for the canonical draft", async () => {
     const hook = renderHook(() => useTrainingPlanCreationService());
 
     act(() => {
@@ -211,12 +209,25 @@ describe("useTrainingPlanCreationService published projection", () => {
     });
 
     await waitFor(() => {
-      expect(hook.result.current.derived.publishedProjection.status).toBe("available");
+      expect(hook.result.current.derived.authoritativeProjectionState.status).toBe("available");
     });
-    const projection = hook.result.current.derived.publishedProjection;
+    const projection = hook.result.current.derived.authoritativeProjectionState;
     if (projection.status !== "available") throw new Error("Expected available projection");
     expect(projection.simulation.projectedState.recentLoad).not.toBe(30);
     expect(projection.simulation.projectedState.stateRevision).toBe(4);
+  });
+
+  it("refuses to commit without a current authoritative preview", async () => {
+    mockPreviewQuery.data = undefined;
+    const hook = renderHook(() => useTrainingPlanCreationService());
+
+    await waitFor(() => expect(hook.result.current.derived.savePlan.canSave).toBe(false));
+    await act(async () => hook.result.current.derived.savePlan.execute());
+
+    expect(mockQueries.commitPlanMutation.mutateAsync).not.toHaveBeenCalled();
+    expect(hook.result.current.derived.projectionConflict).toContain(
+      "authoritative preview before saving",
+    );
   });
 
   it("preserves the draft and re-simulates after a typed stale save", async () => {
@@ -261,9 +272,10 @@ describe("useTrainingPlanCreationService published projection", () => {
         data: projectionBaseline(5, 55, 45),
       },
     };
+    mockPreviewQuery.data = canonicalPreview(5, 55, 45);
     hook.rerender({});
     await waitFor(() => {
-      const projection = hook.result.current.derived.publishedProjection;
+      const projection = hook.result.current.derived.authoritativeProjectionState;
       expect(projection.status).toBe("available");
       if (projection.status === "available")
         expect(projection.simulation.baseStateRevision).toBe(5);
@@ -271,6 +283,30 @@ describe("useTrainingPlanCreationService published projection", () => {
     expect(hook.result.current.state.details.name).toBe("Draft retained");
   });
 });
+
+function canonicalPreview(revision: number, longTermLoad: number, recentLoad: number) {
+  const published = projectionBaseline(revision, longTermLoad, recentLoad);
+  const baseline = published.currentBaseline.baseline;
+  if (!baseline) throw new Error("Expected a published baseline");
+  return {
+    status: "available" as const,
+    simulation: simulateTrainingPlan({
+      baseline,
+      plannedSessions: [
+        {
+          kind: "projected",
+          sourceId: "plan:sessions.0",
+          scheduledAt: "2026-08-02T00:00:00.000Z",
+          activityCategory: "run",
+          commonLoad: 80,
+        },
+      ],
+      simulationAt: "2026-08-02T00:00:00.000Z",
+      planningTimezone: "UTC",
+      goal: null,
+    }),
+  };
+}
 
 function projectionBaseline(revision: number | null, longTermLoad: number, recentLoad: number) {
   const baseline =

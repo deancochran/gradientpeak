@@ -122,7 +122,7 @@ describe("ActivityImportPage", () => {
     );
     expect(mocks.invalidateIngestion).toHaveBeenCalledTimes(1);
     expect(mocks.activitiesInvalidate).toHaveBeenCalledTimes(1);
-    expect(mocks.toastSuccess).toHaveBeenCalledWith("Imported Morning ride");
+    expect(mocks.toastSuccess).toHaveBeenCalledWith("Activity imported");
     expect(mocks.navigate).toHaveBeenCalledWith({
       params: { activityId: "activity-1" },
       to: "/activities/$activityId",

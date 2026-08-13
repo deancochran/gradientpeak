@@ -1,4 +1,4 @@
-import type { ActivityPrescriptionQuantificationBundle } from "@repo/core";
+import type { ActivityPlanSummary } from "@repo/core";
 import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import type { GroupListItem } from "@/lib/groups";
 
@@ -79,16 +79,7 @@ export type SortState<TField extends string> = {
   direction: SortDirection;
 };
 
-export type DiscoverActivityPlanItem = {
-  id: string;
-  name: string;
-  description?: string | null;
-  activity_category: string;
-  structure?: unknown;
-  created_at?: string;
-  updated_at?: string;
-  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
-};
+export type DiscoverActivityPlanItem = ActivityPlanSummary;
 
 export type DiscoverTrainingPlanItem = {
   id: string;
@@ -317,7 +308,7 @@ function scoreActivityPlanSearch(query: string, item: DiscoverActivityPlanItem) 
   return (
     scoreSearchTextMatch(query, item.name) +
     scoreSearchTextMatch(query, item.description) * 0.65 +
-    scoreSearchTextMatch(query, item.activity_category) * 0.4 +
+    scoreSearchTextMatch(query, item.activityCategory) * 0.4 +
     TYPE_WEIGHT.activityPlans
   );
 }
@@ -386,10 +377,17 @@ function getTimestampValue(value: string | null) {
 }
 
 function getSortDate(item: {
+  createdAt?: string | null;
+  updatedAt?: string | null;
   created_at?: string | Date | null;
   updated_at?: string | Date | null;
 }) {
-  return toIsoDateString(item.created_at) ?? toIsoDateString(item.updated_at);
+  return (
+    toIsoDateString(item.createdAt) ??
+    toIsoDateString(item.created_at) ??
+    toIsoDateString(item.updatedAt) ??
+    toIsoDateString(item.updated_at)
+  );
 }
 
 export function getRangeValidationMessage(
@@ -440,10 +438,7 @@ export function matchesActivityPlanDerivedFilters(
   const commonLoad = quantities.commonLoad;
   const commonIntensity = quantities.commonIntensity;
 
-  if (
-    filters.categoryIds.length > 0 &&
-    !filters.categoryIds.includes(item.activity_category as DiscoverCategoryId)
-  ) {
+  if (filters.categoryIds.length > 0 && !filters.categoryIds.includes(item.activityCategory)) {
     return false;
   }
 

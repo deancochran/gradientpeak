@@ -1,4 +1,4 @@
-import type { ActivityPrescriptionQuantificationBundle } from "@repo/core";
+import type { ActivityPlanDetail, ActivityPlanSummary } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Check, MapPin } from "lucide-react-native";
@@ -11,21 +11,6 @@ import { formatDistanceMeters, formatElevationMeters } from "@/lib/display/forma
 import { formatEstimatedDurationSeconds } from "@/lib/estimatedMetrics";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import type { ResourcePickerItem, ResourcePickerScope } from "./resourcePickerTypes";
-
-type ActivityPlanPickerSource = {
-  activity_category: string;
-  structure?: unknown;
-  created_at?: string | null;
-  description?: string | null;
-  has_liked?: boolean | null;
-  id: string;
-  is_system_template?: boolean | null;
-  likes_count?: number | null;
-  name: string;
-  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
-  content_visibility?: string | null;
-  updated_at?: string | null;
-};
 
 type RoutePickerSource = {
   activity_category?: string | null;
@@ -65,23 +50,8 @@ export function ResourcePickerResultRow({
   const preferredUnitSystem = usePreferredUnitSystem();
   const isActivityPlan = scope === "activityPlans";
   const card =
-    item.presentation === "canonical" && isActivityPlan && "activityPlanCardData" in item ? (
-      <ActivityPlanCard
-        cardData={{
-          activity_category: item.activityPlanCardData.activity_category,
-          createdAt: item.activityPlanCardData.createdAt ?? undefined,
-          description: item.activityPlanCardData.description ?? undefined,
-          estimatedDuration: item.activityPlanCardData.estimatedDuration ?? undefined,
-          has_liked: item.activityPlanCardData.hasLiked ?? undefined,
-          id: item.activityPlanCardData.id,
-          likes_count: item.activityPlanCardData.likesCount ?? undefined,
-          name: item.activityPlanCardData.name,
-          prescriptionQuantification: item.activityPlanCardData.prescriptionQuantification,
-          structure: item.activityPlanCardData.structure,
-          updatedAt: item.activityPlanCardData.updatedAt ?? undefined,
-        }}
-        variant="compact"
-      />
+    item.presentation === "canonical" && isActivityPlan && "activityPlan" in item ? (
+      <ActivityPlanCard plan={item.activityPlan} variant="compact" />
     ) : item.presentation === "canonical" && scope === "routes" && "routeCardData" in item ? (
       <RouteCard
         route={item.routeCardData}
@@ -177,36 +147,24 @@ export function ResourcePickerResultRow({
 }
 
 export function mapActivityPlanToResourcePickerItem(
-  plan: ActivityPlanPickerSource,
+  plan: ActivityPlanSummary | ActivityPlanDetail,
 ): ResourcePickerItem {
   const quantitySummary = getActivityPlanQuantitySummary(plan);
-  const activity_category = plan.activity_category;
+  const activity_category = plan.activityCategory;
   return {
     activityCategory: activity_category,
-    activityPlanCardData: {
-      activity_category,
-      createdAt: plan.created_at,
-      description: plan.description,
-      estimatedDuration: quantitySummary.durationSeconds,
-      hasLiked: plan.has_liked,
-      id: plan.id,
-      likesCount: plan.likes_count,
-      name: plan.name,
-      prescriptionQuantification: plan.prescriptionQuantification,
-      structure: plan.structure,
-      updatedAt: plan.updated_at,
-    },
-    createdAt: plan.created_at,
+    activityPlan: plan,
+    createdAt: plan.createdAt,
     description: plan.description,
     estimatedDuration: quantitySummary.durationSeconds,
     id: plan.id,
-    hasLiked: plan.has_liked,
-    isPublic: plan.content_visibility === "public",
-    isSystem: plan.is_system_template,
-    likesCount: plan.likes_count,
+    hasLiked: plan.engagement.viewerHasLiked,
+    isPublic: plan.visibility === "public",
+    isSystem: plan.isSystemTemplate,
+    likesCount: plan.engagement.likes,
     name: plan.name,
     presentation: "canonical",
-    updatedAt: plan.updated_at,
+    updatedAt: plan.updatedAt,
   };
 }
 

@@ -1,6 +1,5 @@
 import { createAthletePlanningContextFromSnapshot } from "@repo/core";
 import { toDateKey } from "@/lib/calendar/dateMath";
-import { trainingPlanBuilderStateSchema } from "./schemas";
 import type { TrainingPlanBuilderState } from "./types";
 
 export const DEFAULT_TRAINING_PLAN_NAME = "";
@@ -10,7 +9,7 @@ function getDefaultAnchorDate() {
 }
 
 export function createDefaultTrainingPlanBuilderState(): TrainingPlanBuilderState {
-  return trainingPlanBuilderStateSchema.parse({
+  return {
     details: {
       name: DEFAULT_TRAINING_PLAN_NAME,
       description: "",
@@ -48,5 +47,5 @@ export function createDefaultTrainingPlanBuilderState(): TrainingPlanBuilderStat
       sessionDateOverrides: {},
     },
     selection: { type: "overview" },
-  });
+  };
 }

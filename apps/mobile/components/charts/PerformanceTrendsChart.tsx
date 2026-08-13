@@ -5,7 +5,6 @@ import { CartesianChart, Line } from "victory-native";
 export interface PerformanceDataPoint {
   date: string;
   activityId: string;
-  activityName: string;
   avgSpeed: number | null; // m/s
   avgPower: number | null; // watts
   avgHeartRate: number | null; // bpm
@@ -62,7 +61,7 @@ export function PerformanceTrendsChart({
     return {
       index,
       value,
-      label: point.activityName,
+      label: point.date,
     };
   });
 

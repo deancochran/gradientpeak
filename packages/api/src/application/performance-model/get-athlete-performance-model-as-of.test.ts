@@ -4,7 +4,6 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   ActivityEffortPerformanceRow,
   AthletePerformanceModelRepository,
-  HeartRateCalibrationCandidateRow,
   SwimmingCssProtocolPerformanceRow,
 } from "../../repositories/athlete-performance-model-repository";
 import { getAthletePerformanceModelAsOf } from "./get-athlete-performance-model-as-of";
@@ -74,38 +73,6 @@ function bikeRow(
     artifact_owner_profile_id: athleteId,
     artifact_availability: "accepted",
     activity_pool_length_meters: null,
-  };
-}
-
-function lthrRow(): HeartRateCalibrationCandidateRow {
-  const activityId = uuid(20);
-  const segmentId = uuid(21);
-  const recordedAt = new Date("2026-07-20T00:20:00.000Z");
-  return {
-    id: uuid(22),
-    profile_id: athleteId,
-    metric_type: "lthr",
-    recorded_at: recordedAt,
-    unit: "bpm",
-    value: 172,
-    source: "derived",
-    method: "activity_file_lthr_detection",
-    calculation_version: "activity-file-lthr-v1",
-    reference_activity_id: activityId,
-    activity_category: "bike",
-    provenance: {
-      activity_id: activityId,
-      segment_id: segmentId,
-      derived_from: "activity_file_best_effort",
-      source_series: "heart_rate",
-      source_effort_calculation_version: "best-effort-extraction-v1",
-      exact_window_start_timestamp_seconds: recordedAt.getTime() / 1_000 - 1_200,
-      exact_window_end_timestamp_seconds: recordedAt.getTime() / 1_000,
-      duration_seconds: 1_200,
-      window_coverage: 1,
-      extraction_status: "available",
-      extraction_reason: null,
-    },
   };
 }
 
@@ -229,6 +196,30 @@ function repository(
   const rows = durations.map((duration, index) =>
     bikeRow(duration, shortDurationPower.get(duration) ?? 240 + 24_000 / duration, index),
   );
+  const calibration = (
+    id: string,
+    metricKey: "threshold_power" | "threshold_speed" | "threshold_heart_rate",
+    activityCategory: "bike" | "run" | "swim",
+    value: number,
+    unit: "watts" | "meters_per_second" | "beats_per_minute",
+  ) => ({
+    id,
+    identity: { metricKey, activityCategory },
+    value,
+    unit,
+    effectiveAt: "2026-07-20T00:20:00.000Z",
+    expiresAt: "2026-10-18T00:20:00.000Z",
+    policyVersion: "performance-calibration-v1",
+    selectionDiagnostics: {
+      selectedEvidenceIds: [`${id}-evidence`],
+      selectedActivityIds: [`${id}-activity`],
+      evidenceCount: 1,
+      selectionReason: "independent_confirmation" as const,
+      trend: "stable" as const,
+      tolerance: metricKey === "threshold_heart_rate" ? 3 : 0.03,
+      policyVersion: "performance-calibration-v1",
+    },
+  });
   return {
     readAthletePerformanceEvidenceSnapshot: vi.fn(async () => ({
       effortReads: {
@@ -237,17 +228,23 @@ function repository(
         swim: { rows: [], truncated: false },
       },
       swimmingCssProtocolRead: { rows: options.cssProtocolRows ?? [], truncated: false },
+      calibrationReads: options.truncated
+        ? []
+        : [
+            calibration("bike-power", "threshold_power", "bike", 247, "watts"),
+            calibration("bike-lthr", "threshold_heart_rate", "bike", 172, "beats_per_minute"),
+            ...(options.cssProtocolRows?.length
+              ? [calibration("swim-css", "threshold_speed", "swim", 100 / 85, "meters_per_second")]
+              : []),
+          ],
       heartRateReads: {
         bike: {
-          lthr: { rows: [lthrRow()], truncated: false },
           maxHr: { rows: [], truncated: false },
         },
         run: {
-          lthr: { rows: [], truncated: false },
           maxHr: { rows: [], truncated: false },
         },
         swim: {
-          lthr: { rows: [], truncated: false },
           maxHr: { rows: [], truncated: false },
         },
       },
@@ -276,12 +273,21 @@ describe("getAthletePerformanceModelAsOf", () => {
       },
       heartRate: {
         bike: {
-          lthr: { status: "available", valueBpm: 172, sourceActivityId: uuid(20) },
+          lthr: { status: "unavailable", valueBpm: null, sourceActivityId: null },
           maxHr: { status: "unavailable", reason: "no_eligible_evidence" },
         },
       },
     });
     expect(result.categories.bike.parameters.planningThresholdPower.status).toBe("available");
+    expect(projectAthletePerformanceTargetFacts(result).heartRate.bike.lthr).toMatchObject({
+      sourceEvidenceId: "bike-lthr-evidence",
+      sourceActivityId: "bike-lthr-activity",
+      policyVersion: "performance-calibration-v1",
+      method: "performance_calibration",
+      calculationVersion: "performance-calibration-v1",
+      evidenceCount: 1,
+      trend: "stable",
+    });
     if (result.categories.bike.parameters.planningThresholdPower.status !== "unavailable") {
       expect(result.categories.bike.parameters.planningThresholdPower.value.watts).toBeCloseTo(
         247,
@@ -311,10 +317,10 @@ describe("getAthletePerformanceModelAsOf", () => {
       status: "available",
       value: 85,
       unit: "seconds_per_100_meters",
-      sourceEvidenceIds: [protocol.evidence_id],
+      sourceEvidenceIds: ["swim-css-evidence"],
       evidenceTime: {
-        observedFrom: protocol.observed_at.toISOString(),
-        observedThrough: protocol.observed_at.toISOString(),
+        observedFrom: "2026-07-20T00:20:00.000Z",
+        observedThrough: "2026-07-20T00:20:00.000Z",
         computedAt: asOf.toISOString(),
       },
     });
@@ -344,21 +350,14 @@ describe("getAthletePerformanceModelAsOf", () => {
     const laterModel = await getAthletePerformanceModelAsOf({ athleteId, asOf: laterAsOf }, store);
     const first = projectAthletePerformanceTargetFacts(firstModel);
     const later = projectAthletePerformanceTargetFacts(laterModel);
-    const sourceIds = new Set(first.cycling.planningThresholdPower.sourceEvidenceIds);
-    const reads = await store.readAthletePerformanceEvidenceSnapshot({ athleteId, asOf });
-    const supportingTimes = reads.effortReads.bike.rows
-      .filter((row) => sourceIds.has(row.id))
-      .map((row) => row.recorded_at.toISOString())
-      .sort();
-
     expect(first.cycling.planningThresholdPower.evidenceTime).toEqual({
-      observedFrom: supportingTimes[0],
-      observedThrough: supportingTimes.at(-1),
+      observedFrom: "2026-07-20T00:20:00.000Z",
+      observedThrough: "2026-07-20T00:20:00.000Z",
       computedAt: asOf.toISOString(),
     });
     expect(later.cycling.planningThresholdPower.evidenceTime).toEqual({
-      observedFrom: supportingTimes[0],
-      observedThrough: supportingTimes.at(-1),
+      observedFrom: "2026-07-20T00:20:00.000Z",
+      observedThrough: "2026-07-20T00:20:00.000Z",
       computedAt: laterAsOf.toISOString(),
     });
   });

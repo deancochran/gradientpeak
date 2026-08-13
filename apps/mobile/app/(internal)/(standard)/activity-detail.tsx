@@ -10,14 +10,15 @@ import { Icon } from "@repo/ui/components/icon";
 import { Skeleton } from "@repo/ui/components/skeleton";
 import { Text } from "@repo/ui/components/text";
 import { getNormalizedPowerPresentation } from "@repo/ui/lib/normalized-power-presentation";
-import { skipToken } from "@tanstack/react-query";
+import { skipToken, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Activity, Heart, Lock, Waves } from "lucide-react-native";
+import { Activity, Lock, MessageCircle, Share2, Waves } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   InteractionManager,
+  Pressable,
   ScrollView,
   Share,
   View,
@@ -33,8 +34,12 @@ import {
 } from "@/components/activity/useActivityDetailStreams";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ActivityCard } from "@/components/shared/ActivityCard";
+import { APP_BOTTOM_SHEET_PRESENTATIONS, AppBottomSheet } from "@/components/shared/AppBottomSheet";
 import { DetailDeleteConfirmModal, DetailOverflowMenu } from "@/components/shared/detail";
-import { ResourceCardActionButton } from "@/components/shared/ResourceCardPrimitives";
+import {
+  ResourceCardActionButton,
+  ResourceLikeButton,
+} from "@/components/shared/ResourceCardPrimitives";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import { getCommonLoadPresentation } from "@/lib/activity-load-presentation";
 import {
@@ -47,7 +52,6 @@ import {
   formatPaceSecondsPerKilometer,
   formatSpeedMetersPerSecond,
 } from "@/lib/display/formatters";
-import { useAuth } from "@/lib/hooks/useAuth";
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
@@ -75,16 +79,8 @@ const VISIBILITY_LABELS: Record<ContentVisibility, string> = {
   public: "Public",
 };
 
-function resolveContentVisibility(activity: { content_visibility: string }) {
-  if (
-    activity.content_visibility === "private" ||
-    activity.content_visibility === "followers" ||
-    activity.content_visibility === "public"
-  ) {
-    return activity.content_visibility;
-  }
-  return "private";
-}
+const ACTIVITY_DETAIL_TABS = ["overview", "breakdown", "analysis"] as const;
+type ActivityDetailTab = (typeof ACTIVITY_DETAIL_TABS)[number];
 
 function getPublicShareUrl(path: string) {
   const origin = (process.env.EXPO_PUBLIC_API_URL ?? "https://gradientpeak.app").replace(/\/$/, "");
@@ -349,6 +345,7 @@ function ActivityDetailScreen() {
   const preferredUnitSystem = usePreferredUnitSystem();
   const { Stack } = require("expo-router") as typeof import("expo-router");
   const queryClient = api.useUtils();
+  const tanstackQueryClient = useQueryClient();
 
   // Fetch activity data
   const { data: activityData, isLoading: isLoadingActivity } = api.activities.getById.useQuery(
@@ -359,42 +356,36 @@ function ActivityDetailScreen() {
     enabled: !!id,
   });
 
-  const activity = activityData?.activity;
-  const linkedActivityPlanId = activity?.activity_plans?.id;
+  const detail = activityData?.detail;
+  const activity = detail?.summary;
+  const linkedActivityPlanId = detail?.linkedPlan?.id;
   const { data: linkedActivityPlan } = api.activityPlans.getById.useQuery(
     linkedActivityPlanId ? { id: linkedActivityPlanId } : skipToken,
     { enabled: !!linkedActivityPlanId },
   );
-  const primaryActivitySegment = activity?.segments?.find((segment) => segment.role === "activity");
-  const activityCategory = primaryActivitySegment?.activity_category ?? null;
+  const primaryActivitySegment = detail?.segments.find((segment) => segment.role === "activity");
+  const activityCategory = primaryActivitySegment?.activityCategory ?? null;
   const normalizedPowerPresentation = getNormalizedPowerPresentation(
     primaryActivitySegment?.status === "available"
       ? primaryActivitySegment.summary.normalizedPowerResult
       : undefined,
   );
-  const derived = activityData?.derived;
+  const derived = activityData?.analysis.derived;
   const commonLoadPresentation = getCommonLoadPresentation(derived?.stress.common_load, {
     hasHeartRateSummary:
-      typeof activity?.avg_heart_rate === "number" && activity.avg_heart_rate > 0,
-    segmentCommonLoads: activityData?.segment_loads?.map((segment) => segment.common_load),
+      typeof detail?.performance.averageHeartRate === "number" &&
+      detail.performance.averageHeartRate > 0,
+    segmentCommonLoads: activityData?.analysis.segmentLoads.map((segment) => segment.common_load),
   });
   const loadUnavailableText = commonLoadPresentation?.diagnostic
     ? null
     : "Compatible activity data is unavailable.";
 
-  // Get current user to check ownership
-  const { user } = useAuth();
-  const isOwner = user?.id === activity?.profile_id;
-
-  // Fetch profile for header
-  const { data: profile } = api.profiles.getPublicById.useQuery(
-    activity?.profile_id ? { id: activity.profile_id } : skipToken,
-    { enabled: !!activity?.profile_id },
-  );
+  const isOwner = activity?.capabilities.canEdit ?? false;
 
   // Fetch streams if an activity file exists
   const activityId = activity?.id;
-  const currentArtifact = activity?.current_artifact;
+  const currentArtifact = detail?.currentArtifact;
   const activityFilePath = currentArtifact?.availability === "accepted" ? currentArtifact.id : null;
   const [shouldLoadDetailedStreams, setShouldLoadDetailedStreams] = useState(false);
   const canLoadDetailedStreams = !!activityFilePath && !!activityId && isOwner;
@@ -420,8 +411,8 @@ function ActivityDetailScreen() {
     canLoadDetailedStreams
       ? {
           activityId: activityId,
-          scope: activity?.segments?.[0]?.id
-            ? { type: "segment" as const, segmentId: activity.segments[0].id }
+          scope: primaryActivitySegment?.id
+            ? { type: "segment" as const, segmentId: primaryActivitySegment.id }
             : { type: "session" as const, sessionMessageIndex: 0 },
         }
       : skipToken,
@@ -438,6 +429,7 @@ function ActivityDetailScreen() {
       queryClient.activities.invalidate();
       queryClient.home.getDashboard.invalidate();
       queryClient.athleteIntelligence.getReadModel.invalidate();
+      void invalidatePostActivityIngestionQueries(tanstackQueryClient);
       router.back();
     },
     onError: (error) => {
@@ -459,8 +451,8 @@ function ActivityDetailScreen() {
   const activityLike = useResourceLike({
     entityId: activity?.id ?? "",
     entityType: "activity",
-    initialCount: activity?.likes_count,
-    initialLiked: activityData?.has_liked,
+    initialCount: activity?.engagement.likes,
+    initialLiked: activity?.engagement.viewerHasLiked,
   });
 
   const handleLikeToggle = () => {
@@ -469,6 +461,8 @@ function ActivityDetailScreen() {
   };
 
   const comments = useEntityCommentsController({ entityId: activity?.id, entityType: "activity" });
+  const [activeTab, setActiveTab] = useState<ActivityDetailTab>("overview");
+  const [showComments, setShowComments] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const handleDelete = () => {
@@ -476,7 +470,7 @@ function ActivityDetailScreen() {
     setShowDeleteConfirm(true);
   };
 
-  const contentVisibility = activity ? resolveContentVisibility(activity) : "private";
+  const contentVisibility = activity?.visibility ?? "private";
 
   const handleChangeVisibility = () => {
     if (!activity || !isOwner) return;
@@ -521,7 +515,9 @@ function ActivityDetailScreen() {
 
   const { chartStreams, distanceStream, elevationStream, routeCoordinates } =
     useActivityDetailStreams({
-      activity,
+      activity: activity
+        ? { id: activity.id, polyline: detail?.routePolyline ?? null, type: activityCategory }
+        : null,
       streamsData,
     });
   const isPreparingDetailedContent = canLoadDetailedStreams && !shouldLoadDetailedStreams;
@@ -536,9 +532,11 @@ function ActivityDetailScreen() {
     : null;
 
   // Get laps
-  const laps = parseActivityLapRecords(streamsData?.laps ?? activity?.laps);
+  const laps = parseActivityLapRecords(streamsData?.laps ?? detail?.laps);
   const ingestionMessage = getIngestionMessage(
-    (activity as { ingestion?: unknown } | undefined)?.ingestion,
+    detail?.ingestion
+      ? { status: detail.ingestion.status, last_error_message: detail.ingestion.lastErrorMessage }
+      : null,
   );
 
   // Loading skeleton
@@ -558,33 +556,28 @@ function ActivityDetailScreen() {
   }
 
   const renderHeaderActions = () => {
-    if (!isOwner) {
-      return null;
-    }
-
     return (
-      <DetailOverflowMenu
-        actions={[
-          {
-            disabled: updatePrivacyMutation.isPending,
-            label: "Change visibility",
-            onPress: handleChangeVisibility,
-            testID: "activity-detail-options-visibility",
-          },
-          {
-            label: "Share",
-            onPress: handleShare,
-            testID: "activity-detail-options-share",
-          },
-          {
-            label: deleteMutation.isPending ? "Deleting..." : "Delete Activity",
-            onPress: handleDelete,
-            testID: "activity-detail-options-delete",
-            variant: "destructive",
-          },
-        ]}
-        testID="activity-detail-options-trigger"
-      />
+      <View className="flex-row items-center">
+        {isOwner ? (
+          <DetailOverflowMenu
+            actions={[
+              {
+                disabled: updatePrivacyMutation.isPending,
+                label: "Change visibility",
+                onPress: handleChangeVisibility,
+                testID: "activity-detail-options-visibility",
+              },
+              {
+                label: deleteMutation.isPending ? "Deleting..." : "Delete Activity",
+                onPress: handleDelete,
+                testID: "activity-detail-options-delete",
+                variant: "destructive",
+              },
+            ]}
+            testID="activity-detail-options-trigger"
+          />
+        ) : null}
+      </View>
     );
   };
 
@@ -593,150 +586,191 @@ function ActivityDetailScreen() {
       <Stack.Screen options={{ headerRight: renderHeaderActions }} />
       <ScrollView className="flex-1 bg-background">
         <View className="p-4 gap-4">
-          <ActivityCard
-            activity={{
-              ...activity,
-              ingestion:
-                activity.ingestion === null || activity.ingestion === undefined
-                  ? null
-                  : {
-                      status: activity.ingestion.status,
-                      last_error_message: activity.ingestion.last_error_message ?? null,
-                    },
-              ...(derived === undefined ? {} : { derived }),
-              segment_loads: activityData.segment_loads,
-            }}
-            headerAccessory={
-              <ResourceCardActionButton
-                accessibilityLabel={activityLike.isLiked ? "Unlike activity" : "Like activity"}
-                contentClassName="flex-row items-center gap-1.5 rounded-full border border-border bg-background px-3 py-2"
-                disabled={activityLike.isPending}
-                onPress={handleLikeToggle}
-                testID="activity-detail-like-button"
-              >
-                <Heart
-                  size={16}
-                  className={
-                    activityLike.isLiked ? "fill-red-500 text-red-500" : "text-muted-foreground"
-                  }
-                  color={activityLike.isLiked ? "#ef4444" : undefined}
-                />
-                <Text
-                  className={
-                    activityLike.isLiked
-                      ? "text-red-500 text-sm font-medium"
-                      : "text-muted-foreground text-sm"
-                  }
+          <View className="gap-2" testID="activity-detail-header">
+            <ActivityCard
+              activity={activity}
+              commentCount={comments.commentCount}
+              belowMetricsActions={
+                <View
+                  className="flex-row items-center gap-2"
+                  testID="activity-detail-social-actions"
                 >
-                  {activityLike.likeCount > 0
-                    ? activityLike.likeCount
-                    : activityLike.isLiked
-                      ? "Liked"
-                      : "Like"}
-                </Text>
-              </ResourceCardActionButton>
-            }
-            owner={{
-              id: activity.profile_id,
-              username: profile?.username || "Unknown User",
-              avatar_url: profile?.avatar_url,
-            }}
-            showVisualPreview={false}
-            variant="detail"
-          />
+                  <ResourceLikeButton
+                    disabled={activityLike.isPending}
+                    isLiked={activityLike.isLiked}
+                    likeCount={activityLike.likeCount}
+                    onPress={handleLikeToggle}
+                    testID={`activity-card-like-button-${activity.id}`}
+                  />
+                  <ResourceCardActionButton
+                    accessibilityLabel={`Comment, ${comments.commentCount} comments`}
+                    onPress={() => setShowComments(true)}
+                    testID="activity-detail-comment-button"
+                  >
+                    <View className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5">
+                      <Icon as={MessageCircle} size={14} className="text-muted-foreground" />
+                      <Text className="ml-1 text-xs font-medium text-muted-foreground">
+                        {comments.commentCount > 0
+                          ? `Comments ${comments.commentCount}`
+                          : "Comments"}
+                      </Text>
+                    </View>
+                  </ResourceCardActionButton>
+                </View>
+              }
+              showLike={false}
+              testID="activity-detail-summary"
+              topRightAction={
+                <ResourceCardActionButton
+                  accessibilityLabel="Share activity"
+                  onPress={handleShare}
+                  testID="activity-detail-share-button"
+                >
+                  <View className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5">
+                    <Icon as={Share2} size={14} className="text-muted-foreground" />
+                    <Text className="ml-1 text-xs font-medium text-muted-foreground">Share</Text>
+                  </View>
+                </ResourceCardActionButton>
+              }
+            />
+          </View>
 
-          {isOwner ? (
-            <SessionRpeCard
-              activityId={activity.id}
-              effectiveSessionRpe={activity.effective_session_rpe}
+          <View
+            accessibilityLabel="Activity detail sections"
+            accessibilityRole="tablist"
+            className="flex-row rounded-2xl border border-border bg-muted/40 p-1"
+          >
+            {ACTIVITY_DETAIL_TABS.map((tab) => {
+              const selected = activeTab === tab;
+              const label = tab[0]?.toUpperCase() + tab.slice(1);
+
+              return (
+                <Pressable
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected }}
+                  className={
+                    selected
+                      ? "flex-1 rounded-xl bg-background px-3 py-2 shadow-sm"
+                      : "flex-1 rounded-xl px-3 py-2"
+                  }
+                  key={tab}
+                  onPress={() => setActiveTab(tab)}
+                  testID={`activity-detail-tab-${tab}`}
+                >
+                  <Text
+                    className={
+                      selected
+                        ? "text-center text-sm font-semibold text-foreground"
+                        : "text-center text-sm font-semibold text-muted-foreground"
+                    }
+                  >
+                    {label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {activeTab === "overview" ? (
+            isOwner ? (
+              <SessionRpeCard
+                activityId={activity.id}
+                effectiveSessionRpe={detail?.effectiveSessionRpe ?? null}
+              />
+            ) : null
+          ) : null}
+
+          {activeTab === "overview" ? (
+            routeCoordinates.length > 0 ? (
+              <ActivityRouteMap coordinates={routeCoordinates} height={260} title="Route" />
+            ) : isDetailedContentLoading ? (
+              <VisualStateCard title="Route" state="loading" message="Loading route data..." />
+            ) : shouldShowPrivateStreamMessage ? (
+              <VisualStateCard
+                title="Route"
+                state="private"
+                message={detailedContentPrivateMessage}
+              />
+            ) : (
+              <VisualStateCard
+                title="Route"
+                message="No route data is available for this activity."
+              />
+            )
+          ) : null}
+
+          {/* Laps */}
+          {activeTab === "breakdown" ? (
+            isDetailedContentLoading ? (
+              <VisualStateCard title="Laps" state="loading" message="Loading lap data..." />
+            ) : shouldShowPrivateStreamMessage ? (
+              <VisualStateCard
+                title="Laps"
+                state="private"
+                message={detailedContentPrivateMessage}
+              />
+            ) : laps.length > 0 ? (
+              <LapVisualizationCard
+                activityCategory={activityCategory ?? "other"}
+                laps={laps}
+                preferredUnitSystem={preferredUnitSystem}
+              />
+            ) : (
+              <VisualStateCard title="Laps" message="No lap data is available for this activity." />
+            )
+          ) : null}
+
+          {activeTab === "analysis" ? (
+            elevationStream ? (
+              <ElevationProfileChart
+                elevationStream={elevationStream}
+                distanceStream={distanceStream || undefined}
+                preferredUnitSystem={preferredUnitSystem}
+                title="Elevation Profile"
+                height={200}
+              />
+            ) : isDetailedContentLoading ? (
+              <VisualStateCard
+                title="Elevation Profile"
+                state="loading"
+                message="Loading elevation data..."
+              />
+            ) : shouldShowPrivateStreamMessage ? (
+              <VisualStateCard
+                title="Elevation Profile"
+                state="private"
+                message={detailedContentPrivateMessage}
+              />
+            ) : (
+              <VisualStateCard
+                title="Elevation Profile"
+                message="No elevation data is available for this activity."
+              />
+            )
+          ) : null}
+
+          {activeTab === "overview" && detail?.linkedPlan && linkedActivityPlan?.detail ? (
+            <ActivityPlanComparison
+              activityPlan={{
+                id: linkedActivityPlan.detail.id,
+                name: linkedActivityPlan.detail.name,
+                structure: linkedActivityPlan.detail.structure,
+                metrics: linkedActivityPlan.detail.metrics,
+              }}
+              actualMetrics={{
+                duration: detail.performance.activeSeconds ?? detail.performance.elapsedSeconds,
+                ...(derived?.stress.common_load === undefined
+                  ? {}
+                  : { observationQuantification: derived.observationQuantification }),
+              }}
+              onPress={() => {
+                router.navigate(ROUTES.PLAN.PLAN_DETAIL(detail.linkedPlan?.id ?? ""));
+              }}
             />
           ) : null}
 
-          {routeCoordinates.length > 0 ? (
-            <ActivityRouteMap coordinates={routeCoordinates} height={260} title="Route" />
-          ) : isDetailedContentLoading ? (
-            <VisualStateCard title="Route" state="loading" message="Loading route data..." />
-          ) : shouldShowPrivateStreamMessage ? (
-            <VisualStateCard
-              title="Route"
-              state="private"
-              message={detailedContentPrivateMessage}
-            />
-          ) : (
-            <VisualStateCard
-              title="Route"
-              message="No route data is available for this activity."
-            />
-          )}
-
-          {/* Laps */}
-          {isDetailedContentLoading ? (
-            <VisualStateCard title="Laps" state="loading" message="Loading lap data..." />
-          ) : shouldShowPrivateStreamMessage ? (
-            <VisualStateCard title="Laps" state="private" message={detailedContentPrivateMessage} />
-          ) : laps.length > 0 ? (
-            <LapVisualizationCard
-              activityCategory={activityCategory ?? "other"}
-              laps={laps}
-              preferredUnitSystem={preferredUnitSystem}
-            />
-          ) : (
-            <VisualStateCard title="Laps" message="No lap data is available for this activity." />
-          )}
-
-          {elevationStream ? (
-            <ElevationProfileChart
-              elevationStream={elevationStream}
-              distanceStream={distanceStream || undefined}
-              preferredUnitSystem={preferredUnitSystem}
-              title="Elevation Profile"
-              height={200}
-            />
-          ) : isDetailedContentLoading ? (
-            <VisualStateCard
-              title="Elevation Profile"
-              state="loading"
-              message="Loading elevation data..."
-            />
-          ) : shouldShowPrivateStreamMessage ? (
-            <VisualStateCard
-              title="Elevation Profile"
-              state="private"
-              message={detailedContentPrivateMessage}
-            />
-          ) : (
-            <VisualStateCard
-              title="Elevation Profile"
-              message="No elevation data is available for this activity."
-            />
-          )}
-
-          {activity.activity_plan_id && activity.activity_plans && (
-            <ActivityPlanComparison
-              activityPlan={{
-                ...activity.activity_plans,
-                ...(linkedActivityPlan?.prescriptionQuantification === undefined
-                  ? {}
-                  : {
-                      common_load: linkedActivityPlan.prescriptionQuantification.summary.commonLoad,
-                    }),
-              }}
-              actualMetrics={{
-                duration: (activity.active_ms ?? activity.elapsed_ms) / 1000,
-                ...(derived?.stress.common_load === undefined
-                  ? {}
-                  : { common_load: derived.stress.common_load }),
-              }}
-              onPress={() => {
-                if (activity.activity_plan_id) {
-                  router.navigate(ROUTES.PLAN.PLAN_DETAIL(activity.activity_plan_id));
-                }
-              }}
-            />
-          )}
-
           {/* Swim Metrics */}
-          {activityCategory === "swim" && (
+          {activeTab === "breakdown" && activityCategory === "swim" ? (
             <Card>
               <CardHeader>
                 <CardTitle className="flex-row items-center gap-2">
@@ -748,12 +782,12 @@ function ActivityDetailScreen() {
                 <View className="flex-row justify-between">
                   <View className="items-center">
                     <Text className="text-2xl font-bold">
-                      {typeof activity.pool_length_meters === "number"
+                      {typeof detail?.performance.poolLengthMeters === "number"
                         ? formatDisplayUnitValue(
                             toDisplayUnitValue(
                               {
                                 dimension: "pool_length",
-                                value: activity.pool_length_meters,
+                                value: detail.performance.poolLengthMeters,
                                 unit: "meters",
                               },
                               preferredUnitSystem,
@@ -764,20 +798,24 @@ function ActivityDetailScreen() {
                     <Text className="text-xs text-muted-foreground uppercase">Pool</Text>
                   </View>
                   <View className="items-center">
-                    <Text className="text-2xl font-bold">{activity.total_strokes ?? "--"}</Text>
+                    <Text className="text-2xl font-bold">
+                      {detail?.performance.totalStrokes ?? "--"}
+                    </Text>
                     <Text className="text-xs text-muted-foreground uppercase">Strokes</Text>
                   </View>
                   <View className="items-center">
-                    <Text className="text-2xl font-bold">{activity.avg_swolf ?? "--"}</Text>
+                    <Text className="text-2xl font-bold">
+                      {detail?.performance.averageSwolf ?? "--"}
+                    </Text>
                     <Text className="text-xs text-muted-foreground uppercase">Swolf</Text>
                   </View>
                 </View>
               </CardContent>
             </Card>
-          )}
+          ) : null}
 
           {/* Canonical Common Load and its normalized intensity are the summary authority. */}
-          {(commonLoadPresentation || derived?.stress.common_load) && (
+          {activeTab === "breakdown" && (commonLoadPresentation || derived?.stress.common_load) ? (
             <Card>
               <CardHeader>
                 <CardTitle>Load & Intensity</CardTitle>
@@ -809,267 +847,284 @@ function ActivityDetailScreen() {
                 )}
               </CardContent>
             </Card>
-          )}
+          ) : null}
 
-          <Card testID="activity-derived-efforts">
-            <CardHeader>
-              <CardTitle>Derived Efforts</CardTitle>
-            </CardHeader>
-            <CardContent className="gap-3">
-              {effortsQuery.isLoading ? (
-                <ActivityIndicator size="small" className="text-primary" />
-              ) : effortsQuery.isError ? (
-                <Text className="text-sm text-destructive">
-                  Derived efforts could not be loaded.
-                </Text>
-              ) : effortsQuery.data?.length ? (
-                effortsQuery.data.map((effort) => (
-                  <View
-                    className="flex-row items-center justify-between gap-3 border-b border-border py-2 last:border-b-0"
-                    key={effort.id}
-                  >
-                    <View className="flex-1">
-                      <Text className="font-medium capitalize">
-                        {effort.activity_category} {effort.effort_type.replaceAll("_", " ")}
-                      </Text>
-                      <Text className="text-xs text-muted-foreground">
-                        {formatDuration(effort.duration_seconds)}
-                        {effort.distance_meters ? ` · ${effort.distance_meters} m` : ""}
+          {activeTab === "breakdown" ? (
+            <Card testID="activity-derived-efforts">
+              <CardHeader>
+                <CardTitle>Derived Efforts</CardTitle>
+              </CardHeader>
+              <CardContent className="gap-3">
+                {effortsQuery.isLoading ? (
+                  <ActivityIndicator size="small" className="text-primary" />
+                ) : effortsQuery.isError ? (
+                  <Text className="text-sm text-destructive">
+                    Derived efforts could not be loaded.
+                  </Text>
+                ) : effortsQuery.data?.length ? (
+                  effortsQuery.data.map((effort) => (
+                    <View
+                      className="flex-row items-center justify-between gap-3 border-b border-border py-2 last:border-b-0"
+                      key={effort.id}
+                    >
+                      <View className="flex-1">
+                        <Text className="font-medium capitalize">
+                          {effort.activity_category} {effort.effort_type.replaceAll("_", " ")}
+                        </Text>
+                        <Text className="text-xs text-muted-foreground">
+                          {formatDuration(effort.duration_seconds)}
+                          {effort.distance_meters ? ` · ${effort.distance_meters} m` : ""}
+                        </Text>
+                      </View>
+                      <Text className="font-semibold">
+                        {formatEffortValue(effort.value, effort.unit)}
                       </Text>
                     </View>
-                    <Text className="font-semibold">
-                      {formatEffortValue(effort.value, effort.unit)}
-                    </Text>
-                  </View>
-                ))
-              ) : (
-                <Text className="text-sm text-muted-foreground">
-                  No derived efforts are available for this activity.
-                </Text>
-              )}
-            </CardContent>
-          </Card>
-
-          {activityCategory === "bike" && primaryActivitySegment?.status === "processing" ? (
-            <VisualStateCard
-              title="Normalized Power"
-              state="loading"
-              message="Segment analysis is still processing. Normalized Power will appear when analysis completes."
-              testID="activity-segment-analysis-processing"
-            />
-          ) : activityCategory === "bike" && primaryActivitySegment?.status === "failed" ? (
-            <VisualStateCard
-              title="Normalized Power"
-              state="error"
-              message={`Segment analysis failed: ${primaryActivitySegment.reason}`}
-              testID="activity-segment-analysis-failed"
-            />
-          ) : activityCategory === "bike" && normalizedPowerPresentation ? (
-            <Card testID="activity-normalized-power-card">
-              <CardHeader>
-                <CardTitle>{normalizedPowerPresentation.label}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Text className="text-3xl font-bold">
-                  {normalizedPowerPresentation.valueWatts === null
-                    ? "Unavailable"
-                    : `${Math.round(normalizedPowerPresentation.valueWatts)} W`}
-                </Text>
-                <Text className="mt-2 text-xs text-muted-foreground">
-                  {normalizedPowerPresentation.evidence}
-                </Text>
+                  ))
+                ) : (
+                  <Text className="text-sm text-muted-foreground">
+                    No derived efforts are available for this activity.
+                  </Text>
+                )}
               </CardContent>
             </Card>
           ) : null}
 
-          {/* Zones */}
-          {ingestionMessage ? (
-            <VisualStateCard
-              title="Stream Analysis"
-              state={ingestionMessage.state}
-              message={
-                ingestionMessage.state === "error"
-                  ? ingestionMessage.message
-                  : getStreamArtifactMessage("processing")
-              }
-            />
-          ) : isDetailedContentLoading ? (
-            <VisualStateCard
-              title="Stream Analysis"
-              state="loading"
-              message={getStreamArtifactMessage("loading")}
-            />
-          ) : streamsError ? (
-            <VisualStateCard
-              title="Stream Analysis"
-              state="error"
-              message={getStreamArtifactMessage("error", streamsError.message)}
-            />
-          ) : shouldShowPrivateStreamMessage ? (
-            <VisualStateCard
-              title="Stream Analysis"
-              state="private"
-              message={getStreamArtifactMessage("private")}
-            />
-          ) : !activityFilePath ? (
-            <VisualStateCard
-              title="Stream Analysis"
-              message={getStreamArtifactMessage("missing")}
-            />
-          ) : streamPresentation ? (
-            <>
-              <Card testID="activity-stream-hr-load-card">
+          {activeTab === "breakdown" ? (
+            activityCategory === "bike" && primaryActivitySegment?.status === "processing" ? (
+              <VisualStateCard
+                title="Normalized Power"
+                state="loading"
+                message="Segment analysis is still processing. Normalized Power will appear when analysis completes."
+                testID="activity-segment-analysis-processing"
+              />
+            ) : activityCategory === "bike" && primaryActivitySegment?.status === "failed" ? (
+              <VisualStateCard
+                title="Normalized Power"
+                state="error"
+                message={`Segment analysis failed: ${primaryActivitySegment.reason}`}
+                testID="activity-segment-analysis-failed"
+              />
+            ) : activityCategory === "bike" && normalizedPowerPresentation ? (
+              <Card testID="activity-normalized-power-card">
                 <CardHeader>
-                  <CardTitle>Stream HR Load</CardTitle>
+                  <CardTitle>{normalizedPowerPresentation.label}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <Text className="text-3xl font-bold">
-                    {streamPresentation.heartRateLoad.value}
+                    {normalizedPowerPresentation.valueWatts === null
+                      ? "Unavailable"
+                      : `${Math.round(normalizedPowerPresentation.valueWatts)} W`}
                   </Text>
                   <Text className="mt-2 text-xs text-muted-foreground">
-                    {streamPresentation.heartRateLoad.copy} This diagnostic does not replace summary
-                    training load.
+                    {normalizedPowerPresentation.evidence}
                   </Text>
                 </CardContent>
               </Card>
-              {streamPresentation.distributions.map((distribution) =>
-                distribution.zones.length > 0 ? (
-                  <View className="gap-2" key={distribution.key}>
-                    <ZoneDistributionCard
-                      title={distribution.title}
-                      zones={distribution.zones}
-                      colors={
-                        distribution.key === "power"
-                          ? [
-                              "bg-gray-400",
-                              "bg-blue-400",
-                              "bg-green-400",
-                              "bg-yellow-400",
-                              "bg-orange-400",
-                              "bg-red-400",
-                              "bg-purple-400",
-                            ]
-                          : [
-                              "bg-blue-400",
-                              "bg-green-400",
-                              "bg-yellow-400",
-                              "bg-orange-400",
-                              "bg-red-400",
-                            ]
-                      }
-                      showToggle={true}
-                    />
-                    <Text className="px-1 text-xs text-muted-foreground">
-                      {distribution.qualityCopy}
+            ) : null
+          ) : null}
+
+          {/* Zones */}
+          {activeTab === "analysis" ? (
+            ingestionMessage ? (
+              <VisualStateCard
+                title="Stream Analysis"
+                state={ingestionMessage.state}
+                message={
+                  ingestionMessage.state === "error"
+                    ? ingestionMessage.message
+                    : getStreamArtifactMessage("processing")
+                }
+              />
+            ) : isDetailedContentLoading ? (
+              <VisualStateCard
+                title="Stream Analysis"
+                state="loading"
+                message={getStreamArtifactMessage("loading")}
+              />
+            ) : streamsError ? (
+              <VisualStateCard
+                title="Stream Analysis"
+                state="error"
+                message={getStreamArtifactMessage("error", streamsError.message)}
+              />
+            ) : shouldShowPrivateStreamMessage ? (
+              <VisualStateCard
+                title="Stream Analysis"
+                state="private"
+                message={getStreamArtifactMessage("private")}
+              />
+            ) : !activityFilePath ? (
+              <VisualStateCard
+                title="Stream Analysis"
+                message={getStreamArtifactMessage("missing")}
+              />
+            ) : streamPresentation ? (
+              <>
+                <Card testID="activity-stream-hr-load-card">
+                  <CardHeader>
+                    <CardTitle>Stream HR Load</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Text className="text-3xl font-bold">
+                      {streamPresentation.heartRateLoad.value}
                     </Text>
-                  </View>
-                ) : (
-                  <VisualStateCard
-                    key={distribution.key}
-                    title={distribution.title}
-                    message={distribution.qualityCopy}
-                  />
-                ),
-              )}
-            </>
-          ) : (
-            <VisualStateCard
-              title="Stream Analysis"
-              state="error"
-              message={getStreamArtifactMessage("error")}
-            />
-          )}
+                    <Text className="mt-2 text-xs text-muted-foreground">
+                      {streamPresentation.heartRateLoad.copy} This diagnostic does not replace
+                      summary training load.
+                    </Text>
+                  </CardContent>
+                </Card>
+                {streamPresentation.distributions.map((distribution) =>
+                  distribution.zones.length > 0 ? (
+                    <View className="gap-2" key={distribution.key}>
+                      <ZoneDistributionCard
+                        title={distribution.title}
+                        zones={distribution.zones}
+                        colors={
+                          distribution.key === "power"
+                            ? [
+                                "bg-gray-400",
+                                "bg-blue-400",
+                                "bg-green-400",
+                                "bg-yellow-400",
+                                "bg-orange-400",
+                                "bg-red-400",
+                                "bg-purple-400",
+                              ]
+                            : [
+                                "bg-blue-400",
+                                "bg-green-400",
+                                "bg-yellow-400",
+                                "bg-orange-400",
+                                "bg-red-400",
+                              ]
+                        }
+                        showToggle={true}
+                      />
+                      <Text className="px-1 text-xs text-muted-foreground">
+                        {distribution.qualityCopy}
+                      </Text>
+                    </View>
+                  ) : (
+                    <VisualStateCard
+                      key={distribution.key}
+                      title={distribution.title}
+                      message={distribution.qualityCopy}
+                    />
+                  ),
+                )}
+              </>
+            ) : (
+              <VisualStateCard
+                title="Stream Analysis"
+                state="error"
+                message={getStreamArtifactMessage("error")}
+              />
+            )
+          ) : null}
 
           {/* Analysis Charts */}
-          {ingestionMessage ? (
-            <VisualStateCard
-              title="Analysis Charts"
-              state={ingestionMessage.state}
-              message={ingestionMessage.message}
-            />
-          ) : isDetailedContentLoading ? (
-            <VisualStateCard
-              title="Analysis Charts"
-              state="loading"
-              message="Loading detailed analysis..."
-            />
-          ) : streamsError ? (
-            <VisualStateCard
-              title="Analysis Charts"
-              state="error"
-              message={`Failed to load analysis: ${streamsError.message}`}
-            />
-          ) : shouldShowPrivateStreamMessage ? (
-            <VisualStateCard
-              title="Analysis Charts"
-              state="private"
-              message={detailedContentPrivateMessage}
-            />
-          ) : chartStreams.length > 0 ? (
-            chartStreams.map((s) => {
-              const stats = getStreamStats(s.stream.values);
-              return (
-                <View key={s.type}>
-                  <StreamChart
-                    title={s.label}
-                    streams={[s]}
-                    xAxisType="time"
-                    height={200}
-                    showLegend={false}
-                  />
-                  <View className="flex-row justify-between px-2 mt-2 mb-4">
-                    <View className="items-center">
-                      <Text className="text-xs text-muted-foreground">Max</Text>
-                      <Text className="font-semibold">
-                        {Math.round(stats.max)} {s.unit}
-                      </Text>
-                    </View>
-                    <View className="items-center">
-                      <Text className="text-xs text-muted-foreground">Avg</Text>
-                      <Text className="font-semibold">
-                        {Math.round(stats.avg)} {s.unit}
-                      </Text>
-                    </View>
-                    <View className="items-center">
-                      <Text className="text-xs text-muted-foreground">Min</Text>
-                      <Text className="font-semibold">
-                        {Math.round(stats.min)} {s.unit}
-                      </Text>
+          {activeTab === "analysis" ? (
+            ingestionMessage ? (
+              <VisualStateCard
+                title="Analysis Charts"
+                state={ingestionMessage.state}
+                message={ingestionMessage.message}
+              />
+            ) : isDetailedContentLoading ? (
+              <VisualStateCard
+                title="Analysis Charts"
+                state="loading"
+                message="Loading detailed analysis..."
+              />
+            ) : streamsError ? (
+              <VisualStateCard
+                title="Analysis Charts"
+                state="error"
+                message={`Failed to load analysis: ${streamsError.message}`}
+              />
+            ) : shouldShowPrivateStreamMessage ? (
+              <VisualStateCard
+                title="Analysis Charts"
+                state="private"
+                message={detailedContentPrivateMessage}
+              />
+            ) : chartStreams.length > 0 ? (
+              chartStreams.map((s) => {
+                const stats = getStreamStats(s.stream.values);
+                return (
+                  <View key={s.type}>
+                    <StreamChart
+                      title={s.label}
+                      streams={[s]}
+                      xAxisType="time"
+                      height={200}
+                      showLegend={false}
+                    />
+                    <View className="flex-row justify-between px-2 mt-2 mb-4">
+                      <View className="items-center">
+                        <Text className="text-xs text-muted-foreground">Max</Text>
+                        <Text className="font-semibold">
+                          {Math.round(stats.max)} {s.unit}
+                        </Text>
+                      </View>
+                      <View className="items-center">
+                        <Text className="text-xs text-muted-foreground">Avg</Text>
+                        <Text className="font-semibold">
+                          {Math.round(stats.avg)} {s.unit}
+                        </Text>
+                      </View>
+                      <View className="items-center">
+                        <Text className="text-xs text-muted-foreground">Min</Text>
+                        <Text className="font-semibold">
+                          {Math.round(stats.min)} {s.unit}
+                        </Text>
+                      </View>
                     </View>
                   </View>
-                </View>
-              );
-            })
-          ) : (
-            <VisualStateCard
-              title="Analysis Charts"
-              message={
-                currentArtifact
-                  ? "No chartable stream data is available for this activity."
-                  : "No activity file is available for detailed analysis."
-              }
-            />
-          )}
-
-          <EntityCommentsSection
-            addCommentPending={comments.addCommentPending}
-            commentCount={comments.commentCount}
-            comments={comments.comments}
-            hasMoreComments={comments.hasMoreComments}
-            isLoadingMoreComments={comments.isLoadingMoreComments}
-            newComment={comments.newComment}
-            onAddComment={comments.handleAddComment}
-            onChangeNewComment={comments.setNewComment}
-            onLoadMoreComments={comments.loadMoreComments}
-            testIDPrefix="activity-detail"
-          />
+                );
+              })
+            ) : (
+              <VisualStateCard
+                title="Analysis Charts"
+                message={
+                  currentArtifact
+                    ? "No chartable stream data is available for this activity."
+                    : "No activity file is available for detailed analysis."
+                }
+              />
+            )
+          ) : null}
         </View>
       </ScrollView>
+      <AppBottomSheet
+        initialSnapIndex={APP_BOTTOM_SHEET_PRESENTATIONS.inspector.initialSnapIndex}
+        onClose={() => setShowComments(false)}
+        showCloseAction
+        snapPoints={APP_BOTTOM_SHEET_PRESENTATIONS.inspector.snapPoints}
+        testID="activity-detail-comments-sheet"
+        title={`Comments (${comments.commentCount})`}
+        visible={showComments}
+      >
+        <EntityCommentsSection
+          addCommentPending={comments.addCommentPending}
+          commentCount={comments.commentCount}
+          comments={comments.comments}
+          hasMoreComments={comments.hasMoreComments}
+          isLoadingMoreComments={comments.isLoadingMoreComments}
+          newComment={comments.newComment}
+          onAddComment={comments.handleAddComment}
+          onChangeNewComment={comments.setNewComment}
+          onLoadMoreComments={comments.loadMoreComments}
+          testIDPrefix="activity-detail"
+        />
+      </AppBottomSheet>
       {showDeleteConfirm ? (
         <DetailDeleteConfirmModal
-          description={`Are you sure you want to delete "${activity.name}"? This action cannot be undone.`}
+          description="Are you sure you want to delete this activity? This action cannot be undone."
           entityLabel="Activity"
-          entityName={activity.name}
+          entityName="Activity"
           onClose={() => setShowDeleteConfirm(false)}
           onConfirm={() => deleteMutation.mutate({ id: activity.id })}
           pending={deleteMutation.isPending}
@@ -1087,3 +1142,5 @@ export default function ActivityDetailScreenWithErrorBoundary() {
     </ErrorBoundary>
   );
 }
+
+import { invalidatePostActivityIngestionQueries } from "@repo/api/client";

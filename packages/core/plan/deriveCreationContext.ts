@@ -1,7 +1,10 @@
 import type { ActivityDerivedZones } from "../activity-analysis/contracts";
 import { calculateRollingTrainingQuality } from "../calculations/training-quality";
 import type { CommonLoadResult } from "../load/common-relative-load";
-import type { AthletePerformanceTargetFacts } from "../performance-model";
+import {
+  type AthletePerformanceTargetFacts,
+  getAvailablePerformanceTargetValue,
+} from "../performance-model";
 import {
   type CreationContextSummary,
   creationContextSummarySchema,
@@ -66,10 +69,8 @@ type PlanningTargetFact =
   | AthletePerformanceTargetFacts["running"]["planningThresholdPace"]
   | AthletePerformanceTargetFacts["swimming"]["css"];
 
-function isAvailablePerformanceTarget(
-  fact: PlanningTargetFact | undefined,
-): fact is PlanningTargetFact & { status: "available"; value: number } {
-  return fact?.status === "available" && fact.value !== null;
+function performanceTargetValue(fact: PlanningTargetFact | undefined): number | null {
+  return fact ? getAvailablePerformanceTargetValue(fact) : null;
 }
 
 function toDate(value: string): Date | null {
@@ -188,7 +189,7 @@ export function deriveCreationContext(input: DeriveCreationContextInput): Creati
       performanceTargets?.cycling.planningThresholdPower,
       performanceTargets?.running.planningThresholdPace,
       performanceTargets?.swimming.css,
-    ].find(isAvailablePerformanceTarget);
+    ].find((fact) => performanceTargetValue(fact) !== null);
   const anyLthr =
     primaryLthr ??
     [
@@ -198,12 +199,12 @@ export function deriveCreationContext(input: DeriveCreationContextInput): Creati
     ].find((fact) => fact?.status === "available");
   const missingOptionalCalibrationFields = [
     input.weight_kg == null ? "weight_kg" : null,
-    !isAvailablePerformanceTarget(anyThreshold) ? "performance_target" : null,
+    performanceTargetValue(anyThreshold) === null ? "performance_target" : null,
     anyLthr?.status !== "available" ? "lthr" : null,
   ].filter((field): field is string => field !== null);
   const presentMetricCount = [
     input.weight_kg == null ? null : input.weight_kg,
-    isAvailablePerformanceTarget(anyThreshold) ? anyThreshold.value : null,
+    performanceTargetValue(anyThreshold),
     anyLthr?.status === "available" ? anyLthr.valueBpm : null,
   ].filter((value) => value !== null && value !== undefined).length;
   const metricCompleteness = clamp(presentMetricCount / 3, 0, 1);

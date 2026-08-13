@@ -120,7 +120,7 @@ export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions 
   const profileSettings = useProfileSettings();
   const profileQuery = api.profiles.get.useQuery(undefined, scheduleAwareReadQueryOptions);
   const planQuery = api.trainingPlans.get.useQuery(
-    options.planId ? { id: options.planId } : undefined,
+    options.planId ? { id: options.planId } : skipToken,
     scheduleAwareReadQueryOptions,
   );
   const plan = isTrainingPlanSnapshotData(planQuery.data)

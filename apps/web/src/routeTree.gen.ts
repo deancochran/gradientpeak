@@ -55,7 +55,6 @@ import { Route as ProtectedRoutesIndexRouteImport } from './routes/_protected/ro
 import { Route as ProtectedRoutesUploadRouteImport } from './routes/_protected/routes/upload'
 import { Route as ProtectedTrainingPlansIndexRouteImport } from './routes/_protected/training-plans/index'
 import { Route as ProtectedTrainingPlansCreateRouteImport } from './routes/_protected/training-plans/create'
-import { Route as ProtectedTrainingPlansReorderRouteImport } from './routes/_protected/training-plans/reorder'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api/trpc/$'
 import { Route as ApiWebhooksWahooRouteImport } from './routes/api/webhooks/wahoo'
@@ -328,12 +327,6 @@ const ProtectedTrainingPlansCreateRoute =
     path: '/training-plans/create',
     getParentRoute: () => ProtectedRoute,
   } as any)
-const ProtectedTrainingPlansReorderRoute =
-  ProtectedTrainingPlansReorderRouteImport.update({
-    id: '/training-plans/reorder',
-    path: '/training-plans/reorder',
-    getParentRoute: () => ProtectedRoute,
-  } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -565,7 +558,6 @@ export interface FileRoutesByFullPath {
   '/record/session': typeof ProtectedRecordSessionRoute
   '/routes/upload': typeof ProtectedRoutesUploadRoute
   '/training-plans/create': typeof ProtectedTrainingPlansCreateRoute
-  '/training-plans/reorder': typeof ProtectedTrainingPlansReorderRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/api/webhooks/wahoo': typeof ApiWebhooksWahooRoute
@@ -641,7 +633,6 @@ export interface FileRoutesByTo {
   '/record/session': typeof ProtectedRecordSessionRoute
   '/routes/upload': typeof ProtectedRoutesUploadRoute
   '/training-plans/create': typeof ProtectedTrainingPlansCreateRoute
-  '/training-plans/reorder': typeof ProtectedTrainingPlansReorderRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/api/webhooks/wahoo': typeof ApiWebhooksWahooRoute
@@ -724,7 +715,6 @@ export interface FileRoutesById {
   '/_protected/record/session': typeof ProtectedRecordSessionRoute
   '/_protected/routes/upload': typeof ProtectedRoutesUploadRoute
   '/_protected/training-plans/create': typeof ProtectedTrainingPlansCreateRoute
-  '/_protected/training-plans/reorder': typeof ProtectedTrainingPlansReorderRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/api/webhooks/wahoo': typeof ApiWebhooksWahooRoute
@@ -806,7 +796,6 @@ export interface FileRouteTypes {
     | '/record/session'
     | '/routes/upload'
     | '/training-plans/create'
-    | '/training-plans/reorder'
     | '/api/auth/$'
     | '/api/trpc/$'
     | '/api/webhooks/wahoo'
@@ -882,7 +871,6 @@ export interface FileRouteTypes {
     | '/record/session'
     | '/routes/upload'
     | '/training-plans/create'
-    | '/training-plans/reorder'
     | '/api/auth/$'
     | '/api/trpc/$'
     | '/api/webhooks/wahoo'
@@ -964,7 +952,6 @@ export interface FileRouteTypes {
     | '/_protected/record/session'
     | '/_protected/routes/upload'
     | '/_protected/training-plans/create'
-    | '/_protected/training-plans/reorder'
     | '/api/auth/$'
     | '/api/trpc/$'
     | '/api/webhooks/wahoo'
@@ -1361,13 +1348,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedTrainingPlansCreateRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/_protected/training-plans/reorder': {
-      id: '/_protected/training-plans/reorder'
-      path: '/training-plans/reorder'
-      fullPath: '/training-plans/reorder'
-      preLoaderRoute: typeof ProtectedTrainingPlansReorderRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -1713,7 +1693,6 @@ interface ProtectedRouteChildren {
   ProtectedGroupsNewRoute: typeof ProtectedGroupsNewRoute
   ProtectedRoutesUploadRoute: typeof ProtectedRoutesUploadRoute
   ProtectedTrainingPlansCreateRoute: typeof ProtectedTrainingPlansCreateRoute
-  ProtectedTrainingPlansReorderRoute: typeof ProtectedTrainingPlansReorderRoute
   ProtectedActivitiesIndexRoute: typeof ProtectedActivitiesIndexRoute
   ProtectedActivityPlansIndexRoute: typeof ProtectedActivityPlansIndexRoute
   ProtectedGroupsIndexRoute: typeof ProtectedGroupsIndexRoute
@@ -1755,7 +1734,6 @@ const ProtectedRouteChildren: ProtectedRouteChildren = {
   ProtectedGroupsNewRoute: ProtectedGroupsNewRoute,
   ProtectedRoutesUploadRoute: ProtectedRoutesUploadRoute,
   ProtectedTrainingPlansCreateRoute: ProtectedTrainingPlansCreateRoute,
-  ProtectedTrainingPlansReorderRoute: ProtectedTrainingPlansReorderRoute,
   ProtectedActivitiesIndexRoute: ProtectedActivitiesIndexRoute,
   ProtectedActivityPlansIndexRoute: ProtectedActivityPlansIndexRoute,
   ProtectedGroupsIndexRoute: ProtectedGroupsIndexRoute,

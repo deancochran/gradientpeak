@@ -14,12 +14,11 @@ import {
 describe("profile metric definitions", () => {
   it("defines every persisted profile metric with display and input bounds", () => {
     expect(profileMetricTypes).toContain("weight_kg");
-    expect(getProfileMetricDefinition("lthr")).toMatchObject({ unit: "bpm", min: 80 });
+    expect(profileMetricTypes).not.toContain("lthr");
   });
 
   it("validates values through the shared registry", () => {
-    expect(isProfileMetricValueWithinRange("lthr", 165)).toBe(true);
-    expect(isProfileMetricValueWithinRange("lthr", 79)).toBe(false);
+    expect(isProfileMetricValueWithinRange("lthr", 165)).toBe(false);
     expect(isProfileMetricValueWithinRange("weight_kg", 70)).toBe(true);
     expect(isProfileMetricValueWithinRange("unknown", 20)).toBe(false);
   });
@@ -35,7 +34,6 @@ describe("profile metric definitions", () => {
   });
 
   it("formats values with canonical units", () => {
-    expect(formatProfileMetricValue({ metric_type: "lthr", value: 165 })).toBe("165 bpm");
     expect(formatProfileMetricValue({ metric_type: "stress_score", value: 7 })).toBe("7");
   });
 
@@ -54,20 +52,12 @@ describe("profile metric definitions", () => {
     ).toBeCloseTo(70, 8);
   });
 
-  it("represents a locked override as manual provenance", () => {
-    expect(
-      profileMetricObservationSchema.parse({
-        metric_type: "lthr",
-        source: "manual",
-        provenance: { manual_override: { locked: true } },
-      }),
-    ).toMatchObject({ source: "manual", provenance: { manual_override: { locked: true } } });
-
+  it("rejects removed threshold observations", () => {
     expect(
       profileMetricObservationSchema.safeParse({
         metric_type: "lthr",
-        source: "provider",
-        provenance: { manual_override: { locked: true } },
+        source: "manual",
+        provenance: {},
       }).success,
     ).toBe(false);
   });

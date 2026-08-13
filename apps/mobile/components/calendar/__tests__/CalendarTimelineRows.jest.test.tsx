@@ -1,4 +1,4 @@
-import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
+import { createCalendarProjectionItem } from "../../../test/calendar-projection-fixture";
 import { createHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
 import { CalendarScheduleObjectCard } from "../CalendarTimelineRows";
@@ -17,18 +17,23 @@ describe("CalendarScheduleObjectCard", () => {
   it("renders expired planned sessions as unverified with accessible completion copy", () => {
     renderNative(
       <CalendarScheduleObjectCard
-        object={{
+        object={createCalendarProjectionItem({
           id: "event-1",
-          type: "event",
+          kind: "planned_activity",
+          title: "Recovery ride",
+          subtitle: "No completion recorded",
+          status: "expired",
+          timing: {
+            startsAt: "2026-03-01T09:00:00.000Z",
+            endsAt: "2026-03-01T10:00:00.000Z",
+            allDay: false,
+            timezone: "UTC",
+          },
           event: {
-            id: "event-1",
-            event_type: "planned",
-            status: "expired",
-            title: "Recovery ride",
-            starts_at: "2026-03-01T09:00:00.000Z",
-            ends_at: "2026-03-01T10:00:00.000Z",
-          } as CalendarEvent,
-        }}
+            type: "planned",
+            trainingPlanId: null,
+          },
+        })}
       />,
     );
 
@@ -40,24 +45,74 @@ describe("CalendarScheduleObjectCard", () => {
   it("renders a cancelled linked session as cancelled rather than completed", () => {
     renderNative(
       <CalendarScheduleObjectCard
-        object={{
+        object={createCalendarProjectionItem({
           id: "event-cancelled",
-          type: "event",
+          kind: "planned_activity",
+          title: "Cancelled ride",
+          status: "cancelled",
+          timing: {
+            startsAt: "2026-03-01T09:00:00.000Z",
+            endsAt: "2026-03-01T10:00:00.000Z",
+            allDay: false,
+            timezone: "UTC",
+          },
           event: {
-            id: "event-cancelled",
-            event_type: "planned",
-            status: "cancelled",
-            linked_activity_id: "activity-cancelled",
-            title: "Cancelled ride",
-            starts_at: "2026-03-01T09:00:00.000Z",
-            ends_at: "2026-03-01T10:00:00.000Z",
-          } as CalendarEvent,
-        }}
+            type: "planned",
+            trainingPlanId: null,
+          },
+        })}
       />,
     );
 
     expect(screen.getByText("Cancelled")).toBeTruthy();
     expect(screen.queryByText("Completed")).toBeNull();
     expect(screen.getByLabelText(/Cancelled, Cancelled ride/)).toBeTruthy();
+  });
+
+  it("uses the recorded completed activity name", () => {
+    renderNative(
+      <CalendarScheduleObjectCard
+        object={createCalendarProjectionItem({
+          id: "activity-1",
+          kind: "completed_activity",
+          title: "Auto-generated morning ride",
+          timing: {
+            startsAt: "2026-03-01T09:00:00.000Z",
+            endsAt: null,
+            allDay: false,
+            timezone: "UTC",
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Auto-generated morning ride")).toBeTruthy();
+    expect(screen.getByLabelText(/^Done, Auto-generated morning ride/)).toBeTruthy();
+  });
+
+  it("renders a cross-date group event in its event timezone", () => {
+    renderNative(
+      <CalendarScheduleObjectCard
+        object={createCalendarProjectionItem({
+          id: "tokyo-event",
+          kind: "group_event",
+          title: "Tokyo start",
+          calendarDate: "2026-05-01",
+          timing: {
+            startsAt: "2026-04-30T15:30:00.000Z",
+            endsAt: null,
+            allDay: false,
+            timezone: "Asia/Tokyo",
+          },
+          groupEvent: {
+            group: { id: "group-1", name: "Tokyo runners" },
+            viewerRsvpStatus: null,
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Tokyo start")).toBeTruthy();
+    expect(screen.getByText("12:30 AM")).toBeTruthy();
   });
 });

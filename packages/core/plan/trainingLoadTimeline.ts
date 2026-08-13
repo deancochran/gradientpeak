@@ -12,7 +12,6 @@ export type TrainingLoadTimelinePoint = {
   /** A finite nonnegative value is known; null means the dimension is unavailable. */
   recommended_common_load: number | null;
   scheduled_common_load: number | null;
-  tentative_scheduled_common_load: number | null;
   completed_common_load: number | null;
   adherence_score?: number | null;
   boundary_state?: "safe" | "caution" | "exceeded";
@@ -29,7 +28,6 @@ export const trainingLoadTimelineInputPointSchema = z
     date: z.string(),
     recommended_common_load: z.number().finite().nonnegative().nullable().optional(),
     scheduled_common_load: z.number().finite().nonnegative().nullable().optional(),
-    tentative_scheduled_common_load: z.number().finite().nonnegative().nullable().optional(),
     completed_common_load: z.number().finite().nonnegative().nullable().optional(),
     adherence_score: z.number().finite().nullable().optional(),
     boundary_state: z.enum(["safe", "caution", "exceeded"]).optional(),
@@ -93,7 +91,6 @@ export function normalizeTrainingLoadTimelinePoint(
   const parsed = trainingLoadTimelineInputPointSchema.parse(point);
   const recommendedLoad = roundLoad(parsed.recommended_common_load);
   const scheduledLoad = roundLoad(parsed.scheduled_common_load);
-  const tentativeScheduledLoad = roundLoad(parsed.tentative_scheduled_common_load);
   const completedLoad = roundLoad(parsed.completed_common_load);
   const source = parsed.source
     ? {
@@ -109,7 +106,6 @@ export function normalizeTrainingLoadTimelinePoint(
     date: parsed.date,
     recommended_common_load: recommendedLoad,
     scheduled_common_load: scheduledLoad,
-    tentative_scheduled_common_load: tentativeScheduledLoad,
     completed_common_load: completedLoad,
     adherence_score: roundLoad(parsed.adherence_score),
     ...(parsed.boundary_state === undefined ? {} : { boundary_state: parsed.boundary_state }),

@@ -1,15 +1,5 @@
-/**
- * Onboarding Router
- *
- * Handles the smart onboarding flow that derives activity_efforts and profile_metrics
- * from minimal user input. Supports experience-based paths:
- * - Beginner: Auto-apply conservative defaults
- * - Intermediate: Validate estimates
- * - Advanced: Manual entry
- * - Skip: Minimal setup
- */
-
-import { completeOnboardingSchema } from "@repo/core/schemas/onboarding";
+import { executableIntegrationProviderIdSchema } from "@repo/core";
+import { completeOnboardingSchema, onboardingStatusSchema } from "@repo/core/schemas/onboarding";
 import { schema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, ne, sql } from "drizzle-orm";
@@ -19,48 +9,120 @@ import {
   completeLifecycleSetup,
   lifecycleSettingsPatchSchema,
 } from "../application/onboarding/complete-lifecycle-setup";
+import { saveOnboardingDraft } from "../application/onboarding/complete-onboarding";
 import { OnboardingProfileNotFoundError } from "../application/onboarding/persist-onboarding-profile";
+import {
+  getOnboardingProgress,
+  onboardingProgressSchema,
+} from "../application/onboarding/progress";
+import {
+  getOnboardingReadiness,
+  reconcileOnboardingStatus,
+} from "../application/onboarding/readiness";
+import {
+  OnboardingRestartConflictError,
+  restartOnboardingProviderSelection,
+} from "../application/onboarding/restart-provider-selection";
+import {
+  OnboardingProviderRecoveryConflictError,
+  retryOnboardingProviderProcessing,
+} from "../application/onboarding/retry-provider-processing";
+import {
+  OnboardingWorkOwnershipConflictError,
+  startOnboardingProcessing,
+} from "../application/onboarding/start-processing";
 import { getRequiredDb } from "../db";
-import { OnboardingProfileNotFoundForLockError } from "../repositories/onboarding-lifecycle-repository";
+import {
+  OnboardingCompletedReplayConflictError,
+  OnboardingGoalContentConflictError,
+  OnboardingPendingOAuthError,
+  OnboardingProfileNotFoundForLockError,
+  OnboardingReadinessBarrierError,
+  OnboardingStatusConflictError,
+} from "../repositories/onboarding-lifecycle-repository";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
-const lifecycleSectionFailureCodeSchema = z.enum(["content_conflict", "temporarily_unavailable"]);
-const lifecycleGoalStatusSchema = z
-  .object({
-    status: z.enum(["saved", "skipped", "failed"]),
-    retryable: z.boolean(),
-    failure_code: lifecycleSectionFailureCodeSchema.optional(),
-  })
-  .strict();
-const lifecycleSettingsStatusSchema = z
-  .object({
-    status: z.enum(["saved", "unchanged", "skipped", "failed"]),
-    retryable: z.boolean(),
-    failure_code: lifecycleSectionFailureCodeSchema.optional(),
-  })
-  .strict();
 const completeLifecycleSetupInputSchema = z
   .object({
     profile: completeOnboardingSchema,
-    goal: profileGoalWriteDataSchema.optional(),
+    goal: profileGoalWriteDataSchema,
     settings_patch: lifecycleSettingsPatchSchema.optional(),
   })
   .strict();
 const completeLifecycleSetupOutputSchema = z
   .object({
     status: z.enum(["completed", "already_completed"]),
-    goal: lifecycleGoalStatusSchema,
-    settings: lifecycleSettingsStatusSchema,
-    retryable: z.boolean(),
-    cache_tags: z.tuple([
-      // biome-ignore lint/security/noSecrets: Public tRPC cache tag, not a credential.
-      z.literal("integrations.getSyncOverview"),
-      z.literal("goals.list"),
-      z.literal("profileSettings.getForProfile"),
-    ]),
+    goal: z.object({ status: z.enum(["saved", "unchanged"]) }).strict(),
+    settings: z.object({ status: z.enum(["saved", "unchanged"]) }).strict(),
+    created: z.object({ profile_metrics: z.number().int().nonnegative() }).strict(),
   })
   .strict();
-
+const saveDraftInputSchema = z.object({ profile: completeOnboardingSchema }).strict();
+const saveDraftOutputSchema = z
+  .object({ status: z.enum(["provider_selection", "processing", "review"]) })
+  .strict();
+const startProcessingOutputSchema = z
+  .object({
+    status: z.enum(["processing", "review"]),
+    providers: z.array(executableIntegrationProviderIdSchema),
+  })
+  .strict();
+const retryProviderProcessingInputSchema = z
+  .object({ provider: executableIntegrationProviderIdSchema })
+  .strict();
+const retryProviderProcessingOutputSchema = z
+  .object({
+    provider: executableIntegrationProviderIdSchema,
+    status: z.literal("processing"),
+    queued: z.boolean(),
+  })
+  .strict();
+const restartProviderSelectionOutputSchema = z
+  .object({ status: z.literal("provider_selection") })
+  .strict();
+const nextActionSchema = z.enum([
+  "connect_provider",
+  "wait",
+  "retry",
+  "restart_selection",
+  "review",
+  "finalize",
+]);
+const readinessOutputSchema = z
+  .object({
+    status: onboardingStatusSchema,
+    ready_to_finalize: z.boolean(),
+    providers: z.array(
+      z
+        .object({
+          provider: executableIntegrationProviderIdSchema,
+          state: z.enum([
+            "connected",
+            "queued",
+            "importing",
+            "deriving",
+            "complete",
+            "complete_no_data",
+            "complete_with_limitations",
+            "recovery_required",
+          ]),
+          executable: z.boolean(),
+          integration_active: z.boolean(),
+          progress: z
+            .object({
+              imported_count: z.number().int().nonnegative(),
+              skipped_count: z.number().int().nonnegative(),
+              failed_count: z.number().int().nonnegative(),
+              profile: z.enum(["queued", "running", "complete", "recovery_required"]),
+            })
+            .strict(),
+          next_actions: z.array(nextActionSchema),
+        })
+        .strict(),
+    ),
+    next_actions: z.array(nextActionSchema),
+  })
+  .strict();
 const checkUsernameAvailabilityInputSchema = z
   .object({ username: completeOnboardingSchema.shape.username })
   .strict();
@@ -69,32 +131,41 @@ const checkUsernameAvailabilityOutputSchema = z.object({ available: z.boolean() 
 function isUsernameConflict(error: unknown): boolean {
   let candidate = error;
   const visited = new Set<unknown>();
-
   while (candidate && typeof candidate === "object" && !visited.has(candidate)) {
     visited.add(candidate);
     const record = candidate as { code?: unknown; constraint?: unknown; cause?: unknown };
-    if (record.code === "23505" && record.constraint === "profiles_username_unique_idx") {
+    if (record.code === "23505" && record.constraint === "profiles_username_unique_idx")
       return true;
-    }
     candidate = record.cause;
   }
-
   return false;
 }
 
-function throwCompletionError(error: unknown): never {
+function throwOnboardingError(error: unknown): never {
   if (
     error instanceof OnboardingProfileNotFoundError ||
     error instanceof OnboardingProfileNotFoundForLockError
   ) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Profile not found" });
   }
+  if (
+    error instanceof OnboardingStatusConflictError ||
+    error instanceof OnboardingCompletedReplayConflictError ||
+    error instanceof OnboardingPendingOAuthError ||
+    error instanceof OnboardingReadinessBarrierError ||
+    error instanceof OnboardingGoalContentConflictError ||
+    error instanceof OnboardingProviderRecoveryConflictError ||
+    error instanceof OnboardingRestartConflictError ||
+    error instanceof OnboardingWorkOwnershipConflictError
+  ) {
+    throw new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
   if (isUsernameConflict(error)) {
     throw new TRPCError({ code: "CONFLICT", message: "That username is already taken" });
   }
   throw new TRPCError({
     code: "INTERNAL_SERVER_ERROR",
-    message: "Failed to complete onboarding",
+    message: "Onboarding operation failed",
     cause: error,
   });
 }
@@ -114,9 +185,103 @@ export const onboardingRouter = createTRPCRouter({
           ),
         )
         .limit(1);
-
       return { available: !conflict };
     }),
+
+  saveDraft: protectedProcedure
+    .input(saveDraftInputSchema)
+    .output(saveDraftOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await saveOnboardingDraft({
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+          data: input.profile,
+        });
+      } catch (error) {
+        throwOnboardingError(error);
+      }
+    }),
+
+  startProcessing: protectedProcedure
+    .output(startProcessingOutputSchema)
+    .mutation(async ({ ctx }) => {
+      try {
+        return await startOnboardingProcessing({
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+        });
+      } catch (error) {
+        throwOnboardingError(error);
+      }
+    }),
+
+  retryProviderProcessing: protectedProcedure
+    .input(retryProviderProcessingInputSchema)
+    .output(retryProviderProcessingOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await retryOnboardingProviderProcessing({
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+          provider: input.provider,
+        });
+      } catch (error) {
+        throwOnboardingError(error);
+      }
+    }),
+
+  restartProviderSelection: protectedProcedure
+    .output(restartProviderSelectionOutputSchema)
+    .mutation(async ({ ctx }) => {
+      try {
+        return await restartOnboardingProviderSelection({
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+        });
+      } catch (error) {
+        throwOnboardingError(error);
+      }
+    }),
+
+  getReadiness: protectedProcedure.output(readinessOutputSchema).query(async ({ ctx }) => {
+    try {
+      const readiness = await getOnboardingReadiness({
+        db: getRequiredDb(ctx),
+        profileId: ctx.session.user.id,
+      });
+      if (!readiness) throw new OnboardingProfileNotFoundForLockError();
+      return readiness;
+    } catch (error) {
+      throwOnboardingError(error);
+    }
+  }),
+
+  getProgress: protectedProcedure.output(onboardingProgressSchema).query(async ({ ctx }) => {
+    try {
+      const progress = await getOnboardingProgress({
+        db: getRequiredDb(ctx),
+        profileId: ctx.session.user.id,
+      });
+      if (!progress) throw new OnboardingProfileNotFoundForLockError();
+      return progress;
+    } catch (error) {
+      throwOnboardingError(error);
+    }
+  }),
+
+  reconcileStatus: protectedProcedure.output(readinessOutputSchema).mutation(async ({ ctx }) => {
+    try {
+      const readiness = await reconcileOnboardingStatus({
+        db: getRequiredDb(ctx),
+        profileId: ctx.session.user.id,
+      });
+      if (!readiness) throw new OnboardingProfileNotFoundForLockError();
+      return readiness;
+    } catch (error) {
+      throwOnboardingError(error);
+    }
+  }),
 
   completeLifecycleSetup: protectedProcedure
     .input(completeLifecycleSetupInputSchema)
@@ -129,7 +294,7 @@ export const onboardingRouter = createTRPCRouter({
           ...input,
         });
       } catch (error) {
-        throwCompletionError(error);
+        throwOnboardingError(error);
       }
     }),
 });

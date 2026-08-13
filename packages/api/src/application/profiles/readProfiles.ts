@@ -65,7 +65,7 @@ const profileBaseSelect = {
   bio: profiles.bio,
   dob: profiles.dob,
   gender: profiles.gender,
-  onboarded: profiles.onboarded,
+  onboarding_status: profiles.onboarding_status,
   is_public: profiles.is_public,
   username: profiles.username,
   preferred_units: profiles.preferred_units,
@@ -92,7 +92,7 @@ type ProfileBaseRow = Pick<
   | "bio"
   | "dob"
   | "gender"
-  | "onboarded"
+  | "onboarding_status"
   | "is_public"
   | "username"
   | "preferred_units"
@@ -197,7 +197,7 @@ export async function ensureProfileExists(db: DbClient, user: SessionUser) {
     language: null,
     preferred_units: null,
     planning_timezone: null,
-    onboarded: false,
+    onboarding_status: "provider_selection",
     is_public: true,
   });
 

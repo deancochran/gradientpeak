@@ -28,10 +28,14 @@ export function useScrollableTrainingPathWindow({
     setWeekWindow((current) => {
       if (!current || !isCanonicalWeekWindow(current)) return initialWeekWindow;
 
-      return {
+      const nextWindow = {
         start: current.start < initialWeekWindow.start ? current.start : initialWeekWindow.start,
         end: current.end > initialWeekWindow.end ? current.end : initialWeekWindow.end,
       };
+
+      return current.start === nextWindow.start && current.end === nextWindow.end
+        ? current
+        : nextWindow;
     });
   }, [initialWeekWindow]);
 

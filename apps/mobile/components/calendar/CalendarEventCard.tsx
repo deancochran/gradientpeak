@@ -1,6 +1,6 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { CalendarDays, Lock, Play, Target, Zap } from "lucide-react-native";
+import { CalendarDays, Play, Target, Zap } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
 import {
   getEventPrimaryMeta,
@@ -58,9 +58,7 @@ export function CalendarEventCard({
       ? Zap
       : event.event_type === "race_target"
         ? Target
-        : event.event_type === "imported"
-          ? Lock
-          : CalendarDays;
+        : CalendarDays;
 
   const quickActionIcon = canStart ? Play : CalendarDays;
 

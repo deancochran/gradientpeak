@@ -1,4 +1,3 @@
-import { deriveDraftPlanProjection } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
@@ -21,12 +20,11 @@ type TrainingPlanEditorProps = {
 
 export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps) {
   const utils = api.useUtils();
-  const planQuery = api.trainingPlans.get.useQuery(planId ? { id: planId } : undefined, {
+  const planQuery = api.trainingPlans.get.useQuery(planId ? { id: planId } : skipToken, {
     enabled: Boolean(planId),
   });
   const activityPlansQuery = api.activityPlans.list.useQuery({
     ownerScope: "own",
-    includeEstimation: true,
     limit: 100,
   });
   const profileQuery = api.profiles.get.useQuery();
@@ -54,7 +52,6 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
     reason: "state" | "plan";
   } | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
-  const projectionPlanId = planId ?? "00000000-0000-4000-8000-000000000001";
 
   useEffect(() => {
     if (!planId || !planQuery.data || hydratedId === planId) return;
@@ -75,45 +72,12 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
         error: error instanceof Error ? error.message : "Invalid plan structure",
       };
     }
-  }, [sessions, startDate]);
+  }, [sessions]);
 
   const draftFingerprint = useMemo(
     () => JSON.stringify({ description, name, structure: preview.structure }),
     [description, name, preview.structure],
   );
-  const projection = useMemo(() => {
-    const baseline = athleteReadModelQuery.data?.currentBaseline?.baseline;
-    if (!baseline || !preview.structure) return null;
-    const planningTimezone = athleteReadModelQuery.data?.currentBaseline?.planningTimezone ?? "UTC";
-    const activityPlanFacts = (activityPlansQuery.data?.items ?? []).flatMap((plan) => {
-      const load = plan.prescriptionQuantification?.summary.commonLoad;
-      const category = plan.prescriptionQuantification?.members[0]?.activity_category;
-      return load && load.status !== "unavailable" && load.load !== null && category
-        ? [{ activityPlanId: plan.id, activityCategory: category, commonLoad: load.load }]
-        : [];
-    });
-    const result = deriveDraftPlanProjection({
-      baseline,
-      planId: projectionPlanId,
-      structure: preview.structure,
-      activityPlans: activityPlanFacts,
-      planningTimezone,
-      startDate,
-    });
-    if (result.status === "unavailable")
-      return { status: "unavailable" as const, derivation: result };
-    return {
-      status: "available" as const,
-      simulation: result.simulation,
-    };
-  }, [
-    activityPlansQuery.data?.items,
-    preview.structure,
-    athleteReadModelQuery.data?.currentBaseline?.planningTimezone,
-    athleteReadModelQuery.data?.currentBaseline?.baseline,
-    projectionPlanId,
-    startDate,
-  ]);
   const authoritativePreviewInput = useMemo(() => {
     if (!preview.structure || !name.trim()) return null;
     const commonDraft = {
@@ -147,6 +111,10 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
   const commitMutation = api.trainingPlans.commit.useMutation();
   const saving = commitMutation.isPending;
   const activityPlans = activityPlansQuery.data?.items ?? [];
+  const authoritativeProjection =
+    authoritativePreviewQuery.data?.status === "available"
+      ? authoritativePreviewQuery.data.simulation
+      : null;
 
   const addSession = () => {
     const firstPlan = activityPlans[0];
@@ -170,6 +138,14 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
     }
     if (!preview.structure) {
       setFormError(preview.error ?? "Add at least one valid activity.");
+      return;
+    }
+    if (
+      !authoritativePreviewInput ||
+      !authoritativeProjection ||
+      authoritativePreviewQuery.isFetching
+    ) {
+      setFormError("Wait for the authoritative preview before saving this draft.");
       return;
     }
     const basePublishedRevision = athleteReadModelQuery.data?.publishedRevision;
@@ -386,7 +362,7 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
           </div>
         ) : null}
         <Button
-          disabled={saving || !name.trim() || !preview.structure}
+          disabled={saving || !name.trim() || !preview.structure || !authoritativeProjection}
           onClick={() => void save()}
           type="button"
         >
@@ -416,16 +392,15 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
             ))}
           </ol>
           <div aria-live="polite" className="border-t pt-3" role="status">
-            <p className="font-medium">Tentative local projection</p>
-            {athleteReadModelQuery.isLoading || profileQuery.isLoading ? (
-              <p>Loading athlete baseline…</p>
-            ) : athleteReadModelQuery.error || profileQuery.error ? (
+            <p className="font-medium">Authoritative server projection</p>
+            {authoritativePreviewQuery.isFetching ? (
+              <p>Validating this draft…</p>
+            ) : authoritativePreviewQuery.error ? (
               <div>
                 <p>Projection could not be loaded.</p>
                 <Button
                   onClick={() => {
-                    void athleteReadModelQuery.refetch();
-                    void profileQuery.refetch();
+                    void authoritativePreviewQuery.refetch();
                   }}
                   type="button"
                   variant="outline"
@@ -433,29 +408,28 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
                   Retry projection
                 </Button>
               </div>
-            ) : !athleteReadModelQuery.data?.currentBaseline?.baseline ||
-              projection?.status !== "available" ? (
-              <p>
-                Projection unavailable until published state and canonical activity loads exist.
-              </p>
+            ) : authoritativePreviewInput === null ? (
+              <p>Complete the plan details and activities to request a projection.</p>
+            ) : !authoritativeProjection ? (
+              <p>Projection unavailable from the current published athlete state.</p>
             ) : (
               <dl className="grid grid-cols-2 gap-2 text-sm">
                 <div>
                   <dt>Fitness</dt>
-                  <dd>{projection.simulation.projectedState.longTermLoad.toFixed(1)}</dd>
+                  <dd>{authoritativeProjection.projectedState.longTermLoad.toFixed(1)}</dd>
                 </div>
                 <div>
                   <dt>Fatigue</dt>
-                  <dd>{projection.simulation.projectedState.recentLoad.toFixed(1)}</dd>
+                  <dd>{authoritativeProjection.projectedState.recentLoad.toFixed(1)}</dd>
                 </div>
                 <div>
                   <dt>Form</dt>
-                  <dd>{projection.simulation.projectedState.loadBalance.toFixed(1)}</dd>
+                  <dd>{authoritativeProjection.projectedState.loadBalance.toFixed(1)}</dd>
                 </div>
                 <div>
                   <dt>Readiness</dt>
                   <dd>
-                    {projection.simulation.goalAssessment?.readiness.toFixed(0) ?? "Unavailable"}
+                    {authoritativeProjection.goalAssessment?.readiness.toFixed(0) ?? "Unavailable"}
                   </dd>
                 </div>
               </dl>
@@ -469,13 +443,11 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
                     : "Using stale published state while a rebuild is pending."}
               </p>
             ) : null}
-            <p className="border-t pt-2 text-xs text-muted-foreground">
-              {authoritativePreviewQuery.isFetching
-                ? "Authoritative server projection is validating this draft…"
-                : authoritativePreviewQuery.data?.status === "available"
-                  ? "Authoritative server projection is current for this exact draft."
-                  : "This local projection is tentative until server validation completes."}
-            </p>
+            {authoritativeProjection ? (
+              <p className="border-t pt-2 text-xs text-muted-foreground">
+                The server projection is current for this exact draft.
+              </p>
+            ) : null}
           </div>
         </CardContent>
       </Card>

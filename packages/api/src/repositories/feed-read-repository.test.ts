@@ -18,6 +18,9 @@ describe("feed activity projections", () => {
     );
     expect(normalizedSql).toContain("select s.activity_category from activity_segments s");
     expect(normalizedSql).not.toContain("select s.category from activity_segments s");
+    expect(normalizedSql).toContain("(a.polyline is not null) as has_route");
+    expect(normalizedSql).not.toContain("activity_file_ingestions");
+    expect(normalizedSql).not.toContain("last_error_message");
     expect(query.params).toEqual([VIEWER_ID, VIEWER_ID, 21]);
   });
 
@@ -44,15 +47,12 @@ describe("feed activity projections", () => {
           normalized_speed_mps: null,
           elevation_gain_meters: null,
           calories: null,
-          polyline: null,
+          has_route: false,
           content_visibility: "private",
           started_at: "2026-07-18T10:00:00.000Z",
           finished_at: "2026-07-18T11:00:00.000Z",
-          created_at: "2026-07-18T11:01:00.000Z",
           profile_username: "athlete",
           profile_avatar_url: null,
-          ingestion_status: null,
-          ingestion_last_error_message: null,
         },
       ],
     });
@@ -87,23 +87,74 @@ describe("feed activity projections", () => {
         avg_cadence: 86,
         elevation_gain_meters: 450,
         calories: 1_200,
-        polyline: null,
+        has_route: false,
         content_visibility: "public",
-        created_at: new Date("2026-07-17T10:01:00.000Z"),
         profile_username: "athlete",
         profile_avatar_url: null,
       },
-      { commentCounts: new Map(), derivedMap: new Map(), likeStats: new Map() },
+      {
+        commentCounts: new Map(),
+        derivedMap: new Map(),
+        likeStats: new Map(),
+        viewerId: VIEWER_ID,
+      },
     );
 
-    expect(result.activity_categories).toEqual(["run", "bike", "run"]);
     expect(result).toMatchObject({
-      type: null,
-      activity_kind: "multisport",
-      elapsed_seconds: 7_200,
-      duration_seconds: 6_600,
-      moving_seconds: 6_400,
+      title: "Run bike run",
+      activityComposition: { kind: "multisport", categories: ["run", "bike", "run"] },
+      capabilities: { canEdit: false, canDelete: false, hasRoute: false },
     });
+    expect(result.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "elapsed_duration", value: 7_200 }),
+        expect.objectContaining({ key: "active_duration", value: 6_600 }),
+        expect.objectContaining({ key: "moving_duration", value: 6_400 }),
+      ]),
+    );
     expect(result).not.toHaveProperty("activity_file_path");
+    expect(result).not.toHaveProperty("polyline");
+    expect(result).not.toHaveProperty("ingestion");
+    expect(result).not.toHaveProperty("segments");
+  });
+
+  it("keeps feed items available when legacy profile presentation fields are malformed", () => {
+    const result = mapFeedActivity(
+      {
+        id: "33333333-3333-4333-8333-333333333333",
+        profile_id: VIEWER_ID,
+        name: "Recovery Run",
+        category_composition: ["run"],
+        elapsed_ms: 1_800_000,
+        active_ms: null,
+        moving_ms: null,
+        timing_coverage: "unavailable",
+        started_at: new Date("2026-07-17T08:00:00.000Z"),
+        finished_at: new Date("2026-07-17T08:30:00.000Z"),
+        distance_meters: 5_000,
+        avg_heart_rate: null,
+        max_heart_rate: null,
+        avg_power: null,
+        avg_cadence: null,
+        elevation_gain_meters: null,
+        calories: null,
+        has_route: false,
+        content_visibility: "public",
+        profile_username: "   ",
+        profile_avatar_url: "/legacy-avatar.png",
+      },
+      {
+        commentCounts: new Map(),
+        derivedMap: new Map(),
+        likeStats: new Map(),
+        viewerId: VIEWER_ID,
+      },
+    );
+
+    expect(result.owner).toEqual({
+      id: VIEWER_ID,
+      username: null,
+      avatarUrl: null,
+    });
   });
 });

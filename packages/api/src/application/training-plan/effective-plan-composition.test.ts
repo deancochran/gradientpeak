@@ -179,24 +179,22 @@ function observationBundle(id: string) {
 }
 
 describe("composeEffectivePlanDto", () => {
-  it("keeps tentative availability separate from the firm effective value", () => {
+  it("composes all active scheduled items into the effective value", () => {
     const result = composeEffectivePlanDto({
       scheduledItems: [
         {
           scheduledItemId: "firm",
           scheduledDate: "2026-07-24",
           status: "active",
-          tentative: false,
           linkedCompletedActivityId: null,
           prescriptionQuantification: prescriptionBundle("firm"),
         },
         {
-          scheduledItemId: "tentative",
+          scheduledItemId: "second",
           scheduledDate: "2026-07-24",
           status: "active",
-          tentative: true,
           linkedCompletedActivityId: null,
-          prescriptionQuantification: prescriptionBundle("tentative"),
+          prescriptionQuantification: prescriptionBundle("second"),
         },
       ],
       completedActivities: [],
@@ -207,13 +205,8 @@ describe("composeEffectivePlanDto", () => {
     });
     expect(result).toMatchObject({
       status: "available",
-      firm: { status: "complete", commonLoad: { load: 100 } },
-      tentative: { status: "complete", load: 100 },
-      includingTentative: { status: "complete", commonLoad: { load: 200 } },
-      firmLifecycleQuantifications: {
-        prescriptions: { summary: { commonLoad: { load: 100, totalActivityCount: 1 } } },
-      },
-      includingTentativeLifecycleQuantifications: {
+      firm: { status: "complete", commonLoad: { load: 200 } },
+      lifecycleQuantifications: {
         prescriptions: { summary: { commonLoad: { load: 200, totalActivityCount: 2 } } },
       },
     });
@@ -226,7 +219,6 @@ describe("composeEffectivePlanDto", () => {
           scheduledItemId: "scheduled-a",
           scheduledDate: "2026-07-24",
           status: "active",
-          tentative: false,
           linkedCompletedActivityId: "activity-a",
           prescriptionQuantification: prescriptionBundle("scheduled-a"),
         },
@@ -234,7 +226,6 @@ describe("composeEffectivePlanDto", () => {
           scheduledItemId: "scheduled-b",
           scheduledDate: "2026-07-24",
           status: "active",
-          tentative: false,
           linkedCompletedActivityId: "activity-a",
           prescriptionQuantification: prescriptionBundle("scheduled-b"),
         },
@@ -285,7 +276,6 @@ describe("composeEffectivePlanDto", () => {
           scheduledItemId: "scheduled-a",
           scheduledDate: "2026-07-24",
           status: "active",
-          tentative: false,
           linkedCompletedActivityId: "activity-a",
           prescriptionQuantification: createActivityPlanPrescriptionQuantificationBundle({
             members: [scheduledQuantification],
@@ -336,7 +326,6 @@ describe("composeEffectivePlanDto", () => {
           scheduledItemId: "scheduled-a",
           scheduledDate: "2026-07-24",
           status: "active",
-          tentative: false,
           linkedCompletedActivityId: "activity-a",
           prescriptionQuantification: createActivityPlanPrescriptionQuantificationBundle({
             members: [planned],
@@ -368,7 +357,7 @@ describe("composeEffectivePlanDto", () => {
         },
       ],
       firm: { status: "complete", commonLoad: { load: 100, totalActivityCount: 1 } },
-      firmLifecycleQuantifications: {
+      lifecycleQuantifications: {
         prescriptions: { summary: { lifecycle: "prescription", commonLoad: { load: 100 } } },
         observations: { summary: { lifecycle: "observation", commonLoad: { load: 100 } } },
         comparison: { kind: "planned_vs_completed_comparison", commonLoadDelta: 0 },
@@ -405,7 +394,7 @@ describe("composeEffectivePlanDto", () => {
           load: 200,
         },
       },
-      firmLifecycleQuantifications: {
+      lifecycleQuantifications: {
         observations: {
           summary: {
             commonLoad: {

@@ -19,7 +19,7 @@ const createProfile = (overrides: Partial<AuthProfile> = {}): AuthProfile => ({
   bio: null,
   dob: null,
   gender: null,
-  onboarded: true,
+  onboarding_status: "completed",
   is_public: false,
   username: null,
   preferred_units: null,
@@ -35,7 +35,7 @@ const authStoreState = {
   ready: true,
   loading: false,
   error: null,
-  onboardingStatus: true as boolean | null,
+  onboardingStatus: "completed" as AuthProfile["onboarding_status"] | null,
   profile: createProfile({
     full_name: "Optimistic Name",
   }) as AuthProfile | null,
@@ -45,7 +45,7 @@ const authStoreState = {
 
 const profileQueryResult = {
   data: createProfile({
-    onboarded: false,
+    onboarding_status: "processing",
     full_name: "Stale Name",
     updated_at: "2026-04-22T00:00:00.000Z",
   }),
@@ -112,6 +112,7 @@ describe("useAuth optimistic onboarding precedence", () => {
     setProfileMock.mockClear();
     setOnboardingStatusMock.mockClear();
     refetchProfileMock.mockClear();
+    refetchProfileMock.mockResolvedValue({ data: profileQueryResult.data });
     invalidateProfileMock.mockClear();
     refreshMobileAuthSessionMock.mockClear();
     profileQueryUseQueryMock.mockReset();
@@ -119,30 +120,32 @@ describe("useAuth optimistic onboarding precedence", () => {
     setProfileMock.mockImplementation((profile: AuthProfile | null) => {
       authStoreState.profile = profile;
     });
-    setOnboardingStatusMock.mockImplementation((status: boolean | null) => {
-      authStoreState.onboardingStatus = status;
-    });
+    setOnboardingStatusMock.mockImplementation(
+      (status: AuthProfile["onboarding_status"] | null) => {
+        authStoreState.onboardingStatus = status;
+      },
+    );
     authStoreState.user = { id: "user-1", email: "athlete@test.com", emailVerified: true };
-    authStoreState.onboardingStatus = true;
+    authStoreState.onboardingStatus = "completed";
     authStoreState.profile = createProfile({ full_name: "Optimistic Name" });
   });
 
-  it("keeps optimistic onboarding and profile over stale profile query data", () => {
+  it("uses the explicit status returned by the profile query", () => {
     const { result } = renderHook(() => useAuth());
 
-    expect(result.current.onboardingStatus).toBe(true);
+    expect(result.current.onboardingStatus).toBe("processing");
     expect(result.current.profile).toEqual(
       expect.objectContaining({
         id: "profile-1",
-        onboarded: true,
+        onboarding_status: "completed",
         full_name: "Optimistic Name",
         updated_at: "2026-04-23T00:00:00.000Z",
         bio: null,
         dob: null,
       }),
     );
-    expect(setOnboardingStatusMock).not.toHaveBeenCalled();
-    expect(setProfileMock).not.toHaveBeenCalled();
+    expect(setOnboardingStatusMock).toHaveBeenCalledWith("processing");
+    expect(setProfileMock).toHaveBeenCalled();
   });
 
   it("does not fetch the profile for unverified users", () => {
@@ -157,16 +160,16 @@ describe("useAuth optimistic onboarding precedence", () => {
   });
 
   it("syncs fresh profile data when only updated_at changes", () => {
-    authStoreState.onboardingStatus = false;
+    authStoreState.onboardingStatus = "processing";
     authStoreState.profile = createProfile({
-      onboarded: false,
+      onboarding_status: "processing",
       avatar_url: "https://old.example/avatar.png",
       updated_at: "2026-04-22T00:00:00.000Z",
     });
     profileQueryUseQueryMock.mockReturnValue({
       ...profileQueryResult,
       data: createProfile({
-        onboarded: false,
+        onboarding_status: "processing",
         avatar_url: null,
         bio: null,
         dob: null,
@@ -179,7 +182,7 @@ describe("useAuth optimistic onboarding precedence", () => {
     expect(setProfileMock).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "profile-1",
-        onboarded: false,
+        onboarding_status: "processing",
         avatar_url: null,
         bio: null,
         dob: null,
@@ -188,17 +191,17 @@ describe("useAuth optimistic onboarding precedence", () => {
     );
   });
 
-  it("completes onboarding against the typed existing profile and invalidates the query", async () => {
-    authStoreState.onboardingStatus = false;
+  it("refreshes onboarding status from the authoritative profile query", async () => {
+    authStoreState.onboardingStatus = "processing";
     authStoreState.profile = createProfile({
-      onboarded: false,
+      onboarding_status: "processing",
       bio: null,
       dob: null,
     });
     const { result } = renderHook(() => useAuth());
-    authStoreState.onboardingStatus = false;
+    authStoreState.onboardingStatus = "processing";
     authStoreState.profile = createProfile({
-      onboarded: false,
+      onboarding_status: "processing",
       bio: null,
       dob: null,
     });
@@ -207,26 +210,25 @@ describe("useAuth optimistic onboarding precedence", () => {
     invalidateProfileMock.mockClear();
 
     await act(async () => {
-      await result.current.completeOnboarding();
+      await result.current.refreshOnboardingStatus();
     });
 
-    expect(setOnboardingStatusMock).toHaveBeenCalledWith(true);
-    expect(authStoreState.onboardingStatus).toBe(true);
+    expect(setOnboardingStatusMock).toHaveBeenCalledWith("processing");
     expect(setProfileMock).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "profile-1",
-        onboarded: true,
+        onboarding_status: "processing",
         bio: null,
         dob: null,
       }),
     );
     expect(authStoreState.profile).toEqual(
-      expect.objectContaining({ id: "profile-1", onboarded: true, bio: null, dob: null }),
+      expect.objectContaining({ id: "profile-1", onboarding_status: "processing" }),
     );
     expect(invalidateProfileMock).toHaveBeenCalledTimes(1);
   });
 
-  it("completes onboarding with a null profile without creating a partial profile", async () => {
+  it("refreshes a null local profile from the query without creating a partial profile", async () => {
     authStoreState.onboardingStatus = null;
     authStoreState.profile = null;
     const { result } = renderHook(() => useAuth());
@@ -237,13 +239,11 @@ describe("useAuth optimistic onboarding precedence", () => {
     invalidateProfileMock.mockClear();
 
     await act(async () => {
-      await result.current.completeOnboarding();
+      await result.current.refreshOnboardingStatus();
     });
 
-    expect(setOnboardingStatusMock).toHaveBeenCalledWith(true);
-    expect(authStoreState.onboardingStatus).toBe(true);
-    expect(setProfileMock).not.toHaveBeenCalled();
-    expect(authStoreState.profile).toBeNull();
+    expect(setOnboardingStatusMock).toHaveBeenCalledWith("processing");
+    expect(setProfileMock).toHaveBeenCalled();
     expect(invalidateProfileMock).toHaveBeenCalledTimes(1);
   });
 });

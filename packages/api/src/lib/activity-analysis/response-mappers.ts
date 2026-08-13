@@ -21,7 +21,18 @@ type ActivityPlanReference = Omit<ActivityPlanRow, "created_at" | "updated_at"> 
   updated_at: string | Date;
 };
 
-type PublicActivityRow = ActivityRow;
+type InternalAthleteStateFields =
+  | "performance_target_snapshot"
+  | "athlete_state_common_load"
+  | "athlete_state_activity_category"
+  | "athlete_state_evidence_confidence"
+  | "athlete_state_capability_distance_meters"
+  | "athlete_state_capability_duration_minutes"
+  | "athlete_state_input_version"
+  | "athlete_state_computed_at"
+  | "canonical_evidence_tier";
+
+type PublicActivityRow = Omit<ActivityRow, InternalAthleteStateFields>;
 
 export function mapActivityToDerivedResponse(input: {
   activity: PublicActivityRow & { likes_count: number } & {

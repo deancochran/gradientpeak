@@ -13,46 +13,47 @@ GradientPeak is a product monorepo for the web app, mobile app, shared UI, backe
 
 ## Getting started
 
-Install dependencies:
+For the supported full development environment, install dependencies and start the Turbo task graph:
 
 ```bash
 mise trust
 mise install
 pnpm install
+cp apps/web/.env.example apps/web/.env.local
+cp apps/mobile/.env.example apps/mobile/.env
+pnpm run doctor -- --lane dev
+pnpm exec turbo run dev
 ```
 
-Start local development:
+`pnpm exec turbo run dev` is the primary development command. It starts the web app, mobile Metro
+server, local Supabase setup, Wahoo worker, and the ngrok tunnel required for provider callbacks.
+Configure ngrok and the reserved development domain before starting the full development lane.
+
+The first time local Supabase starts, copy its local API keys from `pnpm db:status` into
+`apps/web/.env.local` and `apps/mobile/.env`. Re-run `pnpm run doctor -- --lane dev`, then restart
+`pnpm exec turbo run dev`. A successful onboarding session has the web app at http://localhost:3000
+and no required Doctor failures.
+
+Use a focused Turbo command when you only need one surface:
 
 ```bash
-pnpm run doctor
-pnpm dev
-pnpm dev:web:tunnel
-pnpm dev:web:scan
+pnpm exec turbo run dev --filter=web
+pnpm exec turbo run dev --filter=mobile
 ```
 
-`turbo run dev` (and the `pnpm dev` wrapper) starts the web app, Wahoo worker, reserved ngrok
-tunnel, mobile app, and local database setup. Use `pnpm dev:web:local` when the web app should
-run without ngrok.
+`pnpm dev` remains a convenience wrapper for `pnpm exec turbo run dev`. Use `pnpm dev:web:local` when
+you intentionally want the web app and Wahoo worker without ngrok. `pnpm dev:web:tunnel` remains an
+explicit web-only alias for the default tunneled web development task.
+`pnpm dev:web:scan` is a web-only performance-inspection command.
 
-Use package-specific entrypoints when you only need one surface:
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the first-contribution checklist, environment setup,
+verification progression, and specialist lanes.
 
-```bash
-pnpm --filter web dev
-pnpm --filter mobile dev
-pnpm self-host:up
-```
-
-Run the main validation commands before handoff or review:
+Run the narrowest relevant check while iterating. Before integration, run the repository gate:
 
 ```bash
-pnpm verify:static
-pnpm verify
-pnpm verify:full
-pnpm knip
-pnpm knip:full
-pnpm check-types
-pnpm lint
-pnpm test
+pnpm --filter web check-types # example focused check
+pnpm quality:agent
 ```
 
 ## Development workflow

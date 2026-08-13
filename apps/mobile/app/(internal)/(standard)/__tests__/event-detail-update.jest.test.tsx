@@ -1,5 +1,6 @@
 import { act } from "@testing-library/react-native";
 import React from "react";
+import { createActivityPlanSummary } from "../../../../test/activity-plan-projection-fixture";
 import {
   createFormComponentMocks as mockCreateFormComponentMocks,
   createHost as mockCreateHost,
@@ -16,18 +17,13 @@ const mockActivityPlansListUseQuery: jest.Mock = jest.fn(() => ({
   refetch: jest.fn(),
 }));
 
-type ActivityPlanFixture = {
-  activity_categories?: string[];
-  id: string;
-  name: string;
-  activity_category?: string;
-};
+type ActivityPlanFixture = ReturnType<typeof createActivityPlanSummary>;
 type EventEditorInput = { starts_at: string; recurrence_rule?: string | null };
 type StackScreenProps = Record<string, unknown> & {
   options?: { headerRight?: () => React.ReactNode };
 };
 type ResourcePickerProps = {
-  onSelect: (item: ActivityPlanFixture) => void;
+  onSelect: (item: Record<string, unknown>) => void;
   scope: "activityPlans" | "routes";
   visible: boolean;
 };
@@ -41,7 +37,7 @@ const eventDetailData: {
   all_day: boolean;
   notes: string;
   activity_plan_id: string | null;
-  activity_plan: ActivityPlanFixture | null;
+  activityPlanSummary: ActivityPlanFixture | null;
   route_id?: string | null;
   route?: { id: string; name: string } | null;
   recurrence_rule: string | null;
@@ -57,7 +53,7 @@ const eventDetailData: {
   all_day: false,
   notes: "Bring gels",
   activity_plan_id: null as string | null,
-  activity_plan: null,
+  activityPlanSummary: null,
   recurrence_rule: null as string | null,
   series_id: null as string | null,
   occurrence_key: null as string | null,
@@ -177,12 +173,22 @@ jest.mock("@/components/shared/resource-picker", () => ({
     return React.createElement(
       "ResourcePickerModal",
       { visible },
-      ...items.map((item: ActivityPlanFixture) =>
+      ...items.map((item: { id: string; name: string }) =>
         React.createElement(
           "Button",
           {
             key: item.id,
-            onPress: () => onSelect(item),
+            onPress: () =>
+              onSelect(
+                scope === "routes"
+                  ? { kind: "route", id: item.id, label: item.name, route: item }
+                  : {
+                      kind: "activityPlan",
+                      id: item.id,
+                      label: item.name,
+                      activityPlan: item,
+                    },
+              ),
             testID: `event-detail-update-${scope === "routes" ? "route" : "activity-plan"}-option-${item.id}`,
           },
           item.name,
@@ -245,7 +251,7 @@ describe("event detail update screen", () => {
     eventDetailData.ends_at = null;
     eventDetailData.event_type = "custom";
     eventDetailData.activity_plan_id = null;
-    eventDetailData.activity_plan = null;
+    eventDetailData.activityPlanSummary = null;
     eventDetailData.route_id = null;
     eventDetailData.route = null;
     eventDetailData.series_id = null;
@@ -340,12 +346,11 @@ describe("event detail update screen", () => {
     mockActivityPlansListUseQuery.mockReturnValue({
       data: {
         items: [
-          {
-            activity_categories: ["run"],
+          createActivityPlanSummary({
             id: "11111111-1111-4111-8111-111111111111",
             name: "Tempo Run",
-            activity_category: "run",
-          },
+            activityCategory: "run",
+          }),
         ],
       },
       isLoading: false,
@@ -372,22 +377,23 @@ describe("event detail update screen", () => {
         expect.objectContaining({
           patch: expect.objectContaining({
             activity_plan_id: "11111111-1111-4111-8111-111111111111",
-            event_type: "planned",
           }),
         }),
       );
     });
+    expect(updateEventMutateMock.mock.calls[0]?.[0]?.patch).not.toHaveProperty("event_type");
+  });
 
+  it("detaches an activity plan without rewriting the event type", async () => {
     eventDetailData.event_type = "planned";
     eventDetailData.activity_plan_id = "11111111-1111-4111-8111-111111111111";
-    eventDetailData.activity_plan = {
-      activity_categories: ["run"],
+    eventDetailData.route_id = "route-1";
+    eventDetailData.route = { id: "route-1", name: "River Loop" };
+    eventDetailData.activityPlanSummary = createActivityPlanSummary({
       id: "11111111-1111-4111-8111-111111111111",
       name: "Tempo Run",
-      activity_category: "run",
-    };
-    updateEventMutateMock.mockClear();
-
+      activityCategory: "run",
+    });
     renderNative(<EventDetailUpdateScreen />);
     fireEvent.press(screen.getByTestId("event-detail-update-remove-activity-plan-button"));
 
@@ -400,10 +406,10 @@ describe("event detail update screen", () => {
         expect.objectContaining({
           patch: expect.objectContaining({
             activity_plan_id: null,
-            event_type: "custom",
           }),
         }),
       );
     });
+    expect(updateEventMutateMock.mock.calls[0]?.[0]?.patch).not.toHaveProperty("event_type");
   });
 });

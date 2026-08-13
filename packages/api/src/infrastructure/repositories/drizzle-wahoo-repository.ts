@@ -315,12 +315,18 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
               eq(schema.groupMemberships.status, "active"),
             ),
           )
-          .innerJoin(
+          .leftJoin(
             schema.groupEventRsvps,
             and(
               eq(schema.groupEventRsvps.group_event_id, schema.groupEvents.id),
               eq(schema.groupEventRsvps.profile_id, input.profileId),
-              eq(schema.groupEventRsvps.status, "accepted"),
+            ),
+          )
+          .leftJoin(
+            schema.groupEventSeriesRsvps,
+            and(
+              eq(schema.groupEventSeriesRsvps.group_event_series_id, schema.groupEvents.series_id),
+              eq(schema.groupEventSeriesRsvps.profile_id, input.profileId),
             ),
           )
           .innerJoin(
@@ -336,6 +342,8 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
                   and ${schema.groups.deleted_at} is null
               )`,
               isNull(schema.groupEvents.cancelled_at),
+              sql<boolean>`coalesce(${schema.groupEventRsvps.status} <> 'declined', true)`,
+              sql<boolean>`case when ${schema.groupEventRsvps.profile_id} is not null then true else coalesce(${schema.groupEventSeriesRsvps.status} <> 'declined', true) end`,
               gt(schema.groupEvents.starts_at, new Date()),
               sql<boolean>`coalesce(${schema.profileTrainingSettings.settings}->>'wahooEventRouteDeliveryEnabled', 'false') = 'true'`,
               or(
@@ -745,12 +753,18 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
             eq(schema.groupMemberships.status, "active"),
           ),
         )
-        .innerJoin(
+        .leftJoin(
           schema.groupEventRsvps,
           and(
             eq(schema.groupEventRsvps.group_event_id, schema.groupEvents.id),
             eq(schema.groupEventRsvps.profile_id, profileId),
-            eq(schema.groupEventRsvps.status, "accepted"),
+          ),
+        )
+        .leftJoin(
+          schema.groupEventSeriesRsvps,
+          and(
+            eq(schema.groupEventSeriesRsvps.group_event_series_id, schema.groupEvents.series_id),
+            eq(schema.groupEventSeriesRsvps.profile_id, profileId),
           ),
         )
         .innerJoin(
@@ -766,6 +780,8 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
                 and ${schema.groups.deleted_at} is null
             )`,
             isNull(schema.groupEvents.cancelled_at),
+            sql<boolean>`coalesce(${schema.groupEventRsvps.status} <> 'declined', true)`,
+            sql<boolean>`case when ${schema.groupEventRsvps.profile_id} is not null then true else coalesce(${schema.groupEventSeriesRsvps.status} <> 'declined', true) end`,
             gt(schema.groupEvents.starts_at, new Date()),
             sql<boolean>`coalesce(${schema.profileTrainingSettings.settings}->>'wahooEventRouteDeliveryEnabled', 'false') = 'true'`,
             or(
@@ -806,12 +822,11 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
             eq(schema.groupMemberships.status, "active"),
           ),
         )
-        .innerJoin(
+        .leftJoin(
           schema.groupEventRsvps,
           and(
             eq(schema.groupEventRsvps.group_event_id, schema.groupEvents.id),
             eq(schema.groupEventRsvps.profile_id, profileId),
-            eq(schema.groupEventRsvps.status, "accepted"),
           ),
         )
         .innerJoin(
@@ -828,6 +843,8 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
                 and ${schema.groups.deleted_at} is null
             )`,
             isNull(schema.groupEvents.cancelled_at),
+            sql<boolean>`coalesce(${schema.groupEventRsvps.status} <> 'declined', true)`,
+            sql<boolean>`case when ${schema.groupEventRsvps.profile_id} is not null then true else coalesce(${schema.groupEventSeriesRsvps.status} <> 'declined', true) end`,
             gt(schema.groupEvents.starts_at, new Date()),
             after
               ? or(

@@ -5,7 +5,6 @@ import { profileMetricSections } from "./trends";
 describe("profileMetricSections", () => {
   it("keeps every canonical metric exactly once in the categorized order", () => {
     expect(profileMetricSections.map(({ id }) => id)).toEqual([
-      "load_calibration",
       "supporting_physiology",
       "recovery",
       "body_aerobic",
@@ -14,7 +13,6 @@ describe("profileMetricSections", () => {
     const metricTypes = profileMetricSections.flatMap(({ metricTypes }) => metricTypes);
 
     expect(metricTypes).toEqual([
-      "lthr",
       "max_hr",
       "resting_hr",
       "weight_kg",

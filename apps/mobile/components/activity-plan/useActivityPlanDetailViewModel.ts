@@ -1,22 +1,19 @@
 import {
+  type ActivityPlanDetail,
   type ActivityPlanIntervalStep,
-  type ActivityPrescriptionQuantificationBundle,
+  type ActivityPlanSummary,
+  activityPlanDetailSchema,
   activityPlanStructureSchema,
+  activityPlanSummarySchema,
   compileActivityPlan,
 } from "@repo/core";
 import { useMemo } from "react";
 import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 
-type ActivityPlanLike = {
-  activity_category?: string | null;
-  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
-  profile_id?: string | null;
-  structure?: unknown;
-  [key: string]: unknown;
-};
+type ActivityPlanProjection = ActivityPlanSummary | ActivityPlanDetail;
 
 type PlannedActivityLike = {
-  activity_plan?: ActivityPlanLike | null;
+  activityPlanSummary?: ActivityPlanSummary | null;
 };
 
 type ProfileLike = {
@@ -25,7 +22,7 @@ type ProfileLike = {
 
 interface UseActivityPlanDetailViewModelParams {
   activityPlanParam?: string;
-  fetchedPlan: ActivityPlanLike | null | undefined;
+  fetchedPlan: ActivityPlanDetail | null | undefined;
   formatDuration: (seconds: number) => string;
   isScheduled: boolean;
   plannedActivity: PlannedActivityLike | null | undefined;
@@ -42,21 +39,19 @@ export function useActivityPlanDetailViewModel({
   profile,
   template,
 }: UseActivityPlanDetailViewModelParams) {
-  const activityPlan = useMemo(() => {
-    if (plannedActivity?.activity_plan) return plannedActivity.activity_plan;
+  const activityPlan = useMemo<ActivityPlanProjection | null>(() => {
+    if (plannedActivity?.activityPlanSummary) return plannedActivity.activityPlanSummary;
     if (fetchedPlan) return fetchedPlan;
-    if (template) {
+    const serializedPlan = template ?? activityPlanParam;
+    if (serializedPlan) {
       try {
-        return JSON.parse(template);
+        const candidate: unknown = JSON.parse(serializedPlan);
+        const detail = activityPlanDetailSchema.safeParse(candidate);
+        if (detail.success) return detail.data;
+        const summary = activityPlanSummarySchema.safeParse(candidate);
+        if (summary.success) return summary.data;
       } catch (error) {
-        console.error("Failed to parse template:", error);
-      }
-    }
-    if (activityPlanParam) {
-      try {
-        return JSON.parse(activityPlanParam);
-      } catch (error) {
-        console.error("Failed to parse activityPlan:", error);
+        console.error("Failed to parse activity plan projection:", error);
       }
     }
     return null;
@@ -86,10 +81,10 @@ export function useActivityPlanDetailViewModel({
     : null;
   const durationMinutes =
     estimatedDurationMinutes ?? Math.round((compiled?.explicitTimedDurationSeconds ?? 0) / 60);
-  const isOwnedByUser = activityPlan?.profile_id === profile?.id;
+  const isOwnedByUser = Boolean(activityPlan?.capabilities.canEdit && profile?.id);
   const detailBadges = activityPlan
     ? [
-        compiled?.activity_category || activityPlan.activity_category || "Other",
+        compiled?.activity_category || activityPlan.activityCategory || "Other",
         isScheduled ? "Scheduled" : isOwnedByUser ? "My plan" : "Template",
       ]
     : [];

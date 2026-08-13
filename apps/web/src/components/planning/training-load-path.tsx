@@ -1,54 +1,17 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardDescription, CardHeader } from "@repo/ui/components/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
-import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
-
 import { formatShortDayLabel } from "../../lib/planning";
 
-type EffectiveItem =
-  | {
-      commonLoad: unknown;
-      completedActivityId: string;
-      date: string;
-      kind: "completed";
-      observationQuantification: unknown;
-      replacedScheduledItemId?: string | null;
-    }
-  | {
-      commonLoad: unknown;
-      date: string;
-      kind: "scheduled";
-      prescriptionQuantification: unknown;
-      scheduledItemId: string;
-    };
-
-type EffectiveLoad = {
-  status: "available" | "unavailable";
-  reason?: string;
-  completed?: unknown;
-  completedObservationQuantification?: unknown;
-  remaining?: unknown;
-  remainingPrescriptionQuantification?: unknown;
-  resolvedRange?: {
-    endDate: string | null;
-    startDate: string | null;
-    timezone: string | null;
-  };
-  sourceCoverage?: SourceCoverage;
-  tentative?: unknown;
-  tentativePrescriptionQuantification?: unknown;
-  effective?: {
-    status: "available" | "integrity_unavailable";
-    reason?: string;
-    firmItems?: EffectiveItem[];
-    tentativeItems?: EffectiveItem[];
-  };
-};
-
-type SourceCoverage = {
-  activities: { status: "complete" | "partial" } | null;
-  scheduledItems: { status: "complete" | "partial" } | null;
+type PlanTabProjection = inferRouterOutputs<AppRouter>["trainingPlans"]["getPlanTabProjection"];
+type SourceCoverage = PlanTabProjection["sourceCoverage"];
+type PathItem = {
+  date: string;
+  id: string;
+  kind: "completed" | "scheduled";
+  load: number | null;
+  title: string;
 };
 
 function coverageIsComplete(coverage: { status: "complete" | "partial" } | null | undefined) {
@@ -61,29 +24,17 @@ function coverageLabel(coverage: SourceCoverage | undefined) {
   return `Completed activity coverage is ${activities}; scheduled work coverage is ${scheduled}.`;
 }
 
-function resolvedRangeLabel(range: EffectiveLoad["resolvedRange"]) {
-  if (!range?.startDate || !range.endDate) return "for the server-resolved current week";
-  return `for ${range.startDate}–${range.endDate}${range.timezone ? ` in ${range.timezone}` : ""}`;
+function CommonLoadValue({ value }: { value: number | null | undefined }) {
+  return value === null || value === undefined ? (
+    <Badge variant="outline">Common Load unavailable</Badge>
+  ) : (
+    <Badge>Common Load {Math.round(value * 10) / 10}</Badge>
+  );
 }
 
-function CommonLoadValue({ value }: { value: unknown }) {
-  const presentation = getActivityQuantificationPresentation(value);
-  if (presentation.kind === "unavailable" || presentation.commonLoad.status === "unavailable") {
-    return <Badge variant="outline">Common Load unavailable</Badge>;
-  }
-  return (
-    <Badge
-      variant={
-        presentation.commonLoad.status === "available" ||
-        presentation.commonLoad.status === "complete"
-          ? "default"
-          : "outline"
-      }
-    >
-      {presentation.commonLoad.label} {presentation.commonLoad.value}
-      {presentation.commonLoad.status === "partial" ? " · partial" : ""}
-    </Badge>
-  );
+function sumAvailable(values: Array<number | null | undefined>) {
+  const available = values.filter((value): value is number => typeof value === "number");
+  return available.length > 0 ? available.reduce((sum, value) => sum + value, 0) : null;
 }
 
 function ItemList({
@@ -93,7 +44,7 @@ function ItemList({
   unavailableMessage,
 }: {
   emptyMessage: string;
-  items: EffectiveItem[];
+  items: PathItem[];
   sourceComplete: boolean;
   unavailableMessage: string;
 }) {
@@ -106,121 +57,117 @@ function ItemList({
   }
   return (
     <div className="space-y-2">
-      {items.map((item) => {
-        const quantification =
-          item.kind === "completed"
-            ? item.observationQuantification
-            : item.prescriptionQuantification;
-        const presentation = getActivityQuantificationPresentation(quantification);
-        return (
-          <div
-            key={item.kind === "completed" ? item.completedActivityId : item.scheduledItemId}
-            className="flex items-center justify-between gap-3 rounded-xl border p-3"
-            data-scheduled-item-id={item.kind === "scheduled" ? item.scheduledItemId : undefined}
-          >
-            <div>
-              <p className="font-medium">{formatShortDayLabel(item.date)}</p>
-              <p className="text-xs text-muted-foreground">
-                {item.kind === "completed" ? "Completed activity" : "Scheduled activity"}
-              </p>
-              <p className="text-xs text-muted-foreground">{presentation.commonLoad.explanation}</p>
-            </div>
-            <CommonLoadValue value={quantification} />
+      {items.map((item) => (
+        <div
+          className="flex items-center justify-between gap-3 rounded-xl border p-3"
+          data-scheduled-item-id={item.kind === "scheduled" ? item.id : undefined}
+          key={`${item.kind}:${item.id}`}
+        >
+          <div>
+            <p className="font-medium">{item.title}</p>
+            <p className="text-xs text-muted-foreground">
+              {formatShortDayLabel(item.date)} ·{` `}
+              {item.kind === "completed" ? "Completed activity" : "Scheduled activity"}
+            </p>
           </div>
-        );
-      })}
+          <CommonLoadValue value={item.load} />
+        </div>
+      ))}
     </div>
   );
 }
 
 export function TrainingLoadPath({
-  effectiveLoad,
   isError = false,
+  isLoading = false,
   onRetry,
+  projection,
 }: {
-  effectiveLoad: EffectiveLoad | undefined;
   isError?: boolean;
+  isLoading?: boolean;
   onRetry?: () => void;
+  projection: PlanTabProjection | undefined;
 }) {
-  const effective = effectiveLoad?.status === "available" ? effectiveLoad.effective : undefined;
-  const firmItems = effective?.status === "available" ? (effective.firmItems ?? []) : [];
-  const tentativeItems = effective?.status === "available" ? (effective.tentativeItems ?? []) : [];
-  const sourceCoverage = effectiveLoad?.sourceCoverage;
+  const timeline = projection?.timeline;
+  const sourceCoverage = projection?.sourceCoverage;
   const completedCoverageComplete = coverageIsComplete(sourceCoverage?.activities);
   const scheduledCoverageComplete = coverageIsComplete(sourceCoverage?.scheduledItems);
   const firmCoverageComplete = completedCoverageComplete && scheduledCoverageComplete;
-  const unavailableReason =
-    effectiveLoad?.status === "unavailable"
-      ? effectiveLoad.reason
-      : effective?.status === "integrity_unavailable"
-        ? effective.reason
-        : null;
+  const completedItems =
+    timeline?.days.flatMap((day) =>
+      day.completedItems.map<PathItem>((item) => ({
+        date: day.date,
+        id: item.id,
+        kind: "completed",
+        load: item.completedLoad ?? null,
+        title: item.title,
+      })),
+    ) ?? [];
+  const scheduledItems =
+    timeline?.days.flatMap((day) =>
+      day.scheduledItems
+        .filter((item) => item.status !== "cancelled")
+        .map<PathItem>((item) => ({
+          date: day.date,
+          id: item.id,
+          kind: "scheduled",
+          load: item.plannedLoad ?? null,
+          title: item.title,
+        })),
+    ) ?? [];
+  const items = [...completedItems, ...scheduledItems].sort((left, right) =>
+    left.date.localeCompare(right.date),
+  );
+  const completedLoad = sumAvailable(timeline?.days.map((day) => day.load.completedLoad) ?? []);
+  const remainingLoad = sumAvailable(timeline?.days.map((day) => day.load.remainingLoad) ?? []);
+  const rangeLabel = timeline
+    ? `for ${timeline.startDate}–${timeline.endDate}${projection?.planningTimezone ? ` in ${projection.planningTimezone}` : ""}`
+    : "for the requested planning window";
 
   return (
     <Card>
       <CardHeader>
         <h2 className="leading-none font-semibold">Training path</h2>
-        <CardDescription>
-          Server-composed Common Load {resolvedRangeLabel(effectiveLoad?.resolvedRange)}. Firm and
-          tentative work remain separate.
-        </CardDescription>
+        <CardDescription>Server-composed Common Load {rangeLabel}.</CardDescription>
       </CardHeader>
       <CardContent>
-        {isError ? (
+        {isLoading ? (
+          <p aria-live="polite" className="text-sm text-muted-foreground">
+            Loading training path…
+          </p>
+        ) : isError ? (
           <div className="space-y-2 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-            <p>
-              Effective plan Common Load could not be refreshed. No client-side estimate is shown.
-            </p>
+            <p>Training path could not be refreshed. No client-side estimate is shown.</p>
             {onRetry ? (
               <Button onClick={onRetry} size="sm" type="button" variant="outline">
-                Retry effective plan Common Load
+                Retry training path
               </Button>
             ) : null}
           </div>
-        ) : unavailableReason ? (
+        ) : !timeline ? (
           <div className="space-y-2 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-            <p>
-              Effective plan Common Load is unavailable: {unavailableReason.replaceAll("_", " ")}.
-            </p>
+            <p>Training path is unavailable from the current planning projection.</p>
             <p>{coverageLabel(sourceCoverage)}</p>
           </div>
         ) : (
-          <Tabs defaultValue="firm">
-            <TabsList>
-              <TabsTrigger value="firm">Firm</TabsTrigger>
-              <TabsTrigger value="tentative">Tentative</TabsTrigger>
-            </TabsList>
-            <TabsContent value="firm" className="space-y-3">
-              <div className="grid gap-2 sm:grid-cols-3">
-                <div className="rounded-xl border p-3">
-                  <p className="text-xs text-muted-foreground">Completed this week</p>
-                  <CommonLoadValue value={effectiveLoad?.completedObservationQuantification} />
-                </div>
-                <div className="rounded-xl border p-3">
-                  <p className="text-xs text-muted-foreground">Remaining firm work</p>
-                  <CommonLoadValue value={effectiveLoad?.remainingPrescriptionQuantification} />
-                </div>
-                <div className="rounded-xl border p-3">
-                  <p className="text-xs text-muted-foreground">Tentative work</p>
-                  <CommonLoadValue value={effectiveLoad?.tentativePrescriptionQuantification} />
-                </div>
+          <div className="space-y-3">
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div className="rounded-xl border p-3">
+                <p className="text-xs text-muted-foreground">Completed</p>
+                <CommonLoadValue value={completedLoad} />
               </div>
-              <ItemList
-                emptyMessage="No firm activities are scheduled in this window."
-                items={firmItems}
-                sourceComplete={firmCoverageComplete}
-                unavailableMessage="Firm work is unavailable because completed or scheduled coverage is not complete."
-              />
-            </TabsContent>
-            <TabsContent value="tentative">
-              <ItemList
-                emptyMessage="No tentative activities are scheduled in this window."
-                items={tentativeItems}
-                sourceComplete={scheduledCoverageComplete}
-                unavailableMessage="Tentative work is unavailable because scheduled coverage is not complete."
-              />
-            </TabsContent>
-          </Tabs>
+              <div className="rounded-xl border p-3">
+                <p className="text-xs text-muted-foreground">Remaining scheduled work</p>
+                <CommonLoadValue value={remainingLoad} />
+              </div>
+            </div>
+            <ItemList
+              emptyMessage="No activities are scheduled in this window."
+              items={items}
+              sourceComplete={firmCoverageComplete}
+              unavailableMessage="Scheduled work is unavailable because completed or scheduled coverage is not complete."
+            />
+          </div>
         )}
       </CardContent>
     </Card>

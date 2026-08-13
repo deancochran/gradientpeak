@@ -9,16 +9,22 @@ const mocks = vi.hoisted(() => ({
   query: vi.fn(),
   fetchNextPage: vi.fn(),
   refetch: vi.fn(),
+  navigate: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
     <a href={to}>{children}</a>
   ),
+  useNavigate: () => mocks.navigate,
 }));
 
 vi.mock("../../lib/api/client", () => ({
   api: { feed: { getFeed: { useInfiniteQuery: mocks.query } } },
+}));
+
+vi.mock("../../hooks/use-viewing-user-preferred-unit-system", () => ({
+  useViewingUserPreferredUnitSystem: () => ({ isLoading: false, unitSystem: "metric" }),
 }));
 
 afterEach(() => {
@@ -34,16 +40,37 @@ describe("ActivityFeed", () => {
           {
             items: [
               {
+                contractVersion: "activity-display-v1",
                 id: "activity-1",
-                name: "Morning Run",
-                profile: { username: "runner" },
-                activity_kind: "single",
-                type: "run",
-                started_at: "2026-07-20T08:00:00.000Z",
-                duration_seconds: 3600,
-                distance_meters: 10000,
-                likes_count: 2,
-                comments_count: 1,
+                href: "/activities/activity-1",
+                owner: { id: "runner-1", username: "runner", avatarUrl: null },
+                time: {
+                  startedAt: "2026-07-20T08:00:00.000Z",
+                  finishedAt: null,
+                },
+                activityComposition: { kind: "single", categories: ["run"] },
+                title: "Morning Run",
+                notes: null,
+                metrics: [
+                  {
+                    key: "elapsed_duration",
+                    label: "Elapsed",
+                    status: "available",
+                    value: 3600,
+                    unit: "seconds",
+                    reason: null,
+                  },
+                ],
+                visibility: "public",
+                engagement: { likes: 2, comments: 1, viewerHasLiked: false },
+                capabilities: {
+                  canLike: true,
+                  canComment: true,
+                  canShare: true,
+                  canEdit: false,
+                  canDelete: false,
+                  hasRoute: false,
+                },
               },
             ],
           },

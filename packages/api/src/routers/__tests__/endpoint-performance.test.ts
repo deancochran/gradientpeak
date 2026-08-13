@@ -66,7 +66,7 @@ const queryMap: QueryMap = {
       email: "athlete@example.com",
       full_name: "Athlete Example",
       username: "athlete",
-      onboarded: true,
+      onboarding_status: "completed",
       is_public: true,
       preferred_units: "metric",
       language: "en",

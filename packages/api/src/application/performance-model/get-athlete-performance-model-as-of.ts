@@ -29,22 +29,6 @@ import {
 const HEART_RATE_FRESHNESS_WINDOW_MS = 90 * 86_400_000;
 const uuidSchema = z.string().uuid();
 
-const lthrProvenanceSchema = z
-  .object({
-    activity_id: uuidSchema,
-    segment_id: uuidSchema,
-    derived_from: z.literal("activity_file_best_effort"),
-    source_series: z.literal("heart_rate"),
-    source_effort_calculation_version: z.string().trim().min(1),
-    exact_window_start_timestamp_seconds: z.number().finite().nonnegative(),
-    exact_window_end_timestamp_seconds: z.number().finite().positive(),
-    duration_seconds: z.number().int().positive().max(14_400),
-    window_coverage: z.literal(1),
-    extraction_status: z.enum(["available", "partial"]),
-    extraction_reason: z.literal("source_incomplete").nullable(),
-  })
-  .strict();
-
 const maxHrProvenanceSchema = z
   .object({
     activity_id: uuidSchema,
@@ -84,7 +68,7 @@ function unavailableHeartRateFact(input: {
 
 function adaptHeartRateFact(input: {
   activityCategory: ActivityCategory;
-  metric: HeartRateMetric;
+  metric: "max_hr";
   rows: readonly HeartRateCalibrationCandidateRow[];
   truncated: boolean;
   asOf: Date;
@@ -116,38 +100,20 @@ function adaptHeartRateFact(input: {
   ) {
     throw new Error("Incompatible heart-rate calibration row identity");
   }
-  const expectedMethod =
-    input.metric === "lthr" ? "activity_file_lthr_detection" : "max_hr_progressive_test_v1";
-  const expectedCalculationVersion =
-    input.metric === "lthr" ? "activity-file-lthr-v1" : "max_hr_progressive_test_v1";
+  const expectedMethod = "max_hr_progressive_test_v1";
+  const expectedCalculationVersion = "max_hr_progressive_test_v1";
   if (
     row.method !== expectedMethod ||
     row.calculation_version !== expectedCalculationVersion ||
-    row.value < (input.metric === "lthr" ? 60 : 100) ||
-    row.value > (input.metric === "lthr" ? 240 : 250)
+    row.value < 100 ||
+    row.value > 250
   ) {
     throw new Error("Incompatible heart-rate calibration method, version, or value");
   }
 
-  if (input.metric === "lthr") {
-    const provenance = lthrProvenanceSchema.parse(row.provenance);
-    if (
-      provenance.activity_id !== row.reference_activity_id ||
-      provenance.exact_window_end_timestamp_seconds -
-        provenance.exact_window_start_timestamp_seconds !==
-        provenance.duration_seconds ||
-      Math.abs(provenance.exact_window_end_timestamp_seconds - row.recorded_at.getTime() / 1_000) >
-        0.001 ||
-      provenance.extraction_reason !==
-        (provenance.extraction_status === "partial" ? "source_incomplete" : null)
-    ) {
-      throw new Error("Incompatible LTHR provenance, coverage, or timestamps");
-    }
-  } else {
-    const provenance = maxHrProvenanceSchema.parse(row.provenance);
-    if (provenance.activity_id !== row.reference_activity_id) {
-      throw new Error("Incompatible max-HR provenance identity");
-    }
+  const provenance = maxHrProvenanceSchema.parse(row.provenance);
+  if (provenance.activity_id !== row.reference_activity_id) {
+    throw new Error("Incompatible max-HR provenance identity");
   }
 
   const expiresAt = new Date(row.recorded_at.getTime() + HEART_RATE_FRESHNESS_WINDOW_MS);
@@ -251,11 +217,12 @@ export function buildAthletePerformanceModelFromEvidenceReads(
     (["bike", "run", "swim"] as const).map((activityCategory) => [
       activityCategory,
       {
-        lthr: adaptHeartRateFact({
+        // Automatic LTHR has exactly one authority: selected calibration history.
+        // Legacy profile_metrics detections are intentionally not a fallback.
+        lthr: unavailableHeartRateFact({
           activityCategory,
           metric: "lthr",
-          ...heartRateReads[activityCategory].lthr,
-          asOf: input.asOf,
+          reason: "no_eligible_evidence",
         }),
         maxHr: adaptHeartRateFact({
           activityCategory,
@@ -279,6 +246,7 @@ export function buildAthletePerformanceModelFromEvidenceReads(
       other: emptySessionModel("other"),
     },
     heartRate,
+    calibrations: reads.calibrationReads ?? [],
   });
 }
 

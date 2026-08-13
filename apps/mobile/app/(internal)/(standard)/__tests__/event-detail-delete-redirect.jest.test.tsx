@@ -221,7 +221,7 @@ jest.mock("@/lib/api", () => ({
       },
     },
     trainingPlans: {
-      getById: {
+      get: {
         useQuery: () => ({ data: null }),
       },
     },

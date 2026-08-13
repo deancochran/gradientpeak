@@ -2,7 +2,6 @@ import { Text } from "@repo/ui/components/text";
 import {
   DashPathEffect,
   interpolateColors,
-  Circle as SkiaCircle,
   Line as SkiaLine,
   Rect as SkiaRect,
   Text as SkiaText,
@@ -40,7 +39,6 @@ type ChartDatum = Record<string, unknown> & {
   index: number;
   completedLoad: number | null;
   plannedLoad: number | null;
-  plannedLoadWithTentative: number | null;
   targetLoad: number | null;
   fitness: number | null;
   scheduledFitness: number | null;
@@ -50,7 +48,6 @@ type ChartDatum = Record<string, unknown> & {
 type ChartYKey =
   | "completedLoad"
   | "plannedLoad"
-  | "plannedLoadWithTentative"
   | "targetLoad"
   | "fitness"
   | "scheduledFitness"
@@ -77,18 +74,12 @@ type TrainingPathChartProps = {
 const yKeys: ChartYKey[] = [
   "completedLoad",
   "plannedLoad",
-  "plannedLoadWithTentative",
   "targetLoad",
   "fitness",
   "scheduledFitness",
   "targetFitness",
 ];
-const loadKeys: ChartYKey[] = [
-  "completedLoad",
-  "plannedLoad",
-  "plannedLoadWithTentative",
-  "targetLoad",
-];
+const loadKeys: ChartYKey[] = ["completedLoad", "plannedLoad", "targetLoad"];
 const fitnessKeys: ChartYKey[] = ["fitness", "scheduledFitness", "targetFitness"];
 const initialChartPressState: { x: number; y: Record<ChartYKey, number> } = {
   x: 0,
@@ -96,7 +87,6 @@ const initialChartPressState: { x: number; y: Record<ChartYKey, number> } = {
     completedLoad: 0,
     fitness: 0,
     plannedLoad: 0,
-    plannedLoadWithTentative: 0,
     scheduledFitness: 0,
     targetFitness: 0,
     targetLoad: 0,
@@ -168,7 +158,6 @@ function getLoadBarGeometry(
   return (
     getBarGeometry(pointsByKey.completedLoad ?? [], index, chartLeft, chartRight) ??
     getBarGeometry(pointsByKey.plannedLoad ?? [], index, chartLeft, chartRight) ??
-    getBarGeometry(pointsByKey.plannedLoadWithTentative ?? [], index, chartLeft, chartRight) ??
     getBarGeometry(pointsByKey.targetLoad ?? [], index, chartLeft, chartRight)
   );
 }
@@ -234,106 +223,6 @@ function AnimatedFocusedRect({
   );
 }
 
-const tentativePatternSpacing = 5;
-const tentativePatternRadius = 1.1;
-type SkiaCircleProps = Parameters<typeof SkiaCircle>[0];
-
-function TentativePatternFill({
-  color,
-  height,
-  opacity = 0.82,
-  width,
-  x,
-  y,
-}: {
-  color: SkiaCircleProps["color"];
-  height: number;
-  opacity?: SkiaCircleProps["opacity"];
-  width: number;
-  x: number;
-  y: number;
-}) {
-  if (width <= 0 || height <= 0) return null;
-
-  const dots = [];
-  const left = x + Math.min(3, width / 2);
-  const top = y + Math.min(3, height / 2);
-  const right = x + width - 2;
-  const bottom = y + height - 2;
-
-  for (let cy = top; cy <= bottom; cy += tentativePatternSpacing) {
-    for (let cx = left; cx <= right; cx += tentativePatternSpacing) {
-      dots.push(
-        <SkiaCircle
-          key={`tentative-dot-${dots.length}`}
-          cx={cx}
-          cy={cy}
-          r={tentativePatternRadius}
-          color={color}
-          opacity={opacity}
-        />,
-      );
-    }
-  }
-
-  if (dots.length === 0) {
-    dots.push(
-      <SkiaCircle
-        key="tentative-dot-center"
-        cx={x + width / 2}
-        cy={y + height / 2}
-        r={tentativePatternRadius}
-        color={color}
-        opacity={opacity}
-      />,
-    );
-  }
-
-  return <Fragment>{dots}</Fragment>;
-}
-
-function AnimatedTentativePatternFill({
-  activeColor,
-  chartScrollX,
-  dimColor,
-  height,
-  index,
-  scrollSlotWidth,
-  width,
-  x,
-  y,
-}: {
-  activeColor: string;
-  chartScrollX: SharedValue<number>;
-  dimColor: string;
-  height: number;
-  index: number;
-  scrollSlotWidth: number;
-  width: number;
-  x: number;
-  y: number;
-}) {
-  const focus = useDerivedValue(() => {
-    const distance = Math.abs(chartScrollX.value - index * scrollSlotWidth);
-    return Math.max(0, Math.min(1, 1 - distance / scrollSlotWidth));
-  });
-  const color = useDerivedValue(() =>
-    interpolateColors(focus.value, [0, 1], [dimColor, activeColor]),
-  );
-  const opacity = useDerivedValue(() => 0.58 + focus.value * 0.34);
-
-  return (
-    <TentativePatternFill
-      x={x}
-      y={y}
-      width={width}
-      height={height}
-      color={color}
-      opacity={opacity}
-    />
-  );
-}
-
 function buildLinearTicks(domain: [number, number], count = 5) {
   const [min, max] = domain;
   if (count <= 1 || min === max) return [max];
@@ -381,9 +270,6 @@ function getRenderedLoadDomain({
     if (showPlanningLayers && isFiniteNumber(datum.targetLoad)) values.push(datum.targetLoad);
     if (showPlanningLayers && showPlannedLoad && isFiniteNumber(datum.plannedLoad)) {
       values.push(datum.plannedLoad);
-    }
-    if (showPlanningLayers && showPlannedLoad && isFiniteNumber(datum.plannedLoadWithTentative)) {
-      values.push(datum.plannedLoadWithTentative);
     }
   }
 
@@ -492,7 +378,6 @@ export function TrainingPathChart({
     marker: isDark ? "#f8fafc" : "#020617",
     planned: isDark ? "rgba(59, 130, 246, 0.74)" : "rgba(37, 99, 235, 0.68)",
     plannedDimmed: isDark ? "rgba(59, 130, 246, 0.32)" : "rgba(37, 99, 235, 0.24)",
-    plannedOutline: isDark ? "rgba(96, 165, 250, 0.9)" : "rgba(37, 99, 235, 0.88)",
     selected: isDark ? "rgba(248, 250, 252, 0.12)" : "rgba(15, 23, 42, 0.08)",
     scheduledFitness: isDark ? "rgba(96, 165, 250, 0.95)" : "rgba(37, 99, 235, 0.95)",
     target: isDark ? "rgba(148, 163, 184, 0.34)" : "rgba(100, 116, 139, 0.24)",
@@ -500,6 +385,12 @@ export function TrainingPathChart({
     targetFitness: isDark ? "rgba(248, 250, 252, 0.5)" : "rgba(15, 23, 42, 0.42)",
   };
   const axisFont = useFont(getAxisFontSource(), 9);
+  const hasGoalBackedRecommendation =
+    model.goalMarkers.length > 0 &&
+    model.weeks.some(
+      (week) =>
+        week.recommendedLoadStatus === "complete" || week.recommendedLoadStatus === "known_zero",
+    );
   const labels = useMemo(() => model.weeks.map((week) => week.label), [model.weeks]);
   const chartData: ChartDatum[] = useMemo(
     () =>
@@ -508,25 +399,21 @@ export function TrainingPathChart({
         completedLoad: week.effectiveCompletedLoad ?? null,
         plannedLoad:
           week.effectiveLoadStatus === "unavailable" ? null : (week.effectiveRemainingLoad ?? null),
-        plannedLoadWithTentative:
-          week.effectiveLoadStatus !== "unavailable" &&
-          typeof week.effectiveRemainingLoad === "number" &&
-          typeof week.effectiveTentativeLoad === "number"
-            ? week.effectiveRemainingLoad + week.effectiveTentativeLoad
-            : null,
         // Only the explicit versioned common-Load recommendation may share this axis.
         targetLoad:
-          week.recommendedLoadStatus === "complete" || week.recommendedLoadStatus === "known_zero"
+          hasGoalBackedRecommendation &&
+          (week.recommendedLoadStatus === "complete" || week.recommendedLoadStatus === "known_zero")
             ? (week.recommendedLoad ?? null)
             : null,
         fitness: week.fitness,
         scheduledFitness: week.scheduledFitness,
         targetFitness:
-          week.recommendedLoadStatus === "complete" || week.recommendedLoadStatus === "known_zero"
+          hasGoalBackedRecommendation &&
+          (week.recommendedLoadStatus === "complete" || week.recommendedLoadStatus === "known_zero")
             ? week.targetFitness
             : null,
       })),
-    [model.weeks],
+    [hasGoalBackedRecommendation, model.weeks],
   );
   const effectiveLoadDomain = useMemo(
     () =>
@@ -738,23 +625,18 @@ export function TrainingPathChart({
         accessibilityWeek.effectiveRemainingLoad == null
           ? null
           : formatAccessibleMetric("Planned Common Load", accessibilityWeek.effectiveRemainingLoad),
-        accessibilityWeek.effectiveTentativeLoad == null
-          ? null
-          : formatAccessibleMetric(
-              "Tentative Common Load",
-              accessibilityWeek.effectiveTentativeLoad,
-            ),
-        !accessibilityWeek.recommendedLoadStatus
+        !hasGoalBackedRecommendation || !accessibilityWeek.recommendedLoadStatus
           ? null
           : accessibilityWeek.recommendedLoadStatus === "unavailable" ||
               accessibilityWeek.recommendedLoad == null
             ? "Recommended Common Load unavailable"
             : `${formatAccessibleMetric("Recommended Common Load", accessibilityWeek.recommendedLoad)}${accessibilityWeek.recommendedLoadStatus === "partial" ? " incomplete" : ""}`,
-        formatAccessibleMetric("Actual fitness", accessibilityWeek.fitness),
-        formatAccessibleMetric("Projected fitness", accessibilityWeek.scheduledFitness),
-        accessibilityWeek.recommendedLoadStatus === "complete" ||
-        accessibilityWeek.recommendedLoadStatus === "known_zero"
-          ? formatAccessibleMetric("Target fitness", accessibilityWeek.targetFitness)
+        formatAccessibleMetric("Current fitness", accessibilityWeek.fitness),
+        formatAccessibleMetric("Planned projection", accessibilityWeek.scheduledFitness),
+        hasGoalBackedRecommendation &&
+        (accessibilityWeek.recommendedLoadStatus === "complete" ||
+          accessibilityWeek.recommendedLoadStatus === "known_zero")
+          ? formatAccessibleMetric("Recommended projection", accessibilityWeek.targetFitness)
           : null,
       ]
         .filter((value): value is string => value !== null)
@@ -906,7 +788,6 @@ export function TrainingPathChart({
               );
               const completedPoint = points.completedLoad[index];
               const plannedPoint = points.plannedLoad[index];
-              const plannedWithTentativePoint = points.plannedLoadWithTentative[index];
               const targetPoint = points.targetLoad[index];
               if (!geometry) return null;
               const barWidth = getSleeveBarWidth(
@@ -982,39 +863,6 @@ export function TrainingPathChart({
                       />
                     )
                   ) : null}
-                  {showPlanningLayers &&
-                  showPlannedLoad &&
-                  typeof plannedWithTentativePoint?.yValue === "number" &&
-                  typeof plannedWithTentativePoint.y === "number" &&
-                  typeof plannedPoint?.yValue === "number" &&
-                  typeof plannedPoint.y === "number" &&
-                  plannedWithTentativePoint.yValue > plannedPoint.yValue ? (
-                    shouldFocusScrolledBars ? (
-                      <AnimatedTentativePatternFill
-                        key={`tentative-planned-${week.weekStart}`}
-                        x={barLeft}
-                        y={plannedWithTentativePoint.y}
-                        width={barWidth}
-                        height={plannedPoint.y - plannedWithTentativePoint.y}
-                        activeColor={chartColors.plannedOutline}
-                        dimColor={chartColors.plannedDimmed}
-                        index={index}
-                        scrollSlotWidth={scrollWeekWidth}
-                        chartScrollX={chartScrollX}
-                      />
-                    ) : (
-                      <TentativePatternFill
-                        key={`tentative-planned-${week.weekStart}`}
-                        x={barLeft}
-                        y={plannedWithTentativePoint.y}
-                        width={barWidth}
-                        height={
-                          (plannedPoint?.y ?? chartBounds.bottom) - plannedWithTentativePoint.y
-                        }
-                        color={isDimmed ? chartColors.plannedDimmed : chartColors.plannedOutline}
-                      />
-                    )
-                  ) : null}
                   {showCompletedLoad &&
                   typeof completedPoint?.yValue === "number" &&
                   typeof completedPoint.y === "number" ? (
@@ -1045,14 +893,16 @@ export function TrainingPathChart({
                 </Fragment>
               );
             })}
-            <Line
-              points={points.targetFitness.filter((point) => point.yValue != null)}
-              color={chartColors.targetFitness}
-              strokeWidth={2}
-              curveType="natural"
-            >
-              <DashPathEffect intervals={[4, 4]} />
-            </Line>
+            {hasGoalBackedRecommendation ? (
+              <Line
+                points={points.targetFitness.filter((point) => point.yValue != null)}
+                color={chartColors.targetFitness}
+                strokeWidth={2}
+                curveType="natural"
+              >
+                <DashPathEffect intervals={[4, 4]} />
+              </Line>
+            ) : null}
             {showScheduledFitness ? (
               <Line
                 points={points.scheduledFitness.filter((point) => point.yValue != null)}
@@ -1072,23 +922,31 @@ export function TrainingPathChart({
                   const index = model.weeks.findIndex(
                     (week) => week.weekStart === todayWeekStart.weekStart,
                   );
-                  const actualMarkerPoint = points.fitness[index];
-                  const scheduledMarkerPoint = points.scheduledFitness[index];
                   const markerPoint =
-                    actualMarkerPoint?.yValue != null ? actualMarkerPoint : scheduledMarkerPoint;
-                  if (
-                    !markerPoint ||
-                    markerPoint.yValue == null ||
-                    typeof markerPoint.y !== "number"
-                  )
-                    return null;
+                    points.fitness[index] ??
+                    points.scheduledFitness[index] ??
+                    points.completedLoad[index];
+                  if (!markerPoint || typeof markerPoint.x !== "number") return null;
                   return (
-                    <SkiaCircle
-                      cx={markerPoint.x}
-                      cy={markerPoint.y}
-                      r={4}
-                      color={chartColors.marker}
-                    />
+                    <>
+                      <SkiaLine
+                        p1={vec(markerPoint.x, chartBounds.top)}
+                        p2={vec(markerPoint.x, chartBounds.bottom)}
+                        color={chartColors.marker}
+                        strokeWidth={1.5}
+                      >
+                        <DashPathEffect intervals={[3, 3]} />
+                      </SkiaLine>
+                      {axisFont ? (
+                        <SkiaText
+                          x={Math.max(chartBounds.left, markerPoint.x - 12)}
+                          y={chartBounds.top + 10}
+                          text="TODAY"
+                          font={axisFont}
+                          color={chartColors.marker}
+                        />
+                      ) : null}
+                    </>
                   );
                 })()
               : null}
@@ -1154,9 +1012,22 @@ export function TrainingPathChart({
   return (
     <View style={{ height }} onLayout={onChartLayout} testID="training-path-chart">
       <View className="flex-row items-center justify-between px-2 pb-1">
-        <Text className="text-[10px] font-medium text-muted-foreground">Common Load</Text>
-        <Text className="text-[10px] font-medium text-muted-foreground">Fitness</Text>
+        <View accessibilityLabel="Left axis: Load, Common Load">
+          <Text className="text-[10px] font-medium text-muted-foreground">Load</Text>
+          <Text className="text-[8px] text-muted-foreground">Common Load</Text>
+        </View>
+        <View accessibilityLabel="Right axis: Fitness">
+          <Text className="text-[10px] font-medium text-muted-foreground">Fitness</Text>
+        </View>
       </View>
+      {todayWeekStart ? (
+        <View
+          accessibilityLabel={`Today boundary in week of ${todayWeekStart.weekStart}`}
+          accessibilityRole="image"
+          style={{ height: 0, width: 0 }}
+          testID="training-path-today-boundary"
+        />
+      ) : null}
       {reviewWeeks && onSelectedWeekChange ? (
         <View
           accessible

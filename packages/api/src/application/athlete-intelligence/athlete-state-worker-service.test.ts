@@ -6,7 +6,12 @@ import {
   readAthleteStateEvidencePage,
   renewAthleteStateClaim,
 } from "../../repositories/athlete-state-repository";
+import { sweepDuePerformanceCalibrations } from "../performance-model/sweep-due-performance-calibrations";
 import { AthleteStateWorkerService } from "./athlete-state-worker";
+
+vi.mock("../performance-model/sweep-due-performance-calibrations", () => ({
+  sweepDuePerformanceCalibrations: vi.fn().mockResolvedValue({ claimed: 0, changed: 0 }),
+}));
 
 vi.mock("../../repositories/athlete-state-repository", () => ({
   claimNextAthleteState: vi.fn(),
@@ -52,6 +57,10 @@ describe("athlete-state worker lease fencing", () => {
     ).resolves.toEqual({ completed: 0, failed: 1, processed: 1 });
 
     expect(renewAthleteStateClaim).toHaveBeenCalledOnce();
+    expect(sweepDuePerformanceCalibrations).toHaveBeenCalledWith(
+      {},
+      { limit: 1, now: new Date("2026-08-06T12:00:00.000Z") },
+    );
     expect(publishAthleteState).not.toHaveBeenCalled();
     expect(failAthleteStateClaim).not.toHaveBeenCalled();
   });

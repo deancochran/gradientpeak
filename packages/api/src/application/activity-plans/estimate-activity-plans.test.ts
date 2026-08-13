@@ -1,7 +1,9 @@
 import {
   activityPlanStructureSchema,
+  athletePerformanceTargetFactsSchema,
   createUnavailableAthletePerformanceTargetFacts,
 } from "@repo/core";
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const publishedState = vi.hoisted(() => ({
@@ -93,6 +95,52 @@ describe("estimateActivityPlans", () => {
       "unavailable",
     );
     expect(estimated).not.toHaveProperty("estimation_warnings");
+  });
+
+  it.each([
+    ["confirmed", "complete"],
+    ["provisional", "complete"],
+    ["stale", "complete"],
+    ["unavailable", "unavailable"],
+  ] as const)("applies %s calibration-state planning behavior", async (state, expectedStatus) => {
+    const confirmed = buildPerformanceTargetFactsFixture({
+      asOf: asOf.toISOString(),
+      athleteId: plan.profile_id,
+      planningThresholdPowerWatts: 250,
+    });
+    const fact = confirmed.cycling.planningThresholdPower;
+    const targets =
+      state === "confirmed"
+        ? confirmed
+        : state === "unavailable"
+          ? createUnavailableAthletePerformanceTargetFacts(asOf.toISOString(), plan.profile_id)
+          : athletePerformanceTargetFactsSchema.parse({
+              ...confirmed,
+              cycling: {
+                planningThresholdPower:
+                  state === "provisional"
+                    ? {
+                        ...fact,
+                        status: "partial",
+                        calibrationState: "provisional",
+                        confidence: "low",
+                      }
+                    : {
+                        ...fact,
+                        status: "available",
+                        calibrationState: "stale",
+                        confidence: "low",
+                        reasons: ["stale_evidence"],
+                      },
+              },
+            });
+    publishedState.readPublishedAthletePerformanceTargets.mockResolvedValue({
+      status: "available",
+      targets,
+    });
+
+    const [estimated] = await estimateActivityPlans([plan], {} as never, plan.profile_id, { asOf });
+    expect(estimated?.prescriptionQuantification.summary.commonLoad.status).toBe(expectedStatus);
   });
 
   it("skips snapshot I/O for an empty batch", async () => {

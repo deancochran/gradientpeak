@@ -4,6 +4,7 @@ import { calculateRunningNormalizedGradedPace } from "../../calculations/normali
 import { calculateCyclingNormalizedPower } from "../../calculations/normalized-power";
 import { aggregateCommonLoad, type CommonLoadResult } from "../../load/common-relative-load";
 import { buildPerformanceTargetFactsFixture } from "../../performance-model/__tests__/fixtures/target-facts";
+import { athletePerformanceTargetFactsSchema } from "../../performance-model/projections";
 import { type ActivitySummaryForAnalysis, analyzeActivityDerivedMetrics } from "../stress";
 
 const STARTED_AT = "2026-07-31T10:00:00.000Z";
@@ -79,6 +80,32 @@ describe("running Common Load v1", () => {
     }
     expect(result.intensity).toBeCloseTo(fixture.expected.normalizedIntensity, 12);
     expect(result.load).toBeCloseTo(fixture.expected.commonLoad, 12);
+  });
+
+  it("calculates normal Load from a provisional valid run threshold", () => {
+    const fixture = RUNNING_NUMERICAL_TRUST_FIXTURES_V1.canonicalThresholdHour;
+    const targets = buildPerformanceTargetFactsFixture({
+      planningThresholdPaceSecondsPerKm: 1_000 / fixture.thresholdSpeedMetersPerSecond,
+    });
+    const performanceTargets = athletePerformanceTargetFactsSchema.parse({
+      ...targets,
+      running: {
+        planningThresholdPace: {
+          ...targets.running.planningThresholdPace,
+          status: "partial",
+          calibrationState: "provisional",
+          confidence: "low",
+        },
+      },
+    });
+
+    const result = analyzeActivityDerivedMetrics({
+      activity: activityFromFixture(fixture),
+      context: { profileMetrics: {}, performanceTargets, recentEfforts: [], profile: {} },
+    }).stress.common_load;
+    expect(result).toMatchObject({ status: "available", method: "run_pace_threshold" });
+    if (result.status !== "available") throw new Error("Expected provisional run Load");
+    expect(result.load).toBeCloseTo(100, 12);
   });
 
   it("returns threshold_missing without converting evidenced NGP into Load", () => {

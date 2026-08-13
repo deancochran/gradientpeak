@@ -1,23 +1,19 @@
+import { Button } from "@repo/ui/components/button";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
+import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Stack, useLocalSearchParams } from "expo-router";
-import { Activity } from "lucide-react-native";
+import { Activity, SlidersHorizontal } from "lucide-react-native";
 import { useState } from "react";
 import { View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ActivityCard } from "@/components/shared/ActivityCard";
 import { HeaderTextAction } from "@/components/shared/HeaderAction";
 import { IndexFilterSheet } from "@/components/shared/IndexFilterSheet";
-import {
-  FilterChip,
-  FilterSection,
-  IndexResultsSummary,
-  IndexSearchBar,
-} from "@/components/shared/IndexSearchBar";
+import { FilterChip, FilterSection, IndexResultsSummary } from "@/components/shared/IndexSearchBar";
 import { ResourceList } from "@/components/shared/ResourceList";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
-import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 function ActivitiesScreen() {
@@ -33,9 +29,7 @@ function ActivitiesScreen() {
       ? rawImportRunId
       : undefined;
   const navigateTo = useAppNavigate();
-  const { profile, user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<
     "run" | "bike" | "swim" | "strength" | "other" | null
   >(null);
@@ -61,7 +55,6 @@ function ActivitiesScreen() {
     {
       limit,
       importRunId,
-      search: searchQuery.trim() || undefined,
       activity_category: categoryFilter ?? undefined,
       composition_mode: includeMultisport ? "include_multisport" : "single_only",
       sort_by: sortBy,
@@ -73,20 +66,10 @@ function ActivitiesScreen() {
   );
 
   const activities = activitiesData?.pages.flatMap((page) => page.items) || [];
-  const activityOwner = user?.id
-    ? {
-        avatar_url: profile?.avatar_url ?? null,
-        id: user.id,
-        username: profile?.username ?? user.email?.split("@")[0] ?? "You",
-      }
-    : null;
   const hasMore = activitiesData?.pages[activitiesData.pages.length - 1]?.hasMore || false;
   const total = activitiesData?.pages[0]?.total || 0;
-  const hasActiveFilter =
-    searchQuery.trim().length > 0 ||
-    categoryFilter !== null ||
-    !includeMultisport ||
-    Boolean(importRunId);
+  const hasActiveFilter = categoryFilter !== null || !includeMultisport || Boolean(importRunId);
+  const hasActiveSheetFilters = categoryFilter !== null || sortBy !== "date" || !includeMultisport;
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -118,20 +101,29 @@ function ActivitiesScreen() {
           ),
         }}
       />
-      <IndexSearchBar
-        value={searchQuery}
-        placeholder="Search activities"
-        hasActiveFilters={categoryFilter !== null || sortBy !== "date" || !includeMultisport}
-        onChangeText={setSearchQuery}
-        onClear={() => setSearchQuery("")}
-        onFilterPress={() => {
-          setDraftCategoryFilter(categoryFilter);
-          setDraftSortBy(sortBy);
-          setDraftIncludeMultisport(includeMultisport);
-          setIsFilterSheetOpen(true);
-        }}
-        testIDPrefix="activities-list"
-      />
+      <View className="items-end border-b border-border bg-background px-4 py-3">
+        <Button
+          accessibilityLabel="Open activity filters"
+          accessibilityState={{ selected: hasActiveSheetFilters }}
+          onPress={() => {
+            setDraftCategoryFilter(categoryFilter);
+            setDraftSortBy(sortBy);
+            setDraftIncludeMultisport(includeMultisport);
+            setIsFilterSheetOpen(true);
+          }}
+          testId="activities-list-filter-button"
+          variant="outline"
+        >
+          <Icon as={SlidersHorizontal} className="text-foreground" size={16} />
+          <Text>Filters</Text>
+          {hasActiveSheetFilters ? (
+            <View
+              className="h-1.5 w-1.5 rounded-full bg-primary"
+              testID="activities-list-filter-button-dot"
+            />
+          ) : null}
+        </Button>
+      </View>
       {importRunId ? (
         <View className="border-b border-border/50 px-4 py-2">
           <Text className="text-sm font-medium text-foreground">Imported activity batch</Text>
@@ -173,22 +165,11 @@ function ActivitiesScreen() {
         renderItem={(activity) => {
           return (
             <ActivityCard
-              activity={{
-                ...activity,
-                ingestion:
-                  activity.ingestion === null || activity.ingestion === undefined
-                    ? null
-                    : {
-                        status: activity.ingestion.status,
-                        last_error_message: activity.ingestion.last_error_message ?? null,
-                      },
-              }}
+              activity={activity}
               dateMode="absolute"
               onPress={() => handleActivityPress(activity.id)}
-              owner={activityOwner}
               showLike
               testID={`activities-list-item-${activity.id}`}
-              variant="list"
             />
           );
         }}

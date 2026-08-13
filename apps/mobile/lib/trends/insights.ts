@@ -40,7 +40,7 @@ export type Insight = {
   rows: { label: string; value: string }[];
 };
 
-type ServerTrendInsight = Omit<Insight, "icon" | "points" | "series"> & {
+export type ServerTrendInsight = Omit<Insight, "icon" | "points" | "series"> & {
   icon:
     | "activity"
     | "barChart"
@@ -86,6 +86,18 @@ function hydratePoint(point: ServerTrendInsight["points"][number]): InsightPoint
 export function hydrateTrendInsights(items: ServerTrendInsight[]): Insight[] {
   return items.map(({ icon, points, series, ...item }) => ({
     ...item,
+    ...(item.id === "performance"
+      ? {
+          summary:
+            item.value === "--" ? "No power or speed samples yet" : "Latest completed activity",
+        }
+      : {}),
+    ...(item.id === "peak-power"
+      ? {
+          summary: item.value === "--" ? "No power peak recorded" : "Top recorded effort",
+          rows: item.rows.map((row, index) => ({ ...row, label: `#${index + 1} Activity` })),
+        }
+      : {}),
     icon: iconByKey[icon],
     points: points.map(hydratePoint),
     ...(series === undefined

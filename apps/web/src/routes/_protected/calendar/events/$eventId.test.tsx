@@ -33,7 +33,7 @@ vi.mock("../../../../lib/api/client", () => ({
       getById: { useQuery: () => ({ data: mocks.event, isError: false, isLoading: false }) },
     },
     trainingPlans: {
-      getById: { useQuery: () => ({ data: null }) },
+      get: { useQuery: () => ({ data: null }) },
     },
   },
 }));
@@ -43,8 +43,9 @@ afterEach(cleanup);
 describe("EventDetailPage", () => {
   it("renders the activity plan's compiled canonical activity_category as one badge", () => {
     mocks.event = {
-      activity_plan: {
+      activityPlanSummary: {
         name: "Tempo run",
+        activityCategory: "run",
         structure: {
           activity_category: "run",
           segments: [

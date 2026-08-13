@@ -55,7 +55,6 @@ export function GroupEventForm({
 }: GroupEventFormProps) {
   const routesQuery = api.routes.list.useQuery({ limit: 50, ownerScope: "all" });
   const plansQuery = api.activityPlans.list.useQuery({
-    includeEstimation: false,
     ownerScope: "all",
     limit: 50,
   });

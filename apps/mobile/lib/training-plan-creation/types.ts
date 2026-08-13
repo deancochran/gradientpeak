@@ -3,47 +3,50 @@ import type {
   AthletePlanningContextEditableFieldKey,
   AthletePlanningContextEffortInput,
   AthletePlanningContextFieldOverride,
+  ContentVisibility,
+  PlannedTrainingActivityPlanFacts,
+  PlannedTrainingEventOverrides,
+  PlannedTrainingSessionIntent,
+  PlanningGoal,
+  PlanningPreferences,
+  PlanningSchedule,
 } from "@repo/core";
-import type { z } from "zod";
-import type {
-  trainingPlanActivityPlanFactsSchema,
-  trainingPlanBuilderEventOverridesSchema,
-  trainingPlanBuilderGoalBlueprintSchema,
-  trainingPlanBuilderGoalContextSchema,
-  trainingPlanBuilderPlanPreferencesSchema,
-  trainingPlanBuilderProfileGoalDraftSchema,
-  trainingPlanBuilderSchedulingSchema,
-  trainingPlanBuilderSelectionSchema,
-  trainingPlanBuilderSessionIntentSchema,
-  trainingPlanBuilderSessionSchema,
-  trainingPlanBuilderStateSchema,
-  trainingPlanFinalCreatePayloadSchema,
-  trainingPlanFinalUpdatePayloadSchema,
-} from "./schemas";
 
-export type TrainingPlanActivityPlanFacts = z.infer<typeof trainingPlanActivityPlanFactsSchema>;
-export type TrainingPlanBuilderEventOverrides = z.infer<
-  typeof trainingPlanBuilderEventOverridesSchema
->;
-export type TrainingPlanBuilderGoalBlueprint = z.infer<
-  typeof trainingPlanBuilderGoalBlueprintSchema
->;
-export type TrainingPlanBuilderGoalContext = z.infer<typeof trainingPlanBuilderGoalContextSchema>;
-export type TrainingPlanBuilderPlanPreferences = z.infer<
-  typeof trainingPlanBuilderPlanPreferencesSchema
->;
-export type TrainingPlanBuilderProfileGoalDraft = z.infer<
-  typeof trainingPlanBuilderProfileGoalDraftSchema
->;
-export type TrainingPlanBuilderSelection = z.infer<typeof trainingPlanBuilderSelectionSchema>;
-export type TrainingPlanBuilderSessionIntent = z.infer<
-  typeof trainingPlanBuilderSessionIntentSchema
->;
-export type TrainingPlanBuilderSession = z.infer<typeof trainingPlanBuilderSessionSchema>;
-export type TrainingPlanBuilderScheduling = z.infer<typeof trainingPlanBuilderSchedulingSchema>;
-export type TrainingPlanBuilderState = z.infer<typeof trainingPlanBuilderStateSchema>;
-export type TrainingPlanFinalCreatePayload = z.infer<typeof trainingPlanFinalCreatePayloadSchema>;
-export type TrainingPlanFinalUpdatePayload = z.infer<typeof trainingPlanFinalUpdatePayloadSchema>;
+export type TrainingPlanActivityPlanFacts = PlannedTrainingActivityPlanFacts;
+export type TrainingPlanBuilderEventOverrides = PlannedTrainingEventOverrides;
+export type TrainingPlanBuilderGoalBlueprint = PlanningGoal;
+export type TrainingPlanBuilderGoalContext = { selectedGoals: TrainingPlanBuilderGoalBlueprint[] };
+export type TrainingPlanBuilderPlanPreferences = PlanningPreferences;
+export type TrainingPlanBuilderSessionIntent = PlannedTrainingSessionIntent;
+export type TrainingPlanBuilderSession = {
+  localId: string;
+  offsetDays: number;
+  intent?: TrainingPlanBuilderSessionIntent;
+  activityPlan: TrainingPlanActivityPlanFacts | null;
+  eventOverrides?: TrainingPlanBuilderEventOverrides;
+};
+export type TrainingPlanBuilderScheduling = PlanningSchedule;
+export type TrainingPlanBuilderSelection =
+  | { type: "overview" }
+  | { type: "session"; sessionId: string }
+  | { type: "goal"; goalId: string }
+  | { type: "assumptions" }
+  | { type: "planCheck"; planCheckId: string };
+
+export type TrainingPlanBuilderState = {
+  details: {
+    name: string;
+    description: string;
+    contentVisibility: ContentVisibility;
+  };
+  anchorDate: string;
+  athleteContext: AthletePlanningContext;
+  planPreferences: TrainingPlanBuilderPlanPreferences;
+  goalContext: TrainingPlanBuilderGoalContext;
+  structure: { sessions: TrainingPlanBuilderSession[] };
+  scheduling: TrainingPlanBuilderScheduling;
+  selection: TrainingPlanBuilderSelection;
+};
 
 export type TrainingPlanBuilderAction =
   | { type: "state.replace"; state: TrainingPlanBuilderState }
@@ -67,12 +70,7 @@ export type TrainingPlanBuilderAction =
       sessionId: string;
       activityPlan: TrainingPlanActivityPlanFacts | null;
     }
-  | { type: "session.move"; sessionId: string; offsetDays: number }
   | { type: "scheduling.startDateUpdate"; startDate: string }
-  | { type: "scheduling.togglePreferredWeekday"; weekday: number }
-  | { type: "scheduling.moveSessionToDate"; sessionId: string; date: string }
-  | { type: "scheduling.clearSessionDateOverride"; sessionId: string }
-  | { type: "scheduling.shiftPlan"; days: number }
   | {
       type: "session.updateEventOverrides";
       sessionId: string;
@@ -80,32 +78,3 @@ export type TrainingPlanBuilderAction =
     }
   | { type: "session.remove"; sessionId: string }
   | { type: "selection.set"; selection: TrainingPlanBuilderSelection };
-
-export type TrainingPlanBuilderSaveBlockerCode =
-  | "missing_plan_name"
-  | "no_sessions"
-  | "missing_activity_plan"
-  | "invalid_offset_days"
-  | "invalid_goal_target_offset"
-  | "invalid_assumption_date"
-  | "invalid_plan_preferences"
-  | "inaccessible_activity_plan"
-  | "unpublished_activity_plan"
-  | "invalid_start_time"
-  | "duplicate_session"
-  | "min_sessions_exceeds_max_sessions"
-  | "single_session_exceeds_weekly_budget"
-  | "sessions_and_rest_days_exceed_week"
-  | "average_session_duration_exceeds_budget"
-  | "high_average_session_duration"
-  | "canonical_schema_failure";
-
-export type TrainingPlanBuilderSaveBlocker = {
-  code: TrainingPlanBuilderSaveBlockerCode;
-  message: string;
-  target?: TrainingPlanBuilderSelection;
-};
-
-export type TrainingPlanBuilderValidationResult = {
-  blockers: TrainingPlanBuilderSaveBlocker[];
-};

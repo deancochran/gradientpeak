@@ -1,4 +1,3 @@
-import type { TrainingPlan } from "@repo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -31,25 +30,9 @@ vi.mock("@repo/api/server", () => ({
 
 vi.mock("@repo/db/client", () => ({ db: {} }));
 
-import {
-  loadPublicActivity,
-  loadPublicActivityPlan,
-  loadPublicTrainingPlan,
-  projectPublicTrainingPlanStructure,
-} from "./public-share";
+import { loadPublicActivity, loadPublicActivityPlan, loadPublicTrainingPlan } from "./public-share";
 
 const validId = "00000000-0000-4000-8000-000000000001";
-
-const baseStructure: TrainingPlan = {
-  id: validId,
-  version: 1,
-  sessions: [
-    {
-      activity_plan_id: "00000000-0000-4000-8000-000000000002",
-      offset_days: 0,
-    },
-  ],
-};
 
 describe("public share loaders", () => {
   beforeEach(() => {
@@ -87,49 +70,5 @@ describe("public share loaders", () => {
     expect(mocks.activityPlan).toHaveBeenCalledWith({ id: validId });
     expect(mocks.trainingPlan).toHaveBeenCalledWith({ id: validId });
     expect(mocks.createCaller).toHaveBeenCalledTimes(3);
-  });
-});
-
-describe("projectPublicTrainingPlanStructure", () => {
-  it("preserves serializable goal objectives", () => {
-    const projected = projectPublicTrainingPlanStructure({
-      ...baseStructure,
-      goal_blueprints: [
-        {
-          objective: {
-            distance_m: 10_000,
-            labels: ["priority", null],
-            type: "event_performance",
-          },
-          priority: 9,
-          title: "10K race",
-        },
-      ],
-    });
-
-    expect(projected.goal_blueprints?.[0]?.objective).toEqual({
-      distance_m: 10_000,
-      labels: ["priority", null],
-      type: "event_performance",
-    });
-  });
-
-  it("omits unsupported opaque objective values", () => {
-    const projected = projectPublicTrainingPlanStructure({
-      ...baseStructure,
-      goal_blueprints: [
-        {
-          objective: new Date("2026-07-17T00:00:00.000Z"),
-          priority: 5,
-          title: "Opaque objective",
-        },
-      ],
-    });
-
-    expect(projected.goal_blueprints?.[0]).toEqual({
-      priority: 5,
-      title: "Opaque objective",
-    });
-    expect(projected.goal_blueprints?.[0]).not.toHaveProperty("objective");
   });
 });

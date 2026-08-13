@@ -19,7 +19,6 @@ const zeroTargetDates = (dates: string[]) =>
     date,
     recommended_common_load: 0,
     scheduled_common_load: 0,
-    tentative_scheduled_common_load: 0,
   }));
 
 describe("trainingPathUtils", () => {
@@ -31,7 +30,6 @@ describe("trainingPathUtils", () => {
           ...observedCompletedLoad,
           completed_common_load: 50,
           scheduled_common_load: 80,
-          tentative_scheduled_common_load: 0,
           recommended_common_load: 100,
         },
         {
@@ -39,7 +37,6 @@ describe("trainingPathUtils", () => {
           ...observedCompletedLoad,
           completed_common_load: 25,
           scheduled_common_load: 40,
-          tentative_scheduled_common_load: 0,
           recommended_common_load: 50,
         },
         ...zeroTargetDates(["2026-05-20", "2026-05-21", "2026-05-22", "2026-05-23", "2026-05-24"]),
@@ -107,7 +104,6 @@ describe("trainingPathUtils", () => {
         completed_observation_state: "known_zero" as const,
         recommended_common_load: 0,
         scheduled_common_load: 0,
-        tentative_scheduled_common_load: 0,
       })),
       goalMarkers,
       range: "all",
@@ -132,7 +128,6 @@ describe("trainingPathUtils", () => {
           completed_observation_state: effectiveCompleted.get(date)?.state,
           recommended_common_load: 10,
           scheduled_common_load: index === 0 ? 40 : 0,
-          tentative_scheduled_common_load: 0,
         };
       }),
       goalMarkers,
@@ -175,7 +170,6 @@ describe("trainingPathUtils", () => {
         {
           date: "2026-05-18",
           scheduled_common_load: 160,
-          tentative_scheduled_common_load: 0,
           recommended_common_load: 200,
           completed_observation_state: "known_zero",
         },
@@ -228,14 +222,12 @@ describe("trainingPathUtils", () => {
           completed_common_load: 80,
           recommended_common_load: 120,
           scheduled_common_load: 0,
-          tentative_scheduled_common_load: 0,
           ...observedCompletedLoad,
         },
         {
           date: "2026-05-19",
           recommended_common_load: 100,
           scheduled_common_load: 0,
-          tentative_scheduled_common_load: 0,
         },
         ...zeroTargetDates(["2026-05-20", "2026-05-21", "2026-05-22", "2026-05-23", "2026-05-24"]),
       ],
@@ -262,13 +254,11 @@ describe("trainingPathUtils", () => {
           date: "2026-05-18",
           completed_common_load: 80,
           scheduled_common_load: 0,
-          tentative_scheduled_common_load: 0,
           ...observedCompletedLoad,
         },
         {
           date: "2026-05-19",
           scheduled_common_load: 45,
-          tentative_scheduled_common_load: 0,
         },
       ],
       fitnessHistory: [{ date: "2026-05-18", longTermLoad: 42 }],
@@ -299,7 +289,6 @@ describe("trainingPathUtils", () => {
         {
           date: "2026-05-18",
           scheduled_common_load: 75,
-          tentative_scheduled_common_load: 0,
           recommended_common_load: 120,
           completed_observation_state: "known_zero",
         },

@@ -220,11 +220,12 @@ describe("createAthletePerformanceModelRepository", () => {
       };
       return builder;
     });
-    const tx = { select };
+    const execute = vi.fn(async () => ({ rows: [] }));
+    const tx = { select, execute };
     const transaction = vi.fn(async (operation: (executor: typeof tx) => Promise<unknown>) =>
       operation(tx),
     );
-    return { db: { transaction }, select, transaction };
+    return { db: { transaction }, execute, select, transaction };
   }
 
   it("reads one immutable evidence snapshot in a read-only repeatable-read transaction", async () => {
@@ -241,14 +242,15 @@ describe("createAthletePerformanceModelRepository", () => {
       accessMode: "read only",
       isolationLevel: "repeatable read",
     });
-    expect(fixture.select).toHaveBeenCalledTimes(10);
+    expect(fixture.select).toHaveBeenCalledTimes(7);
+    expect(fixture.execute).toHaveBeenCalledOnce();
     expect(Object.isFrozen(snapshot)).toBe(true);
     expect(Object.isFrozen(snapshot.effortReads)).toBe(true);
     expect(Object.isFrozen(snapshot.effortReads.bike.rows)).toBe(true);
     expect(Object.isFrozen(snapshot.heartRateReads.bike)).toBe(true);
   });
 
-  it("uses a fixed ten-query evidence batch independent of request count", async () => {
+  it("uses a fixed eight-query evidence batch independent of request count", async () => {
     const fixture = transactionFixture();
     const repository = createAthletePerformanceModelRepository(fixture.db as never);
     const requests = Array.from({ length: 25 }, (_, index) => ({
@@ -257,7 +259,8 @@ describe("createAthletePerformanceModelRepository", () => {
     }));
 
     await expect(repository.readEvidenceBatch?.(requests)).resolves.toHaveLength(25);
-    expect(fixture.select).toHaveBeenCalledTimes(10);
+    expect(fixture.select).toHaveBeenCalledTimes(7);
+    expect(fixture.execute).toHaveBeenCalledOnce();
     expect(fixture.transaction).toHaveBeenCalledWith(expect.any(Function), {
       accessMode: "read only",
       isolationLevel: "repeatable read",

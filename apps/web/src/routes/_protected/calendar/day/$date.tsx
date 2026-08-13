@@ -10,18 +10,13 @@ import {
 } from "@repo/ui/components/card";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { useMemo } from "react";
 
 import { PlannedDaySummary } from "../../../../components/planning/planned-day-summary";
 import { api } from "../../../../lib/api/client";
 import {
-  compareEventsByStart,
   formatDayLabel,
-  formatEventTimeRange,
-  getEventTitle,
   getMonthKey,
   isValidMonthKey,
-  type PlanningEvent,
   shiftDateKey,
 } from "../../../../lib/planning";
 
@@ -44,29 +39,12 @@ function CalendarDayPage() {
   const { month, view } = Route.useSearch();
   const eventsQuery = api.calendar.day.useQuery({ date: routeDate });
 
-  const events = useMemo(
-    () => ((eventsQuery.data?.items ?? []) as PlanningEvent[]).slice().sort(compareEventsByStart),
-    [eventsQuery.data?.items],
+  const projectionItems = (eventsQuery.data?.projection.items ?? []).filter(
+    (item) => item.calendarDate === routeDate,
   );
-  const goals = useMemo(
-    () => (eventsQuery.data?.goals?.items ?? []).filter((goal) => goal.target_date === routeDate),
-    [eventsQuery.data?.goals?.items, routeDate],
-  );
-  const completedActivities = useMemo(
-    () =>
-      (eventsQuery.data?.completedActivities?.items ?? []).filter(
-        (activity) => activity.scheduled_date === routeDate,
-      ),
-    [eventsQuery.data?.completedActivities?.items, routeDate],
-  );
-  const selectedGroupEvents = useMemo(
-    () =>
-      (eventsQuery.data?.selectedGroupEvents?.items ?? []).filter(
-        (event) => event.scheduled_date === routeDate,
-      ),
-    [eventsQuery.data?.selectedGroupEvents?.items, routeDate],
-  );
-  const agendaCount = events.length + completedActivities.length + selectedGroupEvents.length;
+  const goals = projectionItems.filter((item) => item.kind === "goal");
+  const agendaItems = projectionItems.filter((item) => item.kind !== "goal");
+  const agendaCount = agendaItems.length;
 
   return (
     <div className="space-y-6">
@@ -126,9 +104,9 @@ function CalendarDayPage() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="font-medium">{goal.title}</p>
-                    <p className="text-sm text-muted-foreground">Priority {goal.priority}/10</p>
+                    <p className="text-sm text-muted-foreground">Goal marker</p>
                   </div>
-                  <Badge>{goal.activity_category}</Badge>
+                  <Badge>{goal.status}</Badge>
                 </div>
               </div>
             ))}
@@ -171,60 +149,30 @@ function CalendarDayPage() {
             <p className="text-sm text-muted-foreground">Loading day agenda...</p>
           ) : agendaCount > 0 ? (
             <div className="space-y-3">
-              {selectedGroupEvents.map((event) => (
+              {agendaItems.map((item) => (
                 <a
+                  key={`${item.kind}-${item.id}`}
+                  href={item.navigation.href}
                   className="block rounded-xl border p-4 transition-colors hover:border-primary hover:bg-accent/40"
-                  href={`/groups/events/${event.id}`}
-                  key={`group-${event.id}`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-medium">{event.title}</p>
+                      <p className="font-medium">{item.title}</p>
                       <p className="text-sm text-muted-foreground">
-                        {event.group?.name ?? "Group event"} · {formatEventTimeRange(event)}
+                        {item.timing.allDay
+                          ? "All day"
+                          : item.timing.startsAt
+                            ? new Date(item.timing.startsAt).toLocaleTimeString([], {
+                                hour: "numeric",
+                                minute: "2-digit",
+                                timeZone: item.timing.timezone,
+                              })
+                            : "Scheduled"}
                       </p>
                     </div>
-                    <Badge variant="outline">Group</Badge>
+                    <Badge variant="outline">{item.status}</Badge>
                   </div>
                 </a>
-              ))}
-              {completedActivities.map((activity) => (
-                <a
-                  className="block rounded-xl border p-4 transition-colors hover:border-primary hover:bg-accent/40"
-                  href={`/activities/${activity.id}`}
-                  key={`activity-${activity.id}`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium">{activity.name?.trim() || "Completed activity"}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {new Date(activity.started_at).toLocaleTimeString([], {
-                          hour: "numeric",
-                          minute: "2-digit",
-                          timeZone: eventsQuery.data?.timezone ?? "UTC",
-                        })}
-                      </p>
-                    </div>
-                    <Badge>Completed</Badge>
-                  </div>
-                </a>
-              ))}
-              {events.map((event) => (
-                <Link
-                  key={event.id}
-                  to="/calendar/events/$eventId"
-                  params={{ eventId: event.id }}
-                  search={{ flash: undefined, flashType: undefined, month, view }}
-                  className="block rounded-xl border p-4 transition-colors hover:border-primary hover:bg-accent/40"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium">{getEventTitle(event)}</p>
-                      <p className="text-sm text-muted-foreground">{formatEventTimeRange(event)}</p>
-                    </div>
-                    <Badge variant="outline">{event.event_type ?? "event"}</Badge>
-                  </div>
-                </Link>
               ))}
             </div>
           ) : (

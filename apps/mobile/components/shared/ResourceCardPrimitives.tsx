@@ -37,7 +37,7 @@ type ResourceCardHeaderProps = {
   iconContainerClassName?: string;
   meta?: ReactNode;
   title?: string | null;
-  titleFallback: string;
+  titleFallback?: string;
   titleClassName?: string;
   titleNumberOfLines?: number;
 };
@@ -282,6 +282,7 @@ export function ResourceCardHeader({
   titleNumberOfLines,
 }: ResourceCardHeaderProps) {
   const resolvedDescription = description?.trim() || descriptionFallback?.trim() || null;
+  const resolvedTitle = title?.trim() || titleFallback?.trim() || null;
   const IconComponent = icon;
 
   return (
@@ -293,15 +294,17 @@ export function ResourceCardHeader({
       ) : null}
 
       <View className="min-w-0 flex-1 gap-1">
-        <Text
-          className={
-            titleClassName ??
-            `${detail ? "text-xl" : compact ? "text-lg" : "text-xl"} font-semibold text-foreground`
-          }
-          numberOfLines={titleNumberOfLines ?? (detail ? undefined : 2)}
-        >
-          {title?.trim() || titleFallback}
-        </Text>
+        {resolvedTitle ? (
+          <Text
+            className={
+              titleClassName ??
+              `${detail ? "text-xl" : compact ? "text-lg" : "text-xl"} font-semibold text-foreground`
+            }
+            numberOfLines={titleNumberOfLines ?? (detail ? undefined : 2)}
+          >
+            {resolvedTitle}
+          </Text>
+        ) : null}
         {resolvedDescription ? (
           <Text
             className="text-sm leading-5 text-muted-foreground"

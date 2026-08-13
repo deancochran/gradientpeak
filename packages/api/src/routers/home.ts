@@ -7,6 +7,7 @@ import {
   calculateRollingTrainingQuality,
   canonicalActivityCategorySchema,
   canonicalTrainingPlanStructureSchema,
+  createObservationQuantificationBundle,
   createPrescriptionQuantificationBundle,
   createUnavailableActivityPlanPlanningEstimate,
   getLoadBalanceStatus,
@@ -23,9 +24,14 @@ import {
   commonLoadHistoryResultSchema,
   commonLoadResultSchema,
 } from "@repo/core/load";
-import { calculateDateOfBirthAge, formatDateOfBirth } from "@repo/core/profile/date-of-birth";
-import { schema, type TrainingPlanRow } from "@repo/db";
-import { and, asc, eq, gte, isNotNull, lte, sql } from "drizzle-orm";
+import {
+  activityArtifactLinks,
+  activityArtifacts,
+  activitySourceReferences,
+  schema,
+  type TrainingPlanRow,
+} from "@repo/db";
+import { and, asc, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { readAthleteReadModel } from "../application/athlete-intelligence/athlete-read-model";
 import {
@@ -38,18 +44,10 @@ import {
   getPlanningDateRange,
 } from "../application/training-plan/current-planning-week";
 import { getRequiredDb } from "../db";
-import {
-  createActivityAnalysisStore,
-  createEventReadRepository,
-} from "../infrastructure/repositories";
-import {
-  buildDynamicStressSeries,
-  loadActivitySegmentsByActivityId,
-  summarizeSegmentQuantification,
-} from "../lib/activity-analysis";
+import { createEventReadRepository } from "../infrastructure/repositories";
 import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { buildWorkloadEnvelopes } from "../utils/workload";
+import { buildWorkloadEnvelopes, resolveActivitySourceIntegrity } from "../utils/workload";
 
 function unavailableScheduledQuantification(
   item: Pick<PlannedActivityWithEstimation, "id" | "scheduled_date">,
@@ -108,14 +106,6 @@ const nextPlannedEventRowSchema = z
   .object({
     training_plan_id: z.string().nullable(),
     starts_at: z.date(),
-  })
-  .strict();
-
-const profileRowSchema = z
-  .object({
-    dob: z.date().nullable().optional(),
-    gender: z.enum(["male", "female"]).nullable().optional(),
-    planning_timezone: z.string().nullable().optional(),
   })
   .strict();
 
@@ -303,71 +293,6 @@ export function projectCommonLoad(input: {
 
 type DashboardTrainingPlanRow = Pick<TrainingPlanRow, "id" | "name" | "description" | "structure">;
 
-const dashboardActivitySchema = z
-  .object({
-    id: z.string(),
-    profile_id: z.string(),
-    started_at: z.date(),
-    finished_at: z.date(),
-    elapsed_ms: z.number().int().positive(),
-    active_ms: z.number().int().nonnegative().nullable(),
-    moving_ms: z.number().int().nonnegative().nullable(),
-    timing_coverage: z.enum(["complete", "partial", "unavailable"]),
-    distance_meters: z.number().int().nonnegative(),
-    avg_heart_rate: z.number().int().nullable(),
-    max_heart_rate: z.number().int().nullable(),
-    avg_power: z.number().int().nullable(),
-    max_power: z.number().int().nullable(),
-    avg_speed_mps: z.number().nullable(),
-    max_speed_mps: z.number().nullable(),
-    normalized_speed_mps: z.number().nullable(),
-  })
-  .strict();
-
-async function listDashboardActivitiesInRange(
-  db: ReturnType<typeof getRequiredDb>,
-  input: { profileId: string; startedAtGte: Date; startedAtLte: Date },
-) {
-  const rows = await db
-    .select({
-      id: schema.activities.id,
-      profile_id: schema.activities.profile_id,
-      started_at: schema.activities.started_at,
-      finished_at: schema.activities.finished_at,
-      elapsed_ms: schema.activities.elapsed_ms,
-      active_ms: schema.activities.active_ms,
-      moving_ms: schema.activities.moving_ms,
-      timing_coverage: schema.activities.timing_coverage,
-      distance_meters: schema.activities.distance_meters,
-      avg_heart_rate: schema.activities.avg_heart_rate,
-      max_heart_rate: schema.activities.max_heart_rate,
-      avg_power: schema.activities.avg_power,
-      max_power: schema.activities.max_power,
-      avg_speed_mps: schema.activities.avg_speed_mps,
-      max_speed_mps: schema.activities.max_speed_mps,
-      normalized_speed_mps: schema.activities.normalized_speed_mps,
-    })
-    .from(schema.activities)
-    .where(
-      and(
-        eq(schema.activities.profile_id, input.profileId),
-        gte(schema.activities.started_at, input.startedAtGte),
-        lte(schema.activities.started_at, input.startedAtLte),
-      ),
-    )
-    .orderBy(asc(schema.activities.started_at));
-
-  const activities = dashboardActivitySchema.array().parse(rows);
-  const segmentsByActivityId = await loadActivitySegmentsByActivityId(
-    db,
-    activities.map((activity) => activity.id),
-  );
-  return activities.map((activity) => ({
-    ...activity,
-    segments: segmentsByActivityId.get(activity.id) ?? [],
-  }));
-}
-
 async function getAccessibleTrainingPlan(
   db: ReturnType<typeof getRequiredDb>,
   input: { planId: string; profileId: string },
@@ -414,13 +339,23 @@ export const homeRouter = createTRPCRouter({
       const db = getRequiredDb(ctx);
       const estimationStore = createEventReadRepository(db);
       const userId = ctx.session.user.id;
+      const now = new Date();
+      const analyticsStart = new Date(now.getTime() - 90 * 86_400_000);
       const athleteReadModel = await readAthleteReadModel({
         db,
         profileId: userId,
+        now,
         sections: {
           status: true,
-          currentBaseline: { includePlanningContext: false },
+          currentBaseline: { includePlanningContext: true },
           loadHistory: true,
+          activityAnalytics: {
+            startAt: analyticsStart.toISOString(),
+            endAt: now.toISOString(),
+            groupBy: "day",
+            peakMetric: "common_load",
+            peakLimit: 5,
+          },
         },
       });
       const commonLoadHistory =
@@ -437,20 +372,7 @@ export const homeRouter = createTRPCRouter({
       const availableCommonLoadHistory =
         commonLoadHistory.status === "available" ? commonLoadHistory : null;
       const latestCommonLoadPoint = availableCommonLoadHistory?.points.at(-1) ?? null;
-      const now = new Date();
-
-      const [rawProfile] = await db
-        .select({
-          dob: schema.profiles.dob,
-          gender: schema.profiles.gender,
-          planning_timezone: schema.profiles.planning_timezone,
-        })
-        .from(schema.profiles)
-        .where(eq(schema.profiles.id, userId))
-        .limit(1);
-
-      const profile = rawProfile ? profileRowSchema.parse(rawProfile) : null;
-      const profileTimezone = profile?.planning_timezone?.trim();
+      const profileTimezone = athleteReadModel.currentBaseline?.planningTimezone.trim();
       const planningTimezone =
         profileTimezone && isValidIanaTimeZone(profileTimezone) ? profileTimezone : "UTC";
       const todayDate = getCalendarDateInIanaZone(now.toISOString(), planningTimezone);
@@ -462,13 +384,9 @@ export const homeRouter = createTRPCRouter({
         timezone: planningTimezone,
       });
       const today = todayRange.startInstant;
-      const endOfToday = new Date(todayRange.endExclusiveInstant.getTime() - 1);
-
-      const userAge = profile?.dob
-        ? (calculateDateOfBirthAge(formatDateOfBirth(profile.dob), now) ?? undefined)
-        : undefined;
-      const userGender =
-        profile?.gender === "male" || profile?.gender === "female" ? profile.gender : null;
+      const planningContext = athleteReadModel.currentBaseline?.planningContext ?? null;
+      const userAge = planningContext?.demographics.ageYears.value ?? undefined;
+      const userGender = planningContext?.demographics.gender ?? null;
       const effectiveAge = featureFlags.personalizationAgeConstants ? userAge : undefined;
       const effectiveGender = featureFlags.personalizationGenderAdjustment ? userGender : undefined;
 
@@ -514,15 +432,8 @@ export const homeRouter = createTRPCRouter({
       }
 
       // --- 2. Calculate Dates ---
-      // For trends: Need 42 days of history + 42 days buffer for CTL seeding
+      // The canonical read model owns the historical replay window.
       const trendDays = 42;
-      const seedDays = 42;
-      const historyStartDate = addDaysDateOnlyUtc(todayDate, -(trendDays + seedDays));
-      const historyStart = getPlanningDateRange({
-        startDate: historyStartDate,
-        endDate: historyStartDate,
-        timezone: planningTimezone,
-      }).startInstant;
       const chartStartDate = addDaysDateOnlyUtc(todayDate, -trendDays);
 
       // For schedule: Next N days, bounded by profile-local calendar dates.
@@ -531,52 +442,32 @@ export const homeRouter = createTRPCRouter({
       // For weekly summary: Current Week (Sun-Sat)
       const currentWeek = getCurrentPlanningWeek(now, planningTimezone);
 
-      // --- 3. Fetch Activities (Actual) ---
-      // Fetching enough history for trends and current week stats
-      const activities = await listDashboardActivitiesInRange(db, {
-        profileId: userId,
-        startedAtGte: historyStart,
-        startedAtLte: endOfToday,
-      });
-
-      const dynamicStressSeries = await buildDynamicStressSeries({
-        store: createActivityAnalysisStore(db),
-        profileId: userId,
-        activities,
-      });
-      const {
-        byActivityId: derivedActivityMap,
-        segmentSummaries = [],
-        complete: hasCompleteCommonLoadSeries = false,
-        seriesIdentity = null,
-      } = dynamicStressSeries as typeof dynamicStressSeries & {
-        complete?: boolean;
-        seriesIdentity?: unknown;
-      };
-      const activityStartedAtById = new Map(
-        activities.map((activity) => [activity.id, activity.started_at.toISOString()]),
-      );
+      const activityAnalytics =
+        athleteReadModel.activityAnalytics?.status === "available"
+          ? athleteReadModel.activityAnalytics.dashboard
+          : null;
+      const activityPoints = activityAnalytics?.performance.dataPoints ?? [];
 
       const rollingTrainingQuality =
-        featureFlags.personalizationTrainingQuality && activities.length > 0
+        featureFlags.personalizationTrainingQuality && activityPoints.length > 0
           ? calculateRollingTrainingQuality(
-              segmentSummaries.map((summary) => ({
-                started_at:
-                  activityStartedAtById.get(summary.activity_id) ?? summary.computed_as_of,
-                common_load: summary.observationQuantification.members[0]?.commonLoad ?? null,
-              })),
+              activityPoints.flatMap((activity) =>
+                (activity.observationQuantification?.members ?? []).map((member) => ({
+                  started_at: activity.date,
+                  common_load: member.commonLoad,
+                })),
+              ),
             )
           : undefined;
 
       // --- 4. Fetch Planned Activities (Future & Current Week) ---
       // We need planned activities for the Schedule (Future) AND for the Weekly Summary (Past days of this week)
       // So we fetch from startOfWeek to scheduleEnd
-      const { plannedActivities, activitiesWithEstimations } =
-        await loadPlannedActivitiesWithEstimations(db, {
-          profileId: userId,
-          scheduledDateGte: currentWeek.startDate,
-          scheduledDateLt: scheduleEndDate,
-        });
+      const { activitiesWithEstimations } = await loadPlannedActivitiesWithEstimations(db, {
+        profileId: userId,
+        scheduledDateGte: currentWeek.startDate,
+        scheduledDateLt: scheduleEndDate,
+      });
 
       // --- 6. Primary fitness trends use the canonical daily common Load history. ---
       const commonHistoryPoints =
@@ -594,10 +485,8 @@ export const homeRouter = createTRPCRouter({
       // Iterate backwards from yesterday
       let streak = 0;
       const uniqueActivityDays = new Set(
-        activities
-          .map((activity) =>
-            getCalendarDateInIanaZone(activity.started_at.toISOString(), planningTimezone),
-          )
+        activityPoints
+          .map((activity) => getCalendarDateInIanaZone(activity.date, planningTimezone))
           .filter(Boolean),
       );
       // Check today
@@ -617,17 +506,15 @@ export const homeRouter = createTRPCRouter({
 
       // --- 8. Weekly Summary (Planned vs Actual) ---
       // Actuals
-      const weeklyActuals = activities.filter((activity) => {
-        const activityDate = getCalendarDateInIanaZone(
-          activity.started_at.toISOString(),
-          planningTimezone,
-        );
+      const weeklyActuals = activityPoints.filter((activity) => {
+        const activityDate = getCalendarDateInIanaZone(activity.date, planningTimezone);
         return activityDate >= currentWeek.startDate && activityDate <= currentWeek.endDate;
       });
-      const weeklyActualQuantification = summarizeSegmentQuantification(
-        segmentSummaries,
-        new Set(weeklyActuals.map((activity) => activity.id)),
-      );
+      const weeklyActualQuantification = createObservationQuantificationBundle({
+        members: weeklyActuals.flatMap(
+          (activity) => activity.observationQuantification?.members ?? [],
+        ),
+      });
       const weeklyActualSummary = weeklyActualQuantification.summary;
       const weeklyActualLoad = weeklyActualSummary.commonLoad;
 
@@ -681,33 +568,92 @@ export const homeRouter = createTRPCRouter({
         endDate: workloadWindowStartDate,
         timezone: planningTimezone,
       }).startInstant;
+      const workloadActivityIds = activityPoints.map((activity) => activity.activityId);
+      const workloadSourceRows =
+        workloadActivityIds.length === 0
+          ? []
+          : await db
+              .select({
+                activityId: activityArtifactLinks.activity_id,
+                artifactId: activityArtifactLinks.artifact_id,
+              })
+              .from(activityArtifactLinks)
+              .innerJoin(
+                activityArtifacts,
+                and(
+                  eq(activityArtifacts.id, activityArtifactLinks.artifact_id),
+                  eq(activityArtifacts.profile_id, activityArtifactLinks.profile_id),
+                  eq(activityArtifacts.availability, "accepted"),
+                ),
+              )
+              .where(
+                and(
+                  eq(activityArtifactLinks.profile_id, userId),
+                  inArray(activityArtifactLinks.activity_id, workloadActivityIds),
+                  eq(activityArtifactLinks.role, "source"),
+                  eq(activityArtifactLinks.is_current, true),
+                ),
+              );
+      const workloadProviderRows =
+        workloadActivityIds.length === 0
+          ? []
+          : await db
+              .select({
+                activityId: activitySourceReferences.activity_id,
+                provider: activitySourceReferences.provider,
+                externalId: activitySourceReferences.provider_external_id,
+              })
+              .from(activitySourceReferences)
+              .where(
+                and(
+                  eq(activitySourceReferences.profile_id, userId),
+                  inArray(activitySourceReferences.activity_id, workloadActivityIds),
+                ),
+              );
+      const sourceEvidenceByActivity = new Map<
+        string,
+        {
+          currentArtifactIds: string[];
+          providerReferences: Array<{ provider: string; externalId: string }>;
+        }
+      >();
+      const sourceEvidenceFor = (activityId: string) => {
+        const existing = sourceEvidenceByActivity.get(activityId);
+        if (existing) return existing;
+        const created = { currentArtifactIds: [], providerReferences: [] };
+        sourceEvidenceByActivity.set(activityId, created);
+        return created;
+      };
+      for (const row of workloadSourceRows) {
+        sourceEvidenceFor(row.activityId).currentArtifactIds.push(row.artifactId);
+      }
+      for (const row of workloadProviderRows) {
+        sourceEvidenceFor(row.activityId).providerReferences.push({
+          provider: row.provider,
+          externalId: row.externalId,
+        });
+      }
       const workload = buildWorkloadEnvelopes(
-        activities.map((activity) => ({
-          started_at: activity.started_at.toISOString(),
-          observationQuantification:
-            derivedActivityMap.get(activity.id)?.observationQuantification ?? null,
-        })),
+        activityPoints.map((activity) => {
+          const evidence =
+            sourceEvidenceByActivity.get(activity.activityId) ??
+            ({ currentArtifactIds: [], providerReferences: [] } as const);
+          return {
+            started_at: activity.date,
+            sourceIntegrity: resolveActivitySourceIntegrity({
+              evidence,
+              observationQuantification: activity.observationQuantification,
+            }),
+            observationQuantification: activity.observationQuantification,
+          };
+        }),
         workloadWindowStart,
         today,
+        { planningTimezone },
       );
 
       // --- 10. Schedule (Future) ---
       const todayStr = todayDate;
-
-      // Check which planned activities have been completed by matching with actual activities
-      const completedActivityMap = new Map<string, boolean>();
-      plannedActivities?.forEach((pa) => {
-        if (!pa.scheduled_date) return;
-        const paDate = pa.scheduled_date.split("T")[0];
-        const hasActivity = activities.some(
-          (activity) =>
-            getCalendarDateInIanaZone(activity.started_at.toISOString(), planningTimezone) ===
-            paDate,
-        );
-        if (hasActivity) {
-          completedActivityMap.set(pa.id, true);
-        }
-      });
 
       const scheduleEndStr = scheduleEndDate;
 
@@ -730,7 +676,8 @@ export const homeRouter = createTRPCRouter({
             id: plannedActivity.id,
             date: plannedActivity.scheduled_date,
             isToday: plannedActivity.scheduled_date === todayStr,
-            isCompleted: completedActivityMap.get(plannedActivity.id) || false,
+            isCompleted:
+              Boolean(plannedActivity.linked_activity_id) || plannedActivity.status === "completed",
             activityName: plannedActivity.activity_plan?.name || "Activity",
             ...getScheduleExecutionPresentation(execution),
             estimatedDuration: quantification.duration.elapsed.value,
@@ -810,11 +757,10 @@ export const homeRouter = createTRPCRouter({
                 coverageStatus: availableCommonLoadHistory.coverageStatus,
               },
         trainingLoadState: {
-          status: hasCompleteCommonLoadSeries && seriesIdentity ? "available" : "unavailable",
-          reason:
-            hasCompleteCommonLoadSeries && seriesIdentity
-              ? "complete_common_load_series"
-              : "incomplete_common_load_series",
+          status: availableCommonLoadHistory ? "available" : "unavailable",
+          reason: availableCommonLoadHistory
+            ? "complete_common_load_series"
+            : "incomplete_common_load_series",
         },
         workload,
         consistency: {

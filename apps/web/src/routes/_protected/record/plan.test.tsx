@@ -11,6 +11,7 @@ const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padSta
 function structure(activity_category: "run" | "bike" | "swim") {
   return {
     version: 3,
+    activity_category,
     segments: [
       {
         activity_category,
@@ -52,7 +53,7 @@ vi.mock("../../../lib/api/client", () => ({
       day: {
         useQuery: () => {
           const result = mocks.getToday();
-          return { ...result, data: { items: result.data ?? [] } };
+          return { ...result, data: { projection: { items: result.data ?? [] } } };
         },
       },
     },
@@ -73,24 +74,26 @@ describe("RecordPlanPage search", () => {
     mocks.getToday.mockReturnValue({
       data: [
         {
-          activity_plan: {
+          plan: {
             description: "Steady aerobic work",
             name: "Tempo run",
-            activity_category: "run",
+            activityCategory: "run",
             structure: structure("run"),
           },
           id: "event-1",
-          scheduled_date: "2026-07-14T12:00:00.000Z",
+          kind: "planned_activity",
+          calendarDate: "2026-07-14",
         },
         {
-          activity_plan: {
+          plan: {
             description: "Easy spin",
             name: "Recovery ride",
-            activity_category: "bike",
+            activityCategory: "bike",
             structure: structure("bike"),
           },
           id: "event-2",
-          scheduled_date: "2026-07-14T13:00:00.000Z",
+          kind: "planned_activity",
+          calendarDate: "2026-07-14",
         },
       ],
       error: null,
@@ -112,23 +115,25 @@ describe("RecordPlanPage search", () => {
     mocks.getToday.mockReturnValue({
       data: [
         {
-          activity_plan: {
+          plan: {
             description: "Repeat run",
             name: "Double run",
-            activity_category: "run",
+            activityCategory: "run",
             structure: structure("run"),
           },
           id: "event-1",
-          scheduled_date: "2026-07-14T12:00:00.000Z",
+          kind: "planned_activity",
+          calendarDate: "2026-07-14",
         },
         {
-          activity_plan: {
+          plan: {
             name: "Malformed plan",
-            activity_category: null,
+            activityCategory: null,
             structure: { version: 3, segments: [] },
           },
           id: "event-invalid",
-          scheduled_date: "2026-07-14T13:00:00.000Z",
+          kind: "planned_activity",
+          calendarDate: "2026-07-14",
         },
       ],
       error: null,

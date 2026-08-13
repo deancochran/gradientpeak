@@ -23,9 +23,12 @@ export function RouteEventAttachment({ routeId }: { routeId: string }) {
   });
   const events = useMemo(
     () =>
-      [...(eventsQuery.data?.items ?? [])].sort((left, right) =>
-        String(left.starts_at).localeCompare(String(right.starts_at)),
-      ),
+      (eventsQuery.data?.items ?? [])
+        .filter((item) => item.event !== null)
+        .slice()
+        .sort((left, right) =>
+          String(left.timing.startsAt).localeCompare(String(right.timing.startsAt)),
+        ),
     [eventsQuery.data?.items],
   );
   const attachMutation = api.events.update.useMutation({
@@ -67,7 +70,7 @@ export function RouteEventAttachment({ routeId }: { routeId: string }) {
                 <option value="">Select an event</option>
                 {events.map((event) => (
                   <option key={event.id} value={event.id}>
-                    {event.title} · {String(event.scheduled_date ?? event.starts_at).slice(0, 10)}
+                    {event.title} · {event.calendarDate}
                   </option>
                 ))}
               </select>

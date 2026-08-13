@@ -10,6 +10,7 @@ import {
 } from "@repo/core";
 import type { profilePerformanceEstimates } from "@repo/db";
 import type { getRequiredDb } from "../../db";
+import { enqueueWahooRelativeTargetRefreshes } from "../../lib/provider-sync/planned-activities/refresh-wahoo-relative-target-activities";
 import { createAthletePerformanceModelRepository } from "../../repositories/athlete-performance-model-repository";
 import {
   type AthleteStateClaim,
@@ -19,7 +20,10 @@ import {
   readAthleteStateEvidencePage,
   renewAthleteStateClaim,
 } from "../../repositories/athlete-state-repository";
+import { reconcileOnboardingStatus } from "../onboarding/readiness";
 import { getAthletePerformanceModelAsOf } from "../performance-model/get-athlete-performance-model-as-of";
+import { sweepDuePerformanceCalibrations } from "../performance-model/sweep-due-performance-calibrations";
+import { readPublishedAthletePerformanceTargets } from "./published-athlete-state";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 const PAGE_SIZE = 100;
@@ -89,15 +93,18 @@ async function buildCurrentEstimates(
       unit: string;
       confidence: "high" | "medium" | "low" | "unavailable";
       evidenceTime: { observedFrom: string | null; observedThrough: string | null };
+      calibrationState: "provisional" | "confirmed" | "stale" | "unavailable";
     };
+    calibration?: { value: number; unit: string };
   }) => {
-    if (input.fact.status === "unavailable" || input.fact.value === null) return;
+    const value = input.calibration?.value ?? input.fact.value ?? null;
+    if (value === null || input.fact.calibrationState === "unavailable") return;
     estimates.push({
       profile_id: claim.profileId,
       capability_kind: input.capabilityKind,
       activity_category: input.activityCategory,
-      value: input.fact.value,
-      unit: input.fact.unit,
+      value,
+      unit: input.calibration?.unit ?? input.fact.unit,
       confidence: confidenceNumber(input.fact.confidence),
       effective_at: new Date(input.fact.evidenceTime.observedThrough ?? now.toISOString()),
       evidence_window_start_at: input.fact.evidenceTime.observedFrom
@@ -112,37 +119,66 @@ async function buildCurrentEstimates(
       computed_at: now,
     });
   };
+  const bikePowerCalibration = performanceModel.calibrations.find(
+    ({ identity }) =>
+      identity.metricKey === "threshold_power" && identity.activityCategory === "bike",
+  );
   appendTarget({
     activityCategory: "bike",
-    capabilityKind: "bike_ftp",
+    capabilityKind: "threshold_power",
     fact: targets.cycling.planningThresholdPower,
+    ...(bikePowerCalibration === undefined
+      ? {}
+      : { calibration: { value: bikePowerCalibration.value, unit: bikePowerCalibration.unit } }),
   });
+  const runSpeedCalibration = performanceModel.calibrations.find(
+    ({ identity }) =>
+      identity.metricKey === "threshold_speed" && identity.activityCategory === "run",
+  );
   appendTarget({
     activityCategory: "run",
-    capabilityKind: "run_threshold_pace",
+    capabilityKind: "threshold_speed",
     fact: targets.running.planningThresholdPace,
+    ...(runSpeedCalibration === undefined
+      ? {}
+      : { calibration: { value: runSpeedCalibration.value, unit: runSpeedCalibration.unit } }),
   });
+  const swimSpeedCalibration = performanceModel.calibrations.find(
+    ({ identity }) =>
+      identity.metricKey === "threshold_speed" && identity.activityCategory === "swim",
+  );
   appendTarget({
     activityCategory: "swim",
-    capabilityKind: "swim_css",
+    capabilityKind: "threshold_speed",
     fact: targets.swimming.css,
+    ...(swimSpeedCalibration === undefined
+      ? {}
+      : { calibration: { value: swimSpeedCalibration.value, unit: swimSpeedCalibration.unit } }),
   });
   for (const activityCategory of ["bike", "run", "swim"] as const) {
     for (const [capabilityKind, fact] of [
-      [`${activityCategory}_lthr`, targets.heartRate[activityCategory].lthr],
+      [
+        activityCategory === "swim" ? "swim_lthr" : "threshold_heart_rate",
+        targets.heartRate[activityCategory].lthr,
+      ],
       [`${activityCategory}_max_hr`, targets.heartRate[activityCategory].maxHr],
     ] as const) {
+      const calibration = performanceModel.calibrations.find(
+        ({ identity }) =>
+          identity.metricKey === "threshold_heart_rate" &&
+          identity.activityCategory === activityCategory,
+      );
       if (fact.status !== "available") continue;
       estimates.push({
         profile_id: claim.profileId,
         capability_kind: capabilityKind,
         activity_category: activityCategory,
-        value: fact.valueBpm,
+        value: fact.valueBpm ?? calibration?.value ?? 0,
         unit: "bpm",
         confidence: 0.8,
-        effective_at: new Date(fact.observedAt),
-        evidence_window_start_at: new Date(fact.observedAt),
-        evidence_window_end_at: new Date(fact.observedAt),
+        effective_at: new Date(fact.observedAt ?? calibration?.effectiveAt ?? now),
+        evidence_window_start_at: fact.observedAt ? new Date(fact.observedAt) : null,
+        evidence_window_end_at: fact.observedAt ? new Date(fact.observedAt) : null,
         algorithm_version: ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
         source_revision: claim.sourceRevision,
         target_fact: fact,
@@ -185,7 +221,7 @@ async function buildCurrentEstimates(
       });
     }
   }
-  return { estimates };
+  return { estimates, targets };
 }
 
 export async function rebuildClaimedAthleteState(input: {
@@ -291,6 +327,11 @@ export async function rebuildClaimedAthleteState(input: {
     input.now,
     state.capabilities,
   );
+  const beforePublishedTargets = await readPublishedAthletePerformanceTargets({
+    db: input.db,
+    profileId: input.claim.profileId,
+    now: input.now,
+  });
   return publishAthleteState(input.db, {
     claim: input.claim,
     state: {
@@ -304,6 +345,18 @@ export async function rebuildClaimedAthleteState(input: {
     },
     estimates: performance.estimates,
     now: input.now,
+    // The queue rows are written only after the fenced snapshot update and become
+    // visible atomically with it. A failed enqueue rolls the publication back.
+    afterPublishInTransaction: async (tx) => {
+      await enqueueWahooRelativeTargetRefreshes({
+        afterTargetFacts: performance.targets,
+        beforeTargetFacts: beforePublishedTargets.targets,
+        db: input.db,
+        now: input.now,
+        profileId: input.claim.profileId,
+        transaction: tx,
+      });
+    },
   });
 }
 
@@ -313,6 +366,10 @@ export class AthleteStateWorkerService {
   async processDueJobs(input: { limit?: number; now?: Date } = {}) {
     const limit = Math.max(1, Math.min(input.limit ?? 5, 50));
     const result = { completed: 0, failed: 0, processed: 0 };
+    await sweepDuePerformanceCalibrations(this.input.db, {
+      now: input.now ?? new Date(),
+      limit,
+    });
     for (let index = 0; index < limit; index += 1) {
       const now = input.now ?? new Date();
       const claim = await claimNextAthleteState(this.input.db, {
@@ -327,8 +384,13 @@ export class AthleteStateWorkerService {
           claim,
           now,
         });
-        if (published) result.completed += 1;
-        else result.failed += 1;
+        if (published) {
+          result.completed += 1;
+          await reconcileOnboardingStatus({
+            db: this.input.db,
+            profileId: claim.profileId,
+          }).catch(() => undefined);
+        } else result.failed += 1;
       } catch (error) {
         result.failed += 1;
         if (!(error instanceof AthleteStateLeaseLostError)) {

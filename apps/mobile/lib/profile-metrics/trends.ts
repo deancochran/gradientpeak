@@ -11,19 +11,13 @@ export type ProfileMetricTrendRow = {
 };
 
 export type ProfileMetricSection = {
-  id: "load_calibration" | "supporting_physiology" | "recovery" | "body_aerobic";
+  id: "supporting_physiology" | "recovery" | "body_aerobic";
   title: string;
   description: string;
   metricTypes: readonly ProfileMetricType[];
 };
 
 export const profileMetricSections: readonly ProfileMetricSection[] = [
-  {
-    id: "load_calibration",
-    title: "Heart-rate calibration",
-    description: "Activity-derived heart-rate evidence used to anchor intensity zones.",
-    metricTypes: ["lthr"],
-  },
   {
     id: "supporting_physiology",
     title: "Supporting Physiology",

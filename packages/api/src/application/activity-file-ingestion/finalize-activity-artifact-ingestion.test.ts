@@ -39,26 +39,57 @@ function storageFixture(log: string[], options: { failCanonicalRemove?: boolean 
   return { objects, storage };
 }
 
-function quarantineDb() {
+function quarantineDb(
+  options: {
+    existingAvailability?: "accepted" | "deleted" | "deletion_pending";
+    conflictAvailability?: "accepted" | "deleted" | "deletion_pending";
+    ownershipAvailability?: "accepted" | "deleted" | "deletion_pending";
+  } = {},
+) {
   const inserted: Array<Record<string, unknown>> = [];
   const finalized = vi.fn().mockResolvedValue({ rows: [] });
+  let selectCount = 0;
   const tx = {
     execute: vi.fn().mockResolvedValue({ rows: [] }),
     select: vi.fn(() => ({
       from: vi.fn(() => ({
-        where: vi.fn(() => ({ limit: vi.fn().mockResolvedValue([]) })),
+        where: vi.fn(() => ({
+          limit: vi.fn().mockImplementation(async () => {
+            selectCount += 1;
+            const availability =
+              selectCount === 1 ? options.existingAvailability : options.conflictAvailability;
+            return availability ? [{ availability, id: "artifact-1" }] : [];
+          }),
+        })),
       })),
     })),
     insert: vi.fn(() => ({
       values: vi.fn((value: Record<string, unknown>) => {
         inserted.push(value);
-        return { onConflictDoNothing: vi.fn().mockResolvedValue(undefined) };
+        return {
+          onConflictDoNothing: vi.fn(() => ({
+            returning: vi
+              .fn()
+              .mockResolvedValue(options.conflictAvailability ? [] : [{ id: value.id }]),
+          })),
+        };
       }),
     })),
   };
   const db = {
     transaction: async <T>(run: (client: typeof tx) => Promise<T>) => run(tx),
     execute: finalized,
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi
+            .fn()
+            .mockResolvedValue([
+              { availability: options.ownershipAvailability ?? "deletion_pending" },
+            ]),
+        })),
+      })),
+    })),
   } as unknown as ReturnType<typeof getRequiredDb>;
   return { db, finalized, inserted };
 }
@@ -146,7 +177,7 @@ describe("activity artifact ingestion finalizer", () => {
       availability: "deletion_pending",
       digest_algorithm: "sha256",
     });
-    expect(finalized).toHaveBeenCalledOnce();
+    expect(finalized).toHaveBeenCalledTimes(2);
     expect(objects.size).toBe(0);
   });
 
@@ -172,6 +203,56 @@ describe("activity artifact ingestion finalizer", () => {
 
     expect(inserted).toHaveLength(1);
     expect(inserted[0]).toMatchObject({ availability: "deletion_pending" });
+    expect(finalized).not.toHaveBeenCalled();
+    expect([...objects.keys()]).toEqual([expect.stringMatching(/^artifacts\/sha256\//)]);
+  });
+
+  it("never removes canonical bytes when a concurrent accepted artifact wins quarantine", async () => {
+    const log: string[] = [];
+    const { objects, storage } = storageFixture(log);
+    const { db, finalized, inserted } = quarantineDb({ existingAvailability: "accepted" });
+
+    await expect(
+      finalizeActivityArtifactIngestion(db, {
+        profileId,
+        storage,
+        bucket: "activity-files",
+        stagingPath,
+        bytes,
+        format: "fit",
+        parse: () => ({ activity: "parsed" }),
+        submit: async () => {
+          throw new Error("persistence failed");
+        },
+      }),
+    ).rejects.toThrow("persistence failed");
+
+    expect(inserted).toHaveLength(0);
+    expect(finalized).not.toHaveBeenCalled();
+    expect([...objects.keys()]).toEqual([expect.stringMatching(/^artifacts\/sha256\//)]);
+  });
+
+  it("does not use a losing deterministic id as deletion authority", async () => {
+    const log: string[] = [];
+    const { objects, storage } = storageFixture(log);
+    const { db, finalized, inserted } = quarantineDb({ conflictAvailability: "accepted" });
+
+    await expect(
+      finalizeActivityArtifactIngestion(db, {
+        profileId,
+        storage,
+        bucket: "activity-files",
+        stagingPath,
+        bytes,
+        format: "fit",
+        parse: () => ({ activity: "parsed" }),
+        submit: async () => {
+          throw new Error("persistence failed");
+        },
+      }),
+    ).rejects.toThrow("persistence failed");
+
+    expect(inserted).toHaveLength(1);
     expect(finalized).not.toHaveBeenCalled();
     expect([...objects.keys()]).toEqual([expect.stringMatching(/^artifacts\/sha256\//)]);
   });

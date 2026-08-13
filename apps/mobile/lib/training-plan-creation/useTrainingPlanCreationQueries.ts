@@ -2,7 +2,7 @@ import { keepPreviousData, skipToken } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { getTrainingPlanStructureActivityPlanIds } from "./mappers";
+import { getTrainingPlanStructureActivityPlanIds } from "./canonical-draft";
 import type { UseTrainingPlanCreationServiceOptions } from "./service-types";
 
 const ACTIVITY_PLAN_PICKER_PAGE_SIZE = 25;
@@ -28,7 +28,6 @@ export function useTrainingPlanCreationQueries({
   const activityPlansQuery = api.activityPlans.list.useInfiniteQuery(
     {
       ownerScope: "discoverable",
-      includeEstimation: true,
       search: activityPlanPicker?.searchQuery.trim() || undefined,
       activityCategories: activityPlanPicker?.activityCategoryFilter
         ? [activityPlanPicker.activityCategoryFilter]

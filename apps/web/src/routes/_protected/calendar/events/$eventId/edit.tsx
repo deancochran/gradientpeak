@@ -49,10 +49,6 @@ function EventEditPage() {
     return <p className="text-sm text-muted-foreground">Event not found.</p>;
   }
 
-  if (event.event_type === "imported") {
-    return <p className="text-sm text-muted-foreground">Imported events are read-only.</p>;
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">

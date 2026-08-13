@@ -59,9 +59,13 @@ const planTabLoadSummarySchema = z
     status: loadStatusSchema,
     commonLoad: z.number().finite().nonnegative().nullable(),
     intensity: z.number().finite().nonnegative().nullable(),
+    contributingDurationSeconds: z.number().finite().nonnegative().nullable(),
+    completedLoadStatus: loadStatusSchema,
     completedLoad: z.number().finite().nonnegative().nullable(),
+    scheduledLoadStatus: loadStatusSchema,
+    scheduledLoad: z.number().finite().nonnegative().nullable(),
+    remainingLoadStatus: loadStatusSchema,
     remainingLoad: z.number().finite().nonnegative().nullable(),
-    tentativeLoad: z.number().finite().nonnegative().nullable(),
     hasUnavailableCompletedLoad: z.boolean(),
     recommendedLoadStatus: loadStatusSchema,
     recommendedLoad: z.number().finite().nonnegative().nullable(),
@@ -111,6 +115,20 @@ const recommendationPointSchema = z
     load: z.number().finite().nonnegative().nullable(),
   })
   .strict();
+const ledgerItemSchema = z
+  .object({
+    id: z.string().min(1),
+    date: dateOnlySchema,
+    kind: z.enum(["completed", "planned"]),
+    title: z.string().min(1),
+    loadStatus: loadStatusSchema,
+    load: z.number().finite().nonnegative().nullable(),
+    intensityStatus: loadStatusSchema,
+    intensity: z.number().finite().nonnegative().nullable(),
+    contributingDurationStatus: loadStatusSchema,
+    contributingDurationSeconds: z.number().finite().nonnegative().nullable(),
+  })
+  .strict();
 export const planTabProjectionSchema = z
   .object({
     contractVersion: z.literal(PLAN_TAB_PROJECTION_VERSION),
@@ -128,6 +146,7 @@ export const planTabProjectionSchema = z
       })
       .strict(),
     recommendationPoints: z.array(recommendationPointSchema),
+    ledgerItems: z.array(ledgerItemSchema),
     sourceCoverage: sourceCoverageSchema,
     goalMarkers: z.array(goalMarkerSchema).max(100),
     publishedRevision: z.number().int().nonnegative().nullable(),
@@ -305,12 +324,27 @@ type EffectiveItem = Extract<
 
 function aggregateValue(items: EffectiveItem[]) {
   if (items.length === 0) {
-    return { status: "known_zero" as const, load: 0, intensity: null };
+    return {
+      status: "known_zero" as const,
+      load: 0,
+      intensity: null,
+      contributingDurationSeconds: 0,
+    };
   }
   const aggregate = aggregateCommonLoadEnvelopes(items.map((item) => item.commonLoad));
   return aggregate.status === "unavailable"
-    ? { status: "unavailable" as const, load: null, intensity: null }
-    : { status: aggregate.status, load: aggregate.load, intensity: aggregate.intensity };
+    ? {
+        status: "unavailable" as const,
+        load: null,
+        intensity: null,
+        contributingDurationSeconds: null,
+      }
+    : {
+        status: aggregate.status,
+        load: aggregate.load,
+        intensity: aggregate.intensity,
+        contributingDurationSeconds: aggregate.contributingDurationSeconds,
+      };
 }
 
 function recommendationForDate(
@@ -333,9 +367,13 @@ function unavailableLoadSummary(
     status: "unavailable",
     commonLoad: null,
     intensity: null,
+    contributingDurationSeconds: null,
+    completedLoadStatus: "unavailable",
     completedLoad: null,
+    scheduledLoadStatus: "unavailable",
+    scheduledLoad: null,
+    remainingLoadStatus: "unavailable",
     remainingLoad: null,
-    tentativeLoad: null,
     hasUnavailableCompletedLoad: false,
     recommendedLoadStatus: recommendation.status,
     recommendedLoad: recommendation.load,
@@ -357,31 +395,30 @@ function summarizeDate(response: EffectivePlanLoadDto, date: string) {
     date <= response.resolvedRange.endDate;
   if (!withinResolvedRange) return unavailableLoadSummary(recommendation);
 
-  const firmItems = response.effective.firmItems.filter((item) => item.date === date);
-  const tentativeItems = response.effective.tentativeItems.filter((item) => item.date === date);
+  const items = response.effective.firmItems.filter((item) => item.date === date);
   if (
-    firmItems.length === 0 &&
+    items.length === 0 &&
     response.effective.firm.status !== "complete" &&
     response.effective.firm.status !== "known_zero"
   ) {
     return unavailableLoadSummary(recommendation);
   }
-  const completed = aggregateValue(firmItems.filter((item) => item.kind === "completed"));
-  const scheduled = aggregateValue(firmItems.filter((item) => item.kind === "scheduled"));
-  const firm = aggregateValue(firmItems);
-  const tentative =
-    tentativeItems.length === 0 && response.sourceCoverage.scheduledItems?.status !== "complete"
-      ? { status: "unavailable" as const, load: null, intensity: null }
-      : aggregateValue(tentativeItems);
+  const completed = aggregateValue(items.filter((item) => item.kind === "completed"));
+  const scheduled = aggregateValue(items.filter((item) => item.kind === "scheduled"));
+  const effective = aggregateValue(items);
   return planTabLoadSummarySchema.parse({
-    status: firm.status,
-    commonLoad: firm.load,
-    intensity: firm.intensity,
+    status: effective.status,
+    commonLoad: effective.load,
+    intensity: effective.intensity,
+    contributingDurationSeconds: effective.contributingDurationSeconds,
+    completedLoadStatus: completed.status,
     completedLoad: completed.load,
+    scheduledLoadStatus: effective.status,
+    scheduledLoad: effective.load,
+    remainingLoadStatus: scheduled.status,
     remainingLoad: scheduled.load,
-    tentativeLoad: tentative.load,
     hasUnavailableCompletedLoad:
-      firmItems.some((item) => item.kind === "completed") &&
+      items.some((item) => item.kind === "completed") &&
       (completed.status === "unavailable" || completed.status === "partial"),
     recommendedLoadStatus: recommendation.status,
     recommendedLoad: recommendation.load,
@@ -483,51 +520,45 @@ function recommendationPoints(response: EffectivePlanLoadDto) {
   }));
 }
 
-async function readProjectionSnapshot(input: {
+export async function readPlanTabProjectionSnapshot(input: {
   db: DrizzleQueryExecutor;
   profileId: string;
   request: PlanTabRequest;
   asOf: Date;
-  dependencies: PlanTabProjectionDependencies;
+  dependencies?: PlanTabProjectionDependencies;
 }): Promise<PlanTabProjection> {
-  const readModel = await input.dependencies.readModel({
+  const dependencies = input.dependencies ?? defaultDependencies;
+  const readModel = await dependencies.readModel({
     db: input.db,
     profileId: input.profileId,
     now: input.asOf,
   });
-  const effectiveLoad = await input.dependencies.readEffectiveLoad({
+  const effectiveLoad = await dependencies.readEffectiveLoad({
     db: input.db,
     profileId: input.profileId,
     request: input.request,
     asOf: input.asOf,
   });
-  const currentScheduledPlan = await input.dependencies.readCurrentScheduledPlan({
+  const currentScheduledPlan = await dependencies.readCurrentScheduledPlan({
     db: input.db,
     profileId: input.profileId,
     asOf: input.asOf,
   });
-  const goalMarkers = await input.dependencies.readGoalMarkers({
+  const goalMarkers = await dependencies.readGoalMarkers({
     db: input.db,
     profileId: input.profileId,
   });
   const effectiveItems =
     effectiveLoad.status === "available" && effectiveLoad.effective.status === "available"
-      ? [...effectiveLoad.effective.firmItems, ...effectiveLoad.effective.tentativeItems]
+      ? effectiveLoad.effective.firmItems
       : [];
-  const tentativeScheduledIds = new Set(
-    effectiveLoad.status === "available" && effectiveLoad.effective.status === "available"
-      ? effectiveLoad.effective.tentativeItems.flatMap((item) =>
-          item.kind === "scheduled" ? [item.scheduledItemId] : [],
-        )
-      : [],
-  );
   const scheduledIds = effectiveItems.flatMap((item) =>
     item.kind === "scheduled" ? [item.scheduledItemId] : [],
   );
   const completedIds = effectiveItems.flatMap((item) =>
     item.kind === "completed" ? [item.completedActivityId] : [],
   );
-  const metadata = await input.dependencies.readItemMetadata({
+  const metadata = await dependencies.readItemMetadata({
     db: input.db,
     profileId: input.profileId,
     scheduledIds,
@@ -554,7 +585,7 @@ async function readProjectionSnapshot(input: {
         title: itemMetadata?.title ?? "Scheduled session",
         activityCategory: itemMetadata?.activityCategory ?? null,
         plannedLoad: item.commonLoad.status === "unavailable" ? null : item.commonLoad.load,
-        status: tentativeScheduledIds.has(item.scheduledItemId) ? "tentative" : "planned",
+        status: "planned",
       },
     ];
   });
@@ -584,7 +615,6 @@ async function readProjectionSnapshot(input: {
             date,
             recommended_common_load: load.recommendedLoad,
             scheduled_common_load: load.remainingLoad,
-            tentative_scheduled_common_load: load.tentativeLoad,
             completed_common_load: load.completedLoad,
           };
         }),
@@ -608,6 +638,35 @@ async function readProjectionSnapshot(input: {
       ...(recommendation === undefined ? {} : { recommendation }),
     }),
     recommendationPoints: recommendationPoints(effectiveLoad),
+    ledgerItems: effectiveItems.map((item) => {
+      const envelope = item.commonLoad;
+      const unavailable = envelope.status === "unavailable";
+      const loadStatus = unavailable
+        ? ("unavailable" as const)
+        : envelope.status === "partial"
+          ? ("partial" as const)
+          : envelope.load === 0
+            ? ("known_zero" as const)
+            : ("complete" as const);
+      const metadataItem =
+        item.kind === "scheduled"
+          ? metadata.scheduled.get(item.scheduledItemId)
+          : metadata.completed.get(item.completedActivityId);
+      return {
+        id: item.kind === "scheduled" ? item.scheduledItemId : item.completedActivityId,
+        date: item.date,
+        kind: item.kind === "completed" ? ("completed" as const) : ("planned" as const),
+        title:
+          metadataItem?.title ??
+          (item.kind === "completed" ? "Completed activity" : "Scheduled session"),
+        loadStatus,
+        load: unavailable ? null : envelope.load,
+        intensityStatus: loadStatus,
+        intensity: unavailable ? null : envelope.intensity,
+        contributingDurationStatus: loadStatus,
+        contributingDurationSeconds: unavailable ? null : envelope.contributingDurationSeconds,
+      };
+    }),
     sourceCoverage: effectiveLoad.sourceCoverage,
     goalMarkers,
     publishedRevision: readModel.publishedRevision,
@@ -628,7 +687,7 @@ export async function readPlanTabProjection(input: {
   const dependencies = input.dependencies ?? defaultDependencies;
   return input.db.transaction(
     (tx) =>
-      readProjectionSnapshot({
+      readPlanTabProjectionSnapshot({
         db: tx,
         profileId: input.profileId,
         request,

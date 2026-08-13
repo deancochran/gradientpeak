@@ -1,6 +1,9 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
-import { readPublishedAthleteStateSnapshotData } from "./athlete-state-repository";
+import {
+  publishAthleteState,
+  readPublishedAthleteStateSnapshotData,
+} from "./athlete-state-repository";
 
 const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 const COMPUTED_AT = "2026-08-01T12:00:00.000Z";
@@ -72,6 +75,12 @@ describe("published athlete-state repository snapshot", () => {
     expect(normalizedSql).toContain("where run.profile_id = $3");
     expect(normalizedSql).toContain("estimate.profile_id = profile.id");
     expect(normalizedSql).toContain("estimate.source_revision = state.published_revision");
+    if (!result) throw new Error("Expected published athlete-state snapshot");
+    expect(
+      result.current?.estimates.every(
+        (estimate) => estimate.source_revision === result.current?.state.published_revision,
+      ),
+    ).toBe(true);
     expect(query.params).toEqual([PROFILE_ID, PROFILE_ID, PROFILE_ID]);
   });
 
@@ -86,5 +95,120 @@ describe("published athlete-state repository snapshot", () => {
     expect(execute).toHaveBeenCalledOnce();
     const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0] as never);
     expect(query.sql.replace(/\s+/g, " ")).toContain("where state.profile_id = $2 for update");
+  });
+});
+
+describe("athlete-state publication fence", () => {
+  it("does not replace estimates when the source-revision claim is stale", async () => {
+    const afterPublishInTransaction = vi.fn();
+    const deleteEstimates = vi.fn();
+    const insertEstimates = vi.fn();
+    const updateState = vi.fn();
+    const select = vi.fn((fields: Record<string, unknown>) => ({
+      from: vi.fn(() => {
+        const builder = {
+          innerJoin: vi.fn(() => builder),
+          where: vi.fn(() =>
+            "profileId" in fields
+              ? { limit: vi.fn(() => ({ for: vi.fn().mockResolvedValue([]) })) }
+              : Promise.resolve([{ dirtyFromAt: null }]),
+          ),
+        };
+        return builder;
+      }),
+    }));
+    const tx = {
+      execute: vi.fn().mockResolvedValue({ rows: [] }),
+      select,
+      delete: deleteEstimates,
+      insert: insertEstimates,
+      update: updateState,
+    };
+    const db = { transaction: vi.fn((callback) => callback(tx)) };
+
+    await expect(
+      publishAthleteState(db as never, {
+        claim: {
+          profileId: PROFILE_ID,
+          sourceRevision: 5,
+          leaseToken: "22222222-2222-4222-8222-222222222222",
+          planningTimezone: "UTC",
+        },
+        state: {
+          fitness: 1,
+          fatigue: 1,
+          evidenceConfidence: 1,
+          coverageStartAt: null,
+          coverageEndAt: null,
+          lastActivityAt: null,
+          algorithmVersion: "athlete-state-projection-v1",
+        },
+        estimates: [],
+        now: new Date(COMPUTED_AT),
+        afterPublishInTransaction,
+      }),
+    ).resolves.toBe(false);
+    expect(deleteEstimates).not.toHaveBeenCalled();
+    expect(insertEstimates).not.toHaveBeenCalled();
+    expect(updateState).not.toHaveBeenCalled();
+    expect(afterPublishInTransaction).not.toHaveBeenCalled();
+  });
+
+  it("runs outbound-effect enqueue only after the fenced snapshot update succeeds", async () => {
+    const publishedReturning = vi.fn().mockResolvedValue([{ profileId: PROFILE_ID }]);
+    const updateWhere = vi.fn(() => ({ returning: publishedReturning }));
+    const tx = {
+      execute: vi.fn().mockResolvedValue({ rows: [] }),
+      select: vi.fn((fields: Record<string, unknown>) => ({
+        from: vi.fn(() => {
+          const builder = {
+            innerJoin: vi.fn(() => builder),
+            where: vi.fn(() =>
+              "profileId" in fields
+                ? {
+                    limit: vi.fn(() => ({
+                      for: vi.fn().mockResolvedValue([{ profileId: PROFILE_ID }]),
+                    })),
+                  }
+                : Promise.resolve([{ dirtyFromAt: null }]),
+            ),
+          };
+          return builder;
+        }),
+      })),
+      delete: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+      insert: vi.fn(),
+      update: vi.fn(() => ({ set: vi.fn(() => ({ where: updateWhere })) })),
+    };
+    const db = { transaction: vi.fn((callback) => callback(tx)) };
+    const afterPublishInTransaction = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      publishAthleteState(db as never, {
+        claim: {
+          profileId: PROFILE_ID,
+          sourceRevision: 5,
+          leaseToken: "22222222-2222-4222-8222-222222222222",
+          planningTimezone: "UTC",
+        },
+        state: {
+          fitness: 1,
+          fatigue: 1,
+          evidenceConfidence: 1,
+          coverageStartAt: null,
+          coverageEndAt: null,
+          lastActivityAt: null,
+          algorithmVersion: "athlete-state-projection-v1",
+        },
+        estimates: [],
+        now: new Date(COMPUTED_AT),
+        afterPublishInTransaction,
+      }),
+    ).resolves.toBe(true);
+
+    expect(afterPublishInTransaction).toHaveBeenCalledWith(tx);
+    expect(publishedReturning.mock.invocationCallOrder[0]).toBeLessThan(
+      afterPublishInTransaction.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
   });
 });

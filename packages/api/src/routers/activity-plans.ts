@@ -16,13 +16,23 @@ import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, gt, gte, ilike, inArray, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
+  ActivityPlanDeleteNotFoundError,
+  ActivityPlanLinkedEventsError,
+  deleteActivityPlanUseCase,
+} from "../application/activity-plans/delete-activity-plan";
+import {
   type ActivityPlanWithEstimate,
   estimateActivityPlan,
   estimateActivityPlans,
 } from "../application/activity-plans/estimate-activity-plans";
+import {
+  toActivityPlanDetail,
+  toActivityPlanSummary,
+} from "../application/activity-plans/read-projections";
 import { activityPlanStructureHash } from "../application/activity-plans/structure-hash";
 import { enqueueWahooPlannedActivityJobs } from "../application/events";
 import { getRequiredDb } from "../db";
+import { createActivityPlanWriteRepository } from "../infrastructure/repositories";
 import { createContentAccessPermissions } from "../permissions/content-access";
 import { getLikeStats, loadLikeStats } from "../repositories/like-stats";
 import { captureApiError } from "../telemetry";
@@ -32,7 +42,6 @@ import { loadProfileIdentityMap, type profileIdentitySchema } from "../utils/pro
 // Input schemas for queries
 const uuidSchema = z.string().uuid();
 const contentVisibilitySchema = z.enum(["private", "followers", "public"]);
-const activityCategoryFilterSchema = z.union([publicActivityCategorySchema, z.literal("all")]);
 const activityCategoryFiltersSchema = z.array(publicActivityCategorySchema).min(1).max(10);
 const activityPlanCursorSchema = z.string().superRefine((value, ctx) => {
   if (/^index:\d+$/.test(value)) {
@@ -58,10 +67,8 @@ const activityPlanCursorSchema = z.string().superRefine((value, ctx) => {
 
 const listActivityPlansSchema = z
   .object({
-    includeEstimation: z.boolean().default(true),
     ownerScope: z.enum(["own", "system", "public", "discoverable", "all"]),
     visibility: contentVisibilitySchema.optional(),
-    activityCategory: activityCategoryFilterSchema.optional(),
     activityCategories: activityCategoryFiltersSchema.optional(),
     search: z.string().optional(),
     sort_by: z.enum(["newest", "oldest"]).optional(),
@@ -330,12 +337,7 @@ export const activityPlansRouter = createTRPCRouter({
       conditions.push(eq(activityPlans.content_visibility, input.visibility));
     }
 
-    const requestedCategories = new Set([
-      ...(input.activityCategory && input.activityCategory !== "all"
-        ? [input.activityCategory]
-        : []),
-      ...(input.activityCategories ?? []),
-    ]);
+    const requestedCategories = new Set(input.activityCategories ?? []);
 
     if (requestedCategories.size > 0) {
       conditions.push(
@@ -436,10 +438,11 @@ export const activityPlansRouter = createTRPCRouter({
     const items = pageRows.map(serializeActivityPlanRow);
 
     const planIds = items.map((plan) => plan.id);
-    const itemsWithOptionalEstimationPromise: Promise<DiscoverListActivityPlan[]> =
-      input.includeEstimation
-        ? estimateActivityPlans(items, db, ctx.session.user.id)
-        : Promise.resolve(items.map((plan) => ({ ...plan })));
+    const itemsWithEstimationPromise: Promise<DiscoverListActivityPlan[]> = estimateActivityPlans(
+      items,
+      db,
+      ctx.session.user.id,
+    );
     const likeStatsPromise = loadLikeStats(db, {
       entityType: "activity_plan",
       entityIds: planIds,
@@ -450,8 +453,8 @@ export const activityPlansRouter = createTRPCRouter({
       items.map((plan) => plan.profile_id),
     );
 
-    const [itemsWithOptionalEstimation, likeStats, profileIdentityMap] = await Promise.all([
-      itemsWithOptionalEstimationPromise,
+    const [itemsWithEstimation, likeStats, profileIdentityMap] = await Promise.all([
+      itemsWithEstimationPromise,
       likeStatsPromise,
       profileIdentityMapPromise,
     ]);
@@ -470,15 +473,18 @@ export const activityPlansRouter = createTRPCRouter({
     }
 
     return {
-      items: itemsWithOptionalEstimation.map((plan) => ({
-        ...toPublicActivityPlan(
-          withOwnerIdentity(
-            withIdentityFields(withPrescriptionQuantificationOnly(plan)),
-            profileIdentityMap,
+      items: itemsWithEstimation.map((plan) => {
+        const item = {
+          ...toPublicActivityPlan(
+            withOwnerIdentity(
+              withIdentityFields(withPrescriptionQuantificationOnly(plan)),
+              profileIdentityMap,
+            ),
           ),
-        ),
-        ...getLikeStats(likeStats, plan.id),
-      })),
+          ...getLikeStats(likeStats, plan.id),
+        };
+        return toActivityPlanSummary(item, ctx.session.user.id);
+      }),
       nextCursor,
     };
   }),
@@ -530,7 +536,7 @@ export const activityPlansRouter = createTRPCRouter({
       loadProfileIdentityMap(db, [planWithEstimation.profile_id]),
     ]);
 
-    return {
+    const detailResult = {
       ...toPublicActivityPlan(
         withOwnerIdentity(
           withIdentityFields(withPrescriptionQuantificationOnly(planWithEstimation)),
@@ -538,6 +544,22 @@ export const activityPlansRouter = createTRPCRouter({
         ),
       ),
       ...getLikeStats(likeStats, input.id),
+    };
+    return {
+      detail: toActivityPlanDetail(detailResult, userId),
+      edit:
+        plan.profile_id === userId
+          ? {
+              id: plan.id,
+              name: plan.name,
+              description: plan.description,
+              notes: plan.notes,
+              structure: plan.structure,
+              structureHash: plan.structure_hash,
+              gpsRecordingEnabled: plan.gps_recording_enabled,
+              contentVisibility: plan.content_visibility,
+            }
+          : null,
     };
   }),
 
@@ -581,15 +603,18 @@ export const activityPlansRouter = createTRPCRouter({
       ]);
 
       return {
-        items: itemsWithEstimation.map((plan) => ({
-          ...toPublicActivityPlan(
-            withOwnerIdentity(
-              withIdentityFields(withPrescriptionQuantificationOnly(plan)),
-              profileIdentityMap,
+        items: itemsWithEstimation.map((plan) => {
+          const item = {
+            ...toPublicActivityPlan(
+              withOwnerIdentity(
+                withIdentityFields(withPrescriptionQuantificationOnly(plan)),
+                profileIdentityMap,
+              ),
             ),
-          ),
-          ...getLikeStats(likeStats, plan.id),
-        })),
+            ...getLikeStats(likeStats, plan.id),
+          };
+          return toActivityPlanSummary(item, userId);
+        }),
       };
     }),
 
@@ -774,72 +799,27 @@ export const activityPlansRouter = createTRPCRouter({
 
   delete: protectedProcedure.input(activityPlanIdInputSchema).mutation(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
-
-    const [ownedPlan] = await db
-      .select({ id: activityPlans.id })
-      .from(activityPlans)
-      .where(and(eq(activityPlans.id, input.id), eq(activityPlans.profile_id, ctx.session.user.id)))
-      .limit(1);
-
-    if (!ownedPlan) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "Activity plan not found or you don't have permission to delete it",
+    try {
+      return await deleteActivityPlanUseCase({
+        planId: input.id,
+        profileId: ctx.session.user.id,
+        repository: createActivityPlanWriteRepository(db),
       });
-    }
-
-    const linkedEvents = await db
-      .select({ id: events.id })
-      .from(events)
-      .where(
-        and(
-          eq(events.profile_id, ctx.session.user.id),
-          eq(events.activity_plan_id, input.id),
-          eq(events.event_type, "planned"),
-          eq(events.status, "scheduled"),
-          gte(events.starts_at, new Date()),
-        ),
-      );
-
-    let plannedActivitySync = null;
-    if (linkedEvents.length > 0) {
-      try {
-        plannedActivitySync = await enqueueWahooPlannedActivityJobs(ctx, {
-          eventIds: linkedEvents.map((event) => event.id),
-          operation: "unsync",
-        });
-      } catch (error) {
+    } catch (error) {
+      if (error instanceof ActivityPlanDeleteNotFoundError) {
         throw new TRPCError({
-          code: "CONFLICT",
-          message: "Activity plan cannot be deleted until linked device activities can be unsynced",
-          cause: error,
+          code: "NOT_FOUND",
+          message: "Activity plan not found or you don't have permission to delete it",
         });
       }
-
-      if (plannedActivitySync && !plannedActivitySync.success) {
+      if (error instanceof ActivityPlanLinkedEventsError) {
         throw new TRPCError({
           code: "CONFLICT",
-          message: "Activity plan cannot be deleted until linked device activities can be unsynced",
+          message: "Remove all linked scheduled events before deleting this activity plan",
         });
       }
+      throw error;
     }
-
-    const deletedRows = await db
-      .delete(activityPlans)
-      .where(and(eq(activityPlans.id, input.id), eq(activityPlans.profile_id, ctx.session.user.id)))
-      .returning({ id: activityPlans.id });
-
-    if (deletedRows.length === 0) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "Activity plan not found or you don't have permission to delete it",
-      });
-    }
-
-    return {
-      success: true,
-      plannedActivitySync,
-    };
   }),
 
   duplicate: protectedProcedure

@@ -56,15 +56,11 @@ export type CompletedCommonLoadObservationMerge = {
   timeline: Array<
     Omit<
       TrainingPathDailyLoadInput,
-      | "completed_common_load"
-      | "recommended_common_load"
-      | "scheduled_common_load"
-      | "tentative_scheduled_common_load"
+      "completed_common_load" | "recommended_common_load" | "scheduled_common_load"
     > & {
       completed_common_load: number;
       recommended_common_load: number;
       scheduled_common_load: number;
-      tentative_scheduled_common_load?: number;
     }
   >;
 };
@@ -90,11 +86,6 @@ function normalizeCompletedLoadTimeline(
         Number.isFinite(point.scheduled_common_load)
           ? point.scheduled_common_load
           : 0,
-      tentative_scheduled_common_load:
-        typeof point.tentative_scheduled_common_load === "number" &&
-        Number.isFinite(point.tentative_scheduled_common_load)
-          ? point.tentative_scheduled_common_load
-          : undefined,
     }))
     .sort((left, right) => left.date.localeCompare(right.date));
 }
@@ -230,7 +221,6 @@ export function buildDailyTrainingAdjustmentPointsFromTimelineWindow(input: {
           completedObservation?.hasUnavailableCompletedActivity === true,
         hasTargetLoad: input.targetLoadDates?.has(day.date) === true,
         plannedLoad: day.load.scheduledLoad,
-        tentativePlannedLoad: day.load.tentativeScheduledLoad,
         completedLoad: day.load.completedLoad,
         remainingScheduledLoadTss: day.load.remainingLoad,
         targetLoad: day.load.recommendedLoad ?? day.load.plannedLoad,

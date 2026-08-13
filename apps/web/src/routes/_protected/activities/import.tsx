@@ -41,15 +41,13 @@ export function ActivityImportPage() {
   const getSignedUrlMutation = api.activityFiles.getSignedUploadUrl.useMutation();
   const processActivityFileMutation = api.activityFiles.processActivityFile.useMutation();
   const [phase, setPhase] = useState<ActivityImportPhase>("idle");
-  const [importedActivity, setImportedActivity] = useState<{ id: string; name: string } | null>(
-    null,
-  );
+  const [importedActivity, setImportedActivity] = useState<{ id: string } | null>(null);
   const [navigationFailed, setNavigationFailed] = useState(false);
   const [navigationPending, setNavigationPending] = useState(false);
   const importInFlight = useRef(false);
-  const importedActivityRef = useRef<{ id: string; name: string } | null>(null);
+  const importedActivityRef = useRef<{ id: string } | null>(null);
 
-  const openImportedActivity = async (activity: { id: string; name: string }) => {
+  const openImportedActivity = async (activity: { id: string }) => {
     setNavigationPending(true);
     try {
       await navigate({
@@ -70,7 +68,7 @@ export function ActivityImportPage() {
     }
     importInFlight.current = true;
 
-    let activity: { id: string; name: string };
+    let activity: { id: string };
     try {
       setPhase("signing");
       const signedUrlData = await getSignedUrlMutation.mutateAsync({
@@ -87,7 +85,7 @@ export function ActivityImportPage() {
         name: values.name,
         notes: values.notes ?? undefined,
       });
-      activity = result.activity;
+      activity = { id: result.activity.id };
     } catch (error) {
       setPhase("idle");
       toast.error("Activity import failed");
@@ -98,7 +96,7 @@ export function ActivityImportPage() {
     importedActivityRef.current = activity;
     setImportedActivity(activity);
     setPhase("success");
-    toast.success(`Imported ${activity.name}`);
+    toast.success("Activity imported");
 
     await Promise.allSettled([
       Promise.resolve().then(() => invalidatePostActivityIngestionQueries(queryClient)),
@@ -144,8 +142,8 @@ export function ActivityImportPage() {
         <Card>
           <CardContent className="space-y-3 py-6">
             <p className="text-sm text-destructive" role="alert">
-              {importedActivity.name} was imported successfully, but it could not be opened
-              automatically. You do not need to import the file again.
+              The activity was imported successfully, but it could not be opened automatically. You
+              do not need to import the file again.
             </p>
             <Button
               disabled={navigationPending}

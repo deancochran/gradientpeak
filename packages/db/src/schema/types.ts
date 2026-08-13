@@ -2,6 +2,7 @@ import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 
 import type {
   activities,
+  activityAnalysisRevisions,
   activityArtifactLinks,
   activityArtifacts,
   activityEfforts,
@@ -41,6 +42,10 @@ import type {
   organizationMembershipRoleGrants,
   organizationMemberships,
   organizations,
+  performanceCalibrationEvidence,
+  performanceCalibrationModelInputs,
+  performanceCalibrationSelectionEvidence,
+  performanceCalibrations,
   profileAthleteState,
   profileGoals,
   profileMetrics,
@@ -121,6 +126,8 @@ export type TrainingPlanInsert = InferInsertModel<typeof trainingPlans>;
 
 export type ActivityRow = InferSelectModel<typeof activities>;
 export type ActivityInsert = InferInsertModel<typeof activities>;
+export type ActivityAnalysisRevisionRow = InferSelectModel<typeof activityAnalysisRevisions>;
+export type ActivityAnalysisRevisionInsert = InferInsertModel<typeof activityAnalysisRevisions>;
 export type ActivityImportRunRow = InferSelectModel<typeof activityImportRuns>;
 export type ActivityImportRunInsert = InferInsertModel<typeof activityImportRuns>;
 export type ActivitySourceReferenceRow = InferSelectModel<typeof activitySourceReferences>;
@@ -176,6 +183,26 @@ export type ProfileAthleteStateRow = InferSelectModel<typeof profileAthleteState
 export type ProfileAthleteStateInsert = InferInsertModel<typeof profileAthleteState>;
 export type ProfilePerformanceEstimateRow = InferSelectModel<typeof profilePerformanceEstimates>;
 export type ProfilePerformanceEstimateInsert = InferInsertModel<typeof profilePerformanceEstimates>;
+export type PerformanceCalibrationEvidenceRow = InferSelectModel<
+  typeof performanceCalibrationEvidence
+>;
+export type PerformanceCalibrationEvidenceInsert = InferInsertModel<
+  typeof performanceCalibrationEvidence
+>;
+export type PerformanceCalibrationModelInputRow = InferSelectModel<
+  typeof performanceCalibrationModelInputs
+>;
+export type PerformanceCalibrationModelInputInsert = InferInsertModel<
+  typeof performanceCalibrationModelInputs
+>;
+export type PerformanceCalibrationRow = InferSelectModel<typeof performanceCalibrations>;
+export type PerformanceCalibrationInsert = InferInsertModel<typeof performanceCalibrations>;
+export type PerformanceCalibrationSelectionEvidenceRow = InferSelectModel<
+  typeof performanceCalibrationSelectionEvidence
+>;
+export type PerformanceCalibrationSelectionEvidenceInsert = InferInsertModel<
+  typeof performanceCalibrationSelectionEvidence
+>;
 
 export type ProfileTrainingSettingsRow = InferSelectModel<typeof profileTrainingSettings>;
 export type ProfileTrainingSettingsInsert = InferInsertModel<typeof profileTrainingSettings>;

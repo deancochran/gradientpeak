@@ -8,7 +8,6 @@
 import { randomUUID } from "node:crypto";
 import {
   getProfileMetricDefinition,
-  isActivityDerivedThresholdMetricType,
   isProfileMetricValueWithinRange,
   normalizeProfileMetricCreate,
   normalizeProfileMetricUpdate,
@@ -18,7 +17,7 @@ import {
 } from "@repo/core/athlete-inputs";
 import { activities, profileMetrics, publicProfileMetricsRowSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { listProfileMetricHistory } from "../application/profile-metrics/listProfileMetricHistory";
 import { getRequiredDb } from "../db";
@@ -80,15 +79,6 @@ function parseNullableProfileMetricRow(row: unknown) {
   return row ? parseProfileMetricRow(row) : null;
 }
 
-function assertUserWritableMetric(metricType: z.infer<typeof profileMetricTypeSchema>): void {
-  if (!isActivityDerivedThresholdMetricType(metricType)) return;
-  throw new TRPCError({
-    code: "FORBIDDEN",
-    message:
-      "Training thresholds are calculated from trusted activity evidence and cannot be edited.",
-  });
-}
-
 export const profileMetricsRouter = createTRPCRouter({
   /**
    * List all profile metric logs for current user.
@@ -142,7 +132,6 @@ export const profileMetricsRouter = createTRPCRouter({
 
       const { profile_id: _profileId, ...metricInput } = input;
       const normalizedMetric = normalizeProfileMetricCreate(metricInput);
-      assertUserWritableMetric(normalizedMetric.metric_type);
 
       return db.transaction(async (tx) => {
         if (normalizedMetric.reference_activity_id) {
@@ -217,7 +206,6 @@ export const profileMetricsRouter = createTRPCRouter({
       if (!existing) {
         return null;
       }
-      assertUserWritableMetric(existing.metric_type);
 
       const normalizedPatch = (() => {
         try {
@@ -300,8 +288,6 @@ export const profileMetricsRouter = createTRPCRouter({
           message: "Only manual profile metric observations can be deleted",
         });
       }
-
-      if (existing) assertUserWritableMetric(existing.metric_type);
 
       if (!existing) return deleteProfileMetricOutputSchema.parse({ success: true });
 

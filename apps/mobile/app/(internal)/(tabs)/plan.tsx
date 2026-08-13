@@ -1,52 +1,34 @@
 import { Button } from "@repo/ui/components/button";
+import { Skeleton } from "@repo/ui/components/skeleton";
 import { Text } from "@repo/ui/components/text";
 import { useRouter } from "expo-router";
 import { useCallback } from "react";
 import { RefreshControl, ScrollView, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import type { TrainingPathLedgerSelection } from "@/components/plan/training-path/TrainingPathLoadChartSection";
 import { TrainingPathSection } from "@/components/plan/training-path/TrainingPathSection";
 import { usePlanTrainingPathData } from "@/components/plan/training-path/usePlanTrainingPathData";
 import { AppHeader } from "@/components/shared";
 import { ROUTES } from "@/lib/constants/routes";
 import { usePerformanceScreenReady } from "@/lib/performance";
-import { useTrainingPreferencesSheetStore } from "@/lib/stores/trainingPreferencesSheetStore";
+import { usePlanDisplayPreferences } from "@/lib/stores/planDisplayPreferences";
 
 function PlanDashboardScreen() {
   const router = useRouter();
   usePerformanceScreenReady("route-plan");
   const trainingPath = usePlanTrainingPathData();
-  const openTrainingPreferences = useTrainingPreferencesSheetStore((state) => state.open);
+  const chartRange = usePlanDisplayPreferences((state) => state.range);
+  const chartPreferencesHydrated = usePlanDisplayPreferences((state) => state.hydrated);
+  const setChartRange = usePlanDisplayPreferences((state) => state.setRange);
+  const hasBlockingFailure = trainingPath.queryFailureCount > 0 && !trainingPath.hasUsableData;
 
-  const navigateToActivity = useCallback(
-    (activityId: string) =>
-      router.navigate({ pathname: "/activity-detail", params: { id: activityId } } as never),
-    [router],
-  );
-  const navigateToGoal = useCallback(
-    (goalId: string) =>
-      router.navigate({ pathname: "/goal-detail", params: { id: goalId } } as never),
-    [router],
-  );
   const navigateToCreateGoal = useCallback(
     () => router.navigate(ROUTES.GOALS.CREATE as never),
     [router],
   );
-  const navigateToGroup = useCallback(
-    (groupId: string) =>
-      router.navigate({ pathname: "/group-detail", params: { groupId } } as never),
-    [router],
-  );
-  const navigateToGroupEvent = useCallback(
-    (eventId: string) =>
-      router.navigate({
-        pathname: "/group-event-detail",
-        params: { groupEventId: eventId },
-      } as never),
-    [router],
-  );
-  const navigateToScheduledEvent = useCallback(
-    (eventId: string) =>
-      router.navigate({ pathname: "/event-detail", params: { id: eventId } } as never),
+  const navigateToPlanningLedger = useCallback(
+    ({ anchorDate, period }: TrainingPathLedgerSelection) =>
+      router.navigate(ROUTES.PLAN.PLANNING_LEDGER({ anchorDate, period }) as never),
     [router],
   );
   return (
@@ -65,6 +47,7 @@ function PlanDashboardScreen() {
         <View className="gap-5 px-2 pb-6 pt-3">
           {trainingPath.queryFailureCount > 0 ? (
             <View
+              accessibilityRole={hasBlockingFailure ? "alert" : undefined}
               className="mx-2 gap-2 rounded-2xl border border-destructive/40 bg-card p-4"
               testID="plan-query-error"
             >
@@ -89,30 +72,28 @@ function PlanDashboardScreen() {
               </Button>
             </View>
           ) : null}
-          <TrainingPathSection
-            dailyPoints={trainingPath.dailyTrainingPathPoints}
-            chartLoading={trainingPath.chartLoading}
-            chartUnavailable={trainingPath.chartUnavailable}
-            model={trainingPath.trainingPath}
-            selectedDate={trainingPath.selectedDate}
-            selectedWeekGoals={trainingPath.selectedWeekGoals}
-            selectedWeekEvents={trainingPath.selectedWeekEvents}
-            selectedWeekGroupEvents={trainingPath.selectedWeekGroupEvents}
-            selectedWeekCompletedActivities={trainingPath.selectedWeekCompletedActivities}
-            selectedWeekLoading={trainingPath.selectedWeekLoading}
-            onScrollNearEnd={trainingPath.extendTrainingPathWindowEnd}
-            onScrollNearStart={trainingPath.extendTrainingPathWindowStart}
-            onOpenActivity={navigateToActivity}
-            onCreateGoal={navigateToCreateGoal}
-            onOpenGoal={navigateToGoal}
-            onOpenGroup={navigateToGroup}
-            onOpenGroupEvent={navigateToGroupEvent}
-            onOpenScheduledEvent={navigateToScheduledEvent}
-            onOpenSettings={openTrainingPreferences}
-            onWeekScrollStart={trainingPath.handleWeekScrollStart}
-            onSelectedDateChange={trainingPath.handleSelectedDateChange}
-            onSelectedWeekChange={trainingPath.handleSelectedWeekChange}
-          />
+          {!hasBlockingFailure && chartPreferencesHydrated ? (
+            <TrainingPathSection
+              chartRange={chartRange}
+              dailyPoints={trainingPath.dailyTrainingPathPoints}
+              chartLoading={trainingPath.chartLoading}
+              chartUnavailable={trainingPath.chartUnavailable}
+              model={trainingPath.trainingPath}
+              selectedDate={trainingPath.selectedDate}
+              onScrollNearEnd={trainingPath.extendTrainingPathWindowEnd}
+              onScrollNearStart={trainingPath.extendTrainingPathWindowStart}
+              onCreateGoal={navigateToCreateGoal}
+              onChartRangeChange={setChartRange}
+              onViewDetails={navigateToPlanningLedger}
+              onSelectedDateChange={trainingPath.handleSelectedDateChange}
+              onSelectedWeekChange={trainingPath.handleSelectedWeekChange}
+            />
+          ) : !hasBlockingFailure ? (
+            <View className="gap-3 px-2" testID="plan-chart-preferences-loading">
+              <Skeleton className="h-11 w-36 rounded-lg" />
+              <Skeleton className="h-[300px] w-full rounded-2xl" />
+            </View>
+          ) : null}
         </View>
       </ScrollView>
     </View>

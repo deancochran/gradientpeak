@@ -138,14 +138,12 @@ const model: TrainingPathViewModel = {
       label: "Apr 6",
       completedLoad: 20,
       plannedLoad: 40,
-      tentativePlannedLoad: 0,
       targetLoad: 80,
       effectiveLoadStatus: "complete",
       effectiveLoad: 60,
       effectiveIntensity: 0.8,
       effectiveCompletedLoad: 20,
       effectiveRemainingLoad: 40,
-      effectiveTentativeLoad: null,
       fitness: 40,
       scheduledFitness: 42,
       targetFitness: 45,
@@ -161,14 +159,12 @@ const model: TrainingPathViewModel = {
       label: "Apr 13",
       completedLoad: 0,
       plannedLoad: 60,
-      tentativePlannedLoad: 20,
       targetLoad: 90,
       effectiveLoadStatus: "complete",
       effectiveLoad: 60,
       effectiveIntensity: 0.7,
       effectiveCompletedLoad: null,
       effectiveRemainingLoad: 60,
-      effectiveTentativeLoad: 20,
       fitness: null,
       scheduledFitness: 44,
       targetFitness: 46,
@@ -233,7 +229,7 @@ describe("TrainingPathChart interactions", () => {
     expect(adjustable.props.accessibilityValue.text).not.toContain("TSS");
     expect(adjustable.props.accessibilityValue.text).toContain("Planned Common Load 40");
     expect(adjustable.props.accessibilityValue.text).not.toContain("Recommended Common Load");
-    expect(adjustable.props.accessibilityValue.text).toContain("Projected fitness 42");
+    expect(adjustable.props.accessibilityValue.text).toContain("Planned projection 42");
 
     fireEvent(adjustable, "accessibilityAction", {
       nativeEvent: { actionName: "increment" },
@@ -285,11 +281,11 @@ describe("TrainingPathChart interactions", () => {
     expect(screen.queryByTestId("training-path-week-2026-04-13")).toBeNull();
     expect(scrollView.props.disableIntervalMomentum).toBe(false);
     expect(scrollView.props.snapToInterval).toBeUndefined();
-    expect(renderedLines).toHaveLength(2);
+    expect(renderedLines).toHaveLength(1);
     expect(renderedRects).toHaveLength(0);
   });
 
-  it("renders tentative load as borderless dotted fill", () => {
+  it("renders only the scheduled load layer", () => {
     renderNative(
       <TrainingPathChart model={model} range="season" onSelectedWeekChange={jest.fn()} />,
     );
@@ -301,15 +297,26 @@ describe("TrainingPathChart interactions", () => {
       (rect: ReactTestInstance) => rect.props.style === "stroke",
     );
 
-    expect(dots.length).toBeGreaterThan(1);
+    expect(dots).toHaveLength(0);
     expect(strokedBars).toHaveLength(0);
   });
 
-  it("renders actual and projected fitness solid while keeping target fitness dotted in the fallback chart and legend", () => {
+  it("renders current and planned fitness solid while keeping a goal-backed recommendation dotted", () => {
+    const recommendationModel: TrainingPathViewModel = {
+      ...model,
+      goalMarkers: [
+        { id: "goal-1", label: "Race", targetDate: "2026-04-19", weekStart: "2026-04-13" },
+      ],
+      weeks: model.weeks.map((week) => ({
+        ...week,
+        recommendedLoadStatus: "complete" as const,
+        recommendedLoad: week.targetLoad,
+      })),
+    };
     renderNative(
       <>
-        <TrainingPathChart model={model} range="season" />
-        <TrainingPathLegend range="season" />
+        <TrainingPathChart model={recommendationModel} range="season" />
+        <TrainingPathLegend range="season" showTargetFitness showTargetLoad />
       </>,
     );
 
@@ -329,12 +336,13 @@ describe("TrainingPathChart interactions", () => {
     expect(plannedCtlLine.props.children).toBeUndefined();
     expect(idealCtlLine.props.children.type).toEqual(expect.any(Function));
     expect(idealCtlLine.props.children.props.intervals).toEqual([4, 4]);
-    expect(screen.getByText("Actual fitness")).toBeTruthy();
-    expect(screen.getByText("Projected fitness")).toBeTruthy();
-    expect(screen.getByText("Target fitness")).toBeTruthy();
-    expect(screen.queryByText("Recommended")).toBeNull();
-    expect(screen.getByText("Completed, Common Load unavailable")).toBeTruthy();
-    expect(screen.getByText("✓")).toBeTruthy();
+    expect(screen.getByText("Current fitness")).toBeTruthy();
+    expect(screen.getByText("Planned projection")).toBeTruthy();
+    expect(screen.getByText("Recommended projection")).toBeTruthy();
+    expect(screen.getByText("Recommended")).toBeTruthy();
+    expect(screen.getByTestId("training-path-today-boundary")).toBeTruthy();
+    expect(screen.getByLabelText("Left axis: Load, Common Load")).toBeTruthy();
+    expect(screen.getByLabelText("Right axis: Fitness")).toBeTruthy();
     expect(legendDottedSwatch?.props.style).toEqual(
       expect.objectContaining({ borderStyle: "dotted" }),
     );
@@ -380,6 +388,9 @@ describe("TrainingPathChart interactions", () => {
   it("renders the explicit common-Load recommendation instead of the legacy weekly target", () => {
     const recommendationModel: TrainingPathViewModel = {
       ...model,
+      goalMarkers: [
+        { id: "goal-1", label: "Race", targetDate: "2026-04-12", weekStart: "2026-04-06" },
+      ],
       weeks: [
         {
           ...firstModelWeek,
@@ -408,25 +419,23 @@ describe("TrainingPathChart interactions", () => {
     ).toContain("Recommended Common Load 80");
   });
 
-  it("does not use zero for an unavailable weekly planned base under tentative Load", () => {
-    const tentativeOnlyModel: TrainingPathViewModel = {
+  it("does not use zero for an unavailable weekly planned base", () => {
+    const unavailablePlannedModel: TrainingPathViewModel = {
       ...model,
       weeks: [
         {
           ...firstModelWeek,
           effectiveLoadStatus: "partial",
           effectiveRemainingLoad: null,
-          effectiveTentativeLoad: 25,
         },
       ],
     };
 
-    renderNative(<TrainingPathChart model={tentativeOnlyModel} range="season" />);
+    renderNative(<TrainingPathChart model={unavailablePlannedModel} range="season" />);
 
     expect(getHostNode("CartesianChart").props.data[0]).toEqual(
       expect.objectContaining({
         plannedLoad: null,
-        plannedLoadWithTentative: null,
         targetFitness: null,
       }),
     );

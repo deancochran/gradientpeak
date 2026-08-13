@@ -1,671 +1,289 @@
-import { defaultAthletePreferenceProfile } from "@repo/core";
 import type { CompleteOnboarding } from "@repo/core/schemas/onboarding";
 import {
-  activities,
-  activityEfforts,
   integrationCredentials,
   integrations,
+  oauthStates,
+  profileAthleteState,
   profileGoals,
   profileMetrics,
   profiles,
   profileTrainingSettings,
-  providerSyncState,
+  providerSyncJobs,
 } from "@repo/db";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const enqueueWahooProfileEnrichmentMock = vi.hoisted(() =>
-  vi.fn(async () => ({ id: "99999999-9999-4999-8999-999999999999", status: "queued" })),
+const queueMock = vi.hoisted(() =>
+  vi.fn(async (_tx: unknown, input: { jobType: string }) => ({
+    id: input.jobType,
+    status: "queued",
+  })),
 );
-
-vi.mock("../../lib/provider-sync/wahoo-profile-enrichment", () => ({
-  enqueueWahooProfileEnrichment: enqueueWahooProfileEnrichmentMock,
+vi.mock("../../infrastructure/repositories", () => ({
+  createWahooSyncRepository: vi.fn(() => ({ enqueueJobInTransaction: queueMock })),
 }));
 
-import { WahooProfileSetupService } from "../../application/wahoo-profile-setup-service";
-import { encryptProviderToken } from "../../lib/provider-token-crypto";
-import { getOnboardingGoalId } from "../../repositories/onboarding-lifecycle-repository";
 import { onboardingRouter } from "../onboarding";
 
-type InsertCall = {
-  table: unknown;
-  values: unknown[] | unknown;
+vi.mock("../../application/wahoo-profile-setup-service", () => ({
+  WahooProfileSetupService: class {
+    async getSetupData() {
+      return {
+        profile: { dob: null, gender: null, onboarding_status: "provider_selection" },
+        values: {},
+        sources: {},
+      };
+    }
+  },
+}));
+
+const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
+const INTEGRATION_ID = "22222222-2222-4222-8222-222222222222";
+const profileInput: CompleteOnboarding = {
+  full_name: "Lifecycle Athlete",
+  username: "lifecycle-athlete",
+  experience_level: "skip",
+  intents: ["train_event"],
+  baseline_field_sources: {},
+};
+const goalInput = {
+  target_date: "2026-09-13",
+  title: "Finish 5K",
+  priority: 1,
+  activity_category: "run" as const,
+  target_payload: {
+    type: "completion" as const,
+    activity_category: "run" as const,
+    distance_m: 5000,
+  },
 };
 
-function createCaller(params?: {
-  userId?: string;
-  updatedProfileId?: string | null;
-  latestActivityId?: string | null;
-  integrationRows?: Array<{
-    generation?: number;
-    id: string;
-    lifecycle_status?: string;
-    provider: "strava" | "wahoo";
-    profile_id: string;
-  }>;
-  activityEffortRows?: Array<{
-    id: string;
-    activity_id?: string | null;
-    activityId?: string | null;
-    duration_seconds?: number;
-    durationSeconds?: number;
-    unit?: string;
-    value?: number;
-    source: "manual" | "test" | "imported" | "provider" | "estimated" | "derived" | null;
-    method: string | null;
-    provenance: Record<string, unknown> | null;
-  }>;
-  profileRow?: {
-    dob: Date | null;
-    gender: "male" | "female" | "other" | null;
-    onboarded: boolean | null;
-  } | null;
-  profileMetricRows?: Array<{ value: number; recorded_at: Date; notes?: string | null }>;
-  profileTrainingSettingsValue?: unknown;
-  existingGoalRow?: {
-    id: string;
-    profile_id: string;
-    target_date: string;
-    title: string;
-    priority: number;
-    activity_category: string;
-    target_payload: unknown;
-  };
-  failGoalWrite?: boolean;
-  failSettingsWriteAfter?: number;
-  syncRows?: Array<{
-    integration_id: string;
-    metadata: Record<string, unknown>;
-    last_sync_started_at?: Date | null;
-    last_sync_succeeded_at?: Date | null;
-    last_sync_failed_at?: Date | null;
-  }>;
+function createCaller(input?: {
+  authenticated?: boolean;
+  pendingOAuth?: boolean;
+  providers?: boolean;
+  status?: "provider_selection" | "processing" | "review" | "completed";
 }) {
-  const userId = params?.userId ?? "11111111-1111-4111-8111-111111111111";
-  const updatedProfileId = params?.updatedProfileId ?? userId;
-  const latestActivityId = params?.latestActivityId ?? null;
-  const integrationRows = (params?.integrationRows ?? []).map((row) => ({
-    ...row,
-    generation: row.generation ?? 1,
-    lifecycle_status: row.lifecycle_status ?? "active",
-  }));
-  const activityEffortRows = params?.activityEffortRows ?? [];
-  const profileRow = params?.profileRow ?? null;
-  const profileMetricRows = params?.profileMetricRows ?? [];
-  let profileTrainingSettingsValue = params?.profileTrainingSettingsValue;
-  let storedGoal = params?.existingGoalRow;
-  let settingsWriteCount = 0;
-  const syncRows = params?.syncRows ?? [];
-  let lifecycleOnboarded = profileRow?.onboarded ?? false;
-  const insertCalls: InsertCall[] = [];
-  const updateCalls: Array<{ table: unknown; values: unknown }> = [];
-
+  let status = input?.status ?? "provider_selection";
+  const providers = input?.providers ?? false;
   const db = {
-    transaction: async () => undefined,
-    update: (table: unknown) => {
-      expect(table).toBe(profiles);
-
-      return {
-        set: (values: unknown) => {
-          updateCalls.push({ table, values });
-          if (values && typeof values === "object" && "onboarded" in values) {
-            lifecycleOnboarded =
-              (values as { onboarded?: boolean }).onboarded ?? lifecycleOnboarded;
-          }
-
-          return {
-            where: () => ({
-              returning: async () => (updatedProfileId ? [{ id: updatedProfileId }] : []),
-            }),
-          };
-        },
-      };
-    },
-    insert: (table: unknown) => ({
-      values: (values: unknown[] | unknown) => {
-        insertCalls.push({ table, values });
-        return {
-          onConflictDoNothing: async () => {
-            if (table === profileGoals) {
-              if (params?.failGoalWrite) throw new Error("goal write unavailable");
-              if (!storedGoal) {
-                storedGoal = values as typeof storedGoal;
-              }
-            }
-            return [];
-          },
-          onConflictDoUpdate: async () => {
-            if (table === profileTrainingSettings) {
-              settingsWriteCount += 1;
-              if (
-                params?.failSettingsWriteAfter !== undefined &&
-                settingsWriteCount > params.failSettingsWriteAfter
-              ) {
-                throw new Error("settings write unavailable");
-              }
-              profileTrainingSettingsValue = (values as { settings: unknown }).settings;
-            }
-            return [];
-          },
-          then: (resolve: (value: unknown[]) => void) => resolve([]),
-        };
-      },
-    }),
+    execute: vi.fn(async () => ({ rows: [] })),
+    transaction: async (operation: (tx: unknown) => Promise<unknown>) => operation(db),
     select: (selection?: Record<string, unknown>) => ({
       from: (table: unknown) => {
-        if (table === integrations) {
-          return {
-            where: () => ({
-              limit: async () => integrationRows.slice(0, 1),
-              then: (resolve: (value: typeof integrationRows) => void) => resolve(integrationRows),
-            }),
-          };
-        }
-
-        if (table === integrationCredentials) {
-          return {
-            where: () => ({
-              limit: async () => [
-                {
-                  access_token: encryptProviderToken("wahoo-access-token"),
-                  refresh_token: null,
-                  scope: "user_read",
-                },
-              ],
-            }),
-          };
-        }
-
-        if (table === providerSyncState) {
-          return {
-            where: async () => syncRows,
-          };
-        }
-
         if (table === profiles) {
-          if (selection && "id" in selection) {
-            const rows = updatedProfileId
-              ? [{ id: updatedProfileId, onboarded: lifecycleOnboarded }]
-              : [];
-            return {
-              where: () => ({
-                limit: () => ({
-                  for: async () => rows,
-                  then: (resolve: (value: typeof rows) => void) => resolve(rows),
-                }),
-              }),
-            };
-          }
-          return {
-            where: () => ({
-              limit: async () => (profileRow ? [profileRow] : []),
-            }),
-          };
-        }
-
-        if (table === profileMetrics) {
-          return {
-            where: () => ({
-              orderBy: () => ({
-                limit: async () => profileMetricRows,
-              }),
-            }),
-          };
-        }
-
-        if (table === profileTrainingSettings) {
-          const rows = () =>
-            profileTrainingSettingsValue === undefined
-              ? []
-              : [{ settings: profileTrainingSettingsValue }];
           return {
             where: () => ({
               limit: () => ({
-                for: async () => rows(),
-                then: (resolve: (value: ReturnType<typeof rows>) => void) => resolve(rows()),
+                for: async () => [{ id: PROFILE_ID, onboarding_status: status }],
+                then: (resolve: (rows: unknown[]) => void) =>
+                  resolve([{ id: PROFILE_ID, onboarding_status: status }]),
               }),
             }),
           };
         }
-
-        if (table === profileGoals) {
-          const goalRow = storedGoal
-            ? {
-                id: storedGoal.id,
-                profile_id: storedGoal.profile_id,
-                target_date: storedGoal.target_date,
-                title: storedGoal.title,
-                priority: storedGoal.priority,
-                activity_category: storedGoal.activity_category,
-                target_payload: storedGoal.target_payload,
-              }
-            : null;
+        if (table === integrations) {
+          const rows = providers
+            ? [
+                {
+                  id: INTEGRATION_ID,
+                  generation: 1,
+                  provider: "wahoo",
+                  scope: "workouts_read offline_data user_read",
+                },
+              ]
+            : [];
+          return {
+            innerJoin: () => ({
+              where: () => ({
+                for: async () => rows,
+                then: (resolve: (value: typeof rows) => void) => resolve(rows),
+              }),
+            }),
+          };
+        }
+        if (table === oauthStates) {
+          const rows = input?.pendingOAuth ? [{ id: "33333333-3333-4333-8333-333333333333" }] : [];
           return {
             where: () => ({
-              limit: async () => (goalRow ? [goalRow] : []),
+              limit: () => ({
+                for: async () => rows,
+              }),
             }),
           };
         }
-
-        if (table === activityEfforts) {
-          return {
-            where: () => {
-              const rows = activityEffortRows.map((row) => ({
-                ...row,
-                activityId: row.activityId ?? row.activity_id ?? null,
-                durationSeconds: row.durationSeconds ?? row.duration_seconds ?? 300,
-                unit: row.unit ?? "watts",
-                value: row.value ?? 300,
-              }));
-              return {
-                limit: async () => rows,
-                orderBy: () => ({ limit: async () => rows }),
-                then: (resolve: (value: typeof rows) => void) => resolve(rows),
-              };
+        if (table === providerSyncJobs) {
+          const rows = [
+            {
+              active: true,
+              id: INTEGRATION_ID,
+              generation: 1,
+              provider: "wahoo",
+              scope: "workouts_read offline_data user_read",
+              job_id: "history",
+              import_run_id: null,
+              payload_import_run_id: null,
+              job_type: "wahoo.activity_history_reconcile",
+              status: "completed",
+              last_error: null,
             },
+            {
+              active: true,
+              id: INTEGRATION_ID,
+              generation: 1,
+              provider: "wahoo",
+              scope: "workouts_read offline_data user_read",
+              job_id: "profile",
+              import_run_id: null,
+              payload_import_run_id: null,
+              job_type: "wahoo.profile_enrichment",
+              status: "completed",
+              last_error: null,
+            },
+          ];
+          return { innerJoin: () => ({ leftJoin: () => ({ where: async () => rows }) }) };
+        }
+        if (table === profileAthleteState) {
+          return { where: () => ({ limit: async () => [] }) };
+        }
+        if (table === profileTrainingSettings) {
+          return {
+            where: () => ({
+              limit: () => ({
+                for: async () => [],
+                then: (resolve: (rows: unknown[]) => void) => resolve([]),
+              }),
+            }),
           };
         }
-
-        expect(table).toBe(activities);
-
-        return {
-          where: () => ({
-            orderBy: () => ({
-              limit: async () => (latestActivityId ? [{ id: latestActivityId }] : []),
-            }),
-          }),
-        };
+        if (table === profileGoals) return { where: () => ({ limit: async () => [] }) };
+        if (table === profileMetrics)
+          return { where: () => ({ orderBy: () => ({ limit: async () => [] }) }) };
+        throw new Error(`Unexpected table ${String(table)}`);
       },
     }),
+    update: (table: unknown) => ({
+      set: (values: Record<string, unknown>) => ({
+        where: () => ({
+          returning: async () => {
+            if (table === profiles && typeof values.onboarding_status === "string") {
+              status = values.onboarding_status as typeof status;
+            }
+            return [{ id: PROFILE_ID }];
+          },
+        }),
+      }),
+    }),
+    insert: (table: unknown) => ({
+      values: (values: unknown) => ({
+        onConflictDoNothing: async () => [],
+        onConflictDoUpdate: async () => [],
+        then: (resolve: (rows: unknown[]) => void) => resolve([]),
+      }),
+    }),
   };
-  let transactionTail = Promise.resolve<unknown>(undefined);
-  Object.assign(db, {
-    transaction: (callback: (tx: typeof db) => Promise<unknown>) => {
-      const result = transactionTail.then(() => callback(db));
-      transactionTail = result.then(
-        () => undefined,
-        () => undefined,
-      );
-      return result;
-    },
-  });
-
-  const caller = onboardingRouter.createCaller({
-    db: db as any,
-    session: { user: { id: userId } },
-    headers: new Headers(),
-    clientType: "test",
-    trpcSource: "vitest",
-  } as any);
-
-  return { caller, db, insertCalls, updateCalls };
+  return {
+    caller: onboardingRouter.createCaller({
+      db: db as never,
+      session: input?.authenticated === false ? null : { user: { id: PROFILE_ID } },
+      headers: new Headers(),
+      clientType: "test",
+      trpcSource: "vitest",
+    } as never),
+    getStatus: () => status,
+  };
 }
 
-describe("onboardingRouter", () => {
+describe("onboarding lifecycle", () => {
   beforeEach(() => {
-    vi.stubEnv("PROVIDER_TOKEN_ENCRYPTION_KEY", Buffer.alloc(32, 7).toString("base64"));
     vi.clearAllMocks();
+    vi.stubEnv("WAHOO_CLIENT_ID", "client");
+    vi.stubEnv("WAHOO_CLIENT_SECRET", "secret");
   });
 
-  afterEach(() => vi.unstubAllEnvs());
-
-  it("queues setup refresh without overwriting existing canonical values", async () => {
-    const userId = "11111111-1111-4111-8111-111111111111";
-    const integrationId = "22222222-2222-4222-8222-222222222222";
-    const { db, insertCalls, updateCalls } = createCaller({
-      userId,
-      integrationRows: [
-        {
-          id: integrationId,
-          provider: "wahoo",
-          profile_id: userId,
-          access_token: encryptProviderToken("access-1"),
-          refresh_token: encryptProviderToken("refresh-1"),
-        } as any,
-      ],
-      profileRow: { dob: new Date("1988-02-03T00:00:00.000Z"), gender: "female", onboarded: true },
-      profileMetricRows: [{ value: 70, recorded_at: new Date("2026-05-16T00:00:00.000Z") }],
+  it("saves a draft without completing or advancing the lifecycle", async () => {
+    const { caller, getStatus } = createCaller();
+    await expect(caller.saveDraft({ profile: profileInput })).resolves.toEqual({
+      status: "provider_selection",
     });
-    const service = new WahooProfileSetupService({ db: db as any });
-
-    await expect(service.refreshSetupData(userId, "wahoo")).resolves.toEqual({
-      fieldsFilled: [],
-      fieldsKept: [],
-      fieldsUpdated: [],
-      keptExistingValues: false,
-      provider: "wahoo",
-      status: "queued",
-    });
-
-    expect(updateCalls).toHaveLength(0);
-    expect(insertCalls.filter((call) => call.table === profileMetrics)).toHaveLength(0);
-    expect(insertCalls.some((call) => call.table === providerSyncState)).toBe(true);
-    expect(enqueueWahooProfileEnrichmentMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        admission: expect.objectContaining({ trigger: "manual" }),
-      }),
-    );
+    expect(getStatus()).toBe("provider_selection");
+    expect(queueMock).not.toHaveBeenCalled();
   });
 
-  it("stops disabled setup refresh before credential or provider I/O", async () => {
-    vi.stubEnv("WAHOO_CLIENT_ID", "");
-    vi.stubEnv("WAHOO_CLIENT_SECRET", "");
-    const userId = "11111111-1111-4111-8111-111111111111";
-    const { db, insertCalls, updateCalls } = createCaller({
-      userId,
-      integrationRows: [
-        {
-          id: "22222222-2222-4222-8222-222222222222",
-          provider: "wahoo",
-          profile_id: userId,
-        },
-      ],
-    });
-    const service = new WahooProfileSetupService({ db: db as any });
-
-    await expect(service.refreshSetupData(userId, "wahoo")).rejects.toThrow(
-      "Integration not found",
-    );
-    expect(enqueueWahooProfileEnrichmentMock).not.toHaveBeenCalled();
-    expect(insertCalls).toEqual([]);
-    expect(updateCalls).toEqual([]);
+  it("moves zero-provider onboarding directly to review", async () => {
+    const { caller, getStatus } = createCaller();
+    await expect(caller.startProcessing()).resolves.toEqual({ status: "review", providers: [] });
+    expect(getStatus()).toBe("review");
+    expect(queueMock).not.toHaveBeenCalled();
   });
 
-  const lifecycleProfile: CompleteOnboarding = {
-    full_name: "Lifecycle Athlete",
-    username: "lifecycle-athlete",
-    experience_level: "skip",
-    intents: ["train_event", "groups"],
-    baseline_field_sources: {},
-  };
-  const lifecycleGoal = {
-    target_date: "2026-09-13",
-    title: "Break 20 for 5K",
-    priority: 1,
-    activity_category: "run" as const,
-    target_payload: {
-      type: "event_performance" as const,
-      activity_category: "run" as const,
-      distance_m: 5000,
-      target_time_s: 1200,
-      tolerance_pct: 0.02,
-      environment: "road" as const,
-    },
-  };
-  const lifecycleSettingsPatch = { preset: "push_harder" as const };
-
-  it("completes lifecycle setup once and makes a repeat effect-idempotent", async () => {
-    const { caller, insertCalls } = createCaller();
-
-    const first = await caller.completeLifecycleSetup({
-      profile: lifecycleProfile,
-      goal: lifecycleGoal,
-      settings_patch: lifecycleSettingsPatch,
-    });
-    const repeated = await caller.completeLifecycleSetup({
-      profile: { ...lifecycleProfile, full_name: "Do Not Rewrite", username: "different-name" },
-      goal: lifecycleGoal,
-      settings_patch: lifecycleSettingsPatch,
-    });
-
-    expect(first).toMatchObject({
-      status: "completed",
-      goal: { status: "saved", retryable: false },
-      settings: { status: "saved", retryable: false },
-      retryable: false,
-      cache_tags: ["integrations.getSyncOverview", "goals.list", "profileSettings.getForProfile"],
-    });
-    expect(repeated).toMatchObject({
-      status: "already_completed",
-      goal: { status: "saved", retryable: false },
-      settings: { status: "unchanged", retryable: false },
-    });
-    expect(insertCalls.filter((call) => call.table === profileMetrics)).toHaveLength(0);
-    expect(insertCalls.filter((call) => call.table === activityEfforts)).toHaveLength(0);
-    expect(
-      new Set(
-        insertCalls
-          .filter((call) => call.table === profileGoals)
-          .map((call) => (call.values as { id: string }).id),
-      ),
-    ).toEqual(new Set([getOnboardingGoalId("11111111-1111-4111-8111-111111111111")]));
-    expect(
-      insertCalls.filter((call) => call.table === profileTrainingSettings).at(-1)?.values,
-    ).toMatchObject({
-      profile_id: "11111111-1111-4111-8111-111111111111",
-      settings: { onboarding_intents: ["train_event", "groups"] },
-    });
+  it("keeps provider selection open while an OAuth callback is pending", async () => {
+    const { caller, getStatus } = createCaller({ pendingOAuth: true });
+    await expect(caller.startProcessing()).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(getStatus()).toBe("provider_selection");
+    expect(queueMock).not.toHaveBeenCalled();
   });
 
-  it("patches only named compact settings and preserves newer advanced settings", async () => {
-    const current = {
-      ...defaultAthletePreferenceProfile,
-      dose_limits: {
-        ...defaultAthletePreferenceProfile.dose_limits,
-        min_sessions_per_week: 2,
-        max_sessions_per_week: 8,
-        max_weekly_duration_minutes: 900,
-        activity_category_overrides: {
-          run: { max_sessions_per_week: 6 },
-          bike: { max_sessions_per_week: 7 },
-        },
-      },
-      recovery_preferences: {
-        ...defaultAthletePreferenceProfile.recovery_preferences,
-        post_goal_recovery_days: 12,
-      },
-    };
-    const { caller, insertCalls } = createCaller({
-      profileRow: { dob: null, gender: null, onboarded: true },
-      profileTrainingSettingsValue: current,
+  it("queues both required initial Wahoo jobs and closes provider selection", async () => {
+    const { caller, getStatus } = createCaller({ providers: true });
+    await expect(caller.startProcessing()).resolves.toEqual({
+      status: "processing",
+      providers: ["wahoo"],
     });
-
-    await caller.completeLifecycleSetup({
-      profile: lifecycleProfile,
-      settings_patch: { minSessionsPerWeek: 4 },
-    });
-
-    const saved = insertCalls.filter((call) => call.table === profileTrainingSettings).at(-1)
-      ?.values as { settings: typeof current };
-    expect(saved.settings.dose_limits.min_sessions_per_week).toBe(4);
-    expect(saved.settings.dose_limits.max_sessions_per_week).toBe(8);
-    expect(saved.settings.dose_limits.max_weekly_duration_minutes).toBe(900);
-    expect(saved.settings.dose_limits.activity_category_overrides).toEqual(
-      current.dose_limits.activity_category_overrides,
-    );
-    expect(saved.settings.recovery_preferences.post_goal_recovery_days).toBe(12);
-    expect(saved.settings.onboarding_intents).toEqual(lifecycleProfile.intents);
-  });
-
-  it("uses canonical defaults when no settings row exists", async () => {
-    const { caller, insertCalls } = createCaller({
-      profileRow: { dob: null, gender: null, onboarded: true },
-    });
-
-    await caller.completeLifecycleSetup({
-      profile: lifecycleProfile,
-      settings_patch: { maxWeeklyMinutes: 480, preset: "safer" },
-    });
-
-    const saved = insertCalls.filter((call) => call.table === profileTrainingSettings).at(-1)
-      ?.values as { settings: typeof defaultAthletePreferenceProfile };
-    expect(saved.settings.dose_limits.min_sessions_per_week).toBe(3);
-    expect(saved.settings.dose_limits.max_weekly_duration_minutes).toBe(480);
-    expect(saved.settings.training_style.progression_pace).toBe(0.25);
-  });
-
-  it("treats reordered activity_category override records as unchanged", async () => {
-    const settings = {
-      ...defaultAthletePreferenceProfile,
-      dose_limits: {
-        ...defaultAthletePreferenceProfile.dose_limits,
-        activity_category_overrides: {
-          bike: { max_sessions_per_week: 5 },
-          run: { max_sessions_per_week: 4 },
-        },
-      },
-      onboarding_intents: lifecycleProfile.intents,
-    };
-    const { caller } = createCaller({
-      profileRow: { dob: null, gender: null, onboarded: true },
-      profileTrainingSettingsValue: settings,
-    });
-
-    await expect(
-      caller.completeLifecycleSetup({ profile: lifecycleProfile, settings_patch: {} }),
-    ).resolves.toMatchObject({ settings: { status: "unchanged", retryable: false } });
-  });
-
-  it("rejects malformed compact settings before writes", async () => {
-    const { caller, insertCalls, updateCalls } = createCaller();
-
-    await expect(
-      caller.completeLifecycleSetup({
-        profile: lifecycleProfile,
-        settings_patch: { minSessionsPerWeek: 9, maxSessionsPerWeek: 2 },
-      }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(insertCalls).toEqual([]);
-    expect(updateCalls).toEqual([]);
-  });
-
-  it("returns a retryable partial failure when a valid patch conflicts with latest settings", async () => {
-    const { caller } = createCaller({
-      profileRow: { dob: null, gender: null, onboarded: true },
-      profileTrainingSettingsValue: {
-        ...defaultAthletePreferenceProfile,
-        dose_limits: { ...defaultAthletePreferenceProfile.dose_limits, max_sessions_per_week: 3 },
-      },
-    });
-
-    await expect(
-      caller.completeLifecycleSetup({
-        profile: lifecycleProfile,
-        settings_patch: { minSessionsPerWeek: 4 },
-      }),
-    ).resolves.toMatchObject({
-      status: "already_completed",
-      settings: { status: "failed", retryable: true, failure_code: "temporarily_unavailable" },
-      retryable: true,
-    });
-  });
-
-  it("serializes rapid completion calls at the profile lock without duplicate observations", async () => {
-    const { caller, insertCalls } = createCaller();
-
-    const results = await Promise.all([
-      caller.completeLifecycleSetup({ profile: lifecycleProfile }),
-      caller.completeLifecycleSetup({ profile: lifecycleProfile }),
+    expect(queueMock).toHaveBeenCalledTimes(2);
+    expect(queueMock.mock.calls.map(([, job]) => job.jobType).sort()).toEqual([
+      "wahoo.activity_history_reconcile",
+      "wahoo.profile_enrichment",
     ]);
-
-    expect(results.map((result) => result.status).sort()).toEqual([
-      "already_completed",
-      "completed",
-    ]);
-    expect(insertCalls.filter((call) => call.table === profileMetrics)).toHaveLength(0);
-    expect(insertCalls.filter((call) => call.table === activityEfforts)).toHaveLength(0);
+    expect(getStatus()).toBe("processing");
   });
 
-  it("repairs optional sections after onboarding and skips volatile provider prerequisites", async () => {
-    const userId = "11111111-1111-4111-8111-111111111111";
-    const integrationId = "22222222-2222-4222-8222-222222222222";
-    const { caller } = createCaller({
-      profileRow: { dob: null, gender: null, onboarded: true },
-      integrationRows: [{ id: integrationId, provider: "wahoo", profile_id: userId }],
-      syncRows: [
-        {
-          integration_id: integrationId,
-          metadata: { status: "running", blocking: true },
-          last_sync_started_at: new Date("2026-05-16T00:00:00.000Z"),
-        },
-      ],
+  it("replays startProcessing without duplicating durable work", async () => {
+    const { caller } = createCaller({ providers: true, status: "processing" });
+    await expect(caller.startProcessing()).resolves.toEqual({
+      status: "processing",
+      providers: ["wahoo"],
     });
+    expect(queueMock).not.toHaveBeenCalled();
+  });
 
+  it("exposes protected read-only aggregate progress", async () => {
+    const { caller, getStatus } = createCaller({ providers: true, status: "processing" });
+    await expect(caller.getProgress()).resolves.toMatchObject({
+      status: "processing",
+      phase: "recovery_required",
+      percent: 50,
+      provider_summary: [{ provider: "wahoo", label: "Wahoo" }],
+    });
+    expect(getStatus()).toBe("processing");
+    expect(queueMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps terminal processing below ready until review is persisted", async () => {
+    const { caller } = createCaller({ providers: true, status: "processing" });
+    const progress = await caller.getProgress();
+    expect(progress.status).toBe("processing");
+    expect(progress.phase).not.toBe("ready");
+    expect(progress.percent).not.toBe(100);
+  });
+
+  it("executes lost-anchor restart through the protected mutation", async () => {
+    const { caller, getStatus } = createCaller({ providers: false, status: "processing" });
+    await expect(caller.restartProviderSelection()).resolves.toEqual({
+      status: "provider_selection",
+    });
+    expect(getStatus()).toBe("provider_selection");
+    expect(queueMock).not.toHaveBeenCalled();
+  });
+
+  it("protects aggregate progress from unauthenticated callers", async () => {
+    const { caller } = createCaller({ authenticated: false });
+    await expect(caller.getProgress()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("requires review before finalization", async () => {
+    const { caller } = createCaller({ status: "provider_selection" });
     await expect(
-      caller.completeLifecycleSetup({
-        profile: lifecycleProfile,
-        goal: lifecycleGoal,
-        settings_patch: lifecycleSettingsPatch,
-      }),
-    ).resolves.toMatchObject({
-      status: "already_completed",
-      goal: { status: "saved" },
-      settings: { status: "saved" },
-    });
-  });
-
-  it("continues to settings when goal persistence fails", async () => {
-    const { caller } = createCaller({ failGoalWrite: true });
-
-    await expect(
-      caller.completeLifecycleSetup({
-        profile: lifecycleProfile,
-        goal: lifecycleGoal,
-        settings_patch: lifecycleSettingsPatch,
-      }),
-    ).resolves.toMatchObject({
-      status: "completed",
-      goal: { status: "failed", retryable: true, failure_code: "temporarily_unavailable" },
-      settings: { status: "saved", retryable: false },
-      retryable: true,
-    });
-  });
-
-  it("keeps a saved goal when optional settings persistence fails", async () => {
-    const { caller } = createCaller({ failSettingsWriteAfter: 1 });
-
-    await expect(
-      caller.completeLifecycleSetup({
-        profile: lifecycleProfile,
-        goal: lifecycleGoal,
-        settings_patch: lifecycleSettingsPatch,
-      }),
-    ).resolves.toMatchObject({
-      status: "completed",
-      goal: { status: "saved", retryable: false },
-      settings: {
-        status: "failed",
-        retryable: true,
-        failure_code: "temporarily_unavailable",
-      },
-      retryable: true,
-    });
-  });
-
-  it("does not overwrite a deterministic onboarding goal conflict", async () => {
-    const userId = "11111111-1111-4111-8111-111111111111";
-    const { caller } = createCaller({
-      existingGoalRow: {
-        id: getOnboardingGoalId(userId),
-        profile_id: userId,
-        ...lifecycleGoal,
-        title: "Existing different goal",
-      },
-    });
-
-    await expect(
-      caller.completeLifecycleSetup({ profile: lifecycleProfile, goal: lifecycleGoal }),
-    ).resolves.toMatchObject({
-      status: "completed",
-      goal: { status: "failed", retryable: false, failure_code: "content_conflict" },
-      settings: { status: "skipped", retryable: false },
-    });
-  });
-
-  it("derives lifecycle ownership only from the authenticated session", async () => {
-    const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-    const { caller, insertCalls } = createCaller({ userId });
-
-    await caller.completeLifecycleSetup({
-      profile: lifecycleProfile,
-      goal: lifecycleGoal,
-      settings_patch: lifecycleSettingsPatch,
-    });
-
-    expect(insertCalls.find((call) => call.table === profileGoals)?.values).toMatchObject({
-      profile_id: userId,
-    });
-    expect(
-      insertCalls.filter((call) => call.table === profileTrainingSettings).at(-1)?.values,
-    ).toMatchObject({ profile_id: userId });
+      caller.completeLifecycleSetup({ profile: profileInput, goal: goalInput }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
   });
 });

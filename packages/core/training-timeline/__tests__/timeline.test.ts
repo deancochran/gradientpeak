@@ -12,15 +12,13 @@ describe("training timeline", () => {
     expect(
       compareTrainingLoad({
         plannedLoad: 75,
-        scheduledLoad: 60,
-        tentativeScheduledLoad: 15,
+        scheduledLoad: 75,
         completedLoad: 40,
         recommendedLoad: 80,
       }),
     ).toEqual({
       plannedLoad: 75,
-      scheduledLoad: 60,
-      tentativeScheduledLoad: 15,
+      scheduledLoad: 75,
       completedLoad: 40,
       remainingLoad: 35,
       recommendedLoad: 80,
@@ -63,14 +61,12 @@ describe("training timeline", () => {
           date: "2026-07-06",
           recommended_common_load: 50,
           scheduled_common_load: 50,
-          tentative_scheduled_common_load: 0,
           completed_common_load: 0,
         },
         {
           date: "2026-07-07",
           recommended_common_load: 40,
           scheduled_common_load: 0,
-          tentative_scheduled_common_load: 0,
           completed_common_load: 35,
         },
       ],
@@ -92,7 +88,6 @@ describe("training timeline", () => {
           date: "2026-07-09",
           recommended_common_load: 100,
           scheduled_common_load: 80,
-          tentative_scheduled_common_load: 0,
           completed_common_load: 20,
         },
       ],
@@ -176,7 +171,6 @@ describe("training timeline", () => {
       compareTrainingLoad({
         plannedLoad: 50,
         scheduledLoad: 0,
-        tentativeScheduledLoad: 0,
         completedLoad: 0,
       }),
     ).toMatchObject({ remainingLoad: 0, deltaLoad: 0 });

@@ -3,6 +3,7 @@ import {
   activities,
   activityEfforts,
   activityImportRuns,
+  performanceCalibrations,
   profileAthleteState,
   profilePerformanceEstimates,
 } from "@repo/db";
@@ -292,6 +293,7 @@ export async function publishAthleteState(
     };
     estimates: Array<typeof profilePerformanceEstimates.$inferInsert>;
     now: Date;
+    afterPublishInTransaction?: (tx: DrizzleTransactionClient) => Promise<void>;
   },
 ) {
   try {
@@ -334,9 +336,42 @@ export async function publishAthleteState(
             sql`greatest(${activities.finished_at}, ${activityEfforts.recorded_at}) > ${input.now}`,
           ),
         );
+      const [futureCalibrationChange] = await tx
+        .select({
+          dirtyFromAt: sql<Date | string | null>`min(${performanceCalibrations.effective_at})`,
+        })
+        .from(performanceCalibrations)
+        .where(
+          and(
+            eq(performanceCalibrations.profile_id, input.claim.profileId),
+            gt(performanceCalibrations.effective_at, input.now),
+          ),
+        );
+      const [futureCalibrationExpiry] = await tx
+        .select({
+          dirtyFromAt: sql<Date | string | null>`min(${performanceCalibrations.expires_at})`,
+        })
+        .from(performanceCalibrations)
+        .where(
+          and(
+            eq(performanceCalibrations.profile_id, input.claim.profileId),
+            gt(performanceCalibrations.expires_at, input.now),
+            sql`not exists (
+              select 1 from ${performanceCalibrations} newer
+              where newer.profile_id = ${performanceCalibrations.profile_id}
+                and newer.metric_key = ${performanceCalibrations.metric_key}
+                and newer.activity_category = ${performanceCalibrations.activity_category}
+                and newer.effective_at <= ${performanceCalibrations.expires_at}
+                and (newer.effective_at, newer.created_at, newer.id) >
+                    (${performanceCalibrations.effective_at}, ${performanceCalibrations.created_at}, ${performanceCalibrations.id})
+            )`,
+          ),
+        );
       const futureDirtyFromAt = earliestTimestamp(
         parseDatabaseTimestamp(futureActivityEvidence?.dirtyFromAt),
         parseDatabaseTimestamp(futureEffortEvidence?.dirtyFromAt),
+        parseDatabaseTimestamp(futureCalibrationChange?.dirtyFromAt),
+        parseDatabaseTimestamp(futureCalibrationExpiry?.dirtyFromAt),
       );
       const [owned] = await tx
         .select({ profileId: profileAthleteState.profile_id })
@@ -402,6 +437,7 @@ export async function publishAthleteState(
         )
         .returning({ profileId: profileAthleteState.profile_id });
       if (!published) throw new AthleteStatePublishFenceLostError();
+      await input.afterPublishInTransaction?.(tx);
       return true;
     });
   } catch (error) {

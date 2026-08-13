@@ -71,7 +71,7 @@ function createProfileRow(overrides: Partial<Record<string, unknown>> = {}) {
     bio: "Climber",
     dob: new Date("1990-01-01T00:00:00.000Z"),
     gender: "male",
-    onboarded: true,
+    onboarding_status: "completed",
     is_public: true,
     username: "athlete",
     preferred_units: "metric",
@@ -280,8 +280,20 @@ describe("profilesRouter", () => {
       select: {
         profiles: [
           [],
-          [createProfileRow({ onboarded: false, username: null, full_name: null })],
-          [createProfileRow({ onboarded: false, username: null, full_name: null })],
+          [
+            createProfileRow({
+              onboarding_status: "provider_selection",
+              username: null,
+              full_name: null,
+            }),
+          ],
+          [
+            createProfileRow({
+              onboarding_status: "provider_selection",
+              username: null,
+              full_name: null,
+            }),
+          ],
         ],
         profileMetrics: [[], []],
         activityEfforts: [[], []],
@@ -296,13 +308,13 @@ describe("profilesRouter", () => {
       values: {
         id: SESSION_USER_ID,
         email: "athlete@example.com",
-        onboarded: false,
+        onboarding_status: "provider_selection",
         is_public: true,
       },
     });
     expect(result.id).toBe(SESSION_USER_ID);
     expect(result.email).toBe("athlete@example.com");
-    expect(result.onboarded).toBe(false);
+    expect(result.onboarding_status).toBe("provider_selection");
   });
 
   it("getPublicById hides private fields and counts for non-followers", async () => {
@@ -456,8 +468,8 @@ describe("profilesRouter", () => {
       select: {
         profiles: [
           [],
-          [createProfileRow({ onboarded: false })],
-          [createProfileRow({ onboarded: false })],
+          [createProfileRow({ onboarding_status: "provider_selection" })],
+          [createProfileRow({ onboarding_status: "provider_selection" })],
         ],
         profileMetrics: [[], []],
         activityEfforts: [[], []],
@@ -467,7 +479,7 @@ describe("profilesRouter", () => {
     await expect(caller.get()).resolves.toMatchObject({
       id: SESSION_USER_ID,
       email: "athlete@example.com",
-      onboarded: false,
+      onboarding_status: "provider_selection",
     });
     expect(calls.inserts[0]).toMatchObject({
       table: "profiles",

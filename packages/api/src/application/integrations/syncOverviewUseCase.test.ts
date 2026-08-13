@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   listByProfileId: vi.fn(),
   listJobs: vi.fn(),
   listSyncStateByIntegrationIds: vi.fn(),
+  readOverviewEvidence: vi.fn(),
 }));
 
 vi.mock("../../infrastructure/repositories", () => ({
@@ -24,8 +25,19 @@ vi.mock("../../infrastructure/repositories", () => ({
   })),
 }));
 
-vi.mock("../../lib/integrations/oauth-config", () => ({
-  isWahooIntegrationEnabled: vi.fn(() => true),
+vi.mock("./provider-operation-runtime", () => ({
+  getProviderOperationAdapter: vi.fn(() => ({
+    isConfigured: () => true,
+    allowsAction: ({ action, grantedScope }: { action: string; grantedScope?: string | null }) => {
+      const scopes = new Set((grantedScope ?? "").split(/\s+/));
+      return (
+        action === "disconnect" ||
+        (action === "sync_now" && scopes.has("workouts_read") && scopes.has("offline_data")) ||
+        (action === "refresh_setup_data" && scopes.has("user_read"))
+      );
+    },
+    readOverviewEvidence: mocks.readOverviewEvidence,
+  })),
 }));
 
 import { getProviderSyncOverview } from "./syncOverviewUseCase";
@@ -82,6 +94,29 @@ describe("getProviderSyncOverview planned Wahoo delivery", () => {
     });
     mocks.listJobs.mockResolvedValue([]);
     mocks.listSyncStateByIntegrationIds.mockResolvedValue([]);
+    mocks.readOverviewEvidence.mockResolvedValue({
+      activityHistory: {
+        lastError: null,
+        lastFailedAt: null,
+        lastSucceededAt: null,
+        queuedJobId: null,
+        status: "idle",
+        importRun: null,
+      },
+      plannedActivities: {
+        lastError: null,
+        lastFailedAt: null,
+        lastSucceededAt: null,
+        queuedJobId: null,
+        status: "automatic",
+      },
+      setupData: {
+        lastError: null,
+        lastFailedAt: null,
+        lastSucceededAt: null,
+        status: "idle",
+      },
+    });
   });
 
   it("reports planned delivery as automatic when grants are ready", async () => {
@@ -104,6 +139,16 @@ describe("getProviderSyncOverview planned Wahoo delivery", () => {
       reconnect_required_at: null,
       scope: "workouts_read offline_data",
     });
+    mocks.readOverviewEvidence.mockResolvedValueOnce({
+      ...(await mocks.readOverviewEvidence()),
+      plannedActivities: {
+        lastError: "Reconnect Wahoo to grant planned activity permissions",
+        lastFailedAt: null,
+        lastSucceededAt: null,
+        queuedJobId: null,
+        status: "unsupported",
+      },
+    });
 
     const overview = await getProviderSyncOverview({ db: overviewDb(), profileId: PROFILE_ID });
     const wahoo = overview.find((provider) => provider.provider === "wahoo");
@@ -115,6 +160,23 @@ describe("getProviderSyncOverview planned Wahoo delivery", () => {
   });
 
   it("reports a failed bulk import as incomplete before any state has published", async () => {
+    mocks.readOverviewEvidence.mockResolvedValueOnce({
+      ...(await mocks.readOverviewEvidence()),
+      activityHistory: {
+        lastError: null,
+        lastFailedAt: null,
+        lastSucceededAt: null,
+        queuedJobId: null,
+        status: "failed",
+        importRun: {
+          id: "88888888-8888-4888-8888-888888888888",
+          status: "failed",
+          importedCount: 2,
+          skippedCount: 0,
+          failedCount: 1,
+        },
+      },
+    });
     const overview = await getProviderSyncOverview({
       db: overviewDb({
         failedBulkRuns: [{ id: "88888888-8888-4888-8888-888888888888" }],
@@ -137,6 +199,16 @@ describe("getProviderSyncOverview planned Wahoo delivery", () => {
   });
 
   it("surfaces an active planned-delivery job when grants are ready", async () => {
+    mocks.readOverviewEvidence.mockResolvedValueOnce({
+      ...(await mocks.readOverviewEvidence()),
+      plannedActivities: {
+        lastError: null,
+        lastFailedAt: null,
+        lastSucceededAt: null,
+        queuedJobId: "66666666-6666-4666-8666-666666666666",
+        status: "queued",
+      },
+    });
     mocks.listJobs.mockResolvedValue([
       {
         id: "66666666-6666-4666-8666-666666666666",
@@ -179,6 +251,17 @@ describe("getProviderSyncOverview planned Wahoo delivery", () => {
   });
 
   it("maps the current generic bounded sync category without exposing raw diagnostics", async () => {
+    mocks.readOverviewEvidence.mockResolvedValueOnce({
+      ...(await mocks.readOverviewEvidence()),
+      activityHistory: {
+        lastError: "Provider sync failed",
+        lastFailedAt: "2026-07-28T11:00:00.000Z",
+        lastSucceededAt: null,
+        queuedJobId: null,
+        status: "failed",
+        importRun: null,
+      },
+    });
     mocks.listSyncStateByIntegrationIds.mockResolvedValue([
       {
         integrationId: INTEGRATION_ID,

@@ -149,7 +149,7 @@ jest.mock("@/lib/api", () => ({
       },
     },
     trainingPlans: {
-      getById: {
+      get: {
         useQuery: () => ({
           data: { id: "plan-123", name: "Spring Build" },
         }),

@@ -1,4 +1,5 @@
 import {
+  COMPLETED_ACTIVITY_PERFORMANCE_TARGET_SNAPSHOT_VERSION,
   completedSegmentSummarySchema,
   createUnavailableAthletePerformanceTargetFacts,
 } from "@repo/core";
@@ -568,6 +569,50 @@ describe("segment-derived activity analysis", () => {
         activities: [incompatible],
       }),
     ).rejects.toThrow("Persisted activity segment version identity is incompatible");
+  });
+
+  it("keeps completed load on the captured published target after calibration changes", async () => {
+    const input = activity([
+      segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000),
+    ]);
+    const capturedTargets = buildPerformanceTargetFactsFixture({
+      athleteId: PROFILE_ID,
+      asOf: input.started_at.toISOString(),
+      planningThresholdPowerWatts: 250,
+    });
+    const changedStore = store();
+    changedStore.getPerformanceTargetsAsOf.mockImplementation(async ({ asOf }) =>
+      buildPerformanceTargetFactsFixture({
+        athleteId: PROFILE_ID,
+        asOf: asOf.toISOString(),
+        planningThresholdPowerWatts: 400,
+      }),
+    );
+
+    const [frozen] = await buildActivitySegmentDerivedSummaries({
+      store: changedStore,
+      profileId: PROFILE_ID,
+      activities: [
+        {
+          ...input,
+          performance_target_snapshot: {
+            contractVersion: COMPLETED_ACTIVITY_PERFORMANCE_TARGET_SNAPSHOT_VERSION,
+            capturedAt: input.finished_at.toISOString(),
+            publishedRevision: 7,
+            publicationStatus: "available",
+            targets: capturedTargets,
+          },
+        },
+      ],
+    });
+    const [driftingWithoutSnapshot] = await buildActivitySegmentDerivedSummaries({
+      store: changedStore,
+      profileId: PROFILE_ID,
+      activities: [input],
+    });
+
+    expect(frozen?.common_load).toMatchObject({ status: "available", method: "power_threshold" });
+    expect(frozen?.common_load).not.toEqual(driftingWithoutSnapshot?.common_load);
   });
 
   it("preserves compatible segment common Load in the parent aggregate", async () => {
@@ -1698,5 +1743,88 @@ describe("segment-derived activity analysis", () => {
         reason: "threshold_missing",
       },
     });
+  });
+
+  it("uses a selected current-segment analysis revision before the immutable original snapshot", async () => {
+    const startedAt = new Date("2026-07-01T08:00:00.000Z");
+    const selectedTargets = buildPerformanceTargetFactsFixture({
+      athleteId: PROFILE_ID,
+      asOf: startedAt.toISOString(),
+      planningThresholdPowerWatts: 250,
+    });
+    const input = {
+      ...activity([segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000)]),
+      started_at: startedAt,
+      segments_revision: 1,
+      performance_target_snapshot: {
+        contractVersion: COMPLETED_ACTIVITY_PERFORMANCE_TARGET_SNAPSHOT_VERSION,
+        capturedAt: startedAt.toISOString(),
+        publishedRevision: null,
+        publicationStatus: "unavailable" as const,
+        targets: unavailableTargets(startedAt),
+      },
+    };
+    const getPerformanceTargetsAsOf = vi.fn(async () => unavailableTargets(startedAt));
+
+    const [result] = await buildActivitySegmentDerivedSummaries({
+      store: {
+        ...store(),
+        getPerformanceTargetsAsOf,
+        getPerformanceTargetSelectionsForActivities: vi.fn(
+          async () =>
+            new Map([
+              [
+                input.id,
+                {
+                  activityId: input.id,
+                  source: "analysis_revision" as const,
+                  sourceSegmentsRevision: 1,
+                  revision: 2,
+                  performanceTargets: selectedTargets,
+                },
+              ],
+            ]),
+        ),
+      },
+      profileId: PROFILE_ID,
+      activities: [input],
+    });
+
+    expect(result?.common_load.status).toBe("available");
+    expect(getPerformanceTargetsAsOf).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the immutable completion snapshot when no revision is selected", async () => {
+    const startedAt = new Date("2026-07-01T08:00:00.000Z");
+    const getPerformanceTargetsAsOf = vi.fn(async () =>
+      buildPerformanceTargetFactsFixture({
+        athleteId: PROFILE_ID,
+        asOf: startedAt.toISOString(),
+        planningThresholdPowerWatts: 250,
+      }),
+    );
+    const input = {
+      ...activity([segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000)]),
+      started_at: startedAt,
+      segments_revision: 1,
+      performance_target_snapshot: {
+        contractVersion: COMPLETED_ACTIVITY_PERFORMANCE_TARGET_SNAPSHOT_VERSION,
+        capturedAt: startedAt.toISOString(),
+        publishedRevision: null,
+        publicationStatus: "unavailable" as const,
+        targets: unavailableTargets(startedAt),
+      },
+    };
+
+    const [result] = await buildActivitySegmentDerivedSummaries({
+      store: { ...store(), getPerformanceTargetsAsOf },
+      profileId: PROFILE_ID,
+      activities: [input],
+    });
+
+    expect(result).toMatchObject({
+      common_load: { status: "unavailable", reason: "threshold_missing" },
+    });
+    expect(getPerformanceTargetsAsOf).not.toHaveBeenCalled();
   });
 });

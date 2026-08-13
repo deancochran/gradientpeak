@@ -2,7 +2,6 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createActivityQuantificationBundle } from "../../test-support/activity-quantification";
 
 import { ActivityCategoryBadges } from "../activity-category-presentation";
 import {
@@ -20,77 +19,69 @@ vi.mock("../../hooks/use-viewing-user-preferred-unit-system", () => ({
 afterEach(() => cleanup());
 
 describe("ActivityListCard", () => {
-  const unavailableHeartRateQuantification = createActivityQuantificationBundle({
-    activityCategory: "run",
-    id: "activity-run",
-    kind: "observation",
-    load: null,
-    method: "heart_rate_zones",
-    nativeIntensity: null,
-    unavailableReason: "threshold_missing",
-  });
+  const activity = {
+    contractVersion: "activity-display-v1" as const,
+    id: "11111111-1111-4111-8111-111111111111",
+    href: "/activities/11111111-1111-4111-8111-111111111111",
+    owner: { id: "owner-1", username: "runner", avatarUrl: null },
+    time: { startedAt: "2026-07-17T10:00:00.000Z", finishedAt: null },
+    activityComposition: {
+      kind: "multisport" as const,
+      categories: ["run" as const, "bike" as const],
+    },
+    title: "Activity",
+    notes: null,
+    metrics: [
+      {
+        key: "common_load" as const,
+        label: "Load",
+        status: "unavailable" as const,
+        value: null,
+        unit: "score",
+        reason: "quantification_unavailable",
+      },
+      {
+        key: "normalized_intensity" as const,
+        label: "Intensity",
+        status: "unavailable" as const,
+        value: null,
+        unit: "ratio",
+        reason: "quantification_unavailable",
+      },
+      {
+        key: "elapsed_duration" as const,
+        label: "Elapsed",
+        status: "available" as const,
+        value: 5_400,
+        unit: "seconds",
+        reason: null,
+      },
+    ],
+    visibility: "private" as const,
+    engagement: { likes: 0, comments: 0, viewerHasLiked: false },
+    capabilities: {
+      canLike: true,
+      canComment: true,
+      canShare: false,
+      canEdit: true,
+      canDelete: true,
+      hasRoute: false,
+    },
+  };
 
-  it("renders modern activity DTO category and elapsed fields", () => {
-    render(
-      <ActivityListCard
-        activity={
-          {
-            id: "11111111-1111-4111-8111-111111111111",
-            profile_id: "22222222-2222-4222-8222-222222222222",
-            activity_categories: ["run", "bike", "run"],
-            activity_kind: "multisport",
-            name: "Brick activity",
-            notes: null,
-            started_at: new Date("2026-07-17T10:00:00.000Z"),
-            finished_at: new Date("2026-07-17T11:30:00.000Z"),
-            elapsed_ms: 5_400_000,
-            active_ms: null,
-            moving_ms: null,
-            timing_coverage: "unavailable",
-            distance_meters: 25_000,
-            derived: null,
-            has_liked: false,
-            likes_count: 0,
-          } as never
-        }
-        onOpen={() => undefined}
-      />,
-    );
+  it("renders the canonical display projection", () => {
+    render(<ActivityListCard activity={activity} onOpen={() => undefined} />);
 
-    expect(screen.getByText("Brick activity")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Activity" })).toBeTruthy();
     expect(screen.getByText("Run • Ride")).toBeTruthy();
-    expect(screen.getByText("Run, Ride")).toBeTruthy();
     expect(screen.getByText("1h 30m")).toBeTruthy();
-    expect(screen.getByText("Common Load")).toBeTruthy();
-    expect(screen.getByText("Normalized intensity")).toBeTruthy();
+    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
     expect(screen.getAllByText("Unavailable")).toHaveLength(2);
-    expect(screen.getByText(/no canonical activity quantification was provided/i)).toBeTruthy();
     expect(screen.getByTestId("activity-card-11111111-1111-4111-8111-111111111111")).toBeTruthy();
     expect(
       screen.getByTestId("activity-card-11111111-1111-4111-8111-111111111111-open"),
     ).toBeTruthy();
-  });
-
-  it("renders the canonical activity-category-specific LTHR diagnostic", () => {
-    render(
-      <ActivityListCard
-        activity={{
-          name: "Morning Run",
-          started_at: "2026-07-17T10:00:00.000Z",
-          activity_categories: ["run"],
-          elapsed_ms: 3_600_000,
-          avg_heart_rate: 150,
-          derived: { observationQuantification: unavailableHeartRateQuantification },
-          segment_loads: [{ observationQuantification: unavailableHeartRateQuantification }],
-        }}
-        onOpen={() => undefined}
-      />,
-    );
-
-    expect(
-      screen.getByText(/activity-category-specific LTHR is missing for this activity/),
-    ).toBeTruthy();
-    expect(screen.getByText(/Add a current activity-category-specific LTHR/)).toBeTruthy();
   });
 });
 

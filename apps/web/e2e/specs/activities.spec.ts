@@ -16,7 +16,10 @@ test.describe("completed activities and imports", () => {
     let activityId = "";
     try {
       activityId = await importActivity(athletePage, activityFiles.gpx, name);
-      await expect(athletePage.getByRole("heading", { name })).toBeVisible();
+      await expect(
+        athletePage.getByRole("heading", { name: "Activity", exact: true }),
+      ).toBeVisible();
+      await expect(athletePage.getByText(name, { exact: true })).toHaveCount(0);
       await expect(athletePage.getByRole("heading", { name: "Route preview" })).toBeVisible();
       await expect(athletePage.getByRole("heading", { name: "Stream charts" })).toBeVisible();
       await expect(athletePage.getByRole("img", { name: "Heart rate over time" })).toBeVisible();
@@ -57,31 +60,32 @@ test.describe("completed activities and imports", () => {
       });
 
       await athletePage.goto(`/share/activities/${activityId}`);
-      await expect(athletePage.getByRole("heading", { name })).not.toBeVisible();
+      await expect(athletePage.getByText(name, { exact: true })).toHaveCount(0);
       await athletePage.goto(`/activities/${activityId}`);
       await athletePage.getByRole("button", { name: "Change visibility" }).click();
       await athletePage.getByRole("button", { name: /^Followers/ }).click();
       await expect(athletePage.getByText("Visibility updated")).toBeVisible();
       await athletePage.keyboard.press("Escape");
       await athletePage.goto(`/share/activities/${activityId}`);
-      await expect(athletePage.getByRole("heading", { name })).not.toBeVisible();
+      await expect(athletePage.getByText(name, { exact: true })).toHaveCount(0);
       await athletePage.goto(`/activities/${activityId}`);
       await athletePage.getByRole("button", { name: "Change visibility" }).click();
       await athletePage.getByRole("button", { name: /^Public/ }).click();
       await expect(athletePage.getByText("Visibility updated")).toBeVisible();
       await athletePage.goto(`/share/activities/${activityId}`);
-      await expect(athletePage.getByRole("heading", { name })).toBeVisible();
+      await expect(
+        athletePage.getByRole("heading", { name: "Activity", exact: true }),
+      ).toBeVisible();
+      await expect(athletePage.getByText(name, { exact: true })).toHaveCount(0);
 
       await athletePage.goto("/activities");
-      await athletePage.getByLabel("Search activities").fill(name);
-      await athletePage.getByRole("button", { name: "Search" }).click();
-      await expect(athletePage.getByRole("heading", { name })).toBeVisible();
+      await expect(athletePage.getByLabel("Search activities")).toHaveCount(0);
       await athletePage.getByLabel("Activity category").selectOption("run");
       await athletePage.getByLabel("Sort by").selectOption("distance");
       await athletePage.getByRole("combobox", { name: /^Order/ }).selectOption("asc");
       await athletePage.getByRole("textbox", { name: "From", exact: true }).fill("2026-01-01");
       await athletePage.getByRole("textbox", { name: "To", exact: true }).fill("2026-01-01");
-      await expect(athletePage.getByRole("heading", { name })).toBeVisible();
+      await expect(athletePage.getByTestId(`activity-card-${activityId}`)).toBeVisible();
       await athletePage.getByTestId(`activity-card-${activityId}-open`).click();
 
       await athletePage.getByRole("button", { name: "Delete", exact: true }).click();
@@ -115,7 +119,10 @@ test.describe("completed activities and imports", () => {
       let activityId = "";
       try {
         activityId = await importActivity(athletePage, fixture, name);
-        await expect(athletePage.getByRole("heading", { name })).toBeVisible();
+        await expect(
+          athletePage.getByRole("heading", { name: "Activity", exact: true }),
+        ).toBeVisible();
+        await expect(athletePage.getByText(name, { exact: true })).toHaveCount(0);
         if (format === "FIT") {
           await expect(
             athletePage.getByRole("heading", { name: "Pool swim detail" }),
@@ -142,7 +149,7 @@ test.describe("completed activities and imports", () => {
         mimeType: "application/gpx+xml",
         buffer: Buffer.from("<gpx>broken"),
       });
-      await athletePage.getByTestId("activity-import-name-input").fill(name);
+      await expect(athletePage.getByTestId("activity-import-name-input")).toHaveCount(0);
       await athletePage.getByRole("button", { name: "Import activity" }).click();
       await expect(athletePage.getByRole("alert")).toBeVisible();
       await athletePage
@@ -150,7 +157,10 @@ test.describe("completed activities and imports", () => {
         .setInputFiles(activityFileForIdentity(activityFiles.gpx, name));
       await athletePage.getByRole("button", { name: "Import activity" }).click();
       await athletePage.waitForURL(/\/activities\/[0-9a-f-]+\/?$/, { timeout: 30_000 });
-      await expect(athletePage.getByRole("heading", { name })).toBeVisible();
+      await expect(
+        athletePage.getByRole("heading", { name: "Activity", exact: true }),
+      ).toBeVisible();
+      await expect(athletePage.getByText(name, { exact: true })).toHaveCount(0);
       activityId = athletePage.url().match(/\/activities\/([0-9a-f-]+)/)?.[1] ?? "";
     } finally {
       await deleteImportedActivity(athletePage, activityId);

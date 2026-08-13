@@ -20,6 +20,16 @@ import {
   isGroupOwner,
 } from "./permissions";
 
+export function isGroupEventGoing(input: {
+  occurrenceStatus?: string | null;
+  seriesStatus?: string | null;
+}): boolean {
+  if (input.occurrenceStatus !== null && input.occurrenceStatus !== undefined) {
+    return input.occurrenceStatus !== "declined";
+  }
+  return input.seriesStatus !== "declined";
+}
+
 export type GroupViewerState = {
   membershipRole: GroupMembershipRole | null;
   membershipStatus: GroupMembershipStatus | null;

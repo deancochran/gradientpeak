@@ -96,7 +96,7 @@ function integration(overrides: Record<string, unknown> = {}) {
       lastError: null,
       lastFailedAt: null,
       lastSucceededAt: null,
-      profile: { dob: null, gender: null, onboarded: false },
+      profile: { dob: null, gender: null, onboarding_status: "provider_selection" },
       sources: {},
       status: "idle",
       values: {},
@@ -186,17 +186,17 @@ describe("web integrations journey", () => {
     expect(screen.queryByRole("button", { name: "Sync now" })).toBeNull();
   });
 
-  it("shows actionable token-limit recovery and removes callback details from the URL", () => {
+  it("shows the API-normalized provider recovery message and removes callback details", () => {
     window.history.replaceState(
       null,
       "",
-      "/integrations?integration=failed&provider=wahoo&error=wahoo_token_limit_exceeded",
+      "/integrations?integration=failed&provider=wahoo&error=authorization_limit_reached&error_message=This+account+has+too+many+active+GradientPeak+authorizations.",
     );
 
     render(<IntegrationsPage />);
 
     expect(mocks.toastError).toHaveBeenCalledWith(
-      "Wahoo has too many active GradientPeak authorizations. Revoke GradientPeak in Wahoo, then try again.",
+      "This account has too many active GradientPeak authorizations.",
     );
     expect(window.location.search).toBe("");
   });

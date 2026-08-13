@@ -1,4 +1,4 @@
-import type { ActivityPrescriptionQuantificationBundle } from "@repo/core";
+import type { ActivityPlanSummary } from "@repo/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import type React from "react";
@@ -13,14 +13,6 @@ type StructureSessionRow = {
   sourcePath: Array<string | number>;
 };
 
-type ActivityPlanListItem = {
-  id: string;
-  name: string;
-  activity_category?: string | null;
-  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
-  structure?: unknown;
-};
-
 type GroupedMicrocycleSessions = {
   microcycle: number;
   days: Array<{
@@ -30,7 +22,7 @@ type GroupedMicrocycleSessions = {
 };
 
 interface TrainingPlanStructureSectionProps {
-  activityPlanItems: ActivityPlanListItem[];
+  activityPlanItems: ActivityPlanSummary[];
   activityPlanNameById: Map<string, string>;
   formatCompactDayLabel: (dayOffset: number) => string;
   groupedStructureSessions: GroupedMicrocycleSessions[];
@@ -43,7 +35,7 @@ interface TrainingPlanStructureSectionProps {
   onRefreshActivityPlans: () => void;
   onRemoveActivityFromSession: (session: StructureSessionRow) => void;
   renderSessionActivityContent?: (session: StructureSessionRow) => React.ReactNode;
-  onSelectActivityForSession: (activityPlan: ActivityPlanListItem) => void;
+  onSelectActivityForSession: (activityPlan: ActivityPlanSummary) => void;
   selectedSessionRow: StructureSessionRow | null;
   showActivityPicker: boolean;
   title?: string;

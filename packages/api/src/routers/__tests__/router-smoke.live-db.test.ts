@@ -52,7 +52,7 @@ async function seedUserProfile() {
     email,
     full_name: "Live DB Test User",
     username: `live-db-${userId.slice(0, 8)}`,
-    onboarded: true,
+    onboarding_status: "completed",
     is_public: true,
     planning_timezone: "UTC",
   });

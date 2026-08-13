@@ -27,6 +27,7 @@ function finalHeartRateLoad(input: {
   lthrBpm?: number | null;
   includeQuality?: boolean;
   stale?: boolean;
+  provisional?: boolean;
 }): CommonLoadResult {
   const evidence =
     input.distribution ??
@@ -34,6 +35,12 @@ function finalHeartRateLoad(input: {
       samples: input.samples,
       maxGapSeconds: fixtures.heartRate.maxGapSeconds,
     });
+  const performanceTargets = buildPerformanceTargetFactsFixture({
+    lthrBpm: input.lthrBpm === null ? {} : { run: input.lthrBpm ?? fixtures.heartRate.lthrBpm },
+  });
+  if (input.stale || input.provisional) {
+    performanceTargets.heartRate.run.lthr.calibrationState = input.stale ? "stale" : "provisional";
+  }
   const result = analyzeActivityDerivedMetrics({
     activity: {
       id: `phase5-hr-${input.durationSeconds}`,
@@ -50,14 +57,7 @@ function finalHeartRateLoad(input: {
     },
     context: {
       profileMetrics: {},
-      ...(input.includeQuality === false || input.stale === true
-        ? {}
-        : {
-            performanceTargets: buildPerformanceTargetFactsFixture({
-              lthrBpm:
-                input.lthrBpm === null ? {} : { run: input.lthrBpm ?? fixtures.heartRate.lthrBpm },
-            }),
-          }),
+      ...(input.includeQuality === false ? {} : { performanceTargets }),
       recentEfforts: [],
       profile: {},
     },
@@ -87,6 +87,24 @@ describe("Phase 5 final HR Common Load contract", () => {
         value: fixtures.heartRate.lthrBpm,
         freshness: "current",
       },
+    });
+  });
+
+  it.each([
+    "provisional",
+    "stale",
+  ] as const)("calculates normal HR Load from a %s valid threshold", (state) => {
+    expect(
+      finalHeartRateLoad({
+        samples: fixtures.heartRate.thresholdHour.samples,
+        durationSeconds: 3_600,
+        ...(state === "provisional" ? { provisional: true } : { stale: true }),
+      }),
+    ).toMatchObject({
+      status: "available",
+      method: "heart_rate_zones",
+      load: 100,
+      thresholdEvidence: { freshness: state === "stale" ? "stale" : "current" },
     });
   });
 
@@ -222,7 +240,7 @@ describe("Phase 5 final HR Common Load contract", () => {
     });
   });
 
-  it("keeps missing, low-coverage, unqualified, and stale model facts unavailable", () => {
+  it("keeps missing, low-coverage, and unqualified model facts unavailable", () => {
     const lowCoverage = fixtures.heartRate.lowCoverage;
     expect(
       finalHeartRateLoad({
@@ -247,13 +265,6 @@ describe("Phase 5 final HR Common Load contract", () => {
         samples: fixtures.heartRate.thresholdHour.samples,
         durationSeconds: 3_600,
         includeQuality: false,
-      }),
-    ).toMatchObject({ status: "unavailable", reason: "threshold_missing" });
-    expect(
-      finalHeartRateLoad({
-        samples: fixtures.heartRate.thresholdHour.samples,
-        durationSeconds: 3_600,
-        stale: true,
       }),
     ).toMatchObject({ status: "unavailable", reason: "threshold_missing" });
   });

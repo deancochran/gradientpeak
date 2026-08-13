@@ -21,7 +21,6 @@ export type ServerEffectiveLoadSummary = {
   intensity: number | null;
   completedLoad: number | null;
   remainingLoad: number | null;
-  tentativeLoad: number | null;
   hasUnavailableCompletedLoad: boolean;
   recommendedLoadStatus: "complete" | "partial" | "known_zero" | "unavailable";
   recommendedLoad: number | null;
@@ -32,13 +31,11 @@ type EffectiveLoadResponse =
       status: "available";
       completed: CommonLoadAggregate;
       remaining: CommonLoadAggregate;
-      tentative: CommonLoadAggregate;
       recommendation?: CommonLoadRecommendation;
       effective:
         | {
             status: "available";
             firmItems: EffectiveCompositionItem[];
-            tentativeItems: EffectiveCompositionItem[];
             firm: EffectiveLoadAggregate;
           }
         | { status: "integrity_unavailable" };
@@ -131,7 +128,6 @@ function unavailableSummary(
     intensity: null,
     completedLoad: null,
     remainingLoad: null,
-    tentativeLoad: null,
     hasUnavailableCompletedLoad: false,
     ...recommendation,
   };
@@ -170,9 +166,6 @@ export function buildServerEffectiveLoadSummaries(input: {
       const firmItems = effective.firmItems.filter(
         (item) => item.date >= period.startDate && item.date <= period.endDate,
       );
-      const tentativeItems = effective.tentativeItems.filter(
-        (item) => item.date >= period.startDate && item.date <= period.endDate,
-      );
       // Only the server composition knows whether an empty period is a known zero. In
       // particular, do not turn a partial bounded source into a client-side zero.
       if (
@@ -189,17 +182,12 @@ export function buildServerEffectiveLoadSummaries(input: {
       const remaining = aggregateCommonLoadEnvelopes(
         firmItems.filter((item) => item.kind === "scheduled").map((item) => item.commonLoad),
       );
-      const tentative =
-        tentativeItems.length === 0 && response.sourceCoverage.scheduledItems?.status !== "complete"
-          ? { status: "unavailable", commonLoad: null, intensity: null }
-          : summarize(tentativeItems);
       return [
         period.key,
         {
           ...firm,
           completedLoad: aggregateValue(completed),
           remainingLoad: aggregateValue(remaining),
-          tentativeLoad: tentative.status === "unavailable" ? null : tentative.commonLoad,
           hasUnavailableCompletedLoad:
             firmItems.some((item) => item.kind === "completed") &&
             (completed.status === "unavailable" || completed.status === "partial"),

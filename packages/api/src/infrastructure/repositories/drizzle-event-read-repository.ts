@@ -1,4 +1,5 @@
 import { getCalendarDateInIanaZone, scheduledDateTimeToIsoInstant } from "@repo/core/calendar";
+import { isGroupEventGoing } from "@repo/core/groups";
 import { type DrizzleDbClient, schema } from "@repo/db";
 import {
   and,
@@ -38,6 +39,29 @@ function addCalendarDays(date: string, days: number): string {
   const value = new Date(`${date}T00:00:00.000Z`);
   value.setUTCDate(value.getUTCDate() + days);
   return value.toISOString().slice(0, 10);
+}
+
+function activityPlanViewerAccessCondition(profileId: string) {
+  return or(
+    eq(schema.activityPlans.profile_id, profileId),
+    eq(schema.activityPlans.is_system_template, true),
+    eq(schema.activityPlans.content_visibility, "public"),
+    sql`(${schema.activityPlans.content_visibility} = 'followers' and exists (
+      select 1 from follows f
+      where f.follower_id = ${profileId}::uuid
+        and f.following_id = ${schema.activityPlans.profile_id}
+        and f.status = 'accepted'
+    ))`,
+    sql`exists (
+      select 1 from content_access_grants cag
+      where cag.content_type = 'activity_plan'
+        and cag.content_id = ${schema.activityPlans.id}
+        and cag.grantee_profile_id = ${profileId}::uuid
+        and cag.access_level = 'read'
+        and cag.revoked_at is null
+        and (cag.expires_at is null or cag.expires_at > now())
+    )`,
+  );
 }
 
 function serializeActivityPlanRow(activityPlan: typeof schema.activityPlans.$inferSelect | null) {
@@ -84,7 +108,7 @@ function serializeEventRow(row: {
   created_at: Date;
   description: string | null;
   ends_at: Date | null;
-  event_type: "planned" | "race_target" | "custom" | "imported";
+  event_type: "planned" | "race_target" | "custom";
   id: string;
   linked_activity_id: string | null;
   notes: string | null;
@@ -95,7 +119,6 @@ function serializeEventRow(row: {
   recurrence_timezone: string | null;
   scheduled_date: string;
   series_id: string | null;
-  source_provider: string | null;
   starts_at: Date;
   status: "scheduled" | "completed" | "cancelled" | null;
   timezone: string | null;
@@ -112,7 +135,6 @@ function serializeEventRow(row: {
     recurrence_rule: row.recurrence_rule,
     recurrence_timezone: row.recurrence_timezone,
     series_id: row.series_id,
-    source_provider: row.source_provider,
     status: requireCurrentEventField(row.status, "status"),
     timezone: requireCurrentEventField(row.timezone, "timezone"),
     title: requireCurrentEventField(row.title, "title"),
@@ -125,6 +147,54 @@ function serializeEventRow(row: {
     updated_at: row.updated_at.toISOString(),
     activity_plan: serializeActivityPlanRow(row.activity_plan),
     route: serializeActivityRouteRow(row.activity_route),
+  };
+}
+
+function serializeGroupEventAsEffectivePlanEvent(
+  row: {
+    activity_plan: typeof schema.activityPlans.$inferSelect | null;
+    activity_plan_id: string | null;
+    created_at: Date;
+    description: string | null;
+    ends_at: Date | null;
+    id: string;
+    occurrence_key: string | null;
+    series_id: string | null;
+    starts_at: Date;
+    timezone: string;
+    title: string;
+    updated_at: Date;
+  },
+  profileId: string,
+  planningTimezone: string,
+) {
+  const accessibleActivityPlanId = row.activity_plan ? row.activity_plan_id : null;
+  return {
+    id: row.id,
+    // Effective-plan consumers need a profile-scoped DTO, not group or membership data.
+    profile_id: profileId,
+    event_type: "planned" as const,
+    title: row.title,
+    description: row.description,
+    all_day: false,
+    timezone: row.timezone,
+    activity_plan_id: accessibleActivityPlanId,
+    route_id: null,
+    training_plan_id: null,
+    recurrence_rule: null,
+    recurrence_timezone: null,
+    series_id: row.series_id,
+    occurrence_key: row.occurrence_key ?? "",
+    notes: null,
+    status: "scheduled" as const,
+    linked_activity_id: null,
+    created_at: row.created_at.toISOString(),
+    updated_at: row.updated_at.toISOString(),
+    starts_at: row.starts_at.toISOString(),
+    ends_at: row.ends_at?.toISOString() ?? null,
+    original_starts_at: null,
+    scheduled_date: getCalendarDateInIanaZone(row.starts_at.toISOString(), planningTimezone),
+    activity_plan: serializeActivityPlanRow(row.activity_plan),
   };
 }
 
@@ -142,7 +212,6 @@ const eventColumns = {
   recurrence_rule: schema.events.recurrence_rule,
   recurrence_timezone: schema.events.recurrence_timezone,
   series_id: schema.events.series_id,
-  source_provider: schema.events.source_provider,
   occurrence_key: schema.events.occurrence_key,
   original_starts_at: schema.events.original_starts_at,
   notes: schema.events.notes,
@@ -277,7 +346,7 @@ export function createEventReadRepository(
             )
             .limit(boundedLimit)
         : Promise.resolve([]);
-      const [eventRows, activityRows, recommendationRows] = await Promise.all([
+      const [eventRows, groupEventRows, activityRows, recommendationRows] = await Promise.all([
         db
           .select({
             ...eventColumns,
@@ -306,6 +375,79 @@ export function createEventReadRepository(
           .limit(boundedLimit),
         db
           .select({
+            id: schema.groupEvents.id,
+            series_id: schema.groupEvents.series_id,
+            occurrence_key: schema.groupEvents.occurrence_key,
+            title: schema.groupEvents.title,
+            description: schema.groupEvents.description,
+            starts_at: schema.groupEvents.starts_at,
+            ends_at: schema.groupEvents.ends_at,
+            timezone: schema.groupEvents.timezone,
+            activity_plan_id: schema.groupEvents.activity_plan_id,
+            created_at: schema.groupEvents.created_at,
+            updated_at: schema.groupEvents.updated_at,
+            activity_plan: schema.activityPlans,
+            viewer_occurrence_rsvp_status: schema.groupEventRsvps.status,
+            viewer_series_rsvp_status: schema.groupEventSeriesRsvps.status,
+          })
+          .from(schema.groupMemberships)
+          .innerJoin(
+            schema.groupEvents,
+            eq(schema.groupEvents.group_id, schema.groupMemberships.group_id),
+          )
+          .innerJoin(schema.groups, eq(schema.groups.id, schema.groupMemberships.group_id))
+          .leftJoin(
+            schema.groupEventRsvps,
+            and(
+              eq(schema.groupEventRsvps.group_event_id, schema.groupEvents.id),
+              eq(schema.groupEventRsvps.profile_id, profileId),
+            ),
+          )
+          .leftJoin(
+            schema.groupEventSeriesRsvps,
+            and(
+              eq(schema.groupEventSeriesRsvps.group_event_series_id, schema.groupEvents.series_id),
+              eq(schema.groupEventSeriesRsvps.profile_id, profileId),
+            ),
+          )
+          .leftJoin(
+            schema.activityPlans,
+            and(
+              eq(schema.groupEvents.activity_plan_id, schema.activityPlans.id),
+              activityPlanViewerAccessCondition(profileId),
+            ),
+          )
+          .where(
+            and(
+              eq(schema.groupMemberships.profile_id, profileId),
+              eq(schema.groupMemberships.status, "active"),
+              isNull(schema.groups.deleted_at),
+              isNull(schema.groupEvents.cancelled_at),
+              or(
+                isNull(schema.groupEvents.recurrence_rule),
+                isNotNull(schema.groupEvents.series_id),
+              ),
+              sql`(${schema.groupEvents.starts_at} at time zone ${planningTimezone})::date >= ${startDate}::date`,
+              sql`(${schema.groupEvents.starts_at} at time zone ${planningTimezone})::date <= ${endDate}::date`,
+              or(
+                and(
+                  isNotNull(schema.groupEventRsvps.profile_id),
+                  ne(schema.groupEventRsvps.status, "declined"),
+                ),
+                and(
+                  isNull(schema.groupEventRsvps.profile_id),
+                  or(
+                    isNull(schema.groupEventSeriesRsvps.profile_id),
+                    ne(schema.groupEventSeriesRsvps.status, "declined"),
+                  ),
+                ),
+              ),
+            ),
+          )
+          .orderBy(asc(schema.groupEvents.starts_at), asc(schema.groupEvents.id))
+          .limit(boundedLimit),
+        db
+          .select({
             id: schema.activities.id,
             profile_id: schema.activities.profile_id,
             started_at: schema.activities.started_at,
@@ -331,12 +473,34 @@ export function createEventReadRepository(
         recommendationQuery,
       ]);
       const activitiesStatus = activityRows.length === boundedLimit ? "partial" : "complete";
-      const scheduledItemsStatus = eventRows.length === boundedLimit ? "partial" : "complete";
+      const selectedGroupEventRows = groupEventRows.filter((row) =>
+        isGroupEventGoing({
+          occurrenceStatus: row.viewer_occurrence_rsvp_status,
+          seriesStatus: row.viewer_series_rsvp_status,
+        }),
+      );
+      const serializedScheduledItems = [
+        ...eventRows.map((row) => serializeEventRow(row)),
+        ...selectedGroupEventRows.map((row) =>
+          serializeGroupEventAsEffectivePlanEvent(row, profileId, planningTimezone),
+        ),
+      ].sort(
+        (left, right) =>
+          left.scheduled_date.localeCompare(right.scheduled_date) ||
+          left.starts_at.localeCompare(right.starts_at) ||
+          left.id.localeCompare(right.id),
+      );
+      const scheduledItemsStatus =
+        eventRows.length === boundedLimit ||
+        groupEventRows.length === boundedLimit ||
+        serializedScheduledItems.length >= boundedLimit
+          ? "partial"
+          : "complete";
       const recommendationStatus =
         recommendationRows.length === boundedLimit ? "partial" : "complete";
       return {
         activities: activityRows.slice(0, boundedLimit - 1),
-        events: eventRows.slice(0, boundedLimit - 1).map((row) => serializeEventRow(row)),
+        events: serializedScheduledItems.slice(0, boundedLimit - 1),
         recommendationEvents: recommendationRows
           .slice(0, boundedLimit - 1)
           .map((row) => serializeEventRow(row)),
@@ -349,7 +513,7 @@ export function createEventReadRepository(
         resolvedRange: { startDate, endDate },
         sourceCounts: {
           activities: Math.min(activityRows.length, boundedLimit - 1),
-          events: Math.min(eventRows.length, boundedLimit - 1),
+          events: Math.min(serializedScheduledItems.length, boundedLimit - 1),
         },
         sourceCoverage: {
           activities: { startDate, endDate, status: activitiesStatus },
@@ -416,13 +580,44 @@ export function createEventReadRepository(
       const rows = await db
         .select({
           active_ms: schema.activities.active_ms,
+          content_visibility: schema.activities.content_visibility,
           distance_meters: schema.activities.distance_meters,
           elapsed_ms: schema.activities.elapsed_ms,
+          finished_at: schema.activities.finished_at,
           id: schema.activities.id,
           name: schema.activities.name,
+          notes: schema.activities.notes,
+          polyline: schema.activities.polyline,
+          profile_id: schema.activities.profile_id,
+          activity_category: sql<"run" | "bike" | "swim" | "strength" | "other" | null>`(
+            select activity_category from ${schema.activitySegments}
+            where ${schema.activitySegments.activity_id} = ${schema.activities.id}
+              and ${schema.activitySegments.role} = 'activity'
+            order by ${schema.activitySegments.ordinal}
+            limit 1
+          )`,
           started_at: schema.activities.started_at,
+          profile_username: schema.profiles.username,
+          profile_avatar_url: schema.profiles.avatar_url,
+          likes_count: sql<number>`(
+            select count(*) from ${schema.likes}
+            where ${schema.likes.entity_type} = 'activity'
+              and ${schema.likes.entity_id} = ${schema.activities.id}
+          )`,
+          comments_count: sql<number>`(
+            select count(*) from ${schema.comments}
+            where ${schema.comments.entity_type} = 'activity'
+              and ${schema.comments.entity_id} = ${schema.activities.id}
+          )`,
+          has_liked: sql<boolean>`exists (
+            select 1 from ${schema.likes}
+            where ${schema.likes.entity_type} = 'activity'
+              and ${schema.likes.entity_id} = ${schema.activities.id}
+              and ${schema.likes.profile_id} = ${profileId}::uuid
+          )`,
         })
         .from(schema.activities)
+        .leftJoin(schema.profiles, eq(schema.profiles.id, schema.activities.profile_id))
         .where(
           and(
             eq(schema.activities.profile_id, profileId),
@@ -433,7 +628,24 @@ export function createEventReadRepository(
         .orderBy(asc(schema.activities.started_at), asc(schema.activities.id))
         .limit(limit);
 
-      return rows.map((row) => ({ ...row, started_at: row.started_at.toISOString() }));
+      return rows.map((row) => ({
+        active_ms: row.active_ms,
+        activity_category: row.activity_category,
+        comments_count: Number(row.comments_count),
+        content_visibility: row.content_visibility,
+        distance_meters: row.distance_meters,
+        elapsed_ms: row.elapsed_ms,
+        finished_at: row.finished_at,
+        has_liked: row.has_liked,
+        id: row.id,
+        likes_count: Number(row.likes_count),
+        name: row.name,
+        notes: row.notes,
+        polyline: row.polyline,
+        profile: { avatar_url: row.profile_avatar_url, username: row.profile_username },
+        profile_id: row.profile_id,
+        started_at: row.started_at.toISOString(),
+      }));
     },
 
     async listCalendarGoals({ endDateExclusive, limit, profileId, startDate }) {
@@ -459,12 +671,17 @@ export function createEventReadRepository(
         .limit(limit);
     },
 
-    async listCalendarGroupActivityPlans({ activityPlanIds }) {
+    async listCalendarGroupActivityPlans({ activityPlanIds, profileId }) {
       if (activityPlanIds.length === 0) return [];
       return db
         .select()
         .from(schema.activityPlans)
-        .where(inArray(schema.activityPlans.id, activityPlanIds));
+        .where(
+          and(
+            inArray(schema.activityPlans.id, activityPlanIds),
+            activityPlanViewerAccessCondition(profileId),
+          ),
+        );
     },
 
     async listPlannedEventDatesInRange({ profileId, startsAtGte, startsAtLte }) {

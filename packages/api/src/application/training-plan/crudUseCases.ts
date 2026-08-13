@@ -22,49 +22,28 @@ type TrainingPlanListInput = {
 
 export async function getTrainingPlanUseCase(input: {
   db: DrizzleDbClient;
-  id?: string;
-  profileId: string;
-  repository: TrainingPlanRepository;
-}) {
-  if (input.id) {
-    const plan = await input.repository.getAccessibleTrainingPlan({
-      id: input.id,
-      profileId: input.profileId,
-    });
-
-    if (!plan) {
-      throw new TRPCError({ code: "NOT_FOUND", message: "Training plan not found" });
-    }
-
-    const serialized = await serializeTrainingPlanForViewer({ ...input, plan });
-    return {
-      ...serialized,
-      editor: await getTrainingPlanEditorMetadata({
-        db: input.db,
-        profileId: input.profileId,
-        plan,
-      }),
-    };
-  }
-
-  const activePlanLookup = await input.repository.getActivePlanFromFutureEvents(input.profileId);
-  if (!activePlanLookup) {
-    return null;
-  }
-
-  return {
-    ...(await serializeTrainingPlanForViewer({ ...input, plan: activePlanLookup.trainingPlan })),
-    editor: null,
-  };
-}
-
-export async function getTrainingPlanByIdUseCase(input: {
-  db: DrizzleDbClient;
   id: string;
   profileId: string;
   repository: TrainingPlanRepository;
 }) {
-  return getTrainingPlanUseCase(input);
+  const plan = await input.repository.getAccessibleTrainingPlan({
+    id: input.id,
+    profileId: input.profileId,
+  });
+
+  if (!plan) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Training plan not found" });
+  }
+
+  const serialized = await serializeTrainingPlanForViewer({ ...input, plan });
+  return {
+    ...serialized,
+    editor: await getTrainingPlanEditorMetadata({
+      db: input.db,
+      profileId: input.profileId,
+      plan,
+    }),
+  };
 }
 
 export async function listTrainingPlansUseCase(input: {

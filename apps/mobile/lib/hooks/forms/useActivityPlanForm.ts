@@ -77,23 +77,30 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       options.onError?.(error) ?? showErrorAlert(error, "Failed to Update Plan");
     },
   });
-  const editStatus = !isEditMode ? "editable" : !existingPlan ? "loading" : "editable";
+  const editPlan = existingPlan?.edit;
+  const editStatus = !isEditMode
+    ? "editable"
+    : !existingPlan
+      ? "loading"
+      : editPlan
+        ? "editable"
+        : "unavailable";
 
   useEffect(() => {
-    if (!existingPlan || !isEditMode) return;
-    const parsed = activityPlanStructureSchema.safeParse(existingPlan.structure);
+    if (!editPlan || !isEditMode) return;
+    const parsed = activityPlanStructureSchema.safeParse(editPlan.structure);
     if (!parsed.success) {
       Alert.alert("Unsupported plan", "This plan is not a valid version 3 activity plan.");
       return;
     }
     store.reset();
-    store.setName(existingPlan.name);
-    store.setDescription(existingPlan.description || "");
-    store.setNotes(existingPlan.notes || "");
+    store.setName(editPlan.name);
+    store.setDescription(editPlan.description || "");
+    store.setNotes(editPlan.notes || "");
     store.setActivityCategory(parsed.data.activity_category);
     store.setStructure(parsed.data);
   }, [
-    existingPlan,
+    editPlan,
     isEditMode,
     store.reset,
     store.setName,
@@ -155,11 +162,10 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     try {
       if (isEditMode) {
         if (!options.planId) throw new Error("Edit mode requires a plan id");
-        if (!existingPlan?.structure_hash)
-          throw new Error("Refresh this plan before saving changes.");
+        if (!editPlan?.structureHash) throw new Error("Refresh this plan before saving changes.");
         return await updateMutation.mutateAsync({
           id: options.planId,
-          expectedStructureHash: existingPlan.structure_hash,
+          expectedStructureHash: editPlan.structureHash,
           ...payload,
         });
       }
@@ -174,7 +180,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     isEditMode,
     editStatus,
     options.planId,
-    existingPlan?.structure_hash,
+    editPlan?.structureHash,
     createMutation,
     updateMutation,
   ]);

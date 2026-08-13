@@ -1,4 +1,5 @@
 import type {
+  ActivityDisplayModel,
   ActivityObservationQuantificationBundle,
   ActivityPrescriptionQuantificationBundle,
 } from "@repo/core";
@@ -46,6 +47,7 @@ export type CompletedWeekActivity = {
   derived?: {
     observationQuantification?: ActivityObservationQuantificationBundle | null;
   } | null;
+  display?: ActivityDisplayModel;
 };
 
 export type ActivityOwner = {
@@ -238,16 +240,16 @@ function getCompletedActivityDate(
 
 export function toTrainingPathCompletedActivity(
   activity: CompletedWeekActivity,
-  owner: ActivityOwner | null,
+  _owner: ActivityOwner | null,
   planningTimezone: string | null | undefined,
 ): TrainingPathCompletedActivity | null {
   const date = getCompletedActivityDate(activity, planningTimezone);
   if (!date) return null;
   return {
     id: activity.id,
-    title: activity.name?.trim() || "Completed activity",
+    title: "Completed activity",
     date,
     load: getCompleteActivityQuantificationCommonLoad(activity.derived?.observationQuantification),
-    activity: owner ? { ...activity, profile: owner } : activity,
+    ...(activity.display ? { activity: activity.display } : {}),
   };
 }

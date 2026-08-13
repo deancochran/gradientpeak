@@ -59,7 +59,7 @@ function EventDetailPage() {
   const { flash, flashType, month, view } = Route.useSearch();
   const eventQuery = api.events.getById.useQuery({ id: eventId }, { enabled: Boolean(eventId) });
   const event = eventQuery.data;
-  const trainingPlanQuery = api.trainingPlans.getById.useQuery(
+  const trainingPlanQuery = api.trainingPlans.get.useQuery(
     { id: event?.training_plan_id ?? "00000000-0000-0000-0000-000000000000" },
     { enabled: Boolean(event?.training_plan_id) },
   );
@@ -88,8 +88,8 @@ function EventDetailPage() {
     return <p className="text-sm text-muted-foreground">Event schedule is unavailable.</p>;
   }
 
-  const compiledActivityPlan = event.activity_plan
-    ? compileActivityPlan(event.activity_plan.structure)
+  const compiledActivityPlan = event.activityPlanSummary
+    ? compileActivityPlan(event.activityPlanSummary.structure)
     : null;
 
   return (
@@ -126,46 +126,42 @@ function EventDetailPage() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {event.event_type === "imported" ? null : (
-            <Button asChild>
-              <Link
-                to="/calendar/events/$eventId/edit"
-                params={{ eventId: event.id }}
-                search={{ month, view }}
-              >
-                <Pencil className="mr-2 h-4 w-4" />
-                Edit event
-              </Link>
-            </Button>
-          )}
-          {event.event_type === "imported" ? null : (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="destructive">
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete this event?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    {event.series_id || event.recurrence_rule
-                      ? "Choose whether to delete this occurrence, future occurrences, or the entire series."
-                      : "This removes the scheduled event."}
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <EventDeleteForm
-                    eventId={event.id}
-                    recurring={Boolean(event.series_id || event.recurrence_rule)}
-                    redirectTo={`/calendar?month=${month}&view=${view}`}
-                  />
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
+          <Button asChild>
+            <Link
+              to="/calendar/events/$eventId/edit"
+              params={{ eventId: event.id }}
+              search={{ month, view }}
+            >
+              <Pencil className="mr-2 h-4 w-4" />
+              Edit event
+            </Link>
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive">
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete this event?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {event.series_id || event.recurrence_rule
+                    ? "Choose whether to delete this occurrence, future occurrences, or the entire series."
+                    : "This removes the scheduled event."}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <EventDeleteForm
+                  eventId={event.id}
+                  recurring={Boolean(event.series_id || event.recurrence_rule)}
+                  redirectTo={`/calendar?month=${month}&view=${view}`}
+                />
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
 
@@ -187,7 +183,10 @@ function EventDetailPage() {
               label="When"
               value={`${formatDayLabel(scheduledDate)} · ${formatEventTimeRange(event)}`}
             />
-            <DetailRow label="Activity plan" value={event.activity_plan?.name ?? "None attached"} />
+            <DetailRow
+              label="Activity plan"
+              value={event.activityPlanSummary?.name ?? "None attached"}
+            />
             <DetailRow
               label="Generated from training plan"
               value={trainingPlanQuery.data?.name ?? "Not linked"}

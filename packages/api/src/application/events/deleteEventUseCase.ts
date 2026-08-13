@@ -11,8 +11,7 @@ type ProtectedContext = Context & {
   };
 };
 
-type CoreEventType = "planned" | "race_target" | "custom" | "imported";
-type DbEventType = "planned" | "race_target" | "custom" | "imported";
+type DbEventType = "planned" | "race_target" | "custom";
 type EventMutationScope = "single" | "series";
 
 type EventRecord = {
@@ -49,7 +48,6 @@ type DeleteEventUseCaseDependencies = {
   getEventCompletionRepository: (
     ctx: Context,
   ) => ReturnType<typeof createEventCompletionRepository>;
-  toCoreEventType: (eventType: DbEventType) => CoreEventType;
   toDateKey: (value: string) => string;
 };
 
@@ -72,14 +70,6 @@ export async function deleteEventUseCase<
   }
 
   const existingEvent = existing as unknown as TEventRecord;
-  const existingEventType = dependencies.toCoreEventType(existingEvent.event_type);
-  if (existingEventType === "imported") {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Imported events are read-only",
-    });
-  }
-
   const scope = input.input.scope ?? "single";
 
   try {

@@ -1,17 +1,18 @@
+import type { ComponentProps } from "react";
+import { createActivityPlanSummary } from "../../../test/activity-plan-projection-fixture";
 import { createHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
-import { ActivityPlanCard } from "../ActivityPlanCard";
-import { createPrescriptionQuantificationBundleFixture } from "./activityQuantificationFixture";
+import { ActivityPlanCard as ProjectionActivityPlanCard } from "../ActivityPlanCard";
 
 const toggleLikeMutateMock = jest.fn();
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 const activityPlanStructure = {
   version: 3,
+  activity_category: "run",
   segments: [
     {
       id: id(1),
       role: "activity",
-      activity_category: "run",
       name: "Tempo run",
       intervals: [
         {
@@ -99,20 +100,56 @@ jest.mock("@/lib/api", () => ({
   },
 }));
 
+function ActivityPlanCard({
+  activityPlan,
+  ...props
+}: Omit<ComponentProps<typeof ProjectionActivityPlanCard>, "plan"> & {
+  activityPlan: Parameters<typeof createActivityPlanSummary>[0];
+}) {
+  return <ProjectionActivityPlanCard {...props} plan={createActivityPlanSummary(activityPlan)} />;
+}
+
+const availableMetrics = [
+  {
+    key: "elapsed_duration" as const,
+    label: "Duration",
+    value: 300,
+    unit: "seconds",
+    status: "available" as const,
+    reason: null,
+  },
+  {
+    key: "common_load" as const,
+    label: "Load",
+    value: 64,
+    unit: "score",
+    status: "available" as const,
+    reason: null,
+  },
+  {
+    key: "normalized_intensity" as const,
+    label: "Intensity",
+    value: 0.8,
+    unit: "ratio",
+    status: "available" as const,
+    reason: null,
+  },
+];
+
 describe("ActivityPlanCard", () => {
   beforeEach(() => {
     toggleLikeMutateMock.mockReset();
   });
 
-  it("shows the footer on one justified row under the intensity chart", () => {
+  it("shows the owner and category footer on one justified row", () => {
     const { getByTestId } = renderNative(
       <ActivityPlanCard
         activityPlan={{
           id: "plan-1",
           name: "Tempo Builder",
           description: "Progressive tempo with a strong finish.",
-          activity_category: "run",
-          updated_at: "2026-03-21T08:00:00.000",
+          activityCategory: "run",
+          updatedAt: "2026-03-21T08:00:00.000Z",
           owner: null,
         }}
       />,
@@ -121,7 +158,6 @@ describe("ActivityPlanCard", () => {
     expect(screen.getByText("Tempo Builder")).toBeTruthy();
     expect(screen.getByText("Progressive tempo with a strong finish.")).toBeTruthy();
     expect(screen.getByText("Run")).toBeTruthy();
-    expect(screen.getByText("Mar 21, 2026 • 8:00 AM")).toBeTruthy();
     expect(screen.getByText("GradientPeak")).toBeTruthy();
     expect(screen.queryByText("Updated Mar 21, 2026")).toBeNull();
     expect(screen.queryByText("By")).toBeNull();
@@ -134,12 +170,12 @@ describe("ActivityPlanCard", () => {
         activityPlan={{
           id: "plan-1",
           name: "Tempo Builder",
-          activity_category: "run",
-          updated_at: "2026-03-21T08:00:00.000",
+          activityCategory: "run",
+          updatedAt: "2026-03-21T08:00:00.000Z",
           owner: {
             id: "owner-1",
             username: "Coach Kim",
-            avatar_url: null,
+            avatarUrl: null,
           },
         }}
       />,
@@ -156,7 +192,7 @@ describe("ActivityPlanCard", () => {
         activityPlan={{
           id: "plan-run",
           name: "Run builder",
-          activity_category: "run",
+          activityCategory: "run",
         }}
       />,
     );
@@ -172,18 +208,32 @@ describe("ActivityPlanCard", () => {
         activityPlan={{
           id: "plan-load",
           name: "Strength builder",
-          activity_category: "strength",
-          prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
-            activityCategory: "strength",
-            durationSeconds: 5_400,
-            status: "unsupported",
-          }),
+          activityCategory: "strength",
+          structure: { ...activityPlanStructure, activity_category: "strength" },
+          metrics: [
+            {
+              key: "common_load",
+              label: "Load",
+              value: null,
+              unit: "score",
+              status: "unavailable",
+              reason: "unsupported",
+            },
+            {
+              key: "normalized_intensity",
+              label: "Intensity",
+              value: null,
+              unit: "ratio",
+              status: "unavailable",
+              reason: "unsupported",
+            },
+          ],
         }}
       />,
     );
 
-    expect(screen.getByText("Common Load")).toBeTruthy();
-    expect(screen.getByText("Normalized intensity")).toBeTruthy();
+    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
     expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
     expect(JSON.stringify(rendered.toJSON())).not.toMatch(
       /TSS|\bIF\b|category_load|intensityFactor/,
@@ -196,18 +246,18 @@ describe("ActivityPlanCard", () => {
         activityPlan={{
           id: "plan-single-activity-category-load",
           name: "Bike tempo",
-          activity_category: "run",
+          activityCategory: "run",
           structure: activityPlanStructure,
-          prescriptionQuantification: createPrescriptionQuantificationBundleFixture(),
+          metrics: availableMetrics,
         }}
       />,
     );
 
-    expect(screen.getAllByText("Common Load")).toHaveLength(1);
+    expect(screen.getAllByText("Load")).toHaveLength(1);
     expect(screen.getAllByText("64")).toHaveLength(1);
-    expect(screen.getAllByText("Normalized intensity")).toHaveLength(1);
+    expect(screen.getAllByText("Intensity")).toHaveLength(1);
     expect(screen.getAllByText("0.80")).toHaveLength(1);
-    expect(screen.getByText("Prescribed intensity: RPE 7/10 · Prescribed")).toBeTruthy();
+    expect(screen.getByText("Prescribed intensity: RPE 7 · Prescribed")).toBeTruthy();
   });
 
   it("keeps compact cards visual, focused, and tappable", () => {
@@ -219,14 +269,14 @@ describe("ActivityPlanCard", () => {
           id: "plan-list-1",
           name: "Tempo Builder",
           description: "Progressive tempo with a strong finish.",
-          activity_category: "run",
-          prescriptionQuantification: createPrescriptionQuantificationBundleFixture(),
+          activityCategory: "run",
+          metrics: availableMetrics,
           structure: activityPlanStructure,
-          created_at: "2026-03-21T08:00:00.000",
+          createdAt: "2026-03-21T08:00:00.000Z",
           owner: {
             id: "owner-1",
             username: "Coach Kim",
-            avatar_url: null,
+            avatarUrl: null,
           },
         }}
         onPress={onPress}
@@ -240,10 +290,10 @@ describe("ActivityPlanCard", () => {
     expect(screen.getByText("Run")).toBeTruthy();
     expect(screen.getByText("Tempo Builder")).toBeTruthy();
     expect(screen.getByText("Duration")).toBeTruthy();
-    expect(screen.getByText("~1h")).toBeTruthy();
-    expect(screen.getByText("Common Load")).toBeTruthy();
+    expect(screen.getByText("~5 min")).toBeTruthy();
+    expect(screen.getByText("Load")).toBeTruthy();
     expect(screen.getByText("64")).toBeTruthy();
-    expect(screen.getByText("Normalized intensity")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
     expect(screen.getByText("0.80")).toBeTruthy();
     expect(screen.queryByTestId("resource-owner-action-row")).toBeNull();
     expect(screen.queryByText("Coach Kim")).toBeNull();
@@ -260,7 +310,7 @@ describe("ActivityPlanCard", () => {
         activityPlan={{
           id: "plan-route-preview",
           name: "Structured Tempo",
-          activity_category: "run",
+          activityCategory: "run",
           structure: activityPlanStructure,
         }}
       />,
@@ -283,9 +333,8 @@ describe("ActivityPlanCard", () => {
         activityPlan={{
           id: "plan-like-boundary",
           name: "Tempo Builder",
-          activity_category: "run",
-          likes_count: 3,
-          has_liked: false,
+          activityCategory: "run",
+          engagement: { likes: 3, viewerHasLiked: false },
         }}
         onPress={onPress}
       />,

@@ -30,16 +30,15 @@ export function RecordSessionPage() {
   const beginRecordingUpload = api.activityFiles.beginMobileRecordingUpload.useMutation();
   const createActivity = api.activities.createFromRecordingSummary.useMutation();
   const recordSessionRpe = api.activities.recordSessionRpe.useMutation();
-  const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
   const [perceivedEffort, setPerceivedEffort] = useState("");
   const [distanceMeters, setDistanceMeters] = useState("0");
   const [calories, setCalories] = useState("");
   const hasSavedActivity = isReviewFrozen(recording.submissionJob);
+  const activityPersistenceName = recording.artifact?.review.name ?? "Activity";
 
   useEffect(() => {
     if (!recording.artifact) return;
-    setName(recording.artifact.review.name);
     setNotes(recording.artifact.review.notes ?? "");
     setPerceivedEffort(recording.artifact.review.perceivedEffort?.toString() ?? "");
     setDistanceMeters(recording.artifact.review.distanceMeters.toString());
@@ -248,20 +247,6 @@ export function RecordSessionPage() {
                   submission.
                 </p>
               </div>
-              <label className="grid gap-1 text-sm" htmlFor="recording-name">
-                <span className="font-medium">Activity name</span>
-                <Input
-                  id="recording-name"
-                  value={name}
-                  maxLength={200}
-                  disabled={
-                    hasSavedActivity ||
-                    recording.busy ||
-                    recording.submissionJob?.status === "submitting"
-                  }
-                  onChange={(event) => setName(event.target.value)}
-                />
-              </label>
               <label className="grid gap-1 text-sm" htmlFor="recording-notes">
                 <span className="font-medium">Notes</span>
                 <Textarea
@@ -331,12 +316,11 @@ export function RecordSessionPage() {
                   disabled={
                     recording.busy ||
                     recording.submissionJob?.status === "submitting" ||
-                    !name.trim() ||
                     hasSavedActivity
                   }
                   onClick={() =>
                     void recording.save({
-                      name: name.trim(),
+                      name: activityPersistenceName,
                       notes: notes.trim() || null,
                       perceivedEffort: perceivedEffort ? Number(perceivedEffort) : null,
                       distanceMeters: Number(distanceMeters || 0),
@@ -371,9 +355,6 @@ export function RecordSessionPage() {
               {recording.submissionJob ? (
                 <p role="status" className="text-sm text-muted-foreground">
                   {submissionRecoveryLabel(recording.submissionJob)}
-                  {recording.submissionJob.lastError
-                    ? ` (${recording.submissionJob.lastError.replaceAll("_", " ")})`
-                    : ""}
                 </p>
               ) : null}
               {recording.submissionJob?.activityId ? (

@@ -6,7 +6,6 @@ import {
 } from "../training-plans/data";
 import {
   createEditAndReloadTrainingPlan,
-  createScheduleAndReorderTrainingPlan,
   expectTrainingPlanLibraries,
   saveAndRestoreTrainingPreferences,
   trainingPlanName,
@@ -29,21 +28,6 @@ test("athlete creates, reloads, edits, and cleans a persisted training plan", as
     await cleanupTrainingPlanByName(name);
     restorePrerequisites = await prepareTrainingPlanPrerequisites();
     await createEditAndReloadTrainingPlan(athletePage, testInfo);
-  } finally {
-    await cleanupTrainingPlanByName(name);
-    await restorePrerequisites?.();
-  }
-});
-
-test("athlete atomically reorders persisted scheduled activities", async ({
-  athletePage,
-}, testInfo) => {
-  const name = trainingPlanName(testInfo, "Reorder training plan");
-  let restorePrerequisites: (() => Promise<void>) | undefined;
-  try {
-    await cleanupTrainingPlanByName(name);
-    restorePrerequisites = await prepareTrainingPlanPrerequisites();
-    await createScheduleAndReorderTrainingPlan(athletePage, testInfo);
   } finally {
     await cleanupTrainingPlanByName(name);
     await restorePrerequisites?.();

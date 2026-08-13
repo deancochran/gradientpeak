@@ -43,7 +43,6 @@ const splitCompletionEventColumns = {
   recurrence_rule: schema.events.recurrence_rule,
   recurrence_timezone: schema.events.recurrence_timezone,
   series_id: schema.events.series_id,
-  source_provider: schema.events.source_provider,
   occurrence_key: schema.events.occurrence_key,
   original_starts_at: schema.events.original_starts_at,
 };

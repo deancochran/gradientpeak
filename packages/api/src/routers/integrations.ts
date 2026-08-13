@@ -1,36 +1,31 @@
+import {
+  executableIntegrationProviderIdSchema,
+  providerOnboardingPresentationSchema,
+} from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { getProviderSyncOverview, syncIntegrationNow } from "../application/integrations";
-import { WahooProfileSetupService } from "../application/wahoo-profile-setup-service";
-import type { Context } from "../context";
+import {
+  assertIntegrationManagementOpen,
+  cancelPendingOAuthWithFence,
+  createPendingOAuthStateWithFence,
+  getProviderOperationAdapter,
+  getProviderSyncOverview,
+  IntegrationDisconnectPendingError,
+  IntegrationOnboardingClosedError,
+  ProviderOperationUnavailableError,
+  requireProviderOperationAdapter,
+} from "../application/integrations";
 import { getRequiredDb } from "../db";
-import {
-  createIntegrationsRepositories,
-  createWahooSyncRepository,
-} from "../infrastructure/repositories";
-import {
-  isLocalWahooOAuthTestAdapterEnabled,
-  isWahooIntegrationEnabled,
-  isWahooOAuthConfigured,
-  requireWahooOAuthConfig,
-} from "../lib/integrations/oauth-config";
-import {
-  createOAuthCodeChallenge,
-  deriveOAuthCodeVerifier,
-  issueLocalOAuthAuthorizationCode,
-} from "../lib/integrations/oauth-pkce";
+import { isLocalWahooOAuthTestAdapterEnabled } from "../lib/integrations/oauth-config";
 import { getDefaultMobileOAuthRedirect } from "../lib/integrations/oauth-redirect";
-import {
-  createOAuthStateBinding,
-  getOAuthCallbackUrl,
-} from "../lib/integrations/oauth-state-binding";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
-const wahooProviderSchema = z.literal("wahoo");
 const strictSuccessSchema = z.object({ success: z.literal(true) }).strict();
 
 const authUrlResultSchema = z.object({ url: z.string().url(), state: z.string().uuid() }).strict();
-const syncNowInputSchema = z.object({ provider: wahooProviderSchema }).strict();
+const providerActionInputSchema = z
+  .object({ provider: executableIntegrationProviderIdSchema })
+  .strict();
 const syncNowResultSchema = z
   .object({
     jobId: z.string().uuid(),
@@ -52,7 +47,7 @@ const refreshSetupDataResultSchema = z
     fieldsKept: z.array(z.enum(["dob", "gender", "weight_kg"])),
     fieldsUpdated: z.array(z.enum(["dob", "gender", "weight_kg"])),
     keptExistingValues: z.boolean(),
-    provider: wahooProviderSchema,
+    provider: executableIntegrationProviderIdSchema,
     status: z.enum(["queued", "succeeded", "partial", "failed"]),
   })
   .strict();
@@ -101,6 +96,7 @@ const syncOverviewSchema = z.array(
         })
         .strict(),
       configured: z.boolean(),
+      onboarding: providerOnboardingPresentationSchema,
       setupData: z
         .object({
           lastError: z.string().nullable(),
@@ -125,7 +121,12 @@ const syncOverviewSchema = z.array(
             .object({
               dob: z.string().nullable(),
               gender: z.enum(["male", "female", "other"]).nullable(),
-              onboarded: z.boolean().nullable(),
+              onboarding_status: z.enum([
+                "provider_selection",
+                "processing",
+                "review",
+                "completed",
+              ]),
             })
             .strict(),
         })
@@ -134,7 +135,7 @@ const syncOverviewSchema = z.array(
       integrationId: z.string().uuid().nullable(),
       label: z.string().min(1),
       primaryAction: z.enum(["connect", "disconnect", "reconnect"]).nullable(),
-      provider: wahooProviderSchema,
+      provider: executableIntegrationProviderIdSchema,
       summary: z
         .object({
           badge: z.string().min(1),
@@ -155,9 +156,14 @@ const syncOverviewSchema = z.array(
     .strict(),
 );
 const getAuthUrlInputSchema = z
-  .object({ provider: wahooProviderSchema, redirectUri: z.string().url().optional() })
+  .object({
+    provider: executableIntegrationProviderIdSchema,
+    redirectUri: z.string().url().optional(),
+  })
   .strict();
-const disconnectInputSchema = z.object({ provider: wahooProviderSchema }).strict();
+const cancelPendingOAuthOutputSchema = z
+  .object({ cancelled: z.number().int().nonnegative() })
+  .strict();
 
 function parseBoundaryValue<T>(schema: z.ZodType<T>, value: unknown, message: string): T {
   const parsed = schema.safeParse(value);
@@ -167,64 +173,103 @@ function parseBoundaryValue<T>(schema: z.ZodType<T>, value: unknown, message: st
   return parsed.data;
 }
 
-function getIntegrationsRepositories(ctx: Context) {
-  return createIntegrationsRepositories(getRequiredDb(ctx));
+function throwIntegrationGateError(error: unknown): never {
+  if (
+    error instanceof IntegrationOnboardingClosedError ||
+    error instanceof IntegrationDisconnectPendingError
+  ) {
+    throw new TRPCError({ code: "CONFLICT", message: error.message });
+  }
+  if (error instanceof ProviderOperationUnavailableError) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Integration not found" });
+  }
+  throw error;
+}
+
+export function attachProviderSetupEvidence<
+  TItem extends { provider: string; setupData: Record<string, unknown> },
+>(input: {
+  overview: TItem[];
+  setupEvidence: ReadonlyMap<
+    string,
+    { profile: unknown; sources: Record<string, { label: string }>; values: unknown } | null
+  >;
+}) {
+  return input.overview.map((item) => {
+    const evidence = input.setupEvidence.get(item.provider);
+    return {
+      ...item,
+      setupData: evidence
+        ? {
+            ...item.setupData,
+            values: evidence.values,
+            profile: evidence.profile,
+            sources: Object.fromEntries(
+              Object.entries(evidence.sources).map(([field, source]) => [
+                field,
+                { label: source.label },
+              ]),
+            ),
+          }
+        : {
+            ...item.setupData,
+            values: {},
+            profile: { dob: null, gender: null, onboarding_status: "provider_selection" },
+            sources: {},
+          },
+    };
+  });
 }
 
 export const integrationsRouter = createTRPCRouter({
   getSyncOverview: protectedProcedure.query(async ({ ctx }) => {
     const db = getRequiredDb(ctx);
     const profileId = ctx.session.user.id;
-    const [overview, setupData] = await Promise.all([
-      getProviderSyncOverview({ db, profileId }),
-      new WahooProfileSetupService({ db }).getSetupData(profileId),
-    ]);
+    const overview = await getProviderSyncOverview({ db, profileId });
+    const setupEvidence = new Map(
+      await Promise.all(
+        overview.map(async (item) => {
+          const adapter = getProviderOperationAdapter(item.provider);
+          return [
+            item.provider,
+            adapter && item.onboarding.evidence.profileDetails
+              ? await adapter.readSetupEvidence({ db, profileId })
+              : null,
+          ] as const;
+        }),
+      ),
+    );
     return parseBoundaryValue(
       syncOverviewSchema,
-      overview.map((provider) => ({
-        ...provider,
-        setupData: {
-          ...provider.setupData,
-          values: setupData.values,
-          profile: setupData.profile,
-          sources: Object.fromEntries(
-            Object.entries(setupData.sources).map(([field, source]) => [
-              field,
-              { label: source.label },
-            ]),
-          ),
-        },
-      })),
+      attachProviderSetupEvidence({ overview, setupEvidence }),
       "Sync overview was invalid",
     );
   }),
 
-  syncNow: protectedProcedure.input(syncNowInputSchema).mutation(async ({ ctx, input }) =>
-    parseBoundaryValue(
-      syncNowResultSchema,
-      await syncIntegrationNow({
-        db: getRequiredDb(ctx),
-        profileId: ctx.session.user.id,
-        provider: input.provider,
-      }),
-      "Sync now result was invalid",
-    ),
+  syncNow: protectedProcedure.input(providerActionInputSchema).mutation(async ({ ctx, input }) =>
+    requireProviderOperationAdapter(input.provider)
+      .syncNow({ db: getRequiredDb(ctx), profileId: ctx.session.user.id })
+      .then((result) =>
+        parseBoundaryValue(syncNowResultSchema, result, "Sync now result was invalid"),
+      )
+      .catch(throwIntegrationGateError),
   ),
 
   refreshSetupData: protectedProcedure
-    .input(syncNowInputSchema)
+    .input(providerActionInputSchema)
     .mutation(async ({ ctx, input }) => {
-      if (!isWahooIntegrationEnabled()) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Integration not found" });
-      }
-      const service = new WahooProfileSetupService({ db: getRequiredDb(ctx) });
       try {
+        await assertIntegrationManagementOpen(getRequiredDb(ctx), ctx.session.user.id);
         return parseBoundaryValue(
           refreshSetupDataResultSchema,
-          await service.refreshSetupData(ctx.session.user.id, input.provider),
+          await requireProviderOperationAdapter(input.provider).refreshSetupEvidence({
+            db: getRequiredDb(ctx),
+            profileId: ctx.session.user.id,
+          }),
           "Refresh setup data result was invalid",
         );
       } catch (error) {
+        if (error instanceof IntegrationOnboardingClosedError) throwIntegrationGateError(error);
         if (error instanceof TRPCError) throw error;
         if (error instanceof Error && error.message === "Integration not found") {
           throw new TRPCError({ code: "NOT_FOUND", message: error.message });
@@ -238,51 +283,67 @@ export const integrationsRouter = createTRPCRouter({
     }),
 
   getAuthUrl: protectedProcedure.input(getAuthUrlInputSchema).mutation(async ({ ctx, input }) => {
-    const repositories = getIntegrationsRepositories(ctx);
     const now = new Date();
-    if (!isWahooOAuthConfigured()) {
+    const adapter = requireProviderOperationAdapter(input.provider);
+    if (!adapter.isOAuthConfigured()) {
       throw new TRPCError({
         code: "BAD_REQUEST",
         message: "Integration is not configured on this server",
       });
     }
-    const existingIntegration = (
-      await repositories.integrations.listByProfileId(ctx.session.user.id)
-    ).find((integration) => integration.provider === input.provider);
-    if (existingIntegration?.lifecycle_status === "disconnect_pending") {
-      throw new TRPCError({
-        code: "CONFLICT",
-        message: "Integration disconnect is still in progress",
-      });
-    }
-    await repositories.oauthStates.deleteExpired({ profileId: ctx.session.user.id, now });
     const state = crypto.randomUUID();
     const returnUri = requireAllowedOAuthReturn(input.redirectUri);
-    const config = requireWahooOAuthConfig();
-    const callbackUrl = getOAuthCallbackUrl(input.provider);
-    const binding = createOAuthStateBinding({ config, provider: input.provider, state });
-    await repositories.oauthStates.create({
-      ...binding,
-      state,
-      profileId: ctx.session.user.id,
-      provider: input.provider,
-      mobileRedirectUri: returnUri,
-      createdAt: now,
-      expiresAt: new Date(now.getTime() + 10 * 60 * 1000),
-    });
+    const authorization = adapter.createOAuthAuthorization({ returnUri, state });
+    try {
+      await createPendingOAuthStateWithFence({
+        db: getRequiredDb(ctx),
+        ...authorization.binding,
+        state,
+        profileId: ctx.session.user.id,
+        provider: input.provider,
+        mobileRedirectUri: returnUri,
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + 10 * 60 * 1000),
+      });
+    } catch (error) {
+      throwIntegrationGateError(error);
+    }
     return parseBoundaryValue(
       authUrlResultSchema,
-      { url: buildOAuthUrl(input.provider, state, callbackUrl, returnUri, config), state },
+      { url: authorization.url, state },
       "OAuth URL was invalid",
     );
   }),
 
-  disconnect: protectedProcedure.input(disconnectInputSchema).mutation(async ({ ctx }) => {
-    await createWahooSyncRepository({ db: getRequiredDb(ctx) }).requestWahooDisconnect({
-      profileId: ctx.session.user.id,
-    });
-    return strictSuccessSchema.parse({ success: true });
-  }),
+  cancelPendingOAuth: protectedProcedure
+    .input(providerActionInputSchema)
+    .output(cancelPendingOAuthOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await cancelPendingOAuthWithFence({
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+          provider: input.provider,
+        });
+      } catch (error) {
+        throwIntegrationGateError(error);
+      }
+    }),
+
+  disconnect: protectedProcedure
+    .input(providerActionInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        await assertIntegrationManagementOpen(getRequiredDb(ctx), ctx.session.user.id);
+      } catch (error) {
+        throwIntegrationGateError(error);
+      }
+      await requireProviderOperationAdapter(input.provider).disconnect({
+        db: getRequiredDb(ctx),
+        profileId: ctx.session.user.id,
+      });
+      return strictSuccessSchema.parse({ success: true });
+    }),
 });
 
 function getApplicationBaseUrl(): string {
@@ -295,51 +356,17 @@ function requireAllowedOAuthReturn(redirectUri?: string): string {
   const parsedTarget = new URL(target);
   const isConfiguredWebReturn =
     parsedTarget.origin === new URL(getApplicationBaseUrl()).origin &&
-    parsedTarget.pathname === "/integrations" &&
+    (parsedTarget.pathname === "/integrations" || parsedTarget.pathname === "/onboarding") &&
     parsedTarget.search === "" &&
     parsedTarget.hash === "";
   const isLocalAdapterWebReturn =
     isLocalWahooOAuthTestAdapterEnabled() &&
     ["127.0.0.1", "localhost"].includes(parsedTarget.hostname) &&
-    parsedTarget.pathname === "/integrations" &&
+    (parsedTarget.pathname === "/integrations" || parsedTarget.pathname === "/onboarding") &&
     parsedTarget.search === "" &&
     parsedTarget.hash === "";
   if (target !== defaultMobileRedirect && !isConfiguredWebReturn && !isLocalAdapterWebReturn) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "OAuth redirect URI is not allowed" });
   }
   return target;
-}
-
-function buildOAuthUrl(
-  provider: "wahoo",
-  state: string,
-  callbackUrl: string,
-  returnUri: string,
-  config = requireWahooOAuthConfig(),
-): string {
-  const verifier = deriveOAuthCodeVerifier({ clientSecret: config.clientSecret, provider, state });
-  const challenge = createOAuthCodeChallenge(verifier);
-  if (config.adapter === "local-test") {
-    const callback = new URL(callbackUrl);
-    callback.searchParams.set(
-      "code",
-      issueLocalOAuthAuthorizationCode({ challenge, config, provider }),
-    );
-    callback.searchParams.set("state", state);
-    if (new URL(returnUri).protocol.startsWith("http"))
-      callback.searchParams.set("test_return", "web");
-    return callback.toString();
-  }
-  const params = new URLSearchParams({
-    client_id: config.clientId,
-    redirect_uri: callbackUrl,
-    response_type: "code",
-    scope: config.scopes.join(" "),
-    state,
-  });
-  if (config.pkce) {
-    params.set("code_challenge", challenge);
-    params.set("code_challenge_method", "S256");
-  }
-  return `${config.authUrl}?${params.toString()}`;
 }

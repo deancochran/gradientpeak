@@ -179,7 +179,7 @@ export const parityRegistry = [
   {
     area: "planning",
     backendOperations: [
-      "trainingPlans.getActivePlan",
+      "trainingPlans.getPlanTabProjection",
       "trainingPlans.list",
       "calendar.range",
       "goals.list",
@@ -284,7 +284,6 @@ export const parityRegistry = [
       "activityPlans.delete",
       "activityPlans.duplicate",
       "events.delete",
-      "events.validateConstraints",
       "events.create",
       "events.update",
     ],
@@ -309,13 +308,7 @@ export const parityRegistry = [
   },
   {
     area: "scheduled_activities",
-    backendOperations: [
-      "events.getById",
-      "trainingPlans.getById",
-      "activityPlans.list",
-      "events.create",
-      "events.delete",
-    ],
+    backendOperations: ["events.getById", "activityPlans.list", "events.create", "events.delete"],
     id: "scheduled_activities.event_detail",
     mobileRoute: "/(internal)/(standard)/event-detail",
     policy: "required_on_web",
@@ -360,7 +353,7 @@ export const parityRegistry = [
       "trainingPlans.get",
       "athleteIntelligence.getReadModel",
       "trainingPlans.preview",
-      "trainingPlans.getActivePlan",
+      "trainingPlans.getPlanTabProjection",
       "trainingPlans.applyTemplate",
       "trainingPlans.removeAppliedSchedule",
       "trainingPlans.delete",

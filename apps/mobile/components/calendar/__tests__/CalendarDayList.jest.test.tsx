@@ -1,6 +1,6 @@
 import { act } from "@testing-library/react-native/pure";
 import type React from "react";
-
+import { createCalendarProjectionItem } from "../../../test/calendar-projection-fixture";
 import { renderNative } from "../../../test/render-native";
 
 const mockScrollToIndex = jest.fn();
@@ -74,19 +74,13 @@ function createProps(overrides: Partial<CalendarDayListProps> = {}): CalendarDay
     todayKey: initialDayKey,
     scrollTargetDateKey: null,
     scrollTargetVersion: 0,
-    activitiesByDate: new Map(),
-    eventsByDate: new Map(),
-    groupEventsByDate: new Map(),
-    goalsByDate: new Map(),
+    itemsByDate: new Map(),
     onReachStart: jest.fn(),
     onReachEnd: jest.fn(),
     onVisibleDayChange: jest.fn(),
     onVisibleDaySettled: jest.fn(),
     onPressDay: jest.fn(),
-    onPressActivity: jest.fn(),
-    onPressEvent: jest.fn(),
-    onPressGroupEvent: jest.fn(),
-    onPressGoal: jest.fn(),
+    onPressItem: jest.fn(),
     ...overrides,
   };
 }
@@ -176,7 +170,14 @@ describe("CalendarDayList scrolling", () => {
     rendered.rerender(
       <CalendarDayList
         {...props}
-        goalsByDate={new Map([[middleDayKey, [{ id: "goal-1" } as never]]])}
+        itemsByDate={
+          new Map([
+            [
+              middleDayKey,
+              [createCalendarProjectionItem({ id: "goal-1", kind: "goal", title: "Goal" })],
+            ],
+          ])
+        }
       />,
     );
 
@@ -190,7 +191,14 @@ describe("CalendarDayList scrolling", () => {
     rendered.rerender(
       <CalendarDayList
         {...props}
-        goalsByDate={new Map([[middleDayKey, [{ id: "goal-1" } as never]]])}
+        itemsByDate={
+          new Map([
+            [
+              middleDayKey,
+              [createCalendarProjectionItem({ id: "goal-1", kind: "goal", title: "Goal" })],
+            ],
+          ])
+        }
         scrollTargetVersion={2}
       />,
     );
@@ -213,7 +221,12 @@ describe("CalendarDayList scrolling", () => {
       const props = createProps({
         scrollTargetDateKey: targetDayKey,
         scrollTargetVersion: 1,
-        goalsByDate: new Map([[middleDayKey, [{ id: "goal-1" } as never]]]),
+        itemsByDate: new Map([
+          [
+            middleDayKey,
+            [createCalendarProjectionItem({ id: "goal-1", kind: "goal", title: "Goal" })],
+          ],
+        ]),
       });
       const rendered = renderNative(<CalendarDayList {...props} />);
       const listWithGoal = getMockFlatListProps();
@@ -230,7 +243,7 @@ describe("CalendarDayList scrolling", () => {
           index: 3,
         });
       });
-      rendered.rerender(<CalendarDayList {...props} goalsByDate={new Map()} />);
+      rendered.rerender(<CalendarDayList {...props} itemsByDate={new Map()} />);
       mockScrollToIndex.mockClear();
 
       act(() => queuedFrames.shift()?.(0));

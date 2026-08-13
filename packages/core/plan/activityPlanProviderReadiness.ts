@@ -5,9 +5,9 @@ import {
   compileActivityPlan,
 } from "../activity-plan";
 import {
+  type ExecutableIntegrationProviderId,
   getProviderCapabilityDefinition,
   getProviderPlannedActivityCapability,
-  type IntegrationProviderId,
   providerHasCapability,
 } from "../integrations/provider-capabilities";
 import {
@@ -15,7 +15,7 @@ import {
   isTargetTypePermittedForActivity,
 } from "../schemas/activity_target_capabilities";
 
-export type ActivityPlanProvider = "native" | IntegrationProviderId;
+export type ActivityPlanProvider = "native" | ExecutableIntegrationProviderId;
 
 export type ActivityPlanTargetAnchors = {
   ftpWatts?: number | null;
@@ -169,10 +169,7 @@ export function getActivityPlanProviderProjection(input: {
     ) {
       findings.push({
         disposition: "unsupported",
-        message:
-          input.provider === "garmin"
-            ? "Garmin planned-activity delivery remains evidence-gated until partner delivery support is available."
-            : `${definition.label} planned-activity delivery is not available in the current integration.`,
+        message: `${definition.label} planned-activity delivery is not available in the current integration.`,
         path: ["provider"],
         reasonCode: "provider_delivery_evidence_missing",
         semantic: "provider",
@@ -192,7 +189,7 @@ export function getActivityPlanProviderProjection(input: {
         disposition: supported ? "compatible" : "unsupported",
         message: supported
           ? `${occurrence.role} occurrence is preserved.`
-          : `${getProviderCapabilityDefinition(input.provider as IntegrationProviderId).label} cannot preserve ${occurrence.role} boundaries.`,
+          : `${getProviderCapabilityDefinition("wahoo").label} cannot preserve ${occurrence.role} boundaries.`,
         path: [...basePath, "role"],
         reasonCode: supported ? "boundary_preserved" : "unsupported_boundary",
         semantic: "occurrence_role",

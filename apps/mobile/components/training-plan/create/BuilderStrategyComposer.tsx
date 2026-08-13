@@ -6,22 +6,19 @@ import { BuilderProjectionOverview } from "@/components/training-plan/create/Bui
 import type { BuilderTrainingPathReviewSection } from "@/components/training-plan/create/BuilderTrainingPathReviewSection";
 import { shouldUseAccessibleBuilderLayout } from "@/components/training-plan/create/responsiveLayout";
 import type { TrainingPlanBuilderController } from "@/components/training-plan/create/useTrainingPlanBuilderController";
+import type { BuilderPlanningBriefRowViewModel } from "@/lib/training-plan-creation/builder-presentation";
 import type { TrainingPlanBuilderState } from "@/lib/training-plan-creation/types";
-import type { BuilderPlanningBriefRowViewModel } from "@/lib/training-plan-creation/view-model";
 
 type BuilderStrategyComposerProps = {
   state: TrainingPlanBuilderState;
   chartReview: TrainingPlanBuilderController["chartReview"];
   saveReadiness: TrainingPlanBuilderController["builder"]["derived"]["savePlan"]["readiness"];
   planningBriefRows: BuilderPlanningBriefRowViewModel[];
-  canUseStructureProposal: boolean;
   onAddActivity: () => void;
-  onApplyStructureProposal: () => void;
   onEditMetadata?: () => void;
   onOpenAthleteContext?: () => void;
   onOpenGoals?: () => void;
   onOpenPlanningConstraints?: () => void;
-  onOpenSchedulePreview: () => void;
   renderBelowChart?: ComponentProps<typeof BuilderTrainingPathReviewSection>["renderBelowChart"];
 };
 
@@ -29,19 +26,15 @@ const CONFIG_ACTIONS = {
   athleteContext: "onOpenAthleteContext",
   goals: "onOpenGoals",
   planningConstraints: "onOpenPlanningConstraints",
-  schedulePreview: "onOpenSchedulePreview",
 } as const;
 
 export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
-  canUseStructureProposal,
   chartReview,
   onAddActivity,
-  onApplyStructureProposal,
   onEditMetadata,
   onOpenAthleteContext,
   onOpenGoals,
   onOpenPlanningConstraints,
-  onOpenSchedulePreview,
   planningBriefRows,
   renderBelowChart,
   saveReadiness,
@@ -51,7 +44,6 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
     onOpenAthleteContext,
     onOpenGoals,
     onOpenPlanningConstraints,
-    onOpenSchedulePreview,
   };
   const scheduleStatus = getScheduleStatus(state);
   const { fontScale, width } = useWindowDimensions();
@@ -101,7 +93,9 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
                 key={row.key}
                 row={row}
                 scheduleStatus={scheduleStatus}
-                onPress={actions[CONFIG_ACTIONS[row.key]]}
+                onPress={
+                  row.key === "schedulePreview" ? undefined : actions[CONFIG_ACTIONS[row.key]]
+                }
               />
             ))}
           </View>
@@ -129,25 +123,9 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
         className={useVerticalLayout ? "gap-2" : "flex-row gap-2"}
         testID="builder-schedule-actions"
       >
-        <Button
-          className={
-            canUseStructureProposal && !useVerticalLayout ? "min-h-11 flex-1" : "min-h-11 w-full"
-          }
-          onPress={onAddActivity}
-          testID="builder-add-activity"
-        >
+        <Button className="min-h-11 w-full" onPress={onAddActivity} testID="builder-add-activity">
           <Text>Add activity</Text>
         </Button>
-        {canUseStructureProposal ? (
-          <Button
-            accessibilityLabel="Use suggested schedule"
-            className={useVerticalLayout ? "min-h-11 w-full" : "min-h-11 flex-1"}
-            onPress={onApplyStructureProposal}
-            variant="outline"
-          >
-            <Text>Use schedule</Text>
-          </Button>
-        ) : null}
       </View>
 
       <BuilderProjectionOverview chartReview={chartReview} renderBelowChart={renderBelowChart} />

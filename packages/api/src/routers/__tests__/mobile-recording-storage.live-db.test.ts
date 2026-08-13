@@ -63,7 +63,7 @@ async function seedProfile(): Promise<{ email: string; profileId: string }> {
     email,
     full_name: "Mobile Recording Storage Live DB Test",
     username: `mobile-storage-${profileId.slice(0, 8)}`,
-    onboarded: true,
+    onboarding_status: "completed",
     is_public: false,
     planning_timezone: "UTC",
     created_at: now,

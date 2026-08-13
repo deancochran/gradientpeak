@@ -225,7 +225,6 @@ export default function EventDetailScreen() {
     id,
     mode,
     date,
-    trainingPlanId,
     activityPlanId,
     scheduleGapLoadDelta,
     planSuggestionType,
@@ -235,7 +234,6 @@ export default function EventDetailScreen() {
     id?: string;
     mode?: string;
     date?: string;
-    trainingPlanId?: string;
     activityPlanId?: string;
     scheduleGapLoadDelta?: string;
     planSuggestionType?: string;
@@ -245,7 +243,6 @@ export default function EventDetailScreen() {
   const eventId = typeof id === "string" ? id : "";
   const startsInCreateMode = mode === "create";
   const createDate = typeof date === "string" ? date : undefined;
-  const createTrainingPlanId = typeof trainingPlanId === "string" ? trainingPlanId : undefined;
   const preselectedActivityPlanId = typeof activityPlanId === "string" ? activityPlanId : undefined;
   const scheduleGapLoad = parseSuggestionLoadDelta(scheduleGapLoadDelta);
   const scheduleGapNote =
@@ -305,13 +302,12 @@ export default function EventDetailScreen() {
   });
 
   const recurring = useMemo(() => isRecurringEvent(event), [event]);
-  const isReadOnlyImported = !startsInCreateMode && event?.event_type === "imported";
-  const activityPlan = event?.activity_plan;
+  const activityPlan = event?.activityPlanSummary;
   const route = event?.route;
   const isPlannedEvent = !startsInCreateMode && event?.event_type === "planned";
   const updateSupportsRecurrence = !isPlannedEvent;
   const comments = useEntityCommentsController({ entityId: event?.id, entityType: "event" });
-  const { data: sourceTrainingPlan } = api.trainingPlans.getById.useQuery(
+  const { data: sourceTrainingPlan } = api.trainingPlans.get.useQuery(
     event?.training_plan_id ? { id: event.training_plan_id } : skipToken,
     {
       ...scheduleAwareReadQueryOptions,
@@ -320,7 +316,7 @@ export default function EventDetailScreen() {
   );
   const completed = isPlannedEvent && event ? isAuthoritativeCompletedCalendarEvent(event) : false;
   const activityCategory =
-    typeof activityPlan?.activity_category === "string" ? activityPlan.activity_category : "other";
+    typeof activityPlan?.activityCategory === "string" ? activityPlan.activityCategory : "other";
   const activityColor = getActivityColor(activityCategory);
   const _detailTitle = startsInCreateMode
     ? "Create Event"
@@ -379,7 +375,6 @@ export default function EventDetailScreen() {
         scope: "single",
         patch: {
           activity_plan_id: item.id,
-          event_type: "planned",
           title: event.title?.trim() || item.name || "Scheduled activity",
         },
       });
@@ -401,7 +396,6 @@ export default function EventDetailScreen() {
         scope: "single",
         patch: {
           activity_plan_id: null,
-          event_type: event.route_id ? "planned" : "custom",
           title: event.title?.trim() || activityPlan?.name || "Event",
         },
       });
@@ -462,7 +456,7 @@ export default function EventDetailScreen() {
       );
     }
 
-    if (isReadOnlyImported || !event) {
+    if (!event) {
       return null;
     }
 
@@ -606,7 +600,7 @@ export default function EventDetailScreen() {
                   starts_at: displayStartsAt.toISOString(),
                   ends_at: event?.ends_at ?? null,
                   timezone: event?.timezone,
-                  preserveInstant: event?.event_type === "imported" || completed,
+                  preserveInstant: completed,
                 })}
               </Text>
               {recurring ? (
@@ -631,13 +625,13 @@ export default function EventDetailScreen() {
               </Text>
             </View>
             <ActivityPlanCard
-              activityPlan={activityPlan}
+              plan={activityPlan}
               onPress={handleOpenPlanDetail}
               testID="event-detail-activity-plan-card"
               variant="default"
             />
           </View>
-        ) : !startsInCreateMode && event && !isReadOnlyImported ? (
+        ) : !startsInCreateMode && event ? (
           <Pressable
             className="rounded-2xl border border-dashed border-border bg-card px-4 py-4"
             onPress={() => setActivityPlanPickerOpen(true)}
@@ -679,7 +673,6 @@ export default function EventDetailScreen() {
             scheduleGapNote={scheduleGapNote}
             showFooterActions={false}
             testIDPrefix="event-detail"
-            trainingPlanId={createTrainingPlanId}
           />
         ) : null}
 

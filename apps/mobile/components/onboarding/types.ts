@@ -1,12 +1,13 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import type {
   AthleteTrainingSettings,
+  ExecutableIntegrationProviderId,
   GoalEditorDraft,
-  IntegrationProviderId,
   OnboardingIntent,
+  OnboardingStatus,
 } from "@repo/core";
 import type { ComponentType } from "react";
 import type { AthleteBaselineFieldSource } from "@/components/athlete-baseline";
-import type { IntegrationOverviewItem } from "@/components/integrations/IntegrationProviderList";
 import type { CompactTrainingPreferencesValue } from "@/components/settings/training-preferences/compactTrainingPreferences";
 
 export type TrainingPreferencesHydrationStatus = "loading" | "ready" | "error";
@@ -67,17 +68,18 @@ export type OnboardingStatusModal = {
   onSecondary?: () => void | Promise<void>;
 };
 
-export type IntegrationProvider = IntegrationProviderId;
+export type IntegrationProvider = ExecutableIntegrationProviderId;
+
+type IntegrationOverviewItem =
+  inferRouterOutputs<AppRouter>["integrations"]["getSyncOverview"][number];
+export type OnboardingIntegrationOverview<TProvider extends string = IntegrationProvider> = Omit<
+  IntegrationOverviewItem,
+  "provider"
+> & { provider: TProvider };
 
 export type OnboardingFieldSources = Partial<
   Record<keyof OnboardingData, AthleteBaselineFieldSource>
 >;
-
-export interface WahooSetupStatus {
-  status: "idle" | "refreshing" | "refreshed" | "failed" | "unsupported";
-  canContinue: boolean;
-  lastError: string | null;
-}
 
 export interface StepConfig {
   canSkip: boolean;
@@ -98,12 +100,12 @@ export interface StepProps {
     },
   ) => void;
   fieldSources?: OnboardingFieldSources;
-  wahooSetupStatus?: WahooSetupStatus;
-  onRetryWahooSetup?: () => void;
-  integrationOverview?: IntegrationOverviewItem[];
+  integrationOverview?: OnboardingIntegrationOverview[];
   integrationOverviewError?: unknown;
   integrationOverviewLoading?: boolean;
   onRefreshIntegrations?: () => unknown;
+  onboardingStatus?: OnboardingStatus;
+  providersMutable?: boolean;
   usernameAvailability?: {
     available?: boolean;
     isError: boolean;

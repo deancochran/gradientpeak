@@ -155,17 +155,4 @@ describe("calendar event presentation", () => {
     expect(getEventPrimaryMeta(event)).toEqual([]);
     expect(getEventStatusLabel(event)).toBeNull();
   });
-
-  it("marks imported events as read-only without extra secondary badges", () => {
-    const event = {
-      id: "imported-1",
-      event_type: "imported",
-      starts_at: "2026-03-23T14:00:00.000Z",
-      description: "Pulled in from provider sync.",
-    };
-
-    expect(getEventTimeLabel(event)).not.toBe("Scheduled");
-    expect(getEventSupportingLine(event)).toBe("Pulled in from provider sync.");
-    expect(getEventStatusLabel(event)).toBe("Read-only");
-  });
 });

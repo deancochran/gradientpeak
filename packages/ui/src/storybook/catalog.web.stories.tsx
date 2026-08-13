@@ -29,6 +29,7 @@ import * as Form from "../components/form/index.web";
 import { Icon } from "../components/icon/index.web";
 import { Input } from "../components/input/index.web";
 import * as NavigationMenu from "../components/navigation-menu/index.web";
+import { ProgressBar } from "../components/progress/index.web";
 import * as Resizable from "../components/resizable/index.web";
 import * as ScrollArea from "../components/scroll-area/index.web";
 import { Separator } from "../components/separator/index.web";
@@ -49,6 +50,15 @@ const meta = {
 export default meta;
 
 type Story = StoryObj<typeof meta>;
+
+export const ProgressStory: Story = {
+  name: "Progress",
+  render: () => (
+    <WebFrame>
+      <ProgressBar accessibilityLabel="Example progress" value={72} />
+    </WebFrame>
+  ),
+};
 
 const ResizablePanelGroup = Resizable.ResizablePanelGroup as React.ComponentType<any>;
 

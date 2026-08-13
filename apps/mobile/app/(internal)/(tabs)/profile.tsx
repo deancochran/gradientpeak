@@ -279,7 +279,7 @@ export default function ProfileTabScreen() {
           <SettingItem
             type="button"
             label="Integrations"
-            description="Connect third-party services like Strava and Garmin."
+            description="Connect supported services for activity import and planning sync."
             buttonLabel="Manage"
             variant="outline"
             onPress={() => navigateTo(ROUTES.INTEGRATIONS)}

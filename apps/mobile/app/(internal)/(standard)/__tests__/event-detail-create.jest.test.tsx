@@ -2,7 +2,10 @@ import { act } from "@testing-library/react-native";
 import React from "react";
 import type { Control, ControllerRenderProps, FieldValues } from "react-hook-form";
 import type { ReactTestInstance } from "react-test-renderer";
-import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
+import {
+  createActivityPlanDetail,
+  createActivityPlanSummary,
+} from "../../../../test/activity-plan-projection-fixture";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 import EventDetailScreen from "../event-detail";
@@ -22,19 +25,19 @@ const mockActivityPlanGetByIdUseQuery: jest.Mock = jest.fn(() => ({
 }));
 let paramsState: Record<string, string | undefined> = { mode: "create", date: "2026-03-24" };
 
-type ActivityPlanFixture = {
-  activity_categories?: string[];
-  id: string;
-  name: string;
-  activity_category?: string;
-};
+type ActivityPlanFixture = ReturnType<typeof createActivityPlanSummary>;
 type RecurrenceFixture = { recurrence?: { endDate?: string | null; frequency?: string } } | null;
 type StackScreenProps = Record<string, unknown> & {
   options?: { headerRight?: () => React.ReactNode };
 };
 type ResourcePickerProps = {
   onClose: () => void;
-  onSelect: (item: ActivityPlanFixture) => void;
+  onSelect: (item: {
+    kind: "activityPlan";
+    id: string;
+    label: string;
+    activityPlan: ActivityPlanFixture;
+  }) => void;
   visible: boolean;
 };
 type FormFieldMockProps = {
@@ -133,7 +136,8 @@ jest.mock("@/components/shared/resource-picker", () => ({
           "Button",
           {
             key: item.id,
-            onPress: () => onSelect(item),
+            onPress: () =>
+              onSelect({ kind: "activityPlan", id: item.id, label: item.name, activityPlan: item }),
             testID: `event-detail-activity-plan-option-${item.id}`,
           },
           item.name,
@@ -320,7 +324,7 @@ jest.mock("@/lib/api", () => ({
       },
     },
     trainingPlans: {
-      getById: {
+      get: {
         useQuery: () => ({ data: null }),
       },
     },
@@ -397,13 +401,11 @@ describe("event detail create mode", () => {
     mockActivityPlansListUseQuery.mockReturnValue({
       data: {
         items: [
-          {
-            activity_categories: ["run"],
+          createActivityPlanSummary({
             id: "plan-1",
             name: "Tempo Run",
-            activity_category: "run",
-            estimated_duration: 3600,
-          },
+            activityCategory: "run",
+          }),
         ],
       },
       isLoading: false,
@@ -430,7 +432,6 @@ describe("event detail create mode", () => {
           event_type: "planned",
           activity_plan_id: "plan-1",
           title: "Tempo Run",
-          all_day: true,
           scheduled_date: "2026-03-24",
         }),
       );
@@ -479,27 +480,16 @@ describe("event detail create mode", () => {
     mockActivityPlansListUseQuery.mockReturnValue({
       data: {
         items: [
-          {
-            activity_categories: ["run"],
+          createActivityPlanSummary({
             id: "plan-1",
             name: "Tempo Run",
-            activity_category: "run",
-            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
-              durationSeconds: 3_600,
-              id: "plan-1",
-            }),
-          },
-          {
-            activity_categories: ["bike"],
+            activityCategory: "run",
+          }),
+          createActivityPlanSummary({
             id: "plan-2",
             name: "Recovery Ride",
-            activity_category: "bike",
-            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
-              activityCategory: "bike",
-              durationSeconds: 2_400,
-              id: "plan-2",
-            }),
-          },
+            activityCategory: "bike",
+          }),
         ],
       },
       isLoading: false,
@@ -543,13 +533,10 @@ describe("event detail create mode", () => {
     };
     mockActivityPlanGetByIdUseQuery.mockReturnValue({
       data: {
-        activity_categories: ["run"],
-        id: "plan-tempo",
-        name: "Tempo Run",
-        activity_category: "run",
-        prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
-          durationSeconds: 3_600,
+        detail: createActivityPlanDetail({
           id: "plan-tempo",
+          name: "Tempo Run",
+          activityCategory: "run",
         }),
       },
       isLoading: false,
@@ -573,10 +560,8 @@ describe("event detail create mode", () => {
         expect.objectContaining({
           event_type: "planned",
           activity_plan_id: "plan-tempo",
-          training_plan_id: "00000000-0000-4000-8000-000000000123",
           title: "Tempo Run",
           notes: expect.stringContaining("Schedule gap:"),
-          all_day: true,
           scheduled_date: "2026-03-24",
         }),
       );
@@ -595,26 +580,16 @@ describe("event detail create mode", () => {
     mockActivityPlansListUseQuery.mockReturnValue({
       data: {
         items: [
-          {
-            activity_categories: ["run"],
+          createActivityPlanSummary({
             id: "plan-easy",
             name: "Easy Run",
-            activity_category: "run",
-            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
-              durationSeconds: 2_400,
-              id: "plan-easy",
-            }),
-          },
-          {
-            activity_categories: ["run"],
+            activityCategory: "run",
+          }),
+          createActivityPlanSummary({
             id: "plan-tempo",
             name: "Tempo Run",
-            activity_category: "run",
-            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
-              durationSeconds: 3_600,
-              id: "plan-tempo",
-            }),
-          },
+            activityCategory: "run",
+          }),
         ],
       },
       isLoading: false,

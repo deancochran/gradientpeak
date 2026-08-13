@@ -1,6 +1,3 @@
-export * from "./active-projection";
 export * from "./chart-adapter";
-export * from "./inspector-insight";
 export * from "./preview-normalization";
-export * from "./projection-status";
 export * from "./types";

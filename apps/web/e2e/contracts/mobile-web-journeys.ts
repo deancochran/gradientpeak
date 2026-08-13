@@ -193,7 +193,7 @@ function testTitleFor(id: string): string {
     return "owner creates, edits, RSVPs to, cancels an event, and archives its group";
   }
   if (id === "planning.training-path" || id === "calendar.navigation") {
-    return "planning.training-path and calendar.navigation expose server-composed firm and tentative paths";
+    return "planning.training-path and calendar.navigation expose server-composed scheduled paths";
   }
   if (id === "agenda.create" || id === "events.recurrence") {
     return "agenda.create and events.recurrence persist a bounded series and honor delete scope";
@@ -215,9 +215,6 @@ function testTitleFor(id: string): string {
   }
   if (id === "training-preferences") {
     return "athlete preferences hydrate, validate, persist, reload, and restore";
-  }
-  if (id === "training-plans.reorder") {
-    return "athlete atomically reorders persisted scheduled activities";
   }
   if (id.startsWith("training-plans.")) {
     return "athlete creates, reloads, edits, and cleans a persisted training plan";
@@ -577,12 +574,6 @@ export const mobileWebJourneyDomains: MobileWebJourneyDomain[] = [
         "Visibility, like, duplicate and share",
         "needs-seed",
         "protected owner/non-owner actions",
-      ),
-      blocked(
-        "training-plans.reorder",
-        "Activity reorder and failure recovery",
-        "needs-seed",
-        "web reorder surface",
       ),
       executable(
         "training-preferences",

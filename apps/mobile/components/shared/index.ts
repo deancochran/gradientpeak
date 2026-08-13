@@ -1,7 +1,5 @@
 export {
   ActivityCard,
-  type ActivityCardActivity,
-  type ActivityCardOwner,
   activityCardFormatters,
 } from "./ActivityCard";
 export {

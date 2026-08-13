@@ -1,28 +1,20 @@
+import type { CalendarProjectionItem } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { keepPreviousData } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { Alert, ScrollView, TouchableOpacity, View } from "react-native";
-import {
-  EventAgendaCard,
-  GoalAgendaCard,
-  PlannedAgendaEventCard,
-} from "@/components/calendar/AgendaCards";
-import type { CalendarActivity } from "@/components/calendar/CalendarTimelineModel";
+import { ScrollView, TouchableOpacity, View } from "react-native";
+import { GoalAgendaCard } from "@/components/calendar/AgendaCards";
+import { CalendarScheduleObjectCard } from "@/components/calendar/CalendarTimelineRows";
 import { PlannedDaySummary } from "@/components/calendar/PlannedDaySummary";
 import { announcePlannedDaySummaryRetryStatus } from "@/components/calendar/plannedDaySummaryAccessibility";
-import { GroupEventCard } from "@/components/groups/GroupEventCards";
-import { ActivityCard } from "@/components/shared/ActivityCard";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { parseDateKey, toDateKeyInTimeZone } from "@/lib/calendar/dateMath";
 import { buildOpenEventRoute } from "@/lib/calendar/eventRouting";
-import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
-import { buildEventsByDate, type CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import { resolvePlanningDayQueryRange } from "@/lib/calendar/planningQueryRange";
-import { buildTimelineEvents, buildTimelineEventsByDate } from "@/lib/calendar/timelineEvents";
 import { ROUTES } from "@/lib/constants/routes";
 import { markEstimated } from "@/lib/estimatedMetrics";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
@@ -38,32 +30,6 @@ function formatCalendarDayTitle(dateKey: string, todayKey: string) {
   }
 
   return format(date, "EEEE, MMMM d");
-}
-
-function formatTimeRange(event: CalendarEvent): string {
-  if (event.all_day) {
-    return "All day";
-  }
-
-  if (!event.starts_at) {
-    return "Scheduled";
-  }
-
-  const start = new Date(event.starts_at);
-  if (Number.isNaN(start.getTime())) {
-    return "Scheduled";
-  }
-
-  if (!event.ends_at) {
-    return format(start, "h:mm a");
-  }
-
-  const end = new Date(event.ends_at);
-  if (Number.isNaN(end.getTime())) {
-    return format(start, "h:mm a");
-  }
-
-  return `${format(start, "h:mm a")} - ${format(end, "h:mm a")}`;
 }
 
 function readParam(value: string | string[] | undefined): string | undefined {
@@ -89,17 +55,6 @@ function formatPlanSuggestion(input: { type?: string; loadDelta?: string; descri
     type: direction === "Reduce" ? "reduce_load" : "add_load",
     actionLabel: direction === "Reduce" ? "Create adjustment note" : "Create suggested session",
   };
-}
-
-function readEventPlace(event: CalendarEvent): string | null {
-  const source = event as CalendarEvent & {
-    location?: string | null;
-    place?: string | null;
-    venue?: string | null;
-  };
-
-  const value = source.location ?? source.place ?? source.venue ?? null;
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
 export default function CalendarDayScreen() {
@@ -172,90 +127,34 @@ export default function CalendarDayScreen() {
   const plannedDaySummaryLoading =
     isLoading || (dayQueriesEnabled && !plannedDaySummaryData && !error);
 
-  const events = useMemo(() => (data?.items ?? []) as CalendarEvent[], [data?.items]);
-  const visibleGroupEvents = useMemo(
-    () => (data?.selectedGroupEvents?.items ?? []) as CalendarGroupEvent[],
-    [data?.selectedGroupEvents?.items],
-  );
-  const visibleCompletedActivities = useMemo(
-    () =>
-      ((data?.completedActivities?.items ?? []) as CalendarActivity[]).filter(
-        (activity) => activity.scheduled_date === dateKey,
-      ),
-    [data?.completedActivities?.items, dateKey],
-  );
-  const eventsByDate = useMemo(() => buildEventsByDate(events), [events]);
-  const goals = data?.goals?.items ?? [];
-  const timelineEvents = useMemo(
-    () =>
-      buildTimelineEvents({
-        calendarEvents: events,
-        goals,
-        todayKey: todayKey ?? "",
-      }),
-    [events, goals, todayKey],
-  );
-  const timelineEventsByDate = useMemo(
-    () => buildTimelineEventsByDate(timelineEvents),
-    [timelineEvents],
-  );
-  const visibleEvents = useMemo(
-    () =>
-      (dateKey ? (eventsByDate.get(dateKey) ?? []) : []).filter(
-        (event) => event.event_type !== "rest_day",
-      ),
-    [dateKey, eventsByDate],
-  );
-  const visibleTimelineEvents = useMemo(
-    () =>
-      (dateKey ? (timelineEventsByDate.get(dateKey) ?? []) : []).filter(
-        (event) => event.type !== "rest_day",
-      ),
-    [dateKey, timelineEventsByDate],
-  );
-  const _plannedEventsOnDate = useMemo(
-    () => visibleEvents.filter((event) => event.event_type === "planned" && event.activity_plan),
-    [visibleEvents],
-  );
-  const goalsOnDate = useMemo(
-    () => goals.filter((goal) => goal.target_date === dateKey),
-    [dateKey, goals],
-  );
-  const isRestDay =
-    visibleGroupEvents.length === 0 &&
-    visibleCompletedActivities.length === 0 &&
-    !visibleTimelineEvents.some(
-      (event) =>
-        event.type === "planned_activity" ||
-        event.type === "completed_activity" ||
-        event.type === "goal" ||
-        event.type === "race",
-    );
+  const projectionItems = data?.projection.items ?? [];
+  const goalsOnDate = projectionItems.filter((item) => item.kind === "goal");
+  const agendaItems = projectionItems.filter((item) => item.kind !== "goal");
+  const isRestDay = agendaItems.length === 0 && goalsOnDate.length === 0;
   const title = useMemo(
     () => (dateKey && todayKey ? formatCalendarDayTitle(dateKey, todayKey) : "Calendar"),
     [dateKey, todayKey],
   );
 
-  const handleOpenEvent = (event: CalendarEvent) => {
-    const eventType =
-      event.event_type === "planned" ||
-      event.event_type === "custom" ||
-      event.event_type === "race_target" ||
-      event.event_type === "imported" ||
-      event.event_type === "rest_day"
-        ? event.event_type
-        : undefined;
-    const route = buildOpenEventRoute({
-      id: event.id,
-      ...(eventType === undefined ? {} : { event_type: eventType }),
-    });
-
-    if (!route) {
-      Alert.alert("Open Event", "This event type does not have a detail screen yet.");
+  const handleOpenItem = (item: CalendarProjectionItem) => {
+    if (item.kind === "completed_activity") {
+      navigateTo(`/activity-detail?id=${item.id}` as never);
       return;
     }
-
-    navigateTo(route as never);
+    if (item.kind === "goal") {
+      navigateTo(ROUTES.PLAN.GOAL_DETAIL(item.id) as never);
+      return;
+    }
+    if (item.kind === "group_event") {
+      navigateTo({ pathname: "/group-event-detail", params: { groupEventId: item.id } } as never);
+      return;
+    }
+    const eventType = item.event?.type;
+    const route = buildOpenEventRoute({
+      id: item.id,
+      ...(eventType === undefined ? {} : { event_type: eventType }),
+    });
+    if (route) navigateTo(route as never);
   };
 
   const handleCreateEvent = () => {
@@ -264,9 +163,6 @@ export default function CalendarDayScreen() {
       pathname: "/(internal)/(standard)/agenda-create",
       params: {
         date: dateKey,
-        ...(typeof params.trainingPlanId === "string"
-          ? { trainingPlanId: params.trainingPlanId }
-          : {}),
         ...(planSuggestion
           ? {
               planSuggestionType: planSuggestion.type,
@@ -286,20 +182,8 @@ export default function CalendarDayScreen() {
     navigateTo(ROUTES.PLAN.GOAL_DETAIL(primaryGoal.id) as never);
   };
 
-  const handleOpenGroupEvent = (eventId: string) => {
-    navigateTo({ pathname: "/group-event-detail", params: { groupEventId: eventId } } as never);
-  };
-
-  const handleOpenActivity = (activityId: string) => {
-    navigateTo(`/activity-detail?id=${activityId}` as never);
-  };
-
-  const hasAgendaEvents =
-    visibleEvents.length > 0 ||
-    visibleGroupEvents.length > 0 ||
-    visibleCompletedActivities.length > 0;
-  const agendaEventCount =
-    visibleEvents.length + visibleGroupEvents.length + visibleCompletedActivities.length;
+  const hasAgendaEvents = agendaItems.length > 0;
+  const agendaEventCount = agendaItems.length;
   const isAgendaInitiallyLoading = isLoading && !data;
   const hasAgendaInitialError = Boolean(error && !data);
   const [agendaRetryStatus, setAgendaRetryStatus] = useState<string | null>(null);
@@ -432,7 +316,7 @@ export default function CalendarDayScreen() {
                 >
                   <Text className="text-sm font-semibold text-foreground">Rest day</Text>
                   <Text className="mt-1 text-sm text-muted-foreground">
-                    {visibleEvents.length > 0
+                    {projectionItems.some((item) => item.kind === "event")
                       ? "No activity plan or goal is scheduled for this day, even if other events are on your calendar."
                       : "Nothing scheduled."}
                   </Text>
@@ -453,62 +337,14 @@ export default function CalendarDayScreen() {
                     </Text>
                   </View>
 
-                  {visibleGroupEvents.map((event) => (
-                    <GroupEventCard
-                      key={event.id}
-                      event={event}
-                      onGroupPress={(group) =>
-                        navigateTo({
-                          pathname: "/group-detail",
-                          params: { groupId: group.id },
-                        } as never)
-                      }
-                      onPress={() => handleOpenGroupEvent(event.id)}
-                      testID={`calendar-day-group-event-${event.id}`}
+                  {agendaItems.map((item) => (
+                    <CalendarScheduleObjectCard
+                      key={`${item.kind}:${item.id}`}
+                      object={item}
+                      onPress={handleOpenItem}
+                      testIDPrefix="calendar-day"
                     />
                   ))}
-
-                  {visibleCompletedActivities.map((activity) => (
-                    <ActivityCard
-                      key={activity.id}
-                      activity={{
-                        id: activity.id,
-                        name: activity.name,
-                        started_at: activity.started_at,
-                        ...(activity.distance_meters === undefined
-                          ? {}
-                          : { distance_meters: activity.distance_meters }),
-                        ...(activity.duration_seconds === undefined
-                          ? {}
-                          : { elapsed_seconds: activity.duration_seconds }),
-                      }}
-                      dateMode="none"
-                      onPress={() => handleOpenActivity(activity.id)}
-                      showLike={false}
-                      showNotes={false}
-                      showVisualPreview={false}
-                      testID={`calendar-day-completed-activity-${activity.id}`}
-                    />
-                  ))}
-
-                  {visibleEvents.map((event) =>
-                    event.event_type === "planned" && event.activity_plan ? (
-                      <PlannedAgendaEventCard
-                        key={event.id}
-                        event={event}
-                        onPress={() => handleOpenEvent(event)}
-                        scheduleLabel={formatTimeRange(event)}
-                      />
-                    ) : (
-                      <EventAgendaCard
-                        key={event.id}
-                        event={event}
-                        onPress={() => handleOpenEvent(event)}
-                        place={readEventPlace(event)}
-                        scheduleLabel={formatTimeRange(event)}
-                      />
-                    ),
-                  )}
                 </>
               ) : !isRestDay ? (
                 <View

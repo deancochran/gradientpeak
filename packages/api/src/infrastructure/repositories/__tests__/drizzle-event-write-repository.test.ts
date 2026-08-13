@@ -23,7 +23,6 @@ function storedEvent(id: string, activityPlanId: string) {
     route_id: null,
     scheduled_date: "2026-07-13",
     series_id: "series-123",
-    source_provider: null,
     starts_at: now,
     status: "scheduled" as const,
     timezone: "UTC",
@@ -72,7 +71,6 @@ function eventInput(overrides: Partial<CreateOwnedEventInput> = {}): CreateOwned
     recurrenceRule: null,
     recurrenceTimezone: null,
     routeId: null,
-    sourceProvider: "trainingpeaks",
     scheduledDate: "2026-07-13",
     startsAt: "2026-07-13T10:00:00.000Z",
     status: "scheduled",
@@ -126,7 +124,6 @@ function createTransactionalDb(failAtInsert?: number) {
                   recurrence_timezone: values.recurrence_timezone,
                   route_id: values.route_id,
                   series_id: values.series_id,
-                  source_provider: values.source_provider,
                   starts_at: values.starts_at,
                   status: values.status,
                   timezone: values.timezone,
@@ -218,7 +215,7 @@ describe("createEventWriteRepository", () => {
     expect(orderBy).toHaveBeenCalledTimes(1);
   });
 
-  it("persists an entire series in one transaction without partial external identity", async () => {
+  it("persists an entire series in one transaction", async () => {
     const { db, transaction, committedValues } = createTransactionalDb();
     const repository = createEventWriteRepository(db);
 
@@ -242,20 +239,8 @@ describe("createEventWriteRepository", () => {
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(created).toHaveLength(2);
     expect(committedValues).toHaveLength(2);
-    expect(committedValues.every((values) => !("source_provider" in values))).toBe(true);
     expect(committedValues.map((values) => values.route_id)).toEqual(["route-123", "route-123"]);
     expect(committedValues[1]?.series_id).toBe(created[0]?.id);
-  });
-
-  it("omits partial external identity for an ordinary single event", async () => {
-    const { db, transaction, committedValues } = createTransactionalDb();
-    const repository = createEventWriteRepository(db);
-
-    await repository.createOwnedEvent(eventInput({ sourceProvider: "trainingpeaks" }));
-
-    expect(transaction).toHaveBeenCalledTimes(1);
-    expect(committedValues).toHaveLength(1);
-    expect(committedValues[0]).not.toHaveProperty("source_provider");
   });
 
   it("rolls back the whole series when a middle insert fails", async () => {

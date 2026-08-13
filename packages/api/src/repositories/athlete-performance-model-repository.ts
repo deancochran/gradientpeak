@@ -1,10 +1,12 @@
 import {
+  type CalibrationRecord,
   type CanonicalQualifiedDurationEffortEvidence,
   type CanonicalSwimCssProtocolEvidence,
   canonicalQualifiedDurationEffortEvidenceSchema,
   canonicalSwimCssProtocolEvidenceSchema,
   DURATION_PERFORMANCE_FRESHNESS_WINDOW_DAYS,
   DURATION_PERFORMANCE_MAX_INPUT_EFFORTS,
+  performanceCalibrationRegistry,
   SWIMMING_CSS_PROTOCOL_EVIDENCE_VERSION,
   SWIMMING_CSS_SOURCE_EFFORT_CALCULATION_VERSION,
   SWIMMING_CSS_SOURCE_EFFORT_METHOD,
@@ -23,11 +25,14 @@ import {
 import { and, desc, eq, gte, inArray, lte, ne, type SQL, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
-import type { getRequiredDb } from "../db";
+import type { DrizzleQueryExecutor, getRequiredDb } from "../db";
+import {
+  readCalibrationRowsBatch,
+  readCalibrationRowsForIdentities,
+} from "./performance-calibration-repository";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
-type TransactionClient = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
-type EvidenceReadClient = Pick<TransactionClient, "select">;
+type EvidenceReadClient = DrizzleQueryExecutor;
 
 export const ATHLETE_PERFORMANCE_EFFORT_QUERY_LIMIT = DURATION_PERFORMANCE_MAX_INPUT_EFFORTS + 1;
 export const ATHLETE_PERFORMANCE_HEART_RATE_QUERY_LIMIT = 101;
@@ -58,6 +63,9 @@ const activityFileEffortProvenanceSchema = z
     contributing_duration_seconds: z.number().finite().positive().max(14_400),
     window_coverage: z.literal(1),
     source_time_coverage: z.number().finite().min(0).max(1),
+    output_window_coverage: z.number().finite().min(0).max(1).optional(),
+    maximum_gap_seconds: z.number().finite().nonnegative().optional(),
+    output_coefficient_of_variation: z.number().finite().nonnegative().nullable().optional(),
     extraction_status: z.enum(["available", "partial"]),
     extraction_reason: z.literal("source_incomplete").nullable(),
     persisted_start_offset_quantization: z.literal("floor_seconds_v1"),
@@ -648,7 +656,7 @@ export type AthletePerformanceHeartRateReads = Readonly<
     "bike" | "run" | "swim",
     Readonly<
       Record<
-        "lthr" | "maxHr",
+        "maxHr",
         Readonly<{ rows: readonly HeartRateCalibrationCandidateRow[]; truncated: boolean }>
       >
     >
@@ -664,6 +672,7 @@ export type AthletePerformanceEvidenceReads = Readonly<{
   effortReads: AthletePerformanceEffortReads;
   heartRateReads: AthletePerformanceHeartRateReads;
   swimmingCssProtocolRead: AthletePerformanceSwimmingCssProtocolRead;
+  calibrationReads?: readonly CalibrationRecord[];
 }>;
 
 export type AthletePerformanceModelRepository = {
@@ -799,15 +808,12 @@ function freezeEvidenceSnapshot(input: {
   };
   heartRateReads: {
     bike: {
-      lthr: { rows: HeartRateCalibrationCandidateRow[]; truncated: boolean };
       maxHr: { rows: HeartRateCalibrationCandidateRow[]; truncated: boolean };
     };
     run: {
-      lthr: { rows: HeartRateCalibrationCandidateRow[]; truncated: boolean };
       maxHr: { rows: HeartRateCalibrationCandidateRow[]; truncated: boolean };
     };
     swim: {
-      lthr: { rows: HeartRateCalibrationCandidateRow[]; truncated: boolean };
       maxHr: { rows: HeartRateCalibrationCandidateRow[]; truncated: boolean };
     };
   };
@@ -815,6 +821,7 @@ function freezeEvidenceSnapshot(input: {
     rows: SwimmingCssProtocolPerformanceRow[];
     truncated: boolean;
   };
+  calibrationReads?: CalibrationRecord[];
 }): AthletePerformanceEvidenceReads {
   return Object.freeze({
     effortReads: Object.freeze({
@@ -824,19 +831,17 @@ function freezeEvidenceSnapshot(input: {
     }),
     heartRateReads: Object.freeze({
       bike: Object.freeze({
-        lthr: freezeEvidenceRead(input.heartRateReads.bike.lthr),
         maxHr: freezeEvidenceRead(input.heartRateReads.bike.maxHr),
       }),
       run: Object.freeze({
-        lthr: freezeEvidenceRead(input.heartRateReads.run.lthr),
         maxHr: freezeEvidenceRead(input.heartRateReads.run.maxHr),
       }),
       swim: Object.freeze({
-        lthr: freezeEvidenceRead(input.heartRateReads.swim.lthr),
         maxHr: freezeEvidenceRead(input.heartRateReads.swim.maxHr),
       }),
     }),
     swimmingCssProtocolRead: freezeEvidenceRead(input.swimmingCssProtocolRead),
+    calibrationReads: Object.freeze([...(input.calibrationReads ?? [])]),
   });
 }
 
@@ -973,13 +978,11 @@ export function createAthletePerformanceModelRepository(
   const heartRateRows = async (
     executor: EvidenceReadClient,
     input: { athleteId: string; asOf: Date; excludedActivityId?: string },
-    metric: "lthr" | "max_hr",
+    metric: "max_hr",
     activityCategory: "bike" | "run" | "swim",
   ) => {
-    const method =
-      metric === "lthr" ? "activity_file_lthr_detection" : "max_hr_progressive_test_v1";
-    const calculationVersion =
-      metric === "lthr" ? "activity-file-lthr-v1" : "max_hr_progressive_test_v1";
+    const method = "max_hr_progressive_test_v1";
+    const calculationVersion = "max_hr_progressive_test_v1";
     const rows = await executor
       .select({
         id: profileMetrics.id,
@@ -1188,15 +1191,13 @@ export function createAthletePerformanceModelRepository(
   const batchHeartRateRows = async (
     executor: EvidenceReadClient,
     inputs: AthletePerformanceModelReadInput[],
-    metric: "lthr" | "max_hr",
+    metric: "max_hr",
     activityCategory: "bike" | "run" | "swim",
   ) => {
     const profileIds = [...new Set(inputs.map((input) => input.athleteId))];
     const latestAsOf = new Date(Math.max(...inputs.map((input) => input.asOf.getTime())));
-    const method =
-      metric === "lthr" ? "activity_file_lthr_detection" : "max_hr_progressive_test_v1";
-    const calculationVersion =
-      metric === "lthr" ? "activity-file-lthr-v1" : "max_hr_progressive_test_v1";
+    const method = "max_hr_progressive_test_v1";
+    const calculationVersion = "max_hr_progressive_test_v1";
     const rows = await executor
       .select({
         id: profileMetrics.id,
@@ -1274,19 +1275,25 @@ export function createAthletePerformanceModelRepository(
         const run = await effortRows(tx, input, "run");
         const swim = await effortRows(tx, input, "swim");
         const swimmingCssProtocolRead = await swimmingCssProtocolRows(tx, input);
-        const bikeLthr = await heartRateRows(tx, input, "lthr", "bike");
         const bikeMaxHr = await heartRateRows(tx, input, "max_hr", "bike");
-        const runLthr = await heartRateRows(tx, input, "lthr", "run");
         const runMaxHr = await heartRateRows(tx, input, "max_hr", "run");
-        const swimLthr = await heartRateRows(tx, input, "lthr", "swim");
         const swimMaxHr = await heartRateRows(tx, input, "max_hr", "swim");
+        const calibrationReads = await readCalibrationRowsForIdentities(tx, {
+          profileId: input.athleteId,
+          identities: performanceCalibrationRegistry.map(({ identity }) => identity),
+          asOf: input.asOf,
+          ...(input.excludedActivityId === undefined
+            ? {}
+            : { excludedActivityId: input.excludedActivityId }),
+        });
         return freezeEvidenceSnapshot({
           effortReads: { bike, run, swim },
           swimmingCssProtocolRead,
+          calibrationReads,
           heartRateReads: {
-            bike: { lthr: bikeLthr, maxHr: bikeMaxHr },
-            run: { lthr: runLthr, maxHr: runMaxHr },
-            swim: { lthr: swimLthr, maxHr: swimMaxHr },
+            bike: { maxHr: bikeMaxHr },
+            run: { maxHr: runMaxHr },
+            swim: { maxHr: swimMaxHr },
           },
         });
       };
@@ -1313,11 +1320,8 @@ export function createAthletePerformanceModelRepository(
           const runEfforts = await batchEffortRows(tx, inputs, "run");
           const swimEfforts = await batchEffortRows(tx, inputs, "swim");
           const swimmingCssProtocols = await batchSwimmingCssProtocolRows(tx, inputs);
-          const bikeLthr = await batchHeartRateRows(tx, inputs, "lthr", "bike");
           const bikeMaxHr = await batchHeartRateRows(tx, inputs, "max_hr", "bike");
-          const runLthr = await batchHeartRateRows(tx, inputs, "lthr", "run");
           const runMaxHr = await batchHeartRateRows(tx, inputs, "max_hr", "run");
-          const swimLthr = await batchHeartRateRows(tx, inputs, "lthr", "swim");
           const swimMaxHr = await batchHeartRateRows(tx, inputs, "max_hr", "swim");
           const effortRead = (
             input: AthletePerformanceModelReadInput,
@@ -1424,60 +1428,59 @@ export function createAthletePerformanceModelRepository(
             swimmingCssProtocolRead,
             (input) => swimmingCssProtocolRows(tx, input),
           );
-          const readBikeLthr = await resolveLaneReader(
-            bikeLthr.truncated,
-            (input) => heartRateRead(input, bikeLthr),
-            (input) => heartRateRows(tx, input, "lthr", "bike"),
-          );
           const readBikeMaxHr = await resolveLaneReader(
             bikeMaxHr.truncated,
             (input) => heartRateRead(input, bikeMaxHr),
             (input) => heartRateRows(tx, input, "max_hr", "bike"),
-          );
-          const readRunLthr = await resolveLaneReader(
-            runLthr.truncated,
-            (input) => heartRateRead(input, runLthr),
-            (input) => heartRateRows(tx, input, "lthr", "run"),
           );
           const readRunMaxHr = await resolveLaneReader(
             runMaxHr.truncated,
             (input) => heartRateRead(input, runMaxHr),
             (input) => heartRateRows(tx, input, "max_hr", "run"),
           );
-          const readSwimLthr = await resolveLaneReader(
-            swimLthr.truncated,
-            (input) => heartRateRead(input, swimLthr),
-            (input) => heartRateRows(tx, input, "lthr", "swim"),
-          );
           const readSwimMaxHr = await resolveLaneReader(
             swimMaxHr.truncated,
             (input) => heartRateRead(input, swimMaxHr),
             (input) => heartRateRows(tx, input, "max_hr", "swim"),
           );
-          return inputs.map((input) =>
-            freezeEvidenceSnapshot({
-              effortReads: {
-                bike: readBikeEfforts(input),
-                run: readRunEfforts(input),
-                swim: readSwimEfforts(input),
-              },
-              swimmingCssProtocolRead: readSwimmingCssProtocols(input),
-              heartRateReads: {
-                bike: {
-                  lthr: readBikeLthr(input),
-                  maxHr: readBikeMaxHr(input),
-                },
-                run: {
-                  lthr: readRunLthr(input),
-                  maxHr: readRunMaxHr(input),
-                },
-                swim: {
-                  lthr: readSwimLthr(input),
-                  maxHr: readSwimMaxHr(input),
-                },
-              },
-            }),
+          const calibrationReadsByRequest = await readCalibrationRowsBatch(
+            tx,
+            inputs.map((input) => ({
+              profileId: input.athleteId,
+              identities: performanceCalibrationRegistry.map(({ identity }) => identity),
+              asOf: input.asOf,
+              ...(input.excludedActivityId === undefined
+                ? {}
+                : { excludedActivityId: input.excludedActivityId }),
+            })),
           );
+          const snapshots = [];
+          for (const [index, input] of inputs.entries()) {
+            const calibrationReads = calibrationReadsByRequest[index] ?? [];
+            snapshots.push(
+              freezeEvidenceSnapshot({
+                effortReads: {
+                  bike: readBikeEfforts(input),
+                  run: readRunEfforts(input),
+                  swim: readSwimEfforts(input),
+                },
+                swimmingCssProtocolRead: readSwimmingCssProtocols(input),
+                calibrationReads,
+                heartRateReads: {
+                  bike: {
+                    maxHr: readBikeMaxHr(input),
+                  },
+                  run: {
+                    maxHr: readRunMaxHr(input),
+                  },
+                  swim: {
+                    maxHr: readSwimMaxHr(input),
+                  },
+                },
+              }),
+            );
+          }
+          return snapshots;
         },
         { accessMode: "read only", isolationLevel: "repeatable read" },
       );

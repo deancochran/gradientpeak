@@ -77,6 +77,65 @@ function cyclingPerformanceTargets(asOf: string, thresholdPowerWatts: number) {
 }
 
 describe("analyzeParsedActivityFile", () => {
+  it("extracts the final 20-minute HR mean only from a complete stable 30-minute output window", async () => {
+    const startedAt = new Date("2026-07-31T10:00:00.000Z");
+    const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "stable-threshold-window",
+      profileId: "stable-threshold-profile",
+      refreshWeather: false,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "cycling" },
+        summary: {
+          totalTime: 1_800,
+          totalDistance: 15_000,
+          avgPower: 250,
+          avgHeartRate: 170,
+        },
+        records: Array.from({ length: 1_801 }, (_, second) => ({
+          sessionMessageIndex: 0,
+          timestamp: new Date(startedAt.getTime() + second * 1_000),
+          power: 250,
+          heartRate: 170,
+        })),
+        segments: explicitBikeSegment(startedAt, 1_800),
+      },
+    });
+
+    expect(result.detectedLTHR).toMatchObject({
+      valueBpm: 170,
+      recordedAt: new Date(startedAt.getTime() + 1_800_000),
+      provenance: {
+        duration_seconds: 1_800,
+        hr_coverage: 1,
+        supporting_output_coverage: 1,
+        maximum_gap_seconds: 1,
+        output_coefficient_of_variation: 0,
+        supporting_output_value: 250,
+      },
+    });
+  });
+
+  it("keeps missing output variability out of detected threshold provenance", async () => {
+    const startedAt = new Date("2026-07-31T10:00:00.000Z");
+    const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "threshold-window-without-output",
+      profileId: "threshold-profile-without-output",
+      refreshWeather: false,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "cycling" },
+        summary: { totalTime: 1_800, totalDistance: 15_000, avgHeartRate: 170 },
+        records: Array.from({ length: 1_801 }, (_, second) => ({
+          sessionMessageIndex: 0,
+          timestamp: new Date(startedAt.getTime() + second * 1_000),
+          heartRate: 170,
+        })),
+        segments: explicitBikeSegment(startedAt, 1_800),
+      },
+    });
+
+    expect(result.detectedLTHR?.provenance).not.toHaveProperty("output_coefficient_of_variation");
+  });
+
   it("persists valid zero decoupling while keeping unavailable evidence nullable", async () => {
     const fixture = AEROBIC_NUMERICAL_TRUST_FIXTURES_V1.validZeroDrift;
     const startedAt = new Date("2026-07-31T10:00:00.000Z");
@@ -992,7 +1051,7 @@ describe("analyzeParsedActivityFile", () => {
     expect(result.detectedLTHR).toBeNull();
   });
 
-  it("promotes a bike LTHR even when another activity category has a higher threshold", async () => {
+  it("does not promote a legacy 20-minute best-HR effort as calibration evidence", async () => {
     const startedAt = new Date("2026-01-01T10:00:00Z");
     const result = await analyzeParsedActivityFile(dbWithMetricResults([[], []]), {
       activityId: "bike-activity",
@@ -1005,21 +1064,7 @@ describe("analyzeParsedActivityFile", () => {
       },
     });
 
-    expect(result.detectedLTHR).toMatchObject({
-      valueBpm: 162,
-      recordedAt: new Date(startedAt.getTime() + 1_200_000),
-      calculationVersion: "activity-file-lthr-v1",
-      provenance: {
-        activity_id: "bike-activity",
-        segment_id: expect.any(String),
-        source_series: "heart_rate",
-        source_effort_calculation_version: "best-effort-extraction-v1",
-        exact_window_start_timestamp_seconds: startedAt.getTime() / 1_000,
-        exact_window_end_timestamp_seconds: startedAt.getTime() / 1_000 + 1_200,
-        duration_seconds: 1_200,
-        window_coverage: 1,
-      },
-    });
+    expect(result.detectedLTHR).toBeNull();
     expect(result.segmentSet.segments[0]?.summary).toMatchObject({
       heartRateDistribution: {
         coverageSeconds: 1200,
@@ -1037,7 +1082,7 @@ describe("analyzeParsedActivityFile", () => {
     );
   });
 
-  it("returns a detected LTHR below the latest prior same-category observation", async () => {
+  it("does not use a prior profile metric to authorize a short HR effort", async () => {
     const startedAt = new Date("2026-01-01T10:00:00Z");
     const db = dbWithMetricResults([
       [
@@ -1064,10 +1109,10 @@ describe("analyzeParsedActivityFile", () => {
       },
     });
 
-    expect(result.detectedLTHR?.valueBpm).toBe(165);
+    expect(result.detectedLTHR).toBeNull();
   });
 
-  it("does not let untrusted LTHR suppress trusted activity detection", async () => {
+  it("does not let an untrusted profile LTHR promote a short activity window", async () => {
     const startedAt = new Date("2026-01-01T10:00:00Z");
     const result = await analyzeParsedActivityFile(
       dbWithMetricResults([
@@ -1094,7 +1139,7 @@ describe("analyzeParsedActivityFile", () => {
       },
     );
 
-    expect(result.detectedLTHR?.valueBpm).toBe(162);
+    expect(result.detectedLTHR).toBeNull();
   });
 
   it("projects only complete owned pool-length evidence and single-swim parent fields", async () => {
@@ -1309,7 +1354,7 @@ describe("analyzeParsedActivityFile", () => {
     });
   });
 
-  it("does not let an activity suppress its own equal LTHR during reanalysis", async () => {
+  it("does not let an activity's legacy profile metric promote its own short window", async () => {
     const startedAt = new Date("2026-01-01T10:00:00Z");
     const result = await analyzeParsedActivityFile(
       dbWithMetricResults([
@@ -1339,6 +1384,6 @@ describe("analyzeParsedActivityFile", () => {
       },
     );
 
-    expect(result.detectedLTHR?.valueBpm).toBe(162);
+    expect(result.detectedLTHR).toBeNull();
   });
 });

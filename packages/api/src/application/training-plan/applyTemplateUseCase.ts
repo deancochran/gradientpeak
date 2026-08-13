@@ -39,7 +39,6 @@ type PlannedEventInsertRow = Pick<
   | "description"
   | "ends_at"
   | "event_type"
-  | "payload"
   | "profile_id"
   | "scheduled_date"
   | "starts_at"
@@ -268,15 +267,6 @@ export async function applyTrainingPlanTemplateUseCase(input: {
       status: "scheduled" as const,
       activity_plan_id: session.activity_plan_id,
       training_plan_id: appliedPlanId,
-      payload: {
-        training_plan_generation: {
-          application_mode: materializedApplication.applicationMode,
-          applied_start_date: materializedApplication.appliedPlanStartDate,
-          source_day_offset: session.source_day_offset,
-          source_path: session.source_path,
-          target_date: materializedApplication.targetDate,
-        },
-      },
     }));
 
   const schedule_batch_id = crypto.randomUUID();

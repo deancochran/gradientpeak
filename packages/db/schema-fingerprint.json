@@ -22,7 +22,7 @@
     },
     {
       "name": "event_type",
-      "values": ["planned", "race_target", "custom", "imported"]
+      "values": ["planned", "race_target", "custom"]
     },
     {
       "name": "evidence_observation_source",
@@ -63,6 +63,40 @@
       ]
     },
     {
+      "name": "onboarding_status",
+      "values": ["provider_selection", "processing", "review", "completed"]
+    },
+    {
+      "name": "performance_calibration_evidence_state",
+      "values": ["candidate", "rejected", "invalidated"]
+    },
+    {
+      "name": "performance_calibration_metric_key",
+      "values": ["threshold_power", "threshold_speed", "threshold_heart_rate"]
+    },
+    {
+      "name": "performance_calibration_rejection_reason",
+      "values": [
+        "metric_not_enabled",
+        "source_not_accepted",
+        "stream_coverage_insufficient",
+        "stream_gap_exceeded",
+        "output_variability_exceeded",
+        "supporting_threshold_unavailable",
+        "supporting_output_not_threshold_like",
+        "duration_insufficient",
+        "grade_coverage_insufficient",
+        "protocol_incomplete",
+        "model_history_insufficient",
+        "model_quality_insufficient",
+        "value_out_of_range"
+      ]
+    },
+    {
+      "name": "performance_calibration_source_semantics",
+      "values": ["measured", "derived"]
+    },
+    {
       "name": "profile_metric_type",
       "values": [
         "weight_kg",
@@ -75,8 +109,7 @@
         "stress_score",
         "soreness_level",
         "wellness_score",
-        "max_hr",
-        "lthr"
+        "max_hr"
       ]
     },
     {
@@ -95,6 +128,12 @@
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
       "name": "activities",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "activity_analysis_revisions",
       "forceRls": false
     },
     {
@@ -341,6 +380,30 @@
       "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "name": "organizations",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdxtm/postgres}",
+      "rls": true,
+      "name": "performance_calibration_evidence",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdxtm/postgres}",
+      "rls": true,
+      "name": "performance_calibration_model_inputs",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdxtm/postgres}",
+      "rls": true,
+      "name": "performance_calibration_selection_evidence",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdxtm/postgres}",
+      "rls": true,
+      "name": "performance_calibrations",
       "forceRls": false
     },
     {
@@ -986,13 +1049,23 @@
       "generated": ""
     },
     {
+      "name": "performance_target_snapshot",
+      "type": "jsonb",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 43,
+      "generated": ""
+    },
+    {
       "name": "athlete_state_common_load",
       "type": "numeric",
       "table": "activities",
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 43,
+      "position": 44,
       "generated": ""
     },
     {
@@ -1002,7 +1075,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 44,
+      "position": 45,
       "generated": ""
     },
     {
@@ -1012,7 +1085,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 45,
+      "position": 46,
       "generated": ""
     },
     {
@@ -1022,7 +1095,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 46,
+      "position": 47,
       "generated": ""
     },
     {
@@ -1032,7 +1105,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 47,
+      "position": 48,
       "generated": ""
     },
     {
@@ -1042,7 +1115,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 48,
+      "position": 49,
       "generated": ""
     },
     {
@@ -1052,7 +1125,137 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 49,
+      "position": 50,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "activity_analysis_revisions",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "activity_id",
+      "type": "uuid",
+      "table": "activity_analysis_revisions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "profile_id",
+      "type": "uuid",
+      "table": "activity_analysis_revisions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "revision",
+      "type": "integer",
+      "table": "activity_analysis_revisions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "source_segments_revision",
+      "type": "integer",
+      "table": "activity_analysis_revisions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "analysis_version",
+      "type": "text",
+      "table": "activity_analysis_revisions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "reason",
+      "type": "text",
+      "table": "activity_analysis_revisions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "performance_target_snapshot",
+      "type": "jsonb",
+      "table": "activity_analysis_revisions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "target_fingerprint",
+      "type": "text",
+      "table": "activity_analysis_revisions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "segment_load_projection",
+      "type": "jsonb",
+      "table": "activity_analysis_revisions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "output_fingerprint",
+      "type": "text",
+      "table": "activity_analysis_revisions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "computed_at",
+      "type": "timestamp with time zone",
+      "table": "activity_analysis_revisions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 12,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "activity_analysis_revisions",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 13,
       "generated": ""
     },
     {
@@ -3756,23 +3959,13 @@
       "generated": ""
     },
     {
-      "name": "read_only",
-      "type": "boolean",
-      "table": "events",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 15,
-      "generated": ""
-    },
-    {
       "name": "training_plan_id",
       "type": "uuid",
       "table": "events",
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 16,
+      "position": 15,
       "generated": ""
     },
     {
@@ -3782,7 +3975,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 17,
+      "position": 16,
       "generated": ""
     },
     {
@@ -3792,7 +3985,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 18,
+      "position": 17,
       "generated": ""
     },
     {
@@ -3802,7 +3995,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 19,
+      "position": 18,
       "generated": ""
     },
     {
@@ -3812,7 +4005,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 20,
+      "position": 19,
       "generated": ""
     },
     {
@@ -3822,7 +4015,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 21,
+      "position": 20,
       "generated": ""
     },
     {
@@ -3832,17 +4025,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 22,
-      "generated": ""
-    },
-    {
-      "name": "source_provider",
-      "type": "text",
-      "table": "events",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 23,
+      "position": 21,
       "generated": ""
     },
     {
@@ -3852,7 +4035,7 @@
       "default": "''::text",
       "notNull": true,
       "identity": "",
-      "position": 24,
+      "position": 22,
       "generated": ""
     },
     {
@@ -3862,37 +4045,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 25,
-      "generated": ""
-    },
-    {
-      "name": "integration_account_id",
-      "type": "uuid",
-      "table": "events",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 26,
-      "generated": ""
-    },
-    {
-      "name": "external_calendar_id",
-      "type": "text",
-      "table": "events",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 27,
-      "generated": ""
-    },
-    {
-      "name": "external_event_id",
-      "type": "text",
-      "table": "events",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 28,
+      "position": 23,
       "generated": ""
     },
     {
@@ -3902,37 +4055,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 29,
-      "generated": ""
-    },
-    {
-      "name": "lifecycle",
-      "type": "jsonb",
-      "table": "events",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 30,
-      "generated": ""
-    },
-    {
-      "name": "recurrence",
-      "type": "jsonb",
-      "table": "events",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 31,
-      "generated": ""
-    },
-    {
-      "name": "payload",
-      "type": "jsonb",
-      "table": "events",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 32,
+      "position": 24,
       "generated": ""
     },
     {
@@ -4009,7 +4132,7 @@
       "name": "status",
       "type": "text",
       "table": "group_event_rsvps",
-      "default": "'accepted'::text",
+      "default": "",
       "notNull": true,
       "identity": "",
       "position": 3,
@@ -4059,7 +4182,7 @@
       "name": "status",
       "type": "text",
       "table": "group_event_series_rsvps",
-      "default": "'accepted'::text",
+      "default": "",
       "notNull": true,
       "identity": "",
       "position": 3,
@@ -5546,6 +5669,526 @@
       "generated": ""
     },
     {
+      "name": "id",
+      "type": "uuid",
+      "table": "performance_calibration_evidence",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "profile_id",
+      "type": "uuid",
+      "table": "performance_calibration_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "metric_key",
+      "type": "performance_calibration_metric_key",
+      "table": "performance_calibration_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "activity_category",
+      "type": "text",
+      "table": "performance_calibration_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "value",
+      "type": "numeric",
+      "table": "performance_calibration_evidence",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "unit",
+      "type": "text",
+      "table": "performance_calibration_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "observed_at",
+      "type": "timestamp with time zone",
+      "table": "performance_calibration_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "activity_id",
+      "type": "uuid",
+      "table": "performance_calibration_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "segment_id",
+      "type": "uuid",
+      "table": "performance_calibration_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "segment_revision",
+      "type": "bigint",
+      "table": "performance_calibration_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "source_artifact_id",
+      "type": "uuid",
+      "table": "performance_calibration_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "state",
+      "type": "performance_calibration_evidence_state",
+      "table": "performance_calibration_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 12,
+      "generated": ""
+    },
+    {
+      "name": "rejection_reason",
+      "type": "performance_calibration_rejection_reason",
+      "table": "performance_calibration_evidence",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 13,
+      "generated": ""
+    },
+    {
+      "name": "policy_version",
+      "type": "text",
+      "table": "performance_calibration_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 14,
+      "generated": ""
+    },
+    {
+      "name": "source_semantics",
+      "type": "performance_calibration_source_semantics",
+      "table": "performance_calibration_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 15,
+      "generated": ""
+    },
+    {
+      "name": "diagnostics",
+      "type": "jsonb",
+      "table": "performance_calibration_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 16,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "performance_calibration_evidence",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 17,
+      "generated": ""
+    },
+    {
+      "name": "invalidated_at",
+      "type": "timestamp with time zone",
+      "table": "performance_calibration_evidence",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 18,
+      "generated": ""
+    },
+    {
+      "name": "invalidation_reason",
+      "type": "text",
+      "table": "performance_calibration_evidence",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 19,
+      "generated": ""
+    },
+    {
+      "name": "calibration_evidence_id",
+      "type": "uuid",
+      "table": "performance_calibration_model_inputs",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "effort_id",
+      "type": "uuid",
+      "table": "performance_calibration_model_inputs",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "profile_id",
+      "type": "uuid",
+      "table": "performance_calibration_model_inputs",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "metric_key",
+      "type": "performance_calibration_metric_key",
+      "table": "performance_calibration_model_inputs",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "activity_category",
+      "type": "text",
+      "table": "performance_calibration_model_inputs",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "activity_id",
+      "type": "uuid",
+      "table": "performance_calibration_model_inputs",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "segment_id",
+      "type": "uuid",
+      "table": "performance_calibration_model_inputs",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "segment_revision",
+      "type": "bigint",
+      "table": "performance_calibration_model_inputs",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "source_artifact_id",
+      "type": "uuid",
+      "table": "performance_calibration_model_inputs",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "source_artifact_digest",
+      "type": "text",
+      "table": "performance_calibration_model_inputs",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "observed_at",
+      "type": "timestamp with time zone",
+      "table": "performance_calibration_model_inputs",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "duration_seconds",
+      "type": "integer",
+      "table": "performance_calibration_model_inputs",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 12,
+      "generated": ""
+    },
+    {
+      "name": "value",
+      "type": "numeric",
+      "table": "performance_calibration_model_inputs",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 13,
+      "generated": ""
+    },
+    {
+      "name": "calculation_version",
+      "type": "text",
+      "table": "performance_calibration_model_inputs",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 14,
+      "generated": ""
+    },
+    {
+      "name": "ordinal",
+      "type": "integer",
+      "table": "performance_calibration_model_inputs",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 15,
+      "generated": ""
+    },
+    {
+      "name": "calibration_id",
+      "type": "uuid",
+      "table": "performance_calibration_selection_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "evidence_id",
+      "type": "uuid",
+      "table": "performance_calibration_selection_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "profile_id",
+      "type": "uuid",
+      "table": "performance_calibration_selection_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "metric_key",
+      "type": "performance_calibration_metric_key",
+      "table": "performance_calibration_selection_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "activity_category",
+      "type": "text",
+      "table": "performance_calibration_selection_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "ordinal",
+      "type": "integer",
+      "table": "performance_calibration_selection_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "performance_calibrations",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "profile_id",
+      "type": "uuid",
+      "table": "performance_calibrations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "metric_key",
+      "type": "performance_calibration_metric_key",
+      "table": "performance_calibrations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "activity_category",
+      "type": "text",
+      "table": "performance_calibrations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "value",
+      "type": "numeric",
+      "table": "performance_calibrations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "unit",
+      "type": "text",
+      "table": "performance_calibrations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "effective_at",
+      "type": "timestamp with time zone",
+      "table": "performance_calibrations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "expires_at",
+      "type": "timestamp with time zone",
+      "table": "performance_calibrations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "policy_version",
+      "type": "text",
+      "table": "performance_calibrations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "selection_diagnostics",
+      "type": "jsonb",
+      "table": "performance_calibrations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "supersedes_id",
+      "type": "uuid",
+      "table": "performance_calibrations",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "performance_calibrations",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 12,
+      "generated": ""
+    },
+    {
       "name": "profile_id",
       "type": "uuid",
       "table": "profile_athlete_state",
@@ -6266,11 +6909,11 @@
       "generated": ""
     },
     {
-      "name": "onboarded",
-      "type": "boolean",
+      "name": "onboarding_status",
+      "type": "onboarding_status",
       "table": "profiles",
-      "default": "",
-      "notNull": false,
+      "default": "'provider_selection'::onboarding_status",
+      "notNull": true,
       "identity": "",
       "position": 15,
       "generated": ""
@@ -7713,6 +8356,21 @@
       "definition": "CREATE INDEX idx_activities_started ON public.activities USING btree (started_at)"
     },
     {
+      "name": "activity_analysis_revisions_activity_revision_unique",
+      "table": "activity_analysis_revisions",
+      "definition": "CREATE UNIQUE INDEX activity_analysis_revisions_activity_revision_unique ON public.activity_analysis_revisions USING btree (activity_id, profile_id, revision)"
+    },
+    {
+      "name": "activity_analysis_revisions_pkey",
+      "table": "activity_analysis_revisions",
+      "definition": "CREATE UNIQUE INDEX activity_analysis_revisions_pkey ON public.activity_analysis_revisions USING btree (id)"
+    },
+    {
+      "name": "idx_activity_analysis_revisions_selection",
+      "table": "activity_analysis_revisions",
+      "definition": "CREATE INDEX idx_activity_analysis_revisions_selection ON public.activity_analysis_revisions USING btree (profile_id, activity_id, source_segments_revision, revision)"
+    },
+    {
       "name": "activity_artifact_links_activity_artifact_profile_unique",
       "table": "activity_artifact_links",
       "definition": "CREATE UNIQUE INDEX activity_artifact_links_activity_artifact_profile_unique ON public.activity_artifact_links USING btree (activity_id, artifact_id, profile_id)"
@@ -7726,11 +8384,6 @@
       "name": "activity_artifact_links_activity_role_ordinal_unique",
       "table": "activity_artifact_links",
       "definition": "CREATE UNIQUE INDEX activity_artifact_links_activity_role_ordinal_unique ON public.activity_artifact_links USING btree (activity_id, role, ordinal)"
-    },
-    {
-      "name": "activity_artifact_links_current_source_unique",
-      "table": "activity_artifact_links",
-      "definition": "CREATE UNIQUE INDEX activity_artifact_links_current_source_unique ON public.activity_artifact_links USING btree (activity_id) WHERE ((role = 'source'::text) AND (is_current = true))"
     },
     {
       "name": "activity_artifact_links_pkey",
@@ -8228,16 +8881,6 @@
       "definition": "CREATE INDEX idx_events_event_type_starts_at ON public.events USING btree (event_type, starts_at)"
     },
     {
-      "name": "idx_events_external_identity_unique",
-      "table": "events",
-      "definition": "CREATE UNIQUE INDEX idx_events_external_identity_unique ON public.events USING btree (source_provider, integration_account_id, external_calendar_id, external_event_id, occurrence_key) WHERE ((source_provider IS NOT NULL) AND (integration_account_id IS NOT NULL) AND (external_calendar_id IS NOT NULL) AND (external_event_id IS NOT NULL))"
-    },
-    {
-      "name": "idx_events_integration_calendar_updated",
-      "table": "events",
-      "definition": "CREATE INDEX idx_events_integration_calendar_updated ON public.events USING btree (integration_account_id, external_calendar_id, updated_at) WHERE ((integration_account_id IS NOT NULL) AND (external_calendar_id IS NOT NULL))"
-    },
-    {
       "name": "idx_events_linked_activity_id",
       "table": "events",
       "definition": "CREATE INDEX idx_events_linked_activity_id ON public.events USING btree (linked_activity_id) WHERE (linked_activity_id IS NOT NULL)"
@@ -8563,6 +9206,11 @@
       "definition": "CREATE UNIQUE INDEX oauth_states_pkey ON public.oauth_states USING btree (id)"
     },
     {
+      "name": "oauth_states_state_unique",
+      "table": "oauth_states",
+      "definition": "CREATE UNIQUE INDEX oauth_states_state_unique ON public.oauth_states USING btree (state)"
+    },
+    {
       "name": "organization_audit_events_actor_identity_fkey_idx",
       "table": "organization_audit_events",
       "definition": "CREATE INDEX organization_audit_events_actor_identity_fkey_idx ON public.organization_audit_events USING btree (organization_id, actor_membership_id, actor_profile_id)"
@@ -8651,6 +9299,96 @@
       "name": "organizations_slug_unique_idx",
       "table": "organizations",
       "definition": "CREATE UNIQUE INDEX organizations_slug_unique_idx ON public.organizations USING btree (slug)"
+    },
+    {
+      "name": "performance_calibration_evidence_current_profile_identity_obser",
+      "table": "performance_calibration_evidence",
+      "definition": "CREATE INDEX performance_calibration_evidence_current_profile_identity_obser ON public.performance_calibration_evidence USING btree (profile_id, metric_key, activity_category, observed_at DESC NULLS LAST) WHERE ((state = 'candidate'::performance_calibration_evidence_state) AND (invalidated_at IS NULL))"
+    },
+    {
+      "name": "performance_calibration_evidence_identity_unique",
+      "table": "performance_calibration_evidence",
+      "definition": "CREATE UNIQUE INDEX performance_calibration_evidence_identity_unique ON public.performance_calibration_evidence USING btree (id, profile_id, metric_key, activity_category)"
+    },
+    {
+      "name": "performance_calibration_evidence_pkey",
+      "table": "performance_calibration_evidence",
+      "definition": "CREATE UNIQUE INDEX performance_calibration_evidence_pkey ON public.performance_calibration_evidence USING btree (id)"
+    },
+    {
+      "name": "performance_calibration_evidence_source_policy_unique",
+      "table": "performance_calibration_evidence",
+      "definition": "CREATE UNIQUE INDEX performance_calibration_evidence_source_policy_unique ON public.performance_calibration_evidence USING btree (activity_id, segment_id, segment_revision, source_artifact_id, metric_key, policy_version)"
+    },
+    {
+      "name": "performance_calibration_evidence_source_revision_idx",
+      "table": "performance_calibration_evidence",
+      "definition": "CREATE INDEX performance_calibration_evidence_source_revision_idx ON public.performance_calibration_evidence USING btree (activity_id, segment_id, segment_revision)"
+    },
+    {
+      "name": "performance_calibration_model_inputs_activity_revision_idx",
+      "table": "performance_calibration_model_inputs",
+      "definition": "CREATE INDEX performance_calibration_model_inputs_activity_revision_idx ON public.performance_calibration_model_inputs USING btree (activity_id, segment_id, segment_revision)"
+    },
+    {
+      "name": "performance_calibration_model_inputs_calibration_evidence_id_ef",
+      "table": "performance_calibration_model_inputs",
+      "definition": "CREATE UNIQUE INDEX performance_calibration_model_inputs_calibration_evidence_id_ef ON public.performance_calibration_model_inputs USING btree (calibration_evidence_id, effort_id)"
+    },
+    {
+      "name": "performance_calibration_model_inputs_evidence_ordinal_unique",
+      "table": "performance_calibration_model_inputs",
+      "definition": "CREATE UNIQUE INDEX performance_calibration_model_inputs_evidence_ordinal_unique ON public.performance_calibration_model_inputs USING btree (calibration_evidence_id, ordinal)"
+    },
+    {
+      "name": "performance_calibration_model_inputs_source_artifact_idx",
+      "table": "performance_calibration_model_inputs",
+      "definition": "CREATE INDEX performance_calibration_model_inputs_source_artifact_idx ON public.performance_calibration_model_inputs USING btree (source_artifact_id)"
+    },
+    {
+      "name": "performance_calibration_selection_evidence_calibration_id_evide",
+      "table": "performance_calibration_selection_evidence",
+      "definition": "CREATE UNIQUE INDEX performance_calibration_selection_evidence_calibration_id_evide ON public.performance_calibration_selection_evidence USING btree (calibration_id, evidence_id)"
+    },
+    {
+      "name": "performance_calibration_selection_evidence_calibration_ordinal_",
+      "table": "performance_calibration_selection_evidence",
+      "definition": "CREATE UNIQUE INDEX performance_calibration_selection_evidence_calibration_ordinal_ ON public.performance_calibration_selection_evidence USING btree (calibration_id, ordinal)"
+    },
+    {
+      "name": "performance_calibration_selection_evidence_evidence_idx",
+      "table": "performance_calibration_selection_evidence",
+      "definition": "CREATE INDEX performance_calibration_selection_evidence_evidence_idx ON public.performance_calibration_selection_evidence USING btree (evidence_id, profile_id, metric_key, activity_category, calibration_id)"
+    },
+    {
+      "name": "performance_calibrations_due_idx",
+      "table": "performance_calibrations",
+      "definition": "CREATE INDEX performance_calibrations_due_idx ON public.performance_calibrations USING btree (profile_id, expires_at)"
+    },
+    {
+      "name": "performance_calibrations_identity_unique",
+      "table": "performance_calibrations",
+      "definition": "CREATE UNIQUE INDEX performance_calibrations_identity_unique ON public.performance_calibrations USING btree (id, profile_id, metric_key, activity_category)"
+    },
+    {
+      "name": "performance_calibrations_pkey",
+      "table": "performance_calibrations",
+      "definition": "CREATE UNIQUE INDEX performance_calibrations_pkey ON public.performance_calibrations USING btree (id)"
+    },
+    {
+      "name": "performance_calibrations_profile_identity_effective_idx",
+      "table": "performance_calibrations",
+      "definition": "CREATE INDEX performance_calibrations_profile_identity_effective_idx ON public.performance_calibrations USING btree (profile_id, metric_key, activity_category, effective_at DESC NULLS LAST)"
+    },
+    {
+      "name": "performance_calibrations_supersedes_idx",
+      "table": "performance_calibrations",
+      "definition": "CREATE INDEX performance_calibrations_supersedes_idx ON public.performance_calibrations USING btree (supersedes_id) WHERE (supersedes_id IS NOT NULL)"
+    },
+    {
+      "name": "performance_calibrations_supersedes_unique",
+      "table": "performance_calibrations",
+      "definition": "CREATE UNIQUE INDEX performance_calibrations_supersedes_unique ON public.performance_calibrations USING btree (supersedes_id)"
     },
     {
       "name": "profile_athlete_state_claim_idx",
@@ -8947,10 +9685,22 @@
       "definition": "CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user()"
     },
     {
+      "name": "activities_performance_target_snapshot_immutable",
+      "table": "activities",
+      "schema": "public",
+      "definition": "CREATE TRIGGER activities_performance_target_snapshot_immutable BEFORE UPDATE OF performance_target_snapshot ON activities FOR EACH ROW EXECUTE FUNCTION reject_activity_performance_target_snapshot_mutation()"
+    },
+    {
       "name": "activities_validate_segment_set",
       "table": "activities",
       "schema": "public",
       "definition": "CREATE CONSTRAINT TRIGGER activities_validate_segment_set AFTER INSERT OR UPDATE ON activities DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION activity_parent_segment_set_constraint_trigger()"
+    },
+    {
+      "name": "activity_analysis_revisions_immutable",
+      "table": "activity_analysis_revisions",
+      "schema": "public",
+      "definition": "CREATE TRIGGER activity_analysis_revisions_immutable BEFORE INSERT OR DELETE OR UPDATE ON activity_analysis_revisions FOR EACH ROW EXECUTE FUNCTION enforce_activity_analysis_revision_immutability()"
     },
     {
       "name": "activity_artifacts_block_direct_delete",
@@ -9089,6 +9839,72 @@
       "table": "organizations",
       "schema": "public",
       "definition": "CREATE TRIGGER organizations_root_owner_transfer_command_guard BEFORE UPDATE OF root_owner_membership_id ON organizations FOR EACH ROW EXECUTE FUNCTION guard_organization_root_owner_transfer()"
+    },
+    {
+      "name": "performance_calibration_evidence_history_guard",
+      "table": "performance_calibration_evidence",
+      "schema": "public",
+      "definition": "CREATE TRIGGER performance_calibration_evidence_history_guard BEFORE INSERT OR DELETE OR UPDATE ON performance_calibration_evidence FOR EACH ROW EXECUTE FUNCTION guard_performance_calibration_evidence_history()"
+    },
+    {
+      "name": "performance_calibration_evidence_model_inputs_guard",
+      "table": "performance_calibration_evidence",
+      "schema": "public",
+      "definition": "CREATE CONSTRAINT TRIGGER performance_calibration_evidence_model_inputs_guard AFTER INSERT ON performance_calibration_evidence DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_performance_calibration_model_inputs()"
+    },
+    {
+      "name": "performance_calibration_model_inputs_append_only",
+      "table": "performance_calibration_model_inputs",
+      "schema": "public",
+      "definition": "CREATE TRIGGER performance_calibration_model_inputs_append_only BEFORE DELETE OR UPDATE ON performance_calibration_model_inputs FOR EACH ROW EXECUTE FUNCTION guard_performance_calibration_append_only()"
+    },
+    {
+      "name": "performance_calibration_model_inputs_complete_guard",
+      "table": "performance_calibration_model_inputs",
+      "schema": "public",
+      "definition": "CREATE CONSTRAINT TRIGGER performance_calibration_model_inputs_complete_guard AFTER INSERT ON performance_calibration_model_inputs DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_performance_calibration_model_inputs()"
+    },
+    {
+      "name": "performance_calibration_model_inputs_insert_guard",
+      "table": "performance_calibration_model_inputs",
+      "schema": "public",
+      "definition": "CREATE TRIGGER performance_calibration_model_inputs_insert_guard BEFORE INSERT ON performance_calibration_model_inputs FOR EACH ROW EXECUTE FUNCTION guard_performance_calibration_model_input_insert()"
+    },
+    {
+      "name": "performance_calibration_selection_append_only",
+      "table": "performance_calibration_selection_evidence",
+      "schema": "public",
+      "definition": "CREATE TRIGGER performance_calibration_selection_append_only BEFORE DELETE OR UPDATE ON performance_calibration_selection_evidence FOR EACH ROW EXECUTE FUNCTION guard_performance_calibration_append_only()"
+    },
+    {
+      "name": "performance_calibration_selection_history_guard",
+      "table": "performance_calibration_selection_evidence",
+      "schema": "public",
+      "definition": "CREATE CONSTRAINT TRIGGER performance_calibration_selection_history_guard AFTER INSERT ON performance_calibration_selection_evidence DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_performance_calibration_selection()"
+    },
+    {
+      "name": "performance_calibration_selection_insert_guard",
+      "table": "performance_calibration_selection_evidence",
+      "schema": "public",
+      "definition": "CREATE TRIGGER performance_calibration_selection_insert_guard BEFORE INSERT ON performance_calibration_selection_evidence FOR EACH ROW EXECUTE FUNCTION guard_performance_calibration_selection_insert()"
+    },
+    {
+      "name": "performance_calibrations_append_only",
+      "table": "performance_calibrations",
+      "schema": "public",
+      "definition": "CREATE TRIGGER performance_calibrations_append_only BEFORE DELETE OR UPDATE ON performance_calibrations FOR EACH ROW EXECUTE FUNCTION guard_performance_calibration_append_only()"
+    },
+    {
+      "name": "performance_calibrations_insert_guard",
+      "table": "performance_calibrations",
+      "schema": "public",
+      "definition": "CREATE TRIGGER performance_calibrations_insert_guard BEFORE INSERT ON performance_calibrations FOR EACH ROW EXECUTE FUNCTION guard_performance_calibration_insert()"
+    },
+    {
+      "name": "performance_calibrations_selection_guard",
+      "table": "performance_calibrations",
+      "schema": "public",
+      "definition": "CREATE CONSTRAINT TRIGGER performance_calibrations_selection_guard AFTER INSERT ON performance_calibrations DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_performance_calibration_selection()"
     }
   ],
   "functions": [
@@ -9239,6 +10055,15 @@
     {
       "acl": "",
       "config": ["search_path=\"\""],
+      "identity": "enforce_activity_analysis_revision_immutability()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.enforce_activity_analysis_revision_immutability()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\ndeclare\n  current_segments_revision integer;\nbegin\n  if TG_OP = 'INSERT' then\n    select activity.segments_revision\n    into current_segments_revision\n    from public.activities activity\n    where activity.id = new.activity_id\n      and activity.profile_id = new.profile_id;\n    if current_segments_revision is null\n       or current_segments_revision <> new.source_segments_revision then\n      raise exception 'activity analysis revision must match the owned current segment revision';\n    end if;\n    return new;\n  end if;\n  if TG_OP = 'DELETE'\n     and not exists (\n       select 1 from public.activities activity\n       where activity.id = old.activity_id and activity.profile_id = old.profile_id\n     ) then\n    return old;\n  end if;\n  raise exception 'activity analysis revisions are append-only';\nend;\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=\"\""],
       "identity": "enforce_activity_artifact_immutable()",
       "language": "plpgsql",
       "definition": "CREATE OR REPLACE FUNCTION public.enforce_activity_artifact_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\ndeclare lifecycle_owner name;\nbegin\n  if row(new.profile_id, new.digest_algorithm, new.digest, new.byte_size, new.bucket, new.path,\n         new.media_type, new.format, new.original_name, new.first_accepted_at)\n     is distinct from\n     row(old.profile_id, old.digest_algorithm, old.digest, old.byte_size, old.bucket, old.path,\n         old.media_type, old.format, old.original_name, old.first_accepted_at) then\n    raise exception 'accepted activity artifact byte identity is immutable';\n  end if;\n  if new.availability is distinct from old.availability then\n    select pg_catalog.pg_get_userbyid(procedure.proowner) into lifecycle_owner\n    from pg_catalog.pg_proc as procedure\n    where procedure.oid=pg_catalog.to_regprocedure('public.enforce_activity_artifact_immutable()');\n    if current_user is distinct from lifecycle_owner\n      or current_setting('gradientpeak.artifact_lifecycle_authorized',true) is distinct from 'on' then\n      raise exception 'activity artifact lifecycle requires authorized service workflow';\n    end if;\n    if not ((old.availability='accepted' and new.availability='deletion_pending')\n      or (old.availability='deletion_pending' and new.availability='deleted')) then\n      raise exception 'invalid activity artifact lifecycle transition';\n    end if;\n  end if;\n  return new;\nend $function$\n",
@@ -9282,6 +10107,51 @@
       "securityDefiner": false
     },
     {
+      "acl": "",
+      "config": ["search_path=pg_catalog, public"],
+      "identity": "guard_performance_calibration_append_only()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_performance_calibration_append_only()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nBEGIN\n  IF TG_OP = 'UPDATE' THEN\n    RAISE EXCEPTION 'calibration provenance is append-only'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibration_provenance_append_only';\n  END IF;\n  IF EXISTS (SELECT 1 FROM public.profiles WHERE id = OLD.profile_id) THEN\n    RAISE EXCEPTION 'calibration provenance cannot be deleted while its profile exists'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibration_provenance_retained';\n  END IF;\n  RETURN OLD;\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog, public"],
+      "identity": "guard_performance_calibration_evidence_history()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_performance_calibration_evidence_history()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nBEGIN\n  IF TG_OP = 'INSERT' THEN\n    IF NOT EXISTS (\n      SELECT 1\n      FROM public.activities AS activity\n      JOIN public.activity_segments AS segment\n        ON segment.id = NEW.segment_id\n       AND segment.activity_id = NEW.activity_id\n       AND segment.profile_id = NEW.profile_id\n       AND segment.activity_category = NEW.activity_category\n       AND segment.segment_revision = NEW.segment_revision\n       AND segment.source_artifact_id = NEW.source_artifact_id\n      JOIN public.activity_artifact_links AS source_link\n        ON source_link.activity_id = NEW.activity_id\n       AND source_link.artifact_id = NEW.source_artifact_id\n       AND source_link.profile_id = NEW.profile_id\n       AND source_link.role = 'source'\n       AND source_link.is_current = true\n      JOIN public.activity_artifacts AS artifact\n        ON artifact.id = NEW.source_artifact_id\n       AND artifact.profile_id = NEW.profile_id\n       AND artifact.availability = 'accepted'\n      WHERE activity.id = NEW.activity_id\n        AND activity.profile_id = NEW.profile_id\n        AND activity.segments_revision = NEW.segment_revision\n        AND activity.finished_at = NEW.observed_at\n        AND activity.finished_at <= pg_catalog.statement_timestamp()\n    ) THEN\n      RAISE EXCEPTION 'calibration evidence source is not the exact accepted current segment revision'\n        USING ERRCODE = '23514',\n          CONSTRAINT = 'performance_calibration_evidence_source_integrity';\n    END IF;\n    NEW.created_at := pg_catalog.statement_timestamp();\n    RETURN NEW;\n  END IF;\n\n  IF TG_OP = 'UPDATE' THEN\n    IF OLD.state <> 'candidate'\n      OR NEW.state <> 'invalidated'\n      OR NEW.invalidation_reason IS NULL\n      OR pg_catalog.btrim(NEW.invalidation_reason) = ''\n      OR (to_jsonb(NEW) - ARRAY['state', 'invalidated_at', 'invalidation_reason']::text[])\n         IS DISTINCT FROM\n         (to_jsonb(OLD) - ARRAY['state', 'invalidated_at', 'invalidation_reason']::text[])\n    THEN\n      RAISE EXCEPTION 'calibration evidence is immutable except for candidate invalidation'\n        USING ERRCODE = '23514',\n          CONSTRAINT = 'performance_calibration_evidence_invalidation_only';\n    END IF;\n    NEW.invalidated_at := pg_catalog.statement_timestamp();\n    RETURN NEW;\n  END IF;\n\n  IF EXISTS (SELECT 1 FROM public.profiles WHERE id = OLD.profile_id) THEN\n    RAISE EXCEPTION 'calibration evidence history cannot be deleted while its profile exists'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibration_evidence_retained';\n  END IF;\n  RETURN OLD;\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog, public"],
+      "identity": "guard_performance_calibration_insert()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_performance_calibration_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE\n  prior public.performance_calibrations%ROWTYPE;\nBEGIN\n  NEW.created_at := pg_catalog.statement_timestamp();\n  IF NEW.effective_at > NEW.created_at THEN\n    RAISE EXCEPTION 'calibration effective_at cannot be in the future'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibrations_not_future';\n  END IF;\n\n  IF NEW.supersedes_id IS NULL THEN\n    IF EXISTS (\n      SELECT 1\n      FROM public.performance_calibrations AS existing\n      WHERE existing.profile_id = NEW.profile_id\n        AND existing.metric_key = NEW.metric_key\n        AND existing.activity_category = NEW.activity_category\n    ) THEN\n      RAISE EXCEPTION 'calibration history requires an exact supersession edge'\n        USING ERRCODE = '23514',\n          CONSTRAINT = 'performance_calibrations_linear_history';\n    END IF;\n  ELSE\n    SELECT existing.*\n    INTO prior\n    FROM public.performance_calibrations AS existing\n    WHERE existing.id = NEW.supersedes_id\n      AND existing.profile_id = NEW.profile_id\n      AND existing.metric_key = NEW.metric_key\n      AND existing.activity_category = NEW.activity_category;\n    IF NOT FOUND OR NEW.effective_at < prior.effective_at THEN\n      RAISE EXCEPTION 'calibration supersession is cross-identity or backdated'\n        USING ERRCODE = '23514',\n          CONSTRAINT = 'performance_calibrations_supersession_order';\n    END IF;\n    IF EXISTS (\n      SELECT 1\n      FROM public.performance_calibrations AS existing\n      WHERE existing.profile_id = NEW.profile_id\n        AND existing.metric_key = NEW.metric_key\n        AND existing.activity_category = NEW.activity_category\n        AND (existing.effective_at, existing.created_at, existing.id)\n          > (prior.effective_at, prior.created_at, prior.id)\n    ) THEN\n      RAISE EXCEPTION 'calibration must supersede the latest history row'\n        USING ERRCODE = '23514',\n          CONSTRAINT = 'performance_calibrations_latest_supersession';\n    END IF;\n  END IF;\n  RETURN NEW;\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog, public"],
+      "identity": "guard_performance_calibration_model_input_insert()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_performance_calibration_model_input_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE\n  evidence_observed_at timestamptz;\nBEGIN\n  SELECT evidence.observed_at\n  INTO evidence_observed_at\n  FROM public.performance_calibration_evidence AS evidence\n  WHERE evidence.id = NEW.calibration_evidence_id\n    AND evidence.profile_id = NEW.profile_id\n    AND evidence.metric_key = NEW.metric_key\n    AND evidence.activity_category = NEW.activity_category;\n  IF NOT FOUND OR NEW.observed_at > evidence_observed_at THEN\n    RAISE EXCEPTION 'calibration model input is outside its evidence model run'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibration_model_inputs_evidence_time';\n  END IF;\n\n  IF NOT EXISTS (\n    SELECT 1\n    FROM public.activities AS activity\n    JOIN public.activity_segments AS segment\n      ON segment.id = NEW.segment_id\n     AND segment.activity_id = NEW.activity_id\n     AND segment.profile_id = NEW.profile_id\n     AND segment.activity_category = 'bike'\n     AND segment.segment_revision = NEW.segment_revision\n     AND segment.source_artifact_id = NEW.source_artifact_id\n    JOIN public.activity_efforts AS effort\n      ON effort.id = NEW.effort_id\n     AND effort.activity_id = NEW.activity_id\n     AND effort.segment_id = NEW.segment_id\n     AND effort.profile_id = NEW.profile_id\n     AND effort.activity_category = 'bike'\n     AND effort.effort_type = 'power'\n     AND effort.recorded_at = NEW.observed_at\n     AND effort.duration_seconds = NEW.duration_seconds\n     AND pg_catalog.abs(effort.value::double precision - NEW.value::double precision)\n       <= greatest(\n         0.000001::double precision,\n         pg_catalog.abs(effort.value::double precision) * 0.000005::double precision\n       )\n     AND effort.calculation_version = NEW.calculation_version\n    JOIN public.activity_artifact_links AS source_link\n      ON source_link.activity_id = NEW.activity_id\n     AND source_link.artifact_id = NEW.source_artifact_id\n     AND source_link.profile_id = NEW.profile_id\n     AND source_link.role = 'source'\n     AND source_link.is_current = true\n    JOIN public.activity_artifacts AS artifact\n      ON artifact.id = NEW.source_artifact_id\n     AND artifact.profile_id = NEW.profile_id\n     AND artifact.digest = NEW.source_artifact_digest\n     AND artifact.availability = 'accepted'\n    WHERE activity.id = NEW.activity_id\n      AND activity.profile_id = NEW.profile_id\n      AND activity.segments_revision = NEW.segment_revision\n      AND activity.finished_at <= evidence_observed_at\n  ) THEN\n    RAISE EXCEPTION 'calibration model input is not an exact accepted current source effort'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibration_model_inputs_source_integrity';\n  END IF;\n  RETURN NEW;\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog, public"],
+      "identity": "guard_performance_calibration_selection_insert()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_performance_calibration_selection_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE\n  evidence_state public.performance_calibration_evidence_state;\n  evidence_observed_at timestamptz;\n  calibration_effective_at timestamptz;\nBEGIN\n  SELECT evidence.state, evidence.observed_at, calibration.effective_at\n  INTO evidence_state, evidence_observed_at, calibration_effective_at\n  FROM public.performance_calibration_evidence AS evidence\n  JOIN public.activities AS activity\n    ON activity.id = evidence.activity_id\n   AND activity.profile_id = evidence.profile_id\n   AND activity.finished_at = evidence.observed_at\n  JOIN public.activity_segments AS segment\n    ON segment.id = evidence.segment_id\n   AND segment.activity_id = evidence.activity_id\n   AND segment.profile_id = evidence.profile_id\n   AND segment.activity_category = evidence.activity_category\n   AND segment.segment_revision = evidence.segment_revision\n   AND segment.segment_revision = activity.segments_revision\n   AND segment.source_artifact_id = evidence.source_artifact_id\n  JOIN public.activity_artifact_links AS source_link\n    ON source_link.activity_id = evidence.activity_id\n   AND source_link.artifact_id = evidence.source_artifact_id\n   AND source_link.profile_id = evidence.profile_id\n   AND source_link.role = 'source'\n   AND source_link.is_current = true\n  JOIN public.activity_artifacts AS artifact\n    ON artifact.id = evidence.source_artifact_id\n   AND artifact.profile_id = evidence.profile_id\n   AND artifact.availability = 'accepted'\n  JOIN public.performance_calibrations AS calibration\n    ON calibration.id = NEW.calibration_id\n   AND calibration.profile_id = NEW.profile_id\n   AND calibration.metric_key = NEW.metric_key\n   AND calibration.activity_category = NEW.activity_category\n  WHERE evidence.id = NEW.evidence_id\n    AND evidence.profile_id = NEW.profile_id\n    AND evidence.metric_key = NEW.metric_key\n    AND evidence.activity_category = NEW.activity_category\n    AND evidence.policy_version = calibration.policy_version\n    AND public.performance_calibration_evidence_is_current(evidence.id)\n    AND NOT EXISTS (\n      SELECT 1\n      FROM public.performance_calibration_model_inputs AS model_input\n      WHERE model_input.calibration_evidence_id = evidence.id\n        AND NOT EXISTS (\n          SELECT 1\n          FROM public.activities AS model_activity\n          JOIN public.activity_segments AS model_segment\n            ON model_segment.id = model_input.segment_id\n           AND model_segment.activity_id = model_input.activity_id\n           AND model_segment.profile_id = model_input.profile_id\n           AND model_segment.segment_revision = model_input.segment_revision\n           AND model_segment.segment_revision = model_activity.segments_revision\n           AND model_segment.source_artifact_id = model_input.source_artifact_id\n          JOIN public.activity_efforts AS model_effort\n            ON model_effort.id = model_input.effort_id\n           AND model_effort.activity_id = model_input.activity_id\n           AND model_effort.segment_id = model_input.segment_id\n           AND model_effort.profile_id = model_input.profile_id\n          JOIN public.activity_artifact_links AS model_source_link\n            ON model_source_link.activity_id = model_input.activity_id\n           AND model_source_link.artifact_id = model_input.source_artifact_id\n           AND model_source_link.profile_id = model_input.profile_id\n           AND model_source_link.role = 'source'\n           AND model_source_link.is_current = true\n          JOIN public.activity_artifacts AS model_artifact\n            ON model_artifact.id = model_input.source_artifact_id\n           AND model_artifact.profile_id = model_input.profile_id\n           AND model_artifact.digest = model_input.source_artifact_digest\n           AND model_artifact.availability = 'accepted'\n          WHERE model_activity.id = model_input.activity_id\n            AND model_activity.profile_id = model_input.profile_id\n        )\n    );\n  IF NOT FOUND\n    OR evidence_state <> 'candidate'\n    OR evidence_observed_at > calibration_effective_at\n  THEN\n    RAISE EXCEPTION 'calibration selection must cite qualifying same-identity evidence as of effectiveness'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibration_selection_source_integrity';\n  END IF;\n  RETURN NEW;\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
       "acl": "{postgres=X/postgres}",
       "config": ["search_path=\"\""],
       "identity": "handle_new_user()",
@@ -9289,6 +10159,24 @@
       "definition": "CREATE OR REPLACE FUNCTION public.handle_new_user()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n    full_name text;\n    user_email text;\n    base_username text;\n    unique_suffix text;\n    final_username text;\nbegin\n    full_name := nullif(btrim(coalesce(\n        new.raw_user_meta_data->>'full_name',\n        new.raw_user_meta_data->>'name',\n        concat_ws(' ',\n            new.raw_user_meta_data->>'first_name',\n            new.raw_user_meta_data->>'last_name'\n        )\n    )), '');\n\n    user_email := coalesce(\n        nullif(new.email, ''),\n        nullif(new.raw_user_meta_data->>'email', ''),\n        new.id::text || '@users.local'\n    );\n\n    base_username := coalesce(\n        nullif(concat_ws('',\n            new.raw_user_meta_data->>'first_name',\n            new.raw_user_meta_data->>'last_name'\n        ), ''),\n        split_part(user_email, '@', 1),\n        'user'\n    );\n\n    unique_suffix := substring(replace(new.id::text, '-', '') from 1 for 6);\n    final_username := left(base_username || unique_suffix, 50);\n\n    insert into public.users (id, name, email, email_verified, image)\n    values (\n        new.id,\n        coalesce(full_name, split_part(user_email, '@', 1), 'User'),\n        user_email,\n        coalesce(new.email_confirmed_at is not null, false),\n        new.raw_user_meta_data->>'avatar_url'\n    )\n    on conflict (id) do update\n    set\n        name = coalesce(public.users.name, excluded.name),\n        email = coalesce(public.users.email, excluded.email),\n        image = coalesce(public.users.image, excluded.image),\n        updated_at = now();\n\n    insert into public.profiles (id, email, full_name, username, avatar_url)\n    values (\n        new.id,\n        new.email,\n        full_name,\n        final_username,\n        new.raw_user_meta_data->>'avatar_url'\n    )\n    on conflict (id) do update\n    set\n        email = coalesce(public.profiles.email, excluded.email),\n        full_name = coalesce(public.profiles.full_name, excluded.full_name),\n        username = coalesce(public.profiles.username, excluded.username),\n        avatar_url = coalesce(public.profiles.avatar_url, excluded.avatar_url),\n        updated_at = now();\n\n    return new;\nend;\n$function$\n",
       "volatility": "v",
       "securityDefiner": true
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": ["search_path=pg_catalog, public"],
+      "identity": "performance_calibration_evidence_is_current(uuid)",
+      "language": "sql",
+      "definition": "CREATE OR REPLACE FUNCTION public.performance_calibration_evidence_is_current(target_evidence_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\n  SELECT EXISTS (\n    SELECT 1\n    FROM public.performance_calibration_evidence AS evidence\n    JOIN public.activities AS activity\n      ON activity.id = evidence.activity_id\n     AND activity.profile_id = evidence.profile_id\n     AND activity.finished_at = evidence.observed_at\n    JOIN public.activity_segments AS segment\n      ON segment.id = evidence.segment_id\n     AND segment.activity_id = evidence.activity_id\n     AND segment.profile_id = evidence.profile_id\n     AND segment.activity_category = evidence.activity_category\n     AND segment.segment_revision = evidence.segment_revision\n     AND segment.segment_revision = activity.segments_revision\n     AND segment.source_artifact_id = evidence.source_artifact_id\n    JOIN public.activity_artifact_links AS source_link\n      ON source_link.activity_id = evidence.activity_id\n     AND source_link.artifact_id = evidence.source_artifact_id\n     AND source_link.profile_id = evidence.profile_id\n     AND source_link.role = 'source'\n     AND source_link.is_current = true\n    JOIN public.activity_artifacts AS artifact\n      ON artifact.id = evidence.source_artifact_id\n     AND artifact.profile_id = evidence.profile_id\n     AND artifact.availability = 'accepted'\n    WHERE evidence.id = target_evidence_id\n      AND evidence.state = 'candidate'\n      AND evidence.invalidated_at IS NULL\n      AND NOT EXISTS (\n        SELECT 1\n        FROM public.performance_calibration_model_inputs AS model_input\n        WHERE model_input.calibration_evidence_id = evidence.id\n          AND NOT EXISTS (\n            SELECT 1\n            FROM public.activities AS model_activity\n            JOIN public.activity_segments AS model_segment\n              ON model_segment.id = model_input.segment_id\n             AND model_segment.activity_id = model_input.activity_id\n             AND model_segment.profile_id = model_input.profile_id\n             AND model_segment.segment_revision = model_input.segment_revision\n             AND model_segment.segment_revision = model_activity.segments_revision\n             AND model_segment.source_artifact_id = model_input.source_artifact_id\n            JOIN public.activity_efforts AS model_effort\n              ON model_effort.id = model_input.effort_id\n             AND model_effort.activity_id = model_input.activity_id\n             AND model_effort.segment_id = model_input.segment_id\n             AND model_effort.profile_id = model_input.profile_id\n            JOIN public.activity_artifact_links AS model_source_link\n              ON model_source_link.activity_id = model_input.activity_id\n             AND model_source_link.artifact_id = model_input.source_artifact_id\n             AND model_source_link.profile_id = model_input.profile_id\n             AND model_source_link.role = 'source'\n             AND model_source_link.is_current = true\n            JOIN public.activity_artifacts AS model_artifact\n              ON model_artifact.id = model_input.source_artifact_id\n             AND model_artifact.profile_id = model_input.profile_id\n             AND model_artifact.digest = model_input.source_artifact_digest\n             AND model_artifact.availability = 'accepted'\n            WHERE model_activity.id = model_input.activity_id\n              AND model_activity.profile_id = model_input.profile_id\n          )\n      )\n  )\n$function$\n",
+      "volatility": "s",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "performance_calibration_lifecycle_policy()",
+      "language": "sql",
+      "definition": "CREATE OR REPLACE FUNCTION public.performance_calibration_lifecycle_policy()\n RETURNS jsonb\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'pg_catalog'\nAS $function$\n  SELECT '{\n    \"expiryDays\": 90,\n    \"maximumSelectionCandidates\": 64,\n    \"confirmation\": {\"evidenceCount\": 2, \"minimumDaySpan\": 7, \"maximumDaySpan\": 42},\n    \"decrease\": {\"evidenceCount\": 3, \"minimumDaySpan\": 14, \"maximumDaySpan\": 56},\n    \"heartRateChange\": {\"evidenceCount\": 3, \"minimumDaySpan\": 14, \"maximumDaySpan\": 56},\n    \"relativeTolerance\": 0.03,\n    \"heartRateToleranceBpm\": 3,\n    \"materialRelativeChange\": 0.03,\n    \"materialHeartRateChangeBpm\": 4\n  }'::jsonb\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
     },
     {
       "acl": "",
@@ -9352,6 +10240,15 @@
       "definition": "CREATE OR REPLACE FUNCTION public.purge_deleted_activity_artifact(target_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\nbegin\n  perform set_config('gradientpeak.artifact_hard_delete_authorized','on',true);\n  delete from public.activity_artifacts where id=target_id and availability='deleted';\n  if not found then raise exception 'artifact tombstone is not deletable'; end if;\nend $function$\n",
       "volatility": "v",
       "securityDefiner": true
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog"],
+      "identity": "reject_activity_performance_target_snapshot_mutation()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.reject_activity_performance_target_snapshot_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nbegin\n  if new.performance_target_snapshot is distinct from old.performance_target_snapshot then\n    raise exception 'activity performance target snapshots are immutable after capture';\n  end if;\n  return new;\nend;\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
     },
     {
       "acl": "",
@@ -9440,6 +10337,24 @@
       "identity": "validate_organization_root_owner()",
       "language": "plpgsql",
       "definition": "CREATE OR REPLACE FUNCTION public.validate_organization_root_owner()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  target_organization_id uuid;\n  root_membership_id uuid;\nBEGIN\n  target_organization_id := COALESCE(\n    (pg_catalog.to_jsonb(NEW)->>'organization_id')::uuid,\n    (pg_catalog.to_jsonb(OLD)->>'organization_id')::uuid,\n    (pg_catalog.to_jsonb(NEW)->>'id')::uuid,\n    (pg_catalog.to_jsonb(OLD)->>'id')::uuid\n  );\n  SELECT root_owner_membership_id INTO root_membership_id\n  FROM public.organizations\n  WHERE id = target_organization_id\n  FOR UPDATE;\n  IF FOUND AND EXISTS (\n    SELECT 1\n    FROM public.organizations\n    WHERE id = target_organization_id\n      AND closed_at IS NULL\n  ) THEN\n    IF NOT EXISTS (\n      SELECT 1\n      FROM public.organization_memberships AS membership\n      WHERE membership.organization_id = target_organization_id\n        AND membership.id = root_membership_id\n        AND membership.suspended_at IS NULL\n        AND membership.ended_at IS NULL\n    ) THEN\n      RAISE EXCEPTION 'active or suspended organization % must retain an active root-owner membership', target_organization_id;\n    END IF;\n    IF NOT EXISTS (\n      SELECT 1\n      FROM public.organization_membership_role_grants AS grant_row\n      WHERE grant_row.organization_id = target_organization_id\n        AND grant_row.membership_id = root_membership_id\n        AND grant_row.role_key = 'admin'\n        AND grant_row.granted_at <= pg_catalog.transaction_timestamp()\n        AND grant_row.revoked_at IS NULL\n    ) THEN\n      RAISE EXCEPTION 'root-owner membership % must retain an effective admin grant', root_membership_id;\n    END IF;\n  END IF;\n  RETURN NULL;\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog, public"],
+      "identity": "validate_performance_calibration_model_inputs()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.validate_performance_calibration_model_inputs()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE\n  evidence_id_to_validate uuid;\n  evidence public.performance_calibration_evidence%ROWTYPE;\n  input_count integer;\n  minimum_ordinal integer;\n  maximum_ordinal integer;\n  actual_effort_ids jsonb;\n  expected_effort_ids jsonb;\nBEGIN\n  IF TG_TABLE_NAME = 'performance_calibration_evidence' THEN\n    evidence_id_to_validate := NEW.id;\n  ELSE\n    evidence_id_to_validate := NEW.calibration_evidence_id;\n  END IF;\n  SELECT * INTO evidence\n  FROM public.performance_calibration_evidence\n  WHERE id = evidence_id_to_validate;\n  IF NOT FOUND THEN RETURN NULL; END IF;\n\n  SELECT count(*)::integer,\n    min(model_input.ordinal),\n    max(model_input.ordinal),\n    coalesce(\n      jsonb_agg(to_jsonb(model_input.effort_id::text) ORDER BY model_input.ordinal),\n      '[]'::jsonb\n    )\n  INTO input_count, minimum_ordinal, maximum_ordinal, actual_effort_ids\n  FROM public.performance_calibration_model_inputs AS model_input\n  WHERE model_input.calibration_evidence_id = evidence.id;\n\n  expected_effort_ids := coalesce(\n    evidence.diagnostics #> '{model,sourceEvidenceIds}',\n    '[]'::jsonb\n  );\n  IF actual_effort_ids IS DISTINCT FROM expected_effort_ids\n    OR (input_count > 0 AND (minimum_ordinal <> 0 OR maximum_ordinal <> input_count - 1))\n    OR coalesce((evidence.diagnostics #>> '{model,evidenceCount}')::integer, 0) <> input_count\n  THEN\n    RAISE EXCEPTION 'calibration model inputs do not match immutable model-run diagnostics'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibration_model_inputs_complete';\n  END IF;\n  RETURN NULL;\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog, public"],
+      "identity": "validate_performance_calibration_selection()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.validate_performance_calibration_selection()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE\n  calibration_id_to_validate uuid;\n  calibration public.performance_calibrations%ROWTYPE;\n  prior_calibration public.performance_calibrations%ROWTYPE;\n  lifecycle_policy jsonb := public.performance_calibration_lifecycle_policy();\n  selected_count integer;\n  distinct_activity_count integer;\n  distinct_day_count integer;\n  minimum_ordinal integer;\n  maximum_ordinal integer;\n  minimum_observed_at timestamptz;\n  maximum_observed_at timestamptz;\n  minimum_observed_day date;\n  maximum_observed_day date;\n  minimum_value double precision;\n  maximum_value double precision;\n  median_value double precision;\n  selected_evidence_ids jsonb;\n  selected_activity_ids jsonb;\n  selection_reason text;\n  selection_trend text;\n  required_evidence_count integer;\n  minimum_day_span integer;\n  maximum_day_span integer;\n  day_span integer;\n  tolerance double precision;\n  material_change double precision;\n  prior_is_eligible boolean := false;\n  current_band_support_exists boolean := false;\n  lifecycle_semantics_valid boolean := true;\nBEGIN\n  IF TG_TABLE_NAME = 'performance_calibrations' THEN\n    calibration_id_to_validate := NEW.id;\n  ELSE\n    calibration_id_to_validate := NEW.calibration_id;\n  END IF;\n  SELECT * INTO calibration\n  FROM public.performance_calibrations\n  WHERE id = calibration_id_to_validate;\n  IF NOT FOUND THEN RETURN NULL; END IF;\n\n  SELECT count(*)::integer,\n    count(DISTINCT evidence.activity_id)::integer,\n    count(DISTINCT (evidence.observed_at AT TIME ZONE 'UTC')::date)::integer,\n    min(link.ordinal),\n    max(link.ordinal),\n    min(evidence.observed_at),\n    max(evidence.observed_at),\n    min((evidence.observed_at AT TIME ZONE 'UTC')::date),\n    max((evidence.observed_at AT TIME ZONE 'UTC')::date),\n    min(evidence.value::double precision),\n    max(evidence.value::double precision),\n    percentile_cont(0.5) WITHIN GROUP (ORDER BY evidence.value::double precision),\n    jsonb_agg(to_jsonb(evidence.id::text) ORDER BY link.ordinal),\n    jsonb_agg(to_jsonb(evidence.activity_id::text) ORDER BY link.ordinal)\n  INTO selected_count,\n    distinct_activity_count,\n    distinct_day_count,\n    minimum_ordinal,\n    maximum_ordinal,\n    minimum_observed_at,\n    maximum_observed_at,\n    minimum_observed_day,\n    maximum_observed_day,\n    minimum_value,\n    maximum_value,\n    median_value,\n    selected_evidence_ids,\n    selected_activity_ids\n  FROM public.performance_calibration_selection_evidence AS link\n  JOIN public.performance_calibration_evidence AS evidence\n    ON evidence.id = link.evidence_id\n   AND evidence.profile_id = link.profile_id\n   AND evidence.metric_key = link.metric_key\n   AND evidence.activity_category = link.activity_category\n  WHERE link.calibration_id = calibration.id;\n\n  IF selected_count = 0\n    OR minimum_ordinal <> 0\n    OR maximum_ordinal <> selected_count - 1\n    OR maximum_observed_at IS DISTINCT FROM calibration.effective_at\n    OR calibration.selection_diagnostics -> 'selectedEvidenceIds' IS DISTINCT FROM selected_evidence_ids\n    OR calibration.selection_diagnostics -> 'selectedActivityIds' IS DISTINCT FROM selected_activity_ids\n    OR (calibration.selection_diagnostics ->> 'evidenceCount')::integer IS DISTINCT FROM selected_count\n    OR calibration.selection_diagnostics ->> 'policyVersion' IS DISTINCT FROM calibration.policy_version\n  THEN\n    RAISE EXCEPTION 'calibration selection provenance does not match immutable history'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibrations_selection_integrity';\n  END IF;\n\n  IF calibration.expires_at IS DISTINCT FROM\n      calibration.effective_at\n        + ((lifecycle_policy ->> 'expiryDays')::integer * INTERVAL '24 hours')\n  THEN\n    RAISE EXCEPTION 'calibration expiry does not match lifecycle policy'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibrations_lifecycle_semantics';\n  END IF;\n\n  selection_reason := calibration.selection_diagnostics ->> 'selectionReason';\n  selection_trend := calibration.selection_diagnostics ->> 'trend';\n  day_span := maximum_observed_day - minimum_observed_day;\n  tolerance := CASE\n    WHEN calibration.metric_key = 'threshold_heart_rate'\n      THEN (lifecycle_policy ->> 'heartRateToleranceBpm')::double precision\n    ELSE (lifecycle_policy ->> 'relativeTolerance')::double precision\n  END;\n  material_change := CASE\n    WHEN calibration.metric_key = 'threshold_heart_rate'\n      THEN (lifecycle_policy ->> 'materialHeartRateChangeBpm')::double precision\n    ELSE (lifecycle_policy ->> 'materialRelativeChange')::double precision\n  END;\n\n  IF (calibration.selection_diagnostics ->> 'tolerance')::double precision\n      IS DISTINCT FROM tolerance\n  THEN\n    lifecycle_semantics_valid := false;\n  END IF;\n\n  IF calibration.supersedes_id IS NOT NULL THEN\n    SELECT * INTO prior_calibration\n    FROM public.performance_calibrations\n    WHERE id = calibration.supersedes_id;\n\n    prior_is_eligible := FOUND\n      AND prior_calibration.policy_version = calibration.policy_version\n      AND calibration.effective_at >= prior_calibration.effective_at\n      AND NOT EXISTS (\n        SELECT 1\n        FROM public.performance_calibration_selection_evidence AS prior_link\n        WHERE prior_link.calibration_id = prior_calibration.id\n          AND NOT public.performance_calibration_evidence_is_current(prior_link.evidence_id)\n      );\n  END IF;\n\n  IF selection_reason = 'first_qualifying_evidence' THEN\n    lifecycle_semantics_valid := lifecycle_semantics_valid\n      AND selected_count = 1\n      AND distinct_activity_count = 1\n      AND distinct_day_count = 1\n      AND selection_trend = 'initial'\n      AND abs(calibration.value::double precision - median_value)\n        <= greatest(1e-9, abs(median_value) * 1e-9)\n      AND (\n        calibration.supersedes_id IS NULL\n        OR calibration.effective_at >= prior_calibration.expires_at\n        OR NOT prior_is_eligible\n      );\n  ELSIF selection_reason = 'complete_protocol' THEN\n    lifecycle_semantics_valid := lifecycle_semantics_valid\n      AND calibration.metric_key = 'threshold_speed'\n      AND calibration.activity_category = 'swim'\n      AND selected_count = 1\n      AND distinct_activity_count = 1\n      AND distinct_day_count = 1\n      AND selection_trend = 'initial'\n      AND abs(calibration.value::double precision - median_value)\n        <= greatest(1e-9, abs(median_value) * 1e-9)\n      AND (\n        calibration.supersedes_id IS NULL\n        OR NOT prior_is_eligible\n      );\n  ELSIF selection_reason = 'independent_confirmation' THEN\n    required_evidence_count := (lifecycle_policy #>> '{confirmation,evidenceCount}')::integer;\n    minimum_day_span := (lifecycle_policy #>> '{confirmation,minimumDaySpan}')::integer;\n    maximum_day_span := (lifecycle_policy #>> '{confirmation,maximumDaySpan}')::integer;\n    lifecycle_semantics_valid := lifecycle_semantics_valid\n      AND selected_count = required_evidence_count\n      AND distinct_activity_count = required_evidence_count\n      AND distinct_day_count = required_evidence_count\n      AND day_span BETWEEN minimum_day_span AND maximum_day_span\n      AND (\n        (calibration.metric_key = 'threshold_heart_rate' AND maximum_value - minimum_value <= tolerance)\n        OR (calibration.metric_key <> 'threshold_heart_rate' AND maximum_value / minimum_value - 1 <= tolerance)\n      )\n      AND abs(calibration.value::double precision - median_value)\n        <= greatest(1e-9, abs(median_value) * 1e-9)\n      AND (\n        (calibration.supersedes_id IS NULL AND selection_trend = 'initial')\n        OR (\n          calibration.supersedes_id IS NOT NULL\n          AND (\n            (\n              NOT prior_is_eligible\n              AND selection_trend = 'initial'\n            )\n            OR (\n              prior_is_eligible\n              AND selection_trend = 'stable'\n              AND (\n                (\n                  prior_calibration.selection_diagnostics ->> 'selectionReason'\n                    = 'first_qualifying_evidence'\n                  AND calibration.effective_at < prior_calibration.expires_at\n                  AND maximum_observed_at >= prior_calibration.effective_at\n                )\n                OR (\n                  calibration.effective_at >= prior_calibration.expires_at\n                  AND minimum_observed_at >= prior_calibration.expires_at\n                )\n              )\n            )\n          )\n        )\n      );\n  ELSIF selection_reason IN ('supported_increase', 'supported_decrease', 'unchanged') THEN\n    lifecycle_semantics_valid := lifecycle_semantics_valid\n      AND calibration.supersedes_id IS NOT NULL\n      AND prior_is_eligible\n      AND prior_calibration.selection_diagnostics ->> 'selectionReason' <> 'first_qualifying_evidence'\n      AND calibration.effective_at < prior_calibration.expires_at\n      AND minimum_observed_at >= prior_calibration.effective_at;\n\n    IF selection_reason = 'unchanged' THEN\n      required_evidence_count := (lifecycle_policy #>> '{confirmation,evidenceCount}')::integer;\n      minimum_day_span := (lifecycle_policy #>> '{confirmation,minimumDaySpan}')::integer;\n      maximum_day_span := (lifecycle_policy #>> '{confirmation,maximumDaySpan}')::integer;\n      lifecycle_semantics_valid := lifecycle_semantics_valid\n        AND selected_count = required_evidence_count\n        AND distinct_activity_count = required_evidence_count\n        AND distinct_day_count = required_evidence_count\n        AND day_span BETWEEN minimum_day_span AND maximum_day_span\n        AND selection_trend = 'stable'\n        AND calibration.value IS NOT DISTINCT FROM prior_calibration.value\n        AND (\n          (\n            calibration.metric_key = 'threshold_heart_rate'\n            AND maximum_value - minimum_value <= tolerance\n            AND abs(minimum_value - prior_calibration.value::double precision) <= tolerance\n            AND abs(maximum_value - prior_calibration.value::double precision) <= tolerance\n          )\n          OR (\n            calibration.metric_key <> 'threshold_heart_rate'\n            AND maximum_value / minimum_value - 1 <= tolerance\n            AND abs(minimum_value / prior_calibration.value::double precision - 1) <= tolerance\n            AND abs(maximum_value / prior_calibration.value::double precision - 1) <= tolerance\n          )\n        );\n    ELSE\n      IF selection_reason = 'supported_increase'\n        AND calibration.metric_key <> 'threshold_heart_rate'\n      THEN\n        required_evidence_count := (lifecycle_policy #>> '{confirmation,evidenceCount}')::integer;\n        minimum_day_span := (lifecycle_policy #>> '{confirmation,minimumDaySpan}')::integer;\n        maximum_day_span := (lifecycle_policy #>> '{confirmation,maximumDaySpan}')::integer;\n      ELSIF selection_reason = 'supported_increase' THEN\n        required_evidence_count := (lifecycle_policy #>> '{heartRateChange,evidenceCount}')::integer;\n        minimum_day_span := (lifecycle_policy #>> '{heartRateChange,minimumDaySpan}')::integer;\n        maximum_day_span := (lifecycle_policy #>> '{heartRateChange,maximumDaySpan}')::integer;\n      ELSE\n        required_evidence_count := (lifecycle_policy #>> '{decrease,evidenceCount}')::integer;\n        minimum_day_span := (lifecycle_policy #>> '{decrease,minimumDaySpan}')::integer;\n        maximum_day_span := (lifecycle_policy #>> '{decrease,maximumDaySpan}')::integer;\n      END IF;\n\n      lifecycle_semantics_valid := lifecycle_semantics_valid\n        AND selected_count = required_evidence_count\n        AND distinct_activity_count = required_evidence_count\n        AND distinct_day_count = required_evidence_count\n        AND day_span BETWEEN minimum_day_span AND maximum_day_span\n        AND abs(calibration.value::double precision - median_value)\n          <= greatest(1e-9, abs(median_value) * 1e-9)\n        AND (\n          (calibration.metric_key = 'threshold_heart_rate' AND maximum_value - minimum_value <= tolerance)\n          OR (calibration.metric_key <> 'threshold_heart_rate' AND maximum_value / minimum_value - 1 <= tolerance)\n        );\n\n      IF selection_reason = 'supported_increase' THEN\n        lifecycle_semantics_valid := lifecycle_semantics_valid\n          AND selection_trend = 'increasing'\n          AND (\n            (\n              calibration.metric_key = 'threshold_heart_rate'\n              AND median_value - prior_calibration.value::double precision >= material_change\n            )\n            OR (\n              calibration.metric_key <> 'threshold_heart_rate'\n              AND median_value / prior_calibration.value::double precision - 1 >= material_change\n            )\n          );\n      ELSE\n        lifecycle_semantics_valid := lifecycle_semantics_valid\n          AND selection_trend = 'decreasing'\n          AND (\n            (\n              calibration.metric_key = 'threshold_heart_rate'\n              AND prior_calibration.value::double precision - median_value >= material_change\n            )\n            OR (\n              calibration.metric_key <> 'threshold_heart_rate'\n              AND prior_calibration.value::double precision / median_value - 1 >= material_change\n            )\n          );\n\n        WITH lifecycle_candidates AS (\n          SELECT evidence.id,\n            evidence.activity_id,\n            evidence.observed_at,\n            evidence.value::double precision AS value\n          FROM public.performance_calibration_evidence AS evidence\n          WHERE evidence.profile_id = calibration.profile_id\n            AND evidence.metric_key = calibration.metric_key\n            AND evidence.activity_category = calibration.activity_category\n            AND evidence.policy_version = calibration.policy_version\n            AND evidence.observed_at >= prior_calibration.effective_at\n            AND evidence.observed_at <= calibration.effective_at\n            AND public.performance_calibration_evidence_is_current(evidence.id)\n          ORDER BY evidence.observed_at DESC, evidence.id DESC\n          LIMIT (lifecycle_policy ->> 'maximumSelectionCandidates')::integer\n        )\n        SELECT EXISTS (\n          SELECT 1\n          FROM lifecycle_candidates AS left_evidence\n          JOIN lifecycle_candidates AS right_evidence\n            ON right_evidence.id > left_evidence.id\n           AND right_evidence.activity_id <> left_evidence.activity_id\n           AND (right_evidence.observed_at AT TIME ZONE 'UTC')::date\n             <> (left_evidence.observed_at AT TIME ZONE 'UTC')::date\n          WHERE abs(\n              (right_evidence.observed_at AT TIME ZONE 'UTC')::date\n              - (left_evidence.observed_at AT TIME ZONE 'UTC')::date\n            ) BETWEEN\n              (lifecycle_policy #>> '{confirmation,minimumDaySpan}')::integer\n              AND (lifecycle_policy #>> '{confirmation,maximumDaySpan}')::integer\n            AND (\n              (\n                calibration.metric_key = 'threshold_heart_rate'\n                AND abs(right_evidence.value - left_evidence.value) <= tolerance\n                AND abs(right_evidence.value - prior_calibration.value::double precision) <= tolerance\n                AND abs(left_evidence.value - prior_calibration.value::double precision) <= tolerance\n              )\n              OR (\n                calibration.metric_key <> 'threshold_heart_rate'\n                AND greatest(right_evidence.value, left_evidence.value)\n                  / least(right_evidence.value, left_evidence.value) - 1 <= tolerance\n                AND abs(right_evidence.value / prior_calibration.value::double precision - 1) <= tolerance\n                AND abs(left_evidence.value / prior_calibration.value::double precision - 1) <= tolerance\n              )\n            )\n        ) INTO current_band_support_exists;\n        lifecycle_semantics_valid := lifecycle_semantics_valid AND NOT current_band_support_exists;\n      END IF;\n    END IF;\n  ELSE\n    lifecycle_semantics_valid := false;\n  END IF;\n\n  IF lifecycle_semantics_valid IS NOT TRUE THEN\n    RAISE EXCEPTION 'calibration selection violates lifecycle semantics'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibrations_lifecycle_semantics';\n  END IF;\n  RETURN NULL;\nEND\n$function$\n",
       "volatility": "v",
       "securityDefiner": false
     },
@@ -9582,6 +10497,13 @@
       "definition": "CHECK (moving_ms IS NULL OR active_ms IS NULL OR moving_ms <= active_ms)"
     },
     {
+      "kind": "c",
+      "name": "activities_performance_target_snapshot_check",
+      "table": "activities",
+      "validated": true,
+      "definition": "CHECK (performance_target_snapshot IS NULL OR jsonb_typeof(performance_target_snapshot) = 'object'::text AND pg_column_size(performance_target_snapshot) <= 65536)"
+    },
+    {
       "kind": "p",
       "name": "activities_pkey",
       "table": "activities",
@@ -9608,6 +10530,83 @@
       "table": "activities",
       "validated": true,
       "definition": "CHECK (timing_coverage = 'complete'::text AND active_ms IS NOT NULL AND moving_ms IS NOT NULL OR (timing_coverage = ANY (ARRAY['partial'::text, 'unavailable'::text])) AND active_ms IS NULL AND moving_ms IS NULL)"
+    },
+    {
+      "kind": "f",
+      "name": "activity_analysis_revisions_activity_profile_fkey",
+      "table": "activity_analysis_revisions",
+      "validated": true,
+      "definition": "FOREIGN KEY (activity_id, profile_id) REFERENCES activities(id, profile_id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "u",
+      "name": "activity_analysis_revisions_activity_revision_unique",
+      "table": "activity_analysis_revisions",
+      "validated": true,
+      "definition": "UNIQUE (activity_id, profile_id, revision)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_analysis_revisions_output_fingerprint_check",
+      "table": "activity_analysis_revisions",
+      "validated": true,
+      "definition": "CHECK (output_fingerprint ~ '^sha256:[0-9a-f]{64}$'::text)"
+    },
+    {
+      "kind": "p",
+      "name": "activity_analysis_revisions_pkey",
+      "table": "activity_analysis_revisions",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_analysis_revisions_projection_check",
+      "table": "activity_analysis_revisions",
+      "validated": true,
+      "definition": "CHECK (jsonb_typeof(segment_load_projection) = 'object'::text AND pg_column_size(segment_load_projection) <= 1048576)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_analysis_revisions_reason_check",
+      "table": "activity_analysis_revisions",
+      "validated": true,
+      "definition": "CHECK (reason = 'manual_profile_reprocess'::text)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_analysis_revisions_revision_check",
+      "table": "activity_analysis_revisions",
+      "validated": true,
+      "definition": "CHECK (revision > 0)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_analysis_revisions_segments_revision_check",
+      "table": "activity_analysis_revisions",
+      "validated": true,
+      "definition": "CHECK (source_segments_revision > 0)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_analysis_revisions_target_check",
+      "table": "activity_analysis_revisions",
+      "validated": true,
+      "definition": "CHECK (jsonb_typeof(performance_target_snapshot) = 'object'::text AND pg_column_size(performance_target_snapshot) <= 1048576)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_analysis_revisions_target_fingerprint_check",
+      "table": "activity_analysis_revisions",
+      "validated": true,
+      "definition": "CHECK (target_fingerprint ~ '^sha256:[0-9a-f]{64}$'::text)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_analysis_revisions_version_check",
+      "table": "activity_analysis_revisions",
+      "validated": true,
+      "definition": "CHECK (btrim(analysis_version) <> ''::text)"
     },
     {
       "kind": "u",
@@ -10779,32 +11778,11 @@
       "definition": "FOREIGN KEY (activity_plan_id) REFERENCES activity_plans(id) ON DELETE SET NULL"
     },
     {
-      "kind": "c",
-      "name": "events_external_calendar_non_empty",
-      "table": "events",
-      "validated": true,
-      "definition": "CHECK (external_calendar_id IS NULL OR btrim(external_calendar_id) <> ''::text)"
-    },
-    {
-      "kind": "c",
-      "name": "events_external_event_non_empty",
-      "table": "events",
-      "validated": true,
-      "definition": "CHECK (external_event_id IS NULL OR btrim(external_event_id) <> ''::text)"
-    },
-    {
       "kind": "u",
       "name": "events_id_profile_id_unique",
       "table": "events",
       "validated": true,
       "definition": "UNIQUE (id, profile_id)"
-    },
-    {
-      "kind": "f",
-      "name": "events_integration_account_id_integrations_id_fk",
-      "table": "events",
-      "validated": true,
-      "definition": "FOREIGN KEY (integration_account_id) REFERENCES integrations(id)"
     },
     {
       "kind": "f",
@@ -10878,20 +11856,6 @@
     },
     {
       "kind": "c",
-      "name": "events_source_identity_complete",
-      "table": "events",
-      "validated": true,
-      "definition": "CHECK (source_provider IS NULL AND integration_account_id IS NULL AND external_calendar_id IS NULL AND external_event_id IS NULL OR source_provider IS NOT NULL AND integration_account_id IS NOT NULL AND external_calendar_id IS NOT NULL AND external_event_id IS NOT NULL)"
-    },
-    {
-      "kind": "c",
-      "name": "events_source_provider_non_empty",
-      "table": "events",
-      "validated": true,
-      "definition": "CHECK (source_provider IS NULL OR btrim(source_provider) <> ''::text)"
-    },
-    {
-      "kind": "c",
       "name": "events_time_window",
       "table": "events",
       "validated": true,
@@ -10951,7 +11915,7 @@
       "name": "group_event_rsvps_status_check",
       "table": "group_event_rsvps",
       "validated": true,
-      "definition": "CHECK (status = ANY (ARRAY['accepted'::text, 'declined'::text, 'tentative'::text]))"
+      "definition": "CHECK (status = 'declined'::text)"
     },
     {
       "kind": "f",
@@ -10979,7 +11943,7 @@
       "name": "group_event_series_rsvps_status_check",
       "table": "group_event_series_rsvps",
       "validated": true,
-      "definition": "CHECK (status = ANY (ARRAY['accepted'::text, 'declined'::text, 'tentative'::text]))"
+      "definition": "CHECK (status = 'declined'::text)"
     },
     {
       "kind": "f",
@@ -11395,6 +12359,13 @@
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
     },
     {
+      "kind": "u",
+      "name": "oauth_states_state_unique",
+      "table": "oauth_states",
+      "validated": true,
+      "definition": "UNIQUE (state)"
+    },
+    {
       "kind": "c",
       "name": "organization_audit_events_action_non_empty",
       "table": "organization_audit_events",
@@ -11596,6 +12567,321 @@
       "table": "organizations",
       "validated": true,
       "definition": "CHECK (btrim(timezone) <> ''::text)"
+    },
+    {
+      "kind": "f",
+      "name": "performance_calibration_evidence_activity_category_canonical_ac",
+      "table": "performance_calibration_evidence",
+      "validated": true,
+      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibration_evidence_created_after_observed_check",
+      "table": "performance_calibration_evidence",
+      "validated": true,
+      "definition": "CHECK (created_at >= observed_at)"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibration_evidence_diagnostics_check",
+      "table": "performance_calibration_evidence",
+      "validated": true,
+      "definition": "CHECK (jsonb_typeof(diagnostics) = 'object'::text AND pg_column_size(diagnostics) <= 16384)"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibration_evidence_identity_check",
+      "table": "performance_calibration_evidence",
+      "validated": true,
+      "definition": "CHECK (metric_key = 'threshold_power'::performance_calibration_metric_key AND activity_category = 'bike'::text OR metric_key = 'threshold_speed'::performance_calibration_metric_key AND (activity_category = ANY (ARRAY['run'::text, 'swim'::text])) OR metric_key = 'threshold_heart_rate'::performance_calibration_metric_key AND (activity_category = ANY (ARRAY['bike'::text, 'run'::text])))"
+    },
+    {
+      "kind": "u",
+      "name": "performance_calibration_evidence_identity_unique",
+      "table": "performance_calibration_evidence",
+      "validated": true,
+      "definition": "UNIQUE (id, profile_id, metric_key, activity_category)"
+    },
+    {
+      "kind": "p",
+      "name": "performance_calibration_evidence_pkey",
+      "table": "performance_calibration_evidence",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibration_evidence_policy_check",
+      "table": "performance_calibration_evidence",
+      "validated": true,
+      "definition": "CHECK (btrim(policy_version) <> ''::text)"
+    },
+    {
+      "kind": "f",
+      "name": "performance_calibration_evidence_profile_id_profiles_id_fk",
+      "table": "performance_calibration_evidence",
+      "validated": true,
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibration_evidence_revision_check",
+      "table": "performance_calibration_evidence",
+      "validated": true,
+      "definition": "CHECK (segment_revision > 0)"
+    },
+    {
+      "kind": "u",
+      "name": "performance_calibration_evidence_source_policy_unique",
+      "table": "performance_calibration_evidence",
+      "validated": true,
+      "definition": "UNIQUE (activity_id, segment_id, segment_revision, source_artifact_id, metric_key, policy_version)"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibration_evidence_state_values_check",
+      "table": "performance_calibration_evidence",
+      "validated": true,
+      "definition": "CHECK (state = 'candidate'::performance_calibration_evidence_state AND value IS NOT NULL AND rejection_reason IS NULL AND invalidated_at IS NULL AND invalidation_reason IS NULL OR state = 'rejected'::performance_calibration_evidence_state AND value IS NULL AND rejection_reason IS NOT NULL AND invalidated_at IS NULL AND invalidation_reason IS NULL OR state = 'invalidated'::performance_calibration_evidence_state AND value IS NOT NULL AND rejection_reason IS NULL AND invalidated_at IS NOT NULL AND invalidated_at >= created_at AND invalidation_reason IS NOT NULL AND btrim(invalidation_reason) <> ''::text)"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibration_evidence_unit_check",
+      "table": "performance_calibration_evidence",
+      "validated": true,
+      "definition": "CHECK (metric_key = 'threshold_power'::performance_calibration_metric_key AND unit = 'watts'::text OR metric_key = 'threshold_speed'::performance_calibration_metric_key AND unit = 'meters_per_second'::text OR metric_key = 'threshold_heart_rate'::performance_calibration_metric_key AND unit = 'beats_per_minute'::text)"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibration_evidence_value_check",
+      "table": "performance_calibration_evidence",
+      "validated": true,
+      "definition": "CHECK (value IS NULL OR value > 0::numeric)"
+    },
+    {
+      "kind": "f",
+      "name": "performance_calibration_model_inputs_activity_category_canonica",
+      "table": "performance_calibration_model_inputs",
+      "validated": true,
+      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibration_model_inputs_artifact_digest_check",
+      "table": "performance_calibration_model_inputs",
+      "validated": true,
+      "definition": "CHECK (source_artifact_digest ~ '^[0-9a-f]{64}$'::text)"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibration_model_inputs_calculation_version_check",
+      "table": "performance_calibration_model_inputs",
+      "validated": true,
+      "definition": "CHECK (btrim(calculation_version) <> ''::text)"
+    },
+    {
+      "kind": "p",
+      "name": "performance_calibration_model_inputs_calibration_evidence_id_ef",
+      "table": "performance_calibration_model_inputs",
+      "validated": true,
+      "definition": "PRIMARY KEY (calibration_evidence_id, effort_id)"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibration_model_inputs_duration_check",
+      "table": "performance_calibration_model_inputs",
+      "validated": true,
+      "definition": "CHECK (duration_seconds >= 1 AND duration_seconds <= 14400)"
+    },
+    {
+      "kind": "f",
+      "name": "performance_calibration_model_inputs_evidence_identity_fkey",
+      "table": "performance_calibration_model_inputs",
+      "validated": true,
+      "definition": "FOREIGN KEY (calibration_evidence_id, profile_id, metric_key, activity_category) REFERENCES performance_calibration_evidence(id, profile_id, metric_key, activity_category) ON DELETE CASCADE"
+    },
+    {
+      "kind": "u",
+      "name": "performance_calibration_model_inputs_evidence_ordinal_unique",
+      "table": "performance_calibration_model_inputs",
+      "validated": true,
+      "definition": "UNIQUE (calibration_evidence_id, ordinal)"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibration_model_inputs_identity_check",
+      "table": "performance_calibration_model_inputs",
+      "validated": true,
+      "definition": "CHECK (metric_key = 'threshold_power'::performance_calibration_metric_key AND activity_category = 'bike'::text)"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibration_model_inputs_ordinal_check",
+      "table": "performance_calibration_model_inputs",
+      "validated": true,
+      "definition": "CHECK (ordinal >= 0 AND ordinal <= 1999)"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibration_model_inputs_revision_check",
+      "table": "performance_calibration_model_inputs",
+      "validated": true,
+      "definition": "CHECK (segment_revision > 0)"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibration_model_inputs_value_check",
+      "table": "performance_calibration_model_inputs",
+      "validated": true,
+      "definition": "CHECK (value > 0::numeric AND (value <> ALL (ARRAY['NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric])))"
+    },
+    {
+      "kind": "f",
+      "name": "performance_calibration_selection_evidence_activity_category_ca",
+      "table": "performance_calibration_selection_evidence",
+      "validated": true,
+      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "p",
+      "name": "performance_calibration_selection_evidence_calibration_id_evide",
+      "table": "performance_calibration_selection_evidence",
+      "validated": true,
+      "definition": "PRIMARY KEY (calibration_id, evidence_id)"
+    },
+    {
+      "kind": "f",
+      "name": "performance_calibration_selection_evidence_calibration_identity",
+      "table": "performance_calibration_selection_evidence",
+      "validated": true,
+      "definition": "FOREIGN KEY (calibration_id, profile_id, metric_key, activity_category) REFERENCES performance_calibrations(id, profile_id, metric_key, activity_category) ON DELETE CASCADE"
+    },
+    {
+      "kind": "u",
+      "name": "performance_calibration_selection_evidence_calibration_ordinal_",
+      "table": "performance_calibration_selection_evidence",
+      "validated": true,
+      "definition": "UNIQUE (calibration_id, ordinal)"
+    },
+    {
+      "kind": "f",
+      "name": "performance_calibration_selection_evidence_evidence_identity_fk",
+      "table": "performance_calibration_selection_evidence",
+      "validated": true,
+      "definition": "FOREIGN KEY (evidence_id, profile_id, metric_key, activity_category) REFERENCES performance_calibration_evidence(id, profile_id, metric_key, activity_category) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibration_selection_evidence_ordinal_check",
+      "table": "performance_calibration_selection_evidence",
+      "validated": true,
+      "definition": "CHECK (ordinal >= 0 AND ordinal <= 63)"
+    },
+    {
+      "kind": "f",
+      "name": "performance_calibration_selection_evidence_profile_id_profiles_",
+      "table": "performance_calibration_selection_evidence",
+      "validated": true,
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "f",
+      "name": "performance_calibrations_activity_category_canonical_activity_c",
+      "table": "performance_calibrations",
+      "validated": true,
+      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibrations_created_after_effective_check",
+      "table": "performance_calibrations",
+      "validated": true,
+      "definition": "CHECK (created_at >= effective_at)"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibrations_diagnostics_check",
+      "table": "performance_calibrations",
+      "validated": true,
+      "definition": "CHECK (jsonb_typeof(selection_diagnostics) = 'object'::text AND pg_column_size(selection_diagnostics) <= 16384)"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibrations_expiry_check",
+      "table": "performance_calibrations",
+      "validated": true,
+      "definition": "CHECK (expires_at >= effective_at)"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibrations_identity_check",
+      "table": "performance_calibrations",
+      "validated": true,
+      "definition": "CHECK (metric_key = 'threshold_power'::performance_calibration_metric_key AND activity_category = 'bike'::text OR metric_key = 'threshold_speed'::performance_calibration_metric_key AND (activity_category = ANY (ARRAY['run'::text, 'swim'::text])) OR metric_key = 'threshold_heart_rate'::performance_calibration_metric_key AND (activity_category = ANY (ARRAY['bike'::text, 'run'::text])))"
+    },
+    {
+      "kind": "u",
+      "name": "performance_calibrations_identity_unique",
+      "table": "performance_calibrations",
+      "validated": true,
+      "definition": "UNIQUE (id, profile_id, metric_key, activity_category)"
+    },
+    {
+      "kind": "p",
+      "name": "performance_calibrations_pkey",
+      "table": "performance_calibrations",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibrations_policy_check",
+      "table": "performance_calibrations",
+      "validated": true,
+      "definition": "CHECK (btrim(policy_version) <> ''::text)"
+    },
+    {
+      "kind": "f",
+      "name": "performance_calibrations_profile_id_profiles_id_fk",
+      "table": "performance_calibrations",
+      "validated": true,
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibrations_supersedes_check",
+      "table": "performance_calibrations",
+      "validated": true,
+      "definition": "CHECK (supersedes_id IS NULL OR supersedes_id <> id)"
+    },
+    {
+      "kind": "f",
+      "name": "performance_calibrations_supersedes_identity_fkey",
+      "table": "performance_calibrations",
+      "validated": true,
+      "definition": "FOREIGN KEY (supersedes_id, profile_id, metric_key, activity_category) REFERENCES performance_calibrations(id, profile_id, metric_key, activity_category) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "u",
+      "name": "performance_calibrations_supersedes_unique",
+      "table": "performance_calibrations",
+      "validated": true,
+      "definition": "UNIQUE (supersedes_id)"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibrations_unit_check",
+      "table": "performance_calibrations",
+      "validated": true,
+      "definition": "CHECK (metric_key = 'threshold_power'::performance_calibration_metric_key AND unit = 'watts'::text OR metric_key = 'threshold_speed'::performance_calibration_metric_key AND unit = 'meters_per_second'::text OR metric_key = 'threshold_heart_rate'::performance_calibration_metric_key AND unit = 'beats_per_minute'::text)"
+    },
+    {
+      "kind": "c",
+      "name": "performance_calibrations_value_check",
+      "table": "performance_calibrations",
+      "validated": true,
+      "definition": "CHECK (value > 0::numeric)"
     },
     {
       "kind": "c",
@@ -12299,6 +13585,14 @@
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
       "kind": "r",
+      "name": "activity_analysis_revisions",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
       "name": "activity_artifact_links",
       "managed": true,
       "forceRls": false
@@ -12620,6 +13914,38 @@
       "rls": true,
       "kind": "r",
       "name": "organizations",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "performance_calibration_evidence",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "performance_calibration_model_inputs",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "performance_calibration_selection_evidence",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "performance_calibrations",
       "managed": true,
       "forceRls": false
     },

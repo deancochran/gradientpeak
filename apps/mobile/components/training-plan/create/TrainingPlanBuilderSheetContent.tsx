@@ -1,10 +1,12 @@
 import type {
   ActivityPlanPlanningEstimate,
+  ActivityPlanSummary,
   ContentVisibility,
   TrainingPreferenceValidationIssue,
 } from "@repo/core";
 import {
   isAthletePlanningContextEditableFieldKey,
+  planningPreferencesSchema,
   validatePlanningPreferencesConsistency,
 } from "@repo/core";
 import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form";
@@ -24,7 +26,6 @@ import {
 } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import { Pressable, View } from "react-native";
-import type { ActivityPlan } from "@/components/shared/ActivityPlanCard";
 import {
   type ActivityCategoryFilter,
   type ActivityPlanSort,
@@ -39,14 +40,12 @@ import {
   BuilderGoalEditorContent,
   BuilderLocalGoalCreateContent,
 } from "@/components/training-plan/create/BuilderGoalEditorSheetContent";
-import { BuilderSchedulePreviewContent } from "@/components/training-plan/create/BuilderSchedulePreviewSheetContent";
 import { BuilderSessionEditorContent } from "@/components/training-plan/create/BuilderSessionEditorSheetContent";
 import {
   addTrainingPlanPreferenceField,
   applyTrainingPlanPreferenceFieldOverride,
   type TrainingPlanPreferenceFieldKey,
 } from "@/lib/training-plan-creation/preferences-context";
-import { trainingPlanBuilderPlanPreferencesSchema } from "@/lib/training-plan-creation/schemas";
 import type { TrainingPlanBuilderPlanPreferences } from "@/lib/training-plan-creation/types";
 import type { useTrainingPlanCreationService } from "@/lib/training-plan-creation/useTrainingPlanCreationService";
 import type { BuilderSheet } from "./BuilderSheetTypes";
@@ -133,13 +132,11 @@ export function TrainingPlanBuilderSheetDraftsProvider({
     planMetadata.contentVisibility,
   );
   const planningPreferencesForm = useZodForm({
-    schema: trainingPlanBuilderPlanPreferencesSchema,
+    schema: planningPreferencesSchema,
     defaultValues: planPreferences,
     mode: "onChange",
   }) as UseFormReturn<TrainingPlanBuilderPlanPreferences>;
-  const draftPlanningPreferences = trainingPlanBuilderPlanPreferencesSchema.parse(
-    planningPreferencesForm.watch(),
-  );
+  const draftPlanningPreferences = planningPreferencesSchema.parse(planningPreferencesForm.watch());
   const canResetPlanningPreferences = planningPreferencesForm.formState.isDirty;
   const planningPreferenceIssues = useMemo(
     () => validatePlanningPreferencesConsistency(draftPlanningPreferences),
@@ -230,7 +227,7 @@ export function TrainingPlanBuilderSheetDraftsProvider({
 
   const setPlanningPreferencesDraft = useCallback(
     (preferences: TrainingPlanBuilderPlanPreferences) => {
-      planningPreferencesForm.reset(trainingPlanBuilderPlanPreferencesSchema.parse(preferences), {
+      planningPreferencesForm.reset(planningPreferencesSchema.parse(preferences), {
         keepDefaultValues: true,
       });
     },
@@ -264,7 +261,7 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       return;
     }
     onApplyPlanningPreferences(
-      trainingPlanBuilderPlanPreferencesSchema.parse(planningPreferencesForm.getValues()),
+      planningPreferencesSchema.parse(planningPreferencesForm.getValues()),
     );
   }, [canSavePlanningPreferences, onApplyPlanningPreferences, planningPreferencesForm]);
 
@@ -426,10 +423,10 @@ type TrainingPlanBuilderSheetContentProps = {
   activityPlanEstimateById: Map<string, ActivityPlanPlanningEstimate>;
   activityPlanSearchQuery: string;
   activityPlanSort: ActivityPlanSort;
-  activityPlansById: Record<string, ActivityPlan>;
+  activityPlansById: Record<string, ActivityPlanSummary>;
   builder: TrainingPlanBuilderService;
   goBackSheet: () => void;
-  onSelectActivityPlan: (activityPlan: ActivityPlan) => void;
+  onSelectActivityPlan: (activityPlan: ActivityPlanSummary) => void;
   onRemoveSession: (sessionId: string) => void;
   pushSheet: (sheet: BuilderSheet) => void;
   selectedSessionId: string | null;
@@ -456,7 +453,7 @@ export function TrainingPlanBuilderSheetContent({
   const router = useRouter();
   const sheetDrafts = useTrainingPlanBuilderSheetDrafts();
   const { activityPlanItems, activityPlansQuery, state } = builder;
-  const { athleteContextFields, schedulingPreview } = builder.derived;
+  const { athleteContextFields } = builder.derived;
   const selectedSession = selectedSessionId
     ? builder.actions.getSessionById(selectedSessionId)
     : null;
@@ -563,18 +560,6 @@ export function TrainingPlanBuilderSheetContent({
         onAddField={sheetDrafts.addPlanningConstraintDraft}
         onChangeField={sheetDrafts.updatePlanningConstraintDraft}
         onRemoveField={(fieldKey) => sheetDrafts.updatePlanningConstraintDraft(fieldKey, null)}
-      />
-    );
-  }
-
-  if (activeSheet === "schedulePreview") {
-    return (
-      <BuilderSchedulePreviewContent
-        preview={schedulingPreview}
-        state={state}
-        onClearSessionOverride={builder.actions.clearSessionScheduleDateOverride}
-        onMoveSessionByDays={builder.actions.moveSessionByDays}
-        onTogglePreferredWeekday={builder.actions.togglePreferredScheduleWeekday}
       />
     );
   }

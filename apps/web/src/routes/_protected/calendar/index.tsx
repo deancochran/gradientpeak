@@ -1,4 +1,4 @@
-import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
+import type { CalendarProjectionItem } from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -17,52 +17,27 @@ import { useMemo } from "react";
 import { RouteFlashToast, type RouteFlashType } from "../../../components/route-flash-toast";
 import { api } from "../../../lib/api/client";
 import {
-  compareEventsByStart,
-  formatEventTimeRange,
   formatMonthLabel,
   formatShortDayLabel,
   getCalendarGrid,
-  getEventTitle,
   getMonthKey,
   getMonthWindow,
   getTodayDateKey,
   getWeekWindow,
   isValidDateKey,
   isValidMonthKey,
-  type PlanningEvent,
   shiftDateKey,
   shiftMonthKey,
   toDateKey,
 } from "../../../lib/planning";
 
-type CalendarRangeOutput = inferRouterOutputs<AppRouter>["calendar"]["range"];
-type CalendarProjectionItem =
-  | { date: string; id: string; kind: "event"; title: string; value: PlanningEvent }
-  | {
-      date: string;
-      id: string;
-      kind: "activity";
-      title: string;
-      value: CalendarRangeOutput["completedActivities"]["items"][number];
-    }
-  | {
-      date: string;
-      id: string;
-      kind: "group";
-      title: string;
-      value: CalendarRangeOutput["selectedGroupEvents"]["items"][number];
-    };
-
-function getProjectionItemStart(item: CalendarProjectionItem): string {
-  return item.kind === "activity" ? item.value.started_at : (item.value.starts_at ?? "");
-}
-
-function formatProjectionItemTime(item: CalendarProjectionItem, planningTimezone: string) {
-  if (item.kind !== "activity") return formatEventTimeRange(item.value);
-  return new Date(item.value.started_at).toLocaleTimeString([], {
+function formatProjectionItemTime(item: CalendarProjectionItem) {
+  if (item.timing.allDay) return "All day";
+  if (!item.timing.startsAt) return "Scheduled";
+  return new Date(item.timing.startsAt).toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
-    timeZone: planningTimezone,
+    timeZone: item.timing.timezone,
   });
 }
 
@@ -117,66 +92,22 @@ function CalendarIndexPage() {
     limit: 500,
   });
 
-  const events = useMemo(
-    () => ((eventsQuery.data?.items ?? []) as PlanningEvent[]).slice().sort(compareEventsByStart),
-    [eventsQuery.data?.items],
-  );
-  const projectionItems = useMemo(() => {
-    const items: CalendarProjectionItem[] = events.flatMap((event) =>
-      event.scheduled_date
-        ? [
-            {
-              date: event.scheduled_date,
-              id: event.id,
-              kind: "event" as const,
-              title: getEventTitle(event),
-              value: event,
-            },
-          ]
-        : [],
-    );
-    for (const activity of eventsQuery.data?.completedActivities.items ?? []) {
-      items.push({
-        date: activity.scheduled_date,
-        id: activity.id,
-        kind: "activity",
-        title: activity.name?.trim() || "Completed activity",
-        value: activity,
-      });
-    }
-    for (const event of eventsQuery.data?.selectedGroupEvents.items ?? []) {
-      items.push({
-        date: event.scheduled_date,
-        id: event.id,
-        kind: "group",
-        title: event.title,
-        value: event,
-      });
-    }
-    return items.sort((left, right) => {
-      const dateOrder = left.date.localeCompare(right.date);
-      if (dateOrder !== 0) return dateOrder;
-      const leftStart = getProjectionItemStart(left);
-      const rightStart = getProjectionItemStart(right);
-      return leftStart.localeCompare(rightStart) || left.id.localeCompare(right.id);
-    });
-  }, [
-    events,
-    eventsQuery.data?.completedActivities.items,
-    eventsQuery.data?.selectedGroupEvents.items,
-  ]);
+  const projectionItems = eventsQuery.data?.items ?? [];
   const projectionItemsByDate = useMemo(() => {
     const grouped = new Map<string, CalendarProjectionItem[]>();
     for (const item of projectionItems) {
-      const bucket = grouped.get(item.date) ?? [];
+      const bucket = grouped.get(item.calendarDate) ?? [];
       bucket.push(item);
-      grouped.set(item.date, bucket);
+      grouped.set(item.calendarDate, bucket);
     }
     return grouped;
   }, [projectionItems]);
   const goalDates = useMemo(
-    () => new Set((eventsQuery.data?.goals?.items ?? []).map((goal) => goal.target_date)),
-    [eventsQuery.data?.goals?.items],
+    () =>
+      new Set(
+        projectionItems.filter((item) => item.kind === "goal").map((item) => item.calendarDate),
+      ),
+    [projectionItems],
   );
   const gridDays = useMemo(() => getCalendarGrid(month), [month]);
   const monthEventDays = projectionItemsByDate.size;
@@ -402,7 +333,7 @@ function CalendarIndexPage() {
                     </Link>
                     <div className="mt-3 space-y-2">
                       {dayEvents.map((event) =>
-                        event.kind === "event" ? (
+                        event.kind === "event" || event.kind === "planned_activity" ? (
                           <Link
                             key={`${event.kind}-${event.id}`}
                             to="/calendar/events/$eventId"
@@ -415,11 +346,7 @@ function CalendarIndexPage() {
                         ) : (
                           <a
                             className="block rounded-md bg-muted p-2 text-xs hover:bg-accent"
-                            href={
-                              event.kind === "activity"
-                                ? `/activities/${event.id}`
-                                : `/groups/events/${event.id}`
-                            }
+                            href={event.navigation.href}
                             key={`${event.kind}-${event.id}`}
                           >
                             {event.title}
@@ -462,24 +389,21 @@ function CalendarIndexPage() {
                         <div>
                           <p className="font-medium">{item.title}</p>
                           <p className="text-sm text-muted-foreground">
-                            {item.date} ·{" "}
-                            {formatProjectionItemTime(item, eventsQuery.data?.timezone ?? "UTC")}
+                            {item.calendarDate} · {formatProjectionItemTime(item)}
                           </p>
-                          {item.kind === "event" && item.value.activity_plan?.activity_category ? (
+                          {item.plan ? (
                             <p className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">
-                              {item.value.activity_plan.activity_category}
+                              {item.plan.activityCategory}
                             </p>
                           ) : null}
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          <Badge variant="outline">
-                            {item.kind === "event" ? (item.value.event_type ?? "event") : item.kind}
-                          </Badge>
-                          {goalDates.has(item.date) ? <Badge>Goal day</Badge> : null}
+                          <Badge variant="outline">{item.status}</Badge>
+                          {goalDates.has(item.calendarDate) ? <Badge>Goal day</Badge> : null}
                         </div>
                       </div>
                     );
-                    return item.kind === "event" ? (
+                    return item.kind === "event" || item.kind === "planned_activity" ? (
                       <Link
                         key={`${item.kind}-${item.id}`}
                         to="/calendar/events/$eventId"
@@ -492,11 +416,7 @@ function CalendarIndexPage() {
                     ) : (
                       <a
                         className="block rounded-xl border p-4 transition-colors hover:border-primary hover:bg-accent/40"
-                        href={
-                          item.kind === "activity"
-                            ? `/activities/${item.id}`
-                            : `/groups/events/${item.id}`
-                        }
+                        href={item.navigation.href}
                         key={`${item.kind}-${item.id}`}
                       >
                         {content}

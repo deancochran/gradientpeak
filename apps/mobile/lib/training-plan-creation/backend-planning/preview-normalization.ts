@@ -7,12 +7,6 @@ export function normalizeBackendPlanningPreview(
   return {
     source: "backend",
     isAvailable: true,
-    readinessScore: null,
-    readinessConfidence: null,
-    feasibilityState: null,
-    feasibilityReasons: [],
-    conflicts: { isBlocking: false, items: [] },
-    planPreview: null,
     projectionChart: data.simulation,
     simulation: data.simulation,
   };

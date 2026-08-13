@@ -13,11 +13,7 @@ import {
   type CompletedActivitySegmentSet,
   completedActivitySegmentSetSchema,
 } from "@repo/core/activity-segments";
-import {
-  calculateCyclingNormalizedPower,
-  detectLactateThresholdHeartRateFromBestEfforts,
-  estimateVO2Max,
-} from "@repo/core/calculations";
+import { calculateCyclingNormalizedPower, estimateVO2Max } from "@repo/core/calculations";
 import { profileMetrics } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, lte } from "drizzle-orm";
@@ -26,6 +22,7 @@ import { fetchActivityTemperature } from "../../utils/weather";
 import type { GeneratedActivityLthrEvidence } from "../activities/reconcile-activity-evidence";
 import { calculateActivityFileHeartRateEvidence } from "./heart-rate-evidence";
 import {
+  type ActivityFileStreamDerivedCalculations,
   buildActivityFileDerivedSegmentSummary,
   calculateActivityFileStreamDerivedCalculations,
 } from "./stream-derived-calculations";
@@ -65,6 +62,27 @@ export interface ParsedActivityFileForAnalysis {
   lengths?: ActivityLength[] | undefined;
   decodedArtifact?: DecodedActivityArtifact | undefined;
   semantics?: ActivityArtifactSemantics | undefined;
+}
+
+export class ActivityAnalysisValidationError extends Error {
+  constructor(
+    public readonly code:
+      | "activity_analysis_initial_segments_invalid"
+      | "activity_analysis_persisted_segments_invalid"
+      | "activity_analysis_segments_invalid",
+    cause: unknown,
+  ) {
+    super(code, { cause });
+    this.name = "ActivityAnalysisValidationError";
+  }
+}
+
+function parseAnalyzedSegmentSet(input: unknown, code: ActivityAnalysisValidationError["code"]) {
+  try {
+    return completedActivitySegmentSetSchema.parse(input);
+  } catch (error) {
+    throw new ActivityAnalysisValidationError(code, error);
+  }
 }
 
 function recordsForCompletedSegment(
@@ -132,6 +150,115 @@ interface ActivitySegmentStreamEvidence {
   records: ParsedActivityFileForAnalysis["records"];
   metadata: ActivityFileStreamMetadata;
   includedTimeline?: boolean[];
+}
+
+function weightedWindow(input: {
+  samples: ActivityFileStreamMetadata["samples"];
+  includedTimeline?: readonly boolean[];
+  start: number;
+  end: number;
+  value: (sample: ActivityFileStreamMetadata["samples"][number]) => number | null;
+}) {
+  let covered = 0;
+  let sum = 0;
+  let squareSum = 0;
+  let maximumGap = 0;
+  for (let index = 1; index < input.samples.length; index += 1) {
+    const previous = input.samples[index - 1];
+    const current = input.samples[index];
+    if (!previous || !current) continue;
+    const intervalStart = Math.max(previous.timestampSeconds, input.start);
+    const intervalEnd = Math.min(current.timestampSeconds, input.end);
+    if (intervalEnd <= intervalStart) continue;
+    const duration = intervalEnd - intervalStart;
+    maximumGap = Math.max(
+      maximumGap,
+      input.includedTimeline?.[index] === false
+        ? duration
+        : current.timestampSeconds - previous.timestampSeconds,
+    );
+    if (input.includedTimeline?.[index] === false) continue;
+    const value = input.value(current);
+    if (value === null || !Number.isFinite(value) || value <= 0) continue;
+    covered += duration;
+    sum += value * duration;
+    squareSum += value * value * duration;
+  }
+  const duration = input.end - input.start;
+  const mean = covered > 0 ? sum / covered : null;
+  const variance = mean === null ? null : Math.max(0, squareSum / covered - mean * mean);
+  return {
+    coverage: duration > 0 ? covered / duration : 0,
+    mean,
+    coefficientOfVariation:
+      variance === null || mean === null || mean === 0 ? null : Math.sqrt(variance) / mean,
+    maximumGap,
+  };
+}
+
+function deriveThresholdHeartRateEvidence(input: {
+  activityId: string;
+  segmentId: string;
+  activityCategory: "bike" | "run";
+  metadata: ActivityFileStreamMetadata;
+  includedTimeline?: readonly boolean[];
+  extraction: NonNullable<ActivityFileStreamDerivedCalculations["bestEffortExtractions"][number]>;
+}): GeneratedActivityLthrEvidence | null {
+  const sourceEffort = input.extraction.results.find(
+    (effort) => effort.durationSeconds === 1_800 && effort.status !== "unavailable",
+  );
+  if (!sourceEffort || sourceEffort.status === "unavailable") return null;
+  const windowStart = sourceEffort.startTimestampSeconds;
+  const windowEnd = sourceEffort.endTimestampSeconds;
+  const heartRate = weightedWindow({
+    samples: input.metadata.samples,
+    ...(input.includedTimeline === undefined ? {} : { includedTimeline: input.includedTimeline }),
+    start: windowEnd - 1_200,
+    end: windowEnd,
+    value: (sample) => sample.heartRateBpm,
+  });
+  const output = weightedWindow({
+    samples: input.metadata.samples,
+    ...(input.includedTimeline === undefined ? {} : { includedTimeline: input.includedTimeline }),
+    start: windowStart,
+    end: windowEnd,
+    value: (sample) =>
+      input.activityCategory === "bike" ? sample.powerWatts : sample.speedMetersPerSecond,
+  });
+  const grade = weightedWindow({
+    samples: input.metadata.samples,
+    ...(input.includedTimeline === undefined ? {} : { includedTimeline: input.includedTimeline }),
+    start: windowStart,
+    end: windowEnd,
+    value: (sample) => sample.elevationMeters,
+  });
+  if (heartRate.mean === null) return null;
+  return {
+    valueBpm: Math.round(heartRate.mean),
+    recordedAt: new Date(windowEnd * 1_000),
+    calculationVersion: "activity-file-lthr-v1",
+    provenance: {
+      activity_id: input.activityId,
+      segment_id: input.segmentId,
+      derived_from: "activity_file_best_effort",
+      source_series: "heart_rate",
+      source_effort_calculation_version: input.extraction.calculationVersion,
+      exact_window_start_timestamp_seconds: windowStart,
+      exact_window_end_timestamp_seconds: windowEnd,
+      duration_seconds: 1_800,
+      window_coverage: 1,
+      hr_coverage: heartRate.coverage,
+      supporting_output_coverage: output.coverage,
+      maximum_gap_seconds: Math.max(heartRate.maximumGap, output.maximumGap),
+      ...(output.coefficientOfVariation === null
+        ? {}
+        : { output_coefficient_of_variation: output.coefficientOfVariation }),
+      supporting_output_value: output.mean ?? 0,
+      grade_coverage: input.activityCategory === "run" ? grade.coverage : 1,
+      extraction_status: sourceEffort.status,
+      extraction_reason: sourceEffort.status === "partial" ? sourceEffort.reason : null,
+    },
+  };
 }
 
 function average(values: Array<number | undefined>): number | undefined {
@@ -255,7 +382,7 @@ export async function getLatestProfileMetricValue(
   db: DbClient,
   input: {
     profileId: string;
-    metricType: "lthr" | "max_hr" | "resting_hr";
+    metricType: "max_hr" | "resting_hr";
     recordedAtLte: Date;
   },
 ): Promise<number | null> {
@@ -589,7 +716,12 @@ export async function analyzeParsedActivityFile(
 ) {
   const { summary, records } = input.parsedData;
   const startTime = input.parsedData.metadata.startTime;
-  const initialSegmentSet = buildCompletedSegmentSet(input);
+  let initialSegmentSet: ReturnType<typeof buildCompletedSegmentSet>;
+  try {
+    initialSegmentSet = buildCompletedSegmentSet(input);
+  } catch (error) {
+    throw new ActivityAnalysisValidationError("activity_analysis_initial_segments_invalid", error);
+  }
   const duration = initialSegmentSet.elapsedMs / 1000;
 
   if (duration <= 0) {
@@ -624,46 +756,49 @@ export async function analyzeParsedActivityFile(
       ...(includedTimeline === undefined ? {} : { includedTimeline }),
     });
   }
-  const segmentSet = completedActivitySegmentSetSchema.parse({
-    ...initialSegmentSet,
-    segments: initialSegmentSet.segments.map((segment) => {
-      if (segment.role !== "activity") return segment;
-      const evidence = segmentStreamEvidence.get(segment.id);
-      if (evidence === undefined) return segment;
-      const segmentRecords = evidence.records;
-      const heartRateDistribution = calculateActivityFileHeartRateEvidence({
-        samples: evidence.metadata.samples,
-        ...(evidence.includedTimeline === undefined
-          ? {}
-          : { includedTimeline: evidence.includedTimeline }),
-      });
-      const recordAverageSpeed = average(segmentRecords.map((record) => record.speed));
-      const preservesSwimSessionAverage =
-        segment.activity_category === "swim" &&
-        validSwimSpeed(segment.summary.averageSpeedMetersPerSecond) !== undefined;
-      return {
-        ...segment,
-        summary: {
-          ...segment.summary,
-          ...(heartRateDistribution.timeWeightedAverageBpm === null
+  const segmentSet = parseAnalyzedSegmentSet(
+    {
+      ...initialSegmentSet,
+      segments: initialSegmentSet.segments.map((segment) => {
+        if (segment.role !== "activity") return segment;
+        const evidence = segmentStreamEvidence.get(segment.id);
+        if (evidence === undefined) return segment;
+        const segmentRecords = evidence.records;
+        const heartRateDistribution = calculateActivityFileHeartRateEvidence({
+          samples: evidence.metadata.samples,
+          ...(evidence.includedTimeline === undefined
             ? {}
-            : { averageHeartRateBpm: heartRateDistribution.timeWeightedAverageBpm }),
-          heartRateDistribution,
-          ...(average(segmentRecords.map((record) => record.power)) === undefined
-            ? {}
-            : { averagePowerWatts: average(segmentRecords.map((record) => record.power)) }),
-          ...(average(segmentRecords.map((record) => record.cadence)) === undefined
-            ? {}
-            : { averageCadenceRpm: average(segmentRecords.map((record) => record.cadence)) }),
-          ...(recordAverageSpeed === undefined || preservesSwimSessionAverage
-            ? {}
-            : {
-                averageSpeedMetersPerSecond: recordAverageSpeed,
-              }),
-        },
-      };
-    }),
-  });
+            : { includedTimeline: evidence.includedTimeline }),
+        });
+        const recordAverageSpeed = average(segmentRecords.map((record) => record.speed));
+        const preservesSwimSessionAverage =
+          segment.activity_category === "swim" &&
+          validSwimSpeed(segment.summary.averageSpeedMetersPerSecond) !== undefined;
+        return {
+          ...segment,
+          summary: {
+            ...segment.summary,
+            ...(heartRateDistribution.timeWeightedAverageBpm === null
+              ? {}
+              : { averageHeartRateBpm: heartRateDistribution.timeWeightedAverageBpm }),
+            heartRateDistribution,
+            ...(average(segmentRecords.map((record) => record.power)) === undefined
+              ? {}
+              : { averagePowerWatts: average(segmentRecords.map((record) => record.power)) }),
+            ...(average(segmentRecords.map((record) => record.cadence)) === undefined
+              ? {}
+              : { averageCadenceRpm: average(segmentRecords.map((record) => record.cadence)) }),
+            ...(recordAverageSpeed === undefined || preservesSwimSessionAverage
+              ? {}
+              : {
+                  averageSpeedMetersPerSecond: recordAverageSpeed,
+                }),
+          },
+        };
+      }),
+    },
+    "activity_analysis_segments_invalid",
+  );
   const completeTiming = segmentSet.segments.every(
     (segment) => segment.summary.timing.timingCoverage === "complete",
   );
@@ -745,24 +880,28 @@ export async function analyzeParsedActivityFile(
       return {
         segment,
         segmentMetadata: evidence.metadata,
+        includedTimeline: evidence.includedTimeline,
         calculation,
         efforts: calculation.effortsToInsert,
       };
     });
-  const persistedSegmentSet = completedActivitySegmentSetSchema.parse({
-    ...segmentSet,
-    segments: segmentSet.segments.map((segment) => {
-      const analysis = segmentAnalyses.find((candidate) => candidate.segment.id === segment.id);
-      if (!analysis) return segment;
-      return {
-        ...segment,
-        summary: buildActivityFileDerivedSegmentSummary({
-          summary: segment.summary,
-          metrics: analysis.calculation,
-        }),
-      };
-    }),
-  });
+  const persistedSegmentSet = parseAnalyzedSegmentSet(
+    {
+      ...segmentSet,
+      segments: segmentSet.segments.map((segment) => {
+        const analysis = segmentAnalyses.find((candidate) => candidate.segment.id === segment.id);
+        if (!analysis) return segment;
+        return {
+          ...segment,
+          summary: buildActivityFileDerivedSegmentSummary({
+            summary: segment.summary,
+            metrics: analysis.calculation,
+          }),
+        };
+      }),
+    },
+    "activity_analysis_persisted_segments_invalid",
+  );
   const soleActivityAnalysis = segmentAnalyses.length === 1 ? segmentAnalyses[0] : undefined;
   const soleSwimSummary =
     soleActivityAnalysis?.segment.activity_category === "swim"
@@ -792,30 +931,26 @@ export async function analyzeParsedActivityFile(
     (extraction) => extraction.metric === "heart_rate",
   );
   const detected =
-    heartRateBestEfforts === undefined
+    heartRateBestEfforts === undefined ||
+    soleActivityAnalysis === undefined ||
+    (soleActivityAnalysis.segment.activity_category !== "bike" &&
+      soleActivityAnalysis.segment.activity_category !== "run")
       ? null
-      : detectLactateThresholdHeartRateFromBestEfforts(heartRateBestEfforts);
+      : deriveThresholdHeartRateEvidence({
+          activityId: input.activityId,
+          segmentId: soleActivityAnalysis.segment.id,
+          activityCategory: soleActivityAnalysis.segment.activity_category,
+          metadata: soleActivityAnalysis.segmentMetadata,
+          ...(soleActivityAnalysis.includedTimeline === undefined
+            ? {}
+            : { includedTimeline: soleActivityAnalysis.includedTimeline }),
+          extraction: heartRateBestEfforts,
+        });
   const detectedLTHR: GeneratedActivityLthrEvidence | null =
     detected === null || soleActivityAnalysis === undefined
       ? null
       : {
-          valueBpm: detected.valueBpm,
-          recordedAt: new Date(detected.sourceEffort.endTimestampSeconds * 1_000),
-          calculationVersion: detected.calculationVersion,
-          provenance: {
-            activity_id: input.activityId,
-            segment_id: soleActivityAnalysis.segment.id,
-            derived_from: "activity_file_best_effort",
-            source_series: "heart_rate",
-            source_effort_calculation_version: detected.sourceEffortCalculationVersion,
-            exact_window_start_timestamp_seconds: detected.sourceEffort.startTimestampSeconds,
-            exact_window_end_timestamp_seconds: detected.sourceEffort.endTimestampSeconds,
-            duration_seconds: detected.sourceEffort.durationSeconds,
-            window_coverage: detected.sourceEffort.windowCoverage,
-            extraction_status: detected.sourceEffort.status,
-            extraction_reason:
-              detected.sourceEffort.status === "partial" ? detected.sourceEffort.reason : null,
-          },
+          ...detected,
         };
   if (summary.maxHeartRate && restingHR) void estimateVO2Max(summary.maxHeartRate, restingHR);
 

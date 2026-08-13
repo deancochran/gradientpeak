@@ -1,12 +1,13 @@
-import { decodePolyline } from "@repo/core";
+import type { ActivityDisplayModel, SemanticMetric } from "@repo/core";
 import { formatDurationSec } from "@repo/core/utils/dates";
 import { fireEvent } from "@testing-library/react-native";
-import type { ReactTestInstance } from "react-test-renderer";
+import type { ComponentProps } from "react";
+import { Pressable, View } from "react-native";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
+import { createActivityDisplay } from "../../../test/activity-display-fixture";
 import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
-import { ActivityCard } from "../ActivityCard";
-import { createObservationQuantificationBundleFixture } from "./activityQuantificationFixture";
+import { ActivityCard as ProjectionActivityCard } from "../ActivityCard";
 
 const toggleLikeMutateMock = jest.fn();
 
@@ -16,12 +17,6 @@ jest.mock("react-native", () => ({
   Pressable: mockCreateHost("Pressable"),
   TouchableOpacity: mockCreateHost("TouchableOpacity"),
   View: mockCreateHost("View"),
-}));
-
-jest.mock("react-native-svg", () => ({
-  __esModule: true,
-  default: mockCreateHost("Svg"),
-  Polyline: mockCreateHost("Polyline"),
 }));
 
 jest.mock("@repo/ui/components/avatar", () => ({
@@ -38,13 +33,10 @@ jest.mock("@repo/ui/components/card", () => ({
 }));
 
 jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: mockCreateHost("Icon") }));
-jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreateHost("Text") }));
-
-jest.mock("@repo/core", () => ({
-  __esModule: true,
-  ...jest.requireActual("@repo/core"),
-  decodePolyline: jest.fn(() => []),
-}));
+jest.mock("@repo/ui/components/text", () => {
+  const { createHost } = jest.requireActual("../../../test/mock-components");
+  return { __esModule: true, Text: createHost("Text") };
+});
 
 jest.mock("@repo/core/utils/dates", () => ({
   __esModule: true,
@@ -60,13 +52,7 @@ jest.mock("lucide-react-native", () => ({
   Footprints: mockCreateHost("Footprints"),
   Heart: mockCreateHost("Heart"),
   MessageCircle: mockCreateHost("MessageCircle"),
-  Route: mockCreateHost("Route"),
   Waves: mockCreateHost("Waves"),
-}));
-
-jest.mock("@/components/shared/StaticRouteMapPreview", () => ({
-  __esModule: true,
-  StaticRouteMapPreview: mockCreateHost("StaticRouteMapPreview"),
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -92,37 +78,115 @@ jest.mock("@/lib/hooks/usePreferredUnitSystem", () => ({
 
 const mockUsePreferredUnitSystem = jest.mocked(usePreferredUnitSystem);
 
-const availableQuantification = createObservationQuantificationBundleFixture({
-  estimated: false,
-});
-const partialQuantification = createObservationQuantificationBundleFixture({
-  status: "partial",
-});
+const availableMetrics: SemanticMetric[] = [
+  {
+    key: "common_load",
+    label: "Load",
+    status: "available",
+    value: 64,
+    unit: "score",
+    reason: null,
+  },
+  {
+    key: "normalized_intensity",
+    label: "Intensity",
+    status: "available",
+    value: 0.8,
+    unit: "ratio",
+    reason: null,
+  },
+];
+const unavailableMetrics: SemanticMetric[] = [
+  {
+    key: "common_load",
+    label: "Load",
+    status: "unavailable",
+    value: null,
+    unit: "score",
+    reason: "unavailable",
+  },
+  {
+    key: "normalized_intensity",
+    label: "Intensity",
+    status: "unavailable",
+    value: null,
+    unit: "ratio",
+    reason: "unavailable",
+  },
+];
+
+function ActivityCard({
+  activity,
+  owner,
+  ...props
+}: Omit<ComponentProps<typeof ProjectionActivityCard>, "activity"> & {
+  activity: Partial<ActivityDisplayModel>;
+  owner?: { id?: string | null; username?: string | null; avatar_url?: string | null } | null;
+}) {
+  return (
+    <ProjectionActivityCard
+      {...props}
+      activity={createActivityDisplay({
+        ...activity,
+        ...(owner
+          ? {
+              owner: {
+                id: owner.id ?? "owner-1",
+                username: owner.username ?? null,
+                avatarUrl: owner.avatar_url ?? null,
+              },
+            }
+          : {}),
+      })}
+    />
+  );
+}
 
 describe("ActivityCard", () => {
   beforeEach(() => {
     toggleLikeMutateMock.mockReset();
-    jest.mocked(decodePolyline).mockReturnValue([]);
     mockUsePreferredUnitSystem.mockReturnValue("metric");
   });
 
-  it("shows a like action by default in list mode", () => {
-    renderNative(
-      <ActivityCard
-        activity={{
-          id: "activity-1",
-          name: "Morning Run",
-          activity_kind: "single",
-          activity_categories: ["run"],
-          started_at: "2026-03-21T12:00:00.000Z",
-          likes_count: 2,
-          has_liked: false,
-        }}
-        variant="list"
-      />,
-    );
+  it("uses one canonical title, notes, and metrics layout across interaction contexts", () => {
+    const activity = {
+      id: "activity-1",
+      title: "Morning Run",
+      notes: "Steady aerobic work.",
+      activityComposition: { kind: "single" as const, categories: ["run" as const] },
+      time: { startedAt: "2026-03-21T12:00:00.000Z", finishedAt: null },
+      metrics: [
+        {
+          key: "elapsed_duration" as const,
+          label: "Elapsed",
+          status: "available" as const,
+          value: 3600,
+          unit: "seconds",
+          reason: null,
+        },
+      ],
+      engagement: { likes: 2, comments: 0, viewerHasLiked: false },
+    };
+    const rendered = renderNative(<ActivityCard activity={activity} />);
 
-    expect(screen.getByText("Morning Run")).toBeTruthy();
+    expect(screen.getByText("Morning Run").props.className).toBe(
+      "text-base font-semibold text-foreground",
+    );
+    expect(screen.getByText("Steady aerobic work.").props.numberOfLines).toBe(2);
+    expect(screen.getByTestId("activity-card-metrics").props.className).toBe(
+      "flex-row flex-wrap items-start gap-x-5 gap-y-2 px-1",
+    );
+    expect(screen.queryByTestId("activity-card-like-button-activity-1")).toBeNull();
+
+    rendered.rerender(<ActivityCard activity={activity} onPress={jest.fn()} showLike />);
+
+    expect(screen.getByText("Morning Run").props.className).toBe(
+      "text-base font-semibold text-foreground",
+    );
+    expect(screen.getByText("Steady aerobic work.").props.numberOfLines).toBe(2);
+    expect(screen.getByTestId("activity-card-metrics").props.className).toBe(
+      "flex-row flex-wrap items-start gap-x-5 gap-y-2 px-1",
+    );
     expect(screen.getByTestId("activity-card-like-button-activity-1")).toBeTruthy();
   });
 
@@ -131,9 +195,8 @@ describe("ActivityCard", () => {
       <ActivityCard
         activity={{
           id: "activity-multisport",
-          name: "Brick activity",
-          activity_kind: "multisport",
-          activity_categories: ["run", "bike", "run"],
+          title: "Brick activity",
+          activityComposition: { kind: "multisport", categories: ["run", "bike", "run"] },
         }}
       />,
     );
@@ -150,22 +213,25 @@ describe("ActivityCard", () => {
       <ActivityCard
         activity={{
           id: "activity-multisport-load",
-          name: "Brick activity",
-          activity_kind: "multisport",
-          activity_categories: ["bike", "run"],
-          distance_meters: 20_000,
-          elapsed_ms: 4_500_000,
-          derived: null,
-          segment_loads: [
+          title: "Brick activity",
+          activityComposition: { kind: "multisport", categories: ["bike", "run"] },
+          metrics: [
+            ...unavailableMetrics,
             {
-              segment_id: "segment-bike",
-              activity_category: "bike",
-              observationQuantification: null,
+              key: "distance",
+              label: "Distance",
+              status: "available",
+              value: 20_000,
+              unit: "meters",
+              reason: null,
             },
             {
-              segment_id: "segment-run",
-              activity_category: "run",
-              observationQuantification: null,
+              key: "elapsed_duration",
+              label: "Elapsed",
+              status: "available",
+              value: 4500,
+              unit: "seconds",
+              reason: null,
             },
           ],
         }}
@@ -173,29 +239,38 @@ describe("ActivityCard", () => {
     );
 
     expect(screen.queryByText("ActivityCategory-specific load")).toBeNull();
-    expect(screen.getByText("Common Load")).toBeTruthy();
-    expect(screen.getByText("Normalized intensity")).toBeTruthy();
+    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
     expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
   });
 
-  it("shows activity summary metrics in list mode", () => {
+  it("shows the canonical activity summary metrics", () => {
     renderNative(
       <ActivityCard
         activity={{
           id: "activity-1",
-          name: "Morning Run",
-          activity_kind: "single",
-          activity_categories: ["run"],
-          distance_meters: 10000,
-          elapsed_ms: 3_600_000,
-          avg_speed_mps: 2.78,
-          avg_power: 240,
-          avg_heart_rate: 148,
-          derived: {
-            observationQuantification: availableQuantification,
-          },
+          title: "Morning Run",
+          activityComposition: { kind: "single", categories: ["run"] },
+          metrics: [
+            ...availableMetrics,
+            {
+              key: "distance",
+              label: "Distance",
+              status: "available",
+              value: 10_000,
+              unit: "meters",
+              reason: null,
+            },
+            {
+              key: "elapsed_duration",
+              label: "Elapsed",
+              status: "available",
+              value: 3600,
+              unit: "seconds",
+              reason: null,
+            },
+          ],
         }}
-        variant="list"
       />,
     );
 
@@ -203,9 +278,9 @@ describe("ActivityCard", () => {
     expect(screen.getByText("10.0 km")).toBeTruthy();
     expect(screen.getByText("Elapsed")).toBeTruthy();
     expect(screen.getByText("60 min")).toBeTruthy();
-    expect(screen.getByText("Common Load")).toBeTruthy();
+    expect(screen.getByText("Load")).toBeTruthy();
     expect(screen.getByText("64")).toBeTruthy();
-    expect(screen.getByText("Normalized intensity")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
     expect(screen.getByText("0.80")).toBeTruthy();
     expect(
       screen.queryByText("Derived. Common Load is available using Run pace threshold."),
@@ -221,9 +296,17 @@ describe("ActivityCard", () => {
       <ActivityCard
         activity={{
           id: "activity-elapsed",
-          name: "Paused Ride",
-          elapsed_ms: 3_600_000,
-          active_ms: 3_000_000,
+          title: "Paused Ride",
+          metrics: [
+            {
+              key: "elapsed_duration",
+              label: "Elapsed",
+              status: "available",
+              value: 3600,
+              unit: "seconds",
+              reason: null,
+            },
+          ],
         }}
       />,
     );
@@ -238,8 +321,17 @@ describe("ActivityCard", () => {
       <ActivityCard
         activity={{
           id: "activity-active-only",
-          name: "Indoor Ride",
-          active_ms: 3_000_000,
+          title: "Indoor Ride",
+          metrics: [
+            {
+              key: "active_duration",
+              label: "Active",
+              status: "available",
+              value: 3000,
+              unit: "seconds",
+              reason: null,
+            },
+          ],
         }}
       />,
     );
@@ -254,8 +346,25 @@ describe("ActivityCard", () => {
       <ActivityCard
         activity={{
           id: "activity-partial",
-          name: "Partial Run",
-          derived: { observationQuantification: partialQuantification },
+          title: "Partial Run",
+          metrics: [
+            {
+              key: "common_load",
+              label: "Load",
+              status: "partial",
+              value: 32,
+              unit: "score",
+              reason: "partial",
+            },
+            {
+              key: "normalized_intensity",
+              label: "Intensity",
+              status: "partial",
+              value: 0.8,
+              unit: "ratio",
+              reason: "partial",
+            },
+          ],
         }}
       />,
     );
@@ -270,13 +379,9 @@ describe("ActivityCard", () => {
       <ActivityCard
         activity={{
           id: "activity-unsupported",
-          name: "Strength session",
-          derived: {
-            observationQuantification: createObservationQuantificationBundleFixture({
-              activityCategory: "strength",
-              status: "unsupported",
-            }),
-          },
+          title: "Strength session",
+          activityComposition: { kind: "single", categories: ["strength"] },
+          metrics: unavailableMetrics,
         }}
       />,
     );
@@ -295,12 +400,19 @@ describe("ActivityCard", () => {
       <ActivityCard
         activity={{
           id: "activity-1",
-          name: "Morning Run",
-          activity_kind: "single",
-          activity_categories: ["run"],
-          distance_meters: 5000,
+          title: "Morning Run",
+          activityComposition: { kind: "single", categories: ["run"] },
+          metrics: [
+            {
+              key: "distance",
+              label: "Distance",
+              status: "available",
+              value: 5000,
+              unit: "meters",
+              reason: null,
+            },
+          ],
         }}
-        variant="list"
       />,
     );
 
@@ -312,19 +424,33 @@ describe("ActivityCard", () => {
       <ActivityCard
         activity={{
           id: "activity-1",
-          name: "Morning Run",
-          activity_kind: "single",
-          activity_categories: ["run"],
-          distance_meters: 1000,
-          elapsed_ms: 600_000,
-          derived: null,
+          title: "Morning Run",
+          activityComposition: { kind: "single", categories: ["run"] },
+          metrics: [
+            ...unavailableMetrics,
+            {
+              key: "distance",
+              label: "Distance",
+              status: "available",
+              value: 1000,
+              unit: "meters",
+              reason: null,
+            },
+            {
+              key: "elapsed_duration",
+              label: "Elapsed",
+              status: "available",
+              value: 600,
+              unit: "seconds",
+              reason: null,
+            },
+          ],
         }}
-        variant="list"
       />,
     );
 
-    expect(screen.getByText("Common Load")).toBeTruthy();
-    expect(screen.getByText("Normalized intensity")).toBeTruthy();
+    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
     expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("0")).toBeNull();
   });
@@ -334,36 +460,25 @@ describe("ActivityCard", () => {
       <ActivityCard
         activity={{
           id: "activity-1",
-          name: "Strength Session",
-          activity_kind: "single",
-          activity_categories: ["strength"],
-          elapsed_ms: 1_800_000,
-          derived: {},
+          title: "Strength Session",
+          activityComposition: { kind: "single", categories: ["strength"] },
+          metrics: unavailableMetrics,
         }}
-        variant="list"
       />,
     );
 
-    expect(screen.getByText("Common Load")).toBeTruthy();
-    expect(screen.getByText("Normalized intensity")).toBeTruthy();
+    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
     expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
 
     rerender(
       <ActivityCard
         activity={{
           id: "activity-1",
-          name: "Strength Session",
-          activity_kind: "single",
-          activity_categories: ["strength"],
-          elapsed_ms: 1_800_000,
-          derived: {
-            observationQuantification: createObservationQuantificationBundleFixture({
-              activityCategory: "strength",
-              status: "unsupported",
-            }),
-          },
+          title: "Strength Session",
+          activityComposition: { kind: "single", categories: ["strength"] },
+          metrics: unavailableMetrics,
         }}
-        variant="list"
       />,
     );
 
@@ -380,12 +495,10 @@ describe("ActivityCard", () => {
       <ActivityCard
         activity={{
           id: "activity-1",
-          name: "Morning Run",
-          activity_kind: "single",
-          activity_categories: ["run"],
-          started_at: "2026-07-21T00:00:00.000Z",
-          elapsed_ms: 3_600_000,
-          derived: { observationQuantification: availableQuantification },
+          title: "Morning Run",
+          activityComposition: { kind: "single", categories: ["run"] },
+          time: { startedAt: "2026-07-21T00:00:00.000Z", finishedAt: null },
+          metrics: availableMetrics,
         }}
       />,
     );
@@ -400,11 +513,10 @@ describe("ActivityCard", () => {
       <ActivityCard
         activity={{
           id: "activity-1",
-          name: "Morning Run",
-          likes_count: 2,
-          has_liked: false,
+          title: "Morning Run",
+          engagement: { likes: 2, comments: 0, viewerHasLiked: false },
         }}
-        variant="list"
+        showLike
       />,
     );
 
@@ -420,15 +532,14 @@ describe("ActivityCard", () => {
     const onCommentPress = jest.fn();
     const onLikePress = jest.fn();
     const onPress = jest.fn();
+    const onTopRightActionPress = jest.fn();
 
     renderNative(
       <ActivityCard
         activity={{
           id: "activity-boundaries",
-          name: "Boundary Run",
-          comments_count: 4,
-          likes_count: 2,
-          has_liked: false,
+          title: "Boundary Run",
+          engagement: { likes: 2, comments: 4, viewerHasLiked: false },
         }}
         isLiked={false}
         likeCount={2}
@@ -437,13 +548,16 @@ describe("ActivityCard", () => {
         onPress={onPress}
         showLike
         testID="activity-boundary-card"
-        variant="list"
+        topRightAction={
+          <Pressable accessibilityLabel="Activity context action" onPress={onTopRightActionPress} />
+        }
       />,
     );
 
-    const navigation = screen.getByLabelText("Open activity Boundary Run");
+    const navigation = screen.getByLabelText("Open activity");
     const comment = screen.getByLabelText("Comment, 4 comments");
     const like = screen.getByLabelText("Like, 2 likes");
+    const topRightAction = screen.getByLabelText("Activity context action");
 
     expect(navigation.props.accessibilityRole).toBe("button");
     expect(comment.props.accessibilityRole).toBe("button");
@@ -465,6 +579,45 @@ describe("ActivityCard", () => {
     expect(onLikePress).toHaveBeenCalledTimes(1);
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(onCommentPress).toHaveBeenCalledTimes(1);
+
+    fireEvent.press(topRightAction);
+    expect(onTopRightActionPress).toHaveBeenCalledTimes(1);
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps top-right actions in the owner region and below-metrics actions after metrics", () => {
+    renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-accessory",
+          metrics: [
+            {
+              key: "elapsed_duration",
+              label: "Elapsed",
+              status: "available",
+              value: 60,
+              unit: "seconds",
+              reason: null,
+            },
+          ],
+        }}
+        belowMetricsActions={<View testID="activity-card-content-action" />}
+        showLike={false}
+        testID="activity-card-accessory-placement"
+        topRightAction={<View testID="activity-card-top-right-action" />}
+      />,
+    );
+
+    expect(
+      screen
+        .getByTestId("activity-card-accessory-placement-action-region")
+        .findAllByProps({ testID: "activity-card-top-right-action" }).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen
+        .getByTestId("activity-card-below-metrics-actions")
+        .findAllByProps({ testID: "activity-card-content-action" }).length,
+    ).toBeGreaterThan(0);
   });
 
   it("keeps owner profile and card navigation independent", () => {
@@ -473,7 +626,7 @@ describe("ActivityCard", () => {
 
     renderNative(
       <ActivityCard
-        activity={{ id: "activity-owner-boundary", name: "Owner Run" }}
+        activity={{ id: "activity-owner-boundary", title: "Owner Run" }}
         onOwnerPress={onOwnerPress}
         onPress={onPress}
         owner={{ id: "owner-1", username: "Coach Kim" }}
@@ -482,7 +635,7 @@ describe("ActivityCard", () => {
     );
 
     const owner = screen.getByLabelText("Open profile for Coach Kim");
-    const navigation = screen.getByLabelText("Open activity Owner Run");
+    const navigation = screen.getByLabelText("Open activity");
 
     fireEvent.press(owner);
     expect(onOwnerPress).toHaveBeenCalledTimes(1);
@@ -493,28 +646,26 @@ describe("ActivityCard", () => {
     expect(onOwnerPress).toHaveBeenCalledTimes(1);
   });
 
-  it("renders the shared static map preview for list route thumbnails", () => {
-    jest.mocked(decodePolyline).mockReturnValue([
-      { latitude: 35.1, longitude: -80.1 },
-      { latitude: 35.2, longitude: -80.2 },
-    ]);
-
+  it("never renders route previews or route indicators", () => {
     renderNative(
       <ActivityCard
         activity={{
           id: "activity-1",
-          name: "Morning Run",
-          polyline: "encoded-route",
+          title: "Morning Run",
+          capabilities: {
+            canLike: true,
+            canComment: true,
+            canShare: false,
+            canEdit: true,
+            canDelete: true,
+            hasRoute: true,
+          },
         }}
-        variant="list"
       />,
     );
 
-    expect(
-      screen.UNSAFE_root.find(
-        (node: ReactTestInstance) => String(node.type) === "StaticRouteMapPreview",
-      ),
-    ).toBeTruthy();
+    expect(screen.queryByTestId("activity-card-route-preview-activity-1")).toBeNull();
+    expect(screen.queryByText("Route available")).toBeNull();
   });
 
   it("does not show ingestion text in feed and list cards", () => {
@@ -522,10 +673,8 @@ describe("ActivityCard", () => {
       <ActivityCard
         activity={{
           id: "activity-1",
-          name: "Morning Run",
-          ingestion: { status: "pending_upload" },
+          title: "Morning Run",
         }}
-        variant="list"
       />,
     );
 

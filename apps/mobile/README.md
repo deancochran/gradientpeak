@@ -27,7 +27,7 @@ For E2E runs, `pnpm --filter mobile dev:e2e` loads `apps/mobile/.env.e2e` automa
 Run these from the repo root:
 
 ```bash
-pnpm --filter mobile dev
+pnpm exec turbo run dev --filter=mobile
 pnpm --filter mobile storybook:start
 pnpm --filter mobile check-types
 pnpm --filter mobile lint

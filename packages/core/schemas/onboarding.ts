@@ -15,6 +15,18 @@ import { ianaTimezoneSchema } from "../athlete-intelligence/planning-context";
 import { isValidDateOfBirth } from "../profile/date-of-birth";
 import { canonicalActivityCategorySchema } from "./activity-category";
 
+export const onboardingStatusValues = [
+  "provider_selection",
+  "processing",
+  "review",
+  "completed",
+] as const;
+
+/** Durable lifecycle state. Provider selection closes atomically when processing starts. */
+export const onboardingStatusSchema = z.enum(onboardingStatusValues);
+
+export type OnboardingStatus = z.infer<typeof onboardingStatusSchema>;
+
 /**
  * Experience level for onboarding.
  * Determines which baseline profile to use and which UI flows to show.

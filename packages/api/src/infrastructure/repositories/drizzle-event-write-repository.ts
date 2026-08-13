@@ -22,7 +22,7 @@ function serializeCreatedEvent(row: {
   created_at: Date;
   description: string | null;
   ends_at: Date | null;
-  event_type: "planned" | "race_target" | "custom" | "imported";
+  event_type: "planned" | "race_target" | "custom";
   id: string;
   linked_activity_id: string | null;
   notes: string | null;
@@ -34,7 +34,6 @@ function serializeCreatedEvent(row: {
   route_id: string | null;
   scheduled_date: string;
   series_id: string | null;
-  source_provider: string | null;
   starts_at: Date;
   status: "scheduled" | "completed" | "cancelled" | null;
   timezone: string | null;
@@ -64,7 +63,7 @@ function serializeSplitEventRow(row: {
   created_at: Date;
   description: string | null;
   ends_at: Date | null;
-  event_type: "planned" | "race_target" | "custom" | "imported";
+  event_type: "planned" | "race_target" | "custom";
   id: string;
   linked_activity_id: string | null;
   notes: string | null;
@@ -76,7 +75,6 @@ function serializeSplitEventRow(row: {
   route_id: string | null;
   scheduled_date: string;
   series_id: string | null;
-  source_provider: string | null;
   starts_at: Date;
   status: "scheduled" | "completed" | "cancelled" | null;
   timezone: string | null;
@@ -130,7 +128,6 @@ const splitEventReturningColumns = {
   series_id: schema.events.series_id,
   occurrence_key: schema.events.occurrence_key,
   original_starts_at: schema.events.original_starts_at,
-  source_provider: schema.events.source_provider,
 };
 
 type EventTransaction = Parameters<Parameters<DrizzleDbClient["transaction"]>[0]>[0];

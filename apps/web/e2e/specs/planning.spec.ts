@@ -2,39 +2,36 @@ import { expect, test } from "../fixtures";
 import { withPlanningPathFixture } from "../planning/data";
 import { openPlanningRoute, planningJourneyIds, planningTestIdentity } from "../planning/journeys";
 
-test("planning.training-path and calendar.navigation expose server-composed firm and tentative paths", async ({
+test("planning.training-path and calendar.navigation expose the server-composed scheduled path", async ({
   athletePage,
 }, testInfo) => {
   expect(planningJourneyIds).toContain("planning.training-path");
   await withPlanningPathFixture(testInfo, async (fixture) => {
-    const effectiveLoadResponse = athletePage.waitForResponse(
+    const planTabResponse = athletePage.waitForResponse(
       (response) =>
         response.url().includes("/api/trpc/") &&
-        response.url().includes("trainingPlans.getEffectiveLoad"),
+        response.url().includes("trainingPlans.getPlanTabProjection"),
     );
     await openPlanningRoute(athletePage, "/plan", /^plan$/i);
-    const effectiveLoad = await readEffectiveLoadResponse(await effectiveLoadResponse);
-    expect(effectiveLoad).toMatchObject({
-      status: "available",
-      resolvedRange: { startDate: fixture.startDate, endDate: fixture.endDate, timezone: "UTC" },
-      sourceCounts: { events: expect.any(Number) },
+    const planTab = await readPlanTabResponse(await planTabResponse);
+    expect(planTab).toMatchObject({
+      contractVersion: "plan-tab-projection-v1",
+      planningTimezone: "UTC",
+      timeline: { startDate: fixture.startDate, endDate: fixture.endDate },
       sourceCoverage: {
         activities: { status: "complete" },
         scheduledItems: { status: "complete" },
       },
-      effective: { status: "available" },
     });
-    expect(effectiveLoad.sourceCounts.events).toBeGreaterThanOrEqual(1);
-    const dtoFirmItem = effectiveLoad.effective.firmItems.find(
-      (item) => item.scheduledItemId === fixture.eventId,
-    );
-    if (!dtoFirmItem) throw new Error("Effective Load DTO did not contain the expected firm item.");
+    const dtoFirmItem = planTab.timeline.days
+      .flatMap((day) => day.scheduledItems)
+      .find((item) => item.id === fixture.eventId);
+    if (!dtoFirmItem) throw new Error("Plan-tab DTO did not contain the expected firm item.");
     expect(dtoFirmItem).toMatchObject({
-      date: fixture.date,
-      kind: "scheduled",
+      id: fixture.eventId,
+      status: "planned",
     });
-    expect(effectiveLoad.effective.tentativeItems).toEqual([]);
-    expect(dtoFirmItem.commonLoad).toMatchObject({ status: "complete" });
+    expect(dtoFirmItem.plannedLoad).toEqual(expect.any(Number));
     await expect(
       athletePage.getByRole("heading", { level: 2, name: /training path/i }),
     ).toBeVisible();
@@ -49,10 +46,6 @@ test("planning.training-path and calendar.navigation expose server-composed firm
       .locator(`[data-scheduled-item-id="${fixture.eventId}"]`);
     await expect(firmItemRow).toBeVisible();
     await expect(firmItemRow.getByText(/^Common Load \d+(?:\.\d+)?$/)).toBeVisible();
-    await athletePage.getByRole("tab", { name: /^tentative$/i }).press("Enter");
-    await expect(
-      athletePage.getByText("No tentative activities are scheduled in this window."),
-    ).toBeVisible();
     await expect(athletePage.getByText(/\b(?:TSS|IF|CTL|ATL|TSB)\b/)).toHaveCount(0);
     await expect(
       athletePage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
@@ -115,43 +108,43 @@ test("planning.training-path and calendar.navigation expose server-composed firm
   ).resolves.toBe(true);
 });
 
-type EffectiveLoadResponse = {
-  effective: {
-    firmItems: Array<{
-      commonLoad: unknown;
-      date: string;
-      kind: string;
-      scheduledItemId?: string;
-    }>;
-    status: string;
-    tentativeItems: unknown[];
-  };
-  resolvedRange: { endDate: string; startDate: string; timezone: string };
-  sourceCounts: { events: number };
+type PlanTabResponse = {
+  contractVersion: "plan-tab-projection-v1";
+  planningTimezone: string | null;
   sourceCoverage: {
     activities: { status: string };
     scheduledItems: { status: string };
   };
-  status: string;
+  timeline: {
+    endDate: string;
+    startDate: string;
+    days: Array<{
+      scheduledItems: Array<{
+        id: string;
+        plannedLoad?: number | null;
+        status: string;
+      }>;
+    }>;
+  };
 };
 
-async function readEffectiveLoadResponse(response: import("@playwright/test").Response) {
+async function readPlanTabResponse(response: import("@playwright/test").Response) {
   const payload: unknown = await response.json();
-  const data = findEffectiveLoadDto(payload);
+  const data = findPlanTabDto(payload);
   if (!data) {
-    throw new Error(`Effective Load response was HTTP ${response.status()} without a parsed DTO.`);
+    throw new Error(`Plan-tab response was HTTP ${response.status()} without a parsed DTO.`);
   }
-  return data as EffectiveLoadResponse;
+  return data as PlanTabResponse;
 }
 
-function findEffectiveLoadDto(value: unknown): Record<string, unknown> | undefined {
+function findPlanTabDto(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
-  if ("sourceCounts" in record && "sourceCoverage" in record && "resolvedRange" in record) {
+  if (record.contractVersion === "plan-tab-projection-v1" && "timeline" in record) {
     return record;
   }
   for (const child of Object.values(record)) {
-    const found = findEffectiveLoadDto(child);
+    const found = findPlanTabDto(child);
     if (found) return found;
   }
   return undefined;

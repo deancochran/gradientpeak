@@ -6,7 +6,7 @@ import {
 import { isWahooIntegrationEnabled } from "../../lib/integrations/oauth-config";
 
 export type WahooReconciliationTarget = "activity_history" | "profile_enrichment";
-export type WahooReconciliationTrigger = "connect" | "manual";
+export type WahooReconciliationTrigger = "connect" | "manual" | "onboarding";
 
 type WahooIntegrationCandidate = {
   generation: number;

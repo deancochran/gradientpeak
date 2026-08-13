@@ -5,21 +5,40 @@ import {
   quantifyCompletedActivityObservation,
 } from "@repo/core";
 import { describe, expect, it } from "vitest";
-import { buildCanonicalDailyLoads, buildWorkloadEnvelopes } from "../workload";
+import {
+  buildCanonicalDailyLoads,
+  buildWorkloadEnvelopes,
+  resolveActivitySourceIntegrity,
+} from "../workload";
 
 const start = new Date("2026-02-01T00:00:00.000Z");
 const end = new Date("2026-02-28T00:00:00.000Z");
 
-function observation(commonLoad: CommonLoadResult) {
+function observation(
+  commonLoad: CommonLoadResult,
+  source:
+    | { artifactId: string; capability: "activity_file" }
+    | { provider: string; externalId: string; capability: "provider_summary" }
+    | { capability: "unknown" }
+    | undefined = undefined,
+) {
+  const provider = source && "provider" in source ? source.provider : "wahoo";
+  const externalId = source && "externalId" in source ? source.externalId : "provider-activity";
   return quantifyCompletedActivityObservation({
     activityCategory: "bike",
     source: {
       activityId: "activity-1",
       segmentId: "segment-1",
-      provider: null,
-      externalId: null,
-      artifactId: null,
-      capability: "unknown",
+      provider:
+        source?.capability === "unknown" || source?.capability === "activity_file"
+          ? null
+          : provider,
+      externalId:
+        source?.capability === "unknown" || source?.capability === "activity_file"
+          ? null
+          : externalId,
+      artifactId: source && "artifactId" in source ? source.artifactId : null,
+      capability: source?.capability ?? "provider_summary",
       parserVersion: null,
       decodedContractVersion: null,
       materializerVersion: null,
@@ -57,6 +76,12 @@ function observationBundle(commonLoad: CommonLoadResult) {
   return createObservationQuantificationBundle({ members: [observation(commonLoad)] });
 }
 
+function unknownObservationBundle(commonLoad: CommonLoadResult) {
+  return createObservationQuantificationBundle({
+    members: [observation(commonLoad, { capability: "unknown" })],
+  });
+}
+
 function unavailableCommonLoad(): CommonLoadResult {
   return {
     status: "unavailable",
@@ -84,20 +109,211 @@ describe("workload utils", () => {
     });
   });
 
-  it("preserves unavailable Common Load as an unavailable workload envelope", () => {
+  it("counts a known activity with unavailable Common Load as known zero without estimating load", () => {
     const result = buildWorkloadEnvelopes(
       [
         {
           started_at: "2026-02-01T12:00:00.000Z",
+          sourceIntegrity: "trusted",
           observationQuantification: observationBundle(unavailableCommonLoad()),
+        },
+      ],
+      start,
+      end,
+      {
+        knownRestDates: Array.from({ length: 27 }, (_, index) =>
+          new Date(Date.UTC(2026, 1, index + 2)).toISOString().slice(0, 10),
+        ),
+      },
+    );
+
+    expect(result.acwr).toMatchObject({
+      value: null,
+      coverageDays: 28,
+      reasonCode: "chronic_load_zero",
+    });
+    expect(result.monotony).toMatchObject({
+      value: null,
+      coverageDays: 7,
+      reasonCode: "zero_variance",
+    });
+  });
+
+  it("counts an activity with one trusted provider source and missing quantification as known zero", () => {
+    const sourceIntegrity = resolveActivitySourceIntegrity({
+      evidence: {
+        currentArtifactIds: [],
+        providerReferences: [{ provider: "wahoo", externalId: "provider-activity" }],
+      },
+      observationQuantification: null,
+    });
+    const result = buildCanonicalDailyLoads(
+      [{ started_at: "2026-02-01T12:00:00.000Z", sourceIntegrity }],
+      start,
+      end,
+    );
+
+    expect(sourceIntegrity).toBe("trusted");
+    expect(result).toMatchObject({ complete: true, source: "common_load" });
+    expect(result.series[0]?.observations[0]).toEqual({
+      date: "2026-02-01",
+      state: "known_zero",
+      value: 0,
+    });
+  });
+
+  it("keeps invalid activity timestamps unavailable", () => {
+    for (const started_at of ["not-a-date", "2026-02-30T12:00:00.000Z"]) {
+      expect(
+        buildWorkloadEnvelopes([{ started_at, sourceIntegrity: "trusted" }], start, end).acwr,
+      ).toMatchObject({
+        value: null,
+        reasonCode: "missing_quantification",
+      });
+    }
+  });
+
+  it.each([
+    undefined,
+    "missing",
+    "invalid",
+  ] as const)("fails closed when per-activity source integrity is %s", (sourceIntegrity) => {
+    const result = buildWorkloadEnvelopes(
+      [
+        {
+          started_at: "2026-02-01T12:00:00.000Z",
+          ...(sourceIntegrity === undefined ? {} : { sourceIntegrity }),
         },
       ],
       start,
       end,
     );
 
-    expect(result.acwr).toMatchObject({ value: null, reasonCode: "incomplete_common_load" });
-    expect(result.monotony).toMatchObject({ value: null, reasonCode: "incomplete_common_load" });
+    expect(result.acwr).toMatchObject({
+      value: null,
+      reasonCode: "source_integrity_unavailable",
+    });
+  });
+
+  it("rejects quantification provenance that conflicts with the persisted current source", () => {
+    const quantification = createObservationQuantificationBundle({
+      members: [
+        observation(unavailableCommonLoad(), {
+          artifactId: "artifact-in-quantification",
+          capability: "activity_file",
+        }),
+      ],
+    });
+
+    expect(
+      resolveActivitySourceIntegrity({
+        evidence: {
+          currentArtifactIds: ["different-current-artifact"],
+          providerReferences: [],
+        },
+        observationQuantification: quantification,
+      }),
+    ).toBe("invalid");
+    expect(
+      buildWorkloadEnvelopes(
+        [
+          {
+            started_at: "2026-02-01T12:00:00.000Z",
+            sourceIntegrity: "invalid",
+            observationQuantification: quantification,
+          },
+        ],
+        start,
+        end,
+      ).acwr,
+    ).toMatchObject({ value: null, reasonCode: "source_integrity_unavailable" });
+  });
+
+  it.each([
+    {
+      label: "unknown provenance",
+      evidence: { currentArtifactIds: ["artifact"], providerReferences: [] },
+      quantification: unknownObservationBundle(unavailableCommonLoad()),
+    },
+    {
+      label: "mixed artifact and provider evidence",
+      evidence: {
+        currentArtifactIds: ["artifact"],
+        providerReferences: [{ provider: "wahoo", externalId: "provider-activity" }],
+      },
+      quantification: createObservationQuantificationBundle({
+        members: [
+          observation(unavailableCommonLoad(), {
+            artifactId: "artifact",
+            capability: "activity_file",
+          }),
+        ],
+      }),
+    },
+    {
+      label: "ambiguous provider references",
+      evidence: {
+        currentArtifactIds: [],
+        providerReferences: [
+          { provider: "wahoo", externalId: "provider-activity" },
+          { provider: "wahoo", externalId: "another-activity" },
+        ],
+      },
+      quantification: observationBundle(unavailableCommonLoad()),
+    },
+  ])("fails closed for $label", ({ evidence, quantification }) => {
+    expect(
+      resolveActivitySourceIntegrity({ evidence, observationQuantification: quantification }),
+    ).toBe("invalid");
+  });
+
+  it.each([
+    {
+      label: "mixed evidence with absent quantification",
+      evidence: {
+        currentArtifactIds: ["artifact"],
+        providerReferences: [{ provider: "wahoo", externalId: "provider-activity" }],
+      },
+      observationQuantification: null,
+    },
+    {
+      label: "multiple provider references with malformed quantification",
+      evidence: {
+        currentArtifactIds: [],
+        providerReferences: [
+          { provider: "wahoo", externalId: "provider-activity" },
+          { provider: "wahoo", externalId: "another-activity" },
+        ],
+      },
+      observationQuantification: { malformed: true },
+    },
+  ])("validates $label before allowing known zero", (input) => {
+    const sourceIntegrity = resolveActivitySourceIntegrity(input);
+    expect(sourceIntegrity).toBe("invalid");
+    expect(
+      buildCanonicalDailyLoads(
+        [{ started_at: "2026-02-01T12:00:00.000Z", sourceIntegrity }],
+        start,
+        end,
+      ),
+    ).toMatchObject({ complete: false, rejectionReason: "source_integrity_unavailable" });
+  });
+
+  it("trusts an exact activity-file source binding", () => {
+    const quantification = createObservationQuantificationBundle({
+      members: [
+        observation(unavailableCommonLoad(), {
+          artifactId: "artifact",
+          capability: "activity_file",
+        }),
+      ],
+    });
+    expect(
+      resolveActivitySourceIntegrity({
+        evidence: { currentArtifactIds: ["artifact"], providerReferences: [] },
+        observationQuantification: quantification,
+      }),
+    ).toBe("trusted");
   });
 
   it("rejects a quantification from an incompatible Common Load model version", () => {
@@ -114,6 +330,7 @@ describe("workload utils", () => {
       [
         {
           started_at: "2026-02-01T12:00:00.000Z",
+          sourceIntegrity: "trusted",
           observationQuantification: incompatible,
         },
       ],
@@ -162,6 +379,7 @@ describe("workload utils", () => {
       [
         {
           started_at: "2026-02-01T12:00:00.000Z",
+          sourceIntegrity: "trusted",
           observationQuantification: observationBundle(commonLoad),
         },
       ],
@@ -220,8 +438,16 @@ describe("workload utils", () => {
     });
     const duplicated = observationBundle(commonLoad);
     const deliveries = [
-      { started_at: "2026-02-01T12:00:00.000Z", observationQuantification: duplicated },
-      { started_at: "2026-02-02T12:00:00.000Z", observationQuantification: duplicated },
+      {
+        started_at: "2026-02-01T12:00:00.000Z",
+        sourceIntegrity: "trusted" as const,
+        observationQuantification: duplicated,
+      },
+      {
+        started_at: "2026-02-02T12:00:00.000Z",
+        sourceIntegrity: "trusted" as const,
+        observationQuantification: duplicated,
+      },
     ];
     const result = buildCanonicalDailyLoads(deliveries, start, end);
 
@@ -236,5 +462,37 @@ describe("workload utils", () => {
       value: null,
       reasonCode: "duplicate_subject",
     });
+  });
+
+  it("assigns an instant at a UTC boundary to the profile-local calendar date", () => {
+    const result = buildCanonicalDailyLoads(
+      [{ started_at: "2026-02-01T15:30:00.000Z", sourceIntegrity: "trusted" }],
+      new Date("2026-02-01T15:00:00.000Z"),
+      new Date("2026-02-02T14:59:59.999Z"),
+      { planningTimezone: "Asia/Tokyo" },
+    );
+
+    expect(result.series[0]?.observations).toEqual([
+      { date: "2026-02-02", state: "known_zero", value: 0 },
+    ]);
+  });
+
+  it("uses local calendar bounds across a DST-shortened day", () => {
+    const result = buildCanonicalDailyLoads(
+      [{ started_at: "2026-03-09T06:30:00.000Z", sourceIntegrity: "trusted" }],
+      new Date("2026-03-08T08:00:00.000Z"),
+      new Date("2026-03-09T06:59:59.999Z"),
+      { planningTimezone: "America/Los_Angeles" },
+    );
+
+    expect(result.series[0]?.observations).toEqual([
+      { date: "2026-03-08", state: "known_zero", value: 0 },
+    ]);
+  });
+
+  it("rejects an invalid planning timezone instead of consulting ambient time", () => {
+    expect(() =>
+      buildCanonicalDailyLoads([], start, end, { planningTimezone: "Mars/Olympus_Mons" }),
+    ).toThrow(/valid IANA zone/);
   });
 });

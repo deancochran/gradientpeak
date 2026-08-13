@@ -1,9 +1,12 @@
 import { formatDateOfBirth } from "@repo/core/profile";
-import type { DrizzleDbClient, IntegrationCredentialRow, IntegrationRow } from "@repo/db";
+import type { OnboardingStatus } from "@repo/core/schemas/onboarding";
+import type { DrizzleDbClient, IntegrationRow } from "@repo/db";
 import { schema } from "@repo/db";
 import { and, desc, eq, inArray } from "drizzle-orm";
+import type { DrizzleTransactionClient } from "../db";
 import { createWahooSyncRepository } from "../infrastructure/repositories";
 import { enqueueWahooProfileEnrichment } from "../lib/provider-sync/wahoo-profile-enrichment";
+import { withOpenIntegrationManagementTransaction } from "./integrations/onboarding-integration-gate";
 import { admitWahooReconciliation } from "./integrations/wahoo-reconciliation-admission";
 
 const PROFILE_ENRICHMENT_RESOURCE = "profile_enrichment";
@@ -29,7 +32,7 @@ export type WahooProfileSetupData = {
   profile: {
     dob: string | null;
     gender: "male" | "female" | "other" | null;
-    onboarded: boolean | null;
+    onboarding_status: OnboardingStatus;
   };
   values: {
     dob?: string;
@@ -73,7 +76,7 @@ export class WahooProfileSetupService {
       .select({
         dob: schema.profiles.dob,
         gender: schema.profiles.gender,
-        onboarded: schema.profiles.onboarded,
+        onboarding_status: schema.profiles.onboarding_status,
       })
       .from(schema.profiles)
       .where(eq(schema.profiles.id, profileId))
@@ -116,7 +119,7 @@ export class WahooProfileSetupService {
       profile: {
         dob: profile?.dob ? toDateOnlyString(profile.dob) : null,
         gender: profile?.gender ?? null,
-        onboarded: profile?.onboarded ?? null,
+        onboarding_status: profile?.onboarding_status ?? "provider_selection",
       },
       values,
       sources,
@@ -127,28 +130,64 @@ export class WahooProfileSetupService {
     profileId: string,
     provider: ExecutableEnrichmentProvider,
   ): Promise<ProviderSetupRefreshResult> {
-    const integration = await this.getConnectedIntegration(profileId, provider);
+    await withOpenIntegrationManagementTransaction({
+      db: this.db,
+      profileId,
+      operation: (tx) => this.refreshSetupDataInTransaction(tx, profileId, provider),
+    });
 
-    if (!integration) {
-      throw new Error("Integration not found");
-    }
+    return {
+      fieldsFilled: [],
+      fieldsKept: [],
+      fieldsUpdated: [],
+      keptExistingValues: false,
+      provider,
+      status: "queued",
+    };
+  }
 
-    const credentials = await this.getIntegrationCredentials(integration.id);
+  async refreshSetupDataInTransaction(
+    tx: DrizzleTransactionClient,
+    profileId: string,
+    provider: ExecutableEnrichmentProvider,
+  ): Promise<ProviderSetupRefreshResult> {
+    const [integration] = await tx
+      .select()
+      .from(schema.integrations)
+      .where(
+        and(
+          eq(schema.integrations.profile_id, profileId),
+          eq(schema.integrations.provider, provider),
+          eq(schema.integrations.lifecycle_status, "active"),
+        ),
+      )
+      .limit(1)
+      .for("update");
+    if (!integration) throw new Error("Integration not found");
+    const [credentials] = await tx
+      .select()
+      .from(schema.integrationCredentials)
+      .where(eq(schema.integrationCredentials.integration_id, integration.id))
+      .limit(1);
     const admission = admitWahooReconciliation({
       integration,
       scope: credentials?.scope,
       target: "profile_enrichment",
       trigger: "manual",
     });
-    if (!admission.admitted) {
-      throw new Error("Integration not found");
-    }
+    if (!admission.admitted) throw new Error("Integration not found");
     await enqueueWahooProfileEnrichment({
       admission,
       providerSyncRepository: createWahooSyncRepository({ db: this.db }),
+      transaction: tx,
     });
-    await this.writeSetupRefreshState(integration, "queued", { fields_imported: [] });
-
+    await this.writeSetupRefreshState(
+      integration,
+      "queued",
+      { fields_imported: [] },
+      undefined,
+      tx,
+    );
     return {
       fieldsFilled: [],
       fieldsKept: [],
@@ -229,13 +268,14 @@ export class WahooProfileSetupService {
       | "provider_error_code"
     >,
     lastError?: string,
+    writeDb: DrizzleDbClient | DrizzleTransactionClient = this.db,
   ) {
     const now = new Date();
     const isSuccess = status === "succeeded" || status === "partial";
     const isFailure = status === "failed";
 
     try {
-      await this.db
+      await writeDb
         .insert(schema.providerSyncState)
         .values({
           integration_id: integration.id,
@@ -278,34 +318,6 @@ export class WahooProfileSetupService {
       .select()
       .from(schema.integrations)
       .where(and(...conditions));
-  }
-
-  private async getConnectedIntegration(profileId: string, provider: ExecutableEnrichmentProvider) {
-    const [integration] = await this.db
-      .select()
-      .from(schema.integrations)
-      .where(
-        and(
-          eq(schema.integrations.profile_id, profileId),
-          eq(schema.integrations.provider, provider),
-          eq(schema.integrations.lifecycle_status, "active"),
-        ),
-      )
-      .limit(1);
-
-    return integration ?? null;
-  }
-
-  private async getIntegrationCredentials(
-    integrationId: string,
-  ): Promise<IntegrationCredentialRow | null> {
-    const [credentials] = await this.db
-      .select()
-      .from(schema.integrationCredentials)
-      .where(eq(schema.integrationCredentials.integration_id, integrationId))
-      .limit(1);
-
-    return credentials ?? null;
   }
 }
 

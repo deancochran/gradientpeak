@@ -82,7 +82,7 @@ export async function importActivity(page: Page, fixture: ActivityFileFixture, n
   await page
     .getByTestId("activity-import-file-input")
     .setInputFiles(activityFileForIdentity(fixture, name));
-  await page.getByTestId("activity-import-name-input").fill(name);
+  await page.getByTestId("activity-import-name-input").waitFor({ state: "detached" });
   await page.getByRole("button", { name: "Import activity" }).click();
   await page.waitForURL(/\/activities\/[0-9a-f-]+\/?$/);
   return page.url().match(/\/activities\/([0-9a-f-]+)/)?.[1] ?? "";

@@ -1,8 +1,4 @@
-import {
-  getProfileMetricDefinition,
-  isActivityDerivedThresholdMetricType,
-  profileMetricTypes,
-} from "@repo/core/athlete-inputs";
+import { getProfileMetricDefinition, profileMetricTypes } from "@repo/core/athlete-inputs";
 import type { ReactNode } from "react";
 import React from "react";
 import { createHost } from "../../../../test/mock-components";
@@ -146,7 +142,7 @@ describe("profile metric semantic pace entry", () => {
     metric = undefined;
   });
 
-  it("renders every metric once in the four categorized picker groups", () => {
+  it("renders every metric once in the three categorized picker groups", () => {
     renderNative(<ProfileMetricEditScreen />);
 
     expect(screen.getByTestId("profile-metric-type-trigger").props.accessibilityLabel).toBe(
@@ -155,37 +151,13 @@ describe("profile metric semantic pace entry", () => {
     expect(screen.getByTestId("profile-metric-type-trigger").props.accessibilityHint).toContain(
       "grouped by category",
     );
-    for (const category of [
-      "Heart-rate calibration",
-      "Supporting Physiology",
-      "Recovery",
-      "Body & Aerobic",
-    ]) {
+    for (const category of ["Supporting Physiology", "Recovery", "Body & Aerobic"]) {
       expect(screen.getByText(category)).toBeTruthy();
     }
-    for (const metricType of profileMetricTypes.filter(
-      (candidate) => !isActivityDerivedThresholdMetricType(candidate),
-    )) {
+    for (const metricType of profileMetricTypes) {
       const option = screen.getByTestId(`profile-metric-type-${metricType}`);
       expect(option.props.children).toBe(getProfileMetricDefinition(metricType).label);
     }
-    expect(screen.queryByTestId("profile-metric-type-lthr")).toBeNull();
-  });
-
-  it("shows an existing threshold as read-only", async () => {
-    routeId = "metric-1";
-    metric = {
-      metric_type: "lthr",
-      value: 168,
-      recorded_at: "2026-07-01T08:30:00.000Z",
-      notes: null,
-    };
-
-    renderNative(<ProfileMetricEditScreen />);
-
-    expect(await screen.findByText("Read-only threshold")).toBeTruthy();
-    expect(screen.getByText(/calculated from trusted recorded activity evidence/)).toBeTruthy();
-    expect(screen.queryByTestId("profile-metric-type-trigger")).toBeNull();
   });
 
   it("disables the metric picker while a create is pending", () => {

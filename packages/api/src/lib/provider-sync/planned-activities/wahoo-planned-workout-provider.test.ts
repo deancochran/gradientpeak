@@ -140,6 +140,50 @@ describe("WahooPlannedActivityProvider", () => {
     });
   });
 
+  it.each([
+    "provisional",
+    "stale",
+  ] as const)("exports a structured bike workout from a %s valid threshold", async (calibrationState) => {
+    const targets = performanceTargets();
+    const performanceTargetsWithState = athletePerformanceTargetFactsSchema.parse({
+      ...targets,
+      cycling: {
+        planningThresholdPower: {
+          ...targets.cycling.planningThresholdPower,
+          status: calibrationState === "provisional" ? "partial" : "available",
+          calibrationState,
+          confidence: "low",
+          reasons: calibrationState === "stale" ? ["stale_evidence"] : [],
+        },
+      },
+    });
+    const { enqueueJob, provider } = providerFixture({
+      performanceTargets: performanceTargetsWithState,
+      planStructure: planWithRelativeTarget("%FTP", "bike"),
+    });
+
+    await expect(
+      provider.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" }),
+    ).resolves.toEqual({ jobId: "job-1", queued: true });
+    expect(enqueueJob.mock.calls[0]?.[0].payload.projectionSnapshot).toMatchObject({
+      plan: { header: { ftp: 250 } },
+    });
+  });
+
+  it("exports a structured run workout from a provisional sport-specific HR threshold", async () => {
+    const targets = performanceTargets();
+    targets.heartRate.run.lthr.calibrationState = "provisional";
+    const { enqueueJob, provider } = providerFixture({
+      performanceTargets: targets,
+      planStructure: planWithRelativeTarget("%ThresholdHR", "run"),
+    });
+
+    await provider.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" });
+    expect(enqueueJob.mock.calls[0]?.[0].payload.projectionSnapshot).toMatchObject({
+      plan: { header: { threshold_hr: 175 } },
+    });
+  });
+
   it("changes queued desired state when the scheduled time changes", async () => {
     const first = providerFixture({ startsAt: "2026-07-29T12:00:00.000Z" });
     const second = providerFixture({ startsAt: "2026-07-29T13:00:00.000Z" });

@@ -11,7 +11,6 @@ describe("buildTrainingAdjustmentDailySeries", () => {
     expect(points.map((point) => point.date)).toEqual(["2026-06-01", "2026-06-02", "2026-06-03"]);
     expect(points[1]).toMatchObject({
       plannedLoad: null,
-      tentativePlannedLoad: null,
       completedLoad: null,
       targetLoad: null,
       actualOrScheduledLoad: null,
@@ -21,12 +20,11 @@ describe("buildTrainingAdjustmentDailySeries", () => {
     });
   });
 
-  it("computes daily load deltas from target, planned, tentative, and actual inputs", () => {
+  it("computes daily load deltas from target, scheduled, and actual inputs", () => {
     const points = buildTrainingAdjustmentDailySeries({
       startDate: "2026-06-01",
       endDate: "2026-06-01",
-      plannedLoadByDate: { "2026-06-01": 45 },
-      tentativePlannedLoadByDate: { "2026-06-01": 15 },
+      plannedLoadByDate: { "2026-06-01": 60 },
       completedLoadByDate: { "2026-06-01": 30 },
       targetLoadByDate: { "2026-06-01": 50 },
       actualOrScheduledLoadByDate: { "2026-06-01": 55 },
@@ -45,7 +43,6 @@ describe("buildTrainingAdjustmentDailySeries", () => {
       endDate: "2026-06-01",
       completedLoadByDate: new Map([["2026-06-01", 20]]),
       plannedLoadByDate: new Map([["2026-06-01", 35]]),
-      tentativePlannedLoadByDate: new Map([["2026-06-01", 0]]),
       targetLoadByDate: new Map([["2026-06-01", 45]]),
     });
 
@@ -59,7 +56,6 @@ describe("buildTrainingAdjustmentDailySeries", () => {
       startDate: "2026-06-01",
       endDate: "2026-06-01",
       plannedLoadByDate: { "2026-06-01": 35 },
-      tentativePlannedLoadByDate: { "2026-06-01": 0 },
       targetLoadByDate: { "2026-06-01": 45 },
     });
 
@@ -76,7 +72,6 @@ describe("buildTrainingAdjustmentDailySeries", () => {
       startDate: "2026-06-01",
       endDate: "2026-06-01",
       plannedLoadByDate: { "2026-06-01": 35 },
-      tentativePlannedLoadByDate: { "2026-06-01": 0 },
       completedLoadByDate: { "2026-06-01": 20 },
       targetLoadByDate: { "2026-06-01": 45 },
       actualOrScheduledLoadByDate: { "2026-06-01": null },

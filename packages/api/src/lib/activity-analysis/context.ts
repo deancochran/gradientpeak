@@ -81,7 +81,7 @@ export function resolveActivityContextFromEvidence(input: {
     .sort(compareRecordedAtDesc);
   const latestMetrics = new Map<string, (typeof metricRows)[number]>();
   for (const metric of metricRows) {
-    if (metric.metric_type === "lthr" || latestMetrics.has(metric.metric_type)) continue;
+    if (latestMetrics.has(metric.metric_type)) continue;
     latestMetrics.set(metric.metric_type, metric);
   }
   const profileMetrics: ActivityAnalysisContext["profileMetrics"] = {};

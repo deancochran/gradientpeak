@@ -4,8 +4,6 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Route } from "./$activityPlanId";
 
-const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
-
 const mocks = vi.hoisted(() => ({
   loaderData: undefined as unknown,
 }));
@@ -19,7 +17,6 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("../../../lib/public-share", () => ({
-  describeStructure: () => "1 activity step",
   loadPublicActivityPlan: vi.fn(),
 }));
 
@@ -32,32 +29,9 @@ describe("PublicActivityPlanPage", () => {
         is_system_template: false,
         name: "Tempo run",
         owner: { name: "Avery", username: "avery" },
-        structure: {
-          activity_category: "run",
-          segments: [
-            {
-              id: id(1),
-              intervals: [
-                {
-                  id: id(2),
-                  name: "Tempo",
-                  repetitions: 1,
-                  steps: [
-                    {
-                      duration: { seconds: 60, type: "time" },
-                      id: id(3),
-                      name: "Work",
-                      targets: [{ intensity: 5, type: "RPE" }],
-                    },
-                  ],
-                },
-              ],
-              name: "Run",
-              role: "activity",
-            },
-          ],
-          version: 3,
-        },
+        activity_category: "run",
+        structure_summary: "1 activity step",
+        structure_version: 3,
       },
     };
     const PublicActivityPlanPage = (Route as unknown as { component: React.ComponentType })
@@ -67,5 +41,6 @@ describe("PublicActivityPlanPage", () => {
 
     expect(screen.getAllByText("Run")).toHaveLength(2);
     expect(screen.queryByText("Categories")).toBeNull();
+    expect(screen.queryByRole("button", { name: /print|save as pdf/i })).toBeNull();
   });
 });

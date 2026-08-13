@@ -110,7 +110,6 @@ jest.mock("@rn-primitives/label", () => createPrimitiveModule("@rn-primitives/la
 jest.mock("@rn-primitives/menubar", () => createPrimitiveModule("@rn-primitives/menubar"));
 jest.mock("@rn-primitives/popover", () => createPrimitiveModule("@rn-primitives/popover"));
 jest.mock("@rn-primitives/portal", () => createPrimitiveModule("@rn-primitives/portal"));
-jest.mock("@rn-primitives/progress", () => createPrimitiveModule("@rn-primitives/progress"));
 jest.mock("@rn-primitives/radio-group", () => createPrimitiveModule("@rn-primitives/radio-group"));
 jest.mock("@rn-primitives/select", () => createPrimitiveModule("@rn-primitives/select"));
 jest.mock("@rn-primitives/separator", () => createPrimitiveModule("@rn-primitives/separator"));

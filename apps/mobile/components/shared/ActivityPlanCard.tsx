@@ -1,3 +1,8 @@
+import type {
+  ActivityPlanDetail,
+  ActivityPlanSummary as ActivityPlanSummaryProjection,
+  ScheduledActivityPlanSummary,
+} from "@repo/core";
 import { deriveActivityPlanPresentation } from "@repo/core/activity-plan";
 import type { ActivityPrescriptionQuantificationBundle } from "@repo/core/activity-quantification";
 import { Icon } from "@repo/ui/components/icon";
@@ -7,7 +12,6 @@ import { Calendar } from "lucide-react-native";
 import { useMemo } from "react";
 import { View } from "react-native";
 import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
-import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
 import { ActivityPlanSummary } from "./ActivityPlanSummary";
@@ -19,12 +23,8 @@ import {
   ResourceOwnerActionRow,
 } from "./ResourceCardPrimitives";
 
-// ============================================
-// TYPES
-// ============================================
-
-// Database object types
-export interface ActivityPlan {
+/** Legacy authoring/query source retained outside the card prop boundary during caller migration. */
+export type ActivityPlan = {
   id: string;
   name: string;
   activity_category?: string | null;
@@ -41,9 +41,9 @@ export interface ActivityPlan {
   likes_count?: number | null;
   has_liked?: boolean;
   owner?: EntityOwner | null;
-}
+};
 
-export interface PlannedActivity {
+export type PlannedActivity = {
   id: string;
   activity_plan_id: string;
   activity_plan?: ActivityPlan;
@@ -53,39 +53,29 @@ export interface PlannedActivity {
   profile_id?: string;
   created_at?: string;
   updated_at?: string;
-}
+};
 
-/** Preformatted data for plan/card adapters that do not have a database object. */
-export interface ActivityPlanCardData {
+export type ActivityPlanCardData = {
   id: string;
   name: string;
   activity_category: string;
   description?: string;
   structure?: unknown;
-  estimatedDuration?: number; // in seconds
+  estimatedDuration?: number;
   prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
-  estimatedDistance?: number; // meters
+  estimatedDistance?: number;
   notes?: string;
   createdAt?: string;
   updatedAt?: string;
-
-  // Scheduling info (optional)
-  scheduledDate?: string; // ISO date string
+  scheduledDate?: string;
   isCompleted?: boolean;
-
   likes_count?: number | null;
   has_liked?: boolean;
   owner?: EntityOwner | null;
-}
+};
 
 interface ActivityPlanCardProps {
-  // New flexible prop: accepts activity_plan directly, or planned_activity with nested activity_plan
-  activityPlan?: ActivityPlan;
-  plannedActivity?: PlannedActivity;
-
-  // Accepts preformatted data from plan/card adapters.
-  cardData?: ActivityPlanCardData;
-
+  plan: ActivityPlanSummaryProjection | ActivityPlanDetail | ScheduledActivityPlanSummary;
   onPress?: () => void;
   testID?: string;
   variant?: "default" | "compact";
@@ -97,25 +87,24 @@ interface ActivityPlanCardProps {
 // ============================================
 
 export function ActivityPlanCard({
-  activityPlan,
-  plannedActivity,
-  cardData: providedCardData,
+  plan,
   onPress,
   testID,
   variant = "default",
   showScheduleInfo = false,
 }: ActivityPlanCardProps) {
-  // Normalize database objects and adapter data to the card's presentation contract.
-  const cardData = providedCardData || transformToCardData(activityPlan, plannedActivity);
-
-  // Determine card size based on variant
   const isCompact = variant === "compact";
   const presentation = useMemo(
-    () => deriveActivityPlanPresentation(cardData.structure),
-    [cardData.structure],
+    () => deriveActivityPlanPresentation(plan.structure),
+    [plan.structure],
   );
+  const scheduledDate =
+    plan.contractVersion === "scheduled-activity-plan-summary-v1"
+      ? (plan.schedule.startsAt ?? plan.schedule.calendarDate)
+      : null;
+  const estimatedDuration = plan.metrics.find((metric) => metric.key === "elapsed_duration")?.value;
   const categoryItems = getUniqueActivityCategoryConfigs([
-    presentation?.activity_category ?? cardData.activity_category,
+    presentation?.activity_category ?? plan.activityCategory,
   ]).map((activity_category) => ({
     icon: activity_category.icon,
     iconClassName: activity_category.color,
@@ -128,17 +117,15 @@ export function ActivityPlanCard({
     likeCount,
     toggleLike,
   } = useResourceLike({
-    entityId: cardData.id,
+    entityId: plan.id,
     entityType: "activity_plan",
-    initialCount: cardData.likes_count,
-    initialLiked: cardData.has_liked,
+    initialCount: plan.engagement.likes,
+    initialLiked: plan.engagement.viewerHasLiked,
   });
 
   return (
     <ResourceCardShell
-      accessibilityLabel={
-        onPress ? `Open activity plan ${cardData.name || "Untitled activity plan"}` : undefined
-      }
+      accessibilityLabel={onPress ? `Open activity plan ${plan.name}` : undefined}
       actionRegion={
         isCompact ? undefined : (
           <ResourceOwnerActionRow
@@ -153,99 +140,76 @@ export function ActivityPlanCard({
             compact={isCompact}
             categoryItems={categoryItems}
             fallbackLabel="GradientPeak"
-            owner={cardData.owner}
-            timestamp={cardData.createdAt ?? cardData.updatedAt}
+            owner={
+              plan.owner
+                ? {
+                    id: plan.owner.id,
+                    username: plan.owner.username,
+                    avatar_url: plan.owner.avatarUrl,
+                  }
+                : null
+            }
           />
         )
       }
-      cardClassName={cardData.isCompleted ? "opacity-60" : undefined}
+      cardClassName={
+        plan.contractVersion === "scheduled-activity-plan-summary-v1" &&
+        plan.schedule.status === "completed"
+          ? "opacity-60"
+          : undefined
+      }
       compact={isCompact}
       contentClassName={isCompact ? "gap-3 px-2" : "gap-3 px-3"}
       onPress={onPress}
-      testID={testID ?? `activity-plan-card-${cardData.id}`}
+      testID={testID ?? `activity-plan-card-${plan.id}`}
     >
       {isCompact ? <ResourceCategoryItems items={categoryItems} /> : null}
 
       <ActivityPlanSummary
-        description={cardData.description || cardData.notes || null}
-        estimatedDuration={cardData.estimatedDuration}
-        owner={cardData.owner}
+        description={plan.description}
+        estimatedDuration={estimatedDuration ?? undefined}
+        owner={
+          plan.owner
+            ? { id: plan.owner.id, username: plan.owner.username, avatar_url: plan.owner.avatarUrl }
+            : null
+        }
         presentation={presentation}
-        prescriptionQuantification={cardData.prescriptionQuantification}
-        structure={cardData.structure}
-        title={cardData.name}
+        projectionMetrics={plan.metrics}
+        structure={plan.structure}
+        title={plan.name}
         variant="standalone"
         showAttribution={false}
       />
 
-      {showScheduleInfo && cardData.scheduledDate && (
+      {showScheduleInfo &&
+      plan.contractVersion === "scheduled-activity-plan-summary-v1" &&
+      (scheduledDate || plan.schedule.trainingPlanId) ? (
         <View className="mb-2 mt-3 flex-row items-center">
           <Icon as={Calendar} size={12} className="text-muted-foreground mr-1.5" />
-          <Text className="text-xs text-muted-foreground">
-            {formatScheduledDateTime(cardData.scheduledDate)}
-          </Text>
+          <View>
+            {scheduledDate ? (
+              <Text className="text-xs text-muted-foreground">
+                {formatScheduledDateTime(scheduledDate)}
+              </Text>
+            ) : null}
+            {plan.schedule.trainingPlanId ? (
+              <Text className="text-xs text-muted-foreground">From training plan</Text>
+            ) : null}
+          </View>
         </View>
-      )}
+      ) : null}
 
       <ActivityPlanContentPreview
         compact={isCompact}
         size={isCompact ? "small" : "medium"}
         plan={{
-          structure: cardData.structure,
+          structure: plan.structure,
         }}
         presentation={presentation}
-        testIDPrefix={`activity-plan-card-preview-${cardData.id}`}
+        testIDPrefix={`activity-plan-card-preview-${plan.id}`}
       />
     </ResourceCardShell>
   );
-}
-
-// ============================================
-// UTILITY FUNCTIONS
-// ============================================
-
-/**
- * Transform database objects to internal card data format
- */
-function transformToCardData(
-  activityPlan?: ActivityPlan,
-  plannedActivity?: PlannedActivity,
-): ActivityPlanCardData {
-  // Determine the source of activity_plan data
-  const plan = plannedActivity?.activity_plan || activityPlan;
-
-  if (!plan) {
-    throw new Error(
-      "ActivityPlanCard: Either activityPlan or plannedActivity with nested activity_plan must be provided",
-    );
-  }
-
-  const quantitySummary = getActivityPlanQuantitySummary(plan);
-
-  return {
-    id: plannedActivity?.id || plan.id,
-    name: plan.name,
-    activity_category: plan.activity_category ?? "other",
-    description: plan.description || undefined,
-    structure: plan.structure,
-    estimatedDuration: quantitySummary.durationSeconds ?? undefined,
-    prescriptionQuantification: plan.prescriptionQuantification,
-    estimatedDistance: quantitySummary.distanceMeters ?? undefined,
-    notes: plannedActivity?.notes || plan.description || plan.notes || undefined,
-    createdAt:
-      plan.created_at instanceof Date
-        ? plan.created_at.toISOString()
-        : plan.created_at || undefined,
-    updatedAt:
-      plan.updated_at instanceof Date
-        ? plan.updated_at.toISOString()
-        : plan.updated_at || undefined,
-    scheduledDate: plannedActivity?.scheduled_date,
-    isCompleted: Boolean(plannedActivity?.completed_activity_id),
-    likes_count: plan.likes_count,
-    has_liked: plan.has_liked,
-    owner: plan.owner ?? null,
-  };
 }
 
 /**

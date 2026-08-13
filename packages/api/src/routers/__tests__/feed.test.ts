@@ -4,7 +4,6 @@ import {
   quantifyCompletedActivityObservation,
 } from "@repo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { mapActivityToListDerivedResponse } from "../../lib/activity-analysis/response-mappers";
 
 const analysisMocks = vi.hoisted(() => ({
   buildActivityDerivedSummaryMap: vi.fn(),
@@ -139,12 +138,12 @@ function createDbMock(plan: DbPlan = {}) {
 function createCaller(plan: DbPlan = {}, userId = VIEWER_ID) {
   const db = createDbMock(plan);
   const caller = feedRouter.createCaller({
-    db: db as any,
+    db: db as never,
     session: { user: { id: userId } },
     headers: new Headers(),
     clientType: "test",
     trpcSource: "vitest",
-  } as any);
+  } as never);
 
   return { caller, db };
 }
@@ -189,9 +188,8 @@ describe("feedRouter", () => {
         avg_cadence: 88,
         elevation_gain_meters: "450.25",
         calories: 900,
-        polyline: null,
+        has_route: false,
         content_visibility: "public",
-        created_at: new Date("2026-04-03T11:05:00.000Z"),
         profile_username: "owner",
         profile_avatar_url: "https://example.com/owner.png",
       },
@@ -213,9 +211,8 @@ describe("feedRouter", () => {
         avg_cadence: 84,
         elevation_gain_meters: 55,
         calories: 420,
-        polyline: null,
+        has_route: false,
         content_visibility: "public",
-        created_at: new Date("2026-04-02T10:35:00.000Z"),
         profile_username: "viewer",
         profile_avatar_url: null,
       },
@@ -237,9 +234,8 @@ describe("feedRouter", () => {
         avg_cadence: null,
         elevation_gain_meters: null,
         calories: 200,
-        polyline: null,
+        has_route: false,
         content_visibility: "public",
-        created_at: new Date("2026-04-01T10:25:00.000Z"),
         profile_username: "owner",
         profile_avatar_url: "https://example.com/owner.png",
       },
@@ -255,39 +251,41 @@ describe("feedRouter", () => {
     expect(result.hasMore).toBe(true);
     expect(result.nextCursor).toBe(`${secondStartedAt.toISOString()}|${ACTIVITY_ID_2}`);
     expect(result.items).toHaveLength(2);
-    expect(result.items[0]).toEqual({
+    expect(result.items[0]).toMatchObject({
+      contractVersion: "activity-display-v1",
       id: ACTIVITY_ID,
-      profile_id: OWNER_ID,
-      name: "Morning Ride",
-      type: "bike",
-      activity_kind: "single",
-      activity_categories: ["bike"],
-      started_at: firstStartedAt.toISOString(),
-      finished_at: "2026-04-03T11:00:00.000Z",
-      distance_meters: 32000,
-      elapsed_seconds: 3600,
-      duration_seconds: 3600,
-      moving_seconds: 3500,
-      avg_heart_rate: 150,
-      max_heart_rate: 178,
-      avg_power: 220,
-      avg_cadence: 88,
-      elevation_gain_meters: 450.25,
-      calories: 900,
-      polyline: null,
-      likes_count: 4,
-      comments_count: 2,
-      content_visibility: "public",
-      created_at: "2026-04-03T11:05:00.000Z",
-      profile: {
-        id: OWNER_ID,
-        username: "owner",
-        avatar_url: "https://example.com/owner.png",
-      },
-      has_liked: true,
-      derived: null,
-      ingestion: null,
+      title: "Morning Ride",
+      engagement: { likes: 4, comments: 2, viewerHasLiked: true },
+      capabilities: expect.objectContaining({ canEdit: false, canDelete: false }),
     });
+    const firstItem = result.items[0];
+    if (!firstItem) throw new Error("Expected the first feed item");
+    expect(Object.keys(firstItem).sort()).toEqual([
+      "activityComposition",
+      "capabilities",
+      "contractVersion",
+      "engagement",
+      "href",
+      "id",
+      "metrics",
+      "notes",
+      "owner",
+      "time",
+      "title",
+      "visibility",
+    ]);
+    for (const sensitiveField of [
+      "polyline",
+      "ingestion",
+      "segments",
+      "derived",
+      "profile_id",
+      "created_at",
+      "avg_heart_rate",
+      "calories",
+    ]) {
+      expect(firstItem).not.toHaveProperty(sensitiveField);
+    }
     expect(analysisMocks.buildActivityDerivedSummaryMap).toHaveBeenCalledWith(
       expect.objectContaining({
         profileId: VIEWER_ID,
@@ -324,9 +322,8 @@ describe("feedRouter", () => {
         avg_cadence: 84,
         elevation_gain_meters: 55,
         calories: 420,
-        polyline: null,
+        has_route: false,
         content_visibility: "public",
-        created_at: new Date("2026-04-03T10:35:00.000Z"),
         profile_username: "viewer",
         profile_avatar_url: null,
       },
@@ -348,9 +345,8 @@ describe("feedRouter", () => {
         avg_cadence: 88,
         elevation_gain_meters: 450,
         calories: 900,
-        polyline: null,
+        has_route: false,
         content_visibility: "public",
-        created_at: new Date("2026-04-03T11:05:00.000Z"),
         profile_username: "owner",
         profile_avatar_url: "https://example.com/owner.png",
       },
@@ -389,25 +385,26 @@ describe("feedRouter", () => {
       avg_cadence: 84,
       elevation_gain_meters: 55,
       calories: 420,
-      polyline: null,
+      has_route: false,
       content_visibility: "public",
-      created_at: new Date("2026-04-03T11:05:00.000Z"),
       profile_username: "viewer",
       profile_avatar_url: null,
     };
-    const myActivitiesItem = mapActivityToListDerivedResponse({
-      activity: activity as never,
-      has_liked: false,
-      derived,
-      segment_loads: [],
-    });
     const { caller } = createCaller({ execute: [[activity], []] });
 
     const result = await caller.getFeed({ limit: 1 });
+    const expectedCommonLoad = derived.observationQuantification.summary.commonLoad;
+    if (expectedCommonLoad.status === "unavailable") {
+      throw new Error("Expected available common load");
+    }
 
-    expect(result.items[0]?.derived).toEqual(myActivitiesItem.derived);
-    expect(result.items[0]?.derived?.observationQuantification.summary.commonLoad).toEqual(
-      derived.observationQuantification.summary.commonLoad,
+    expect(result.items[0]?.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "common_load",
+          value: expectedCommonLoad.load,
+        }),
+      ]),
     );
   });
 
@@ -433,9 +430,8 @@ describe("feedRouter", () => {
             avg_cadence: 88,
             elevation_gain_meters: "450.25",
             calories: 900,
-            polyline: null,
+            has_route: false,
             content_visibility: "public",
-            created_at: new Date("2026-04-03T11:05:00.000Z"),
             profile_username: "owner",
             profile_avatar_url: "https://example.com/owner.png",
           },
@@ -449,7 +445,7 @@ describe("feedRouter", () => {
     });
   });
 
-  it("getFeed rejects malformed derived summaries at the DTO boundary", async () => {
+  it("getFeed keeps the canonical feed available when an owned derived summary is malformed", async () => {
     analysisMocks.buildActivityDerivedSummaryMap.mockResolvedValue(
       new Map([[ACTIVITY_ID, { tss: 82, intensity_factor: 0.91, computed_as_of: 123 }]]),
     );
@@ -475,9 +471,8 @@ describe("feedRouter", () => {
             avg_cadence: 88,
             elevation_gain_meters: 450,
             calories: 900,
-            polyline: null,
+            has_route: false,
             content_visibility: "public",
-            created_at: new Date("2026-04-03T11:05:00.000Z"),
             profile_username: "viewer",
             profile_avatar_url: "https://example.com/owner.png",
           },
@@ -487,9 +482,24 @@ describe("feedRouter", () => {
       likeStatsRows: [{ entity_id: ACTIVITY_ID, likes_count: 4, has_liked: true }],
     });
 
-    await expect(caller.getFeed({ limit: 1 })).rejects.toMatchObject({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Failed to fetch feed",
+    await expect(caller.getFeed({ limit: 1 })).resolves.toMatchObject({
+      items: [
+        expect.objectContaining({
+          id: ACTIVITY_ID,
+          metrics: expect.arrayContaining([
+            expect.objectContaining({
+              key: "common_load",
+              status: "unavailable",
+              reason: "quantification_unavailable",
+            }),
+            expect.objectContaining({
+              key: "normalized_intensity",
+              status: "unavailable",
+              reason: "quantification_unavailable",
+            }),
+          ]),
+        }),
+      ],
     });
   });
 });

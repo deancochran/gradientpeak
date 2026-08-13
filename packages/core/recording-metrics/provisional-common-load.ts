@@ -13,7 +13,10 @@ import {
   calculateHeartRateZoneStress,
   type HeartRateCommonLoadCalculationResult,
 } from "../load/heart-rate-zone-stress";
-import type { AthletePerformanceTargetFacts } from "../performance-model";
+import {
+  type AthletePerformanceTargetFacts,
+  getAvailablePerformanceTargetValue,
+} from "../performance-model";
 import type { HeartRateDurationEvidence } from "../zones/heart-rate-duration";
 import type { RecordingMetricsActivityCategory } from "./contracts";
 
@@ -117,7 +120,7 @@ function buildThresholdEvidence(input: {
     source: input.fact.source,
     observedAt: input.fact.observedAt,
     validAt: input.fact.computedAt,
-    freshness: "current",
+    freshness: input.fact.reasons.some((reason) => reason.includes("stale")) ? "stale" : "current",
     calculationVersion: input.fact.calculationVersion,
     sourceFingerprint: input.fact.sourceEvidenceIds.join(":"),
   };
@@ -173,7 +176,7 @@ function buildProvenance(input: {
       observed_at: input.fact.observedAt,
       valid_at: input.fact.computedAt,
       confidence: input.fact.confidence === "unavailable" ? "unknown" : input.fact.confidence,
-      stale: false,
+      stale: thresholdEvidence.freshness === "stale",
       estimate: input.fact.source === "estimated" || input.fact.source === "modeled",
       calculation_version: input.fact.calculationVersion,
       evidence_fingerprint: evidenceFingerprint,
@@ -199,17 +202,21 @@ function factForMethod(
       | AthletePerformanceTargetFacts["cycling"]["planningThresholdPower"]
       | AthletePerformanceTargetFacts["running"]["planningThresholdPace"]
       | AthletePerformanceTargetFacts["swimming"]["css"],
-  ): SelectedPerformanceFact => ({
-    status: fact.status,
-    value: fact.value,
-    calculationVersion: fact.calculationVersion,
-    sourceEvidenceIds: fact.sourceEvidenceIds,
-    confidence: fact.confidence,
-    reasons: fact.reasons,
-    source: fact.status === "available" ? "modeled" : "unknown",
-    observedAt: fact.status === "available" ? fact.evidenceTime.observedThrough : null,
-    computedAt: fact.evidenceTime.computedAt,
-  });
+  ): SelectedPerformanceFact => {
+    const value = getAvailablePerformanceTargetValue(fact);
+    const status = value === null ? "unavailable" : "available";
+    return {
+      status,
+      value,
+      calculationVersion: fact.calculationVersion,
+      sourceEvidenceIds: fact.sourceEvidenceIds,
+      confidence: fact.confidence,
+      reasons: fact.reasons,
+      source: status === "available" ? "modeled" : "unknown",
+      observedAt: status === "available" ? fact.evidenceTime.observedThrough : null,
+      computedAt: fact.evidenceTime.computedAt,
+    };
+  };
   switch (method) {
     case "power_threshold":
       return targetFact(performanceTargets.cycling.planningThresholdPower);

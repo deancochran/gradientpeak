@@ -1,4 +1,4 @@
-import type { ActivityCardActivity } from "@/components/shared/ActivityCard";
+import type { ActivityDisplayModel } from "@repo/core";
 import type { ActivityPlan, PlannedActivity } from "@/components/shared/ActivityPlanCard";
 import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
@@ -8,6 +8,8 @@ import type {
 } from "@/lib/training-path/completedCommonLoadObservation";
 
 export type TrainingPathRange = "goal" | "season" | "all";
+
+export type PlanTrainingChartRange = "daily" | "weekly" | "monthly";
 
 export type TrainingPathWeekWindow = {
   start: string;
@@ -29,7 +31,6 @@ export type TrainingPathWeek = {
   effectiveIntensity?: number | null;
   effectiveCompletedLoad?: number | null;
   effectiveRemainingLoad?: number | null;
-  effectiveTentativeLoad?: number | null;
   recommendedLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
   recommendedLoad?: number | null;
   weekStart: string;
@@ -37,7 +38,6 @@ export type TrainingPathWeek = {
   label: string;
   completedLoad: number | null;
   plannedLoad: number | null;
-  tentativePlannedLoad: number | null;
   targetLoad: number | null;
   fitness: number | null;
   scheduledFitness: number | null;
@@ -63,11 +63,9 @@ export type TrainingPathWeekSummary = {
   effectiveIntensity?: number | null;
   effectiveCompletedLoad?: number | null;
   effectiveRemainingLoad?: number | null;
-  effectiveTentativeLoad?: number | null;
   recommendedLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
   recommendedLoad?: number | null;
   plannedLoad: number | null;
-  tentativePlannedLoad: number | null;
   targetLoad: number | null;
   fitness: number | null;
   targetFitness: number | null;
@@ -104,7 +102,7 @@ export type TrainingPathCompletedActivity = {
   title: string;
   date: string;
   load?: number | null;
-  activity?: ActivityCardActivity;
+  activity?: ActivityDisplayModel;
 };
 
 export type TrainingPathGoalMarker = {
@@ -133,7 +131,6 @@ export type TrainingPathLoadPoint = {
   date: string;
   completed_common_load?: number | null;
   scheduled_common_load?: number | null;
-  tentative_scheduled_common_load?: number | null;
   recommended_common_load?: number | null;
 };
 

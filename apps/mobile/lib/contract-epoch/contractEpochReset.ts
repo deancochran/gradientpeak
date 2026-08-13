@@ -7,6 +7,7 @@ export const CONTRACT_EPOCH_STORAGE_KEY = "gradientpeak:contract-epoch";
 export const CONTRACT_EPOCH_RESET_STORAGE_KEYS = [
   "gradientpeak-theme-store",
   "gradientpeak-calendar-store",
+  "gradientpeak-plan-display-preferences",
   "location_buffer",
   "last_location_time",
   "background_location_session_id",

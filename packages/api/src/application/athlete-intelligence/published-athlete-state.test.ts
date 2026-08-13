@@ -121,6 +121,23 @@ describe("published athlete-state snapshot", () => {
     expect(snapshot.baseline?.asOf).toBe("2026-07-01T23:30:00.000Z");
   });
 
+  it("keeps the published snapshot fresh until a scheduled calibration expiry is due", async () => {
+    const read = snapshotRead("UTC");
+    if (!read.current) throw new Error("Expected published state fixture");
+    read.current.state.source_revision = 5;
+    read.current.state.published_revision = 4;
+    read.current.state.dirty_from_at = new Date("2026-07-03T00:00:00.000Z");
+    vi.mocked(readPublishedAthleteStateSnapshotData).mockResolvedValue(read);
+
+    await expect(
+      readPublishedAthleteStateSnapshot({
+        db: {} as never,
+        profileId,
+        now: new Date("2026-07-02T00:30:00.000Z"),
+      }),
+    ).resolves.toMatchObject({ freshness: "fresh", rebuildStatus: "fresh" });
+  });
+
   it("reconstructs canonical performance targets only from matching published estimate facts", async () => {
     const facts = buildPerformanceTargetFactsFixture({
       asOf: "2026-07-01T23:30:00.000Z",
@@ -128,26 +145,29 @@ describe("published athlete-state snapshot", () => {
       planningThresholdPowerWatts: 285,
       planningThresholdPaceSecondsPerKm: 240,
       swimmingCssSecondsPer100m: 95,
-      lthrBpm: { bike: 170, run: 176, swim: 158 },
+      lthrBpm: { bike: 170, run: 176 },
       maxHrBpm: { bike: 190, run: 194, swim: 180 },
     });
+    facts.cycling.planningThresholdPower.evidenceCount = 2;
+    facts.cycling.planningThresholdPower.trend = "increasing";
+    facts.heartRate.bike.lthr.evidenceCount = 3;
+    facts.heartRate.bike.lthr.trend = "stable";
     const read = snapshotRead("UTC");
     if (!read.current) throw new Error("Expected published state fixture");
     read.current.estimates = [
-      estimate("bike_ftp", "bike", 285, "watts", facts.cycling.planningThresholdPower),
+      estimate("threshold_power", "bike", 285, "watts", facts.cycling.planningThresholdPower),
       estimate(
-        "run_threshold_pace",
+        "threshold_speed",
         "run",
         240,
         "seconds_per_km",
         facts.running.planningThresholdPace,
       ),
-      estimate("swim_css", "swim", 95, "seconds_per_100m", facts.swimming.css),
-      estimate("bike_lthr", "bike", 170, "bpm", facts.heartRate.bike.lthr),
+      estimate("threshold_speed", "swim", 95, "seconds_per_100m", facts.swimming.css),
+      estimate("threshold_heart_rate", "bike", 170, "bpm", facts.heartRate.bike.lthr),
       estimate("bike_max_hr", "bike", 190, "bpm", facts.heartRate.bike.maxHr),
-      estimate("run_lthr", "run", 176, "bpm", facts.heartRate.run.lthr),
+      estimate("threshold_heart_rate", "run", 176, "bpm", facts.heartRate.run.lthr),
       estimate("run_max_hr", "run", 194, "bpm", facts.heartRate.run.maxHr),
-      estimate("swim_lthr", "swim", 158, "bpm", facts.heartRate.swim.lthr),
       estimate("swim_max_hr", "swim", 180, "bpm", facts.heartRate.swim.maxHr),
     ];
     vi.mocked(readPublishedAthleteStateSnapshotData).mockResolvedValue(read);
@@ -158,7 +178,22 @@ describe("published athlete-state snapshot", () => {
         profileId,
         now: new Date("2026-07-02T00:30:00.000Z"),
       }),
-    ).resolves.toMatchObject({ performanceTargets: facts });
+    ).resolves.toMatchObject({
+      performanceTargets: {
+        ...facts,
+        cycling: {
+          planningThresholdPower: expect.objectContaining({
+            evidenceCount: 2,
+            trend: "increasing",
+          }),
+        },
+        heartRate: {
+          bike: {
+            lthr: expect.objectContaining({ evidenceCount: 3, trend: "stable" }),
+          },
+        },
+      },
+    });
   });
 
   it("uses UTC only when the profile preference is absent", async () => {

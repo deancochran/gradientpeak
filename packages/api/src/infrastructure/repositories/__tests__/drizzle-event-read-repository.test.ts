@@ -21,7 +21,6 @@ function createEventRow(overrides: Record<string, unknown> = {}) {
     recurrence_rule: null,
     recurrence_timezone: null,
     series_id: null,
-    source_provider: null,
     occurrence_key: "",
     original_starts_at: new Date("2026-04-15T06:45:00.000Z"),
     notes: "Bring bottles",
@@ -79,7 +78,6 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
     system_content_key: null,
     system_content_version: null,
     system_content_hash: null,
-    source_provider: null,
     external_id: null,
     duration_seconds: null,
     distance_meters: null,
@@ -173,6 +171,10 @@ function createSelectCaptureDb(rowsByTable: Record<string, unknown[]>) {
       const builder: any = {
         from: (table: unknown) => {
           captured.table = extractTableName(table);
+          return builder;
+        },
+        innerJoin: (...args: unknown[]) => {
+          captured.leftJoinArgs.push(args);
           return builder;
         },
         leftJoin: (...args: unknown[]) => {
@@ -331,6 +333,132 @@ describe("drizzle-event-read-repository", () => {
       expect.arrayContaining(["profile-1", "planned", "training-plan-1"]),
     );
     expect(recommendationQuery?.params).not.toEqual(expect.arrayContaining(["2026-07-25"]));
+  });
+
+  it("uses the viewer planning date and hides inaccessible plans for default-going group events", async () => {
+    const activityPlan = createActivityPlanRow();
+    const groupEvent = {
+      id: "group-event-1",
+      series_id: "group-series-1",
+      occurrence_key: "2026-07-21",
+      title: "Club tempo ride",
+      description: "Tuesday group session",
+      starts_at: new Date("2026-07-21T01:00:00.000Z"),
+      ends_at: new Date("2026-07-21T02:00:00.000Z"),
+      timezone: "Asia/Tokyo",
+      activity_plan_id: activityPlan.id,
+      created_at: new Date("2026-07-01T00:00:00.000Z"),
+      updated_at: new Date("2026-07-01T00:00:00.000Z"),
+      activity_plan: null,
+      viewer_occurrence_rsvp_status: null,
+      viewer_series_rsvp_status: null,
+    };
+    const { db, selects } = createSelectCaptureDb({
+      profiles: [{ planningTimezone: "America/Los_Angeles" }],
+      events: [],
+      group_memberships: [
+        groupEvent,
+        {
+          ...groupEvent,
+          id: "declined-group-event",
+          viewer_occurrence_rsvp_status: "declined",
+        },
+      ],
+      activities: [],
+    });
+
+    const result = await createEventReadRepository(db).getEffectivePlanLoadInputs({
+      asOf: new Date("2026-07-20T12:00:00.000Z"),
+      profileId: "profile-1",
+      startDate: "2026-07-20",
+      endDate: "2026-07-26",
+    });
+
+    expect(result.events).toMatchObject([
+      {
+        id: "group-event-1",
+        profile_id: "profile-1",
+        event_type: "planned",
+        scheduled_date: "2026-07-20",
+        status: "scheduled",
+        training_plan_id: null,
+        linked_activity_id: null,
+        activity_plan_id: null,
+        activity_plan: null,
+      },
+    ]);
+    expect(result.sourceCounts.events).toBe(1);
+    const groupEventQuery = selects.find((select) => select.table === "group_memberships");
+    const query = toQuery(groupEventQuery?.whereArg);
+    expect(query.sql).toContain('"group_memberships"."profile_id" =');
+    expect(query.sql).toContain('"group_memberships"."status" =');
+    expect(query.sql).toContain('"groups"."deleted_at" is null');
+    expect(query.sql).toContain('"group_events"."cancelled_at" is null');
+    expect(query.sql).toContain('"group_event_rsvps"."status" <>');
+    expect(query.sql).toContain('"group_event_series_rsvps"."status" <>');
+    expect(query.sql).toContain('"group_event_rsvps"."profile_id" is not null');
+    expect(query.sql).toContain('"group_event_rsvps"."profile_id" is null');
+    expect(query.sql).toContain("at time zone");
+    expect(query.params).toEqual(
+      expect.arrayContaining([
+        "profile-1",
+        "active",
+        "profile-1",
+        "America/Los_Angeles",
+        "2026-07-20",
+        "2026-07-26",
+        "declined",
+      ]),
+    );
+    const activityPlanJoin = groupEventQuery?.leftJoinArgs.at(-1);
+    const activityPlanJoinQuery = toQuery(activityPlanJoin?.[1]);
+    expect(activityPlanJoinQuery.sql).toContain('"activity_plans"."profile_id" =');
+    expect(activityPlanJoinQuery.sql).toContain("from follows f");
+    expect(activityPlanJoinQuery.sql).toContain("from content_access_grants cag");
+    expect(activityPlanJoinQuery.params).toContain("profile-1");
+    expect(groupEventQuery?.limitArg).toBe(10_001);
+  });
+
+  it("serializes an accessible group plan after applying the canonical viewer predicate", async () => {
+    const activityPlan = createActivityPlanRow({ content_visibility: "public" });
+    const { db } = createSelectCaptureDb({
+      profiles: [{ planningTimezone: "UTC" }],
+      events: [],
+      group_memberships: [
+        {
+          id: "group-event-1",
+          series_id: null,
+          occurrence_key: null,
+          title: "Public workout",
+          description: null,
+          starts_at: new Date("2026-07-21T07:00:00.000Z"),
+          ends_at: null,
+          timezone: "UTC",
+          activity_plan_id: activityPlan.id,
+          created_at: new Date("2026-07-01T00:00:00.000Z"),
+          updated_at: new Date("2026-07-01T00:00:00.000Z"),
+          activity_plan: activityPlan,
+          viewer_occurrence_rsvp_status: "accepted",
+          viewer_series_rsvp_status: null,
+        },
+      ],
+      activities: [],
+    });
+
+    const result = await createEventReadRepository(db).getEffectivePlanLoadInputs({
+      asOf: new Date("2026-07-20T12:00:00.000Z"),
+      profileId: "profile-1",
+      startDate: "2026-07-20",
+      endDate: "2026-07-26",
+    });
+
+    expect(result.events).toMatchObject([
+      {
+        id: "group-event-1",
+        activity_plan_id: "activity-plan-1",
+        activity_plan: { id: "activity-plan-1" },
+      },
+    ]);
   });
 
   it("fetches validate constraint plans by id after router permission checks", async () => {
@@ -861,5 +989,23 @@ describe("drizzle-event-read-repository", () => {
       '"events"."starts_at" asc',
       '"events"."id" asc',
     ]);
+  });
+
+  it("filters group-event plans by the canonical viewer read predicate before serialization", async () => {
+    const { db, selects } = createSelectCaptureDb({ activity_plans: [] });
+
+    await createEventReadRepository(db).listCalendarGroupActivityPlans({
+      activityPlanIds: ["activity-plan-1"],
+      profileId: "profile-viewer",
+    });
+
+    const query = toQuery(selects[0]?.whereArg);
+    expect(query.sql).toContain('"activity_plans"."profile_id" =');
+    expect(query.sql).toContain('"activity_plans"."is_system_template" =');
+    expect(query.sql).toContain('"activity_plans"."content_visibility" =');
+    expect(query.sql).toContain("from follows f");
+    expect(query.sql).toContain("from content_access_grants cag");
+    expect(query.sql).toContain("cag.access_level = 'read'");
+    expect(query.params).toContain("profile-viewer");
   });
 });

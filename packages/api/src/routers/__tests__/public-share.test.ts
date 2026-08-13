@@ -45,6 +45,8 @@ describe("publicShareRouter", () => {
       {
         id: "00000000-0000-4000-8000-000000000002",
         name: "Morning ride",
+        activity_kind: "single",
+        activity_categories: ["bike"],
         notes: "Sunny tempo work",
         started_at: new Date("2026-07-16T12:00:00.000Z"),
         finished_at: new Date("2026-07-16T13:15:00.000Z"),
@@ -100,17 +102,28 @@ describe("publicShareRouter", () => {
 
     expect(activity).toMatchObject({
       id: "00000000-0000-4000-8000-000000000002",
-      name: "Morning ride",
-      started_at: "2026-07-16T12:00:00.000Z",
-      elevation_gain_meters: 420.5,
-      likes_count: 3,
+      startedAt: "2026-07-16T12:00:00.000Z",
+      performance: { elevationGainMeters: 420.5 },
+      likes: 3,
       owner: { username: "alex" },
     });
+    expect(Object.keys(activity ?? {}).sort()).toEqual([
+      "activityComposition",
+      "id",
+      "likes",
+      "notes",
+      "owner",
+      "performance",
+      "sourceArtifact",
+      "startedAt",
+    ]);
+    expect(activity?.owner).not.toHaveProperty("id");
+    expect(activity?.owner).not.toHaveProperty("avatar_url");
     expect(activity).not.toHaveProperty("activity_file_path");
-    expect(activity?.current_artifact).not.toHaveProperty("path");
+    expect(activity?.sourceArtifact).not.toHaveProperty("path");
   });
 
-  it("returns only modern public activity-plan fields", async () => {
+  it("returns only the activity-plan fields rendered by the public route", async () => {
     const id = "00000000-0000-4000-8000-000000000010";
     const structure = activityPlanStructureSchema.parse({
       version: 3,
@@ -164,10 +177,110 @@ describe("publicShareRouter", () => {
 
     expect(activityPlan).toMatchObject({
       id,
-      structure,
-      structure_hash: `v1:sha256:${"a".repeat(64)}`,
+      activity_category: "run",
+      structure_version: 3,
+      structure_summary: "Structured plan details",
     });
-    expect(activityPlan).not.toHaveProperty("activity_category");
-    expect(activityPlan).not.toHaveProperty("version");
+    expect(Object.keys(activityPlan ?? {}).sort()).toEqual([
+      "activity_category",
+      "description",
+      "id",
+      "is_system_template",
+      "name",
+      "notes",
+      "owner",
+      "structure_summary",
+      "structure_version",
+    ]);
+    expect(activityPlan).not.toHaveProperty("structure");
+    expect(activityPlan).not.toHaveProperty("structure_hash");
+    expect(activityPlan).not.toHaveProperty("gps_recording_enabled");
+    expect(activityPlan).not.toHaveProperty("content_visibility");
+    expect(activityPlan).not.toHaveProperty("created_at");
+    expect(activityPlan).not.toHaveProperty("updated_at");
+    expect(activityPlan?.owner).not.toHaveProperty("id");
+    expect(activityPlan?.owner).not.toHaveProperty("avatar_url");
+  });
+
+  it("redacts builder snapshots, arbitrary goal objectives, and internal IDs at direct public tRPC", async () => {
+    const id = "00000000-0000-4000-8000-000000000020";
+    const secretActivityPlanId = "00000000-0000-4000-8000-000000000021";
+    const secretProfileGoalId = "private-profile-goal-id";
+    const structure = {
+      id,
+      version: 1 as const,
+      sessions: [{ activity_plan_id: secretActivityPlanId, offset_days: 0 }],
+      goal_blueprints: [
+        {
+          title: "Private race objective",
+          objective: { privateTarget: "do-not-return" },
+        },
+      ],
+      builder_planning_snapshot: {
+        version: 1 as const,
+        plan_preferences: {
+          duration_weeks: 8,
+          weekly_session_count: 4,
+          target_weekly_hours: 6,
+          rest_days_per_week: 2,
+        },
+        scheduling: { preferred_weekdays: [1, 3, 6] },
+        goal_context: {
+          selected_goals: [
+            {
+              title: "Private goal",
+              target_offset_days: 40,
+              priority: 10,
+              activity_category: "run" as const,
+              objective: { raw: "sensitive-objective" },
+              source_profile_goal_id: secretProfileGoalId,
+            },
+          ],
+        },
+      },
+    };
+    const { caller } = createCaller([
+      {
+        id,
+        name: "Public marathon plan",
+        description: "Eight week plan",
+        structure,
+        structure_hash: `v1:sha256:${"b".repeat(64)}`,
+        content_visibility: "public",
+        sessions_per_week_target: 4,
+        duration_hours: "6.5",
+        is_system_template: false,
+        created_at: new Date("2026-07-16T12:00:00.000Z"),
+        updated_at: new Date("2026-07-17T12:00:00.000Z"),
+        owner_id: "00000000-0000-4000-8000-000000000022",
+        owner_name: "Alex Athlete",
+        owner_username: "alex",
+        owner_avatar_url: "https://example.test/private-avatar.png",
+      },
+    ]);
+
+    const trainingPlan = await caller.trainingPlan({ id });
+    const serialized = JSON.stringify(trainingPlan);
+
+    expect(trainingPlan).toEqual({
+      id,
+      name: "Public marathon plan",
+      description: "Eight week plan",
+      structure_summary: "Structured plan details",
+      sessions_per_week_target: 4,
+      duration_hours: 6.5,
+      is_system_template: false,
+      owner: { name: "Alex Athlete", username: "alex" },
+    });
+    expect(serialized).not.toContain("builder_planning_snapshot");
+    expect(serialized).not.toContain("objective");
+    expect(serialized).not.toContain(secretActivityPlanId);
+    expect(serialized).not.toContain(secretProfileGoalId);
+    expect(trainingPlan).not.toHaveProperty("structure_hash");
+    expect(trainingPlan).not.toHaveProperty("content_visibility");
+    expect(trainingPlan).not.toHaveProperty("created_at");
+    expect(trainingPlan).not.toHaveProperty("updated_at");
+    expect(trainingPlan?.owner).not.toHaveProperty("id");
+    expect(trainingPlan?.owner).not.toHaveProperty("avatar_url");
   });
 });

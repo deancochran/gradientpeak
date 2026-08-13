@@ -10,7 +10,10 @@ import {
 type HomeDb = ReturnType<typeof getRequiredDb>;
 type HomeActivityPlan = typeof schema.activityPlans.$inferSelect & ActivityPlanExecutionDto;
 
-export type PlannedActivityRow = Pick<EventRow, "id" | "notes"> & {
+export type PlannedActivityRow = Pick<
+  EventRow,
+  "id" | "linked_activity_id" | "notes" | "status"
+> & {
   activity_plan_id: string | null;
   starts_at: Date;
   activity_plan: HomeActivityPlan | null;
@@ -34,7 +37,9 @@ export async function listPlannedActivitiesInRange(
       id: schema.events.id,
       starts_at: schema.events.starts_at,
       scheduled_date: schema.events.scheduled_date,
+      linked_activity_id: schema.events.linked_activity_id,
       notes: schema.events.notes,
+      status: schema.events.status,
       activity_plan_id: schema.events.activity_plan_id,
       activity_plan: schema.activityPlans,
     })

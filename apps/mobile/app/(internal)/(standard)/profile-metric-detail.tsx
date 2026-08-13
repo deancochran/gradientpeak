@@ -1,7 +1,6 @@
 import {
   formatProfileMetricValue,
   getProfileMetricDefinition,
-  isActivityDerivedThresholdMetricType,
   isProfileMetricType,
 } from "@repo/core/athlete-inputs";
 import { Card, CardContent } from "@repo/ui/components/card";
@@ -18,13 +17,12 @@ import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { Ellipsis, HeartPulse, Scale, TrendingUp } from "lucide-react-native";
 import React from "react";
 import { Alert, ScrollView, View } from "react-native";
-import { ActivityCard, type ActivityCardActivity } from "@/components/shared/ActivityCard";
+import { ActivityCard } from "@/components/shared/ActivityCard";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { formatDateStamp } from "@/lib/display/formatters";
-import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 function getMetricLabel(metricType: string) {
@@ -35,7 +33,7 @@ function getMetricLabel(metricType: string) {
 
 function getMetricIcon(metricType: string) {
   if (metricType.includes("weight")) return Scale;
-  if (metricType.includes("hr") || metricType.includes("hrv") || metricType.includes("lthr")) {
+  if (metricType.includes("hr") || metricType.includes("hrv")) {
     return HeartPulse;
   }
   return TrendingUp;
@@ -46,17 +44,9 @@ export default function ProfileMetricDetailScreen() {
   const metricId = typeof id === "string" ? id : "";
   const router = useRouter();
   const navigateTo = useAppNavigate();
-  const { profile, user } = useAuth();
   const { Stack } = require("expo-router") as typeof import("expo-router");
   const utils = api.useUtils();
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
-  const activityOwner = user?.id
-    ? {
-        avatar_url: profile?.avatar_url ?? null,
-        id: user.id,
-        username: profile?.username ?? user.email?.split("@")[0] ?? "You",
-      }
-    : null;
 
   const { data: metric, isLoading } = api.profileMetrics.getById.useQuery(
     { id: metricId },
@@ -83,7 +73,6 @@ export default function ProfileMetricDetailScreen() {
 
   const renderHeaderActions = () => {
     if (!metric) return null;
-    if (isActivityDerivedThresholdMetricType(metric.metric_type)) return null;
     const isManual = metric.source === "manual";
     return (
       <DropdownMenu>
@@ -151,13 +140,7 @@ export default function ProfileMetricDetailScreen() {
   }
 
   const MetricIcon = getMetricIcon(metric.metric_type);
-  const linkedActivity = activityData?.activity;
-  const linkedActivityCard: ActivityCardActivity | null = linkedActivity
-    ? {
-        ...linkedActivity,
-        derived: { stress: activityData.derived?.stress ?? null },
-      }
-    : null;
+  const linkedActivityCard = activityData?.detail.summary ?? null;
 
   return (
     <View className="flex-1 bg-background" testID="profile-metric-detail-screen">
@@ -214,9 +197,8 @@ export default function ProfileMetricDetailScreen() {
               activity={linkedActivityCard}
               dateMode="absolute"
               onPress={() => navigateTo(ROUTES.ACTIVITIES.DETAIL(linkedActivityCard.id) as Href)}
-              owner={activityOwner}
+              showLike={false}
               testID="profile-metric-open-activity"
-              variant="list"
             />
           ) : null}
         </View>

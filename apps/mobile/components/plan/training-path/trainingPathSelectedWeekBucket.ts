@@ -14,7 +14,6 @@ export type TrainingPathSelectedWeekPoint = {
   hasCompletedActivityWithoutLoad?: boolean;
   plannedLoad?: number | null;
   targetLoad?: number | null;
-  tentativePlannedLoad?: number | null;
 };
 
 export type TrainingPathSelectedWeekBucket<TPoint extends TrainingPathSelectedWeekPoint> = {
@@ -120,11 +119,7 @@ export function buildSelectedWeekBucket<TPoint extends TrainingPathSelectedWeekP
       targetLoad == null || completedLoadUnavailable || actualOrScheduledLoad == null
         ? null
         : actualOrScheduledLoad - targetLoad,
-    plannedLoad: (() => {
-      const planned = sumAvailable((point) => point.plannedLoad);
-      const tentative = sumAvailable((point) => point.tentativePlannedLoad);
-      return planned === null || tentative === null ? null : planned + tentative;
-    })(),
+    plannedLoad: sumAvailable((point) => point.plannedLoad),
     points,
     targetLoad,
     weekEndDate: input.weekEnd,

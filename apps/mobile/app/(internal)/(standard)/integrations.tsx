@@ -17,6 +17,7 @@ import { api } from "@/lib/api";
 import type { IntegrationProvider } from "@/lib/constants/integrations";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { parseIntegrationOAuthCallback } from "@/lib/integration-oauth-callback";
+import { productionMobileProviderActionRegistry } from "@/lib/integration-provider-actions";
 
 function getMobileRedirectUri(): string {
   if (Constants.expoConfig?.extra?.redirectUri) {
@@ -29,7 +30,9 @@ function getMobileRedirectUri(): string {
 export default function IntegrationsScreen() {
   const router = useRouter();
   const [pendingByProvider, setPendingByProvider] = useState<
-    Partial<Record<IntegrationProvider, "connect" | "disconnect">>
+    Partial<
+      Record<IntegrationProvider, "connect" | "disconnect" | "sync_now" | "refresh_setup_data">
+    >
   >({});
   const [disconnectingProvider, setDisconnectingProvider] =
     useState<IntegrationOverviewItem | null>(null);
@@ -76,6 +79,10 @@ export default function IntegrationsScreen() {
     invalidate: invalidateIntegrations,
     success: "Disconnecting",
   });
+  const syncNowMutation = useReliableMutation(api.integrations.syncNow, { silent: true });
+  const refreshSetupMutation = useReliableMutation(api.integrations.refreshSetupData, {
+    silent: true,
+  });
 
   const handleDeepLink = useCallback(
     (event: { url: string }) => {
@@ -113,24 +120,15 @@ export default function IntegrationsScreen() {
   }, [handleClose]);
 
   const handleConnect = async (provider: IntegrationProvider) => {
-    if (provider !== "wahoo") return;
     setPendingByProvider((prev) => ({ ...prev, [provider]: "connect" }));
 
     try {
-      const redirectUri = getMobileRedirectUri();
-      const { url } = await getAuthUrlMutation.mutateAsync({ provider, redirectUri });
-      const result = await WebBrowser.openAuthSessionAsync(url, redirectUri, {
-        preferEphemeralSession: Platform.OS === "ios",
+      await productionMobileProviderActionRegistry.dispatch(provider, "connect", providerActions);
+    } catch {
+      setStatusModal({
+        title: "Connection unavailable",
+        description: "This integration could not be connected. Check availability and try again.",
       });
-
-      if (result.type === "cancel") {
-        setStatusModal({ title: "Cancelled", description: "Connection cancelled." });
-      } else if (result.type === "success" && "url" in result && result.url) {
-        handleDeepLink({ url: result.url });
-      }
-    } catch (error) {
-      console.error("OAuth initiation error:", error);
-      setStatusModal({ title: "Issue", description: "Could not start connection." });
     } finally {
       setPendingByProvider((prev) => {
         const next = { ...prev };
@@ -143,15 +141,69 @@ export default function IntegrationsScreen() {
   const confirmDisconnect = async () => {
     if (!disconnectingProvider) return;
     const provider = disconnectingProvider.provider;
-    if (provider !== "wahoo") return;
     setPendingByProvider((prev) => ({ ...prev, [provider]: "disconnect" }));
     try {
-      await disconnectMutation.mutateAsync({ provider });
-      refetchSyncOverview();
+      await productionMobileProviderActionRegistry.dispatch(
+        provider,
+        "disconnect",
+        providerActions,
+      );
       setDisconnectingProvider(null);
-    } catch (error) {
-      console.error("Disconnect error:", error);
-      setStatusModal({ title: "Issue", description: "Could not disconnect." });
+    } catch {
+      setStatusModal({
+        title: "Disconnect unavailable",
+        description:
+          "This integration could not be disconnected. Check availability and try again.",
+      });
+    } finally {
+      setPendingByProvider((prev) => {
+        const next = { ...prev };
+        delete next[provider];
+        return next;
+      });
+    }
+  };
+
+  const providerActions = {
+    connectOAuth: async (provider: IntegrationProvider) => {
+      const redirectUri = getMobileRedirectUri();
+      const { url } = await getAuthUrlMutation.mutateAsync({ provider, redirectUri });
+      const result = await WebBrowser.openAuthSessionAsync(url, redirectUri, {
+        preferEphemeralSession: Platform.OS === "ios",
+      });
+      if (result.type === "cancel") {
+        setStatusModal({ title: "Cancelled", description: "Connection cancelled." });
+      } else if (result.type === "success" && "url" in result && result.url) {
+        handleDeepLink({ url: result.url });
+      }
+    },
+    disconnectApi: async (provider: IntegrationProvider) => {
+      await disconnectMutation.mutateAsync({ provider });
+      await refetchSyncOverview();
+    },
+    syncNow: async (provider: IntegrationProvider) => {
+      await syncNowMutation.mutateAsync({ provider });
+      await refetchSyncOverview();
+    },
+    refreshSetupData: async (provider: IntegrationProvider) => {
+      await refreshSetupMutation.mutateAsync({ provider });
+      await refetchSyncOverview();
+    },
+  };
+
+  const runProviderAction = async (
+    provider: IntegrationProvider,
+    action: "sync_now" | "refresh_setup_data",
+  ) => {
+    setPendingByProvider((prev) => ({ ...prev, [provider]: action }));
+    try {
+      await productionMobileProviderActionRegistry.dispatch(provider, action, providerActions);
+    } catch {
+      setStatusModal({
+        title: "Action unavailable",
+        description:
+          "This integration action could not be completed. Check availability and try again.",
+      });
     } finally {
       setPendingByProvider((prev) => {
         const next = { ...prev };
@@ -184,6 +236,7 @@ export default function IntegrationsScreen() {
             void handleConnect(provider);
           }}
           onDisconnect={setDisconnectingProvider}
+          onAction={(provider, action) => void runProviderAction(provider, action)}
           onViewImportedActivities={(importRunId) =>
             router.push({ pathname: "/activities-list", params: { importRunId } })
           }

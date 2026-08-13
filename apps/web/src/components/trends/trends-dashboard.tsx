@@ -276,7 +276,7 @@ export function TrendsDashboard() {
             }
             points={dashboard.performance.dataPoints.map((point) => ({
               id: point.activityId,
-              label: `${formatDate(point.date)} · ${point.activityName}`,
+              label: `${formatDate(point.date)} · Activity`,
               value: performanceUsesPower
                 ? point.avgPower
                 : point.avgSpeed == null
@@ -406,9 +406,7 @@ export function TrendsDashboard() {
                   key={`${peak.activityId}-${peak.rank}`}
                 >
                   <div>
-                    <p className="font-medium">
-                      #{peak.rank} {peak.activityName}
-                    </p>
+                    <p className="font-medium">#{peak.rank} Activity</p>
                     <p className="text-sm text-muted-foreground">
                       {formatDate(peak.date)} · {peak.activity_category}
                     </p>

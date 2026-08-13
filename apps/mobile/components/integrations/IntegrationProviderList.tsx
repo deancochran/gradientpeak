@@ -20,7 +20,10 @@ type IntegrationProviderListProps = {
   onConnect: (provider: IntegrationProvider) => void;
   onDisconnect?: (integration: IntegrationOverviewItem) => void;
   onViewImportedActivities?: (importRunId: string) => void;
-  pendingByProvider?: Partial<Record<IntegrationProvider, "connect" | "disconnect">>;
+  pendingByProvider?: Partial<
+    Record<IntegrationProvider, "connect" | "disconnect" | "sync_now" | "refresh_setup_data">
+  >;
+  onAction?: (provider: IntegrationProvider, action: "sync_now" | "refresh_setup_data") => void;
   onRetry?: () => unknown;
 };
 
@@ -97,6 +100,7 @@ export function IntegrationProviderList({
   onViewImportedActivities,
   pendingByProvider = {},
   onRetry,
+  onAction,
 }: IntegrationProviderListProps) {
   const visibleIntegrations = integrations.filter(
     (integration) =>
@@ -246,20 +250,64 @@ export function IntegrationProviderList({
                     <Icon as={RefreshCcw} size={18} className="text-destructive" />
                   </Button>
                 ) : integration.primaryAction === "disconnect" && onDisconnect ? (
-                  <Button
-                    accessibilityLabel={`Disconnect ${integration.label}`}
-                    accessibilityState={{ disabled: false }}
-                    className="rounded-full border border-border bg-background"
-                    onPress={() => onDisconnect(integration)}
-                    role="button"
-                    size="icon"
-                    testId={`integration-disconnect-${integration.provider}`}
-                    variant="ghost"
-                  >
-                    <Icon as={Unlink} size={18} className="text-muted-foreground" />
-                  </Button>
+                  <View className="flex-row items-center gap-1">
+                    {integration.actions.includes("sync_now") && onAction ? (
+                      <Button
+                        accessibilityLabel={`Sync ${integration.label} now`}
+                        onPress={() => onAction(integration.provider, "sync_now")}
+                        testId={`integration-sync-now-${integration.provider}`}
+                        variant="ghost"
+                      >
+                        <Text>Sync</Text>
+                      </Button>
+                    ) : null}
+                    {integration.actions.includes("refresh_setup_data") && onAction ? (
+                      <Button
+                        accessibilityLabel={`Refresh ${integration.label} setup`}
+                        onPress={() => onAction(integration.provider, "refresh_setup_data")}
+                        testId={`integration-refresh-setup-${integration.provider}`}
+                        variant="ghost"
+                      >
+                        <Text>Refresh</Text>
+                      </Button>
+                    ) : null}
+                    <Button
+                      accessibilityLabel={`Disconnect ${integration.label}`}
+                      accessibilityState={{ disabled: false }}
+                      className="rounded-full border border-border bg-background"
+                      onPress={() => onDisconnect(integration)}
+                      role="button"
+                      size="icon"
+                      testId={`integration-disconnect-${integration.provider}`}
+                      variant="ghost"
+                    >
+                      <Icon as={Unlink} size={18} className="text-muted-foreground" />
+                    </Button>
+                  </View>
                 ) : integration.connected ? (
-                  <Icon as={Check} className="text-success" size={20} />
+                  <View className="flex-row items-center gap-1">
+                    {integration.actions.includes("sync_now") && onAction ? (
+                      <Button
+                        accessibilityLabel={`Sync ${integration.label} now`}
+                        onPress={() => onAction(integration.provider, "sync_now")}
+                        testId={`integration-sync-now-${integration.provider}`}
+                        variant="ghost"
+                      >
+                        <Text>Sync</Text>
+                      </Button>
+                    ) : null}
+                    {integration.actions.includes("refresh_setup_data") && onAction ? (
+                      <Button
+                        accessibilityLabel={`Refresh ${integration.label} setup`}
+                        onPress={() => onAction(integration.provider, "refresh_setup_data")}
+                        testId={`integration-refresh-setup-${integration.provider}`}
+                        variant="ghost"
+                      >
+                        <Text>Refresh</Text>
+                      </Button>
+                    ) : null}
+                    <Icon as={Check} className="text-success" size={20} />
+                  </View>
                 ) : null}
               </View>
 

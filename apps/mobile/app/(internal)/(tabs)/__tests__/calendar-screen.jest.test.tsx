@@ -300,6 +300,86 @@ jest.mock("@/components/shared/ActivityPlanCard", () => ({
   ActivityPlanCard: createHost("ActivityPlanCard"),
 }));
 
+function mockProjectionMetric(
+  key: "common_load" | "distance" | "elapsed_duration" | "normalized_intensity",
+  label: string,
+  value: number | null,
+  unit: string,
+  status: "available" | "partial" | "unavailable" = "available",
+) {
+  return status === "unavailable"
+    ? { key, label, status, value: null, unit, reason: "quantification_unavailable" }
+    : {
+        key,
+        label,
+        status,
+        value: value ?? 0,
+        unit,
+        reason: status === "partial" ? "quantification_partial" : null,
+      };
+}
+
+function mockProjectionItem(input: {
+  allDay?: boolean;
+  calendarDate?: string;
+  endsAt?: string | null;
+  id: string;
+  kind: "completed_activity" | "event" | "goal" | "group_event" | "planned_activity";
+  metrics?: unknown[];
+  plan?: Record<string, unknown> | null;
+  startsAt?: string | null;
+  subtitle?: string | null;
+  title: string;
+}) {
+  return {
+    id: input.id,
+    calendarDate: input.calendarDate ?? today,
+    timing: {
+      startsAt: input.startsAt ?? null,
+      endsAt: input.endsAt ?? null,
+      allDay: input.allDay ?? false,
+      timezone: "UTC",
+    },
+    kind: input.kind,
+    title: input.title,
+    subtitle: input.subtitle ?? null,
+    status: input.kind === "completed_activity" ? "completed" : "scheduled",
+    navigation: {
+      target:
+        input.kind === "completed_activity"
+          ? "activity"
+          : input.kind === "goal"
+            ? "goal"
+            : input.kind === "group_event"
+              ? "group_event"
+              : "event",
+      href:
+        input.kind === "completed_activity"
+          ? `/activities/${input.id}`
+          : input.kind === "goal"
+            ? `/goals/${input.id}`
+            : input.kind === "group_event"
+              ? `/group-events/${input.id}`
+              : `/calendar/events/${input.id}`,
+    },
+    metrics: input.metrics ?? [],
+    estimated: input.kind === "planned_activity",
+    partial: false,
+    plan: input.plan ?? null,
+    activity: null,
+    event:
+      input.kind === "planned_activity" || input.kind === "event"
+        ? { type: input.kind === "planned_activity" ? "planned" : "custom", trainingPlanId: null }
+        : null,
+    groupEvent:
+      input.kind === "group_event"
+        ? { group: { id: "group-1", name: "Tuesday crew" }, viewerRsvpStatus: "accepted" }
+        : null,
+    goal:
+      input.kind === "goal" ? { typeLabel: "Race Day", objectiveSummary: "Run your A race" } : null,
+  };
+}
+
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
@@ -314,7 +394,7 @@ jest.mock("@/lib/api", () => ({
           return (
             calendarRangeUseQueryMock(input, options) ?? {
               data: {
-                items: [
+                legacyItems: [
                   {
                     id: "event-1",
                     event_type: "custom",
@@ -392,23 +472,78 @@ jest.mock("@/lib/api", () => ({
                     starts_at: "2026-03-24T18:00:00.000",
                     all_day: false,
                   },
-                  {
-                    id: "event-4",
-                    event_type: "rest_day",
-                    title: "Legacy rest day",
-                    scheduled_date: "2026-03-25",
-                    all_day: true,
-                  },
-                  {
-                    id: "event-5",
-                    event_type: "imported",
-                    title: "Imported ride",
-                    description: "Pulled in from provider sync.",
-                    scheduled_date: today,
-                    starts_at: `${today}T14:00:00.000`,
-                    all_day: false,
-                  },
                 ],
+                projection: {
+                  contractVersion: "calendar-projection-v1",
+                  startDate: "2026-03-02",
+                  endDateExclusive: "2026-07-21",
+                  timezone: "UTC",
+                  items: [
+                    mockProjectionItem({
+                      id: "event-1",
+                      kind: "event",
+                      title: "Track activity",
+                      subtitle: "Fast reps on the oval.",
+                      startsAt: `${today}T05:00:00.000Z`,
+                      endsAt: `${today}T06:30:00.000Z`,
+                    }),
+                    mockProjectionItem({
+                      id: "event-2",
+                      kind: "planned_activity",
+                      title: "Tempo Builder",
+                      startsAt: `${today}T06:30:00.000Z`,
+                      metrics: [
+                        mockProjectionMetric("elapsed_duration", "Duration", 3_600, "seconds"),
+                        mockProjectionMetric("common_load", "Load", 67.24, "score"),
+                        mockProjectionMetric("normalized_intensity", "Intensity", 0.82, "ratio"),
+                      ],
+                      plan: {
+                        id: "plan-1",
+                        name: "Tempo Builder",
+                        description: "Progressive tempo with a strong finish.",
+                        activityCategory: "run",
+                        structure: { version: 3, activity_category: "run", segments: [] },
+                      },
+                    }),
+                    mockProjectionItem({
+                      id: "activity-1",
+                      kind: "completed_activity",
+                      title: "Morning miles",
+                      startsAt: `${today}T11:00:00.000Z`,
+                      metrics: [
+                        mockProjectionMetric("distance", "Distance", 8_000, "meters"),
+                        mockProjectionMetric("elapsed_duration", "Duration", 2_700, "seconds"),
+                        mockProjectionMetric("common_load", "Load", 64, "score"),
+                        mockProjectionMetric("normalized_intensity", "Intensity", 0.8, "ratio"),
+                      ],
+                    }),
+                    mockProjectionItem({
+                      id: "event-3",
+                      kind: "event",
+                      title: "Mobility session",
+                      subtitle: "Gentle evening mobility.",
+                      calendarDate: "2026-03-24",
+                      startsAt: "2026-03-24T18:00:00.000Z",
+                    }),
+                    mockProjectionItem({
+                      id: "goal-1",
+                      kind: "goal",
+                      title: "Spring A Race",
+                      calendarDate: today,
+                      allDay: true,
+                    }),
+                  ],
+                  truncated: false,
+                  truncation: {
+                    events: false,
+                    completedActivities: false,
+                    groupEvents: false,
+                    goals: false,
+                  },
+                },
+                get items(): ReturnType<typeof mockProjectionItem>[] {
+                  return this.projection.items;
+                },
                 completedActivities: {
                   items: [
                     {
@@ -479,13 +614,89 @@ function calendarProjectionQuery(input: {
   items?: unknown[];
   selectedGroupEvents?: unknown[];
 }) {
+  const projectionItems = [
+    ...(input.items ?? []).map((event) => {
+      const value = event as Record<string, unknown>;
+      return mockProjectionItem({
+        id: String(value.id),
+        kind: value.event_type === "planned" ? "planned_activity" : "event",
+        title: typeof value.title === "string" ? value.title : "Event",
+        subtitle: typeof value.description === "string" ? value.description : null,
+        calendarDate: typeof value.scheduled_date === "string" ? value.scheduled_date : today,
+        startsAt: typeof value.starts_at === "string" ? value.starts_at : null,
+        endsAt: typeof value.ends_at === "string" ? value.ends_at : null,
+      });
+    }),
+    ...(input.completedActivities ?? []).map((activity) => {
+      const value = activity as Record<string, unknown>;
+      const metrics = Array.isArray(value.metrics)
+        ? value.metrics
+        : [
+            typeof value.distance_meters === "number"
+              ? mockProjectionMetric("distance", "Distance", value.distance_meters, "meters")
+              : null,
+            typeof value.duration_seconds === "number"
+              ? mockProjectionMetric(
+                  "elapsed_duration",
+                  "Duration",
+                  value.duration_seconds,
+                  "seconds",
+                )
+              : null,
+          ].filter(Boolean);
+      return mockProjectionItem({
+        id: String(value.id),
+        kind: "completed_activity",
+        title: typeof value.name === "string" ? value.name : "Completed activity",
+        calendarDate: typeof value.scheduled_date === "string" ? value.scheduled_date : today,
+        startsAt: typeof value.started_at === "string" ? value.started_at : null,
+        metrics,
+      });
+    }),
+    ...(input.selectedGroupEvents ?? []).map((groupEvent) => {
+      const value = groupEvent as Record<string, unknown>;
+      const group = value.group as { name?: string } | undefined;
+      const plan = value.selectedActivityPlan as { name?: string } | undefined;
+      return mockProjectionItem({
+        id: String(value.id),
+        kind: "group_event",
+        title: typeof value.title === "string" ? value.title : "Group event",
+        subtitle: [group?.name, plan?.name].filter(Boolean).join(" · ") || null,
+        calendarDate: typeof value.scheduled_date === "string" ? value.scheduled_date : today,
+        startsAt: typeof value.starts_at === "string" ? value.starts_at : null,
+        metrics: plan
+          ? [
+              mockProjectionMetric("common_load", "Common Load", 56.25, "score"),
+              mockProjectionMetric("normalized_intensity", "Normalized intensity", 0.75, "ratio"),
+            ]
+          : [],
+      });
+    }),
+    ...(input.goals ?? []).map((goal) => {
+      const value = goal as Record<string, unknown>;
+      return mockProjectionItem({
+        id: String(value.id),
+        kind: "goal",
+        title: typeof value.title === "string" ? value.title : "Goal",
+        calendarDate: typeof value.target_date === "string" ? value.target_date : today,
+        allDay: true,
+      });
+    }),
+  ];
   return {
     data: {
-      items: input.items ?? [],
-      completedActivities: { items: input.completedActivities ?? [], truncated: false },
-      goals: { items: input.goals ?? [], truncated: false },
-      selectedGroupEvents: { items: input.selectedGroupEvents ?? [], truncated: false },
-      plannedLoadSummaries: { items: [], truncated: false },
+      contractVersion: "calendar-projection-v1",
+      startDate: "2026-03-02",
+      endDateExclusive: "2026-07-21",
+      timezone: "UTC",
+      items: projectionItems,
+      truncated: false,
+      truncation: {
+        events: false,
+        completedActivities: false,
+        groupEvents: false,
+        goals: false,
+      },
     },
     isError: false,
     isLoading: false,
@@ -519,6 +730,9 @@ describe("calendar day timeline screen", () => {
     expect(calendarRangeUseQueryMock).toHaveBeenCalledWith(
       expect.objectContaining({ limit: CALENDAR_PROJECTION_LIMIT }),
       expect.not.objectContaining({ getNextPageParam: expect.anything() }),
+    );
+    expect(calendarRangeUseQueryMock.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ placeholderData: expect.any(Function) }),
     );
   });
 
@@ -554,18 +768,16 @@ describe("calendar day timeline screen", () => {
     expect(screen.getByText("Today")).toBeTruthy();
     expect(screen.getByTestId("calendar-goal-row-goal-1")).toBeTruthy();
     expect(screen.getByTestId("calendar-activity-row-activity-1")).toBeTruthy();
-    expect(
-      screen.getByText("8.0 km · 45 min · Common Load 64 · Normalized intensity 0.80"),
-    ).toBeTruthy();
-    expect(screen.getByTestId("calendar-event-row-event-2")).toBeTruthy();
-    expect(screen.getByText("~1h · Common Load 67.2 · Normalized intensity 0.82")).toBeTruthy();
+    expect(screen.getByText("Distance 8.0 km · Duration 45 min · Load 64")).toBeTruthy();
+    expect(screen.getByTestId("calendar-planned_activity-row-event-2")).toBeTruthy();
+    expect(screen.getByText("Duration ~1h · Load 67.2 · Intensity 0.82")).toBeTruthy();
     expect(screen.queryByText(/TSS|\bIF\b/)).toBeNull();
     expect(
       screen.getByTestId("calendar-activity-row-activity-1").props.accessibilityLabel,
-    ).toContain("Common Load 64, Normalized intensity 0.80");
-    expect(screen.getByTestId("calendar-event-row-event-2").props.accessibilityLabel).toContain(
-      "Common Load 67.2 · Normalized intensity 0.82",
-    );
+    ).toContain("Load 64");
+    expect(
+      screen.getByTestId("calendar-planned_activity-row-event-2").props.accessibilityLabel,
+    ).toContain("Load 67.2 · Intensity 0.82");
     expect(screen.queryByTestId("calendar-summary-card")).toBeNull();
     expect(screen.queryByTestId("calendar-month-page-2026-03-01")).toBeNull();
     expect(screen.queryByTestId("calendar-month-marker-2026-04-01")).toBeNull();
@@ -735,6 +947,18 @@ describe("calendar day timeline screen", () => {
             started_at: `${today}T13:00:00.000Z`,
             duration_seconds: 1800,
             distance_meters: 9000,
+            metrics: [
+              mockProjectionMetric("distance", "Distance", 9_000, "meters"),
+              mockProjectionMetric("elapsed_duration", "Duration", 1_800, "seconds"),
+              mockProjectionMetric("common_load", "Load", null, "score", "unavailable"),
+              mockProjectionMetric(
+                "normalized_intensity",
+                "Intensity",
+                null,
+                "ratio",
+                "unavailable",
+              ),
+            ],
             derived: {
               observationQuantification: createObservationQuantificationBundleFixture({
                 activityCategory: "bike",
@@ -749,15 +973,11 @@ describe("calendar day timeline screen", () => {
 
     renderNative(<CalendarScreenWithErrorBoundary />);
 
-    expect(
-      screen.getByText(
-        "9.0 km · 30 min · Common Load Unavailable · Normalized intensity Unavailable",
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText("Distance 9.0 km · Duration 30 min · Load unavailable")).toBeTruthy();
     expect(screen.queryByText(/91|0\.93|TSS|\bIF\b/)).toBeNull();
     expect(
       screen.getByTestId("calendar-activity-row-activity-missing-load").props.accessibilityLabel,
-    ).toContain("Common Load Unavailable");
+    ).toContain("Load unavailable");
   });
 
   it("marks partial completed common Load and Intensity as incomplete", () => {
@@ -770,6 +990,11 @@ describe("calendar day timeline screen", () => {
             scheduled_date: today,
             started_at: `${today}T13:00:00.000Z`,
             duration_seconds: 3600,
+            metrics: [
+              mockProjectionMetric("elapsed_duration", "Duration", 3_600, "seconds"),
+              mockProjectionMetric("common_load", "Load", 32, "score", "partial"),
+              mockProjectionMetric("normalized_intensity", "Intensity", 0.8, "ratio", "partial"),
+            ],
             derived: {
               observationQuantification: createObservationQuantificationBundleFixture({
                 status: "partial",
@@ -783,7 +1008,7 @@ describe("calendar day timeline screen", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
     expect(
-      screen.getByText("1h · Common Load 32 · Incomplete · Normalized intensity 0.80 · Incomplete"),
+      screen.getByText("Duration 60 min · Load 32 · Incomplete · Intensity 0.80 · Incomplete"),
     ).toBeTruthy();
     expect(
       screen.getByTestId("calendar-activity-row-activity-partial-load").props.accessibilityLabel,
@@ -800,7 +1025,7 @@ describe("calendar day timeline screen", () => {
             scheduled_date: today,
             starts_at: `${today}T15:00:00.000Z`,
             activity_plan_id: "group-plan-load",
-            viewerRsvp: { status: "accepted" },
+            viewerRsvp: null,
             group: { name: "Tuesday crew" },
             selectedActivityPlan: {
               id: "group-plan-load",
@@ -819,9 +1044,7 @@ describe("calendar day timeline screen", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
     expect(
-      screen.getByText(
-        "Tuesday crew · Group tempo plan · ~1h · Common Load 56.3 · Normalized intensity 0.75",
-      ),
+      screen.getByText("Tuesday crew · Common Load 56.3 · Normalized intensity 0.75"),
     ).toBeTruthy();
     expect(screen.queryByText(/99|0\.99|TSS|\bIF\b/)).toBeNull();
     expect(
@@ -944,24 +1167,18 @@ describe("calendar day timeline screen", () => {
   it("renders lightweight agenda rows for non-planned events", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
-    expect(screen.getByTestId("calendar-entry-type-goal-goal-1")).toBeTruthy();
+    expect(screen.getByTestId("calendar-goal-row-goal-1")).toBeTruthy();
     expect(screen.getByText("5:00 AM")).toBeTruthy();
-    expect(screen.getByText("1h 30m")).toBeTruthy();
     expect(screen.getByText("Fast reps on the oval.")).toBeTruthy();
-    expect(screen.queryByTestId("calendar-entry-type-event-event-1")).toBeNull();
+    expect(screen.getByTestId("calendar-event-row-event-1")).toBeTruthy();
   });
 
   it("uses the same agenda row frame for activity plans and normal events", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
-    expect(screen.getByTestId("calendar-event-press-event-1").props.className).toContain(
-      "min-h-16",
-    );
-    expect(screen.getByTestId("calendar-event-press-event-2").props.className).toContain(
-      "min-h-16",
-    );
-    expect(screen.getByTestId("calendar-event-press-event-1").props.className).toBe(
-      screen.getByTestId("calendar-event-press-event-2").props.className,
+    expect(screen.getByTestId("calendar-event-row-event-1").props.className).toContain("py-3");
+    expect(screen.getByTestId("calendar-event-row-event-1").props.className).toBe(
+      screen.getByTestId("calendar-planned_activity-row-event-2").props.className,
     );
   });
 
@@ -1012,7 +1229,7 @@ describe("calendar day timeline screen", () => {
     expect(refetch).toHaveBeenCalled();
   });
 
-  it("shifts a bounded day window while loading future days", () => {
+  it("extends the end of the day window while loading future days", () => {
     const rendered = renderNative(<CalendarScreenWithErrorBoundary />);
     const list = getFlatListByTestId(rendered, "calendar-day-list");
 
@@ -1030,14 +1247,14 @@ describe("calendar day timeline screen", () => {
 
     expect(calendarRangeUseQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        startDate: "2026-04-01",
+        startDate: "2026-03-02",
         endDateExclusive: "2026-08-20",
       }),
       expect.anything(),
     );
   });
 
-  it("shifts a bounded day window while loading past days", () => {
+  it("extends the start of the day window while loading past days", () => {
     const rendered = renderNative(<CalendarScreenWithErrorBoundary />);
     const list = getFlatListByTestId(rendered, "calendar-day-list");
 
@@ -1048,7 +1265,7 @@ describe("calendar day timeline screen", () => {
     expect(calendarRangeUseQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
         startDate: "2026-01-31",
-        endDateExclusive: "2026-06-21",
+        endDateExclusive: "2026-07-21",
       }),
       expect.anything(),
     );

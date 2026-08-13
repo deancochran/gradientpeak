@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
+import { projectAthletePerformanceTargetFacts } from "@repo/core/performance-model";
 import { db, pool } from "@repo/db/client";
 import {
   activities,
@@ -7,6 +8,7 @@ import {
   activityArtifacts,
   activityEfforts,
   activitySegments,
+  performanceCalibrations,
   profiles,
   swimmingCssProtocolEvidence,
   users,
@@ -343,6 +345,30 @@ describe("canonical swimming CSS protocol persistence", () => {
         .from(swimmingCssProtocolEvidence)
         .where(eq(swimmingCssProtocolEvidence.activity_id, activityId)),
     ).resolves.toHaveLength(1);
+    const [calibration] = await db
+      .select()
+      .from(performanceCalibrations)
+      .where(
+        and(
+          eq(performanceCalibrations.profile_id, profileId),
+          eq(performanceCalibrations.metric_key, "threshold_speed"),
+          eq(performanceCalibrations.activity_category, "swim"),
+        ),
+      );
+    expect(calibration?.selection_diagnostics).toMatchObject({
+      selectionReason: "complete_protocol",
+      evidenceCount: 1,
+    });
+    const repository = createAthletePerformanceModelRepository(db);
+    const model = await getAthletePerformanceModelAsOf(
+      { athleteId: profileId, asOf: seededAt },
+      repository,
+    );
+    expect(projectAthletePerformanceTargetFacts(model).swimming.css).toMatchObject({
+      status: "available",
+      calibrationState: "confirmed",
+      value: 85,
+    });
   });
 
   it("qualifies, reads as-of, self-excludes, invalidates, and replaces source evidence", async () => {

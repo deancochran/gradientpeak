@@ -1,6 +1,7 @@
 import React from "react";
 import { announcePlannedDaySummaryRetryStatus } from "@/components/calendar/plannedDaySummaryAccessibility";
 import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
+import { createCalendarProjectionItem } from "../../../../test/calendar-projection-fixture";
 import { createHost } from "../../../../test/mock-components";
 import { act, fireEvent, renderNative, screen } from "../../../../test/render-native";
 
@@ -90,17 +91,26 @@ function configureQueries(
       agendaLoading || agendaError
         ? undefined
         : {
-            items: [
-              {
-                id: "cancelled-event",
-                event_type: "planned",
-                title: "Cancelled Event remains in agenda",
-                scheduled_date: "2026-07-27",
-                all_day: true,
-                activity_plan: null,
-                status: "cancelled",
-              },
-            ],
+            projection: {
+              contractVersion: "calendar-projection-v1",
+              from: "2026-07-27",
+              to: "2026-07-27",
+              timezone: "UTC",
+              truncated: false,
+              items: [
+                createCalendarProjectionItem({
+                  id: "cancelled-event",
+                  kind: "planned_activity",
+                  title: "Cancelled Event remains in agenda",
+                  calendarDate: "2026-07-27",
+                  status: "cancelled",
+                  navigation: {
+                    target: "event",
+                    href: "/event-detail?id=cancelled-event",
+                  },
+                }),
+              ],
+            },
             plannedLoadSummary: input.summaryError
               ? undefined
               : {
@@ -146,7 +156,7 @@ describe("calendar day planned summary boundary", () => {
       { date: "2026-07-27" },
       expect.objectContaining({ enabled: true }),
     );
-    fireEvent.press(screen.getByTestId("event-card-cancelled-event"));
+    fireEvent.press(screen.getByTestId("calendar-day-planned_activity-row-cancelled-event"));
     expect(navigateMock).toHaveBeenCalled();
     expect(screen.getByText("1 Event")).toBeTruthy();
   });
@@ -160,7 +170,7 @@ describe("calendar day planned summary boundary", () => {
       fireEvent.press(screen.getByTestId("calendar-day-planned-summary-retry"));
     });
     expect(calendarDayRefetchMock).toHaveBeenCalledTimes(1);
-    fireEvent.press(screen.getByTestId("event-card-cancelled-event"));
+    fireEvent.press(screen.getByTestId("calendar-day-planned_activity-row-cancelled-event"));
     expect(navigateMock).toHaveBeenCalled();
   });
 
@@ -193,7 +203,14 @@ describe("calendar day planned summary boundary", () => {
     routeDate = "2026-07-28";
     calendarDayUseQueryMock.mockImplementation(() => ({
       data: {
-        items: [],
+        projection: {
+          contractVersion: "calendar-projection-v1",
+          from: "2026-07-28",
+          to: "2026-07-28",
+          timezone: "UTC",
+          truncated: false,
+          items: [],
+        },
         plannedLoadSummary: {
           date: "2026-07-27",
           source: {
@@ -224,7 +241,14 @@ describe("calendar day planned summary boundary", () => {
 
     calendarDayUseQueryMock.mockImplementation(() => ({
       data: {
-        items: [],
+        projection: {
+          contractVersion: "calendar-projection-v1",
+          from: "2026-07-28",
+          to: "2026-07-28",
+          timezone: "UTC",
+          truncated: false,
+          items: [],
+        },
         plannedLoadSummary: {
           date: "2026-07-28",
           source: {

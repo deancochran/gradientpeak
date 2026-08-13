@@ -1,19 +1,18 @@
 import { invalidateActivityPlanQueries } from "@repo/api/react";
+import type { ActivityPlanDetail, ActivityPlanSummary } from "@repo/core";
 import type { Router } from "expo-router";
 import { Alert } from "react-native";
-import type { ActivityPlan } from "@/components/shared/ActivityPlanCard";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 
 interface UseActivityPlanSchedulingActionsParams {
   action?: string;
-  activityPlan: ActivityPlan | null;
+  activityPlan: ActivityPlanSummary | ActivityPlanDetail | null;
   beginRedirect: () => void;
   eventId?: string;
   plannedActivity: { id: string; scheduled_date?: string | null } | null | undefined;
   planId?: string;
-  profileId?: string;
   canCreateNewPlanWork?: boolean;
   queryClient: ReturnType<typeof import("@tanstack/react-query").useQueryClient>;
   router: Pick<Router, "back" | "navigate" | "replace">;
@@ -27,7 +26,6 @@ export function useActivityPlanSchedulingActions({
   eventId,
   plannedActivity,
   planId,
-  profileId,
   canCreateNewPlanWork = false,
   queryClient,
   router,
@@ -153,16 +151,7 @@ export function useActivityPlanSchedulingActions({
         mode: "create",
       },
     });
-  }, [
-    action,
-    activityPlan?.id,
-    activityPlan?.profile_id,
-    eventId,
-    plannedActivity?.id,
-    profileId,
-    canCreateNewPlanWork,
-    router,
-  ]);
+  }, [action, activityPlan?.id, eventId, plannedActivity?.id, canCreateNewPlanWork, router]);
 
   return {
     duplicatePending: duplicatePlanMutation.isPending,

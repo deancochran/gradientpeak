@@ -1,5 +1,6 @@
 import React from "react";
-
+import { createScheduledActivityPlanSummary } from "../../../../test/activity-plan-projection-fixture";
+import { createCalendarProjectionItem } from "../../../../test/calendar-projection-fixture";
 import { createHost as mockCreateHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
@@ -44,21 +45,12 @@ type AuthStoreState = {
   session: { user: { id: string } };
 };
 
-type ActivityPlanCardNode = {
-  props: {
-    activityPlan: CalendarEvent["activity_plan"];
-  };
-};
-
 type StackScreenNode = {
   props: { options: { title?: string } };
 };
 
 type UnsafeTypeQuery = {
-  UNSAFE_getByType: {
-    (type: "StackScreen"): StackScreenNode;
-    (type: "ActivityPlanCard"): ActivityPlanCardNode;
-  };
+  UNSAFE_getByType: (type: "StackScreen") => StackScreenNode;
 };
 
 let eventItems: CalendarEvent[] = [];
@@ -67,13 +59,93 @@ let completedActivityItems: CalendarEvent[] = [];
 const mockEventRefetch = jest.fn(async () => undefined);
 const mockEventsUseQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
   data: {
-    items: eventItems,
-    goals: {
-      items: [{ id: "goal-1", title: "Spring A Race", target_date: today }],
+    projection: {
+      contractVersion: "calendar-projection-v1",
+      from: today,
+      to: today,
+      timezone: planningTimezone ?? "UTC",
       truncated: false,
+      items: [
+        ...eventItems.map((event) => {
+          const calendarDate = String(event.scheduled_date ?? today);
+          const startsAt = String(event.starts_at ?? `${calendarDate}T00:00:00.000Z`);
+          const normalizedStartsAt = /(?:Z|[+-]\d\d:\d\d)$/.test(startsAt)
+            ? startsAt
+            : `${startsAt}Z`;
+          const endsAt = typeof event.ends_at === "string" ? event.ends_at : null;
+          const normalizedEndsAt =
+            endsAt && !/(?:Z|[+-]\d\d:\d\d)$/.test(endsAt) ? `${endsAt}Z` : endsAt;
+          const planned = event.event_type === "planned";
+          return createCalendarProjectionItem({
+            id: event.id,
+            kind: planned ? "planned_activity" : "event",
+            title: String(event.title ?? "Calendar event"),
+            subtitle: typeof event.description === "string" ? event.description : null,
+            calendarDate,
+            timing: {
+              startsAt: normalizedStartsAt,
+              endsAt: normalizedEndsAt,
+              allDay: Boolean(event.all_day),
+              timezone: planningTimezone ?? "UTC",
+            },
+            status: event.status === "cancelled" ? "cancelled" : "scheduled",
+            navigation: { target: "event", href: `/event-detail?id=${event.id}` },
+            event: {
+              type: planned ? "planned" : "custom",
+              trainingPlanId:
+                typeof event.training_plan_id === "string" ? event.training_plan_id : null,
+            },
+            plan: event.activity_plan
+              ? createScheduledActivityPlanSummary({
+                  id: event.activity_plan.id,
+                  name: event.activity_plan.name,
+                  description:
+                    typeof event.activity_plan.description === "string"
+                      ? event.activity_plan.description
+                      : null,
+                  activityCategory:
+                    event.activity_plan.activity_category === "bike" ? "bike" : "run",
+                  schedule: {
+                    eventId: event.id,
+                    calendarDate,
+                    startsAt: normalizedStartsAt,
+                    allDay: Boolean(event.all_day),
+                    status: event.status === "cancelled" ? "cancelled" : "scheduled",
+                    trainingPlanId:
+                      typeof event.training_plan_id === "string" ? event.training_plan_id : null,
+                  },
+                })
+              : null,
+          });
+        }),
+        ...groupEventItems.map((groupEvent) =>
+          createCalendarProjectionItem({
+            id: groupEvent.id,
+            kind: "group_event",
+            title: String(groupEvent.title ?? "Group event"),
+            calendarDate: String(groupEvent.scheduled_date ?? today),
+            navigation: { target: "group_event", href: `/group-event-detail?id=${groupEvent.id}` },
+          }),
+        ),
+        ...completedActivityItems.map((activity) =>
+          createCalendarProjectionItem({
+            id: activity.id,
+            kind: "completed_activity",
+            title: String(activity.name ?? "Completed activity"),
+            calendarDate: String(activity.scheduled_date ?? today),
+            navigation: { target: "activity", href: `/activity-detail?id=${activity.id}` },
+          }),
+        ),
+        createCalendarProjectionItem({
+          id: "goal-1",
+          kind: "goal",
+          title: "Spring A Race",
+          calendarDate: today,
+          navigation: { target: "goal", href: "/goal-detail?id=goal-1" },
+        }),
+      ],
     },
-    selectedGroupEvents: { items: groupEventItems, truncated: false },
-    completedActivities: { items: completedActivityItems, truncated: false },
+    plannedLoadSummary: null,
   },
   isLoading: false,
   error: null,
@@ -291,7 +363,7 @@ describe("calendar day screen", () => {
 
     renderNative(<CalendarDayScreen />);
 
-    expect(screen.getByTestId("calendar-day-completed-activity-activity-1")).toBeTruthy();
+    expect(screen.getByTestId("calendar-day-activity-row-activity-1")).toBeTruthy();
     expect(screen.getByText("3 events")).toBeTruthy();
   });
 
@@ -342,7 +414,6 @@ describe("calendar day screen", () => {
       pathname: "/(internal)/(standard)/agenda-create",
       params: {
         date: tomorrow,
-        trainingPlanId: "training-plan-1",
         planSuggestionType: "add_load",
         planSuggestionLoadDelta: "75",
       },
@@ -367,25 +438,13 @@ describe("calendar day screen", () => {
     expect(screen.queryByText("Scheduled sessions to review")).toBeNull();
   });
 
-  it("shows the linked activity plan card under the event details and opens event detail on tap", () => {
-    const rendered = renderNative(<CalendarDayScreen />);
+  it("shows the canonical planned activity row and opens event detail on tap", () => {
+    renderNative(<CalendarDayScreen />);
 
     expect(screen.getByText("Goal")).toBeTruthy();
     expect(screen.getByText("Spring A Race")).toBeTruthy();
     expect(screen.getByText("Tempo Builder")).toBeTruthy();
-    expect(screen.getByText("From training plan")).toBeTruthy();
-    expect(screen.getByText("Linked activity plan")).toBeTruthy();
-    expect(
-      (rendered as unknown as UnsafeTypeQuery).UNSAFE_getByType("ActivityPlanCard").props
-        .activityPlan,
-    ).toEqual(
-      expect.objectContaining({
-        id: "plan-1",
-        name: "Tempo Builder",
-      }),
-    );
-
-    fireEvent.press(screen.getByTestId("schedule-event-event-1"));
+    fireEvent.press(screen.getByTestId("calendar-day-planned_activity-row-event-1"));
 
     expect(pushMock).toHaveBeenCalledWith("/event-detail?id=event-1");
   });
@@ -403,8 +462,7 @@ describe("calendar day screen", () => {
 
     expect(screen.getByText("Mobility session")).toBeTruthy();
     expect(screen.getByText("Gentle evening mobility.")).toBeTruthy();
-    expect(screen.getByText("2:00 PM - 3:00 PM")).toBeTruthy();
-    expect(screen.getByText("Garage studio")).toBeTruthy();
+    expect(screen.getByTestId("calendar-day-event-row-event-2")).toBeTruthy();
   });
 
   it("keeps planned agenda items scan-first without a quick action button", () => {
@@ -413,7 +471,7 @@ describe("calendar day screen", () => {
     expect(screen.queryByTestId("schedule-event-action-event-1")).toBeNull();
   });
 
-  it("shows human-readable recurrence text in agenda items", () => {
+  it("renders recurring events through the canonical event row", () => {
     eventItems = [
       {
         id: "event-recurring",
@@ -428,7 +486,7 @@ describe("calendar day screen", () => {
 
     renderNative(<CalendarDayScreen />);
 
-    expect(screen.getByText("Every week until May 30, 2026")).toBeTruthy();
+    expect(screen.getByTestId("calendar-day-event-row-event-recurring")).toBeTruthy();
   });
 
   it("shows goal anchors even when the day has no events", () => {
@@ -441,7 +499,7 @@ describe("calendar day screen", () => {
     expect(screen.queryByText("Rest day")).toBeNull();
   });
 
-  it("keeps custom events visible while still classifying the day as a rest day", () => {
+  it("keeps custom events visible without inferring a rest day", () => {
     paramsState = { date: tomorrow };
     eventItems = [
       {
@@ -459,8 +517,8 @@ describe("calendar day screen", () => {
 
     renderNative(<CalendarDayScreen />);
 
-    expect(screen.getByTestId(`calendar-rest-day-state-${tomorrow}`)).toBeTruthy();
-    expect(screen.getByText("Rest day")).toBeTruthy();
+    expect(screen.queryByTestId(`calendar-rest-day-state-${tomorrow}`)).toBeNull();
+    expect(screen.queryByText("Rest day")).toBeNull();
     expect(screen.getByText("Dinner reservation")).toBeTruthy();
   });
 

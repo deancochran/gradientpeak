@@ -6,7 +6,7 @@ import { TrainingPlanDetail } from "./training-plan-detail";
 
 const mocks = vi.hoisted(() => ({
   mutation: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  activePlan: null as { id: string; schedule_batch_id: string } | null,
+  activePlan: null as { id: string; scheduleBatchId: string } | null,
   plan: {
     id: "plan-1",
     profile_id: "profile-1",
@@ -31,7 +31,9 @@ vi.mock("../../lib/api/client", () => ({
     profiles: { get: { useQuery: () => ({ data: { id: "profile-1" } }) } },
     trainingPlans: {
       get: { useQuery: () => ({ data: mocks.plan, error: null, isLoading: false }) },
-      getActivePlan: { useQuery: () => ({ data: mocks.activePlan }) },
+      getPlanTabProjection: {
+        useQuery: () => ({ data: { currentScheduledPlan: mocks.activePlan } }),
+      },
       commit: { useMutation: mocks.mutation },
       removeAppliedSchedule: {
         useMutation: () => ({ isPending: false, mutateAsync: mocks.removeAppliedScheduleMutation }),
@@ -66,7 +68,7 @@ describe("TrainingPlanDetail", () => {
   });
 
   it("removes the active schedule with the displayed plan and active batch IDs", async () => {
-    mocks.activePlan = { id: "plan-1", schedule_batch_id: "schedule-batch-1" };
+    mocks.activePlan = { id: "plan-1", scheduleBatchId: "schedule-batch-1" };
 
     render(
       <TrainingPlanDetail

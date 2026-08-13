@@ -2,8 +2,9 @@ import React from "react";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
+let activityItems: Array<Record<string, unknown>> = [];
 const activitiesListUseInfiniteQueryMock = jest.fn((_input?: unknown, _options?: unknown) => ({
-  data: { pages: [{ items: [], total: 0, hasMore: false }] },
+  data: { pages: [{ items: activityItems, total: activityItems.length, hasMore: false }] },
   isLoading: false,
   isFetchingNextPage: false,
   hasNextPage: false,
@@ -113,16 +114,30 @@ jest.mock("@/components/shared/ActivityCard", () => ({
 jest.mock("@/components/shared/ResourceList", () => ({
   __esModule: true,
   ResourceList: ({
+    data = [],
     emptyComponent,
     isEmptyFiltered,
+    renderItem,
   }: {
+    data?: Array<Record<string, unknown>>;
     emptyComponent?: React.ReactNode;
     isEmptyFiltered?: boolean;
+    renderItem?: (item: Record<string, unknown>) => React.ReactNode;
   }) =>
     React.createElement(
       "View",
       null,
-      isEmptyFiltered ? React.createElement("Text", null, "No matching results") : emptyComponent,
+      data.length > 0
+        ? data.map((item, index) =>
+            React.createElement(
+              React.Fragment,
+              { key: String(item.id ?? index) },
+              renderItem?.(item),
+            ),
+          )
+        : isEmptyFiltered
+          ? React.createElement("Text", null, "No matching results")
+          : emptyComponent,
     ),
 }));
 jest.mock("@/lib/hooks/useAuth", () => ({
@@ -151,7 +166,32 @@ const ActivitiesListScreen = require("../activities-list").default;
 describe("activities list screen filters", () => {
   beforeEach(() => {
     activitiesListUseInfiniteQueryMock.mockClear();
+    activityItems = [];
     localSearchParamsMock = {};
+  });
+
+  it("opts list cards into likes without requesting an alternate layout", () => {
+    activityItems = [
+      {
+        id: "activity-1",
+        name: "Activity",
+        started_at: "2026-03-23T09:00:00.000Z",
+      },
+    ];
+
+    const rendered = renderNative(<ActivitiesListScreen />);
+    const activityCard = (
+      rendered as unknown as {
+        UNSAFE_getByType: (type: "ActivityCard") => { props: Record<string, unknown> };
+      }
+    ).UNSAFE_getByType("ActivityCard");
+
+    expect(activityCard.props).toMatchObject({
+      dateMode: "absolute",
+      showLike: true,
+      testID: "activities-list-item-activity-1",
+    });
+    expect(activityCard.props).not.toHaveProperty("variant");
   });
 
   it("includes multisport in the default query", () => {
@@ -161,7 +201,6 @@ describe("activities list screen filters", () => {
       {
         limit: 20,
         importRunId: undefined,
-        search: undefined,
         activity_category: undefined,
         composition_mode: "include_multisport",
         sort_by: "date",
@@ -169,6 +208,13 @@ describe("activities list screen filters", () => {
       },
       expect.objectContaining({ getNextPageParam: expect.any(Function) }),
     );
+  });
+
+  it("does not expose stored activity names through list search", () => {
+    renderNative(<ActivitiesListScreen />);
+
+    expect(screen.queryByTestId("activities-list-search-input")).toBeNull();
+    expect(screen.queryByText("Search activities")).toBeNull();
   });
 
   it("filters the activity list to a valid imported batch route parameter", () => {

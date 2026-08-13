@@ -1,21 +1,34 @@
 import { describe, expect, it } from "vitest";
 import {
+  executableIntegrationProviderIdSchema,
+  executableIntegrationProviderIdValues,
   getConfigurableProviderActions,
   getProviderCapabilityUnavailableReason,
   getProviderPlannedActivityCapability,
   getProviderSyncMode,
   getProvidersWithCapability,
-  integrationProviderIdValues,
   isProviderActivityHistoryReconciliationTarget,
+  persistentIntegrationSourceIdSchema,
+  persistentIntegrationSourceIdValues,
   providerCapabilityRegistry,
   providerHasCapability,
+  providerOnboardingPresentationSchema,
 } from "../provider-capabilities";
 
 describe("provider capability registry", () => {
-  it("has one capability definition for every provider ID", () => {
+  it("keeps durable provider identities neutral while exposing only Wahoo executable capabilities", () => {
     expect(providerCapabilityRegistry.map((provider) => provider.id)).toEqual(
-      integrationProviderIdValues,
+      executableIntegrationProviderIdValues,
     );
+    expect(persistentIntegrationSourceIdValues).toEqual([
+      "wahoo",
+      "strava",
+      "trainingpeaks",
+      "garmin",
+      "zwift",
+    ]);
+    expect(persistentIntegrationSourceIdSchema.safeParse("strava").success).toBe(true);
+    expect(executableIntegrationProviderIdSchema.safeParse("strava").success).toBe(false);
   });
 
   it("marks Wahoo as the MVP file-first activity import provider", () => {
@@ -24,28 +37,25 @@ describe("provider capability registry", () => {
     expect(providerHasCapability("wahoo", "activity_file_format_fit")).toBe(true);
     expect(getProviderSyncMode("wahoo", "activity_history_read")).toBe("automatic");
     expect(isProviderActivityHistoryReconciliationTarget("wahoo")).toBe(true);
-    expect(isProviderActivityHistoryReconciliationTarget("strava")).toBe(false);
   });
 
   it("does not encode runtime enablement separately from server configuration", () => {
     expect(providerCapabilityRegistry.every((provider) => !("runtimeStatus" in provider))).toBe(
       true,
     );
-    expect(providerHasCapability("trainingpeaks", "planned_activity_push")).toBe(false);
-    expect(getProviderSyncMode("trainingpeaks", "planned_activity_push")).toBe("unsupported");
   });
 
-  it("does not enable full automatic Strava activity import without provider files", () => {
-    expect(providerHasCapability("strava", "activity_history_read")).toBe(true);
-    expect(providerHasCapability("strava", "activity_file_download")).toBe(false);
-    expect(providerHasCapability("strava", "activity_file_format_fit")).toBe(false);
-    expect(getConfigurableProviderActions("strava")).toEqual(["disconnect"]);
+  it("publishes stable user-safe onboarding presentation metadata", () => {
+    const wahoo = providerCapabilityRegistry.find((provider) => provider.id === "wahoo");
+    expect(providerOnboardingPresentationSchema.parse(wahoo?.onboarding)).toEqual({
+      summary: "Import profile details and activity history from your Wahoo account.",
+      evidence: { activityHistory: true, profileDetails: true },
+    });
+    expect(JSON.stringify(wahoo?.onboarding)).not.toMatch(/icon|className|tailwind/i);
   });
 
   it("filters connected providers by capability", () => {
-    expect(
-      getProvidersWithCapability(["wahoo", "strava", "trainingpeaks"], "planned_activity_push"),
-    ).toEqual(["wahoo"]);
+    expect(getProvidersWithCapability(["wahoo"], "planned_activity_push")).toEqual(["wahoo"]);
   });
 
   it("declares Wahoo implementation support separately from route delivery", () => {
@@ -68,17 +78,10 @@ describe("provider capability registry", () => {
       ]),
       supportsBoundaries: false,
     });
-    expect(getProviderPlannedActivityCapability("garmin")).toMatchObject({
-      maturity: "evidence_gated",
-      supportedActivityCategories: [],
-      supportedTargets: [],
-    });
   });
 
   it("derives user-configurable actions instead of exposing raw capabilities", () => {
     expect(getProviderSyncMode("wahoo", "profile_enrichment_read")).toBe("manual");
     expect(getConfigurableProviderActions("wahoo")).toEqual(["disconnect", "sync_now"]);
-    expect(getConfigurableProviderActions("trainingpeaks")).toEqual(["disconnect"]);
-    expect(getConfigurableProviderActions("garmin")).toEqual(["disconnect"]);
   });
 });

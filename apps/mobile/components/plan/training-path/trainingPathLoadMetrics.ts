@@ -8,12 +8,10 @@ type TrainingPathLoadMetricPoint = {
   effectiveIntensity?: number | null | undefined;
   effectiveCompletedLoad?: number | null | undefined;
   effectiveRemainingLoad?: number | null | undefined;
-  effectiveTentativeLoad?: number | null | undefined;
   recommendedLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable" | undefined;
   recommendedLoad?: number | null | undefined;
   plannedLoad?: number | null;
   targetLoad?: number | null;
-  tentativePlannedLoad?: number | null;
 };
 
 function formatIntensity(value: number): string {
@@ -23,14 +21,7 @@ function formatIntensity(value: number): string {
 }
 
 export type TrainingPathLoadMetric = {
-  label:
-    | "Common Load"
-    | "Completed"
-    | "Normalized intensity"
-    | "Planned"
-    | "Remaining"
-    | "Target"
-    | "Tentative";
+  label: "Common Load" | "Completed" | "Normalized intensity" | "Planned" | "Remaining" | "Target";
   value: string;
 };
 
@@ -78,9 +69,6 @@ export function buildTrainingPathLoadMetrics(
     }
     if (point.effectiveRemainingLoad != null) {
       metrics.push({ label: "Remaining", value: formatLoad(point.effectiveRemainingLoad) });
-    }
-    if (point.effectiveTentativeLoad != null) {
-      metrics.push({ label: "Tentative", value: formatLoad(point.effectiveTentativeLoad) });
     }
     if (point.recommendedLoadStatus) {
       metrics.push({

@@ -4,6 +4,7 @@ import { calculateCyclingNormalizedPower } from "../../calculations/normalized-p
 import { calculateSwimmingDurationPerformance } from "../../duration-performance";
 import { SWIMMING_DURATION_PERFORMANCE_FIXTURE_V1 } from "../../duration-performance/__tests__/fixtures/duration-performance-v1";
 import { aggregateCommonLoad } from "../../load/common-relative-load";
+import { athletePerformanceTargetFactsSchema } from "../../performance-model";
 import { buildPerformanceTargetFactsFixture } from "../../performance-model/__tests__/fixtures/target-facts";
 import { projectAthletePerformanceTargetFacts } from "../../performance-model/projections";
 import { buildPerformanceModelSnapshotFixture } from "../../testing/performance-model";
@@ -42,9 +43,22 @@ describe("activity analysis Common Load", () => {
       },
       context: {
         profileMetrics: {},
-        performanceTargets: buildPerformanceTargetFactsFixture({
-          planningThresholdPowerWatts: 250,
-        }),
+        performanceTargets: (() => {
+          const targets = buildPerformanceTargetFactsFixture({
+            planningThresholdPowerWatts: 250,
+          });
+          return athletePerformanceTargetFactsSchema.parse({
+            ...targets,
+            cycling: {
+              planningThresholdPower: {
+                ...targets.cycling.planningThresholdPower,
+                status: "partial",
+                calibrationState: "provisional",
+                confidence: "low",
+              },
+            },
+          });
+        })(),
         recentEfforts: [],
         profile: {},
       },
@@ -64,14 +78,43 @@ describe("activity analysis Common Load", () => {
     expect(activityDerivedMetricsSchema.parse(derived)).toEqual(derived);
   });
 
-  it("uses canonical CSS protocol model output for swimming Common Load", () => {
+  it("uses a provisional canonical CSS target for swimming Common Load", () => {
     const fixture = SWIMMING_DURATION_PERFORMANCE_FIXTURE_V1;
     const snapshot = buildPerformanceModelSnapshotFixture({
       asOf: fixture.input.assessmentAsOf,
       athleteId: fixture.input.athleteId,
     });
     snapshot.categories.swim = calculateSwimmingDurationPerformance(fixture.input);
-    const performanceTargets = projectAthletePerformanceTargetFacts(snapshot);
+    snapshot.calibrations.push({
+      id: "swim-css-calibration",
+      identity: { metricKey: "threshold_speed", activityCategory: "swim" },
+      value: 100 / fixture.expected.cssSecondsPer100Meters,
+      unit: "meters_per_second",
+      effectiveAt: fixture.input.cssProtocols[0]?.recordedAt ?? fixture.input.assessmentAsOf,
+      expiresAt: new Date(Date.parse(fixture.input.assessmentAsOf) + 90 * 86_400_000).toISOString(),
+      policyVersion: "performance-calibration-v1",
+      selectionDiagnostics: {
+        selectedEvidenceIds: [fixture.input.cssProtocols[0]?.evidenceId ?? "css-evidence"],
+        selectedActivityIds: ["swim-css-activity"],
+        evidenceCount: 1,
+        selectionReason: "complete_protocol",
+        trend: "initial",
+        tolerance: 0.03,
+        policyVersion: "performance-calibration-v1",
+      },
+    });
+    const projectedTargets = projectAthletePerformanceTargetFacts(snapshot);
+    const performanceTargets = athletePerformanceTargetFactsSchema.parse({
+      ...projectedTargets,
+      swimming: {
+        css: {
+          ...projectedTargets.swimming.css,
+          status: "partial",
+          calibrationState: "provisional",
+          confidence: "low",
+        },
+      },
+    });
     const cssSpeed = 100 / fixture.expected.cssSecondsPer100Meters;
 
     const derived = analyzeActivityDerivedMetrics({
@@ -95,7 +138,8 @@ describe("activity analysis Common Load", () => {
     });
 
     expect(performanceTargets.swimming.css).toMatchObject({
-      status: "available",
+      status: "partial",
+      calibrationState: "provisional",
       sourceEvidenceIds: [fixture.input.cssProtocols[0]?.evidenceId],
     });
     expect(derived.stress.common_load).toMatchObject({

@@ -54,6 +54,8 @@
     "./parity": "./parity/index.ts",
     "./performance-model": "./performance-model/index.ts",
     "./performance-model/*": "./performance-model/*.ts",
+    "./performance-calibration": "./performance-calibration/index.ts",
+    "./performance-calibration/*": "./performance-calibration/*.ts",
     "./testing": "./testing/index.ts",
     "./testing/*": "./testing/*/index.ts",
     "./plan": "./plan/index.ts",

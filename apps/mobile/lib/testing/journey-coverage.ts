@@ -60,8 +60,8 @@ export const mobileJourneyCoverageManifest = {
   "training_plan.create": {
     evidence: [
       {
-        kind: "domain_test",
-        path: "lib/training-plan-creation/training-plan-creation.test.ts",
+        kind: "component_test",
+        path: "lib/training-plan-creation/useTrainingPlanCreationService.jest.test.tsx",
         status: "validated",
         verificationStatus: "declared",
       },
@@ -95,7 +95,7 @@ export const mobileJourneyCoverageManifest = {
       addActivity: "builder-add-activity",
       goalsControl: "builder-configuration-goals",
       nameInput: "builder-plan-name-input",
-      scheduleControl: "builder-configuration-schedulePreview",
+      scheduleControl: "builder-sessions-workspace",
       saveButton: "training-plan-save-button",
       screen: "builder-strategy-composer",
     },

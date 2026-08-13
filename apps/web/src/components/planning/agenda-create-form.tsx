@@ -111,9 +111,17 @@ export function AgendaCreateForm({
             ))}
           </select>
           {activityPlansQuery.isError ? (
-            <p role="alert" className="text-sm text-destructive">
-              Activity plans could not be loaded. Retry the query before scheduling.
-            </p>
+            <div role="alert" className="flex items-center gap-2 text-sm text-destructive">
+              <span>Activity plans could not be loaded.</span>
+              <Button
+                onClick={() => void activityPlansQuery.refetch()}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Retry
+              </Button>
+            </div>
           ) : null}
           {!activityPlansQuery.isLoading && activityPlansQuery.data?.items.length === 0 ? (
             <p className="text-sm text-muted-foreground">

@@ -19,7 +19,7 @@ const availableLoad = {
 };
 
 describe("buildServerEffectiveLoadSummaries", () => {
-  it("keeps firm and tentative server-composed Load separate", () => {
+  it("summarizes the server-composed scheduled Load", () => {
     const summaries = buildServerEffectiveLoadSummaries({
       periods: [{ key: "week", startDate: "2026-07-20", endDate: "2026-07-26" }],
       response: {
@@ -31,7 +31,6 @@ describe("buildServerEffectiveLoadSummaries", () => {
         },
         completed: { status: "unavailable", reason: "no_load_data" },
         remaining: { status: "unavailable", reason: "no_load_data" },
-        tentative: { status: "unavailable", reason: "no_load_data" },
         effective: {
           status: "available",
           firm: availableLoad,
@@ -43,14 +42,6 @@ describe("buildServerEffectiveLoadSummaries", () => {
               commonLoad: availableLoad,
             },
           ],
-          tentativeItems: [
-            {
-              kind: "scheduled",
-              date: "2026-07-23",
-              scheduledItemId: "tentative",
-              commonLoad: availableLoad,
-            },
-          ],
         },
       } as never,
     });
@@ -59,7 +50,6 @@ describe("buildServerEffectiveLoadSummaries", () => {
       status: "complete",
       commonLoad: 50,
       intensity: Math.SQRT1_2,
-      tentativeLoad: 50,
     });
   });
 
@@ -84,83 +74,15 @@ describe("buildServerEffectiveLoadSummaries", () => {
         },
         completed: { status: "unavailable", reason: "no_load_data" },
         remaining: { status: "unavailable", reason: "no_load_data" },
-        tentative: { status: "unavailable", reason: "no_load_data" },
         effective: {
           status: "available",
           firm: { ...availableLoad, status: "partial", partialActivityCount: 1 },
           firmItems: [],
-          tentativeItems: [],
         },
       } as never,
     });
 
     expect(summaries.get("empty-day")).toMatchObject({ status: "unavailable", commonLoad: null });
-  });
-
-  it("keeps an empty tentative subset unavailable until scheduled coverage is complete", () => {
-    const summaries = buildServerEffectiveLoadSummaries({
-      periods: [{ key: "empty-day", startDate: "2026-07-23", endDate: "2026-07-23" }],
-      response: {
-        status: "available",
-        resolvedRange: {
-          startDate: "2026-07-20",
-          endDate: "2026-07-26",
-          timezone: "UTC",
-        },
-        completed: { status: "unavailable", reason: "no_load_data" },
-        remaining: { status: "unavailable", reason: "no_load_data" },
-        tentative: { status: "unavailable", reason: "no_load_data" },
-        effective: {
-          status: "available",
-          firm: availableLoad,
-          firmItems: [],
-          tentativeItems: [],
-        },
-        sourceCoverage: {
-          activities: null,
-          scheduledItems: { startDate: "2026-07-20", endDate: "2026-07-26", status: "partial" },
-        },
-      } as never,
-    });
-
-    expect(summaries.get("empty-day")).toMatchObject({
-      status: "known_zero",
-      commonLoad: 0,
-      tentativeLoad: null,
-    });
-  });
-
-  it("recognizes an empty tentative subset as zero after complete scheduled coverage", () => {
-    const summaries = buildServerEffectiveLoadSummaries({
-      periods: [{ key: "empty-day", startDate: "2026-07-23", endDate: "2026-07-23" }],
-      response: {
-        status: "available",
-        resolvedRange: {
-          startDate: "2026-07-20",
-          endDate: "2026-07-26",
-          timezone: "UTC",
-        },
-        completed: { status: "unavailable", reason: "no_load_data" },
-        remaining: { status: "unavailable", reason: "no_load_data" },
-        tentative: { status: "unavailable", reason: "no_load_data" },
-        effective: {
-          status: "available",
-          firm: availableLoad,
-          firmItems: [],
-          tentativeItems: [],
-        },
-        sourceCoverage: {
-          activities: null,
-          scheduledItems: { startDate: "2026-07-20", endDate: "2026-07-26", status: "complete" },
-        },
-      } as never,
-    });
-
-    expect(summaries.get("empty-day")).toMatchObject({
-      status: "known_zero",
-      commonLoad: 0,
-      tentativeLoad: 0,
-    });
   });
 
   it("keeps periods outside the server-resolved range unavailable", () => {
@@ -173,7 +95,6 @@ describe("buildServerEffectiveLoadSummaries", () => {
         status: "available",
         completed: { status: "unavailable", reason: "no_load_data" },
         remaining: { status: "unavailable", reason: "no_load_data" },
-        tentative: { status: "unavailable", reason: "no_load_data" },
         resolvedRange: {
           startDate: "2026-07-20",
           endDate: "2026-07-26",
@@ -183,7 +104,6 @@ describe("buildServerEffectiveLoadSummaries", () => {
           status: "available",
           firm: availableLoad,
           firmItems: [],
-          tentativeItems: [],
         },
         sourceCoverage: {
           activities: { startDate: "2026-07-20", endDate: "2026-07-26", status: "complete" },
@@ -218,12 +138,10 @@ describe("buildServerEffectiveLoadSummaries", () => {
         },
         completed: { status: "unavailable", reason: "no_load_data" },
         remaining: { status: "unavailable", reason: "no_load_data" },
-        tentative: { status: "unavailable", reason: "no_load_data" },
         effective: {
           status: "available",
           firm: availableLoad,
           firmItems: [],
-          tentativeItems: [],
         },
         sourceCoverage: {
           activities: { startDate: "2026-07-20", endDate: "2026-07-26", status: "complete" },

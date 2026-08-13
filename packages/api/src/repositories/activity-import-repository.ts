@@ -229,7 +229,14 @@ export function createActivityImportRepository(db: DbClient) {
       return db.transaction((tx) => recordPage(tx, input));
     },
 
-    async complete(id: string, now = new Date()) {
+    async complete(
+      id: string,
+      now = new Date(),
+      beforeComplete?: (
+        tx: DrizzleTransactionClient,
+        run: typeof activityImportRuns.$inferSelect,
+      ) => Promise<void>,
+    ) {
       return db.transaction(async (tx) => {
         const [candidate] = await tx
           .select({ profileId: activityImportRuns.profile_id })
@@ -238,6 +245,14 @@ export function createActivityImportRepository(db: DbClient) {
           .limit(1);
         if (!candidate) return null;
         await lockProfileAdvisoryFence(tx, candidate.profileId);
+        const [locked] = await tx
+          .select()
+          .from(activityImportRuns)
+          .where(eq(activityImportRuns.id, id))
+          .limit(1)
+          .for("update");
+        if (!locked || locked.status !== "running") return null;
+        await beforeComplete?.(tx, locked);
         const [run] = await tx
           .update(activityImportRuns)
           .set({
@@ -282,22 +297,36 @@ export function createActivityImportRepository(db: DbClient) {
     },
 
     async fail(id: string, errorCode: string, now = new Date()) {
-      const [run] = await db
-        .update(activityImportRuns)
-        .set({
-          status: "failed",
-          completed_at: now,
-          last_error_code: errorCode.slice(0, 64),
-          updated_at: now,
-        })
-        .where(
-          and(
-            eq(activityImportRuns.id, id),
-            sql`${activityImportRuns.status} in ('queued', 'running')`,
-          ),
-        )
-        .returning();
-      return run ?? null;
+      return db.transaction(async (tx) => {
+        const [run] = await tx
+          .update(activityImportRuns)
+          .set({
+            status: "failed",
+            completed_at: now,
+            last_error_code: errorCode.slice(0, 64),
+            updated_at: now,
+          })
+          .where(
+            and(
+              eq(activityImportRuns.id, id),
+              sql`${activityImportRuns.status} in ('queued', 'running')`,
+            ),
+          )
+          .returning();
+        if (!run) return null;
+
+        // A failed history import can still have committed material activity evidence from earlier
+        // pages. Publish that verified partial history as stale rather than leaving the profile
+        // without any athlete-state baseline until a later import fully succeeds.
+        if (run.material_change_count > 0) {
+          await markAthleteStateDirty(tx, {
+            profileId: run.profile_id,
+            effectiveAt: run.material_effective_from_at ?? run.earliest_activity_at ?? now,
+            now,
+          });
+        }
+        return run;
+      });
     },
   };
   return repository;

@@ -20,11 +20,11 @@ describe("dailyTrainingPathModel", () => {
       targetLoad: 40,
       actualOrScheduledLoad: null,
       loadDelta: null,
-      plannedDelta: null,
+      plannedDelta: -10,
     });
   });
 
-  it("combines completed load with remaining scheduled and tentative load", () => {
+  it("combines completed load with remaining scheduled load", () => {
     const [point] = normalizeDailyTrainingAdjustmentPoints({
       startDate: "2026-06-01",
       endDate: "2026-06-01",
@@ -32,7 +32,6 @@ describe("dailyTrainingPathModel", () => {
         {
           date: "2026-06-01",
           plannedLoad: 40,
-          tentativePlannedLoad: 10,
           completedLoad: 35,
           targetLoad: 50,
         },
@@ -41,11 +40,10 @@ describe("dailyTrainingPathModel", () => {
 
     expect(point).toMatchObject({
       plannedLoad: 40,
-      tentativePlannedLoad: 10,
       completedLoad: 35,
-      actualOrScheduledLoad: 50,
-      loadDelta: 0,
-      plannedDelta: 0,
+      actualOrScheduledLoad: 40,
+      loadDelta: -10,
+      plannedDelta: -10,
     });
   });
 
@@ -115,7 +113,6 @@ describe("dailyTrainingPathModel", () => {
         {
           date: "2026-06-01",
           scheduled_common_load: 40,
-          tentative_scheduled_common_load: 10,
           completed_common_load: 20,
           recommended_common_load: 60,
         },
@@ -130,12 +127,11 @@ describe("dailyTrainingPathModel", () => {
     expect(points[0]).toMatchObject({
       date: "2026-06-01",
       plannedLoad: 40,
-      tentativePlannedLoad: 10,
       completedLoad: 20,
       targetLoad: 60,
-      actualOrScheduledLoad: 50,
-      loadDelta: -10,
-      plannedDelta: -10,
+      actualOrScheduledLoad: 40,
+      loadDelta: -20,
+      plannedDelta: -20,
       fitnessCtl: 42,
       targetFitnessCtl: 44,
       scheduledFitnessCtl: 43,

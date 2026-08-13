@@ -1,5 +1,29 @@
 # API contract changes
 
+## 2026-08-10 — fresh-baseline compatibility hard cut
+
+Activity-plan list callers now use `ownerScope` and `activityCategories`; the removed
+`includeEstimation`, singular `activityCategory`, and unused direction compatibility inputs are no
+longer accepted. Training plans use `trainingPlans.get({ id })` and
+`trainingPlans.getPlanTabProjection(...)`; `getById`, `getActivePlan`, and their application aliases
+were removed.
+
+Personal events no longer accept imported/rest-day event types, read-only flags, lifecycle wrappers,
+or recurrence exception fields. The fresh database baseline likewise omits the imported enum value
+and dead event source, external-calendar, lifecycle, recurrence-JSON, and payload columns. Profile
+metrics no longer accept or persist LTHR; published performance-target facts and calibration evidence
+own threshold-heart-rate state.
+
+Personal planned sessions now accept calendar date keys and content links only. Client-authored
+datetime, timezone, all-day, recurrence, and training-plan-linkage fields were removed while generic
+custom and race-target events retain their timed/recurring schedule contracts. The
+`events.validateConstraints` preflight route was removed; create and update mutations are the sole
+schedule authority. Training-plan writes no longer accept the legacy `is_active` field.
+
+Executable provider capability contracts are now Wahoo-only. Neutral provider identifiers remain for
+durable source identity and recovery, but unsupported providers no longer receive runtime capability,
+sync-mode, setup-action, or planned-activity-readiness definitions.
+
 ## 2026-07-24 — public API hard-cut cleanup
 
 Removed unused activity-plan imports/counts; legacy training-plan creation, feasibility, audit,

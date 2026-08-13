@@ -201,7 +201,7 @@ describe("Wahoo repository activity persistence boundary", () => {
     ]);
   });
 
-  it("requires the current group event, accepted RSVP, opt-in, and viewable source route for delivery", async () => {
+  it("requires a default-going current group event, opt-in, and viewable source route for delivery", async () => {
     let whereCondition: unknown;
     const publicSource = {
       description: null,
@@ -218,12 +218,14 @@ describe("Wahoo repository activity persistence boundary", () => {
         from: vi.fn(() => ({
           innerJoin: vi.fn(() => ({
             innerJoin: vi.fn(() => ({
-              innerJoin: vi.fn(() => ({
-                innerJoin: vi.fn(() => ({
-                  where: vi.fn((condition: unknown) => {
-                    whereCondition = condition;
-                    return { limit: vi.fn().mockResolvedValue([publicSource]) };
-                  }),
+              leftJoin: vi.fn(() => ({
+                leftJoin: vi.fn(() => ({
+                  innerJoin: vi.fn(() => ({
+                    where: vi.fn((condition: unknown) => {
+                      whereCondition = condition;
+                      return { limit: vi.fn().mockResolvedValue([publicSource]) };
+                    }),
+                  })),
                 })),
               })),
             })),
@@ -246,6 +248,9 @@ describe("Wahoo repository activity persistence boundary", () => {
     const query = new PgDialect().sqlToQuery(whereCondition as never);
     expect(query.sql).toContain('"group_events"."id" = $1');
     expect(query.sql).toContain('"group_events"."cancelled_at" is null');
+    expect(query.sql).toContain('coalesce("group_event_rsvps"."status" <>');
+    expect(query.sql).toContain('case when "group_event_rsvps"."profile_id" is not null');
+    expect(query.sql).toContain('"group_event_series_rsvps"."status" <>');
     expect(query.sql).toContain('"group_events"."starts_at" > $2');
     expect(query.sql).toContain("wahooEventRouteDeliveryEnabled");
     expect(query.sql).toContain('"activity_routes"."is_public" = $');
@@ -268,12 +273,14 @@ describe("Wahoo repository activity persistence boundary", () => {
         from: vi.fn(() => ({
           innerJoin: vi.fn(() => ({
             innerJoin: vi.fn(() => ({
-              innerJoin: vi.fn(() => ({
-                innerJoin: vi.fn(() => ({
-                  where: vi.fn((condition: unknown) => {
-                    whereCondition = condition;
-                    return { orderBy: vi.fn(() => ({ limit })) };
-                  }),
+              leftJoin: vi.fn(() => ({
+                leftJoin: vi.fn(() => ({
+                  innerJoin: vi.fn(() => ({
+                    where: vi.fn((condition: unknown) => {
+                      whereCondition = condition;
+                      return { orderBy: vi.fn(() => ({ limit })) };
+                    }),
+                  })),
                 })),
               })),
             })),
@@ -301,6 +308,9 @@ describe("Wahoo repository activity persistence boundary", () => {
     const query = new PgDialect().sqlToQuery(whereCondition as never);
     expect(query.sql).toContain('"group_events"."series_id" is null');
     expect(query.sql).toContain('"group_events"."recurrence_rule" is null');
+    expect(query.sql).toContain('coalesce("group_event_rsvps"."status" <>');
+    expect(query.sql).toContain('case when "group_event_rsvps"."profile_id" is not null');
+    expect(query.sql).toContain('"group_event_series_rsvps"."status" <>');
     expect(query.sql).toContain("wahooEventRouteDeliveryEnabled");
   });
 

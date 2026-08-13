@@ -220,13 +220,7 @@ function getGroupEventActivityPlanCardData(event: CalendarGroupEvent): ActivityP
 
 function getGroupEventStatusLabel(event: CalendarGroupEvent) {
   if (event.cancelled_at) return "Cancelled";
-  if (event.viewerRsvp?.status === "accepted" || event.viewerSeriesRsvp?.status === "accepted") {
-    return "Going";
-  }
-  if (event.viewerRsvp?.status === "tentative" || event.viewerSeriesRsvp?.status === "tentative") {
-    return "Tentative";
-  }
-  return null;
+  return "Going";
 }
 
 function getGroupEventOwner(event: CalendarGroupEvent): EntityOwner | null {
@@ -301,7 +295,6 @@ export function TrainingPathWeekSummaryCard({
     effectiveIntensity: summary.effectiveIntensity,
     effectiveCompletedLoad: summary.effectiveCompletedLoad,
     effectiveRemainingLoad: summary.effectiveRemainingLoad,
-    effectiveTentativeLoad: summary.effectiveTentativeLoad,
     hasCompletedActivityWithoutLoad: summary.completedLoadUnavailable ?? false,
   });
 
@@ -443,7 +436,6 @@ export function TrainingPathWeekSummaryCard({
                 onPress={() => onOpenActivity(activity.id)}
                 showLike
                 testID={`training-path-week-activity-${activity.id}`}
-                variant="list"
               />
             ) : (
               <View key={activity.id} className="flex-row items-center justify-between gap-3">
@@ -608,7 +600,6 @@ export function TrainingPathSelectedDaySummaryCard({
                 onPress={() => onOpenActivity(activity.id)}
                 showLike
                 testID={`training-path-day-activity-${activity.id}`}
-                variant="list"
               />
             ) : (
               <View key={activity.id} className="flex-row items-center justify-between gap-3">

@@ -542,18 +542,20 @@ function selectedTargetFact(
     | AthletePerformanceTargetFacts["swimming"]["css"],
   transform: (value: number) => number = (value) => value,
 ): SelectedPerformanceFact {
+  const value = getAvailablePerformanceTargetValue(fact);
+  const status = value === null ? "unavailable" : "available";
   return {
-    status: fact.status,
-    value: fact.value === null ? null : transform(fact.value),
+    status,
+    value: value === null ? null : transform(value),
     unit: fact.unit,
     calculationVersion: fact.calculationVersion,
     sourceEvidenceIds: fact.sourceEvidenceIds,
     confidence: fact.confidence,
     expiresAt: fact.expiresAt,
     reasons: fact.reasons,
-    source: fact.status === "available" ? "modeled" : "unknown",
-    observedFrom: fact.status === "available" ? fact.evidenceTime.observedFrom : null,
-    observedAt: fact.status === "available" ? fact.evidenceTime.observedThrough : null,
+    source: status === "available" ? "modeled" : "unknown",
+    observedFrom: status === "available" ? fact.evidenceTime.observedFrom : null,
+    observedAt: status === "available" ? fact.evidenceTime.observedThrough : null,
     computedAt: fact.evidenceTime.computedAt,
   };
 }
@@ -711,7 +713,7 @@ function buildPlannedDose(input: {
           source: fact.source,
           observedAt: fact.observedAt,
           validAt: fact.computedAt,
-          freshness: "current",
+          freshness: fact.reasons.some((reason) => reason.includes("stale")) ? "stale" : "current",
           calculationVersion: fact.calculationVersion,
           sourceFingerprint,
         })

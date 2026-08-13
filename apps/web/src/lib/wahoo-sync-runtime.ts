@@ -175,6 +175,7 @@ export function createWahooSyncRuntime() {
 
   return {
     activityHistoryJobs: new WahooActivityHistoryJobService({
+      db,
       executionLimiter,
       importRuns: activityImportRepository,
       importer,
@@ -182,6 +183,7 @@ export function createWahooSyncRuntime() {
       wahooRepository,
     }),
     syncJobs: new WahooSyncJobService({
+      db,
       executionLimiter,
       providerSyncRepository,
       syncService,

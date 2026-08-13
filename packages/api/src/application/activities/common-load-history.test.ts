@@ -33,6 +33,15 @@ const CURRENT_DATE = "2026-07-21";
 const CALCULATED_AS_OF = "2026-07-21T12:00:00.000Z";
 const AS_OF = new Date(CALCULATED_AS_OF);
 const EVIDENCE_SCOPE_FINGERPRINT = "common-load-history-test-scope";
+const trustedSourceEvidence = {
+  currentArtifactIds: [],
+  providerReferences: [{ provider: "wahoo", externalId: "provider-activity" }],
+} as const;
+const activity = (id: string, startedAt: string) => ({
+  id,
+  started_at: new Date(startedAt),
+  sourceEvidence: trustedSourceEvidence,
+});
 const quality = {
   source: "manual",
   observed_at: "2026-01-01T00:00:00.000Z",
@@ -151,10 +160,10 @@ function summary(
     source: {
       activityId,
       segmentId,
-      provider: null,
-      externalId: null,
+      provider: "wahoo",
+      externalId: "provider-activity",
       artifactId: null,
-      capability: "unknown",
+      capability: "provider_summary",
       parserVersion: null,
       decodedContractVersion: null,
       materializerVersion: null,
@@ -203,7 +212,12 @@ function summary(
 function createDb(
   rows: unknown[],
   failure?: Error,
-  source: { integrationRows?: unknown[]; syncRows?: unknown[] } = {},
+  source: {
+    integrationRows?: unknown[];
+    syncRows?: unknown[];
+    artifactRows?: unknown[];
+    sourceReferenceRows?: unknown[];
+  } = {},
 ) {
   const whereClauses = new Map<string, unknown>();
   const db = {
@@ -212,6 +226,20 @@ function createDb(
       const rowsForTable = () => {
         if (tableName === "integrations") return source.integrationRows ?? [];
         if (tableName === "provider_sync_state") return source.syncRows ?? [];
+        if (tableName === "activity_artifact_links") return source.artifactRows ?? [];
+        if (tableName === "activity_source_references") {
+          if (source.sourceReferenceRows) return source.sourceReferenceRows;
+          return rows.flatMap((row) => {
+            if (!row || typeof row !== "object" || !("id" in row)) return [];
+            return [
+              {
+                activityId: String(Reflect.get(row, "id")),
+                provider: "wahoo",
+                externalId: "provider-activity",
+              },
+            ];
+          });
+        }
         return rows;
       };
       const query = {
@@ -223,6 +251,7 @@ function createDb(
           whereClauses.set(tableName, condition);
           return query;
         }),
+        innerJoin: vi.fn(() => query),
         orderBy: vi.fn(() => query),
         limit: vi.fn(async () => {
           if (failure && tableName === "activities") throw failure;
@@ -308,6 +337,29 @@ describe("common Load history", () => {
     expect(result.maturity).toMatchObject({ status: "mature", replayedDays: 168 });
     expect(result.points).toHaveLength(84);
     expect(repeated).toEqual(result);
+  });
+
+  it.each([
+    ["date-only start", { start: "2026-01-01" }],
+    ["normalized-invalid end", { end: "2026-07-32T00:00:00.000Z" }],
+    ["normalized-invalid start", { start: "2026-02-30T00:00:00.000Z" }],
+  ])("rejects metadata with a non-strict ISO offset datetime (%s)", async (_label, replacement) => {
+    const coverage = completeSourceCoverage();
+    const metadata = coverage.syncRows[0]?.metadata as {
+      activityHistoryCoverage: { start: string; end: string };
+    };
+    Object.assign(metadata.activityHistoryCoverage, replacement);
+    const { db } = createDb([], undefined, coverage);
+
+    await expect(
+      getCommonLoadHistory({
+        asOf: AS_OF,
+        db: db as never,
+        profileId: PROFILE_ID,
+        currentPlanningDate: CURRENT_DATE,
+        planningTimezone: "UTC",
+      }),
+    ).resolves.toMatchObject({ status: "unavailable", reason: "incomplete_observation" });
   });
 
   it("abstains when stale coverage has a current high-watermark", async () => {
@@ -456,8 +508,8 @@ describe("common Load history", () => {
       calculatedAsOf: CALCULATED_AS_OF,
       evidenceScopeFingerprint: EVIDENCE_SCOPE_FINGERPRINT,
       activities: [
-        { id: "bike", started_at: new Date("2026-07-20T08:00:00.000Z") },
-        { id: "run", started_at: new Date("2026-07-20T12:00:00.000Z") },
+        activity("bike", "2026-07-20T08:00:00.000Z"),
+        activity("run", "2026-07-20T12:00:00.000Z"),
       ],
       segmentSummaries: [
         summary("bike", "bike-1", availableLoad({ activity_category: "bike", load: 64 })),
@@ -476,8 +528,8 @@ describe("common Load history", () => {
 
   it("fingerprints activity and threshold-source evidence independently without exposing row IDs", () => {
     const activities = [
-      { id: "private-activity-a", started_at: new Date("2026-07-20T08:00:00.000Z") },
-      { id: "private-activity-b", started_at: new Date("2026-07-20T12:00:00.000Z") },
+      activity("private-activity-a", "2026-07-20T08:00:00.000Z"),
+      activity("private-activity-b", "2026-07-20T12:00:00.000Z"),
     ];
     const observations = buildCommonLoadHistoryObservations({
       calculatedAsOf: CALCULATED_AS_OF,
@@ -542,7 +594,7 @@ describe("common Load history", () => {
     const observations = buildCommonLoadHistoryObservations({
       calculatedAsOf: CALCULATED_AS_OF,
       evidenceScopeFingerprint: EVIDENCE_SCOPE_FINGERPRINT,
-      activities: [{ id: "multi", started_at: new Date("2026-07-20T08:00:00.000Z") }],
+      activities: [activity("multi", "2026-07-20T08:00:00.000Z")],
       segmentSummaries: [
         summary("multi", "one", availableLoad({ load: 32, duration: 1800, fingerprint: "one" })),
         summary(
@@ -568,8 +620,8 @@ describe("common Load history", () => {
 
   it("canonicalizes activity and segment ordering before daily aggregation", () => {
     const activities = [
-      { id: "bike", started_at: new Date("2026-07-20T08:00:00.000Z") },
-      { id: "run", started_at: new Date("2026-07-20T12:00:00.000Z") },
+      activity("bike", "2026-07-20T08:00:00.000Z"),
+      activity("run", "2026-07-20T12:00:00.000Z"),
     ];
     const summaries = [
       summary("bike", "bike-1", availableLoad({ activity_category: "bike", load: 64 })),
@@ -592,7 +644,7 @@ describe("common Load history", () => {
 
   it("excludes a contribution calculated after the historical as-of instant", () => {
     const observations = buildCommonLoadHistoryObservations({
-      activities: [{ id: "later", started_at: new Date("2026-07-20T08:00:00.000Z") }],
+      activities: [activity("later", "2026-07-20T08:00:00.000Z")],
       calculatedAsOf: CALCULATED_AS_OF,
       currentPlanningDate: CURRENT_DATE,
       evidenceScopeFingerprint: EVIDENCE_SCOPE_FINGERPRINT,
@@ -611,12 +663,19 @@ describe("common Load history", () => {
   it.each([
     ["partial", partialLoad()],
     ["unavailable", unavailableLoad()],
-  ])("keeps %s common results distinct from zero", async (_status, load) => {
-    const activity = { id: "incomplete", started_at: new Date("2026-07-20T08:00:00.000Z") };
-    const { db } = createDb([activity], undefined, completeSourceCoverage());
-    analysis.buildActivitySegmentDerivedSummaries.mockResolvedValue([
-      summary("incomplete", "incomplete-1", load),
-    ]);
+  ])("replays a known activity with %s common Load as a zero contribution", async (_status, load) => {
+    const knownActivity = activity("incomplete", "2026-07-20T08:00:00.000Z");
+    const { db } = createDb([knownActivity], undefined, completeSourceCoverage());
+    const segmentSummary = summary("incomplete", "incomplete-1", load);
+    analysis.buildActivitySegmentDerivedSummaries.mockResolvedValue([segmentSummary]);
+    const observations = buildCommonLoadHistoryObservations({
+      activities: [knownActivity],
+      calculatedAsOf: CALCULATED_AS_OF,
+      currentPlanningDate: CURRENT_DATE,
+      evidenceScopeFingerprint: EVIDENCE_SCOPE_FINGERPRINT,
+      planningTimezone: "UTC",
+      segmentSummaries: [segmentSummary],
+    });
     const result = await getCommonLoadHistory({
       asOf: AS_OF,
       db: db as never,
@@ -625,13 +684,167 @@ describe("common Load history", () => {
       planningTimezone: "UTC",
     });
 
-    expect(result).toMatchObject({ status: "unavailable", reason: "incomplete_observation" });
+    expect(observations.at(-1)).toMatchObject({
+      state: "known_zero",
+      coverageStatus: "partial",
+    });
+    expect(observations.at(-1)?.evidenceFingerprints).toHaveLength(1);
+    expect(result).toMatchObject({ status: "available" });
+    if (result.status !== "available") throw new Error("Expected available history");
+    expect(result.points.at(-1)).toMatchObject({ date: "2026-07-20", dailyLoad: 0 });
+  });
+
+  it("keeps quantified contributions unchanged when another known activity has no complete Load", () => {
+    const activities = [
+      activity("quantified", "2026-07-20T08:00:00.000Z"),
+      activity("known-zero", "2026-07-20T12:00:00.000Z"),
+    ];
+    const build = () =>
+      buildCommonLoadHistoryObservations({
+        activities,
+        calculatedAsOf: CALCULATED_AS_OF,
+        currentPlanningDate: CURRENT_DATE,
+        evidenceScopeFingerprint: EVIDENCE_SCOPE_FINGERPRINT,
+        planningTimezone: "UTC",
+        segmentSummaries: [
+          summary("quantified", "quantified-1", availableLoad({ load: 64 })),
+          summary("known-zero", "known-zero-1", unavailableLoad()),
+        ],
+      }).at(-1);
+    const day = build();
+
+    expect(day).toMatchObject({
+      state: "observed",
+      coverageStatus: "partial",
+      aggregate: { status: "complete", load: 64, totalActivityCount: 1 },
+    });
+    expect(day?.evidenceFingerprints).toHaveLength(2);
+    expect(new Set(day?.evidenceFingerprints).size).toBe(2);
+    expect(build()).toEqual(day);
+    expect(day?.evidenceFingerprints.join(" ")).not.toMatch(/quantified|known-zero/);
+  });
+
+  it("preserves a missing activity-derived source result as unavailable", () => {
+    const observations = buildCommonLoadHistoryObservations({
+      activities: [{ id: "missing", started_at: new Date("2026-07-20T08:00:00.000Z") }],
+      calculatedAsOf: CALCULATED_AS_OF,
+      currentPlanningDate: CURRENT_DATE,
+      evidenceScopeFingerprint: EVIDENCE_SCOPE_FINGERPRINT,
+      planningTimezone: "UTC",
+      segmentSummaries: [],
+    });
+
+    expect(observations.at(-1)).toMatchObject({
+      state: "unavailable",
+      reason: "common_load_unavailable",
+    });
+  });
+
+  it("zero-contributes a trusted known activity whose quantification is missing", () => {
+    const observations = buildCommonLoadHistoryObservations({
+      activities: [activity("trusted-unquantified", "2026-07-20T08:00:00.000Z")],
+      calculatedAsOf: CALCULATED_AS_OF,
+      currentPlanningDate: CURRENT_DATE,
+      evidenceScopeFingerprint: EVIDENCE_SCOPE_FINGERPRINT,
+      planningTimezone: "UTC",
+      segmentSummaries: [],
+    });
+
+    expect(observations.at(-1)).toMatchObject({
+      state: "known_zero",
+      coverageStatus: "partial",
+    });
+    expect(observations.at(-1)?.evidenceFingerprints).toHaveLength(1);
+  });
+
+  it.each([
+    {
+      label: "mixed artifact and provider evidence",
+      sourceEvidence: {
+        currentArtifactIds: ["artifact"],
+        providerReferences: [{ provider: "wahoo", externalId: "provider-activity" }],
+      },
+    },
+    {
+      label: "multiple provider references",
+      sourceEvidence: {
+        currentArtifactIds: [],
+        providerReferences: [
+          { provider: "wahoo", externalId: "provider-activity" },
+          { provider: "wahoo", externalId: "another-activity" },
+        ],
+      },
+    },
+  ])("fails closed for missing quantification with $label", ({ sourceEvidence }) => {
+    const observations = buildCommonLoadHistoryObservations({
+      activities: [
+        {
+          id: "ambiguous-unquantified",
+          started_at: new Date("2026-07-20T08:00:00.000Z"),
+          sourceEvidence,
+        },
+      ],
+      calculatedAsOf: CALCULATED_AS_OF,
+      currentPlanningDate: CURRENT_DATE,
+      evidenceScopeFingerprint: EVIDENCE_SCOPE_FINGERPRINT,
+      planningTimezone: "UTC",
+      segmentSummaries: [],
+    });
+
+    expect(observations.at(-1)).toMatchObject({
+      state: "unavailable",
+      reason: "common_load_unavailable",
+    });
+  });
+
+  it("does not zero-contribute an untrusted activity even when derived Load is unavailable", () => {
+    const observations = buildCommonLoadHistoryObservations({
+      activities: [
+        {
+          id: "untrusted",
+          started_at: new Date("2026-07-20T08:00:00.000Z"),
+          sourceEvidence: { currentArtifactIds: [], providerReferences: [] },
+        },
+      ],
+      calculatedAsOf: CALCULATED_AS_OF,
+      currentPlanningDate: CURRENT_DATE,
+      evidenceScopeFingerprint: EVIDENCE_SCOPE_FINGERPRINT,
+      planningTimezone: "UTC",
+      segmentSummaries: [summary("untrusted", "untrusted-1", unavailableLoad())],
+    });
+
+    expect(observations.at(-1)).toMatchObject({
+      state: "unavailable",
+      reason: "common_load_unavailable",
+    });
+  });
+
+  it("fails the persisted history read closed when an activity has no source reference", async () => {
+    const knownActivity = activity("missing-source", "2026-07-20T08:00:00.000Z");
+    const coverage = completeSourceCoverage();
+    const { db } = createDb([knownActivity], undefined, {
+      ...coverage,
+      sourceReferenceRows: [],
+    });
+    analysis.buildActivitySegmentDerivedSummaries.mockResolvedValue([
+      summary("missing-source", "missing-source-1", unavailableLoad()),
+    ]);
+
+    await expect(
+      getCommonLoadHistory({
+        asOf: AS_OF,
+        db: db as never,
+        profileId: PROFILE_ID,
+        currentPlanningDate: CURRENT_DATE,
+        planningTimezone: "UTC",
+      }),
+    ).resolves.toMatchObject({ status: "unavailable", reason: "incomplete_observation" });
   });
 
   it("uses the athlete planning timezone at the UTC boundary and excludes the current day", () => {
     const activities = [
-      { id: "previous", started_at: new Date("2026-07-20T00:30:00.000Z") },
-      { id: "current", started_at: new Date("2026-07-21T18:00:00.000Z") },
+      activity("previous", "2026-07-20T00:30:00.000Z"),
+      activity("current", "2026-07-21T18:00:00.000Z"),
     ];
     const segmentSummaries = [
       summary("previous", "previous-1", availableLoad()),
@@ -676,10 +889,7 @@ describe("common Load history", () => {
       expectedDate: "2026-11-01",
     },
   ])("groups both sides of the $label into one profile-local day", (fixture) => {
-    const activities = fixture.instants.map((instant, index) => ({
-      id: `dst-${index}`,
-      started_at: new Date(instant),
-    }));
+    const activities = fixture.instants.map((instant, index) => activity(`dst-${index}`, instant));
     const observations = buildCommonLoadHistoryObservations({
       activities,
       calculatedAsOf: fixture.calculatedAsOf,

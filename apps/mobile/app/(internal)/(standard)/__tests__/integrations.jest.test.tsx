@@ -316,9 +316,54 @@ describe("integrations screen", () => {
     expect(screen.getByTestId("integration-provider-wahoo")).toBeTruthy();
     expect(screen.getByText("2/3 ready")).toBeTruthy();
     expect(screen.getAllByText("Auto").length).toBeTruthy();
-    expect(screen.queryByTestId("integration-sync-now-wahoo")).toBeNull();
+    expect(screen.getByTestId("integration-sync-now-wahoo")).toBeTruthy();
     expect(screen.getByTestId("integration-disconnect-wahoo")).toBeTruthy();
     expect(screen.getByTestId("integration-reconnect-garmin")).toBeTruthy();
+  });
+
+  it("dispatches API-advertised sync and setup refresh actions", async () => {
+    integrationOverviewMock = [
+      {
+        actions: ["disconnect", "sync_now", "refresh_setup_data"],
+        configured: true,
+        connected: true,
+        providerHealth: { lastError: null, status: "connected" },
+        activityHistory: {
+          lastError: null,
+          lastFailedAt: null,
+          lastSucceededAt: null,
+          queuedJobId: null,
+          status: "idle",
+          importRun: null,
+        },
+        plannedActivities: {
+          lastError: null,
+          lastFailedAt: null,
+          lastSucceededAt: null,
+          queuedJobId: null,
+          status: "automatic",
+        },
+        setupData: {
+          lastError: null,
+          lastFailedAt: null,
+          lastSucceededAt: null,
+          status: "idle",
+        },
+        summary: { badge: "Auto", health: "connected", subtitle: "Connected", title: "Wahoo" },
+        label: "Wahoo",
+        provider: "wahoo",
+        primaryAction: "disconnect",
+      },
+    ];
+    renderNative(<IntegrationsScreen />);
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("integration-sync-now-wahoo"));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("integration-refresh-setup-wahoo"));
+    });
+    expect(screen.getByTestId("integration-sync-now-wahoo")).toBeTruthy();
+    expect(screen.getByTestId("integration-refresh-setup-wahoo")).toBeTruthy();
   });
 
   it("shows the durable disconnect transition without offering a false reconnect", () => {

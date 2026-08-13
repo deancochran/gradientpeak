@@ -1,3 +1,4 @@
+import { addDaysDateKey } from "@repo/core";
 import type { Router } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Alert } from "react-native";
@@ -34,11 +35,12 @@ export function useTrainingPlanTemplateSchedulingController({
     setShowConcurrencyWarning(false);
   }, []);
 
-  const { data: rawActivePlan } = api.trainingPlans.getActivePlan.useQuery(
-    undefined,
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: planTabProjection } = api.trainingPlans.getPlanTabProjection.useQuery(
+    { startDate: today, endDate: addDaysDateKey(today, 89) },
     scheduleAwareReadQueryOptions,
   );
-  const activePlan = rawActivePlan;
+  const activePlan = planTabProjection?.currentScheduledPlan;
 
   const handleOpenCurrentPlan = useCallback(() => {
     handleCloseScheduleFlow();

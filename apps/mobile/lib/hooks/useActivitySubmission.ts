@@ -16,10 +16,7 @@
  *
  *   return (
  *     <Form>
- *       <Input
- *         value={submission.activity.name}
- *         onChangeText={(name) => submission.update({ name })}
- *       />
+ *       <NotesInput />
  *       <Button onPress={submission.submit}>Save Activity</Button>
  *     </Form>
  *   );
@@ -545,7 +542,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
             : state.phase === "success"
               ? "Activity saved. Upload processing is complete."
               : state.phase === "error"
-                ? state.error || "Activity upload failed. You can retry."
+                ? "Activity upload failed. You can retry."
                 : null;
 
   // ================================

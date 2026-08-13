@@ -4,7 +4,7 @@ import {
   manualActivityImportFormSchema,
 } from "@repo/core/activity-files";
 import { Button } from "@repo/ui/components/button";
-import { Form, FormFileField, FormTextareaField, FormTextField } from "@repo/ui/components/form";
+import { Form, FormFileField, FormTextareaField } from "@repo/ui/components/form";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { useZodForm } from "@repo/ui/hooks";
 import { Upload } from "lucide-react";
@@ -54,10 +54,8 @@ export function ActivityImportForm({ onCancel, onSubmit, phase }: ActivityImport
     schema: browserActivityImportFormSchema,
   });
   const files = form.watch("files");
-  const name = form.watch("name");
   const notes = form.watch("notes");
   const previousFileSelection = useRef<unknown>(null);
-  const autoDerivedName = useRef<string | null>(null);
   const disabled = phase !== "idle";
 
   useEffect(() => {
@@ -66,25 +64,13 @@ export function ActivityImportForm({ onCancel, onSubmit, phase }: ActivityImport
       return;
     }
     const selectedFileName = selectedFile?.name ?? null;
-
-    const currentName = form.getValues("name").trim();
-    const stillAutoDerived =
-      autoDerivedName.current === null
-        ? currentName.length === 0
-        : currentName === autoDerivedName.current;
-
-    if (selectedFileName) {
-      if (stillAutoDerived) {
-        const nextName = deriveActivityNameFromFileName(selectedFileName);
-        autoDerivedName.current = nextName;
-        form.setValue("name", nextName, { shouldDirty: true, shouldValidate: true });
-      } else {
-        autoDerivedName.current = null;
-      }
-    } else if (stillAutoDerived) {
-      autoDerivedName.current = null;
-      form.setValue("name", "", { shouldDirty: true, shouldValidate: true });
-    }
+    form.setValue(
+      "name",
+      selectedFileName
+        ? deriveActivityNameFromFileName(selectedFileName).trim().slice(0, 100) || "Activity"
+        : "",
+      { shouldDirty: true, shouldValidate: true },
+    );
 
     previousFileSelection.current = selectedFile;
     form.clearErrors("files");
@@ -92,13 +78,10 @@ export function ActivityImportForm({ onCancel, onSubmit, phase }: ActivityImport
   }, [files, form]);
 
   useEffect(() => {
-    if (autoDerivedName.current !== null && name !== autoDerivedName.current) {
-      autoDerivedName.current = null;
-    }
     if (notes === null || typeof notes === "string") {
       form.clearErrors("root" as never);
     }
-  }, [form, name, notes]);
+  }, [form, notes]);
 
   const submit = form.handleSubmit(async (values) => {
     const selected = values.files[0] as (typeof values.files)[number] & { file?: unknown };
@@ -115,10 +98,9 @@ export function ActivityImportForm({ onCancel, onSubmit, phase }: ActivityImport
 
     try {
       await onSubmit({ ...values, file });
-    } catch (error) {
+    } catch {
       form.setError("root", {
-        message:
-          error instanceof Error ? error.message : "The activity file could not be imported.",
+        message: "The activity file could not be imported. Check the file and try again.",
       });
     }
   });
@@ -136,14 +118,6 @@ export function ActivityImportForm({ onCancel, onSubmit, phase }: ActivityImport
           name="files"
           required
           testId="activity-import-file-input"
-        />
-        <FormTextField
-          control={form.control}
-          disabled={disabled}
-          label="Activity name"
-          name="name"
-          required
-          testId="activity-import-name-input"
         />
         <FormTextareaField
           className="min-h-28"

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { inferActivityFileType, parseActivityFile } from "./activity-file-parser";
+import {
+  ActivityFileParseError,
+  inferActivityFileType,
+  parseActivityFile,
+} from "./activity-file-parser";
 
 describe("activity-file-parser", () => {
   it("normalizes GPX activity records", () => {
@@ -58,13 +62,26 @@ describe("activity-file-parser", () => {
     ).toBe("tcx");
   });
 
+  it("classifies unsupported formats with a closed parser code", () => {
+    expect(() => inferActivityFileType("activity.bin")).toThrow(
+      expect.objectContaining({ code: "unsupported_format", name: "ActivityFileParseError" }),
+    );
+  });
+
+  it("classifies corrupt XML with a closed parser code", () => {
+    expect(() => parseActivityFile({ data: "<gpx>", fileName: "activity.gpx" })).toThrow(
+      expect.objectContaining({ code: "corrupt_artifact", name: "ActivityFileParseError" }),
+    );
+    expect(ActivityFileParseError).toBeTypeOf("function");
+  });
+
   it("rejects multiple GPX tracks instead of collapsing distinct activities", () => {
     expect(() =>
       parseActivityFile({
         data: `<gpx><trk><trkseg><trkpt lat="40.1" lon="-74.1"><time>2026-01-01T10:00:00Z</time></trkpt></trkseg></trk><trk><trkseg><trkpt lat="41.1" lon="-75.1"><time>2026-01-02T10:00:00Z</time></trkpt></trkseg></trk></gpx>`,
         fileName: "multiple.gpx",
       }),
-    ).toThrow("GPX activity files must contain exactly one <trk> activity");
+    ).toThrow(expect.objectContaining({ code: "corrupt_artifact" }));
   });
 
   it("rejects multiple TCX activities instead of assigning every record to one session", () => {
@@ -73,6 +90,6 @@ describe("activity-file-parser", () => {
         data: `<TrainingCenterDatabase><Activities><Activity Sport="Running"><Id>Run</Id></Activity><Activity Sport="Biking"><Id>Ride</Id></Activity></Activities></TrainingCenterDatabase>`,
         fileName: "multiple.tcx",
       }),
-    ).toThrow("TCX activity files must contain exactly one <Activity>");
+    ).toThrow(expect.objectContaining({ code: "corrupt_artifact" }));
   });
 });

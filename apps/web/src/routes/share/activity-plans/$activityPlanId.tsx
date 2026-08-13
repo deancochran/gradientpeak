@@ -1,11 +1,10 @@
-import { compileActivityPlan } from "@repo/core/activity-plan";
 import { Badge } from "@repo/ui/components/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { Dumbbell } from "lucide-react";
 
 import { getActivityBadgeLabel, getActivityEmoji } from "../../../lib/activity-route-helpers";
-import { describeStructure, loadPublicActivityPlan } from "../../../lib/public-share";
+import { loadPublicActivityPlan } from "../../../lib/public-share";
 
 export const Route = createFileRoute("/share/activity-plans/$activityPlanId")({
   loader: async ({ params }) => {
@@ -41,17 +40,14 @@ function PublicActivityPlanPage() {
   const { activityPlan } = Route.useLoaderData();
   const ownerName =
     activityPlan.owner.name ?? activityPlan.owner.username ?? "GradientPeak athlete";
-  const compiledActivityPlan = compileActivityPlan(activityPlan.structure);
 
   return (
     <main className="mx-auto w-full max-w-3xl space-y-6 py-8">
       <header className="space-y-4">
         <div className="flex flex-wrap gap-2">
           <Badge className="gap-1.5" variant="secondary">
-            <span aria-hidden="true">
-              {getActivityEmoji(compiledActivityPlan.activity_category)}
-            </span>
-            {getActivityBadgeLabel(compiledActivityPlan.activity_category)}
+            <span aria-hidden="true">{getActivityEmoji(activityPlan.activity_category)}</span>
+            {getActivityBadgeLabel(activityPlan.activity_category)}
           </Badge>
         </div>
         <div>
@@ -75,10 +71,10 @@ function PublicActivityPlanPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             <Detail
               label="Activity category"
-              value={getActivityBadgeLabel(compiledActivityPlan.activity_category)}
+              value={getActivityBadgeLabel(activityPlan.activity_category)}
             />
-            <Detail label="Structure" value={describeStructure(activityPlan.structure)} />
-            <Detail label="Version" value={`V${compiledActivityPlan.structureVersion}`} />
+            <Detail label="Structure" value={activityPlan.structure_summary} />
+            <Detail label="Version" value={`V${activityPlan.structure_version}`} />
             <Detail
               label="Template"
               value={activityPlan.is_system_template ? "System" : "Athlete"}

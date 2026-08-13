@@ -2,7 +2,7 @@ import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { ScrollView, View } from "react-native";
 import type { TrainingPathChartSectionContext } from "@/components/plan/training-path/TrainingPathLoadChartSection";
-import { BuilderPublishedProjectionCard } from "@/components/training-plan/create/BuilderPublishedProjectionCard";
+import { BuilderAuthoritativeProjectionCard } from "@/components/training-plan/create/BuilderAuthoritativeProjectionCard";
 import { BuilderScheduleEditor } from "@/components/training-plan/create/BuilderScheduleEditor";
 import { BuilderStrategyComposer } from "@/components/training-plan/create/BuilderStrategyComposer";
 import { useScheduleEditorController } from "@/components/training-plan/create/useScheduleEditorController";
@@ -34,7 +34,7 @@ export function TrainingPlanBuilderSurfaces({ controller }: TrainingPlanBuilderS
       <View className="gap-5">
         {hasContextError ? (
           <QueryNotice
-            detail="Some athlete context could not be loaded. You can keep building with local inputs."
+            detail="Some athlete context could not be loaded. You can keep editing the draft."
             label="Athlete context unavailable"
             onRetry={() => {
               for (const query of contextQueries) void query.refetch();
@@ -43,7 +43,7 @@ export function TrainingPlanBuilderSurfaces({ controller }: TrainingPlanBuilderS
         ) : null}
         {previewError ? (
           <QueryNotice
-            detail="The authoritative server preview could not refresh. The local projection remains tentative, and saving waits for server validation."
+            detail="The authoritative server preview could not refresh. Saving waits for a current server projection."
             label="Preview unavailable"
             onRetry={() => void controller.builder.backendPlanningPreviewQuery.refetch()}
           />
@@ -55,12 +55,12 @@ export function TrainingPlanBuilderSurfaces({ controller }: TrainingPlanBuilderS
             onRetry={() => void controller.actions.handleSave()}
           />
         ) : null}
-        <BuilderPublishedProjectionCard
+        <BuilderAuthoritativeProjectionCard
           onRetry={() => {
             void controller.builder.queries.publishedState.refetch();
             void controller.builder.backendPlanningPreviewQuery.refetch();
           }}
-          projection={controller.builder.derived.publishedProjection}
+          projection={controller.builder.derived.authoritativeProjectionState}
         />
         <BuilderStrategyComposer {...strategyComposer} renderBelowChart={renderSelectedDayPanel} />
       </View>

@@ -24,7 +24,6 @@ export const trainingAdjustmentDailyPointSchema = z
   .object({
     date: dateOnlySchema,
     plannedLoad: finiteNumberSchema.nullable(),
-    tentativePlannedLoad: finiteNumberSchema.nullable(),
     completedLoad: finiteNumberSchema.nullable(),
     targetLoad: finiteNumberSchema.nullable(),
     actualOrScheduledLoad: finiteNumberSchema.nullable(),
@@ -61,7 +60,6 @@ export type BuildTrainingAdjustmentDailySeriesInput = {
   startDate: string;
   endDate: string;
   plannedLoadByDate?: DateNumberInput;
-  tentativePlannedLoadByDate?: DateNumberInput;
   completedLoadByDate?: DateNumberInput;
   targetLoadByDate?: DateNumberInput;
   actualOrScheduledLoadByDate?: DateNumberInput;
@@ -131,7 +129,6 @@ export function buildTrainingAdjustmentDailySeries(
   return Array.from({ length: dayCount }, (_, dayIndex) => {
     const date = addDaysDateOnlyUtc(input.startDate, dayIndex);
     const plannedLoad = readNumber(input.plannedLoadByDate, date);
-    const tentativePlannedLoad = readNumber(input.tentativePlannedLoadByDate, date);
     const completedLoad = readNumber(input.completedLoadByDate, date);
     const targetLoad = readNumber(input.targetLoadByDate, date);
     const providedActualOrScheduledLoad = readProvidedNumber(
@@ -141,15 +138,13 @@ export function buildTrainingAdjustmentDailySeries(
     const actualOrScheduledLoad = providedActualOrScheduledLoad.provided
       ? providedActualOrScheduledLoad.value
       : deriveLoad(
-          [plannedLoad, tentativePlannedLoad, completedLoad],
-          (planned, tentative, completed) =>
-            completed + Math.max(0, planned + tentative - completed),
+          [plannedLoad, completedLoad],
+          (planned, completed) => completed + Math.max(0, planned - completed),
         );
 
     return trainingAdjustmentDailyPointSchema.parse({
       date,
       plannedLoad,
-      tentativePlannedLoad,
       completedLoad,
       targetLoad,
       actualOrScheduledLoad,
@@ -158,8 +153,8 @@ export function buildTrainingAdjustmentDailySeries(
         (actualOrScheduled, target) => actualOrScheduled - target,
       ),
       plannedDeltaLoad: deriveLoad(
-        [plannedLoad, tentativePlannedLoad, targetLoad],
-        (planned, tentative, target) => planned + tentative - target,
+        [plannedLoad, targetLoad],
+        (planned, target) => planned - target,
       ),
       fitnessLongTermLoad: optionalMetric(readNumber(input.fitnessLongTermLoadByDate, date)),
       targetFitnessLongTermLoad: optionalMetric(

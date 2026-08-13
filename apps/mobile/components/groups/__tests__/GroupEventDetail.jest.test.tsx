@@ -93,17 +93,11 @@ jest.mock("@/lib/server-config", () => ({
 
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
-  ActivityPlanCard: ({
-    activityPlan,
-    onPress,
-  }: {
-    activityPlan: ActivityPlanFixture;
-    onPress?: () => void;
-  }) =>
+  ActivityPlanCard: ({ plan, onPress }: { plan: ActivityPlanFixture; onPress?: () => void }) =>
     React.createElement(
       "ActivityPlanCard",
-      { onPress, testID: `activity-plan-card-${activityPlan.id}` },
-      activityPlan.name,
+      { onPress, testID: `activity-plan-card-${plan.id}` },
+      plan.name,
     ),
 }));
 
@@ -194,7 +188,7 @@ describe("GroupEventDetailScreen", () => {
           series_id: "series-1",
           occurrence_key: "2026-05-21",
           is_recurring_occurrence: true,
-          viewerSeriesRsvp: createViewerSeriesRsvp("accepted"),
+          viewerSeriesRsvp: createViewerSeriesRsvp("declined"),
         })}
         onRsvpSeries={rsvpSeriesMock}
       />,
@@ -204,7 +198,7 @@ describe("GroupEventDetailScreen", () => {
     expect(screen.queryByText("Recurring series")).toBeNull();
     expect(screen.queryByText("One-time event")).toBeNull();
     expect(screen.getByText("Repeating event")).toBeTruthy();
-    expect(screen.getByText("Your RSVP is for this date · Series is Going.")).toBeTruthy();
+    expect(screen.getByText("Your RSVP is for this date · Series is Declined.")).toBeTruthy();
     expect(screen.queryByText("Future dates")).toBeNull();
     expect(screen.queryByText("Decline series")).toBeNull();
 
@@ -223,20 +217,18 @@ describe("GroupEventDetailScreen", () => {
     expect(screen.queryByText("Created by creator-1")).toBeNull();
   });
 
-  it("allows clearing or returning an occurrence RSVP to tentative", () => {
+  it("allows a declined occurrence to return to default Going", () => {
     renderNative(
       <GroupEventDetailScreen
         event={createGroupEvent({
-          viewerRsvp: createViewerRsvp("accepted"),
+          viewerRsvp: createViewerRsvp("declined"),
         })}
         onRsvp={rsvpMock}
       />,
     );
 
-    fireEvent.press(screen.getByText("Tentative"));
-    fireEvent.press(screen.getByText("Clear"));
+    fireEvent.press(screen.getByText("Restore Going"));
 
-    expect(rsvpMock).toHaveBeenCalledWith("tentative");
     expect(rsvpMock).toHaveBeenCalledWith(null);
   });
 

@@ -8,12 +8,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
 import { cn } from "@repo/ui/lib/cn";
 import { Heart, MapPin } from "lucide-react";
 import type { ReactNode } from "react";
 import { useViewingUserPreferredUnitSystem } from "../../hooks/use-viewing-user-preferred-unit-system";
-import { formatCalibrationQuality } from "../../lib/activity-load-presentation";
 import {
   buildElevationPolylinePoints,
   buildMapPolylinePoints,
@@ -26,7 +24,7 @@ import {
   getActivityBadgeLabel,
   type RouteCoordinate,
 } from "../../lib/activity-route-helpers";
-import { ActivityCategoryBadges, ActivityCategoryIcons } from "../activity-category-presentation";
+import { ActivityCategoryBadges } from "../activity-category-presentation";
 
 type DetailMetricItem = {
   label: string;
@@ -46,7 +44,7 @@ export function DetailPageIntro({
   categories?: readonly string[];
   description?: string | null;
   eyebrow?: string;
-  title: string;
+  title?: string;
 }) {
   const hasActions = Boolean(actions);
 
@@ -55,7 +53,9 @@ export function DetailPageIntro({
       <div className="space-y-3">
         {eyebrow ? <p className="text-sm font-medium text-primary">{eyebrow}</p> : null}
         <div className="space-y-2">
-          <h1 className="text-3xl font-semibold tracking-tight text-foreground">{title}</h1>
+          {title ? (
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground">{title}</h1>
+          ) : null}
           {description ? (
             <p className="max-w-3xl text-sm text-muted-foreground">{description}</p>
           ) : null}
@@ -221,33 +221,25 @@ function deriveCategoryLabel(categories: string[]) {
   return [...new Set(categories)].map(getActivityBadgeLabel).join(" • ");
 }
 
-export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: () => void }) {
+function formatDisplayMetric(metric: SemanticMetric, unitSystem: "metric" | "imperial") {
+  if (metric.status === "unavailable") return "Unavailable";
+  if (metric.unit === "meters") return formatDistance(metric.value, unitSystem);
+  if (metric.unit === "seconds") return formatDuration(metric.value);
+  if (metric.unit === "ratio") return metric.value.toFixed(2);
+  if (metric.unit === "bpm") return `${Math.round(metric.value)} bpm`;
+  if (metric.unit === "watts") return `${Math.round(metric.value)} W`;
+  if (metric.unit === "kilocalories") return `${Math.round(metric.value)} kcal`;
+  return Number.isInteger(metric.value) ? String(metric.value) : metric.value.toFixed(1);
+}
+
+export function ActivityListCard({
+  activity,
+  onOpen,
+}: {
+  activity: ActivityDisplayModel;
+  onOpen?: () => void;
+}) {
   const { unitSystem } = useViewingUserPreferredUnitSystem();
-  const segmentQuantifications = activity.segment_loads?.map(
-    (segment: {
-      observationQuantification?: { members?: Array<{ commonLoad: CommonLoadResult }> };
-    }) => segment.observationQuantification,
-  );
-  const loadPresentation = getActivityQuantificationPresentation(
-    activity.derived?.observationQuantification,
-    {
-      hasHeartRateSummary:
-        typeof activity.avg_heart_rate === "number" && activity.avg_heart_rate > 0,
-    },
-  );
-  const calibrationCommonLoad =
-    segmentQuantifications?.length === 1
-      ? segmentQuantifications[0]?.members?.[0]?.commonLoad
-      : null;
-  const calibrationText = formatCalibrationQuality(
-    calibrationCommonLoad?.status === "available" || calibrationCommonLoad?.status === "partial"
-      ? calibrationCommonLoad.quality
-      : null,
-    activity.started_at,
-  );
-  const categories = activity.activity_categories as string[] | undefined;
-  const elapsedSeconds =
-    activity.elapsed_ms != null ? Math.round(activity.elapsed_ms / 1000) : null;
   return (
     <Card
       className="transition-colors hover:border-primary/30"
@@ -255,61 +247,41 @@ export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: 
     >
       <CardContent className="space-y-4 p-4">
         <div className="flex items-start gap-3">
-          <ActivityCategoryIcons categories={categories ?? []} />
           <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-lg font-semibold text-foreground">{activity.name}</h3>
-              {deriveCategoryLabel(categories ?? []) ? (
-                <Badge variant="secondary">{deriveCategoryLabel(categories ?? [])}</Badge>
-              ) : null}
-            </div>
-            <p className="text-sm text-muted-foreground">{formatDateTime(activity.started_at)}</p>
+            <p className="text-xs text-muted-foreground">@{activity.owner.username ?? "athlete"}</p>
+            <h3 className="text-lg font-semibold text-foreground">{activity.title}</h3>
+            {deriveCategoryLabel(activity.activityComposition.categories) ? (
+              <Badge variant="secondary">
+                {deriveCategoryLabel(activity.activityComposition.categories)}
+              </Badge>
+            ) : null}
+            <p className="text-sm text-muted-foreground">
+              {formatDateTime(activity.time.startedAt)}
+            </p>
             {activity.notes ? (
               <p className="line-clamp-2 text-sm text-muted-foreground">{activity.notes}</p>
             ) : null}
           </div>
-          <Button
-            data-testid={`activity-card-${activity.id}-open`}
-            onClick={onOpen}
-            type="button"
-            variant="ghost"
-          >
-            Open
-          </Button>
+          {onOpen ? (
+            <Button
+              data-testid={`activity-card-${activity.id}-open`}
+              onClick={onOpen}
+              type="button"
+              variant="ghost"
+            >
+              Open
+            </Button>
+          ) : null}
         </div>
         <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
-          <MetricPill
-            label={loadPresentation.commonLoad.label}
-            value={loadPresentation.commonLoad.value}
-          />
-          <MetricPill
-            label={loadPresentation.normalizedIntensity.label}
-            value={loadPresentation.normalizedIntensity.value}
-          />
-          <MetricPill
-            label="Distance"
-            value={formatDistance(activity.distance_meters, unitSystem)}
-          />
-          <MetricPill label="Duration" value={formatDuration(elapsedSeconds)} />
+          {activity.metrics.slice(0, 4).map((metric) => (
+            <MetricPill
+              key={metric.key}
+              label={metric.status === "partial" ? `${metric.label} (partial)` : metric.label}
+              value={formatDisplayMetric(metric, unitSystem)}
+            />
+          ))}
         </div>
-        <p className="text-xs text-muted-foreground">
-          {loadPresentation.commonLoad.evidence}. {loadPresentation.commonLoad.explanation}
-        </p>
-        {loadPresentation.commonLoad.diagnostic ? (
-          <p className="text-xs text-muted-foreground">
-            {loadPresentation.commonLoad.diagnostic.summary}{" "}
-            {loadPresentation.commonLoad.diagnostic.action}
-          </p>
-        ) : null}
-        {loadPresentation.nativeIntensity.status !== "unavailable" ? (
-          <p className="text-xs text-muted-foreground">
-            {loadPresentation.nativeIntensity.label}: {loadPresentation.nativeIntensity.value} ·{" "}
-            {loadPresentation.nativeIntensity.evidence}
-          </p>
-        ) : null}
-        {calibrationText ? (
-          <p className="text-xs text-muted-foreground">{calibrationText}</p>
-        ) : null}
       </CardContent>
     </Card>
   );
@@ -440,4 +412,4 @@ function MetricPill({ label, value }: { label: string; value: string }) {
   );
 }
 
-import type { CommonLoadResult } from "@repo/core";
+import type { ActivityDisplayModel, SemanticMetric } from "@repo/core";

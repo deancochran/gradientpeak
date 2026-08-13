@@ -467,6 +467,11 @@ test("covers representative active current-contract regressions", async () => {
     const projectionFacade = ["buildDeterministic", "ProjectionPayload"].join("");
     const providerReadinessFacade = ["getActivityPlan", "ProviderReadiness"].join("");
     const plannedExportFacade = ["getPlannedActivity", "ExportCompatibility"].join("");
+    const localPlanPreview = ["deriveTrainingPlan", "CreationPreview"].join("");
+    const localSaveReadiness = ["selectSave", "Readiness"].join("");
+    const broadProviderId = ["Integration", "ProviderId"].join("");
+    const providerCapabilityCall = ["providerHas", "Capability"].join("");
+    const reorderUseCase = ["reorderTrainingPlan", "ActivitiesUseCase"].join("");
     const replayReconcileFacade = ["reconcileParsed", "ActivityFileEvidence"].join("");
     const legacyTssProjection = ["allowLegacyTss", "Projection"].join("");
     const cases = [
@@ -531,6 +536,71 @@ test("covers representative active current-contract regressions", async () => {
         "removed planned export compatibility facade",
       ],
       [
+        "packages/core/plan/current.ts",
+        `${localPlanPreview}();`,
+        "removed local training-plan preview or validation API",
+      ],
+      [
+        "packages/core/integrations/provider-capabilities.ts",
+        'const providerCapabilityMap = { strava: { id: "strava" } };',
+        "removed non-Wahoo executable provider capability definition",
+      ],
+      [
+        "packages/core/integrations/provider-capabilities.ts",
+        `type ${broadProviderId} = "wahoo" | "strava";`,
+        "removed broad executable provider identity alias",
+      ],
+      [
+        "packages/api/src/application/integrations/current.ts",
+        `${providerCapabilityCall}("strava", "activity_history_read");`,
+        "unsupported provider passed to executable capability helper",
+      ],
+      [
+        "packages/api/src/application/training-plan/current.ts",
+        `${reorderUseCase}();`,
+        "removed training-plan schedule reorder use case",
+      ],
+      [
+        "apps/web/src/current.tsx",
+        "api.trainingPlans.reorderActivities.useMutation();",
+        "removed training-plan schedule reorder surface",
+      ],
+      [
+        "packages/core/schemas/form-schemas.ts",
+        "export const trainingPlanCreationConfigFormSchema = {};",
+        "removed training-plan creation wrapper contract",
+      ],
+      [
+        "packages/core/schemas/planned_activity.ts",
+        "export const plannedActivityRescheduleSchema = {};",
+        "removed event compatibility contract",
+      ],
+      [
+        "packages/core/schemas/index.ts",
+        "const input = { is_active: true };",
+        "removed training-plan write is_active field",
+      ],
+      [
+        "packages/api/src/routers/events.ts",
+        "const router = { validateConstraints: procedure };",
+        "removed event constraint preflight route",
+      ],
+      [
+        "packages/api/src/query-client.ts",
+        'invalidate(["events", "validateConstraints"]);',
+        "removed event constraint preflight cache key",
+      ],
+      [
+        "apps/mobile/components/ScheduleActivityModal.tsx",
+        "const recurrence = form.watch(); const trainingPlanId = props.trainingPlanId;",
+        "removed planned-session recurrence UI",
+      ],
+      [
+        "apps/mobile/components/ScheduleActivityModal.tsx",
+        "const trainingPlanId = props.trainingPlanId;",
+        "removed client-authored training-plan schedule linkage",
+      ],
+      [
         "packages/core/schemas/current.ts",
         `${planningCategoryAlias}.parse("mixed");`,
         "removed planning activity-category alias",
@@ -579,6 +649,11 @@ test("covers representative active current-contract regressions", async () => {
         "apps/mobile/components/current.tsx",
         'const status = "legacy_read_only";',
         "removed legacy composer state",
+      ],
+      [
+        "apps/mobile/lib/training-plan-creation/current.ts",
+        `${localSaveReadiness}(state);`,
+        "removed local training-plan preview or save-readiness path",
       ],
       [
         "apps/mobile/components/plan/training-path/trainingPathUtils.ts",

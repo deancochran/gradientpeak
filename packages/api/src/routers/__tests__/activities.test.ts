@@ -75,6 +75,19 @@ vi.mock("../../application/athlete-intelligence/athlete-state-evidence", () => (
     materialChanged: false,
   }),
 }));
+vi.mock("../../application/athlete-intelligence/published-athlete-state", async () => {
+  const { createUnavailableAthletePerformanceTargetFacts } =
+    await vi.importActual<typeof import("@repo/core")>("@repo/core");
+  return {
+    readPublishedAthletePerformanceTargets: vi.fn(
+      async ({ profileId, now }: { profileId: string; now: Date }) => ({
+        status: "unavailable" as const,
+        publishedRevision: null,
+        targets: createUnavailableAthletePerformanceTargetFacts(now.toISOString(), profileId),
+      }),
+    ),
+  };
+});
 vi.mock("../../repositories/athlete-state-repository", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../repositories/athlete-state-repository")>()),
   markAthleteStateDirty: vi.fn(async () => 1),
@@ -1003,20 +1016,21 @@ describe("activitiesRouter", () => {
       date_to: "2026-01-31T23:59:59.999Z",
     });
 
-    expect(result.items).toEqual([
-      {
-        ...publicActivityRow(firstRow),
-        laps: [],
-        likes_count: 3,
-        has_liked: true,
-        derived: publicDerived,
-        segment_loads: [],
-        activity_kind: "single",
-        activity_segment_count: 1,
-        activity_categories: ["run"],
-        matched_category_summary: null,
-      },
-    ]);
+    expect(result.items[0]).toMatchObject({
+      contractVersion: "activity-display-v1",
+      id: ACTIVITY_ID,
+      title: "Morning Run",
+    });
+    expect(result.items[0]?.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "common_load", status: "available", value: 72 }),
+        expect.objectContaining({ key: "normalized_intensity", status: "available" }),
+      ]),
+    );
+    expect(result.items[0]?.capabilities).toMatchObject({ canEdit: true, canDelete: true });
+    expect(result.items[0]).not.toHaveProperty("profile_id");
+    expect(result.items[0]).not.toHaveProperty("derived");
+    expect(result.items[0]).not.toHaveProperty("matched_category_summary");
     expect(mockActivityAnalysis.buildActivityDerivedSummaryMap).toHaveBeenCalledWith(
       expect.objectContaining({
         profileId: OWNER_ID,
@@ -1078,29 +1092,11 @@ describe("activitiesRouter", () => {
     });
 
     expect(result.items[0]).toMatchObject({
-      activity_kind: "multisport",
-      activity_segment_count: 3,
-      activity_categories: ["bike", "run", "run"],
-      matched_category_summary: {
-        segment_count: 2,
-        distance_meters: 1_200,
-        active_ms: 5_000,
-        moving_ms: 4_500,
-        common_load: expect.objectContaining({ status: "complete", load: expect.closeTo(50) }),
-      },
-      segment_loads: [
-        expect.objectContaining({
-          segment_id: segments[1]?.id,
-          activity_category: "run",
-          common_load: expect.objectContaining({ status: "available", load: expect.closeTo(20) }),
-        }),
-        expect.objectContaining({
-          segment_id: segments[2]?.id,
-          activity_category: "run",
-          common_load: expect.objectContaining({ status: "available", load: expect.closeTo(30) }),
-        }),
-      ],
+      contractVersion: "activity-display-v1",
+      activityComposition: { kind: "multisport", categories: ["bike", "run", "run"] },
     });
+    expect(result.items[0]).not.toHaveProperty("matched_category_summary");
+    expect(result.items[0]).not.toHaveProperty("segment_loads");
     const whereSql = toSql(db.__spies.selectWhere.mock.calls[0]?.[0]);
     expect(whereSql).toContain('"activity_segments"."activity_category" =');
     expect(whereSql).toContain("select count(*)");
@@ -1195,11 +1191,7 @@ describe("activitiesRouter", () => {
     });
 
     expect(result.items.map((item) => item.id)).toEqual(expected);
-    expect(result.items.at(-1)?.matched_category_summary).toMatchObject({
-      distance_meters: null,
-      active_ms: null,
-      common_load: null,
-    });
+    expect(result.items.at(-1)).not.toHaveProperty("matched_category_summary");
     expect(db.transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: "repeatable read",
       accessMode: "read only",
@@ -1246,12 +1238,13 @@ describe("activitiesRouter", () => {
     });
 
     expect(result.items[0]).toMatchObject({
-      distance_meters: 1,
-      elapsed_ms: 2_000,
-      active_ms: 2_000,
-      moving_ms: 1_900,
-      polyline: "legacy-polyline",
-      map_bounds: { legacy: true },
+      capabilities: { hasRoute: true },
+      metrics: expect.arrayContaining([
+        expect.objectContaining({ key: "distance", value: 1 }),
+        expect.objectContaining({ key: "elapsed_duration", value: 2 }),
+        expect.objectContaining({ key: "active_duration", value: 2 }),
+        expect.objectContaining({ key: "moving_duration", value: 1.9 }),
+      ]),
     });
   });
 
@@ -1825,22 +1818,35 @@ describe("activitiesRouter", () => {
     const caller = createCaller(db, OWNER_ID);
     const result = await caller.getById({ id: ACTIVITY_ID });
 
-    expect(result).toEqual({
-      activity: {
-        ...publicActivityRow(activity),
-        laps: [],
-        likes_count: 5,
-        activity_plans: null,
-        segments: expect.any(Array),
-        activity_kind: "single",
-        activity_segment_count: 1,
-        activity_categories: ["run"],
-        matched_category_summary: null,
-        current_artifact: null,
-        ingestion: null,
-        effective_session_rpe: null,
-      },
-      has_liked: true,
+    expect(result.detail.summary).toMatchObject({
+      contractVersion: "activity-display-v1",
+      id: ACTIVITY_ID,
+      title: activity.name,
+    });
+    expect(result.detail.summary.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "common_load",
+          status: "unavailable",
+          reason: "no_load_data",
+        }),
+        expect.objectContaining({
+          key: "normalized_intensity",
+          status: "unavailable",
+          reason: "no_load_data",
+        }),
+      ]),
+    );
+    expect(result.detail.summary.capabilities).toMatchObject({ canEdit: false, canDelete: false });
+    expect(result.detail).toMatchObject({
+      contractVersion: "activity-detail-display-v1",
+      laps: [],
+      linkedPlan: null,
+      currentArtifact: null,
+      ingestion: null,
+      effectiveSessionRpe: null,
+    });
+    expect(result.analysis).toEqual({
       derived: expect.objectContaining({
         stress: expect.objectContaining({
           common_load: expect.objectContaining({
@@ -1867,7 +1873,7 @@ describe("activitiesRouter", () => {
           }),
         }),
       }),
-      segment_loads: [],
+      segmentLoads: [],
     });
     expect(mockActivityAnalysis.resolveActivityContextAsOf).not.toHaveBeenCalled();
     expect(mockActivityAnalysis.analyzeActivityDerivedMetrics).not.toHaveBeenCalled();
@@ -1918,13 +1924,42 @@ describe("activitiesRouter", () => {
 
     const result = await createCaller(db).getById({ id: ACTIVITY_ID });
 
-    expect(result.derived).toMatchObject({
+    expect(result.analysis.derived).toMatchObject({
       computed_as_of: derived.computed_as_of,
       observationQuantification: derived.observationQuantification,
       stress: { common_load: derived.common_load },
     });
-    expect(result.derived.stress).not.toHaveProperty("computed_as_of");
-    expect(result.derived.stress).not.toHaveProperty("observationQuantification");
+    expect(result.analysis.derived.stress).not.toHaveProperty("computed_as_of");
+    expect(result.analysis.derived.stress).not.toHaveProperty("observationQuantification");
+  });
+
+  it("does not expose internal athlete-state columns in activity detail", async () => {
+    const activity = buildActivityRow({
+      profile_id: OWNER_ID,
+      athlete_state_common_load: 72,
+      athlete_state_activity_category: "run",
+      athlete_state_evidence_confidence: 0.9,
+      athlete_state_capability_distance_meters: 10_000,
+      athlete_state_capability_duration_minutes: 45,
+      athlete_state_input_version: 1,
+      athlete_state_computed_at: new Date("2026-01-10T09:00:00.000Z"),
+      canonical_evidence_tier: "raw_samples",
+    });
+    const db = createDbMock({
+      queryActivitiesFindFirst: [{ profile_id: OWNER_ID, content_visibility: "private" }],
+      joinedRows: [{ activity, activityPlan: null }],
+    });
+
+    const result = await createCaller(db).getById({ id: ACTIVITY_ID });
+
+    expect(result.detail).not.toHaveProperty("canonical_evidence_tier");
+    expect(result.detail).not.toHaveProperty("athlete_state_common_load");
+    expect(result.detail).not.toHaveProperty("athlete_state_activity_category");
+    expect(result.detail).not.toHaveProperty("athlete_state_evidence_confidence");
+    expect(result.detail).not.toHaveProperty("athlete_state_capability_distance_meters");
+    expect(result.detail).not.toHaveProperty("athlete_state_capability_duration_minutes");
+    expect(result.detail).not.toHaveProperty("athlete_state_input_version");
+    expect(result.detail).not.toHaveProperty("athlete_state_computed_at");
   });
 
   it("returns ordered completed multisport source identity to the owner without raw payloads", async () => {
@@ -1981,25 +2016,15 @@ describe("activitiesRouter", () => {
 
     const result = await createCaller(db).getById({ id: ACTIVITY_ID });
 
-    expect(result.activity.segments).toEqual(
-      segments.map((segment) => ({ ...segment, status: "available" })),
-    );
-    expect(result.activity.segments.map((segment) => segment.ordinal)).toEqual([0, 1, 2]);
-    expect(
-      result.activity.segments.map((segment) => ({
-        raw_sub_sport_integer: segment.raw_sub_sport_integer,
-        raw_sub_sport_string: segment.raw_sub_sport_string,
-      })),
-    ).toEqual([
-      { raw_sub_sport_integer: null, raw_sub_sport_string: "road" },
-      { raw_sub_sport_integer: 17, raw_sub_sport_string: null },
-      { raw_sub_sport_integer: null, raw_sub_sport_string: null },
-    ]);
-    expect(result.activity.segments).not.toContainEqual(
+    expect(result.detail.segments.map((segment) => segment.ordinal)).toEqual([0, 1, 2]);
+    expect(result.detail.segments).not.toContainEqual(
       expect.objectContaining({ raw_payload: expect.anything() }),
     );
-    expect(result.activity.segments).not.toContainEqual(
+    expect(result.detail.segments).not.toContainEqual(
       expect.objectContaining({ coordinates: expect.anything() }),
+    );
+    expect(result.detail.segments).not.toContainEqual(
+      expect.objectContaining({ raw_sub_sport_string: expect.anything() }),
     );
   });
 
@@ -2021,11 +2046,11 @@ describe("activitiesRouter", () => {
 
     const result = await createCaller(db).getById({ id: ACTIVITY_ID });
 
-    expect(result.activity.segments).toHaveLength(1);
-    expect(result.activity.segments[0]).not.toHaveProperty("summary_version");
-    expect(result.activity.segments[0]).not.toHaveProperty("segment_revision");
-    expect(result.activity.segments[0]).not.toHaveProperty("parser_version");
-    expect(result.activity.segments[0]).not.toHaveProperty("materializer_version");
+    expect(result.detail.segments).toHaveLength(1);
+    expect(result.detail.segments[0]).not.toHaveProperty("summary_version");
+    expect(result.detail.segments[0]).not.toHaveProperty("segment_revision");
+    expect(result.detail.segments[0]).not.toHaveProperty("parser_version");
+    expect(result.detail.segments[0]).not.toHaveProperty("materializer_version");
   });
 
   it("returns the unique effective session RPE evidence only to the activity owner", async () => {
@@ -2060,19 +2085,14 @@ describe("activitiesRouter", () => {
 
     const result = await createCaller(db).getById({ id: ACTIVITY_ID });
 
-    expect(result.activity.effective_session_rpe).toEqual({
+    expect(result.detail.effectiveSessionRpe).toEqual({
       id: effectiveEvidenceId,
       rpe: 7,
       scale: "borg_cr10",
-      scale_version: "1",
+      scaleVersion: "1",
       source: "manual",
-      recorded_at: new Date("2026-01-10T08:47:00.000Z"),
-      corrected_at: new Date("2026-01-10T08:48:00.000Z"),
-      provenance: {
-        observation_type: "completed_session_rpe",
-        entered_by: "athlete",
-        correction_of_id: firstEvidenceId,
-      },
+      recordedAt: new Date("2026-01-10T08:47:00.000Z").toISOString(),
+      correctedAt: new Date("2026-01-10T08:48:00.000Z").toISOString(),
     });
   });
 
@@ -2154,22 +2174,22 @@ describe("activitiesRouter", () => {
     const caller = createCaller(db);
     const result = await caller.getById({ id: ACTIVITY_ID });
 
-    expect(result.activity).toMatchObject({
-      distance_meters: 1,
-      elapsed_ms: 2_000,
-      active_ms: 2_000,
-      moving_ms: 1_900,
-      polyline: "legacy-polyline",
-      map_bounds: { legacy: true },
+    expect(result.detail).toMatchObject({
+      performance: {
+        distanceMeters: 1,
+        elapsedSeconds: 2,
+        activeSeconds: 2,
+        movingSeconds: 1.9,
+      },
+      routePolyline: "legacy-polyline",
       laps: [{ legacy: true }],
       segments: expect.any(Array),
-      current_artifact: expect.objectContaining({
+      currentArtifact: expect.objectContaining({
         id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         availability: "accepted",
       }),
     });
-    expect(result.activity.segments).toEqual([{ ...canonicalSegment, status: "available" }]);
-    const [projectedSegment] = result.activity.segments;
+    const [projectedSegment] = result.detail.segments;
     expect(projectedSegment?.status).toBe("available");
     if (!projectedSegment || projectedSegment.status !== "available") {
       throw new Error("Expected an available segment analysis");
@@ -2182,11 +2202,9 @@ describe("activitiesRouter", () => {
       calculationVersion: "cycling-normalized-power-v1",
       diagnostics: { sourceTimeCoverage: 29 / 35, excludedGapDurationSeconds: 6 },
     });
-    expect(result.activity).toMatchObject({
-      activity_kind: "single",
-      activity_segment_count: 1,
-      activity_categories: ["run"],
-      matched_category_summary: null,
+    expect(result.detail.summary.activityComposition).toMatchObject({
+      kind: "single",
+      categories: ["run"],
     });
   });
 
@@ -2210,6 +2228,34 @@ describe("activitiesRouter", () => {
 
     expect(result).toEqual(publicActivityRow(updated));
     expect(db.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not expose internal athlete-state columns after updating an activity", async () => {
+    const updated = buildActivityRow({
+      athlete_state_common_load: 72,
+      athlete_state_activity_category: "run",
+      athlete_state_evidence_confidence: 0.9,
+      athlete_state_capability_distance_meters: 10_000,
+      athlete_state_capability_duration_minutes: 45,
+      athlete_state_input_version: 1,
+      athlete_state_computed_at: new Date("2026-01-10T09:00:00.000Z"),
+      canonical_evidence_tier: "raw_samples",
+      content_visibility: "private",
+    });
+    const result = await createCaller(createDbMock({ updatedRows: [updated] })).update({
+      id: ACTIVITY_ID,
+      content_visibility: "private",
+    });
+
+    expect(result).toMatchObject({ content_visibility: "private" });
+    expect(result).not.toHaveProperty("canonical_evidence_tier");
+    expect(result).not.toHaveProperty("athlete_state_common_load");
+    expect(result).not.toHaveProperty("athlete_state_activity_category");
+    expect(result).not.toHaveProperty("athlete_state_evidence_confidence");
+    expect(result).not.toHaveProperty("athlete_state_capability_distance_meters");
+    expect(result).not.toHaveProperty("athlete_state_capability_duration_minutes");
+    expect(result).not.toHaveProperty("athlete_state_input_version");
+    expect(result).not.toHaveProperty("athlete_state_computed_at");
   });
 
   it("rejects the removed legacy privacy field without persisting it", async () => {
@@ -2255,7 +2301,7 @@ describe("activitiesRouter", () => {
       activityRows: [
         {
           ...buildActivityRow(),
-          id: "not-a-uuid",
+          id: "",
         },
       ],
     });

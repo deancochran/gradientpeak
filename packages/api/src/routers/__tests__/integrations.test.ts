@@ -5,10 +5,22 @@ const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 const STATE_ID = "55555555-5555-4555-8555-555555555555";
 
 const mocks = vi.hoisted(() => ({
+  IntegrationDisconnectPendingError: class IntegrationDisconnectPendingError extends Error {},
+  assertIntegrationManagementOpen: vi.fn(),
+  cancelPendingOAuthWithFence: vi.fn(),
+  createPendingOAuthStateWithFence: vi.fn(),
   getProviderSyncOverview: vi.fn(),
   syncIntegrationNow: vi.fn(),
   refreshSetupData: vi.fn(),
   getSetupData: vi.fn(),
+  providerAdapter: {
+    createOAuthAuthorization: vi.fn(),
+    disconnect: vi.fn(),
+    isOAuthConfigured: vi.fn(),
+    readSetupEvidence: vi.fn(),
+    refreshSetupEvidence: vi.fn(),
+    syncNow: vi.fn(),
+  },
   providerSyncRepository: { requestWahooDisconnect: vi.fn() },
   repositories: {
     integrations: { deleteByProfileIdAndProvider: vi.fn(), listByProfileId: vi.fn() },
@@ -17,8 +29,15 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../application/integrations", () => ({
+  assertIntegrationManagementOpen: mocks.assertIntegrationManagementOpen,
+  cancelPendingOAuthWithFence: mocks.cancelPendingOAuthWithFence,
+  createPendingOAuthStateWithFence: mocks.createPendingOAuthStateWithFence,
+  IntegrationDisconnectPendingError: mocks.IntegrationDisconnectPendingError,
+  IntegrationOnboardingClosedError: class IntegrationOnboardingClosedError extends Error {},
   getProviderSyncOverview: mocks.getProviderSyncOverview,
-  syncIntegrationNow: mocks.syncIntegrationNow,
+  getProviderOperationAdapter: vi.fn(() => mocks.providerAdapter),
+  requireProviderOperationAdapter: vi.fn(() => mocks.providerAdapter),
+  ProviderOperationUnavailableError: class ProviderOperationUnavailableError extends Error {},
 }));
 vi.mock("../../application/wahoo-profile-setup-service", () => ({
   WahooProfileSetupService: class {
@@ -46,7 +65,7 @@ vi.mock("@repo/db", () => ({
   }),
 }));
 
-import { integrationsRouter } from "../integrations";
+import { attachProviderSetupEvidence, integrationsRouter } from "../integrations";
 
 function createCaller() {
   return integrationsRouter.createCaller({
@@ -68,21 +87,40 @@ describe("integrationsRouter", () => {
     process.env.WAHOO_CLIENT_ID = "wahoo-client-id";
     process.env.WAHOO_CLIENT_SECRET = "wahoo-client-secret";
     mocks.repositories.oauthStates.deleteExpired.mockResolvedValue(0);
+    mocks.cancelPendingOAuthWithFence.mockResolvedValue({ cancelled: 0 });
+    mocks.createPendingOAuthStateWithFence.mockResolvedValue(undefined);
+    mocks.assertIntegrationManagementOpen.mockResolvedValue(undefined);
     mocks.repositories.integrations.listByProfileId.mockResolvedValue([]);
     mocks.getProviderSyncOverview.mockResolvedValue([]);
     mocks.getSetupData.mockResolvedValue({
-      profile: { dob: null, gender: null, onboarded: false },
+      profile: { dob: null, gender: null, onboarding_status: "provider_selection" },
       sources: {},
       values: {},
     });
+    mocks.providerAdapter.isOAuthConfigured.mockReturnValue(true);
+    mocks.providerAdapter.createOAuthAuthorization.mockImplementation(({ state }) => ({
+      binding: {
+        callbackUri: "https://app.example.com/api/integrations/callback/wahoo",
+        requestedScope: "user_read workouts_read offline_data",
+        verifierHash: "binding-hash",
+      },
+      url: `https://api.wahooligan.com/oauth/authorize?state=${state}&redirect_uri=${encodeURIComponent("https://app.example.com/api/integrations/callback/wahoo")}`,
+    }));
+    mocks.providerAdapter.readSetupEvidence.mockImplementation(() => mocks.getSetupData());
+    mocks.providerAdapter.refreshSetupEvidence.mockImplementation(() => mocks.refreshSetupData());
+    mocks.providerAdapter.syncNow.mockImplementation(() => mocks.syncIntegrationNow());
+    mocks.providerAdapter.disconnect.mockImplementation(() =>
+      mocks.providerSyncRepository.requestWahooDisconnect(),
+    );
   });
 
   afterEach(() => {
     process.env = { ...originalEnv };
   });
 
-  it("exposes only the five live integration leaves", () => {
+  it("exposes the live integration leaves", () => {
     expect(Object.keys(integrationsRouter._def.procedures).sort()).toEqual([
+      "cancelPendingOAuth",
       "disconnect",
       "getAuthUrl",
       "getSyncOverview",
@@ -109,7 +147,7 @@ describe("integrationsRouter", () => {
     );
     expect(authorizationUrl.searchParams.has("code_challenge")).toBe(false);
     expect(authorizationUrl.searchParams.has("code_challenge_method")).toBe(false);
-    expect(mocks.repositories.oauthStates.create).toHaveBeenCalledWith(
+    expect(mocks.createPendingOAuthStateWithFence).toHaveBeenCalledWith(
       expect.objectContaining({ mobileRedirectUri: "gradientpeak-dev://integrations" }),
     );
     await expect(caller.disconnect({ provider: "wahoo" })).resolves.toEqual({ success: true });
@@ -122,7 +160,7 @@ describe("integrationsRouter", () => {
     await expect(createCaller().getAuthUrl({ provider: "wahoo" })).resolves.toMatchObject({
       state: expect.any(String),
     });
-    expect(mocks.repositories.oauthStates.create).toHaveBeenCalledWith(
+    expect(mocks.createPendingOAuthStateWithFence).toHaveBeenCalledWith(
       expect.objectContaining({ mobileRedirectUri: "gradientpeak-dev://integrations" }),
     );
   });
@@ -137,18 +175,37 @@ describe("integrationsRouter", () => {
     expect(mocks.repositories.oauthStates.create).not.toHaveBeenCalled();
   });
 
+  it("allows only the exact same-origin onboarding web return", async () => {
+    await expect(
+      createCaller().getAuthUrl({
+        provider: "wahoo",
+        redirectUri: "https://app.example.com/onboarding",
+      }),
+    ).resolves.toMatchObject({ state: expect.any(String) });
+    for (const redirectUri of [
+      "https://app.example.com/onboarding/child",
+      "https://app.example.com/onboarding?redirect=/activities",
+      "https://app.example.com/onboarding#return",
+    ]) {
+      await expect(
+        createCaller().getAuthUrl({ provider: "wahoo", redirectUri }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+      });
+    }
+  });
+
   it("rejects OAuth initiation while the provider disconnect is pending", async () => {
-    mocks.repositories.integrations.listByProfileId.mockResolvedValue([
-      { provider: "wahoo", lifecycle_status: "disconnect_pending" },
-    ]);
+    mocks.createPendingOAuthStateWithFence.mockRejectedValueOnce(
+      new mocks.IntegrationDisconnectPendingError(),
+    );
 
     await expect(
       createCaller().getAuthUrl({
         provider: "wahoo",
-        redirectUri: "gradientpeak-dev://integrations",
+        redirectUri: "gradientpeak://integrations",
       }),
     ).rejects.toMatchObject({ code: "CONFLICT" });
-    expect(mocks.repositories.oauthStates.create).not.toHaveBeenCalled();
   });
 
   it("rejects an unqueued sync result at the public boundary", async () => {
@@ -161,12 +218,74 @@ describe("integrationsRouter", () => {
   });
 
   it("rejects setup refresh for a disabled adapter before invoking the service", async () => {
-    delete process.env.WAHOO_CLIENT_ID;
-    delete process.env.WAHOO_CLIENT_SECRET;
-
-    await expect(createCaller().refreshSetupData({ provider: "wahoo" })).rejects.toMatchObject({
-      code: "NOT_FOUND",
+    const unavailable = new Error("not executable");
+    const application = await import("../../application/integrations");
+    vi.mocked(application.requireProviderOperationAdapter).mockImplementationOnce(() => {
+      throw unavailable;
     });
+
+    await expect(createCaller().refreshSetupData({ provider: "wahoo" })).rejects.toBeTruthy();
     expect(mocks.refreshSetupData).not.toHaveBeenCalled();
+  });
+
+  it("attaches provider-specific setup evidence only to its matching catalog item", async () => {
+    const base = {
+      actions: [],
+      activityHistory: {
+        lastError: null,
+        lastFailedAt: null,
+        lastSucceededAt: null,
+        queuedJobId: null,
+        status: "idle",
+        importRun: null,
+      },
+      plannedActivities: {
+        lastError: null,
+        lastFailedAt: null,
+        lastSucceededAt: null,
+        queuedJobId: null,
+        status: "unsupported",
+      },
+      providerHealth: { lastError: null, status: "disconnected" },
+      configured: true,
+      onboarding: {
+        summary: "Import profile details and activity history.",
+        evidence: { activityHistory: true, profileDetails: true },
+      },
+      setupData: {
+        lastError: null,
+        lastFailedAt: null,
+        lastSucceededAt: null,
+        status: "idle",
+      },
+      connected: false,
+      integrationId: null,
+      primaryAction: "connect",
+      summary: {
+        badge: "Ready",
+        health: "unavailable",
+        subtitle: "Connect",
+        title: "Provider",
+      },
+    } as const;
+    const setupData = {
+      profile: { dob: "1990-01-01", gender: null, onboarding_status: "provider_selection" },
+      sources: { dob: { label: "Wahoo" } },
+      values: { dob: "1990-01-01" },
+    };
+    const result = attachProviderSetupEvidence({
+      overview: [
+        { ...base, provider: "wahoo", label: "Wahoo" },
+        { ...base, provider: "future", label: "Future" },
+      ],
+      setupEvidence: new Map([
+        ["wahoo", setupData],
+        ["future", null],
+      ]),
+    });
+    expect(result[0]?.setupData.values).toEqual({ dob: "1990-01-01" });
+    expect(result[0]?.setupData.sources).toEqual({ dob: { label: "Wahoo" } });
+    expect(result[1]?.setupData.values).toEqual({});
+    expect(result[1]?.setupData.sources).toEqual({});
   });
 });

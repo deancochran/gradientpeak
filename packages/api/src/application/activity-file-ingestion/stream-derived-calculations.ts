@@ -429,6 +429,11 @@ function buildActivityFileBestEffortRow(
   input: ActivityFileStreamDerivedCalculationsInput,
   extraction: BestEffortExtractionResult,
   effort: NumericBestEffortResult,
+  outputWindowDiagnostics: {
+    coverage: number;
+    maximumGapSeconds: number;
+    coefficientOfVariation: number | null;
+  } | null,
 ): typeof activityEfforts.$inferInsert {
   const activityStartedAtSeconds = input.activityStartedAt.getTime() / 1_000;
   if (!Number.isFinite(activityStartedAtSeconds)) {
@@ -484,6 +489,13 @@ function buildActivityFileBestEffortRow(
       contributing_duration_seconds: effort.contributingDurationSeconds,
       window_coverage: effort.windowCoverage,
       source_time_coverage: extraction.diagnostics.sourceTimeCoverage,
+      ...(outputWindowDiagnostics === null
+        ? {}
+        : {
+            output_window_coverage: outputWindowDiagnostics.coverage,
+            maximum_gap_seconds: outputWindowDiagnostics.maximumGapSeconds,
+            output_coefficient_of_variation: outputWindowDiagnostics.coefficientOfVariation,
+          }),
       extraction_status: effort.status,
       extraction_reason: effort.status === "partial" ? effort.reason : null,
       persisted_start_offset_quantization: "floor_seconds_v1",
@@ -499,10 +511,75 @@ function buildActivityFileBestEffortRow(
   };
 }
 
+function runningOutputWindowDiagnostics(
+  extraction: BestEffortExtractionResult,
+  effort: NumericBestEffortResult,
+  gradeAdjustedSpeed: readonly {
+    timestampSeconds: number;
+    value: number | null;
+    included: boolean;
+  }[],
+): {
+  coverage: number;
+  maximumGapSeconds: number;
+  coefficientOfVariation: number | null;
+} | null {
+  if (extraction.metric !== "grade_adjusted_speed") {
+    return null;
+  }
+  let coveredSeconds = 0;
+  let weightedSum = 0;
+  let weightedSquareSum = 0;
+  let maximumGapSeconds = 0;
+  for (let index = 1; index < gradeAdjustedSpeed.length; index += 1) {
+    const previous = gradeAdjustedSpeed[index - 1];
+    const current = gradeAdjustedSpeed[index];
+    if (!previous || !current) continue;
+    const intervalStart = Math.max(previous.timestampSeconds, effort.startTimestampSeconds);
+    const intervalEnd = Math.min(current.timestampSeconds, effort.endTimestampSeconds);
+    if (intervalEnd <= intervalStart) continue;
+    const intervalSeconds = intervalEnd - intervalStart;
+    maximumGapSeconds = Math.max(
+      maximumGapSeconds,
+      current.timestampSeconds - previous.timestampSeconds,
+    );
+    if (!current.included || current.value === null) continue;
+    coveredSeconds += intervalSeconds;
+    weightedSum += current.value * intervalSeconds;
+    weightedSquareSum += current.value * current.value * intervalSeconds;
+  }
+  const coverage = coveredSeconds / effort.durationSeconds;
+  const mean = coveredSeconds > 0 ? weightedSum / coveredSeconds : null;
+  const variance =
+    mean === null ? null : Math.max(0, weightedSquareSum / coveredSeconds - mean * mean);
+  return {
+    coverage,
+    maximumGapSeconds,
+    coefficientOfVariation:
+      variance === null || mean === null || mean === 0 ? null : Math.sqrt(variance) / mean,
+  };
+}
+
 function buildActivityFileBestEffortRows(
   input: ActivityFileStreamDerivedCalculationsInput,
   extractions: readonly BestEffortExtractionResult[],
 ): Array<typeof activityEfforts.$inferInsert> {
+  const runningSamples =
+    input.activityCategory === "run"
+      ? buildRunningSamples(input.streamMetadata, input.includedTimeline)
+      : [];
+  const gradeAdjustedSpeed =
+    runningSamples.length === 0
+      ? []
+      : calculateGradeAdjustedSpeedSeries({
+          timestampsSeconds: runningSamples.map((sample) => sample.timestampSeconds),
+          speedMetersPerSecond: runningSamples.map((sample) => sample.speedMetersPerSecond),
+          elevationMeters: runningSamples.map((sample) => sample.elevationMeters),
+          includedStream: runningSamples.map((sample) => sample.included !== false),
+        }).map((sample, index) => ({
+          ...sample,
+          included: runningSamples[index]?.included !== false,
+        }));
   return selectedEffortEvidence({
     activityCategory: input.activityCategory,
     extractions,
@@ -532,7 +609,14 @@ function buildActivityFileBestEffortRows(
         }).classification !== "hard-invalid"
       );
     })
-    .map(({ extraction, result }) => buildActivityFileBestEffortRow(input, extraction, result));
+    .map(({ extraction, result }) =>
+      buildActivityFileBestEffortRow(
+        input,
+        extraction,
+        result,
+        runningOutputWindowDiagnostics(extraction, result, gradeAdjustedSpeed),
+      ),
+    );
 }
 
 function buildActivityFileSwimDistanceEffortRow(

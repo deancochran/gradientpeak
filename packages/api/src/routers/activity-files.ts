@@ -74,12 +74,16 @@ function toStreamTargetIdentity(
     | AthletePerformanceTargetFacts["running"]["planningThresholdPace"]
     | AthletePerformanceTargetFacts["swimming"]["css"],
 ): ActivityStreamThresholdIdentity | null {
-  if (fact.status !== "available" || fact.evidenceTime.observedThrough === null) return null;
+  if (
+    getAvailablePerformanceTargetValue(fact) === null ||
+    fact.evidenceTime.observedThrough === null
+  )
+    return null;
   return {
     source: "modeled",
     observed_at: fact.evidenceTime.observedThrough,
-    confidence: fact.confidence,
-    stale: false,
+    confidence: fact.confidence === "unavailable" ? "unknown" : fact.confidence,
+    stale: fact.calibrationState === "stale",
     estimate: true,
     calculation_version: fact.calculationVersion,
   };
@@ -93,7 +97,7 @@ function toStreamHeartRateIdentity(
         source: "observed_effort",
         observed_at: fact.observedAt,
         confidence: "high",
-        stale: false,
+        stale: fact.calibrationState === "stale",
         estimate: false,
         calculation_version: fact.calculationVersion,
       }

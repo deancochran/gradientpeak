@@ -1,8 +1,5 @@
-import {
-  activityPlanStructureSchema,
-  completedActivitySegmentSchema,
-  trainingPlanSchema,
-} from "@repo/core";
+import { activityPlanStructureSchema, trainingPlanSchema } from "@repo/core";
+import { compileActivityPlan } from "@repo/core/activity-plan";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -10,91 +7,68 @@ import { getRequiredDb } from "../db";
 import { createTRPCRouter, publicProcedure } from "../trpc";
 
 const uuidInputSchema = z.object({ id: z.string().uuid() }).strict();
-const publicJsonSchema = z.json();
 
-const profileSummarySchema = z
-  .object({
-    id: z.string().uuid().nullable(),
-    name: z.string().nullable(),
-    username: z.string().nullable(),
-    avatar_url: z.string().nullable(),
-  })
-  .strict();
+const profileSummarySchema = z.strictObject({
+  name: z.string().nullable(),
+  username: z.string().nullable(),
+});
 
-const currentArtifactSchema = z
-  .object({
-    id: z.string().uuid(),
-    digest_algorithm: z.literal("sha256"),
-    digest: z.string().regex(/^[0-9a-f]{64}$/),
-    byte_size: z.number().int().positive(),
-    media_type: z.string(),
-    format: z.string(),
-    original_name: z.string().nullable(),
-    availability: z.literal("accepted"),
-    first_accepted_at: z.string().datetime({ offset: true }),
-  })
-  .strict();
+const publicActivityArtifactRowSchema = z.looseObject({
+  format: z.string(),
+  original_name: z.string().nullable(),
+});
 
-const publicActivitySchema = z
-  .object({
-    id: z.string().uuid(),
-    name: z.string(),
-    notes: z.string().nullable(),
-    started_at: z.string().datetime({ offset: true }),
-    finished_at: z.string().datetime({ offset: true }),
-    elapsed_ms: z.number().int().positive(),
-    active_ms: z.number().int().nonnegative().nullable(),
-    moving_ms: z.number().int().nonnegative().nullable(),
-    timing_coverage: z.enum(["complete", "partial", "unavailable"]),
-    distance_meters: z.number().int().nonnegative(),
-    elevation_gain_meters: z.number().nullable(),
-    calories: z.number().int().nullable(),
-    avg_heart_rate: z.number().int().nullable(),
-    max_heart_rate: z.number().int().nullable(),
-    avg_power: z.number().int().nullable(),
-    max_power: z.number().int().nullable(),
-    avg_speed_mps: z.number().nullable(),
-    max_speed_mps: z.number().nullable(),
-    segments: z.array(completedActivitySegmentSchema),
-    current_artifact: currentArtifactSchema.nullable(),
-    likes_count: z.number().int().nonnegative(),
-    owner: profileSummarySchema,
-  })
-  .strict();
+export const publicActivityShareSchema = z.strictObject({
+  id: z.string().uuid(),
+  notes: z.string().nullable(),
+  owner: profileSummarySchema,
+  startedAt: z.iso.datetime({ offset: true }),
+  activityComposition: z.strictObject({
+    categories: z.array(z.enum(["run", "bike", "swim", "strength", "other"])),
+  }),
+  performance: z.strictObject({
+    timingCoverage: z.enum(["complete", "partial", "unavailable"]),
+    elapsedSeconds: z.number().finite().nonnegative(),
+    movingSeconds: z.number().finite().nonnegative().nullable(),
+    distanceMeters: z.number().finite().nonnegative(),
+    elevationGainMeters: z.number().finite().nullable(),
+    calories: z.number().finite().nullable(),
+    averageHeartRate: z.number().finite().nullable(),
+    maximumHeartRate: z.number().finite().nullable(),
+    averagePower: z.number().finite().nullable(),
+    maximumPower: z.number().finite().nullable(),
+  }),
+  likes: z.number().int().nonnegative(),
+  sourceArtifact: z
+    .strictObject({
+      format: z.string().trim().min(1).max(64),
+      originalName: z.string().max(512).nullable(),
+    })
+    .nullable(),
+});
 
-const publicActivityPlanSchema = z
-  .object({
-    id: z.string().uuid(),
-    name: z.string(),
-    description: z.string().nullable(),
-    notes: z.string().nullable(),
-    structure: activityPlanStructureSchema,
-    structure_hash: z.string().regex(/^v1:sha256:[0-9a-f]{64}$/),
-    gps_recording_enabled: z.boolean(),
-    content_visibility: z.enum(["private", "followers", "public"]),
-    is_system_template: z.boolean(),
-    created_at: z.string(),
-    updated_at: z.string(),
-    owner: profileSummarySchema,
-  })
-  .strict();
+export const publicActivityPlanShareSchema = z.strictObject({
+  id: z.string().uuid(),
+  name: z.string(),
+  description: z.string().nullable(),
+  notes: z.string().nullable(),
+  activity_category: z.enum(["run", "bike", "swim", "strength", "other"]),
+  structure_version: z.number().int().positive(),
+  structure_summary: z.string(),
+  is_system_template: z.boolean(),
+  owner: profileSummarySchema,
+});
 
-const publicTrainingPlanSchema = z
-  .object({
-    id: z.string().uuid(),
-    name: z.string(),
-    description: z.string().nullable(),
-    structure: trainingPlanSchema,
-    structure_hash: z.string().regex(/^v1:sha256:[0-9a-f]{64}$/),
-    content_visibility: z.enum(["private", "followers", "public"]),
-    sessions_per_week_target: z.number().int().nullable(),
-    duration_hours: z.number().nullable(),
-    is_system_template: z.boolean(),
-    created_at: z.string(),
-    updated_at: z.string(),
-    owner: profileSummarySchema,
-  })
-  .strict();
+export const publicTrainingPlanShareSchema = z.strictObject({
+  id: z.string().uuid(),
+  name: z.string(),
+  description: z.string().nullable(),
+  structure_summary: z.string(),
+  sessions_per_week_target: z.number().int().nullable(),
+  duration_hours: z.number().nullable(),
+  is_system_template: z.boolean(),
+  owner: profileSummarySchema,
+});
 
 type SqlResult = { rows?: unknown[] } | unknown[];
 function getRows<T>(result: SqlResult): T[] {
@@ -106,28 +80,18 @@ function toIsoString(value: Date | string) {
 function toNumberOrNull(value: number | string | null) {
   return value === null ? null : Number(value);
 }
-function ownerFromRow(row: {
-  owner_id: string | null;
-  owner_name: string | null;
-  owner_username: string | null;
-  owner_avatar_url: string | null;
-}) {
+function ownerFromRow(row: { owner_name: string | null; owner_username: string | null }) {
   return {
-    id: row.owner_id,
     name: row.owner_name,
     username: row.owner_username,
-    avatar_url: row.owner_avatar_url,
   };
 }
 
 type PublicActivityRow = {
   id: string;
-  name: string;
   notes: string | null;
   started_at: Date | string;
-  finished_at: Date | string;
   elapsed_ms: number | string;
-  active_ms: number | string | null;
   moving_ms: number | string | null;
   timing_coverage: "complete" | "partial" | "unavailable";
   distance_meters: number;
@@ -137,72 +101,55 @@ type PublicActivityRow = {
   max_heart_rate: number | null;
   avg_power: number | null;
   max_power: number | null;
-  avg_speed_mps: number | string | null;
-  max_speed_mps: number | string | null;
-  segments: unknown;
+  activity_categories: unknown;
   current_artifact: unknown;
   likes_count: number | string | null;
-  owner_id: string | null;
   owner_name: string | null;
   owner_username: string | null;
-  owner_avatar_url: string | null;
 };
 
-type PublicPlanRow = {
+type PublicActivityPlanRow = {
   id: string;
   name: string;
   description: string | null;
-  notes?: string | null;
+  notes: string | null;
   structure: unknown;
-  structure_hash: string;
-  gps_recording_enabled?: boolean;
-  content_visibility: "private" | "followers" | "public";
-  sessions_per_week_target?: number | null;
-  duration_hours?: number | string | null;
   is_system_template: boolean;
-  created_at: Date | string;
-  updated_at: Date | string;
-  owner_id: string | null;
   owner_name: string | null;
   owner_username: string | null;
-  owner_avatar_url: string | null;
+};
+
+type PublicTrainingPlanRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  structure: unknown;
+  sessions_per_week_target: number | null;
+  duration_hours: number | string | null;
+  is_system_template: boolean;
+  owner_name: string | null;
+  owner_username: string | null;
 };
 
 export const publicShareRouter = createTRPCRouter({
   activity: publicProcedure
     .input(uuidInputSchema)
-    .output(publicActivitySchema.nullable())
+    .output(publicActivityShareSchema.nullable())
     .query(async ({ ctx, input }) => {
       const result = await getRequiredDb(ctx).execute(sql<PublicActivityRow>`
         select
-          a.id, a.name, a.notes, a.started_at, a.finished_at,
-          a.elapsed_ms, a.active_ms, a.moving_ms, a.timing_coverage,
+          a.id, a.notes, a.started_at,
+          a.elapsed_ms, a.moving_ms, a.timing_coverage,
           a.distance_meters, a.elevation_gain_meters, a.calories,
           a.avg_heart_rate, a.max_heart_rate, a.avg_power, a.max_power,
-          a.avg_speed_mps, a.max_speed_mps,
           coalesce((
-            select jsonb_agg(jsonb_build_object(
-              'id', s.id, 'ordinal', s.ordinal, 'role', s.role, 'activity_category', s.activity_category,
-              'startOffsetMs', s.start_offset_ms, 'endOffsetMs', s.end_offset_ms,
-              'summary', s.summary,
-              'source', case when s.source_artifact_id is not null then jsonb_strip_nulls(jsonb_build_object(
-                'kind', 'artifact', 'artifactId', s.source_artifact_id,
-                'source', jsonb_build_object('standard', ar.format, 'format', ar.format),
-                'sessionMessageIndex', s.source_session_index, 'messageIndex', s.source_message_index,
-                'rawType', coalesce(s.raw_type_string, s.raw_type_integer::text),
-                'rawSport', coalesce(s.raw_sport_string, s.raw_sport_integer::text)
-              )) else null end
-            ) order by s.ordinal)
+            select jsonb_agg(s.activity_category order by s.ordinal)
             from activity_segments s
-            left join activity_artifacts ar on ar.id = s.source_artifact_id
-            where s.activity_id = a.id
-          ), '[]'::jsonb) as segments,
+            where s.activity_id = a.id and s.role = 'activity' and s.activity_category is not null
+          ), '[]'::jsonb) as activity_categories,
           (
             select jsonb_build_object(
-              'id', ar.id, 'digest_algorithm', ar.digest_algorithm, 'digest', ar.digest,
-              'byte_size', ar.byte_size, 'media_type', ar.media_type, 'format', ar.format,
-              'original_name', ar.original_name, 'availability', ar.availability,
-              'first_accepted_at', ar.first_accepted_at
+              'format', ar.format, 'original_name', ar.original_name
             )
             from activity_artifact_links aal
             join activity_artifacts ar on ar.id = aal.artifact_id and ar.availability = 'accepted'
@@ -210,8 +157,7 @@ export const publicShareRouter = createTRPCRouter({
             limit 1
           ) as current_artifact,
           (select count(*) from likes l where l.entity_type = 'activity' and l.entity_id = a.id) as likes_count,
-          p.id as owner_id, p.full_name as owner_name, p.username as owner_username,
-          p.avatar_url as owner_avatar_url
+          p.full_name as owner_name, p.username as owner_username
         from activities a
         left join profiles p on p.id = a.profile_id
         where a.id = ${input.id}::uuid and a.content_visibility = 'public'
@@ -219,112 +165,98 @@ export const publicShareRouter = createTRPCRouter({
       `);
       const row = getRows<PublicActivityRow>(result)[0];
       if (!row) return null;
+      const categories = z
+        .array(z.enum(["run", "bike", "swim", "strength", "other"]))
+        .parse(row.activity_categories);
       const artifact = row.current_artifact
-        ? (() => {
-            const current = row.current_artifact as Record<string, unknown>;
-            return {
-              id: current.id,
-              digest_algorithm: current.digest_algorithm,
-              digest: current.digest,
-              byte_size: Number(current.byte_size),
-              media_type: current.media_type,
-              format: current.format,
-              original_name: current.original_name,
-              availability: current.availability,
-              first_accepted_at: toIsoString(
-                (row.current_artifact as { first_accepted_at: Date | string }).first_accepted_at,
-              ),
-            };
-          })()
+        ? publicActivityArtifactRowSchema.parse(row.current_artifact)
         : null;
-      return publicActivitySchema.parse({
+      return publicActivityShareSchema.parse({
         id: row.id,
-        name: row.name,
         notes: row.notes,
-        started_at: toIsoString(row.started_at),
-        finished_at: toIsoString(row.finished_at),
-        elapsed_ms: Number(row.elapsed_ms),
-        active_ms: toNumberOrNull(row.active_ms),
-        moving_ms: toNumberOrNull(row.moving_ms),
-        timing_coverage: row.timing_coverage,
-        distance_meters: row.distance_meters,
-        elevation_gain_meters: toNumberOrNull(row.elevation_gain_meters),
-        calories: row.calories,
-        avg_heart_rate: row.avg_heart_rate,
-        max_heart_rate: row.max_heart_rate,
-        avg_power: row.avg_power,
-        max_power: row.max_power,
-        avg_speed_mps: toNumberOrNull(row.avg_speed_mps),
-        max_speed_mps: toNumberOrNull(row.max_speed_mps),
-        segments: row.segments,
-        current_artifact: artifact,
-        likes_count: Number(row.likes_count ?? 0),
-        owner: ownerFromRow(row),
+        owner: {
+          name: row.owner_name,
+          username: row.owner_username,
+        },
+        startedAt: toIsoString(row.started_at),
+        activityComposition: {
+          categories,
+        },
+        performance: {
+          timingCoverage: row.timing_coverage,
+          elapsedSeconds: Number(row.elapsed_ms) / 1_000,
+          movingSeconds: row.moving_ms === null ? null : Number(row.moving_ms) / 1_000,
+          distanceMeters: row.distance_meters,
+          elevationGainMeters: toNumberOrNull(row.elevation_gain_meters),
+          calories: row.calories,
+          averageHeartRate: row.avg_heart_rate,
+          maximumHeartRate: row.max_heart_rate,
+          averagePower: row.avg_power,
+          maximumPower: row.max_power,
+        },
+        likes: Number(row.likes_count ?? 0),
+        sourceArtifact: artifact
+          ? { format: artifact.format, originalName: artifact.original_name }
+          : null,
       });
     }),
 
   activityPlan: publicProcedure
     .input(uuidInputSchema)
-    .output(publicActivityPlanSchema.nullable())
+    .output(publicActivityPlanShareSchema.nullable())
     .query(async ({ ctx, input }) => {
-      const result = await getRequiredDb(ctx).execute(sql<PublicPlanRow>`
-        select ap.id, ap.name, ap.description, ap.notes, ap.structure, ap.structure_hash,
-          ap.gps_recording_enabled, ap.content_visibility, ap.is_system_template,
-          ap.created_at, ap.updated_at,
-          p.id as owner_id, p.full_name as owner_name, p.username as owner_username,
-          p.avatar_url as owner_avatar_url
+      const result = await getRequiredDb(ctx).execute(sql<PublicActivityPlanRow>`
+        select ap.id, ap.name, ap.description, ap.notes, ap.structure, ap.is_system_template,
+          p.full_name as owner_name, p.username as owner_username
         from activity_plans ap
         left join profiles p on p.id = ap.profile_id
         where ap.id = ${input.id}::uuid and ap.content_visibility = 'public'
         limit 1
       `);
-      const row = getRows<PublicPlanRow>(result)[0];
+      const row = getRows<PublicActivityPlanRow>(result)[0];
       if (!row) return null;
-      return publicActivityPlanSchema.parse({
+      const structure = activityPlanStructureSchema.parse(row.structure);
+      const compiled = compileActivityPlan(structure);
+      return publicActivityPlanShareSchema.parse({
         id: row.id,
         name: row.name,
         description: row.description,
-        notes: row.notes ?? null,
-        structure: publicJsonSchema.parse(row.structure),
-        structure_hash: row.structure_hash,
-        gps_recording_enabled: row.gps_recording_enabled,
-        content_visibility: row.content_visibility,
+        notes: row.notes,
+        activity_category: compiled.activity_category,
+        structure_version: compiled.structureVersion,
+        structure_summary: "Structured plan details",
         is_system_template: row.is_system_template,
-        created_at: toIsoString(row.created_at),
-        updated_at: toIsoString(row.updated_at),
         owner: ownerFromRow(row),
       });
     }),
 
   trainingPlan: publicProcedure
     .input(uuidInputSchema)
-    .output(publicTrainingPlanSchema.nullable())
+    .output(publicTrainingPlanShareSchema.nullable())
     .query(async ({ ctx, input }) => {
-      const result = await getRequiredDb(ctx).execute(sql<PublicPlanRow>`
-        select tp.id, tp.name, tp.description, tp.structure, tp.structure_hash,
-          tp.content_visibility, tp.sessions_per_week_target, tp.duration_hours,
-          tp.is_system_template, tp.created_at, tp.updated_at,
-          p.id as owner_id, p.full_name as owner_name, p.username as owner_username,
-          p.avatar_url as owner_avatar_url
+      const result = await getRequiredDb(ctx).execute(sql<PublicTrainingPlanRow>`
+        select tp.id, tp.name, tp.description, tp.structure,
+          tp.sessions_per_week_target, tp.duration_hours, tp.is_system_template,
+          p.full_name as owner_name, p.username as owner_username
         from training_plans tp
         left join profiles p on p.id = tp.profile_id
         where tp.id = ${input.id}::uuid and tp.content_visibility = 'public'
         limit 1
       `);
-      const row = getRows<PublicPlanRow>(result)[0];
+      const row = getRows<PublicTrainingPlanRow>(result)[0];
       if (!row) return null;
-      return publicTrainingPlanSchema.parse({
+      // Parsing before projection rejects malformed persistence data. Returning
+      // only the render projection makes builder snapshots, goal objectives,
+      // session IDs, and activity-plan IDs impossible to cross public tRPC.
+      trainingPlanSchema.parse(row.structure);
+      return publicTrainingPlanShareSchema.parse({
         id: row.id,
         name: row.name,
         description: row.description,
-        structure: publicJsonSchema.parse(row.structure),
-        structure_hash: row.structure_hash,
-        content_visibility: row.content_visibility,
+        structure_summary: "Structured plan details",
         sessions_per_week_target: row.sessions_per_week_target ?? null,
         is_system_template: row.is_system_template,
         duration_hours: toNumberOrNull(row.duration_hours ?? null),
-        created_at: toIsoString(row.created_at),
-        updated_at: toIsoString(row.updated_at),
         owner: ownerFromRow(row),
       });
     }),

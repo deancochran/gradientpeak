@@ -4,13 +4,6 @@ import { Redirect, useSegments } from "expo-router";
 import * as React from "react";
 import { ActivityIndicator, View } from "react-native";
 import { useAuth } from "@/lib/hooks/useAuth";
-import {
-  clearOnboardingRecovery,
-  hasPendingOnboardingRecovery,
-  loadOnboardingRecovery,
-  type OnboardingRecoveryRecord,
-  subscribeToOnboardingRecovery,
-} from "@/lib/onboarding/onboarding-recovery";
 import { useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
@@ -30,46 +23,6 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
   const childSegment = segments.at(1);
   const grandchildSegment = segments.at(2);
   const clearSession = useAuthStore((state) => state.clearSession);
-  const recoveryUserId = authState === "authenticated-verified" ? user?.id : undefined;
-  const [recoveryLookup, setRecoveryLookup] = React.useState<{
-    record: OnboardingRecoveryRecord | null;
-    status: "idle" | "loading" | "loaded";
-    userId?: string;
-  }>({ record: null, status: "idle" });
-
-  React.useEffect(() => {
-    if (!recoveryUserId) {
-      setRecoveryLookup({ record: null, status: "idle" });
-      return;
-    }
-
-    let active = true;
-    setRecoveryLookup({ record: null, status: "loading", userId: recoveryUserId });
-    const unsubscribe = subscribeToOnboardingRecovery(recoveryUserId, (record) => {
-      if (!active) return;
-      setRecoveryLookup({ record, status: "loaded", userId: recoveryUserId });
-      if (record?.status === "completed") {
-        void clearOnboardingRecovery(recoveryUserId).catch(() => undefined);
-      }
-    });
-    void loadOnboardingRecovery(recoveryUserId).then(
-      (record) => {
-        if (!active) return;
-        setRecoveryLookup({ record, status: "loaded", userId: recoveryUserId });
-        if (record?.status === "completed") {
-          void clearOnboardingRecovery(recoveryUserId).catch(() => undefined);
-        }
-      },
-      () => {
-        if (active) setRecoveryLookup({ record: null, status: "loaded", userId: recoveryUserId });
-      },
-    );
-
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, [recoveryUserId]);
 
   const inInternalGroup = rootSegment === "(internal)";
   const inExternalGroup = rootSegment === "(external)";
@@ -79,14 +32,6 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
     grandchildSegment === "onboarding";
   const isVerificationScreen = rootSegment === "(external)" && childSegment === "verify";
   const isAuthCallbackScreen = rootSegment === "(external)" && childSegment === "callback";
-  const recoveryLookupReady =
-    !recoveryUserId ||
-    (recoveryLookup.userId === recoveryUserId && recoveryLookup.status === "loaded");
-  const recoveryPending =
-    recoveryUserId !== undefined &&
-    recoveryLookup.userId === recoveryUserId &&
-    recoveryLookup.status === "loaded" &&
-    hasPendingOnboardingRecovery(recoveryLookup.record);
 
   const guardDecision = React.useMemo(() => {
     if (!initialized || !isFullyLoaded) {
@@ -111,19 +56,6 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
       };
     }
 
-    if (!recoveryLookupReady) {
-      return { type: "loading" as const };
-    }
-
-    if (recoveryPending) {
-      return isOnboardingScreen
-        ? { type: "allow" as const }
-        : {
-            type: "redirect" as const,
-            to: "/(internal)/(standard)/onboarding" as const,
-          };
-    }
-
     if (onboardingStatus === null) {
       if (profileLoading) {
         return { type: "loading" as const };
@@ -139,7 +71,7 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
       };
     }
 
-    if (onboardingStatus !== true) {
+    if (onboardingStatus !== "completed") {
       return isOnboardingScreen
         ? { type: "allow" as const }
         : {
@@ -165,8 +97,6 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
     onboardingStatus,
     profileError,
     profileLoading,
-    recoveryLookupReady,
-    recoveryPending,
     user,
   ]);
 

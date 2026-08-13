@@ -188,6 +188,7 @@ export function CalendarPlannedActivityPickerModal({
           ? "Easy repeat"
           : null;
 
+    if (!("activityPlan" in plan)) return null;
     return (
       <View key={plan.id} className="gap-1">
         {recommendationLabel ? (
@@ -196,18 +197,7 @@ export function CalendarPlannedActivityPickerModal({
           </Text>
         ) : null}
         <ActivityPlanCard
-          activityPlan={{
-            ...plan,
-            activity_category: plan.activityCategory ?? "other",
-            created_at: plan.createdAt ?? undefined,
-            prescriptionQuantification:
-              "activityPlanCardData" in plan
-                ? (plan.activityPlanCardData.prescriptionQuantification ?? null)
-                : null,
-            has_liked: plan.hasLiked ?? undefined,
-            likes_count: plan.likesCount,
-            updated_at: plan.updatedAt ?? undefined,
-          }}
+          plan={plan.activityPlan}
           onPress={() => onSelectPlan(plan.id)}
           testID={`calendar-planned-activity-option-${plan.id}`}
           variant="compact"

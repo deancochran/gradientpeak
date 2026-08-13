@@ -73,6 +73,8 @@ export async function invalidateGroupEventQueries(
     utils.groups.events.seriesOccurrences.invalidate(),
     utils.groups.events.myUpcomingGroupEvents.invalidate(),
     utils.calendar.invalidate(),
+    utils.trainingPlans.getPlanTabProjection.invalidate(),
+    utils.trainingPlans.getPlanningLedger.invalidate(),
   ]);
 }
 

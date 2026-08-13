@@ -1,4 +1,5 @@
-import type { ProfileGoal } from "@repo/core";
+import type { CalendarProjectionItem } from "@repo/core";
+import { keepPreviousData } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
@@ -6,22 +7,18 @@ import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { addDaysToDateKey } from "@/lib/calendar/dateMath";
 import { buildOpenEventRoute } from "@/lib/calendar/eventRouting";
-import { buildGroupEventsByDate, type CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
-import { buildEventsByDate, type CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import { ROUTES } from "@/lib/constants/routes";
 import { useLocalTodayKey } from "@/lib/hooks/useLocalTodayKey";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useCalendarStore } from "@/lib/stores/calendar-store";
 import type { CalendarDayListProps } from "./CalendarDayList";
-import type { CalendarActivity } from "./CalendarTimelineModel";
 import type { CalendarWeekDayIndicators } from "./CalendarWeekStrip";
 
 export const CALENDAR_PROJECTION_LIMIT = 500;
 export const DAY_RANGE_BACKWARD = 21;
 export const DAY_RANGE_FORWARD = 119;
 export const DAY_RANGE_EXTENSION = 30;
-const ROUTABLE_EVENT_TYPES = new Set(["planned", "rest_day", "race_target", "custom", "imported"]);
 
 export function buildDayQueryWindow(anchorDate: string) {
   return {
@@ -42,78 +39,30 @@ export function ensureDayQueryWindowCovers(input: {
   return { rangeStart: input.rangeStart, rangeEnd: input.rangeEnd };
 }
 
-function buildGoalsByDate(goals: ProfileGoal[]) {
-  const map = new Map<string, ProfileGoal[]>();
-
-  for (const goal of goals) {
-    const items = map.get(goal.target_date) ?? [];
-    items.push(goal);
-    map.set(goal.target_date, items);
+function buildItemsByDate(items: CalendarProjectionItem[]) {
+  const map = new Map<string, CalendarProjectionItem[]>();
+  for (const item of items) {
+    const dayItems = map.get(item.calendarDate) ?? [];
+    dayItems.push(item);
+    map.set(item.calendarDate, dayItems);
   }
-
   return map;
 }
 
-function buildActivitiesByDate(activities: CalendarActivity[]) {
-  const map = new Map<string, CalendarActivity[]>();
-
-  for (const activity of activities) {
-    const dateKey = activity.scheduled_date;
-    const items = map.get(dateKey) ?? [];
-    items.push(activity);
-    map.set(dateKey, items);
-  }
-
-  for (const [dateKey, dayActivities] of map.entries()) {
-    map.set(
-      dateKey,
-      [...dayActivities].sort(
-        (left, right) =>
-          new Date(left.started_at ?? 0).getTime() - new Date(right.started_at ?? 0).getTime(),
-      ),
-    );
-  }
-
-  return map;
-}
-
-function buildWeekDayIndicators({
-  activitiesByDate,
-  eventsByDate,
-  goalsByDate,
-  groupEventsByDate,
-}: {
-  activitiesByDate: Map<string, CalendarActivity[]>;
-  eventsByDate: Map<string, CalendarEvent[]>;
-  goalsByDate: Map<string, ProfileGoal[]>;
-  groupEventsByDate: Map<string, CalendarGroupEvent[]>;
-}) {
+function buildWeekDayIndicators(itemsByDate: Map<string, CalendarProjectionItem[]>) {
   const indicators = new Map<string, CalendarWeekDayIndicators>();
-  const dateKeys = new Set([
-    ...activitiesByDate.keys(),
-    ...eventsByDate.keys(),
-    ...goalsByDate.keys(),
-    ...groupEventsByDate.keys(),
-  ]);
-
-  for (const dateKey of dateKeys) {
+  for (const [dateKey, items] of itemsByDate.entries()) {
     indicators.set(dateKey, {
-      activityCount: activitiesByDate.get(dateKey)?.length ?? 0,
-      eventCount:
-        (eventsByDate.get(dateKey)?.length ?? 0) + (groupEventsByDate.get(dateKey)?.length ?? 0),
-      goalCount: goalsByDate.get(dateKey)?.length ?? 0,
+      activityCount: items.filter((item) => item.kind === "completed_activity").length,
+      eventCount: items.filter(
+        (item) =>
+          item.kind === "planned_activity" || item.kind === "event" || item.kind === "group_event",
+      ).length,
+      goalCount: items.filter((item) => item.kind === "goal").length,
     });
   }
 
   return indicators;
-}
-
-function toRoutableEventType(eventType: CalendarEvent["event_type"]) {
-  if (!eventType || !ROUTABLE_EVENT_TYPES.has(eventType)) {
-    return undefined;
-  }
-
-  return eventType as "planned" | "rest_day" | "race_target" | "custom" | "imported";
 }
 
 export function useCalendarTimelineController() {
@@ -158,44 +107,19 @@ export function useCalendarTimelineController() {
     {
       ...scheduleAwareReadQueryOptions,
       enabled: eventsQueryEnabled,
+      placeholderData: keepPreviousData,
     },
   );
 
-  const events = useMemo(
-    () => (eventsQuery.data?.items ?? []) as CalendarEvent[],
-    [eventsQuery.data?.items],
-  );
-  const completedActivities = useMemo(
-    () => (eventsQuery.data?.completedActivities?.items ?? []) as CalendarActivity[],
-    [eventsQuery.data?.completedActivities?.items],
-  );
-  const activitiesByDate = useMemo(
-    () => buildActivitiesByDate(completedActivities),
-    [completedActivities],
-  );
-  const eventsByDate = useMemo(() => buildEventsByDate(events), [events]);
-  const groupEvents = useMemo(
-    () => (eventsQuery.data?.selectedGroupEvents?.items ?? []) as CalendarGroupEvent[],
-    [eventsQuery.data?.selectedGroupEvents?.items],
-  );
-  const groupEventsByDate = useMemo(() => buildGroupEventsByDate(groupEvents), [groupEvents]);
-  const goalsByDate = useMemo(
-    () => buildGoalsByDate(eventsQuery.data?.goals?.items ?? []),
-    [eventsQuery.data?.goals?.items],
-  );
-  const weekDayIndicators = useMemo(
-    () =>
-      buildWeekDayIndicators({ activitiesByDate, eventsByDate, goalsByDate, groupEventsByDate }),
-    [activitiesByDate, eventsByDate, goalsByDate, groupEventsByDate],
-  );
+  const projectionItems = eventsQuery.data?.items ?? [];
+  const itemsByDate = useMemo(() => buildItemsByDate(projectionItems), [projectionItems]);
+  const weekDayIndicators = useMemo(() => buildWeekDayIndicators(itemsByDate), [itemsByDate]);
 
   const extendDayRangeBackward = useCallback(() => {
     setRangeStart((currentStart) => addDaysToDateKey(currentStart, -DAY_RANGE_EXTENSION));
-    setRangeEnd((currentEnd) => addDaysToDateKey(currentEnd, -DAY_RANGE_EXTENSION));
   }, []);
 
   const extendDayRangeForward = useCallback(() => {
-    setRangeStart((currentStart) => addDaysToDateKey(currentStart, DAY_RANGE_EXTENSION));
     setRangeEnd((currentEnd) => addDaysToDateKey(currentEnd, DAY_RANGE_EXTENSION));
   }, []);
 
@@ -279,37 +203,27 @@ export function useCalendarTimelineController() {
     } as never);
   }, [navigateTo, visibleDateKey]);
 
-  const handleOpenEvent = useCallback(
-    (event: CalendarEvent) => {
+  const handleOpenItem = useCallback(
+    (item: CalendarProjectionItem) => {
+      if (item.kind === "completed_activity") {
+        navigateTo(`/activity-detail?id=${item.id}` as never);
+        return;
+      }
+      if (item.kind === "goal") {
+        navigateTo({ pathname: "/goal-detail", params: { id: item.id } } as never);
+        return;
+      }
+      if (item.kind === "group_event") {
+        navigateTo({ pathname: "/group-event-detail", params: { groupEventId: item.id } } as never);
+        return;
+      }
       const route = buildOpenEventRoute({
-        id: event.id,
-        event_type: toRoutableEventType(event.event_type),
+        id: item.id,
+        event_type: item.event?.type,
       });
-
       if (route) {
         navigateTo(route as never);
       }
-    },
-    [navigateTo],
-  );
-
-  const handleOpenGoal = useCallback(
-    (goal: ProfileGoal) => {
-      navigateTo({ pathname: "/goal-detail", params: { id: goal.id } } as never);
-    },
-    [navigateTo],
-  );
-
-  const handleOpenActivity = useCallback(
-    (activity: CalendarActivity) => {
-      navigateTo(`/activity-detail?id=${activity.id}` as never);
-    },
-    [navigateTo],
-  );
-
-  const handleOpenGroupEvent = useCallback(
-    (event: CalendarGroupEvent) => {
-      navigateTo({ pathname: "/group-event-detail", params: { groupEventId: event.id } } as never);
     },
     [navigateTo],
   );
@@ -323,35 +237,23 @@ export function useCalendarTimelineController() {
       todayKey,
       scrollTargetDateKey: scrollTarget?.dateKey ?? null,
       scrollTargetVersion: scrollTarget?.version ?? 0,
-      activitiesByDate,
-      eventsByDate,
-      groupEventsByDate,
-      goalsByDate,
+      itemsByDate,
       onReachStart: extendDayRangeBackward,
       onReachEnd: extendDayRangeForward,
       onVisibleDayChange: handleVisibleDayChange,
       onVisibleDaySettled: handleVisibleDaySettled,
       onPressDay: handleDayPress,
-      onPressActivity: handleOpenActivity,
-      onPressEvent: handleOpenEvent,
-      onPressGroupEvent: handleOpenGroupEvent,
-      onPressGoal: handleOpenGoal,
+      onPressItem: handleOpenItem,
     }),
     [
       activeDate,
-      activitiesByDate,
-      eventsByDate,
+      itemsByDate,
       extendDayRangeBackward,
       extendDayRangeForward,
-      goalsByDate,
-      groupEventsByDate,
       handleDayPress,
       handleVisibleDayChange,
       handleVisibleDaySettled,
-      handleOpenActivity,
-      handleOpenEvent,
-      handleOpenGroupEvent,
-      handleOpenGoal,
+      handleOpenItem,
       rangeEnd,
       rangeStart,
       scrollTarget,

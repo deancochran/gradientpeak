@@ -27,8 +27,6 @@ import {
   type GroupEventRsvpRow,
   type GroupEventSeriesRsvpRow,
   type GroupEventSummaryGroupRow,
-  getAcceptedRsvpCount,
-  serializeGroupEvent,
   serializeGroupEventsForViewer,
   serializeRsvp,
   serializeSeriesRsvp,
@@ -413,7 +411,10 @@ export const groupEventsRouter = createTRPCRouter({
       .orderBy(asc(groupEvents.starts_at), asc(groupEvents.id))
       .limit(input.limit + 1);
 
-    const items = await serializeGroupEventsForViewer(db, rows, profileId);
+    const items = (await serializeGroupEventsForViewer(db, rows, profileId)).filter(
+      (event) =>
+        event.viewerRsvp?.status !== "declined" && event.viewerSeriesRsvp?.status !== "declined",
+    );
     return pageResult(items, input.limit, (event) => event.id);
   }),
 
@@ -454,11 +455,16 @@ export const groupEventsRouter = createTRPCRouter({
         groupById.set(row.group.id, row.group);
       }
 
-      const items = await serializeGroupEventsForViewer(
-        db,
-        rows.map((row) => row.event),
-        profileId,
-        { groupById },
+      const items = (
+        await serializeGroupEventsForViewer(
+          db,
+          rows.map((row) => row.event),
+          profileId,
+          { groupById },
+        )
+      ).filter(
+        (event) =>
+          event.viewerRsvp?.status !== "declined" && event.viewerSeriesRsvp?.status !== "declined",
       );
       return pageResult(items, input.limit, (event) => event.id);
     }),
@@ -629,7 +635,10 @@ export const groupEventsRouter = createTRPCRouter({
         .orderBy(asc(groupEvents.starts_at), asc(groupEvents.id))
         .limit(input.limit + 1);
 
-      const items = await serializeGroupEventsForViewer(db, rows, profileId);
+      const items = (await serializeGroupEventsForViewer(db, rows, profileId)).filter(
+        (item) =>
+          item.viewerRsvp?.status !== "declined" && item.viewerSeriesRsvp?.status !== "declined",
+      );
       return pageResult(items, input.limit, (event) => event.id);
     }),
 
@@ -844,13 +853,9 @@ export const groupEventsRouter = createTRPCRouter({
             ),
           );
 
-        const acceptedRsvpCount = await getAcceptedRsvpCount(db, event.id);
+        const [serializedEvent] = await serializeGroupEventsForViewer(db, [event], profileId);
         return {
-          event: serializeGroupEvent(event, {
-            acceptedRsvpCount,
-            viewerRsvp: null,
-            viewerSeriesRsvp: null,
-          }),
+          event: serializedEvent,
           rsvp: null,
         };
       }
@@ -868,13 +873,9 @@ export const groupEventsRouter = createTRPCRouter({
         })
         .returning();
 
-      const acceptedRsvpCount = await getAcceptedRsvpCount(db, event.id);
+      const [serializedEvent] = await serializeGroupEventsForViewer(db, [event], profileId);
       return {
-        event: serializeGroupEvent(event, {
-          acceptedRsvpCount,
-          viewerRsvp: null,
-          viewerSeriesRsvp: rsvp as GroupEventSeriesRsvpRow,
-        }),
+        event: serializedEvent,
         rsvp: serializeSeriesRsvp(rsvp as GroupEventSeriesRsvpRow),
       };
     }),

@@ -38,6 +38,11 @@ import {
   integrationResourceKindEnum,
   likeEntityTypeEnum,
   notificationTypeEnum,
+  onboardingStatusEnum,
+  performanceCalibrationEvidenceStateEnum,
+  performanceCalibrationMetricKeyEnum,
+  performanceCalibrationRejectionReasonEnum,
+  performanceCalibrationSourceSemanticsEnum,
   profileMetricTypeEnum,
 } from "./enums";
 
@@ -65,7 +70,9 @@ export const profiles = pgTable(
     language: text("language"),
     planning_timezone: text("planning_timezone"),
     preferred_units: text("preferred_units", { enum: preferredUnitSystemDbValues }),
-    onboarded: boolean("onboarded"),
+    onboarding_status: onboardingStatusEnum("onboarding_status")
+      .default("provider_selection")
+      .notNull(),
     is_public: boolean("is_public").default(false).notNull(),
     default_content_visibility: text("default_content_visibility", {
       enum: ["private", "followers", "public"],
@@ -1012,9 +1019,7 @@ export const groupEventRsvps = pgTable(
     profile_id: uuid("profile_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
-    status: text("status", { enum: ["accepted", "declined", "tentative"] })
-      .notNull()
-      .default("accepted"),
+    status: text("status", { enum: ["declined"] }).notNull(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -1025,10 +1030,7 @@ export const groupEventRsvps = pgTable(
   (table) => [
     primaryKey({ columns: [table.group_event_id, table.profile_id] }),
     index("group_event_rsvps_profile_status_idx").on(table.profile_id, table.status),
-    check(
-      "group_event_rsvps_status_check",
-      sql`${table.status} in ('accepted', 'declined', 'tentative')`,
-    ),
+    check("group_event_rsvps_status_check", sql`${table.status} = 'declined'`),
   ],
 );
 
@@ -1041,9 +1043,7 @@ export const groupEventSeriesRsvps = pgTable(
     profile_id: uuid("profile_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
-    status: text("status", { enum: ["accepted", "declined", "tentative"] })
-      .notNull()
-      .default("accepted"),
+    status: text("status", { enum: ["declined"] }).notNull(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -1054,10 +1054,7 @@ export const groupEventSeriesRsvps = pgTable(
   (table) => [
     primaryKey({ columns: [table.group_event_series_id, table.profile_id] }),
     index("group_event_series_rsvps_profile_status_idx").on(table.profile_id, table.status),
-    check(
-      "group_event_series_rsvps_status_check",
-      sql`${table.status} in ('accepted', 'declined', 'tentative')`,
-    ),
+    check("group_event_series_rsvps_status_check", sql`${table.status} = 'declined'`),
   ],
 );
 
@@ -1157,7 +1154,6 @@ export const events = pgTable(
     starts_at: timestamp("starts_at", { withTimezone: true, mode: "date" }).notNull(),
     ends_at: timestamp("ends_at", { withTimezone: true, mode: "date" }),
     scheduled_date: text("scheduled_date").notNull(),
-    read_only: boolean("read_only"),
     training_plan_id: uuid("training_plan_id").references(() => trainingPlans.id, {
       onDelete: "set null",
     }),
@@ -1169,48 +1165,15 @@ export const events = pgTable(
     recurrence_rule: text("recurrence_rule"),
     recurrence_timezone: text("recurrence_timezone"),
     series_id: uuid("series_id").references((): AnyPgColumn => events.id),
-    source_provider: text("source_provider"),
     occurrence_key: text("occurrence_key").notNull().default(""),
     original_starts_at: timestamp("original_starts_at", { withTimezone: true, mode: "date" }),
-    integration_account_id: uuid("integration_account_id").references(() => integrations.id),
-    external_calendar_id: text("external_calendar_id"),
-    external_event_id: text("external_event_id"),
     schedule_batch_id: uuid("schedule_batch_id"),
-    lifecycle: jsonb("lifecycle"),
-    recurrence: jsonb("recurrence"),
-    payload: jsonb("payload"),
   },
   (table) => [
     unique("events_id_profile_id_unique").on(table.id, table.profile_id),
     check(
       "events_time_window",
       sql`${table.ends_at} is null or ${table.ends_at} > ${table.starts_at}`,
-    ),
-    check(
-      "events_external_calendar_non_empty",
-      sql`${table.external_calendar_id} is null or btrim(${table.external_calendar_id}) <> ''`,
-    ),
-    check(
-      "events_external_event_non_empty",
-      sql`${table.external_event_id} is null or btrim(${table.external_event_id}) <> ''`,
-    ),
-    check(
-      "events_source_identity_complete",
-      sql`(
-        ${table.source_provider} is null
-        and ${table.integration_account_id} is null
-        and ${table.external_calendar_id} is null
-        and ${table.external_event_id} is null
-      ) or (
-        ${table.source_provider} is not null
-        and ${table.integration_account_id} is not null
-        and ${table.external_calendar_id} is not null
-        and ${table.external_event_id} is not null
-      )`,
-    ),
-    check(
-      "events_source_provider_non_empty",
-      sql`${table.source_provider} is null or btrim(${table.source_provider}) <> ''`,
     ),
     check(
       "events_recurrence_rule_non_empty",
@@ -1232,17 +1195,6 @@ export const events = pgTable(
       "events_series_not_self",
       sql`${table.series_id} is null or ${table.series_id} <> ${table.id}`,
     ),
-    uniqueIndex("idx_events_external_identity_unique")
-      .on(
-        table.source_provider,
-        table.integration_account_id,
-        table.external_calendar_id,
-        table.external_event_id,
-        table.occurrence_key,
-      )
-      .where(
-        sql`${table.source_provider} is not null and ${table.integration_account_id} is not null and ${table.external_calendar_id} is not null and ${table.external_event_id} is not null`,
-      ),
     uniqueIndex("idx_events_series_occurrence_unique")
       .on(table.series_id, table.occurrence_key)
       .where(sql`${table.series_id} is not null`),
@@ -1259,11 +1211,6 @@ export const events = pgTable(
     index("idx_events_schedule_batch")
       .on(table.profile_id, table.schedule_batch_id)
       .where(sql`${table.schedule_batch_id} is not null`),
-    index("idx_events_integration_calendar_updated")
-      .on(table.integration_account_id, table.external_calendar_id, table.updated_at)
-      .where(
-        sql`${table.integration_account_id} is not null and ${table.external_calendar_id} is not null`,
-      ),
     index("idx_events_event_type_starts_at").on(table.event_type, table.starts_at),
     index("idx_events_profile_starts_at").on(table.profile_id, table.starts_at),
     index("idx_events_profile_status_starts_at").on(
@@ -1407,6 +1354,7 @@ export const activities = pgTable(
     polyline: text("polyline"),
     laps: jsonb("laps").$type<unknown[]>().notNull().default([]),
     map_bounds: jsonb("map_bounds"),
+    performance_target_snapshot: jsonb("performance_target_snapshot"),
     athlete_state_common_load: numeric("athlete_state_common_load", { mode: "number" }),
     athlete_state_activity_category: text("athlete_state_activity_category", {
       enum: canonicalActivityCategoryDbValues,
@@ -1470,6 +1418,10 @@ export const activities = pgTable(
     check("activities_laps_array_check", sql`jsonb_typeof(${table.laps}) = 'array'`),
     check("activities_laps_count_check", sql`jsonb_array_length(${table.laps}) <= 1000`),
     check("activities_laps_size_check", sql`pg_column_size(${table.laps}) <= 1048576`),
+    check(
+      "activities_performance_target_snapshot_check",
+      sql`${table.performance_target_snapshot} is null or (jsonb_typeof(${table.performance_target_snapshot}) = 'object' and pg_column_size(${table.performance_target_snapshot}) <= 65536)`,
+    ),
     check(
       "activities_athlete_state_load_check",
       sql`${table.athlete_state_common_load} is null or ${table.athlete_state_common_load} >= 0`,
@@ -1595,9 +1547,6 @@ export const activityArtifactLinks = pgTable(
       table.role,
       table.ordinal,
     ),
-    uniqueIndex("activity_artifact_links_current_source_unique")
-      .on(table.activity_id)
-      .where(sql`${table.role} = 'source' and ${table.is_current} = true`),
     check("activity_artifact_links_ordinal_check", sql`${table.ordinal} >= 0`),
     check(
       "activity_artifact_links_current_source_check",
@@ -1717,6 +1666,73 @@ export const activitySegments = pgTable(
     index("idx_activity_segments_category")
       .on(table.activity_category)
       .where(sql`${table.activity_category} is not null`),
+  ],
+);
+
+export const activityAnalysisRevisions = pgTable(
+  "activity_analysis_revisions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    activity_id: uuid("activity_id").notNull(),
+    profile_id: uuid("profile_id").notNull(),
+    revision: integer("revision").notNull(),
+    source_segments_revision: integer("source_segments_revision").notNull(),
+    analysis_version: text("analysis_version").notNull(),
+    reason: text("reason", { enum: ["manual_profile_reprocess"] }).notNull(),
+    performance_target_snapshot: jsonb("performance_target_snapshot").notNull(),
+    target_fingerprint: text("target_fingerprint").notNull(),
+    segment_load_projection: jsonb("segment_load_projection").notNull(),
+    output_fingerprint: text("output_fingerprint").notNull(),
+    computed_at: timestamp("computed_at", { withTimezone: true, mode: "date" }).notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.activity_id, table.profile_id],
+      foreignColumns: [activities.id, activities.profile_id],
+      name: "activity_analysis_revisions_activity_profile_fkey",
+    }).onDelete("cascade"),
+    // Historical identity is the owned monotonic revision position, not its
+    // content: a legitimate A -> B -> A recomputation must append all 3 rows.
+    unique("activity_analysis_revisions_activity_revision_unique").on(
+      table.activity_id,
+      table.profile_id,
+      table.revision,
+    ),
+    index("idx_activity_analysis_revisions_selection").on(
+      table.profile_id,
+      table.activity_id,
+      table.source_segments_revision,
+      table.revision,
+    ),
+    check("activity_analysis_revisions_revision_check", sql`${table.revision} > 0`),
+    check(
+      "activity_analysis_revisions_segments_revision_check",
+      sql`${table.source_segments_revision} > 0`,
+    ),
+    check("activity_analysis_revisions_version_check", sql`btrim(${table.analysis_version}) <> ''`),
+    check(
+      "activity_analysis_revisions_reason_check",
+      sql`${table.reason} = 'manual_profile_reprocess'`,
+    ),
+    check(
+      "activity_analysis_revisions_target_check",
+      sql`jsonb_typeof(${table.performance_target_snapshot}) = 'object' and pg_column_size(${table.performance_target_snapshot}) <= 1048576`,
+    ),
+    check(
+      "activity_analysis_revisions_projection_check",
+      sql`jsonb_typeof(${table.segment_load_projection}) = 'object' and pg_column_size(${table.segment_load_projection}) <= 1048576`,
+    ),
+    check(
+      "activity_analysis_revisions_target_fingerprint_check",
+      sql`${table.target_fingerprint} ~ '^sha256:[0-9a-f]{64}$'`,
+    ),
+    check(
+      "activity_analysis_revisions_output_fingerprint_check",
+      sql`${table.output_fingerprint} ~ '^sha256:[0-9a-f]{64}$'`,
+    ),
   ],
 );
 
@@ -2050,6 +2066,301 @@ export const swimmingCssProtocolEvidence = pgTable(
       .where(sql`${table.status} = 'qualified'`),
     index("idx_swimming_css_protocol_evidence_activity").on(table.activity_id),
     index("idx_swimming_css_protocol_evidence_source_artifact").on(table.source_artifact_id),
+  ],
+);
+
+/** Immutable policy evaluations over accepted activity source revisions. */
+export const performanceCalibrationEvidence = pgTable(
+  "performance_calibration_evidence",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    metric_key: performanceCalibrationMetricKeyEnum("metric_key").notNull(),
+    activity_category: text("activity_category", { enum: canonicalActivityCategoryDbValues })
+      .notNull()
+      .references(() => canonicalActivityCategories.code, { onDelete: "restrict" }),
+    value: numeric("value", { mode: "number" }),
+    unit: text("unit").notNull(),
+    observed_at: timestamp("observed_at", { withTimezone: true, mode: "date" }).notNull(),
+    activity_id: uuid("activity_id").notNull(),
+    segment_id: uuid("segment_id").notNull(),
+    segment_revision: bigint("segment_revision", { mode: "number" }).notNull(),
+    source_artifact_id: uuid("source_artifact_id").notNull(),
+    state: performanceCalibrationEvidenceStateEnum("state").notNull(),
+    rejection_reason: performanceCalibrationRejectionReasonEnum("rejection_reason"),
+    policy_version: text("policy_version").notNull(),
+    source_semantics: performanceCalibrationSourceSemanticsEnum("source_semantics").notNull(),
+    diagnostics: jsonb("diagnostics").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    invalidated_at: timestamp("invalidated_at", { withTimezone: true, mode: "date" }),
+    invalidation_reason: text("invalidation_reason"),
+  },
+  (table) => [
+    unique("performance_calibration_evidence_source_policy_unique").on(
+      table.activity_id,
+      table.segment_id,
+      table.segment_revision,
+      table.source_artifact_id,
+      table.metric_key,
+      table.policy_version,
+    ),
+    unique("performance_calibration_evidence_identity_unique").on(
+      table.id,
+      table.profile_id,
+      table.metric_key,
+      table.activity_category,
+    ),
+    check(
+      "performance_calibration_evidence_state_values_check",
+      sql`(${table.state} = 'candidate' and ${table.value} is not null and ${table.rejection_reason} is null and ${table.invalidated_at} is null and ${table.invalidation_reason} is null) or (${table.state} = 'rejected' and ${table.value} is null and ${table.rejection_reason} is not null and ${table.invalidated_at} is null and ${table.invalidation_reason} is null) or (${table.state} = 'invalidated' and ${table.value} is not null and ${table.rejection_reason} is null and ${table.invalidated_at} is not null and ${table.invalidated_at} >= ${table.created_at} and ${table.invalidation_reason} is not null and btrim(${table.invalidation_reason}) <> '')`,
+    ),
+    check(
+      "performance_calibration_evidence_unit_check",
+      sql`(${table.metric_key} = 'threshold_power' and ${table.unit} = 'watts') or (${table.metric_key} = 'threshold_speed' and ${table.unit} = 'meters_per_second') or (${table.metric_key} = 'threshold_heart_rate' and ${table.unit} = 'beats_per_minute')`,
+    ),
+    check(
+      "performance_calibration_evidence_identity_check",
+      sql`(${table.metric_key} = 'threshold_power' and ${table.activity_category} = 'bike') or (${table.metric_key} = 'threshold_speed' and ${table.activity_category} in ('run', 'swim')) or (${table.metric_key} = 'threshold_heart_rate' and ${table.activity_category} in ('bike', 'run'))`,
+    ),
+    check(
+      "performance_calibration_evidence_value_check",
+      sql`${table.value} is null or ${table.value} > 0`,
+    ),
+    check("performance_calibration_evidence_revision_check", sql`${table.segment_revision} > 0`),
+    check(
+      "performance_calibration_evidence_created_after_observed_check",
+      sql`${table.created_at} >= ${table.observed_at}`,
+    ),
+    check(
+      "performance_calibration_evidence_policy_check",
+      sql`btrim(${table.policy_version}) <> ''`,
+    ),
+    check(
+      "performance_calibration_evidence_diagnostics_check",
+      sql`jsonb_typeof(${table.diagnostics}) = 'object' and pg_column_size(${table.diagnostics}) <= 16384`,
+    ),
+    index("performance_calibration_evidence_current_profile_identity_observed_idx")
+      .on(table.profile_id, table.metric_key, table.activity_category, table.observed_at.desc())
+      .where(sql`${table.state} = 'candidate' and ${table.invalidated_at} is null`),
+    index("performance_calibration_evidence_source_revision_idx").on(
+      table.activity_id,
+      table.segment_id,
+      table.segment_revision,
+    ),
+  ],
+);
+
+/** Immutable snapshots of every accepted effort selected by a bike threshold model run. */
+export const performanceCalibrationModelInputs = pgTable(
+  "performance_calibration_model_inputs",
+  {
+    calibration_evidence_id: uuid("calibration_evidence_id").notNull(),
+    effort_id: uuid("effort_id").notNull(),
+    profile_id: uuid("profile_id").notNull(),
+    metric_key: performanceCalibrationMetricKeyEnum("metric_key").notNull(),
+    activity_category: text("activity_category", { enum: canonicalActivityCategoryDbValues })
+      .notNull()
+      .references(() => canonicalActivityCategories.code, { onDelete: "restrict" }),
+    activity_id: uuid("activity_id").notNull(),
+    segment_id: uuid("segment_id").notNull(),
+    segment_revision: bigint("segment_revision", { mode: "number" }).notNull(),
+    source_artifact_id: uuid("source_artifact_id").notNull(),
+    source_artifact_digest: text("source_artifact_digest").notNull(),
+    observed_at: timestamp("observed_at", { withTimezone: true, mode: "date" }).notNull(),
+    duration_seconds: integer("duration_seconds").notNull(),
+    value: numeric("value", { mode: "number" }).notNull(),
+    calculation_version: text("calculation_version").notNull(),
+    ordinal: integer("ordinal").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.calibration_evidence_id, table.effort_id] }),
+    unique("performance_calibration_model_inputs_evidence_ordinal_unique").on(
+      table.calibration_evidence_id,
+      table.ordinal,
+    ),
+    foreignKey({
+      columns: [
+        table.calibration_evidence_id,
+        table.profile_id,
+        table.metric_key,
+        table.activity_category,
+      ],
+      foreignColumns: [
+        performanceCalibrationEvidence.id,
+        performanceCalibrationEvidence.profile_id,
+        performanceCalibrationEvidence.metric_key,
+        performanceCalibrationEvidence.activity_category,
+      ],
+      name: "performance_calibration_model_inputs_evidence_identity_fkey",
+    }).onDelete("cascade"),
+    check(
+      "performance_calibration_model_inputs_identity_check",
+      sql`${table.metric_key} = 'threshold_power' and ${table.activity_category} = 'bike'`,
+    ),
+    check(
+      "performance_calibration_model_inputs_revision_check",
+      sql`${table.segment_revision} > 0`,
+    ),
+    check(
+      "performance_calibration_model_inputs_artifact_digest_check",
+      sql`${table.source_artifact_digest} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "performance_calibration_model_inputs_duration_check",
+      sql`${table.duration_seconds} between 1 and 14400`,
+    ),
+    check(
+      "performance_calibration_model_inputs_value_check",
+      sql`${table.value} > 0 and ${table.value} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
+    ),
+    check(
+      "performance_calibration_model_inputs_calculation_version_check",
+      sql`btrim(${table.calculation_version}) <> ''`,
+    ),
+    check(
+      "performance_calibration_model_inputs_ordinal_check",
+      sql`${table.ordinal} between 0 and 1999`,
+    ),
+    index("performance_calibration_model_inputs_activity_revision_idx").on(
+      table.activity_id,
+      table.segment_id,
+      table.segment_revision,
+    ),
+    index("performance_calibration_model_inputs_source_artifact_idx").on(table.source_artifact_id),
+  ],
+);
+
+/** Append-only effective-dated selections; the latest eligible row is current. */
+export const performanceCalibrations = pgTable(
+  "performance_calibrations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    metric_key: performanceCalibrationMetricKeyEnum("metric_key").notNull(),
+    activity_category: text("activity_category", { enum: canonicalActivityCategoryDbValues })
+      .notNull()
+      .references(() => canonicalActivityCategories.code, { onDelete: "restrict" }),
+    value: numeric("value", { mode: "number" }).notNull(),
+    unit: text("unit").notNull(),
+    effective_at: timestamp("effective_at", { withTimezone: true, mode: "date" }).notNull(),
+    expires_at: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
+    policy_version: text("policy_version").notNull(),
+    selection_diagnostics: jsonb("selection_diagnostics").notNull(),
+    supersedes_id: uuid("supersedes_id"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("performance_calibrations_identity_unique").on(
+      table.id,
+      table.profile_id,
+      table.metric_key,
+      table.activity_category,
+    ),
+    unique("performance_calibrations_supersedes_unique").on(table.supersedes_id),
+    foreignKey({
+      columns: [table.supersedes_id, table.profile_id, table.metric_key, table.activity_category],
+      foreignColumns: [table.id, table.profile_id, table.metric_key, table.activity_category],
+      name: "performance_calibrations_supersedes_identity_fkey",
+    }).onDelete("restrict"),
+    check("performance_calibrations_value_check", sql`${table.value} > 0`),
+    check(
+      "performance_calibrations_unit_check",
+      sql`(${table.metric_key} = 'threshold_power' and ${table.unit} = 'watts') or (${table.metric_key} = 'threshold_speed' and ${table.unit} = 'meters_per_second') or (${table.metric_key} = 'threshold_heart_rate' and ${table.unit} = 'beats_per_minute')`,
+    ),
+    check(
+      "performance_calibrations_identity_check",
+      sql`(${table.metric_key} = 'threshold_power' and ${table.activity_category} = 'bike') or (${table.metric_key} = 'threshold_speed' and ${table.activity_category} in ('run', 'swim')) or (${table.metric_key} = 'threshold_heart_rate' and ${table.activity_category} in ('bike', 'run'))`,
+    ),
+    check(
+      "performance_calibrations_expiry_check",
+      sql`${table.expires_at} >= ${table.effective_at}`,
+    ),
+    check(
+      "performance_calibrations_created_after_effective_check",
+      sql`${table.created_at} >= ${table.effective_at}`,
+    ),
+    check("performance_calibrations_policy_check", sql`btrim(${table.policy_version}) <> ''`),
+    check(
+      "performance_calibrations_diagnostics_check",
+      sql`jsonb_typeof(${table.selection_diagnostics}) = 'object' and pg_column_size(${table.selection_diagnostics}) <= 16384`,
+    ),
+    check(
+      "performance_calibrations_supersedes_check",
+      sql`${table.supersedes_id} is null or ${table.supersedes_id} <> ${table.id}`,
+    ),
+    index("performance_calibrations_profile_identity_effective_idx").on(
+      table.profile_id,
+      table.metric_key,
+      table.activity_category,
+      table.effective_at.desc(),
+    ),
+    index("performance_calibrations_due_idx").on(table.profile_id, table.expires_at),
+    index("performance_calibrations_supersedes_idx")
+      .on(table.supersedes_id)
+      .where(sql`${table.supersedes_id} is not null`),
+  ],
+);
+
+/** Normalized immutable provenance edges; not a third calibration-state entity. */
+export const performanceCalibrationSelectionEvidence = pgTable(
+  "performance_calibration_selection_evidence",
+  {
+    calibration_id: uuid("calibration_id").notNull(),
+    evidence_id: uuid("evidence_id").notNull(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    metric_key: performanceCalibrationMetricKeyEnum("metric_key").notNull(),
+    activity_category: text("activity_category", { enum: canonicalActivityCategoryDbValues })
+      .notNull()
+      .references(() => canonicalActivityCategories.code, { onDelete: "restrict" }),
+    ordinal: integer("ordinal").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.calibration_id, table.evidence_id] }),
+    unique("performance_calibration_selection_evidence_calibration_ordinal_unique").on(
+      table.calibration_id,
+      table.ordinal,
+    ),
+    foreignKey({
+      columns: [table.calibration_id, table.profile_id, table.metric_key, table.activity_category],
+      foreignColumns: [
+        performanceCalibrations.id,
+        performanceCalibrations.profile_id,
+        performanceCalibrations.metric_key,
+        performanceCalibrations.activity_category,
+      ],
+      name: "performance_calibration_selection_evidence_calibration_identity_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.evidence_id, table.profile_id, table.metric_key, table.activity_category],
+      foreignColumns: [
+        performanceCalibrationEvidence.id,
+        performanceCalibrationEvidence.profile_id,
+        performanceCalibrationEvidence.metric_key,
+        performanceCalibrationEvidence.activity_category,
+      ],
+      name: "performance_calibration_selection_evidence_evidence_identity_fkey",
+    }).onDelete("restrict"),
+    index("performance_calibration_selection_evidence_evidence_idx").on(
+      table.evidence_id,
+      table.profile_id,
+      table.metric_key,
+      table.activity_category,
+      table.calibration_id,
+    ),
+    check(
+      "performance_calibration_selection_evidence_ordinal_check",
+      sql`${table.ordinal} between 0 and 63`,
+    ),
   ],
 );
 
@@ -2417,6 +2728,7 @@ export const oauthStates = pgTable(
     expires_at: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
   },
   (table) => [
+    unique("oauth_states_state_unique").on(table.state),
     index("idx_oauth_states_expires_at").on(table.expires_at),
     index("idx_oauth_states_profile_id").on(table.profile_id),
   ],

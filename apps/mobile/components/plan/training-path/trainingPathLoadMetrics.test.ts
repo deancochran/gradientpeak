@@ -8,7 +8,6 @@ describe("buildTrainingPathLoadMetrics", () => {
         completedLoad: 60,
         plannedLoad: 80,
         targetLoad: 100,
-        tentativePlannedLoad: 20,
       }),
     ).toEqual([]);
   });
@@ -72,7 +71,6 @@ describe("buildTrainingPathLoadMetrics", () => {
         effectiveIntensity: 0.78,
         effectiveCompletedLoad: 42,
         effectiveRemainingLoad: 44.4,
-        effectiveTentativeLoad: 12,
         targetLoad: 80,
       }),
     ).toEqual([
@@ -80,7 +78,6 @@ describe("buildTrainingPathLoadMetrics", () => {
       { label: "Normalized intensity", value: "Moderate · 0.78" },
       { label: "Completed", value: "42" },
       { label: "Remaining", value: "44" },
-      { label: "Tentative", value: "12" },
     ]);
   });
 

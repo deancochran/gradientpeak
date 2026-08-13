@@ -1,62 +1,90 @@
-import type { ProfileGoal } from "@repo/core";
 import { getPlannedRecordingState } from "@/lib/calendar/eventPresentation";
-import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
+import { createCalendarProjectionItem } from "../../../test/calendar-projection-fixture";
 import { buildCalendarTimelineRows } from "../CalendarTimelineModel";
 
 const dateKey = "2026-05-01";
 const equalTime = "2026-05-01T09:00:00.000Z";
 
 function objectRowKeys(sourceOrder: "forward" | "reverse") {
-  const goals = [{ id: "goal-a" }, { id: "goal-b" }] as ProfileGoal[];
-  const groupEvents = [
-    { id: "group-a", starts_at: equalTime },
-    { id: "group-b", starts_at: equalTime },
-  ] as CalendarGroupEvent[];
-  const events = [
-    { id: "event-a", starts_at: equalTime },
-    { id: "event-b", starts_at: equalTime },
-  ];
-  const activities = [
-    {
+  const items = [
+    createCalendarProjectionItem({ id: "goal-a", kind: "goal", title: "Goal A" }),
+    createCalendarProjectionItem({ id: "goal-b", kind: "goal", title: "Goal B" }),
+    createCalendarProjectionItem({
       id: "activity-early",
-      name: "Early",
-      scheduled_date: dateKey,
-      started_at: "2026-05-01T08:00:00.000Z",
-    },
-    { id: "activity-a", name: "A", scheduled_date: dateKey, started_at: equalTime },
-    { id: "activity-b", name: "B", scheduled_date: dateKey, started_at: equalTime },
+      kind: "completed_activity",
+      title: "Early",
+      timing: {
+        startsAt: "2026-05-01T08:00:00.000Z",
+        endsAt: null,
+        allDay: false,
+        timezone: "UTC",
+      },
+    }),
+    createCalendarProjectionItem({
+      id: "group-a",
+      kind: "group_event",
+      title: "Group A",
+      timing: { startsAt: equalTime, endsAt: null, allDay: false, timezone: "UTC" },
+    }),
+    createCalendarProjectionItem({
+      id: "group-b",
+      kind: "group_event",
+      title: "Group B",
+      timing: { startsAt: equalTime, endsAt: null, allDay: false, timezone: "UTC" },
+    }),
+    createCalendarProjectionItem({
+      id: "event-a",
+      kind: "event",
+      title: "Event A",
+      timing: { startsAt: equalTime, endsAt: null, allDay: false, timezone: "UTC" },
+    }),
+    createCalendarProjectionItem({
+      id: "event-b",
+      kind: "event",
+      title: "Event B",
+      timing: { startsAt: equalTime, endsAt: null, allDay: false, timezone: "UTC" },
+    }),
+    createCalendarProjectionItem({
+      id: "activity-a",
+      kind: "completed_activity",
+      title: "A",
+      timing: { startsAt: equalTime, endsAt: null, allDay: false, timezone: "UTC" },
+    }),
+    createCalendarProjectionItem({
+      id: "activity-b",
+      kind: "completed_activity",
+      title: "B",
+      timing: { startsAt: equalTime, endsAt: null, allDay: false, timezone: "UTC" },
+    }),
   ];
   const ordered = <T>(items: T[]) => (sourceOrder === "reverse" ? [...items].reverse() : items);
 
   return buildCalendarTimelineRows({
     rangeStart: dateKey,
     rangeEnd: dateKey,
-    goalsByDate: new Map([[dateKey, ordered(goals)]]),
-    groupEventsByDate: new Map([[dateKey, ordered(groupEvents)]]),
-    eventsByDate: new Map([[dateKey, ordered(events)]]),
-    activitiesByDate: new Map([[dateKey, ordered(activities)]]),
+    itemsByDate: new Map([[dateKey, ordered(items)]]),
   })
     .rows.filter((row) => row.type === "object")
     .map((row) => row.key);
 }
 
 describe("buildCalendarTimelineRows", () => {
-  it("orders goals first and mixed timed objects by instant, type, and id", () => {
+  it("preserves the canonical projection order", () => {
     const expectedKeys = [
       "goal:goal-a",
       "goal:goal-b",
-      "activity:activity-early",
-      "group-event:group-a",
-      "group-event:group-b",
+      "completed_activity:activity-early",
+      "group_event:group-a",
+      "group_event:group-b",
       "event:event-a",
       "event:event-b",
-      "activity:activity-a",
-      "activity:activity-b",
+      "completed_activity:activity-a",
+      "completed_activity:activity-b",
     ];
 
     expect(objectRowKeys("forward")).toEqual(expectedKeys);
-    expect(objectRowKeys("reverse")).toEqual(expectedKeys);
+    expect(objectRowKeys("reverse")).toEqual([...expectedKeys].reverse());
   });
 });
 

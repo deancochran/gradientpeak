@@ -54,6 +54,86 @@ const PROVIDERS = new Set(["strava", "wahoo", "garmin", "polar", "coros", "fitbi
 const CATEGORIES = new Set(["auth", "validation", "database", "upstream", "rate_limit", "unknown"]);
 const ENVIRONMENTS = new Set(["development", "test", "staging", "production"]);
 const FLAG_KEYS = new Set(["cached", "partial", "retryable"]);
+const SAFE_APPLICATION_CODES = new Set([
+  "activity_analysis_initial_segments_invalid",
+  "activity_analysis_failed",
+  "activity_analysis_persisted_segments_invalid",
+  "activity_analysis_segments_invalid",
+  "activity_artifact_lifecycle_pending",
+  "activity_artifact_persistence_failed",
+  "activity_athlete_state_evidence_invalid",
+  "activity_calibration_evidence_invalid",
+  "activity_effort_segment_mismatch",
+  "activity_effort_reconciliation_invalid",
+  "activity_import_failed",
+  "activity_ingestion_conflict",
+  "activity_ingestion_persistence_failed",
+  "activity_material_evidence_marker_failed",
+  "activity_parent_persistence_failed",
+  "activity_laps_invalid",
+  "activity_performance_snapshot_invalid",
+  "activity_persistence_invariant_failed",
+  "activity_persistence_failed",
+  "activity_segments_invalid",
+  "activity_segment_persistence_failed",
+  "activity_source_reference_failed",
+  "activity_validation_failed",
+  "invalid_started_at",
+  "missing_started_at",
+  "unsupported_persisted_version",
+]);
+const SAFE_ERROR_CLASSES = new Set([
+  "ActivityAnalysisValidationError",
+  "AbortError",
+  "ActivityArtifactLifecycleRetryableError",
+  "ActivityArtifactPersistenceError",
+  "ActivityAthleteStateEvidenceError",
+  "ActivityCalibrationEvidenceError",
+  "ActivityMaterialEvidenceMarkerError",
+  "ActivityFileIngestionPersistenceError",
+  "ActivityFileParseError",
+  "ActivityParentPersistenceError",
+  "ActivitySegmentPersistenceError",
+  "ActivitySubmissionValidationError",
+  "ActivitySourceReferenceError",
+  "DrizzleQueryError",
+  "Error",
+  "ImportedActivityAnalysisError",
+  "PostgresError",
+  "TRPCError",
+  "UnsupportedPersistedActivityVersionError",
+  "ZodError",
+  "unknown",
+]);
+const SAFE_POSTGRES_CONSTRAINTS = new Set([
+  "activities_active_ms_check",
+  "activities_distance_meters_check",
+  "activities_elapsed_ms_check",
+  "activities_laps_array_check",
+  "activities_laps_count_check",
+  "activities_laps_size_check",
+  "activities_moving_ms_check",
+  "activities_moving_time_check",
+  "activities_segments_revision_check",
+  "activities_timing_coverage_values_check",
+  "activity_efforts_bike_power_max_check",
+  "activity_efforts_distance_meters_bounds_check",
+  "activity_efforts_duration_seconds_bounds_check",
+  "activity_efforts_heart_rate_bounds_check",
+  "activity_efforts_run_speed_bounds_check",
+  "activity_efforts_supported_combination_check",
+  "activity_efforts_swim_speed_bounds_check",
+  "activity_efforts_unit_compatibility_check",
+  "activity_efforts_value_finite_positive_check",
+  "activity_segments_offset_check",
+  "activity_segments_role_category_check",
+  "activity_segments_timing_check",
+  "activity_segments_timing_coverage_values_check",
+  "activity_source_references_artifact_unique",
+  "activity_source_references_provider_unique",
+  "performance_calibration_evidence_value_check",
+  "performance_calibration_model_inputs_value_check",
+]);
 const SENSITIVE_KEY =
   /(?:authorization|cookie|password|passcode|secret|token|api[-_]?key|email|phone|username|user[-_]?id|session|credential|url|query|body|payload|coordinate|latitude|longitude|health|heart|error|message)/i;
 const SENSITIVE_VALUE =
@@ -100,10 +180,30 @@ export function sanitizeTelemetryContext(context) {
       result[key] = allowedEnum(value, ERROR_CODES);
       continue;
     }
+    if (key === "application_code") {
+      result[key] = allowedEnum(value, SAFE_APPLICATION_CODES);
+      continue;
+    }
+    if (key === "error_class") {
+      result[key] = allowedEnum(value, SAFE_ERROR_CLASSES);
+      continue;
+    }
+    if (key === "postgres_code") {
+      result[key] =
+        typeof value === "string" && /^[0-9A-Z]{5}$/.test(value) ? value : "unknown";
+      continue;
+    }
+    if (key === "postgres_constraint") {
+      result[key] = allowedEnum(value, SAFE_POSTGRES_CONSTRAINTS);
+      continue;
+    }
     if (SENSITIVE_KEY.test(key)) continue;
     switch (key) {
       case "procedure_group":
         result[key] = allowedEnum(value, PROCEDURE_GROUPS);
+        break;
+      case "operation":
+        result[key] = safeString(value);
         break;
       case "procedure_type":
         result[key] = allowedEnum(value, PROCEDURE_TYPES);

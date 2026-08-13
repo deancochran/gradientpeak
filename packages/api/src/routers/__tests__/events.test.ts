@@ -162,7 +162,6 @@ function createEventRow(overrides: Record<string, unknown> = {}) {
     recurrence_rule: null,
     recurrence_timezone: null,
     series_id: null,
-    source_provider: null,
     linked_activity_id: null,
     occurrence_key: "occurrence-1",
     original_starts_at: null,
@@ -205,6 +204,24 @@ function createActivityPlanStructure(activity_category: "bike" | "run", segmentC
   };
 }
 
+function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "11111111-1111-4111-8111-111111111111",
+    profile_id: "profile-1",
+    name: "Activity plan",
+    description: null,
+    notes: null,
+    structure: createActivityPlanStructure("run"),
+    structure_hash: "test-structure-hash",
+    gps_recording_enabled: true,
+    content_visibility: "private",
+    is_system_template: false,
+    created_at: "2026-03-01T00:00:00.000Z",
+    updated_at: "2026-03-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
 function createLegacyCompositionStructure() {
   return {
     version: 3,
@@ -218,6 +235,12 @@ function createLegacyCompositionStructure() {
 function createMockDb(queryMap: QueryMap): MockDb {
   const callLog: QueryCall[] = [];
   const counters = new Map<string, number>();
+  const profile =
+    queryMap.profiles && !Array.isArray(queryMap.profiles) ? queryMap.profiles.data : null;
+  const planningTimezone =
+    profile && typeof profile === "object" && "planningTimezone" in profile
+      ? ((profile as { planningTimezone?: string | null }).planningTimezone ?? null)
+      : "America/New_York";
 
   const nextResult = (table: string): QueryResult => {
     const entry = queryMap[table];
@@ -233,7 +256,7 @@ function createMockDb(queryMap: QueryMap): MockDb {
     callLog.push({ table, operation: "filter", payload: { type, column, value } });
   };
 
-  const readRepository = createReadRepository({ nextResult, logFilter });
+  const readRepository = createReadRepository({ nextResult, logFilter, callLog });
   const writeRepository = createWriteRepository({ nextResult, callLog });
   const completionRepository = createCompletionRepository({ nextResult, callLog, logFilter });
 
@@ -246,7 +269,7 @@ function createMockDb(queryMap: QueryMap): MockDb {
     completionRepository,
     select: () => ({
       from: () => ({
-        where: () => ({ limit: async () => [{ planningTimezone: "America/New_York" }] }),
+        where: () => ({ limit: async () => [{ planningTimezone }] }),
       }),
     }),
   };
@@ -268,6 +291,7 @@ function createCaller(queryMap: QueryMap) {
 }
 
 function createReadRepository(params: {
+  callLog: QueryCall[];
   nextResult: (table: string) => QueryResult;
   logFilter: (table: string, type: string, column: string, value: unknown) => void;
 }) {
@@ -300,7 +324,12 @@ function createReadRepository(params: {
     async listCompletedActivitiesInRange() {
       return params.nextResult("activities").data ?? [];
     },
-    async listCalendarCompletedActivities() {
+    async listCalendarCompletedActivities(input: { startedAtGte: string; startedAtLt: string }) {
+      params.callLog.push({
+        table: "calendar_activities",
+        operation: "batch",
+        payload: input,
+      });
       return params.nextResult("calendar_activities").data ?? [];
     },
     async listCalendarGoals() {
@@ -309,7 +338,13 @@ function createReadRepository(params: {
     async listCalendarGroupActivityPlans() {
       return params.nextResult("calendar_group_activity_plans").data ?? [];
     },
-    async listOwnedEvents(input: { dateFrom?: string; dateTo?: string; limit?: number }) {
+    async listOwnedEvents(input: {
+      dateFrom?: string;
+      dateTo?: string;
+      limit?: number;
+      planningTimezone?: string;
+    }) {
+      params.callLog.push({ table: "events", operation: "batch", payload: input });
       if (input.limit) {
         params.logFilter("events", "limit", "limit", input.limit);
       }
@@ -359,7 +394,6 @@ function createWriteRepository(params: {
       series_id: input.seriesId,
       occurrence_key: input.occurrenceKey,
       original_starts_at: input.originalStartsAt,
-      source_provider: input.sourceProvider,
     },
   });
 
@@ -631,7 +665,6 @@ describe("eventsRouter generalization", () => {
           enqueueWahooPlannedActivityJobs,
           getContentPermissions: (_ctx, tx) => (tx ? ({ revokeEventGrants } as any) : null),
           getEventCompletionRepository: () => completionRepository as any,
-          toCoreEventType: (eventType) => eventType,
           toDateKey: (value) => value.slice(0, 10),
         },
       }),
@@ -658,7 +691,7 @@ describe("eventsRouter generalization", () => {
         data: [
           createEventRow({ id: "a", event_type: "planned" }),
           createEventRow({ id: "b", event_type: "race_target" }),
-          createEventRow({ id: "c", event_type: "imported" }),
+          createEventRow({ id: "c", event_type: "custom" }),
         ],
         error: null,
       },
@@ -672,21 +705,90 @@ describe("eventsRouter generalization", () => {
       includeAdhoc: true,
     });
 
-    expect(result.items.map((item) => item.event_type)).toEqual([
+    expect(result.items.map((item) => item.event?.type)).toEqual([
       "planned",
       "race_target",
-      "imported",
+      "custom",
     ]);
-    expect(result.plannedLoadSummaries).toMatchObject({
-      items: [
-        {
-          date: "2026-03-02",
-          timezone: "America/New_York",
-          source: { eventCount: 1, unlinkedPlanCount: 1 },
-          summary: { eventCount: 1 },
-        },
-      ],
-      truncated: false,
+    expect(result).not.toHaveProperty("plannedLoadSummaries");
+  });
+
+  it.each([
+    null,
+    "Not/A_Timezone",
+  ])("falls back to UTC for a legacy planning timezone (%s) without rewriting persisted calendar dates", async (planningTimezone) => {
+    const { calendarCaller, callLog } = createCaller({
+      profiles: {
+        data: { id: "profile-123", planningTimezone },
+        error: null,
+      },
+      events: {
+        data: [
+          createEventRow({
+            all_day: true,
+            scheduled_date: "2026-03-02",
+            starts_at: "2026-03-02T00:00:00.000Z",
+          }),
+        ],
+        error: null,
+      },
+      activities: { data: [], error: null },
+    });
+
+    const result = await calendarCaller.range({
+      startDate: "2026-03-01",
+      endDateExclusive: "2026-03-04",
+      includeAdhoc: true,
+      limit: 20,
+    });
+
+    expect(result.timezone).toBe("UTC");
+    expect(result.items[0]?.calendarDate).toBe("2026-03-02");
+    expect(callLog).toContainEqual({
+      table: "events",
+      operation: "batch",
+      payload: expect.objectContaining({
+        dateFrom: "2026-03-01",
+        dateTo: "2026-03-04",
+        planningTimezone: "UTC",
+      }),
+    });
+  });
+
+  it("passes a valid DST-aware planning timezone and an exclusive range to repositories", async () => {
+    const { calendarCaller, callLog } = createCaller({
+      profiles: {
+        data: { id: "profile-123", planningTimezone: "America/New_York" },
+        error: null,
+      },
+      events: { data: [], error: null },
+      activities: { data: [], error: null },
+    });
+
+    const result = await calendarCaller.range({
+      startDate: "2026-03-08",
+      endDateExclusive: "2026-03-10",
+      includeAdhoc: true,
+      limit: 20,
+    });
+
+    expect(result.timezone).toBe("America/New_York");
+    expect(callLog).toContainEqual({
+      table: "events",
+      operation: "batch",
+      payload: expect.objectContaining({
+        dateFrom: "2026-03-08",
+        dateTo: "2026-03-10",
+        planningTimezone: "America/New_York",
+      }),
+    });
+    expect(callLog).toContainEqual({
+      table: "calendar_activities",
+      operation: "batch",
+      payload: expect.objectContaining({
+        startedAtGte: "2026-03-08T05:00:00.000Z",
+        startedAtLt: "2026-03-10T04:00:00.000Z",
+      }),
     });
   });
 
@@ -699,6 +801,8 @@ describe("eventsRouter generalization", () => {
           starts_at: "2026-04-30T15:30:00.000Z",
           timezone: "Asia/Tokyo",
           activity_plan_id: null,
+          group: { id: "group-1", name: "Tokyo runners" },
+          viewerRsvp: null,
         },
       ],
       truncated: false,
@@ -725,8 +829,92 @@ describe("eventsRouter generalization", () => {
       includeAdhoc: true,
     });
 
-    expect(result.items[0]?.scheduled_date).toBe("2026-03-09");
-    expect(result.selectedGroupEvents.items[0]?.scheduled_date).toBe("2026-05-01");
+    expect(result.items.find((item) => item.id === "personal-timed-1")?.calendarDate).toBe(
+      "2026-03-09",
+    );
+    expect(result.items.find((item) => item.kind === "group_event")).toMatchObject({
+      calendarDate: "2026-05-01",
+      timing: { startsAt: "2026-04-30T15:30:00.000Z", timezone: "Asia/Tokyo" },
+    });
+  });
+
+  it("redacts an unauthorized selected group-event plan from the projection DTO", async () => {
+    vi.mocked(readSelectedGroupEventsForCalendar).mockResolvedValueOnce({
+      items: [
+        {
+          id: "group-event-private-plan",
+          title: "Visible event",
+          starts_at: "2026-05-01T09:00:00.000Z",
+          timezone: "UTC",
+          activity_plan_id: "private-plan-id",
+          group: { id: "group-1", name: "Visible group" },
+          viewerRsvp: null,
+        },
+      ],
+      truncated: false,
+    } as never);
+    const { calendarCaller } = createCaller({
+      events: { data: [], error: null },
+      calendar_group_activity_plans: { data: [], error: null },
+    });
+
+    const result = await calendarCaller.range({
+      startDate: "2026-05-01",
+      endDateExclusive: "2026-05-02",
+      limit: 20,
+      includeAdhoc: true,
+    });
+
+    expect(result.items[0]).toMatchObject({
+      kind: "group_event",
+      title: "Visible event",
+      plan: null,
+      metrics: [],
+      estimated: false,
+    });
+    expect(JSON.stringify(result)).not.toContain("private-plan-id");
+  });
+
+  it("uses stored activity names in completed projections with a safe missing-name fallback", async () => {
+    const { calendarCaller } = createCaller({
+      events: { data: [], error: null },
+      calendar_activities: {
+        data: [
+          {
+            id: "named-activity",
+            profile_id: "profile-123",
+            content_visibility: "private",
+            name: "Morning ride",
+            started_at: "2026-05-01T08:00:00.000Z",
+            distance_meters: 12_000,
+            active_ms: 3_600_000,
+            elapsed_ms: 3_700_000,
+          },
+          {
+            id: "unnamed-activity",
+            profile_id: "profile-123",
+            content_visibility: "private",
+            name: null,
+            started_at: "2026-05-01T09:00:00.000Z",
+            distance_meters: 0,
+            active_ms: 600_000,
+            elapsed_ms: 600_000,
+          },
+        ],
+        error: null,
+      },
+    });
+
+    const result = await calendarCaller.range({
+      startDate: "2026-05-01",
+      endDateExclusive: "2026-05-02",
+      limit: 20,
+      includeAdhoc: true,
+    });
+
+    expect(
+      result.items.filter((item) => item.kind === "completed_activity").map((item) => item.title),
+    ).toEqual(["Morning ride", "Completed activity"]);
   });
 
   it("does not infer completion for a plan-less event from an unrelated same-day activity", async () => {
@@ -847,7 +1035,7 @@ describe("eventsRouter generalization", () => {
     expect(result.items.map((item) => item.status)).toEqual(["cancelled", "completed"]);
   });
 
-  it("uses one bounded canonical repository page and preserves the cursor contract", async () => {
+  it("uses one bounded range read and does not expose an event-only projection cursor", async () => {
     const first = createEventRow({ id: "00000000-0000-4000-8000-000000000101" });
     const second = createEventRow({
       id: "00000000-0000-4000-8000-000000000102",
@@ -869,7 +1057,8 @@ describe("eventsRouter generalization", () => {
     });
 
     expect(result.items).toHaveLength(2);
-    expect(result.nextCursor).toBe("2026-03-03T00:00:00.000Z_00000000-0000-4000-8000-000000000102");
+    expect(result).not.toHaveProperty("nextCursor");
+    expect(result.truncation.events).toBe(true);
     expect(
       callLog.filter(
         (call) =>
@@ -939,15 +1128,14 @@ describe("eventsRouter generalization", () => {
           id: "00000000-0000-4000-8000-000000000012",
           event_type: "planned",
           activity_plan_id: "11111111-1111-4111-8111-111111111111",
-          activity_plan: {
+          activity_plan: createActivityPlanRow({
             id: "11111111-1111-4111-8111-111111111111",
             name: "Tempo Builder",
-            activity_category: "run",
             structure: createActivityPlanStructure("run"),
             route_id: "route-1",
             profile_id: "profile-1",
             updated_at: "2026-03-01T00:00:00.000Z",
-          },
+          }),
         }),
         error: null,
       },
@@ -958,22 +1146,15 @@ describe("eventsRouter generalization", () => {
     });
 
     expect(result.event_type).toBe("planned");
-    expect(result.activity_plan).toMatchObject({
+    expect(result.activityPlanSummary).toMatchObject({
       id: "11111111-1111-4111-8111-111111111111",
       name: "Tempo Builder",
-      route_id: "route-1",
-      prescriptionQuantification: {
-        summary: {
-          commonLoad: {
-            status: "complete",
-            load: 72,
-            intensity: 0.88,
-          },
-        },
-      },
-      updated_at: "2026-03-01T00:00:00.000Z",
+      metrics: expect.arrayContaining([
+        expect.objectContaining({ key: "elapsed_duration", status: "available", value: 600 }),
+      ]),
+      updatedAt: "2026-03-01T00:00:00.000Z",
       owner: expect.objectContaining({ username: "user-prof" }),
-      activity_category: "run",
+      activityCategory: "run",
     });
   });
 
@@ -985,15 +1166,14 @@ describe("eventsRouter generalization", () => {
             id: "planned-1",
             event_type: "planned",
             activity_plan_id: "11111111-1111-4111-8111-111111111111",
-            activity_plan: {
+            activity_plan: createActivityPlanRow({
               id: "11111111-1111-4111-8111-111111111111",
               name: "Threshold Ride",
-              activity_category: "bike",
               route_id: "route-2",
               structure: createActivityPlanStructure("bike", 2),
               profile_id: "profile-2",
               updated_at: "2026-03-02T00:00:00.000Z",
-            },
+            }),
           }),
           createEventRow({
             id: "custom-1",
@@ -1014,22 +1194,23 @@ describe("eventsRouter generalization", () => {
     });
     const plannedEvent = result.items.find((item) => item.id === "planned-1");
 
-    expect(plannedEvent?.activity_plan).toMatchObject({
+    expect(plannedEvent?.plan).toMatchObject({
       id: "11111111-1111-4111-8111-111111111111",
       name: "Threshold Ride",
-      route_id: "route-2",
-      prescriptionQuantification: {
-        summary: {
-          commonLoad: {
-            status: "complete",
-            load: 72,
-            intensity: 0.88,
-          },
-        },
-      },
-      updated_at: "2026-03-02T00:00:00.000Z",
+      metrics: expect.arrayContaining([
+        expect.objectContaining({ key: "elapsed_duration", status: "available", value: 1200 }),
+      ]),
+      updatedAt: "2026-03-02T00:00:00.000Z",
       owner: expect.objectContaining({ username: "user-prof" }),
-      activity_category: "bike",
+      activityCategory: "bike",
+    });
+    expect(plannedEvent).toMatchObject({
+      kind: "planned_activity",
+      plan: {
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "Threshold Ride",
+        visibility: "private",
+      },
     });
   });
 
@@ -1043,6 +1224,7 @@ describe("eventsRouter generalization", () => {
           createEventRow({
             id: "today-1",
             event_type: "race_target",
+            scheduled_date: "2026-03-12",
             starts_at: "2026-03-12T06:00:00.000Z",
           }),
         ],
@@ -1050,10 +1232,10 @@ describe("eventsRouter generalization", () => {
       },
     });
 
-    const result = (await calendarCaller.day({ date: "2026-03-12" })).items;
+    const result = (await calendarCaller.day({ date: "2026-03-12" })).projection.items;
 
     expect(result).toHaveLength(1);
-    expect(result[0]?.event_type).toBe("race_target");
+    expect(result[0]?.event?.type).toBe("race_target");
     expect(callLog).toContainEqual({
       table: "events",
       operation: "filter",
@@ -1128,9 +1310,24 @@ describe("eventsRouter generalization", () => {
     const { calendarCaller, callLog } = createCaller({
       events: {
         data: [
-          createEventRow({ id: "week-visible-1", event_type: "planned" }),
-          createEventRow({ id: "week-visible-custom", event_type: "custom" }),
-          createEventRow({ id: "week-visible-2", event_type: "custom" }),
+          createEventRow({
+            id: "week-visible-1",
+            event_type: "planned",
+            scheduled_date: "2026-03-10",
+            starts_at: "2026-03-10T08:00:00.000Z",
+          }),
+          createEventRow({
+            id: "week-visible-custom",
+            event_type: "custom",
+            scheduled_date: "2026-03-11",
+            starts_at: "2026-03-11T08:00:00.000Z",
+          }),
+          createEventRow({
+            id: "week-visible-2",
+            event_type: "custom",
+            scheduled_date: "2026-03-12",
+            starts_at: "2026-03-12T08:00:00.000Z",
+          }),
         ],
         error: null,
       },
@@ -1143,6 +1340,7 @@ describe("eventsRouter generalization", () => {
       limit: 500,
     });
 
+    expect(result.items).toHaveLength(3);
     expect(result.items).toHaveLength(3);
     expect(callLog).toContainEqual({
       table: "events",
@@ -1228,11 +1426,7 @@ describe("eventsRouter generalization", () => {
       event_type: "planned",
       title: "Evening Run",
       scheduled_date: "2026-03-12",
-      all_day: true,
-      timezone: "UTC",
       activity_plan_id: "11111111-1111-4111-8111-111111111111",
-      lifecycle: { status: "scheduled" },
-      read_only: false,
     });
 
     const insertCall = callLog.find((call) => call.operation === "insert");
@@ -1323,8 +1517,6 @@ describe("eventsRouter generalization", () => {
       starts_at: "2026-03-12T01:30:00.000Z",
       all_day: false,
       timezone: "America/Los_Angeles",
-      lifecycle: { status: "scheduled" },
-      read_only: false,
     });
     const event = await caller.getById({ id: "00000000-0000-4000-8000-000000000001" });
 
@@ -1377,187 +1569,6 @@ describe("eventsRouter generalization", () => {
     ]);
   });
 
-  it("create accepts planned event recurrence and materializes occurrences", async () => {
-    const routeId = "22222222-2222-4222-8222-222222222222";
-    const { caller, callLog } = createCaller({
-      events: [
-        {
-          data: createEventRow({
-            id: "00000000-0000-4000-8000-000000000020",
-            activity_plan_id: "11111111-1111-4111-8111-111111111111",
-            route_id: routeId,
-            starts_at: "2026-03-12T00:00:00.000Z",
-            ends_at: "2026-03-13T00:00:00.000Z",
-            recurrence_rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=2;BYDAY=TH",
-          }),
-          error: null,
-        },
-        {
-          data: createEventRow({
-            id: "00000000-0000-4000-8000-000000000021",
-            activity_plan_id: "11111111-1111-4111-8111-111111111111",
-            route_id: routeId,
-            starts_at: "2026-03-19T00:00:00.000Z",
-            ends_at: "2026-03-20T00:00:00.000Z",
-            series_id: "00000000-0000-4000-8000-000000000020",
-            recurrence_rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=2;BYDAY=TH",
-          }),
-          error: null,
-        },
-      ],
-      activity_plans: {
-        data: { id: "11111111-1111-4111-8111-111111111111" },
-        error: null,
-      },
-      activity_routes: { data: { id: routeId }, error: null },
-      integrations: {
-        data: null,
-        error: null,
-      },
-    });
-
-    await caller.create({
-      event_type: "planned",
-      title: "Evening Run",
-      scheduled_date: "2026-03-12",
-      all_day: true,
-      timezone: "UTC",
-      activity_plan_id: "11111111-1111-4111-8111-111111111111",
-      route_id: routeId,
-      recurrence: {
-        rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=2;BYDAY=TH",
-        timezone: "UTC",
-      },
-      lifecycle: { status: "scheduled" },
-      read_only: false,
-    });
-
-    const insertCalls = callLog.filter((call) => call.operation === "insert");
-    expect(callLog.filter((call) => call.operation === "batch")).toHaveLength(1);
-    expect(insertCalls).toHaveLength(2);
-    expect(insertCalls.map((call) => (call.payload as any).route_id)).toEqual([routeId, routeId]);
-    expect((insertCalls[1]?.payload as any).starts_at).toBe("2026-03-19T00:00:00.000Z");
-    expect((insertCalls[1]?.payload as any).series_id).toBe("00000000-0000-4000-8000-000000000020");
-  });
-
-  it("create returns no partial recurring series when the batch fails in the middle", async () => {
-    const { caller, callLog } = createCaller({
-      events: [
-        {
-          data: createEventRow({ id: "00000000-0000-4000-8000-000000000030" }),
-          error: null,
-        },
-        { data: null, error: { message: "middle occurrence failed" } },
-      ],
-      activity_plans: {
-        data: { id: "11111111-1111-4111-8111-111111111111" },
-        error: null,
-      },
-    });
-
-    await expect(
-      caller.create({
-        event_type: "planned",
-        title: "Recurring activity",
-        activity_plan_id: "11111111-1111-4111-8111-111111111111",
-        scheduled_date: "2026-03-12",
-        all_day: true,
-        timezone: "UTC",
-        recurrence: {
-          rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=3;BYDAY=TH",
-          timezone: "UTC",
-        },
-      }),
-    ).rejects.toThrow("middle occurrence failed");
-
-    expect(callLog.filter((call) => call.operation === "batch")).toHaveLength(1);
-    expect(callLog.filter((call) => call.operation === "insert")).toHaveLength(0);
-  });
-
-  it("create rejects weekly recurrence when BYDAY does not match the start date", async () => {
-    const { caller, callLog } = createCaller({
-      events: {
-        data: createEventRow({
-          id: "00000000-0000-4000-8000-000000000025",
-          activity_plan_id: "11111111-1111-4111-8111-111111111111",
-          starts_at: "2026-03-12T00:00:00.000Z",
-          ends_at: "2026-03-13T00:00:00.000Z",
-          recurrence_rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=2;BYDAY=FR",
-        }),
-        error: null,
-      },
-      activity_plans: {
-        data: { id: "11111111-1111-4111-8111-111111111111" },
-        error: null,
-      },
-      integrations: {
-        data: null,
-        error: null,
-      },
-    });
-
-    await expect(
-      caller.create({
-        event_type: "planned",
-        title: "Evening Run",
-        scheduled_date: "2026-03-12",
-        all_day: true,
-        timezone: "UTC",
-        activity_plan_id: "11111111-1111-4111-8111-111111111111",
-        recurrence: {
-          rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=2;BYDAY=FR",
-          timezone: "UTC",
-        },
-        lifecycle: { status: "scheduled" },
-        read_only: false,
-      }),
-    ).rejects.toThrow("Weekly recurrence day must match the event start date");
-
-    expect(callLog.filter((call) => call.operation === "insert")).toHaveLength(0);
-  });
-
-  it("create rejects oversized recurrence series before materializing extra occurrences", async () => {
-    const { caller, callLog } = createCaller({
-      events: {
-        data: createEventRow({
-          id: "00000000-0000-4000-8000-000000000026",
-          activity_plan_id: "11111111-1111-4111-8111-111111111111",
-          starts_at: "2026-03-12T00:00:00.000Z",
-          ends_at: "2026-03-13T00:00:00.000Z",
-          recurrence_rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=367;BYDAY=TH",
-        }),
-        error: null,
-      },
-      activity_plans: {
-        data: { id: "11111111-1111-4111-8111-111111111111" },
-        error: null,
-      },
-      integrations: {
-        data: null,
-        error: null,
-      },
-    });
-
-    await expect(
-      caller.create({
-        event_type: "planned",
-        title: "Evening Run",
-        scheduled_date: "2026-03-12",
-        all_day: true,
-        timezone: "UTC",
-        activity_plan_id: "11111111-1111-4111-8111-111111111111",
-        recurrence: {
-          rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=367;BYDAY=TH",
-          timezone: "UTC",
-        },
-        lifecycle: { status: "scheduled" },
-        read_only: false,
-      }),
-    ).rejects.toThrow("Recurring events support 1-366 occurrences");
-
-    expect(callLog.filter((call) => call.operation === "insert")).toHaveLength(0);
-  });
-
   it("create enforces type-specific rest day rules", async () => {
     const { caller } = createCaller({});
 
@@ -1569,8 +1580,6 @@ describe("eventsRouter generalization", () => {
         all_day: true,
         timezone: "UTC",
         activity_plan_id: "22222222-2222-4222-8222-222222222222",
-        lifecycle: { status: "scheduled" },
-        read_only: false,
       } as any),
     ).rejects.toThrow(/Invalid discriminator value|rest_day/);
   });
@@ -1600,8 +1609,6 @@ describe("eventsRouter generalization", () => {
         all_day: true,
         timezone: "UTC",
         activity_plan_id: "not-a-uuid",
-        lifecycle: { status: "scheduled" },
-        read_only: false,
       } as any),
     ).rejects.toThrow(/Invalid UUID|Invalid activity plan ID|Invalid event create payload/);
 
@@ -2311,25 +2318,6 @@ describe("eventsRouter generalization", () => {
     expect(drainDueWahooPlannedActivityJobs).not.toHaveBeenCalled();
   });
 
-  it("blocks mutable update for imported events", async () => {
-    const { caller } = createCaller({
-      events: {
-        data: createEventRow({
-          id: "00000000-0000-4000-8000-000000000040",
-          event_type: "imported",
-        }),
-        error: null,
-      },
-    });
-
-    await expect(
-      caller.update({
-        id: "00000000-0000-4000-8000-000000000040",
-        patch: { notes: "should fail" },
-      }),
-    ).rejects.toThrow("Imported events are read-only");
-  });
-
   it("update blocks changing another event into rest_day", async () => {
     const { caller } = createCaller({
       events: {
@@ -2344,7 +2332,7 @@ describe("eventsRouter generalization", () => {
     await expect(
       caller.update({
         id: "00000000-0000-4000-8000-000000000042",
-        patch: { event_type: "rest_day" as any },
+        patch: { event_type: "rest_day" } as never,
       }),
     ).rejects.toThrow(/Invalid option|Invalid event update payload|rest_day|Invalid input/);
   });
@@ -2462,43 +2450,6 @@ describe("eventsRouter generalization", () => {
         event_id: "00000000-0000-4000-8000-000000000056",
       }),
     ).rejects.toThrow("Event not found");
-  });
-
-  it("blocks completion linking for imported events", async () => {
-    const { caller } = createCaller({
-      events: {
-        data: createEventRow({
-          id: "00000000-0000-4000-8000-000000000053",
-          event_type: "imported",
-        }),
-        error: null,
-      },
-    });
-
-    await expect(
-      caller.linkCompletion({
-        event_id: "00000000-0000-4000-8000-000000000053",
-        activity_id: "11111111-1111-4111-8111-111111111153",
-      }),
-    ).rejects.toThrow("Imported events are read-only");
-  });
-
-  it("blocks completion unlinking for imported events", async () => {
-    const { caller } = createCaller({
-      events: {
-        data: createEventRow({
-          id: "00000000-0000-4000-8000-000000000055",
-          event_type: "imported",
-        }),
-        error: null,
-      },
-    });
-
-    await expect(
-      caller.unlinkCompletion({
-        event_id: "00000000-0000-4000-8000-000000000055",
-      }),
-    ).rejects.toThrow("Imported events are read-only");
   });
 
   it.each([
@@ -2662,138 +2613,7 @@ describe("eventsRouter generalization", () => {
     });
   });
 
-  it("rejects recurrence exceptions until persistence supports them", async () => {
-    const { caller } = createCaller({
-      activity_plans: {
-        data: { id: "11111111-1111-4111-8111-111111111111" },
-        error: null,
-      },
-    });
-
-    await expect(
-      caller.create({
-        event_type: "planned",
-        title: "Recurring activity",
-        activity_plan_id: "11111111-1111-4111-8111-111111111111",
-        scheduled_date: "2026-06-01",
-        all_day: true,
-        timezone: "UTC",
-        recurrence: {
-          rule: "FREQ=WEEKLY;INTERVAL=1",
-          timezone: "UTC",
-          exdates: ["2026-06-08"],
-          exceptions: [],
-        },
-      }),
-    ).rejects.toThrow(
-      /Recurrence exdates\/exceptions are not yet supported|exdates are not supported|Invalid input/,
-    );
-  });
-
-  it("creates materialized weekly planned activity occurrences for bounded recurrence", async () => {
-    const activityPlanId = "11111111-1111-4111-8111-111111111111";
-    const { caller, callLog } = createCaller({
-      activity_plans: {
-        data: { id: activityPlanId },
-        error: null,
-      },
-      training_plans: {
-        data: null,
-        error: null,
-      },
-      events: [
-        {
-          data: createEventRow({
-            id: "00000000-0000-4000-8000-000000000100",
-            activity_plan_id: activityPlanId,
-            starts_at: "2026-06-02T00:00:00.000Z",
-            recurrence_rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=4;BYDAY=TU",
-            recurrence_timezone: "UTC",
-            occurrence_key: "2026-06-02",
-            original_starts_at: "2026-06-02T00:00:00.000Z",
-          }),
-          error: null,
-        },
-        {
-          data: createEventRow({
-            id: "00000000-0000-4000-8000-000000000101",
-            activity_plan_id: activityPlanId,
-            starts_at: "2026-06-09T00:00:00.000Z",
-            series_id: "00000000-0000-4000-8000-000000000100",
-            occurrence_key: "2026-06-09",
-            original_starts_at: "2026-06-09T00:00:00.000Z",
-          }),
-          error: null,
-        },
-        {
-          data: createEventRow({
-            id: "00000000-0000-4000-8000-000000000102",
-            activity_plan_id: activityPlanId,
-            starts_at: "2026-06-16T00:00:00.000Z",
-            series_id: "00000000-0000-4000-8000-000000000100",
-            occurrence_key: "2026-06-16",
-            original_starts_at: "2026-06-16T00:00:00.000Z",
-          }),
-          error: null,
-        },
-        {
-          data: createEventRow({
-            id: "00000000-0000-4000-8000-000000000103",
-            activity_plan_id: activityPlanId,
-            starts_at: "2026-06-23T00:00:00.000Z",
-            series_id: "00000000-0000-4000-8000-000000000100",
-            occurrence_key: "2026-06-23",
-            original_starts_at: "2026-06-23T00:00:00.000Z",
-          }),
-          error: null,
-        },
-      ],
-      integrations: {
-        data: null,
-        error: null,
-      },
-    });
-
-    const result = await caller.create({
-      event_type: "planned",
-      title: "Recurring activity",
-      activity_plan_id: activityPlanId,
-      scheduled_date: "2026-06-02",
-      all_day: true,
-      timezone: "UTC",
-      recurrence: {
-        rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=4;BYDAY=TU",
-        timezone: "UTC",
-      },
-    });
-
-    const insertPayloads = callLog
-      .filter((call) => call.table === "events" && call.operation === "insert")
-      .map((call) => call.payload as Record<string, unknown>);
-
-    expect(result.id).toBe("00000000-0000-4000-8000-000000000100");
-    expect(insertPayloads).toHaveLength(4);
-    expect(insertPayloads.map((payload) => payload.starts_at)).toEqual([
-      "2026-06-02T00:00:00.000Z",
-      "2026-06-09T00:00:00.000Z",
-      "2026-06-16T00:00:00.000Z",
-      "2026-06-23T00:00:00.000Z",
-    ]);
-    expect(insertPayloads[0]).toMatchObject({
-      recurrence_rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=4;BYDAY=TU",
-      recurrence_timezone: "UTC",
-      occurrence_key: "2026-06-02",
-      original_starts_at: "2026-06-02T00:00:00.000Z",
-      series_id: null,
-    });
-    expect(insertPayloads.slice(1).map((payload) => payload.series_id)).toEqual([
-      "00000000-0000-4000-8000-000000000100",
-      "00000000-0000-4000-8000-000000000100",
-      "00000000-0000-4000-8000-000000000100",
-    ]);
-  });
-
-  it("rejects unbounded user-created recurrence", async () => {
+  it("rejects recurrence input for personal planned sessions", async () => {
     const { caller } = createCaller({
       activity_plans: {
         data: { id: "11111111-1111-4111-8111-111111111111" },
@@ -2807,138 +2627,12 @@ describe("eventsRouter generalization", () => {
         title: "Recurring activity",
         activity_plan_id: "11111111-1111-4111-8111-111111111111",
         scheduled_date: "2026-06-02",
-        all_day: true,
-        timezone: "UTC",
         recurrence: {
           rule: "FREQ=WEEKLY;INTERVAL=1;BYDAY=TU",
           timezone: "UTC",
         },
-      }),
-    ).rejects.toThrow("Recurring events must end with COUNT or UNTIL");
-  });
-
-  it("validateConstraints infers rest days from unique planned dates", async () => {
-    const { caller } = createCaller({
-      training_plans: {
-        data: {
-          id: "44444444-4444-4444-8444-444444444444",
-          structure: {
-            target_weekly_load_max: 9999,
-            target_activities_per_week: 7,
-            max_consecutive_days: 7,
-            min_rest_days_per_week: 5,
-          },
-        },
-        error: null,
-      },
-      activity_plans: {
-        data: {
-          id: "55555555-5555-4555-8555-555555555555",
-          activity_category: "run",
-          structure: null,
-          route_id: null,
-        },
-        error: null,
-      },
-      profiles: {
-        data: {
-          id: "profile-123",
-          dob: null,
-        },
-        error: null,
-      },
-      activity_efforts: {
-        data: null,
-        error: null,
-      },
-      profile_metrics: [
-        { data: null, error: null },
-        { data: null, error: null },
-      ],
-      events: [
-        {
-          data: [
-            createEventRow({
-              id: "double-1",
-              event_type: "planned",
-              activity_plan_id: "55555555-5555-4555-8555-555555555555",
-              starts_at: "2026-03-09T06:00:00.000Z",
-            }),
-            createEventRow({
-              id: "double-2",
-              event_type: "planned",
-              activity_plan_id: "55555555-5555-4555-8555-555555555555",
-              starts_at: "2026-03-09T18:00:00.000Z",
-            }),
-          ],
-          error: null,
-        },
-        {
-          data: [
-            { starts_at: "2026-03-09T06:00:00.000Z" },
-            { starts_at: "2026-03-09T18:00:00.000Z" },
-            { starts_at: "2026-03-11T07:00:00.000Z" },
-          ],
-          error: null,
-        },
-      ],
-    });
-
-    const result = await caller.validateConstraints({
-      training_plan_id: "44444444-4444-4444-8444-444444444444",
-      scheduled_date: "2026-03-11",
-      activity_plan_id: "55555555-5555-4555-8555-555555555555",
-    });
-
-    expect(result.constraints.restDays).toEqual({
-      status: "satisfied",
-      current: 6,
-      withNew: 5,
-      minimum: 5,
-    });
-  });
-
-  it("validateConstraints schedules against a complete canonical Load", async () => {
-    const { caller } = createCaller(constraintQueryMap());
-
-    const result = await caller.validateConstraints({
-      training_plan_id: "44444444-4444-4444-8444-444444444444",
-      scheduled_date: "2026-03-11",
-      activity_plan_id: "55555555-5555-4555-8555-555555555555",
-    });
-
-    expect(result.constraints.weeklyLoad).toEqual({
-      status: "satisfied",
-      current: 0,
-      withNew: 72,
-      limit: 100,
-    });
-    expect(result.canSchedule).toBe(true);
-  });
-
-  it("validateConstraints fails closed when canonical Load is unavailable", async () => {
-    vi.mocked(estimateActivityPlans).mockResolvedValueOnce([
-      {
-        prescriptionQuantification: {
-          summary: { commonLoad: { status: "unavailable", reason: "missing_threshold" } },
-        },
-      },
-    ] as never);
-    const { caller } = createCaller(constraintQueryMap());
-
-    const result = await caller.validateConstraints({
-      training_plan_id: "44444444-4444-4444-8444-444444444444",
-      scheduled_date: "2026-03-11",
-      activity_plan_id: "55555555-5555-4555-8555-555555555555",
-    });
-
-    expect(result.constraints.weeklyLoad).toEqual({
-      status: "violated",
-      current: 0,
-      withNew: null,
-      limit: 100,
-    });
-    expect(result.canSchedule).toBe(false);
+      } as never),
+    ).rejects.toThrow();
   });
 
   it("reconcileHistoricalCompletions dry-run reports matches without persisting", async () => {

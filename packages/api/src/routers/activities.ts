@@ -1,19 +1,18 @@
 import {
   activityDerivedMetricsSchema,
+  activityDetailDisplaySchema,
+  activityDisplayModelSchema,
   activityListDerivedSummarySchema,
   activityObservationQuantificationBundleSchema,
-  completedSegmentSummarySchema,
   contentVisibilitySchema,
   ianaTimezoneSchema,
 } from "@repo/core";
-import { commonLoadAggregateSchema, commonLoadResultSchema } from "@repo/core/load";
+import { commonLoadAggregateSchema } from "@repo/core/load";
 import {
   activityEfforts,
   publicActivitiesRowSchema,
   publicActivityCategorySchema,
   publicActivityEffortsRowSchema,
-  publicActivityPlansRowSchema,
-  publicActivitySegmentsRowSchema,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq } from "drizzle-orm";
@@ -60,6 +59,7 @@ const activityRowSchema = publicActivitiesRowSchema
     athlete_state_capability_duration_minutes: true,
     athlete_state_input_version: true,
     athlete_state_computed_at: true,
+    performance_target_snapshot: true,
     canonical_evidence_tier: true,
   })
   .extend({
@@ -71,105 +71,12 @@ const activityRowSchema = publicActivitiesRowSchema
   })
   .strict();
 
-const activityPlanReferenceSchema = publicActivityPlansRowSchema
-  .extend({
-    created_at: isoDatetimeSchema,
-    updated_at: isoDatetimeSchema,
-    content_visibility: contentVisibilitySchema.optional(),
-  })
-  .strict();
-
-const activityIngestionStatusSchema = z
-  .object({
-    id: z.string().uuid(),
-    status: z.string(),
-    source: z.string(),
-    last_error_message: z.string().nullable().optional(),
-  })
-  .strict();
-
-const effectiveSessionRpeSchema = z
-  .object({
-    // This ID is intentionally returned to the owner so a correction can
-    // reference the exact immutable observation it supersedes.
-    id: z.string().uuid(),
-    rpe: z.number().int().min(1).max(10),
-    scale: z.literal("borg_cr10"),
-    scale_version: z.literal("1"),
-    source: z.enum(["user", "provider", "manual"]),
-    recorded_at: activityTimestampSchema,
-    corrected_at: activityTimestampSchema.nullable(),
-    provenance: z.record(z.string(), z.unknown()),
-  })
-  .strict();
-
-const activityCompositionSchema = z.object({
-  activity_kind: z.enum(["single", "multisport", "unknown"]),
-  activity_segment_count: z.number().int().nonnegative(),
-  activity_categories: publicActivityCategorySchema.array(),
-  matched_category_summary: z
-    .object({
-      segment_count: z.number().int().nonnegative(),
-      distance_meters: z.number().nonnegative().nullable(),
-      active_ms: z.number().int().nonnegative().nullable(),
-      moving_ms: z.number().int().nonnegative().nullable(),
-      common_load: z.union([commonLoadResultSchema, commonLoadAggregateSchema]).nullable(),
-      observationQuantification: activityObservationQuantificationBundleSchema.nullable(),
-    })
-    .strict()
-    .nullable(),
-});
-
-const activitySegmentReadBaseSchema = publicActivitySegmentsRowSchema
-  .pick({
-    id: true,
-    activity_id: true,
-    ordinal: true,
-    role: true,
-    activity_category: true,
-    start_offset_ms: true,
-    end_offset_ms: true,
-    source_artifact_id: true,
-    source_session_index: true,
-    source_message_index: true,
-    raw_type_string: true,
-    raw_type_integer: true,
-    raw_sport_string: true,
-    raw_sport_integer: true,
-    raw_sub_sport_string: true,
-    raw_sub_sport_integer: true,
-    timing_coverage: true,
-    active_ms: true,
-    moving_ms: true,
-  })
-  .strict();
-
-const activitySegmentReadSchema = z.discriminatedUnion("status", [
-  activitySegmentReadBaseSchema
-    .extend({ status: z.literal("processing"), summary: z.null() })
-    .strict(),
-  activitySegmentReadBaseSchema
-    .extend({ status: z.literal("available"), summary: completedSegmentSummarySchema })
-    .strict(),
-  activitySegmentReadBaseSchema
-    .extend({
-      status: z.literal("failed"),
-      summary: z.null(),
-      reason: z.string().trim().min(1).max(512),
-    })
-    .strict(),
-]);
-
 const activitySegmentLoadSchema = activityListDerivedSummarySchema
   .extend({
     segment_id: z.string().uuid(),
     activity_category: publicActivityCategorySchema,
     observationQuantification: activityObservationQuantificationBundleSchema,
   })
-  .strict();
-
-const activityListQuantifiedSummarySchema = activityListDerivedSummarySchema
-  .extend({ observationQuantification: activityObservationQuantificationBundleSchema })
   .strict();
 
 const activityQuantifiedMetricsSchema = activityDerivedMetricsSchema
@@ -179,50 +86,15 @@ const activityQuantifiedMetricsSchema = activityDerivedMetricsSchema
   })
   .strict();
 
-const activityListItemSchema = activityRowSchema
-  .extend({
-    ...activityCompositionSchema.shape,
-    likes_count: z.number().int().nonnegative(),
-    has_liked: z.boolean(),
-    derived: activityListQuantifiedSummarySchema.nullable(),
-    segment_loads: activitySegmentLoadSchema.array(),
-    ingestion: activityIngestionStatusSchema.nullable().optional(),
-  })
-  .strict();
-
-const activityWithPlanSchema = activityRowSchema
-  .extend({
-    ...activityCompositionSchema.shape,
-    likes_count: z.number().int().nonnegative(),
-    activity_plans: activityPlanReferenceSchema.nullable(),
-    ingestion: activityIngestionStatusSchema.nullable().optional(),
-    // Owner-only evidence. Shared viewers receive null even when the activity
-    // is visible to them.
-    effective_session_rpe: effectiveSessionRpeSchema.nullable(),
-    segments: activitySegmentReadSchema.array(),
-    current_artifact: z
-      .object({
-        id: z.string().uuid(),
-        digest_algorithm: z.literal("sha256"),
-        digest: z.string().regex(/^[0-9a-f]{64}$/),
-        byte_size: z.number().int().positive(),
-        media_type: z.string(),
-        format: z.string(),
-        original_name: z.string().nullable(),
-        availability: z.literal("accepted"),
-        first_accepted_at: activityTimestampSchema,
-      })
-      .strict()
-      .nullable(),
-  })
-  .strict();
-
 const activityDerivedResponseSchema = z
   .object({
-    activity: activityWithPlanSchema,
-    has_liked: z.boolean(),
-    derived: activityQuantifiedMetricsSchema,
-    segment_loads: activitySegmentLoadSchema.array(),
+    detail: activityDetailDisplaySchema,
+    analysis: z
+      .object({
+        derived: activityQuantifiedMetricsSchema,
+        segmentLoads: activitySegmentLoadSchema.array(),
+      })
+      .strict(),
   })
   .strict();
 
@@ -360,10 +232,19 @@ function parseActivityRow(value: unknown) {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return activityRowSchema.parse(value);
   }
-  const currentFields = Object.fromEntries(
-    Object.entries(value).filter(([key]) => key !== "canonical_evidence_tier"),
-  );
-  return activityRowSchema.parse(currentFields);
+  const {
+    athlete_state_common_load: _athleteStateCommonLoad,
+    athlete_state_activity_category: _athleteStateActivityCategory,
+    athlete_state_evidence_confidence: _athleteStateEvidenceConfidence,
+    athlete_state_capability_distance_meters: _athleteStateCapabilityDistanceMeters,
+    athlete_state_capability_duration_minutes: _athleteStateCapabilityDurationMinutes,
+    athlete_state_input_version: _athleteStateInputVersion,
+    athlete_state_computed_at: _athleteStateComputedAt,
+    performance_target_snapshot: _performanceTargetSnapshot,
+    canonical_evidence_tier: _canonicalEvidenceTier,
+    ...publicFields
+  } = value as Record<string, unknown>;
+  return activityRowSchema.parse(publicFields);
 }
 
 function _parseActivityRows(value: unknown[]) {
@@ -401,7 +282,7 @@ export const activitiesRouter = createTRPCRouter({
 
       return z
         .object({
-          items: activityListItemSchema.array(),
+          items: activityDisplayModelSchema.array(),
           total: z.number().int().nonnegative(),
           hasMore: z.boolean(),
           nextCursor: z.string().optional(),
@@ -487,7 +368,7 @@ export const activitiesRouter = createTRPCRouter({
         .where(
           and(
             eq(activityEfforts.activity_id, input.id),
-            eq(activityEfforts.profile_id, activityView.activity.profile_id),
+            eq(activityEfforts.profile_id, activityView.detail.summary.owner.id),
           ),
         )
         .orderBy(desc(activityEfforts.recorded_at), desc(activityEfforts.duration_seconds));

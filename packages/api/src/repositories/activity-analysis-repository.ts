@@ -49,6 +49,14 @@ export type ActivityAnalysisContextEvidenceRequest = {
   activityIdToExclude?: string;
 };
 
+export type ActivityAnalysisPerformanceTargetSelection = {
+  activityId: string;
+  source: "analysis_revision" | "original_snapshot";
+  sourceSegmentsRevision: number;
+  revision: number | null;
+  performanceTargets: AthletePerformanceTargetFacts;
+};
+
 export interface ActivityAnalysisStore {
   getPerformanceModelAsOf?(input: {
     asOf: Date;
@@ -67,6 +75,10 @@ export interface ActivityAnalysisStore {
       activityIdToExclude?: string;
     }>;
   }): Promise<AthletePerformanceTargetFacts[]>;
+  getPerformanceTargetSelectionsForActivities?(input: {
+    profileId: string;
+    activities: Array<{ activityId: string; segmentsRevision?: number }>;
+  }): Promise<Map<string, ActivityAnalysisPerformanceTargetSelection>>;
   getContextSnapshot(input: {
     asOf: Date;
     effortLookbackAsOf?: Date;

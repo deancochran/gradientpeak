@@ -61,10 +61,10 @@ function RecordPage() {
     { id: effectiveLauncher.routeId ?? "" },
     { enabled: Boolean(effectiveLauncher.routeId) },
   );
-  const selectedActivityPlanId = selectedEventQuery.data?.activity_plan?.id;
-  const selectedPlan = selectedEventQuery.data?.activity_plan;
-  const selectedPlanIsCanonical = Boolean(selectedPlan?.activity_category);
-  const selectedPlanActivityCategory = selectedPlan?.activity_category ?? null;
+  const selectedActivityPlanId = selectedEventQuery.data?.activityPlanSummary?.id;
+  const selectedPlan = selectedEventQuery.data?.activityPlanSummary;
+  const selectedPlanIsCanonical = Boolean(selectedPlan?.activityCategory);
+  const selectedPlanActivityCategory = selectedPlan?.activityCategory ?? null;
   const selectedPlanQueryFailed = Boolean(effectiveLauncher.eventId) && selectedEventQuery.isError;
   const selectedPlanUnavailable =
     Boolean(effectiveLauncher.eventId) && selectedEventQuery.isSuccess && !selectedPlanIsCanonical;
@@ -180,7 +180,7 @@ function RecordPage() {
               <LauncherActionCard
                 title="Plan"
                 description={
-                  selectedEventQuery.data?.activity_plan?.name ??
+                  selectedEventQuery.data?.activityPlanSummary?.name ??
                   "Attach one of today's scheduled activities."
                 }
                 icon={MapIcon}
@@ -257,7 +257,7 @@ function RecordPage() {
                   ? "Unable to load plan"
                   : selectedPlanUnavailable
                     ? "Unavailable plan"
-                    : (selectedEventQuery.data?.activity_plan?.name ?? "No plan attached")
+                    : (selectedEventQuery.data?.activityPlanSummary?.name ?? "No plan attached")
               }
             />
             {selectedPlanQueryFailed ? (
@@ -386,7 +386,7 @@ function RecordPage() {
                 <p className="font-medium text-foreground">Local recording history</p>
                 {recording.history.slice(0, 5).map((artifact) => (
                   <div key={artifact.recordingSessionId} className="flex justify-between gap-3">
-                    <span>{artifact.review.name}</span>
+                    <span>{artifact.snapshot.activity.activity_category} activity</span>
                     <span>{new Date(artifact.finishedAt).toLocaleDateString()}</span>
                   </div>
                 ))}

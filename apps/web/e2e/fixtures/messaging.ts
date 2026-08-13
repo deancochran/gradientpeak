@@ -75,11 +75,11 @@ async function provision(context: BrowserContext, key: ActorKey, pool: Pool): Pr
   const id = user.rows[0]?.id;
   if (!id) throw new Error(`Messaging actor ${key} has no user row.`);
   await pool.query(
-    `insert into "profiles" ("id", "email", "full_name", "username", "onboarded", "is_public")
-     values ($1, $2, $3, $4, true, true)
+    `insert into "profiles" ("id", "email", "full_name", "username", "onboarding_status", "is_public")
+     values ($1, $2, $3, $4, 'completed', true)
      on conflict ("id") do update set
        "email" = excluded."email", "full_name" = excluded."full_name",
-       "username" = excluded."username", "onboarded" = true, "is_public" = true`,
+       "username" = excluded."username", "onboarding_status" = 'completed', "is_public" = true`,
     [id, actor.email, actor.name, actor.username],
   );
   const page = await context.newPage();

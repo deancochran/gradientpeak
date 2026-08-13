@@ -43,7 +43,7 @@ import { paceSecondsFieldFixtures } from "../components/pace-seconds-field/fixtu
 import { PaceSecondsField } from "../components/pace-seconds-field/index.native";
 import { percentSliderInputFixtures } from "../components/percent-slider-input/fixtures";
 import { PercentSliderInput } from "../components/percent-slider-input/index.native";
-import { Progress } from "../components/progress/index.native";
+import { ProgressBar } from "../components/progress/index.native";
 import { radioGroupFixtures } from "../components/radio-group/fixtures";
 import { RadioGroup, RadioGroupItem } from "../components/radio-group/index.native";
 import { selectFixtures } from "../components/select/fixtures";
@@ -321,7 +321,7 @@ export const ProgressStory: Story = {
   name: "Progress",
   render: () => (
     <NativeFrame>
-      <Progress value={72} />
+      <ProgressBar accessibilityLabel="Example progress" value={72} />
     </NativeFrame>
   ),
 };

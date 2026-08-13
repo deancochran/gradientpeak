@@ -1,10 +1,8 @@
-import { type ActivityObservationQuantificationBundle, decodePolyline } from "@repo/core";
+import type { ActivityDisplayModel, SemanticMetric } from "@repo/core";
 import { formatDurationSec } from "@repo/core/utils/dates";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
-import { MessageCircle, Route } from "lucide-react-native";
-import { useMemo } from "react";
+import { MessageCircle } from "lucide-react-native";
 import { Pressable, View } from "react-native";
 import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
 import { formatDistanceMeters } from "@/lib/display/formatters";
@@ -19,66 +17,13 @@ import {
   ResourceMetricsRow,
   ResourceOwnerActionRow,
 } from "./ResourceCardPrimitives";
-import { StaticRouteMapPreview } from "./StaticRouteMapPreview";
-
-type RouteCoordinate = { latitude: number; longitude: number };
-
-const COMPACT_ROUTE_PREVIEW_HEIGHT = 128;
-
-export type ActivityCardActivity = {
-  id: string;
-  name?: string | null;
-  activity_kind?: "single" | "multisport" | "unknown";
-  activity_categories?: readonly string[];
-  segments?: Array<{ role?: string; activity_category?: string | null }>;
-  started_at?: string | Date | null;
-  distance_meters?: number | null;
-  elapsed_ms?: number | null;
-  elapsed_seconds?: number | null;
-  active_ms?: number | null;
-  moving_ms?: number | null;
-  timing_coverage?: "complete" | "partial" | "unavailable";
-  avg_heart_rate?: number | null;
-  avg_power?: number | null;
-  avg_speed_mps?: number | null;
-  device_manufacturer?: string | null;
-  device_product?: string | null;
-  notes?: string | null;
-  polyline?: string | null;
-  current_artifact?: { id: string; availability?: string | null } | null;
-  likes_count?: number | null;
-  comments_count?: number | null;
-  has_liked?: boolean | null;
-  derived?: {
-    observationQuantification?: ActivityObservationQuantificationBundle | null;
-    [key: string]: unknown;
-  } | null;
-  segment_loads?: Array<{
-    segment_id: string;
-    activity_category: string;
-    observationQuantification?: ActivityObservationQuantificationBundle | null;
-    [key: string]: unknown;
-  }>;
-  ingestion?: {
-    status?: string | null;
-    last_error_message?: string | null;
-  } | null;
-  profile?: ActivityCardOwner | null;
-};
-
-export type ActivityCardOwner = {
-  id?: string | null;
-  username?: string | null;
-  avatar_url?: string | null;
-  avatarUrl?: string | null;
-};
 
 type ActivityCardProps = {
-  activity: ActivityCardActivity;
+  activity: ActivityDisplayModel;
+  /** Context actions rendered directly below the canonical metrics row. */
+  belowMetricsActions?: ResourceCardAccessory;
   commentCount?: number | null;
   dateMode?: "absolute" | "none" | "relative";
-  footerAccessory?: ResourceCardAccessory;
-  headerAccessory?: ResourceCardAccessory;
   isLiked?: boolean | null;
   likeCount?: number | null;
   likePending?: boolean;
@@ -86,103 +31,50 @@ type ActivityCardProps = {
   onLikePress?: () => void;
   onOwnerPress?: () => void;
   onPress?: () => void;
-  owner?: ActivityCardOwner | null;
   showNotes?: boolean;
   showLike?: boolean;
-  showRouteIndicator?: boolean;
-  showVisualPreview?: boolean;
   testID?: string;
-  variant?: "detail" | "list";
+  /** Context action rendered at the top-right of the owner/category row. */
+  topRightAction?: ResourceCardAccessory;
 };
 
-function CompactRoutePreview({ coordinates }: { coordinates: RouteCoordinate[] }) {
-  if (coordinates.length < 2) {
-    return null;
+function formatMetric(
+  metric: SemanticMetric,
+  preferredUnitSystem: ReturnType<typeof usePreferredUnitSystem>,
+) {
+  if (metric.status === "unavailable") return "Unavailable";
+  if (metric.unit === "meters") {
+    return formatDistanceMeters(metric.value, { preferredUnitSystem });
   }
-
-  return (
-    <View
-      className="overflow-hidden rounded-2xl border border-border bg-card"
-      style={{ height: COMPACT_ROUTE_PREVIEW_HEIGHT }}
-    >
-      <StaticRouteMapPreview
-        coordinates={coordinates}
-        showMarkers={true}
-        strokeColor="#f97316"
-        strokeWidth={4}
-      />
-    </View>
-  );
+  if (metric.unit === "seconds") return formatDurationSec(metric.value);
+  if (metric.unit === "ratio") return metric.value.toFixed(2);
+  if (metric.unit === "bpm") return `${Math.round(metric.value)} bpm`;
+  if (metric.unit === "watts") return `${Math.round(metric.value)} W`;
+  if (metric.unit === "kilocalories") return `${Math.round(metric.value)} kcal`;
+  return Number.isInteger(metric.value) ? String(metric.value) : metric.value.toFixed(1);
 }
 
-function getActivityCategories(activity: ActivityCardActivity): string[] {
-  const categories = activity.activity_categories?.length
-    ? activity.activity_categories
-    : activity.segments
-        ?.filter((segment) => segment.role === "activity")
-        .map((segment) => segment.activity_category)
-        .filter((activityCategory): activityCategory is string => !!activityCategory);
-  return [...new Set(categories?.length ? categories : ["other"])];
-}
-
-function getQuantificationPresentation(activity: ActivityCardActivity) {
-  return getActivityQuantificationPresentation(activity.derived?.observationQuantification, {
-    hasHeartRateSummary: typeof activity.avg_heart_rate === "number" && activity.avg_heart_rate > 0,
-  });
-}
-
-function ActivityMetricsRow({
-  activity,
-  compact,
-}: {
-  activity: ActivityCardActivity;
-  compact: boolean;
-}) {
+function ActivityMetricsRow({ activity }: { activity: ActivityDisplayModel }) {
   const preferredUnitSystem = usePreferredUnitSystem();
-  const quantification = getQuantificationPresentation(activity);
-  const metrics: ResourceMetric[] = [];
-
-  if (typeof activity.distance_meters === "number" && activity.distance_meters > 0) {
-    metrics.push({
-      label: "Distance",
-      value: formatDistanceMeters(activity.distance_meters, { preferredUnitSystem }),
-    });
-  }
-
-  const elapsedSeconds =
-    activity.elapsed_seconds ??
-    (typeof activity.elapsed_ms === "number" ? activity.elapsed_ms / 1000 : null);
-  const activeSeconds = typeof activity.active_ms === "number" ? activity.active_ms / 1000 : null;
-  if (typeof elapsedSeconds === "number" && elapsedSeconds > 0) {
-    metrics.push({ label: "Elapsed", value: formatDurationSec(elapsedSeconds) });
-  } else if (typeof activeSeconds === "number" && activeSeconds > 0) {
-    metrics.push({ label: "Active", value: formatDurationSec(activeSeconds) });
-  }
-
-  metrics.push({
-    label: quantification.commonLoad.label,
-    value: quantification.commonLoad.value,
-    tone: "primary",
-  });
-  metrics.push({
-    label: quantification.normalizedIntensity.label,
-    value: quantification.normalizedIntensity.value,
-    tone: "primary",
-  });
+  const metrics: ResourceMetric[] = activity.metrics.slice(0, 4).map((metric) => ({
+    label: metric.status === "partial" ? `${metric.label} (partial)` : metric.label,
+    value: formatMetric(metric, preferredUnitSystem),
+    tone:
+      metric.key === "common_load" || metric.key === "normalized_intensity" ? "primary" : undefined,
+  }));
 
   if (metrics.length === 0) {
     return null;
   }
 
-  return <ResourceMetricsRow compact={compact} maxItems={4} metrics={metrics} />;
+  return <ResourceMetricsRow maxItems={4} metrics={metrics} testID="activity-card-metrics" />;
 }
 
 export function ActivityCard({
   activity,
+  belowMetricsActions,
   commentCount,
   dateMode,
-  footerAccessory,
-  headerAccessory,
   isLiked,
   likeCount,
   likePending = false,
@@ -190,27 +82,22 @@ export function ActivityCard({
   onLikePress,
   onOwnerPress,
   onPress,
-  owner: ownerProp,
-  showLike,
+  showLike = false,
   showNotes = true,
-  showRouteIndicator = true,
-  showVisualPreview,
   testID,
-  variant = "list",
+  topRightAction,
 }: ActivityCardProps) {
-  const detail = variant === "detail";
-  const list = variant === "list";
-  const resolvedShowLike = showLike ?? list;
-  const categoryItems = getUniqueActivityCategoryConfigs(getActivityCategories(activity)).map(
-    (category) => ({
-      icon: category.icon,
-      iconClassName: category.color,
-      label: category.name,
-    }),
-  );
-  const owner = ownerProp ?? activity.profile ?? null;
+  const categoryItems = getUniqueActivityCategoryConfigs(
+    activity.activityComposition.categories.length > 0
+      ? activity.activityComposition.categories
+      : ["other"],
+  ).map((category) => ({
+    icon: category.icon,
+    iconClassName: category.color,
+    label: category.name,
+  }));
   const resolvedDateMode = dateMode ?? "relative";
-  const resolvedCommentCount = commentCount ?? activity.comments_count ?? 0;
+  const resolvedCommentCount = commentCount ?? activity.engagement.comments;
   const {
     isLiked: internalLiked,
     isPending: internalLikePending,
@@ -219,42 +106,32 @@ export function ActivityCard({
   } = useResourceLike({
     entityId: activity.id,
     entityType: "activity",
-    initialCount: activity.likes_count,
-    initialLiked: activity.has_liked,
+    initialCount: activity.engagement.likes,
+    initialLiked: activity.engagement.viewerHasLiked,
   });
   const displayLiked = isLiked ?? internalLiked;
   const displayLikeCount = likeCount ?? internalLikeCount;
   const displayLikePending = likePending || internalLikePending;
-  const shouldShowVisualPreview = showVisualPreview ?? false;
-  const shouldShowCompactRoutePreview = list && showVisualPreview !== false;
-  const attributionOwner = owner
-    ? {
-        avatar_url: owner.avatar_url ?? owner.avatarUrl ?? null,
-        id: owner.id,
-        username: owner.username,
-      }
-    : null;
-  const decodedPolylineCoordinates = useMemo(() => {
-    if (!shouldShowVisualPreview && !shouldShowCompactRoutePreview) return [];
-    if (!activity.polyline) return [];
-    try {
-      return decodePolyline(activity.polyline);
-    } catch {
-      return [];
-    }
-  }, [activity.polyline, shouldShowCompactRoutePreview, shouldShowVisualPreview]);
-  const routeCoordinates = decodedPolylineCoordinates;
+  const attributionOwner = {
+    avatar_url: activity.owner.avatarUrl,
+    id: activity.owner.id,
+    username: activity.owner.username,
+  };
   const hasCommentAction = Boolean(onCommentPress);
-  const hasFooterAccessory = Boolean(footerAccessory);
-  const hasHeaderAccessory = Boolean(headerAccessory);
+  const hasBelowMetricsActions =
+    belowMetricsActions !== undefined &&
+    belowMetricsActions !== null &&
+    belowMetricsActions !== false;
+  const hasTopRightAction =
+    topRightAction !== undefined && topRightAction !== null && topRightAction !== false;
 
   return (
     <ResourceCardShell
-      accessibilityLabel={`Open activity ${activity.name || "Untitled activity"}`}
+      accessibilityLabel={onPress ? "Open activity" : undefined}
       actionRegion={
         <ResourceOwnerActionRow
           actions={
-            hasCommentAction || hasFooterAccessory || resolvedShowLike || hasHeaderAccessory ? (
+            hasCommentAction || showLike || hasTopRightAction ? (
               <>
                 {onCommentPress ? (
                   <Pressable
@@ -267,10 +144,7 @@ export function ActivityCard({
                     <Text className="text-sm text-muted-foreground">{resolvedCommentCount}</Text>
                   </Pressable>
                 ) : null}
-
-                {footerAccessory}
-
-                {resolvedShowLike ? (
+                {showLike ? (
                   <ResourceLikeButton
                     disabled={displayLikePending}
                     isLiked={displayLiked}
@@ -279,8 +153,7 @@ export function ActivityCard({
                     testID={`activity-card-like-button-${activity.id}`}
                   />
                 ) : null}
-
-                {headerAccessory}
+                {topRightAction}
               </>
             ) : null
           }
@@ -288,7 +161,7 @@ export function ActivityCard({
           fallbackLabel="GradientPeak"
           onOwnerPress={onOwnerPress}
           owner={attributionOwner}
-          timestamp={resolvedDateMode === "none" ? null : activity.started_at}
+          timestamp={resolvedDateMode === "none" ? null : activity.time.startedAt}
         />
       }
       contentClassName="gap-3 px-3"
@@ -297,36 +170,16 @@ export function ActivityCard({
     >
       <ResourceCardHeader
         description={showNotes ? activity.notes : null}
-        descriptionNumberOfLines={detail ? undefined : 2}
-        detail={detail}
-        title={activity.name}
-        titleClassName={`${detail ? "text-xl" : "text-base"} font-semibold text-foreground`}
-        titleFallback="Untitled Activity"
+        descriptionNumberOfLines={2}
+        title={activity.title}
+        titleClassName="text-base font-semibold text-foreground"
+        titleFallback="Activity"
       />
 
-      <ActivityMetricsRow activity={activity} compact={false} />
+      <ActivityMetricsRow activity={activity} />
 
-      {shouldShowVisualPreview && routeCoordinates.length > 0 ? (
-        <View
-          className="overflow-hidden rounded-2xl border border-border bg-card"
-          testID={`activity-card-route-preview-${activity.id}`}
-        >
-          <View className="h-36 bg-muted">
-            <StaticRouteMapPreview
-              coordinates={routeCoordinates}
-              showMarkers={true}
-              strokeColor="#f97316"
-              strokeWidth={4}
-            />
-          </View>
-        </View>
-      ) : shouldShowCompactRoutePreview && routeCoordinates.length > 0 ? (
-        <CompactRoutePreview coordinates={routeCoordinates} />
-      ) : showRouteIndicator && activity.polyline ? (
-        <View className="flex-row items-center gap-1.5">
-          <Icon as={Route} size={14} className="text-muted-foreground" />
-          <Text className="text-xs text-muted-foreground">Route available</Text>
-        </View>
+      {hasBelowMetricsActions ? (
+        <View testID="activity-card-below-metrics-actions">{belowMetricsActions}</View>
       ) : null}
     </ResourceCardShell>
   );

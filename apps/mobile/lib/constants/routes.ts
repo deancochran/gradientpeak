@@ -12,6 +12,8 @@ export const ROUTES = {
     CALENDAR: "/(internal)/(tabs)/calendar" as const,
     CREATE: "/create-activity-plan" as const,
     CALENDAR_DAY: (date: string) => ({ pathname: "/calendar-day", params: { date } }) as const,
+    PLANNING_LEDGER: (params: { anchorDate: string; period: "day" | "week" | "month" }) =>
+      ({ pathname: "/planning-ledger", params }) as const,
     AGENDA_CREATE: (date: string) => ({ pathname: "/agenda-create", params: { date } }) as const,
     EVENT_CREATE: (date: string) =>
       ({ pathname: "/event-detail", params: { mode: "create", date } }) as const,

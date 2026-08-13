@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import type React from "react";
-import { DailyTrainingAdjustmentChart, getLoadBarGeometry } from "./DailyTrainingAdjustmentChart";
+import type { ReactTestInstance } from "react-test-renderer";
+import { DailyTrainingAdjustmentChart } from "./DailyTrainingAdjustmentChart";
 import { hasCompletedActivityWithoutLoad } from "./dailyTrainingAdjustmentChartPresentation";
 import { deriveTrainingPathChartWindow } from "./trainingPathChartWindow";
 
@@ -189,7 +190,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(screen.queryByText("On target")).toBeNull();
   });
 
-  it("shows the versioned common-Load recommendation in the selected-day tray", () => {
+  it("keeps recommendation data out of chart layers while preserving reusable tray compatibility", () => {
     render(
       <DailyTrainingAdjustmentChart
         selectedDate="2026-06-02"
@@ -243,7 +244,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     );
 
     expect(mockScrollTo).toHaveBeenCalledTimes(1);
-    expect(mockScrollTo).toHaveBeenCalledWith({ animated: false, x: 60, y: 0 });
+    expect(mockScrollTo).toHaveBeenCalledWith({ animated: false, x: 96, y: 0 });
   });
 
   it("renders an empty state", () => {
@@ -339,7 +340,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     );
     const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
     const dragEvent = { nativeEvent: { contentOffset: { x: 31, y: 0 } } };
-    const momentumEvent = { nativeEvent: { contentOffset: { x: 60, y: 0 } } };
+    const momentumEvent = { nativeEvent: { contentOffset: { x: 96, y: 0 } } };
 
     fireEvent(scrollView, "scrollBeginDrag");
     fireEvent(scrollView, "scrollEndDrag", dragEvent);
@@ -378,7 +379,7 @@ describe("DailyTrainingAdjustmentChart", () => {
 
     fireEvent(scrollView, "momentumScrollBegin");
     fireEvent(scrollView, "momentumScrollEnd", {
-      nativeEvent: { contentOffset: { x: 60, y: 0 } },
+      nativeEvent: { contentOffset: { x: 96, y: 0 } },
     });
     expect(onSelectedDateChange).toHaveBeenCalledTimes(1);
     expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-03");
@@ -400,13 +401,13 @@ describe("DailyTrainingAdjustmentChart", () => {
 
     const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
     fireEvent(scrollView, "scrollBeginDrag");
-    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 60, y: 0 } } });
+    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 96, y: 0 } } });
 
     expect(screen.getByText("2026-06-03")).toBeTruthy();
     expect(onSelectedDateChange).not.toHaveBeenCalled();
 
     fireEvent(scrollView, "momentumScrollEnd", {
-      nativeEvent: { contentOffset: { x: 60, y: 0 } },
+      nativeEvent: { contentOffset: { x: 96, y: 0 } },
     });
 
     expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-03");
@@ -431,7 +432,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     fireEvent(scrollView, "scrollBeginDrag");
     fireEvent(scrollView, "momentumScrollBegin");
     fireEvent(scrollView, "momentumScrollEnd", {
-      nativeEvent: { contentOffset: { x: 60, y: 0 } },
+      nativeEvent: { contentOffset: { x: 96, y: 0 } },
     });
     expect(screen.getByText("2026-06-03")).toBeTruthy();
 
@@ -477,7 +478,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     const adjustable = screen.getByLabelText("Daily training adjustment chart");
     expect(adjustable.props.accessibilityRole).toBe("adjustable");
     expect(adjustable.props.accessibilityValue).toEqual({
-      text: "Selected date 2026-06-02. Common Load 50. Normalized intensity 0.75",
+      text: "Selected date 2026-06-02",
     });
     expect(adjustable.props.accessibilityHint).toBe("Adjust to select the next or previous date");
 
@@ -486,6 +487,36 @@ describe("DailyTrainingAdjustmentChart", () => {
     });
     expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-03");
     expect(screen.getByText("2026-06-03")).toBeTruthy();
+  });
+
+  it("provides a 44-point period target aligned to each bucket", () => {
+    const onSelectedDateChange = jest.fn();
+    render(
+      <DailyTrainingAdjustmentChart
+        onSelectedDateChange={onSelectedDateChange}
+        points={[{ date: "2026-06-01", effectiveRemainingLoad: 20 }]}
+      />,
+    );
+
+    const target = screen.getByTestId("daily-training-adjustment-chart-bucket-2026-06-01");
+    expect(target.props.accessibilityRole).toBe("button");
+    expect(target.props.style.width).toBeGreaterThanOrEqual(44);
+    fireEvent.press(target);
+    expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-01");
+  });
+
+  it("passes center-valued x data and the x field to CartesianChart", () => {
+    render(
+      <DailyTrainingAdjustmentChart
+        points={[
+          { date: "2026-06-01", effectiveRemainingLoad: 20 },
+          { date: "2026-06-02", effectiveRemainingLoad: 30 },
+        ]}
+      />,
+    );
+
+    const chart = screen.UNSAFE_getByType("CartesianChart" as never);
+    expect(chart.props.data.map((datum: { x: number }) => datum.x)).toEqual([120, 168]);
   });
 
   it("announces available selected load, fitness, and unavailable completed-load state", () => {
@@ -500,7 +531,6 @@ describe("DailyTrainingAdjustmentChart", () => {
             effectiveIntensity: 0.7,
             effectiveCompletedLoad: 15,
             effectiveRemainingLoad: 25,
-            effectiveTentativeLoad: 5,
             recommendedLoadStatus: "complete",
             recommendedLoad: 80,
             fitnessCtl: 31.4,
@@ -509,6 +539,7 @@ describe("DailyTrainingAdjustmentChart", () => {
           },
         ]}
         selectedDate="2026-06-02"
+        showRecommendedProjection
       />,
     );
 
@@ -517,25 +548,68 @@ describe("DailyTrainingAdjustmentChart", () => {
     ).toEqual({
       text: [
         "Selected date 2026-06-02",
-        "Common Load 40 incomplete",
-        "Normalized intensity 0.70 incomplete",
         "Completed Common Load 15",
         "Completed activity, Common Load unavailable",
         "Planned Common Load 25",
-        "Tentative Common Load 5",
-        "Recommended Common Load 80",
         "Actual fitness 31",
-        "Projected fitness 33",
-        "Target fitness 35",
+        "Planned fitness projection 33",
       ].join(". "),
     });
   });
 
-  it("uses one collision-safe width and center for every daily load layer", () => {
-    const geometry = getLoadBarGeometry([{ x: 10 }, { x: 20 }, { x: 30 }], 1, 0, 40, 22);
+  it("renders metric axes, projection styles, and a visible Today boundary", () => {
+    render(
+      <DailyTrainingAdjustmentChart
+        points={[
+          {
+            date: "2026-06-01",
+            effectiveCompletedLoad: 20,
+            fitnessCtl: 40,
+            scheduledFitnessCtl: 40,
+            targetFitnessCtl: 40,
+            recommendedLoadStatus: "complete",
+            recommendedLoad: 30,
+          },
+          {
+            date: "2026-06-02",
+            effectiveRemainingLoad: 25,
+            scheduledFitnessCtl: 42,
+            targetFitnessCtl: 43,
+            recommendedLoadStatus: "complete",
+            recommendedLoad: 35,
+          },
+        ]}
+        selectedDate="2026-06-01"
+        showRecommendedProjection
+        todayDate="2026-06-01"
+      />,
+    );
 
-    expect(geometry?.center).toBe(20);
-    expect(geometry?.width).toBeCloseTo(7.2);
+    expect(screen.getByLabelText("Left axis: Load, Common Load")).toBeTruthy();
+    expect(screen.getByLabelText("Right axis: Training state")).toBeTruthy();
+    expect(screen.getByTestId("daily-training-adjustment-chart-today-boundary")).toBeTruthy();
+    expect(screen.getByLabelText("Today boundary at 2026-06-01")).toBeTruthy();
+
+    const lines = screen.UNSAFE_root.findAll(
+      (node: ReactTestInstance) => String(node.type) === "Line",
+    );
+    const currentFitness = lines.find(
+      (line: ReactTestInstance) => line.props.color === "rgba(22, 163, 74, 0.95)",
+    );
+    const plannedProjection = lines.find(
+      (line: ReactTestInstance) => line.props.color === "rgba(37, 99, 235, 0.95)",
+    );
+    expect(currentFitness?.props.children).toBeUndefined();
+    expect(plannedProjection?.props.children).toBeUndefined();
+    expect(
+      lines.find((line: ReactTestInstance) => line.props.color === "rgba(15, 23, 42, 0.44)"),
+    ).toBeUndefined();
+    expect(
+      screen.UNSAFE_root.findAll(
+        (node: ReactTestInstance) =>
+          String(node.type) === "SkiaText" && node.props.text === "TODAY",
+      ),
+    ).toHaveLength(1);
   });
 
   it("prefetches more days before the user reaches either scroll edge", () => {
@@ -579,7 +653,7 @@ describe("DailyTrainingAdjustmentChart", () => {
 
     const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
     fireEvent(scrollView, "scrollBeginDrag");
-    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 270, y: 0 } } });
+    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 336, y: 0 } } });
 
     rerender(
       <DailyTrainingAdjustmentChart
@@ -589,7 +663,7 @@ describe("DailyTrainingAdjustmentChart", () => {
       />,
     );
 
-    expect(screen.getByText("06/23", { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.getByText("06/21", { includeHiddenElements: true })).toBeTruthy();
   });
 
   it("restores the centered date after older dates are prepended", () => {
@@ -632,7 +706,7 @@ describe("DailyTrainingAdjustmentChart", () => {
       />,
     );
 
-    expect(mockScrollTo).toHaveBeenCalledWith({ animated: false, x: 150, y: 0 });
+    expect(mockScrollTo).toHaveBeenCalledWith({ animated: false, x: 240, y: 0 });
   });
 
   it("preserves the final drag position when dates arrive during momentum", () => {
@@ -677,6 +751,6 @@ describe("DailyTrainingAdjustmentChart", () => {
       nativeEvent: { contentOffset: { x: 180, y: 0 } },
     });
 
-    expect(mockScrollTo).toHaveBeenCalledWith({ animated: false, x: 180, y: 0 });
+    expect(mockScrollTo).toHaveBeenCalledWith({ animated: false, x: 192, y: 0 });
   });
 });

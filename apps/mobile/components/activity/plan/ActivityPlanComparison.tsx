@@ -1,6 +1,6 @@
 import {
   type ActivityObservationQuantificationBundle,
-  type ActivityPrescriptionQuantificationBundle,
+  type ActivityPlanDetail,
   calculateActivityPlanStats,
   deriveActivityPlanPresentation,
 } from "@repo/core";
@@ -12,13 +12,7 @@ import { Pressable, View } from "react-native";
 import { TimelineChart } from "@/components/activity-plan/activity/TimelineChart";
 import { markEstimated } from "@/lib/estimatedMetrics";
 
-interface ActivityPlanData {
-  id: string;
-  name: string;
-  structure: unknown;
-  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
-  [key: string]: unknown;
-}
+type ActivityPlanData = Pick<ActivityPlanDetail, "id" | "metrics" | "name" | "structure">;
 
 interface ActivityMetrics {
   duration: number; // seconds
@@ -67,8 +61,9 @@ export function ActivityPlanComparison({
 
   const actualDuration = actualMetrics.duration;
   const actualLoad = getActivityQuantificationPresentation(actualMetrics.observationQuantification);
-  const plannedLoad = getActivityQuantificationPresentation(
-    activityPlan.prescriptionQuantification,
+  const plannedCommonLoad = activityPlan.metrics.find((metric) => metric.key === "common_load");
+  const plannedIntensity = activityPlan.metrics.find(
+    (metric) => metric.key === "normalized_intensity",
   );
 
   // Calculate variances
@@ -110,9 +105,9 @@ export function ActivityPlanComparison({
               {actualLoad.commonLoad.label}
             </Text>
             <Text className="text-lg font-bold">{actualLoad.commonLoad.value}</Text>
-            {plannedLoad.commonLoad.status !== "unavailable" ? (
+            {plannedCommonLoad && plannedCommonLoad.status !== "unavailable" ? (
               <Text className="text-xs text-muted-foreground mt-1">
-                Plan: {markEstimated(plannedLoad.commonLoad.value)}
+                Plan: {markEstimated(String(Math.round(plannedCommonLoad.value)))}
               </Text>
             ) : null}
           </View>
@@ -122,9 +117,9 @@ export function ActivityPlanComparison({
               {actualLoad.normalizedIntensity.label}
             </Text>
             <Text className="text-lg font-bold">{actualLoad.normalizedIntensity.value}</Text>
-            {plannedLoad.normalizedIntensity.status !== "unavailable" ? (
+            {plannedIntensity && plannedIntensity.status !== "unavailable" ? (
               <Text className="text-xs text-muted-foreground mt-1">
-                Plan: {markEstimated(plannedLoad.normalizedIntensity.value)}
+                Plan: {markEstimated(plannedIntensity.value.toFixed(2))}
               </Text>
             ) : null}
           </View>

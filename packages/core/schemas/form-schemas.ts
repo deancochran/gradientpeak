@@ -49,19 +49,7 @@ import {
   restingHrSchema,
   weightKgSchema,
 } from "./forms/profile";
-import {
-  eventLifecycleSchema,
-  eventMutationScopeSchema,
-  eventRecurrenceSchema,
-  eventTypeInputSchema,
-  importedEventSourceMetadataSchema,
-} from "./planned_activity";
-import {
-  creationProvenanceSchema,
-  creationRecentInfluenceActionEnum,
-  trainingPlanCreationConfigSchema,
-  trainingPlanGoalTargetSchema,
-} from "./training-plan-structure";
+import { trainingPlanGoalTargetSchema } from "./training-plan-structure";
 
 export {
   completionTimeHmsSchema,
@@ -363,56 +351,6 @@ export const activityPlanUpdateFormSchema = activityPlanFormFieldsBaseSchema.par
 export type ActivityPlanUpdateFormData = z.infer<typeof activityPlanUpdateFormSchema>;
 
 // ============================================================================
-// PLANNED ACTIVITY FORM SCHEMAS
-// ============================================================================
-
-/**
- * Planned Activity Schedule Form Schema
- * Used when scheduling an activity from a plan
- */
-export const plannedActivityScheduleFormSchema = z.object({
-  activity_plan_id: z.string().uuid("Please select an activity plan"),
-  scheduled_date: dateStringSchema,
-  notes: activityPlanNotesSchema,
-  training_plan_id: z.string().uuid().optional().nullable(),
-  event_type: eventTypeInputSchema.default("planned").optional(),
-  recurrence: eventRecurrenceSchema.optional(),
-  lifecycle: eventLifecycleSchema.optional(),
-  source: importedEventSourceMetadataSchema.optional(),
-  read_only: z.boolean().optional(),
-});
-
-export type PlannedActivityScheduleFormData = z.infer<typeof plannedActivityScheduleFormSchema>;
-
-/**
- * Planned Activity Update Form Schema
- */
-export const plannedActivityUpdateFormSchema = z.object({
-  activity_plan_id: z.string().uuid("Please select an activity plan").optional(),
-  scheduled_date: dateStringSchema.optional(),
-  notes: activityPlanNotesSchema,
-  event_type: eventTypeInputSchema.optional(),
-  lifecycle: eventLifecycleSchema.optional(),
-  scope: z.literal("single").default("single").optional(),
-});
-
-export type PlannedActivityUpdateFormData = z.infer<typeof plannedActivityUpdateFormSchema>;
-
-/**
- * Planned Activity Reschedule Form Schema
- */
-export const plannedActivityRescheduleFormSchema = z.object({
-  new_date: futureDateSchema,
-  reason: z.preprocess(
-    trimString,
-    z.string().max(500, "Reason must be less than 500 characters").optional(),
-  ),
-  scope: z.literal("single").default("single"),
-});
-
-export type PlannedActivityRescheduleFormData = z.infer<typeof plannedActivityRescheduleFormSchema>;
-
-// ============================================================================
 // TRAINING PLAN FORM SCHEMAS
 // ============================================================================
 
@@ -480,67 +418,6 @@ export const trainingPlanMinimalSubmitFormSchema = z.object({
 });
 
 export type TrainingPlanMinimalSubmitFormData = z.infer<typeof trainingPlanMinimalSubmitFormSchema>;
-
-/**
- * Training plan creation provenance metadata at form boundary.
- * Allows confidence to be submitted as a number or numeric string.
- */
-export const trainingPlanCreationProvenanceFormSchema = creationProvenanceSchema.extend({
-  confidence: z.preprocess(
-    (val) => stringToNumber(emptyStringToNull(val)),
-    z.number().min(0).max(1).nullable(),
-  ),
-});
-
-export type TrainingPlanCreationProvenanceFormData = z.infer<
-  typeof trainingPlanCreationProvenanceFormSchema
->;
-
-/**
- * Form-level validator for creation config used by preview/create MVP endpoints.
- * Adds cross-field checks that are specific to submission semantics.
- */
-export const trainingPlanCreationConfigFormSchema = trainingPlanCreationConfigSchema.superRefine(
-  (data, ctx) => {
-    if (
-      data.recent_influence_action === creationRecentInfluenceActionEnum.enum.disabled &&
-      data.recent_influence.influence_score !== 0
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["recent_influence", "influence_score"],
-        message:
-          'recent_influence.influence_score must be 0 when recent_influence_action is "disabled"',
-      });
-    }
-
-    if (
-      data.recent_influence_action === creationRecentInfluenceActionEnum.enum.accepted &&
-      data.recent_influence_provenance.source !== "suggested"
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["recent_influence_provenance", "source"],
-        message: 'recent_influence_provenance.source must be "suggested" when action is "accepted"',
-      });
-    }
-
-    if (
-      data.recent_influence_action === creationRecentInfluenceActionEnum.enum.edited &&
-      data.recent_influence_provenance.source !== "user"
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["recent_influence_provenance", "source"],
-        message: 'recent_influence_provenance.source must be "user" when action is "edited"',
-      });
-    }
-  },
-);
-
-export type TrainingPlanCreationConfigFormData = z.infer<
-  typeof trainingPlanCreationConfigFormSchema
->;
 
 /**
  * Weekly Common Load target validation
@@ -955,9 +832,6 @@ export const formSchemas = {
   profileSettings: profileSettingsFormSchema,
   profileQuickUpdate: profileQuickUpdateSchema,
   activitySubmission: activitySubmissionFormSchema,
-  plannedActivitySchedule: plannedActivityScheduleFormSchema,
-  plannedActivityUpdate: plannedActivityUpdateFormSchema,
-  plannedActivityReschedule: plannedActivityRescheduleFormSchema,
 
   // Activity plan schemas
   activityPlanCreate: activityPlanCreateFormSchema,
@@ -968,8 +842,6 @@ export const formSchemas = {
   trainingPlanMinimalGoal: trainingPlanMinimalGoalFormSchema,
   trainingPlanAdvancedGoal: trainingPlanAdvancedGoalFormSchema,
   trainingPlanMinimalSubmit: trainingPlanMinimalSubmitFormSchema,
-  trainingPlanCreationProvenance: trainingPlanCreationProvenanceFormSchema,
-  trainingPlanCreationConfig: trainingPlanCreationConfigFormSchema,
   distanceKm: distanceKmSchema,
   completionTimeHms: completionTimeHmsSchema,
   paceMmSs: paceMmSsSchema,

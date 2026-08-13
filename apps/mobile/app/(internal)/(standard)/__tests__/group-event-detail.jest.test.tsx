@@ -232,10 +232,10 @@ describe("group event detail route", () => {
     fireEvent.press(screen.getByTestId("mock-rsvp-series"));
 
     await waitFor(() => {
-      expect(rsvpMock).toHaveBeenCalledWith("99999999-9999-4999-8999-999999999999", "accepted");
+      expect(rsvpMock).toHaveBeenCalledWith("99999999-9999-4999-8999-999999999999", null);
       expect(rsvpEventSeriesMock).toHaveBeenCalledWith({
         groupEventSeriesId: "88888888-8888-4888-8888-888888888888",
-        status: "accepted",
+        status: null,
       });
     });
   });

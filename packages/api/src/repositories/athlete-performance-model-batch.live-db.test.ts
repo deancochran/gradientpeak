@@ -183,18 +183,18 @@ async function seedCanonicalBikeEffort(
   return evidenceId;
 }
 
-async function seedLthrEvidence(activity: SeededBikeActivity, recordedAt: Date): Promise<string> {
+async function seedMaxHrEvidence(activity: SeededBikeActivity, recordedAt: Date): Promise<string> {
   const evidenceId = randomUUID();
   await db.insert(profileMetrics).values({
     id: evidenceId,
     profile_id: activity.profileId,
-    metric_type: "lthr",
+    metric_type: "max_hr",
     recorded_at: recordedAt,
     unit: "bpm",
     value: 170,
     source: "derived",
-    method: "activity_file_lthr_detection",
-    calculation_version: "activity-file-lthr-v1",
+    method: "max_hr_progressive_test_v1",
+    calculation_version: "max_hr_progressive_test_v1",
     provenance: { segment_id: activity.segmentId },
     reference_activity_id: activity.activityId,
     created_at: seededAt,
@@ -203,7 +203,7 @@ async function seedLthrEvidence(activity: SeededBikeActivity, recordedAt: Date):
   return evidenceId;
 }
 
-async function seedHighVolumeLthrEvidence(
+async function seedHighVolumeMaxHrEvidence(
   activity: SeededBikeActivity,
   firstRecordedAt: Date,
 ): Promise<void> {
@@ -236,13 +236,13 @@ async function seedHighVolumeLthrEvidence(
       select
         generated_evidence.id,
         ${activity.profileId}::uuid,
-        'lthr',
+        'max_hr',
         generated_evidence.recorded_at,
         'bpm',
         170,
         'derived',
-        'activity_file_lthr_detection',
-        'activity-file-lthr-v1',
+        'max_hr_progressive_test_v1',
+        'max_hr_progressive_test_v1',
         jsonb_build_object('segment_id', ${activity.segmentId}::text),
         ${activity.activityId}::uuid,
         ${seededAt},
@@ -300,7 +300,7 @@ describe("athlete performance-model historical batch reads", () => {
     ).resolves.toHaveLength(0);
 
     const activity = await seedBikeActivity(profileId, "accepted HR evidence", seededAt);
-    await seedLthrEvidence(activity, seededAt);
+    await seedMaxHrEvidence(activity, seededAt);
     const [state] = await db
       .select()
       .from(profileAthleteState)
@@ -320,7 +320,7 @@ describe("athlete performance-model historical batch reads", () => {
       new Date("2026-08-03T00:00:00.000Z"),
     );
     await seedCanonicalBikeEffort(activity, new Date("2026-08-01T12:00:00.000Z"));
-    await seedLthrEvidence(activity, new Date("2026-08-01T12:00:00.000Z"));
+    await seedMaxHrEvidence(activity, new Date("2026-08-01T12:00:00.000Z"));
     const repository = createAthletePerformanceModelRepository(db);
     const model = await getAthletePerformanceModelAsOf(
       { athleteId: profileId, asOf: new Date("2026-08-02T00:00:00.000Z") },
@@ -370,26 +370,26 @@ describe("athlete performance-model historical batch reads", () => {
       historicalActivity,
       historicalRecordedAt,
     );
-    const historicalLthrId = await seedLthrEvidence(historicalActivity, historicalRecordedAt);
+    const historicalMaxHrId = await seedMaxHrEvidence(historicalActivity, historicalRecordedAt);
     const otherOlderEffortId = await seedCanonicalBikeEffort(
       otherOlderActivity,
       otherOlderRecordedAt,
     );
-    const otherOlderLthrId = await seedLthrEvidence(otherOlderActivity, otherOlderRecordedAt);
+    const otherOlderMaxHrId = await seedMaxHrEvidence(otherOlderActivity, otherOlderRecordedAt);
     const otherNewerEffortId = await seedCanonicalBikeEffort(
       otherNewerActivity,
       otherNewerRecordedAt,
     );
-    const otherNewerLthrId = await seedLthrEvidence(otherNewerActivity, otherNewerRecordedAt);
+    const otherNewerMaxHrId = await seedMaxHrEvidence(otherNewerActivity, otherNewerRecordedAt);
     const futureEffortId = await seedCanonicalBikeEffort(
       futureFinishedActivity,
       new Date("2026-08-01T12:00:00.000Z"),
     );
-    const futureLthrId = await seedLthrEvidence(
+    const futureMaxHrId = await seedMaxHrEvidence(
       futureFinishedActivity,
       new Date("2026-08-01T12:00:00.000Z"),
     );
-    await seedHighVolumeLthrEvidence(highVolumeActivity, highVolumeRecordedAt);
+    await seedHighVolumeMaxHrEvidence(highVolumeActivity, highVolumeRecordedAt);
 
     const requests: AthletePerformanceModelReadInput[] = [
       {
@@ -421,29 +421,29 @@ describe("athlete performance-model historical batch reads", () => {
     const batchReads = await readEvidenceBatch(requests);
 
     expect(batchReads).toEqual(directReads);
-    expect(batchReads[0]?.heartRateReads.bike.lthr).toMatchObject({
+    expect(batchReads[0]?.heartRateReads.bike.maxHr).toMatchObject({
       rows: { length: 100 },
       truncated: true,
     });
     expect(batchReads[1]?.effortReads.bike.rows.map(({ id }) => id)).toEqual([historicalEffortId]);
-    expect(batchReads[1]?.heartRateReads.bike.lthr.rows.map(({ id }) => id)).toEqual([
-      historicalLthrId,
+    expect(batchReads[1]?.heartRateReads.bike.maxHr.rows.map(({ id }) => id)).toEqual([
+      historicalMaxHrId,
     ]);
     expect(batchReads[2]?.effortReads.bike.rows.map(({ id }) => id)).toEqual([
       otherNewerEffortId,
       otherOlderEffortId,
     ]);
-    expect(batchReads[2]?.heartRateReads.bike.lthr.rows.map(({ id }) => id)).toEqual([
-      otherNewerLthrId,
-      otherOlderLthrId,
+    expect(batchReads[2]?.heartRateReads.bike.maxHr.rows.map(({ id }) => id)).toEqual([
+      otherNewerMaxHrId,
+      otherOlderMaxHrId,
     ]);
     expect(batchReads[2]?.effortReads.bike.rows.map(({ id }) => id)).not.toContain(futureEffortId);
-    expect(batchReads[2]?.heartRateReads.bike.lthr.rows.map(({ id }) => id)).not.toContain(
-      futureLthrId,
+    expect(batchReads[2]?.heartRateReads.bike.maxHr.rows.map(({ id }) => id)).not.toContain(
+      futureMaxHrId,
     );
     expect(batchReads[3]?.effortReads.bike.rows.map(({ id }) => id)).toEqual([otherOlderEffortId]);
-    expect(batchReads[3]?.heartRateReads.bike.lthr.rows.map(({ id }) => id)).toEqual([
-      otherOlderLthrId,
+    expect(batchReads[3]?.heartRateReads.bike.maxHr.rows.map(({ id }) => id)).toEqual([
+      otherOlderMaxHrId,
     ]);
   }, 60_000);
 });

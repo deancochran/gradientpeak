@@ -1,6 +1,6 @@
 // apps/mobile/app/(internal)/(tabs)/plan/training-plan/modals/components/ActivitySelector.tsx
 
-import type { ActivityPrescriptionQuantificationBundle } from "@repo/core";
+import type { ActivityPlanSummary } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { CircleCheck } from "lucide-react-native";
@@ -10,14 +10,7 @@ import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { EmptyState } from "@/components/shared/ScreenState";
 import { SearchField } from "@/components/shared/SearchField";
 
-export interface ActivityOption {
-  id: string;
-  name: string;
-  activity_category: string;
-  structure?: unknown;
-  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
-  description?: string | null;
-}
+export type ActivityOption = ActivityPlanSummary;
 
 interface ActivitySelectorProps {
   activities: ActivityOption[];
@@ -71,7 +64,7 @@ export function ActivitySelector({
         testID={`activity-selector-option-${item.id}`}
       >
         <ActivityPlanCard
-          activityPlan={item}
+          plan={item}
           onPress={() => onSelect(item)}
           testID={`activity-selector-activity-plan-${item.id}`}
           variant="compact"

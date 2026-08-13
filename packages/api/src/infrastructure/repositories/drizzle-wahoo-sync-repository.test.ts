@@ -1,6 +1,10 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createWahooSyncRepository } from "./drizzle-wahoo-sync-repository";
+import {
+  assertOnboardingJobOwnership,
+  createWahooSyncRepository,
+  onboardingJobIdentityMatches,
+} from "./drizzle-wahoo-sync-repository";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -89,5 +93,51 @@ describe("provider retry enablement", () => {
     expect(query.sql).toContain('"provider_webhook_receipts"."provider" = $2');
     expect(query.sql).toContain('"provider_webhook_receipts"."processing_status" = $3');
     expect(query.params).toEqual(["00000000-0000-4000-8000-000000000002", "wahoo", "failed"]);
+  });
+});
+
+describe("onboarding queue ownership", () => {
+  const input = {
+    dedupeKey: "wahoo-history-reconcile:integration-1:1",
+    integrationId: "integration-1",
+    integrationGeneration: 1,
+    jobType: "wahoo.activity_history_reconcile",
+    payload: { trigger: "onboarding" },
+    profileId: "profile-1",
+    provider: "wahoo" as const,
+    resourceKind: "activity" as const,
+    runAt: "2026-08-12T00:00:00.000Z",
+    syncLaneKey: "wahoo:integration-1:activity-history",
+  };
+  const existing = {
+    integrationGeneration: 1,
+    integrationId: "integration-1",
+    internalResourceId: null,
+    jobType: "wahoo.activity_history_reconcile",
+    operation: null,
+    payloadHash: null,
+    payloadMatches: true,
+    profileId: "profile-1",
+    provider: "wahoo",
+    resourceKind: "activity" as const,
+  };
+
+  it("reuses an exact queued or running onboarding identity idempotently", () => {
+    expect(onboardingJobIdentityMatches(existing, input, 1)).toBe(true);
+  });
+
+  it.each([
+    "manual",
+    "connect",
+  ])("rejects queued %s work rather than relabeling it onboarding", () => {
+    expect(() =>
+      assertOnboardingJobOwnership({ ...existing, payloadMatches: false }, input, 1),
+    ).toThrow("Existing provider work must finish");
+  });
+
+  it("rejects a running identity mismatch", () => {
+    expect(() => assertOnboardingJobOwnership({ ...existing, jobType: "other" }, input, 1)).toThrow(
+      "Existing provider work must finish",
+    );
   });
 });

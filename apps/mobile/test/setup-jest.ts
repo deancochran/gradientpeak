@@ -352,7 +352,6 @@ jest.mock("victory-native", () => ({
               goal: data,
               planned: data,
               plannedLoad: pointSeries("plannedLoad"),
-              plannedLoadWithTentative: pointSeries("plannedLoadWithTentative"),
               projection: data,
               projectedFitness: pointSeries("projectedFitness"),
               recommendedFitness: pointSeries("recommendedFitness"),

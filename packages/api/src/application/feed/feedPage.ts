@@ -2,7 +2,7 @@ import { z } from "zod";
 
 type FeedCursorItem = {
   id: string;
-  started_at: string;
+  time: { startedAt: string };
 };
 
 export function decodeFeedCursor(cursor: string | null | undefined) {
@@ -24,7 +24,7 @@ export function decodeFeedCursor(cursor: string | null | undefined) {
 }
 
 function encodeFeedCursor(activity: FeedCursorItem) {
-  return `${activity.started_at}|${activity.id}`;
+  return `${activity.time.startedAt}|${activity.id}`;
 }
 
 /** Maps the over-fetched feed rows and produces a stable composite continuation cursor. */

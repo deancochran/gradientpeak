@@ -7,6 +7,7 @@ const replace = jest.fn();
 const cleanup = jest.fn(async () => undefined);
 const discardFinalizedArtifact = jest.fn(async () => undefined);
 let hookCalls = 0;
+let submissionState: Record<string, unknown>;
 
 jest.mock("react-native", () => ({
   ...jest.requireActual("@repo/ui/test/react-native"),
@@ -43,15 +44,7 @@ jest.mock("@/lib/providers/ActivityRecorderProvider", () => ({
 jest.mock("@/lib/hooks/useActivitySubmission", () => ({
   useActivitySubmission: () => {
     hookCalls += 1;
-    return {
-      activity: null,
-      artifact: null,
-      error: "No finalized activity artifact found",
-      isLoading: false,
-      isSubmitting: false,
-      update: jest.fn(),
-      submit: jest.fn(),
-    };
+    return submissionState;
   },
 }));
 jest.mock("lucide-react-native", () => ({
@@ -67,6 +60,32 @@ beforeEach(() => {
   discardFinalizedArtifact.mockClear();
   (Alert.alert as jest.Mock).mockClear();
   hookCalls = 0;
+  submissionState = {
+    activity: null,
+    artifact: null,
+    error: "No finalized activity artifact found",
+    isLoading: false,
+    isSubmitting: false,
+    update: jest.fn(),
+    submit: jest.fn(),
+  };
+});
+
+it("never renders the stored recorded activity name in submission review", () => {
+  submissionState = {
+    ...submissionState,
+    activity: {
+      name: "Private stored recording name",
+      notes: null,
+      content_visibility: "private",
+    },
+    artifact: { sessionId: "artifact-1" },
+  };
+
+  renderNative(<Submit />);
+
+  expect(screen.queryByTestId("activity-name-input")).toBeNull();
+  expect(screen.queryByText("Private stored recording name")).toBeNull();
 });
 
 it("retries loading by remounting submission recovery", () => {

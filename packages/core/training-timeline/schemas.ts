@@ -6,12 +6,7 @@ export const scheduledTrainingItemSourceSchema = z.enum([
   "group_event",
 ]);
 export const completedTrainingItemSourceSchema = z.enum(["completed_activity", "activity_effort"]);
-export const scheduledTrainingItemStatusSchema = z.enum([
-  "planned",
-  "tentative",
-  "completed",
-  "cancelled",
-]);
+export const scheduledTrainingItemStatusSchema = z.enum(["planned", "completed", "cancelled"]);
 export const trainingTimelineAnnotationToneSchema = z.enum(["info", "warning", "risk"]);
 
 export const scheduledTrainingItemSchema = z
@@ -56,7 +51,6 @@ export const trainingLoadComparisonSchema = z
   .object({
     plannedLoad: z.number().finite().nonnegative().nullable(),
     scheduledLoad: z.number().finite().nonnegative().nullable(),
-    tentativeScheduledLoad: z.number().finite().nonnegative().nullable(),
     completedLoad: z.number().finite().nonnegative().nullable(),
     remainingLoad: z.number().finite().nonnegative().nullable(),
     recommendedLoad: z.number().finite().nonnegative().nullable(),

@@ -14,7 +14,7 @@ export const Route = createFileRoute("/_protected")({
   },
   beforeLoad: async ({ location, serverContext }) => {
     const session = await resolveRouteAuthSession(serverContext);
-    const initialDecision = getProtectedAccessRedirect(session, true, location.href);
+    const initialDecision = getProtectedAccessRedirect(session, "completed", location.href);
 
     if (initialDecision?.destination === "login") {
       throw redirect({
@@ -42,7 +42,12 @@ export const Route = createFileRoute("/_protected")({
     if (decision?.destination === "onboarding") {
       throw redirect({
         to: "/onboarding",
-        search: { flash: undefined, flashType: undefined, redirect: decision.redirectTo },
+        search: {
+          error: undefined,
+          flash: undefined,
+          flashType: undefined,
+          redirect: decision.redirectTo,
+        },
       });
     }
 

@@ -12,7 +12,14 @@ import {
 
 const asOf = "2026-06-01T00:00:00.000Z";
 
-function targets(input: { power?: number; runLthr?: number; runMaxHr?: number } = {}) {
+function targets(
+  input: {
+    power?: number;
+    powerState?: "provisional" | "confirmed" | "stale";
+    runLthr?: number;
+    runMaxHr?: number;
+  } = {},
+) {
   const unavailable = createUnavailableAthletePerformanceTargetFacts(asOf);
   const heartRate = (metric: "lthr" | "max_hr", valueBpm: number | undefined) =>
     valueBpm === undefined
@@ -46,7 +53,8 @@ function targets(input: { power?: number; runLthr?: number; runMaxHr?: number } 
           ? unavailable.cycling.planningThresholdPower
           : {
               ...unavailable.cycling.planningThresholdPower,
-              status: "available",
+              status: input.powerState === "provisional" ? "partial" : "available",
+              calibrationState: input.powerState ?? "confirmed",
               value: input.power,
               calculationVersion: "recording-target-test-v1",
               sourceEvidenceIds: ["power-evidence"],
@@ -55,7 +63,7 @@ function targets(input: { power?: number; runLthr?: number; runMaxHr?: number } 
                 observedThrough: "2026-05-30T00:00:00.000Z",
                 computedAt: asOf,
               },
-              confidence: "high",
+              confidence: (input.powerState ?? "confirmed") === "confirmed" ? "high" : "low",
               expiresAt: "2026-08-28T00:00:00.000Z",
               reasons: [],
             },
@@ -120,7 +128,42 @@ describe("resolveActivityOccurrenceTrainerIntents", () => {
     ).toEqual([expect.objectContaining({ type: "set_power", watts: 180 })]);
   });
 
-  it("fails closed for missing or stale FTP while preserving absolute watts", () => {
+  it("keeps the recording-start target snapshot stable after a later calibration", () => {
+    const recordingOccurrence = occurrence("bike", [{ type: "%FTP", intensity: 80 }]);
+    const capturedAtStart = targets({ power: 250 });
+    const started = resolveActivityOccurrenceTrainerIntents({
+      occurrence: recordingOccurrence,
+      performanceTargets: capturedAtStart,
+    });
+    const afterRecalibration = resolveActivityOccurrenceTrainerIntents({
+      occurrence: recordingOccurrence,
+      performanceTargets: targets({ power: 300 }),
+    });
+
+    expect(started.intents).toEqual([expect.objectContaining({ type: "set_power", watts: 200 })]);
+    expect(afterRecalibration.intents).toEqual([
+      expect.objectContaining({ type: "set_power", watts: 240 }),
+    ]);
+    expect(started.intents).toEqual([expect.objectContaining({ type: "set_power", watts: 200 })]);
+  });
+
+  it.each([
+    "provisional",
+    "stale",
+  ] as const)("exports a structured bike target from a %s valid calibration", (powerState) => {
+    const performanceTargets = targets({ power: 250, powerState });
+    expect(
+      resolveActivityOccurrenceTrainerIntents({
+        occurrence: occurrence("bike", [{ type: "%FTP", intensity: 80 }]),
+        performanceTargets,
+      }),
+    ).toMatchObject({
+      intents: [expect.objectContaining({ type: "set_power", watts: 200 })],
+      unresolvedTargets: [],
+    });
+  });
+
+  it("fails closed for missing FTP while preserving absolute watts", () => {
     expect(
       resolveActivityOccurrenceTrainerIntents({
         occurrence: occurrence("bike", [{ type: "%FTP", intensity: 80 }]),
@@ -141,6 +184,16 @@ describe("resolveActivityOccurrenceTrainerIntents", () => {
       expect.objectContaining({ type: "set_power", watts: 210 }),
     ]);
     expect(resolution.unresolvedTargets).toEqual([{ type: "%FTP", intensity: 80 }]);
+  });
+
+  it("does not export a bike threshold into a wrong-sport target", () => {
+    expect(
+      resolvePerformanceTargetValue({
+        target: { type: "%FTP", intensity: 80 },
+        activityCategory: "run",
+        performanceTargets: targets({ power: 250, powerState: "provisional" }),
+      }),
+    ).toBeNull();
   });
 
   it("requires activity-category-specific eligible LTHR and max HR", () => {

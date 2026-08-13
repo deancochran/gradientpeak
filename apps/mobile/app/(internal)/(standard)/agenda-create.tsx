@@ -103,11 +103,9 @@ export default function AgendaCreateScreen() {
     planSuggestionDescription?: string;
     planSuggestionLoadDelta?: string;
     planSuggestionType?: string;
-    trainingPlanId?: string;
     type?: string;
   }>();
   const createDate = readParam(params.date);
-  const trainingPlanId = readParam(params.trainingPlanId);
   const planSuggestionDefaults = useMemo(
     () =>
       buildPlanSuggestionDefaults({
@@ -244,7 +242,6 @@ export default function AgendaCreateScreen() {
             onCreated={(createdEvent) => router.replace(ROUTES.PLAN.EVENT_DETAIL(createdEvent.id))}
             showFooterActions={false}
             testIDPrefix="agenda-create-event"
-            trainingPlanId={trainingPlanId}
           />
         )}
       </ScrollView>

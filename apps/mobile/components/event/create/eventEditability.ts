@@ -1,5 +1,5 @@
 type ExistingEventPlanReference = {
-  activity_plan?: { id?: unknown } | null;
+  activityPlanSummary?: { id?: unknown } | null;
   activity_plan_id?: unknown;
 };
 
@@ -11,7 +11,7 @@ type ExistingEventPlanReference = {
 export function isExistingEventActivityPlanEditable(
   event: ExistingEventPlanReference | null | undefined,
 ) {
-  const hasLinkedPlan = event?.activity_plan_id != null || event?.activity_plan?.id != null;
+  const hasLinkedPlan = event?.activity_plan_id != null || event?.activityPlanSummary?.id != null;
 
-  return !hasLinkedPlan || event?.activity_plan?.id != null;
+  return !hasLinkedPlan || event?.activityPlanSummary?.id != null;
 }

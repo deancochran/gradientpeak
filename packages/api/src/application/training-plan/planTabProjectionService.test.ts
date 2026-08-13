@@ -49,7 +49,6 @@ function dependencies(): PlanTabProjectionDependencies {
           status: "available",
           completed: aggregate,
           remaining: aggregate,
-          tentative: { ...aggregate, status: "known_zero", load: 0, intensity: null },
           effective: {
             status: "available",
             periodStartDate: "2026-04-06",
@@ -63,7 +62,14 @@ function dependencies(): PlanTabProjectionDependencies {
                 commonLoad: aggregate,
               },
             ],
-            tentativeItems: [],
+            tentativeItems: [
+              {
+                kind: "scheduled",
+                scheduledItemId: "55555555-5555-4555-8555-555555555555",
+                date: "2026-04-06",
+                commonLoad: { ...aggregate, load: 90 },
+              },
+            ],
             firm: aggregate,
           },
           model: "gradientpeak_relative_load",
@@ -158,6 +164,10 @@ describe("readPlanTabProjection", () => {
         "2026-04-06": {
           status: "complete",
           commonLoad: 60,
+          completedLoadStatus: "known_zero",
+          scheduledLoadStatus: "complete",
+          scheduledLoad: 60,
+          remainingLoadStatus: "complete",
           remainingLoad: 60,
           recommendedLoad: 70,
         },
@@ -169,6 +179,19 @@ describe("readPlanTabProjection", () => {
       scheduledItems: [{ title: "Tempo ride", plannedLoad: 60 }],
       load: { scheduledLoad: 60, recommendedLoad: 70 },
     });
+    expect(result.dayLoads["2026-04-06"]).not.toHaveProperty("tentativeLoad");
+    expect(result.ledgerItems).toEqual([
+      expect.objectContaining({
+        id: "22222222-2222-4222-8222-222222222222",
+        kind: "planned",
+        load: 60,
+      }),
+    ]);
+    expect(deps.readItemMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scheduledIds: ["22222222-2222-4222-8222-222222222222"],
+      }),
+    );
   });
 
   it("rejects an unbounded request before opening a transaction", async () => {

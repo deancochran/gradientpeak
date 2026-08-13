@@ -3,17 +3,21 @@ import { View } from "react-native";
 import { useTheme } from "@/lib/stores/theme-store";
 import type { TrainingPathRange } from "./trainingPathTypes";
 
+type LegendItem = {
+  color: string;
+  label: string;
+  shape: "fill" | "line";
+};
+
 export function TrainingPathLegend({
-  mode = "weekly",
-  range,
-  showTargetFitness = true,
-  showTargetLoad = false,
   showUnavailableLoad = false,
   variant = "full",
 }: {
   mode?: "daily" | "weekly";
   range: TrainingPathRange;
+  /** Compatibility-only; Plan legends always describe rendered factual layers. */
   showTargetFitness?: boolean;
+  /** Compatibility-only; Plan legends always describe rendered factual layers. */
   showTargetLoad?: boolean;
   showUnavailableLoad?: boolean;
   variant?: "full" | "primary";
@@ -22,85 +26,60 @@ export function TrainingPathLegend({
   const isDark = resolvedTheme === "dark";
   const colors = {
     completed: isDark ? "rgba(34, 197, 94, 0.88)" : "rgba(22, 163, 74, 0.86)",
-    marker: isDark ? "#f8fafc" : "#020617",
+    fatigue: isDark ? "rgba(251, 146, 60, 0.95)" : "rgba(234, 88, 12, 0.95)",
     planned: isDark ? "rgba(59, 130, 246, 0.74)" : "rgba(37, 99, 235, 0.68)",
-    projectedFitness: isDark ? "rgba(96, 165, 250, 0.95)" : "rgba(37, 99, 235, 0.95)",
-    selected: isDark ? "rgba(248, 250, 252, 0.12)" : "rgba(15, 23, 42, 0.08)",
-    targetFitness: isDark ? "rgba(248, 250, 252, 0.5)" : "rgba(15, 23, 42, 0.42)",
-    tentative: isDark ? "rgba(96, 165, 250, 0.9)" : "rgba(37, 99, 235, 0.88)",
-    target: isDark ? "rgba(148, 163, 184, 0.34)" : "rgba(100, 116, 139, 0.24)",
+    plannedProjection: isDark ? "rgba(96, 165, 250, 0.95)" : "rgba(37, 99, 235, 0.95)",
+    plannedFatigue: isDark ? "rgba(251, 191, 36, 0.95)" : "rgba(217, 119, 6, 0.95)",
   };
-  const unavailableItem = {
-    label: "Completed, Common Load unavailable",
-    color: colors.completed,
-    shape: "check",
-  };
-  const loadItems = [
-    ...(showTargetLoad ? [{ label: "Recommended", color: colors.target, shape: "fill" }] : []),
-    { label: "Planned", color: colors.planned, shape: "fill" },
+  const workloadItems: LegendItem[] = [
     { label: "Completed", color: colors.completed, shape: "fill" },
-    { label: "Tentative", color: colors.tentative, shape: "fill" },
+    { label: "Planned", color: colors.planned, shape: "fill" },
   ];
-  const pathItems = [
+  const stateItems: LegendItem[] = [
     { label: "Actual fitness", color: colors.completed, shape: "line" },
-    { label: "Projected fitness", color: colors.projectedFitness, shape: "line" },
-    ...(showTargetFitness
-      ? [{ label: "Target fitness", color: colors.targetFitness, shape: "dotted" }]
-      : []),
+    { label: "Planned fitness projection", color: colors.plannedProjection, shape: "line" },
+    { label: "Actual fatigue", color: colors.fatigue, shape: "line" },
+    { label: "Planned fatigue projection", color: colors.plannedFatigue, shape: "line" },
   ];
-  const detailItems = [
-    { label: "Today", color: colors.marker, shape: "today" },
-    { label: "Goal", color: colors.marker, shape: "dotted" },
-    { label: "Selected week", color: colors.selected, shape: "fill" },
-  ];
-  const dailyDetailItems = [{ label: "Selected day", color: colors.selected, shape: "fill" }];
-  const visibleLoadItems =
-    range === "all" ? loadItems.filter((item) => item.label === "Completed") : loadItems;
-  const primaryItems = [...visibleLoadItems, ...(showUnavailableLoad ? [unavailableItem] : [])];
-  const fullItems = [
-    ...visibleLoadItems,
-    unavailableItem,
-    ...pathItems,
-    ...(mode === "daily" ? dailyDetailItems : detailItems),
-  ];
-  const items = variant === "primary" ? primaryItems : fullItems;
 
   return (
     <View
-      className="flex-row flex-wrap gap-x-3 gap-y-1.5 px-1"
+      className="gap-2 px-1"
       testID={variant === "primary" ? "training-path-primary-legend" : "training-path-legend"}
     >
-      {items.map((item) => (
-        <View key={item.label} className="flex-row items-center gap-1.5">
-          <View
-            className={
-              item.shape === "line"
-                ? "h-0.5 w-4"
-                : item.shape === "dotted"
-                  ? "h-0 w-4 border-t-2"
-                  : item.shape === "check"
-                    ? "h-3 w-3 items-center justify-center"
-                    : item.shape === "today"
-                      ? "h-2.5 w-2.5 rounded-full"
-                      : "h-2.5 w-2.5 rounded-sm"
-            }
-            style={{
-              backgroundColor:
-                item.shape === "check" || item.shape === "dotted" ? "transparent" : item.color,
-              borderColor: item.color,
-              borderStyle: item.shape === "dotted" ? "dotted" : "solid",
-              borderWidth: 0,
-            }}
-          >
-            {item.shape === "check" ? (
-              <Text className="text-xs font-bold" style={{ color: item.color }}>
-                ✓
-              </Text>
-            ) : null}
+      <LegendGroup items={workloadItems} label="Workload" />
+      <LegendGroup items={stateItems} label="Training state" />
+      {showUnavailableLoad ? (
+        <Text className="text-[10px] text-muted-foreground">
+          A check marker means an activity was completed but its Common Load could not be
+          calculated.
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+function LegendGroup({ items, label }: { items: LegendItem[]; label: string }) {
+  return (
+    <View className="gap-1">
+      <Text className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </Text>
+      <View className="flex-row flex-wrap gap-x-3 gap-y-1.5">
+        {items.map((item) => (
+          <View key={item.label} className="flex-row items-center gap-1.5">
+            <View
+              className={item.shape === "fill" ? "h-2.5 w-2.5 rounded-sm" : "h-0 w-4 border-t-2"}
+              style={{
+                backgroundColor: item.shape === "fill" ? item.color : "transparent",
+                borderColor: item.color,
+                borderStyle: "solid",
+              }}
+            />
+            <Text className="text-[11px] font-medium text-muted-foreground">{item.label}</Text>
           </View>
-          <Text className="text-[11px] font-medium text-muted-foreground">{item.label}</Text>
-        </View>
-      ))}
+        ))}
+      </View>
     </View>
   );
 }

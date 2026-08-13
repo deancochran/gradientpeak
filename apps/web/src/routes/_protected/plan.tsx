@@ -1,3 +1,4 @@
+import type { CalendarProjectionItem } from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -26,9 +27,24 @@ import {
   formatShortDayLabel,
   getMonthKey,
   getTodayDateKey,
-  type PlanningEvent,
   shiftDateKey,
 } from "../../lib/planning";
+
+export function getUpcomingScheduledWorkItems(
+  items: readonly CalendarProjectionItem[],
+): CalendarProjectionItem[] {
+  return items.filter(
+    (item) =>
+      item.status === "scheduled" && (item.kind === "planned_activity" || item.kind === "event"),
+  );
+}
+
+export function getScheduledWorkTypeLabel(item: CalendarProjectionItem): string {
+  return (item.plan?.activityCategory ?? item.event?.type ?? "planned activity").replaceAll(
+    "_",
+    " ",
+  );
+}
 
 export const Route = createFileRoute("/_protected/plan")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -44,21 +60,21 @@ export const Route = createFileRoute("/_protected/plan")({
 function PlanPage() {
   const navigate = Route.useNavigate();
   const { flash, flashType } = Route.useSearch();
+  const today = getTodayDateKey();
 
   const profileQuery = api.profiles.get.useQuery();
-  const activePlanQuery = api.trainingPlans.getActivePlan.useQuery();
-  // An empty request explicitly asks the server to resolve the current week in
-  // the athlete's planning timezone. Date ranges are reserved for deliberate
-  // non-current views.
-  const effectiveLoadQuery = api.trainingPlans.getEffectiveLoad.useQuery({});
+  const planTabQuery = api.trainingPlans.getPlanTabProjection.useQuery({
+    startDate: today,
+    endDate: shiftDateKey(today, 89),
+  });
   const trainingPlansQuery = api.trainingPlans.list.useQuery({
     ownerScope: "own",
     limit: 6,
   });
 
   const upcomingEventsQuery = api.calendar.range.useQuery({
-    startDate: getTodayDateKey(),
-    endDateExclusive: shiftDateKey(getTodayDateKey(), 366),
+    startDate: today,
+    endDateExclusive: shiftDateKey(today, 366),
     includeAdhoc: false,
     limit: 12,
   });
@@ -71,7 +87,7 @@ function PlanPage() {
   );
 
   const upcomingEvents = useMemo(
-    () => (upcomingEventsQuery.data?.items ?? []) as PlanningEvent[],
+    () => getUpcomingScheduledWorkItems(upcomingEventsQuery.data?.items ?? []),
     [upcomingEventsQuery.data?.items],
   );
   const nextGoal = useMemo(() => {
@@ -121,9 +137,10 @@ function PlanPage() {
       ) : null}
 
       <TrainingLoadPath
-        effectiveLoad={effectiveLoadQuery.data}
-        isError={effectiveLoadQuery.isError}
-        onRetry={() => void effectiveLoadQuery.refetch()}
+        isError={planTabQuery.isError}
+        isLoading={planTabQuery.isLoading}
+        onRetry={() => void planTabQuery.refetch()}
+        projection={planTabQuery.data}
       />
 
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
@@ -133,25 +150,23 @@ function PlanPage() {
             <CardDescription>The current schedule batch driving upcoming sessions.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {activePlanQuery.data ? (
+            {planTabQuery.data?.currentScheduledPlan ? (
               <>
                 <div>
                   <p className="text-xl font-semibold">
-                    {activePlanQuery.data.name ?? "Untitled plan"}
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {activePlanQuery.data.description?.trim() || "No plan description yet."}
+                    {planTabQuery.data.currentScheduledPlan.name}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {activePlanQuery.data.schedule_batch_id ? (
+                  {planTabQuery.data.currentScheduledPlan.scheduleBatchId ? (
                     <Badge variant="secondary">Scheduled batch</Badge>
                   ) : null}
-                  {activePlanQuery.data.next_event_at ? (
-                    <Badge variant="outline">
-                      Next event {new Date(activePlanQuery.data.next_event_at).toLocaleDateString()}
-                    </Badge>
-                  ) : null}
+                  <Badge variant="outline">
+                    Next event{` `}
+                    {new Date(
+                      planTabQuery.data.currentScheduledPlan.nextEventAt,
+                    ).toLocaleDateString()}
+                  </Badge>
                 </div>
               </>
             ) : (
@@ -209,15 +224,13 @@ function PlanPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-medium">
-                          {event.title ?? event.activity_plan?.name ?? "Untitled event"}
+                          {event.title || event.plan?.name || "Untitled event"}
                         </p>
                         <p className="text-sm text-muted-foreground">
-                          {formatShortDayLabel(event.scheduled_date ?? getTodayDateKey())}
+                          {formatShortDayLabel(event.calendarDate)}
                         </p>
                       </div>
-                      <Badge variant="outline">
-                        {event.activity_plan?.activity_category ?? event.event_type ?? "event"}
-                      </Badge>
+                      <Badge variant="outline">{getScheduledWorkTypeLabel(event)}</Badge>
                     </div>
                   </div>
                 ))}

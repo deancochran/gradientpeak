@@ -1,6 +1,7 @@
 import type {
   ActivityObservationQuantificationBundle,
   ActivityPrescriptionQuantificationBundle,
+  SemanticMetric,
 } from "@repo/core";
 
 export interface CalendarEventActivityPlan {
@@ -42,6 +43,7 @@ export interface CalendarEvent {
   route_id?: string | null;
   prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
   observationQuantification?: ActivityObservationQuantificationBundle | null;
+  projectionMetrics?: readonly SemanticMetric[];
 }
 
 export type CalendarEventsByDate = Map<string, CalendarEvent[]>;
@@ -80,6 +82,5 @@ export function buildEventsByDate(events: CalendarEvent[]): CalendarEventsByDate
 }
 
 export function getMonthDensity(eventsByDate: CalendarEventsByDate, dateKey: string): number {
-  return (eventsByDate.get(dateKey) ?? []).filter((event) => event.event_type !== "rest_day")
-    .length;
+  return (eventsByDate.get(dateKey) ?? []).length;
 }

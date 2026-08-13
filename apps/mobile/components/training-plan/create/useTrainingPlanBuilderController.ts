@@ -1,8 +1,7 @@
-import type { ActivityPlanPlanningEstimate } from "@repo/core";
+import type { ActivityPlanPlanningEstimate, ActivityPlanSummary } from "@repo/core";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
-import type { ActivityPlan } from "@/components/shared/ActivityPlanCard";
 import type {
   ActivityCategoryFilter,
   ActivityPlanSort,
@@ -14,7 +13,7 @@ import { diffDateOnlyDays } from "@/lib/training-plan-creation/date-utils";
 import type { TrainingPlanActivityPlanFacts } from "@/lib/training-plan-creation/types";
 import { useTrainingPlanCreationService } from "@/lib/training-plan-creation/useTrainingPlanCreationService";
 
-type ActivityPlanListItem = ActivityPlan;
+type ActivityPlanListItem = ActivityPlanSummary;
 
 type TrainingPlanBuilderControllerOptions = {
   mode: "create" | "edit";
@@ -22,15 +21,14 @@ type TrainingPlanBuilderControllerOptions = {
 };
 
 function toActivityPlanFacts(activityPlan: ActivityPlanListItem): TrainingPlanActivityPlanFacts {
-  const isPublished =
-    activityPlan.content_visibility === "public" || activityPlan.is_system_template === true;
+  const isPublished = activityPlan.visibility === "public" || activityPlan.isSystemTemplate;
 
   return {
     id: activityPlan.id,
     name: activityPlan.name,
     published: isPublished,
     accessible: true,
-    prescriptionQuantification: activityPlan.prescriptionQuantification ?? null,
+    prescriptionQuantification: null,
   };
 }
 
@@ -40,8 +38,7 @@ function toEstimatedActivityPlanFacts(
 ): TrainingPlanActivityPlanFacts {
   return {
     ...toActivityPlanFacts(activityPlan),
-    prescriptionQuantification:
-      estimate?.prescriptionQuantification ?? activityPlan.prescriptionQuantification ?? null,
+    prescriptionQuantification: estimate?.prescriptionQuantification ?? null,
   };
 }
 
@@ -190,10 +187,6 @@ export function useTrainingPlanBuilderController({
     [builder.actions, sheetStack.openSheet],
   );
 
-  const applyStructureProposal = useCallback(() => {
-    builder.actions.addProposedStructure();
-  }, [builder.actions]);
-
   const handleSave = useCallback(async () => {
     if (!builder.derived.savePlan.canSave) {
       Alert.alert(
@@ -321,19 +314,11 @@ export function useTrainingPlanBuilderController({
     () => ({
       addSession,
       addSessionAtOffset,
-      applyStructureProposal,
       cancelPendingSessionDraft,
       confirmRemoveSession,
       handleSave,
     }),
-    [
-      addSession,
-      addSessionAtOffset,
-      applyStructureProposal,
-      cancelPendingSessionDraft,
-      confirmRemoveSession,
-      handleSave,
-    ],
+    [addSession, addSessionAtOffset, cancelPendingSessionDraft, confirmRemoveSession, handleSave],
   );
 
   return {

@@ -89,6 +89,7 @@ function createDependencies(
     return operation(transaction);
   };
   return {
+    db: {} as never,
     repositories: { integrations, oauthStates } as unknown as IntegrationsRepositories,
     providerSyncRepository: providerSyncRepository as unknown as WahooSyncRepository,
     runInTransaction,
@@ -133,7 +134,7 @@ describe("OAuth callback use case", () => {
     vi.restoreAllMocks();
   });
 
-  it("atomically consumes state while storing credentials and enqueues Wahoo history", async () => {
+  it("atomically consumes state, stores credentials, and queues only lightweight enrichment", async () => {
     const deps = createDependencies();
     const code = createLocalCode();
 
@@ -162,15 +163,6 @@ describe("OAuth callback use case", () => {
     expect(deps.providerSyncRepositoryMock.enqueueJobInTransaction).toHaveBeenCalledWith(
       deps.transaction,
       expect.objectContaining({
-        integrationId: INTEGRATION_ID,
-        profileId: PROFILE_ID,
-        provider: "wahoo",
-        payload: { trigger: "connect" },
-      }),
-    );
-    expect(deps.providerSyncRepositoryMock.enqueueJobInTransaction).toHaveBeenCalledWith(
-      deps.transaction,
-      expect.objectContaining({
         integrationGeneration: 3,
         integrationId: INTEGRATION_ID,
         jobType: "wahoo.profile_enrichment",
@@ -179,12 +171,13 @@ describe("OAuth callback use case", () => {
         provider: "wahoo",
       }),
     );
-    expect(deps.providerSyncRepositoryMock.enqueueJobInTransaction).toHaveBeenCalledTimes(2);
+    expect(deps.providerSyncRepositoryMock.enqueueJobInTransaction).toHaveBeenCalledTimes(1);
     const queuedJobTypes = (
       deps.providerSyncRepositoryMock.enqueueJobInTransaction.mock.calls as unknown as Array<
         [unknown, { jobType: string }]
       >
     ).map(([, job]) => job.jobType);
+    expect(queuedJobTypes).not.toContain("wahoo.activity_history_reconcile");
     expect(queuedJobTypes).not.toContain("wahoo.reconcile_owned_routes");
     expect(queuedJobTypes).not.toContain("wahoo.reconcile_group_event_route_deliveries");
   });
@@ -360,6 +353,34 @@ describe("OAuth callback use case", () => {
     expect(new URL(result.redirectUrl).searchParams.get("error")).toBe("integration_state_changed");
     expect(deps.providerSyncRepositoryMock.enqueueJobInTransaction).not.toHaveBeenCalled();
     expect(deps.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
+  });
+
+  it("serializes callback persistence through the supplied transaction before reporting connected", async () => {
+    const deps = createDependencies();
+    const callbackEntered = vi.fn();
+    deps.integrations.upsertFromOAuthStateInTransaction.mockImplementationOnce(async () => {
+      callbackEntered(deps.transaction);
+      return {
+        generation: 3,
+        id: INTEGRATION_ID,
+        lifecycle_status: "active",
+        profile_id: PROFILE_ID,
+        provider: "wahoo",
+      } as never;
+    });
+
+    const result = await handleOAuthCallback({
+      ...deps,
+      code: createLocalCode(),
+      error: null,
+      fallbackRedirect: "http://localhost:3000/integrations",
+      provider: "wahoo",
+      state: STATE_ID,
+    });
+
+    expect(callbackEntered).toHaveBeenCalledWith(deps.transaction);
+    expect(deps.getTransactionCallCount()).toBe(1);
+    expect(new URL(result.redirectUrl).searchParams.get("integration")).toBe("connected");
   });
 
   it("does not redeem a provider code while disconnect is already pending", async () => {

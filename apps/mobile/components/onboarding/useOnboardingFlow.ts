@@ -1,10 +1,12 @@
 import {
   buildGoalCreatePayload,
+  type ExecutableIntegrationProviderId,
   getGoalDraftQualityFeedback,
+  type OnboardingStatus,
   profileTrainingSettingsRecordSchema,
 } from "@repo/core";
 import { estimateMaxHRFromDOB } from "@repo/core/estimators";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { invalidateOnboardingSocialQueries } from "@/lib/groups/invalidation";
@@ -24,14 +26,14 @@ import {
   saveOnboardingRecovery,
 } from "@/lib/onboarding/onboarding-recovery";
 import { isValidOnboardingUsername } from "@/lib/onboarding/validation";
+import { resolveOnboardingLifecycleStatus } from "./lifecycle-status";
 import { getCompactTrainingPreferencesValue, INITIAL_ONBOARDING_DATA } from "./onboarding-data";
-import { getOnboardingSteps } from "./onboarding-steps";
-import type {
-  OnboardingData,
-  OnboardingFieldSources,
-  OnboardingStatusModal,
-  WahooSetupStatus,
-} from "./types";
+import {
+  onboardingOverviewEnabled,
+  onboardingProgressRefetchInterval,
+} from "./processing-query-policy";
+import { runOnboardingRecoveryAction } from "./recovery-actions";
+import type { OnboardingData, OnboardingFieldSources, OnboardingStatusModal } from "./types";
 
 type SocialActionJob = { key: string; run: () => Promise<unknown> };
 
@@ -56,7 +58,6 @@ export async function runSocialActionsWithLimit(jobs: SocialActionJob[], limit =
 
 export function useOnboardingFlow() {
   const [data, setData] = useState<OnboardingData>(INITIAL_ONBOARDING_DATA);
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [debouncedUsername, setDebouncedUsername] = useState("");
   const [touchedFields, setTouchedFields] = useState<Set<keyof OnboardingData>>(() => new Set());
@@ -64,15 +65,28 @@ export function useOnboardingFlow() {
   const [fieldSources, setFieldSources] = useState<OnboardingFieldSources>({});
   const [statusModal, setStatusModal] = useState<OnboardingStatusModal | null>(null);
   const [isRecoveryLoading, setIsRecoveryLoading] = useState(true);
+  const [lifecycleOverride, setLifecycleOverride] = useState<OnboardingStatus | null>(null);
   const completionInFlightRef = useRef(false);
+  const reviewHydrationStartedRef = useRef(false);
   const localCompletionStartedRef = useRef(false);
   const excludedSocialActionKeysRef = useRef(new Set<string>());
   const recoveryRef = useRef<OnboardingRecoveryRecord | null>(null);
   const restoredRecoveryRef = useRef(false);
   const recoveryIdentityRef = useRef<string | undefined>(undefined);
-  const { completeOnboarding, isAuthenticated, isFullyLoaded, onboardingStatus, user } = useAuth();
+  const {
+    completeOnboarding,
+    isAuthenticated,
+    isFullyLoaded,
+    onboardingStatus,
+    refreshOnboardingStatus,
+    user,
+  } = useAuth();
   const recoveryUserId = user?.id;
   const profileQueryEnabled = isFullyLoaded && isAuthenticated && hasSessionAuthCredentials();
+  const profileLifecycleStatus = resolveOnboardingLifecycleStatus({
+    overrideStatus: lifecycleOverride,
+    profileStatus: onboardingStatus,
+  });
   const { data: profile } = api.profiles.get.useQuery(undefined, {
     enabled: profileQueryEnabled,
   });
@@ -89,16 +103,24 @@ export function useOnboardingFlow() {
   );
   const utils = api.useUtils();
   const syncOverviewQuery = api.integrations.getSyncOverview.useQuery(undefined, {
-    enabled: profileQueryEnabled,
+    enabled: onboardingOverviewEnabled({
+      authenticated: profileQueryEnabled,
+      status: onboardingStatus,
+    }),
     refetchInterval: (query) =>
       query.state.data?.some((provider) => provider.setupData.status === "refreshing")
         ? 1000
         : false,
   });
-  const refreshSetupDataMutation = api.integrations.refreshSetupData.useMutation({
-    onSuccess: () => utils.integrations.getSyncOverview.invalidate(),
+  const progressQuery = api.onboarding.getProgress.useQuery(undefined, {
+    enabled: profileQueryEnabled && profileLifecycleStatus === "processing",
+    refetchInterval: (query) => onboardingProgressRefetchInterval(query.state.data ?? {}),
   });
   const completeLifecycleSetupMutation = api.onboarding.completeLifecycleSetup.useMutation();
+  const startProcessingMutation = api.onboarding.startProcessing.useMutation();
+  const retryProviderProcessingMutation = api.onboarding.retryProviderProcessing.useMutation();
+  const cancelPendingOAuthMutation = api.integrations.cancelPendingOAuth.useMutation();
+  const restartProviderSelectionMutation = api.onboarding.restartProviderSelection.useMutation();
   const acceptInviteMutation = api.groups.acceptInvite.useMutation();
   const joinOrRequestGroupMutation = api.groups.joinOrRequest.useMutation();
   const followProfileMutation = api.social.followUser.useMutation();
@@ -111,10 +133,11 @@ export function useOnboardingFlow() {
     restoredRecoveryRef.current = false;
     completionInFlightRef.current = false;
     localCompletionStartedRef.current = false;
+    reviewHydrationStartedRef.current = false;
     excludedSocialActionKeysRef.current = new Set();
     setData(INITIAL_ONBOARDING_DATA);
-    setCurrentStepIndex(0);
     setIsSubmitting(false);
+    setLifecycleOverride(null);
     setDebouncedUsername("");
     setTouchedFields(new Set());
     setClearedFields(new Set());
@@ -132,7 +155,7 @@ export function useOnboardingFlow() {
       return;
     }
 
-    if (onboardingStatus !== true) {
+    if (onboardingStatus !== "completed") {
       setIsRecoveryLoading(false);
       void clearOnboardingRecovery(recoveryUserId).catch(() => undefined);
       return;
@@ -204,16 +227,6 @@ export function useOnboardingFlow() {
             Object.entries(record.social.statuses)
               .filter(([, actionStatus]) => actionStatus !== "pending" && actionStatus !== "failed")
               .map(([key]) => key),
-          );
-          const restoredSteps = getOnboardingSteps({
-            canContinueWahooSetup: true,
-            isUsernameAvailable: true,
-          }).filter((step) => step.shouldShow(recoveredData));
-          setCurrentStepIndex(
-            Math.max(
-              0,
-              restoredSteps.findIndex((step) => step.id === "summary"),
-            ),
           );
           setIsRecoveryLoading(false);
 
@@ -392,21 +405,11 @@ export function useOnboardingFlow() {
     updateData,
   ]);
 
-  const wahooSyncOverview = syncOverviewQuery.data?.find(
-    (provider) => provider.provider === "wahoo",
+  const profileEvidenceOverview = syncOverviewQuery.data?.find(
+    (provider) => provider.connected && provider.onboarding.evidence.profileDetails,
   );
-  const wahooSetupStatus = useMemo<WahooSetupStatus | undefined>(() => {
-    if (!wahooSyncOverview) return undefined;
-    const setupStatus = wahooSyncOverview.setupData.status;
-    return {
-      status: setupStatus,
-      canContinue: setupStatus !== "refreshing",
-      lastError: wahooSyncOverview.setupData.lastError,
-    };
-  }, [wahooSyncOverview]);
-
   useEffect(() => {
-    const importedValues = wahooSyncOverview?.setupData;
+    const importedValues = profileEvidenceOverview?.setupData;
     if (!importedValues) return;
 
     const updates: Partial<OnboardingData> = {};
@@ -446,7 +449,7 @@ export function useOnboardingFlow() {
         ),
       });
     }
-  }, [clearedFields, touchedFields, updateData, wahooSyncOverview?.setupData]);
+  }, [clearedFields, profileEvidenceOverview?.setupData, touchedFields, updateData]);
 
   useEffect(() => {
     const updates: Partial<OnboardingData> = {};
@@ -482,44 +485,109 @@ export function useOnboardingFlow() {
     }
   }, [profile?.full_name, profile?.username, touchedFields, updateData]);
 
-  const retryWahooSetup = async () => {
-    const result = await syncOverviewQuery.refetch();
-    const provider = result.data?.find((item) => item.provider === "wahoo");
-    if (!provider?.connected || !provider.actions.includes("refresh_setup_data")) return;
-    await refreshSetupDataMutation.mutateAsync({ provider: "wahoo" });
-    await syncOverviewQuery.refetch();
-  };
-
-  const steps = useMemo(
-    () =>
-      getOnboardingSteps({
-        canContinueWahooSetup: wahooSetupStatus?.canContinue ?? true,
-        isUsernameAvailable:
-          usernameIsReadyToCheck &&
-          !usernameAvailabilityQuery.isError &&
-          !usernameAvailabilityQuery.isFetching &&
-          usernameAvailabilityQuery.data?.available === true,
-      }),
-    [
-      wahooSetupStatus?.canContinue,
-      usernameAvailabilityQuery.data?.available,
-      usernameAvailabilityQuery.isError,
-      usernameAvailabilityQuery.isFetching,
-      usernameIsReadyToCheck,
-    ],
-  );
-  const activeSteps = useMemo(() => steps.filter((step) => step.shouldShow(data)), [data, steps]);
-  const currentStep = activeSteps[currentStepIndex];
-  const isLastStep = currentStepIndex === activeSteps.length - 1;
-  const isStepValid = currentStep?.isValid(data) ?? true;
-  const canSkipStep = !isLastStep && (currentStep?.canSkip ?? false);
-  const isWahooSetupBlocking =
-    currentStep?.id === "connect_import" && wahooSetupStatus?.status === "refreshing";
   const isBusy =
     isRecoveryLoading ||
     isSubmitting ||
-    refreshSetupDataMutation.isPending ||
-    completeLifecycleSetupMutation.isPending;
+    completeLifecycleSetupMutation.isPending ||
+    startProcessingMutation.isPending ||
+    retryProviderProcessingMutation.isPending ||
+    restartProviderSelectionMutation.isPending;
+  const retryProviderProcessing = async (provider: ExecutableIntegrationProviderId) => {
+    if (retryProviderProcessingMutation.isPending || restartProviderSelectionMutation.isPending) {
+      return;
+    }
+    await runOnboardingRecoveryAction({
+      action: async () => {
+        await retryProviderProcessingMutation.mutateAsync({ provider });
+        await progressQuery.refetch();
+      },
+      setStatusModal,
+      failure: {
+        title: "Preparation could not be retried",
+        description:
+          "This preparation could not be restarted safely. Try again or return to account selection.",
+      },
+    });
+  };
+  const lifecycleStatus = resolveOnboardingLifecycleStatus({
+    overrideStatus: lifecycleOverride,
+    profileStatus: onboardingStatus,
+    progressStatus: progressQuery.data?.status,
+  });
+
+  useEffect(() => {
+    if (lifecycleOverride && onboardingStatus === lifecycleOverride) setLifecycleOverride(null);
+  }, [lifecycleOverride, onboardingStatus]);
+
+  useEffect(() => {
+    if (lifecycleStatus !== "review" || reviewHydrationStartedRef.current) return;
+    reviewHydrationStartedRef.current = true;
+    void refreshOnboardingStatus();
+  }, [lifecycleStatus, refreshOnboardingStatus]);
+
+  const startProviderProcessing = async () => {
+    try {
+      const result = await startProcessingMutation.mutateAsync();
+      setLifecycleOverride(result.status);
+    } catch (error) {
+      const pendingOAuth = Boolean(
+        error &&
+          typeof error === "object" &&
+          "data" in error &&
+          (error as { data?: { applicationErrorCode?: unknown } }).data?.applicationErrorCode ===
+            "ONBOARDING_PENDING_OAUTH",
+      );
+      if (!pendingOAuth) {
+        setStatusModal({
+          title: "Processing could not start",
+          description:
+            error instanceof Error ? error.message : "Check the provider status and try again.",
+        });
+        return;
+      }
+      setStatusModal({
+        title: "Connection still pending",
+        description:
+          "Finish the provider connection, or explicitly cancel it before continuing. It was not cancelled automatically.",
+        primaryLabel: "Cancel pending connection",
+        onPrimary: cancelPendingProviderConnection,
+      });
+      return;
+    }
+    await refreshOnboardingStatus();
+    await progressQuery.refetch();
+  };
+
+  const cancelPendingProviderConnection = async () => {
+    for (const integration of syncOverviewQuery.data ?? []) {
+      await cancelPendingOAuthMutation.mutateAsync({ provider: integration.provider });
+    }
+    await syncOverviewQuery.refetch();
+  };
+
+  const restartProviderSelection = async () => {
+    if (retryProviderProcessingMutation.isPending || restartProviderSelectionMutation.isPending) {
+      return;
+    }
+    await runOnboardingRecoveryAction({
+      action: async () => {
+        const result = await restartProviderSelectionMutation.mutateAsync();
+        setLifecycleOverride(result.status);
+        utils.onboarding.getProgress.setData(undefined, undefined);
+        await Promise.allSettled([
+          refreshOnboardingStatus(),
+          utils.onboarding.getProgress.invalidate(),
+          syncOverviewQuery.refetch(),
+        ]);
+        utils.onboarding.getProgress.setData(undefined, undefined);
+      },
+      setStatusModal,
+      failure: {
+        title: "Account selection could not be reopened",
+        description: "We could not safely reopen account selection. Try again in a moment.",
+      },
+    });
+  };
 
   function sectionNeedsRetry(section: OnboardingRecoverySection): boolean {
     return section.status === "pending" || section.status === "failed";
@@ -816,11 +884,18 @@ export function useOnboardingFlow() {
     );
     const settingsPatch = settingsNeedsRetry ? recoveredRecord?.settingsPatch : undefined;
 
-    let lifecycleResult: Awaited<ReturnType<typeof completeLifecycleSetupMutation.mutateAsync>>;
+    if (!goal) {
+      setStatusModal({
+        title: "Goal required",
+        description: "Add a complete initial goal before finalizing setup.",
+      });
+      return null;
+    }
+
     try {
-      lifecycleResult = await completeLifecycleSetupMutation.mutateAsync({
+      await completeLifecycleSetupMutation.mutateAsync({
         profile: result.input,
-        ...(goal ? { goal } : null),
+        goal,
         ...(settingsPatch ? { settings_patch: settingsPatch } : null),
       });
     } catch (error) {
@@ -839,29 +914,8 @@ export function useOnboardingFlow() {
 
     const nextLifecycle: PendingOnboardingRecoveryRecord["lifecycle"] = {
       required: { status: "saved", retryable: false },
-      goal: goal
-        ? {
-            status:
-              lifecycleResult.goal.status === "saved"
-                ? "saved"
-                : lifecycleResult.goal.status === "failed"
-                  ? "failed"
-                  : "skipped",
-            retryable: lifecycleResult.goal.retryable,
-          }
-        : previousLifecycle.goal,
-      settings:
-        lifecycleResult.settings.status === "failed" || settingsPatch
-          ? {
-              status:
-                lifecycleResult.settings.status === "failed"
-                  ? "failed"
-                  : lifecycleResult.settings.status === "skipped"
-                    ? "skipped"
-                    : "saved",
-              retryable: lifecycleResult.settings.retryable,
-            }
-          : previousLifecycle.settings,
+      goal: { status: "saved", retryable: false },
+      settings: settingsPatch ? { status: "saved", retryable: false } : previousLifecycle.settings,
     };
     try {
       await persistRecovery(recoveryData, nextLifecycle);
@@ -966,6 +1020,12 @@ export function useOnboardingFlow() {
     setIsSubmitting(true);
 
     try {
+      const profileInput = buildCompleteOnboardingInput(data, fieldSources);
+      if (!profileInput.ok) {
+        setStatusModal({ title: "Review setup", description: profileInput.error });
+        return;
+      }
+      if (lifecycleStatus !== "review") return;
       const recoveryData = data;
       await persistRecovery(recoveryData);
       await resumeCompletion(recoveryData);
@@ -978,86 +1038,26 @@ export function useOnboardingFlow() {
     }
   };
 
-  const handleNext = async () => {
-    if (isLastStep) {
-      await handleComplete();
-      return;
-    }
-
-    if (currentStep?.id === "connect_import") {
-      const result = await syncOverviewQuery.refetch();
-      const provider = result.data?.find((item) => item.provider === "wahoo");
-
-      if (
-        provider?.connected &&
-        provider.actions.includes("refresh_setup_data") &&
-        provider.setupData.status === "idle"
-      ) {
-        try {
-          await refreshSetupDataMutation.mutateAsync({ provider: "wahoo" });
-          await syncOverviewQuery.refetch();
-        } catch (error) {
-          console.error(error);
-          setStatusModal({ title: "Error", description: "Failed to refresh Wahoo setup data." });
-        }
-        return;
-      }
-    }
-
-    setCurrentStepIndex((prev) => prev + 1);
-  };
-
-  const handleSkip = async () => {
-    if (isLastStep) {
-      await handleComplete();
-      return;
-    }
-    if (currentStep?.id === "connect_import") {
-      await handleNext();
-      return;
-    }
-    if (currentStep?.id === "goals_preferences") {
-      updateData({
-        goal_draft: null,
-        should_create_goal: false,
-        should_save_training_preferences: false,
-        training_preferences_error: null,
-      });
-    }
-    if (currentStep?.id === "groups_people") {
-      excludedSocialActionKeysRef.current.clear();
-      updateData({
-        selected_invitation_ids: [],
-        selected_group_ids: [],
-        selected_group_actions: [],
-        selected_follow_profile_ids: [],
-        social_action_statuses: {},
-      });
-    }
-    setCurrentStepIndex((prev) => prev + 1);
-  };
-
   return {
-    activeSteps,
-    canSkipStep,
-    currentStep,
-    currentStepIndex,
     data,
     fieldSources,
-    handleNext,
-    handleSkip,
+    handleComplete,
     isBusy,
-    isLastStep,
-    isWahooSetupBlocking,
-    isStepValid,
-    wahooSetupStatus,
     integrationOverview: syncOverviewQuery.data,
+    lifecycleStatus,
+    progress: progressQuery.data,
+    progressError: progressQuery.error,
+    refreshProgress: progressQuery.refetch,
+    retryProviderProcessing,
+    providersMutable: lifecycleStatus === "provider_selection",
     integrationOverviewError: syncOverviewQuery.error,
     integrationOverviewLoading: syncOverviewQuery.isLoading,
     refreshIntegrationState,
-    retryWahooSetup,
     setStatusModal,
     statusModal,
+    startProviderProcessing,
+    cancelPendingProviderConnection,
+    restartProviderSelection,
     updateData,
     usernameAvailability: {
       available:

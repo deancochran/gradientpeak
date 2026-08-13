@@ -7,7 +7,7 @@ import {
 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
-import { Form, FormFileField, FormTextareaField, FormTextField } from "@repo/ui/components/form";
+import { Form, FormFileField, FormTextareaField } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
@@ -65,7 +65,6 @@ export default function ActivityImportScreen() {
   const [navigationError, setNavigationError] = useState<string | null>(null);
   const [importSummary, setImportSummary] = useState<{
     activityId: string;
-    name: string;
     fileName: string;
   } | null>(null);
 
@@ -112,7 +111,8 @@ export default function ActivityImportScreen() {
       return;
     }
 
-    const nextAutoName = deriveActivityNameFromFileName(selectedActivityFile.name);
+    const nextAutoName =
+      deriveActivityNameFromFileName(selectedActivityFile.name).trim().slice(0, 100) || "Activity";
     if (!currentName.trim() || currentName === previousAutoName) {
       form.setValue("name", nextAutoName, { shouldDirty: true, shouldValidate: true });
     }
@@ -187,7 +187,6 @@ export default function ActivityImportScreen() {
       terminalSuccessRef.current = true;
       setImportSummary({
         activityId: result.activity.id,
-        name: result.activity.name,
         fileName: selectedFile.name,
       });
       setImportPhase("idle");
@@ -287,16 +286,6 @@ export default function ActivityImportScreen() {
                   testId="activity-import-file-input"
                 />
 
-                <FormTextField
-                  autoCapitalize="sentences"
-                  control={form.control}
-                  disabled={isFormDisabled}
-                  label="Activity name"
-                  name="name"
-                  placeholder="Activity name"
-                  testId="activity-import-name-input"
-                />
-
                 <FormTextareaField
                   control={form.control}
                   disabled={isFormDisabled}
@@ -350,7 +339,7 @@ export default function ActivityImportScreen() {
               Historical activity imported
             </Text>
             <Text className="mt-1 text-xs text-muted-foreground">
-              {importSummary.name} was created from {importSummary.fileName}.
+              Activity was created from {importSummary.fileName}.
             </Text>
             {navigationError ? (
               <Text

@@ -82,7 +82,7 @@ describe("buildTrainingPathScheduledReviewItems", () => {
     expect(items[0]?.estimatedLoad).toBeNull();
   });
 
-  it("includes a scheduled activity plan when the same source contributes tentative planned load", () => {
+  it("includes a scheduled activity plan from a group event", () => {
     const input = {
       planningTimezone: "America/Los_Angeles",
       plannedEvents: [],
@@ -91,14 +91,13 @@ describe("buildTrainingPathScheduledReviewItems", () => {
           id: "group-event-1",
           title: "Saturday Group Ride",
           starts_at: "2026-04-14T15:00:00.000Z",
-          viewerRsvp: { status: "tentative" },
+          viewerRsvp: null,
         } as GroupEventFixture,
       ],
       groupScheduledActivityPlanEvents: [
         {
           starts_at: "2026-04-14T15:00:00.000Z",
           scheduled_date: "2026-04-14",
-          tentative: true,
           activity_plan: {
             id: "activity-plan-1",
             name: "Tempo Builder",
@@ -145,14 +144,13 @@ describe("buildTrainingPathScheduledReviewItems", () => {
           id: "group-event-1",
           title: "Track Tuesday",
           starts_at: "2026-04-23T18:30:00.000Z",
-          viewerRsvp: { status: "tentative" },
+          viewerRsvp: null,
         } as GroupEventFixture,
       ],
       groupScheduledActivityPlanEvents: [
         {
           starts_at: "2026-04-23T18:30:00.000Z",
           scheduled_date: "2026-04-23",
-          tentative: true,
           activity_plan: {
             id: "activity-plan-1",
             name: "Tempo Builder",

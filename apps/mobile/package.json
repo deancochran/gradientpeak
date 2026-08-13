@@ -70,7 +70,6 @@
     "@rn-primitives/label": "^1.5.2",
     "@rn-primitives/popover": "^1.5.2",
     "@rn-primitives/portal": "^1.5.2",
-    "@rn-primitives/progress": "^1.5.2",
     "@rn-primitives/radio-group": "^1.5.2",
     "@rn-primitives/select": "^1.5.2",
     "@rn-primitives/separator": "^1.5.2",

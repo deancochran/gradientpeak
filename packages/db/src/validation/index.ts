@@ -15,6 +15,10 @@ import {
   integrationProviderEnum,
   integrationResourceKindEnum,
   notificationTypeEnum,
+  performanceCalibrationEvidenceStateEnum,
+  performanceCalibrationMetricKeyEnum,
+  performanceCalibrationRejectionReasonEnum,
+  performanceCalibrationSourceSemanticsEnum,
   profileMetricTypeEnum,
   trainingEffectLabelEnum,
 } from "../schema/enums";
@@ -39,6 +43,10 @@ import {
   messages,
   notifications,
   oauthStates,
+  performanceCalibrationEvidence,
+  performanceCalibrationModelInputs,
+  performanceCalibrationSelectionEvidence,
+  performanceCalibrations,
   profileGoals,
   profileMetrics,
   profiles,
@@ -69,7 +77,18 @@ export const publicIntegrationProviderSchema = z.enum(integrationProviderEnum.en
 export const publicNotificationTypeSchema = z.enum(notificationTypeEnum.enumValues);
 export const publicProfileMetricTypeSchema = z.enum(profileMetricTypeEnum.enumValues);
 export const publicTrainingEffectLabelSchema = z.enum(trainingEffectLabelEnum.enumValues);
-
+export const publicPerformanceCalibrationMetricKeySchema = z.enum(
+  performanceCalibrationMetricKeyEnum.enumValues,
+);
+export const publicPerformanceCalibrationEvidenceStateSchema = z.enum(
+  performanceCalibrationEvidenceStateEnum.enumValues,
+);
+export const publicPerformanceCalibrationRejectionReasonSchema = z.enum(
+  performanceCalibrationRejectionReasonEnum.enumValues,
+);
+export const publicPerformanceCalibrationSourceSemanticsSchema = z.enum(
+  performanceCalibrationSourceSemanticsEnum.enumValues,
+);
 export const publicProfilesRowSchema = createSelectSchema(profiles);
 export const publicProfilesInsertSchema = createInsertSchema(profiles);
 export const publicProfilesUpdateSchema = createUpdateSchema(profiles);
@@ -171,6 +190,34 @@ export const publicProviderWebhookReceiptsUpdateSchema =
 export const publicProfileMetricsRowSchema = createSelectSchema(profileMetrics);
 export const publicProfileMetricsInsertSchema = createInsertSchema(profileMetrics);
 export const publicProfileMetricsUpdateSchema = createUpdateSchema(profileMetrics);
+
+export const publicPerformanceCalibrationEvidenceRowSchema = createSelectSchema(
+  performanceCalibrationEvidence,
+);
+export const publicPerformanceCalibrationEvidenceInsertSchema = createInsertSchema(
+  performanceCalibrationEvidence,
+);
+/** Evidence is immutable except for repository-owned invalidation. */
+export const publicPerformanceCalibrationEvidenceUpdateSchema = z.never();
+export const publicPerformanceCalibrationModelInputsRowSchema = createSelectSchema(
+  performanceCalibrationModelInputs,
+);
+export const publicPerformanceCalibrationModelInputsInsertSchema = createInsertSchema(
+  performanceCalibrationModelInputs,
+);
+export const publicPerformanceCalibrationModelInputsUpdateSchema = z.never();
+export const publicPerformanceCalibrationsRowSchema = createSelectSchema(performanceCalibrations);
+export const publicPerformanceCalibrationsInsertSchema =
+  createInsertSchema(performanceCalibrations);
+/** Effective-dated selections are append-only. */
+export const publicPerformanceCalibrationsUpdateSchema = z.never();
+export const publicPerformanceCalibrationSelectionEvidenceRowSchema = createSelectSchema(
+  performanceCalibrationSelectionEvidence,
+);
+export const publicPerformanceCalibrationSelectionEvidenceInsertSchema = createInsertSchema(
+  performanceCalibrationSelectionEvidence,
+);
+export const publicPerformanceCalibrationSelectionEvidenceUpdateSchema = z.never();
 
 export const publicProfileTrainingSettingsRowSchema = createSelectSchema(profileTrainingSettings);
 export const publicProfileTrainingSettingsInsertSchema =

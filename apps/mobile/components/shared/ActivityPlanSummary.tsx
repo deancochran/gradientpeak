@@ -3,6 +3,7 @@ import {
   type ActivityPlanStructure,
   type ActivityPrescriptionQuantificationBundle,
   deriveActivityPlanPresentation,
+  type SemanticMetric,
 } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
@@ -23,6 +24,7 @@ type ActivityPlanSummaryProps = {
   headerAccessory?: ReactNode;
   owner?: EntityOwner | null;
   presentation?: ActivityPlanPresentationModel | null;
+  projectionMetrics?: readonly SemanticMetric[];
   prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
   structure?: ActivityPlanStructure | unknown;
   subtitle?: string | null;
@@ -69,6 +71,7 @@ export function ActivityPlanMetricsRow({
   estimatedDuration,
   estimatedDurationMinutes,
   presentation,
+  projectionMetrics,
   prescriptionQuantification,
   structure,
 }: Pick<
@@ -76,6 +79,7 @@ export function ActivityPlanMetricsRow({
   | "estimatedDuration"
   | "estimatedDurationMinutes"
   | "presentation"
+  | "projectionMetrics"
   | "prescriptionQuantification"
   | "structure"
 >) {
@@ -86,6 +90,29 @@ export function ActivityPlanMetricsRow({
   const stepCount = presentationModel?.stepCount ?? 0;
   const durationLabel = formatActivityPlanDuration({ estimatedDuration, estimatedDurationMinutes });
   const quantified = getActivityQuantificationPresentation(prescriptionQuantification);
+  const formatProjectionMetric = (metric: SemanticMetric | undefined, fallbackLabel: string) => ({
+    label: metric?.label ?? fallbackLabel,
+    value:
+      !metric || metric.status === "unavailable"
+        ? "Unavailable"
+        : metric.unit === "ratio"
+          ? metric.value.toFixed(2)
+          : Number.isInteger(metric.value)
+            ? String(metric.value)
+            : metric.value.toFixed(1),
+  });
+  const commonLoad = projectionMetrics
+    ? formatProjectionMetric(
+        projectionMetrics.find((metric) => metric.key === "common_load"),
+        "Load",
+      )
+    : quantified.commonLoad;
+  const normalizedIntensity = projectionMetrics
+    ? formatProjectionMetric(
+        projectionMetrics.find((metric) => metric.key === "normalized_intensity"),
+        "Intensity",
+      )
+    : quantified.normalizedIntensity;
   const structureAuthoredValues = [
     ...new Set(
       (presentationModel?.occurrences ?? []).flatMap((occurrence) =>
@@ -110,22 +137,24 @@ export function ActivityPlanMetricsRow({
         metrics={[
           { label: "Duration", value: durationLabel || "Unavailable" },
           {
-            label: quantified.commonLoad.label,
-            value: quantified.commonLoad.value,
+            label: commonLoad.label,
+            value: commonLoad.value,
             tone: "primary",
           },
           {
-            label: quantified.normalizedIntensity.label,
-            value: quantified.normalizedIntensity.value,
+            label: normalizedIntensity.label,
+            value: normalizedIntensity.value,
             tone: "primary",
           },
           { label: "Steps", value: `${stepCount}` },
         ]}
       />
-      <Text className="px-1 text-[10px] text-muted-foreground">
-        {quantified.commonLoad.evidence}. {quantified.commonLoad.explanation}
-      </Text>
-      {quantified.commonLoad.diagnostic ? (
+      {!projectionMetrics ? (
+        <Text className="px-1 text-[10px] text-muted-foreground">
+          {quantified.commonLoad.evidence}. {quantified.commonLoad.explanation}
+        </Text>
+      ) : null}
+      {!projectionMetrics && quantified.commonLoad.diagnostic ? (
         <Text className="px-1 text-[10px] text-muted-foreground">
           {quantified.commonLoad.diagnostic.summary} {quantified.commonLoad.diagnostic.action}
         </Text>
@@ -146,6 +175,7 @@ export function ActivityPlanSummary({
   headerAccessory,
   owner,
   presentation,
+  projectionMetrics,
   prescriptionQuantification,
   structure,
   subtitle,
@@ -185,6 +215,7 @@ export function ActivityPlanSummary({
         estimatedDuration={estimatedDuration}
         estimatedDurationMinutes={estimatedDurationMinutes}
         presentation={presentation}
+        projectionMetrics={projectionMetrics}
         prescriptionQuantification={prescriptionQuantification}
         structure={structure}
       />

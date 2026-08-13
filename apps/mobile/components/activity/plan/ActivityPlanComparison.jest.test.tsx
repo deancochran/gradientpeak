@@ -1,9 +1,7 @@
+import { createActivityPlanStructure } from "../../../test/activity-plan-projection-fixture";
 import { createHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
-import {
-  createObservationQuantificationBundleFixture,
-  createPrescriptionQuantificationBundleFixture,
-} from "../../shared/__tests__/activityQuantificationFixture";
+import { createObservationQuantificationBundleFixture } from "../../shared/__tests__/activityQuantificationFixture";
 import { ActivityPlanComparison } from "./ActivityPlanComparison";
 
 jest.mock("react-native", () => ({
@@ -37,8 +35,25 @@ describe("ActivityPlanComparison", () => {
         activityPlan={{
           id: "plan-1",
           name: "Threshold Builder",
-          structure: { version: 3, segments: [] },
-          prescriptionQuantification: createPrescriptionQuantificationBundleFixture(),
+          structure: createActivityPlanStructure(),
+          metrics: [
+            {
+              key: "common_load",
+              label: "Common Load",
+              value: 64,
+              unit: "load",
+              status: "available",
+              reason: null,
+            },
+            {
+              key: "normalized_intensity",
+              label: "Normalized intensity",
+              value: 0.8,
+              unit: "ratio",
+              status: "available",
+              reason: null,
+            },
+          ],
         }}
         actualMetrics={{
           duration: 3600,

@@ -106,19 +106,8 @@ export function adaptPlannedCommonLoadDoses(input: {
     if (dose.method === null || dose.thresholdEvidence === null) {
       return unavailable(dose, input.computedAsOf, "threshold_missing");
     }
-    if (
-      dose.quality === null ||
-      dose.evidenceFingerprint === null ||
-      dose.thresholdEvidence.freshness === "stale" ||
-      dose.quality.stale
-    ) {
-      return unavailable(
-        dose,
-        input.computedAsOf,
-        dose.thresholdEvidence.freshness === "stale" || dose.quality?.stale
-          ? "stale_threshold"
-          : "invalid_data",
-      );
+    if (dose.quality === null || dose.evidenceFingerprint === null) {
+      return unavailable(dose, input.computedAsOf, "invalid_data");
     }
     const intensity = intensityForDose(dose);
     if (intensity === null || !Number.isFinite(intensity)) {

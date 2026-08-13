@@ -2,7 +2,10 @@ import type { ActivitySegmentAnalysis } from "@repo/core";
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import React from "react";
 import { createObservationQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
+import { APP_BOTTOM_SHEET_PRESENTATIONS } from "@/components/shared/AppBottomSheet";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
+import { createActivityDisplay } from "../../../../test/activity-display-fixture";
+import { createActivityPlanDetail } from "../../../../test/activity-plan-projection-fixture";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
@@ -54,6 +57,7 @@ const activityData = {
   activity: {
     id: "11111111-1111-4111-8111-111111111111",
     profile_id: "profile-1",
+    profile: { id: "profile-1", username: "runner", avatar_url: null },
     activity_kind: "single",
     segments: activitySegments,
     name: "Morning Threshold",
@@ -127,10 +131,154 @@ const activityData = {
   },
   has_liked: false,
 };
-
 const toggleLikeMutateMock = jest.fn();
 const deleteMutateMock = jest.fn();
+const invalidatePostActivityIngestionQueriesMock = jest.fn();
+let deleteMutationOptions: { onSuccess?: () => void } = {};
+
+jest.mock("@repo/api/client", () => ({
+  invalidatePostActivityIngestionQueries: invalidatePostActivityIngestionQueriesMock,
+}));
+jest.mock("@tanstack/react-query", () => ({
+  ...jest.requireActual("@tanstack/react-query"),
+  useQueryClient: () => ({}),
+}));
+const getStreamsUseQueryMock = jest.fn();
+const shareMock = jest.fn();
 const authState = { user: { id: "profile-1" } };
+
+function toActivityProjection(data: typeof activityData) {
+  const isOwner = data.activity.profile_id === authState.user.id;
+  const commonLoad = data.derived.stress.common_load;
+  return {
+    detail: {
+      contractVersion: "activity-detail-display-v1" as const,
+      summary: createActivityDisplay({
+        id: data.activity.id,
+        href: `/activities/${data.activity.id}`,
+        owner: {
+          id: data.activity.profile.id,
+          username: data.activity.profile.username,
+          avatarUrl: data.activity.profile.avatar_url,
+        },
+        time: { startedAt: data.activity.started_at, finishedAt: null },
+        activityComposition: { kind: "single", categories: ["run"] },
+        title: data.activity.name,
+        notes: data.activity.notes,
+        metrics: [
+          {
+            key: "distance",
+            label: "Distance",
+            status: "available",
+            value: data.activity.distance_meters,
+            unit: "meters",
+            reason: null,
+          },
+          {
+            key: "elapsed_duration",
+            label: "Elapsed",
+            status: "available",
+            value: data.activity.elapsed_ms / 1_000,
+            unit: "seconds",
+            reason: null,
+          },
+          ...(commonLoad.status === "available"
+            ? [
+                {
+                  key: "common_load" as const,
+                  label: "Load",
+                  status: "available" as const,
+                  value: commonLoad.load,
+                  unit: "score",
+                  reason: null,
+                },
+                {
+                  key: "normalized_intensity" as const,
+                  label: "Intensity",
+                  status: "available" as const,
+                  value: commonLoad.intensity,
+                  unit: "ratio",
+                  reason: null,
+                },
+              ]
+            : []),
+        ],
+        visibility:
+          "content_visibility" in data.activity
+            ? (data.activity.content_visibility as "private" | "followers" | "public")
+            : "private",
+        engagement: {
+          likes: data.activity.likes_count,
+          comments: 0,
+          viewerHasLiked: data.has_liked,
+        },
+        capabilities: {
+          canLike: true,
+          canComment: true,
+          canShare: true,
+          canEdit: isOwner,
+          canDelete: isOwner,
+          hasRoute: Boolean(data.activity.polyline),
+        },
+      }),
+      performance: {
+        timingCoverage: data.activity.timing_coverage,
+        elapsedSeconds: data.activity.elapsed_ms / 1_000,
+        activeSeconds: data.activity.active_ms / 1_000,
+        movingSeconds: data.activity.moving_ms / 1_000,
+        distanceMeters: data.activity.distance_meters,
+        elevationGainMeters: null,
+        calories: null,
+        averageHeartRate: data.activity.avg_heart_rate,
+        maximumHeartRate: data.activity.max_heart_rate,
+        averagePower: data.activity.avg_power,
+        maximumPower: null,
+        averageSpeedMetersPerSecond: data.activity.avg_speed_mps,
+        maximumSpeedMetersPerSecond: null,
+        poolLengthMeters: null,
+        totalStrokes: null,
+        averageSwolf: null,
+      },
+      routePolyline: data.activity.polyline,
+      laps: streamsData.laps,
+      segments: data.activity.segments.map((segment) => ({
+        id: segment.id,
+        ordinal: segment.ordinal,
+        role: segment.role,
+        activityCategory: segment.activity_category,
+        timingCoverage: segment.summary?.timing.timingCoverage ?? "unavailable",
+        status: segment.status,
+        summary: segment.summary,
+        ...(segment.status === "failed" ? { reason: segment.reason } : {}),
+      })),
+      linkedPlan: data.activity.activity_plans
+        ? { id: data.activity.activity_plans.id, name: data.activity.activity_plans.name }
+        : null,
+      currentArtifact: data.activity.current_artifact,
+      ingestion: data.activity.ingestion
+        ? {
+            status: data.activity.ingestion.status,
+            lastErrorMessage: data.activity.ingestion.last_error_message ?? null,
+          }
+        : null,
+      effectiveSessionRpe: null,
+    },
+    analysis: {
+      derived: data.derived,
+      segmentLoads:
+        (
+          data as typeof activityData & {
+            segment_loads?: Array<{
+              segment_id: string;
+              activity_category: "run" | "bike";
+              common_load: typeof unavailableHeartRateSegment;
+              observationQuantification: unknown;
+            }>;
+          }
+        ).segment_loads ?? [],
+    },
+  };
+}
 const unavailableAggregate = {
   status: "unavailable",
   model: "gradientpeak_relative_load",
@@ -284,7 +432,7 @@ type ZoneDistributionCardProps = {
 };
 
 type ActivityPlanComparisonProps = {
-  activityPlan: { common_load?: unknown };
+  activityPlan: { metrics?: unknown };
   actualMetrics: { common_load?: unknown; [key: string]: unknown };
   onPress?: () => void;
 };
@@ -303,7 +451,7 @@ jest.mock("expo-router", () => ({
     Screen: (props: StackScreenProps) =>
       React.createElement(
         "StackScreen",
-        props,
+        { ...props, testID: "activity-detail-navigation-header" },
         typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
       ),
   },
@@ -315,6 +463,32 @@ jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
   Alert: { alert: jest.fn() },
+  Share: { share: shareMock },
+  Pressable: createHost("Pressable"),
+}));
+
+jest.mock("@/components/shared/AppBottomSheet", () => ({
+  __esModule: true,
+  APP_BOTTOM_SHEET_PRESENTATIONS: {
+    inspector: { initialSnapIndex: 0, snapPoints: ["82%", "96%"] },
+  },
+  AppBottomSheet: ({
+    children,
+    visible,
+    ...props
+  }: {
+    children: React.ReactNode;
+    visible: boolean;
+  }) => (visible ? React.createElement("AppBottomSheet", props, children) : null),
+}));
+
+jest.mock("@/components/social/EntityCommentsSection", () => ({
+  __esModule: true,
+  EntityCommentsSection: (props: { testIDPrefix: string }) =>
+    React.createElement("EntityCommentsSection", {
+      ...props,
+      testID: "activity-detail-comments-section",
+    }),
 }));
 
 jest.mock("@/components/shared/detail", () => ({
@@ -359,6 +533,10 @@ jest.mock("react-native-maps", () => ({
   __esModule: true,
   default: createHost("MapView"),
   Polyline: createHost("Polyline"),
+}));
+jest.mock("@/components/shared/StaticRouteMapPreview", () => ({
+  __esModule: true,
+  StaticRouteMapPreview: createHost("StaticRouteMapPreview"),
 }));
 
 jest.mock("@repo/ui/components/button", () => ({ __esModule: true, Button: createHost("Button") }));
@@ -440,16 +618,23 @@ jest.mock("@/lib/api", () => ({
       home: { getDashboard: { invalidate: jest.fn() } },
       trends: { invalidate: jest.fn() },
       feed: { getFeed: { invalidate: jest.fn() } },
+      athleteIntelligence: { getReadModel: { invalidate: jest.fn() } },
     }),
     activities: {
       getById: {
-        useQuery: () => activityQueryState,
+        useQuery: () => ({
+          ...activityQueryState,
+          data: activityQueryState.data ? toActivityProjection(activityQueryState.data) : undefined,
+        }),
       },
       getEfforts: {
         useQuery: () => effortsQueryState,
       },
       delete: {
-        useMutation: () => ({ mutate: deleteMutateMock, isPending: false }),
+        useMutation: (options: typeof deleteMutationOptions) => {
+          deleteMutationOptions = options;
+          return { mutate: deleteMutateMock, isPending: false };
+        },
       },
       update: {
         useMutation: () => ({ mutate: jest.fn(), isPending: false }),
@@ -459,9 +644,21 @@ jest.mock("@/lib/api", () => ({
       getById: {
         useQuery: () => ({
           data: {
-            prescriptionQuantification: {
-              summary: { commonLoad: activityData.derived.stress.common_load },
-            },
+            detail: createActivityPlanDetail({
+              id: "plan-1",
+              name: "Threshold Builder",
+              metrics: [
+                {
+                  key: "common_load",
+                  label: "Load",
+                  status: "available",
+                  value: activityData.derived.stress.common_load.load,
+                  unit: "score",
+                  reason: null,
+                },
+              ],
+            }),
+            edit: null,
           },
         }),
       },
@@ -473,7 +670,10 @@ jest.mock("@/lib/api", () => ({
     },
     activityFiles: {
       getStreams: {
-        useQuery: () => ({ data: streamsData, isLoading: false, error: null }),
+        useQuery: (...args: unknown[]) => {
+          getStreamsUseQueryMock(...args);
+          return { data: streamsData, isLoading: false, error: null };
+        },
       },
     },
     social: {
@@ -530,21 +730,31 @@ jest.mock("lucide-react-native", () => ({
   MapPin: createHost("MapPin"),
   MessageCircle: createHost("MessageCircle"),
   Route: createHost("Route"),
+  Share2: createHost("Share2"),
   Timer: createHost("Timer"),
   TrendingUp: createHost("TrendingUp"),
   Waves: createHost("Waves"),
   Zap: createHost("Zap"),
 }));
 
+const ReactNative = require("react-native") as typeof import("react-native");
+Object.defineProperty(ReactNative, "Share", {
+  configurable: true,
+  value: { share: shareMock },
+});
 const ActivityDetailScreen = require("../activity-detail").default;
 
 describe("activity detail screen", () => {
   beforeEach(() => {
     deleteMutateMock.mockReset();
+    getStreamsUseQueryMock.mockReset();
     toggleLikeMutateMock.mockReset();
+    shareMock.mockReset();
+    (ReactNative.Alert.alert as jest.Mock).mockClear();
     authState.user.id = "profile-1";
     activitySegments.splice(0, activitySegments.length, activitySegment());
     activityData.activity.ingestion = null;
+    delete (activityData.activity as { content_visibility?: string }).content_visibility;
     activityData.activity.current_artifact = {
       id: "33333333-3333-4333-8333-333333333333",
       availability: "accepted",
@@ -571,12 +781,66 @@ describe("activity detail screen", () => {
     expect(screen.getByTestId("activity-detail-loading")).toBeTruthy();
   });
 
-  it("shows the new identity-first activity layout", () => {
+  it("keeps social controls below metrics and the route in Overview", () => {
     const rendered = renderNative(<ActivityDetailScreen />);
     const unsafeRendered = rendered as unknown as UnsafeTypeQuery;
+    const activityHeader = screen.getByTestId("activity-detail-header");
+    const summary = screen.getByTestId("activity-detail-summary");
+    const summaryActionRegion = screen.getByTestId("activity-detail-summary-action-region");
+    const likeButton = screen.getByTestId(
+      "activity-card-like-button-11111111-1111-4111-8111-111111111111",
+    );
+    const commentButton = screen.getByTestId("activity-detail-comment-button");
 
     expect(screen.getByTestId("activity-detail-options-delete")).toBeTruthy();
-    expect(screen.getByTestId("activity-detail-like-button")).toBeTruthy();
+    expect(screen.getByText("runner")).toBeTruthy();
+    expect(screen.getByText("Run")).toBeTruthy();
+    expect(screen.getByText("Morning Threshold").props.className).toBe(
+      "text-base font-semibold text-foreground",
+    );
+    expect(screen.getByText("Steady through the middle block.")).toBeTruthy();
+    expect(
+      activityHeader.children.map((child) =>
+        typeof child === "string" ? null : child.props.testID,
+      ),
+    ).toEqual(["activity-detail-summary"]);
+    expect(screen.queryByTestId("activity-detail-action-row")).toBeNull();
+    expect(
+      summaryActionRegion.findAllByProps({ testID: "activity-detail-share-button" }).length,
+    ).toBeGreaterThan(0);
+    expect(summary.findAllByProps({ testID: "activity-detail-share-button" })).toHaveLength(0);
+    expect(summary.findAllByProps({ testID: "activity-card-metrics" }).length).toBeGreaterThan(0);
+    const belowMetricsActions = summary.findAllByProps({
+      testID: "activity-card-below-metrics-actions",
+    })[0];
+    expect(belowMetricsActions).toBeTruthy();
+    expect(
+      summary.findAllByProps({ testID: "activity-detail-social-actions" }).length,
+    ).toBeGreaterThan(0);
+    expect(
+      belowMetricsActions?.findAllByProps({ testID: "activity-detail-social-actions" }).length,
+    ).toBeGreaterThan(0);
+    expect(summary.findAll((node) => String(node.type) === "StaticRouteMapPreview")).toHaveLength(
+      0,
+    );
+    expect(
+      screen
+        .getByTestId("activity-detail-navigation-header")
+        .findAllByProps({ testID: "activity-detail-share-button" }),
+    ).toHaveLength(0);
+    const shareButton = screen.getByTestId("activity-detail-share-button");
+    expect(shareButton.props).toMatchObject({
+      accessibilityLabel: "Share activity",
+      accessibilityRole: "button",
+    });
+    expect(shareButton.props.className).toContain("min-h-11");
+    expect(shareButton.findAllByProps({ children: "Share" }).length).toBeGreaterThan(0);
+    expect(likeButton.props.accessibilityLabel).toBe("Like, 0 likes");
+    expect(commentButton.props.accessibilityLabel).toBe("Comment, 0 comments");
+    expect(commentButton.props.accessibilityRole).toBe("button");
+    expect(commentButton.props.className).toContain("min-h-11");
+    expect(unsafeRendered.UNSAFE_getByType("ActivityRouteMap")).toBeTruthy();
+    fireEvent.press(screen.getByTestId("activity-detail-tab-breakdown"));
     expect(screen.getByText("Distance")).toBeTruthy();
     expect(screen.getAllByText("10.4 km").length).toBeGreaterThan(0);
     expect(screen.getByText("Elapsed")).toBeTruthy();
@@ -585,6 +849,7 @@ describe("activity detail screen", () => {
     expect(screen.getAllByText("67").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Intensity").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/0\.88/).length).toBeGreaterThan(0);
+    fireEvent.press(screen.getByTestId("activity-detail-tab-analysis"));
     expect(unsafeRendered.UNSAFE_getAllByType("ZoneDistributionCard")[0]?.props.zones).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ label: "Zone 2", time: 60 }),
@@ -594,17 +859,24 @@ describe("activity detail screen", () => {
     expect(screen.getByTestId("activity-stream-hr-load-card")).toBeTruthy();
     expect(screen.getByText("62")).toBeTruthy();
     expect(screen.getByText(/does not replace summary training load/)).toBeTruthy();
+    expect(() => unsafeRendered.UNSAFE_getByType("ActivityRouteMap")).toThrow();
+    fireEvent.press(screen.getByTestId("activity-detail-tab-overview"));
     const activityPlanComparison = unsafeRendered.UNSAFE_getByType("ActivityPlanComparison");
     expect(activityPlanComparison.props.onPress).toEqual(expect.any(Function));
     expect(activityPlanComparison.props.actualMetrics).toMatchObject({
-      common_load: activityData.derived.stress.common_load,
+      duration: 3120,
     });
+    expect(activityPlanComparison.props.actualMetrics).not.toHaveProperty("common_load");
     expect(activityPlanComparison.props.actualMetrics).not.toHaveProperty("tss");
     expect(activityPlanComparison.props.actualMetrics).not.toHaveProperty("intensity");
-    expect(activityPlanComparison.props.activityPlan.common_load).toEqual(
-      activityData.derived.stress.common_load,
+    expect(activityPlanComparison.props.activityPlan.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "common_load",
+          value: activityData.derived.stress.common_load.load,
+        }),
+      ]),
     );
-    expect(unsafeRendered.UNSAFE_getByType("ActivityRouteMap")).toBeTruthy();
   });
 
   it("renders immutable derived effort evidence on the activity detail", () => {
@@ -625,11 +897,35 @@ describe("activity detail screen", () => {
     };
 
     renderNative(<ActivityDetailScreen />);
+    fireEvent.press(screen.getByTestId("activity-detail-tab-breakdown"));
 
     expect(screen.getByTestId("activity-derived-efforts")).toBeTruthy();
     expect(screen.getByText("run speed")).toBeTruthy();
     expect(screen.getByText("20:00 · 5000 m")).toBeTruthy();
     expect(screen.getByText("4.20 m/s")).toBeTruthy();
+  });
+
+  it("loads streams for the primary activity segment rather than the first segment row", () => {
+    activitySegments.splice(
+      0,
+      activitySegments.length,
+      {
+        id: "warmup-segment",
+        ordinal: 0,
+        role: "warmup",
+        activity_category: null,
+      } as unknown as ActivityDetailTestSegment,
+      { ...activitySegment("available", "bike"), id: "primary-bike-segment", ordinal: 1 },
+    );
+
+    renderNative(<ActivityDetailScreen />);
+
+    expect(getStreamsUseQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: { type: "segment", segmentId: "primary-bike-segment" },
+      }),
+      expect.anything(),
+    );
   });
 
   it("renders a canonical segment diagnostic for an unavailable parent aggregate", () => {
@@ -660,6 +956,7 @@ describe("activity detail screen", () => {
     };
 
     renderNative(<ActivityDetailScreen />);
+    fireEvent.press(screen.getByTestId("activity-detail-tab-breakdown"));
 
     expect(
       screen.getAllByText(/activity-category-specific LTHR is missing for this activity/),
@@ -670,11 +967,72 @@ describe("activity detail screen", () => {
   it("routes likes through the social mutation", () => {
     renderNative(<ActivityDetailScreen />);
 
-    fireEvent.press(screen.getByTestId("activity-detail-like-button"));
+    fireEvent.press(
+      screen.getByTestId("activity-card-like-button-11111111-1111-4111-8111-111111111111"),
+    );
 
     expect(toggleLikeMutateMock).toHaveBeenCalledWith({
       entity_id: "11111111-1111-4111-8111-111111111111",
       entity_type: "activity",
+    });
+  });
+
+  it("switches tab content without rendering non-selected sections", () => {
+    renderNative(<ActivityDetailScreen />);
+
+    expect(screen.getByTestId("activity-detail-tab-overview").props.accessibilityState).toEqual({
+      selected: true,
+    });
+    expect(screen.queryByTestId("activity-derived-efforts")).toBeNull();
+
+    fireEvent.press(screen.getByTestId("activity-detail-tab-breakdown"));
+
+    expect(screen.getByTestId("activity-detail-tab-breakdown").props.accessibilityState).toEqual({
+      selected: true,
+    });
+    expect(screen.getByTestId("activity-derived-efforts")).toBeTruthy();
+    expect(screen.queryByTestId("activity-stream-hr-load-card")).toBeNull();
+  });
+
+  it("opens comments in a sheet rather than rendering them inline", () => {
+    renderNative(<ActivityDetailScreen />);
+
+    expect(screen.queryByTestId("activity-detail-comments-section")).toBeNull();
+    fireEvent.press(screen.getByTestId("activity-detail-comment-button"));
+
+    expect(screen.getByTestId("activity-detail-comments-sheet")).toBeTruthy();
+    expect(screen.getByTestId("activity-detail-comments-sheet").props).toMatchObject({
+      initialSnapIndex: APP_BOTTOM_SHEET_PRESENTATIONS.inspector.initialSnapIndex,
+      snapPoints: APP_BOTTOM_SHEET_PRESENTATIONS.inspector.snapPoints,
+    });
+    expect(screen.getByTestId("activity-detail-comments-section").props).toMatchObject({
+      testIDPrefix: "activity-detail",
+    });
+  });
+
+  it("keeps Share top-right and preserves its public-visibility guard", () => {
+    renderNative(<ActivityDetailScreen />);
+
+    fireEvent.press(screen.getByTestId("activity-detail-share-button"));
+
+    expect(ReactNative.Alert.alert).toHaveBeenCalledWith(
+      "Not public",
+      "Only public activities have a share link. Change visibility to Public first.",
+    );
+    expect(shareMock).not.toHaveBeenCalled();
+  });
+
+  it("shares the public activity from the top-right action", () => {
+    (
+      activityData.activity as typeof activityData.activity & { content_visibility: string }
+    ).content_visibility = "public";
+    renderNative(<ActivityDetailScreen />);
+
+    fireEvent.press(screen.getByTestId("activity-detail-share-button"));
+
+    expect(shareMock).toHaveBeenCalledWith({
+      message: expect.stringContaining("/share/activities/11111111-1111-4111-8111-111111111111"),
+      url: expect.stringContaining("/share/activities/11111111-1111-4111-8111-111111111111"),
     });
   });
 
@@ -686,6 +1044,7 @@ describe("activity detail screen", () => {
     ];
 
     renderNative(<ActivityDetailScreen />);
+    fireEvent.press(screen.getByTestId("activity-detail-tab-breakdown"));
 
     expect(screen.getByTestId("lap-visualization-card")).toBeTruthy();
     expect(screen.queryByText("Fastest")).toBeNull();
@@ -700,6 +1059,7 @@ describe("activity detail screen", () => {
     mockUsePreferredUnitSystem.mockReturnValue("imperial");
 
     renderNative(<ActivityDetailScreen />);
+    fireEvent.press(screen.getByTestId("activity-detail-tab-breakdown"));
 
     expect(screen.getByText("Mi")).toBeTruthy();
     expect(screen.getByText("7:55")).toBeTruthy();
@@ -711,6 +1071,7 @@ describe("activity detail screen", () => {
     renderNative(<ActivityDetailScreen />);
 
     expect(screen.queryByTestId("activity-detail-options-trigger")).toBeNull();
+    expect(screen.getByTestId("activity-detail-share-button")).toBeTruthy();
   });
 
   it("uses a confirm modal before deleting an activity", () => {
@@ -726,10 +1087,17 @@ describe("activity detail screen", () => {
     expect(deleteMutateMock).toHaveBeenCalledWith({ id: "11111111-1111-4111-8111-111111111111" });
   });
 
+  it("invalidates both Plan read models after activity deletion succeeds", () => {
+    renderNative(<ActivityDetailScreen />);
+    deleteMutationOptions.onSuccess?.();
+    expect(invalidatePostActivityIngestionQueriesMock).toHaveBeenCalledTimes(1);
+  });
+
   it("shows processing state in the analysis charts section while ingestion is pending", () => {
     activityData.activity.ingestion = { status: "processing" };
 
     renderNative(<ActivityDetailScreen />);
+    fireEvent.press(screen.getByTestId("activity-detail-tab-analysis"));
 
     expect(screen.getByText("Activity file is still processing.")).toBeTruthy();
   });
@@ -738,6 +1106,7 @@ describe("activity detail screen", () => {
     activitySegments.splice(0, activitySegments.length, activitySegment("processing", "bike"));
 
     renderNative(<ActivityDetailScreen />);
+    fireEvent.press(screen.getByTestId("activity-detail-tab-breakdown"));
 
     expect(screen.getByTestId("activity-segment-analysis-processing")).toBeTruthy();
     expect(screen.queryByTestId("activity-normalized-power-card")).toBeNull();
@@ -747,6 +1116,7 @@ describe("activity detail screen", () => {
     activitySegments.splice(0, activitySegments.length, activitySegment("failed", "bike"));
 
     renderNative(<ActivityDetailScreen />);
+    fireEvent.press(screen.getByTestId("activity-detail-tab-breakdown"));
 
     expect(screen.getByTestId("activity-segment-analysis-failed")).toBeTruthy();
     expect(screen.getByText("Segment analysis failed: analysis_failed")).toBeTruthy();

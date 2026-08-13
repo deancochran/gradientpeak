@@ -8,7 +8,6 @@ import {
 } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
-const fixedNow = new Date("2026-04-05T12:00:00.000Z");
 const pushMock = jest.fn();
 const navigateMock = jest.fn();
 const refetchActivePlanMock = jest.fn(async () => undefined);
@@ -24,65 +23,6 @@ let mockNewUserNoActivities = false;
 const readinessChartPropsMock = jest.fn();
 const projectionChartPropsMock = jest.fn();
 const mockTrainingPathSectionProps = jest.fn();
-const emptyCommonLoadAggregate = {
-  status: "unavailable" as const,
-  reason: "no_load_data" as const,
-  model: "gradientpeak_relative_load" as const,
-  version: "1" as const,
-  contributingDurationSeconds: 0,
-  knownDurationSeconds: null,
-  contributingActivityCount: 0,
-  partialActivityCount: 0,
-  unavailableActivityCount: 0,
-  totalActivityCount: 0,
-  activityCountCoverage: 0,
-  knownDurationCoverage: null,
-  unknownDurationActivityCount: 0,
-};
-const completeKnownEmptyEffectiveLoadResponse = {
-  status: "available" as const,
-  completed: emptyCommonLoadAggregate,
-  remaining: emptyCommonLoadAggregate,
-  tentative: emptyCommonLoadAggregate,
-  effective: {
-    status: "available" as const,
-    periodStartDate: "2026-03-30",
-    periodEndDate: "2026-10-04",
-    planningDate: "2026-04-05",
-    firmItems: [],
-    tentativeItems: [],
-    firm: { status: "known_zero" as const, load: 0, intensity: null },
-    tentative: emptyCommonLoadAggregate,
-    includingTentative: { status: "known_zero" as const, load: 0, intensity: null },
-  },
-  recommendation: {
-    status: "unavailable" as const,
-    reason: "no_active_training_plan" as const,
-    policyVersion: "common_load_recommendation_v1" as const,
-    model: "gradientpeak_relative_load" as const,
-    version: "1" as const,
-    source: "applied_training_plan_prescription" as const,
-    computedAsOf: "2026-04-05T12:00:00.000Z",
-    planningTimezone: "America/Los_Angeles",
-    trainingPlanId: null,
-    scheduleBatchId: null,
-    sourceItemCount: 0,
-    coverage: { startDate: "2026-04-05", endDate: "2026-10-04" },
-    points: [],
-  },
-  model: "gradientpeak_relative_load" as const,
-  version: "1" as const,
-  sourceCounts: { activities: 0, events: 0 },
-  resolvedRange: {
-    startDate: "2026-03-30",
-    endDate: "2026-10-04",
-    timezone: "America/Los_Angeles",
-  },
-  sourceCoverage: {
-    activities: { startDate: "2026-03-30", endDate: "2026-10-04", status: "complete" as const },
-    scheduledItems: { startDate: "2026-03-30", endDate: "2026-10-04", status: "complete" as const },
-  },
-};
 const defaultMockGoals = [
   {
     id: "goal-1",
@@ -123,10 +63,7 @@ type AuthStoreFixture = {
 };
 type TrainingPathMockProps = {
   onSelectedWeekChange: (date: string) => void;
-  onOpenActivity: (id: string) => void;
-  onOpenGoal: (id: string) => void;
-  onOpenGroupEvent: (id: string) => void;
-  onOpenScheduledEvent: (id: string) => void;
+  onViewDetails: (selection: { anchorDate: string; period: "day" | "week" | "month" }) => void;
 } & Record<string, unknown>;
 
 function hasChildrenProps(value: unknown): value is { props: { children?: unknown } } {
@@ -193,6 +130,12 @@ jest.mock("@/lib/stores/auth-store", () => ({
   },
 }));
 
+jest.mock("@/lib/stores/planDisplayPreferences", () => ({
+  usePlanDisplayPreferences: (
+    selector: (state: { hydrated: true; range: "daily"; setRange: jest.Mock }) => unknown,
+  ) => selector({ hydrated: true, range: "daily", setRange: jest.fn() }),
+}));
+
 jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,
   useAuth: () => ({
@@ -224,47 +167,20 @@ jest.mock("@/components/plan/training-path/TrainingPathSection", () => ({
       React.createElement(
         "TouchableOpacity",
         {
+          key: "ledger",
+          onPress: () => props.onViewDetails({ anchorDate: "2026-04-13", period: "week" }),
+          testID: "training-path-view-details",
+        },
+        React.createElement("Text", null, "View details"),
+      ),
+      React.createElement(
+        "TouchableOpacity",
+        {
           key: "select-week",
           onPress: () => props.onSelectedWeekChange("2026-04-13"),
           testID: "training-path-week-2026-04-13",
         },
         React.createElement("Text", null, "Select Apr 13"),
-      ),
-      React.createElement(
-        "TouchableOpacity",
-        {
-          key: "activity",
-          onPress: () => props.onOpenActivity("activity-1"),
-          testID: "training-path-open-activity",
-        },
-        React.createElement("Text", null, "Open activity"),
-      ),
-      React.createElement(
-        "TouchableOpacity",
-        {
-          key: "goal",
-          onPress: () => props.onOpenGoal("goal-1"),
-          testID: "training-path-open-goal",
-        },
-        React.createElement("Text", null, "Open goal"),
-      ),
-      React.createElement(
-        "TouchableOpacity",
-        {
-          key: "group-event",
-          onPress: () => props.onOpenGroupEvent("group-event-1"),
-          testID: "training-path-open-group-event",
-        },
-        React.createElement("Text", null, "Open group event"),
-      ),
-      React.createElement(
-        "TouchableOpacity",
-        {
-          key: "scheduled-event",
-          onPress: () => props.onOpenScheduledEvent("event-1"),
-          testID: "training-path-open-scheduled-event",
-        },
-        React.createElement("Text", null, "Open scheduled event"),
       ),
     ]);
   },
@@ -793,7 +709,6 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
           date: "2026-04-01",
           recommended_common_load: 42,
           scheduled_common_load: 38,
-          tentative_scheduled_common_load: 0,
           completed_common_load: 0,
         },
       ],
@@ -852,7 +767,12 @@ jest.mock("@/lib/api", () => ({
               asOf: "2026-04-05T12:00:00.000Z",
               planningTimezone: "America/Los_Angeles",
               today: "2026-04-05",
-              currentScheduledPlan: null,
+              currentScheduledPlan: {
+                id: "active-1",
+                name: "Current Plan",
+                nextEventAt: "2026-04-05T00:00:00.000Z",
+                scheduleBatchId: null,
+              },
               timeline: {
                 startDate: "2026-03-30",
                 endDate: "2026-04-12",
@@ -876,31 +796,10 @@ jest.mock("@/lib/api", () => ({
             isError: false,
             isFetching: false,
             isLoading: false,
-            refetch: jest.fn(async () => undefined),
-          };
-        },
-      },
-      getEffectiveLoad: {
-        useQuery: () => ({
-          data: completeKnownEmptyEffectiveLoadResponse,
-          isFetching: false,
-          isLoading: false,
-        }),
-      },
-      getActivePlan: {
-        useQuery: (_input: unknown, options: QueryOptions) => {
-          activePlanQueryOptionsRef.current = options;
-          return {
-            data: {
-              id: "active-1",
-              next_event_at: "2026-04-05T00:00:00.000Z",
-              training_plan: { name: "Current Plan" },
-            },
             refetch: refetchActivePlanMock,
           };
         },
       },
-
       list: {
         useInfiniteQuery: () => ({
           data: {
@@ -1036,67 +935,22 @@ describe("plan dashboard navigation", () => {
     expect(screen.getByText("Weekly Training Path")).toBeTruthy();
     expect(mockTrainingPathSectionProps).toHaveBeenCalledWith(
       expect.objectContaining({
-        selectedWeekLoading: false,
-        onOpenActivity: expect.any(Function),
-        onOpenGoal: expect.any(Function),
-        onOpenGroupEvent: expect.any(Function),
-        onOpenScheduledEvent: expect.any(Function),
+        onViewDetails: expect.any(Function),
         onSelectedWeekChange: expect.any(Function),
       }),
     );
   });
 
-  it("shows initial-week goal review items after synchronous planning-date resolution", () => {
-    jest.useFakeTimers();
-    jest.setSystemTime(fixedNow);
-    try {
-      mockGoals = [{ ...defaultMockGoals[0], target_date: "2026-04-05" }];
-
-      renderNative(<PlanScreenWithErrorBoundary />);
-
-      expect(mockTrainingPathSectionProps.mock.calls.at(-1)?.[0].selectedWeekGoals).toEqual([
-        expect.objectContaining({ id: "goal-1", targetDate: "2026-04-05" }),
-      ]);
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
-  it("opens detail screens from training path week review callbacks", () => {
+  it("opens the read-only ledger for the chart selection only from View details", () => {
     renderNative(<PlanScreenWithErrorBoundary />);
 
-    fireEvent.press(screen.getByTestId("training-path-open-activity"));
-    fireEvent.press(screen.getByTestId("training-path-open-goal"));
-    fireEvent.press(screen.getByTestId("training-path-open-group-event"));
-    fireEvent.press(screen.getByTestId("training-path-open-scheduled-event"));
+    expect(navigateMock).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByTestId("training-path-view-details"));
 
     expect(navigateMock).toHaveBeenCalledWith({
-      pathname: "/activity-detail",
-      params: { id: "activity-1" },
+      pathname: "/planning-ledger",
+      params: { anchorDate: "2026-04-13", period: "week" },
     });
-    expect(navigateMock).toHaveBeenCalledWith({
-      pathname: "/goal-detail",
-      params: { id: "goal-1" },
-    });
-    expect(navigateMock).toHaveBeenCalledWith({
-      pathname: "/group-event-detail",
-      params: { groupEventId: "group-event-1" },
-    });
-    expect(navigateMock).toHaveBeenCalledWith({
-      pathname: "/event-detail",
-      params: { id: "event-1" },
-    });
-  });
-
-  it("reports the pending week review state while a new chart week is selected", () => {
-    renderNative(<PlanScreenWithErrorBoundary />);
-
-    expect(mockTrainingPathSectionProps.mock.calls.at(-1)?.[0].selectedWeekLoading).toBe(false);
-    fireEvent.press(screen.getByTestId("training-path-week-2026-04-13"));
-
-    expect(
-      mockTrainingPathSectionProps.mock.calls.some(([props]) => props.selectedWeekLoading),
-    ).toBe(true);
   });
 
   it("keeps removed legacy plan-tab panels out of the current training path flow", () => {

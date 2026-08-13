@@ -36,7 +36,7 @@ async function seedProfile(username: string) {
     bio: "before",
     language: "en",
     preferred_units: "metric",
-    onboarded: true,
+    onboarding_status: "completed",
     is_public: true,
     created_at: now,
     updated_at: now,
@@ -45,7 +45,7 @@ async function seedProfile(username: string) {
   return id;
 }
 
-async function manualMetrics(profileId: string, metricType: "lthr" | "weight_kg") {
+async function manualMetrics(profileId: string, metricType: "weight_kg") {
   return db
     .select()
     .from(profileMetrics)
@@ -153,7 +153,6 @@ describe("atomic profile update against PostgreSQL", () => {
     ]) {
       await expect(caller.update(input as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
     }
-    expect(await manualMetrics(profileId, "lthr")).toEqual([]);
     expect(
       await db
         .select()
@@ -272,7 +271,6 @@ describe("atomic profile update against PostgreSQL", () => {
     });
 
     expect(await manualMetrics(profileId, "weight_kg")).toEqual(reactivatedHistory);
-    expect(await manualMetrics(profileId, "lthr")).toEqual([]);
     expect(
       await db.select().from(activityEfforts).where(eq(activityEfforts.profile_id, profileId)),
     ).toEqual([]);

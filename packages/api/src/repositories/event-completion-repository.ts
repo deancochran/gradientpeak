@@ -16,7 +16,6 @@ type EventCompletionBase = Pick<
   | "recurrence_rule"
   | "recurrence_timezone"
   | "series_id"
-  | "source_provider"
   | "occurrence_key"
   | "notes"
   | "status"

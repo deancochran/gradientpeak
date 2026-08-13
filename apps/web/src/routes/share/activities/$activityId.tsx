@@ -5,11 +5,6 @@ import type { ReactNode } from "react";
 
 import { ActivityCategoryBadges } from "../../../components/activity-category-presentation";
 
-import {
-  deriveActivityCategoryDisplay,
-  deriveActivityTimingDisplay,
-  deriveCurrentArtifactLabel,
-} from "../../../lib/activity-route-helpers";
 import { loadPublicActivity } from "../../../lib/public-share";
 
 export const Route = createFileRoute("/share/activities/$activityId")({
@@ -19,11 +14,9 @@ export const Route = createFileRoute("/share/activities/$activityId")({
     return data;
   },
   head: ({ loaderData }) => {
-    const title = loaderData
-      ? `${loaderData.activity.name} | GradientPeak`
-      : "Activity | GradientPeak";
+    const title = "Activity | GradientPeak";
     const description = loaderData
-      ? `${deriveActivityCategoryDisplay(loaderData.activity.segments).label} shared on GradientPeak.`
+      ? `${loaderData.activity.activityComposition.categories.join(", ") || "Activity"} shared on GradientPeak.`
       : "Public GradientPeak activity.";
     return {
       meta: [
@@ -57,20 +50,20 @@ function formatDistance(meters: number) {
 
 function PublicActivityPage() {
   const { activity } = Route.useLoaderData();
-  const startedAt = new Date(activity.started_at);
+  const startedAt = new Date(activity.startedAt);
   const ownerName = activity.owner.name ?? activity.owner.username ?? "GradientPeak athlete";
-  const categoryDisplay = deriveActivityCategoryDisplay(activity.segments);
-  const timingDisplay = deriveActivityTimingDisplay(activity);
-  const artifactLabel = deriveCurrentArtifactLabel(activity.current_artifact);
+  const performance = activity.performance;
+  const artifactLabel =
+    activity.sourceArtifact?.originalName ?? activity.sourceArtifact?.format ?? null;
 
   return (
     <main className="mx-auto w-full max-w-4xl space-y-6 py-8">
       <header className="space-y-4">
         <div className="flex flex-wrap gap-2">
-          <ActivityCategoryBadges categories={categoryDisplay.categories} />
+          <ActivityCategoryBadges categories={activity.activityComposition.categories} />
         </div>
         <div>
-          <h1 className="text-4xl font-semibold tracking-tight">{activity.name}</h1>
+          <h1 className="text-4xl font-semibold tracking-tight">Activity</h1>
           <p className="mt-2 text-muted-foreground">
             Shared by {ownerName} · {startedAt.toLocaleDateString()}
           </p>
@@ -84,26 +77,26 @@ function PublicActivityPage() {
         <MetricCard
           icon={<Clock className="h-5 w-5" />}
           label="Elapsed"
-          value={formatDuration(timingDisplay.elapsedSeconds)}
+          value={formatDuration(performance.elapsedSeconds)}
         />
         <MetricCard
           icon={<RouteIcon className="h-5 w-5" />}
           label="Distance"
-          value={formatDistance(activity.distance_meters)}
+          value={formatDistance(performance.distanceMeters)}
         />
         <MetricCard
           icon={<Activity className="h-5 w-5" />}
-          label={timingDisplay.coverage === "partial" ? "Moving (partial)" : "Moving time"}
+          label={performance.timingCoverage === "partial" ? "Moving (partial)" : "Moving time"}
           value={
-            timingDisplay.movingSeconds === null
+            performance.movingSeconds === null
               ? "Not available"
-              : formatDuration(timingDisplay.movingSeconds)
+              : formatDuration(performance.movingSeconds)
           }
         />
         <MetricCard
           icon={<Heart className="h-5 w-5" />}
           label="Likes"
-          value={String(activity.likes_count)}
+          value={String(activity.likes)}
         />
       </section>
 
@@ -114,28 +107,34 @@ function PublicActivityPage() {
         <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
           <Detail
             label="Average heart rate"
-            value={activity.avg_heart_rate ? `${activity.avg_heart_rate} bpm` : "Not shared"}
+            value={
+              performance.averageHeartRate ? `${performance.averageHeartRate} bpm` : "Not shared"
+            }
           />
           <Detail
             label="Max heart rate"
-            value={activity.max_heart_rate ? `${activity.max_heart_rate} bpm` : "Not shared"}
+            value={
+              performance.maximumHeartRate ? `${performance.maximumHeartRate} bpm` : "Not shared"
+            }
           />
           <Detail
             label="Average power"
-            value={activity.avg_power ? `${activity.avg_power} W` : "Not shared"}
+            value={performance.averagePower ? `${performance.averagePower} W` : "Not shared"}
           />
           <Detail
             label="Max power"
-            value={activity.max_power ? `${activity.max_power} W` : "Not shared"}
+            value={performance.maximumPower ? `${performance.maximumPower} W` : "Not shared"}
           />
           <Detail
             label="Calories"
-            value={activity.calories ? `${activity.calories} kcal` : "Not shared"}
+            value={performance.calories ? `${performance.calories} kcal` : "Not shared"}
           />
           <Detail
             label="Elevation gain"
             value={
-              activity.elevation_gain_meters ? `${activity.elevation_gain_meters} m` : "Not shared"
+              performance.elevationGainMeters
+                ? `${performance.elevationGainMeters} m`
+                : "Not shared"
             }
           />
           <Detail label="Source artifact" value={artifactLabel ?? "Not shared"} />

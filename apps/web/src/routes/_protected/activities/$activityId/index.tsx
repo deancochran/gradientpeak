@@ -37,6 +37,7 @@ import {
   ActivitySwimDetailCards,
 } from "../../../../components/protected/activity-file-detail-cards";
 import {
+  ActivityListCard,
   DetailMetricGrid,
   DetailPageIntro,
   EntityMapCard,
@@ -44,13 +45,9 @@ import {
 } from "../../../../components/protected/activity-route-primitives";
 import { ActivityStreamAnalysisCard } from "../../../../components/protected/activity-stream-analysis-card";
 import { EntityCommentsCard } from "../../../../components/protected/entity-comments-card";
-import { useAuth } from "../../../../components/providers/auth-provider";
 import { useViewingUserPreferredUnitSystem } from "../../../../hooks/use-viewing-user-preferred-unit-system";
 import { formatCalibrationQuality } from "../../../../lib/activity-load-presentation";
 import {
-  deriveActivityCategoryDisplay,
-  deriveActivityTimingDisplay,
-  deriveCurrentArtifactLabel,
   formatDateTime,
   formatDistance,
   formatDuration,
@@ -73,17 +70,6 @@ const VISIBILITY_OPTIONS: Array<{ value: ContentVisibility; label: string; descr
     { value: "public", label: "Public", description: "Anyone with the public link can view it." },
   ];
 
-function resolveContentVisibility(activity: { content_visibility: string }) {
-  if (
-    activity.content_visibility === "private" ||
-    activity.content_visibility === "followers" ||
-    activity.content_visibility === "public"
-  ) {
-    return activity.content_visibility;
-  }
-  return "private";
-}
-
 function getVisibilityLabel(visibility: ContentVisibility) {
   return VISIBILITY_OPTIONS.find((option) => option.value === visibility)?.label ?? "Private";
 }
@@ -100,7 +86,6 @@ export const Route = createFileRoute("/_protected/activities/$activityId/")({
 });
 
 function ActivityDetailPage() {
-  const { user } = useAuth();
   const { unitSystem } = useViewingUserPreferredUnitSystem();
   const utils = api.useUtils();
   const navigate = Route.useNavigate();
@@ -111,12 +96,13 @@ function ActivityDetailPage() {
   const [deleteFailed, setDeleteFailed] = useState(false);
   const activityQuery = api.activities.getById.useQuery({ id: activityId });
   const effortsQuery = api.activities.getEfforts.useQuery({ id: activityId });
-  const activity = activityQuery.data?.activity;
-  const derived = activityQuery.data?.derived;
-  const categoryDisplay = deriveActivityCategoryDisplay(activity?.segments ?? []);
-  const timingDisplay = activity ? deriveActivityTimingDisplay(activity) : null;
+  const detail = activityQuery.data?.detail;
+  const activity = detail?.summary;
+  const derived = activityQuery.data?.analysis.derived;
+  const categories = activity?.activityComposition.categories ?? [];
+  const singleCategory = categories.length === 1 ? categories[0] : null;
   const normalizedPowerAnalysis = useMemo(() => {
-    const activitySegments = (activity?.segments ?? []).filter(
+    const activitySegments = (detail?.segments ?? []).filter(
       (segment) => segment.role === "activity",
     );
     const segment = activitySegments.length === 1 ? activitySegments[0] : undefined;
@@ -127,26 +113,28 @@ function ActivityDetailPage() {
           ? getNormalizedPowerPresentation(segment.summary.normalizedPowerResult)
           : null,
     };
-  }, [activity?.segments]);
+  }, [detail?.segments]);
   const normalizedPowerPresentation = normalizedPowerAnalysis.presentation;
   const normalizedPowerAnalysisStatus = normalizedPowerAnalysis.segment?.status;
-  const currentArtifactLabel = deriveCurrentArtifactLabel(activity?.current_artifact ?? null);
-  const activityStreamSegments = (activity?.segments ?? [])
+  const currentArtifactLabel =
+    detail?.currentArtifact?.originalName ?? detail?.currentArtifact?.format ?? null;
+  const activityStreamSegments = (detail?.segments ?? [])
     .filter((segment) => segment.role === "activity")
     .sort((left, right) => left.ordinal - right.ordinal);
   const primaryStreamSegment = activityStreamSegments[0];
   const streamScopeDescription =
-    activityStreamSegments.length > 1 && primaryStreamSegment?.activity_category
-      ? `Showing the first ${getActivityBadgeLabel(primaryStreamSegment.activity_category).toLowerCase()} segment from this multisport activity.`
+    activityStreamSegments.length > 1 && primaryStreamSegment?.activityCategory
+      ? `Showing the first ${getActivityBadgeLabel(primaryStreamSegment.activityCategory).toLowerCase()} segment from this multisport activity.`
       : undefined;
-  const segmentQuantifications = activityQuery.data?.segment_loads?.map(
+  const segmentQuantifications = activityQuery.data?.analysis.segmentLoads.map(
     (segment) => segment.observationQuantification,
   );
   const loadPresentation = getActivityQuantificationPresentation(
     derived?.observationQuantification,
     {
       hasHeartRateSummary:
-        typeof activity?.avg_heart_rate === "number" && activity.avg_heart_rate > 0,
+        typeof detail?.performance.averageHeartRate === "number" &&
+        detail.performance.averageHeartRate > 0,
     },
   );
   const calibrationCommonLoad =
@@ -155,28 +143,24 @@ function ActivityDetailPage() {
     calibrationCommonLoad && calibrationCommonLoad.status !== "unavailable"
       ? calibrationCommonLoad.quality
       : null,
-    activity?.started_at,
+    activity?.time.startedAt,
   );
-  const isOwner = user?.id === activity?.profile_id;
-  const ingestion = (
-    activity as
-      | { ingestion?: { last_error_message?: string | null; status?: string | null } | null }
-      | undefined
-  )?.ingestion;
+  const isOwner = activity?.capabilities.canEdit ?? false;
+  const ingestion = detail?.ingestion;
   const ingestionStatus = ingestion?.status ?? null;
   const isStreamProcessing = Boolean(
     ingestionStatus && ingestionStatus !== "ready" && ingestionStatus !== "failed",
   );
   const canLoadStreamAnalysis = Boolean(
-    activity?.current_artifact &&
+    detail?.currentArtifact &&
       primaryStreamSegment &&
       isOwner &&
       !isStreamProcessing &&
       ingestionStatus !== "failed",
   );
   const profileQuery = api.profiles.getPublicById.useQuery(
-    { id: activity?.profile_id ?? "00000000-0000-0000-0000-000000000000" },
-    { enabled: Boolean(activity?.profile_id) },
+    { id: activity?.owner.id ?? "00000000-0000-0000-0000-000000000000" },
+    { enabled: Boolean(activity?.owner.id) },
   );
   const streamsQuery = api.activityFiles.getStreams.useQuery(
     {
@@ -188,7 +172,7 @@ function ActivityDetailPage() {
       staleTime: 5 * 60 * 1000,
     },
   );
-  const streamArtifactState = !activity?.current_artifact
+  const streamArtifactState = !detail?.currentArtifact
     ? isStreamProcessing
       ? "processing"
       : "missing"
@@ -203,7 +187,7 @@ function ActivityDetailPage() {
             : "ready";
   const streamErrorMessage =
     ingestionStatus === "failed"
-      ? (ingestion?.last_error_message ?? "Activity file processing failed.")
+      ? (ingestion?.lastErrorMessage ?? "Activity file processing failed.")
       : streamsQuery.error?.message;
   const retryLikeLabel =
     failedLikeIntent === null ? undefined : failedLikeIntent ? "Retry like" : "Retry unlike";
@@ -230,9 +214,9 @@ function ActivityDetailPage() {
   });
 
   useEffect(() => {
-    setLiked(activityQuery.data?.has_liked ?? false);
-    setLikesCount(activity?.likes_count ?? 0);
-  }, [activity?.likes_count, activityQuery.data?.has_liked]);
+    setLiked(activity?.engagement.viewerHasLiked ?? false);
+    setLikesCount(activity?.engagement.likes ?? 0);
+  }, [activity?.engagement.likes, activity?.engagement.viewerHasLiked]);
 
   useEffect(() => {
     setFailedLikeIntent(null);
@@ -240,14 +224,14 @@ function ActivityDetailPage() {
   }, [activity?.id]);
 
   const coordinates = useMemo(
-    () => getActivityCoordinates(activity?.polyline, streamsQuery.data?.records),
-    [activity?.polyline, streamsQuery.data?.records],
+    () => getActivityCoordinates(detail?.routePolyline, streamsQuery.data?.records),
+    [detail?.routePolyline, streamsQuery.data?.records],
   );
   const streamHighlights = useMemo(
     () => summarizeActivityStreams(streamsQuery.data?.records, unitSystem),
     [streamsQuery.data?.records, unitSystem],
   );
-  const contentVisibility = activity ? resolveContentVisibility(activity) : "private";
+  const contentVisibility = activity?.visibility ?? "private";
 
   const handleLikeToggle = async () => {
     if (!activity) return;
@@ -257,8 +241,8 @@ function ActivityDetailPage() {
 
     if (failedLikeIntent !== null) {
       const refreshed = await activityQuery.refetch();
-      const authoritativeLiked = refreshed.data?.has_liked;
-      const authoritativeCount = refreshed.data?.activity.likes_count;
+      const authoritativeLiked = refreshed.data?.detail.summary.engagement.viewerHasLiked;
+      const authoritativeCount = refreshed.data?.detail.summary.engagement.likes;
       if (typeof authoritativeLiked === "boolean") {
         previousLiked = authoritativeLiked;
         previousCount = authoritativeCount ?? previousCount;
@@ -306,7 +290,7 @@ function ActivityDetailPage() {
     );
   }
 
-  if (!activity) {
+  if (!activity || !detail) {
     return (
       <div className="container mx-auto max-w-3xl py-10">
         <Card>
@@ -400,12 +384,13 @@ function ActivityDetailPage() {
             ) : null}
           </>
         }
-        badges={[getVisibilityLabel(contentVisibility), formatDateTime(activity.started_at)]}
-        categories={categoryDisplay.categories}
+        badges={[getVisibilityLabel(contentVisibility), formatDateTime(activity.time.startedAt)]}
+        categories={categories}
         description={activity.notes || "No notes attached to this activity."}
         eyebrow="Activity detail"
-        title={activity.name}
       />
+
+      <ActivityListCard activity={activity} />
 
       {deleteFailed ? (
         <div
@@ -433,31 +418,31 @@ function ActivityDetailPage() {
               ]),
           {
             label: "Distance",
-            value: formatDistance(activity.distance_meters, unitSystem),
+            value: formatDistance(detail.performance.distanceMeters, unitSystem),
           },
           {
             label: "Elapsed",
-            value: formatDuration(timingDisplay?.elapsedSeconds),
+            value: formatDuration(detail.performance.elapsedSeconds),
           },
           {
-            label: timingDisplay?.coverage === "partial" ? "Active (partial)" : "Active",
-            value: formatDuration(timingDisplay?.activeSeconds),
+            label: detail.performance.timingCoverage === "partial" ? "Active (partial)" : "Active",
+            value: formatDuration(detail.performance.activeSeconds),
           },
           {
-            label: timingDisplay?.coverage === "partial" ? "Moving (partial)" : "Moving",
-            value: formatDuration(timingDisplay?.movingSeconds),
+            label: detail.performance.timingCoverage === "partial" ? "Moving (partial)" : "Moving",
+            value: formatDuration(detail.performance.movingSeconds),
           },
-          { label: "Avg power", value: formatPower(activity.avg_power) },
+          { label: "Avg power", value: formatPower(detail.performance.averagePower) },
           {
             label: "Avg heart rate",
-            value: formatHeartRate(activity.avg_heart_rate),
+            value: formatHeartRate(detail.performance.averageHeartRate),
           },
           {
-            label: categoryDisplay.singleCategory === "run" ? "Avg pace" : "Avg speed",
+            label: singleCategory === "run" ? "Avg pace" : "Avg speed",
             value:
-              categoryDisplay.singleCategory === "run"
-                ? formatPace(activity.avg_speed_mps, unitSystem)
-                : formatSpeed(activity.avg_speed_mps, unitSystem),
+              singleCategory === "run"
+                ? formatPace(detail.performance.averageSpeedMetersPerSecond, unitSystem)
+                : formatSpeed(detail.performance.averageSpeedMetersPerSecond, unitSystem),
           },
           {
             label: normalizedPowerPresentation?.label ?? "Normalized power",
@@ -470,7 +455,7 @@ function ActivityDetailPage() {
                     ? "Unavailable"
                     : formatPower(normalizedPowerPresentation?.valueWatts),
           },
-          { label: "Started", value: formatDateTime(activity.started_at) },
+          { label: "Started", value: formatDateTime(activity.time.startedAt) },
         ]}
       />
       <p className="text-sm text-muted-foreground">
@@ -540,7 +525,7 @@ function ActivityDetailPage() {
         <EntityMapCard
           coordinates={coordinates}
           emptyMessage={
-            activity.current_artifact
+            detail.currentArtifact
               ? "Location records were not available in the imported activity file."
               : "This activity has no stored route preview yet."
           }
@@ -570,10 +555,10 @@ function ActivityDetailPage() {
                 <p className="text-sm text-muted-foreground">Owner unavailable</p>
               )}
             </div>
-            {activity.activity_plans ? (
+            {detail.linkedPlan ? (
               <div>
                 <p className="text-sm font-medium text-foreground">Linked activity plan</p>
-                <p className="text-sm text-muted-foreground">{activity.activity_plans.name}</p>
+                <p className="text-sm text-muted-foreground">{detail.linkedPlan.name}</p>
               </div>
             ) : null}
             <div>
@@ -613,9 +598,9 @@ function ActivityDetailPage() {
       />
 
       <ActivitySwimDetailCards
-        {...(primaryStreamSegment?.activity_category === undefined
+        {...(primaryStreamSegment?.activityCategory === undefined
           ? {}
-          : { activityCategory: primaryStreamSegment.activity_category })}
+          : { activityCategory: primaryStreamSegment.activityCategory })}
         {...(streamsQuery.data?.laps === undefined ? {} : { laps: streamsQuery.data.laps })}
         {...(streamsQuery.data?.lengths === undefined
           ? {}
@@ -629,7 +614,7 @@ function ActivityDetailPage() {
       {isOwner ? (
         <SessionRpeCard
           activityId={activity.id}
-          effectiveSessionRpe={activity.effective_session_rpe}
+          effectiveSessionRpe={detail.effectiveSessionRpe}
           estimatedMethod={
             calibrationCommonLoad && "method" in calibrationCommonLoad
               ? calibrationCommonLoad.method

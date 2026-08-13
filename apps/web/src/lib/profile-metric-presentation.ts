@@ -19,7 +19,6 @@ export type ProfileMetricOption = {
 };
 
 const descriptions: Record<ProfileMetricType, string> = {
-  lthr: "Lactate-threshold heart rate used to anchor intensity zones.",
   max_hr: "Maximum heart-rate reference for intensity zones.",
   resting_hr: "Baseline cardiovascular recovery signal.",
   hrv_rmssd: "Morning readiness and autonomic stress trend.",
@@ -42,11 +41,6 @@ function option(type: ProfileMetricType): ProfileMetricOption {
 }
 
 export const profileMetricGroups = [
-  {
-    label: "Heart-rate calibration",
-    description: "Activity-derived heart-rate evidence used to anchor intensity zones.",
-    metrics: [option("lthr")],
-  },
   {
     label: "Supporting Physiology",
     description: "Heart-rate references that support interpretation and zones.",

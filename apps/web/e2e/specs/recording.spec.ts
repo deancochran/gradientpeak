@@ -60,7 +60,7 @@ test("offline saves stay idempotent in IndexedDB and retry through the server ha
   await startTimer(athletePage);
   await athletePage.getByRole("button", { name: /^finish$/i }).click();
   await expect(athletePage.getByRole("heading", { name: /review recording/i })).toBeVisible();
-  await athletePage.getByLabel(/activity name/i).fill("Offline browser ride");
+  await expect(athletePage.getByLabel(/activity name/i)).toHaveCount(0);
 
   await athletePage.context().setOffline(true);
   await athletePage.getByRole("button", { name: /^save activity$/i }).click();

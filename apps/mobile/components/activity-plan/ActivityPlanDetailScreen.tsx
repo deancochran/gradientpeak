@@ -99,7 +99,7 @@ export function ActivityPlanDetailScreen({
 
   const vm = useActivityPlanDetailViewModel({
     activityPlanParam,
-    fetchedPlan,
+    fetchedPlan: fetchedPlan?.detail,
     formatDuration,
     isScheduled,
     plannedActivity: activePlannedActivity,
@@ -112,7 +112,7 @@ export function ActivityPlanDetailScreen({
     () => deriveActivityPlanPresentation(activityPlan?.structure),
     [activityPlan?.structure],
   );
-  const planCategory = activityPlan?.activity_category ?? "other";
+  const planCategory = activityPlan?.activityCategory ?? "other";
   const quantitySummary = getActivityPlanQuantitySummary(activityPlan);
   const categoryItems = getUniqueActivityCategoryConfigs([
     presentation?.activity_category ?? planCategory,
@@ -129,7 +129,12 @@ export function ActivityPlanDetailScreen({
       objectId: activityPlan.id,
       label: activityPlan.name,
       activity_category: planCategory,
-      plan: activityPlan,
+      plan: {
+        id: activityPlan.id,
+        name: activityPlan.name,
+        activity_category: activityPlan.activityCategory,
+        structure: activityPlan.structure,
+      },
     };
   }, [activityPlan, planCategory]);
 
@@ -157,7 +162,6 @@ export function ActivityPlanDetailScreen({
     eventId,
     plannedActivity,
     planId,
-    profileId: profile?.id,
     queryClient,
     router,
     utils,
@@ -198,7 +202,7 @@ export function ActivityPlanDetailScreen({
       Alert.alert("Error", "Cannot delete this activity plan - no ID found");
       return;
     }
-    if (activityPlan.profile_id !== profile?.id) {
+    if (!activityPlan.capabilities.canDelete) {
       Alert.alert("Error", "You don't have permission to delete this activity plan");
       return;
     }
@@ -216,10 +220,15 @@ export function ActivityPlanDetailScreen({
     deleteMutation.mutate({ id: actualPlanId });
   };
 
+  const socialPlanId = planId ?? activityPlan?.id;
   const social = useActivityPlanSocialController({
-    initialHasLiked: activityPlan?.has_liked,
-    initialLikesCount: activityPlan?.likes_count,
-    planId: planId || activityPlan?.id,
+    ...(activityPlan?.engagement.viewerHasLiked === undefined
+      ? {}
+      : { initialHasLiked: activityPlan.engagement.viewerHasLiked }),
+    ...(activityPlan?.engagement.likes === undefined
+      ? {}
+      : { initialLikesCount: activityPlan.engagement.likes }),
+    ...(socialPlanId === undefined ? {} : { planId: socialPlanId }),
   });
 
   if (loadingPlan || loadingPlannedActivity || isRedirecting) {
@@ -323,33 +332,22 @@ export function ActivityPlanDetailScreen({
               categoryItems={categoryItems}
               fallbackLabel="GradientPeak"
               owner={
-                (
-                  activityPlan as {
-                    owner?: {
-                      id?: string | null;
-                      username?: string | null;
-                      avatar_url?: string | null;
-                    } | null;
-                  }
-                ).owner ?? null
+                activityPlan.owner
+                  ? {
+                      id: activityPlan.owner.id,
+                      username: activityPlan.owner.username,
+                      avatar_url: activityPlan.owner.avatarUrl,
+                    }
+                  : null
               }
-              timestamp={
-                (
-                  activityPlan as {
-                    created_at?: string | Date | null;
-                    updated_at?: string | Date | null;
-                  }
-                ).created_at ??
-                (activityPlan as { updated_at?: string | Date | null }).updated_at ??
-                null
-              }
+              timestamp={activityPlan.createdAt}
             />
 
             <ActivityPlanSummary
               description={activityPlan.description}
               estimatedDuration={quantitySummary.durationSeconds}
               presentation={presentation}
-              prescriptionQuantification={activityPlan.prescriptionQuantification}
+              projectionMetrics={activityPlan.metrics}
               structure={activityPlan.structure}
               title={activityPlan.name}
               variant="standalone"
@@ -382,7 +380,7 @@ export function ActivityPlanDetailScreen({
                 </Text>
               </Pressable>
             ) : null}
-            {activityPlan.notes ? (
+            {activityPlan.contractVersion === "activity-plan-detail-v1" && activityPlan.notes ? (
               <View className="mt-4 rounded-2xl bg-muted/30 px-4 py-3">
                 <Text className="text-sm leading-5 text-muted-foreground">
                   {activityPlan.notes}

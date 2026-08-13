@@ -75,12 +75,8 @@ export const effectivePlanCompositionDtoSchema = z.discriminatedUnion("status", 
       periodEndDate: z.string(),
       planningDate: z.string(),
       firmItems: z.array(quantifiedCompositionItemSchema),
-      tentativeItems: z.array(quantifiedCompositionItemSchema),
       firm: effectiveLoadAggregateSchema,
-      tentative: commonLoadAggregateSchema,
-      includingTentative: effectiveLoadAggregateSchema,
-      firmLifecycleQuantifications: lifecycleQuantificationsSchema,
-      includingTentativeLifecycleQuantifications: lifecycleQuantificationsSchema,
+      lifecycleQuantifications: lifecycleQuantificationsSchema,
     })
     .strict(),
   z
@@ -104,7 +100,7 @@ export const effectivePlanCompositionDtoSchema = z.discriminatedUnion("status", 
 
 export type EffectivePlanCompositionDto = z.infer<typeof effectivePlanCompositionDtoSchema>;
 
-/** Shared API projection for mobile and web; firm and tentative availability never share a default. */
+/** Shared API projection for mobile and web. */
 export function composeEffectivePlanDto(
   input: QuantifiedEffectiveCompositionInput,
 ): EffectivePlanCompositionDto {
@@ -159,8 +155,6 @@ export function composeEffectivePlanDto(
     if (!source) throw new Error("Effective composition item lost its observation source");
     return { ...item, observationQuantification: source.observationQuantification };
   };
-  const firmItems = composition.items.map(enrich);
-  const tentativeItems = composition.tentativeItems.map(enrich);
   const lifecycleMembers = (items: typeof composition.items) => {
     const prescriptions: ActivityPrescriptionQuantification[] = [];
     const observations: ActivityObservationQuantification[] = [];
@@ -198,24 +192,14 @@ export function composeEffectivePlanDto(
         prescriptions === null && observations === null ? null : comparePlannedToCompleted(members),
     };
   };
-  const firmMembers = lifecycleMembers(composition.items);
-  const tentativeMembers = lifecycleMembers(composition.tentativeItems);
-  const firmLifecycleQuantifications = summarizeLifecycles(firmMembers);
-  const includingTentativeLifecycleQuantifications = summarizeLifecycles({
-    prescriptions: [...firmMembers.prescriptions, ...tentativeMembers.prescriptions],
-    observations: firmMembers.observations,
-  });
+  const lifecycleQuantifications = summarizeLifecycles(lifecycleMembers(composition.items));
   return effectivePlanCompositionDtoSchema.parse({
     status: "available",
     periodStartDate: composition.periodStartDate,
     periodEndDate: composition.periodEndDate,
     planningDate: composition.planningDate,
-    firmItems,
-    tentativeItems,
+    firmItems: composition.items.map(enrich),
     firm: composition.aggregate,
-    tentative: composition.tentativeAggregate,
-    includingTentative: composition.includingTentativeAggregate,
-    firmLifecycleQuantifications,
-    includingTentativeLifecycleQuantifications,
+    lifecycleQuantifications,
   });
 }

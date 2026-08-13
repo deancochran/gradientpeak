@@ -39,7 +39,7 @@ const [publicAccessLevel, membersOnlyAccessLevel] = GROUP_ACCESS_LEVELS;
 const [openJoinPolicy, requestToJoinPolicy, inviteOnlyJoinPolicy] = GROUP_JOIN_POLICIES;
 const [adminRole, memberRole] = GROUP_MANAGEABLE_MEMBERSHIP_ROLES;
 const [approveDecision] = GROUP_JOIN_REQUEST_REVIEW_DECISIONS;
-const [acceptedRsvpStatus, declinedRsvpStatus] = GROUP_EVENT_RSVP_STATUSES;
+const [declinedRsvpStatus] = GROUP_EVENT_RSVP_STATUSES;
 
 describe("group input schemas", () => {
   it("normalizes create input and applies MVP defaults", () => {
@@ -179,9 +179,9 @@ describe("recurring group event input schemas", () => {
     expect(
       rsvpEventSeriesInputSchema.parse({
         groupEventSeriesId: validGroupEventId,
-        status: acceptedRsvpStatus,
+        status: declinedRsvpStatus,
       }),
-    ).toEqual({ groupEventSeriesId: validGroupEventId, status: acceptedRsvpStatus });
+    ).toEqual({ groupEventSeriesId: validGroupEventId, status: declinedRsvpStatus });
     expect(
       updateEventOccurrenceInputSchema.safeParse({
         groupEventId: validGroupEventId,
@@ -274,11 +274,11 @@ describe("one-off group event input schemas", () => {
     expect(
       rsvpOneOffGroupEventInputSchema.parse({
         groupEventId: validGroupEventId,
-        status: acceptedRsvpStatus,
+        status: declinedRsvpStatus,
       }),
     ).toEqual({
       groupEventId: validGroupEventId,
-      status: acceptedRsvpStatus,
+      status: declinedRsvpStatus,
     });
     expect(
       rsvpOneOffGroupEventInputSchema.safeParse({
@@ -286,5 +286,11 @@ describe("one-off group event input schemas", () => {
         status: declinedRsvpStatus,
       }).success,
     ).toBe(true);
+    expect(
+      rsvpOneOffGroupEventInputSchema.safeParse({
+        groupEventId: validGroupEventId,
+        status: "accepted",
+      }).success,
+    ).toBe(false);
   });
 });

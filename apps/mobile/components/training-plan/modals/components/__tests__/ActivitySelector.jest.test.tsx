@@ -1,3 +1,7 @@
+import {
+  createActivityPlanStructure,
+  createActivityPlanSummary,
+} from "../../../../../test/activity-plan-projection-fixture";
 import { createHost } from "../../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../../test/render-native";
 import { type ActivityOption, ActivitySelector } from "../ActivitySelector";
@@ -38,17 +42,18 @@ jest.mock("@/components/shared/ScreenState", () => ({
 }));
 
 const activities: ActivityOption[] = [
-  {
+  createActivityPlanSummary({
     id: "tempo",
     name: "Tempo Builder",
-    activity_category: "run",
+    activityCategory: "run",
     description: "Progressive tempo intervals.",
-  },
-  {
+  }),
+  createActivityPlanSummary({
     id: "strength",
     name: "Strength Foundation",
-    activity_category: "strength",
-  },
+    activityCategory: "strength",
+    structure: createActivityPlanStructure("strength"),
+  }),
 ];
 
 describe("ActivitySelector", () => {
@@ -65,7 +70,10 @@ describe("ActivitySelector", () => {
     );
 
     expect(activityPlanCardMock).toHaveBeenCalledWith(
-      expect.objectContaining({ activityPlan: activities[0], variant: "compact" }),
+      expect.objectContaining({
+        plan: expect.objectContaining({ id: "tempo" }),
+        variant: "compact",
+      }),
     );
     expect(screen.getByTestId("activity-selector-option-tempo").props.accessibilityState).toEqual({
       disabled: false,

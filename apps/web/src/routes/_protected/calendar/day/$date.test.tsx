@@ -20,6 +20,49 @@ const mocks = vi.hoisted(() => ({
   routeDate: "2026-07-27",
 }));
 
+function projectionItem(input: {
+  id: string;
+  kind?: "completed_activity" | "event" | "group_event";
+  startsAt?: string | null;
+  status?: "cancelled" | "completed" | "scheduled";
+  title: string;
+  timezone?: string;
+}) {
+  const kind = input.kind ?? "event";
+  return {
+    id: input.id,
+    calendarDate: mocks.routeDate,
+    timing: {
+      startsAt: input.startsAt ?? null,
+      endsAt: null,
+      allDay: false,
+      timezone: input.timezone ?? "America/New_York",
+    },
+    kind,
+    title: input.title,
+    subtitle: null,
+    status: input.status ?? (kind === "completed_activity" ? "completed" : "scheduled"),
+    navigation: {
+      target:
+        kind === "completed_activity"
+          ? "activity"
+          : kind === "group_event"
+            ? "group_event"
+            : "event",
+      href:
+        kind === "completed_activity"
+          ? `/activities/${input.id}`
+          : kind === "group_event"
+            ? `/groups/events/${input.id}`
+            : `/calendar/events/${input.id}`,
+    },
+    metrics: [],
+    estimated: false,
+    partial: false,
+    plan: null,
+  };
+}
+
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
@@ -62,6 +105,51 @@ vi.mock("../../../../lib/api/client", () => ({
               selectedGroupEvents: { items: mocks.groupEvents, truncated: false },
               plannedLoadSummary: mocks.plannedDaySummary,
               timezone: "America/New_York",
+              projection: {
+                contractVersion: "calendar-projection-v1",
+                startDate: mocks.routeDate,
+                endDateExclusive: "2026-07-28",
+                timezone: "America/New_York",
+                items: [
+                  ...mocks.events.map((event) =>
+                    projectionItem({
+                      id: String(event.id),
+                      startsAt: typeof event.starts_at === "string" ? event.starts_at : null,
+                      status: event.status === "cancelled" ? "cancelled" : "scheduled",
+                      title: typeof event.title === "string" ? event.title : "Event",
+                    }),
+                  ),
+                  ...mocks.completedActivities.map((activity) =>
+                    projectionItem({
+                      id: String(activity.id),
+                      kind: "completed_activity",
+                      startsAt:
+                        typeof activity.started_at === "string" ? activity.started_at : null,
+                      title:
+                        typeof activity.name === "string" && activity.name.trim()
+                          ? activity.name
+                          : "Completed activity",
+                    }),
+                  ),
+                  ...mocks.groupEvents.map((event) =>
+                    projectionItem({
+                      id: String(event.id),
+                      kind: "group_event",
+                      startsAt: typeof event.starts_at === "string" ? event.starts_at : null,
+                      title: typeof event.title === "string" ? event.title : "Group event",
+                      timezone:
+                        typeof event.timezone === "string" ? event.timezone : "America/New_York",
+                    }),
+                  ),
+                ],
+                truncated: false,
+                truncation: {
+                  events: false,
+                  completedActivities: false,
+                  groupEvents: false,
+                  goals: false,
+                },
+              },
             },
             isError: mocks.eventsError || mocks.summaryError,
             isLoading: mocks.eventsLoading || mocks.summaryLoading,
@@ -154,10 +242,28 @@ describe("CalendarDayPage planned workload", () => {
     expect(screen.getByRole("link", { name: /Morning ride/i }).getAttribute("href")).toBe(
       "/activities/activity-1",
     );
+    expect(screen.getByText("Morning ride")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Club run/i }).getAttribute("href")).toBe(
       "/groups/events/group-event-1",
     );
     expect(screen.getByText("2 calendar items")).toBeTruthy();
+  });
+
+  it("renders a cross-date group event label in the event timezone", () => {
+    mocks.routeDate = "2026-05-01";
+    mocks.groupEvents = [
+      {
+        id: "tokyo-event",
+        title: "Tokyo start",
+        starts_at: "2026-04-30T15:30:00.000Z",
+        timezone: "Asia/Tokyo",
+      },
+    ];
+
+    render(<CalendarDayPage />);
+
+    expect(screen.getByText("Tokyo start")).toBeTruthy();
+    expect(screen.getByText("12:30 AM")).toBeTruthy();
   });
 
   it("keeps loaded Event cards visible when the complete summary endpoint fails and retries it separately", () => {
@@ -183,8 +289,6 @@ describe("CalendarDayPage planned workload", () => {
     eventLink.focus();
     expect(document.activeElement).toBe(eventLink);
     expect(eventLink.getAttribute("href")).toBe("/calendar/events/event-1");
-    fireEvent.click(eventLink);
-    expect(mocks.linkClick).toHaveBeenCalledOnce();
   });
 
   it("rejects nonexistent route dates before any day query runs", () => {

@@ -122,8 +122,6 @@ export function usePlanTrainingPathData() {
         date: day.date,
         completed_common_load: day.load.completedLoad,
         scheduled_common_load: day.load.scheduledLoad,
-        tentative_scheduled_common_load: day.load.tentativeScheduledLoad,
-        recommended_common_load: day.load.recommendedLoad,
         completed_observation_state:
           day.completedItems.length > 0
             ? ("observed" as const)
@@ -148,7 +146,7 @@ export function usePlanTrainingPathData() {
         timeline: timelineLoadPoints,
         fitnessHistory: projection?.fitness.actual ?? [],
         projectedFitness: projection?.fitness.scheduled ?? [],
-        idealFitnessCurve: projection?.fitness.recommended ?? [],
+        idealFitnessCurve: [],
         goalMarkers,
         selectedWeekStart,
         range: "season",
@@ -158,7 +156,6 @@ export function usePlanTrainingPathData() {
     [
       goalMarkers,
       projection?.fitness.actual,
-      projection?.fitness.recommended,
       projection?.fitness.scheduled,
       selectedWeekStart,
       timelineLoadPoints,
@@ -171,9 +168,6 @@ export function usePlanTrainingPathData() {
     const scheduledByDate = new Map(
       projection?.fitness.scheduled.map((point) => [point.date, point]),
     );
-    const recommendedByDate = new Map(
-      projection?.fitness.recommended.map((point) => [point.date, point]),
-    );
     const timeline = projection?.timeline;
     if (!timeline) return [];
     const normalized = normalizeDailyTrainingAdjustmentPoints({
@@ -183,13 +177,10 @@ export function usePlanTrainingPathData() {
         const load = projection.dayLoads[day.date];
         const actual = actualByDate.get(day.date);
         const scheduled = scheduledByDate.get(day.date);
-        const recommended = recommendedByDate.get(day.date);
         return {
           date: day.date,
           plannedLoad: day.load.scheduledLoad,
-          tentativePlannedLoad: day.load.tentativeScheduledLoad,
           completedLoad: day.load.completedLoad,
-          targetLoad: day.load.recommendedLoad,
           remainingScheduledLoad: day.load.remainingLoad,
           completedObservationState:
             day.completedItems.length > 0
@@ -205,13 +196,11 @@ export function usePlanTrainingPathData() {
                   version: COMMON_RELATIVE_LOAD_VERSION,
                 },
           hasCompletedActivityWithoutLoad: load?.hasUnavailableCompletedLoad === true,
-          hasTargetLoad:
-            load?.recommendedLoadStatus === "complete" ||
-            load?.recommendedLoadStatus === "known_zero",
+          hasTargetLoad: false,
           fitnessCtl: actual?.longTermLoad ?? null,
           scheduledFitnessCtl: scheduled?.longTermLoad ?? null,
-          targetFitnessCtl: recommended?.longTermLoad ?? null,
-          fatigueAtl: scheduled?.recentLoad ?? actual?.recentLoad ?? null,
+          actualFatigueAtl: actual?.recentLoad ?? null,
+          scheduledFatigueAtl: scheduled?.recentLoad ?? null,
           formTsb: scheduled?.loadBalance ?? actual?.loadBalance ?? null,
         };
       }),
@@ -222,12 +211,8 @@ export function usePlanTrainingPathData() {
         ...point,
         effectiveLoadStatus: load?.status ?? "unavailable",
         effectiveLoad: load?.commonLoad ?? null,
-        effectiveIntensity: load?.intensity ?? null,
         effectiveCompletedLoad: load?.completedLoad ?? null,
         effectiveRemainingLoad: load?.remainingLoad ?? null,
-        effectiveTentativeLoad: load?.tentativeLoad ?? null,
-        recommendedLoadStatus: load?.recommendedLoadStatus ?? "unavailable",
-        recommendedLoad: load?.recommendedLoad ?? null,
       };
     });
   }, [projection]);
@@ -321,7 +306,7 @@ export function usePlanTrainingPathData() {
         (day) =>
           day.scheduledItems.length > 0 ||
           day.completedItems.length > 0 ||
-          day.load.recommendedLoad !== null,
+          day.load.completedLoad !== null,
       ),
   );
 

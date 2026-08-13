@@ -19,6 +19,8 @@ type InstantChartSelectionInput<Point extends SelectableChartPoint> = {
   isScrollReady?: boolean;
   selectedDate?: string | null;
   slotWidth: number;
+  offsetForIndex?: (index: number) => number;
+  indexForOffset?: (offsetX: number) => number;
 };
 
 export type InstantChartSelectionPhase = "initializing" | "previewing" | "committed";
@@ -34,6 +36,8 @@ export function useInstantChartSelection<Point extends SelectableChartPoint>({
   isScrollReady = true,
   selectedDate,
   slotWidth,
+  offsetForIndex,
+  indexForOffset,
 }: InstantChartSelectionInput<Point>) {
   const [internalCommittedDate, setInternalCommittedDate] = useState<string | null>(null);
   const [pendingControlledDate, setPendingControlledDate] = useState<string | null>(null);
@@ -87,8 +91,9 @@ export function useInstantChartSelection<Point extends SelectableChartPoint>({
 
   const getNearestIndex = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) =>
+      indexForOffset?.(event.nativeEvent.contentOffset.x) ??
       getNearestTrainingPathChartIndex(event.nativeEvent.contentOffset.x, slotWidth, points.length),
-    [points.length, slotWidth],
+    [indexForOffset, points.length, slotWidth],
   );
 
   const scrollToIndex = useCallback(
@@ -98,12 +103,12 @@ export function useInstantChartSelection<Point extends SelectableChartPoint>({
       lastProgrammaticScrollDateRef.current = point.date;
       scrollRef.current.scrollTo({
         animated,
-        x: getTrainingPathChartOffset(index, slotWidth),
+        x: offsetForIndex?.(index) ?? getTrainingPathChartOffset(index, slotWidth),
         y: 0,
       });
       return true;
     },
-    [points, slotWidth],
+    [offsetForIndex, points, slotWidth],
   );
 
   const scrollToDate = useCallback(
@@ -245,6 +250,7 @@ export function useInstantChartSelection<Point extends SelectableChartPoint>({
     scrollRef,
     scrollToDate,
     selectRelative,
+    selectDate: commitDate,
     selectedPoint,
   };
 }

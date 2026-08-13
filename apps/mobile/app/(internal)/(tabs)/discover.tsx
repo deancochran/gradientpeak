@@ -165,7 +165,6 @@ export default function DiscoverPage() {
   const shouldLoadUsers = activeScope === "users";
   const activityPlansInfiniteQuery = api.activityPlans.list.useInfiniteQuery(
     {
-      includeEstimation: true,
       ownerScope: "all",
       search: validatedSearchQuery || undefined,
       activityCategories: activityPlanFilters.categoryIds.length
@@ -687,10 +686,7 @@ export default function DiscoverPage() {
   const renderFeedItem = (result: DiscoverFeedItem) => (
     <View key={result.id} testID={`discover-feed-item-${result.id}`}>
       {result.type === "activityPlans" ? (
-        <ActivityPlanCard
-          activityPlan={result.item}
-          onPress={() => handleTemplatePress(result.item)}
-        />
+        <ActivityPlanCard plan={result.item} onPress={() => handleTemplatePress(result.item)} />
       ) : null}
       {result.type === "trainingPlans" ? (
         <TrainingPlanCard plan={result.item} onPress={() => handleTrainingPlanPress(result.item)} />

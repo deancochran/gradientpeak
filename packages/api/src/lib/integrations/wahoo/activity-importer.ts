@@ -5,12 +5,24 @@
 
 import { createHash } from "node:crypto";
 import type { StandardActivity } from "@repo/core";
-import { parseActivityFile } from "@repo/core/server/activity-files";
+import { ActivityFileParseError, parseActivityFile } from "@repo/core/server/activity-files";
 import {
+  ActivityArtifactLifecycleRetryableError,
+  ActivityArtifactPersistenceError,
+  ActivityAthleteStateEvidenceError,
+  ActivityCalibrationEvidenceError,
+  ActivityFileIngestionPersistenceError,
+  ActivityMaterialEvidenceMarkerError,
+  ActivityParentPersistenceError,
+  ActivitySegmentPersistenceError,
+  ActivitySourceReferenceError,
   type ActivitySubmissionTransaction,
+  ActivitySubmissionValidationError,
   MATERIALIZER_VERSION,
   UnsupportedPersistedActivityVersionError,
 } from "../../../application/activities/submit-activity";
+import { ActivityAnalysisValidationError } from "../../../application/activity-file-ingestion/analyze-parsed-activity-file";
+import { ImportedActivityAnalysisError } from "../../../application/activity-file-ingestion/submit-imported-activity-artifact";
 import { logger } from "../../logger";
 import {
   buildImportedActivityCreateInput,
@@ -65,6 +77,64 @@ const EXPECTED_PROVIDER_UNIQUE_CONSTRAINTS = new Set([
   "activity_source_references_provider_unique",
 ]);
 
+const RECOGNIZED_ACTIVITY_PERSISTENCE_CONSTRAINTS = new Set([
+  "activities_active_ms_check",
+  "activities_distance_meters_check",
+  "activities_elapsed_ms_check",
+  "activities_laps_array_check",
+  "activities_laps_count_check",
+  "activities_laps_size_check",
+  "activities_moving_ms_check",
+  "activities_moving_time_check",
+  "activities_segments_revision_check",
+  "activities_timing_coverage_values_check",
+  "activity_efforts_bike_power_max_check",
+  "activity_efforts_distance_meters_bounds_check",
+  "activity_efforts_duration_seconds_bounds_check",
+  "activity_efforts_heart_rate_bounds_check",
+  "activity_efforts_run_speed_bounds_check",
+  "activity_efforts_supported_combination_check",
+  "activity_efforts_swim_speed_bounds_check",
+  "activity_efforts_unit_compatibility_check",
+  "activity_efforts_value_finite_positive_check",
+  "activity_segments_offset_check",
+  "activity_segments_role_category_check",
+  "activity_segments_timing_check",
+  "activity_segments_timing_coverage_values_check",
+  "activity_source_references_artifact_unique",
+  "activity_source_references_provider_unique",
+  "performance_calibration_evidence_value_check",
+  "performance_calibration_model_inputs_value_check",
+]);
+
+const SAFE_ERROR_NAMES = new Set([
+  "AbortError",
+  "ActivityArtifactLifecycleRetryableError",
+  "ActivityArtifactPersistenceError",
+  "ActivityAthleteStateEvidenceError",
+  "ActivityCalibrationEvidenceError",
+  "ActivityMaterialEvidenceMarkerError",
+  "ActivityFileIngestionPersistenceError",
+  "ActivityFileParseError",
+  "ActivityParentPersistenceError",
+  "ActivitySegmentPersistenceError",
+  "ActivityAnalysisValidationError",
+  "ActivitySubmissionValidationError",
+  "ActivitySourceReferenceError",
+  "DrizzleQueryError",
+  "Error",
+  "ImportedActivityAnalysisError",
+  "PostgresError",
+  "TRPCError",
+  "UnsupportedPersistedActivityVersionError",
+  "ZodError",
+]);
+
+const LIMITED_ACTIVITY_PERSISTENCE_ERROR_CODES = new Set<WahooActivityImportErrorCode>([
+  "activity_laps_invalid",
+  "activity_segments_invalid",
+]);
+
 const MAX_ACTIVITY_FILE_BYTES = 50 * 1024 * 1024;
 const ACTIVITY_FILE_DOWNLOAD_TIMEOUT_MS = 15_000;
 const DEFAULT_ACTIVITY_FILE_HOSTS = ["*.wahooligan.com"];
@@ -77,6 +147,131 @@ type WahooActivityImportStage =
   | "parse_artifact"
   | "build_activity"
   | "persist_activity";
+
+export type WahooActivityImportErrorCode =
+  | "activity_analysis_initial_segments_invalid"
+  | "activity_analysis_failed"
+  | "activity_analysis_persisted_segments_invalid"
+  | "activity_analysis_segments_invalid"
+  | "activity_artifact_lifecycle_pending"
+  | "activity_artifact_persistence_failed"
+  | "activity_athlete_state_evidence_invalid"
+  | "activity_calibration_evidence_invalid"
+  | "activity_effort_segment_mismatch"
+  | "activity_effort_reconciliation_invalid"
+  | "activity_import_failed"
+  | "activity_ingestion_conflict"
+  | "activity_ingestion_persistence_failed"
+  | "activity_material_evidence_marker_failed"
+  | "activity_parent_persistence_failed"
+  | "activity_laps_invalid"
+  | "activity_performance_snapshot_invalid"
+  | "activity_persistence_invariant_failed"
+  | "activity_persistence_failed"
+  | "activity_segments_invalid"
+  | "activity_segment_persistence_failed"
+  | "activity_source_reference_failed"
+  | "activity_validation_failed"
+  | "invalid_started_at"
+  | "missing_started_at"
+  | "unsupported_persisted_version";
+
+export class WahooActivityCanonicalIdentityMismatchError extends Error {
+  constructor() {
+    super("activity_canonical_identity_mismatch");
+    this.name = "WahooActivityCanonicalIdentityMismatchError";
+  }
+}
+
+function classifyWahooPersistenceError(error: unknown): WahooActivityImportErrorCode {
+  let candidate: unknown = error;
+  const seen = new Set<unknown>();
+  for (let depth = 0; depth < 5 && candidate && !seen.has(candidate); depth += 1) {
+    seen.add(candidate);
+    if (candidate instanceof ActivityArtifactLifecycleRetryableError) {
+      return "activity_artifact_lifecycle_pending";
+    }
+    if (candidate instanceof ActivityArtifactPersistenceError) {
+      return "activity_artifact_persistence_failed";
+    }
+    if (candidate instanceof ActivityAthleteStateEvidenceError) {
+      return "activity_athlete_state_evidence_invalid";
+    }
+    if (candidate instanceof ActivityCalibrationEvidenceError) {
+      return candidate.code;
+    }
+    if (candidate instanceof ActivityMaterialEvidenceMarkerError) {
+      return "activity_material_evidence_marker_failed";
+    }
+    if (candidate instanceof ActivityFileIngestionPersistenceError) {
+      return "activity_ingestion_persistence_failed";
+    }
+    if (candidate instanceof ActivityParentPersistenceError) {
+      return "activity_parent_persistence_failed";
+    }
+    if (candidate instanceof ActivitySegmentPersistenceError) {
+      return "activity_segment_persistence_failed";
+    }
+    if (candidate instanceof ActivityAnalysisValidationError) return candidate.code;
+    if (
+      candidate instanceof ImportedActivityAnalysisError &&
+      candidate.code === "activity_laps_invalid"
+    ) {
+      return candidate.code;
+    }
+    if (candidate instanceof ActivitySubmissionValidationError) return candidate.code;
+    if (candidate instanceof ActivitySourceReferenceError)
+      return "activity_source_reference_failed";
+    if (candidate instanceof Error && candidate.name === "ZodError") {
+      return "activity_validation_failed";
+    }
+    candidate =
+      typeof candidate === "object" && "cause" in candidate
+        ? (candidate as { cause?: unknown }).cause
+        : undefined;
+  }
+  return "activity_persistence_failed";
+}
+
+function safeWahooImportErrorDetails(
+  error: unknown,
+  applicationCode: WahooActivityImportErrorCode,
+) {
+  let candidate: unknown = error;
+  let errorClass = "unknown";
+  let postgresCode: string | undefined;
+  let postgresConstraint: string | undefined;
+  const seen = new Set<unknown>();
+  for (let depth = 0; depth < 5 && candidate && !seen.has(candidate); depth += 1) {
+    seen.add(candidate);
+    if (candidate instanceof Error && errorClass === "unknown") {
+      errorClass = SAFE_ERROR_NAMES.has(candidate.name) ? candidate.name : "unknown";
+    }
+    if (typeof candidate !== "object") break;
+    const record = candidate as { cause?: unknown; code?: unknown; constraint?: unknown };
+    if (
+      postgresCode === undefined &&
+      typeof record.code === "string" &&
+      /^[0-9A-Z]{5}$/.test(record.code)
+    ) {
+      postgresCode = record.code;
+    }
+    if (
+      postgresConstraint === undefined &&
+      typeof record.constraint === "string" &&
+      RECOGNIZED_ACTIVITY_PERSISTENCE_CONSTRAINTS.has(record.constraint)
+    ) {
+      postgresConstraint = record.constraint;
+    }
+    candidate = record.cause;
+  }
+  return {
+    application_code: applicationCode,
+    error_class: errorClass,
+    ...(postgresCode === undefined ? {} : { postgres_code: postgresCode }),
+    ...(postgresConstraint === undefined ? {} : { postgres_constraint: postgresConstraint }),
+  };
+}
 
 const WAHOO_ACTIVITY_IMPORT_FAILURE_MESSAGES = {
   resolve_integration: "Wahoo activity import failed while resolving the integration",
@@ -218,7 +413,12 @@ export interface ImportResult {
   success: boolean;
   activityId?: string;
   error?: string;
-  failureReason?: "missing_started_at" | "invalid_started_at" | "unsupported_persisted_version";
+  errorCode?: WahooActivityImportErrorCode;
+  failureReason?:
+    | "missing_started_at"
+    | "invalid_started_at"
+    | "unsupported_activity_file"
+    | "unsupported_persisted_version";
   skipped?: boolean;
   reason?: string;
 }
@@ -306,6 +506,7 @@ export class WahooActivityImporter {
             startedAtFailureReason === "missing_started_at"
               ? "Wahoo workout summary is missing its start time"
               : "Wahoo workout summary has an invalid start time",
+          errorCode: startedAtFailureReason,
           failureReason: startedAtFailureReason,
         };
       }
@@ -371,6 +572,7 @@ export class WahooActivityImporter {
           return {
             success: false,
             error: "Wahoo activity has a non-current materializer version",
+            errorCode: "unsupported_persisted_version",
             failureReason: "unsupported_persisted_version",
           };
         }
@@ -544,26 +746,72 @@ export class WahooActivityImporter {
         });
         if (repairCandidate) {
           if (newActivity.id !== repairCandidate.activityId) {
-            throw new Error("Provider activity identity resolved to a different canonical parent");
+            throw new WahooActivityCanonicalIdentityMismatchError();
           }
         }
       } catch (insertError) {
+        if (
+          insertError instanceof ImportedActivityAnalysisError &&
+          insertError.code === "activity_laps_invalid"
+        ) {
+          logger.warn("Wahoo activity import skipped", {
+            operation: "analyze_activity",
+            outcome: "unsupported_activity_file",
+            provider: "wahoo",
+            ...safeWahooImportErrorDetails(insertError, "activity_analysis_failed"),
+          });
+          return {
+            success: true,
+            skipped: true,
+            reason: "Activity file semantics are unsupported",
+            failureReason: "unsupported_activity_file",
+          };
+        }
+        if (insertError instanceof WahooActivityCanonicalIdentityMismatchError) {
+          logger.warn("Wahoo activity import skipped", {
+            operation: "reconcile_canonical_identity",
+            outcome: "canonical_identity_mismatch",
+            provider: "wahoo",
+          });
+          return {
+            success: true,
+            skipped: true,
+            reason: "Provider activity resolves to an existing canonical activity",
+          };
+        }
         if (insertError instanceof UnsupportedPersistedActivityVersionError) {
           return {
             success: false,
             error: "Wahoo activity has non-current persisted versions",
+            errorCode: "unsupported_persisted_version",
             failureReason: "unsupported_persisted_version",
           };
         }
         if (!isExpectedProviderUniqueViolation(insertError)) {
+          const errorCode = classifyWahooPersistenceError(insertError);
+          if (LIMITED_ACTIVITY_PERSISTENCE_ERROR_CODES.has(errorCode)) {
+            logger.warn("Wahoo activity import skipped", {
+              operation: "persist_activity",
+              outcome: "unsupported_activity_invariant",
+              provider: "wahoo",
+              ...safeWahooImportErrorDetails(insertError, errorCode),
+            });
+            return {
+              success: true,
+              skipped: true,
+              reason: "Activity persistence semantics are unsupported",
+            };
+          }
           logger.warn(WAHOO_ACTIVITY_IMPORT_FAILURE_MESSAGES.persist_activity, {
             operation: "persist_activity",
             outcome: "unexpected_error",
             provider: "wahoo",
+            ...safeWahooImportErrorDetails(insertError, errorCode),
           });
           return {
             success: false,
             error: "Wahoo activity persistence failed",
+            errorCode,
           };
         }
         // The provider/external-id constraint is the race-safe idempotency authority.
@@ -607,7 +855,11 @@ export class WahooActivityImporter {
             outcome: "concurrent_revision_requires_retry",
             provider: "wahoo",
           });
-          return { success: false, error: "Wahoo activity persistence failed" };
+          return {
+            success: false,
+            error: "Wahoo activity persistence failed",
+            errorCode: "activity_persistence_failed",
+          };
         }
         if (concurrentImport) {
           return {
@@ -619,10 +871,12 @@ export class WahooActivityImporter {
           operation: "persist_activity",
           outcome: "unexpected_error",
           provider: "wahoo",
+          ...safeWahooImportErrorDetails(insertError, classifyWahooPersistenceError(insertError)),
         });
         return {
           success: false,
           error: "Wahoo activity persistence failed",
+          errorCode: classifyWahooPersistenceError(insertError),
         };
       }
 
@@ -647,15 +901,25 @@ export class WahooActivityImporter {
         success: true,
         activityId: newActivity.id,
       };
-    } catch {
+    } catch (error) {
       logger.warn(WAHOO_ACTIVITY_IMPORT_FAILURE_MESSAGES[stage], {
         operation: "import_activity",
         outcome: "unexpected_error",
         provider: "wahoo",
+        ...safeWahooImportErrorDetails(error, "activity_import_failed"),
       });
+      if (stage === "parse_artifact" && error instanceof ActivityFileParseError) {
+        return {
+          success: true,
+          skipped: true,
+          reason: "Activity artifact format is unsupported",
+          failureReason: "unsupported_activity_file",
+        };
+      }
       return {
         success: false,
         error: "Wahoo activity import failed",
+        errorCode: "activity_import_failed",
       };
     } finally {
       if (!completed && ownedStagePath && this.deps.activityFileStorage.removeOwnedActivityFile) {
@@ -700,6 +964,7 @@ export class WahooActivityImporter {
     try {
       return parser({ bytes, fileName: path });
     } catch (error) {
+      if (error instanceof ActivityFileParseError) throw error;
       throw new Error(`Failed to parse Wahoo FIT file for summary ${workoutSummaryId}`, {
         cause: error,
       });

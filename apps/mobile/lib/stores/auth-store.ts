@@ -1,5 +1,6 @@
 import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import type { AuthSession, AuthUser } from "@repo/auth/session";
+import type { OnboardingStatus } from "@repo/core/schemas/onboarding";
 import { AppState } from "react-native";
 import { create } from "zustand";
 import {
@@ -22,7 +23,7 @@ export interface AuthState {
   user: AuthUser | null;
   profile: AuthProfile | null; // Profile data from API (synced from useAuth hook)
   userStatus: "verified" | "unverified" | null;
-  onboardingStatus: boolean | null;
+  onboardingStatus: OnboardingStatus | null;
   loading: boolean;
   ready: boolean; // Replaces hydrated && initialized
   error: Error | null;
@@ -30,7 +31,7 @@ export interface AuthState {
   setUser: (user: AuthUser | null) => void;
   setProfile: (profile: AuthProfile | null) => void;
   setUserStatus: (status: "verified" | "unverified" | null) => void;
-  setOnboardingStatus: (status: boolean | null) => void;
+  setOnboardingStatus: (status: OnboardingStatus | null) => void;
   setLoading: (loading: boolean) => void;
   setReady: (ready: boolean) => void;
   setError: (error: Error | null) => void;

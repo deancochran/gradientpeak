@@ -18,15 +18,14 @@ pnpm install
 Run the web app:
 
 ```bash
-pnpm --filter web dev
-pnpm --filter web dev:local
+pnpm exec turbo run dev --filter=web
 pnpm --filter web dev:tunnel
 pnpm --filter web dev:e2e
 ```
 
-The default `dev` command includes the reserved ngrok tunnel so the workspace-level
-`turbo run dev` task brings the public callback endpoint online. Use `dev:local` to run without
-the tunnel.
+The default `dev` command runs the app, Wahoo worker, and reserved ngrok tunnel so provider callbacks
+and webhooks work under `pnpm exec turbo run dev`. Use `dev:local` when you intentionally need the app
+and worker without a public tunnel. The tunneled lane requires configured ngrok access.
 
 The E2E server verifies the local database migration ledger before binding to `PORT` (default
 `3000`). It fails rather than moving to another port when that port is occupied.

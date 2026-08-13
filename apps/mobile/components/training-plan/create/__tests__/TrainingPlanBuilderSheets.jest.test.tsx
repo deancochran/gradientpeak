@@ -30,11 +30,6 @@ jest.mock("../BuilderGoalEditorSheetContent", () => ({
   BuilderLocalGoalCreateContent: () => null,
 }));
 
-jest.mock("../BuilderSchedulePreviewSheetContent", () => ({
-  __esModule: true,
-  BuilderSchedulePreviewContent: () => null,
-}));
-
 jest.mock("../BuilderSessionEditorSheetContent", () => ({
   __esModule: true,
   BuilderSessionEditorContent: () => null,

@@ -3,7 +3,7 @@ import type { FutureJourneyActor, FutureJourneyBlueprint, FutureJourneyCheckpoin
 const anonymous = ["running web server", "isolated anonymous browser context"] as const;
 const athlete = [
   "local PostgreSQL/Supabase stack",
-  "confirmed and onboarded athlete actor",
+  "confirmed athlete with completed onboarding",
   "actor-scoped deterministic cleanup",
 ] as const;
 const onboarding = [
@@ -18,7 +18,7 @@ const multiActor = [
   "deterministic cleanup",
 ] as const;
 const recording = [
-  "confirmed and onboarded athlete actor",
+  "confirmed athlete with completed onboarding",
   "fresh browser context and IndexedDB",
   "recording artifact cleanup",
 ] as const;
@@ -429,13 +429,13 @@ export const futureJourneyBlueprints = [
     "planning.training-path",
     "athlete",
     "/plan",
-    ["active training plan", "firm and tentative events", "load history"],
+    ["active training plan", "scheduled events", "load history"],
     [
       testId("training-path", "the training path has a stable root"),
       testId("training-path-week", "daily and weekly composition is addressable"),
     ],
     [
-      "Firm and tentative daily/weekly load paths render deterministic values and linked work.",
+      "Scheduled daily/weekly load paths render deterministic values and linked work.",
       "No-plan, empty, partial source failure, and retry states remain distinct.",
     ],
   ),
@@ -678,20 +678,6 @@ export const futureJourneyBlueprints = [
     [
       "Owner visibility controls and non-owner like/duplicate/share behavior obey access rules.",
       "Like rollback, duplicate failure, private sharing denial, and public link access are asserted.",
-    ],
-  ),
-  journey(
-    "training-plans.reorder",
-    "athlete",
-    "/training-plans/reorder",
-    ["reorderable plan with multiple activities", "deterministic initial order"],
-    [
-      testId("training-plan-reorder-list", "reorder rows expose stable identities"),
-      testId("training-plan-reorder-save", "save/retry is a stable action"),
-    ],
-    [
-      "Reorder, save, and reload preserve every activity exactly once in the new order.",
-      "No-op, invalid, failed save, retry, and concurrent change recovery are asserted.",
     ],
   ),
   journey(

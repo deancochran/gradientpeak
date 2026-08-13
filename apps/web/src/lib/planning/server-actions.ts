@@ -109,14 +109,17 @@ export function buildScopedCalendarEventUpdate(
 
   return {
     id: data.event_id,
-    patch: buildCalendarEventUpdatePatch({
-      allDay: data.all_day === "true",
-      event: existingEvent,
-      notes: data.notes,
-      scheduledDate: data.scheduled_date,
-      time: data.time,
-      title: data.title,
-    }),
+    patch:
+      existingEvent.event_type === "planned"
+        ? { notes: data.notes, scheduled_date: data.scheduled_date, title: data.title }
+        : buildCalendarEventUpdatePatch({
+            allDay: data.all_day === "true",
+            event: existingEvent,
+            notes: data.notes,
+            scheduledDate: data.scheduled_date,
+            time: data.time,
+            title: data.title,
+          }),
     scope: data.scope,
   };
 }
@@ -238,12 +241,9 @@ export const createCalendarEventAction = createServerFn({ method: "POST" }).hand
         parsedData.event_type === "planned"
           ? await caller.events.create({
               activity_plan_id: parsedData.activity_plan_id ?? "",
-              all_day: true,
               event_type: "planned",
               notes,
-              recurrence,
               scheduled_date: parsedData.scheduled_date,
-              timezone: parsedData.timezone,
               title: parsedData.title,
             })
           : await caller.events.create({
@@ -390,10 +390,9 @@ export const attachCalendarActivityPlanAction = createServerFn({ method: "POST" 
         scope: "single",
         patch:
           parsedData.operation === "remove"
-            ? { activity_plan_id: null, event_type: "custom", title: parsedData.title }
+            ? { activity_plan_id: null, title: parsedData.title }
             : {
                 activity_plan_id: parsedData.activity_plan_id,
-                event_type: "planned",
                 title: parsedData.title,
               },
       });

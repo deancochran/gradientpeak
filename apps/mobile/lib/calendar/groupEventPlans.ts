@@ -5,7 +5,6 @@ export type CalendarGroupEvent = GroupEventListItem & {
   scheduled_date: string;
   selectedActivityPlan?: CalendarEventActivityPlan | null;
   selectedActivityPlanOptionLabel?: string | null;
-  selectedActivityPlanTentative?: boolean;
 };
 
 export function buildGroupEventsByDate(events: CalendarGroupEvent[]) {

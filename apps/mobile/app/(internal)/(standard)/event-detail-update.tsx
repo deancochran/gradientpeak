@@ -60,19 +60,6 @@ export default function EventDetailUpdateScreen() {
     );
   }
 
-  if (event.event_type === "imported") {
-    return (
-      <View className="flex-1 items-center justify-center px-6 bg-background">
-        <EmptyState
-          actionLabel="Back to event"
-          description="Imported events are read-only and cannot be updated here."
-          onAction={() => router.replace(ROUTES.PLAN.EVENT_DETAIL(event.id))}
-          title="Imported event"
-        />
-      </View>
-    );
-  }
-
   return (
     <View className="flex-1 bg-background">
       <Stack.Screen

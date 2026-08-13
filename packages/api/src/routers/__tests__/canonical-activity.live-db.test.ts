@@ -49,7 +49,7 @@ async function seedProfile() {
     email,
     full_name: "Canonical Activity Test",
     username: `canonical-${id.slice(0, 8)}`,
-    onboarded: true,
+    onboarding_status: "completed",
     created_at: now,
     updated_at: now,
   });

@@ -1,6 +1,6 @@
 import { invalidateTrainingPlanQueries } from "@repo/api/react";
 import {
-  type ActivityPrescriptionQuantificationBundle,
+  type ActivityPlanSummary,
   canonicalTrainingPlanStructureSchema,
   persistedTrainingPlanStructureSchema,
 } from "@repo/core";
@@ -51,14 +51,7 @@ type StructureSessionRow = {
   sourcePath: Array<string | number>;
 };
 
-type ActivityPlanListItem = {
-  id: string;
-  name: string;
-  activity_category?: string | null;
-  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
-  description?: string | null;
-  structure?: unknown;
-};
+type ActivityPlanListItem = ActivityPlanSummary;
 
 type GroupedMicrocycleSessions = {
   microcycle: number;
@@ -481,7 +474,7 @@ export default function TrainingPlanOverview() {
     [navigateTo],
   );
 
-  const activityPlanItems = ((activityPlansData?.items ?? []) as ActivityPlanListItem[]) ?? [];
+  const activityPlanItems = activityPlansData?.items ?? [];
   const linkedActivityPlanItems =
     ((linkedActivityPlansData?.items ?? []) as ActivityPlanListItem[]) ?? [];
   const linkedActivityPlanById = useMemo(
@@ -1141,10 +1134,10 @@ export default function TrainingPlanOverview() {
               ? "Removing..."
               : "Remove Scheduled Sessions",
             onPress: () => {
-              if (typeof scheduling.activePlan?.schedule_batch_id === "string") {
+              if (typeof scheduling.activePlan?.scheduleBatchId === "string") {
                 removeScheduledPlanMutation.mutate({
                   training_plan_id: plan.id,
-                  schedule_batch_id: scheduling.activePlan.schedule_batch_id,
+                  schedule_batch_id: scheduling.activePlan.scheduleBatchId,
                 });
               }
             },
@@ -1152,7 +1145,7 @@ export default function TrainingPlanOverview() {
             variant: "destructive",
             disabled:
               removeScheduledPlanMutation.isPending ||
-              typeof scheduling.activePlan?.schedule_batch_id !== "string",
+              typeof scheduling.activePlan?.scheduleBatchId !== "string",
           }}
           secondaryAction={{
             label: "Cancel",
@@ -1231,7 +1224,7 @@ function TrainingPlanCompactActivityPlanCard({
 }) {
   return (
     <View testID={`training-plan-linked-activity-${linkedPlan.id}`}>
-      <ActivityPlanCard activityPlan={linkedPlan} onPress={onPress} variant="default" />
+      <ActivityPlanCard plan={linkedPlan} onPress={onPress} variant="default" />
     </View>
   );
 }

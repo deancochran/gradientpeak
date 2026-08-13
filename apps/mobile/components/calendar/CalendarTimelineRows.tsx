@@ -1,25 +1,17 @@
-import { formatGoalTypeLabel, getGoalObjectiveSummary, type ProfileGoal } from "@repo/core";
+import type { CalendarProjectionItem, SemanticMetric } from "@repo/core";
 import type { PreferredUnitSystem } from "@repo/core/units";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
 import { differenceInCalendarDays, format } from "date-fns";
-import { Target, Users } from "lucide-react-native";
+import { CalendarDays, Check, Target, Users } from "lucide-react-native";
 import { memo } from "react";
 import { TouchableOpacity, View } from "react-native";
-import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import { parseDateKey } from "@/lib/calendar/dateMath";
-import {
-  getPlannedRecordingState,
-  isAuthoritativeCompletedCalendarEvent,
-} from "@/lib/calendar/eventPresentation";
-import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
-import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import { getActivityCategoryConfig } from "@/lib/constants/activities";
 import { formatDistanceMeters } from "@/lib/display/formatters";
 import { formatEstimatedDurationSeconds } from "@/lib/estimatedMetrics";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
-import type { CalendarActivity, CalendarScheduleObject, DayRow } from "./CalendarTimelineModel";
+import type { DayRow } from "./CalendarTimelineModel";
 
 type DayHeaderRowProps = {
   row: DayRow;
@@ -28,20 +20,9 @@ type DayHeaderRowProps = {
   todayKey: string;
 };
 
-type ScheduleObjectRowProps = {
-  object: CalendarScheduleObject;
-  onPressActivity: (activity: CalendarActivity) => void;
-  onPressEvent: (event: CalendarEvent) => void;
-  onPressGroupEvent: (event: CalendarGroupEvent) => void;
-  onPressGoal: (goal: ProfileGoal) => void;
-};
-
 export type CalendarScheduleObjectCardProps = {
-  object: CalendarScheduleObject;
-  onPressActivity?: (activity: CalendarActivity) => void;
-  onPressEvent?: (event: CalendarEvent) => void;
-  onPressGroupEvent?: (event: CalendarGroupEvent) => void;
-  onPressGoal?: (goal: ProfileGoal) => void;
+  object: CalendarProjectionItem;
+  onPress?: (item: CalendarProjectionItem) => void;
   testIDPrefix?: string;
 };
 
@@ -51,294 +32,85 @@ function formatDayDateLabel(dateKey: string) {
 
 function formatDayRelativeLabel(dateKey: string, todayKey: string) {
   const difference = differenceInCalendarDays(parseDateKey(dateKey), parseDateKey(todayKey));
-
-  if (difference === 0) {
-    return "Today";
-  }
-  if (difference === 1) {
-    return "Tomorrow";
-  }
-  if (difference === -1) {
-    return "Yesterday";
-  }
-
+  if (difference === 0) return "Today";
+  if (difference === 1) return "Tomorrow";
+  if (difference === -1) return "Yesterday";
   return format(parseDateKey(dateKey), "EEEE");
 }
 
-function readMetric(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
+function formatTime(item: CalendarProjectionItem) {
+  if (item.timing.allDay) return "All day";
+  if (!item.timing.startsAt) return "Scheduled";
+  const startsAt = new Date(item.timing.startsAt);
+  if (Number.isNaN(startsAt.getTime())) return "Scheduled";
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: item.timing.timezone,
+    }).format(startsAt);
+  } catch {
+    return format(startsAt, "h:mm a");
   }
-
-  if (typeof value === "string" && value.trim().length > 0) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return null;
 }
 
-function formatDuration(seconds: number | null) {
-  if (!seconds) {
-    return null;
-  }
-
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) {
-    return `${minutes} min`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
-}
-
-function getQuantificationMetricLabels(value: unknown) {
-  const presentation = getActivityQuantificationPresentation(value);
-  const commonLoadSuffix = presentation.commonLoad.status === "partial" ? " · Incomplete" : "";
-  const normalizedIntensitySuffix =
-    presentation.normalizedIntensity.status === "partial" ? " · Incomplete" : "";
-  return [
-    `${presentation.commonLoad.label} ${presentation.commonLoad.value}${commonLoadSuffix}`,
-    `${presentation.normalizedIntensity.label} ${presentation.normalizedIntensity.value}${normalizedIntensitySuffix}`,
-  ];
-}
-
-function getCompletedActivityMetricLabels(
-  activity: CalendarActivity,
+function formatMetric(
+  metric: SemanticMetric,
   preferredUnitSystem: PreferredUnitSystem,
+  estimated: boolean,
 ) {
-  const distance = formatDistanceMeters(activity.distance_meters, {
-    fallback: "",
-    preferredUnitSystem,
-  });
-  const duration = formatDuration(activity.duration_seconds ?? null);
-  const quantification = activity.derived?.observationQuantification;
-
-  return [distance, duration, ...getQuantificationMetricLabels(quantification)].filter(
-    (label): label is string => Boolean(label),
-  );
+  if (metric.status === "unavailable") return `${metric.label} unavailable`;
+  let value: string;
+  if (metric.unit === "meters") {
+    value = formatDistanceMeters(metric.value, { preferredUnitSystem, fallback: "" });
+  } else if (metric.unit === "seconds") {
+    value = estimated
+      ? (formatEstimatedDurationSeconds(metric.value) ?? "Unavailable")
+      : `${Math.round(metric.value / 60)} min`;
+  } else if (metric.unit === "ratio") {
+    value = metric.value.toFixed(2);
+  } else {
+    value = Number.isInteger(metric.value) ? String(metric.value) : metric.value.toFixed(1);
+  }
+  return `${metric.label} ${value}${metric.status === "partial" ? " · Incomplete" : ""}`;
 }
 
-function formatEventTime(event: CalendarEvent) {
-  if (event.all_day) {
-    return "All day";
+function itemLabel(item: CalendarProjectionItem) {
+  if (item.kind === "completed_activity") return "Done";
+  if (item.kind === "planned_activity") {
+    if (item.status === "cancelled") return "Cancelled";
+    if (item.status === "expired") return "Unverified";
+    return "Activity plan";
   }
-
-  if (!event.starts_at) {
-    return "Scheduled";
-  }
-
-  const startsAt = new Date(event.starts_at);
-  if (Number.isNaN(startsAt.getTime())) {
-    return "Scheduled";
-  }
-
-  return format(startsAt, "h:mm a");
-}
-
-function formatGroupEventTime(event: CalendarGroupEvent) {
-  const startsAt = new Date(event.starts_at);
-  if (Number.isNaN(startsAt.getTime())) {
-    return "Scheduled";
-  }
-
-  return format(startsAt, "h:mm a");
-}
-
-function formatActivityTime(activity: CalendarActivity) {
-  if (!activity.started_at) {
-    return "Completed";
-  }
-
-  const startsAt = new Date(activity.started_at);
-  if (Number.isNaN(startsAt.getTime())) {
-    return "Completed";
-  }
-
-  return format(startsAt, "h:mm a");
-}
-
-function formatEventAgendaSubtitle(event: CalendarEvent) {
-  if (event.description?.trim()) {
-    return event.description.trim();
-  }
-  if (event.notes?.trim()) {
-    return event.notes.trim();
-  }
-  if (event.event_type === "imported") {
-    return "Imported activity";
-  }
-  if (event.event_type === "rest_day") {
-    return "All day";
-  }
-
-  return null;
-}
-
-function formatEventDuration(event: CalendarEvent) {
-  if (event.all_day || !event.starts_at || !event.ends_at) {
-    return null;
-  }
-
-  const startsAt = new Date(event.starts_at);
-  const endsAt = new Date(event.ends_at);
-  if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
-    return null;
-  }
-
-  const minutes = Math.max(0, Math.round((endsAt.getTime() - startsAt.getTime()) / 60000));
-  if (minutes === 0) {
-    return null;
-  }
-  if (minutes < 60) {
-    return `${minutes} min`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
-}
-
-function getEventBadgeLabel(event: CalendarEvent) {
-  if (isAuthoritativeCompletedCalendarEvent(event)) {
-    return "Completed";
-  }
-
-  if (event.event_type === "planned") {
-    const recordingState = getPlannedRecordingState(event);
-    if (recordingState === "unverified") return "Unverified";
-    if (recordingState === "cancelled") return "Cancelled";
-    if (recordingState === "skipped") return "Skipped";
-    if (recordingState === "rescheduled") return "Rescheduled";
-    return "Planned";
-  }
-
-  if (event.event_type === "rest_day") {
-    return "Rest";
-  }
-
+  if (item.kind === "group_event") return "Group event";
+  if (item.kind === "goal") return "Goal";
   return "Event";
 }
 
-function getActivityPlanMeta(event: CalendarEvent) {
-  const metrics = getActivityPlanMetricLabels(event);
-  return metrics.length > 0
-    ? metrics.join(" · ")
-    : (event.activity_plan?.activity_category?.replace(/_/g, " ") ?? null);
+function itemIcon(item: CalendarProjectionItem) {
+  if (item.kind === "goal") return Target;
+  if (item.kind === "group_event") return Users;
+  if (item.kind === "completed_activity") return Check;
+  if (item.plan) return getActivityCategoryConfig(item.plan.activityCategory).icon;
+  return CalendarDays;
 }
 
-function getActivityPlanMetricLabels(event: CalendarEvent) {
-  const plan = event.activity_plan;
-  if (!plan) {
-    return [];
-  }
-
-  const duration = readMetric(getActivityPlanQuantitySummary(plan).durationSeconds);
-  const quantification = plan.prescriptionQuantification ?? event.prescriptionQuantification;
-
-  return [
-    formatEstimatedDurationSeconds(duration),
-    ...getQuantificationMetricLabels(quantification),
-  ].filter((label): label is string => Boolean(label));
-}
-
-function getGroupEventActivityPlanMetricLabels(event: CalendarGroupEvent) {
-  if (!event.selectedActivityPlan) {
-    return [];
-  }
-
-  return getActivityPlanMetricLabels({
-    id: event.id,
-    activity_plan: event.selectedActivityPlan,
-  });
-}
-
-function getActivityPlanConfig(activityCategory: string | null | undefined) {
-  if (!activityCategory) {
-    return getActivityCategoryConfig("other");
-  }
-
-  return getActivityCategoryConfig(activityCategory);
-}
-
-function getEventPresentation(event: CalendarEvent) {
-  const recordingState = event.event_type === "planned" ? getPlannedRecordingState(event) : null;
-  const recordingStateLabel =
-    recordingState === "unverified"
-      ? "Unverified"
-      : recordingState === "cancelled"
-        ? "Cancelled"
-        : recordingState === "skipped"
-          ? "Skipped"
-          : recordingState === "rescheduled"
-            ? "Rescheduled"
-            : null;
-  if (event.activity_plan) {
-    return {
-      badgeBgClass: "bg-muted/60",
-      badgeTextClass: "text-muted-foreground",
-      label: recordingStateLabel ?? "Activity plan",
-      meta: recordingState === "unverified" ? "No completion recorded" : getActivityPlanMeta(event),
-      title: event.activity_plan.name?.trim() || event.title?.trim() || "Activity plan",
-    };
-  }
-
-  if (event.event_type === "rest_day") {
-    return {
-      badgeBgClass: "bg-muted",
-      badgeTextClass: "text-muted-foreground",
-      label: "Rest day",
-      meta: event.all_day ? "All day" : formatEventTime(event),
-      title: event.title?.trim() || "Rest day",
-    };
-  }
-
-  if (isAuthoritativeCompletedCalendarEvent(event)) {
-    return {
-      badgeBgClass: "bg-muted/60",
-      badgeTextClass: "text-muted-foreground",
-      label: "Completed activity",
-      meta: formatEventTime(event),
-      title: event.title?.trim() || "Completed activity",
-    };
-  }
-
-  if (event.event_type === "imported") {
-    return {
-      badgeBgClass: "bg-muted/60",
-      badgeTextClass: "text-muted-foreground",
-      label: "Imported activity",
-      meta: formatEventTime(event),
-      title: event.title?.trim() || "Imported activity",
-    };
-  }
-
-  return {
-    badgeBgClass: "bg-muted",
-    badgeTextClass: "text-muted-foreground",
-    label: getEventBadgeLabel(event),
-    meta: recordingState === "unverified" ? "No completion recorded" : formatEventTime(event),
-    title: event.title?.trim() || "Untitled activity",
-  };
-}
-
-function AgendaEventAccent() {
-  return (
-    <View
-      className="h-14 w-1 rounded-full bg-primary"
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-    />
-  );
+function itemSubtitle(item: CalendarProjectionItem, preferredUnitSystem: PreferredUnitSystem) {
+  const context =
+    item.kind === "goal"
+      ? item.goal?.objectiveSummary
+      : item.kind === "group_event"
+        ? item.groupEvent?.group.name
+        : item.subtitle;
+  const metrics = item.metrics
+    .slice(0, 3)
+    .map((metric) => formatMetric(metric, preferredUnitSystem, item.estimated));
+  return [context, ...metrics].filter((part): part is string => Boolean(part)).join(" · ");
 }
 
 export const CalendarDayHeaderRow = memo(
   function CalendarDayHeaderRow({ row, onPressDay, selectedDateKey, todayKey }: DayHeaderRowProps) {
     const isSelected = selectedDateKey === row.dateKey;
-    const hasEntries = row.itemCount > 0;
-    const isRestOnly = row.signals.restCount > 0 && row.itemCount === row.signals.restCount;
-
     return (
       <TouchableOpacity
         onPress={() => onPressDay(row.dateKey)}
@@ -361,10 +133,8 @@ export const CalendarDayHeaderRow = memo(
               {formatDayRelativeLabel(row.dateKey, todayKey)}
             </Text>
           </View>
-          {!hasEntries || isRestOnly ? (
-            <Text className="text-sm text-muted-foreground">
-              {isRestOnly ? "Rest day" : "No scheduled activity"}
-            </Text>
+          {row.itemCount === 0 ? (
+            <Text className="text-sm text-muted-foreground">No scheduled activity</Text>
           ) : null}
         </View>
       </TouchableOpacity>
@@ -380,235 +150,56 @@ export const CalendarDayHeaderRow = memo(
 
 export const CalendarScheduleObjectCard = memo(function CalendarScheduleObjectCard({
   object,
-  onPressActivity,
-  onPressEvent,
-  onPressGroupEvent,
-  onPressGoal,
+  onPress,
   testIDPrefix = "calendar",
 }: CalendarScheduleObjectCardProps) {
   const preferredUnitSystem = usePreferredUnitSystem();
-  if (object.type === "activity") {
-    const activityConfig = getActivityCategoryConfig(object.activity.type || "other");
-    const metrics = getCompletedActivityMetricLabels(object.activity, preferredUnitSystem);
-    const accessibilityLabel = [
-      "Completed activity",
-      object.activity.name ?? "Untitled activity",
-      ...metrics,
-    ].join(", ");
-
-    return (
-      <TouchableOpacity
-        onPress={() => onPressActivity?.(object.activity)}
-        className="mx-5 mb-2 flex-row items-center gap-3 rounded-lg bg-muted/30 px-3 py-2"
-        activeOpacity={0.85}
-        disabled={!onPressActivity}
-        testID={`${testIDPrefix}-activity-row-${object.activity.id}`}
-        accessible
-        accessibilityLabel={accessibilityLabel}
-      >
-        <Icon as={activityConfig.icon} size={13} className="text-muted-foreground" />
-        <View className="min-w-0 flex-1">
-          <View className="flex-row items-center gap-1.5">
-            <Text className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Done
-            </Text>
-            <Text className="text-[11px] text-muted-foreground">•</Text>
-            <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
-              {formatActivityTime(object.activity)}
-            </Text>
-          </View>
-          <View className="mt-0.5 flex-row items-baseline gap-2">
-            <Text className="min-w-0 flex-1 text-sm font-medium text-foreground" numberOfLines={1}>
-              {object.activity.name?.trim() || "Completed activity"}
-            </Text>
-            {metrics.length > 0 ? (
-              <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-                {metrics.join(" · ")}
-              </Text>
-            ) : null}
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  }
-
-  if (object.type === "goal") {
-    const objectiveSummary = getGoalObjectiveSummary(object.goal);
-
-    return (
-      <TouchableOpacity
-        onPress={() => onPressGoal?.(object.goal)}
-        className="mx-5 mb-2 flex-row items-center gap-3 rounded-lg bg-muted/30 px-3 py-2"
-        activeOpacity={0.85}
-        disabled={!onPressGoal}
-        testID={`${testIDPrefix}-goal-row-${object.goal.id}`}
-        accessible
-        accessibilityLabel={`Goal, ${object.goal.title}, ${objectiveSummary}`}
-      >
-        <View testID={`${testIDPrefix}-entry-type-goal-${object.goal.id}`}>
-          <Icon as={Target} size={13} className="text-muted-foreground" />
-        </View>
-        <View className="min-w-0 flex-1">
-          <View className="flex-row items-center gap-2">
-            <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Goal
-            </Text>
-            <Text className="text-[11px] text-muted-foreground">•</Text>
-            <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
-              {formatGoalTypeLabel(object.goal)}
-            </Text>
-          </View>
-          <View className="mt-0.5 flex-row items-baseline gap-2">
-            <Text className="min-w-0 flex-1 text-sm font-medium text-foreground" numberOfLines={1}>
-              {object.goal.title}
-            </Text>
-            <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-              {objectiveSummary}
-            </Text>
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  }
-
-  if (object.type === "groupEvent") {
-    const metrics = getGroupEventActivityPlanMetricLabels(object.groupEvent);
-    const planLabel =
-      object.groupEvent.selectedActivityPlan?.name?.trim() ||
-      (object.groupEvent.activity_plan_id ? "Activity plan" : null);
-    const subtitle = [object.groupEvent.group?.name, planLabel, metrics.join(" · ")]
-      .filter((label): label is string => Boolean(label))
-      .join(" · ");
-    const rsvpLabel = object.groupEvent.viewerRsvp?.status === "accepted" ? "Going" : "Tentative";
-
-    return (
-      <View
-        className="px-5 pb-4"
-        testID={`${testIDPrefix}-group-event-row-${object.groupEvent.id}`}
-        accessible
-        accessibilityLabel={`Group event, ${object.groupEvent.title}${subtitle ? `, ${subtitle}` : ""}`}
-      >
-        <View className="flex-row items-start gap-4">
-          <View className="w-20 pt-1">
-            <Text className="text-sm font-medium text-muted-foreground" numberOfLines={1}>
-              {formatGroupEventTime(object.groupEvent)}
-            </Text>
-            <Text className="mt-1 text-xs text-muted-foreground" numberOfLines={1}>
-              {rsvpLabel}
-            </Text>
-          </View>
-          <AgendaEventAccent />
-          <TouchableOpacity
-            onPress={() => onPressGroupEvent?.(object.groupEvent)}
-            className="min-h-16 min-w-0 flex-1 justify-center rounded-2xl bg-card/70 px-4 py-3"
-            activeOpacity={0.85}
-            disabled={!onPressGroupEvent}
-            testID={`${testIDPrefix}-group-event-press-${object.groupEvent.id}`}
-          >
-            <View className="flex-row items-center gap-2">
-              <Icon as={Users} size={14} className="text-primary" />
-              <Text
-                className="min-w-0 flex-1 text-lg font-medium text-foreground"
-                numberOfLines={1}
-              >
-                {object.groupEvent.title}
-              </Text>
-            </View>
-            {subtitle ? (
-              <Text className="mt-1 text-sm text-muted-foreground" numberOfLines={1}>
-                {subtitle}
-              </Text>
-            ) : null}
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  const presentation = getEventPresentation(object.event);
-  const isUnverified = presentation.label === "Unverified";
-  const hasVisibleRecordingState =
-    object.event.event_type === "planned" &&
-    ["Unverified", "Cancelled", "Skipped", "Rescheduled"].includes(presentation.label);
-  const isPlannedActivity = object.event.event_type === "planned" && !!object.event.activity_plan;
-  const activityConfig = isPlannedActivity
-    ? getActivityPlanConfig(object.event.activity_plan?.activity_category)
-    : null;
-  const activityPlanMetrics = isPlannedActivity ? getActivityPlanMetricLabels(object.event) : [];
-  const subtitle = isPlannedActivity
-    ? activityPlanMetrics.join(" · ") || presentation.meta
-    : formatEventAgendaSubtitle(object.event);
-  const duration = formatEventDuration(object.event) ?? activityPlanMetrics[0] ?? null;
-
+  const subtitle = itemSubtitle(object, preferredUnitSystem);
+  const IconComponent = itemIcon(object);
+  const testKind =
+    object.kind === "completed_activity"
+      ? "activity"
+      : object.kind === "group_event"
+        ? "group-event"
+        : object.kind;
   return (
-    <View
-      className="px-5 pb-4"
-      testID={`${testIDPrefix}-event-row-${object.event.id}`}
+    <TouchableOpacity
+      onPress={() => onPress?.(object)}
+      className="mx-5 mb-2 flex-row items-center gap-3 rounded-lg bg-muted/30 px-3 py-3"
+      activeOpacity={0.85}
+      disabled={!onPress}
+      testID={`${testIDPrefix}-${testKind}-row-${object.id}`}
       accessible
-      accessibilityLabel={`${presentation.label}, ${presentation.title}${
-        presentation.meta ? `, ${presentation.meta}` : ""
-      }`}
+      accessibilityLabel={`${itemLabel(object)}, ${object.title}${subtitle ? `, ${subtitle}` : ""}`}
     >
-      <View className="flex-row items-start gap-4">
-        <View className="w-20 pt-1">
-          <Text className="text-sm font-medium text-muted-foreground" numberOfLines={1}>
-            {formatEventTime(object.event)}
+      <Icon as={IconComponent} size={14} className="text-muted-foreground" />
+      <View className="min-w-0 flex-1">
+        <View className="flex-row items-center gap-1.5">
+          <Text className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {itemLabel(object)}
           </Text>
-          {duration ? (
-            <Text className="mt-1 text-xs text-muted-foreground" numberOfLines={1}>
-              {duration}
-            </Text>
-          ) : null}
+          <Text className="text-[11px] text-muted-foreground">•</Text>
+          <Text className="text-[11px] text-muted-foreground">{formatTime(object)}</Text>
         </View>
-        <AgendaEventAccent />
-        <TouchableOpacity
-          onPress={() => onPressEvent?.(object.event)}
-          className="min-h-16 min-w-0 flex-1 justify-center rounded-2xl bg-card/70 px-4 py-3"
-          activeOpacity={0.85}
-          disabled={!onPressEvent}
-          testID={`${testIDPrefix}-event-press-${object.event.id}`}
-        >
-          <View className="flex-row items-center gap-2">
-            {activityConfig ? (
-              <Icon as={activityConfig.icon} size={14} className={activityConfig.color} />
-            ) : null}
-            <Text className="min-w-0 flex-1 text-lg font-medium text-foreground" numberOfLines={1}>
-              {presentation.title}
-            </Text>
-          </View>
-          {hasVisibleRecordingState ? (
-            <Text className="mt-1 text-sm font-medium text-muted-foreground">
-              {presentation.label}
-            </Text>
-          ) : null}
-          {isUnverified ? (
-            <Text className="mt-1 text-sm text-muted-foreground">No completion recorded</Text>
-          ) : null}
-          {subtitle ? (
-            <Text className="mt-1 text-sm text-muted-foreground" numberOfLines={1}>
-              {subtitle}
-            </Text>
-          ) : null}
-        </TouchableOpacity>
+        <Text className="mt-0.5 text-sm font-medium text-foreground" numberOfLines={1}>
+          {object.title}
+        </Text>
+        {subtitle ? (
+          <Text className="mt-1 text-xs text-muted-foreground" numberOfLines={2}>
+            {subtitle}
+          </Text>
+        ) : null}
       </View>
-    </View>
+    </TouchableOpacity>
   );
 });
 
 export const CalendarScheduleObjectRow = memo(function CalendarScheduleObjectRow({
   object,
-  onPressActivity,
-  onPressEvent,
-  onPressGroupEvent,
-  onPressGoal,
-}: ScheduleObjectRowProps) {
-  return (
-    <CalendarScheduleObjectCard
-      object={object}
-      onPressActivity={onPressActivity}
-      onPressEvent={onPressEvent}
-      onPressGroupEvent={onPressGroupEvent}
-      onPressGoal={onPressGoal}
-    />
-  );
+  onPress,
+}: {
+  object: CalendarProjectionItem;
+  onPress: (item: CalendarProjectionItem) => void;
+}) {
+  return <CalendarScheduleObjectCard object={object} onPress={onPress} />;
 });

@@ -1,4 +1,5 @@
 export * from "./drizzle-activity-analysis-repository";
+export * from "./drizzle-activity-plan-write-repository";
 export * from "./drizzle-event-completion-repository";
 export * from "./drizzle-event-read-repository";
 export * from "./drizzle-event-write-repository";

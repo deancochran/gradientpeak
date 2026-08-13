@@ -90,7 +90,7 @@ function ActivityPlansListScreen() {
         onRetry={refetch}
         renderItem={(item) => (
           <ActivityPlanCard
-            activityPlan={item}
+            plan={item}
             onPress={() => navigateTo(ROUTES.PLAN.PLAN_DETAIL(item.id))}
             testID={`activity-plan-list-item-${item.id}`}
           />

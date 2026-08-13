@@ -1,4 +1,8 @@
-import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import {
+  type AthletePerformanceTargetFacts,
+  activityPlanStructureSchema,
+  resolveActivityPlanTargetPresentation,
+} from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
 import {
   Card,
@@ -20,8 +24,17 @@ function durationLabel(duration: {
   return "Until finished";
 }
 
-export function ActivityPlanStructure({ structure }: { structure: unknown }) {
+export function ActivityPlanStructure({
+  structure,
+  performanceTargets,
+  asOf,
+}: {
+  structure: unknown;
+  performanceTargets?: AthletePerformanceTargetFacts | null;
+  asOf?: string;
+}) {
   const parsed = activityPlanStructureSchema.safeParse(structure);
+  const presentationTime = asOf ?? new Date().toISOString();
 
   return (
     <Card data-testid="activity-plan-structure">
@@ -61,7 +74,15 @@ export function ActivityPlanStructure({ structure }: { structure: unknown }) {
                             <span className="text-muted-foreground">
                               {durationLabel(step.duration)} ·{" "}
                               {step.targets
-                                .map((target) => `${target.intensity} ${target.type}`)
+                                .map(
+                                  (target) =>
+                                    resolveActivityPlanTargetPresentation({
+                                      target,
+                                      activityCategory: parsed.data.activity_category,
+                                      performanceTargets,
+                                      asOf: presentationTime,
+                                    }).label,
+                                )
                                 .join(", ")}
                             </span>
                           </li>

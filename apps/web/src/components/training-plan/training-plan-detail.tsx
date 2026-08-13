@@ -20,6 +20,12 @@ function dateKey(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
+function addDays(date: string, days: number) {
+  const value = new Date(`${date}T00:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return dateKey(value);
+}
+
 export function TrainingPlanDetail({
   onDeleted,
   onEdit,
@@ -29,7 +35,11 @@ export function TrainingPlanDetail({
   const utils = api.useUtils();
   const profile = api.profiles.get.useQuery();
   const planQuery = api.trainingPlans.get.useQuery({ id: planId });
-  const activePlan = api.trainingPlans.getActivePlan.useQuery();
+  const today = dateKey(new Date());
+  const planTabQuery = api.trainingPlans.getPlanTabProjection.useQuery({
+    startDate: today,
+    endDate: addDays(today, 89),
+  });
   const plan = planQuery.data;
   const owned = Boolean(plan && profile.data?.id === plan.profile_id);
   const sessions = useMemo(() => toTrainingPlanSessionDrafts(plan?.structure), [plan?.structure]);
@@ -72,8 +82,8 @@ export function TrainingPlanDetail({
 
   const summary = summarizeTrainingPlan(plan.structure);
   const visibility = plan.content_visibility;
-  const isApplied = activePlan.data?.id === plan.id;
-  const activeScheduleBatchId = activePlan.data?.schedule_batch_id;
+  const isApplied = planTabQuery.data?.currentScheduledPlan?.id === plan.id;
+  const activeScheduleBatchId = planTabQuery.data?.currentScheduledPlan?.scheduleBatchId;
 
   return (
     <div className="space-y-6">

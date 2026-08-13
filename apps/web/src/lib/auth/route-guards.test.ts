@@ -63,13 +63,15 @@ describe("getProtectedAccessRedirect", () => {
   });
 
   it("sends verified incomplete users to onboarding", () => {
-    expect(getProtectedAccessRedirect(authenticatedSession, false, "/activity-plans")).toEqual({
+    expect(
+      getProtectedAccessRedirect(authenticatedSession, "processing", "/activity-plans"),
+    ).toEqual({
       destination: "onboarding",
       redirectTo: "/activity-plans",
     });
   });
 
-  it("allows verified onboarded users into the protected shell", () => {
-    expect(getProtectedAccessRedirect(authenticatedSession, true, "/")).toBeNull();
+  it("allows verified users with completed onboarding into the protected shell", () => {
+    expect(getProtectedAccessRedirect(authenticatedSession, "completed", "/")).toBeNull();
   });
 });

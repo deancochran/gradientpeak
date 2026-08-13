@@ -2,8 +2,7 @@ import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
 import { createFileRoute } from "@tanstack/react-router";
-import { Import, Search } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { Import } from "lucide-react";
 import {
   ActivityListCard,
   DetailPageIntro,
@@ -12,7 +11,6 @@ import { api } from "../../../lib/api/client";
 
 type ActivityHistorySearch = {
   importRunId?: string;
-  q?: string;
   category?: "run" | "bike" | "swim" | "strength" | "other";
   sort?: "date" | "distance" | "duration";
   order?: "asc" | "desc";
@@ -27,14 +25,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 export function validateActivityHistorySearch(
   search: Record<string, unknown>,
 ): ActivityHistorySearch {
-  const q = typeof search.q === "string" ? search.q.trim().slice(0, 80) : "";
   const category = CATEGORIES.find((value) => value === search.category);
   const sort = SORTS.find((value) => value === search.sort);
   return {
     ...(typeof search.importRunId === "string" && UUID.test(search.importRunId)
       ? { importRunId: search.importRunId }
       : {}),
-    ...(q ? { q } : {}),
     ...(category !== undefined ? { category } : {}),
     ...(sort !== undefined ? { sort } : {}),
     ...(search.order === "asc" || search.order === "desc" ? { order: search.order } : {}),
@@ -55,14 +51,12 @@ export const Route = createFileRoute("/_protected/activities/")({
 function ActivitiesPage() {
   const navigate = Route.useNavigate();
   const search = Route.useSearch();
-  const [query, setQuery] = useState(search.q ?? "");
   const activitiesQuery = api.activities.listPaginated.useInfiniteQuery(
     {
       limit: 20,
       importRunId: search.importRunId,
       sort_by: search.sort ?? "date",
       sort_order: search.order ?? "desc",
-      search: search.q,
       activity_category: search.category,
       date_from: search.from ? `${search.from}T00:00:00.000Z` : undefined,
       date_to: search.to ? `${search.to}T23:59:59.999Z` : undefined,
@@ -82,12 +76,6 @@ function ActivitiesPage() {
         return next;
       },
     });
-  const submitSearch = (event: FormEvent) => {
-    event.preventDefault();
-    const nextQuery = query.trim();
-    updateSearch(nextQuery ? { q: nextQuery } : {}, nextQuery ? [] : ["q"]);
-  };
-
   return (
     <div className="container mx-auto max-w-6xl space-y-6 py-4">
       <DetailPageIntro
@@ -104,24 +92,9 @@ function ActivitiesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Search and filter</CardTitle>
+          <CardTitle>Filter activities</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <form className="flex gap-2" onSubmit={submitSearch}>
-            <label className="flex-1" htmlFor="activity-history-search">
-              <span className="sr-only">Search activities</span>
-              <Input
-                id="activity-history-search"
-                onChange={(event) => setQuery(event.currentTarget.value)}
-                placeholder="Search activity names and notes"
-                value={query}
-              />
-            </label>
-            <Button type="submit" variant="outline">
-              <Search className="mr-2 h-4 w-4" />
-              Search
-            </Button>
-          </form>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <FilterSelect
               label="Activity category"
@@ -186,7 +159,6 @@ function ActivitiesPage() {
           </div>
           <Button
             onClick={() => {
-              setQuery("");
               void navigate({ search: {} });
             }}
             type="button"

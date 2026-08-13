@@ -20,7 +20,6 @@ describe("activity history search contract", () => {
         unsafe: "ignored",
       }),
     ).toEqual({
-      q: "morning run",
       importRunId: "77777777-7777-4777-8777-777777777777",
       category: "run",
       sort: "distance",
@@ -39,7 +38,6 @@ describe("activity history search contract", () => {
         to: "2026-1-1",
       }),
     ).toEqual({
-      q: undefined,
       category: undefined,
       sort: undefined,
       order: undefined,

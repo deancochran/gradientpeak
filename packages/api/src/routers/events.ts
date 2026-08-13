@@ -1,11 +1,12 @@
 import {
   activityPlanStructureSchema,
-  type EventLifecycle,
   type EventRecurrence,
   eventCreateSchema,
   eventMutationScopeSchema,
   type eventTypeInputSchema,
   eventUpdateSchema,
+  formatGoalTypeLabel,
+  getGoalObjectiveSummary,
   ianaTimezoneSchema,
   materializeRecurrenceOccurrences,
   parseProfileGoalRecord,
@@ -28,10 +29,13 @@ import { schema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { toActivityDisplayModel } from "../application/activities/activity-display";
 import {
   estimateActivityPlan,
   estimateActivityPlans,
 } from "../application/activity-plans/estimate-activity-plans";
+import { toActivityPlanSummary } from "../application/activity-plans/read-projections";
+import { assembleCalendarProjectionRange } from "../application/calendar/assemble-projection";
 import {
   createEventUseCase,
   deleteEventUseCase,
@@ -39,7 +43,6 @@ import {
   MAX_PLANNED_DAY_SUMMARY_EVENTS,
   PlannedDaySummaryLimitExceededError,
   plannedDaySummaryUseCase,
-  summarizePlannedDayEvents,
   updateEventUseCase,
 } from "../application/events";
 import { readSelectedGroupEventsForCalendar } from "../application/groups/groupEventViews";
@@ -106,9 +109,8 @@ type NormalizedEventCreateInput = {
   endsAt: string | null;
   eventType: CoreEventType;
   notes: string | null;
-  recurrence: NonNullable<EventCreateInput["recurrence"]> | null;
+  recurrence: EventRecurrence | null;
   routeId: string | null;
-  sourceProvider: string | null;
   scheduledDate: string;
   startsAt: string;
   status: PublicEventStatus;
@@ -149,7 +151,6 @@ type PlannedEventRecord = Omit<
     | "recurrence_rule"
     | "recurrence_timezone"
     | "series_id"
-    | "source_provider"
     | "occurrence_key"
     | "original_starts_at"
     | "notes"
@@ -194,16 +195,6 @@ type MappedEvent<T extends PlannedEventRecord = PlannedEventRecord> = Omit<
   activity_plan: EventActivityPlan | null;
 };
 
-const validateConstraintsSchema = z
-  .object({
-    training_plan_id: z.string().uuid(),
-    scheduled_date: z
-      .string()
-      .refine((val) => !Number.isNaN(Date.parse(val)), "Invalid date format"),
-    activity_plan_id: z.string().uuid(),
-  })
-  .strict();
-
 const eventCreateInputSchema = eventCreateSchema;
 
 const eventUpdateInputSchema = eventUpdateSchema;
@@ -215,7 +206,6 @@ type NormalizedEventUpdatePatch = {
   notes?: string | null;
   event_type?: CoreEventType;
   recurrence?: EventRecurrence | null;
-  lifecycle?: EventLifecycle;
   title?: string;
   description?: string | null;
   all_day?: boolean;
@@ -277,7 +267,7 @@ const calendarRangeInputSchema = z
     startDate: calendarDateKeySchema,
     endDateExclusive: calendarDateKeySchema,
     eventTypes: z
-      .array(z.enum(["custom", "imported", "planned", "race_target"]))
+      .array(z.enum(["custom", "planned", "race_target"]))
       .min(1)
       .optional(),
     activityCategory: z.enum(["run", "bike", "swim", "strength", "other"]).optional(),
@@ -285,7 +275,6 @@ const calendarRangeInputSchema = z
     trainingPlanId: z.string().uuid().optional(),
     includeAdhoc: z.boolean().default(true),
     limit: z.number().int().min(1).max(500).default(100),
-    cursor: z.string().optional(),
   })
   .strict()
   .superRefine((input, context) => {
@@ -304,7 +293,7 @@ const calendarDayInputSchema = z
   .object({
     date: calendarDateKeySchema,
     eventTypes: z
-      .array(z.enum(["custom", "imported", "planned", "race_target"]))
+      .array(z.enum(["custom", "planned", "race_target"]))
       .min(1)
       .optional(),
     activityCategory: z.enum(["run", "bike", "swim", "strength", "other"]).optional(),
@@ -354,10 +343,7 @@ function toNextDayStartIso(dateValue: string, planningTimezone = "UTC"): string 
   return toDayStartIso(addDaysDateOnlyUtc(toDateKey(dateValue), 1), planningTimezone);
 }
 
-async function getRequiredProfilePlanningTimezone(
-  ctx: Context,
-  profileId: string,
-): Promise<string> {
+async function getProfilePlanningTimezone(ctx: Context, profileId: string): Promise<string> {
   const db = getRequiredDb(ctx);
   const [profile] = await db
     .select({ planningTimezone: schema.profiles.planning_timezone })
@@ -367,10 +353,10 @@ async function getRequiredProfilePlanningTimezone(
   const parsed = ianaTimezoneSchema.safeParse(profile?.planningTimezone);
   if (parsed.success) return parsed.data;
 
-  throw new TRPCError({
-    code: "BAD_REQUEST",
-    message: "A valid planning timezone is required for calendar-day queries.",
-  });
+  // Legacy profiles may not have a valid planning timezone. Keep calendar
+  // projections server-authoritative while matching the home projection's
+  // explicit fallback behavior.
+  return "UTC";
 }
 
 function parseRRule(rule: string): Map<string, string> {
@@ -547,12 +533,6 @@ async function enrichEventsWithActivityPlanIdentity<
   })) as T[];
 }
 
-function countUniqueScheduledDates(
-  events: Array<Pick<PlannedEventRecord, "scheduled_date">>,
-): number {
-  return new Set(events.map((event) => event.scheduled_date)).size;
-}
-
 function buildCompletedSignature(dateKey: string, activityPlanId: string): string {
   return `${dateKey}::${activityPlanId}`;
 }
@@ -619,53 +599,7 @@ function buildInsightRefreshHint(params: {
   };
 }
 
-function ensurePersistableRecurrence(
-  recurrence:
-    | {
-        rule: string;
-        timezone: string;
-        exdates?: string[];
-        exceptions?: unknown[];
-      }
-    | null
-    | undefined,
-): void {
-  if (!recurrence) return;
-
-  // TODO(events-router): Persist exdates/exceptions once event recurrence JSON
-  // storage is available in the events table (currently only rule/timezone exist).
-  if ((recurrence.exdates?.length ?? 0) > 0 || (recurrence.exceptions?.length ?? 0) > 0) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "Recurrence exdates/exceptions are not yet supported by persistence",
-    });
-  }
-}
-
-function toPersistableEventStatus(
-  lifecycle:
-    | {
-        status: "scheduled" | "completed" | "cancelled" | "deleted";
-      }
-    | undefined,
-): PublicEventStatus {
-  const status = lifecycle?.status ?? "scheduled";
-
-  if (status === "deleted") {
-    // TODO(events-router): Switch to lifecycle metadata persistence when
-    // deleted events are represented in the database layer.
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "Deleted lifecycle status is not supported by persistence",
-    });
-  }
-
-  return status;
-}
-
 function normalizeEventCreateInput(input: EventCreateInput): NormalizedEventCreateInput {
-  const status = toPersistableEventStatus(input.lifecycle);
-
   if (input.event_type === "planned") {
     return {
       activityPlanId: input.activity_plan_id ?? null,
@@ -674,15 +608,14 @@ function normalizeEventCreateInput(input: EventCreateInput): NormalizedEventCrea
       endsAt: toNextDayStartIso(input.scheduled_date),
       eventType: input.event_type,
       notes: input.notes ?? null,
-      recurrence: input.recurrence ?? null,
+      recurrence: null,
       routeId: input.route_id ?? null,
-      sourceProvider: null,
       scheduledDate: input.scheduled_date,
       startsAt: toDayStartIso(input.scheduled_date),
-      status,
-      timezone: input.timezone,
+      status: "scheduled",
+      timezone: "UTC",
       title: input.title,
-      trainingPlanId: input.training_plan_id ?? null,
+      trainingPlanId: null,
     };
   }
 
@@ -695,13 +628,12 @@ function normalizeEventCreateInput(input: EventCreateInput): NormalizedEventCrea
     notes: input.notes ?? null,
     recurrence: input.recurrence ?? null,
     routeId: "route_id" in input ? (input.route_id ?? null) : null,
-    sourceProvider: null,
     // Custom and race payloads may omit the date, so derive their canonical
     // schedule anchor once at this write boundary.
     scheduledDate:
       input.scheduled_date ?? getCalendarDateInIanaZone(input.starts_at, input.timezone),
     startsAt: toCanonicalInstantIso(input.starts_at),
-    status,
+    status: "scheduled",
     timezone: input.timezone,
     title: input.title,
     trainingPlanId: null,
@@ -771,8 +703,7 @@ async function readPersonalCalendarRange(
   input: z.infer<typeof calendarRangeInputSchema>,
 ) {
   const repository = getEventReadRepository(ctx);
-  const planningTimezone = await getRequiredProfilePlanningTimezone(ctx, profileId);
-  const [cursorDate, cursorId] = input.cursor ? input.cursor.split("_") : [];
+  const planningTimezone = await getProfilePlanningTimezone(ctx, profileId);
   let listedEvents;
   try {
     listedEvents = await repository.listOwnedEvents({
@@ -788,9 +719,6 @@ async function readPersonalCalendarRange(
       ...(input.eventTypes === undefined
         ? {}
         : { eventTypes: [...new Set(input.eventTypes.map(toDbEventType))] }),
-      ...(cursorDate && cursorId
-        ? { cursor: { startsAt: toCanonicalInstantIso(cursorDate), id: cursorId } }
-        : {}),
     });
   } catch (error) {
     toSafeStoredActivityPlanError(error);
@@ -860,11 +788,20 @@ async function readPersonalCalendarRange(
     scheduled_date: getCalendarDateInIanaZone(activity.started_at, planningTimezone),
     distance_meters: activity.distance_meters,
     duration_seconds: Math.round((activity.active_ms ?? activity.elapsed_ms) / 1000),
+    display: toActivityDisplayModel({
+      activity: { ...activity, type: activity.activity_category },
+      viewerId: profileId,
+    }),
   }));
   const goals = profileGoalRecordSchema
     .array()
     .parse(goalRows.slice(0, CALENDAR_PROJECTION_SOURCE_LIMIT))
-    .map(parseProfileGoalRecord);
+    .map(parseProfileGoalRecord)
+    .map((goal) => ({
+      ...goal,
+      goalTypeLabel: formatGoalTypeLabel(goal),
+      objectiveSummary: getGoalObjectiveSummary(goal),
+    }));
   const groupActivityPlanIds = Array.from(
     new Set(
       selectedGroupEvents.items
@@ -874,6 +811,7 @@ async function readPersonalCalendarRange(
   );
   const groupActivityPlanRows = await repository.listCalendarGroupActivityPlans({
     activityPlanIds: groupActivityPlanIds,
+    profileId,
   });
   const groupActivityPlans = await estimateActivityPlans(
     groupActivityPlanRows,
@@ -881,75 +819,38 @@ async function readPersonalCalendarRange(
     profileId,
   );
   const groupActivityPlanById = new Map(groupActivityPlans.map((plan) => [plan.id, plan]));
-  const groupEvents = selectedGroupEvents.items.map((event) => ({
-    ...event,
-    scheduled_date: getCalendarDateInIanaZone(event.starts_at, event.timezone),
-    selectedActivityPlan: event.activity_plan_id
+  const groupEvents = selectedGroupEvents.items.map((event) => {
+    const selectedActivityPlan = event.activity_plan_id
       ? (groupActivityPlanById.get(event.activity_plan_id) ?? null)
-      : null,
-    selectedActivityPlanOptionLabel: event.activity_plan_id
-      ? (groupActivityPlanById.get(event.activity_plan_id)?.name ?? null)
-      : null,
-    selectedActivityPlanTentative: false,
-  }));
-  const plannedEventsByDate = new Map<
-    string,
-    Array<{
-      activity_plan: PlannedEventRecord["activity_plan"];
-      activity_plan_id: string | null;
-      id: string;
-      starts_at: string;
-    }>
-  >();
-  for (const event of projectedRows) {
-    if (
-      event.event_type !== "planned" ||
-      (event.status !== "scheduled" && event.status !== "completed") ||
-      !event.scheduled_date
-    ) {
-      continue;
-    }
-    const dayEvents = plannedEventsByDate.get(event.scheduled_date) ?? [];
-    dayEvents.push({
-      activity_plan: event.activity_plan,
-      activity_plan_id: event.activity_plan_id,
-      id: event.id,
-      starts_at: event.starts_at,
-    });
-    plannedEventsByDate.set(event.scheduled_date, dayEvents);
-  }
-  const plannedLoadSummaries = Array.from(plannedEventsByDate.entries())
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([date, dayEvents]) => ({
-      date,
-      timezone: planningTimezone,
-      ...summarizePlannedDayEvents({ date, estimates: estimated, events: dayEvents }),
-    }));
-  const last = items.at(-1);
-  return {
-    contractVersion: "calendar-projection-v1" as const,
+      : null;
+    return {
+      ...event,
+      // The event remains visible, but an inaccessible plan contributes no
+      // identifier, label, structure, estimates, or projection metrics.
+      activity_plan_id: selectedActivityPlan ? event.activity_plan_id : null,
+      scheduled_date: getCalendarDateInIanaZone(event.starts_at, event.timezone),
+      selectedActivityPlan,
+      selectedActivityPlanOptionLabel: selectedActivityPlan?.name ?? null,
+    };
+  });
+  // Mixed-source calendar projections are bounded range reads, not pageable
+  // feeds. Every source advertises truncation; no event-only cursor is exposed.
+  return assembleCalendarProjectionRange({
+    viewerId: profileId,
     startDate: input.startDate,
     endDateExclusive: input.endDateExclusive,
     timezone: planningTimezone,
-    items,
-    completedActivities: {
-      items: completedActivities,
-      truncated: activityRows.length > CALENDAR_PROJECTION_SOURCE_LIMIT,
+    events: items,
+    completedActivities,
+    goals,
+    groupEvents,
+    truncation: {
+      events: hasMore,
+      completedActivities: activityRows.length > CALENDAR_PROJECTION_SOURCE_LIMIT,
+      groupEvents: selectedGroupEvents.truncated,
+      goals: goalRows.length > CALENDAR_PROJECTION_SOURCE_LIMIT,
     },
-    goals: {
-      items: goals,
-      truncated: goalRows.length > CALENDAR_PROJECTION_SOURCE_LIMIT,
-    },
-    selectedGroupEvents: {
-      items: groupEvents,
-      truncated: selectedGroupEvents.truncated,
-    },
-    plannedLoadSummaries: {
-      items: plannedLoadSummaries,
-      truncated: hasMore,
-    },
-    nextCursor: hasMore && last ? `${toCanonicalInstantIso(last.starts_at)}_${last.id}` : undefined,
-  };
+  });
 }
 
 async function readPersonalCalendarDaySummary(
@@ -1013,15 +914,21 @@ export const eventsRouter = createTRPCRouter({
             activity_plan: planWithEstimation,
           } as typeof event,
         ]);
-        return (
-          eventWithOwner ?? {
-            ...event,
-            activity_plan: planWithEstimation,
-          }
-        );
+        const projectedEvent = eventWithOwner ?? {
+          ...event,
+          activity_plan: planWithEstimation,
+        };
+        const { activity_plan, ...eventFields } = projectedEvent;
+        return {
+          ...eventFields,
+          activityPlanSummary: activity_plan
+            ? toActivityPlanSummary(activity_plan, ctx.session.user.id)
+            : null,
+        };
       }
 
-      return event;
+      const { activity_plan: _activityPlan, ...eventFields } = event;
+      return { ...eventFields, activityPlanSummary: null };
     }),
 
   getProviderSyncStatus: protectedProcedure
@@ -1064,7 +971,6 @@ export const eventsRouter = createTRPCRouter({
         buildInsightRefreshHint,
         buildMaterializedRecurrenceOccurrences,
         enqueueWahooPlannedActivityJobs,
-        ensurePersistableRecurrence,
         getContentPermissions,
         getEventWriteRepository,
         mapEvent: (event) => mapEvent(event as PlannedEventRecord),
@@ -1091,9 +997,7 @@ export const eventsRouter = createTRPCRouter({
         toCoreEventType,
         toDateKey,
         toDayStartIso,
-        toDbEventType,
         toNextDayStartIso,
-        toPersistableEventStatus,
       },
     });
   }),
@@ -1107,7 +1011,6 @@ export const eventsRouter = createTRPCRouter({
         enqueueWahooPlannedActivityJobs,
         getContentPermissions,
         getEventCompletionRepository,
-        toCoreEventType,
         toDateKey,
       },
     });
@@ -1131,13 +1034,6 @@ export const eventsRouter = createTRPCRouter({
 
       const existingEvent = existingEventRow;
       const existingEventType = toCoreEventType(existingEvent.event_type);
-
-      if (existingEventType === "imported") {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Imported events are read-only",
-        });
-      }
 
       assertEventPlanWritableForCompletion({
         activityPlanId: existingEvent.activity_plan_id,
@@ -1206,13 +1102,6 @@ export const eventsRouter = createTRPCRouter({
 
       const existingEvent = existingEventRow;
       const existingEventType = toCoreEventType(existingEvent.event_type);
-
-      if (existingEventType === "imported") {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Imported events are read-only",
-        });
-      }
 
       assertEventPlanWritableForCompletion({
         activityPlanId: existingEvent.activity_plan_id,
@@ -1448,224 +1337,6 @@ export const eventsRouter = createTRPCRouter({
         insight_refresh_hints: uniqueInsightRefreshHints,
       };
     }),
-
-  validateConstraints: protectedProcedure
-    .input(validateConstraintsSchema)
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const eventReadRepository = getEventReadRepository(ctx);
-      const permissions = getContentPermissions(ctx);
-      // One operation instant is passed through every calibration-dependent read.
-      const asOf = new Date();
-
-      if (permissions) {
-        await permissions.requireRead(
-          ctx.session.user.id,
-          { type: "training_plan", id: input.training_plan_id },
-          "Training plan not found",
-        );
-        await permissions.requireRead(
-          ctx.session.user.id,
-          { type: "activity_plan", id: input.activity_plan_id },
-          "Activity plan not found",
-        );
-      }
-
-      const validateInputs = await eventReadRepository.getValidateConstraintsInputs({
-        profileId: ctx.session.user.id,
-        trainingPlanId: input.training_plan_id,
-        activityPlanId: input.activity_plan_id,
-        asOf,
-      });
-
-      if (!validateInputs.trainingPlan) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Training plan not found",
-        });
-      }
-
-      if (!validateInputs.activityPlan) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Activity plan not found",
-        });
-      }
-
-      const plan = validateInputs.trainingPlan;
-      const activityPlan = validateInputs.activityPlan;
-
-      const structure = plan.structure as {
-        target_weekly_load_max?: number;
-        target_activities_per_week?: number;
-        max_consecutive_days?: number;
-        min_rest_days_per_week?: number;
-      };
-      const scheduledDate = new Date(input.scheduled_date);
-
-      const startOfWeek = new Date(scheduledDate);
-      startOfWeek.setDate(scheduledDate.getDate() - scheduledDate.getDay());
-      startOfWeek.setHours(0, 0, 0, 0);
-
-      const endOfWeek = new Date(startOfWeek);
-      endOfWeek.setDate(startOfWeek.getDate() + 7);
-
-      const plannedThisWeek = await eventReadRepository.listOwnedEvents({
-        profileId: ctx.session.user.id,
-        eventTypes: ["planned"],
-        includeAdhoc: true,
-        dateFrom: startOfWeek.toISOString().split("T")[0] || "",
-        dateTo: endOfWeek.toISOString().split("T")[0] || "",
-        limit: 500,
-      });
-
-      const plannedThisWeekMapped = (plannedThisWeek as PlannedEventRecord[] | null) ?? [];
-
-      const currentWeekPlans = plannedThisWeekMapped
-        .map((event) => event.activity_plan)
-        .filter(
-          (plan): plan is NonNullable<(typeof plannedThisWeekMapped)[number]["activity_plan"]> =>
-            !!plan,
-        );
-
-      const allDerivedPlans = await estimateActivityPlans(
-        [...currentWeekPlans, activityPlan],
-        db,
-        ctx.session.user.id,
-        { asOf },
-      );
-      const currentWeekDerivedPlans = allDerivedPlans.slice(0, currentWeekPlans.length);
-      const currentWeeklyLoad = currentWeekDerivedPlans.reduce<number | null>((sum, plan) => {
-        const load = plan.prescriptionQuantification.summary.commonLoad;
-        return sum === null || load.status !== "complete" ? null : sum + load.load;
-      }, 0);
-
-      const newActivityDerivedPlan = allDerivedPlans[currentWeekPlans.length];
-      const newActivityCommonLoad =
-        newActivityDerivedPlan?.prescriptionQuantification?.summary.commonLoad;
-      const newLoad =
-        newActivityCommonLoad?.status === "complete" ? newActivityCommonLoad.load : null;
-      const newWeeklyLoad =
-        currentWeeklyLoad === null || newLoad === null ? null : currentWeeklyLoad + newLoad;
-
-      const maxWeeklyLoad = structure.target_weekly_load_max || Infinity;
-      const weeklyLoadStatus =
-        newWeeklyLoad === null
-          ? "violated"
-          : newWeeklyLoad <= maxWeeklyLoad
-            ? "satisfied"
-            : newWeeklyLoad <= maxWeeklyLoad * 1.1
-              ? "warning"
-              : "violated";
-
-      const currentActivitiesCount = plannedThisWeekMapped.length;
-      const newActivitiesCount = currentActivitiesCount + 1;
-      const targetActivitiesPerWeek = structure.target_activities_per_week || 7;
-      const activitiesPerWeekStatus =
-        newActivitiesCount <= targetActivitiesPerWeek
-          ? "satisfied"
-          : newActivitiesCount <= targetActivitiesPerWeek + 1
-            ? "warning"
-            : "violated";
-
-      const threeDaysBefore = new Date(scheduledDate);
-      threeDaysBefore.setDate(scheduledDate.getDate() - 3);
-      const threeDaysAfter = new Date(scheduledDate);
-      threeDaysAfter.setDate(scheduledDate.getDate() + 3);
-
-      const nearbyActivities = await eventReadRepository.listPlannedEventDatesInRange({
-        profileId: ctx.session.user.id,
-        startsAtGte: threeDaysBefore.toISOString().split("T")[0] || "",
-        startsAtLte: threeDaysAfter.toISOString().split("T")[0] || "",
-      });
-
-      const allDates = [
-        ...nearbyActivities.map((a: any) => toDateKey(a.starts_at)),
-        input.scheduled_date,
-      ].sort();
-
-      let maxConsecutive = 1;
-      let currentConsecutive = 1;
-      for (let i = 1; i < allDates.length; i++) {
-        const prevDateStr = allDates[i - 1];
-        const currDateStr = allDates[i];
-        if (!prevDateStr || !currDateStr) continue;
-
-        const prevDate = new Date(prevDateStr);
-        const currDate = new Date(currDateStr);
-        const diffDays = Math.round(
-          (currDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24),
-        );
-
-        if (diffDays === 1) {
-          currentConsecutive++;
-          maxConsecutive = Math.max(maxConsecutive, currentConsecutive);
-        } else if (diffDays > 1) {
-          currentConsecutive = 1;
-        }
-      }
-
-      const maxConsecutiveDays = structure.max_consecutive_days || 7;
-      const consecutiveDaysStatus =
-        maxConsecutive <= maxConsecutiveDays
-          ? "satisfied"
-          : maxConsecutive <= maxConsecutiveDays + 1
-            ? "warning"
-            : "violated";
-
-      const currentPlannedDayCount = countUniqueScheduledDates(plannedThisWeekMapped);
-      const nextPlannedDayCount = new Set([
-        ...plannedThisWeekMapped.map((event) => toDateKey(event.starts_at)),
-        input.scheduled_date,
-      ]).size;
-      const restDaysThisWeek = 7 - nextPlannedDayCount;
-      const minRestDays = structure.min_rest_days_per_week || 0;
-      const restDaysStatus =
-        restDaysThisWeek >= minRestDays
-          ? "satisfied"
-          : restDaysThisWeek >= minRestDays - 1
-            ? "warning"
-            : "violated";
-
-      return {
-        constraints: {
-          weeklyLoad: {
-            status: weeklyLoadStatus as "satisfied" | "warning" | "violated",
-            current: currentWeeklyLoad,
-            withNew: newWeeklyLoad,
-            limit: maxWeeklyLoad,
-          },
-          activitiesPerWeek: {
-            status: activitiesPerWeekStatus as "satisfied" | "warning" | "violated",
-            current: currentActivitiesCount,
-            withNew: newActivitiesCount,
-            limit: targetActivitiesPerWeek,
-          },
-          consecutiveDays: {
-            status: consecutiveDaysStatus as "satisfied" | "warning" | "violated",
-            current: maxConsecutive - 1,
-            withNew: maxConsecutive,
-            limit: maxConsecutiveDays,
-          },
-          restDays: {
-            status: restDaysStatus as "satisfied" | "warning" | "violated",
-            current: 7 - currentPlannedDayCount,
-            withNew: restDaysThisWeek,
-            minimum: minRestDays,
-          },
-        },
-        canSchedule:
-          weeklyLoadStatus !== "violated" &&
-          activitiesPerWeekStatus !== "violated" &&
-          consecutiveDaysStatus !== "violated" &&
-          restDaysStatus !== "violated",
-        hasWarnings:
-          weeklyLoadStatus === "warning" ||
-          activitiesPerWeekStatus === "warning" ||
-          consecutiveDaysStatus === "warning" ||
-          restDaysStatus === "warning",
-      };
-    }),
 });
 
 /** Date-keyed personal schedule projections. Event identity and mutations remain on eventsRouter. */
@@ -1684,13 +1355,7 @@ export const calendarRouter = createTRPCRouter({
       limit: 500,
     });
     return {
-      contractVersion: result.contractVersion,
-      date: input.date,
-      timezone: result.timezone,
-      items: result.items,
-      completedActivities: result.completedActivities,
-      goals: result.goals,
-      selectedGroupEvents: result.selectedGroupEvents,
+      projection: result,
       plannedLoadSummary: await readPersonalCalendarDaySummary(
         ctx,
         ctx.session.user.id,

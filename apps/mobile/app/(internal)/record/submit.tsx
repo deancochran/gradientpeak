@@ -4,19 +4,14 @@ import {
   type ContentVisibility,
 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
-import {
-  Form,
-  FormSegmentedSelectField,
-  FormTextareaField,
-  FormTextField,
-} from "@repo/ui/components/form";
+import { Form, FormSegmentedSelectField, FormTextareaField } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useRouter } from "expo-router";
 import { Save, Trash2 } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { useActivitySubmission } from "@/lib/hooks/useActivitySubmission";
@@ -32,7 +27,7 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
   const form = useZodForm<typeof activitySubmissionFormSchema>({
     schema: activitySubmissionFormSchema,
     defaultValues: {
-      name: submission.activity?.name || "",
+      name: "Activity",
       notes: submission.activity?.notes ?? null,
       content_visibility: undefined,
     } as ActivitySubmissionFormData,
@@ -44,7 +39,7 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
     }
 
     form.reset({
-      name: submission.activity.name || "",
+      name: "Activity",
       notes: submission.activity.notes ?? null,
       content_visibility: submission.activity.content_visibility,
     });
@@ -55,12 +50,12 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
     async (data: ActivitySubmissionFormData) => {
       // Pass all form data to submission.update
       submission.update({
-        name: data.name,
+        name: submission.activity?.name || "Activity",
         notes: data.notes ?? null,
         content_visibility: data.content_visibility,
       });
       const success = await submission.submit({
-        name: data.name,
+        name: submission.activity?.name || "Activity",
         notes: data.notes ?? null,
         content_visibility: data.content_visibility,
       });
@@ -97,15 +92,7 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
     ]);
   }, [service, router]);
 
-  // Memoize canSubmit to prevent unnecessary re-renders
-  const activityName = String(form.watch("name") ?? "");
-  const canSubmit = useMemo(
-    () =>
-      Boolean(submission.artifact && submission.activity) &&
-      activityName.trim().length > 0 &&
-      !submission.isSubmitting,
-    [activityName, submission.activity, submission.artifact, submission.isSubmitting],
-  );
+  const canSubmit = Boolean(submission.artifact && submission.activity) && !submission.isSubmitting;
 
   const submitForm = useZodFormSubmit<ActivitySubmissionFormData>({
     form,
@@ -151,16 +138,6 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
                   {discardError || submission.statusMessage}
                 </Text>
               ) : null}
-
-              <FormTextField
-                control={form.control}
-                disabled={submission.isSubmitting}
-                label="Activity Name"
-                name="name"
-                placeholder="Enter activity name"
-                testId="activity-name-input"
-                className="text-base py-3"
-              />
 
               <FormTextareaField
                 control={form.control}
@@ -216,7 +193,7 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
             <Text className="text-base text-muted-foreground">
               {submission.isLoading
                 ? "Loading finalized activity..."
-                : discardError || submission.error || "No finalized activity found."}
+                : discardError || "No finalized activity found."}
             </Text>
             {!submission.isLoading ? (
               <>

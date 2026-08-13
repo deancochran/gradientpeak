@@ -10,11 +10,11 @@ import { buildTrainingPathLoadMetrics } from "@/components/plan/training-path/tr
 import { BuilderTrainingPathReviewSection } from "@/components/training-plan/create/BuilderTrainingPathReviewSection";
 import { TrainingPlanBuilderEventCard } from "@/components/training-plan/create/TrainingPlanBuilderEventCard";
 import type { TrainingPlanBuilderController } from "@/components/training-plan/create/useTrainingPlanBuilderController";
+import type { BuilderPlanPresentation } from "@/lib/training-plan-creation/builder-presentation";
 import { formatBuilderWeekdayWithWeek } from "@/lib/training-plan-creation/formatters";
-import type { BuilderPlanCreationViewModel } from "@/lib/training-plan-creation/view-model";
 
 type BuilderScheduleEditorProps = {
-  viewModel: BuilderPlanCreationViewModel;
+  viewModel: BuilderPlanPresentation;
   chartReview: TrainingPlanBuilderController["chartReview"];
   estimateBySessionId: Map<string, ActivityPlanPlanningEstimate>;
   onAddSessionAtOffset: (offsetDays: number) => void;
@@ -36,7 +36,7 @@ type BuilderSelectedDayPlanningPanelProps = {
   onRemoveSession: (sessionId: string) => void;
   point: DailyTrainingAdjustmentPoint | null;
   selectedDayOffset: number;
-  sessions: BuilderPlanCreationViewModel["timelineWeeks"][number]["sessions"];
+  sessions: BuilderPlanPresentation["timelineWeeks"][number]["sessions"];
 };
 
 export function BuilderScheduleEditor({

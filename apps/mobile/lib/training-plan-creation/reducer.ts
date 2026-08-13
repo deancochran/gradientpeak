@@ -1,12 +1,22 @@
 import {
   addAthletePlanningContextEffort,
-  addDaysDateOnlyUtc,
-  diffDateOnlyUtcDays,
   overrideAthletePlanningContextField,
   removeAthletePlanningContextEffort,
   removeAthletePlanningContextField,
 } from "@repo/core";
 import type { TrainingPlanBuilderAction, TrainingPlanBuilderState } from "./types";
+
+function replaceSessionEventOverrides(
+  session: TrainingPlanBuilderState["structure"]["sessions"][number],
+  eventOverrides: Extract<
+    TrainingPlanBuilderAction,
+    { type: "session.updateEventOverrides" }
+  >["eventOverrides"],
+) {
+  if (eventOverrides) return { ...session, eventOverrides };
+  const { eventOverrides: _removed, ...sessionWithoutOverrides } = session;
+  return sessionWithoutOverrides;
+}
 
 export function trainingPlanBuilderReducer(
   state: TrainingPlanBuilderState,
@@ -138,24 +148,6 @@ export function trainingPlanBuilderReducer(
           ),
         },
       };
-    case "session.move":
-      return {
-        ...state,
-        structure: {
-          sessions: state.structure.sessions.map((session) =>
-            session.localId === action.sessionId
-              ? { ...session, offsetDays: action.offsetDays }
-              : session,
-          ),
-        },
-        scheduling: {
-          ...state.scheduling,
-          sessionDateOverrides: {
-            ...state.scheduling.sessionDateOverrides,
-            [action.sessionId]: addDaysDateOnlyUtc(state.scheduling.startDate, action.offsetDays),
-          },
-        },
-      };
     case "scheduling.startDateUpdate":
       return {
         ...state,
@@ -166,78 +158,13 @@ export function trainingPlanBuilderReducer(
           sessionDateOverrides: {},
         },
       };
-    case "scheduling.togglePreferredWeekday": {
-      const preferredWeekdays = state.scheduling.preferredWeekdays.includes(action.weekday)
-        ? state.scheduling.preferredWeekdays.filter((weekday) => weekday !== action.weekday)
-        : [...state.scheduling.preferredWeekdays, action.weekday].sort(
-            (left, right) => left - right,
-          );
-
-      return {
-        ...state,
-        scheduling: {
-          ...state.scheduling,
-          preferredWeekdays,
-        },
-      };
-    }
-    case "scheduling.moveSessionToDate":
-      return {
-        ...state,
-        structure: {
-          sessions: state.structure.sessions.map((session) =>
-            session.localId === action.sessionId
-              ? {
-                  ...session,
-                  offsetDays: Math.max(
-                    0,
-                    diffDateOnlyUtcDays(state.scheduling.startDate, action.date),
-                  ),
-                }
-              : session,
-          ),
-        },
-        scheduling: {
-          ...state.scheduling,
-          sessionDateOverrides: {
-            ...state.scheduling.sessionDateOverrides,
-            [action.sessionId]: action.date,
-          },
-        },
-      };
-    case "scheduling.clearSessionDateOverride": {
-      const { [action.sessionId]: _removed, ...sessionDateOverrides } =
-        state.scheduling.sessionDateOverrides;
-      return {
-        ...state,
-        scheduling: {
-          ...state.scheduling,
-          sessionDateOverrides,
-        },
-      };
-    }
-    case "scheduling.shiftPlan":
-      return {
-        ...state,
-        anchorDate: addDaysDateOnlyUtc(state.anchorDate, action.days),
-        scheduling: {
-          ...state.scheduling,
-          startDate: addDaysDateOnlyUtc(state.scheduling.startDate, action.days),
-          sessionDateOverrides: Object.fromEntries(
-            Object.entries(state.scheduling.sessionDateOverrides).map(([sessionId, date]) => [
-              sessionId,
-              addDaysDateOnlyUtc(date, action.days),
-            ]),
-          ),
-        },
-      };
     case "session.updateEventOverrides":
       return {
         ...state,
         structure: {
           sessions: state.structure.sessions.map((session) =>
             session.localId === action.sessionId
-              ? { ...session, eventOverrides: action.eventOverrides }
+              ? replaceSessionEventOverrides(session, action.eventOverrides)
               : session,
           ),
         },

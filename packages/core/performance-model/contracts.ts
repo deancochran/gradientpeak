@@ -6,6 +6,7 @@ import {
   strengthOtherPerformanceModelSchema,
   swimmingDurationPerformanceModelSchema,
 } from "../duration-performance";
+import { calibrationRecordSchema, calibrationTrendSchema } from "../performance-calibration";
 
 export const ATHLETE_PERFORMANCE_MODEL_SNAPSHOT_VERSION =
   "athlete-performance-model-snapshot-v1" as const;
@@ -17,16 +18,22 @@ const dateTimeSchema = z.string().datetime();
 const activityCategorySchema = z.enum(["bike", "run", "swim"]);
 
 const heartRateFactIdentityShape = {
+  calibrationId: opaqueIdSchema.nullable().default(null),
   activityCategory: activityCategorySchema,
   metric: z.enum(["lthr", "max_hr"]),
   unit: z.literal("beats_per_minute"),
-  policyVersion: z.literal(HEART_RATE_CALIBRATION_POLICY_VERSION),
+  policyVersion: z.string().trim().min(1).max(128),
+  evidenceCount: z.number().int().nonnegative().max(64).default(0),
+  trend: calibrationTrendSchema.or(z.literal("unavailable")).default("unavailable"),
 };
 
 export const heartRateCalibrationFactSchema = z.discriminatedUnion("status", [
   z
     .object({
       status: z.literal("available"),
+      calibrationState: z
+        .enum(["provisional", "confirmed", "stale", "unavailable"])
+        .default("confirmed"),
       ...heartRateFactIdentityShape,
       valueBpm: z.number().finite().min(30).max(250),
       observedAt: dateTimeSchema,
@@ -34,14 +41,21 @@ export const heartRateCalibrationFactSchema = z.discriminatedUnion("status", [
       sourceEvidenceId: opaqueIdSchema,
       sourceActivityId: opaqueIdSchema,
       source: z.literal("activity_file"),
-      method: z.enum(["activity_file_lthr_detection", "max_hr_progressive_test_v1"]),
-      calculationVersion: z.enum(["activity-file-lthr-v1", "max_hr_progressive_test_v1"]),
+      method: z.enum([
+        "performance_calibration",
+        "activity_file_lthr_detection",
+        "max_hr_progressive_test_v1",
+      ]),
+      calculationVersion: z.string().trim().min(1).max(128),
       reason: z.null(),
     })
     .strict(),
   z
     .object({
       status: z.literal("unavailable"),
+      calibrationState: z
+        .enum(["provisional", "confirmed", "stale", "unavailable"])
+        .default("unavailable"),
       ...heartRateFactIdentityShape,
       valueBpm: z.null(),
       observedAt: z.null(),
@@ -104,9 +118,20 @@ export const athletePerformanceModelSnapshotSchema = z
       })
       .strict(),
     heartRate: athleteHeartRateCalibrationFactsSchema,
+    calibrations: z.array(calibrationRecordSchema).max(5).default([]),
   })
   .strict()
   .superRefine((snapshot, context) => {
+    const calibrationIdentities = snapshot.calibrations.map(
+      ({ identity }) => `${identity.metricKey}/${identity.activityCategory}`,
+    );
+    if (new Set(calibrationIdentities).size !== calibrationIdentities.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["calibrations"],
+        message: "Performance snapshot calibration identities must be unique",
+      });
+    }
     const models = Object.entries(snapshot.categories);
     for (const [category, model] of models) {
       if (model.athleteId !== snapshot.athleteId || model.assessmentAsOf !== snapshot.asOf) {

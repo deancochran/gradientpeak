@@ -17,9 +17,10 @@ import {
   type ActivityAnalysisContextSnapshot,
   type ActivityAnalysisStore,
 } from "../../repositories";
+import { selectActivityAnalysisPerformanceTargets } from "../../repositories/activity-analysis-revision-repository";
 import { createAthletePerformanceModelRepository } from "../../repositories/athlete-performance-model-repository";
 
-const activityAnalysisMetricTypeSchema = z.enum(["weight_kg", "resting_hr", "max_hr", "lthr"]);
+const activityAnalysisMetricTypeSchema = z.enum(["weight_kg", "resting_hr", "max_hr"]);
 const metricTypes = activityAnalysisMetricTypeSchema.options;
 const effortTypes = ["power", "speed"] as const;
 const CALIBRATION_CANDIDATE_LIMIT = 101;
@@ -96,7 +97,7 @@ export function createActivityAnalysisStore(db: DrizzleQueryExecutor): ActivityA
                 : sql`${metricPeer.reference_activity_id} is distinct from ${request.activityIdToExclude}`
             }
             and (
-              ${schema.profileMetrics.metric_type} not in ('lthr', 'max_hr')
+              ${schema.profileMetrics.metric_type} <> 'max_hr'
               or (
                 select case
                   when count(*) = 1 then min(peer_reference_segment.activity_category)
@@ -136,10 +137,7 @@ export function createActivityAnalysisStore(db: DrizzleQueryExecutor): ActivityA
       return and(
         eq(schema.activityEfforts.profile_id, request.profileId),
         lte(schema.activityEfforts.recorded_at, request.asOf),
-        or(
-          gte(schema.activityEfforts.recorded_at, effortCutoff),
-          eq(schema.activityEfforts.source, "manual"),
-        ),
+        gte(schema.activityEfforts.recorded_at, effortCutoff),
         request.activityIdToExclude === undefined
           ? undefined
           : sql`${schema.activityEfforts.activity_id} is distinct from ${request.activityIdToExclude}`,
@@ -151,10 +149,7 @@ export function createActivityAnalysisStore(db: DrizzleQueryExecutor): ActivityA
             and ${effortPeer.effort_type} = ${schema.activityEfforts.effort_type}
             and ${effortPeer.duration_seconds} = ${schema.activityEfforts.duration_seconds}
             and ${effortPeer.recorded_at} <= ${request.asOf}
-            and (
-              ${effortPeer.recorded_at} >= ${effortCutoff}
-              or ${effortPeer.source} = 'manual'
-            )
+            and ${effortPeer.recorded_at} >= ${effortCutoff}
             and ${
               request.activityIdToExclude === undefined
                 ? sql`true`
@@ -205,7 +200,7 @@ export function createActivityAnalysisStore(db: DrizzleQueryExecutor): ActivityA
           or(...metricWindowPredicates),
           inArray(
             schema.profileMetrics.metric_type,
-            evidenceScope === "thresholds" ? (["lthr"] as const) : metricTypes,
+            evidenceScope === "thresholds" ? (["max_hr"] as const) : metricTypes,
           ),
         ),
       )
@@ -351,6 +346,8 @@ export function createActivityAnalysisStore(db: DrizzleQueryExecutor): ActivityA
             : { excludedActivityId: request.activityIdToExclude }),
         })),
       ),
+    getPerformanceTargetSelectionsForActivities: ({ profileId, activities }) =>
+      selectActivityAnalysisPerformanceTargets(db, { profileId, activities }),
     loadContextEvidence,
     async getContextSnapshot({
       asOf,

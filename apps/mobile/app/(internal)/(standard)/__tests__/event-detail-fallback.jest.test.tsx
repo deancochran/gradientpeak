@@ -2,6 +2,7 @@ import { format } from "date-fns";
 import React from "react";
 import type { ReactTestInstance } from "react-test-renderer";
 import { ROUTES } from "@/lib/constants/routes";
+import { createActivityPlanSummary } from "../../../../test/activity-plan-projection-fixture";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 import EventDetailScreen from "../event-detail";
@@ -10,7 +11,7 @@ type ActivityPlanFixture = {
   id: string;
   name: string;
   description: string;
-  activity_category: string;
+  activity_category: "run" | "bike" | "swim" | "strength" | "other";
   estimated_duration: number;
 };
 type EventQueryError = { data: { code: string }; message?: string };
@@ -71,6 +72,21 @@ const eventQueryState = {
   error: null as EventQueryError | null,
   isLoading: false,
 };
+
+function projectedEventData() {
+  if (!eventQueryState.data) return null;
+  return {
+    ...eventQueryState.data,
+    activityPlanSummary: eventQueryState.data.activity_plan
+      ? createActivityPlanSummary({
+          id: eventQueryState.data.activity_plan.id,
+          name: eventQueryState.data.activity_plan.name,
+          description: eventQueryState.data.activity_plan.description ?? null,
+          activityCategory: eventQueryState.data.activity_plan.activity_category ?? "other",
+        })
+      : null,
+  };
+}
 
 const routerNavigateMock = jest.fn();
 const navigateToMock = jest.fn();
@@ -179,6 +195,7 @@ jest.mock("@react-native-community/datetimepicker", () => ({
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
+  ...jest.requireActual("@repo/core"),
   formatDurationSec: jest.fn(() => "60 min"),
   isActivityCompleted: () => false,
 }));
@@ -218,7 +235,7 @@ jest.mock("@/lib/api", () => ({
     events: {
       getById: {
         useQuery: () => ({
-          data: eventQueryState.data,
+          data: projectedEventData(),
           error: eventQueryState.error,
           isLoading: eventQueryState.isLoading,
           refetch: jest.fn(),
@@ -254,7 +271,7 @@ jest.mock("@/lib/api", () => ({
       },
     },
     trainingPlans: {
-      getById: {
+      get: {
         useQuery: () => ({ data: null }),
       },
     },
@@ -311,7 +328,7 @@ describe("event detail fallback screen", () => {
     const rendered = renderNative(<EventDetailScreen />);
 
     expect(screen.queryByText("Advanced event detail")).toBeNull();
-    expect(getHostByType(rendered, "ActivityPlanCard").props.activityPlan).toEqual(
+    expect(getHostByType(rendered, "ActivityPlanCard").props.plan).toEqual(
       expect.objectContaining({ id: "plan-1", name: "Tempo Builder" }),
     );
     expect(getHostByType(rendered, "ActivityPlanCard").props.onPress).toEqual(expect.any(Function));

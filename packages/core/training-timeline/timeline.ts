@@ -64,10 +64,8 @@ function sumAvailableLoads(values: readonly (number | null)[]): number | null {
 function deriveExpectedLoad(input: {
   plannedLoad: number | null;
   scheduledLoad: number | null;
-  tentativeScheduledLoad: number | null;
 }): number | null {
-  if (input.scheduledLoad === null || input.tentativeScheduledLoad === null) return null;
-  return input.scheduledLoad + input.tentativeScheduledLoad;
+  return input.scheduledLoad;
 }
 
 function hasExplicitLoad(point: TrainingTimelineLoadPoint | undefined, key: string): boolean {
@@ -101,7 +99,6 @@ function bucketByDate<Item extends { date: string }>(items: Item[]) {
 export function compareTrainingLoad(input: {
   plannedLoad?: number | null;
   scheduledLoad?: number | null;
-  tentativeScheduledLoad?: number | null;
   completedLoad?: number | null;
   recommendedLoad?: number | null;
 }): TrainingLoadComparison {
@@ -110,13 +107,11 @@ export function compareTrainingLoad(input: {
     input.plannedLoad === undefined ? input.recommendedLoad : input.plannedLoad,
   );
   const scheduledLoad = roundLoad(input.scheduledLoad);
-  const tentativeScheduledLoad = roundLoad(input.tentativeScheduledLoad);
   const completedLoad = roundLoad(input.completedLoad);
-  const expectedLoad = deriveExpectedLoad({ plannedLoad, scheduledLoad, tentativeScheduledLoad });
+  const expectedLoad = deriveExpectedLoad({ plannedLoad, scheduledLoad });
   return trainingLoadComparisonSchema.parse({
     plannedLoad,
     scheduledLoad,
-    tentativeScheduledLoad,
     completedLoad,
     remainingLoad:
       expectedLoad === null || completedLoad === null
@@ -156,7 +151,6 @@ export function buildTrainingDaySummary(input: {
       scheduledLoad: hasExplicitLoad(input.loadPoint, "scheduled_common_load")
         ? normalizedLoad.scheduled_common_load
         : scheduledItemLoad,
-      tentativeScheduledLoad: normalizedLoad.tentative_scheduled_common_load,
       completedLoad: hasExplicitLoad(input.loadPoint, "completed_common_load")
         ? normalizedLoad.completed_common_load
         : completedItemLoad,
@@ -193,9 +187,6 @@ export function buildTrainingWeekSummaries(days: TrainingDaySummary[]): Training
         load: compareTrainingLoad({
           plannedLoad: sumAvailableLoads(weekDays.map((day) => day.load.plannedLoad)),
           scheduledLoad: sumAvailableLoads(weekDays.map((day) => day.load.scheduledLoad)),
-          tentativeScheduledLoad: sumAvailableLoads(
-            weekDays.map((day) => day.load.tentativeScheduledLoad),
-          ),
           completedLoad: sumAvailableLoads(weekDays.map((day) => day.load.completedLoad)),
           recommendedLoad: sumAvailableLoads(weekDays.map((day) => day.load.recommendedLoad)),
         }),

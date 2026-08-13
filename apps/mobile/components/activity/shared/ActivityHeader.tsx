@@ -1,6 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Card, CardContent } from "@repo/ui/components/card";
-import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form";
+import { Form, FormTextareaField } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
@@ -28,7 +28,6 @@ interface ActivityHeaderProps {
   };
   notes?: string;
   editable?: boolean;
-  onNameChange?: (name: string) => void;
   onNotesChange?: (notes: string) => void;
   variant?: "card" | "embedded";
 }
@@ -43,7 +42,6 @@ const ACTIVITY_ICONS: Record<string, LucideIcon> = {
 };
 
 const activityHeaderSchema = z.object({
-  name: z.string(),
   notes: z.string(),
 });
 
@@ -52,7 +50,6 @@ export function ActivityHeader({
   activity,
   notes,
   editable = false,
-  onNameChange,
   onNotesChange,
   variant = "card",
 }: ActivityHeaderProps) {
@@ -61,14 +58,12 @@ export function ActivityHeader({
   const form = useZodForm({
     schema: activityHeaderSchema,
     defaultValues: {
-      name: activity.name,
       notes: notes ?? "",
     },
   });
-  const name = useWatch({ control: form.control, name: "name" });
   const formNotes = useWatch({ control: form.control, name: "notes" });
-  const externalValues = useRef({ name: activity.name, notes: notes ?? "" });
-  const syncedValues = useRef({ name: activity.name, notes: notes ?? "" });
+  const externalNotes = useRef(notes ?? "");
+  const syncedNotes = useRef(notes ?? "");
   const isSynchronizing = useRef(false);
   const deviceInfo = [activity.device_manufacturer, activity.device_product]
     .filter(Boolean)
@@ -77,48 +72,33 @@ export function ActivityHeader({
   const ActivityIcon = ACTIVITY_ICONS[activity.type] || Activity;
 
   useEffect(() => {
-    const nextValues = { name: activity.name, notes: notes ?? "" };
+    const nextNotes = notes ?? "";
 
-    if (
-      externalValues.current.name !== nextValues.name ||
-      externalValues.current.notes !== nextValues.notes
-    ) {
+    if (externalNotes.current !== nextNotes) {
       isSynchronizing.current = true;
-      form.reset(nextValues);
-      externalValues.current = nextValues;
-      syncedValues.current = nextValues;
+      form.reset({ notes: nextNotes });
+      externalNotes.current = nextNotes;
+      syncedNotes.current = nextNotes;
     }
-  }, [activity.name, form, notes]);
-
-  useEffect(() => {
-    if (
-      !isSynchronizing.current &&
-      editable &&
-      onNameChange &&
-      name !== syncedValues.current.name
-    ) {
-      syncedValues.current.name = name;
-      onNameChange(name);
-    }
-  }, [editable, name, onNameChange]);
+  }, [form, notes]);
 
   useEffect(() => {
     if (
       !isSynchronizing.current &&
       editable &&
       onNotesChange &&
-      formNotes !== syncedValues.current.notes
+      formNotes !== syncedNotes.current
     ) {
-      syncedValues.current.notes = formNotes;
+      syncedNotes.current = formNotes;
       onNotesChange(formNotes);
     }
   }, [editable, formNotes, onNotesChange]);
 
   useEffect(() => {
-    if (name === externalValues.current.name && formNotes === externalValues.current.notes) {
+    if (formNotes === externalNotes.current) {
       isSynchronizing.current = false;
     }
-  }, [formNotes, name]);
+  }, [formNotes]);
 
   const handleUserPress = () => {
     if (!user.id) return;
@@ -169,18 +149,7 @@ export function ActivityHeader({
       </View>
 
       <Form {...form}>
-        {/* Activity Name */}
-        {editable && onNameChange ? (
-          <FormTextField
-            className="text-base font-semibold mb-2 h-10 px-0 border-0"
-            control={form.control}
-            label="Activity name"
-            name="name"
-            placeholder="Activity name"
-          />
-        ) : (
-          <Text className="text-base font-semibold text-foreground mb-2">{activity.name}</Text>
-        )}
+        <Text className="text-base font-semibold text-foreground mb-2">Activity</Text>
 
         {/* Notes/Description */}
         {editable && onNotesChange ? (

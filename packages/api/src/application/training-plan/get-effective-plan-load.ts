@@ -90,8 +90,6 @@ export const getEffectivePlanLoadInputSchema = z
   .object({
     endDate: dateSchema.optional(),
     startDate: dateSchema.optional(),
-    /** An overlay may classify server-loaded scheduled items, but cannot supply Load facts. */
-    tentativeScheduledItemIds: z.array(z.string().uuid()).max(10_000).optional(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -126,10 +124,8 @@ const availableSchema = z
     status: z.literal("available"),
     completed: commonLoadAggregateSchema,
     remaining: commonLoadAggregateSchema,
-    tentative: commonLoadAggregateSchema,
     completedObservationQuantification: activityObservationQuantificationBundleSchema.nullable(),
     remainingPrescriptionQuantification: activityPrescriptionQuantificationBundleSchema.nullable(),
-    tentativePrescriptionQuantification: activityPrescriptionQuantificationBundleSchema.nullable(),
     effective: effectivePlanCompositionDtoSchema,
     model: z.literal(COMMON_RELATIVE_LOAD_MODEL),
     version: z.literal(COMMON_RELATIVE_LOAD_VERSION),
@@ -206,7 +202,7 @@ function parseQuantificationBundle<TSchema extends z.ZodType>(
 
 /**
  * The sole authorized effective Plan Load composition. Events, completions, links and timezone
- * are profile-owned reads; callers may only mark already-loaded scheduled IDs as tentative.
+ * are profile-owned reads.
  */
 export async function getEffectivePlanLoad(input: {
   asOf?: Date;
@@ -289,7 +285,6 @@ export async function getEffectivePlanLoad(input: {
     if (parsed.status === "unavailable") return unavailable(parsed.reason);
     plannedQuantificationById.set(plan.id, parsed.value);
   }
-  const tentativeIds = new Set(request.tentativeScheduledItemIds ?? []);
   const activitiesInRange = facts.activities.filter((activity) => {
     const date = localDate(activity.started_at, planningTimezone);
     return date >= startDate && date <= endDate;
@@ -327,7 +322,6 @@ export async function getEffectivePlanLoad(input: {
         event.status === "cancelled" || (event.status === "completed" && !event.linked_activity_id)
           ? ("cancelled" as const)
           : ("active" as const),
-      tentative: tentativeIds.has(event.id),
       linkedCompletedActivityId: event.linked_activity_id,
       prescriptionQuantification: source,
     };
@@ -385,10 +379,6 @@ export async function getEffectivePlanLoad(input: {
             .map((item) => item.commonLoad),
         )
       : compositionUnavailable;
-  const tentative =
-    composition.status === "available"
-      ? aggregateCommonLoadEnvelopes(composition.tentativeItems.map((item) => item.commonLoad))
-      : compositionUnavailable;
   const completedMembers =
     composition.status === "available"
       ? composition.firmItems.flatMap((item) =>
@@ -403,12 +393,6 @@ export async function getEffectivePlanLoad(input: {
             : [],
         )
       : [];
-  const tentativeMembers =
-    composition.status === "available"
-      ? composition.tentativeItems.flatMap((item) =>
-          item.kind === "scheduled" ? item.prescriptionQuantification.members : [],
-        )
-      : [];
   const completedObservationQuantification =
     completedMembers.length === 0
       ? null
@@ -417,10 +401,6 @@ export async function getEffectivePlanLoad(input: {
     remainingMembers.length === 0
       ? null
       : createPrescriptionQuantificationBundle({ members: remainingMembers });
-  const tentativePrescriptionQuantification =
-    tentativeMembers.length === 0
-      ? null
-      : createPrescriptionQuantificationBundle({ members: tentativeMembers });
   const recommendation = buildCommonLoadRecommendation({
     computedAsOf: asOf.toISOString(),
     planningTimezone,
@@ -444,10 +424,8 @@ export async function getEffectivePlanLoad(input: {
     status: "available",
     completed,
     remaining,
-    tentative,
     completedObservationQuantification,
     remainingPrescriptionQuantification,
-    tentativePrescriptionQuantification,
     recommendation,
     effective: composition,
     model: COMMON_RELATIVE_LOAD_MODEL,

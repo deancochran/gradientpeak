@@ -1,6 +1,7 @@
 /// <reference path="../types/garmin-fitsdk.d.ts" />
 import { Decoder, Profile, Stream, Utils } from "@garmin/fitsdk";
 import { Buffer } from "buffer";
+import { ActivityFileParseError } from "../activity-files/activity-file-errors";
 
 import {
   activityArtifactSemanticsSchema,
@@ -297,10 +298,20 @@ const RECORD_EXTENSION_FIELDS = [
 export function decodeFitActivityArtifact(buffer: Buffer | Uint8Array): DecodedActivityArtifact {
   const decoded = safeDecodeFitFile(Buffer.from(buffer));
   if (!decoded.messages) {
-    throw new Error(`Failed to decode FIT file: ${decoded.errors.map((error) => error.message).join("; ")}`);
+    if (decoded.errors.some((error) => error.type === "system")) {
+      throw new Error("FIT parser runtime failed");
+    }
+    throw new ActivityFileParseError(
+      decoded.errors.some((error) => error.type === "format")
+        ? "unsupported_format"
+        : "corrupt_artifact",
+    );
   }
   if (decoded.errors.length > 0) {
-    throw new Error(`FIT decoding failed: ${decoded.errors.map((error) => error.message).join("; ")}`);
+    if (decoded.errors.some((error) => error.type === "system")) {
+      throw new Error("FIT parser runtime failed");
+    }
+    throw new ActivityFileParseError("corrupt_artifact");
   }
 
   const rawSessions = messagesOf(decoded.messages, "sessionMesgs");

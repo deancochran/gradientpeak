@@ -199,12 +199,6 @@ export const webJourneyCoverageManifest = {
       "The registry has no training-plan social feature; profile detail owns the actor relationship.",
     ),
   ),
-  "training-plans.reorder": entry(
-    approximate(
-      "training_plans.detail",
-      "Mobile no longer exposes the retired standalone reorder route; plan detail is the owning planning surface.",
-    ),
-  ),
   "training-preferences": entry(direct("profile.training_preferences")),
 
   // Completed activities and imports

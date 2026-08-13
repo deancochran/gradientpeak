@@ -15,6 +15,7 @@ type PersistOnboardingProfileInput = {
   tx: Parameters<Parameters<ReturnType<typeof getRequiredDb>["transaction"]>[0]>[0];
   profileId: string;
   input: CompleteOnboarding;
+  onboardingStatus?: "provider_selection" | "completed";
 };
 
 /** Persists the profile fields owned by the authenticated onboarding subject. */
@@ -22,6 +23,7 @@ export async function persistOnboardingProfile({
   tx,
   profileId,
   input,
+  onboardingStatus,
 }: PersistOnboardingProfileInput): Promise<void> {
   const [updatedProfile] = await tx
     .update(profiles)
@@ -34,7 +36,7 @@ export async function persistOnboardingProfile({
             : undefined,
       full_name: input.full_name,
       gender: input.baseline_field_sources?.gender === "cleared" ? null : input.gender,
-      onboarded: true,
+      onboarding_status: onboardingStatus,
       planning_timezone: input.planning_timezone,
       username: input.username,
       updated_at: new Date(),

@@ -50,6 +50,146 @@ async function assertCanonicalActivityCategories(target: {
   `);
 }
 
+async function expectActivityAnalysisRejection(
+  target: {
+    query: <Row extends Record<string, unknown>>(
+      text: string,
+      values?: unknown[],
+    ) => Promise<{ rows: Row[] }>;
+  },
+  statement: string,
+  message: string,
+) {
+  try {
+    await target.query(statement);
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? error.code : null;
+    const actualMessage =
+      error && typeof error === "object" && "message" in error ? error.message : null;
+    if (code === "P0001" && typeof actualMessage === "string" && actualMessage.includes(message)) {
+      return;
+    }
+    throw error;
+  }
+  throw new Error(`expected activity analysis rejection: ${message}`);
+}
+
+async function assertActivityAnalysisRevisionContract(target: {
+  query: <Row extends Record<string, unknown>>(
+    text: string,
+    values?: unknown[],
+  ) => Promise<{ rows: Row[] }>;
+}) {
+  await target.query(`
+    insert into public.activities (
+      id, profile_id, name, started_at, finished_at, elapsed_ms, active_ms, moving_ms,
+      timing_coverage, parser_version, decoded_contract_version, materializer_version,
+      performance_target_snapshot
+    ) values (
+      '66666666-6666-4666-8666-666666666666', '11111111-1111-4111-8111-111111111111',
+      'analysis revision fixture', now(), now() + interval '1 second', 1000, 1000, 1000,
+      'complete', 'fixture', 'fixture', 'fixture', '{"original":true}'::jsonb
+    );
+    insert into public.activity_segments (
+      id, activity_id, profile_id, ordinal, role, activity_category, start_offset_ms, end_offset_ms,
+      summary, timing_coverage, active_ms, moving_ms, parser_version, materializer_version
+    ) values (
+      '66666666-6666-4666-8666-666666666667', '66666666-6666-4666-8666-666666666666',
+      '11111111-1111-4111-8111-111111111111', 0, 'activity', 'run', 0, 1000,
+      '{"version":"1","timing":{"timingCoverage":"complete","activeMs":1000,"movingMs":1000}}'::jsonb,
+      'complete', 1000, 1000, 'fixture', 'fixture'
+    );
+    insert into public.activity_analysis_revisions (
+      id, activity_id, profile_id, revision, source_segments_revision, analysis_version, reason,
+      performance_target_snapshot, target_fingerprint, segment_load_projection,
+      output_fingerprint, computed_at
+    ) values
+      (
+        '66666666-6666-4666-8666-666666666668', '66666666-6666-4666-8666-666666666666',
+        '11111111-1111-4111-8111-111111111111', 1, 1, 'manual-profile-activity-analysis-v1',
+        'manual_profile_reprocess', '{"reprocessed":true}'::jsonb,
+        'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        '{"version":1,"segments":[]}'::jsonb,
+        'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', now()
+      ),
+      (
+        '66666666-6666-4666-8666-666666666669', '66666666-6666-4666-8666-666666666666',
+        '11111111-1111-4111-8111-111111111111', 2, 1, 'manual-profile-activity-analysis-v1',
+        'manual_profile_reprocess', '{"reprocessed":"B"}'::jsonb,
+        'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+        '{"version":1,"segments":[{"state":"B"}]}'::jsonb,
+        'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd', now()
+      ),
+      (
+        '66666666-6666-4666-8666-666666666670', '66666666-6666-4666-8666-666666666666',
+        '11111111-1111-4111-8111-111111111111', 3, 1, 'manual-profile-activity-analysis-v1',
+        'manual_profile_reprocess', '{"reprocessed":true}'::jsonb,
+        'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        '{"version":1,"segments":[]}'::jsonb,
+        'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', now()
+      );
+  `);
+  const history = await target.query<{
+    output_fingerprint: string;
+    revision: number;
+    target_fingerprint: string;
+  }>(`
+    select revision, target_fingerprint, output_fingerprint
+    from public.activity_analysis_revisions
+    where activity_id = '66666666-6666-4666-8666-666666666666'
+    order by revision
+  `);
+  if (
+    history.rows.length !== 3 ||
+    history.rows[0]?.target_fingerprint !== history.rows[2]?.target_fingerprint ||
+    history.rows[0]?.output_fingerprint !== history.rows[2]?.output_fingerprint ||
+    history.rows[1]?.output_fingerprint === history.rows[2]?.output_fingerprint
+  ) {
+    throw new Error("activity analysis revisions did not preserve the A-B-A append history");
+  }
+  await expectActivityAnalysisRejection(
+    target,
+    `update public.activities
+     set performance_target_snapshot = '{"changed":true}'::jsonb
+     where id = '66666666-6666-4666-8666-666666666666'`,
+    "activity performance target snapshots are immutable after capture",
+  );
+  await expectActivityAnalysisRejection(
+    target,
+    `update public.activity_analysis_revisions
+     set computed_at = now()
+     where id = '66666666-6666-4666-8666-666666666668'`,
+    "activity analysis revisions are append-only",
+  );
+  await expectActivityAnalysisRejection(
+    target,
+    `insert into public.activity_analysis_revisions (
+       activity_id, profile_id, revision, source_segments_revision, analysis_version, reason,
+       performance_target_snapshot, target_fingerprint, segment_load_projection,
+       output_fingerprint, computed_at
+     ) values (
+       '66666666-6666-4666-8666-666666666666', '11111111-1111-4111-8111-111111111111',
+       4, 2, 'manual-profile-activity-analysis-v1', 'manual_profile_reprocess', '{}'::jsonb,
+       'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+       '{"version":1,"segments":[]}'::jsonb,
+       'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd', now()
+     )`,
+    "activity analysis revision must match the owned current segment revision",
+  );
+  await target.query(
+    "delete from public.activities where id = '66666666-6666-4666-8666-666666666666'",
+  );
+  const remaining = await target.query<{ count: string }>(
+    "select count(*)::text as count from public.activity_analysis_revisions where activity_id = '66666666-6666-4666-8666-666666666666'",
+  );
+  if (remaining.rows[0]?.count !== "0") {
+    throw new Error("activity analysis revisions did not cascade with their owned activity");
+  }
+  console.log(
+    "[db:activity-analysis-revisions] immutable originals, A-B-A append history, segment linkage, and owned cascade passed",
+  );
+}
+
 async function expectConstraintViolation(
   target: {
     query: <Row extends Record<string, unknown>>(
@@ -631,6 +771,67 @@ async function assertProfileObservationsDoNotInvalidateAthleteState(target: {
   }
 }
 
+async function assertDeclineOnlyGroupEventRsvps(target: {
+  query: <Row extends Record<string, unknown>>(
+    text: string,
+    values?: unknown[],
+  ) => Promise<{ rows: Row[] }>;
+}) {
+  const profileId = "00000000-0000-4000-8000-000000000081";
+  const groupId = "00000000-0000-4000-8000-000000000082";
+  const eventId = "00000000-0000-4000-8000-000000000083";
+  await target.query(`insert into auth.users (id) values ($1::uuid)`, [profileId]);
+  await target.query(
+    `insert into public.groups (id, created_by_profile_id, name, slug)
+     values ($1::uuid, $2::uuid, 'RSVP constraint group', 'rsvp-constraint-group')`,
+    [groupId, profileId],
+  );
+  await target.query(
+    `insert into public.group_events (id, group_id, created_by_profile_id, title, starts_at, timezone)
+     values ($1::uuid, $2::uuid, $3::uuid, 'RSVP constraint event', now() + interval '1 day', 'UTC')`,
+    [eventId, groupId, profileId],
+  );
+
+  for (const [tableName, eventColumn] of [
+    ["group_event_rsvps", "group_event_id"],
+    ["group_event_series_rsvps", "group_event_series_id"],
+  ] as const) {
+    for (const status of ["accepted", "tentative"]) {
+      try {
+        await target.query(
+          `insert into public.${tableName} (${eventColumn}, profile_id, status)
+           values ($1::uuid, $2::uuid, $3)`,
+          [eventId, profileId, status],
+        );
+      } catch (error) {
+        const code = error && typeof error === "object" && "code" in error ? error.code : null;
+        if (code === "23514") continue;
+        throw error;
+      }
+      throw new Error(`${tableName} accepted forbidden ${status} status`);
+    }
+    try {
+      await target.query(
+        `insert into public.${tableName} (${eventColumn}, profile_id)
+         values ($1::uuid, $2::uuid)`,
+        [eventId, profileId],
+      );
+    } catch (error) {
+      const code = error && typeof error === "object" && "code" in error ? error.code : null;
+      if (code !== "23502") throw error;
+    }
+    const inserted = await target.query<{ status: string }>(
+      `insert into public.${tableName} (${eventColumn}, profile_id, status)
+       values ($1::uuid, $2::uuid, 'declined') returning status`,
+      [eventId, profileId],
+    );
+    if (inserted.rows[0]?.status !== "declined") {
+      throw new Error(`${tableName} did not persist the decline exception`);
+    }
+  }
+  console.log("[db:group-event-rsvps] decline-only constraints and absent default passed");
+}
+
 async function main() {
   const args = process.argv.slice(2);
   await withDisposableDatabase(args, "fresh_verify", async (target, targetUrl) => {
@@ -638,12 +839,14 @@ async function main() {
     const baseline = requireFreshBaseline();
     await applySqlFile(target, baseline.sourcePath);
     await assertCanonicalActivityCategories(target);
+    await assertActivityAnalysisRevisionContract(target);
     await assertActivitySourceIdentityContract(target);
     await assertStrictlyPositiveActivityEfforts(target);
     await assertProfileGoalConstraints(target);
     await assertArtifactLifecycleFunctionPrivileges(target);
     await assertRouteStorageLifecycle(target);
     await assertProfileObservationsDoNotInvalidateAthleteState(target);
+    await assertDeclineOnlyGroupEventRsvps(target);
 
     const env = {
       ...process.env,

@@ -62,7 +62,7 @@ async function seedProfile(label: string) {
     email,
     full_name: label,
     username: `plan-access-${id.slice(0, 8)}`,
-    onboarded: true,
+    onboarding_status: "completed",
     is_public: false,
     planning_timezone: "UTC",
     created_at: createdAt,

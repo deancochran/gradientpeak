@@ -85,15 +85,16 @@ export function useRecordScreenController() {
   );
 
   React.useEffect(() => {
-    if (!pendingPlanId || !pendingPlanQuery.data || !service) {
+    if (!pendingPlanId || !pendingPlanQuery.data?.detail || !service) {
       return;
     }
 
     try {
-      const { id: planId, ...planWithoutId } = pendingPlanQuery.data;
+      const planDetail = pendingPlanQuery.data.detail;
       const pendingPlan: RecordingServiceActivityPlan = {
-        ...planWithoutId,
-        ...(planId === undefined ? {} : { id: planId }),
+        id: planDetail.id,
+        name: planDetail.name,
+        structure: planDetail.structure,
       };
       service.selectPlan(pendingPlan);
       setPendingPlanId(null);

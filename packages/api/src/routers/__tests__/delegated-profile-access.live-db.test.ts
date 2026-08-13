@@ -20,8 +20,8 @@ async function seedProfile(label: string) {
     values (${id}::uuid, ${label}, ${email}, true, ${now}, ${now})
   `);
   await db.execute(sql`
-    insert into profiles (id, email, full_name, username, language, preferred_units, onboarded, is_public, created_at, updated_at)
-    values (${id}::uuid, ${email}, ${label}, ${`delegate-${id.slice(0, 8)}`}, 'en', 'metric', true, true, ${now}, ${now})
+    insert into profiles (id, email, full_name, username, language, preferred_units, onboarding_status, is_public, created_at, updated_at)
+    values (${id}::uuid, ${email}, ${label}, ${`delegate-${id.slice(0, 8)}`}, 'en', 'metric', 'completed', true, ${now}, ${now})
   `);
   return id;
 }

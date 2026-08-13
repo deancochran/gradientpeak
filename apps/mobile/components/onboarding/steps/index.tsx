@@ -10,11 +10,8 @@ import { Form, FormTextField } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
-import Constants from "expo-constants";
-import * as Linking from "expo-linking";
-import * as WebBrowser from "expo-web-browser";
 import { Activity, Check } from "lucide-react-native";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { ActivityIndicator, TouchableOpacity, View } from "react-native";
 import { z } from "zod";
 import {
@@ -23,19 +20,15 @@ import {
   AthleteBaselineFields,
 } from "@/components/athlete-baseline";
 import { GoalEditorForm } from "@/components/goals";
-import { IntegrationProviderList } from "@/components/integrations/IntegrationProviderList";
 import { applyCompactTrainingPreferencesChange } from "@/components/settings/training-preferences/compactTrainingPreferences";
 import { TrainingPreferencesSurface } from "@/components/settings/training-preferences/TrainingPreferencesSurface";
-import { AppConfirmModal } from "@/components/shared/AppFormModal";
-import { api } from "@/lib/api";
-import { parseIntegrationOAuthCallback } from "@/lib/integration-oauth-callback";
 import { isValidOnboardingUsername } from "@/lib/onboarding/validation";
 import {
   getCompactTrainingPreferencesValue,
   getTrainingPreferencesSummary,
   PRIMARY_ACTIVITY_CATEGORY_OPTIONS,
 } from "../onboarding-data";
-import type { IntegrationProvider, OnboardingData, StepProps } from "../types";
+import type { OnboardingData, StepProps } from "../types";
 
 export { GroupsAndPeopleStep } from "./GroupsAndPeopleStep";
 
@@ -80,14 +73,6 @@ const INTENT_OPTIONS: Array<{
     description: "Set up the basics and decide later.",
   },
 ];
-
-function getMobileRedirectUri(): string {
-  if (Constants.expoConfig?.extra?.redirectUri) {
-    return Constants.expoConfig.extra.redirectUri;
-  }
-
-  return Linking.createURL("integrations");
-}
 
 function SectionHeading({ title, description }: { title: string; description?: string }) {
   return (
@@ -326,133 +311,6 @@ export const ProfileAndIntentStep = (props: StepProps) => (
   </View>
 );
 
-export const IntegrationsStep = ({
-  integrationOverview,
-  integrationOverviewError,
-  integrationOverviewLoading,
-  onRefreshIntegrations,
-}: StepProps) => {
-  const [statusModal, setStatusModal] = useState<null | { title: string; description: string }>(
-    null,
-  );
-  const [pendingProvider, setPendingProvider] = useState<IntegrationProvider | null>(null);
-  const getAuthUrlMutation = api.integrations.getAuthUrl.useMutation();
-
-  const handleConnect = async (providerKey: IntegrationProvider) => {
-    if (providerKey !== "wahoo") return;
-    setPendingProvider(providerKey);
-    try {
-      const redirectUri = getMobileRedirectUri();
-      const { url } = await getAuthUrlMutation.mutateAsync({
-        provider: providerKey,
-        redirectUri,
-      });
-
-      const result = await WebBrowser.openAuthSessionAsync(url, redirectUri);
-
-      if (result.type === "success") {
-        const outcome = parseIntegrationOAuthCallback(result.url);
-        if (outcome?.status === "connected") {
-          await onRefreshIntegrations?.();
-        }
-        setStatusModal(
-          outcome ?? {
-            title: "Issue",
-            description: "Authorization response was incomplete. Try again.",
-          },
-        );
-      }
-    } catch (error) {
-      console.error(error);
-      setStatusModal({ title: "Error", description: "Failed to connect integration." });
-    } finally {
-      setPendingProvider(null);
-    }
-  };
-
-  return (
-    <View className="gap-4">
-      <Text className="text-xl font-semibold mb-2">Connect Accounts</Text>
-      <Text className="text-muted-foreground mb-4">Sync your activities automatically.</Text>
-
-      <IntegrationProviderList
-        {...(integrationOverviewError === undefined ? {} : { error: integrationOverviewError })}
-        integrations={integrationOverview ?? []}
-        {...(integrationOverviewLoading === undefined
-          ? {}
-          : { isLoading: integrationOverviewLoading })}
-        onConnect={(provider) => {
-          void handleConnect(provider);
-        }}
-        pendingByProvider={pendingProvider ? { [pendingProvider]: "connect" } : {}}
-        {...(onRefreshIntegrations === undefined ? {} : { onRetry: onRefreshIntegrations })}
-      />
-      {statusModal ? (
-        <AppConfirmModal
-          description={statusModal.description}
-          onClose={() => setStatusModal(null)}
-          primaryAction={{
-            label: "OK",
-            onPress: () => setStatusModal(null),
-            testID: "onboarding-integrations-status-confirm",
-          }}
-          testID="onboarding-integrations-status-modal"
-          title={statusModal.title}
-        />
-      ) : null}
-    </View>
-  );
-};
-
-export const WahooSetupStep = ({ wahooSetupStatus, onRetryWahooSetup }: StepProps) => {
-  const status = wahooSetupStatus?.status ?? "idle";
-  const isRecoverable = status === "failed";
-
-  return (
-    <View className="gap-4">
-      <Text className="text-xl font-semibold mb-2">Refreshing Wahoo setup data</Text>
-      <Text className="text-muted-foreground mb-2">
-        We&apos;re importing available Wahoo profile fields before showing the manual review steps.
-      </Text>
-
-      <Card>
-        <CardContent className="pt-6 gap-3">
-          <View className="flex-row items-center justify-between">
-            <Text className="font-semibold text-foreground">Wahoo</Text>
-            <Text className="text-sm text-muted-foreground capitalize">
-              {status.replace(/_/g, " ")}
-            </Text>
-          </View>
-          {wahooSetupStatus?.lastError ? (
-            <Text className="text-xs text-muted-foreground">{wahooSetupStatus.lastError}</Text>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      {isRecoverable ? (
-        <Button
-          variant="outline"
-          onPress={onRetryWahooSetup}
-          testID="onboarding-provider-sync-retry"
-        >
-          <Text>Retry sync</Text>
-        </Button>
-      ) : null}
-    </View>
-  );
-};
-
-export const ConnectAndImportStep = (props: StepProps) => {
-  const hasWahooSetup = props.wahooSetupStatus && props.wahooSetupStatus.status !== "idle";
-
-  return (
-    <View className="gap-8">
-      <IntegrationsStep {...props} />
-      {hasWahooSetup ? <WahooSetupStep {...props} /> : null}
-    </View>
-  );
-};
-
 export const TrainingBaselineStep = ({ data, fieldSources, updateData }: StepProps) => {
   const baselineSources: AthleteBaselineFieldSources = {
     experience: fieldSources?.experience_level,
@@ -561,6 +419,10 @@ export const GoalsPreferencesStep = ({ data, updateData }: StepProps) => {
     updateData({ goal_draft: goalDraft, should_create_goal: true });
   };
 
+  useEffect(() => {
+    if (!data.should_create_goal) addGoal();
+  }, [data.should_create_goal]);
+
   return (
     <View className="gap-8">
       <View className="gap-3">
@@ -605,8 +467,8 @@ export const GoalsPreferencesStep = ({ data, updateData }: StepProps) => {
 
       <View className="gap-3">
         <SectionHeading
-          title="Goal (optional)"
-          description="Add one plan-ready goal now, or skip it and create one later."
+          title="Initial goal (required)"
+          description="Add one complete, plan-ready goal to finish setup."
         />
         {!data.should_create_goal ? (
           <Button onPress={addGoal} testID="onboarding-add-goal" variant="outline">
@@ -614,13 +476,6 @@ export const GoalsPreferencesStep = ({ data, updateData }: StepProps) => {
           </Button>
         ) : (
           <View className="gap-3">
-            <Button
-              onPress={() => updateData({ goal_draft: null, should_create_goal: false })}
-              testID="onboarding-remove-goal"
-              variant="ghost"
-            >
-              <Text className="text-muted-foreground">Remove goal</Text>
-            </Button>
             <GoalEditorForm
               contentSizing="intrinsic"
               initialValue={initialGoalDraftRef.current}
@@ -630,7 +485,7 @@ export const GoalsPreferencesStep = ({ data, updateData }: StepProps) => {
             />
             {goalFeedback && !goalFeedback.canGuidePlan ? (
               <Text className="text-sm text-muted-foreground" testID="onboarding-goal-feedback">
-                {goalFeedback.message} An incomplete goal will be skipped and will not block setup.
+                {goalFeedback.message} Complete this goal before finalizing setup.
               </Text>
             ) : null}
           </View>

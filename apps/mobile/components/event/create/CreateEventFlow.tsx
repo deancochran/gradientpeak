@@ -68,7 +68,7 @@ function mergeNotes(values: Array<string | null | undefined>) {
 }
 
 type EditableEvent = {
-  activity_plan?: ActivityPlanListItem | null;
+  activityPlanSummary?: ActivityPlanListItem | null;
   activity_plan_id?: string | null;
   route?: EventRouteSummary | null;
   route_id?: string | null;
@@ -96,18 +96,15 @@ function buildDraftFromEvent(event: EditableEvent): CreateEventDraft {
   const recurrenceFrequency = parseRecurrenceFrequency(event);
   const recurrenceEndDate = parseRecurrenceEndDate(event);
 
-  if (event.event_type === "planned" || event.activity_plan_id || event.activity_plan?.id) {
+  if (event.event_type === "planned" || event.activity_plan_id || event.activityPlanSummary?.id) {
     return {
       mode: "planned",
-      activityPlanId: event.activity_plan_id ?? event.activity_plan?.id ?? null,
-      activityPlanName: event.activity_plan?.name ?? null,
+      activityPlanId: event.activity_plan_id ?? event.activityPlanSummary?.id ?? null,
+      activityPlanName: event.activityPlanSummary?.name ?? null,
       routeId: event.route_id ?? event.route?.id ?? null,
       routeName: event.route?.name ?? null,
       scheduledDate,
-      timezone,
-      recurrenceFrequency,
-      recurrenceEndDate,
-      title: event.title ?? event.activity_plan?.name ?? "Planned Activity",
+      title: event.title ?? event.activityPlanSummary?.name ?? "Planned Activity",
       notes: event.notes ?? "",
     };
   }
@@ -152,7 +149,7 @@ function toMainFormValues(draft: CreateEventDraft): EventFormValues {
       customTime: "12:00",
       notes: draft.notes,
       plannedDate: draft.scheduledDate,
-      recurrenceEndDate: draft.recurrenceEndDate,
+      recurrenceEndDate: null,
       title: draft.title,
     };
   }
@@ -173,7 +170,6 @@ function applyMainFormValues(draft: CreateEventDraft, values: EventFormValues): 
     return {
       ...draft,
       notes: values.notes,
-      recurrenceEndDate: values.recurrenceEndDate,
       scheduledDate: values.plannedDate || draft.scheduledDate,
       title: values.title,
     };
@@ -222,7 +218,6 @@ export const CreateEventFlow = forwardRef<
     scheduleGapNote?: string | null;
     showFooterActions?: boolean;
     testIDPrefix?: string;
-    trainingPlanId?: string;
     updateEvent?: EditableEvent;
   }
 >(function CreateEventFlow(
@@ -236,7 +231,6 @@ export const CreateEventFlow = forwardRef<
     scheduleGapNote,
     showFooterActions = true,
     testIDPrefix = "event-detail",
-    trainingPlanId,
     updateEvent,
   },
   ref,
@@ -314,10 +308,10 @@ export const CreateEventFlow = forwardRef<
   );
 
   useEffect(() => {
-    const plans = (activityPlansData?.items ?? []) as ActivityPlanListItem[];
+    const plans = activityPlansData?.items ?? [];
     if (plans.length === 0) return;
     setKnownActivityPlans((current) => {
-      const next = [...plans];
+      const next: ActivityPlanListItem[] = [...plans];
       for (const plan of current) {
         if (!next.some((item) => item.id === plan.id)) {
           next.push(plan);
@@ -349,11 +343,10 @@ export const CreateEventFlow = forwardRef<
   );
 
   useEffect(() => {
-    if (!preselectedActivityPlan) return;
+    const detail = preselectedActivityPlan?.detail;
+    if (!detail) return;
     setKnownActivityPlans((current) =>
-      current.some((plan) => plan.id === preselectedActivityPlan.id)
-        ? current
-        : [...current, preselectedActivityPlan as ActivityPlanListItem],
+      current.some((plan) => plan.id === detail.id) ? current : [...current, detail],
     );
   }, [preselectedActivityPlan]);
 
@@ -368,7 +361,7 @@ export const CreateEventFlow = forwardRef<
   }, [draft, knownActivityPlans, preselectedActivityPlanId, handleSelectPlan]);
 
   useEffect(() => {
-    const updateActivityPlan = updateEvent?.activity_plan;
+    const updateActivityPlan = updateEvent?.activityPlanSummary;
     if (updateActivityPlan) {
       setKnownActivityPlans((current) =>
         current.some((plan) => plan.id === updateActivityPlan.id)
@@ -376,7 +369,7 @@ export const CreateEventFlow = forwardRef<
           : [...current, updateActivityPlan],
       );
     }
-  }, [updateEvent?.activity_plan]);
+  }, [updateEvent?.activityPlanSummary]);
 
   useEffect(() => {
     const route = updateEvent?.route;
@@ -460,9 +453,6 @@ export const CreateEventFlow = forwardRef<
           routeId: current.routeId,
           routeName: current.routeName,
           scheduledDate,
-          timezone: current.timezone,
-          recurrenceFrequency: current.recurrenceFrequency,
-          recurrenceEndDate: current.recurrenceEndDate,
           title: current.title,
           notes: current.notes,
         };
@@ -478,10 +468,10 @@ export const CreateEventFlow = forwardRef<
         title: current.title,
         startsAt,
         scheduledDate: current.scheduledDate,
-        timezone: current.timezone,
+        timezone: current.mode === "planned" ? getDeviceTimeZone() : current.timezone,
         allDay: current.mode === "planned" ? true : current.allDay,
-        recurrenceFrequency: current.recurrenceFrequency,
-        recurrenceEndDate: current.recurrenceEndDate,
+        recurrenceFrequency: current.mode === "planned" ? "none" : current.recurrenceFrequency,
+        recurrenceEndDate: current.mode === "planned" ? null : current.recurrenceEndDate,
         notes: current.notes,
         routeId: current.routeId,
         routeName: current.routeName,
@@ -514,16 +504,8 @@ export const CreateEventFlow = forwardRef<
 
   const handleSelectPlanResource = (item: ResourcePickerItem) => {
     if (existingEventReadOnly) return;
-    handleSelectPlan({
-      prescriptionQuantification:
-        "activityPlanCardData" in item
-          ? (item.activityPlanCardData.prescriptionQuantification ?? null)
-          : null,
-      description: item.description ?? null,
-      activity_category: item.activityCategory ?? "other",
-      id: item.id,
-      name: item.name,
-    });
+    if (!("activityPlan" in item)) return;
+    handleSelectPlan(item.activityPlan);
     setActivityPlanPickerOpen(false);
   };
 
@@ -538,7 +520,11 @@ export const CreateEventFlow = forwardRef<
       return false;
     }
 
-    if (nextDraft.recurrenceFrequency !== "none" && !nextDraft.recurrenceEndDate) {
+    if (
+      nextDraft.mode === "custom" &&
+      nextDraft.recurrenceFrequency !== "none" &&
+      !nextDraft.recurrenceEndDate
+    ) {
       setRecurrenceErrorMessage("Choose when this repeating series should end.");
       setStep("repeat");
       return false;
@@ -577,7 +563,7 @@ export const CreateEventFlow = forwardRef<
 
     if (!validateDraft(draft)) return;
     try {
-      createMutation.mutate(buildCreateEventInput(draft, { trainingPlanId }));
+      createMutation.mutate(buildCreateEventInput(draft));
     } catch (error) {
       setFormErrorMessage(
         error instanceof Error
@@ -623,7 +609,7 @@ export const CreateEventFlow = forwardRef<
     );
   }
 
-  if (step === "repeat") {
+  if (step === "repeat" && draft.mode === "custom") {
     return (
       <RepeatStep
         control={form.control}
