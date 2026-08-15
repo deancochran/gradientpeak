@@ -75,8 +75,10 @@ export function deriveOnboardingProviderState(
   if (provider.importRun?.failed_count && provider.importRun.failed_count > 0) {
     return "recovery_required";
   }
+  // A failed queue job still has a scheduled retry. Reserve recovery for work that has exhausted
+  // its retry budget, or for an import run whose durable result cannot progress safely.
   if (
-    jobs.some((job) => job.status === "failed" || job.status === "dead_lettered") ||
+    jobs.some((job) => job.status === "dead_lettered") ||
     provider.importRun?.status === "failed" ||
     provider.importRun?.status === "cancelled"
   ) {
@@ -85,7 +87,10 @@ export function deriveOnboardingProviderState(
   if (jobs.some((job) => job.status === "running") || provider.importRun?.status === "running") {
     return "importing";
   }
-  if (jobs.some((job) => job.status === "queued") || provider.importRun?.status === "queued") {
+  if (
+    jobs.some((job) => job.status === "queued" || job.status === "failed") ||
+    provider.importRun?.status === "queued"
+  ) {
     return "queued";
   }
   if (
@@ -149,7 +154,7 @@ export function deriveOnboardingReadiness(
             ? ("complete" as const)
             : profileJob?.status === "running"
               ? ("running" as const)
-              : profileJob?.status === "queued"
+              : profileJob?.status === "queued" || profileJob?.status === "failed"
                 ? ("queued" as const)
                 : ("recovery_required" as const),
       },

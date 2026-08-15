@@ -247,6 +247,23 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(mockScrollTo).toHaveBeenCalledWith({ animated: false, x: 96, y: 0 });
   });
 
+  it("does not let passive native mount scrolling replace the controlled date", () => {
+    render(
+      <DailyTrainingAdjustmentChart
+        points={[
+          { date: "2026-06-01", effectiveLoadStatus: "complete", effectiveLoad: 40 },
+          { date: "2026-06-02", effectiveLoadStatus: "complete", effectiveLoad: 50 },
+          { date: "2026-06-03", effectiveLoadStatus: "complete", effectiveLoad: 60 },
+        ]}
+        selectedDate="2026-06-03"
+      />,
+    );
+
+    const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
+    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 0, y: 0 } } });
+    expect(screen.getByText("2026-06-03")).toBeTruthy();
+  });
+
   it("renders an empty state", () => {
     render(<DailyTrainingAdjustmentChart points={[]} />);
 

@@ -2,6 +2,7 @@ import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardDescription, CardHeader } from "@repo/ui/components/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
 import { formatShortDayLabel } from "../../lib/planning";
 
 type PlanTabProjection = inferRouterOutputs<AppRouter>["trainingPlans"]["getPlanTabProjection"];
@@ -150,24 +151,29 @@ export function TrainingLoadPath({
             <p>{coverageLabel(sourceCoverage)}</p>
           </div>
         ) : (
-          <div className="space-y-3">
-            <div className="grid gap-2 sm:grid-cols-3">
-              <div className="rounded-xl border p-3">
-                <p className="text-xs text-muted-foreground">Completed</p>
-                <CommonLoadValue value={completedLoad} />
+          <Tabs defaultValue="firm">
+            <TabsList>
+              <TabsTrigger value="firm">Firm</TabsTrigger>
+            </TabsList>
+            <TabsContent className="space-y-3" value="firm">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="rounded-xl border p-3">
+                  <p className="text-xs text-muted-foreground">Completed</p>
+                  <CommonLoadValue value={completedLoad} />
+                </div>
+                <div className="rounded-xl border p-3">
+                  <p className="text-xs text-muted-foreground">Remaining scheduled work</p>
+                  <CommonLoadValue value={remainingLoad} />
+                </div>
               </div>
-              <div className="rounded-xl border p-3">
-                <p className="text-xs text-muted-foreground">Remaining scheduled work</p>
-                <CommonLoadValue value={remainingLoad} />
-              </div>
-            </div>
-            <ItemList
-              emptyMessage="No activities are scheduled in this window."
-              items={items}
-              sourceComplete={firmCoverageComplete}
-              unavailableMessage="Scheduled work is unavailable because completed or scheduled coverage is not complete."
-            />
-          </div>
+              <ItemList
+                emptyMessage="No activities are scheduled in this window."
+                items={items}
+                sourceComplete={firmCoverageComplete}
+                unavailableMessage="Scheduled work is unavailable because completed or scheduled coverage is not complete."
+              />
+            </TabsContent>
+          </Tabs>
         )}
       </CardContent>
     </Card>

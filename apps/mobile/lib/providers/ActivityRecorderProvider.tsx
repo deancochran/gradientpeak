@@ -10,7 +10,6 @@
  * that don't share state.
  */
 
-import type { RecordingCheckpoint } from "@repo/core";
 import { router } from "expo-router";
 import type React from "react";
 import {
@@ -25,6 +24,7 @@ import {
 import { Alert } from "react-native";
 import type { ActivityRecorderService } from "../services/ActivityRecorder";
 import {
+  type ActivityRecorderCheckpoint,
   loadAndClaimRecordingCheckpoint,
   quarantineActiveRecordingCheckpoint,
   releaseRecordingCheckpointClaim,
@@ -35,7 +35,7 @@ import { prepareMobileRecordingStartup } from "../services/mobileRecordingStartu
 interface ActivityRecorderContextValue {
   discardRecovery: () => Promise<void> | undefined;
   service: ActivityRecorderService | null;
-  recoveryCheckpoint: RecordingCheckpoint | null;
+  recoveryCheckpoint: ActivityRecorderCheckpoint | null;
   resumeRecovery: () => Promise<void> | undefined;
 }
 
@@ -112,8 +112,10 @@ export function ActivityRecorderProvider({
   } | null>(null);
   const [serviceTransitionRetry, setServiceTransitionRetry] = useState(0);
   const [serviceState, setServiceState] = useState<ActivityRecorderService | null>(null);
-  const [recoveryCheckpoint, setRecoveryCheckpoint] = useState<RecordingCheckpoint | null>(null);
-  const recoveryCheckpointRef = useRef<RecordingCheckpoint | null>(null);
+  const [recoveryCheckpoint, setRecoveryCheckpoint] = useState<ActivityRecorderCheckpoint | null>(
+    null,
+  );
+  const recoveryCheckpointRef = useRef<ActivityRecorderCheckpoint | null>(null);
   recoveryCheckpointRef.current = recoveryCheckpoint;
   const promptedRecoverySessionRef = useRef<string | null>(null);
 

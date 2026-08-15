@@ -1,10 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  type CanonicalActivityCategory,
-  SWIMMING_CSS_SOURCE_EFFORT_CALCULATION_VERSION,
-  SWIMMING_CSS_SOURCE_EFFORT_METHOD,
-  swimmingCssProtocolIdForActivity,
-} from "@repo/core";
+import type { CanonicalActivityCategory } from "@repo/core";
 import {
   type CompletedSegmentSummary,
   completedSegmentSummarySchema,
@@ -30,6 +25,7 @@ import {
   extractBestEfforts,
   type RunningNormalizedGradedPaceResult,
   type RunningNormalizedGradedPaceSample,
+  STANDARD_BEST_EFFORT_DURATIONS_SECONDS,
 } from "@repo/core/calculations";
 import type { activityEfforts } from "@repo/db";
 import type { ActivityFileStreamMetadata, ActivityFileTimelineSample } from "./stream-metadata";
@@ -59,6 +55,9 @@ export interface ActivityFileStreamDerivedCalculationsInput
   activityStartedAt: Date;
   segmentStartOffsetSeconds: number;
   segmentEndOffsetSeconds: number;
+  /** Bound to the accepted segment revision again at the transactional write boundary. */
+  sourceArtifactId?: string;
+  sourceRevision?: number;
   swimmingEvidenceContext?:
     | {
         environment: "pool";
@@ -152,6 +151,7 @@ function extractMetricBestEfforts(input: {
   includedTimeline: readonly boolean[] | undefined;
   valueFor: (sample: ActivityFileTimelineSample) => number | null;
   unpositionedValueCount: number;
+  durationsSeconds?: number[];
 }): BestEffortExtractionResult {
   return extractBestEfforts({
     metric: input.metric,
@@ -160,7 +160,10 @@ function extractMetricBestEfforts(input: {
       value: input.valueFor(sample),
       ...inclusionAt(input.includedTimeline, index),
     })),
-    config: { unpositionedValueCount: input.unpositionedValueCount },
+    config: {
+      unpositionedValueCount: input.unpositionedValueCount,
+      ...(input.durationsSeconds === undefined ? {} : { durationsSeconds: input.durationsSeconds }),
+    },
   });
 }
 
@@ -191,6 +194,13 @@ function calculateBestEffortExtractions(input: {
         includedTimeline,
         valueFor: (sample) => sample.speedMetersPerSecond,
         unpositionedValueCount: metadata.unpositionedValueCounts.speed,
+        ...(activityCategory === "swim"
+          ? {
+              durationsSeconds: [...STANDARD_BEST_EFFORT_DURATIONS_SECONDS, 900].sort(
+                (left, right) => left - right,
+              ),
+            }
+          : {}),
       }),
     );
   }
@@ -367,16 +377,6 @@ function extractionForMetric(
   return extractions.find((extraction) => extraction.metric === metric) ?? null;
 }
 
-function numericEffort(
-  extraction: BestEffortExtractionResult | null,
-  durationSeconds: number,
-): NumericBestEffortResult | null {
-  const result = extraction?.results.find(
-    (candidate) => candidate.durationSeconds === durationSeconds,
-  );
-  return result === undefined || result.status === "unavailable" ? null : result;
-}
-
 function selectedEffortEvidence(input: {
   activityCategory: CanonicalActivityCategory;
   extractions: readonly BestEffortExtractionResult[];
@@ -396,18 +396,10 @@ function selectedEffortEvidence(input: {
   if (input.activityCategory === "bike") addAllNumeric("power");
   if (input.activityCategory === "swim") addAllNumeric("speed");
   if (input.activityCategory === "run") {
-    const raw = extractionForMetric(input.extractions, "speed");
-    const graded = extractionForMetric(input.extractions, "grade_adjusted_speed");
-    if (raw !== null) {
-      for (const rawResult of raw.results) {
-        const gradedResult = numericEffort(graded, rawResult.durationSeconds);
-        if (graded !== null && gradedResult !== null) {
-          selected.push({ extraction: graded, result: gradedResult });
-        } else if (rawResult.status !== "unavailable") {
-          selected.push({ extraction: raw, result: rawResult });
-        }
-      }
-    }
+    // Persist both measurements independently. Core owns preferred/fallback
+    // selection later, including every grade-adjusted rejection reason.
+    addAllNumeric("grade_adjusted_speed");
+    addAllNumeric("speed");
   }
   addAllNumeric("heart_rate");
   return selected;
@@ -456,8 +448,11 @@ function buildActivityFileBestEffortRow(
         ? "raw_speed"
         : input.activityCategory === "swim"
           ? "swim_speed"
-          : extraction.metric
+          : null
       : extraction.metric;
+  if (sourceSeries === null) {
+    throw new Error("Best-effort source series is incompatible with its activity category");
+  }
   return {
     id,
     created_at: new Date(),
@@ -467,8 +462,14 @@ function buildActivityFileBestEffortRow(
     recorded_at: new Date(effort.endTimestampSeconds * 1_000),
     activity_category: input.activityCategory,
     effort_type: effortType,
+    source_series: sourceSeries,
     duration_seconds: effort.durationSeconds,
-    start_offset: Math.floor(activityStartOffsetSeconds + TIMESTAMP_COMPARISON_EPSILON_SECONDS),
+    source_artifact_id: input.sourceArtifactId ?? "00000000-0000-0000-0000-000000000000",
+    source_revision: input.sourceRevision ?? 1,
+    start_offset_ms: Math.round(activityStartOffsetSeconds * 1_000),
+    end_offset_ms: Math.round(activityStartOffsetSeconds * 1_000) + effort.durationSeconds * 1_000,
+    window_coverage: effort.windowCoverage,
+    max_gap_seconds: extraction.maxGapSeconds,
     unit: extraction.unit,
     value: effort.value,
     source: "imported",
@@ -498,7 +499,7 @@ function buildActivityFileBestEffortRow(
           }),
       extraction_status: effort.status,
       extraction_reason: effort.status === "partial" ? effort.reason : null,
-      persisted_start_offset_quantization: "floor_seconds_v1",
+      persisted_start_offset_quantization: "nearest_millisecond_v1",
       calculation_version: extraction.calculationVersion,
       ...(input.activityCategory === "swim" && input.swimmingEvidenceContext
         ? {
@@ -619,86 +620,12 @@ function buildActivityFileBestEffortRows(
     );
 }
 
-function buildActivityFileSwimDistanceEffortRow(
-  input: ActivityFileStreamDerivedCalculationsInput,
-): typeof activityEfforts.$inferInsert | null {
-  if (
-    input.activityCategory !== "swim" ||
-    (input.distance !== 400 && input.distance !== 200) ||
-    input.activeDuration === null ||
-    input.activeDuration === undefined ||
-    !Number.isInteger(input.activeDuration) ||
-    input.activeDuration <= 0 ||
-    input.activeDuration > 14_400
-  ) {
-    return null;
-  }
-  const speedMetersPerSecond = input.distance / input.activeDuration;
-  if (
-    classifyActivityEffortPlausibility({
-      activityCategory: "swim",
-      effortType: "speed",
-      durationSeconds: input.activeDuration,
-      value: speedMetersPerSecond,
-    }).classification === "hard-invalid"
-  ) {
-    return null;
-  }
-  const id = randomUUID();
-  const activityStartedAtSeconds = input.activityStartedAt.getTime() / 1_000;
-  if (!Number.isFinite(activityStartedAtSeconds)) {
-    throw new Error("Activity start must be a valid instant for swim-distance provenance");
-  }
-  const context = input.swimmingEvidenceContext;
-  return {
-    id,
-    created_at: new Date(),
-    activity_id: input.activityId,
-    segment_id: input.segmentId,
-    profile_id: input.profileId,
-    recorded_at: new Date((activityStartedAtSeconds + input.segmentEndOffsetSeconds) * 1_000),
-    activity_category: "swim",
-    effort_type: "speed",
-    duration_seconds: input.activeDuration,
-    distance_meters: input.distance,
-    start_offset: Math.floor(
-      input.segmentStartOffsetSeconds + TIMESTAMP_COMPARISON_EPSILON_SECONDS,
-    ),
-    unit: "meters_per_second",
-    value: speedMetersPerSecond,
-    source: "imported",
-    method: SWIMMING_CSS_SOURCE_EFFORT_METHOD,
-    calculation_version: SWIMMING_CSS_SOURCE_EFFORT_CALCULATION_VERSION,
-    provenance: {
-      observation_id: id,
-      protocol_id: swimmingCssProtocolIdForActivity(input.activityId),
-      protocol: "css_400m_200m",
-      activity_id: input.activityId,
-      segment_id: input.segmentId,
-      derived_from: "activity_file_swim_segment",
-      source_series: "swim_distance",
-      distance_meters: input.distance,
-      active_duration_seconds: input.activeDuration,
-      segment_start_offset_ms: Math.round(input.segmentStartOffsetSeconds * 1_000),
-      segment_end_offset_ms: Math.round(input.segmentEndOffsetSeconds * 1_000),
-      environment: context?.environment ?? "unresolved",
-      timing_basis: context?.timingBasis ?? "unresolved",
-      pool_length_meters: context?.poolLengthMeters ?? null,
-      calculation_version: SWIMMING_CSS_SOURCE_EFFORT_CALCULATION_VERSION,
-    },
-  };
-}
-
 export function calculateActivityFileStreamDerivedCalculations(
   input: ActivityFileStreamDerivedCalculationsInput,
 ): ActivityFileStreamDerivedCalculations {
   const metrics = calculateActivityFileStreamDerivedMetrics(input);
-  const swimDistanceEffort = buildActivityFileSwimDistanceEffortRow(input);
   return {
     ...metrics,
-    effortsToInsert: [
-      ...buildActivityFileBestEffortRows(input, metrics.bestEffortExtractions),
-      ...(swimDistanceEffort === null ? [] : [swimDistanceEffort]),
-    ],
+    effortsToInsert: buildActivityFileBestEffortRows(input, metrics.bestEffortExtractions),
   };
 }

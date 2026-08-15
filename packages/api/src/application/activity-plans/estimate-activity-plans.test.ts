@@ -83,7 +83,7 @@ describe("estimateActivityPlans", () => {
     expect(estimated?.prescriptionQuantification.members).toHaveLength(1);
   });
 
-  it("does not estimate current facts from a stale published target revision", async () => {
+  it("does not invent a threshold when a stale projection contains unavailable facts", async () => {
     publishedState.readPublishedAthletePerformanceTargets.mockResolvedValue({
       status: "stale",
       targets: createUnavailableAthletePerformanceTargetFacts(asOf.toISOString(), plan.profile_id),
@@ -91,9 +91,7 @@ describe("estimateActivityPlans", () => {
 
     const [estimated] = await estimateActivityPlans([plan], {} as never, plan.profile_id, { asOf });
 
-    expect(estimated?.prescriptionQuantification.summary.duration.elapsed.status).toBe(
-      "unavailable",
-    );
+    expect(estimated?.prescriptionQuantification.summary.commonLoad.status).toBe("unavailable");
     expect(estimated).not.toHaveProperty("estimation_warnings");
   });
 
@@ -106,9 +104,8 @@ describe("estimateActivityPlans", () => {
     const confirmed = buildPerformanceTargetFactsFixture({
       asOf: asOf.toISOString(),
       athleteId: plan.profile_id,
-      planningThresholdPowerWatts: 250,
+      bikeThresholdWatts: 250,
     });
-    const fact = confirmed.cycling.planningThresholdPower;
     const targets =
       state === "confirmed"
         ? confirmed
@@ -116,26 +113,17 @@ describe("estimateActivityPlans", () => {
           ? createUnavailableAthletePerformanceTargetFacts(asOf.toISOString(), plan.profile_id)
           : athletePerformanceTargetFactsSchema.parse({
               ...confirmed,
-              cycling: {
-                planningThresholdPower:
-                  state === "provisional"
-                    ? {
-                        ...fact,
-                        status: "partial",
-                        calibrationState: "provisional",
-                        confidence: "low",
-                      }
-                    : {
-                        ...fact,
-                        status: "available",
-                        calibrationState: "stale",
-                        confidence: "low",
-                        reasons: ["stale_evidence"],
-                      },
+              thresholds: {
+                ...confirmed.thresholds,
+                bike: {
+                  ...confirmed.thresholds.bike,
+                  state: state === "provisional" ? "provisional" : "confirmed",
+                  freshness: state === "stale" ? "stale" : "fresh",
+                },
               },
             });
     publishedState.readPublishedAthletePerformanceTargets.mockResolvedValue({
-      status: "available",
+      status: state === "stale" ? "stale" : "available",
       targets,
     });
 

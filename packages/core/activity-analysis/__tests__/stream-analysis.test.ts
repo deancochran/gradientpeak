@@ -171,7 +171,7 @@ describe("analyzeActivityStreams", () => {
     expect(result.distributions.swim_pace.quality.reason).toBe("activity_category_mismatch");
   });
 
-  it("integrates all swimming pace zones against CSS speed", () => {
+  it("integrates all swimming pace zones against swim threshold speed", () => {
     const result = analyzeActivityStreams({
       records: [1.1, 1.3, 1.4, 1.5, 1.6, 1.6].map((speed, index) => ({
         timestamp: index * 10,

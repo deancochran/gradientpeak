@@ -10,9 +10,10 @@ import { selectCyclingNormalizedPowerWatts } from "../../calculations/normalized
 import { getNormalizedIntensity } from "../../load";
 import {
   type AthletePerformanceTargetFacts,
-  athletePerformanceTargetFactsSchema,
   createUnavailableAthletePerformanceTargetFacts,
 } from "../../performance-model";
+import { buildPerformanceTargetFactsFixture } from "../../testing/performance-model";
+import { secondsPerKilometerToMetersPerSecond } from "../../units";
 import {
   calculateProvisionalRecordingMetrics,
   createProvisionalRecordingMetricsAccumulator,
@@ -25,75 +26,19 @@ const STARTED_AT = "2026-07-31T10:00:00.000Z";
 const STARTED_AT_MS = Date.parse(STARTED_AT);
 
 function performanceTargets(options: {
-  planningThresholdPowerWatts?: number;
+  bikeThresholdWatts?: number;
   bikeLthrBpm?: number;
   runLthrBpm?: number;
-  planningThresholdPaceSecondsPerKm?: number;
-  swimmingCssSecondsPer100m?: number;
+  runThresholdMetersPerSecond?: number;
+  swimThresholdMetersPerSecond?: number;
 }): AthletePerformanceTargetFacts {
-  const unavailable = createUnavailableAthletePerformanceTargetFacts(STARTED_AT);
-  const target = <T extends { value: number | null }>(
-    fact: T,
-    value: number | undefined,
-    evidenceId: string,
-  ) =>
-    value === undefined
-      ? fact
-      : {
-          ...fact,
-          status: "available" as const,
-          value,
-          calculationVersion: "recording-metrics-test-v1",
-          sourceEvidenceIds: [evidenceId],
-          evidenceTime: {
-            observedFrom: "2026-07-30T10:00:00.000Z",
-            observedThrough: "2026-07-30T10:00:00.000Z",
-            computedAt: STARTED_AT,
-          },
-          confidence: "high" as const,
-          expiresAt: "2026-10-29T10:00:00.000Z",
-          reasons: [],
-        };
-  const lthr = (activityCategory: "bike" | "run", valueBpm: number | undefined) =>
-    valueBpm === undefined
-      ? unavailable.heartRate[activityCategory].lthr
-      : {
-          ...unavailable.heartRate[activityCategory].lthr,
-          status: "available" as const,
-          valueBpm,
-          observedAt: "2026-07-30T10:00:00.000Z",
-          expiresAt: "2026-10-28T10:00:00.000Z",
-          sourceEvidenceId: `${activityCategory}-lthr`,
-          sourceActivityId: `${activityCategory}-activity`,
-          source: "activity_file" as const,
-          method: "activity_file_lthr_detection" as const,
-          calculationVersion: "activity-file-lthr-v1" as const,
-          reason: null,
-        };
-  return athletePerformanceTargetFactsSchema.parse({
-    ...unavailable,
-    cycling: {
-      planningThresholdPower: target(
-        unavailable.cycling.planningThresholdPower,
-        options.planningThresholdPowerWatts,
-        "cycling-planning-threshold-power",
-      ),
-    },
-    running: {
-      planningThresholdPace: target(
-        unavailable.running.planningThresholdPace,
-        options.planningThresholdPaceSecondsPerKm,
-        "running-planning-threshold-pace",
-      ),
-    },
-    swimming: {
-      css: target(unavailable.swimming.css, options.swimmingCssSecondsPer100m, "swimming-css"),
-    },
-    heartRate: {
-      ...unavailable.heartRate,
-      bike: { ...unavailable.heartRate.bike, lthr: lthr("bike", options.bikeLthrBpm) },
-      run: { ...unavailable.heartRate.run, lthr: lthr("run", options.runLthrBpm) },
-    },
+  return buildPerformanceTargetFactsFixture({
+    asOf: STARTED_AT,
+    thresholdEffectiveAt: "2026-07-30T10:00:00.000Z",
+    bikeThresholdWatts: options.bikeThresholdWatts,
+    runThresholdMetersPerSecond: options.runThresholdMetersPerSecond,
+    swimThresholdMetersPerSecond: options.swimThresholdMetersPerSecond,
+    lthrBpm: { bike: options.bikeLthrBpm, run: options.runLthrBpm },
   });
 }
 
@@ -191,7 +136,7 @@ describe("provisional recording metrics accumulator", () => {
 
   it("emits one-hour threshold work only as provisional Common Load", () => {
     const snapshot = calculateProvisionalRecordingMetrics({
-      config: bikeConfig(performanceTargets({ planningThresholdPowerWatts: 250 })),
+      config: bikeConfig(performanceTargets({ bikeThresholdWatts: 250 })),
       samples: constantSamples({ seconds: 3600, powerWatts: 250 }),
     });
 
@@ -219,7 +164,7 @@ describe("provisional recording metrics accumulator", () => {
       moving: second <= 1_800,
     }));
     const snapshot = calculateProvisionalRecordingMetrics({
-      config: bikeConfig(performanceTargets({ planningThresholdPowerWatts: 250 })),
+      config: bikeConfig(performanceTargets({ bikeThresholdWatts: 250 })),
       samples,
     });
 
@@ -244,7 +189,7 @@ describe("provisional recording metrics accumulator", () => {
       sample.timestampMs > STARTED_AT_MS + 2880 * 1000 ? { ...sample, powerWatts: null } : sample,
     );
     const snapshot = calculateProvisionalRecordingMetrics({
-      config: bikeConfig(performanceTargets({ planningThresholdPowerWatts: 250 })),
+      config: bikeConfig(performanceTargets({ bikeThresholdWatts: 250 })),
       samples,
     });
 
@@ -271,9 +216,7 @@ describe("provisional recording metrics accumulator", () => {
         sample.timestampMs > STARTED_AT_MS + 1800 * 1000 ? { ...sample, powerWatts: null } : sample,
     );
     const snapshot = calculateProvisionalRecordingMetrics({
-      config: bikeConfig(
-        performanceTargets({ planningThresholdPowerWatts: 250, bikeLthrBpm: 170 }),
-      ),
+      config: bikeConfig(performanceTargets({ bikeThresholdWatts: 250, bikeLthrBpm: 170 })),
       samples,
     });
 
@@ -346,12 +289,13 @@ describe("provisional recording metrics accumulator", () => {
 
   it("adapts run threshold pace into provisional Common Load", () => {
     const thresholdPaceSecondsPerKm = 300;
-    const thresholdSpeedMps = 1000 / thresholdPaceSecondsPerKm;
+    const thresholdSpeedMps = secondsPerKilometerToMetersPerSecond(thresholdPaceSecondsPerKm);
     const snapshot = calculateProvisionalRecordingMetrics({
       config: {
         activityCategory: "run",
         performanceTargets: performanceTargets({
-          planningThresholdPaceSecondsPerKm: thresholdPaceSecondsPerKm,
+          runThresholdMetersPerSecond:
+            secondsPerKilometerToMetersPerSecond(thresholdPaceSecondsPerKm),
         }),
         recordingSessionId: "run-session",
       },
@@ -442,7 +386,9 @@ describe("provisional recording metrics accumulator", () => {
         config: {
           activityCategory: "run",
           performanceTargets: performanceTargets({
-            planningThresholdPaceSecondsPerKm: fixture.thresholdPaceSecondsPerKm,
+            runThresholdMetersPerSecond: secondsPerKilometerToMetersPerSecond(
+              fixture.thresholdPaceSecondsPerKm,
+            ),
           }),
           recordingSessionId: `run-${fixture.expected.status}`,
         },
@@ -498,7 +444,7 @@ describe("provisional recording metrics accumulator", () => {
     const snapshot = calculateProvisionalRecordingMetrics({
       config: {
         activityCategory: "swim",
-        performanceTargets: performanceTargets({ swimmingCssSecondsPer100m: 120 }),
+        performanceTargets: performanceTargets({ swimThresholdMetersPerSecond: 100 / 120 }),
         recordingSessionId: "swim-session",
       },
       samples,
@@ -528,7 +474,7 @@ describe("provisional recording metrics accumulator", () => {
     });
 
     const outOfRange = calculateProvisionalRecordingMetrics({
-      config: bikeConfig(performanceTargets({ planningThresholdPowerWatts: 100 })),
+      config: bikeConfig(performanceTargets({ bikeThresholdWatts: 100 })),
       samples: constantSamples({ seconds: 60, powerWatts: 200 }),
     });
     expect(outOfRange.commonLoad).toMatchObject({
@@ -543,7 +489,7 @@ describe("provisional recording metrics accumulator", () => {
 
   it("restores observed duration and distance without inventing recovered load evidence", () => {
     const accumulator = createProvisionalRecordingMetricsAccumulator(
-      bikeConfig(performanceTargets({ planningThresholdPowerWatts: 250 })),
+      bikeConfig(performanceTargets({ bikeThresholdWatts: 250 })),
     );
     accumulator.restoreObservations({
       elapsedSeconds: 120,
@@ -570,16 +516,16 @@ describe("provisional recording metrics accumulator", () => {
   });
 
   it("retains its immutable performance-target copy and matches incremental replay", () => {
-    const sourcePerformanceTargets = performanceTargets({ planningThresholdPowerWatts: 250 });
+    const sourcePerformanceTargets = performanceTargets({ bikeThresholdWatts: 250 });
     const config = bikeConfig(sourcePerformanceTargets);
     const samples = constantSamples({ seconds: 3600, powerWatts: 250 });
     const accumulator = createProvisionalRecordingMetricsAccumulator(config);
-    sourcePerformanceTargets.cycling.planningThresholdPower.value = 500;
+    sourcePerformanceTargets.thresholds.bike.value = 500;
 
     for (const sample of samples) accumulator.addSample(sample);
     const incremental = accumulator.getSnapshot();
     const replay = calculateProvisionalRecordingMetrics({
-      config: bikeConfig(performanceTargets({ planningThresholdPowerWatts: 250 })),
+      config: bikeConfig(performanceTargets({ bikeThresholdWatts: 250 })),
       samples,
     });
 

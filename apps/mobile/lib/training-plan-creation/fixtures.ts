@@ -8,28 +8,31 @@ import type {
 
 const activityPlanId = "11111111-1111-4111-8111-111111111111";
 const fixtureAsOf = "2026-01-01T12:00:00.000Z";
-const unavailableTargets = createUnavailableAthletePerformanceTargetFacts(fixtureAsOf);
+const performanceTargets = materializeAthletePerformanceTargetFacts({
+  athleteId: "training-plan-builder-fixture",
+  asOf: fixtureAsOf,
+  thresholds: [
+    {
+      id: "builder-fixture-threshold-power",
+      status: "available",
+      activityCategory: "bike",
+      metric: "power",
+      unit: "watts",
+      method: "bike_power_30m",
+      value: 250,
+      effectiveAt: "2025-12-31T12:00:00.000Z",
+      policyVersion: "threshold-policy-v1",
+      state: "confirmed",
+      confidence: 0.9,
+      sourceEvaluationIds: ["builder-fixture-evaluation"],
+      sourceEffortIds: ["builder-fixture-effort"],
+      sourceActivityIds: ["builder-fixture-activity"],
+    },
+  ],
+});
 const prescriptionQuantification = estimateActivityPlanForTrainingContext({
   asOf: fixtureAsOf,
-  performanceTargets: {
-    ...unavailableTargets,
-    cycling: {
-      planningThresholdPower: {
-        ...unavailableTargets.cycling.planningThresholdPower,
-        status: "available",
-        value: 250,
-        calculationVersion: "builder-fixture-v1",
-        sourceEvidenceIds: ["builder-fixture-threshold-power"],
-        evidenceTime: {
-          observedFrom: "2025-12-31T12:00:00.000Z",
-          observedThrough: "2025-12-31T12:00:00.000Z",
-          computedAt: fixtureAsOf,
-        },
-        confidence: "high",
-        reasons: [],
-      },
-    },
-  },
+  performanceTargets,
   planId: activityPlanId,
   structure: {
     version: 3,
@@ -146,6 +149,6 @@ export function createTrainingPlanBuilderFixtures() {
 }
 
 import {
-  createUnavailableAthletePerformanceTargetFacts,
   estimateActivityPlanForTrainingContext,
+  materializeAthletePerformanceTargetFacts,
 } from "@repo/core";

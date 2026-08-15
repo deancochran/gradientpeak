@@ -29,6 +29,13 @@ const coachingAuthorityReadOnlyTables = [
   "organization_audit_events",
 ] as const;
 const coachingAuthorityReadOnlyTableSet = new Set<string>(coachingAuthorityReadOnlyTables);
+const immutableDerivedTables = [
+  "activity_efforts",
+  "threshold_evaluations",
+  "threshold_evaluation_efforts",
+  "thresholds",
+] as const;
+const immutableDerivedTableSet = new Set<string>(immutableDerivedTables);
 
 type SequenceSecurityRow = {
   sequence_name: string;
@@ -112,6 +119,14 @@ async function main() {
     if (coachingAuthorityReadOnlyTableSet.size !== coachingAuthorityReadOnlyTables.length) {
       throw new Error("coaching read-only ACL allowlist contains duplicate table names");
     }
+    const missingImmutableTables = immutableDerivedTables.filter(
+      (tableName) => !tableNames.has(tableName),
+    );
+    if (missingImmutableTables.length > 0) {
+      throw new Error(
+        `immutable derived ACL allowlist has missing or stale table names: ${missingImmutableTables.join(", ")}`,
+      );
+    }
 
     for (const row of tables.rows) {
       if (!row.rls_enabled) throw new Error(`table ${row.table_name}: expected RLS enabled`);
@@ -134,6 +149,26 @@ async function main() {
         ) {
           throw new Error(
             `table ${row.table_name}: service_role must not have explicit INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER ACLs`,
+          );
+        }
+        continue;
+      }
+
+      if (immutableDerivedTableSet.has(row.table_name)) {
+        if (!row.service_role_select_explicit || !row.service_role_insert_explicit) {
+          throw new Error(
+            `table ${row.table_name}: expected explicit service_role SELECT/INSERT ACLs`,
+          );
+        }
+        if (
+          row.service_role_update_explicit ||
+          row.service_role_delete_explicit ||
+          row.service_role_truncate_explicit ||
+          row.service_role_references_explicit ||
+          row.service_role_trigger_explicit
+        ) {
+          throw new Error(
+            `table ${row.table_name}: immutable derived table must be service_role INSERT/SELECT-only`,
           );
         }
         continue;
@@ -279,7 +314,7 @@ async function main() {
     }
 
     console.log(
-      `[db:security:check] ${tables.rows.length - 1} application tables (${coachingAuthorityReadOnlyTables.length} coaching read-only ACL tables) and ${sequences.rows.length - 1} application sequences passed catalog ACL, RLS, and switched-role behavior checks`,
+      `[db:security:check] ${tables.rows.length - 1} application tables (${coachingAuthorityReadOnlyTables.length} coaching read-only, ${immutableDerivedTables.length} immutable derived) and ${sequences.rows.length - 1} application sequences passed catalog ACL, RLS, and switched-role behavior checks`,
     );
   } finally {
     await client.query("rollback").catch(() => undefined);

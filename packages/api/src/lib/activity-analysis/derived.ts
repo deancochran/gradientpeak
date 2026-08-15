@@ -659,19 +659,22 @@ function completedLoadPerformanceTargetUnavailableReason(
     | null,
 ): "evidence_truncated" | "stale_threshold" | null {
   if (!performanceTargets) return null;
-  const reasons =
+  const thresholdFact =
     method === "power_threshold"
-      ? performanceTargets.cycling.planningThresholdPower.reasons
+      ? performanceTargets.thresholds.bike
       : method === "run_pace_threshold"
-        ? performanceTargets.running.planningThresholdPace.reasons
+        ? performanceTargets.thresholds.run
         : method === "swim_pace_threshold"
-          ? performanceTargets.swimming.css.reasons
-          : method === "heart_rate_zones" &&
-              (activityCategory === "bike" ||
-                activityCategory === "run" ||
-                activityCategory === "swim")
-            ? [performanceTargets.heartRate[activityCategory].lthr.reason]
-            : [];
+          ? performanceTargets.thresholds.swim
+          : null;
+  if (thresholdFact?.status === "available") {
+    return thresholdFact.freshness === "stale" ? "stale_threshold" : null;
+  }
+  const reasons =
+    method === "heart_rate_zones" &&
+    (activityCategory === "bike" || activityCategory === "run" || activityCategory === "swim")
+      ? [performanceTargets.heartRate[activityCategory].lthr.reason]
+      : [];
   if (reasons.some((reason) => reason?.includes("truncated"))) return "evidence_truncated";
   return reasons.some((reason) => reason?.includes("stale")) ? "stale_threshold" : null;
 }

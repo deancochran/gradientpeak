@@ -51,6 +51,7 @@ async function publishDueAthleteState(now: Date) {
 
 function cyclingEfforts(input: {
   activityId: string;
+  artifactId: string;
   bias: "long" | "short";
   completedAt: Date;
   profileId: string;
@@ -70,15 +71,20 @@ function cyclingEfforts(input: {
     return {
       id,
       created_at: input.completedAt,
-      updated_at: input.completedAt,
       profile_id: input.profileId,
       activity_id: input.activityId,
       segment_id: input.segmentId,
       recorded_at: input.completedAt,
       activity_category: "bike",
       effort_type: "power",
+      source_series: "power",
       duration_seconds: durationSeconds,
-      start_offset: startOffsetSeconds,
+      source_artifact_id: input.artifactId,
+      source_revision: 1,
+      start_offset_ms: startOffsetSeconds * 1_000,
+      end_offset_ms: endOffsetSeconds * 1_000,
+      window_coverage: 1,
+      max_gap_seconds: 2,
       unit: "watts",
       value:
         (shortDurationPower.get(durationSeconds) ?? 240 + 24_000 / durationSeconds) *
@@ -245,6 +251,7 @@ function lthrSubmission(input: {
           ? []
           : cyclingEfforts({
               activityId,
+              artifactId,
               bias: input.powerBias ?? "short",
               completedAt: input.completedAt,
               profileId: input.owner.profileId,

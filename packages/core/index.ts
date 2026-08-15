@@ -31,23 +31,6 @@ export {
   parsePace,
   speedToPace,
 } from "./calculations/speed-curve";
-export type {
-  CssCalculationResult,
-  CssTestObservationInput,
-  CssTestProtocolInput,
-  CssTestProtocolResult,
-  CssTestTimesInput,
-} from "./calculations/swim-pace-curve";
-export {
-  CSS_CALCULATION_VERSION,
-  CSS_TEST_PROTOCOL,
-  calculateCssFrom400m200mTest,
-  cssTestProtocolSchema,
-  cssTestTimesSchema,
-  evaluateCssFrom400m200mTest,
-  pacePerHundredMetersToSpeed,
-  speedToPacePerHundredMeters,
-} from "./calculations/swim-pace-curve";
 export * from "./recording";
 
 // ============================================================================

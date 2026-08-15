@@ -92,8 +92,6 @@ function thresholdReferenceLabel(
       return "Critical Power";
     case "threshold_speed":
       return "threshold speed";
-    case "css":
-      return "CSS";
     case "lthr":
       return "LTHR";
     case "provider_threshold":

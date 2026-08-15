@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  athletePerformanceTargetFactsSchema,
-  createUnavailableAthletePerformanceTargetFacts,
-} from "../performance-model";
+import { materializeAthletePerformanceTargetFacts } from "../performance-model";
 import { createAthletePlanningContextFromSnapshot } from "./athletePlanningContext";
 import {
   applyEstimatedSessionActivityFacts,
@@ -11,46 +8,48 @@ import {
   plannedTrainingSessionSchema,
 } from "./planningSessions";
 
-function targets(asOf: string, values: { bike?: number; run?: number } = {}) {
-  const unavailable = createUnavailableAthletePerformanceTargetFacts(asOf);
-  const available = <T extends { value: number | null }>(
-    fact: T,
-    value: number | undefined,
-    evidenceId: string,
-  ) =>
-    value === undefined
-      ? fact
-      : {
-          ...fact,
-          status: "available" as const,
-          value,
-          calculationVersion: "planning-sessions-test-v1",
-          sourceEvidenceIds: [evidenceId],
-          evidenceTime: {
-            observedFrom: "2026-07-10T12:00:00.000Z",
-            observedThrough: "2026-07-10T12:00:00.000Z",
-            computedAt: asOf,
-          },
-          confidence: "high" as const,
-          expiresAt: "2026-10-10T12:00:00.000Z",
-          reasons: [],
-        };
-  return athletePerformanceTargetFactsSchema.parse({
-    ...unavailable,
-    cycling: {
-      planningThresholdPower: available(
-        unavailable.cycling.planningThresholdPower,
-        values.bike,
-        "planning-bike-power",
-      ),
-    },
-    running: {
-      planningThresholdPace: available(
-        unavailable.running.planningThresholdPace,
-        values.run,
-        "planning-run-pace",
-      ),
-    },
+function targets(
+  asOf: string,
+  values: { bikeThresholdWatts?: number; runThresholdMetersPerSecond?: number } = {},
+) {
+  return materializeAthletePerformanceTargetFacts({
+    athleteId: "planning-session-athlete",
+    asOf,
+    thresholds: [
+      ...(values.bikeThresholdWatts === undefined
+        ? []
+        : [
+            {
+              activityCategory: "bike" as const,
+              metric: "power" as const,
+              unit: "watts" as const,
+              method: "bike_power_30m" as const,
+              value: values.bikeThresholdWatts,
+            },
+          ]),
+      ...(values.runThresholdMetersPerSecond === undefined
+        ? []
+        : [
+            {
+              activityCategory: "run" as const,
+              metric: "speed" as const,
+              unit: "meters_per_second" as const,
+              method: "run_speed_30m" as const,
+              value: values.runThresholdMetersPerSecond,
+            },
+          ]),
+    ].map((threshold) => ({
+      ...threshold,
+      id: `${threshold.activityCategory}-planning-threshold`,
+      status: "available" as const,
+      effectiveAt: "2026-07-10T12:00:00.000Z",
+      policyVersion: "threshold-policy-v1",
+      state: "confirmed" as const,
+      confidence: 0.9,
+      sourceEvaluationIds: [`${threshold.activityCategory}-planning-evaluation`],
+      sourceEffortIds: [`${threshold.activityCategory}-planning-effort`],
+      sourceActivityIds: [`${threshold.activityCategory}-planning-activity`],
+    })),
   });
 }
 
@@ -61,7 +60,7 @@ describe("planningSessions", () => {
       asOf,
       profile: null,
       profileMetrics: [],
-      performanceTargets: targets(asOf, { run: 250 }),
+      performanceTargets: targets(asOf, { runThresholdMetersPerSecond: 4 }),
       activityEfforts: [
         {
           activity_category: "run",
@@ -268,7 +267,7 @@ describe("planningSessions", () => {
       profile: null,
       profileMetrics: [],
       activityEfforts: [],
-      performanceTargets: targets(asOf, { bike: 250 }),
+      performanceTargets: targets(asOf, { bikeThresholdWatts: 250 }),
     });
     const abstainingContext = createAthletePlanningContextFromSnapshot({
       asOf,
@@ -316,7 +315,7 @@ describe("planningSessions", () => {
       profile: null,
       profileMetrics: [],
       activityEfforts: [],
-      performanceTargets: targets(asOf, { bike: 250 }),
+      performanceTargets: targets(asOf, { bikeThresholdWatts: 250 }),
     });
     const session = plannedTrainingSessionSchema.parse({
       localId: "session-bike",

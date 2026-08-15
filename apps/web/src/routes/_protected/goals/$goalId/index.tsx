@@ -11,7 +11,7 @@ import {
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useRef, useState } from "react";
 
@@ -59,16 +59,31 @@ function GoalDetailPage() {
       />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <a href="/goals" className="text-sm text-primary">
+          <Link
+            to="/goals"
+            className="text-sm text-primary"
+            search={{
+              category: undefined,
+              flash: undefined,
+              flashType: undefined,
+              q: "",
+              sort: "target_date",
+            }}
+          >
             Back to goals
-          </a>
+          </Link>
           <h1 className="mt-2 text-3xl font-semibold">{goal.title}</h1>
         </div>
         <div className="flex gap-2">
           <Button asChild>
-            <a data-testid={`goal-edit-${goal.id}`} href={`/goals/${goal.id}/edit`}>
+            <Link
+              data-testid={`goal-edit-${goal.id}`}
+              to="/goals/$goalId/edit"
+              params={{ goalId: goal.id }}
+              search={{ flash: undefined, flashType: undefined }}
+            >
               Edit
-            </a>
+            </Link>
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>

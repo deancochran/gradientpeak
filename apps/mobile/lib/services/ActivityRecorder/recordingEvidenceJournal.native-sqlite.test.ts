@@ -1,8 +1,15 @@
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
+import { CURRENT_CONTRACT_EPOCH } from "@repo/api/contract-epoch";
+import { createUnavailableAthletePerformanceTargetFacts } from "@repo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("expo-sqlite", () => ({ openDatabaseAsync: vi.fn() }));
+const sqliteMocks = vi.hoisted(() => ({
+  deleteDatabaseAsync: vi.fn(),
+  openDatabaseAsync: vi.fn(),
+}));
+
+vi.mock("expo-sqlite", () => sqliteMocks);
 vi.mock("expo-crypto", () => ({
   CryptoDigestAlgorithm: { SHA256: "SHA-256" },
   digestStringAsync: vi.fn(async (_algorithm: string, value: string) =>
@@ -10,9 +17,15 @@ vi.mock("expo-crypto", () => ({
   ),
 }));
 
+import { createContractEpochInitializer } from "../../contract-epoch/contractEpochReset";
 import { loadDueActivitySubmissionQueueJobs } from "../activitySubmissionQueue/storage";
 import { activitySubmissionQueueJobSchema } from "../activitySubmissionQueue/types";
-import { validateStoredRecordingEvidenceCheckpoint } from "./checkpointStorage";
+import {
+  inspectRecordingCheckpoint,
+  persistRecordingCheckpoint,
+  type UnplannedRecordingCheckpoint,
+  validateStoredRecordingEvidenceCheckpoint,
+} from "./checkpointStorage";
 import {
   allocateRecordingEvidenceSession,
   claimRecordingEvidenceCheckpoint,
@@ -38,15 +51,16 @@ import {
   type RecordingEvidenceSqlExecutor,
   readRecordingEvidenceCheckpoint,
   releaseRecordingEvidenceCheckpointClaim,
+  resetRecordingEvidenceJournal,
   resetRecordingEvidenceJournalForTests,
   retryAcceptedRecordingEvidenceCleanup,
   rollbackRecordingEvidenceSession,
   setRecordingEvidenceDatabaseForTests,
 } from "./recordingEvidenceJournal";
 
-function unplannedCheckpoint(sessionId: string, profileId: string) {
+function unplannedCheckpoint(sessionId: string, profileId: string): UnplannedRecordingCheckpoint {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     variant: "unplanned",
     sessionId,
     profileId,
@@ -56,6 +70,10 @@ function unplannedCheckpoint(sessionId: string, profileId: string) {
     draft: { activity_category: "run", gpsMode: "off" },
     summary: { elapsedSeconds: 1, movingSeconds: 1, distanceMeters: 0 },
     executionState: { timerEvents: [] },
+    performanceTargets: createUnavailableAthletePerformanceTargetFacts(
+      "2026-01-01T10:00:00.000Z",
+      profileId,
+    ),
     streamArtifactPaths: ["file:///streams/checkpoint"],
   };
 }
@@ -115,6 +133,180 @@ describe("recording evidence native SQLite schema", () => {
     resetRecordingEvidenceJournalForTests();
     close?.();
     close = undefined;
+    sqliteMocks.deleteDatabaseAsync.mockReset();
+    sqliteMocks.openDatabaseAsync.mockReset();
+  });
+
+  it("hard-resets epoch-1 v4 evidence before epoch-2 startup and preserves a new v5 recording on repeat startup", async () => {
+    expect(CURRENT_CONTRACT_EPOCH).toBe(2);
+    const transitionOrder: string[] = [];
+    const legacy = await nativeExecutor();
+    const current = await nativeExecutor();
+    close = current.close;
+    let legacyClosed = false;
+    const legacyHandle: RecordingEvidenceSqlExecutor & { closeAsync: () => Promise<void> } = {
+      ...legacy.executor,
+      closeAsync: async () => {
+        transitionOrder.push("close-v4");
+        legacyClosed = true;
+        legacy.close();
+      },
+    };
+    const currentHandle: RecordingEvidenceSqlExecutor & { closeAsync: () => Promise<void> } = {
+      ...current.executor,
+      closeAsync: async () => current.close(),
+    };
+    await legacy.executor.execAsync(`CREATE TABLE recording_evidence_sessions (
+      session_id TEXT PRIMARY KEY NOT NULL,
+      profile_id TEXT NOT NULL,
+      state TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      checkpoint_json TEXT,
+      checkpoint_digest TEXT
+    );
+    CREATE TABLE recording_stream_envelopes (
+      session_id TEXT NOT NULL,
+      stream_kind TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      stream_order INTEGER NOT NULL,
+      timestamp INTEGER NOT NULL,
+      payload TEXT NOT NULL,
+      byte_size INTEGER NOT NULL,
+      sha256 TEXT NOT NULL,
+      commit_marker TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      PRIMARY KEY (session_id, stream_kind, sequence)
+    );
+    CREATE TABLE activity_submission_queue_jobs (
+      id TEXT PRIMARY KEY NOT NULL,
+      session_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      job_json TEXT NOT NULL
+    );
+    PRAGMA user_version = 4;`);
+    const legacyCheckpoint = JSON.stringify({
+      schemaVersion: 4,
+      variant: "unplanned",
+      sessionId: "legacy-active",
+      profileId: "profile-epoch-upgrade",
+      lifecycle: "recording",
+      revision: 3,
+      start: {
+        startedAt: "2026-01-01T10:00:00.000Z",
+        updatedAt: "2026-01-01T10:05:00.000Z",
+      },
+      performanceTargets: {
+        contractVersion: "athlete-performance-target-facts-v2",
+        athleteId: "profile-epoch-upgrade",
+        asOf: "2026-01-01T10:00:00.000Z",
+      },
+    });
+    await legacy.executor.runAsync(
+      "INSERT INTO recording_evidence_sessions (session_id, profile_id, state, created_at, checkpoint_json, checkpoint_digest) VALUES (?, ?, 'active', ?, ?, ?)",
+      "legacy-active",
+      "profile-epoch-upgrade",
+      1,
+      legacyCheckpoint,
+      createHash("sha256").update(legacyCheckpoint).digest("hex"),
+    );
+    await legacy.executor.runAsync(
+      "INSERT INTO recording_stream_envelopes VALUES (?, 'power', 0, 0, 1, ?, ?, ?, 'stream-committed-v1', 1)",
+      "legacy-active",
+      '{"watts":200}',
+      13,
+      createHash("sha256").update('{"watts":200}').digest("hex"),
+    );
+    await legacy.executor.runAsync(
+      "INSERT INTO recording_evidence_sessions (session_id, profile_id, state, created_at) VALUES (?, ?, 'finalized', ?)",
+      "legacy-unsent",
+      "profile-epoch-upgrade",
+      2,
+    );
+    await legacy.executor.runAsync(
+      "INSERT INTO activity_submission_queue_jobs VALUES (?, ?, 'pending', ?)",
+      "legacy-job",
+      "legacy-unsent",
+      '{"schemaVersion":1}',
+    );
+    expect(
+      await legacy.executor.getAllAsync<{ user_version: number }>("PRAGMA user_version"),
+    ).toEqual([{ user_version: 4 }]);
+    expect(
+      await legacy.executor.getAllAsync<{ session_id: string }>(
+        "SELECT session_id FROM recording_evidence_sessions ORDER BY session_id",
+      ),
+    ).toEqual([{ session_id: "legacy-active" }, { session_id: "legacy-unsent" }]);
+
+    setRecordingEvidenceDatabaseForTests(legacyHandle);
+    sqliteMocks.deleteDatabaseAsync.mockImplementation(async () => {
+      transitionOrder.push("delete-v4");
+    });
+    sqliteMocks.openDatabaseAsync.mockImplementation(async () => {
+      transitionOrder.push("open-v5");
+      return currentHandle;
+    });
+    let marker: string | null = "1";
+    const resetRecordingEvidence = vi.fn(async () => {
+      transitionOrder.push("reset-start");
+      await resetRecordingEvidenceJournal();
+      transitionOrder.push("reset-complete");
+    });
+    const initializeEpoch = createContractEpochInitializer({
+      getMarker: async () => marker,
+      setMarker: async (value) => {
+        marker = value;
+        transitionOrder.push(`marker-${value}`);
+      },
+      clearOnboardingRecovery: async () => undefined,
+      clearSecureAuthState: async () => undefined,
+      resetRecordingEvidence,
+      clearAppStorage: async () => undefined,
+      cleanupStreamFiles: async () => undefined,
+      cleanupFitFiles: async () => undefined,
+      cleanupLocation: async () => undefined,
+    });
+
+    await expect(initializeEpoch()).resolves.toBe("reset");
+    expect(legacyClosed).toBe(true);
+    expect(transitionOrder).toEqual([
+      "reset-start",
+      "close-v4",
+      "delete-v4",
+      "open-v5",
+      "reset-complete",
+      "marker-2",
+    ]);
+    expect(
+      await current.executor.getAllAsync<{ user_version: number }>("PRAGMA user_version"),
+    ).toEqual([{ user_version: 5 }]);
+    expect(
+      await current.executor.getAllAsync("SELECT session_id FROM recording_evidence_sessions"),
+    ).toEqual([]);
+    expect(
+      await current.executor.getAllAsync("SELECT id FROM activity_submission_queue_jobs"),
+    ).toEqual([]);
+    await expect(inspectRecordingCheckpoint("profile-epoch-upgrade")).resolves.toEqual({
+      status: "none",
+    });
+
+    const checkpoint = unplannedCheckpoint("epoch-2-v5", "profile-epoch-upgrade");
+    await allocateRecordingEvidenceSession({
+      sessionId: checkpoint.sessionId,
+      profileId: checkpoint.profileId,
+    });
+    await persistRecordingCheckpoint(checkpoint);
+    await expect(inspectRecordingCheckpoint(checkpoint.profileId)).resolves.toEqual({
+      status: "recovered",
+      checkpoint,
+    });
+
+    await expect(initializeEpoch()).resolves.toBe("current");
+    expect(resetRecordingEvidence).toHaveBeenCalledTimes(1);
+    expect(sqliteMocks.deleteDatabaseAsync).toHaveBeenCalledTimes(1);
+    await expect(inspectRecordingCheckpoint(checkpoint.profileId)).resolves.toEqual({
+      status: "recovered",
+      checkpoint,
+    });
   });
 
   it("creates the current schema from version zero and reopens it with constraints and foreign keys", async () => {

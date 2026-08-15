@@ -1,8 +1,12 @@
 import { reconcileOnboardingStatus } from "../../application/onboarding/readiness";
-import { finalizePerformanceCalibrationsAfterHistoryImport } from "../../application/performance-model/reconcile-performance-calibrations";
+import { finalizeThresholdsAfterHistoryImport } from "../../application/performance-model/reconcile-thresholds";
 import type { getRequiredDb } from "../../db";
 import type { WahooIntegrationRecord, WahooSyncRepository } from "../../repositories";
-import type { createActivityImportRepository } from "../../repositories/activity-import-repository";
+import type {
+  ActivityImportSkipDiagnostic,
+  ActivityImportSkipReasonCode,
+  createActivityImportRepository,
+} from "../../repositories/activity-import-repository";
 import { isWahooIntegrationEnabled } from "../integrations/oauth-config";
 import {
   getWahooActivityStartedAtFailureReason,
@@ -37,6 +41,34 @@ function boundedImportTelemetryCount(value: number) {
 }
 const DEFAULT_PAGE_SIZE = 30;
 const MAX_PAGES_PER_LEASE = 4;
+
+function skippedImportReason(reason: string | undefined): ActivityImportSkipReasonCode {
+  switch (reason) {
+    case "Activity already imported":
+      return "already_imported";
+    case "Activity artifact format is unsupported":
+    case "Activity file semantics are unsupported":
+      return "unsupported_activity_file";
+    case "Activity persistence semantics are unsupported":
+      return "unsupported_activity_invariant";
+    case "Provider activity resolves to an existing canonical activity":
+      return "canonical_identity_mismatch";
+    case "Canonical activity evidence was unchanged":
+      return "canonical_evidence_unchanged";
+    default:
+      return "unspecified";
+  }
+}
+
+function skippedImportDiagnostic(
+  summaryId: unknown,
+  reason: string | undefined,
+): ActivityImportSkipDiagnostic | null {
+  if (typeof summaryId !== "number" || !Number.isSafeInteger(summaryId) || summaryId < 0) {
+    return null;
+  }
+  return { providerExternalId: String(summaryId), reason: skippedImportReason(reason) };
+}
 
 class StaleIntegrationGenerationError extends Error {
   constructor() {
@@ -423,6 +455,7 @@ export class WahooActivityHistoryJobService {
               let imported = 0;
               let skipped = 0;
               let failed = 0;
+              const skippedDiagnostics: ActivityImportSkipDiagnostic[] = [];
               let firstFailureCode: WahooActivityImportErrorCode | null = null;
               let earliestTimestamp: number | null = null;
               let latestTimestamp: number | null = null;
@@ -468,6 +501,7 @@ export class WahooActivityHistoryJobService {
                     integrationId: job.integrationId,
                     importRunId: run.id,
                     deferAthleteStateRefresh: true,
+                    deferPerformanceCalibration: true,
                     signal,
                   },
                 );
@@ -479,8 +513,11 @@ export class WahooActivityHistoryJobService {
                     jobFamily: "activity_history",
                     provider: "wahoo",
                   });
-                } else if (result.skipped) skipped += 1;
-                else imported += 1;
+                } else if (result.skipped) {
+                  skipped += 1;
+                  const diagnostic = skippedImportDiagnostic(importSummary.id, result.reason);
+                  if (diagnostic) skippedDiagnostics.push(diagnostic);
+                } else imported += 1;
                 const startedAtTimestamp = Date.parse(startedAt as string);
                 earliestTimestamp =
                   earliestTimestamp === null
@@ -506,6 +543,7 @@ export class WahooActivityHistoryJobService {
                 discovered: pageResult.sourceCount,
                 imported,
                 skipped,
+                skippedDiagnostics,
                 failed,
                 earliestActivityAt: earliestTimestamp === null ? null : new Date(earliestTimestamp),
                 latestActivityAt: latestTimestamp === null ? null : new Date(latestTimestamp),
@@ -533,7 +571,7 @@ export class WahooActivityHistoryJobService {
               run.id,
               completionNow,
               (tx, lockedRun) =>
-                finalizePerformanceCalibrationsAfterHistoryImport(tx, {
+                finalizeThresholdsAfterHistoryImport(tx, {
                   profileId: lockedRun.profile_id,
                   asOf: lockedRun.window_end_at ?? completionNow,
                   now: completionNow,

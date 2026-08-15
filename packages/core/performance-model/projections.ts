@@ -1,181 +1,190 @@
 import { z } from "zod";
 
 import {
-  type CalibrationIdentity,
-  type CalibrationRecord,
-  calibrationStateForSelection,
-  calibrationTrendSchema,
+  getThresholdActivityCategoryPolicy,
+  thresholdActivityCategorySchema,
+  thresholdMethodSchema,
+  thresholdMetricSchema,
+  thresholdUnitSchema,
 } from "../performance-calibration";
 import {
-  type AthletePerformanceModelSnapshot,
+  type AthleteHeartRateCalibrationFacts,
   athleteHeartRateCalibrationFactsSchema,
-  athletePerformanceModelSnapshotSchema,
   HEART_RATE_CALIBRATION_POLICY_VERSION,
   heartRateCalibrationFactSchema,
 } from "./contracts";
 
 export const ATHLETE_PERFORMANCE_TARGET_FACTS_VERSION =
-  "athlete-performance-target-facts-v1" as const;
+  "athlete-performance-target-facts-v3" as const;
 
 const opaqueIdSchema = z.string().trim().min(1).max(256);
 const dateTimeSchema = z.string().datetime({ offset: true });
-const confidenceSchema = z.enum(["high", "medium", "low", "unavailable"]);
-const usableConfidenceSchema = confidenceSchema.exclude(["unavailable"]);
-const targetCalibrationTrendSchema = calibrationTrendSchema.or(z.literal("unavailable"));
 
-/**
- * Inclusive bounds of the canonical observations supporting one target plus the
- * deterministic model instant. The request `asOf` is an evidence cutoff; it is
- * never substituted for either observation bound.
- */
-export const performanceTargetEvidenceTimeSchema = z
+export const performanceThresholdSourceFactSchema = z
   .object({
-    observedFrom: dateTimeSchema.nullable(),
-    observedThrough: dateTimeSchema.nullable(),
-    computedAt: dateTimeSchema,
+    id: opaqueIdSchema,
+    status: z.literal("available"),
+    activityCategory: thresholdActivityCategorySchema,
+    metric: thresholdMetricSchema,
+    unit: thresholdUnitSchema,
+    method: thresholdMethodSchema,
+    value: z.number().finite().positive(),
+    effectiveAt: dateTimeSchema,
+    policyVersion: z.string().trim().min(1).max(128),
+    state: z.enum(["provisional", "confirmed"]),
+    confidence: z.number().finite().min(0).max(1),
+    sourceEvaluationIds: z.array(opaqueIdSchema).min(1).max(8),
+    sourceEffortIds: z.array(opaqueIdSchema).min(1).max(8),
+    sourceActivityIds: z.array(opaqueIdSchema).min(1).max(8),
   })
   .strict()
-  .superRefine((time, context) => {
-    if ((time.observedFrom === null) !== (time.observedThrough === null)) {
+  .superRefine((fact, context) => {
+    if (
+      fact.sourceEvaluationIds.length !== fact.sourceEffortIds.length ||
+      fact.sourceEvaluationIds.length !== fact.sourceActivityIds.length
+    ) {
       context.addIssue({
         code: "custom",
-        message: "Performance-target observation bounds must both be present or both be null",
-      });
-      return;
-    }
-    if (time.observedFrom === null || time.observedThrough === null) return;
-    if (Date.parse(time.observedFrom) > Date.parse(time.observedThrough)) {
-      context.addIssue({
-        code: "custom",
-        path: ["observedThrough"],
-        message: "Performance-target observation bounds must be chronological",
-      });
-    }
-    if (Date.parse(time.observedThrough) > Date.parse(time.computedAt)) {
-      context.addIssue({
-        code: "custom",
-        path: ["computedAt"],
-        message: "A performance target cannot be computed before its supporting evidence",
+        path: ["sourceEvaluationIds"],
+        message: "Threshold evaluation, effort, and activity provenance must align",
       });
     }
   });
 
-function targetFactSchema<T extends z.ZodType>(valueSchema: T, unit: string) {
-  const metadata = {
-    unit: z.literal(unit),
-    calculationVersion: z.string().trim().min(1),
-    calibrationId: opaqueIdSchema.nullable().default(null),
-    sourceEvidenceIds: z
-      .array(opaqueIdSchema)
-      .max(2_000)
-      .refine((ids) => new Set(ids).size === ids.length, {
-        message: "Performance-target source evidence IDs must be unique",
-      }),
-    evidenceTime: performanceTargetEvidenceTimeSchema,
-    expiresAt: dateTimeSchema.nullable(),
-    reasons: z.array(z.string().trim().min(1)).max(16),
-    evidenceCount: z.number().int().nonnegative().max(64).default(0),
-    trend: targetCalibrationTrendSchema.default("unavailable"),
-  };
-  return z
-    .discriminatedUnion("status", [
-      z
-        .object({
-          status: z.literal("available"),
-          calibrationState: z
-            .enum(["provisional", "confirmed", "stale", "unavailable"])
-            .default("confirmed"),
-          value: valueSchema,
-          confidence: usableConfidenceSchema,
-          ...metadata,
-        })
-        .strict(),
-      z
-        .object({
-          status: z.literal("partial"),
-          calibrationState: z
-            .enum(["provisional", "confirmed", "stale", "unavailable"])
-            .default("provisional"),
-          value: valueSchema,
-          confidence: usableConfidenceSchema,
-          ...metadata,
-        })
-        .strict(),
-      z
-        .object({
-          status: z.literal("unavailable"),
-          calibrationState: z
-            .enum(["provisional", "confirmed", "stale", "unavailable"])
-            .default("unavailable"),
-          value: z.null(),
-          confidence: z.literal("unavailable"),
-          ...metadata,
-        })
-        .strict(),
-    ])
-    .superRefine((fact, context) => {
-      const hasEvidence = fact.sourceEvidenceIds.length > 0;
-      const hasObservationBounds = fact.evidenceTime.observedFrom !== null;
-      if (hasEvidence !== hasObservationBounds) {
-        context.addIssue({
-          code: "custom",
-          path: ["evidenceTime"],
-          message: "Performance-target evidence IDs and observation bounds must agree",
-        });
-      }
-      if (fact.status !== "unavailable" && !hasEvidence) {
-        context.addIssue({
-          code: "custom",
-          path: ["evidenceTime"],
-          message: "Usable performance targets require canonical evidence and observation bounds",
-        });
-      }
-    });
-}
+const unavailableThresholdFactSchema = z
+  .object({
+    status: z.literal("unavailable"),
+    activityCategory: thresholdActivityCategorySchema,
+    metric: thresholdMetricSchema,
+    unit: thresholdUnitSchema,
+    thresholdId: z.null(),
+    evaluationId: z.null(),
+    method: z.null(),
+    value: z.null(),
+    effectiveAt: z.null(),
+    confidence: z.null(),
+    state: z.literal("unavailable"),
+    policyVersion: z.null(),
+    calculationVersion: z.null(),
+    freshness: z.literal("unavailable"),
+    ageSeconds: z.null(),
+    freshForSeconds: z.null(),
+    sourceEvaluationIds: z.tuple([]),
+    sourceEffortIds: z.tuple([]),
+    sourceActivityIds: z.tuple([]),
+    reason: z.literal("threshold_unavailable"),
+  })
+  .strict();
 
-export const planningThresholdPowerFactSchema = targetFactSchema(
-  z.number().finite().positive(),
-  "watts",
-);
-export const planningThresholdPaceFactSchema = targetFactSchema(
-  z.number().finite().positive(),
-  "seconds_per_kilometer",
-);
-export const swimmingCssFactSchema = targetFactSchema(
-  z.number().finite().positive(),
-  "seconds_per_100_meters",
-);
+const availableThresholdFactSchema = z
+  .object({
+    status: z.literal("available"),
+    activityCategory: thresholdActivityCategorySchema,
+    metric: thresholdMetricSchema,
+    unit: thresholdUnitSchema,
+    thresholdId: opaqueIdSchema,
+    evaluationId: opaqueIdSchema,
+    method: thresholdMethodSchema,
+    value: z.number().finite().positive(),
+    effectiveAt: dateTimeSchema,
+    confidence: z.number().finite().min(0).max(1),
+    state: z.enum(["provisional", "confirmed"]),
+    policyVersion: z.string().trim().min(1).max(128),
+    calculationVersion: z.string().trim().min(1).max(128),
+    freshness: z.enum(["fresh", "stale"]),
+    ageSeconds: z.number().int().nonnegative(),
+    freshForSeconds: z.number().int().positive(),
+    sourceEvaluationIds: z.array(opaqueIdSchema).min(1).max(8),
+    sourceEffortIds: z.array(opaqueIdSchema).min(1).max(8),
+    sourceActivityIds: z.array(opaqueIdSchema).min(1).max(8),
+    reason: z.null(),
+  })
+  .strict()
+  .superRefine((fact, context) => {
+    if (!fact.sourceEvaluationIds.includes(fact.evaluationId)) {
+      context.addIssue({
+        code: "custom",
+        path: ["evaluationId"],
+        message: "The selected threshold evaluation must remain in its source evaluation set",
+      });
+    }
+    if (
+      fact.sourceEvaluationIds.length !== fact.sourceEffortIds.length ||
+      fact.sourceEvaluationIds.length !== fact.sourceActivityIds.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["sourceEvaluationIds"],
+        message: "Threshold evaluation, effort, and activity provenance must align",
+      });
+    }
+  });
 
+export const performanceThresholdFactSchema = z.discriminatedUnion("status", [
+  availableThresholdFactSchema,
+  unavailableThresholdFactSchema,
+]);
+
+const thresholdFactsByActivityCategorySchema = z
+  .object({
+    bike: performanceThresholdFactSchema,
+    run: performanceThresholdFactSchema,
+    swim: performanceThresholdFactSchema,
+  })
+  .strict();
+
+/** Canonical, native-unit public target truth at one requested instant. */
 export const athletePerformanceTargetFactsSchema = z
   .object({
     contractVersion: z.literal(ATHLETE_PERFORMANCE_TARGET_FACTS_VERSION),
     athleteId: opaqueIdSchema,
     asOf: dateTimeSchema,
-    cycling: z.object({ planningThresholdPower: planningThresholdPowerFactSchema }).strict(),
-    running: z.object({ planningThresholdPace: planningThresholdPaceFactSchema }).strict(),
-    swimming: z.object({ css: swimmingCssFactSchema }).strict(),
+    thresholds: thresholdFactsByActivityCategorySchema,
     heartRate: athleteHeartRateCalibrationFactsSchema,
   })
   .strict()
   .superRefine((facts, context) => {
-    const factsByPath = [
-      ["cycling", "planningThresholdPower", facts.cycling.planningThresholdPower],
-      ["running", "planningThresholdPace", facts.running.planningThresholdPace],
-      ["swimming", "css", facts.swimming.css],
-    ] as const;
-    for (const [category, target, fact] of factsByPath) {
-      if (Date.parse(fact.evidenceTime.computedAt) !== Date.parse(facts.asOf)) {
+    const asOfMs = Date.parse(facts.asOf);
+    for (const activityCategory of thresholdActivityCategorySchema.options) {
+      const fact = facts.thresholds[activityCategory];
+      const policy = getThresholdActivityCategoryPolicy(activityCategory);
+      if (
+        fact.activityCategory !== activityCategory ||
+        fact.metric !== policy.metric ||
+        fact.unit !== policy.unit
+      ) {
         context.addIssue({
           code: "custom",
-          path: [category, target, "evidenceTime", "computedAt"],
-          message: "Performance-target computation must retain the snapshot model instant",
+          path: ["thresholds", activityCategory],
+          message:
+            "Threshold facts must retain their canonical activity category, metric, and unit identity",
         });
+      }
+      if (fact.status === "available" && Date.parse(fact.effectiveAt) > asOfMs) {
+        context.addIssue({
+          code: "custom",
+          path: ["thresholds", activityCategory, "effectiveAt"],
+          message: "An as-of threshold fact cannot come from the future",
+        });
+      }
+      const heartRateFacts = facts.heartRate[activityCategory];
+      for (const [metric, heartRateFact] of [
+        ["lthr", heartRateFacts.lthr],
+        ["maxHr", heartRateFacts.maxHr],
+      ] as const) {
+        if (heartRateFact.status === "available" && Date.parse(heartRateFact.observedAt) > asOfMs) {
+          context.addIssue({
+            code: "custom",
+            path: ["heartRate", activityCategory, metric, "observedAt"],
+            message: "An as-of heart-rate fact cannot come from the future",
+          });
+        }
       }
     }
   });
 
 export const COMPLETED_ACTIVITY_PERFORMANCE_TARGET_SNAPSHOT_VERSION =
-  "completed-activity-performance-target-snapshot-v1" as const;
+  "completed-activity-performance-target-snapshot-v2" as const;
 
 /** Immutable server capture used by completed analysis instead of mutable current calibration. */
 export const completedActivityPerformanceTargetSnapshotSchema = z
@@ -188,9 +197,7 @@ export const completedActivityPerformanceTargetSnapshotSchema = z
   })
   .strict();
 
-export type PerformanceTargetFact = z.infer<typeof planningThresholdPowerFactSchema>;
-
-/** A source-validated numeric calibration is usable regardless of lifecycle metadata. */
+/** A source-validated numeric target is usable even when its freshness is stale. */
 export function getAvailablePerformanceTargetValue(fact: {
   status: "available" | "partial" | "unavailable";
   value: number | null;
@@ -203,143 +210,40 @@ export function getAvailablePerformanceTargetValue(fact: {
     : null;
 }
 
-/** Explicit fail-closed target DTO for surfaces that cannot load the as-of model. */
-export function createUnavailableAthletePerformanceTargetFacts(
-  asOf: string,
-  athleteId = "unavailable-athlete",
-): AthletePerformanceTargetFacts {
-  const unavailableTarget = (unit: string) => ({
-    status: "unavailable" as const,
-    calibrationState: "unavailable" as const,
-    value: null,
-    unit,
-    calculationVersion: ATHLETE_PERFORMANCE_TARGET_FACTS_VERSION,
-    calibrationId: null,
-    sourceEvidenceIds: [],
-    evidenceTime: { observedFrom: null, observedThrough: null, computedAt: asOf },
-    confidence: "unavailable" as const,
-    expiresAt: null,
-    reasons: ["performance_model_unavailable"],
-    evidenceCount: 0,
-    trend: "unavailable" as const,
-  });
-  const unavailableHeartRate = (
-    activityCategory: "bike" | "run" | "swim",
-    metric: "lthr" | "max_hr",
-  ) => ({
-    status: "unavailable" as const,
-    calibrationState: "unavailable" as const,
-    activityCategory,
-    metric,
-    unit: "beats_per_minute" as const,
-    policyVersion: HEART_RATE_CALIBRATION_POLICY_VERSION,
-    valueBpm: null,
-    observedAt: null,
-    expiresAt: null,
-    sourceEvidenceId: null,
-    sourceActivityId: null,
-    source: null,
-    method: null,
-    calculationVersion: null,
-    reason: "no_eligible_evidence" as const,
-    evidenceCount: 0,
-    trend: "unavailable" as const,
-  });
-  return athletePerformanceTargetFactsSchema.parse({
-    contractVersion: ATHLETE_PERFORMANCE_TARGET_FACTS_VERSION,
-    athleteId,
-    asOf,
-    cycling: { planningThresholdPower: unavailableTarget("watts") },
-    running: { planningThresholdPace: unavailableTarget("seconds_per_kilometer") },
-    swimming: { css: unavailableTarget("seconds_per_100_meters") },
-    heartRate: Object.fromEntries(
-      (["bike", "run", "swim"] as const).map((activityCategory) => [
-        activityCategory,
-        {
-          lthr: unavailableHeartRate(activityCategory, "lthr"),
-          maxHr: unavailableHeartRate(activityCategory, "max_hr"),
-        },
-      ]),
-    ),
-  });
-}
-
-function findCalibration(
-  calibrations: readonly CalibrationRecord[],
-  identity: CalibrationIdentity,
-) {
-  return calibrations.find(
-    (calibration) =>
-      calibration.identity.metricKey === identity.metricKey &&
-      calibration.identity.activityCategory === identity.activityCategory,
-  );
-}
-
-function targetFactFromCalibration(
-  calibration: CalibrationRecord | undefined,
-  unit: "watts" | "seconds_per_kilometer" | "seconds_per_100_meters",
-  computedAt: string,
-  transform: (value: number) => number,
-) {
-  if (!calibration) {
-    return {
-      status: "unavailable" as const,
-      calibrationState: "unavailable" as const,
-      value: null,
-      unit,
-      calculationVersion: ATHLETE_PERFORMANCE_TARGET_FACTS_VERSION,
-      calibrationId: null,
-      sourceEvidenceIds: [],
-      evidenceTime: { observedFrom: null, observedThrough: null, computedAt },
-      confidence: "unavailable" as const,
-      expiresAt: null,
-      reasons: ["calibration_unavailable"],
-      evidenceCount: 0,
-      trend: "unavailable" as const,
-    };
-  }
-  const sourceEvidenceIds = calibration.selectionDiagnostics.selectedEvidenceIds;
-  const calibrationState = calibrationStateForSelection(calibration, computedAt);
-  const observedAt = sourceEvidenceIds.length > 0 ? calibration.effectiveAt : null;
-  const metadata = {
-    unit,
-    calculationVersion: calibration.policyVersion,
-    calibrationId: calibration.id,
-    sourceEvidenceIds,
-    evidenceTime: {
-      observedFrom: observedAt,
-      observedThrough: observedAt,
-      computedAt,
-    },
-    expiresAt: calibration.expiresAt,
-    reasons: calibrationState === "stale" ? ["stale_evidence"] : [],
-    evidenceCount: calibration.selectionDiagnostics.evidenceCount,
-    trend: calibration.selectionDiagnostics.trend,
-  };
+function unavailableThresholdFact(activityCategory: "bike" | "run" | "swim") {
+  const policy = getThresholdActivityCategoryPolicy(activityCategory);
   return {
-    status: "available" as const,
-    calibrationState,
-    value: transform(calibration.value),
-    confidence: calibrationState === "confirmed" ? ("high" as const) : ("low" as const),
-    ...metadata,
+    status: "unavailable" as const,
+    activityCategory,
+    metric: policy.metric,
+    unit: policy.unit,
+    thresholdId: null,
+    evaluationId: null,
+    method: null,
+    value: null,
+    effectiveAt: null,
+    confidence: null,
+    state: "unavailable" as const,
+    policyVersion: null,
+    calculationVersion: null,
+    freshness: "unavailable" as const,
+    ageSeconds: null,
+    freshForSeconds: null,
+    sourceEvaluationIds: [] as [],
+    sourceEffortIds: [] as [],
+    sourceActivityIds: [] as [],
+    reason: "threshold_unavailable" as const,
   };
 }
 
-function lthrFactFromCalibration(
-  calibration: CalibrationRecord | undefined,
-  activityCategory: "bike" | "run",
-  computedAt: string,
-) {
-  const calibrationState = calibration
-    ? calibrationStateForSelection(calibration, computedAt)
-    : "unavailable";
-  if (!calibration) {
-    return heartRateCalibrationFactSchema.parse({
+function unavailableHeartRateFacts(): AthleteHeartRateCalibrationFacts {
+  const unavailable = (activityCategory: "bike" | "run" | "swim", metric: "lthr" | "max_hr") =>
+    heartRateCalibrationFactSchema.parse({
       status: "unavailable",
-      calibrationState,
+      calibrationState: "unavailable",
       calibrationId: null,
       activityCategory,
-      metric: "lthr",
+      metric,
       unit: "beats_per_minute",
       policyVersion: HEART_RATE_CALIBRATION_POLICY_VERSION,
       valueBpm: null,
@@ -353,107 +257,106 @@ function lthrFactFromCalibration(
       reason: "no_eligible_evidence",
       evidenceCount: 0,
       trend: "unavailable",
+      ageSeconds: null,
+      freshness: "unavailable",
+      sourceSemantics: "unavailable",
+      evaluationSemantics: "unavailable",
     });
-  }
-  const sourceEvidenceId = calibration.selectionDiagnostics.selectedEvidenceIds.at(-1);
-  const sourceActivityId = calibration.selectionDiagnostics.selectedActivityIds.at(-1);
-  return heartRateCalibrationFactSchema.parse({
-    status: "available",
-    calibrationState,
-    calibrationId: calibration.id,
-    activityCategory,
-    metric: "lthr",
-    unit: "beats_per_minute",
-    policyVersion: calibration.policyVersion,
-    valueBpm: calibration.value,
-    observedAt: calibration.effectiveAt,
-    expiresAt: calibration.expiresAt,
-    sourceEvidenceId,
-    sourceActivityId,
-    source: "activity_file",
-    method: "performance_calibration",
-    calculationVersion: calibration.policyVersion,
-    reason: null,
-    evidenceCount: calibration.selectionDiagnostics.evidenceCount,
-    trend: calibration.selectionDiagnostics.trend,
-  });
+  return athleteHeartRateCalibrationFactsSchema.parse(
+    Object.fromEntries(
+      (["bike", "run", "swim"] as const).map((activityCategory) => [
+        activityCategory,
+        {
+          lthr: unavailable(activityCategory, "lthr"),
+          maxHr: unavailable(activityCategory, "max_hr"),
+        },
+      ]),
+    ),
+  );
 }
 
-/** Compact, lossless-for-targeting projection with lifecycle state retained as metadata. */
-export function projectAthletePerformanceTargetFacts(
-  input: AthletePerformanceModelSnapshot,
-): z.infer<typeof athletePerformanceTargetFactsSchema> {
-  const snapshot = athletePerformanceModelSnapshotSchema.parse(input);
-  const bikePowerCalibration = findCalibration(snapshot.calibrations, {
-    metricKey: "threshold_power",
-    activityCategory: "bike",
-  });
-  const runSpeedCalibration = findCalibration(snapshot.calibrations, {
-    metricKey: "threshold_speed",
-    activityCategory: "run",
-  });
-  const swimSpeedCalibration = findCalibration(snapshot.calibrations, {
-    metricKey: "threshold_speed",
-    activityCategory: "swim",
-  });
+export function createUnavailableAthletePerformanceTargetFacts(
+  asOf: string,
+  athleteId = "unavailable-athlete",
+): AthletePerformanceTargetFacts {
   return athletePerformanceTargetFactsSchema.parse({
     contractVersion: ATHLETE_PERFORMANCE_TARGET_FACTS_VERSION,
-    athleteId: snapshot.athleteId,
-    asOf: snapshot.asOf,
-    cycling: {
-      planningThresholdPower: targetFactFromCalibration(
-        bikePowerCalibration,
-        "watts",
-        snapshot.asOf,
-        (value) => value,
-      ),
+    athleteId,
+    asOf,
+    thresholds: {
+      bike: unavailableThresholdFact("bike"),
+      run: unavailableThresholdFact("run"),
+      swim: unavailableThresholdFact("swim"),
     },
-    running: {
-      planningThresholdPace: targetFactFromCalibration(
-        runSpeedCalibration,
-        "seconds_per_kilometer",
-        snapshot.asOf,
-        (value) => 1_000 / value,
-      ),
-    },
-    swimming: {
-      css: targetFactFromCalibration(
-        swimSpeedCalibration,
-        "seconds_per_100_meters",
-        snapshot.asOf,
-        (value) => 100 / value,
-      ),
-    },
-    heartRate: {
-      ...snapshot.heartRate,
-      bike: {
-        ...snapshot.heartRate.bike,
-        lthr: lthrFactFromCalibration(
-          findCalibration(snapshot.calibrations, {
-            metricKey: "threshold_heart_rate",
-            activityCategory: "bike",
-          }),
-          "bike",
-          snapshot.asOf,
-        ),
-      },
-      run: {
-        ...snapshot.heartRate.run,
-        lthr: lthrFactFromCalibration(
-          findCalibration(snapshot.calibrations, {
-            metricKey: "threshold_heart_rate",
-            activityCategory: "run",
-          }),
-          "run",
-          snapshot.asOf,
-        ),
-      },
-    },
+    heartRate: unavailableHeartRateFacts(),
   });
 }
 
+/**
+ * Materializes latest-as-of persistence facts into the sole public target contract.
+ * Freshness and age are always recomputed from effectiveAt and the requested asOf.
+ */
+export function materializeAthletePerformanceTargetFacts(input: {
+  athleteId: string;
+  asOf: string;
+  thresholds: readonly z.input<typeof performanceThresholdSourceFactSchema>[];
+  heartRate?: AthleteHeartRateCalibrationFacts;
+}): AthletePerformanceTargetFacts {
+  const asOfMs = Date.parse(input.asOf);
+  if (!Number.isFinite(asOfMs)) throw new Error("Target-fact asOf is invalid");
+  const result = createUnavailableAthletePerformanceTargetFacts(input.asOf, input.athleteId);
+  if (input.heartRate)
+    result.heartRate = athleteHeartRateCalibrationFactsSchema.parse(input.heartRate);
+  for (const unknownThreshold of input.thresholds) {
+    const threshold = performanceThresholdSourceFactSchema.parse(unknownThreshold);
+    const policy = getThresholdActivityCategoryPolicy(threshold.activityCategory);
+    if (
+      threshold.metric !== policy.metric ||
+      threshold.unit !== policy.unit ||
+      threshold.method !== policy.method
+    ) {
+      throw new Error("Threshold fact does not match its canonical activity-category policy");
+    }
+    if (result.thresholds[threshold.activityCategory].status === "available") {
+      throw new Error(`Threshold fact is duplicated for ${threshold.activityCategory}`);
+    }
+    const effectiveAtMs = Date.parse(threshold.effectiveAt);
+    if (!Number.isFinite(effectiveAtMs) || effectiveAtMs > asOfMs) {
+      throw new Error("Threshold fact is invalid or comes from the future");
+    }
+    const evaluationId = threshold.sourceEvaluationIds.at(-1);
+    if (!evaluationId) throw new Error("Threshold fact has no selected evaluation");
+    const ageSeconds = Math.floor((asOfMs - effectiveAtMs) / 1_000);
+    const freshForSeconds = policy.freshnessDays * 86_400;
+    result.thresholds[threshold.activityCategory] = performanceThresholdFactSchema.parse({
+      status: "available",
+      activityCategory: threshold.activityCategory,
+      metric: threshold.metric,
+      unit: threshold.unit,
+      thresholdId: threshold.id,
+      evaluationId,
+      method: threshold.method,
+      value: threshold.value,
+      effectiveAt: threshold.effectiveAt,
+      confidence: threshold.confidence,
+      state: threshold.state,
+      policyVersion: threshold.policyVersion,
+      calculationVersion: threshold.policyVersion,
+      freshness: ageSeconds < freshForSeconds ? "fresh" : "stale",
+      ageSeconds,
+      freshForSeconds,
+      sourceEvaluationIds: threshold.sourceEvaluationIds,
+      sourceEffortIds: threshold.sourceEffortIds,
+      sourceActivityIds: threshold.sourceActivityIds,
+      reason: null,
+    });
+  }
+  return athletePerformanceTargetFactsSchema.parse(result);
+}
+
+export type PerformanceThresholdFact = z.infer<typeof performanceThresholdFactSchema>;
+export type PerformanceThresholdSourceFact = z.infer<typeof performanceThresholdSourceFactSchema>;
 export type AthletePerformanceTargetFacts = z.infer<typeof athletePerformanceTargetFactsSchema>;
-export type PerformanceTargetEvidenceTime = z.infer<typeof performanceTargetEvidenceTimeSchema>;
 export type CompletedActivityPerformanceTargetSnapshot = z.infer<
   typeof completedActivityPerformanceTargetSnapshotSchema
 >;

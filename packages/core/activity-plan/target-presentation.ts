@@ -32,7 +32,7 @@ function abstractLabel(target: ActivityPlanTarget): string {
   }
 }
 
-function isConfirmedAvailable(
+function isConfirmedHeartRate(
   fact: { status: string; calibrationState: string; expiresAt: string | null },
   asOf: string,
 ): boolean {
@@ -41,6 +41,10 @@ function isConfirmedAvailable(
     fact.calibrationState === "confirmed" &&
     (fact.expiresAt === null || Date.parse(fact.expiresAt) >= Date.parse(asOf))
   );
+}
+
+function isConfirmedThreshold(fact: AthletePerformanceTargetFacts["thresholds"]["bike"]): boolean {
+  return fact.status === "available" && fact.state === "confirmed" && fact.freshness === "fresh";
 }
 
 /**
@@ -57,8 +61,8 @@ export function resolveActivityPlanTargetPresentation(input: {
   const { performanceTargets, target } = input;
 
   if (target.type === "%FTP" && input.activityCategory === "bike") {
-    const fact = performanceTargets?.cycling.planningThresholdPower;
-    if (fact && isConfirmedAvailable(fact, input.asOf) && typeof fact.value === "number") {
+    const fact = performanceTargets?.thresholds.bike;
+    if (fact && isConfirmedThreshold(fact) && typeof fact.value === "number") {
       return {
         kind: "exact_personalized",
         label: `${formatNumber((fact.value * target.intensity) / 100)} W (${sourceLabel})`,
@@ -77,7 +81,7 @@ export function resolveActivityPlanTargetPresentation(input: {
     const fact = category
       ? performanceTargets?.heartRate[category][target.type === "%ThresholdHR" ? "lthr" : "maxHr"]
       : undefined;
-    if (fact && isConfirmedAvailable(fact, input.asOf) && typeof fact.valueBpm === "number") {
+    if (fact && isConfirmedHeartRate(fact, input.asOf) && typeof fact.valueBpm === "number") {
       return {
         kind: "exact_personalized",
         label: `${formatNumber((fact.valueBpm * target.intensity) / 100)} bpm (${sourceLabel})`,

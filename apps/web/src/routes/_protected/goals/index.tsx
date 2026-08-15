@@ -3,7 +3,7 @@ import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 
 import { RouteFlashToast, type RouteFlashType } from "../../../components/route-flash-toast";
 import { api } from "../../../lib/api/client";
@@ -63,9 +63,9 @@ function GoalsPage() {
           </p>
         </div>
         <Button asChild>
-          <a data-testid="goal-create" href="/goals/new">
+          <Link data-testid="goal-create" to="/goals/new" search={{ date: undefined }}>
             Create goal
-          </a>
+          </Link>
         </Button>
       </div>
       <form method="get" className="grid gap-3 rounded-xl border p-4 sm:grid-cols-3">
@@ -132,10 +132,12 @@ function GoalsPage() {
             <p className="text-sm text-muted-foreground">Loading goals...</p>
           ) : null}
           {(goalsQuery.data?.items ?? []).map((goal) => (
-            <a
+            <Link
               data-testid={`goal-card-${goal.id}`}
               key={goal.id}
-              href={`/goals/${goal.id}`}
+              to="/goals/$goalId"
+              params={{ goalId: goal.id }}
+              search={{ flash: undefined, flashType: undefined }}
               className="flex items-center justify-between gap-3 rounded-xl border p-4 hover:bg-accent"
             >
               <div>
@@ -148,7 +150,7 @@ function GoalsPage() {
                 <Badge>{goal.activity_category}</Badge>
                 <Badge variant="outline">{goal.priority}/10</Badge>
               </div>
-            </a>
+            </Link>
           ))}
           {!isQueryLoading && !hasQueryError && goalsQuery.data?.items.length === 0 ? (
             <p className="text-sm text-muted-foreground">No goals match these filters.</p>

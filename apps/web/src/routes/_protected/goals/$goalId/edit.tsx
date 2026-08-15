@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 
 import { PlanGoalForm } from "../../../../components/protected/plan-goal-form";
 import { api } from "../../../../lib/api/client";
@@ -22,9 +22,14 @@ function GoalEditPage() {
     );
   return (
     <div className="space-y-4">
-      <a className="text-sm text-primary" href={`/goals/${goalId}`}>
+      <Link
+        className="text-sm text-primary"
+        to="/goals/$goalId"
+        params={{ goalId }}
+        search={{ flash: undefined, flashType: undefined }}
+      >
         Back to goal
-      </a>
+      </Link>
       <Card>
         <CardHeader>
           <CardTitle>Edit goal</CardTitle>

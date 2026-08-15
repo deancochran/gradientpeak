@@ -6,7 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 
 import { PlanGoalForm } from "../../../components/protected/plan-goal-form";
 import { api } from "../../../lib/api/client";
@@ -35,9 +35,19 @@ function NewGoalPage() {
   }
   return (
     <div className="space-y-4">
-      <a className="text-sm text-primary hover:underline" href="/goals">
+      <Link
+        className="text-sm text-primary hover:underline"
+        to="/goals"
+        search={{
+          category: undefined,
+          flash: undefined,
+          flashType: undefined,
+          q: "",
+          sort: "target_date",
+        }}
+      >
         Back to goals
-      </a>
+      </Link>
       <Card>
         <CardHeader>
           <CardTitle>Create goal</CardTitle>

@@ -2,11 +2,7 @@ import { z } from "zod";
 
 import type { CanonicalJson } from "../athlete-intelligence/canonical-json";
 import { BEST_EFFORT_CALCULATION_VERSION } from "../calculations/best-efforts";
-import {
-  CSS_CALCULATION_VERSION,
-  CSS_TEST_PROTOCOL,
-  evaluateCssFrom400m200mTest,
-} from "../calculations/swim-pace-curve";
+import { metersPerSecondToSecondsPer100Meters } from "../units";
 import {
   type CanonicalSwimmingDurationEffortEvidence,
   canonicalSwimmingDurationEffortEvidenceSchema,
@@ -42,16 +38,11 @@ export const SWIMMING_DURATION_PERFORMANCE_MODEL_VERSION = "swimming-duration-pe
 export const SWIMMING_PERFORMANCE_EVIDENCE_POLICY_VERSION =
   "swimming-duration-performance-evidence-v1";
 export const SWIMMING_PACE_DURATION_CURVE_CALCULATION_VERSION = "swimming-pace-duration-curve-v1";
-export const SWIMMING_CSS_CAPABILITY_CALCULATION_VERSION = "swimming-css-capability-v1";
 export const SWIMMING_SPRINT_CAPABILITY_CALCULATION_VERSION = "swimming-sprint-capability-v1";
 export const SWIMMING_AEROBIC_CAPABILITY_CALCULATION_VERSION = "swimming-aerobic-capability-v1";
 export const SWIMMING_REPEATED_EFFORT_DECAY_CALCULATION_VERSION =
   "swimming-repeated-effort-decay-v1";
 export const SWIMMING_TRAINING_LEVELS_VERSION = "swimming-individualized-levels-v1";
-export const SWIMMING_CSS_PROTOCOL_EVIDENCE_VERSION = "canonical-swim-css-protocol-evidence-v1";
-export const SWIMMING_CSS_SOURCE_EFFORT_CALCULATION_VERSION =
-  "activity-file-swim-distance-effort-v1";
-export const SWIMMING_CSS_SOURCE_EFFORT_METHOD = "activity_file_swim_distance_effort";
 export const SWIMMING_REPEAT_PROTOCOL_EVIDENCE_VERSION = "qualified-swim-repeat-protocol-v1";
 
 export const SWIMMING_DURATION_PERFORMANCE_POLICY = Object.freeze({
@@ -68,27 +59,6 @@ export const SWIMMING_DURATION_PERFORMANCE_POLICY = Object.freeze({
 const opaqueIdSchema = z.string().trim().min(1).max(256);
 const dateTimeSchema = z.string().datetime();
 const calculationVersionSchema = z.string().regex(/^[a-z][a-z0-9-]*-v[0-9]+$/);
-const artifactDigestSchema = z.string().regex(/^[0-9a-f]{64}$/);
-const contentEvidenceIdSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/);
-
-export function swimmingCssProtocolIdForActivity(activityId: string): string {
-  return `${CSS_TEST_PROTOCOL}:${opaqueIdSchema.parse(activityId)}`;
-}
-
-export const swimmingCssProtocolQualificationReasonSchema = z.enum([
-  "css_protocol_efforts_missing",
-  "css_protocol_efforts_ambiguous",
-  "css_pool_context_missing",
-  "css_protocol_identity_mismatch",
-  "css_source_artifact_not_current",
-  "css_source_segment_not_current",
-  "css_timing_incomplete",
-  "css_effort_order_invalid",
-  "css_protocol_invalid",
-]);
-export type SwimmingCssProtocolQualificationReason = z.infer<
-  typeof swimmingCssProtocolQualificationReasonSchema
->;
 
 const swimProtocolIdentityShape = {
   observationId: opaqueIdSchema,
@@ -100,114 +70,6 @@ const swimProtocolIdentityShape = {
   environment: swimmingEnvironmentSchema,
   poolLengthMeters: z.number().finite().min(10).max(100).nullable(),
 };
-
-const timedDistanceSchema = (distanceMeters: 200 | 400, sequence: 1 | 2) =>
-  z
-    .object({
-      protocolId: opaqueIdSchema,
-      observationId: opaqueIdSchema,
-      evidenceRevision: z.number().int().positive().max(1_000_000),
-      athleteId: opaqueIdSchema,
-      distanceMeters: z.literal(distanceMeters),
-      sequence: z.literal(sequence),
-      activeDurationSeconds: z.number().int().positive().max(14_400),
-      unit: z.literal("seconds"),
-      activityId: opaqueIdSchema,
-      segmentId: opaqueIdSchema,
-      sourceArtifactId: opaqueIdSchema,
-      recordedAt: dateTimeSchema,
-      startOffsetMs: z.number().int().nonnegative(),
-      endOffsetMs: z.number().int().positive(),
-      environment: z.literal("pool"),
-      poolLengthMeters: z.number().finite().min(10).max(100),
-      timingBasis: z.literal("pool_length_timing"),
-      timingCoverage: z.literal("complete"),
-      calculationVersion: z.literal(SWIMMING_CSS_SOURCE_EFFORT_CALCULATION_VERSION),
-    })
-    .strict()
-    .refine((effort) => effort.endOffsetMs > effort.startOffsetMs, {
-      path: ["endOffsetMs"],
-      message: "CSS effort offsets must define a non-empty observed range",
-    });
-
-export const canonicalSwimCssProtocolEvidenceSchema = z
-  .object({
-    protocolId: opaqueIdSchema,
-    observationId: opaqueIdSchema,
-    evidenceId: contentEvidenceIdSchema,
-    evidenceRevision: z.number().int().positive().max(1_000_000),
-    athleteId: opaqueIdSchema,
-    activityId: opaqueIdSchema,
-    recordedAt: dateTimeSchema,
-    sourceArtifactId: opaqueIdSchema,
-    sourceArtifactDigest: artifactDigestSchema,
-    protocol: z.literal(CSS_TEST_PROTOCOL),
-    environment: z.literal("pool"),
-    poolLengthMeters: z.number().finite().min(10).max(100),
-    timingBasis: z.literal("pool_length_timing"),
-    status: z.literal("qualified"),
-    reasons: z.tuple([]),
-    calculationVersion: z.literal(SWIMMING_CSS_PROTOCOL_EVIDENCE_VERSION),
-    efforts: z.tuple([timedDistanceSchema(400, 1), timedDistanceSchema(200, 2)]),
-  })
-  .strict()
-  .superRefine((evidence, context) => {
-    for (const [index, effort] of evidence.efforts.entries()) {
-      if (
-        effort.protocolId !== evidence.protocolId ||
-        effort.athleteId !== evidence.athleteId ||
-        effort.activityId !== evidence.activityId ||
-        effort.sourceArtifactId !== evidence.sourceArtifactId ||
-        effort.evidenceRevision !== evidence.evidenceRevision
-      ) {
-        context.addIssue({
-          code: "custom",
-          path: ["efforts", index],
-          message:
-            "CSS timed efforts must retain one protocol, athlete, activity, artifact, and revision identity",
-        });
-      }
-      if (
-        effort.environment !== evidence.environment ||
-        effort.poolLengthMeters !== evidence.poolLengthMeters ||
-        effort.timingBasis !== evidence.timingBasis
-      ) {
-        context.addIssue({
-          code: "custom",
-          path: ["efforts", index],
-          message: "CSS timed efforts must retain one pool and timing context",
-        });
-      }
-    }
-    const [fourHundred, twoHundred] = evidence.efforts;
-    if (
-      fourHundred.segmentId === twoHundred.segmentId ||
-      fourHundred.observationId === twoHundred.observationId
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["efforts", 1, "segmentId"],
-        message: "CSS timed efforts require distinct source observations and segments",
-      });
-    }
-    if (
-      fourHundred.endOffsetMs > twoHundred.startOffsetMs ||
-      Date.parse(fourHundred.recordedAt) > Date.parse(twoHundred.recordedAt)
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["efforts", 1],
-        message: "The observed 400 m effort must precede the observed 200 m effort",
-      });
-    }
-    if (evidence.recordedAt !== twoHundred.recordedAt) {
-      context.addIssue({
-        code: "custom",
-        path: ["recordedAt"],
-        message: "CSS protocol observation time must be the completing 200 m effort time",
-      });
-    }
-  });
 
 const repeatedSwimEffortSchema = z
   .object({
@@ -289,14 +151,13 @@ export const swimmingDurationPerformanceInputSchema = z
     efforts: z
       .array(canonicalSwimmingDurationEffortEvidenceSchema)
       .max(DURATION_PERFORMANCE_MAX_INPUT_EFFORTS),
-    cssProtocols: z.array(canonicalSwimCssProtocolEvidenceSchema).max(100),
     repeatedEffortProtocols: z.array(canonicalSwimRepeatedEffortProtocolEvidenceSchema).max(100),
   })
   .strict()
   .superRefine((input, context) => {
     const evidenceIds = new Set<string>();
     const observationIds = new Set<string>();
-    const allEvidence = [...input.efforts, ...input.cssProtocols, ...input.repeatedEffortProtocols];
+    const allEvidence = [...input.efforts, ...input.repeatedEffortProtocols];
     allEvidence.forEach((evidence, index) => {
       if (evidence.athleteId !== input.athleteId) {
         context.addIssue({
@@ -324,9 +185,6 @@ export const swimmingPerformanceReasonSchema = z.enum([
   "non_monotonic_canonical_curve",
   "missing_curve_anchors",
   "partial_source_evidence",
-  "css_protocol_evidence_missing",
-  "css_pool_protocol_required",
-  "css_protocol_invalid",
   "sprint_pool_timing_evidence_missing",
   "sprint_not_supported_for_open_water_timing",
   "aerobic_duration_evidence_missing",
@@ -424,26 +282,6 @@ const swimCurveValueSchema = z
   })
   .strict();
 
-const cssValueSchema = z
-  .object({
-    environment: z.literal("pool"),
-    sourceActivityId: opaqueIdSchema,
-    sourceObservedAt: dateTimeSchema,
-    protocol: z.literal(CSS_TEST_PROTOCOL),
-    protocolCalculationVersion: z.literal(CSS_CALCULATION_VERSION),
-    cssMetersPerSecond: z.number().finite().positive(),
-    cssSecondsPer100Meters: z.number().finite().positive(),
-    timedEfforts: z.tuple([
-      z
-        .object({ distanceMeters: z.literal(400), activeDurationSeconds: z.number().positive() })
-        .strict(),
-      z
-        .object({ distanceMeters: z.literal(200), activeDurationSeconds: z.number().positive() })
-        .strict(),
-    ]),
-  })
-  .strict();
-
 const sprintCapacityValueSchema = z
   .object({
     environment: z.literal("pool"),
@@ -458,9 +296,8 @@ const sprintCapacityValueSchema = z
 const aerobicCapacityValueSchema = z.discriminatedUnion("basis", [
   z
     .object({
-      basis: z.literal("pool_css_and_long_duration"),
+      basis: z.literal("pool_duration_curve"),
       environment: z.literal("pool"),
-      cssMetersPerSecond: z.number().finite().positive(),
       longDurationSpeedMetersPerSecond: z.number().finite().positive(),
       longDurationSeconds: z.literal(1_800),
     })
@@ -500,7 +337,6 @@ const repeatedEffortDecayValueSchema = z
 
 export const swimmingTrainingLevelIdSchema = z.enum([
   "sprint_pace",
-  "css_pace",
   "aerobic_pace",
   "repeated_effort_pace",
 ]);
@@ -564,7 +400,6 @@ const swimmingTrainingLevelSchema = z
 const swimmingEvidenceSummarySchema = z
   .object({
     durationEfforts: durationPerformanceEvidenceSummarySchema,
-    selectedCssProtocolEvidenceIds: durationPerformanceSourceEvidenceIdsSchema,
     selectedRepeatedProtocolEvidenceIds: durationPerformanceSourceEvidenceIdsSchema,
   })
   .strict();
@@ -579,7 +414,6 @@ export const swimmingDurationPerformanceModelSchema = z
     calculationIdentity: durationPerformanceCalculationIdentitySchema,
     evidenceSummary: swimmingEvidenceSummarySchema,
     paceDurationCurve: swimmingOutcomeSchema(swimCurveValueSchema),
-    css: swimmingOutcomeSchema(cssValueSchema),
     capabilities: z
       .object({
         sprint: swimmingOutcomeSchema(sprintCapacityValueSchema),
@@ -587,13 +421,10 @@ export const swimmingDurationPerformanceModelSchema = z
         repeatedEffortDecay: swimmingOutcomeSchema(repeatedEffortDecayValueSchema),
       })
       .strict(),
-    trainingLevels: z.array(swimmingTrainingLevelSchema).length(4),
+    trainingLevels: z.array(swimmingTrainingLevelSchema).length(3),
   })
   .strict();
 
-export type CanonicalSwimCssProtocolEvidence = z.infer<
-  typeof canonicalSwimCssProtocolEvidenceSchema
->;
 export type CanonicalSwimRepeatedEffortProtocolEvidence = z.infer<
   typeof canonicalSwimRepeatedEffortProtocolEvidenceSchema
 >;
@@ -605,7 +436,6 @@ export type SwimmingDurationPerformanceModel = z.infer<
   typeof swimmingDurationPerformanceModelSchema
 >;
 type SwimmingOutcome<T> = DurationPerformanceOutcome<T, SwimmingPerformanceReason>;
-type CssValue = z.infer<typeof cssValueSchema>;
 type AerobicCapacityValue = z.infer<typeof aerobicCapacityValueSchema>;
 type RepeatedEffortDecayValue = z.infer<typeof repeatedEffortDecayValueSchema>;
 
@@ -718,42 +548,25 @@ function protocolUnavailable<T = never>(input: {
   };
 }
 
-function pacePer100(speedMetersPerSecond: number): number {
-  return 100 / speedMetersPerSecond;
-}
-
 function sourceEnvironment(input: {
   efforts: readonly CanonicalSwimmingDurationEffortEvidence[];
-  cssProtocols: readonly CanonicalSwimCssProtocolEvidence[];
   repeatProtocols: readonly CanonicalSwimRepeatedEffortProtocolEvidence[];
 }) {
   const environments = new Set([
     ...input.efforts.map((effort) => effort.evidenceContext.environment),
-    ...input.cssProtocols.map((protocol) => protocol.environment),
     ...input.repeatProtocols.map((protocol) => protocol.environment),
   ]);
   if (environments.size > 1) return "mixed";
   return (
     input.efforts[0]?.evidenceContext.environment ??
-    input.cssProtocols[0]?.environment ??
     input.repeatProtocols[0]?.environment ??
     "unresolved"
   );
 }
 
 function swimProtocolIdentityFacts(
-  protocol: CanonicalSwimCssProtocolEvidence | CanonicalSwimRepeatedEffortProtocolEvidence,
+  protocol: CanonicalSwimRepeatedEffortProtocolEvidence,
 ): CanonicalJson {
-  if ("efforts" in protocol) {
-    return {
-      activityId: protocol.activityId,
-      recordedAt: protocol.recordedAt,
-      environment: protocol.environment,
-      poolLengthMeters: protocol.poolLengthMeters,
-      protocol: protocol.protocol,
-      efforts: protocol.efforts,
-    };
-  }
   return {
     activityId: protocol.activityId,
     recordedAt: protocol.recordedAt,
@@ -769,16 +582,10 @@ function swimProtocolIdentityFacts(
 function modelIdentity(input: {
   parsed: SwimmingDurationPerformanceInput;
   efforts: readonly CanonicalSwimmingDurationEffortEvidence[];
-  css: CanonicalSwimCssProtocolEvidence | null;
   repeat: CanonicalSwimRepeatedEffortProtocolEvidence | null;
   environment: "pool" | "open_water" | "mixed" | "unresolved";
 }) {
-  const protocolEvidence = [input.css, input.repeat].filter(
-    (
-      protocol,
-    ): protocol is CanonicalSwimCssProtocolEvidence | CanonicalSwimRepeatedEffortProtocolEvidence =>
-      protocol !== null,
-  );
+  const protocolEvidence = input.repeat === null ? [] : [input.repeat];
   return createDurationPerformanceCalculationIdentity({
     modelVersion: SWIMMING_DURATION_PERFORMANCE_MODEL_VERSION,
     inputContractVersion: SWIMMING_DURATION_PERFORMANCE_INPUT_VERSION,
@@ -789,7 +596,6 @@ function modelIdentity(input: {
     modelVariant: `swimming_${input.environment}`,
     sourceCalculationVersions: [
       BEST_EFFORT_CALCULATION_VERSION,
-      SWIMMING_CSS_PROTOCOL_EVIDENCE_VERSION,
       SWIMMING_REPEAT_PROTOCOL_EVIDENCE_VERSION,
     ],
     evidence: [
@@ -829,15 +635,11 @@ export function calculateSwimmingDurationPerformance(
     assessmentAsOf: parsed.assessmentAsOf,
     freshnessWindowDays: SWIMMING_DURATION_PERFORMANCE_POLICY.freshnessWindowDays,
   });
-  const freshCss = parsed.cssProtocols.filter((protocol) =>
-    protocolIsFresh(protocol, parsed.assessmentAsOf),
-  );
   const freshRepeats = parsed.repeatedEffortProtocols.filter((protocol) =>
     protocolIsFresh(protocol, parsed.assessmentAsOf),
   );
   const environment = sourceEnvironment({
     efforts: temporalSelection.eligible,
-    cssProtocols: freshCss,
     repeatProtocols: freshRepeats,
   });
   const requiredDurations =
@@ -853,10 +655,8 @@ export function calculateSwimmingDurationPerformance(
     requiredExactDurationsSeconds: requiredDurations,
     freshnessWindowDays: SWIMMING_DURATION_PERFORMANCE_POLICY.freshnessWindowDays,
   });
-  const selectedCss = newestProtocol(freshCss);
   const selectedRepeat = newestProtocol(freshRepeats);
-  const hasEligibleEvidence =
-    temporalSelection.eligible.length + freshCss.length + freshRepeats.length > 0;
+  const hasEligibleEvidence = temporalSelection.eligible.length + freshRepeats.length > 0;
 
   const globalReason =
     parsed.evidenceReadCoverage.state === "truncated"
@@ -875,20 +675,18 @@ export function calculateSwimmingDurationPerformance(
         evidenceCoverage: foundation.evidenceCoverage,
         freshnessWindowDays: SWIMMING_DURATION_PERFORMANCE_POLICY.freshnessWindowDays,
       });
-    const levels = ["sprint_pace", "css_pace", "aerobic_pace", "repeated_effort_pace"].map(
-      (levelId) => ({
-        status: "unavailable",
-        levelId,
-        prescription: null,
-        reasons: [globalReason],
-        calculationVersion: SWIMMING_TRAINING_LEVELS_VERSION,
-        sourceEvidenceIds: durationPerformanceSourceEvidenceIds(foundation.selected),
-        evidenceCoverage: foundation.evidenceCoverage,
-        confidence: "unavailable",
-        expiresAt: foundation.expiresAt,
-        recalculationTriggers: [...RECALCULATION_TRIGGERS],
-      }),
-    );
+    const levels = ["sprint_pace", "aerobic_pace", "repeated_effort_pace"].map((levelId) => ({
+      status: "unavailable",
+      levelId,
+      prescription: null,
+      reasons: [globalReason],
+      calculationVersion: SWIMMING_TRAINING_LEVELS_VERSION,
+      sourceEvidenceIds: durationPerformanceSourceEvidenceIds(foundation.selected),
+      evidenceCoverage: foundation.evidenceCoverage,
+      confidence: "unavailable",
+      expiresAt: foundation.expiresAt,
+      recalculationTriggers: [...RECALCULATION_TRIGGERS],
+    }));
     return swimmingDurationPerformanceModelSchema.parse({
       contractVersion: SWIMMING_DURATION_PERFORMANCE_MODEL_VERSION,
       assessmentAsOf: parsed.assessmentAsOf,
@@ -898,17 +696,14 @@ export function calculateSwimmingDurationPerformance(
       calculationIdentity: modelIdentity({
         parsed,
         efforts: environment === "mixed" ? temporalSelection.eligible : foundation.selected,
-        css: selectedCss,
         repeat: selectedRepeat,
         environment,
       }),
       evidenceSummary: {
         durationEfforts: foundation.evidenceSummary,
-        selectedCssProtocolEvidenceIds: selectedCss ? [selectedCss.evidenceId] : [],
         selectedRepeatedProtocolEvidenceIds: selectedRepeat ? [selectedRepeat.evidenceId] : [],
       },
       paceDurationCurve: unavailable(SWIMMING_PACE_DURATION_CURVE_CALCULATION_VERSION),
-      css: unavailable(SWIMMING_CSS_CAPABILITY_CALCULATION_VERSION),
       capabilities: {
         sprint: unavailable(SWIMMING_SPRINT_CAPABILITY_CALCULATION_VERSION),
         aerobic: unavailable(SWIMMING_AEROBIC_CAPABILITY_CALCULATION_VERSION),
@@ -931,7 +726,7 @@ export function calculateSwimmingDurationPerformance(
       recordedAt: point.recordedAt,
       durationSeconds: point.durationSeconds,
       speedMetersPerSecond: point.value,
-      paceSecondsPer100Meters: pacePer100(point.value),
+      paceSecondsPer100Meters: metersPerSecondToSecondsPer100Meters(point.value),
       environment: point.evidenceContext.environment,
       timingBasis: point.evidenceContext.timingBasis,
       sourceExtractionStatus: point.provenance.extractionStatus,
@@ -966,70 +761,6 @@ export function calculateSwimmingDurationPerformance(
           }),
           freshnessWindowDays: SWIMMING_DURATION_PERFORMANCE_POLICY.freshnessWindowDays,
         });
-
-  const cssCoverage = protocolCoverage({
-    available: environment === "pool" && selectedCss !== null,
-    pointCount: selectedCss ? 2 : 0,
-    activityCount: selectedCss ? 1 : 0,
-    observedDurationsSeconds: selectedCss
-      ? selectedCss.efforts.map((effort) => effort.activeDurationSeconds)
-      : [],
-    readCoverageState: parsed.evidenceReadCoverage.state,
-  });
-  let css: SwimmingOutcome<CssValue>;
-  if (environment === "open_water") {
-    css = protocolUnavailable({
-      calculationVersion: SWIMMING_CSS_CAPABILITY_CALCULATION_VERSION,
-      reason: "css_pool_protocol_required",
-      protocol: selectedCss,
-      coverage: cssCoverage,
-    });
-  } else if (!selectedCss) {
-    css = protocolUnavailable({
-      calculationVersion: SWIMMING_CSS_CAPABILITY_CALCULATION_VERSION,
-      reason: "css_protocol_evidence_missing",
-      protocol: null,
-      coverage: cssCoverage,
-    });
-  } else {
-    const evaluated = evaluateCssFrom400m200mTest({
-      time400Seconds: selectedCss.efforts[0].activeDurationSeconds,
-      time200Seconds: selectedCss.efforts[1].activeDurationSeconds,
-    });
-    css =
-      evaluated.status === "available"
-        ? protocolAvailable({
-            calculationVersion: SWIMMING_CSS_CAPABILITY_CALCULATION_VERSION,
-            value: {
-              environment: "pool",
-              sourceActivityId: selectedCss.activityId,
-              sourceObservedAt: selectedCss.recordedAt,
-              protocol: CSS_TEST_PROTOCOL,
-              protocolCalculationVersion: CSS_CALCULATION_VERSION,
-              cssMetersPerSecond: evaluated.cssMetersPerSecond,
-              cssSecondsPer100Meters: evaluated.cssSecondsPer100m,
-              timedEfforts: [
-                {
-                  distanceMeters: 400,
-                  activeDurationSeconds: selectedCss.efforts[0].activeDurationSeconds,
-                },
-                {
-                  distanceMeters: 200,
-                  activeDurationSeconds: selectedCss.efforts[1].activeDurationSeconds,
-                },
-              ],
-            },
-            protocol: selectedCss,
-            coverage: cssCoverage,
-            confidence: "medium",
-          })
-        : protocolUnavailable({
-            calculationVersion: SWIMMING_CSS_CAPABILITY_CALCULATION_VERSION,
-            reason: "css_protocol_invalid",
-            protocol: selectedCss,
-            coverage: cssCoverage,
-          });
-  }
 
   const thirtySecond = selected.find((point) => point.durationSeconds === 30) ?? null;
   const sixtySecond = selected.find((point) => point.durationSeconds === 60) ?? null;
@@ -1068,8 +799,12 @@ export function calculateSwimmingDurationPerformance(
               environment: "pool",
               thirtySecondSpeedMetersPerSecond: thirtySecond.value,
               sixtySecondSpeedMetersPerSecond: sixtySecond.value,
-              thirtySecondPaceSecondsPer100Meters: pacePer100(thirtySecond.value),
-              sixtySecondPaceSecondsPer100Meters: pacePer100(sixtySecond.value),
+              thirtySecondPaceSecondsPer100Meters: metersPerSecondToSecondsPer100Meters(
+                thirtySecond.value,
+              ),
+              sixtySecondPaceSecondsPer100Meters: metersPerSecondToSecondsPer100Meters(
+                sixtySecond.value,
+              ),
               interpretation: "pool_timed_short_duration_capacity_not_instantaneous_speed",
             },
             points: sprintPoints,
@@ -1115,11 +850,10 @@ export function calculateSwimmingDurationPerformance(
         evidenceCoverage: aerobicCoverage,
         freshnessWindowDays: SWIMMING_DURATION_PERFORMANCE_POLICY.freshnessWindowDays,
       });
-    } else if (css.status === "available" && longPoint && aerobicCoverage.state === "complete") {
+    } else if (longPoint && aerobicCoverage.state === "complete") {
       const value: AerobicCapacityValue = {
-        basis: "pool_css_and_long_duration",
+        basis: "pool_duration_curve",
         environment: "pool",
-        cssMetersPerSecond: css.value.cssMetersPerSecond,
         longDurationSpeedMetersPerSecond: longPoint.value,
         longDurationSeconds: 1_800,
       };
@@ -1135,19 +869,7 @@ export function calculateSwimmingDurationPerformance(
         partialReasons: ["partial_source_evidence"],
         freshnessWindowDays: SWIMMING_DURATION_PERFORMANCE_POLICY.freshnessWindowDays,
       });
-      const expiryCandidates = [durationOutcome.expiresAt, css.expiresAt]
-        .filter((expiresAt): expiresAt is string => expiresAt !== null)
-        .map(Date.parse);
-      aerobic = {
-        ...durationOutcome,
-        sourceEvidenceIds: [
-          ...new Set([...durationOutcome.sourceEvidenceIds, ...css.sourceEvidenceIds]),
-        ].sort((left, right) => left.localeCompare(right)),
-        expiresAt:
-          expiryCandidates.length > 0
-            ? new Date(Math.min(...expiryCandidates)).toISOString()
-            : null,
-      };
+      aerobic = durationOutcome;
     } else {
       aerobic = unavailableDurationPerformanceOutcome({
         calculationVersion: SWIMMING_AEROBIC_CAPABILITY_CALCULATION_VERSION,
@@ -1308,8 +1030,8 @@ export function calculateSwimmingDurationPerformance(
           levelId: input.levelId,
           prescription: {
             paceSecondsPer100Meters: {
-              fastest: pacePer100(input.speed),
-              slowest: pacePer100(input.speed * 0.9),
+              fastest: metersPerSecondToSecondsPer100Meters(input.speed),
+              slowest: metersPerSecondToSecondsPer100Meters(input.speed * 0.9),
             },
             workDurationSeconds: {
               minimum: input.minimumDuration,
@@ -1331,11 +1053,10 @@ export function calculateSwimmingDurationPerformance(
 
   const sprintSpeed =
     sprint.status === "unavailable" ? 1 : sprint.value.sixtySecondSpeedMetersPerSecond;
-  const cssSpeed = css.status === "available" ? css.value.cssMetersPerSecond : 1;
   const aerobicSpeed =
     aerobic.status === "unavailable"
       ? 1
-      : aerobic.value.basis === "pool_css_and_long_duration"
+      : aerobic.value.basis === "pool_duration_curve"
         ? aerobic.value.longDurationSpeedMetersPerSecond
         : (aerobic.value.speedsByDuration.at(-1)?.speedMetersPerSecond ?? 1);
   const repeatedLevel =
@@ -1345,8 +1066,12 @@ export function calculateSwimmingDurationPerformance(
           levelId: "repeated_effort_pace",
           prescription: {
             paceSecondsPer100Meters: {
-              fastest: pacePer100(repeatedEffortDecay.value.firstSpeedMetersPerSecond),
-              slowest: pacePer100(repeatedEffortDecay.value.finalSpeedMetersPerSecond),
+              fastest: metersPerSecondToSecondsPer100Meters(
+                repeatedEffortDecay.value.firstSpeedMetersPerSecond,
+              ),
+              slowest: metersPerSecondToSecondsPer100Meters(
+                repeatedEffortDecay.value.finalSpeedMetersPerSecond,
+              ),
             },
             workDurationSeconds: {
               minimum: Math.min(
@@ -1388,13 +1113,6 @@ export function calculateSwimmingDurationPerformance(
       maximumDuration: 60,
     }),
     durationLevel({
-      levelId: "css_pace",
-      outcome: css,
-      speed: cssSpeed,
-      minimumDuration: 600,
-      maximumDuration: 1_800,
-    }),
-    durationLevel({
       levelId: "aerobic_pace",
       outcome: aerobic,
       speed: aerobicSpeed,
@@ -1413,17 +1131,14 @@ export function calculateSwimmingDurationPerformance(
     calculationIdentity: modelIdentity({
       parsed,
       efforts: selected,
-      css: selectedCss,
       repeat: selectedRepeat,
       environment,
     }),
     evidenceSummary: {
       durationEfforts: foundation.evidenceSummary,
-      selectedCssProtocolEvidenceIds: selectedCss ? [selectedCss.evidenceId] : [],
       selectedRepeatedProtocolEvidenceIds: selectedRepeat ? [selectedRepeat.evidenceId] : [],
     },
     paceDurationCurve: curve,
-    css,
     capabilities: { sprint, aerobic, repeatedEffortDecay },
     trainingLevels,
   });

@@ -5,15 +5,18 @@ import {
   activities,
   activityArtifactLinks,
   activityArtifacts,
+  type activityEfforts,
   activityFileIngestions,
   activitySegments,
   activitySourceReferences,
   integrationResourceLinks,
   integrations,
   profiles,
+  thresholdEvaluations,
+  thresholds,
   users,
 } from "@repo/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import {
   ActivityArtifactLifecycleRetryableError,
@@ -119,13 +122,14 @@ function segmentManifest(
   movingMs: number,
   activity_category: "bike" | "run" = "bike",
   sourceArtifactId?: string,
+  segmentId: string = randomUUID(),
 ): NonNullable<ActivitySubmission["segmentSet"]> {
   return {
     version: 1,
     elapsedMs,
     segments: [
       {
-        id: randomUUID(),
+        id: segmentId,
         ordinal: 0,
         role: "activity",
         activity_category,
@@ -163,6 +167,98 @@ function artifact(profileId: string, digestCharacter: string, byteSize: number) 
   } as const;
 }
 
+function manualBikeThresholdSubmission(input: {
+  profileId: string;
+  finishedAt: Date;
+  valueWatts: number;
+  digestCharacter: string;
+}) {
+  const activityId = randomUUID();
+  const segmentId = randomUUID();
+  const effortId = randomUUID();
+  const elapsedMs = 1_800_000;
+  const startedAt = new Date(input.finishedAt.getTime() - elapsedMs);
+  const acceptedArtifact = artifact(input.profileId, input.digestCharacter, 1_024);
+  const sourceArtifactId = activityArtifactId(
+    input.profileId,
+    acceptedArtifact.sha256,
+    acceptedArtifact.byteSize,
+  );
+  return {
+    activityId,
+    submission: submission(input.profileId, {
+      requestedActivityId: activityId,
+      name: `Concurrent threshold ${input.valueWatts}`,
+      startedAt,
+      finishedAt: input.finishedAt,
+      elapsedMs,
+      activeMs: elapsedMs,
+      movingMs: elapsedMs,
+      segmentSet: segmentManifest(
+        elapsedMs,
+        elapsedMs,
+        elapsedMs,
+        "bike",
+        sourceArtifactId,
+        segmentId,
+      ),
+      analysis: {
+        efforts: [
+          {
+            id: effortId,
+            created_at: input.finishedAt,
+            profile_id: input.profileId,
+            activity_id: activityId,
+            segment_id: segmentId,
+            recorded_at: input.finishedAt,
+            activity_category: "bike",
+            effort_type: "power",
+            source_series: "power",
+            duration_seconds: 1_800,
+            source_artifact_id: sourceArtifactId,
+            source_revision: 1,
+            start_offset_ms: 0,
+            end_offset_ms: elapsedMs,
+            window_coverage: 1,
+            max_gap_seconds: 2,
+            unit: "watts",
+            value: input.valueWatts,
+            source: "imported",
+            method: "activity_file_best_effort",
+            calculation_version: "best-effort-extraction-v1",
+            provenance: {
+              observation_id: effortId,
+              activity_id: activityId,
+              segment_id: segmentId,
+              derived_from: "activity_file_stream",
+              source_series: "power",
+              interval_convention: "current_sample_applies_to_preceding_interval",
+              exact_window_start_timestamp_seconds: startedAt.getTime() / 1_000,
+              exact_window_end_timestamp_seconds: input.finishedAt.getTime() / 1_000,
+              exact_window_start_offset_seconds: 0,
+              exact_window_end_offset_seconds: 1_800,
+              duration_seconds: 1_800,
+              contributing_duration_seconds: 1_800,
+              window_coverage: 1,
+              source_time_coverage: 1,
+              extraction_status: "available",
+              extraction_reason: null,
+              persisted_start_offset_quantization: "nearest_millisecond_v1",
+              calculation_version: "best-effort-extraction-v1",
+            },
+          } satisfies typeof activityEfforts.$inferInsert,
+        ],
+        detectedLTHR: null,
+        ingestion: {
+          source: "manual_import",
+          operationKey: `manual-threshold:${activityId}`,
+          artifact: acceptedArtifact,
+        },
+      },
+    }),
+  };
+}
+
 afterEach(async () => {
   while (seededUserIds.length) {
     const id = seededUserIds.pop();
@@ -193,6 +289,158 @@ afterEach(async () => {
 afterAll(async () => pool.end());
 
 describe("canonical activity persistence against PostgreSQL", () => {
+  it("creates a fresh activity and captures canonical performance targets in its write snapshot", async () => {
+    const profileId = await seedProfile();
+    const created = await submitActivity(db, submission(profileId));
+
+    const [activity] = await db.select().from(activities).where(eq(activities.id, created.id));
+    expect(activity?.performance_target_snapshot).toMatchObject({
+      contractVersion: "completed-activity-performance-target-snapshot-v2",
+      publishedRevision: null,
+      publicationStatus: "available",
+      targets: {
+        athleteId: profileId,
+        thresholds: {
+          bike: { status: "unavailable", thresholdId: null },
+          run: { status: "unavailable", thresholdId: null },
+          swim: { status: "unavailable", thresholdId: null },
+        },
+      },
+    });
+  });
+
+  it("serializes same-profile manual thresholds before snapshot capture while other profiles proceed", async () => {
+    const profileId = await seedProfile();
+    const otherProfileId = await seedProfile();
+    const first = manualBikeThresholdSubmission({
+      profileId,
+      finishedAt: new Date("2026-01-01T11:00:00.000Z"),
+      valueWatts: 300,
+      digestCharacter: "a",
+    });
+    const second = manualBikeThresholdSubmission({
+      profileId,
+      finishedAt: new Date("2026-01-02T11:00:00.000Z"),
+      valueWatts: 330,
+      digestCharacter: "b",
+    });
+    const independent = manualBikeThresholdSubmission({
+      profileId: otherProfileId,
+      finishedAt: new Date("2026-01-01T11:00:00.000Z"),
+      valueWatts: 280,
+      digestCharacter: "c",
+    });
+
+    let signalFirstBeforePersist!: () => void;
+    const firstBeforePersist = new Promise<void>((resolve) => {
+      signalFirstBeforePersist = resolve;
+    });
+    let releaseFirst!: () => void;
+    const firstMayCommit = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const firstCommit = submitActivity(db, first.submission, {
+      beforePersist: async () => {
+        signalFirstBeforePersist();
+        await firstMayCommit;
+      },
+    });
+    await firstBeforePersist;
+
+    let signalSecondTransactionStarted!: () => void;
+    const secondTransactionStarted = new Promise<void>((resolve) => {
+      signalSecondTransactionStarted = resolve;
+    });
+    const secondSession = {
+      $client: {
+        connect: async () => {
+          const client = await pool.connect();
+          let firstQuery = true;
+          return new Proxy(client, {
+            get(target, property) {
+              const value = Reflect.get(target, property, target);
+              if (property === "query") {
+                return (...args: unknown[]) => {
+                  if (firstQuery) {
+                    firstQuery = false;
+                    signalSecondTransactionStarted();
+                  }
+                  return (value as (...queryArgs: unknown[]) => unknown).apply(target, args);
+                };
+              }
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+          });
+        },
+      },
+    } as unknown as typeof db;
+    let secondReachedBeforePersist = false;
+    const secondCommit = submitActivity(secondSession, second.submission, {
+      beforePersist: async () => {
+        secondReachedBeforePersist = true;
+      },
+    });
+    await secondTransactionStarted;
+
+    const independentCommit = submitActivity(db, independent.submission);
+    let independentGateFailure: unknown;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        independentCommit,
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error("A separate profile was blocked by the submission fence")),
+            3_000,
+          );
+        }),
+      ]);
+      expect(secondReachedBeforePersist).toBe(false);
+    } catch (error) {
+      independentGateFailure = error;
+    } finally {
+      if (timeout) clearTimeout(timeout);
+      releaseFirst();
+    }
+
+    const commits = await Promise.allSettled([firstCommit, secondCommit, independentCommit]);
+    if (independentGateFailure) throw independentGateFailure;
+    for (const commit of commits) {
+      if (commit.status === "rejected") throw commit.reason;
+    }
+    expect(secondReachedBeforePersist).toBe(true);
+
+    const chain = await db
+      .select()
+      .from(thresholds)
+      .where(eq(thresholds.profile_id, profileId))
+      .orderBy(asc(thresholds.effective_at), asc(thresholds.id));
+    expect(chain).toHaveLength(2);
+    expect(chain[0]?.supersedes_id).toBeNull();
+    expect(chain[1]?.supersedes_id).toBe(chain[0]?.id);
+    expect(chain.filter(({ supersedes_id }) => supersedes_id === null)).toHaveLength(1);
+
+    const evaluations = await db
+      .select()
+      .from(thresholdEvaluations)
+      .where(eq(thresholdEvaluations.profile_id, profileId));
+    expect(evaluations).toHaveLength(2);
+    const [secondActivity] = await db
+      .select({ snapshot: activities.performance_target_snapshot })
+      .from(activities)
+      .where(eq(activities.id, second.activityId));
+    expect(secondActivity?.snapshot).toMatchObject({
+      targets: { thresholds: { bike: { thresholdId: chain[0]?.id } } },
+    });
+
+    const independentChain = await db
+      .select()
+      .from(thresholds)
+      .where(eq(thresholds.profile_id, otherProfileId));
+    expect(independentChain).toHaveLength(1);
+    expect(independentChain[0]?.supersedes_id).toBeNull();
+  });
+
   it("fails closed while a conflicting content artifact is pending deletion", async () => {
     const profileId = await seedProfile();
     const acceptedArtifact = artifact(profileId, "d", 42);

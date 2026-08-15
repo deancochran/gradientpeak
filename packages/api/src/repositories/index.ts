@@ -9,7 +9,6 @@ export * from "./event-read-repository";
 export * from "./event-write-repository";
 export * from "./integrations-repository";
 export * from "./planning-template-repository";
-export * from "./swimming-css-protocol-evidence-repository";
 export * from "./training-plan-repository";
 export * from "./trends-dashboard-repository";
 export * from "./wahoo-repository";

@@ -1,5 +1,5 @@
 /**
- * Test-only clarity reference for HR duration/zones/Load inputs, CSS, and pool timing.
+ * Test-only clarity reference for HR duration/zones/Load inputs and pool timing.
  * It intentionally imports no production helpers or policy constants.
  */
 
@@ -157,77 +157,6 @@ export function calculateReferenceHeartRateCommonLoadInputs(input: {
     rawLoad,
     rawEquivalentIntensityFactor:
       coveredHours > 0 ? Math.sqrt(rawLoad / (coveredHours * 100)) : null,
-  };
-}
-
-export type ReferenceCssResult =
-  | {
-      status: "available";
-      cssSecondsPer100m: number;
-      cssMetersPerSecond: number;
-      efforts: readonly [
-        { distanceMeters: 400; durationSeconds: number; speedMetersPerSecond: number },
-        { distanceMeters: 200; durationSeconds: number; speedMetersPerSecond: number },
-      ];
-    }
-  | { status: "unavailable" };
-
-function swimPlausibilityCeiling(durationSeconds: number): number {
-  if (durationSeconds <= 30) return 3;
-  if (durationSeconds <= 120) return 2.5;
-  if (durationSeconds <= 600) return 2;
-  if (durationSeconds <= 1_800) return 1.8;
-  return 1.6;
-}
-
-export function calculateReferenceCss400m200m(input: unknown): ReferenceCssResult {
-  if (typeof input !== "object" || input === null || Array.isArray(input)) {
-    return { status: "unavailable" };
-  }
-  const time400Seconds = Reflect.get(input, "time400Seconds");
-  const time200Seconds = Reflect.get(input, "time200Seconds");
-  if (
-    !Number.isInteger(time400Seconds) ||
-    !Number.isInteger(time200Seconds) ||
-    typeof time400Seconds !== "number" ||
-    typeof time200Seconds !== "number" ||
-    time400Seconds <= 0 ||
-    time200Seconds <= 0 ||
-    time400Seconds > 14_400 ||
-    time200Seconds > 14_400 ||
-    time400Seconds <= 2 * time200Seconds
-  ) {
-    return { status: "unavailable" };
-  }
-  const speed400MetersPerSecond = 400 / time400Seconds;
-  const speed200MetersPerSecond = 200 / time200Seconds;
-  const cssSecondsPer100m = (time400Seconds - time200Seconds) / 2;
-  if (
-    speed400MetersPerSecond < 0.1 ||
-    speed400MetersPerSecond > swimPlausibilityCeiling(time400Seconds) ||
-    speed200MetersPerSecond < 0.1 ||
-    speed200MetersPerSecond > swimPlausibilityCeiling(time200Seconds) ||
-    cssSecondsPer100m < 45 ||
-    cssSecondsPer100m > 600
-  ) {
-    return { status: "unavailable" };
-  }
-  return {
-    status: "available",
-    cssSecondsPer100m,
-    cssMetersPerSecond: 100 / cssSecondsPer100m,
-    efforts: [
-      {
-        distanceMeters: 400,
-        durationSeconds: time400Seconds,
-        speedMetersPerSecond: speed400MetersPerSecond,
-      },
-      {
-        distanceMeters: 200,
-        durationSeconds: time200Seconds,
-        speedMetersPerSecond: speed200MetersPerSecond,
-      },
-    ],
   };
 }
 

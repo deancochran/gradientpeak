@@ -1,4 +1,4 @@
-import { projectAthletePerformanceTargetOverview } from "@repo/core";
+import { projectAthletePerformanceOverview } from "@repo/core";
 import {
   formatProfileMetricValue,
   getProfileMetricDefinition,
@@ -377,13 +377,9 @@ export default function ProfileMetricsListScreen() {
     },
     { enabled: !!user?.id },
   );
-  const performanceOverview =
-    publishedStateQuery.data?.status?.freshness === "fresh" &&
-    publishedStateQuery.data.publishedState?.performanceTargets
-      ? projectAthletePerformanceTargetOverview(
-          publishedStateQuery.data.publishedState.performanceTargets,
-        )
-      : undefined;
+  const performanceOverview = publishedStateQuery.data?.publishedState?.performanceTargets
+    ? projectAthletePerformanceOverview(publishedStateQuery.data.publishedState.performanceTargets)
+    : undefined;
   const performanceStateError = publishedStateQuery.error?.message
     ? publishedStateQuery.error.message
     : publishedStateQuery.data && !performanceOverview

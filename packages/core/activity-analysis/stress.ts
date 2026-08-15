@@ -18,10 +18,7 @@ import {
   commonThresholdEvidenceSchema,
 } from "../load/common-relative-load";
 import { calculateHeartRateZoneStress } from "../load/heart-rate-zone-stress";
-import {
-  type AthletePerformanceTargetFacts,
-  getAvailablePerformanceTargetValue,
-} from "../performance-model";
+import type { AthletePerformanceTargetFacts, PerformanceThresholdFact } from "../performance-model";
 import {
   type CanonicalActivityCategory,
   canonicalActivityCategoryValues,
@@ -201,27 +198,26 @@ type DirectCommonLoadSelection = {
 };
 
 function performanceTargetQuality(
-  fact:
-    | AthletePerformanceTargetFacts["cycling"]["planningThresholdPower"]
-    | AthletePerformanceTargetFacts["running"]["planningThresholdPace"]
-    | AthletePerformanceTargetFacts["swimming"]["css"],
+  fact: PerformanceThresholdFact,
 ): ActivityCalibrationQuality | null {
-  if (
-    getAvailablePerformanceTargetValue(fact) === null ||
-    fact.sourceEvidenceIds.length === 0 ||
-    fact.evidenceTime.observedThrough === null
-  )
-    return null;
+  if (fact.status !== "available") return null;
+  const confidence = fact.confidence >= 0.85 ? "high" : fact.confidence >= 0.7 ? "medium" : "low";
   return {
-    source: "modeled",
-    observed_at: fact.evidenceTime.observedThrough,
-    valid_at: fact.evidenceTime.computedAt,
-    confidence: fact.confidence === "unavailable" ? "unknown" : fact.confidence,
-    stale: fact.calibrationState === "stale",
-    estimate: true,
+    source: "observed_effort",
+    observed_at: fact.effectiveAt,
+    valid_at: fact.effectiveAt,
+    confidence,
+    stale: fact.freshness === "stale",
+    estimate: false,
     calculation_version: fact.calculationVersion,
-    evidence_fingerprint: fact.sourceEvidenceIds.join(":"),
+    evidence_fingerprint: [fact.thresholdId, fact.evaluationId].join(":"),
   };
+}
+
+function performanceThresholdValue(fact: PerformanceThresholdFact | undefined): number | null {
+  return fact?.status === "available" && Number.isFinite(fact.value) && fact.value > 0
+    ? fact.value
+    : null;
 }
 
 function heartRateFactQuality(
@@ -292,8 +288,8 @@ function resolveCommonLoadMethod(input: {
 
   switch (method) {
     case "power_threshold": {
-      const fact = performanceTargets?.cycling.planningThresholdPower;
-      const planningThresholdPower = fact ? getAvailablePerformanceTargetValue(fact) : null;
+      const fact = performanceTargets?.thresholds.bike;
+      const planningThresholdPower = performanceThresholdValue(fact);
       const calibrationQuality = fact && performanceTargets ? performanceTargetQuality(fact) : null;
       const measurement = resolveMeasurement(
         [selectCyclingNormalizedPowerWatts(activity.normalized_power_result)],
@@ -323,9 +319,8 @@ function resolveCommonLoadMethod(input: {
         : { status: "invalid_data" };
     }
     case "run_pace_threshold": {
-      const fact = performanceTargets?.running.planningThresholdPace;
-      const pace = fact ? getAvailablePerformanceTargetValue(fact) : null;
-      const thresholdSpeedMps = pace === null ? null : 1_000 / pace;
+      const fact = performanceTargets?.thresholds.run;
+      const thresholdSpeedMps = performanceThresholdValue(fact);
       const normalizedGradedPaceResult = activity.normalized_graded_pace_result;
       const measurement =
         normalizedGradedPaceResult === undefined || normalizedGradedPaceResult === null
@@ -362,9 +357,8 @@ function resolveCommonLoadMethod(input: {
         : { status: "invalid_data" };
     }
     case "swim_pace_threshold": {
-      const fact = performanceTargets?.swimming.css;
-      const pace = fact ? getAvailablePerformanceTargetValue(fact) : null;
-      const thresholdSpeedMps = pace === null ? null : 100 / pace;
+      const fact = performanceTargets?.thresholds.swim;
+      const thresholdSpeedMps = performanceThresholdValue(fact);
       // Normalized swim speed is not yet validated strongly enough to reduce intensity.
       // Conservatively use the greater valid value so it cannot understate average-speed load.
       const swimSpeeds = [activity.normalized_speed_mps, activity.avg_speed_mps].filter(
@@ -1003,9 +997,9 @@ export function analyzeActivityDerivedMetrics(
     (candidate) => candidate === activity.type,
   ) as CanonicalActivityCategory | undefined;
   const commonActivityCategory = activity_category ?? "other";
-  const planningThresholdPower = context.performanceTargets
-    ? getAvailablePerformanceTargetValue(context.performanceTargets.cycling.planningThresholdPower)
-    : null;
+  const planningThresholdPower = performanceThresholdValue(
+    context.performanceTargets?.thresholds.bike,
+  );
   const categoryHeartRateFacts =
     activity_category === "bike" || activity_category === "run" || activity_category === "swim"
       ? context.performanceTargets?.heartRate[activity_category]

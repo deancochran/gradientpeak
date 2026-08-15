@@ -124,37 +124,68 @@ await withDisposableDatabase(
       [ownerId, otherId],
     );
     await db.query(
+      `insert into public.activity_artifacts (
+         id, profile_id, digest, byte_size, bucket, path, media_type, format
+       ) values
+       ('60000000-0000-4000-8000-000000000001', $1::uuid, repeat('a', 64), 1,
+        'activity-files', public.activity_artifact_content_path($1::uuid, repeat('a', 64)),
+        'application/vnd.ant.fit', 'fit'),
+       ('60000000-0000-4000-8000-000000000002', $2::uuid, repeat('b', 64), 1,
+        'activity-files', public.activity_artifact_content_path($2::uuid, repeat('b', 64)),
+        'application/vnd.ant.fit', 'fit')`,
+      [ownerId, otherId],
+    );
+    await db.query(
+      `insert into public.activity_artifact_links (
+         id, activity_id, artifact_id, profile_id, role, ordinal, is_current
+       )
+       select ('60500000-0000-4000-8000-' || lpad(row_number() over (order by id)::text, 12, '0'))::uuid,
+         id,
+         case when profile_id = $1::uuid
+           then '60000000-0000-4000-8000-000000000001'::uuid
+           else '60000000-0000-4000-8000-000000000002'::uuid end,
+         profile_id, 'source', 0, true
+       from public.activities`,
+      [ownerId],
+    );
+    await db.query(
       `insert into public.activity_segments (
          id, activity_id, profile_id, ordinal, role, activity_category,
-         start_offset_ms, end_offset_ms, summary, summary_version,
+         start_offset_ms, end_offset_ms, source_artifact_id, summary, summary_version,
          timing_coverage, active_ms, moving_ms, segment_revision,
          parser_version, materializer_version, created_at
        )
-       select ('63000000-0000-4000-8000-' || lpad(row_number() over (order by id)::text, 12, '0'))::uuid,
-         id, profile_id, 0, 'activity', 'run', 0, 60000,
+       select ('63000000-0000-4000-8000-' || lpad(row_number() over (order by activity.id)::text, 12, '0'))::uuid,
+          activity.id, activity.profile_id, 0, 'activity', 'run', 0, 60000,
+          link.artifact_id,
          jsonb_build_object(
            'version', 1,
            'timing', jsonb_build_object(
              'timingCoverage', 'complete', 'activeMs', 60000, 'movingMs', 60000
            )
          ),
-         1, 'complete', 60000, 60000, 1, 'proof-v1', 'proof-v1', finished_at
-        from public.activities`,
+         1, 'complete', 60000, 60000, 1, 'proof-v1', 'proof-v1', activity.finished_at
+         from public.activities activity
+         join public.activity_artifact_links link on link.activity_id = activity.id
+           and link.profile_id = activity.profile_id and link.role = 'source'`,
     );
     await db.query(
       `insert into public.activity_efforts (
          id, created_at, profile_id, activity_id, segment_id, recorded_at,
-         activity_category, effort_type, duration_seconds, distance_meters,
-          start_offset, unit, value, source, method, calculation_version, quality_score, provenance
+           activity_category, effort_type, source_series, duration_seconds, distance_meters, source_artifact_id,
+          source_revision, start_offset_ms, end_offset_ms, window_coverage, max_gap_seconds,
+          unit, value, source, method, calculation_version, quality_score, provenance
        )
        select ('64000000-0000-4000-8000-' || lpad(rn::text, 12, '0'))::uuid,
          recorded_at, profile_id, activity_id, segment_id, recorded_at,
-         'run', 'speed', 60, 240, 0, 'meters_per_second', 4,
+          'run', 'speed', 'raw_speed', 60, 240, source_artifact_id, 1, 0, 60000, 1, 2,
+          'meters_per_second', 4,
           'derived', 'athlete-state-replay-proof', 'proof-v1', 0.9,
           jsonb_build_object('observation_id', ('64000000-0000-4000-8000-' || lpad(rn::text, 12, '0')))
        from (
          select row_number() over (order by activity.id) as rn,
-           activity.id as activity_id, activity.profile_id, segment.id as segment_id,
+            activity.id as activity_id, activity.profile_id, segment.id as segment_id,
+            segment.source_artifact_id,
            case when row_number() over (order by activity.id) % 7 = 0
              then timestamp with time zone '2036-01-01 00:00:00+00'
              else activity.finished_at

@@ -40,6 +40,55 @@ export const authRuntimeEnvSchema = z.object({
 
 export type AuthRuntimeEnv = z.infer<typeof authRuntimeEnvSchema>;
 
+const exactTrustedOriginSchema = z
+  .string()
+  .trim()
+  .url()
+  .transform((value, context) => {
+    const parsed = new URL(value);
+    if (
+      (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+      !parsed.hostname ||
+      value.includes("*") ||
+      value.includes("?") ||
+      parsed.username ||
+      parsed.password ||
+      parsed.pathname !== "/" ||
+      parsed.search ||
+      parsed.hash
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Trusted origins must be exact HTTP(S) origins without wildcards, credentials, paths, queries, or fragments",
+      });
+      return z.NEVER;
+    }
+    return parsed.origin;
+  });
+
 export function parseAuthRuntimeEnv(input: AuthRuntimeEnv) {
   return authRuntimeEnvSchema.parse(input);
+}
+
+export function parseAuthTrustedOrigins(input?: string): string[] {
+  if (!input?.trim()) return [];
+  return Array.from(
+    new Set(
+      input
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map((value) => exactTrustedOriginSchema.parse(value)),
+    ),
+  );
+}
+
+export function resolveDevelopmentAuthTrustedOrigins(
+  nodeEnv: string | undefined,
+  configuredOrigins: string | undefined,
+  defaults: readonly string[] = [],
+): string[] {
+  if (nodeEnv !== "development") return [];
+  return Array.from(new Set([...parseAuthTrustedOrigins(configuredOrigins), ...defaults]));
 }

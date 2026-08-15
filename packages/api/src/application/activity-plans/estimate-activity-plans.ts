@@ -98,7 +98,9 @@ export async function estimateActivityPlans<TPlan extends SupportedActivityPlan>
   const asOf = options?.asOf ?? new Date();
   try {
     const published = await readPublishedAthletePerformanceTargets({ db, profileId, now: asOf });
-    if (published.status !== "available") {
+    // Projection freshness is descriptive. A stale canonical threshold remains
+    // usable; only an unavailable target fact activates range/RPE fallback.
+    if (published.status === "unavailable") {
       return normalizedPlans.map((plan) => unavailablePlan(plan, asOf));
     }
     const memo = new Map<string, ActivityPlanPlanningEstimate>();

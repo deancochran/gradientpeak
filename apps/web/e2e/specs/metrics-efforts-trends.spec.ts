@@ -31,6 +31,28 @@ test.skip(
   "metrics and trends E2E requires a service-role credential for the confirmed athlete fixture.",
 );
 
+test("current metrics fixture renders Trends controls", async ({ athletePage }, testInfo) => {
+  const useTouch = testInfo.project.name === "Mobile Chrome";
+  const fixture = await seedMetricsEffortsTrendsFixture();
+  try {
+    await athletePage.goto("/trends");
+    await expect(athletePage.getByRole("heading", { name: "Trends" })).toBeVisible();
+    await expect(athletePage.getByRole("button", { name: "30 days" })).toBeVisible();
+    await expect(athletePage.getByRole("button", { name: "Weight", exact: true })).toBeVisible();
+    await activateControl(
+      athletePage,
+      athletePage.getByRole("button", { name: "30 days" }),
+      useTouch,
+    );
+    await expect(athletePage.getByRole("button", { name: "30 days" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
 test("athlete can manage metric history and inspect trend evidence", async ({
   athletePage,
 }, testInfo) => {
@@ -48,6 +70,15 @@ test("athlete can manage metric history and inspect trend evidence", async ({
 
     const providerMetricRow = athletePage.getByRole("row").filter({ hasText: "70 kg" });
     await expect(providerMetricRow.getByText("Provider", { exact: true })).toBeVisible();
+    await activateControl(
+      athletePage,
+      providerMetricRow.getByRole("link", { name: "Details" }),
+      useTouch,
+    );
+    await expect(athletePage.getByRole("heading", { name: "Weight" })).toBeVisible();
+    await expect(athletePage.getByText("70 kg", { exact: true })).toBeVisible();
+    await expect(athletePage.getByRole("button", { name: "Manual override" })).toBeVisible();
+    await athletePage.goBack();
     const overrideButton = providerMetricRow.getByRole("button", { name: "Manual override" });
     await activateControl(athletePage, overrideButton, useTouch);
     await expect(athletePage.getByRole("heading", { name: "Override Weight" })).toBeVisible();

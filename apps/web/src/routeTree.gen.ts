@@ -48,6 +48,7 @@ import { Route as ProtectedGoalsNewRouteImport } from './routes/_protected/goals
 import { Route as ProtectedGroupsIndexRouteImport } from './routes/_protected/groups/index'
 import { Route as ProtectedGroupsNewRouteImport } from './routes/_protected/groups/new'
 import { Route as ProtectedProfileMetricsIndexRouteImport } from './routes/_protected/profile-metrics/index'
+import { Route as ProtectedProfileMetricsMetricIdRouteImport } from './routes/_protected/profile-metrics/$metricId'
 import { Route as ProtectedRecordIndexRouteImport } from './routes/_protected/record/index'
 import { Route as ProtectedRecordPlanRouteImport } from './routes/_protected/record/plan'
 import { Route as ProtectedRecordSessionRouteImport } from './routes/_protected/record/session'
@@ -288,6 +289,12 @@ const ProtectedProfileMetricsIndexRoute =
   ProtectedProfileMetricsIndexRouteImport.update({
     id: '/profile-metrics/',
     path: '/profile-metrics/',
+    getParentRoute: () => ProtectedRoute,
+  } as any)
+const ProtectedProfileMetricsMetricIdRoute =
+  ProtectedProfileMetricsMetricIdRouteImport.update({
+    id: '/profile-metrics/$metricId',
+    path: '/profile-metrics/$metricId',
     getParentRoute: () => ProtectedRoute,
   } as any)
 const ProtectedRecordIndexRoute = ProtectedRecordIndexRouteImport.update({
@@ -554,6 +561,7 @@ export interface FileRoutesByFullPath {
   '/calendar/new': typeof ProtectedCalendarNewRoute
   '/goals/new': typeof ProtectedGoalsNewRoute
   '/groups/new': typeof ProtectedGroupsNewRoute
+  '/profile-metrics/$metricId': typeof ProtectedProfileMetricsMetricIdRoute
   '/record/plan': typeof ProtectedRecordPlanRoute
   '/record/session': typeof ProtectedRecordSessionRoute
   '/routes/upload': typeof ProtectedRoutesUploadRoute
@@ -629,6 +637,7 @@ export interface FileRoutesByTo {
   '/calendar/new': typeof ProtectedCalendarNewRoute
   '/goals/new': typeof ProtectedGoalsNewRoute
   '/groups/new': typeof ProtectedGroupsNewRoute
+  '/profile-metrics/$metricId': typeof ProtectedProfileMetricsMetricIdRoute
   '/record/plan': typeof ProtectedRecordPlanRoute
   '/record/session': typeof ProtectedRecordSessionRoute
   '/routes/upload': typeof ProtectedRoutesUploadRoute
@@ -711,6 +720,7 @@ export interface FileRoutesById {
   '/_protected/calendar/new': typeof ProtectedCalendarNewRoute
   '/_protected/goals/new': typeof ProtectedGoalsNewRoute
   '/_protected/groups/new': typeof ProtectedGroupsNewRoute
+  '/_protected/profile-metrics/$metricId': typeof ProtectedProfileMetricsMetricIdRoute
   '/_protected/record/plan': typeof ProtectedRecordPlanRoute
   '/_protected/record/session': typeof ProtectedRecordSessionRoute
   '/_protected/routes/upload': typeof ProtectedRoutesUploadRoute
@@ -792,6 +802,7 @@ export interface FileRouteTypes {
     | '/calendar/new'
     | '/goals/new'
     | '/groups/new'
+    | '/profile-metrics/$metricId'
     | '/record/plan'
     | '/record/session'
     | '/routes/upload'
@@ -867,6 +878,7 @@ export interface FileRouteTypes {
     | '/calendar/new'
     | '/goals/new'
     | '/groups/new'
+    | '/profile-metrics/$metricId'
     | '/record/plan'
     | '/record/session'
     | '/routes/upload'
@@ -948,6 +960,7 @@ export interface FileRouteTypes {
     | '/_protected/calendar/new'
     | '/_protected/goals/new'
     | '/_protected/groups/new'
+    | '/_protected/profile-metrics/$metricId'
     | '/_protected/record/plan'
     | '/_protected/record/session'
     | '/_protected/routes/upload'
@@ -1297,6 +1310,13 @@ declare module '@tanstack/react-router' {
       path: '/profile-metrics'
       fullPath: '/profile-metrics/'
       preLoaderRoute: typeof ProtectedProfileMetricsIndexRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/profile-metrics/$metricId': {
+      id: '/_protected/profile-metrics/$metricId'
+      path: '/profile-metrics/$metricId'
+      fullPath: '/profile-metrics/$metricId'
+      preLoaderRoute: typeof ProtectedProfileMetricsMetricIdRouteImport
       parentRoute: typeof ProtectedRoute
     }
     '/_protected/record/': {
@@ -1691,6 +1711,7 @@ interface ProtectedRouteChildren {
   ProtectedActivitiesImportRoute: typeof ProtectedActivitiesImportRoute
   ProtectedActivityPlansActivityPlanIdRoute: typeof ProtectedActivityPlansActivityPlanIdRoute
   ProtectedGroupsNewRoute: typeof ProtectedGroupsNewRoute
+  ProtectedProfileMetricsMetricIdRoute: typeof ProtectedProfileMetricsMetricIdRoute
   ProtectedRoutesUploadRoute: typeof ProtectedRoutesUploadRoute
   ProtectedTrainingPlansCreateRoute: typeof ProtectedTrainingPlansCreateRoute
   ProtectedActivitiesIndexRoute: typeof ProtectedActivitiesIndexRoute
@@ -1732,6 +1753,7 @@ const ProtectedRouteChildren: ProtectedRouteChildren = {
   ProtectedActivityPlansActivityPlanIdRoute:
     ProtectedActivityPlansActivityPlanIdRoute,
   ProtectedGroupsNewRoute: ProtectedGroupsNewRoute,
+  ProtectedProfileMetricsMetricIdRoute: ProtectedProfileMetricsMetricIdRoute,
   ProtectedRoutesUploadRoute: ProtectedRoutesUploadRoute,
   ProtectedTrainingPlansCreateRoute: ProtectedTrainingPlansCreateRoute,
   ProtectedActivitiesIndexRoute: ProtectedActivitiesIndexRoute,

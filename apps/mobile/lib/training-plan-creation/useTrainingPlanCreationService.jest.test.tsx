@@ -104,7 +104,7 @@ function creationContext(asOf: string, planningThresholdPowerWatts = 250) {
 function createPerformanceTargets(asOf: string, planningThresholdPowerWatts = 250) {
   return buildPerformanceTargetFactsFixture({
     asOf,
-    planningThresholdPowerWatts,
+    bikeThresholdWatts: planningThresholdPowerWatts,
   });
 }
 

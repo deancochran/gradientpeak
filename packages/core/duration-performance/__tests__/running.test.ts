@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { metersPerSecondToSecondsPerKilometer } from "../../units";
 
 import {
   calculateRunningDurationPerformance,
@@ -53,7 +54,7 @@ describe("running duration performance", () => {
       10,
     );
     expect(model.parameters.planningThresholdPace.value.paceSecondsPerKilometer).toBeCloseTo(
-      1_000 / fixture.expected.planningThresholdSpeedMetersPerSecond,
+      metersPerSecondToSecondsPerKilometer(fixture.expected.planningThresholdSpeedMetersPerSecond),
       10,
     );
 

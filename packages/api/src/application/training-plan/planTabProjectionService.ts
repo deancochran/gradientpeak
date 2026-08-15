@@ -18,7 +18,7 @@ import {
 import { activities, activityPlans, events, profileGoals, trainingPlans } from "@repo/db";
 import { and, asc, eq, gte, inArray, isNotNull } from "drizzle-orm";
 import { z } from "zod";
-import type { DrizzleQueryExecutor } from "../../db";
+import { type DrizzleQueryExecutor, withRepeatableReadSnapshot } from "../../db";
 import { createEventReadRepository } from "../../infrastructure/repositories";
 import {
   type AthleteReadModel,
@@ -214,7 +214,6 @@ const defaultDependencies: PlanTabProjectionDependencies = {
       now,
       sections: {
         currentBaseline: { includePlanningContext: false },
-        loadHistory: true,
       },
     }),
   readEffectiveLoad: ({ db, profileId, request, asOf }) =>
@@ -239,6 +238,7 @@ const defaultDependencies: PlanTabProjectionDependencies = {
         and(
           eq(events.profile_id, profileId),
           eq(events.event_type, "planned"),
+          eq(events.status, "scheduled"),
           isNotNull(events.training_plan_id),
           gte(events.starts_at, asOf),
         ),
@@ -340,7 +340,9 @@ function aggregateValue(items: EffectiveItem[]) {
         contributingDurationSeconds: null,
       }
     : {
-        status: aggregate.status,
+        // A finite Common Load is the current authoritative load even when its
+        // source evidence may later be enriched or replaced.
+        status: "complete" as const,
         load: aggregate.load,
         intensity: aggregate.intensity,
         contributingDurationSeconds: aggregate.contributingDurationSeconds,
@@ -413,13 +415,12 @@ function summarizeDate(response: EffectivePlanLoadDto, date: string) {
     contributingDurationSeconds: effective.contributingDurationSeconds,
     completedLoadStatus: completed.status,
     completedLoad: completed.load,
-    scheduledLoadStatus: effective.status,
-    scheduledLoad: effective.load,
+    scheduledLoadStatus: scheduled.status,
+    scheduledLoad: scheduled.load,
     remainingLoadStatus: scheduled.status,
     remainingLoad: scheduled.load,
     hasUnavailableCompletedLoad:
-      items.some((item) => item.kind === "completed") &&
-      (completed.status === "unavailable" || completed.status === "partial"),
+      items.some((item) => item.kind === "completed") && completed.status === "unavailable",
     recommendedLoadStatus: recommendation.status,
     recommendedLoad: recommendation.load,
   });
@@ -439,7 +440,10 @@ function toProjectionDay(summary: z.infer<typeof planTabLoadSummarySchema>, date
   if (summary.status === "known_zero") {
     return { date, state: "known_zero" as const };
   }
-  if (summary.status === "complete" && summary.commonLoad !== null) {
+  if (
+    (summary.status === "complete" || summary.status === "partial") &&
+    summary.commonLoad !== null
+  ) {
     return { date, state: "available" as const, load: summary.commonLoad };
   }
   return {
@@ -453,13 +457,13 @@ function recommendationProjectionDays(recommendation: CommonLoadRecommendation |
   if (!recommendation || recommendation.status === "unavailable") return [];
   return recommendation.points.map<CommonLoadTrendProjectionDay>((point) => {
     if (point.state === "known_zero") return { date: point.date, state: "known_zero" };
-    if (point.state === "complete") {
+    if (point.state === "complete" || point.state === "partial") {
       return { date: point.date, state: "available", load: point.load };
     }
     return {
       date: point.date,
       state: "unavailable",
-      reason: point.state === "partial" ? "partial" : "unavailable",
+      reason: "unavailable",
     };
   });
 }
@@ -470,16 +474,24 @@ function buildFitness(input: {
   recommendation?: CommonLoadRecommendation;
 }) {
   const history = input.readModel.loadHistory?.result;
-  if (!history || history.status !== "available" || history.points.length === 0) {
-    return { actual: [], scheduled: [], recommended: [] };
-  }
-  const actual = history.points.map((point) => ({
+  const historyPoints = history?.status === "available" ? history.points : [];
+  const publishedBaseline = input.readModel.currentBaseline?.baseline;
+  const currentPlanningDate = input.readModel.currentBaseline?.currentPlanningDate;
+  const actual = historyPoints.map((point) => ({
     date: point.date,
     longTermLoad: point.longTermLoad,
     recentLoad: point.recentLoad,
     loadBalance: point.loadBalance,
   }));
-  const baseline = history.points.at(-1);
+  if (actual.length === 0 && publishedBaseline && currentPlanningDate) {
+    actual.push({
+      date: currentPlanningDate,
+      longTermLoad: publishedBaseline.longTermLoad,
+      recentLoad: publishedBaseline.recentLoad,
+      loadBalance: publishedBaseline.loadBalance,
+    });
+  }
+  const baseline = actual.at(-1);
   if (!baseline) return { actual, scheduled: [], recommended: [] };
   const scheduledProjection = projectCommonLoadTrend({
     baseline,
@@ -685,16 +697,14 @@ export async function readPlanTabProjection(input: {
   const request = planTabProjectionInputSchema.parse(input.request);
   const asOf = input.asOf ?? new Date();
   const dependencies = input.dependencies ?? defaultDependencies;
-  return input.db.transaction(
-    (tx) =>
-      readPlanTabProjectionSnapshot({
-        db: tx,
-        profileId: input.profileId,
-        request,
-        asOf,
-        dependencies,
-      }),
-    { accessMode: "read only", isolationLevel: "repeatable read" },
+  return withRepeatableReadSnapshot(input.db, (tx) =>
+    readPlanTabProjectionSnapshot({
+      db: tx,
+      profileId: input.profileId,
+      request,
+      asOf,
+      dependencies,
+    }),
   );
 }
 

@@ -12,8 +12,9 @@ import { Input } from "@repo/ui/components/input";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { cn } from "@repo/ui/lib/cn";
 import { Link } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { useForm } from "react-hook-form";
+import { getSafeAppRedirectTarget } from "../lib/app-url";
+import { authClient } from "../lib/auth/client";
 import { getLoginFormError } from "../lib/auth/form-errors";
 import { type LoginFormValues, loginFormSchema } from "../lib/auth/form-schemas";
 import { signInWithEmailAction } from "../lib/auth/server-actions";
@@ -25,7 +26,6 @@ type LoginFormProps = React.ComponentPropsWithoutRef<"div"> & {
 };
 
 export function LoginForm({ className, redirectTo, ...props }: LoginFormProps) {
-  const signIn = useServerFn(signInWithEmailAction);
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginFormSchema),
     defaultValues: {
@@ -38,7 +38,14 @@ export function LoginForm({ className, redirectTo, ...props }: LoginFormProps) {
     form.clearErrors();
 
     try {
-      await signIn({ data: { ...values, redirect: redirectTo } });
+      const result = await authClient.signIn.email(values);
+      if (result.error) {
+        const formError = getLoginFormError(new Error(result.error.message));
+        form.setError(formError.target, { message: formError.message });
+        return;
+      }
+
+      window.location.assign(getSafeAppRedirectTarget(redirectTo, "/"));
     } catch (error: unknown) {
       const formError = getLoginFormError(error);
 

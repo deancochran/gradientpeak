@@ -179,6 +179,15 @@ describe("web recording submission queue", () => {
     const storage = new MemoryQueue();
     const submit = vi.fn().mockResolvedValue({ activityId: "activity-1" });
 
+    expect(storage.job.artifact.snapshot.performanceTargets).toMatchObject({
+      contractVersion: "athlete-performance-target-facts-v3",
+      thresholds: {
+        bike: { activityCategory: "bike", unit: "watts" },
+        run: { activityCategory: "run", unit: "meters_per_second" },
+        swim: { activityCategory: "swim", unit: "meters_per_second" },
+      },
+    });
+
     await drainWebRecordingSubmissionQueue(storage, submit, new Date("2026-07-20T10:32:00.000Z"));
     await drainWebRecordingSubmissionQueue(storage, submit, new Date("2026-07-20T10:33:00.000Z"));
 

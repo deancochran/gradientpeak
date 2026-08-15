@@ -91,7 +91,7 @@ function materializeSource(samples: readonly FixturePowerSample[]) {
 function performanceTargets(asOf: string) {
   return buildPerformanceTargetFactsFixture({
     asOf,
-    planningThresholdPowerWatts: THRESHOLD_POWER_WATTS,
+    bikeThresholdWatts: THRESHOLD_POWER_WATTS,
     calculationVersion: "cycling-numerical-trust-threshold-v1",
   });
 }
@@ -161,7 +161,11 @@ describe("cycling numerical trust import/live parity", () => {
       activity: finalAnalysisActivity,
       context: {
         profileMetrics: {},
-        performanceTargets: performanceTargets(finishedAt.toISOString()),
+        performanceTargets: buildPerformanceTargetFactsFixture({
+          asOf: finishedAt.toISOString(),
+          bikeThresholdWatts: THRESHOLD_POWER_WATTS,
+          calculationVersion: "cycling-numerical-trust-threshold-v1",
+        }),
         recentEfforts: [],
         profile: {},
       },

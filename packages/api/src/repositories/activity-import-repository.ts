@@ -8,12 +8,45 @@ type DbClient = ReturnType<typeof getRequiredDb>;
 
 export type ActivityImportKind = "onboarding" | "history_sync" | "manual_sync";
 const bulkImportKinds: ActivityImportKind[] = ["onboarding", "history_sync", "manual_sync"];
+const MAX_SKIPPED_DIAGNOSTICS = 120;
+
+export const activityImportSkipReasonCodes = [
+  "already_imported",
+  "unsupported_activity_file",
+  "unsupported_activity_invariant",
+  "canonical_identity_mismatch",
+  "canonical_evidence_unchanged",
+  "unspecified",
+] as const;
+
+export type ActivityImportSkipReasonCode = (typeof activityImportSkipReasonCodes)[number];
+
+export type ActivityImportSkipDiagnostic = {
+  providerExternalId: string;
+  reason: ActivityImportSkipReasonCode;
+};
+
+function assertSkippedDiagnostics(
+  diagnostics: readonly ActivityImportSkipDiagnostic[],
+): readonly ActivityImportSkipDiagnostic[] {
+  if (diagnostics.length > 30) throw new Error("Too many skipped activity diagnostics in one page");
+  for (const diagnostic of diagnostics) {
+    if (!/^\d{1,20}$/.test(diagnostic.providerExternalId)) {
+      throw new Error("Skipped activity diagnostic has an invalid provider external ID");
+    }
+    if (!activityImportSkipReasonCodes.includes(diagnostic.reason)) {
+      throw new Error("Skipped activity diagnostic has an invalid reason code");
+    }
+  }
+  return diagnostics;
+}
 
 type RecordActivityImportPageInput = {
   id: string;
   discovered: number;
   imported: number;
   skipped: number;
+  skippedDiagnostics?: readonly ActivityImportSkipDiagnostic[];
   failed: number;
   earliestActivityAt: Date | null;
   latestActivityAt: Date | null;
@@ -25,12 +58,28 @@ type RecordActivityImportPageInput = {
 export function createActivityImportRepository(db: DbClient) {
   const recordPage = async (tx: DrizzleTransactionClient, input: RecordActivityImportPageInput) => {
     const now = input.now ?? new Date();
+    const skippedDiagnostics = assertSkippedDiagnostics(input.skippedDiagnostics ?? []);
+    const skippedDiagnosticsJson = JSON.stringify(skippedDiagnostics);
     const [pageRecorded] = await tx
       .update(activityImportRuns)
       .set({
         discovered_count: sql`${activityImportRuns.discovered_count} + ${input.discovered}`,
         imported_count: sql`${activityImportRuns.imported_count} + ${input.imported}`,
         skipped_count: sql`${activityImportRuns.skipped_count} + ${input.skipped}`,
+        skipped_diagnostics:
+          skippedDiagnostics.length === 0
+            ? undefined
+            : sql`(
+                select coalesce(jsonb_agg(value), '[]'::jsonb)
+                from (
+                  select value
+                  from jsonb_array_elements(
+                    ${activityImportRuns.skipped_diagnostics} || ${skippedDiagnosticsJson}::jsonb
+                  ) with ordinality as diagnostic(value, ordinal)
+                  order by ordinal
+                  limit ${MAX_SKIPPED_DIAGNOSTICS}
+                ) as bounded_diagnostics
+              )`,
         failed_count: sql`${activityImportRuns.failed_count} + ${input.failed}`,
         earliest_activity_at: input.earliestActivityAt
           ? sql`least(coalesce(${activityImportRuns.earliest_activity_at}, ${input.earliestActivityAt}), ${input.earliestActivityAt})`

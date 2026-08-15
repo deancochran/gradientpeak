@@ -1,136 +1,165 @@
-import type {
-  CalibrationActivityCategory,
-  CalibrationIdentity,
-  CalibrationMetricKey,
-} from "./contracts";
+import { z } from "zod";
 
-export const PERFORMANCE_CALIBRATION_POLICY_VERSION = "performance-calibration-v1" as const;
-export const PERFORMANCE_CALIBRATION_EXPIRY_DAYS = 90 as const;
-export const PERFORMANCE_CALIBRATION_LIFECYCLE_POLICY = Object.freeze({
-  expiryDays: PERFORMANCE_CALIBRATION_EXPIRY_DAYS,
-  maximumSelectionCandidates: 64,
-  confirmation: Object.freeze({ evidenceCount: 2, minimumDaySpan: 7, maximumDaySpan: 42 }),
-  decrease: Object.freeze({ evidenceCount: 3, minimumDaySpan: 14, maximumDaySpan: 56 }),
-  heartRateChange: Object.freeze({ evidenceCount: 3, minimumDaySpan: 14, maximumDaySpan: 56 }),
-  relativeTolerance: 0.03,
-  heartRateToleranceBpm: 3,
-  materialRelativeChange: 0.03,
-  materialHeartRateChangeBpm: 4,
-});
+import { bestEffortMetricSchema } from "../calculations/best-efforts";
+import {
+  THRESHOLD_PLAUSIBILITY_VERSION,
+  THRESHOLD_POLICY_SCHEMA_VERSION,
+  THRESHOLD_POLICY_VERSION,
+  type ThresholdActivityCategory,
+  thresholdActivityCategorySchema,
+  thresholdMethodSchema,
+  thresholdMetricSchema,
+  thresholdPlausibilityVersionSchema,
+  thresholdPolicySchemaVersionSchema,
+  thresholdPolicyVersionSchema,
+  thresholdUnitSchema,
+} from "./threshold-contracts";
 
-export type CalibrationRegistryEntry = Readonly<{
-  identity: CalibrationIdentity;
-  canonicalUnit: "watts" | "meters_per_second" | "beats_per_minute";
-  productLabel: string;
-  policyVersion: typeof PERFORMANCE_CALIBRATION_POLICY_VERSION;
-  expiryDays: typeof PERFORMANCE_CALIBRATION_EXPIRY_DAYS;
-  initialSelectionPolicy: "provisional" | "confirmed_complete_protocol";
-  targetConsumer: string;
-  calculationEntrypoint:
-    | "bike_duration_performance"
-    | "run_threshold_speed_30m"
-    | "swim_css_400m_200m"
-    | "threshold_heart_rate_30m";
-}>;
+export const thresholdActivityCategoryPolicySchema = z
+  .object({
+    schemaVersion: thresholdPolicySchemaVersionSchema,
+    activityCategory: thresholdActivityCategorySchema,
+    metric: thresholdMetricSchema,
+    unit: thresholdUnitSchema,
+    method: thresholdMethodSchema,
+    policyVersion: thresholdPolicyVersionSchema,
+    plausibilityVersion: thresholdPlausibilityVersionSchema,
+    seriesSelection: z
+      .object({
+        preferred: bestEffortMetricSchema,
+        fallback: bestEffortMetricSchema.nullable(),
+      })
+      .strict(),
+    exactWindowSeconds: z.number().int().positive(),
+    conversionFactor: z.number().finite().positive(),
+    requiredWindowCoverage: z.number().finite().min(0.9).max(1),
+    maximumGapSeconds: z.number().finite().positive(),
+    plausibleThreshold: z
+      .object({ minimum: z.number().finite().positive(), maximum: z.number().finite().positive() })
+      .strict(),
+    consistencyRelativeTolerance: z.number().finite().positive().max(0.25),
+    materialChangeRelativeThreshold: z.number().finite().positive().max(0.25),
+    confirmationEvidenceCount: z.literal(2),
+    confirmationWindowDays: z.number().int().positive(),
+    decreaseEvidenceCount: z.literal(2),
+    decreaseWindowDays: z.number().int().positive(),
+    freshnessDays: z.number().int().positive(),
+  })
+  .strict()
+  .superRefine((policy, context) => {
+    if (policy.plausibleThreshold.minimum >= policy.plausibleThreshold.maximum) {
+      context.addIssue({
+        code: "custom",
+        path: ["plausibleThreshold"],
+        message: "Threshold plausibility minimum must be below its maximum",
+      });
+    }
+    const expectedUnit = policy.metric === "power" ? "watts" : "meters_per_second";
+    if (policy.unit !== expectedUnit) {
+      context.addIssue({
+        code: "custom",
+        path: ["unit"],
+        message: "Threshold policy unit mismatch",
+      });
+    }
+  });
 
-const entries = [
-  [
-    "threshold_power",
-    "bike",
-    "watts",
-    "FTP / Bike Threshold Power",
-    "power zones, bike load, and bike plan targets",
-    "bike_duration_performance",
-    "provisional",
-  ],
-  [
-    "threshold_speed",
-    "run",
-    "meters_per_second",
-    "Run Threshold Pace",
-    "run pace zones and plan targets",
-    "run_threshold_speed_30m",
-    "provisional",
-  ],
-  [
-    "threshold_speed",
-    "swim",
-    "meters_per_second",
-    "CSS",
-    "swim pace targets and load",
-    "swim_css_400m_200m",
-    "confirmed_complete_protocol",
-  ],
-  [
-    "threshold_heart_rate",
-    "bike",
-    "beats_per_minute",
-    "Bike LTHR",
-    "bike HR zones and HR-load fallback",
-    "threshold_heart_rate_30m",
-    "provisional",
-  ],
-  [
-    "threshold_heart_rate",
-    "run",
-    "beats_per_minute",
-    "Run LTHR",
-    "run HR zones and HR-load fallback",
-    "threshold_heart_rate_30m",
-    "provisional",
-  ],
-] as const satisfies readonly (readonly [
-  CalibrationMetricKey,
-  CalibrationActivityCategory,
-  CalibrationRegistryEntry["canonicalUnit"],
-  string,
-  string,
-  CalibrationRegistryEntry["calculationEntrypoint"],
-  CalibrationRegistryEntry["initialSelectionPolicy"],
-])[];
+export const thresholdActivityCategoryPoliciesSchema = z
+  .array(thresholdActivityCategoryPolicySchema)
+  .length(3)
+  .superRefine((policies, context) => {
+    if (
+      new Set(policies.map(({ activityCategory }) => activityCategory)).size !== policies.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Threshold activity-category policies must be unique",
+      });
+    }
+  });
 
-export const performanceCalibrationRegistry: readonly CalibrationRegistryEntry[] = Object.freeze(
-  entries.map(
-    ([
-      metricKey,
-      activityCategory,
-      canonicalUnit,
-      productLabel,
-      targetConsumer,
-      calculationEntrypoint,
-      initialSelectionPolicy,
-    ]) =>
-      Object.freeze({
-        identity: Object.freeze({ metricKey, activityCategory }),
-        canonicalUnit,
-        productLabel,
-        policyVersion: PERFORMANCE_CALIBRATION_POLICY_VERSION,
-        expiryDays: PERFORMANCE_CALIBRATION_EXPIRY_DAYS,
-        initialSelectionPolicy,
-        targetConsumer,
-        calculationEntrypoint,
-      }),
-  ),
-);
+export type ThresholdActivityCategoryPolicy = z.infer<typeof thresholdActivityCategoryPolicySchema>;
 
-export function calibrationIdentityKey(identity: CalibrationIdentity): string {
-  return `${identity.metricKey}/${identity.activityCategory}`;
-}
-
-export function getCalibrationRegistryEntriesForCategory(
-  activityCategory: CalibrationActivityCategory,
-): readonly CalibrationRegistryEntry[] {
-  return performanceCalibrationRegistry.filter(
-    (entry) => entry.identity.activityCategory === activityCategory,
+export const thresholdActivityCategoryPolicies: readonly ThresholdActivityCategoryPolicy[] =
+  Object.freeze(
+    thresholdActivityCategoryPoliciesSchema.parse([
+      {
+        schemaVersion: THRESHOLD_POLICY_SCHEMA_VERSION,
+        activityCategory: "bike",
+        metric: "power",
+        unit: "watts",
+        method: "bike_power_30m",
+        policyVersion: THRESHOLD_POLICY_VERSION,
+        plausibilityVersion: THRESHOLD_PLAUSIBILITY_VERSION,
+        seriesSelection: { preferred: "power", fallback: null },
+        exactWindowSeconds: 1_800,
+        conversionFactor: 0.95,
+        requiredWindowCoverage: 0.95,
+        maximumGapSeconds: 10,
+        plausibleThreshold: { minimum: 50, maximum: 2_000 },
+        consistencyRelativeTolerance: 0.03,
+        materialChangeRelativeThreshold: 0.03,
+        confirmationEvidenceCount: 2,
+        confirmationWindowDays: 42,
+        decreaseEvidenceCount: 2,
+        decreaseWindowDays: 56,
+        freshnessDays: 90,
+      },
+      {
+        schemaVersion: THRESHOLD_POLICY_SCHEMA_VERSION,
+        activityCategory: "run",
+        metric: "speed",
+        unit: "meters_per_second",
+        method: "run_speed_30m",
+        policyVersion: THRESHOLD_POLICY_VERSION,
+        plausibilityVersion: THRESHOLD_PLAUSIBILITY_VERSION,
+        seriesSelection: { preferred: "grade_adjusted_speed", fallback: "speed" },
+        exactWindowSeconds: 1_800,
+        conversionFactor: 1,
+        requiredWindowCoverage: 0.95,
+        maximumGapSeconds: 10,
+        plausibleThreshold: { minimum: 0.5, maximum: 12 },
+        consistencyRelativeTolerance: 0.03,
+        materialChangeRelativeThreshold: 0.03,
+        confirmationEvidenceCount: 2,
+        confirmationWindowDays: 42,
+        decreaseEvidenceCount: 2,
+        decreaseWindowDays: 56,
+        freshnessDays: 90,
+      },
+      {
+        schemaVersion: THRESHOLD_POLICY_SCHEMA_VERSION,
+        activityCategory: "swim",
+        metric: "speed",
+        unit: "meters_per_second",
+        method: "swim_speed_15m",
+        policyVersion: THRESHOLD_POLICY_VERSION,
+        plausibilityVersion: THRESHOLD_PLAUSIBILITY_VERSION,
+        seriesSelection: { preferred: "speed", fallback: null },
+        exactWindowSeconds: 900,
+        conversionFactor: 1,
+        requiredWindowCoverage: 0.95,
+        maximumGapSeconds: 10,
+        plausibleThreshold: { minimum: 0.25, maximum: 3 },
+        consistencyRelativeTolerance: 0.03,
+        materialChangeRelativeThreshold: 0.03,
+        confirmationEvidenceCount: 2,
+        confirmationWindowDays: 42,
+        decreaseEvidenceCount: 2,
+        decreaseWindowDays: 56,
+        freshnessDays: 90,
+      },
+    ]),
   );
-}
 
-export function getCalibrationRegistryEntry(
-  identity: CalibrationIdentity,
-): CalibrationRegistryEntry | null {
-  return (
-    performanceCalibrationRegistry.find(
-      (entry) => calibrationIdentityKey(entry.identity) === calibrationIdentityKey(identity),
-    ) ?? null
+export function getThresholdActivityCategoryPolicy(
+  activityCategory: ThresholdActivityCategory,
+): ThresholdActivityCategoryPolicy {
+  const policy = thresholdActivityCategoryPolicies.find(
+    (candidate) => candidate.activityCategory === activityCategory,
   );
+  if (policy === undefined) {
+    throw new Error(`Threshold policy is unavailable for ${activityCategory}`);
+  }
+  return policy;
 }

@@ -101,6 +101,7 @@ describe("published athlete-state repository snapshot", () => {
 describe("athlete-state publication fence", () => {
   it("does not replace estimates when the source-revision claim is stale", async () => {
     const afterPublishInTransaction = vi.fn();
+    const prepareEstimates = vi.fn().mockResolvedValue([]);
     const deleteEstimates = vi.fn();
     const insertEstimates = vi.fn();
     const updateState = vi.fn();
@@ -124,7 +125,7 @@ describe("athlete-state publication fence", () => {
       insert: insertEstimates,
       update: updateState,
     };
-    const db = { transaction: vi.fn((callback) => callback(tx)) };
+    const db = { $client: {}, transaction: vi.fn((callback) => callback(tx)) };
 
     await expect(
       publishAthleteState(db as never, {
@@ -143,7 +144,7 @@ describe("athlete-state publication fence", () => {
           lastActivityAt: null,
           algorithmVersion: "athlete-state-projection-v1",
         },
-        estimates: [],
+        estimates: prepareEstimates,
         now: new Date(COMPUTED_AT),
         afterPublishInTransaction,
       }),
@@ -151,12 +152,14 @@ describe("athlete-state publication fence", () => {
     expect(deleteEstimates).not.toHaveBeenCalled();
     expect(insertEstimates).not.toHaveBeenCalled();
     expect(updateState).not.toHaveBeenCalled();
+    expect(prepareEstimates).not.toHaveBeenCalled();
     expect(afterPublishInTransaction).not.toHaveBeenCalled();
   });
 
-  it("runs outbound-effect enqueue only after the fenced snapshot update succeeds", async () => {
+  it("uses one writable repeatable-read transaction and enqueues only after the fenced update", async () => {
     const publishedReturning = vi.fn().mockResolvedValue([{ profileId: PROFILE_ID }]);
     const updateWhere = vi.fn(() => ({ returning: publishedReturning }));
+    const insertValues = vi.fn().mockResolvedValue(undefined);
     const tx = {
       execute: vi.fn().mockResolvedValue({ rows: [] }),
       select: vi.fn((fields: Record<string, unknown>) => ({
@@ -177,10 +180,12 @@ describe("athlete-state publication fence", () => {
         }),
       })),
       delete: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
-      insert: vi.fn(),
+      insert: vi.fn(() => ({ values: insertValues })),
       update: vi.fn(() => ({ set: vi.fn(() => ({ where: updateWhere })) })),
     };
-    const db = { transaction: vi.fn((callback) => callback(tx)) };
+    const db = { $client: {}, transaction: vi.fn((callback) => callback(tx)) };
+    const preparedEstimates = [{ profile_id: PROFILE_ID }] as never;
+    const prepareEstimates = vi.fn().mockResolvedValue(preparedEstimates);
     const afterPublishInTransaction = vi.fn().mockResolvedValue(undefined);
 
     await expect(
@@ -200,13 +205,26 @@ describe("athlete-state publication fence", () => {
           lastActivityAt: null,
           algorithmVersion: "athlete-state-projection-v1",
         },
-        estimates: [],
+        estimates: prepareEstimates,
         now: new Date(COMPUTED_AT),
         afterPublishInTransaction,
       }),
     ).resolves.toBe(true);
 
+    expect(db.transaction).toHaveBeenCalledWith(expect.any(Function), {
+      accessMode: "read write",
+      isolationLevel: "repeatable read",
+    });
+    expect(tx.execute).toHaveBeenCalledOnce();
+    expect(prepareEstimates).toHaveBeenCalledWith(tx);
+    expect(insertValues).toHaveBeenCalledWith(preparedEstimates);
     expect(afterPublishInTransaction).toHaveBeenCalledWith(tx);
+    expect(prepareEstimates.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.delete.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+    expect(tx.execute.mock.invocationCallOrder[0]).toBeLessThan(
+      prepareEstimates.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
     expect(publishedReturning.mock.invocationCallOrder[0]).toBeLessThan(
       afterPublishInTransaction.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
     );

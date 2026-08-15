@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { projectAthletePerformanceTargetFacts } from "@repo/core";
 import { db, pool } from "@repo/db/client";
 import {
   activities,
@@ -152,8 +151,14 @@ async function seedCanonicalBikeEffort(
     recorded_at: recordedAt,
     activity_category: "bike",
     effort_type: "power",
+    source_series: "power",
     duration_seconds: durationSeconds,
-    start_offset: 0,
+    source_artifact_id: activity.artifactId,
+    source_revision: 1,
+    start_offset_ms: 0,
+    end_offset_ms: durationSeconds * 1_000,
+    window_coverage: 1,
+    max_gap_seconds: 2,
     unit: "watts",
     value: 300,
     source: "imported",
@@ -326,10 +331,10 @@ describe("athlete performance-model historical batch reads", () => {
       { athleteId: profileId, asOf: new Date("2026-08-02T00:00:00.000Z") },
       repository,
     );
-    const targets = projectAthletePerformanceTargetFacts(model);
-
-    expect(targets.cycling.planningThresholdPower).toMatchObject({ status: "unavailable" });
-    expect(targets.heartRate.bike.lthr).toMatchObject({ status: "unavailable" });
+    expect(model.categories.bike.parameters.planningThresholdPower).toMatchObject({
+      status: "unavailable",
+    });
+    expect(model.heartRate.bike.lthr).toMatchObject({ status: "unavailable" });
   });
 
   it("matches direct reads across athletes, as-of windows, and self-exclusion above the old global cap", async () => {

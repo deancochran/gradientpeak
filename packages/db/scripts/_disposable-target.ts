@@ -41,7 +41,7 @@ export async function withDisposableDatabase<T>(
   }
 }
 
-export async function bootstrapSupabaseSchemas(pool: Pool) {
+export async function bootstrapSupabaseAuthSchema(pool: Pool) {
   await pool.query(`
     create schema if not exists extensions;
     create schema auth;
@@ -52,6 +52,12 @@ export async function bootstrapSupabaseSchemas(pool: Pool) {
       email_confirmed_at timestamptz,
       raw_user_meta_data jsonb not null default '{}'::jsonb
     );
+  `);
+}
+
+export async function bootstrapSupabaseSchemas(pool: Pool) {
+  await bootstrapSupabaseAuthSchema(pool);
+  await pool.query(`
     create schema storage;
     create function storage.foldername(name text) returns text[]
       language sql immutable as $$ select string_to_array(name, '/') $$;

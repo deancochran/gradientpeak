@@ -1,4 +1,4 @@
-import { projectAthletePerformanceTargetOverview } from "@repo/core";
+import { projectAthletePerformanceOverview } from "@repo/core";
 import type { ProfileMetricType } from "@repo/core/schemas/profile-metrics";
 import type { PreferredUnitSystem } from "@repo/core/units";
 import {
@@ -35,7 +35,7 @@ import {
   TableHeader,
   TableRow,
 } from "@repo/ui/components/table";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Activity, Loader2, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -118,13 +118,9 @@ function ProfileMetricsPage() {
     },
     { enabled: !!user?.id },
   );
-  const performanceOverview =
-    publishedStateQuery.data?.status?.freshness === "fresh" &&
-    publishedStateQuery.data.publishedState?.performanceTargets
-      ? projectAthletePerformanceTargetOverview(
-          publishedStateQuery.data.publishedState.performanceTargets,
-        )
-      : undefined;
+  const performanceOverview = publishedStateQuery.data?.publishedState?.performanceTargets
+    ? projectAthletePerformanceOverview(publishedStateQuery.data.publishedState.performanceTargets)
+    : undefined;
   const performanceStateError = publishedStateQuery.error?.message
     ? publishedStateQuery.error.message
     : publishedStateQuery.data && !performanceOverview
@@ -436,6 +432,15 @@ function MetricRowsTable({
                   {row.notes || "-"}
                 </TableCell>
                 <TableCell className="text-right">
+                  <Button asChild size="sm" type="button" variant="ghost">
+                    <Link
+                      onClick={(event) => event.stopPropagation()}
+                      params={{ metricId: row.id }}
+                      to="/profile-metrics/$metricId"
+                    >
+                      Details
+                    </Link>
+                  </Button>
                   {manual ? (
                     <Button
                       onClick={(event) => {

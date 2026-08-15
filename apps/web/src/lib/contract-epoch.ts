@@ -2,6 +2,7 @@ import { CONTRACT_EPOCH_HEADER, CURRENT_CONTRACT_EPOCH } from "@repo/api/client"
 
 export const CONTRACT_EPOCH_STORAGE_KEY = "gradientpeak:contract-epoch";
 export const CONTRACT_EPOCH_DATABASE_DELETE_TIMEOUT_MS = 5_000;
+export const CONTRACT_EPOCH_RESET_TIMEOUT_MS = 10_000;
 export const LEGACY_WEB_RECORDING_DATABASE_NAME = "gradientpeak-web-recording";
 export const WEB_RECORDING_DATABASE_PREFIX = "gradientpeak-web-recording-epoch-";
 export const WEB_RECORDING_DATABASE_NAME = `${WEB_RECORDING_DATABASE_PREFIX}${CURRENT_CONTRACT_EPOCH}`;
@@ -45,11 +46,24 @@ export function createBrowserContractEpochRuntime(): ContractEpochRuntime {
   };
 }
 
+let currentBrowserContractEpochReset: Promise<boolean> | undefined;
+
 export async function ensureCurrentBrowserContractEpoch(): Promise<boolean> {
-  return await ensureCurrentContractEpoch(createBrowserContractEpochRuntime());
+  if (!currentBrowserContractEpochReset) {
+    currentBrowserContractEpochReset = ensureCurrentContractEpoch(
+      createBrowserContractEpochRuntime(),
+    );
+    void currentBrowserContractEpochReset.catch(() => {
+      currentBrowserContractEpochReset = undefined;
+    });
+  }
+  return await currentBrowserContractEpochReset;
 }
 
 export async function ensureCurrentContractEpoch(runtime: ContractEpochRuntime): Promise<boolean> {
+  const deadline = Date.now() + CONTRACT_EPOCH_RESET_TIMEOUT_MS;
+  const beforeDeadline = <T>(operation: Promise<T>, description: string) =>
+    withTimeout(operation, Math.max(1, deadline - Date.now()), description);
   const storedEpoch = runtime.localStorage.getItem(CONTRACT_EPOCH_STORAGE_KEY);
   if (storedEpoch === CURRENT_CONTRACT_EPOCH_VALUE) {
     return false;
@@ -65,13 +79,22 @@ export async function ensureCurrentContractEpoch(runtime: ContractEpochRuntime):
   if (storedEpoch) {
     recordingDatabaseNames.add(`${WEB_RECORDING_DATABASE_PREFIX}${storedEpoch}`);
   }
-  for (const databaseName of (await runtime.listDatabaseNames?.()) ?? []) {
+  const discoveredDatabaseNames = runtime.listDatabaseNames
+    ? await beforeDeadline(
+        Promise.resolve().then(runtime.listDatabaseNames),
+        "Timed out checking local browser data.",
+      )
+    : [];
+  for (const databaseName of discoveredDatabaseNames) {
     if (databaseName.startsWith(WEB_RECORDING_DATABASE_PREFIX)) {
       recordingDatabaseNames.add(databaseName);
     }
   }
   for (const databaseName of recordingDatabaseNames) {
-    await runtime.deleteDatabase(databaseName);
+    await beforeDeadline(
+      runtime.deleteDatabase(databaseName),
+      "Timed out preparing local browser data. Close other GradientPeak tabs and retry.",
+    );
   }
 
   for (const key of PRODUCT_LOCAL_STORAGE_KEYS) {
@@ -92,6 +115,22 @@ async function listBrowserDatabaseNames(): Promise<readonly string[]> {
   return (await indexedDB.databases()).flatMap((database) =>
     typeof database.name === "string" ? [database.name] : [],
   );
+}
+
+function withTimeout<T>(operation: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+    void operation.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
 }
 
 function deleteBrowserDatabase(name: string): Promise<void> {

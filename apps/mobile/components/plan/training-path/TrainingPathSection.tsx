@@ -40,7 +40,7 @@ export function TrainingPathSection({
   onSelectedDateChange,
 }: TrainingPathSectionProps) {
   return (
-    <View className="gap-4" testID="training-path-section">
+    <View className="gap-3" testID="training-path-section">
       <TrainingPathLoadChartSection
         dailyPoints={dailyPoints}
         dailyDensity="standard"
@@ -64,6 +64,7 @@ export function TrainingPathSection({
         onScrollNearStart={onScrollNearStart}
         selectedDate={selectedDate}
         selectionMode="day"
+        showInlineLegend={false}
         showSelectedPointTray={false}
         onSelectedDateChange={onSelectedDateChange}
         onSelectedWeekChange={onSelectedWeekChange}

@@ -50,9 +50,16 @@ import {
 import {
   type AthletePerformanceTargetFacts,
   athletePerformanceTargetFactsSchema,
-  getAvailablePerformanceTargetValue,
+  type PerformanceThresholdFact,
 } from "../performance-model";
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
+import {
+  kphToMps,
+  mphToMps,
+  secondsPer100MetersToMetersPerSecond,
+  secondsPerKilometerToMetersPerSecond,
+  secondsPerMileToMetersPerSecond,
+} from "../units";
 
 export type ActivityPlanAuthoredTargetEvidence = {
   occurrenceId: string;
@@ -234,13 +241,15 @@ function absoluteSpeed(value: ActivityNativeIntensityValue): number | null {
   if (magnitude === null || magnitude <= 0) return null;
   if (value.metric === "speed") {
     if (value.unit === "meters_per_second") return magnitude;
-    if (value.unit === "kilometers_per_hour") return magnitude / 3.6;
-    return magnitude * 0.44704;
+    if (value.unit === "kilometers_per_hour") return kphToMps(magnitude);
+    return mphToMps(magnitude);
   }
   if (value.metric !== "pace") return null;
-  if (value.unit === "seconds_per_kilometer") return 1_000 / magnitude;
-  if (value.unit === "seconds_per_mile") return 1_609.344 / magnitude;
-  return 100 / magnitude;
+  if (value.unit === "seconds_per_kilometer") {
+    return secondsPerKilometerToMetersPerSecond(magnitude);
+  }
+  if (value.unit === "seconds_per_mile") return secondsPerMileToMetersPerSecond(magnitude);
+  return secondsPer100MetersToMetersPerSecond(magnitude);
 }
 
 function relativeSpeedCalibration(input: {
@@ -254,22 +263,19 @@ function relativeSpeedCalibration(input: {
   const ratio = input.value.unit === "percent" ? magnitude / 100 : magnitude;
   if (!Number.isFinite(ratio) || ratio <= 0 || input.performanceTargets === null) return null;
 
-  if (input.activityCategory === "run" && input.value.reference === "threshold_speed") {
-    const pace = getAvailablePerformanceTargetValue(
-      input.performanceTargets.running.planningThresholdPace,
-    );
-    return pace === null ? null : (1_000 / pace) * ratio;
-  }
-  if (input.activityCategory === "swim" && input.value.reference === "css") {
-    const pace = getAvailablePerformanceTargetValue(input.performanceTargets.swimming.css);
-    return pace === null ? null : (100 / pace) * ratio;
+  if (
+    (input.activityCategory === "run" || input.activityCategory === "swim") &&
+    input.value.reference === "threshold_speed"
+  ) {
+    const fact = input.performanceTargets.thresholds[input.activityCategory];
+    return fact.status === "available" ? fact.value * ratio : null;
   }
   return null;
 }
 
 /**
  * Absolute authored speed/pace wins without calibration. Relative pace can only
- * resolve through the matching run-threshold or swim-CSS calibration.
+ * resolve through the matching canonical run or swim speed threshold.
  */
 export function resolvePrescriptionSpeedMetersPerSecond(input: {
   activityCategory: CanonicalActivityCategory;
@@ -315,8 +321,7 @@ export function resolvePrescriptionSpeedMetersPerSecond(input: {
 
   const relative = input.prescribedIntensity.values.find(
     (value): value is RelativeThresholdIntensity =>
-      value.metric === "relative_threshold" &&
-      (value.reference === "threshold_speed" || value.reference === "css"),
+      value.metric === "relative_threshold" && value.reference === "threshold_speed",
   );
   if (!relative) {
     return {
@@ -335,8 +340,8 @@ export function resolvePrescriptionSpeedMetersPerSecond(input: {
     };
   }
   const compatible =
-    (input.activityCategory === "run" && relative.reference === "threshold_speed") ||
-    (input.activityCategory === "swim" && relative.reference === "css");
+    (input.activityCategory === "run" || input.activityCategory === "swim") &&
+    relative.reference === "threshold_speed";
   if (!compatible) {
     return {
       status: "unavailable",
@@ -536,27 +541,35 @@ type CommonLoadSelection = {
 };
 
 function selectedTargetFact(
-  fact:
-    | AthletePerformanceTargetFacts["cycling"]["planningThresholdPower"]
-    | AthletePerformanceTargetFacts["running"]["planningThresholdPace"]
-    | AthletePerformanceTargetFacts["swimming"]["css"],
-  transform: (value: number) => number = (value) => value,
+  fact: PerformanceThresholdFact,
+  computedAt: string,
 ): SelectedPerformanceFact {
-  const value = getAvailablePerformanceTargetValue(fact);
-  const status = value === null ? "unavailable" : "available";
+  const status = fact.status;
   return {
     status,
-    value: value === null ? null : transform(value),
+    value: fact.value,
     unit: fact.unit,
     calculationVersion: fact.calculationVersion,
-    sourceEvidenceIds: fact.sourceEvidenceIds,
-    confidence: fact.confidence,
-    expiresAt: fact.expiresAt,
-    reasons: fact.reasons,
-    source: status === "available" ? "modeled" : "unknown",
-    observedFrom: status === "available" ? fact.evidenceTime.observedFrom : null,
-    observedAt: status === "available" ? fact.evidenceTime.observedThrough : null,
-    computedAt: fact.evidenceTime.computedAt,
+    sourceEvidenceIds: fact.sourceEvaluationIds,
+    confidence:
+      fact.status === "unavailable"
+        ? "unavailable"
+        : fact.confidence >= 0.85
+          ? "high"
+          : fact.confidence >= 0.7
+            ? "medium"
+            : "low",
+    expiresAt: null,
+    reasons:
+      fact.status === "available" && fact.freshness === "stale"
+        ? ["stale_threshold"]
+        : fact.status === "unavailable"
+          ? [fact.reason]
+          : [],
+    source: status === "available" ? "observed_effort" : "unknown",
+    observedFrom: fact.effectiveAt,
+    observedAt: fact.effectiveAt,
+    computedAt,
   };
 }
 
@@ -633,7 +646,7 @@ function commonLoadSelection(
   }
 
   if (occurrence.activity_category === "bike") {
-    const fact = selectedTargetFact(performanceTargets.cycling.planningThresholdPower);
+    const fact = selectedTargetFact(performanceTargets.thresholds.bike, performanceTargets.asOf);
     return {
       target:
         target.type === "%FTP"
@@ -648,8 +661,8 @@ function commonLoadSelection(
 
   const fact =
     occurrence.activity_category === "run"
-      ? selectedTargetFact(performanceTargets.running.planningThresholdPace, (pace) => 1_000 / pace)
-      : selectedTargetFact(performanceTargets.swimming.css, (pace) => 100 / pace);
+      ? selectedTargetFact(performanceTargets.thresholds.run, performanceTargets.asOf)
+      : selectedTargetFact(performanceTargets.thresholds.swim, performanceTargets.asOf);
   return {
     target: { type: "speed_mps", value: target.intensity / 3.6 },
     method: occurrence.activity_category === "run" ? "run_pace_threshold" : "swim_pace_threshold",

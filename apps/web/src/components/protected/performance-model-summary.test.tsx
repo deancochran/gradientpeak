@@ -12,65 +12,72 @@ function overviewFixture(): AthletePerformanceOverview {
   const overview = buildPerformanceOverviewFixture();
   return {
     ...overview,
-    bike: {
-      ...overview.bike,
-      fiveSecondPower: {
-        status: "partial",
-        value: "1,200 W",
-        confidence: "low",
-        freshness: "current",
+    thresholds: {
+      ...overview.thresholds,
+      run: {
+        status: "unavailable",
+        value: null,
+        confidence: "unavailable",
+        freshness: "unavailable",
         trainingImpact: "Training targets stay unchanged.",
         action: "Record more activity data.",
+      },
+      swim: {
+        ...overview.thresholds.swim,
+        freshness: "stale",
+        action: "Record more recent activity data.",
       },
     },
   };
 }
 
 describe("PerformanceModelSummary", () => {
-  it("presents available, limited, and unavailable values without internal model copy", () => {
+  it("presents current, stale, and unavailable values without internal model copy", () => {
     render(<PerformanceModelSummary overview={overviewFixture()} />);
 
     expect(screen.getByRole("heading", { name: "Current performance" })).toBeTruthy();
     const threshold = screen.getByRole("article", {
-      name: "Bike Planning threshold power: 247 W, Available",
+      name: "Bike Threshold Power: 250 W, Available",
     });
     expect(within(threshold).getByText("High")).toBeTruthy();
     expect(within(threshold).getByText("Current")).toBeTruthy();
     expect(within(threshold).getByText(/sets cycling power zones/i)).toBeTruthy();
 
-    const limited = screen.getByRole("article", {
-      name: "Bike Five-second power: 1,200 W, Limited",
-    });
-    expect(within(limited).getByText("Low")).toBeTruthy();
-    expect(within(limited).getByText("Training targets stay unchanged.")).toBeTruthy();
-    expect(within(limited).getByText("Record more activity data.")).toBeTruthy();
-
     const unavailable = screen.getByRole("article", {
-      name: "Run Planning threshold pace: Not available, Not available",
+      name: "Run Threshold Pace: Not available, Not available",
     });
     expect(within(unavailable).queryByText("Confidence:")).toBeNull();
     expect(within(unavailable).queryByText("Freshness:")).toBeNull();
     expect(within(unavailable).getByText("Training targets stay unchanged.")).toBeTruthy();
     expect(within(unavailable).getByText("Record more activity data.")).toBeTruthy();
 
-    const css = screen.getByRole("article", {
-      name: "Swim CSS pace: Not available, Not available",
+    const swim = screen.getByRole("article", {
+      name: "Swim Threshold Pace: 1:20 min/100m, Available",
     });
-    expect(within(css).queryByText("Record more activity data.")).toBeNull();
-    expect(screen.getByText("Estimated threshold duration")).toBeTruthy();
-    expect(screen.getAllByText("Duration retention")).toHaveLength(2);
+    expect(within(swim).getByText("Out of date")).toBeTruthy();
+    expect(within(swim).getByText("Record more recent activity data.")).toBeTruthy();
     expect(document.body.textContent).not.toMatch(
       /canonical|as-of|evidence count|calculation version|reason code|source id|protocol|roadmap|progressive|max-HR/i,
     );
   });
 
-  it("keeps a failed model query distinct and retryable", () => {
+  it("announces asynchronous loading politely and a failed query assertively", async () => {
     const onRetry = vi.fn();
-    render(<PerformanceModelSummary error="Request failed" onRetry={onRetry} />);
+    const { rerender } = render(<PerformanceModelSummary isLoading />);
 
-    expect(screen.getByText("Current performance could not be loaded.")).toBeTruthy();
+    const loading = await screen.findByRole("status");
+    expect(loading.textContent).toBe("Loading current performance…");
+    expect(loading.getAttribute("aria-live")).toBe("polite");
+    expect(loading.getAttribute("aria-atomic")).toBe("true");
+
+    rerender(<PerformanceModelSummary error="Request failed" onRetry={onRetry} />);
+
+    const failure = await screen.findByRole("alert");
+    expect(within(failure).getByText("Current performance could not be loaded.")).toBeTruthy();
+    expect(failure.getAttribute("aria-live")).toBe("assertive");
+    expect(failure.getAttribute("aria-atomic")).toBe("true");
     expect(screen.queryByText("Request failed")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    fireEvent.click(within(failure).getByRole("button", { name: "Retry" }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 });

@@ -43,13 +43,13 @@ function target(power: number) {
   return buildPerformanceTargetFactsFixture({
     athleteId: PROFILE_ID,
     asOf: "2026-01-01T00:00:00.000Z",
-    planningThresholdPowerWatts: power,
+    bikeThresholdWatts: power,
   });
 }
 
 function originalSnapshot(targets: ReturnType<typeof target>) {
   return {
-    contractVersion: "completed-activity-performance-target-snapshot-v1" as const,
+    contractVersion: "completed-activity-performance-target-snapshot-v2" as const,
     capturedAt: "2026-01-01T00:00:00.000Z",
     publishedRevision: null,
     publicationStatus: "unavailable" as const,
@@ -246,7 +246,7 @@ describe("activity analysis revision repository", () => {
     const foreign = buildPerformanceTargetFactsFixture({
       athleteId: "22222222-2222-4222-8222-222222222222",
       asOf: "2026-01-01T00:00:00.000Z",
-      planningThresholdPowerWatts: 250,
+      bikeThresholdWatts: 250,
     });
     const builder: Record<string, unknown> = {
       from: vi.fn(() => builder),

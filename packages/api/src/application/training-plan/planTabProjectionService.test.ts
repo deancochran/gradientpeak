@@ -37,7 +37,11 @@ function dependencies(): PlanTabProjectionDependencies {
           currentBaseline: {
             planningTimezone: "America/Los_Angeles",
             currentPlanningDate: "2026-04-06",
-            baseline: null,
+            baseline: {
+              longTermLoad: 40,
+              recentLoad: 35,
+              loadBalance: 5,
+            },
             planningContext: null,
           },
           loadHistory: null,
@@ -146,7 +150,7 @@ describe("readPlanTabProjection", () => {
     const deps = dependencies();
 
     const result = await readPlanTabProjection({
-      db: { transaction } as never,
+      db: { $client: {}, transaction } as never,
       profileId,
       request: { startDate: "2026-04-06", endDate: "2026-04-06" },
       asOf,
@@ -179,6 +183,9 @@ describe("readPlanTabProjection", () => {
       scheduledItems: [{ title: "Tempo ride", plannedLoad: 60 }],
       load: { scheduledLoad: 60, recommendedLoad: 70 },
     });
+    expect(result.fitness.actual).toEqual([
+      expect.objectContaining({ date: "2026-04-06", longTermLoad: 40, recentLoad: 35 }),
+    ]);
     expect(result.dayLoads["2026-04-06"]).not.toHaveProperty("tentativeLoad");
     expect(result.ledgerItems).toEqual([
       expect.objectContaining({
@@ -192,6 +199,89 @@ describe("readPlanTabProjection", () => {
         scheduledIds: ["22222222-2222-4222-8222-222222222222"],
       }),
     );
+  });
+
+  it("publishes finite partial activity Load as the current completed Load", async () => {
+    const deps = dependencies();
+    const partialAggregate = {
+      ...aggregate,
+      status: "partial" as const,
+      load: 24,
+      partialActivityCount: 1,
+    };
+    deps.readEffectiveLoad = vi.fn(
+      async () =>
+        ({
+          status: "available",
+          completed: partialAggregate,
+          remaining: { ...aggregate, status: "known_zero", load: 0, intensity: null },
+          effective: {
+            status: "available",
+            periodStartDate: "2026-04-06",
+            periodEndDate: "2026-04-06",
+            planningDate: "2026-04-06",
+            firmItems: [
+              {
+                kind: "completed",
+                completedActivityId: "66666666-6666-4666-8666-666666666666",
+                replacedScheduledItemId: null,
+                date: "2026-04-06",
+                commonLoad: partialAggregate,
+              },
+            ],
+            tentativeItems: [],
+            firm: partialAggregate,
+          },
+          model: "gradientpeak_relative_load",
+          version: "1",
+          sourceCounts: { activities: 1, events: 0 },
+          resolvedRange: {
+            startDate: "2026-04-06",
+            endDate: "2026-04-06",
+            timezone: "America/Los_Angeles",
+          },
+          sourceCoverage: {
+            activities: { startDate: "2026-04-06", endDate: "2026-04-06", status: "complete" },
+            scheduledItems: {
+              startDate: "2026-04-06",
+              endDate: "2026-04-06",
+              status: "complete",
+            },
+          },
+          recommendation: { status: "unavailable", reason: "no_active_plan" },
+        }) as never,
+    );
+    deps.readItemMetadata = vi.fn(async () => ({
+      scheduled: new Map(),
+      completed: new Map([
+        [
+          "66666666-6666-4666-8666-666666666666",
+          { title: "Partial evidence ride", activityCategory: "bike" },
+        ],
+      ]),
+    }));
+
+    const result = await readPlanTabProjection({
+      db: {
+        $client: {},
+        transaction: async (operation: (tx: unknown) => unknown) => operation({}),
+      } as never,
+      profileId,
+      request: { startDate: "2026-04-06", endDate: "2026-04-06" },
+      asOf,
+      dependencies: deps,
+    });
+
+    expect(result.dayLoads["2026-04-06"]).toMatchObject({
+      status: "complete",
+      commonLoad: 24,
+      completedLoadStatus: "complete",
+      completedLoad: 24,
+      hasUnavailableCompletedLoad: false,
+    });
+    expect(result.timeline?.days[0]).toMatchObject({
+      completedItems: [{ title: "Partial evidence ride", completedLoad: 24 }],
+    });
   });
 
   it("rejects an unbounded request before opening a transaction", async () => {

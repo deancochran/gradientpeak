@@ -96,7 +96,7 @@ describe("common Load daily-observation adapter", () => {
     });
   });
 
-  it("keeps partial and unavailable common Load explicit rather than treating it as known zero", () => {
+  it("uses finite partial Common Load while keeping unavailable activity Load explicit", () => {
     const result = mergeCompletedCommonLoadObservations({
       requestedRange: { start_date: "2026-06-01", end_date: "2026-06-02", timezone: "UTC" },
       timeline,
@@ -138,10 +138,11 @@ describe("common Load daily-observation adapter", () => {
       },
     });
 
-    expect(result.completedActivityDatesWithoutLoad).toEqual(["2026-06-01", "2026-06-02"]);
+    expect(result.completedActivityDatesWithoutLoad).toEqual(["2026-06-02"]);
+    expect(result.timeline[0]).toMatchObject({ completed_common_load: 20 });
     expect(result.completedObservationsByDate.get("2026-06-01")).toMatchObject({
       state: "observed",
-      hasUnavailableCompletedActivity: true,
+      hasUnavailableCompletedActivity: false,
     });
     expect(result.completedObservationsByDate.get("2026-06-02")).toMatchObject({
       state: "unavailable",

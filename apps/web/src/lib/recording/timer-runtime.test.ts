@@ -42,6 +42,15 @@ describe("timer-only web recording runtime", () => {
     expect(started.state.reducer.snapshot?.activity.activityPlanId).toBe(
       "00000000-0000-4000-8000-000000000003",
     );
+    expect(started.state.reducer.snapshot?.performanceTargets).toMatchObject({
+      contractVersion: "athlete-performance-target-facts-v3",
+      thresholds: {
+        bike: { activityCategory: "bike", status: "unavailable", unit: "watts" },
+        run: { activityCategory: "run", status: "unavailable", unit: "meters_per_second" },
+        swim: { activityCategory: "swim", status: "unavailable", unit: "meters_per_second" },
+      },
+    });
+    expect(started.state.reducer.snapshot?.performanceTargets).not.toHaveProperty("cycling");
     expect(started.state.reducer.lifecycle).toBe("recording");
   });
 

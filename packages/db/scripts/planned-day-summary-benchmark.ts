@@ -74,7 +74,7 @@ await withDisposableDatabase(process.argv.slice(2), "planned_day_summary_benchma
     `insert into public.events (id, profile_id, event_type, status, title, starts_at, scheduled_date)
        select ('30000000-0000-4000-8000-' || lpad(i::text, 12, '0'))::uuid,
          case when i % 5 = 0 then $2::uuid else $1::uuid end,
-         (case when i % 4 = 0 then 'custom' when i % 4 = 1 then 'planned' when i % 4 = 2 then 'imported' else 'race_target' end)::public.event_type,
+          (case when i % 3 = 0 then 'custom' when i % 3 = 1 then 'planned' else 'race_target' end)::public.event_type,
          (case when i % 3 = 0 then 'cancelled' when i % 3 = 1 then 'scheduled' else 'completed' end)::public.event_status,
          'history-or-future-' || i,
          case when i <= 25000 then timestamp '2010-01-01 06:00:00+00' + (i || ' days')::interval else timestamp '2040-01-01 06:00:00+00' + ((i - 25000) || ' days')::interval end,

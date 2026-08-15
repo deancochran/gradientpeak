@@ -59,6 +59,7 @@
     "reprocess-profile-activity-analysis": "tsx scripts/reprocess-profile-activity-analysis.ts",
     "test": "vitest run",
     "test:live-db": "vitest run --config vitest.live-db.config.ts",
+    "test:calibration-history:disposable": "tsx scripts/completed-activity-calibration-history.disposable.test.ts --disposable --local",
     "verify:api": "pnpm check-types && pnpm test"
   },
   "dependencies": {

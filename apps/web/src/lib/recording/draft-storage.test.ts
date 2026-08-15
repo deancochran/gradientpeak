@@ -202,6 +202,24 @@ describe("web timer draft persistence", () => {
     expect(storage.removeCount).toBe(1);
   });
 
+  it("hard-rejects a legacy target snapshot instead of migrating the checkpoint", async () => {
+    const storage = new FakeTimerDraftStorage();
+    await checkpointTimerDraft(storage, startedRecording(), 7_500, "profile-1");
+    const legacyDraft = structuredClone(storage.value) as {
+      sessionSnapshot: { performanceTargets: unknown };
+    };
+    legacyDraft.sessionSnapshot.performanceTargets = {
+      cycling: { planningThresholdPower: { status: "unavailable" } },
+    };
+    storage.value = legacyDraft;
+
+    await expect(loadTimerDraft(storage, "profile-1")).resolves.toEqual({
+      status: "discarded-invalid",
+      draft: null,
+    });
+    expect(storage.removeCount).toBe(1);
+  });
+
   it("discards a valid draft owned by another profile", async () => {
     const storage = new FakeTimerDraftStorage();
     await checkpointTimerDraft(storage, startedRecording(), 7_500, "profile-1");

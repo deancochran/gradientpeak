@@ -15,7 +15,12 @@ import {
 import { activityPlans, events, profiles, trainingPlans } from "@repo/db";
 import { and, asc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import type { DrizzleQueryExecutor, DrizzleTransactionClient, getRequiredDb } from "../../db";
+import {
+  type DrizzleQueryExecutor,
+  type DrizzleTransactionClient,
+  type getRequiredDb,
+  withRepeatableReadSnapshot,
+} from "../../db";
 import { createContentAccessPermissions } from "../../permissions/content-access";
 import { lockProfileAdvisoryFence } from "../../repositories/profile-advisory-fence";
 import { estimateActivityPlans } from "../activity-plans/estimate-activity-plans";
@@ -501,138 +506,144 @@ export async function commitTrainingPlan(input: {
 }) {
   const values = trainingPlanCommitInputSchema.parse(input.values);
   const now = input.now ?? new Date();
-  return input.db.transaction(async (tx) => {
-    await lockProfileAdvisoryFence(tx, input.profileId);
-    let currentPlanRevision: number | null = null;
-    let currentPlanStructureHash: string | null = null;
-    if (values.kind === "update") {
-      const [current] = await tx
-        .select({ revision: trainingPlans.revision, structureHash: trainingPlans.structure_hash })
-        .from(trainingPlans)
-        .where(
-          and(
-            eq(trainingPlans.id, values.draft.planId),
-            eq(trainingPlans.profile_id, input.profileId),
-          ),
+  return withRepeatableReadSnapshot(
+    input.db,
+    async (tx) => {
+      await lockProfileAdvisoryFence(tx, input.profileId);
+      let currentPlanRevision: number | null = null;
+      let currentPlanStructureHash: string | null = null;
+      if (values.kind === "update") {
+        const [current] = await tx
+          .select({ revision: trainingPlans.revision, structureHash: trainingPlans.structure_hash })
+          .from(trainingPlans)
+          .where(
+            and(
+              eq(trainingPlans.id, values.draft.planId),
+              eq(trainingPlans.profile_id, input.profileId),
+            ),
+          )
+          .limit(1)
+          .for("update");
+        if (!current) return staleResult({ reason: "plan_unavailable" });
+        currentPlanRevision = current.revision;
+        currentPlanStructureHash = current.structureHash;
+        if (
+          current.revision !== values.draft.expectedRevision ||
+          current.structureHash !== values.draft.expectedStructureHash
         )
-        .limit(1)
-        .for("update");
-      if (!current) return staleResult({ reason: "plan_unavailable" });
-      currentPlanRevision = current.revision;
-      currentPlanStructureHash = current.structureHash;
-      if (
-        current.revision !== values.draft.expectedRevision ||
-        current.structureHash !== values.draft.expectedStructureHash
-      )
-        return staleResult({
-          reason:
-            current.revision !== values.draft.expectedRevision ? "plan_revision" : "plan_structure",
-          currentPlanRevision,
-          currentPlanStructureHash,
-        });
-    }
-    const operationValues = trainingPlanPreviewInputSchema.parse({
-      kind: values.kind,
-      draft: values.draft,
-    });
-    const draft = await resolveDraft({
-      db: tx,
-      profileId: input.profileId,
-      values: operationValues,
-      lock: true,
-      ...(values.kind === "create" || values.kind === "duplicate"
-        ? { createPlanId: randomUUID() }
-        : {}),
-    });
-    if ("status" in draft) return draft;
-    draft.currentPlanRevision = currentPlanRevision ?? draft.currentPlanRevision;
-    draft.currentPlanStructureHash = currentPlanStructureHash ?? draft.currentPlanStructureHash;
-    const projection = await deriveProjection({
-      db: tx,
-      profileId: input.profileId,
-      draft,
-      expectedPublishedRevision: values.basePublishedRevision,
-      now,
-      lockAuthority: true,
-    });
-    if (projection.status !== "available") return projection;
-    const structureHash = activityPlanStructureHash(draft.structure);
-    let savedRevision: number;
-    if (values.kind === "update") {
-      const [saved] = await tx
-        .update(trainingPlans)
-        .set({
-          name: draft.name,
-          description: draft.description,
-          ...(draft.contentVisibility === undefined
-            ? {}
-            : { content_visibility: draft.contentVisibility }),
-          structure: draft.structure,
-          structure_hash: structureHash,
-          revision: sql`${trainingPlans.revision} + 1`,
-          validated_state_revision: projection.publishedRevision,
-          validated_at: now,
-          projection_algorithm_version: DRAFT_PLAN_PROJECTION_ALGORITHM_VERSION,
-          updated_at: now,
-        })
-        .where(
-          and(
-            eq(trainingPlans.id, draft.planId),
-            eq(trainingPlans.profile_id, input.profileId),
-            eq(trainingPlans.revision, values.draft.expectedRevision),
-            eq(trainingPlans.structure_hash, values.draft.expectedStructureHash),
-          ),
-        )
-        .returning({ revision: trainingPlans.revision });
-      if (!saved)
-        return staleResult({
-          reason: "plan_revision",
-          currentPublishedRevision: projection.publishedRevision,
-          currentPlanRevision,
-          currentPlanStructureHash,
-        });
-      savedRevision = saved.revision;
-    } else {
-      let visibility = draft.contentVisibility;
-      if (visibility === undefined) {
-        const [profile] = await tx
-          .select({ visibility: profiles.default_content_visibility })
-          .from(profiles)
-          .where(eq(profiles.id, input.profileId))
-          .limit(1);
-        if (!profile) throw new Error("Profile not found");
-        visibility = profile.visibility;
+          return staleResult({
+            reason:
+              current.revision !== values.draft.expectedRevision
+                ? "plan_revision"
+                : "plan_structure",
+            currentPlanRevision,
+            currentPlanStructureHash,
+          });
       }
-      const [saved] = await tx
-        .insert(trainingPlans)
-        .values({
-          id: draft.planId,
-          profile_id: input.profileId,
-          name: draft.name,
-          description: draft.description,
-          content_visibility: visibility,
-          structure: draft.structure,
-          structure_hash: structureHash,
-          validated_state_revision: projection.publishedRevision,
-          validated_at: now,
-          projection_algorithm_version: DRAFT_PLAN_PROJECTION_ALGORITHM_VERSION,
-          updated_at: now,
-        })
-        .returning({ revision: trainingPlans.revision });
-      if (!saved) throw new Error("Failed to save training plan");
-      savedRevision = saved.revision;
-    }
-    return trainingPlanCommitResultSchema.parse({
-      status: "saved",
-      kind: values.kind,
-      planId: draft.planId,
-      planRevision: savedRevision,
-      planStructureHash: structureHash,
-      publishedRevision: projection.publishedRevision,
-      validatedAt: now.toISOString(),
-      simulation: projection.simulation,
-    });
-  });
+      const operationValues = trainingPlanPreviewInputSchema.parse({
+        kind: values.kind,
+        draft: values.draft,
+      });
+      const draft = await resolveDraft({
+        db: tx,
+        profileId: input.profileId,
+        values: operationValues,
+        lock: true,
+        ...(values.kind === "create" || values.kind === "duplicate"
+          ? { createPlanId: randomUUID() }
+          : {}),
+      });
+      if ("status" in draft) return draft;
+      draft.currentPlanRevision = currentPlanRevision ?? draft.currentPlanRevision;
+      draft.currentPlanStructureHash = currentPlanStructureHash ?? draft.currentPlanStructureHash;
+      const projection = await deriveProjection({
+        db: tx,
+        profileId: input.profileId,
+        draft,
+        expectedPublishedRevision: values.basePublishedRevision,
+        now,
+        lockAuthority: true,
+      });
+      if (projection.status !== "available") return projection;
+      const structureHash = activityPlanStructureHash(draft.structure);
+      let savedRevision: number;
+      if (values.kind === "update") {
+        const [saved] = await tx
+          .update(trainingPlans)
+          .set({
+            name: draft.name,
+            description: draft.description,
+            ...(draft.contentVisibility === undefined
+              ? {}
+              : { content_visibility: draft.contentVisibility }),
+            structure: draft.structure,
+            structure_hash: structureHash,
+            revision: sql`${trainingPlans.revision} + 1`,
+            validated_state_revision: projection.publishedRevision,
+            validated_at: now,
+            projection_algorithm_version: DRAFT_PLAN_PROJECTION_ALGORITHM_VERSION,
+            updated_at: now,
+          })
+          .where(
+            and(
+              eq(trainingPlans.id, draft.planId),
+              eq(trainingPlans.profile_id, input.profileId),
+              eq(trainingPlans.revision, values.draft.expectedRevision),
+              eq(trainingPlans.structure_hash, values.draft.expectedStructureHash),
+            ),
+          )
+          .returning({ revision: trainingPlans.revision });
+        if (!saved)
+          return staleResult({
+            reason: "plan_revision",
+            currentPublishedRevision: projection.publishedRevision,
+            currentPlanRevision,
+            currentPlanStructureHash,
+          });
+        savedRevision = saved.revision;
+      } else {
+        let visibility = draft.contentVisibility;
+        if (visibility === undefined) {
+          const [profile] = await tx
+            .select({ visibility: profiles.default_content_visibility })
+            .from(profiles)
+            .where(eq(profiles.id, input.profileId))
+            .limit(1);
+          if (!profile) throw new Error("Profile not found");
+          visibility = profile.visibility;
+        }
+        const [saved] = await tx
+          .insert(trainingPlans)
+          .values({
+            id: draft.planId,
+            profile_id: input.profileId,
+            name: draft.name,
+            description: draft.description,
+            content_visibility: visibility,
+            structure: draft.structure,
+            structure_hash: structureHash,
+            validated_state_revision: projection.publishedRevision,
+            validated_at: now,
+            projection_algorithm_version: DRAFT_PLAN_PROJECTION_ALGORITHM_VERSION,
+            updated_at: now,
+          })
+          .returning({ revision: trainingPlans.revision });
+        if (!saved) throw new Error("Failed to save training plan");
+        savedRevision = saved.revision;
+      }
+      return trainingPlanCommitResultSchema.parse({
+        status: "saved",
+        kind: values.kind,
+        planId: draft.planId,
+        planRevision: savedRevision,
+        planStructureHash: structureHash,
+        publishedRevision: projection.publishedRevision,
+        validatedAt: now.toISOString(),
+        simulation: projection.simulation,
+      });
+    },
+    { accessMode: "read write" },
+  );
 }
 
 export async function getTrainingPlanEditorMetadata(input: {

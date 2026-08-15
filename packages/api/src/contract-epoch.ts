@@ -1,4 +1,4 @@
-export const CURRENT_CONTRACT_EPOCH = 1;
+export const CURRENT_CONTRACT_EPOCH = 2;
 export const CONTRACT_EPOCH_HEADER = "x-gradientpeak-contract-epoch";
 
 const CURRENT_CONTRACT_EPOCH_HEADER_VALUE = String(CURRENT_CONTRACT_EPOCH);

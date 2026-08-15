@@ -429,7 +429,7 @@ describe("drizzle-event-read-repository", () => {
           id: "group-event-1",
           series_id: null,
           occurrence_key: null,
-          title: "Public workout",
+          title: "Public activity",
           description: null,
           starts_at: new Date("2026-07-21T07:00:00.000Z"),
           ends_at: null,

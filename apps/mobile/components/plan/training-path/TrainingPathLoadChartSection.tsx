@@ -76,6 +76,7 @@ type TrainingPathLoadChartSectionProps = {
   selectedDate?: string | null;
   showHeader?: boolean;
   showAnalysisControls?: boolean;
+  showInlineLegend?: boolean;
   showLegendButton?: boolean;
   showSelectedPointTray?: boolean;
   testID?: string;
@@ -140,6 +141,7 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
   selectedDate,
   showHeader = true,
   showAnalysisControls,
+  showInlineLegend = true,
   showLegendButton = true,
   showSelectedPointTray = true,
   testID = "training-path-load-chart-section",
@@ -322,7 +324,9 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
             tone="empty"
           />
         )}
-        {!resolvedEmptyState && (canRenderDailyChart || canRenderWeeklyChart) ? (
+        {showInlineLegend &&
+        !resolvedEmptyState &&
+        (canRenderDailyChart || canRenderWeeklyChart) ? (
           <TrainingPathLegend
             mode={canRenderDailyChart ? "daily" : "weekly"}
             range="season"
@@ -396,13 +400,11 @@ function SelectedPeriodSummary({
   const periodName = period === "day" ? "Day" : period === "week" ? "Week" : "Month";
   const range = period === "day" ? "daily" : period === "week" ? "weekly" : "monthly";
   const status =
-    point.effectiveLoadStatus === "partial"
-      ? "Partial data"
-      : point.effectiveLoadStatus === "unavailable"
-        ? "Load unavailable"
-        : point.hasCompletedActivityWithoutLoad
-          ? "Completed activity load unavailable"
-          : null;
+    point.effectiveLoadStatus === "unavailable"
+      ? "Load unavailable"
+      : point.hasCompletedActivityWithoutLoad
+        ? "Completed activity load unavailable"
+        : null;
   const facts = [
     ["Completed load", formatSummaryValue(point.effectiveCompletedLoad)],
     ["Planned load", formatSummaryValue(point.plannedLoad ?? point.effectiveRemainingLoad)],

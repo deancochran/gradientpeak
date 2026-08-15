@@ -23,11 +23,6 @@ export function independentInverseDurationReference(points: readonly DurationVal
   return { intercept, reserve };
 }
 
-export function independentCssReference(time400Seconds: number, time200Seconds: number) {
-  const secondsPer100Meters = (time400Seconds - time200Seconds) / 2;
-  return { secondsPer100Meters, metersPerSecond: 100 / secondsPer100Meters };
-}
-
 export function independentSessionReference(input: {
   sessions: readonly { repetitions: number; rpe: number; activeDurationSeconds: number }[];
 }) {

@@ -6,7 +6,11 @@ import {
   getAvailablePerformanceTargetValue,
 } from "../performance-model";
 import { canonicalActivityCategorySchema } from "../schemas/activity-category";
-import { preferredUnitSystemSchema } from "../units";
+import {
+  metersPerSecondToSecondsPer100Meters,
+  metersPerSecondToSecondsPerKilometer,
+  preferredUnitSystemSchema,
+} from "../units";
 
 const dateLikeSchema = z.union([z.string(), z.date()]).nullable().optional();
 
@@ -168,7 +172,7 @@ export const athletePlanningContextSchema = z
       .object({
         planningThresholdPowerWatts: athleteContextEvidenceValueSchema,
         planningThresholdPaceSecondsPerKm: athleteContextEvidenceValueSchema,
-        swimmingCssSecondsPer100m: athleteContextEvidenceValueSchema,
+        swimThresholdPaceSecondsPer100m: athleteContextEvidenceValueSchema,
         restingHeartRateBpm: athleteContextEvidenceValueSchema,
         maxHeartRateBpm: athleteContextEvidenceValueSchema,
         thresholdHeartRateBpm: athleteContextEvidenceValueSchema,
@@ -230,7 +234,7 @@ export type AthletePlanningContextFieldKey =
   | "bodyFatPercentage"
   | "planningThresholdPowerWatts"
   | "planningThresholdPaceSecondsPerKm"
-  | "swimmingCssSecondsPer100m"
+  | "swimThresholdPaceSecondsPer100m"
   | "restingHeartRateBpm"
   | "maxHeartRateBpm"
   | "thresholdHeartRateBpm"
@@ -248,7 +252,7 @@ export type AthletePlanningContextFieldKey =
 const CANONICAL_PERFORMANCE_TARGET_FIELD_KEYS = [
   "planningThresholdPowerWatts",
   "planningThresholdPaceSecondsPerKm",
-  "swimmingCssSecondsPer100m",
+  "swimThresholdPaceSecondsPer100m",
   "thresholdHeartRateBpm",
 ] as const satisfies readonly AthletePlanningContextFieldKey[];
 
@@ -356,8 +360,8 @@ export const ATHLETE_CONTEXT_FIELD_REGISTRY: Record<
     inputKind: "derived",
     defaultUnit: "s/km",
   },
-  swimmingCssSecondsPer100m: {
-    label: "Swim CSS",
+  swimThresholdPaceSecondsPer100m: {
+    label: "Swim threshold pace",
     category: "physiology",
     inputKind: "derived",
     defaultUnit: "s/100m",
@@ -654,17 +658,19 @@ function metricEvidenceValue(
 }
 
 function performanceTargetEvidenceValue(
-  fact:
-    | AthletePerformanceTargetFacts["cycling"]["planningThresholdPower"]
-    | AthletePerformanceTargetFacts["running"]["planningThresholdPace"]
-    | AthletePerformanceTargetFacts["swimming"]["css"],
+  fact: AthletePerformanceTargetFacts["thresholds"]["bike"],
+  presentation: {
+    unit: "watts" | "seconds_per_kilometer" | "seconds_per_100_meters";
+    convert: (value: number) => number;
+  },
 ) {
-  const value = getAvailablePerformanceTargetValue(fact);
+  const canonicalValue = getAvailablePerformanceTargetValue(fact);
+  const value = canonicalValue === null ? null : presentation.convert(canonicalValue);
   return {
     value,
     source: value === null ? "unknown" : "activity_effort",
-    recordedAt: value === null ? null : fact.evidenceTime.observedThrough,
-    unit: fact.unit,
+    recordedAt: value === null || fact.status === "unavailable" ? null : fact.effectiveAt,
+    unit: presentation.unit,
     overridden: false,
   } as z.infer<typeof athleteContextEvidenceValueSchema>;
 }
@@ -727,19 +733,24 @@ export function createAthletePlanningContextFromSnapshot(
   const performanceTargets =
     snapshot.performanceTargets ?? createUnavailableAthletePerformanceTargetFacts(snapshot.asOf);
   const planningThresholdPowerWatts = performanceTargetEvidenceValue(
-    performanceTargets.cycling.planningThresholdPower,
+    performanceTargets.thresholds.bike,
+    { unit: "watts", convert: (value) => value },
   );
   const planningThresholdPaceSecondsPerKm = performanceTargetEvidenceValue(
-    performanceTargets.running.planningThresholdPace,
+    performanceTargets.thresholds.run,
+    { unit: "seconds_per_kilometer", convert: metersPerSecondToSecondsPerKilometer },
   );
-  const swimmingCssSecondsPer100m = performanceTargetEvidenceValue(performanceTargets.swimming.css);
+  const swimThresholdPaceSecondsPer100m = performanceTargetEvidenceValue(
+    performanceTargets.thresholds.swim,
+    { unit: "seconds_per_100_meters", convert: metersPerSecondToSecondsPer100Meters },
+  );
   const missingFields = [
     birthDate === null ? "dob" : null,
     heightCm.value === null ? "height_cm" : null,
     weightKg.value === null ? "weight_kg" : null,
     planningThresholdPowerWatts.value === null ? "planning_threshold_power" : null,
     planningThresholdPaceSecondsPerKm.value === null ? "planning_threshold_pace" : null,
-    swimmingCssSecondsPer100m.value === null ? "swimming_css" : null,
+    swimThresholdPaceSecondsPer100m.value === null ? "swim_threshold_pace" : null,
     performanceTargets.heartRate.bike.lthr.valueBpm === null ? "bike_lthr" : null,
   ].filter((field): field is string => field !== null);
 
@@ -764,7 +775,7 @@ export function createAthletePlanningContextFromSnapshot(
     physiology: {
       planningThresholdPowerWatts,
       planningThresholdPaceSecondsPerKm,
-      swimmingCssSecondsPer100m,
+      swimThresholdPaceSecondsPer100m,
       restingHeartRateBpm: metricEvidenceValue(snapshot.profileMetrics, "resting_hr", "bpm"),
       // Current calibration authority is the published estimate set. A raw
       // profile_metrics observation may remain in history but never wins here.
@@ -843,7 +854,9 @@ function withRecalculatedDerivedBodyValues(
         context.physiology.planningThresholdPaceSecondsPerKm.value === null
           ? "planning_threshold_pace"
           : null,
-        context.physiology.swimmingCssSecondsPer100m.value === null ? "swimming_css" : null,
+        context.physiology.swimThresholdPaceSecondsPer100m.value === null
+          ? "swim_threshold_pace"
+          : null,
         context.physiology.thresholdHeartRateBpm.value === null ? "bike_lthr" : null,
       ].filter((field): field is string => field !== null),
     },
@@ -970,8 +983,8 @@ function getFieldValue(
       return context.physiology.planningThresholdPowerWatts;
     case "planningThresholdPaceSecondsPerKm":
       return context.physiology.planningThresholdPaceSecondsPerKm;
-    case "swimmingCssSecondsPer100m":
-      return context.physiology.swimmingCssSecondsPer100m;
+    case "swimThresholdPaceSecondsPer100m":
+      return context.physiology.swimThresholdPaceSecondsPer100m;
     case "restingHeartRateBpm":
       return context.physiology.restingHeartRateBpm;
     case "maxHeartRateBpm":

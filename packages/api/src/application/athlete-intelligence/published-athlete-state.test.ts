@@ -1,17 +1,42 @@
-import { ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION } from "@repo/core";
+import {
+  ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
+  createUnavailableAthletePerformanceTargetFacts,
+  materializeAthletePerformanceTargetFacts,
+} from "@repo/core";
 import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
+import {
+  secondsPer100MetersToMetersPerSecond,
+  secondsPerKilometerToMetersPerSecond,
+} from "@repo/core/units";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withRepeatableReadSnapshot } from "../../db";
 import {
   type PublishedAthleteStateRead,
   readPublishedAthleteStateSnapshotData,
 } from "../../repositories/athlete-state-repository";
-import { readPublishedAthleteStateSnapshot } from "./published-athlete-state";
+import {
+  readCachedPublishedAthletePerformanceTargets,
+  readPublishedAthleteStateSnapshot,
+} from "./published-athlete-state";
+
+const getAthleteThresholdTargetFactsAsOf = vi.hoisted(() => vi.fn());
 
 vi.mock("../../repositories/athlete-state-repository", () => ({
   readPublishedAthleteStateSnapshotData: vi.fn(),
 }));
+vi.mock("../performance-model/get-athlete-performance-model-as-of", () => ({
+  getAthleteThresholdTargetFactsAsOf,
+}));
 
 const profileId = "11111111-1111-4111-8111-111111111111";
+
+function repeatableReadRoot() {
+  const snapshotExecutor = {};
+  const transaction = vi.fn(async (read: (executor: typeof snapshotExecutor) => Promise<unknown>) =>
+    read(snapshotExecutor),
+  );
+  return { db: { $client: {}, transaction } as never, snapshotExecutor, transaction };
+}
 
 function publishedState(): NonNullable<PublishedAthleteStateRead["current"]> {
   const computedAt = new Date("2026-07-01T23:30:00.000Z");
@@ -76,6 +101,11 @@ beforeEach(() => {
   vi.mocked(readPublishedAthleteStateSnapshotData)
     .mockReset()
     .mockResolvedValue(snapshotRead("UTC"));
+  getAthleteThresholdTargetFactsAsOf
+    .mockReset()
+    .mockResolvedValue(
+      createUnavailableAthletePerformanceTargetFacts("2026-07-02T00:30:00.000Z", profileId),
+    );
 });
 
 describe("published athlete-state snapshot", () => {
@@ -83,8 +113,9 @@ describe("published athlete-state snapshot", () => {
     vi.mocked(readPublishedAthleteStateSnapshotData).mockResolvedValue(
       snapshotRead("America/Los_Angeles"),
     );
+    const root = repeatableReadRoot();
     const snapshot = await readPublishedAthleteStateSnapshot({
-      db: {} as never,
+      db: root.db,
       profileId,
       now: new Date("2026-07-02T00:30:00.000Z"),
     });
@@ -108,17 +139,69 @@ describe("published athlete-state snapshot", () => {
         recentLoad: 35,
       },
     });
+    expect(root.transaction).toHaveBeenCalledWith(expect.any(Function), {
+      accessMode: "read only",
+      isolationLevel: "repeatable read",
+    });
+    expect(readPublishedAthleteStateSnapshotData).toHaveBeenCalledWith(root.snapshotExecutor, {
+      profileId,
+    });
+    expect(getAthleteThresholdTargetFactsAsOf).toHaveBeenCalledWith(
+      { athleteId: profileId, asOf: new Date("2026-07-02T00:30:00.000Z") },
+      root.snapshotExecutor,
+    );
   });
 
   it("can retain the published baseline timestamp for a coherent historical snapshot", async () => {
     const snapshot = await readPublishedAthleteStateSnapshot({
-      db: {} as never,
+      db: repeatableReadRoot().db,
       profileId,
       now: new Date("2026-07-02T00:30:00.000Z"),
       advanceBaselineToReadTime: false,
     });
 
     expect(snapshot.baseline?.asOf).toBe("2026-07-01T23:30:00.000Z");
+  });
+
+  it("uses a repeatable-read read-write snapshot when preserving the state-row lock", async () => {
+    const root = repeatableReadRoot();
+    await readPublishedAthleteStateSnapshot({
+      db: root.db,
+      profileId,
+      now: new Date("2026-07-02T00:30:00.000Z"),
+      lockStateForUpdate: true,
+    });
+
+    expect(root.transaction).toHaveBeenCalledWith(expect.any(Function), {
+      accessMode: "read write",
+      isolationLevel: "repeatable read",
+    });
+    expect(readPublishedAthleteStateSnapshotData).toHaveBeenCalledWith(root.snapshotExecutor, {
+      profileId,
+      lockStateForUpdate: true,
+    });
+    expect(getAthleteThresholdTargetFactsAsOf).toHaveBeenCalledWith(
+      { athleteId: profileId, asOf: new Date("2026-07-02T00:30:00.000Z") },
+      root.snapshotExecutor,
+    );
+  });
+
+  it("does not weaken a locking read inside a known read-only parent snapshot", async () => {
+    const root = repeatableReadRoot();
+    await expect(
+      withRepeatableReadSnapshot(root.db, (tx) =>
+        readPublishedAthleteStateSnapshot({
+          db: tx,
+          profileId,
+          now: new Date("2026-07-02T00:30:00.000Z"),
+          lockStateForUpdate: true,
+        }),
+      ),
+    ).rejects.toThrow("cannot reuse a read-only parent transaction");
+    expect(root.transaction).toHaveBeenCalledWith(expect.any(Function), {
+      accessMode: "read only",
+      isolationLevel: "repeatable read",
+    });
   });
 
   it("keeps the published snapshot fresh until a scheduled calibration expiry is due", async () => {
@@ -131,39 +214,43 @@ describe("published athlete-state snapshot", () => {
 
     await expect(
       readPublishedAthleteStateSnapshot({
-        db: {} as never,
+        db: repeatableReadRoot().db,
         profileId,
         now: new Date("2026-07-02T00:30:00.000Z"),
       }),
     ).resolves.toMatchObject({ freshness: "fresh", rebuildStatus: "fresh" });
   });
 
-  it("reconstructs canonical performance targets only from matching published estimate facts", async () => {
+  it("treats threshold estimates as cache and overlays canonical threshold identity", async () => {
     const facts = buildPerformanceTargetFactsFixture({
       asOf: "2026-07-01T23:30:00.000Z",
       athleteId: profileId,
-      planningThresholdPowerWatts: 285,
-      planningThresholdPaceSecondsPerKm: 240,
-      swimmingCssSecondsPer100m: 95,
+      bikeThresholdWatts: 285,
+      runThresholdMetersPerSecond: secondsPerKilometerToMetersPerSecond(240),
+      swimThresholdMetersPerSecond: secondsPer100MetersToMetersPerSecond(95),
       lthrBpm: { bike: 170, run: 176 },
       maxHrBpm: { bike: 190, run: 194, swim: 180 },
     });
-    facts.cycling.planningThresholdPower.evidenceCount = 2;
-    facts.cycling.planningThresholdPower.trend = "increasing";
     facts.heartRate.bike.lthr.evidenceCount = 3;
     facts.heartRate.bike.lthr.trend = "stable";
     const read = snapshotRead("UTC");
     if (!read.current) throw new Error("Expected published state fixture");
     read.current.estimates = [
-      estimate("threshold_power", "bike", 285, "watts", facts.cycling.planningThresholdPower),
+      estimate("threshold_power", "bike", 285, "watts", facts.thresholds.bike),
       estimate(
         "threshold_speed",
         "run",
-        240,
-        "seconds_per_km",
-        facts.running.planningThresholdPace,
+        secondsPerKilometerToMetersPerSecond(240),
+        "meters_per_second",
+        facts.thresholds.run,
       ),
-      estimate("threshold_speed", "swim", 95, "seconds_per_100m", facts.swimming.css),
+      estimate(
+        "threshold_speed",
+        "swim",
+        secondsPer100MetersToMetersPerSecond(95),
+        "meters_per_second",
+        facts.thresholds.swim,
+      ),
       estimate("threshold_heart_rate", "bike", 170, "bpm", facts.heartRate.bike.lthr),
       estimate("bike_max_hr", "bike", 190, "bpm", facts.heartRate.bike.maxHr),
       estimate("threshold_heart_rate", "run", 176, "bpm", facts.heartRate.run.lthr),
@@ -171,28 +258,112 @@ describe("published athlete-state snapshot", () => {
       estimate("swim_max_hr", "swim", 180, "bpm", facts.heartRate.swim.maxHr),
     ];
     vi.mocked(readPublishedAthleteStateSnapshotData).mockResolvedValue(read);
+    getAthleteThresholdTargetFactsAsOf.mockResolvedValue(
+      materializeAthletePerformanceTargetFacts({
+        athleteId: profileId,
+        asOf: "2026-07-02T00:30:00.000Z",
+        thresholds: [
+          {
+            id: "canonical-bike-threshold",
+            status: "available",
+            activityCategory: "bike",
+            metric: "power",
+            unit: "watts",
+            method: "bike_power_30m",
+            value: 300,
+            effectiveAt: "2026-06-30T00:00:00.000Z",
+            policyVersion: "threshold-policy-v1",
+            state: "confirmed",
+            confidence: 0.95,
+            sourceEvaluationIds: ["canonical-evaluation"],
+            sourceEffortIds: ["canonical-effort"],
+            sourceActivityIds: ["canonical-activity"],
+          },
+        ],
+      }),
+    );
 
     await expect(
       readPublishedAthleteStateSnapshot({
-        db: {} as never,
+        db: repeatableReadRoot().db,
         profileId,
         now: new Date("2026-07-02T00:30:00.000Z"),
       }),
     ).resolves.toMatchObject({
       performanceTargets: {
-        ...facts,
-        cycling: {
-          planningThresholdPower: expect.objectContaining({
-            evidenceCount: 2,
-            trend: "increasing",
+        thresholds: {
+          bike: expect.objectContaining({
+            value: 300,
+            thresholdId: "canonical-bike-threshold",
+            evaluationId: "canonical-evaluation",
           }),
         },
         heartRate: {
           bike: {
-            lthr: expect.objectContaining({ evidenceCount: 3, trend: "stable" }),
+            lthr: expect.objectContaining({ status: "unavailable" }),
+            maxHr: expect.objectContaining({ status: "available", valueBpm: 190 }),
           },
         },
       },
+    });
+  });
+
+  it("rebuilds cache comparisons from canonical IDs and tolerates cache deletion", async () => {
+    const canonical = materializeAthletePerformanceTargetFacts({
+      athleteId: profileId,
+      asOf: "2026-07-02T00:30:00.000Z",
+      thresholds: [
+        {
+          id: "cached-threshold",
+          status: "available",
+          activityCategory: "bike",
+          metric: "power",
+          unit: "watts",
+          method: "bike_power_30m",
+          value: 280,
+          effectiveAt: "2026-07-01T00:00:00.000Z",
+          policyVersion: "threshold-policy-v1",
+          state: "confirmed",
+          confidence: 0.9,
+          sourceEvaluationIds: ["cached-evaluation"],
+          sourceEffortIds: ["cached-effort"],
+          sourceActivityIds: ["cached-activity"],
+        },
+      ],
+    });
+    const read = snapshotRead("UTC");
+    if (!read.current) throw new Error("Expected published state fixture");
+    read.current.estimates = [
+      estimate("threshold_power", "bike", 280, "watts", canonical.thresholds.bike),
+    ];
+    vi.mocked(readPublishedAthleteStateSnapshotData).mockResolvedValue(read);
+
+    await expect(
+      readCachedPublishedAthletePerformanceTargets({
+        db: repeatableReadRoot().db,
+        profileId,
+        now: new Date("2026-07-02T00:30:00.000Z"),
+      }),
+    ).resolves.toMatchObject({
+      thresholds: {
+        bike: {
+          status: "available",
+          value: 280,
+          thresholdId: "cached-threshold",
+          evaluationId: "cached-evaluation",
+        },
+      },
+    });
+
+    read.current.estimates = [];
+    await expect(
+      readCachedPublishedAthletePerformanceTargets({
+        db: repeatableReadRoot().db,
+        profileId,
+        now: new Date("2026-07-02T00:30:00.000Z"),
+      }),
+    ).resolves.toMatchObject({
+      thresholds: { bike: { status: "unavailable" } },
     });
   });
 
@@ -200,7 +371,7 @@ describe("published athlete-state snapshot", () => {
     vi.mocked(readPublishedAthleteStateSnapshotData).mockResolvedValueOnce(snapshotRead(null));
     await expect(
       readPublishedAthleteStateSnapshot({
-        db: {} as never,
+        db: repeatableReadRoot().db,
         profileId,
         now: new Date("2026-07-02T00:30:00.000Z"),
       }),
@@ -211,7 +382,7 @@ describe("published athlete-state snapshot", () => {
     );
     await expect(
       readPublishedAthleteStateSnapshot({
-        db: {} as never,
+        db: repeatableReadRoot().db,
         profileId,
         now: new Date("2026-07-02T00:30:00.000Z"),
       }),
@@ -225,7 +396,7 @@ describe("published athlete-state snapshot", () => {
 
     await expect(
       readPublishedAthleteStateSnapshot({
-        db: {} as never,
+        db: repeatableReadRoot().db,
         profileId,
         now: new Date("2026-07-02T00:30:00.000Z"),
       }),

@@ -4,7 +4,6 @@ import {
   athletePerformanceTargetFactsSchema,
   canonicalActivityCategorySchema,
   compileActivityPlan,
-  type RecordingCheckpoint,
   recordingCheckpointSchema,
 } from "@repo/core";
 import { z } from "zod";
@@ -19,12 +18,14 @@ import {
   releaseRecordingEvidenceCheckpointClaim,
 } from "./recordingEvidenceJournal";
 
+export const MOBILE_RECORDING_CHECKPOINT_SCHEMA_VERSION = 5 as const;
+
 // This is mobile recovery state, not a cross-surface session contract. Keep it
 // local so an unplanned launch never invents a plan/hash just to fit the older
 // planned checkpoint shape.
 const unplannedRecordingCheckpointSchema = z
   .object({
-    schemaVersion: z.literal(4),
+    schemaVersion: z.literal(MOBILE_RECORDING_CHECKPOINT_SCHEMA_VERSION),
     variant: z.literal("unplanned"),
     sessionId: z.string().min(1),
     profileId: z.string().min(1),
@@ -68,14 +69,28 @@ const unplannedRecordingCheckpointSchema = z
       });
     }
   });
-const plannedRecordingCheckpointSchema = recordingCheckpointSchema
-  .extend({ variant: z.literal("planned") })
-  .strict();
+const plannedRecordingCheckpointSchema = z
+  .object({
+    ...recordingCheckpointSchema.shape,
+    schemaVersion: z.literal(MOBILE_RECORDING_CHECKPOINT_SCHEMA_VERSION),
+    variant: z.literal("planned"),
+  })
+  .strict()
+  .superRefine((checkpoint, context) => {
+    if (Date.parse(checkpoint.performanceTargets.asOf) > Date.parse(checkpoint.timing.startedAt)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Checkpoint performance targets cannot be observed after session start",
+        path: ["performanceTargets", "asOf"],
+      });
+    }
+  });
 export const activityRecorderCheckpointSchema = z.discriminatedUnion("variant", [
   plannedRecordingCheckpointSchema,
   unplannedRecordingCheckpointSchema,
 ]);
 export type ActivityRecorderCheckpoint = z.infer<typeof activityRecorderCheckpointSchema>;
+export type PlannedRecordingCheckpoint = z.infer<typeof plannedRecordingCheckpointSchema>;
 export type UnplannedRecordingCheckpoint = z.infer<typeof unplannedRecordingCheckpointSchema>;
 
 function canonicalJson(value: unknown): string {
@@ -121,7 +136,7 @@ async function handleJournalCheckpointFailure(
   return { status: "quarantined", reason };
 }
 
-function assertRecoveryJournal(checkpoint: RecordingCheckpoint): void {
+function assertRecoveryJournal(checkpoint: PlannedRecordingCheckpoint): void {
   if (checkpoint.occurrenceProgress.startMovingSeconds > checkpoint.timing.movingSeconds) {
     throw new Error("Occurrence start counters exceed checkpoint progress");
   }
@@ -252,9 +267,7 @@ export async function persistRecordingCheckpoint(
 
 export type RecordingCheckpointRecovery =
   | { status: "none" }
-  // The recorder narrows the local discriminated schema before it accesses
-  // planned-only fields.
-  | { status: "recovered"; checkpoint: RecordingCheckpoint }
+  | { status: "recovered"; checkpoint: ActivityRecorderCheckpoint }
   | { status: "quarantined"; reason: string };
 
 export async function inspectRecordingCheckpoint(
@@ -273,7 +286,7 @@ export async function inspectRecordingCheckpoint(
       throw new Error("Checkpoint session does not match evidence");
     return {
       status: "recovered",
-      checkpoint: checkpoint as RecordingCheckpoint,
+      checkpoint,
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Unreadable checkpoint";
@@ -296,7 +309,7 @@ export async function loadAndClaimRecordingCheckpoint(
     const checkpoint = await parseAndValidateCheckpoint(row.checkpointJson, profileId);
     if (checkpoint.sessionId !== row.sessionId)
       throw new Error("Checkpoint session does not match evidence");
-    return { status: "recovered", checkpoint: checkpoint as RecordingCheckpoint };
+    return { status: "recovered", checkpoint };
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Unreadable checkpoint";
     await quarantineRecoveredEvidence(row.sessionId, profileId, reason);

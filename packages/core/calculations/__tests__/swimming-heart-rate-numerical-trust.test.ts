@@ -1,16 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { analyzeActivityDerivedMetrics } from "../../activity-analysis";
 import { calculateSwimTiming } from "../../activity-analysis/swim-timing";
-import { buildPerformanceTargetFactsFixture } from "../../performance-model/__tests__/fixtures/target-facts";
+import { buildPerformanceTargetFactsFixture } from "../../testing/performance-model";
+import { secondsPer100MetersToMetersPerSecond } from "../../units";
 import { calculateCyclingNormalizedPower } from "../normalized-power";
-import {
-  CSS_CALCULATION_VERSION,
-  calculateCssFrom400m200mTest,
-  evaluateCssFrom400m200mTest,
-} from "../swim-pace-curve";
 import { SWIMMING_HEART_RATE_NUMERICAL_TRUST_FIXTURES_V1 as fixtures } from "./fixtures/swimming-heart-rate-numerical-trust-v1";
 import {
-  calculateReferenceCss400m200m,
   calculateReferenceSwimTiming,
   SWIMMING_HEART_RATE_REFERENCE_VERSION,
 } from "./support/swimming-heart-rate-reference";
@@ -18,51 +13,9 @@ import {
 const STARTED_AT = "2026-07-31T10:00:00.000Z";
 const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
 
-describe("Phase 5 CSS numerical trust", () => {
-  it("pins an independently implemented test-only reference", () => {
-    expect(SWIMMING_HEART_RATE_REFERENCE_VERSION).toBe(fixtures.referenceVersion);
-    expect(calculateReferenceCss400m200m).not.toBe(evaluateCssFrom400m200mTest);
-  });
-
-  it.each([
-    fixtures.css.canonical,
-    fixtures.css.secondExample,
-  ])("matches the manual example: $rationale", (fixture) => {
-    const result = evaluateCssFrom400m200mTest(fixture.input);
-    const reference = calculateReferenceCss400m200m(fixture.input);
-    expect(result).toMatchObject({
-      status: fixture.expected.status,
-      calculationVersion: CSS_CALCULATION_VERSION,
-      cssSecondsPer100m: fixture.expected.cssSecondsPer100m,
-      cssMetersPerSecond: fixture.expected.cssMetersPerSecond,
-    });
-    if (result.status !== "available") throw new Error(fixture.rationale);
-    if (reference.status !== "available")
-      throw new Error(`Reference rejected: ${fixture.rationale}`);
-    expect(result.cssSecondsPer100m).toBe(reference.cssSecondsPer100m);
-    expect(result.cssMetersPerSecond).toBe(reference.cssMetersPerSecond);
-    expect(result.efforts).toEqual(reference.efforts);
-    expect(result.efforts).toEqual(calculateCssFrom400m200mTest(fixture.input).efforts);
-  });
-
-  it.each(
-    fixtures.css.unavailable,
-  )("abstains for incomplete/invalid input: $rationale", (fixture) => {
-    expect(calculateReferenceCss400m200m(fixture.input)).toEqual({ status: "unavailable" });
-    expect(evaluateCssFrom400m200mTest(fixture.input)).toEqual({
-      status: "unavailable",
-      calculationVersion: fixtures.cssCalculationVersion,
-      protocol: "css_400m_200m",
-      cssSecondsPer100m: null,
-      cssMetersPerSecond: null,
-      efforts: null,
-      reason: "invalid_protocol",
-    });
-  });
-});
-
 describe("Phase 5 swim active/rest timing and threshold Load", () => {
   it("separates explicit active and rest lengths without using rest as threshold duration", () => {
+    expect(SWIMMING_HEART_RATE_REFERENCE_VERSION).toBe(fixtures.referenceVersion);
     const fixture = fixtures.swimTiming.complete;
     const result = calculateSwimTiming({
       elapsedDurationSeconds: fixture.elapsedDurationSeconds,
@@ -121,7 +74,7 @@ describe("Phase 5 swim active/rest timing and threshold Load", () => {
     );
   });
 
-  it("anchors one active hour at CSS to intensity 1 and 100 Common Load", () => {
+  it("anchors one active hour at swim threshold speed to intensity 1 and 100 Common Load", () => {
     const fixture = fixtures.swimTiming.thresholdHour;
     const finishedAt = new Date(Date.parse(STARTED_AT) + fixture.elapsedDurationSeconds * 1_000);
     const result = analyzeActivityDerivedMetrics({
@@ -142,7 +95,7 @@ describe("Phase 5 swim active/rest timing and threshold Load", () => {
       context: {
         profileMetrics: {},
         performanceTargets: buildPerformanceTargetFactsFixture({
-          swimmingCssSecondsPer100m: 100 / fixture.expected.thresholdSpeedMetersPerSecond,
+          swimThresholdMetersPerSecond: fixture.expected.thresholdSpeedMetersPerSecond,
         }),
         recentEfforts: [],
         profile: {},
@@ -176,7 +129,7 @@ describe("Phase 5 swim active/rest timing and threshold Load", () => {
       context: {
         profileMetrics: {},
         performanceTargets: buildPerformanceTargetFactsFixture({
-          swimmingCssSecondsPer100m: 100,
+          swimThresholdMetersPerSecond: secondsPer100MetersToMetersPerSecond(100),
         }),
         recentEfforts: [],
         profile: {},

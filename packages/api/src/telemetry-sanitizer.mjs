@@ -29,7 +29,13 @@ const PROCEDURE_GROUPS = new Set([
   "unknown",
 ]);
 const PROCEDURE_TYPES = new Set(["query", "mutation", "subscription", "unknown"]);
-const OUTCOMES = new Set(["success", "expected_error", "unexpected_error", "cancelled"]);
+const OUTCOMES = new Set([
+  "success",
+  "expected_error",
+  "unexpected_error",
+  "cancelled",
+  "unsupported_activity_file",
+]);
 const DURATION_BUCKETS = new Set(["<50", "<200", "<1000", "<5000", ">=5000"]);
 const ERROR_CODES = new Set([
   "BAD_REQUEST",

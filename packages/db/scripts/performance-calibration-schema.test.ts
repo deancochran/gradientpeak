@@ -1,186 +1,233 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { PERFORMANCE_CALIBRATION_LIFECYCLE_POLICY } from "@repo/core/performance-calibration";
 import { getTableColumns } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
+
 import {
-  performanceCalibrationEvidenceStateEnum,
-  performanceCalibrationMetricKeyEnum,
+  thresholdEvaluationEffortRoleEnum,
+  thresholdEvaluationOutcomeEnum,
+  thresholdEvaluationRejectionReasonEnum,
+  thresholdMetricEnum,
 } from "../src/schema/enums";
 import {
-  activities,
-  activityArtifactLinks,
-  performanceCalibrationEvidence,
-  performanceCalibrationModelInputs,
-  performanceCalibrationSelectionEvidence,
-  performanceCalibrations,
   profilePerformanceEstimates,
+  thresholdEvaluationEfforts,
+  thresholdEvaluations,
+  thresholds,
 } from "../src/schema/tables";
 
-assert.deepEqual(performanceCalibrationMetricKeyEnum.enumValues, [
-  "threshold_power",
-  "threshold_speed",
-  "threshold_heart_rate",
-]);
-assert.deepEqual(performanceCalibrationEvidenceStateEnum.enumValues, [
-  "candidate",
-  "rejected",
-  "invalidated",
+assert.deepEqual(thresholdMetricEnum.enumValues, ["power", "speed"]);
+assert.deepEqual(thresholdEvaluationOutcomeEnum.enumValues, ["qualified", "rejected"]);
+assert.deepEqual(thresholdEvaluationEffortRoleEnum.enumValues, ["primary", "supporting"]);
+assert.deepEqual(thresholdEvaluationRejectionReasonEnum.enumValues, [
+  "source_not_accepted",
+  "ownership_unverified",
+  "series_missing",
+  "series_ambiguous",
+  "exact_window_missing",
+  "exact_window_ambiguous",
+  "exact_window_incomplete",
+  "source_incomplete",
+  "coverage_insufficient",
+  "gap_bound_exceeded",
+  "value_implausible",
 ]);
 
-const evidenceColumns = getTableColumns(performanceCalibrationEvidence);
+const evaluationColumns = getTableColumns(thresholdEvaluations);
 for (const name of [
   "profile_id",
-  "metric_key",
   "activity_category",
-  "segment_revision",
-  "source_artifact_id",
+  "metric",
+  "method",
+  "outcome",
+  "value",
+  "unit",
+  "confidence",
+  "observed_at",
+  "rejection_reason",
+  "policy_version",
   "diagnostics",
-  "invalidated_at",
+  "source_activity_id",
+  "source_revision",
 ] as const) {
-  assert.ok(evidenceColumns[name], `Missing calibration evidence column ${name}`);
+  assert.ok(evaluationColumns[name], `Missing threshold evaluation column ${name}`);
 }
-const calibrationColumns = getTableColumns(performanceCalibrations);
-assert.ok(calibrationColumns.selection_diagnostics);
-assert.ok(calibrationColumns.supersedes_id);
-assert.ok(!("state" in calibrationColumns));
-assert.ok(!("calibration_state" in getTableColumns(profilePerformanceEstimates)));
-const calibrationConfig = getTableConfig(performanceCalibrations);
+assert.ok(!("updated_at" in evaluationColumns));
+
+const evaluationConfig = getTableConfig(thresholdEvaluations);
+const evaluationChecks = new Set(evaluationConfig.checks.map((constraint) => constraint.name));
+for (const checkName of [
+  "threshold_evaluations_outcome_check",
+  "threshold_evaluations_identity_check",
+  "threshold_evaluations_value_finite_positive_check",
+  "threshold_evaluations_confidence_finite_range_check",
+  "threshold_evaluations_source_revision_check",
+]) {
+  assert.ok(evaluationChecks.has(checkName), `Missing evaluation check ${checkName}`);
+}
 assert.ok(
-  calibrationConfig.uniqueConstraints.some(
-    (constraint) => constraint.name === "performance_calibrations_supersedes_unique",
+  evaluationConfig.uniqueConstraints.some(
+    (constraint) => constraint.name === "threshold_evaluations_idempotency_unique",
   ),
 );
 assert.ok(
-  calibrationConfig.foreignKeys.some(
-    (constraint) => constraint.getName() === "performance_calibrations_supersedes_identity_fkey",
+  evaluationConfig.foreignKeys.some(
+    (constraint) => constraint.getName() === "threshold_evaluations_source_activity_profile_fkey",
   ),
 );
-const modelInputColumns = getTableColumns(performanceCalibrationModelInputs);
+
+const linkConfig = getTableConfig(thresholdEvaluationEfforts);
+assert.equal(linkConfig.columns.find(({ name }) => name === "source_series")?.notNull, true);
+assert.ok(
+  linkConfig.uniqueConstraints.some(
+    (constraint) => constraint.name === "threshold_evaluation_efforts_role_ordinal_unique",
+  ),
+);
+assert.ok(
+  linkConfig.checks.some(
+    (constraint) => constraint.name === "threshold_evaluation_efforts_ordinal_check",
+  ),
+  "Supporting effort ordinals must remain database-bounded",
+);
+for (const foreignKeyName of [
+  "threshold_evaluation_efforts_evaluation_ownership_fkey",
+  "threshold_evaluation_efforts_effort_ownership_fkey",
+]) {
+  assert.ok(
+    linkConfig.foreignKeys.some((constraint) => constraint.getName() === foreignKeyName),
+    `Missing composite ownership FK ${foreignKeyName}`,
+  );
+}
+
+const thresholdColumns = getTableColumns(thresholds);
 for (const name of [
-  "calibration_evidence_id",
-  "effort_id",
-  "profile_id",
-  "activity_id",
-  "segment_id",
-  "segment_revision",
-  "source_artifact_id",
-  "source_artifact_digest",
+  "evaluation_id",
+  "effective_at",
+  "value",
+  "unit",
+  "confidence",
+  "method",
+  "policy_version",
+  "supersedes_id",
 ] as const) {
-  assert.ok(modelInputColumns[name], `Missing calibration model input column ${name}`);
+  assert.ok(thresholdColumns[name], `Missing threshold column ${name}`);
 }
-const selectionEvidenceColumns = getTableColumns(performanceCalibrationSelectionEvidence);
-assert.ok(selectionEvidenceColumns.evidence_id);
-assert.ok(selectionEvidenceColumns.calibration_id);
-assert.ok(selectionEvidenceColumns.profile_id);
-assert.ok(selectionEvidenceColumns.metric_key);
-assert.ok(selectionEvidenceColumns.activity_category);
+for (const forbidden of ["freshness", "stale_at", "expires_at"] as const) {
+  assert.ok(!(forbidden in thresholdColumns), `Thresholds must not persist ${forbidden}`);
+}
+assert.ok(!("threshold_id" in getTableColumns(profilePerformanceEstimates)));
+const thresholdConfig = getTableConfig(thresholds);
+assert.ok(
+  thresholdConfig.foreignKeys.some(
+    (constraint) => constraint.getName() === "thresholds_qualified_evaluation_ownership_fkey",
+  ),
+);
+const rootIndex = thresholdConfig.indexes.find(
+  (index) => index.config.name === "thresholds_identity_root_unique",
+);
+assert.ok(rootIndex?.config.unique, "Threshold roots require a race-proof unique index");
+const supersedesForeignKey = thresholdConfig.foreignKeys.find(
+  (constraint) => constraint.getName() === "thresholds_supersedes_fkey",
+);
+assert.equal(supersedesForeignKey?.onDelete, "no action");
+assert.ok(
+  thresholdConfig.uniqueConstraints.some(
+    (constraint) => constraint.name === "thresholds_supersedes_unique",
+  ),
+  "Threshold history must retain one direct successor per row",
+);
 
 const baselinePath = fileURLToPath(
   new URL("../supabase/migrations/20260730000000_mvp_baseline.sql", import.meta.url),
 );
 const baseline = await readFile(baselinePath, "utf8");
+const activeBaseline = baseline;
 for (const required of [
-  'CREATE TABLE "performance_calibration_evidence"',
-  'CREATE TABLE "performance_calibration_model_inputs"',
-  'CREATE TABLE "performance_calibrations"',
-  'CREATE TABLE "performance_calibration_selection_evidence"',
-  'CONSTRAINT "performance_calibration_evidence_source_policy_unique"',
-  'CONSTRAINT "performance_calibration_evidence_identity_unique" UNIQUE("id","profile_id","metric_key","activity_category")',
-  'CONSTRAINT "performance_calibration_model_inputs_evidence_identity_fkey" FOREIGN KEY ("calibration_evidence_id","profile_id","metric_key","activity_category")',
-  'CONSTRAINT "performance_calibrations_identity_unique" UNIQUE("id","profile_id","metric_key","activity_category")',
-  'CONSTRAINT "performance_calibration_selection_evidence_calibration_identity_fkey" FOREIGN KEY ("calibration_id","profile_id","metric_key","activity_category")',
-  'CONSTRAINT "performance_calibration_selection_evidence_evidence_identity_fkey" FOREIGN KEY ("evidence_id","profile_id","metric_key","activity_category")',
-  'CREATE INDEX "performance_calibrations_due_idx"',
-  'CREATE INDEX "performance_calibration_selection_evidence_evidence_idx"',
-  'ALTER TABLE "public"."performance_calibration_evidence" ENABLE ROW LEVEL SECURITY',
-  'ALTER TABLE "public"."performance_calibration_model_inputs" ENABLE ROW LEVEL SECURITY',
-  'ALTER TABLE "public"."performance_calibrations" ENABLE ROW LEVEL SECURITY',
-  'ALTER TABLE "public"."performance_calibration_selection_evidence" ENABLE ROW LEVEL SECURITY',
-  'CREATE OR REPLACE FUNCTION "public"."reject_activity_performance_target_snapshot_mutation"()',
-  "CREATE FUNCTION public.guard_performance_calibration_evidence_history()",
-  "CREATE FUNCTION public.performance_calibration_lifecycle_policy()",
-  "CREATE FUNCTION public.performance_calibration_evidence_is_current(target_evidence_id uuid)",
-  "CREATE FUNCTION public.guard_performance_calibration_insert()",
-  "CREATE FUNCTION public.guard_performance_calibration_append_only()",
-  "CREATE FUNCTION public.guard_performance_calibration_selection_insert()",
-  "CREATE FUNCTION public.guard_performance_calibration_model_input_insert()",
-  "CREATE FUNCTION public.validate_performance_calibration_selection()",
-  "CREATE FUNCTION public.validate_performance_calibration_model_inputs()",
-  "CREATE TRIGGER performance_calibration_evidence_history_guard",
-  "CREATE TRIGGER performance_calibrations_append_only",
-  "CREATE TRIGGER performance_calibration_selection_append_only",
-  "CREATE TRIGGER performance_calibration_model_inputs_append_only",
-  "CREATE CONSTRAINT TRIGGER performance_calibrations_selection_guard",
-  "CREATE CONSTRAINT TRIGGER performance_calibration_model_inputs_complete_guard",
-  "REVOKE TRUNCATE ON TABLE",
-  "CREATE TRIGGER activities_performance_target_snapshot_immutable BEFORE UPDATE OF performance_target_snapshot ON public.activities",
-]) {
-  assert.ok(baseline.includes(required), `Baseline is missing ${required}`);
+  'CREATE TABLE "threshold_evaluations"',
+  'CREATE TYPE "public"."activity_effort_source_series"',
+  'CREATE TABLE "threshold_evaluation_efforts"',
+  'CREATE TABLE "thresholds"',
+  'CONSTRAINT "threshold_evaluations_idempotency_unique"',
+  'CONSTRAINT "threshold_evaluation_efforts_evaluation_ownership_fkey"',
+  'CONSTRAINT "threshold_evaluation_efforts_effort_ownership_fkey"',
+  'CONSTRAINT "thresholds_qualified_evaluation_ownership_fkey"',
+  'CREATE INDEX "thresholds_profile_identity_effective_idx"',
+  'CREATE UNIQUE INDEX "thresholds_identity_root_unique"',
+  'CREATE INDEX "threshold_evaluation_efforts_activity_evaluation_idx"',
+  'ALTER TABLE "public"."threshold_evaluations" ENABLE ROW LEVEL SECURITY',
+  'ALTER TABLE "public"."threshold_evaluation_efforts" ENABLE ROW LEVEL SECURITY',
+  'ALTER TABLE "public"."thresholds" ENABLE ROW LEVEL SECURITY',
+  "CREATE FUNCTION public.enforce_threshold_truth_immutability()",
+  "CREATE FUNCTION public.validate_threshold_evaluation_efforts()",
+  "CREATE FUNCTION public.validate_threshold_insert()",
+  "CREATE FUNCTION public.delete_effort_dependent_threshold_evaluations()",
+  "CREATE CONSTRAINT TRIGGER threshold_evaluations_efforts_guard",
+  "CREATE TRIGGER activity_efforts_delete_threshold_dependents",
+  "CREATE TRIGGER activity_efforts_immutable",
+  "REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE",
+] as const) {
+  assert.ok(activeBaseline.includes(required), `Baseline is missing ${required}`);
 }
-const lifecyclePolicyMatch = baseline.match(
-  /CREATE FUNCTION public\.performance_calibration_lifecycle_policy\(\)[\s\S]+?SELECT '(\{[\s\S]+?\})'::jsonb[\s\S]+?\$\$;/,
-);
-assert.ok(lifecyclePolicyMatch?.[1], "Baseline lifecycle policy JSON is missing");
-assert.deepEqual(
-  JSON.parse(lifecyclePolicyMatch[1]),
-  PERFORMANCE_CALIBRATION_LIFECYCLE_POLICY,
-  "Core and database lifecycle policy values must remain identical",
-);
-assert.match(
-  baseline,
-  /selection_reason = 'complete_protocol'[\s\S]+calibration\.metric_key = 'threshold_speed'[\s\S]+calibration\.activity_category = 'swim'/,
-  "The database must allow immediate confirmation only for complete swim CSS protocols",
-);
-assert.ok(
-  !baseline.includes('CREATE UNIQUE INDEX "activity_artifact_links_current_source_unique"'),
-  "Activities may retain multiple exact current source tuples",
-);
-assert.ok(
-  !getTableConfig(activityArtifactLinks).indexes.some(
-    (index) => index.config.name === "activity_artifact_links_current_source_unique",
-  ),
-  "Drizzle must allow multiple exact current source tuples per activity",
-);
-assert.ok(!baseline.includes('"state" "performance_calibration_state"'));
-assert.ok(!baseline.includes('"calibration_state" "performance_calibration_state"'));
-assert.match(
-  baseline,
-  /CONSTRAINT "performance_calibration_evidence_source_policy_unique" UNIQUE\("activity_id","segment_id","segment_revision","source_artifact_id","metric_key","policy_version"\)/,
-);
-assert.match(
-  baseline,
-  /CONSTRAINT "performance_calibrations_supersedes_identity_fkey" FOREIGN KEY \("supersedes_id","profile_id","metric_key","activity_category"\)/,
-);
-assert.ok(
-  getTableColumns(activities).performance_target_snapshot,
-  "Completed activities must retain their immutable published target snapshot",
-);
-assert.match(
-  baseline,
-  /if new\.performance_target_snapshot is distinct from old\.performance_target_snapshot then\s+raise exception 'activity performance target snapshots are immutable after capture'/,
-  "The database must reject every post-capture snapshot change, including null-to-value updates",
-);
-for (const cascadingConstraint of [
-  "performance_calibration_evidence_profile_id_profiles_id_fk",
-  "performance_calibrations_profile_id_profiles_id_fk",
-]) {
-  assert.match(
-    baseline,
-    new RegExp(`CONSTRAINT "${cascadingConstraint}"[^;]+ON DELETE cascade`),
-    `${cascadingConstraint} must preserve hard-delete cleanup`,
-  );
-}
-for (const retainedAuditConstraint of [
-  "performance_calibration_evidence_activity_profile_fkey",
-  "performance_calibration_evidence_segment_activity_profile_fkey",
-  "performance_calibration_evidence_source_link_fkey",
-]) {
+
+for (const removed of [
+  "performance_calibration_evidence",
+  "performance_calibration_model_inputs",
+  "performance_calibration_selection_evidence",
+  "performance_calibrations",
+  "swimming_css_protocol_evidence",
+  "performance_calibration_metric_key",
+  "performance_calibration_evidence_state",
+  "performance_calibration_rejection_reason",
+  "performance_calibration_source_semantics",
+] as const) {
   assert.ok(
-    !baseline.includes(`CONSTRAINT "${retainedAuditConstraint}"`),
-    `${retainedAuditConstraint} would delete retained invalidation audit history`,
+    !activeBaseline.includes(removed),
+    `Fresh baseline still contains active removed ${removed}`,
   );
 }
 
-console.log("Performance calibration schema and baseline contract tests passed.");
+assert.ok(!activeBaseline.includes("activity_efforts_duration_seconds_bounds_check"));
+assert.match(
+  activeBaseline,
+  /threshold_evaluations_source_activity_profile_fkey[^;]+ON DELETE cascade/,
+);
+assert.match(
+  activeBaseline,
+  /threshold_evaluation_efforts_effort_ownership_fkey[^;]+"source_series"[^;]+REFERENCES[^;]+"source_series"[^;]+ON DELETE cascade/,
+);
+assert.match(
+  activeBaseline,
+  /threshold_evaluation_efforts_ordinal_check" CHECK \("threshold_evaluation_efforts"\."ordinal" between 0 and 63\)/,
+);
+assert.ok(
+  activeBaseline.includes("IF evaluation.outcome = 'qualified' AND primary_count <> 1 THEN"),
+);
+assert.ok(activeBaseline.includes("CONSTRAINT = 'threshold_evaluations_rejected_effort_source'"));
+assert.match(
+  activeBaseline,
+  /thresholds_qualified_evaluation_ownership_fkey[^;]+ON DELETE cascade/,
+);
+assert.match(
+  activeBaseline,
+  /thresholds_supersedes_fkey[^;]+ON DELETE no action[^;]+DEFERRABLE INITIALLY DEFERRED/,
+);
+assert.ok(
+  activeBaseline.includes("CREATE FUNCTION public.rewire_threshold_successor_after_delete()"),
+);
+assert.ok(activeBaseline.includes("CREATE TRIGGER thresholds_rewire_successor"));
+assert.match(
+  activeBaseline,
+  /CREATE FUNCTION public\.rewire_threshold_successor_after_delete\(\) RETURNS trigger[\s\S]+?SECURITY DEFINER[\s\S]+?WHERE successor\.supersedes_id = OLD\.id[\s\S]+?successor\.profile_id = OLD\.profile_id[\s\S]+?successor\.activity_category = OLD\.activity_category[\s\S]+?successor\.metric = OLD\.metric/,
+);
+assert.ok(
+  activeBaseline.includes(
+    "REVOKE ALL ON FUNCTION public.rewire_threshold_successor_after_delete() FROM PUBLIC, anon, authenticated, service_role",
+  ),
+);
+assert.match(
+  activeBaseline,
+  /CREATE UNIQUE INDEX "thresholds_identity_root_unique"[^;]+WHERE "thresholds"\."supersedes_id" is null/,
+);
+
+console.log("Threshold truth schema and baseline contract tests passed.");

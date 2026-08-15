@@ -168,6 +168,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   const windowAnchorDateRef = useRef<string | null>(null);
   const previousSourceRangeRef = useRef<string | null>(null);
   const pendingViewportRestoreDateRef = useRef<string | null>(null);
+  const userInteractionActiveRef = useRef(false);
   const { resolvedTheme } = useTheme();
   const { fontScale } = useWindowDimensions();
   const axisFont = useFont(getAxisFontSource(), 9);
@@ -320,10 +321,28 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
       if (pendingViewportRestoreDateRef.current && nextAnchorDate) {
         pendingViewportRestoreDateRef.current = nextAnchorDate;
       }
-      previewNearestFromScrollEvent(event);
+      if (userInteractionActiveRef.current) previewNearestFromScrollEvent(event);
       prefetchNearEdge(offsetX);
     },
     [layout, prefetchNearEdge, previewNearestFromScrollEvent, viewportWidth, visiblePoints],
+  );
+
+  const handleScrollBeginDrag = useCallback(() => {
+    userInteractionActiveRef.current = true;
+    beginPreview();
+  }, [beginPreview]);
+
+  const handleMomentumScrollBegin = useCallback(() => {
+    userInteractionActiveRef.current = true;
+    beginMomentum();
+  }, [beginMomentum]);
+
+  const handleMomentumScrollEnd = useCallback(
+    (event: Parameters<typeof endMomentum>[0]) => {
+      endMomentum(event);
+      userInteractionActiveRef.current = false;
+    },
+    [endMomentum],
   );
 
   const handleAccessibilityAction = useCallback(
@@ -389,10 +408,10 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                   contentContainerStyle={{ direction: "ltr" }}
                   decelerationRate="fast"
                   onContentSizeChange={onContentSizeChange}
-                  onMomentumScrollBegin={beginMomentum}
-                  onMomentumScrollEnd={endMomentum}
+                  onMomentumScrollBegin={handleMomentumScrollBegin}
+                  onMomentumScrollEnd={handleMomentumScrollEnd}
                   onScroll={handleScroll}
-                  onScrollBeginDrag={beginPreview}
+                  onScrollBeginDrag={handleScrollBeginDrag}
                   onScrollEndDrag={endDrag}
                   scrollEventThrottle={16}
                   showsHorizontalScrollIndicator={false}
@@ -563,7 +582,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                                 return (
                                   <>
                                     <SkiaLine
-                                      p1={vec(markerCenter, chartBounds.top)}
+                                      p1={vec(markerCenter, chartBounds.top + 12)}
                                       p2={vec(markerCenter, chartBounds.bottom)}
                                       color={colors.axisLabel}
                                       strokeWidth={1.5}

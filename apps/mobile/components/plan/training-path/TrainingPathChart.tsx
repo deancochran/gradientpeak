@@ -930,7 +930,7 @@ export function TrainingPathChart({
                   return (
                     <>
                       <SkiaLine
-                        p1={vec(markerPoint.x, chartBounds.top)}
+                        p1={vec(markerPoint.x, chartBounds.top + 12)}
                         p2={vec(markerPoint.x, chartBounds.bottom)}
                         color={chartColors.marker}
                         strokeWidth={1.5}
@@ -958,7 +958,7 @@ export function TrainingPathChart({
                 <Fragment key={`goal-marker-${marker.id}`}>
                   <SkiaLine
                     p1={vec(markerPoint.x, chartBounds.bottom)}
-                    p2={vec(markerPoint.x, chartBounds.top)}
+                    p2={vec(markerPoint.x, chartBounds.top + 12)}
                     color={chartColors.marker}
                     strokeWidth={2}
                   >

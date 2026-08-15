@@ -28,7 +28,7 @@ import {
 } from "@repo/db";
 import { and, asc, eq, gte, inArray, lt } from "drizzle-orm";
 import { z } from "zod";
-import type { getRequiredDb } from "../../db";
+import { type getRequiredDb, withRepeatableReadSnapshot } from "../../db";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
 import {
   buildActivitySegmentDerivedSummaries,
@@ -250,10 +250,10 @@ function parseActivitySegments(
       observationQuantification: null,
       fingerprint: fingerprint([
         "trusted-unquantified-activity-contribution",
-        ...sourceEvidence.currentArtifactIds.toSorted(),
+        ...[...sourceEvidence.currentArtifactIds].sort(),
         ...sourceEvidence.providerReferences
           .map((reference) => `${reference.provider}:${reference.externalId}`)
-          .toSorted(),
+          .sort(),
       ]),
     };
   }
@@ -459,149 +459,146 @@ export async function getCommonLoadHistory(input: {
   envelopeEnd.setUTCDate(envelopeEnd.getUTCDate() + 2);
 
   try {
-    return await input.db.transaction(
-      async (tx) => {
-        const sourceCoverageComplete = await hasCompleteActivitySourceCoverage(tx, {
-          asOf: input.asOf,
-          endDate,
-          planningTimezone: input.planningTimezone,
-          profileId: input.profileId,
-          startDate,
-        });
-        if (!sourceCoverageComplete) return unavailableWindow(input);
-        const activityRows = await tx
-          .select()
-          .from(activities)
-          .where(
-            and(
-              eq(activities.profile_id, input.profileId),
-              gte(activities.started_at, envelopeStart),
-              lt(activities.started_at, envelopeEnd),
-              lt(activities.started_at, input.asOf),
-            ),
-          )
-          .orderBy(asc(activities.started_at), asc(activities.id))
-          .limit(commonLoadHistoryActivityLimit + 1);
-        if (activityRows.length > commonLoadHistoryActivityLimit) return unavailableWindow(input);
-
-        const windowActivityRows = activityRows.filter((activity) => {
-          const date = localDate(activity.started_at, input.planningTimezone);
-          return activity.started_at < input.asOf && date >= startDate && date <= endDate;
-        });
-
-        const activityIds = windowActivityRows.map((activity) => activity.id);
-        const currentArtifactRows =
-          activityIds.length === 0
-            ? []
-            : await tx
-                .select({
-                  activityId: activityArtifactLinks.activity_id,
-                  artifactId: activityArtifactLinks.artifact_id,
-                })
-                .from(activityArtifactLinks)
-                .innerJoin(
-                  activityArtifacts,
-                  and(
-                    eq(activityArtifacts.id, activityArtifactLinks.artifact_id),
-                    eq(activityArtifacts.profile_id, activityArtifactLinks.profile_id),
-                    eq(activityArtifacts.availability, "accepted"),
-                  ),
-                )
-                .where(
-                  and(
-                    eq(activityArtifactLinks.profile_id, input.profileId),
-                    inArray(activityArtifactLinks.activity_id, activityIds),
-                    eq(activityArtifactLinks.role, "source"),
-                    eq(activityArtifactLinks.is_current, true),
-                  ),
-                );
-        const providerReferenceRows =
-          activityIds.length === 0
-            ? []
-            : await tx
-                .select({
-                  activityId: activitySourceReferences.activity_id,
-                  provider: activitySourceReferences.provider,
-                  externalId: activitySourceReferences.provider_external_id,
-                })
-                .from(activitySourceReferences)
-                .where(
-                  and(
-                    eq(activitySourceReferences.profile_id, input.profileId),
-                    inArray(activitySourceReferences.activity_id, activityIds),
-                  ),
-                );
-        const sourceEvidenceByActivity = new Map<
-          string,
-          {
-            currentArtifactIds: string[];
-            providerReferences: Array<{ provider: string; externalId: string }>;
-          }
-        >();
-        const sourceEvidenceFor = (activityId: string) => {
-          const existing = sourceEvidenceByActivity.get(activityId);
-          if (existing) return existing;
-          const created = { currentArtifactIds: [], providerReferences: [] };
-          sourceEvidenceByActivity.set(activityId, created);
-          return created;
-        };
-        for (const row of currentArtifactRows) {
-          sourceEvidenceFor(row.activityId).currentArtifactIds.push(row.artifactId);
-        }
-        for (const row of providerReferenceRows) {
-          sourceEvidenceFor(row.activityId).providerReferences.push({
-            provider: row.provider,
-            externalId: row.externalId,
-          });
-        }
-        const sourcedActivityRows = windowActivityRows.map((activity) => ({
-          ...activity,
-          sourceEvidence: sourceEvidenceByActivity.get(activity.id),
-        }));
-
-        const segments = await loadActivitySegmentsByActivityId(tx, activityIds);
-        const activitiesWithSegments = sourcedActivityRows.map((activity) => ({
-          ...activity,
-          segments: segments.get(activity.id) ?? [],
-        }));
-        const segmentSummaries = await buildActivitySegmentDerivedSummaries({
-          store: createActivityAnalysisStore(tx),
-          profileId: input.profileId,
-          activities: activitiesWithSegments,
-          computedAsOf: input.asOf,
-        });
-        const observations = buildCommonLoadHistoryObservations({
-          activities: sourcedActivityRows,
-          calculatedAsOf,
-          segmentSummaries,
-          currentPlanningDate: input.currentPlanningDate,
-          evidenceScopeFingerprint,
-          planningTimezone: input.planningTimezone,
-          coverageStatus: "complete",
-          replayDays: COMMON_LOAD_HISTORY_MATURE_DAYS,
-        });
-        return replayCommonLoadHistory({
-          basis: COMMON_LOAD_HISTORY_BASIS,
-          calculationIdentity: {
-            model: COMMON_LOAD_HISTORY_CALCULATION_MODEL,
-            version: COMMON_LOAD_HISTORY_CALCULATION_VERSION,
-            asOf: calculatedAsOf,
-          },
-          currentPlanningDate: input.currentPlanningDate,
-          planningTimezone: input.planningTimezone,
-          // Core's current replay output only admits complete days. These partial
-          // markers describe known activities whose accepted numeric contribution
-          // is zero, not incomplete provider/source history; their evidence remains
-          // in the replay identity while quantified contributions stay unchanged.
-          observations: observations.map((observation) =>
-            observation.coverageStatus === "partial"
-              ? { ...observation, coverageStatus: "complete" as const }
-              : observation,
+    return await withRepeatableReadSnapshot(input.db, async (tx) => {
+      const sourceCoverageComplete = await hasCompleteActivitySourceCoverage(tx, {
+        asOf: input.asOf,
+        endDate,
+        planningTimezone: input.planningTimezone,
+        profileId: input.profileId,
+        startDate,
+      });
+      if (!sourceCoverageComplete) return unavailableWindow(input);
+      const activityRows = await tx
+        .select()
+        .from(activities)
+        .where(
+          and(
+            eq(activities.profile_id, input.profileId),
+            gte(activities.started_at, envelopeStart),
+            lt(activities.started_at, envelopeEnd),
+            lt(activities.started_at, input.asOf),
           ),
+        )
+        .orderBy(asc(activities.started_at), asc(activities.id))
+        .limit(commonLoadHistoryActivityLimit + 1);
+      if (activityRows.length > commonLoadHistoryActivityLimit) return unavailableWindow(input);
+
+      const windowActivityRows = activityRows.filter((activity) => {
+        const date = localDate(activity.started_at, input.planningTimezone);
+        return activity.started_at < input.asOf && date >= startDate && date <= endDate;
+      });
+
+      const activityIds = windowActivityRows.map((activity) => activity.id);
+      const currentArtifactRows =
+        activityIds.length === 0
+          ? []
+          : await tx
+              .select({
+                activityId: activityArtifactLinks.activity_id,
+                artifactId: activityArtifactLinks.artifact_id,
+              })
+              .from(activityArtifactLinks)
+              .innerJoin(
+                activityArtifacts,
+                and(
+                  eq(activityArtifacts.id, activityArtifactLinks.artifact_id),
+                  eq(activityArtifacts.profile_id, activityArtifactLinks.profile_id),
+                  eq(activityArtifacts.availability, "accepted"),
+                ),
+              )
+              .where(
+                and(
+                  eq(activityArtifactLinks.profile_id, input.profileId),
+                  inArray(activityArtifactLinks.activity_id, activityIds),
+                  eq(activityArtifactLinks.role, "source"),
+                  eq(activityArtifactLinks.is_current, true),
+                ),
+              );
+      const providerReferenceRows =
+        activityIds.length === 0
+          ? []
+          : await tx
+              .select({
+                activityId: activitySourceReferences.activity_id,
+                provider: activitySourceReferences.provider,
+                externalId: activitySourceReferences.provider_external_id,
+              })
+              .from(activitySourceReferences)
+              .where(
+                and(
+                  eq(activitySourceReferences.profile_id, input.profileId),
+                  inArray(activitySourceReferences.activity_id, activityIds),
+                ),
+              );
+      const sourceEvidenceByActivity = new Map<
+        string,
+        {
+          currentArtifactIds: string[];
+          providerReferences: Array<{ provider: string; externalId: string }>;
+        }
+      >();
+      const sourceEvidenceFor = (activityId: string) => {
+        const existing = sourceEvidenceByActivity.get(activityId);
+        if (existing) return existing;
+        const created = { currentArtifactIds: [], providerReferences: [] };
+        sourceEvidenceByActivity.set(activityId, created);
+        return created;
+      };
+      for (const row of currentArtifactRows) {
+        sourceEvidenceFor(row.activityId).currentArtifactIds.push(row.artifactId);
+      }
+      for (const row of providerReferenceRows) {
+        sourceEvidenceFor(row.activityId).providerReferences.push({
+          provider: row.provider,
+          externalId: row.externalId,
         });
-      },
-      { isolationLevel: "repeatable read", accessMode: "read only" },
-    );
+      }
+      const sourcedActivityRows = windowActivityRows.map((activity) => ({
+        ...activity,
+        sourceEvidence: sourceEvidenceByActivity.get(activity.id),
+      }));
+
+      const segments = await loadActivitySegmentsByActivityId(tx, activityIds);
+      const activitiesWithSegments = sourcedActivityRows.map((activity) => ({
+        ...activity,
+        segments: segments.get(activity.id) ?? [],
+      }));
+      const segmentSummaries = await buildActivitySegmentDerivedSummaries({
+        store: createActivityAnalysisStore(tx),
+        profileId: input.profileId,
+        activities: activitiesWithSegments,
+        computedAsOf: input.asOf,
+      });
+      const observations = buildCommonLoadHistoryObservations({
+        activities: sourcedActivityRows,
+        calculatedAsOf,
+        segmentSummaries,
+        currentPlanningDate: input.currentPlanningDate,
+        evidenceScopeFingerprint,
+        planningTimezone: input.planningTimezone,
+        coverageStatus: "complete",
+        replayDays: COMMON_LOAD_HISTORY_MATURE_DAYS,
+      });
+      return replayCommonLoadHistory({
+        basis: COMMON_LOAD_HISTORY_BASIS,
+        calculationIdentity: {
+          model: COMMON_LOAD_HISTORY_CALCULATION_MODEL,
+          version: COMMON_LOAD_HISTORY_CALCULATION_VERSION,
+          asOf: calculatedAsOf,
+        },
+        currentPlanningDate: input.currentPlanningDate,
+        planningTimezone: input.planningTimezone,
+        // Core's current replay output only admits complete days. These partial
+        // markers describe known activities whose accepted numeric contribution
+        // is zero, not incomplete provider/source history; their evidence remains
+        // in the replay identity while quantified contributions stay unchanged.
+        observations: observations.map((observation) =>
+          observation.coverageStatus === "partial"
+            ? { ...observation, coverageStatus: "complete" as const }
+            : observation,
+        ),
+      });
+    });
   } catch {
     return unavailableWindow(input);
   }

@@ -103,8 +103,6 @@ const RECOGNIZED_ACTIVITY_PERSISTENCE_CONSTRAINTS = new Set([
   "activity_segments_timing_coverage_values_check",
   "activity_source_references_artifact_unique",
   "activity_source_references_provider_unique",
-  "performance_calibration_evidence_value_check",
-  "performance_calibration_model_inputs_value_check",
 ]);
 
 const SAFE_ERROR_NAMES = new Set([
@@ -231,6 +229,21 @@ function classifyWahooPersistenceError(error: unknown): WahooActivityImportError
         : undefined;
   }
   return "activity_persistence_failed";
+}
+
+function isUnsupportedActivityAnalysisError(error: unknown): boolean {
+  let candidate: unknown = error;
+  const seen = new Set<unknown>();
+  for (let depth = 0; depth < 5 && candidate && !seen.has(candidate); depth += 1) {
+    seen.add(candidate);
+    if (candidate instanceof ActivityAnalysisValidationError) return true;
+    if (candidate instanceof Error && candidate.name === "ZodError") return true;
+    candidate =
+      typeof candidate === "object" && "cause" in candidate
+        ? (candidate as { cause?: unknown }).cause
+        : undefined;
+  }
+  return false;
 }
 
 function safeWahooImportErrorDetails(
@@ -462,6 +475,7 @@ export class WahooActivityImporter {
           beforePersist: (tx: ActivitySubmissionTransaction) => Promise<void>;
           importRunId?: string;
           deferAthleteStateRefresh?: boolean;
+          deferPerformanceCalibration?: boolean;
         },
       ): Promise<{ id: string; noOp?: boolean }>;
       generationGuard(
@@ -486,6 +500,7 @@ export class WahooActivityImporter {
       signal?: AbortSignal;
       importRunId?: string;
       deferAthleteStateRefresh?: boolean;
+      deferPerformanceCalibration?: boolean;
     },
   ): Promise<ImportResult> {
     let ownedStagePath: string | null = null;
@@ -743,6 +758,7 @@ export class WahooActivityImporter {
           beforePersist,
           ...(options.importRunId ? { importRunId: options.importRunId } : {}),
           ...(options.deferAthleteStateRefresh ? { deferAthleteStateRefresh: true } : {}),
+          ...(options.deferPerformanceCalibration ? { deferPerformanceCalibration: true } : {}),
         });
         if (repairCandidate) {
           if (newActivity.id !== repairCandidate.activityId) {
@@ -752,7 +768,8 @@ export class WahooActivityImporter {
       } catch (insertError) {
         if (
           insertError instanceof ImportedActivityAnalysisError &&
-          insertError.code === "activity_laps_invalid"
+          (insertError.code === "activity_laps_invalid" ||
+            isUnsupportedActivityAnalysisError(insertError))
         ) {
           logger.warn("Wahoo activity import skipped", {
             operation: "analyze_activity",
@@ -1141,6 +1158,7 @@ export function createActivityImporter(deps: {
       beforePersist: (tx: ActivitySubmissionTransaction) => Promise<void>;
       importRunId?: string;
       deferAthleteStateRefresh?: boolean;
+      deferPerformanceCalibration?: boolean;
     },
   ): Promise<{ id: string }>;
   generationGuard(

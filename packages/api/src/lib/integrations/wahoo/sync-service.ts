@@ -363,7 +363,7 @@ export function resolveWahooSyncMetrics(
   return {
     ftp:
       sport === "bike"
-        ? getAvailablePerformanceTargetValue(performanceTargets.cycling.planningThresholdPower)
+        ? getAvailablePerformanceTargetValue(performanceTargets.thresholds.bike)
         : null,
     maxHr:
       sport && performanceTargets.heartRate[sport].maxHr.status === "available"

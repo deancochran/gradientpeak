@@ -89,11 +89,11 @@ vi.mock("expo", () => {
   return { EventEmitter: MockEventEmitter };
 });
 
-function bikePerformanceTargets(planningThresholdPowerWatts: number, lthrBpm = 170) {
+function bikePerformanceTargets(bikeThresholdWatts: number, lthrBpm = 170) {
   return buildPerformanceTargetFactsFixture({
     asOf: "2026-07-31T10:00:00.000Z",
     heartRateObservedAt: "2026-07-30T10:00:00.000Z",
-    planningThresholdPowerWatts,
+    bikeThresholdWatts,
     lthrBpm: { bike: lthrBpm },
   });
 }
@@ -106,10 +106,10 @@ function bikeHeartRatePerformanceTargets(lthrBpm: number) {
   });
 }
 
-function runPerformanceTargets(thresholdPaceSecondsPerKm: number) {
+function runPerformanceTargets(runThresholdSpeedMps: number) {
   return buildPerformanceTargetFactsFixture({
     asOf: "2026-07-31T10:00:00.000Z",
-    planningThresholdPaceSecondsPerKm: thresholdPaceSecondsPerKm,
+    runThresholdMetersPerSecond: runThresholdSpeedMps,
   });
 }
 
@@ -176,9 +176,8 @@ describe("LiveMetricsManager", () => {
     const manager = new LiveMetricsManager({ id: "profile-1" });
     const updates: Array<{
       profile: {
-        ftpWatts?: number;
+        bikeThresholdWatts?: number;
         lthrBpm?: number;
-        thresholdPaceSecondsPerKm?: number;
       };
       zones: { hrZones: number[]; powerZones: number[] };
     }> = [];
@@ -189,7 +188,7 @@ describe("LiveMetricsManager", () => {
 
     expect(updates.at(-1)).toEqual({
       profile: {
-        ftpWatts: 250,
+        bikeThresholdWatts: 250,
         lthrBpm: 170,
       },
       zones: {
@@ -204,6 +203,31 @@ describe("LiveMetricsManager", () => {
       profile: {},
       zones: { hrZones: [], powerZones: [] },
     });
+
+    await manager.cleanup();
+  });
+
+  it("keeps stale primary thresholds usable and heart-rate capability separate", async () => {
+    const manager = new LiveMetricsManager({ id: "profile-1" });
+    const updates: Array<{
+      profile: { bikeThresholdWatts?: number; lthrBpm?: number };
+      zones: { hrZones: number[]; powerZones: number[] };
+    }> = [];
+    manager.addListener("metricsUpdated", (update) => updates.push(update));
+    manager.setActivityCategory("bike");
+
+    manager.updatePerformanceTargets(
+      buildPerformanceTargetFactsFixture({
+        asOf: "2026-07-31T10:00:00.000Z",
+        thresholdEffectiveAt: "2025-01-01T10:00:00.000Z",
+        bikeThresholdWatts: 260,
+      }),
+    );
+    expect(updates.at(-1)?.profile).toEqual({ bikeThresholdWatts: 260 });
+
+    manager.updatePerformanceTargets(bikeHeartRatePerformanceTargets(175));
+    expect(updates.at(-1)?.profile).toEqual({ lthrBpm: 175 });
+    expect(updates.at(-1)?.zones.powerZones).toEqual([]);
 
     await manager.cleanup();
   });
@@ -343,7 +367,7 @@ describe("LiveMetricsManager", () => {
     vi.setSystemTime("2026-07-31T10:00:00.000Z");
     const manager = new LiveMetricsManager({ id: "profile-1" });
     manager.setActivityCategory("run");
-    manager.updatePerformanceTargets(runPerformanceTargets(fixture.thresholdPaceSecondsPerKm));
+    manager.updatePerformanceTargets(runPerformanceTargets(fixture.thresholdSpeedMetersPerSecond));
 
     await manager.startRecording();
     manager.ingestLocationData({

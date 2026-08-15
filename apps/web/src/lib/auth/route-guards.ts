@@ -59,6 +59,16 @@ export function getProtectedAccessRedirect(
   return null;
 }
 
+export function getAuthenticatedEntryDestination(
+  session: AuthSession | null,
+  onboardingStatus: OnboardingStatus | null,
+) {
+  if (!session?.user) return null;
+  if (!session.user.emailVerified) return "verify" as const;
+  if (onboardingStatus !== "completed") return "onboarding" as const;
+  return "home" as const;
+}
+
 export async function resolveRouteAuthSession(serverContext?: {
   session?: Awaited<ReturnType<typeof getWebAuthSession>>;
 }) {
@@ -85,10 +95,35 @@ export async function resolveRouteProfileState(serverContext?: {
 
 export async function redirectAuthenticatedUser(serverContext?: {
   session?: Awaited<ReturnType<typeof getWebAuthSession>>;
+  onboardingStatus?: OnboardingStatus | null;
 }) {
   const session = await resolveRouteAuthSession(serverContext);
+  const initialDestination = getAuthenticatedEntryDestination(session, null);
 
-  if (session?.user) {
+  if (initialDestination === "verify") {
+    throw redirect({
+      to: "/auth/verify",
+      search: { email: undefined, flash: undefined, flashType: undefined, source: undefined },
+    });
+  }
+  if (!session?.user) return;
+
+  const destination = getAuthenticatedEntryDestination(
+    session,
+    await resolveRouteProfileState(serverContext),
+  );
+  if (destination === "onboarding") {
+    throw redirect({
+      to: "/onboarding",
+      search: {
+        error: undefined,
+        flash: undefined,
+        flashType: undefined,
+        redirect: "/",
+      },
+    });
+  }
+  if (destination === "home") {
     throw redirect({ to: "/" });
   }
 }

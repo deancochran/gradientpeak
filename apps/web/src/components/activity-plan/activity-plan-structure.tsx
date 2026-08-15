@@ -2,6 +2,7 @@ import {
   type AthletePerformanceTargetFacts,
   activityPlanStructureSchema,
   resolveActivityPlanTargetPresentation,
+  resolvePerformanceTargetValue,
 } from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
 import {
@@ -22,6 +23,28 @@ function durationLabel(duration: {
   if (duration.type === "distance") return `${duration.meters ?? 0} m`;
   if (duration.type === "repetitions") return `${duration.count ?? 0} reps`;
   return "Until finished";
+}
+
+function targetLabel({
+  target,
+  activityCategory,
+  performanceTargets,
+  asOf,
+}: Parameters<typeof resolveActivityPlanTargetPresentation>[0]): string {
+  const presentation = resolveActivityPlanTargetPresentation({
+    target,
+    activityCategory,
+    performanceTargets,
+    asOf,
+  });
+  if (target.type !== "%FTP") return presentation.label;
+
+  const resolved = resolvePerformanceTargetValue({
+    target,
+    activityCategory,
+    ...(performanceTargets ? { performanceTargets } : {}),
+  });
+  return resolved ? `${resolved.value} W (${presentation.sourceLabel})` : presentation.label;
 }
 
 export function ActivityPlanStructure({
@@ -74,14 +97,13 @@ export function ActivityPlanStructure({
                             <span className="text-muted-foreground">
                               {durationLabel(step.duration)} ·{" "}
                               {step.targets
-                                .map(
-                                  (target) =>
-                                    resolveActivityPlanTargetPresentation({
-                                      target,
-                                      activityCategory: parsed.data.activity_category,
-                                      performanceTargets,
-                                      asOf: presentationTime,
-                                    }).label,
+                                .map((target) =>
+                                  targetLabel({
+                                    target,
+                                    activityCategory: parsed.data.activity_category,
+                                    performanceTargets,
+                                    asOf: presentationTime,
+                                  }),
                                 )
                                 .join(", ")}
                             </span>

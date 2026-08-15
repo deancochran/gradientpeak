@@ -221,6 +221,7 @@ function createDb(
 ) {
   const whereClauses = new Map<string, unknown>();
   const db = {
+    $client: {},
     select: vi.fn(() => {
       let tableName = "";
       const rowsForTable = () => {
@@ -265,7 +266,7 @@ function createDb(
       return query;
     }),
     transaction: vi.fn(async (callback: (transaction: typeof db) => Promise<unknown>) =>
-      callback(db),
+      callback({ select: db.select } as typeof db),
     ),
   };
   return {

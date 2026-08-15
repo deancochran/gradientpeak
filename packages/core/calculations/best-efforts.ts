@@ -147,6 +147,32 @@ export type BestEffortNumericDurationResult = z.infer<typeof bestEffortNumericDu
 export type BestEffortDurationResult = z.infer<typeof bestEffortDurationResultSchema>;
 export type BestEffortExtractionResult = z.infer<typeof bestEffortExtractionResultSchema>;
 
+export type ExactBestEffortWindowSelection =
+  | { status: "found"; result: BestEffortDurationResult }
+  | { status: "missing" }
+  | { status: "ambiguous" };
+
+/**
+ * Selects only the result for one exact configured duration. It never substitutes
+ * a shorter, longer, or longest-continuous effort. Duplicate exact results are
+ * reported as ambiguous rather than resolved by input order.
+ */
+export function selectExactBestEffortWindow(
+  extraction: BestEffortExtractionResult,
+  durationSeconds: number,
+): ExactBestEffortWindowSelection {
+  const parsedExtraction = bestEffortExtractionResultSchema.parse(extraction);
+  const parsedDuration = z.number().int().positive().parse(durationSeconds);
+  const matches = parsedExtraction.results.filter(
+    (result) => result.durationSeconds === parsedDuration,
+  );
+  if (matches.length === 0) return { status: "missing" };
+  if (matches.length > 1) return { status: "ambiguous" };
+  const result = matches[0];
+  if (result === undefined) return { status: "missing" };
+  return { status: "found", result };
+}
+
 interface ContinuousSignalSegment {
   boundaries: number[];
   values: number[];

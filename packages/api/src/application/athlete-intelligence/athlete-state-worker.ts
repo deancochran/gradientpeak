@@ -6,10 +6,9 @@ import {
   athleteStateBaselineSchema,
   dailyAggregateCommonLoadSchema,
   getCalendarDateInIanaZone,
-  projectAthletePerformanceTargetFacts,
 } from "@repo/core";
 import type { profilePerformanceEstimates } from "@repo/db";
-import type { getRequiredDb } from "../../db";
+import type { DrizzleTransactionClient, getRequiredDb } from "../../db";
 import { enqueueWahooRelativeTargetRefreshes } from "../../lib/provider-sync/planned-activities/refresh-wahoo-relative-target-activities";
 import { createAthletePerformanceModelRepository } from "../../repositories/athlete-performance-model-repository";
 import {
@@ -21,9 +20,8 @@ import {
   renewAthleteStateClaim,
 } from "../../repositories/athlete-state-repository";
 import { reconcileOnboardingStatus } from "../onboarding/readiness";
-import { getAthletePerformanceModelAsOf } from "../performance-model/get-athlete-performance-model-as-of";
-import { sweepDuePerformanceCalibrations } from "../performance-model/sweep-due-performance-calibrations";
-import { readPublishedAthletePerformanceTargets } from "./published-athlete-state";
+import { createAthletePerformanceTargetFactsReader } from "../performance-model/get-athlete-performance-model-as-of";
+import { readCachedPublishedAthletePerformanceTargets } from "./published-athlete-state";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 const PAGE_SIZE = 100;
@@ -72,111 +70,51 @@ function initialState(claim: AthleteStateClaim, asOf: string): AthleteStateBasel
 
 async function buildCurrentEstimates(
   db: DbClient,
+  transaction: DrizzleTransactionClient,
   claim: AthleteStateClaim,
   now: Date,
   capabilities: AthleteStateBaseline["capabilities"],
 ) {
-  const performanceModel = await getAthletePerformanceModelAsOf(
-    { athleteId: claim.profileId, asOf: now },
+  const targets = await createAthletePerformanceTargetFactsReader(
     createAthletePerformanceModelRepository(db),
-  );
-  const targets = projectAthletePerformanceTargetFacts(performanceModel);
-  const confidenceNumber = (value: "high" | "medium" | "low" | "unavailable") =>
-    value === "high" ? 0.9 : value === "medium" ? 0.75 : value === "low" ? 0.6 : 0;
+    transaction,
+  )({
+    actorProfileId: claim.profileId,
+    asOf: now,
+  });
   const estimates: Array<typeof profilePerformanceEstimates.$inferInsert> = [];
-  const appendTarget = (input: {
-    activityCategory: "bike" | "run" | "swim";
-    capabilityKind: string;
-    fact: {
-      status: "available" | "partial" | "unavailable";
-      value: number | null;
-      unit: string;
-      confidence: "high" | "medium" | "low" | "unavailable";
-      evidenceTime: { observedFrom: string | null; observedThrough: string | null };
-      calibrationState: "provisional" | "confirmed" | "stale" | "unavailable";
-    };
-    calibration?: { value: number; unit: string };
-  }) => {
-    const value = input.calibration?.value ?? input.fact.value ?? null;
-    if (value === null || input.fact.calibrationState === "unavailable") return;
+  for (const activityCategory of ["bike", "run", "swim"] as const) {
+    const fact = targets.thresholds[activityCategory];
+    if (fact.status !== "available") continue;
     estimates.push({
       profile_id: claim.profileId,
-      capability_kind: input.capabilityKind,
-      activity_category: input.activityCategory,
-      value,
-      unit: input.calibration?.unit ?? input.fact.unit,
-      confidence: confidenceNumber(input.fact.confidence),
-      effective_at: new Date(input.fact.evidenceTime.observedThrough ?? now.toISOString()),
-      evidence_window_start_at: input.fact.evidenceTime.observedFrom
-        ? new Date(input.fact.evidenceTime.observedFrom)
-        : null,
-      evidence_window_end_at: input.fact.evidenceTime.observedThrough
-        ? new Date(input.fact.evidenceTime.observedThrough)
-        : null,
+      capability_kind: fact.metric === "power" ? "threshold_power" : "threshold_speed",
+      activity_category: activityCategory,
+      value: fact.value,
+      unit: fact.unit,
+      confidence: fact.confidence,
+      effective_at: new Date(fact.effectiveAt),
+      evidence_window_start_at: new Date(fact.effectiveAt),
+      evidence_window_end_at: new Date(fact.effectiveAt),
       algorithm_version: ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
       source_revision: claim.sourceRevision,
-      target_fact: input.fact,
+      target_fact: fact,
       computed_at: now,
     });
-  };
-  const bikePowerCalibration = performanceModel.calibrations.find(
-    ({ identity }) =>
-      identity.metricKey === "threshold_power" && identity.activityCategory === "bike",
-  );
-  appendTarget({
-    activityCategory: "bike",
-    capabilityKind: "threshold_power",
-    fact: targets.cycling.planningThresholdPower,
-    ...(bikePowerCalibration === undefined
-      ? {}
-      : { calibration: { value: bikePowerCalibration.value, unit: bikePowerCalibration.unit } }),
-  });
-  const runSpeedCalibration = performanceModel.calibrations.find(
-    ({ identity }) =>
-      identity.metricKey === "threshold_speed" && identity.activityCategory === "run",
-  );
-  appendTarget({
-    activityCategory: "run",
-    capabilityKind: "threshold_speed",
-    fact: targets.running.planningThresholdPace,
-    ...(runSpeedCalibration === undefined
-      ? {}
-      : { calibration: { value: runSpeedCalibration.value, unit: runSpeedCalibration.unit } }),
-  });
-  const swimSpeedCalibration = performanceModel.calibrations.find(
-    ({ identity }) =>
-      identity.metricKey === "threshold_speed" && identity.activityCategory === "swim",
-  );
-  appendTarget({
-    activityCategory: "swim",
-    capabilityKind: "threshold_speed",
-    fact: targets.swimming.css,
-    ...(swimSpeedCalibration === undefined
-      ? {}
-      : { calibration: { value: swimSpeedCalibration.value, unit: swimSpeedCalibration.unit } }),
-  });
+  }
   for (const activityCategory of ["bike", "run", "swim"] as const) {
     for (const [capabilityKind, fact] of [
-      [
-        activityCategory === "swim" ? "swim_lthr" : "threshold_heart_rate",
-        targets.heartRate[activityCategory].lthr,
-      ],
       [`${activityCategory}_max_hr`, targets.heartRate[activityCategory].maxHr],
     ] as const) {
-      const calibration = performanceModel.calibrations.find(
-        ({ identity }) =>
-          identity.metricKey === "threshold_heart_rate" &&
-          identity.activityCategory === activityCategory,
-      );
       if (fact.status !== "available") continue;
       estimates.push({
         profile_id: claim.profileId,
         capability_kind: capabilityKind,
         activity_category: activityCategory,
-        value: fact.valueBpm ?? calibration?.value ?? 0,
+        value: fact.valueBpm,
         unit: "bpm",
         confidence: 0.8,
-        effective_at: new Date(fact.observedAt ?? calibration?.effectiveAt ?? now),
+        effective_at: new Date(fact.observedAt),
         evidence_window_start_at: fact.observedAt ? new Date(fact.observedAt) : null,
         evidence_window_end_at: fact.observedAt ? new Date(fact.observedAt) : null,
         algorithm_version: ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
@@ -321,17 +259,15 @@ export async function rebuildClaimedAthleteState(input: {
       toDay: planningLocalDate(input.now, input.claim.planningTimezone),
     }).state;
   await renewClaimOrThrow(input.db, input.claim, ATHLETE_STATE_LEASE_MILLISECONDS);
-  const performance = await buildCurrentEstimates(
-    input.db,
-    input.claim,
-    input.now,
-    state.capabilities,
-  );
-  const beforePublishedTargets = await readPublishedAthletePerformanceTargets({
-    db: input.db,
-    profileId: input.claim.profileId,
-    now: input.now,
-  });
+  const publishedCapabilities = state.capabilities;
+  let publicationContext:
+    | {
+        performance: Awaited<ReturnType<typeof buildCurrentEstimates>>;
+        beforePublishedTargets: Awaited<
+          ReturnType<typeof readCachedPublishedAthletePerformanceTargets>
+        >;
+      }
+    | undefined;
   return publishAthleteState(input.db, {
     claim: input.claim,
     state: {
@@ -343,14 +279,32 @@ export async function rebuildClaimedAthleteState(input: {
       lastActivityAt: coverageEndAt,
       algorithmVersion: ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
     },
-    estimates: performance.estimates,
+    estimates: async (tx) => {
+      const performance = await buildCurrentEstimates(
+        input.db,
+        tx,
+        input.claim,
+        input.now,
+        publishedCapabilities,
+      );
+      const beforePublishedTargets = await readCachedPublishedAthletePerformanceTargets({
+        db: tx,
+        profileId: input.claim.profileId,
+        now: input.now,
+      });
+      publicationContext = { performance, beforePublishedTargets };
+      return performance.estimates;
+    },
     now: input.now,
     // The queue rows are written only after the fenced snapshot update and become
     // visible atomically with it. A failed enqueue rolls the publication back.
     afterPublishInTransaction: async (tx) => {
+      if (!publicationContext) {
+        throw new Error("Athlete-state publication context was not prepared");
+      }
       await enqueueWahooRelativeTargetRefreshes({
-        afterTargetFacts: performance.targets,
-        beforeTargetFacts: beforePublishedTargets.targets,
+        afterTargetFacts: publicationContext.performance.targets,
+        beforeTargetFacts: publicationContext.beforePublishedTargets,
         db: input.db,
         now: input.now,
         profileId: input.claim.profileId,
@@ -366,10 +320,6 @@ export class AthleteStateWorkerService {
   async processDueJobs(input: { limit?: number; now?: Date } = {}) {
     const limit = Math.max(1, Math.min(input.limit ?? 5, 50));
     const result = { completed: 0, failed: 0, processed: 0 };
-    await sweepDuePerformanceCalibrations(this.input.db, {
-      now: input.now ?? new Date(),
-      limit,
-    });
     for (let index = 0; index < limit; index += 1) {
       const now = input.now ?? new Date();
       const claim = await claimNextAthleteState(this.input.db, {

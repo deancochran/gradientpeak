@@ -35,7 +35,6 @@ export const ATHLETE_CAPABILITY_FIXTURE_V1 = {
     },
     swimming: {
       shortDurationCapacityMetersPerSecond: 1.9,
-      thresholdCapacityMetersPerSecond: 1.1764705882352942,
       longDurationCapacityMetersPerSecond: 1.25,
       repeatedEffortRecoveryRatio: 0.9285714285714286,
     },

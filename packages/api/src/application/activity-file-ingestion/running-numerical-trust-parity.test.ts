@@ -11,6 +11,7 @@ import {
   type ReferenceRunningNgpSample,
   RUNNING_NUMERICAL_TRUST_FIXTURES_V1,
 } from "@repo/core/testing/running-numerical-trust";
+import { secondsPerKilometerToMetersPerSecond } from "@repo/core/units";
 import { describe, expect, it } from "vitest";
 import { buildCompletedSegmentAnalysisActivity } from "../../lib/activity-analysis/derived";
 import {
@@ -80,7 +81,7 @@ function materializeSource(samples: readonly ReferenceRunningNgpSample[]) {
 function performanceTargets(asOf: string, thresholdPaceSecondsPerKm: number) {
   return buildPerformanceTargetFactsFixture({
     asOf,
-    planningThresholdPaceSecondsPerKm: thresholdPaceSecondsPerKm,
+    runThresholdMetersPerSecond: secondsPerKilometerToMetersPerSecond(thresholdPaceSecondsPerKm),
     calculationVersion: "running-numerical-trust-threshold-v1",
   });
 }
@@ -152,10 +153,13 @@ describe("running numerical trust import/live parity", () => {
       activity: finalAnalysisActivity,
       context: {
         profileMetrics: {},
-        performanceTargets: performanceTargets(
-          finishedAt.toISOString(),
-          vector.thresholdPaceSecondsPerKm,
-        ),
+        performanceTargets: buildPerformanceTargetFactsFixture({
+          asOf: finishedAt.toISOString(),
+          runThresholdMetersPerSecond: secondsPerKilometerToMetersPerSecond(
+            vector.thresholdPaceSecondsPerKm,
+          ),
+          calculationVersion: "running-numerical-trust-threshold-v1",
+        }),
         recentEfforts: [],
         profile: {},
       },

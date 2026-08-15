@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { Pool } from "pg";
 import { TEST_USERS } from "./utils/testData";
 
 const PROFILE_METRIC_MARKER = "E2E Area 14";
 const EFFORT_METHOD_PREFIX = "e2e_area14_";
+const EFFORT_ACTIVITY_MARKER = "E2E Area 14 effort evidence";
+const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
 
 function localDatabaseUrl() {
   const value =
@@ -23,6 +26,11 @@ async function deleteFixtureRows(pool: Pool, profileId: string) {
     `delete from public.activity_efforts
      where profile_id = $1::uuid and method like $2`,
     [profileId, `${EFFORT_METHOD_PREFIX}%`],
+  );
+  await pool.query(
+    `delete from public.activities
+     where profile_id = $1::uuid and name like $2`,
+    [profileId, `${EFFORT_ACTIVITY_MARKER}%`],
   );
   await pool.query(
     `delete from public.profile_metrics
@@ -97,20 +105,60 @@ export async function seedMetricsEffortsTrendsFixture({
       },
     ];
     for (const [index, effort] of effortRows.entries()) {
+      const activityId = randomUUID();
+      const segmentId = randomUUID();
+      const recordedAt = new Date(Date.now() - (index + 1) * 86_400_000).toISOString();
+      await pool.query(
+        `insert into public.activities (
+          id, profile_id, name, started_at, finished_at, elapsed_ms,
+          active_ms, moving_ms, timing_coverage, parser_version,
+          decoded_contract_version, materializer_version, segments_generated_at
+        ) values (
+          $1::uuid, $2::uuid, $3, $4::timestamptz, $4::timestamptz + interval '20 minutes',
+          1200000, 1200000, 1200000, 'complete', 'e2e-metrics-v1',
+          'e2e-metrics-v1', 'e2e-metrics-v1', $4::timestamptz + interval '20 minutes'
+        )`,
+        [activityId, profile.id, `${EFFORT_ACTIVITY_MARKER} bike ${index + 1}`, recordedAt],
+      );
+      await pool.query(
+        `insert into public.activity_segments (
+          id, activity_id, profile_id, ordinal, role, activity_category,
+          start_offset_ms, end_offset_ms, summary, summary_version,
+          timing_coverage, active_ms, moving_ms, segment_revision,
+          parser_version, materializer_version
+        ) values (
+          $1::uuid, $2::uuid, $3::uuid, 0, 'activity', 'bike',
+          0, 1200000, $4::jsonb, 1,
+          'complete', 1200000, 1200000, 1,
+          'e2e-metrics-v1', 'e2e-metrics-v1'
+        )`,
+        [
+          segmentId,
+          activityId,
+          profile.id,
+          JSON.stringify({
+            version: 1,
+            timing: { timingCoverage: "complete", activeMs: 1_200_000, movingMs: 1_200_000 },
+            normalizedPowerResult: unavailableNormalizedPowerResult,
+          }),
+        ],
+      );
       await pool.query(
         `insert into public.activity_efforts (
-          id, created_at, updated_at, profile_id, recorded_at, activity_category,
-          effort_type, duration_seconds, unit, value, source, method,
+          id, created_at, profile_id, activity_id, segment_id, recorded_at, activity_category,
+          effort_type, duration_seconds, start_offset, unit, value, source, method,
           calculation_version, quality_score, provenance
         ) values (
-          $1::uuid, now(), now(), $2::uuid, now() - ($3::int * interval '1 day'), 'bike',
-          'power', 1200, 'watts', $4, $5::evidence_observation_source, $6,
-          'e2e_v1', 0.9, $7::jsonb
+          $1::uuid, now(), $2::uuid, $3::uuid, $4::uuid, $5::timestamptz, 'bike',
+          'power', 1200, 0, 'watts', $6, $7::evidence_observation_source, $8,
+          'e2e_v1', 0.9, $9::jsonb
         )`,
         [
           effort.id,
           profile.id,
-          index + 1,
+          activityId,
+          segmentId,
+          recordedAt,
           effort.value,
           effort.source,
           effort.method,
@@ -119,19 +167,60 @@ export async function seedMetricsEffortsTrendsFixture({
       );
     }
     if (preferredUnits === "imperial") {
+      const activityId = randomUUID();
+      const segmentId = randomUUID();
+      const recordedAt = new Date(Date.now() - 86_400_000).toISOString();
+      await pool.query(
+        `insert into public.activities (
+          id, profile_id, name, started_at, finished_at, elapsed_ms,
+          active_ms, moving_ms, timing_coverage, parser_version,
+          decoded_contract_version, materializer_version, segments_generated_at
+        ) values (
+          $1::uuid, $2::uuid, $3, $4::timestamptz, $4::timestamptz + interval '5 minutes',
+          300000, 300000, 300000, 'complete', 'e2e-metrics-v1',
+          'e2e-metrics-v1', 'e2e-metrics-v1', $4::timestamptz + interval '5 minutes'
+        )`,
+        [activityId, profile.id, `${EFFORT_ACTIVITY_MARKER} run`, recordedAt],
+      );
+      await pool.query(
+        `insert into public.activity_segments (
+          id, activity_id, profile_id, ordinal, role, activity_category,
+          start_offset_ms, end_offset_ms, summary, summary_version,
+          timing_coverage, active_ms, moving_ms, segment_revision,
+          parser_version, materializer_version
+        ) values (
+          $1::uuid, $2::uuid, $3::uuid, 0, 'activity', 'run',
+          0, 300000, $4::jsonb, 1,
+          'complete', 300000, 300000, 1,
+          'e2e-metrics-v1', 'e2e-metrics-v1'
+        )`,
+        [
+          segmentId,
+          activityId,
+          profile.id,
+          JSON.stringify({
+            version: 1,
+            timing: { timingCoverage: "complete", activeMs: 300_000, movingMs: 300_000 },
+            normalizedPowerResult: unavailableNormalizedPowerResult,
+          }),
+        ],
+      );
       await pool.query(
         `insert into public.activity_efforts (
-          id, created_at, updated_at, profile_id, recorded_at, activity_category,
-          effort_type, duration_seconds, unit, value, source, method,
+          id, created_at, profile_id, activity_id, segment_id, recorded_at, activity_category,
+          effort_type, duration_seconds, start_offset, unit, value, source, method,
           calculation_version, quality_score, provenance
         ) values (
-          $1::uuid, now(), now(), $2::uuid, now() - interval '1 day', 'run',
-          'speed', 300, 'meters_per_second', 4, 'provider', $3,
-          'e2e_v1', 0.9, $4::jsonb
+          $1::uuid, now(), $2::uuid, $3::uuid, $4::uuid, $5::timestamptz, 'run',
+          'speed', 300, 0, 'meters_per_second', 4, 'provider', $6,
+          'e2e_v1', 0.9, $7::jsonb
         )`,
         [
           randomUUID(),
           profile.id,
+          activityId,
+          segmentId,
+          recordedAt,
           `${EFFORT_METHOD_PREFIX}imperial_run_speed`,
           JSON.stringify({ observation_type: "observed", trusted: true }),
         ],

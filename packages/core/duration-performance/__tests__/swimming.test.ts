@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   calculateSwimmingDurationPerformance,
-  canonicalSwimCssProtocolEvidenceSchema,
   canonicalSwimRepeatedEffortProtocolEvidenceSchema,
   swimmingDurationPerformanceModelSchema,
 } from "../swimming";
@@ -10,7 +9,6 @@ import {
   SWIMMING_DURATION_PERFORMANCE_FIXTURE_V1 as fixture,
   swimmingEffortFixture,
 } from "./fixtures/duration-performance-v1";
-import { independentCssReference } from "./support/independent-reference";
 
 function expectAvailable<T extends { status: string; value: unknown }>(
   outcome: T,
@@ -24,16 +22,9 @@ describe("swimming duration performance", () => {
     expect(swimmingDurationPerformanceModelSchema.parse(model)).toEqual(model);
     expect(model.environment).toBe("pool");
     expectAvailable(model.paceDurationCurve);
-    expectAvailable(model.css);
-    expect(model.css.value.cssSecondsPer100Meters).toBe(fixture.expected.cssSecondsPer100Meters);
-    expect(model.css.value.cssMetersPerSecond).toBeCloseTo(fixture.expected.cssMetersPerSecond, 12);
-    expect(model.css.sourceEvidenceIds).toEqual([fixture.input.cssProtocols[0]?.evidenceId]);
-
     expectAvailable(model.capabilities.sprint);
     expectAvailable(model.capabilities.aerobic);
-    expect(model.capabilities.aerobic.sourceEvidenceIds).toContain(
-      fixture.input.cssProtocols[0]?.evidenceId,
-    );
+    expect(model.capabilities.aerobic.value.basis).toBe("pool_duration_curve");
     expectAvailable(model.capabilities.repeatedEffortDecay);
     expect(model.capabilities.repeatedEffortDecay.value.finalSpeedRetentionRatio).toBeCloseTo(
       fixture.expected.repeatedFinalRetentionRatio,
@@ -46,66 +37,7 @@ describe("swimming duration performance", () => {
     expect(model.trainingLevels.every((level) => level.status === "available")).toBe(true);
   });
 
-  it("agrees with an independent CSS reference", () => {
-    const reference = independentCssReference(320, 150);
-    const model = calculateSwimmingDurationPerformance(fixture.input);
-    expectAvailable(model.css);
-    expect(model.css.value.cssSecondsPer100Meters).toBe(reference.secondsPer100Meters);
-    expect(model.css.value.cssMetersPerSecond).toBeCloseTo(reference.metersPerSecond, 12);
-  });
-
-  it.each([
-    {
-      name: "pool context",
-      mutate: () => ({ poolLengthMeters: 50 }),
-    },
-    {
-      name: "protocol identity",
-      mutate: () => ({ protocolId: "another-protocol" }),
-    },
-    {
-      name: "evidence revision",
-      mutate: () => ({ evidenceRevision: 2 }),
-    },
-  ])("rejects a CSS effort with mismatched $name", ({ mutate }) => {
-    const protocol = fixture.input.cssProtocols[0];
-    if (!protocol) throw new Error("Swimming fixture requires CSS protocol evidence");
-    expect(
-      canonicalSwimCssProtocolEvidenceSchema.safeParse({
-        ...protocol,
-        efforts: [protocol.efforts[0], { ...protocol.efforts[1], ...mutate() }],
-      }).success,
-    ).toBe(false);
-  });
-
-  it("rejects incomplete timing, invalid effort order, and non-qualified status", () => {
-    const protocol = fixture.input.cssProtocols[0];
-    if (!protocol) throw new Error("Swimming fixture requires CSS protocol evidence");
-    expect(
-      canonicalSwimCssProtocolEvidenceSchema.safeParse({
-        ...protocol,
-        efforts: [protocol.efforts[0], { ...protocol.efforts[1], timingCoverage: "partial" }],
-      }).success,
-    ).toBe(false);
-    expect(
-      canonicalSwimCssProtocolEvidenceSchema.safeParse({
-        ...protocol,
-        efforts: [
-          { ...protocol.efforts[0], endOffsetMs: protocol.efforts[1].endOffsetMs },
-          protocol.efforts[1],
-        ],
-      }).success,
-    ).toBe(false);
-    expect(
-      canonicalSwimCssProtocolEvidenceSchema.safeParse({
-        ...protocol,
-        status: "rejected",
-        reasons: ["css_timing_incomplete"],
-      }).success,
-    ).toBe(false);
-  });
-
-  it("keeps open-water separate and withholds pool/CSS/sprint claims", () => {
+  it("keeps open-water separate and withholds pool sprint claims", () => {
     const openEfforts = [600, 1_200, 1_800, 3_600].map((durationSeconds, index) =>
       swimmingEffortFixture({
         evidenceId: `open-${durationSeconds}`,
@@ -118,15 +50,10 @@ describe("swimming duration performance", () => {
     const model = calculateSwimmingDurationPerformance({
       ...fixture.input,
       efforts: openEfforts,
-      cssProtocols: [],
       repeatedEffortProtocols: [],
     });
     expect(model.environment).toBe("open_water");
     expectAvailable(model.paceDurationCurve);
-    expect(model.css).toMatchObject({
-      status: "unavailable",
-      reasons: ["css_pool_protocol_required"],
-    });
     expect(model.capabilities.sprint).toMatchObject({
       status: "unavailable",
       reasons: ["sprint_not_supported_for_open_water_timing"],

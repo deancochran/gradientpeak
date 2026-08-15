@@ -39,7 +39,6 @@ const irregularHeartRateSamples: readonly HeartRateDurationSample[] = [
 
 export const SWIMMING_HEART_RATE_NUMERICAL_TRUST_FIXTURES_V1 = {
   version: "swimming-heart-rate-numerical-trust-fixtures-v1",
-  cssCalculationVersion: "critical-swim-speed-400m-200m-v1",
   swimTimingCalculationVersion: "swim-active-rest-duration-v1",
   heartRateDurationCalculationVersion: "heart-rate-zone-duration-v1",
   heartRateCommonLoadCalculationVersion: "heart-rate-common-load-v1",
@@ -52,35 +51,6 @@ export const SWIMMING_HEART_RATE_NUMERICAL_TRUST_FIXTURES_V1 = {
     durationSeconds: 1e-12,
     intensity: 1e-12,
     commonLoad: 1e-12,
-  },
-  css: {
-    canonical: {
-      rationale: "360 s for 400 m and 168 s for 200 m gives (360 - 168) / 2 = 96 s/100 m.",
-      input: { time400Seconds: 360, time200Seconds: 168 },
-      expected: {
-        status: "available",
-        cssSecondsPer100m: 96,
-        cssMetersPerSecond: 25 / 24,
-        speed400MetersPerSecond: 10 / 9,
-        speed200MetersPerSecond: 25 / 21,
-      },
-    },
-    secondExample: {
-      rationale: "420 s for 400 m and 180 s for 200 m gives exactly 120 s/100 m.",
-      input: { time400Seconds: 420, time200Seconds: 180 },
-      expected: { status: "available", cssSecondsPer100m: 120, cssMetersPerSecond: 5 / 6 },
-    },
-    unavailable: [
-      {
-        rationale: "The 400 m time must exceed twice the 200 m time.",
-        input: { time400Seconds: 336, time200Seconds: 168 },
-      },
-      {
-        rationale: "Zero is not a timed effort.",
-        input: { time400Seconds: 0, time200Seconds: 168 },
-      },
-      { rationale: "Both timed efforts are required.", input: { time400Seconds: 360 } },
-    ],
   },
   swimTiming: {
     complete: {
@@ -139,7 +109,7 @@ export const SWIMMING_HEART_RATE_NUMERICAL_TRUST_FIXTURES_V1 = {
       activeDurationSeconds: 3_600,
       restDurationSeconds: 600,
       distanceMeters: 3_600,
-      cssSecondsPer100m: 100,
+      thresholdPaceSecondsPer100m: 100,
       expected: { thresholdSpeedMetersPerSecond: 1, intensity: 1, commonLoad: 100 },
     },
   },

@@ -44,7 +44,7 @@ function performanceTargets(
     ...buildPerformanceTargetFactsFixture({
       asOf: performanceModelAsOf,
       athleteId: integration.profileId,
-      planningThresholdPowerWatts: 250,
+      bikeThresholdWatts: 250,
       lthrBpm: { bike: 170, run: 175 },
       maxHrBpm: { bike: 190, run: 195 },
     }),
@@ -533,7 +533,7 @@ describe("WahooSyncService planned-activity reconciliation", () => {
     const latestTargets = buildPerformanceTargetFactsFixture({
       asOf: performanceModelAsOf,
       athleteId: integration.profileId,
-      planningThresholdPowerWatts: 275,
+      bikeThresholdWatts: 275,
       lthrBpm: { bike: 170 },
       maxHrBpm: { bike: 190 },
     });

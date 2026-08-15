@@ -141,7 +141,8 @@ jest.mock("@/lib/stores/auth-store", () => ({
     selector({ ready: true, session: {} }),
 }));
 jest.mock("./trainingPathPlanningTime", () => ({
-  getTrainingPathTodayKey: () => (mockPlanningTimezone ? "2026-04-06" : null),
+  getTrainingPathTodayKey: (_now: Date, timezone: string | null) =>
+    timezone ? "2026-04-06" : null,
   millisecondsUntilNextTrainingPathDay: () => 60_000,
 }));
 jest.mock("./useScrollableTrainingPathWindow", () => ({
@@ -168,8 +169,12 @@ describe("usePlanTrainingPathData", () => {
 
     expect(mockProjectionUseQuery).toHaveBeenCalledTimes(1);
     expect(mockProjectionUseQuery).toHaveBeenCalledWith(
-      { startDate: "2026-02-21", endDate: "2026-05-20" },
-      expect.objectContaining({ enabled: true, placeholderData: expect.any(Function) }),
+      { startDate: "2026-03-09", endDate: "2026-05-04" },
+      expect.objectContaining({
+        enabled: true,
+        retry: false,
+        staleTime: 60_000,
+      }),
     );
     expect(result.current.queryFailureCount).toBe(0);
     expect(result.current.hasUsableData).toBe(true);
@@ -184,8 +189,6 @@ describe("usePlanTrainingPathData", () => {
           date: "2026-04-06",
           completedLoad: 35,
           effectiveLoad: 60,
-          effectiveIntensity: 0.8,
-          recommendedLoad: 70,
           scheduledFitnessCtl: 41,
         }),
       ]),
@@ -201,31 +204,31 @@ describe("usePlanTrainingPathData", () => {
     ]);
   });
 
-  it("moves the bounded projection around the selected day", () => {
+  it("keeps one stable projection window while the selected day changes", () => {
     const { result } = renderHook(() => usePlanTrainingPathData());
 
     act(() => result.current.handleSelectedDateChange("2026-08-01"));
 
     expect(mockProjectionUseQuery).toHaveBeenLastCalledWith(
-      { startDate: "2026-06-18", endDate: "2026-09-14" },
+      { startDate: "2026-03-09", endDate: "2026-05-04" },
       expect.objectContaining({ enabled: true }),
     );
   });
 
-  it("disables the projection and abstains when planning timezone is unavailable", () => {
+  it("uses UTC as a safe request anchor when a legacy profile has no planning timezone", () => {
     mockPlanningTimezone = null;
 
     const { result } = renderHook(() => usePlanTrainingPathData());
 
     expect(mockProjectionUseQuery).toHaveBeenCalledWith(
-      { startDate: "1970-01-01", endDate: "1970-01-01" },
-      expect.objectContaining({ enabled: false }),
+      { startDate: "2026-03-09", endDate: "2026-05-04" },
+      expect.objectContaining({ enabled: true }),
     );
     expect(result.current).toMatchObject({
-      planningTimezoneState: "unavailable",
-      chartUnavailable: true,
+      planningTimezoneState: "ready",
+      chartUnavailable: false,
       chartLoading: false,
-      dailyTrainingPathPoints: [],
+      queryFailureCount: 0,
     });
   });
 

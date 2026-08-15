@@ -23,9 +23,17 @@ pnpm --filter web dev:tunnel
 pnpm --filter web dev:e2e
 ```
 
-The default `dev` command runs the app, Wahoo worker, and reserved ngrok tunnel so provider callbacks
-and webhooks work under `pnpm exec turbo run dev`. Use `dev:local` when you intentionally need the app
-and worker without a public tunnel. The tunneled lane requires configured ngrok access.
+The default `dev` command runs the app, Wahoo worker, and the named Cloudflare Tunnel for
+`https://dev.gradientpeak.com`, so provider callbacks and webhooks work under `pnpm exec turbo run dev`.
+Use `dev:local` when you intentionally need the app and worker without public access. The tunneled lane
+requires `cloudflared` and the named tunnel token file at
+`~/.config/gradientpeak/gradientpeak-dev.tunnel-token` (or the `CLOUDFLARE_TUNNEL_TOKEN_FILE` override).
+Create `apps/web/.env.tunnel` from `.env.tunnel.example` before using the tunneled lane. The local-only
+lane uses the `localhost` values from `.env.local` and never loads `.env.tunnel`.
+
+The named tunnel must route `dev.gradientpeak.com` to `http://localhost:3000`. Restrict the local token
+file to its owner (`chmod 600 ~/.config/gradientpeak/gradientpeak-dev.tunnel-token`). Apply the same
+restriction to any path supplied through `CLOUDFLARE_TUNNEL_TOKEN_FILE`.
 
 The E2E server verifies the local database migration ledger before binding to `PORT` (default
 `3000`). It fails rather than moving to another port when that port is occupied.
@@ -92,9 +100,13 @@ OAuth and webhook providers:
 
 The current server-side Wahoo exchange is a confidential OAuth client. Configure the Wahoo
 developer application with **Confidential = true**, and register the exact
-`<OAUTH_CALLBACK_BASE_URL>/api/integrations/callback/wahoo` URL. Do not add a trailing slash to
-`OAUTH_CALLBACK_BASE_URL`. The public-PKCE flow requires a separate provider-app configuration
-and is not interchangeable with this confidential flow.
+`https://dev.gradientpeak.com/api/integrations/callback/wahoo` URL for development. Configure
+`OAUTH_CALLBACK_BASE_URL=https://dev.gradientpeak.com` without a trailing slash. The public-PKCE flow
+requires a separate provider-app configuration and is not interchangeable with this confidential flow.
+
+Configure Wahoo webhook delivery for development at
+`https://dev.gradientpeak.com/api/webhooks/wahoo`. Keep `WAHOO_WEBHOOK_TOKEN` in the local environment
+file; it is not part of the tunnel configuration.
 
 Wahoo limits each application to 10 unrevoked access tokens per user. Refresh only immediately
 before provider API work; after persisting a refreshed token, GradientPeak calls Wahoo's user API

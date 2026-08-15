@@ -9,7 +9,6 @@ import type {
   StrengthOtherPerformanceInput,
 } from "../../strength-other";
 import type {
-  CanonicalSwimCssProtocolEvidence,
   CanonicalSwimRepeatedEffortProtocolEvidence,
   SwimmingDurationPerformanceInput,
 } from "../../swimming";
@@ -183,69 +182,6 @@ const swimmingEfforts = [
   }),
 );
 
-export const SWIM_CSS_PROTOCOL_FIXTURE: CanonicalSwimCssProtocolEvidence = {
-  protocolId: "swim-css-protocol",
-  observationId: "observation-swim-css",
-  evidenceId: `sha256:${"b".repeat(64)}`,
-  evidenceRevision: 1,
-  athleteId: "athlete-1",
-  activityId: "swim-css-activity",
-  recordedAt: "2026-06-29T00:08:30.000Z",
-  sourceArtifactId: "swim-css-artifact",
-  sourceArtifactDigest: "a".repeat(64),
-  environment: "pool",
-  poolLengthMeters: 25,
-  timingBasis: "pool_length_timing",
-  protocol: "css_400m_200m",
-  status: "qualified",
-  reasons: [],
-  calculationVersion: "canonical-swim-css-protocol-evidence-v1",
-  efforts: [
-    {
-      protocolId: "swim-css-protocol",
-      observationId: "swim-css-400-observation",
-      evidenceRevision: 1,
-      athleteId: "athlete-1",
-      distanceMeters: 400,
-      sequence: 1,
-      activeDurationSeconds: 320,
-      unit: "seconds",
-      activityId: "swim-css-activity",
-      segmentId: "swim-css-400",
-      sourceArtifactId: "swim-css-artifact",
-      recordedAt: "2026-06-29T00:05:20.000Z",
-      startOffsetMs: 0,
-      endOffsetMs: 320_000,
-      environment: "pool",
-      poolLengthMeters: 25,
-      timingBasis: "pool_length_timing",
-      timingCoverage: "complete",
-      calculationVersion: "activity-file-swim-distance-effort-v1",
-    },
-    {
-      protocolId: "swim-css-protocol",
-      observationId: "swim-css-200-observation",
-      evidenceRevision: 1,
-      athleteId: "athlete-1",
-      distanceMeters: 200,
-      sequence: 2,
-      activeDurationSeconds: 150,
-      unit: "seconds",
-      activityId: "swim-css-activity",
-      segmentId: "swim-css-200",
-      sourceArtifactId: "swim-css-artifact",
-      recordedAt: "2026-06-29T00:08:30.000Z",
-      startOffsetMs: 360_000,
-      endOffsetMs: 510_000,
-      environment: "pool",
-      poolLengthMeters: 25,
-      timingBasis: "pool_length_timing",
-      timingCoverage: "complete",
-      calculationVersion: "activity-file-swim-distance-effort-v1",
-    },
-  ],
-};
-
 export const SWIM_REPEAT_PROTOCOL_FIXTURE: CanonicalSwimRepeatedEffortProtocolEvidence = {
   observationId: "observation-swim-repeat",
   evidenceId: "swim-repeat",
@@ -292,7 +228,6 @@ const swimmingInput: SwimmingDurationPerformanceInput = {
   athleteId: "athlete-1",
   evidenceReadCoverage: { state: "complete", reason: null },
   efforts: swimmingEfforts,
-  cssProtocols: [SWIM_CSS_PROTOCOL_FIXTURE],
   repeatedEffortProtocols: [SWIM_REPEAT_PROTOCOL_FIXTURE],
 };
 
@@ -300,8 +235,6 @@ export const SWIMMING_DURATION_PERFORMANCE_FIXTURE_V1 = {
   version: "swimming-duration-performance-fixture-v1",
   input: swimmingInput,
   expected: {
-    cssSecondsPer100Meters: 85,
-    cssMetersPerSecond: 100 / 85,
     repeatedFinalRetentionRatio: 65 / 70,
     repeatedMaximumLossRatio: 1 - 65 / 70,
   },

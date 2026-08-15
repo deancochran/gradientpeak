@@ -35,7 +35,7 @@ function readiness(
 describe("deriveOnboardingProgress", () => {
   it.each([
     ["connected", "preparing_accounts", 25],
-    ["queued", "preparing_accounts", 25],
+    ["queued", "importing_activities", 50],
     ["importing", "importing_activities", 50],
     ["deriving", "building_targets", 75],
     ["complete", "building_targets", 75],

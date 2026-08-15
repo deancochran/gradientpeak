@@ -198,10 +198,7 @@ function factForMethod(
   method: ProvisionalCommonLoadMethod,
 ): SelectedPerformanceFact {
   const targetFact = (
-    fact:
-      | AthletePerformanceTargetFacts["cycling"]["planningThresholdPower"]
-      | AthletePerformanceTargetFacts["running"]["planningThresholdPace"]
-      | AthletePerformanceTargetFacts["swimming"]["css"],
+    fact: AthletePerformanceTargetFacts["thresholds"]["bike"],
   ): SelectedPerformanceFact => {
     const value = getAvailablePerformanceTargetValue(fact);
     const status = value === null ? "unavailable" : "available";
@@ -209,21 +206,22 @@ function factForMethod(
       status,
       value,
       calculationVersion: fact.calculationVersion,
-      sourceEvidenceIds: fact.sourceEvidenceIds,
-      confidence: fact.confidence,
-      reasons: fact.reasons,
+      sourceEvidenceIds: fact.sourceEvaluationIds,
+      confidence:
+        fact.status === "available" ? (fact.state === "confirmed" ? "high" : "low") : "unavailable",
+      reasons: fact.reason === null ? [] : [fact.reason],
       source: status === "available" ? "modeled" : "unknown",
-      observedAt: status === "available" ? fact.evidenceTime.observedThrough : null,
-      computedAt: fact.evidenceTime.computedAt,
+      observedAt: status === "available" ? fact.effectiveAt : null,
+      computedAt: performanceTargets.asOf,
     };
   };
   switch (method) {
     case "power_threshold":
-      return targetFact(performanceTargets.cycling.planningThresholdPower);
+      return targetFact(performanceTargets.thresholds.bike);
     case "run_pace_threshold":
-      return targetFact(performanceTargets.running.planningThresholdPace);
+      return targetFact(performanceTargets.thresholds.run);
     case "swim_pace_threshold":
-      return targetFact(performanceTargets.swimming.css);
+      return targetFact(performanceTargets.thresholds.swim);
     case "heart_rate_zones": {
       const category =
         activityCategory === "bike" || activityCategory === "run" || activityCategory === "swim"
@@ -245,13 +243,8 @@ function factForMethod(
   }
 }
 
-function normalizeThreshold(method: ProvisionalCommonLoadMethod, value: number): number | null {
-  const normalized =
-    method === "run_pace_threshold"
-      ? 1000 / value
-      : method === "swim_pace_threshold"
-        ? 100 / value
-        : value;
+function normalizeThreshold(_method: ProvisionalCommonLoadMethod, value: number): number | null {
+  const normalized = value;
   return Number.isFinite(normalized) && normalized > 0 ? normalized : null;
 }
 

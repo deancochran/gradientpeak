@@ -18,7 +18,11 @@ import {
   inferAuthSessionTransport,
   normalizeAuthSession,
 } from "../contracts/session";
-import { authRuntimeEnvSchema, parseAuthRuntimeEnv } from "./env";
+import {
+  authRuntimeEnvSchema,
+  parseAuthRuntimeEnv,
+  resolveDevelopmentAuthTrustedOrigins,
+} from "./env";
 import { createAuthMailer, type SendAuthEmailInput } from "./mailer";
 import {
   AUTH_TOKEN_POLICY,
@@ -327,11 +331,17 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
 
 export function getGradientPeakAuth() {
   if (!authSingleton) {
+    const developmentTrustedOrigins = resolveDevelopmentAuthTrustedOrigins(
+      process.env["NODE_ENV"],
+      process.env["AUTH_TRUSTED_ORIGINS"],
+      ["http://100.119.109.24:3000"],
+    );
     authSingleton = createGradientPeakAuth({
       appUrl: process.env["APP_URL"] ?? "http://localhost:3000",
       databaseUrl: resolveDatabaseUrl(process.env),
       ...(process.env["BETTER_AUTH_SECRET"] ? { secret: process.env["BETTER_AUTH_SECRET"] } : {}),
       mobileScheme: process.env["AUTH_MOBILE_SCHEME"] ?? "gradientpeak",
+      trustedOrigins: developmentTrustedOrigins,
     });
   }
 

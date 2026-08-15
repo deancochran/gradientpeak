@@ -26,8 +26,10 @@ pnpm exec turbo run dev
 ```
 
 `pnpm exec turbo run dev` is the primary development command. It starts the web app, mobile Metro
-server, local Supabase setup, Wahoo worker, and the ngrok tunnel required for provider callbacks.
-Configure ngrok and the reserved development domain before starting the full development lane.
+server, local Supabase setup, Wahoo worker, and the Cloudflare Tunnel required for provider callbacks.
+The tunnel serves `https://dev.gradientpeak.com`; configure `cloudflared` and its named-tunnel token
+before starting the full development lane. Copy `apps/web/.env.tunnel.example` to
+`apps/web/.env.tunnel` to load the public callback origin only in that lane.
 
 The first time local Supabase starts, copy its local API keys from `pnpm db:status` into
 `apps/web/.env.local` and `apps/mobile/.env`. Re-run `pnpm run doctor -- --lane dev`, then restart
@@ -42,7 +44,7 @@ pnpm exec turbo run dev --filter=mobile
 ```
 
 `pnpm dev` remains a convenience wrapper for `pnpm exec turbo run dev`. Use `pnpm dev:web:local` when
-you intentionally want the web app and Wahoo worker without ngrok. `pnpm dev:web:tunnel` remains an
+you intentionally want the web app and Wahoo worker without a public tunnel. `pnpm dev:web:tunnel` remains an
 explicit web-only alias for the default tunneled web development task.
 `pnpm dev:web:scan` is a web-only performance-inspection command.
 

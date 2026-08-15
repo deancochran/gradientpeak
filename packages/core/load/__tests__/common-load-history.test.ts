@@ -442,7 +442,7 @@ describe("common Load history v1 replay", () => {
     expect(result.points.at(-1)?.dailyLoad).toBe(149);
   });
 
-  it("rejects partial and unavailable observations before LongTermLoad/RecentLoad recurrence", () => {
+  it("uses finite partial Load but rejects unavailable observations before recurrence", () => {
     const partialAggregate = aggregateCommonLoad([available(100), unavailableActivity()]);
     expect(partialAggregate.status).toBe("partial");
     const partialDays = knownZeroDays().map(
@@ -450,11 +450,9 @@ describe("common Load history v1 replay", () => {
         index === 20 ? { ...day, state: "observed", aggregate: partialAggregate } : day,
     );
     const partialResult = replay(partialDays, "UTC");
-    expect(partialResult).toMatchObject({
-      status: "unavailable",
-      reason: "incomplete_observation",
-      context: { observationState: "observed", observationReason: "partial_common_load" },
-    });
+    expect(partialResult.status).toBe("available");
+    if (partialResult.status !== "available") throw new Error("Expected available history");
+    expect(partialResult.points[20]?.dailyLoad).toBe(100);
 
     const unavailableDays = knownZeroDays().map(
       (day, index): CommonLoadHistoryDayObservation =>

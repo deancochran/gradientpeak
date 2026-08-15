@@ -89,9 +89,16 @@ export async function attachActivitySourceReference(
   tx: DrizzleTransactionClient,
   input: ActivitySourceIdentity & { activityId: string; now?: Date },
 ) {
+  await lockActivitySourceResolution(tx, input.profileId);
+  return attachActivitySourceReferenceWithProfileLockHeld(tx, input);
+}
+
+export async function attachActivitySourceReferenceWithProfileLockHeld(
+  tx: DrizzleTransactionClient,
+  input: ActivitySourceIdentity & { activityId: string; now?: Date },
+) {
   const now = input.now ?? new Date();
   const origin = trustedOrigin(input);
-  await lockActivitySourceResolution(tx, input.profileId);
   const [inserted] = await tx
     .insert(activitySourceReferences)
     .values({

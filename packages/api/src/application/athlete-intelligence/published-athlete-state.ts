@@ -6,16 +6,16 @@ import {
   formatDateOnlyInTimeZone,
   heartRateCalibrationFactSchema,
   ianaTimezoneSchema,
-  planningThresholdPaceFactSchema,
-  planningThresholdPowerFactSchema,
-  swimmingCssFactSchema,
+  materializeAthletePerformanceTargetFacts,
+  performanceThresholdFactSchema,
 } from "@repo/core";
 import { z } from "zod";
-import type { DrizzleQueryExecutor } from "../../db";
+import { type DrizzleQueryExecutor, withRepeatableReadSnapshot } from "../../db";
 import {
   type PublishedAthleteStateRead,
   readPublishedAthleteStateSnapshotData,
 } from "../../repositories/athlete-state-repository";
+import { getAthleteThresholdTargetFactsAsOf } from "../performance-model/get-athlete-performance-model-as-of";
 
 type PublishedAthleteState = NonNullable<PublishedAthleteStateRead["current"]>;
 
@@ -95,38 +95,61 @@ function buildPublishedPerformanceTargets(
   const targets = createUnavailableAthletePerformanceTargetFacts(computedAt, profileId);
   for (const estimate of estimates) {
     if (estimate.target_fact === null || estimate.target_fact === undefined) continue;
-    if (estimate.capability_kind === "threshold_power" && estimate.activity_category === "bike") {
-      targets.cycling.planningThresholdPower = planningThresholdPowerFactSchema.parse(
-        estimate.target_fact,
-      );
-    } else if (
-      estimate.capability_kind === "threshold_speed" &&
-      estimate.activity_category === "run"
-    ) {
-      targets.running.planningThresholdPace = planningThresholdPaceFactSchema.parse(
-        estimate.target_fact,
-      );
-    } else if (
-      estimate.capability_kind === "threshold_speed" &&
-      estimate.activity_category === "swim"
-    ) {
-      targets.swimming.css = swimmingCssFactSchema.parse(estimate.target_fact);
-    } else {
-      if (estimate.capability_kind === "threshold_heart_rate") {
-        if (estimate.activity_category !== "bike" && estimate.activity_category !== "run") continue;
-        const fact = heartRateCalibrationFactSchema.parse(estimate.target_fact);
-        targets.heartRate[estimate.activity_category].lthr = fact;
-        continue;
-      }
-      const match = /^(bike|run|swim)_(lthr|max_hr)$/.exec(estimate.capability_kind);
-      if (!match) continue;
-      const category = match[1] as "bike" | "run" | "swim";
-      const fact = heartRateCalibrationFactSchema.parse(estimate.target_fact);
-      if (match[2] === "lthr") targets.heartRate[category].lthr = fact;
-      else targets.heartRate[category].maxHr = fact;
-    }
+    const match = /^(bike|run|swim)_max_hr$/.exec(estimate.capability_kind);
+    if (!match) continue;
+    const category = match[1] as "bike" | "run" | "swim";
+    targets.heartRate[category].maxHr = heartRateCalibrationFactSchema.parse(estimate.target_fact);
   }
   return athletePerformanceTargetFactsSchema.parse(targets);
+}
+
+/** Cache-only comparison read for outbound refresh diffing; never used as target authority. */
+export async function readCachedPublishedAthletePerformanceTargets(input: {
+  db: DrizzleQueryExecutor;
+  profileId: string;
+  now: Date;
+}) {
+  const snapshotData = await readPublishedAthleteStateSnapshotData(input.db, {
+    profileId: input.profileId,
+  });
+  const current = snapshotData?.current;
+  const cachedTargets = current
+    ? buildPublishedPerformanceTargets(
+        input.profileId,
+        current.state.computed_at?.toISOString() ?? input.now.toISOString(),
+        current.estimates,
+      )
+    : createUnavailableAthletePerformanceTargetFacts(input.now.toISOString(), input.profileId);
+  const cachedThresholds =
+    current?.estimates.flatMap((estimate) => {
+      const parsed = performanceThresholdFactSchema.safeParse(estimate.target_fact);
+      if (!parsed.success || parsed.data.status !== "available") return [];
+      if (parsed.data.activityCategory !== estimate.activity_category) return [];
+      return [
+        {
+          id: parsed.data.thresholdId,
+          status: "available" as const,
+          activityCategory: parsed.data.activityCategory,
+          metric: parsed.data.metric,
+          unit: parsed.data.unit,
+          method: parsed.data.method,
+          value: parsed.data.value,
+          effectiveAt: parsed.data.effectiveAt,
+          policyVersion: parsed.data.policyVersion,
+          state: parsed.data.state,
+          confidence: parsed.data.confidence,
+          sourceEvaluationIds: parsed.data.sourceEvaluationIds,
+          sourceEffortIds: parsed.data.sourceEffortIds,
+          sourceActivityIds: parsed.data.sourceActivityIds,
+        },
+      ];
+    }) ?? [];
+  return materializeAthletePerformanceTargetFacts({
+    athleteId: input.profileId,
+    asOf: input.now.toISOString(),
+    thresholds: cachedThresholds,
+    heartRate: cachedTargets.heartRate,
+  });
 }
 
 /**
@@ -134,7 +157,7 @@ function buildPublishedPerformanceTargets(
  * goal assessment and planning. Repository ownership keeps profile preference,
  * state revision, matching estimates, and the import fence on one SQL snapshot.
  */
-export async function readPublishedAthleteStateSnapshot(input: {
+async function readPublishedAthleteStateSnapshotInSnapshot(input: {
   db: DrizzleQueryExecutor;
   profileId: string;
   now?: Date;
@@ -157,6 +180,21 @@ export async function readPublishedAthleteStateSnapshot(input: {
   const blockingImport = snapshotData.blockingImport;
   const importStatus = blockingImport ?? "complete";
   const currentPlanningDate = formatDateOnlyInTimeZone(now, planningTimezone);
+  const thresholdFacts = await getAthleteThresholdTargetFactsAsOf(
+    { athleteId: input.profileId, asOf: now },
+    input.db,
+  );
+  const cachedTargets = current
+    ? buildPublishedPerformanceTargets(
+        input.profileId,
+        current.state.computed_at?.toISOString() ?? now.toISOString(),
+        current.estimates,
+      )
+    : createUnavailableAthletePerformanceTargetFacts(now.toISOString(), input.profileId);
+  const performanceTargets = athletePerformanceTargetFactsSchema.parse({
+    ...thresholdFacts,
+    heartRate: cachedTargets.heartRate,
+  });
   const hasPublishedState = Boolean(
     current && current.state.published_revision > 0 && current.state.computed_at,
   );
@@ -184,7 +222,7 @@ export async function readPublishedAthleteStateSnapshot(input: {
       computedAt: null,
       algorithmVersion: current?.state.algorithm_version ?? null,
       baseline: null,
-      performanceTargets: null,
+      performanceTargets,
       estimates: [],
     };
   }
@@ -236,40 +274,55 @@ export async function readPublishedAthleteStateSnapshot(input: {
     computedAt: current.state.computed_at?.toISOString() ?? null,
     algorithmVersion: current.state.algorithm_version,
     baseline,
-    performanceTargets: buildPublishedPerformanceTargets(
-      input.profileId,
-      current.state.computed_at?.toISOString() ?? now.toISOString(),
-      current.estimates,
-    ),
+    performanceTargets,
     estimates: current.estimates,
   };
+}
+
+export async function readPublishedAthleteStateSnapshot(input: {
+  db: DrizzleQueryExecutor;
+  profileId: string;
+  now?: Date;
+  lockStateForUpdate?: boolean;
+  advanceBaselineToReadTime?: boolean;
+}): Promise<PublishedAthleteStateSnapshot> {
+  return withRepeatableReadSnapshot(
+    input.db,
+    (tx) => readPublishedAthleteStateSnapshotInSnapshot({ ...input, db: tx }),
+    { accessMode: input.lockStateForUpdate ? "read write" : "read only" },
+  );
 }
 
 export type PublishedAthletePerformanceTargetsRead = Awaited<
   ReturnType<typeof readPublishedAthletePerformanceTargets>
 >;
 
-/** Current provider/runtime target authority; historical evaluators remain separate. */
+type PublishedAthletePerformanceTargetsResult =
+  | {
+      status: "available" | "stale";
+      targets: z.infer<typeof athletePerformanceTargetFactsSchema>;
+      publishedRevision: number | null;
+    }
+  | {
+      status: "unavailable";
+      targets: z.infer<typeof athletePerformanceTargetFactsSchema>;
+      publishedRevision: null;
+    };
+
+/** Current provider/runtime projection over canonical threshold truth plus non-threshold cache. */
 export async function readPublishedAthletePerformanceTargets(input: {
   db: DrizzleQueryExecutor;
   profileId: string;
   now?: Date;
-}) {
+}): Promise<PublishedAthletePerformanceTargetsResult> {
   const snapshot = await readPublishedAthleteStateSnapshot(input);
   const asOf = snapshot.computedAt ?? (input.now ?? new Date()).toISOString();
   const targets =
     snapshot.performanceTargets ??
     createUnavailableAthletePerformanceTargetFacts(asOf, input.profileId);
 
-  if (!snapshot.performanceTargets || snapshot.revisions.published === null) {
+  if (!snapshot.performanceTargets) {
     return { status: "unavailable" as const, targets, publishedRevision: null };
-  }
-  if (snapshot.freshness !== "fresh") {
-    return {
-      status: "stale" as const,
-      targets,
-      publishedRevision: snapshot.revisions.published,
-    };
   }
   return {
     status: "available" as const,

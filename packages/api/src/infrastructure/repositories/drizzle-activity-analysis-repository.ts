@@ -44,9 +44,11 @@ export function createActivityAnalysisStore(db: DrizzleQueryExecutor): ActivityA
   const readPerformanceModel = createAthletePerformanceModelReader(performanceModelRepository);
   const readPerformanceTargets = createAthletePerformanceTargetFactsReader(
     performanceModelRepository,
+    db,
   );
   const readPerformanceTargetsBatch = createAthletePerformanceTargetFactsBatchReader(
     performanceModelRepository,
+    db,
   );
   const loadContextEvidence: NonNullable<ActivityAnalysisStore["loadContextEvidence"]> = async ({
     requests,

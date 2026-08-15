@@ -200,6 +200,50 @@ describe("deriveOnboardingReadiness", () => {
     expect(result.ready_to_finalize).toBe(false);
   });
 
+  it("keeps processing while retryable profile enrichment waits for its scheduled retry", () => {
+    const result = deriveOnboardingReadiness({
+      profile,
+      athleteState: null,
+      providers: [
+        {
+          ...provider,
+          jobs: [
+            {
+              id: "history",
+              import_run_id: "run",
+              payload_import_run_id: "run",
+              job_type: "wahoo.activity_history_reconcile",
+              status: "completed",
+              last_error: null,
+            },
+            {
+              id: "profile",
+              import_run_id: null,
+              payload_import_run_id: null,
+              job_type: "wahoo.profile_enrichment",
+              status: "failed",
+              last_error: "wahoo_profile_enrichment_failed",
+            },
+          ],
+          importRun: {
+            status: "completed",
+            failed_count: 0,
+            imported_count: 231,
+            skipped_count: 0,
+            material_change_count: 0,
+          },
+        },
+      ],
+    });
+
+    expect(result.providers[0]).toMatchObject({
+      state: "queued",
+      next_actions: ["wait"],
+      progress: { profile: "queued" },
+    });
+    expect(result.next_actions).toEqual(["wait"]);
+  });
+
   it("fails closed when the anchored integration becomes inactive", () => {
     const result = deriveOnboardingReadiness({
       profile,

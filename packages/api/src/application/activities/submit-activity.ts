@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   activityLapRecordListSchema,
-  type CalibrationIdentity,
   COMPLETED_ACTIVITY_PERFORMANCE_TARGET_SNAPSHOT_VERSION,
   type ContentVisibility,
   completedActivityPerformanceTargetSnapshotSchema,
@@ -22,18 +21,20 @@ import {
   integrations,
 } from "@repo/db";
 import { and, asc, desc, eq, gt, sql } from "drizzle-orm";
-import type { getRequiredDb } from "../../db";
+import { type getRequiredDb, withProfileFencedRepeatableReadSnapshot } from "../../db";
 import {
-  attachActivitySourceReference,
-  lockActivitySourceResolution,
+  attachActivitySourceReferenceWithProfileLockHeld as attachActivitySourceReference,
   resolveCanonicalActivityReference,
 } from "../../repositories/activity-source-reference-repository";
-import { invalidateAllCalibrationEvidenceForActivity } from "../../repositories/performance-calibration-repository";
+import {
+  deleteThresholdEvidenceForActivity,
+  readThresholdImpactForActivity,
+  type ThresholdImpact,
+} from "../../repositories/threshold-repository";
 import { ActivityFileIngestionClaimLostError } from "../activity-file-ingestion/ingestion-state";
 import { materializeActivityAthleteStateEvidence } from "../athlete-intelligence/athlete-state-evidence";
 import { readPublishedAthletePerformanceTargets } from "../athlete-intelligence/published-athlete-state";
 import {
-  acquireActivityEvidenceProfileLock,
   type GeneratedActivityLthrEvidence,
   reconcileGeneratedActivityEvidenceWithProfileLockHeld,
 } from "./reconcile-activity-evidence";
@@ -336,8 +337,8 @@ function assignEffortSegments(
   segmentSet: CompletedActivitySegmentSet,
 ) {
   return efforts.map((effort) => {
-    const startMs = (effort.start_offset ?? 0) * 1000;
-    const endMs = startMs + effort.duration_seconds * 1000;
+    const startMs = effort.start_offset_ms;
+    const endMs = effort.end_offset_ms;
     const matches = segmentSet.segments.filter(
       (segment) =>
         segment.role === "activity" &&
@@ -778,6 +779,7 @@ export async function submitActivity(
     beforePersist?: (tx: ActivitySubmissionTransaction) => Promise<void>;
     importRunId?: string;
     deferAthleteStateRefresh?: boolean;
+    deferPerformanceCalibration?: boolean;
   } = {},
 ) {
   let activityId =
@@ -785,418 +787,128 @@ export async function submitActivity(
   let compositionResult: unknown;
   let noOp = false;
   const evidence = input.kind === "enrich" ? input : input.analysis;
-  await db.transaction(async (tx) => {
-    const now = new Date();
-    let effortMaterialRecordedAt: Date | null = null;
-    let preInvalidatedCalibrationIdentities: CalibrationIdentity[] = [];
-    const provenance = input.kind === "enrich" ? undefined : input.providerProvenance;
-    const ingestion = input.kind === "enrich" ? input.ingestion : input.analysis?.ingestion;
-    const sourceOrigin = provenance
-      ? {
-          ...(provenance.originProvider === undefined
-            ? {}
-            : { originProvider: provenance.originProvider }),
-          ...(provenance.originExternalId === undefined
-            ? {}
-            : { originExternalId: provenance.originExternalId }),
-          ...(provenance.originTrust === undefined ? {} : { originTrust: provenance.originTrust }),
-        }
-      : {};
-    if (provenance) {
-      await lockActivitySourceResolution(tx, input.profileId);
-      const resolved = await resolveCanonicalActivityReference(tx, {
-        profileId: input.profileId,
-        integrationId: provenance.integrationId,
-        provider: provenance.provider,
-        providerExternalId: provenance.externalId,
-        providerRevision: provenance.providerUpdatedAt,
-        ...sourceOrigin,
-        ...(ingestion?.artifact?.sha256 === undefined
-          ? {}
-          : { artifactSha256: ingestion.artifact.sha256 }),
-        ...(options.importRunId === undefined ? {} : { importRunId: options.importRunId }),
-      });
-      if (resolved) activityId = resolved;
-    }
-    // Lock and verify the lifecycle fence in this same transaction as every
-    // activity/artifact/link/ingestion write.
-    if (provenance?.provider === "wahoo" && provenance.integrationGeneration !== undefined) {
-      const [activeIntegration] = await tx
-        .select({ id: integrations.id })
-        .from(integrations)
-        .where(
-          and(
-            eq(integrations.id, provenance.integrationId),
-            eq(integrations.profile_id, input.profileId),
-            eq(integrations.provider, "wahoo"),
-            eq(integrations.lifecycle_status, "active"),
-            eq(integrations.generation, provenance.integrationGeneration),
-          ),
-        )
-        .limit(1)
-        .for(evidence ? "update" : "share");
-      if (!activeIntegration) throw new Error("integration_generation_inactive");
-    }
-    if (ingestion?.claimToken) {
-      if (!ingestion.ingestionId) {
-        throw new Error("Claimed activity file ingestion requires an ingestion ID");
-      }
-      const [claim] = await tx
-        .select({ id: activityFileIngestions.id })
-        .from(activityFileIngestions)
-        .where(
-          and(
-            eq(activityFileIngestions.profile_id, input.profileId),
-            eq(activityFileIngestions.id, ingestion.ingestionId),
-            eq(activityFileIngestions.operation_key, ingestionOperationKey(ingestion, activityId)),
-            eq(activityFileIngestions.source, ingestion.source),
-            eq(activityFileIngestions.status, "processing"),
-            eq(activityFileIngestions.claim_token, ingestion.claimToken),
-            gt(activityFileIngestions.lease_expires_at, sql`clock_timestamp()`),
-          ),
-        )
-        .limit(1);
-      if (!claim) throw new ActivityFileIngestionClaimLostError();
-    }
-    const [existing] = await tx
-      .select()
-      .from(activities)
-      .where(and(eq(activities.id, activityId), eq(activities.profile_id, input.profileId)))
-      .limit(1);
-    if (input.kind === "enrich" && !existing) throw new Error("Activity not found for profile");
-    let existingArtifactDigest: string | null = null;
-    if (existing && ingestion?.artifact) {
-      const [currentArtifact] = await tx
-        .select({ digest: activityArtifacts.digest })
-        .from(activityArtifactLinks)
-        .innerJoin(activityArtifacts, eq(activityArtifacts.id, activityArtifactLinks.artifact_id))
-        .where(
-          and(
-            eq(activityArtifactLinks.activity_id, activityId),
-            eq(activityArtifactLinks.role, "source"),
-            eq(activityArtifactLinks.is_current, true),
-          ),
-        )
-        .limit(1);
-      existingArtifactDigest = currentArtifact?.digest ?? null;
-    }
-    const artifactEvidenceTier = ingestion?.artifact
-      ? ingestion.artifact.format === "fit"
-        ? "fit_artifact"
-        : "raw_samples"
-      : null;
-    const incomingEvidenceTier =
-      input.kind === "enrich"
-        ? (artifactEvidenceTier ?? existing?.canonical_evidence_tier ?? "raw_samples")
-        : (artifactEvidenceTier ??
-          provenance?.evidenceTier ??
-          (provenance ? "provider_summary" : "raw_samples"));
-    if (
-      provenance &&
-      existing &&
-      !canCanonicalEvidenceReplace(existing.canonical_evidence_tier, incomingEvidenceTier)
-    ) {
-      await options.beforePersist?.(tx);
-      await attachActivitySourceReference(tx, {
-        profileId: input.profileId,
-        activityId,
-        integrationId: provenance.integrationId,
-        provider: provenance.provider,
-        providerExternalId: provenance.externalId,
-        providerRevision: provenance.providerUpdatedAt,
-        ...sourceOrigin,
-        ...(ingestion?.artifact?.sha256 === undefined
-          ? {}
-          : { artifactSha256: ingestion.artifact.sha256 }),
-        ...(options.importRunId === undefined ? {} : { importRunId: options.importRunId }),
-        now,
-      });
-      noOp = true;
-      return;
-    }
-
-    if (provenance && existing) {
-      const [sourceReference] = await tx
-        .select({ providerRevision: activitySourceReferences.provider_revision })
-        .from(activitySourceReferences)
-        .where(
-          and(
-            eq(activitySourceReferences.profile_id, input.profileId),
-            eq(activitySourceReferences.provider, provenance.provider),
-            eq(activitySourceReferences.provider_external_id, provenance.externalId),
-          ),
-        )
-        .limit(1);
-      const incomingUpdatedAt = provenance.providerUpdatedAt
-        ? new Date(provenance.providerUpdatedAt)
-        : null;
-      if (ingestion?.artifact) {
-        const decision = providerProjectionDecision({
-          existingProviderUpdatedAt: sourceReference?.providerRevision
-            ? new Date(sourceReference.providerRevision)
-            : null,
-          incomingProviderUpdatedAt: incomingUpdatedAt,
-          existingDigest: existingArtifactDigest,
-          incomingDigest: ingestion.artifact.sha256,
-          existingParserVersion: existing.parser_version,
-          existingDecodedVersion: existing.decoded_contract_version,
-          existingMaterializerVersion: existing.materializer_version,
-        });
-        if (decision === "stale") {
-          await attachActivitySourceReference(tx, {
-            profileId: input.profileId,
-            activityId,
-            integrationId: provenance.integrationId,
-            provider: provenance.provider,
-            providerExternalId: provenance.externalId,
-            providerRevision: sourceReference?.providerRevision ?? provenance.providerUpdatedAt,
-            ...sourceOrigin,
-            artifactSha256: ingestion.artifact.sha256,
-            ...(options.importRunId === undefined ? {} : { importRunId: options.importRunId }),
-            now,
-          });
-          noOp = true;
-          return;
-        }
-        if (decision === "conflict") {
-          throw new Error("Provider payload digest conflicts with the current provider revision");
-        }
-        if (decision === "unsupported-persisted-version") {
-          throw new UnsupportedPersistedActivityVersionError();
-        }
-        if (decision === "exact-redelivery") {
-          await persistReadyActivityFileIngestion(tx, {
-            activityId,
-            artifactId: activityArtifactId(
-              input.profileId,
-              ingestion.artifact.sha256,
-              ingestion.artifact.byteSize,
-            ),
-            profileId: input.profileId,
-            ingestion,
-            now,
-          });
-          await attachActivitySourceReference(tx, {
-            profileId: input.profileId,
-            activityId,
-            integrationId: provenance.integrationId,
-            provider: provenance.provider,
-            providerExternalId: provenance.externalId,
-            providerRevision: provenance.providerUpdatedAt,
-            ...sourceOrigin,
-            artifactSha256: ingestion.artifact.sha256,
-            ...(options.importRunId === undefined ? {} : { importRunId: options.importRunId }),
-            now,
-          });
-          noOp = true;
-          return;
-        }
-      }
-    }
-
-    if (evidence) {
-      await acquireActivityEvidenceProfileLock(tx, input.profileId);
-    }
-
-    const elapsedMs =
-      input.kind === "enrich"
-        ? (input.summaryValues.elapsed_ms ??
-          (input.startedAt && input.finishedAt
-            ? input.finishedAt.getTime() - input.startedAt.getTime()
-            : existing?.elapsed_ms))
-        : input.elapsedMs;
-    if (!elapsedMs || elapsedMs <= 0) throw new Error("Activity elapsed time must be positive");
-    const movingMs =
-      input.kind === "enrich"
-        ? (input.summaryValues.moving_ms ?? existing?.moving_ms ?? null)
-        : (input.movingMs ?? null);
-    if (!input.segmentSet)
-      throw new Error("Activity submission requires an ordered segment manifest");
-    const segmentSet = parseActivitySegments(input.segmentSet);
-    const existingSegments = existing
-      ? await tx
-          .select()
-          .from(activitySegments)
-          .where(eq(activitySegments.activity_id, activityId))
-          .orderBy(asc(activitySegments.ordinal))
-      : [];
-    const canonicalEvidenceMaterialChanged = Boolean(
-      existing &&
-        ((ingestion?.artifact !== undefined &&
-          existingArtifactDigest !== ingestion.artifact.sha256) ||
-          canonicalEvidenceTierRank[incomingEvidenceTier] >
-            canonicalEvidenceTierRank[existing.canonical_evidence_tier] ||
-          canonicalSegmentEvidenceChanged(existingSegments, segmentSet) ||
-          (ingestion?.artifact === undefined &&
-            incomingEvidenceTier === "raw_samples" &&
-            input.kind === "enrich")),
-    );
-    const revision = (existing?.segments_revision ?? 0) + 1;
-    const parserVersion = SUBMISSION_PARSER_VERSION;
-    let laps: ReturnType<typeof activityLapRecordListSchema.parse> | undefined;
-    try {
-      laps =
-        input.laps === undefined ? undefined : activityLapRecordListSchema.parse(input.laps ?? []);
-    } catch (error) {
-      throw new ActivitySubmissionValidationError("activity_laps_invalid", error);
-    }
-    const visibility = input.contentVisibility ?? existing?.content_visibility ?? "private";
-    const targetSnapshot = existing
-      ? null
-      : await captureCompletedActivityPerformanceTargets(tx, { profileId: input.profileId, now });
-    const baseValues = {
-      activity_plan_id:
-        input.activityPlanId === undefined
-          ? (existing?.activity_plan_id ?? null)
-          : input.activityPlanId,
-      name: input.name ?? existing?.name ?? "Activity",
-      notes: input.notes === undefined ? (existing?.notes ?? null) : input.notes,
-      content_visibility: visibility,
-      started_at: input.startedAt ?? existing?.started_at ?? now,
-      finished_at: input.finishedAt ?? existing?.finished_at ?? now,
-      elapsed_ms: elapsedMs,
-      active_ms:
-        input.kind === "enrich"
-          ? (input.summaryValues.active_ms ?? existing?.active_ms ?? null)
-          : (input.activeMs ?? null),
-      moving_ms: movingMs,
-      timing_coverage:
-        input.kind === "enrich"
-          ? (input.summaryValues.timing_coverage ?? existing?.timing_coverage ?? "unavailable")
-          : (input.timingCoverage ?? "unavailable"),
-      segments_revision: revision,
-      parser_version: parserVersion,
-      decoded_contract_version: DECODED_CONTRACT_VERSION,
-      materializer_version: MATERIALIZER_VERSION,
-      canonical_evidence_tier: incomingEvidenceTier,
-      segments_generated_at: now,
-      updated_at: now,
-    };
-
-    await options.beforePersist?.(tx);
-    try {
-      if (existing) {
-        const summaryValues = input.kind === "enrich" ? input.summaryValues : {};
-        const {
-          id: _id,
-          activity_id: _activityId,
-          profile_id: _profileId,
-          created_at: _createdAt,
-          performance_target_snapshot: _performanceTargetSnapshot,
-          ...safeSummaryValues
-        } = summaryValues as typeof summaryValues & {
-          activity_id?: string;
-          performance_target_snapshot?: unknown;
-        };
-        const [updated] = await tx
-          .update(activities)
-          .set({
-            ...safeSummaryValues,
-            ...baseValues,
-            ...(input.kind === "enrich"
+  await withProfileFencedRepeatableReadSnapshot(
+    db,
+    input.profileId,
+    // All provider fetching and artifact promotion has already completed; this
+    // callback contains only relational work and is never partially retried.
+    async (tx) => {
+      const now = new Date();
+      let effortMaterialRecordedAt: Date | null = null;
+      let preInvalidatedCalibrationIdentities: ThresholdImpact[] = [];
+      const provenance = input.kind === "enrich" ? undefined : input.providerProvenance;
+      const ingestion = input.kind === "enrich" ? input.ingestion : input.analysis?.ingestion;
+      const sourceOrigin = provenance
+        ? {
+            ...(provenance.originProvider === undefined
               ? {}
-              : {
-                  pool_length_meters: input.poolLengthMeters ?? null,
-                  total_strokes: input.totalStrokes ?? null,
-                  avg_swolf: input.avgSwolf ?? null,
-                }),
-            device_manufacturer: stringOrNull(input.deviceManufacturer),
-            device_product: stringOrNull(input.deviceProduct),
-            ...(input.mapBounds === undefined ? {} : { map_bounds: input.mapBounds }),
-            ...(input.polyline === undefined ? {} : { polyline: input.polyline }),
-            ...(laps === undefined ? {} : { laps }),
-          })
+              : { originProvider: provenance.originProvider }),
+            ...(provenance.originExternalId === undefined
+              ? {}
+              : { originExternalId: provenance.originExternalId }),
+            ...(provenance.originTrust === undefined
+              ? {}
+              : { originTrust: provenance.originTrust }),
+          }
+        : {};
+      if (provenance) {
+        const resolved = await resolveCanonicalActivityReference(tx, {
+          profileId: input.profileId,
+          integrationId: provenance.integrationId,
+          provider: provenance.provider,
+          providerExternalId: provenance.externalId,
+          providerRevision: provenance.providerUpdatedAt,
+          ...sourceOrigin,
+          ...(ingestion?.artifact?.sha256 === undefined
+            ? {}
+            : { artifactSha256: ingestion.artifact.sha256 }),
+          ...(options.importRunId === undefined ? {} : { importRunId: options.importRunId }),
+        });
+        if (resolved) activityId = resolved;
+      }
+      // Lock and verify the lifecycle fence in this same transaction as every
+      // activity/artifact/link/ingestion write.
+      if (provenance?.provider === "wahoo" && provenance.integrationGeneration !== undefined) {
+        const [activeIntegration] = await tx
+          .select({ id: integrations.id })
+          .from(integrations)
           .where(
             and(
-              eq(activities.id, activityId),
-              eq(activities.profile_id, input.profileId),
-              eq(activities.segments_revision, existing.segments_revision),
+              eq(integrations.id, provenance.integrationId),
+              eq(integrations.profile_id, input.profileId),
+              eq(integrations.provider, "wahoo"),
+              eq(integrations.lifecycle_status, "active"),
+              eq(integrations.generation, provenance.integrationGeneration),
             ),
           )
-          .returning({ id: activities.id });
-        if (!updated) throw new Error("Stale activity materialization revision");
-      } else {
-        if (input.kind === "enrich") throw new Error("Activity not found for profile");
-        await tx.insert(activities).values({
-          id: activityId,
-          profile_id: input.profileId,
-          ...baseValues,
-          distance_meters: input.distanceMeters,
-          elevation_gain_meters: input.elevationGainMeters,
-          calories: input.calories,
-          avg_heart_rate: input.avgHeartRate,
-          max_heart_rate: input.maxHeartRate,
-          avg_power: input.avgPower,
-          max_power: input.maxPower,
-          avg_cadence: input.avgCadence,
-          max_cadence: input.maxCadence,
-          avg_speed_mps: input.avgSpeedMps,
-          max_speed_mps: input.maxSpeedMps,
-          normalized_speed_mps: input.normalizedSpeedMps,
-          avg_temperature: input.avgTemperature,
-          pool_length_meters: input.poolLengthMeters ?? null,
-          total_strokes: input.totalStrokes ?? null,
-          avg_swolf: input.avgSwolf ?? null,
-          device_manufacturer: stringOrNull(input.deviceManufacturer),
-          device_product: stringOrNull(input.deviceProduct),
-          map_bounds: input.mapBounds,
-          polyline: input.polyline,
-          laps: laps ?? [],
-          performance_target_snapshot: targetSnapshot,
-          created_at: now,
-        });
+          .limit(1)
+          .for(evidence ? "update" : "share");
+        if (!activeIntegration) throw new Error("integration_generation_inactive");
       }
-    } catch (error) {
-      throw new ActivityParentPersistenceError(error);
-    }
-
-    if (existing && evidence) {
-      preInvalidatedCalibrationIdentities = await invalidateAllCalibrationEvidenceForActivity(tx, {
-        profileId: input.profileId,
-        activityId,
-        now,
-        reason: "accepted_source_revision_replaced",
-      });
-    }
-
-    let artifactId: string | undefined;
-    if (ingestion) {
-      const artifact = ingestion.artifact;
-      if (!artifact) {
-        throw new Error("Ready activity file ingestion requires an accepted artifact");
+      if (ingestion?.claimToken) {
+        if (!ingestion.ingestionId) {
+          throw new Error("Claimed activity file ingestion requires an ingestion ID");
+        }
+        const [claim] = await tx
+          .select({ id: activityFileIngestions.id })
+          .from(activityFileIngestions)
+          .where(
+            and(
+              eq(activityFileIngestions.profile_id, input.profileId),
+              eq(activityFileIngestions.id, ingestion.ingestionId),
+              eq(
+                activityFileIngestions.operation_key,
+                ingestionOperationKey(ingestion, activityId),
+              ),
+              eq(activityFileIngestions.source, ingestion.source),
+              eq(activityFileIngestions.status, "processing"),
+              eq(activityFileIngestions.claim_token, ingestion.claimToken),
+              gt(activityFileIngestions.lease_expires_at, sql`clock_timestamp()`),
+            ),
+          )
+          .limit(1);
+        if (!claim) throw new ActivityFileIngestionClaimLostError();
       }
-      try {
-        artifactId = await persistArtifactAndLink(tx, {
-          activityId,
-          profileId: input.profileId,
-          artifact,
-          providerRevision:
-            input.kind === "enrich" ? null : (input.providerProvenance?.providerUpdatedAt ?? null),
-          now,
-        });
-      } catch (error) {
-        if (error instanceof ActivityArtifactLifecycleRetryableError) throw error;
-        throw new ActivityArtifactPersistenceError(error);
+      const [existing] = await tx
+        .select()
+        .from(activities)
+        .where(and(eq(activities.id, activityId), eq(activities.profile_id, input.profileId)))
+        .limit(1);
+      if (input.kind === "enrich" && !existing) throw new Error("Activity not found for profile");
+      let existingArtifactDigest: string | null = null;
+      if (existing && ingestion?.artifact) {
+        const [currentArtifact] = await tx
+          .select({ digest: activityArtifacts.digest })
+          .from(activityArtifactLinks)
+          .innerJoin(activityArtifacts, eq(activityArtifacts.id, activityArtifactLinks.artifact_id))
+          .where(
+            and(
+              eq(activityArtifactLinks.activity_id, activityId),
+              eq(activityArtifactLinks.role, "source"),
+              eq(activityArtifactLinks.is_current, true),
+            ),
+          )
+          .limit(1);
+        existingArtifactDigest = currentArtifact?.digest ?? null;
       }
-    }
-    try {
-      await replaceSegments(tx, {
-        activityId,
-        profileId: input.profileId,
-        artifactId,
-        segmentSet,
-        revision,
-        parserVersion,
-        now,
-      });
-    } catch (error) {
-      throw new ActivitySegmentPersistenceError(error);
-    }
-
-    if (provenance) {
-      let attached: Awaited<ReturnType<typeof attachActivitySourceReference>>;
-      try {
-        attached = await attachActivitySourceReference(tx, {
+      const artifactEvidenceTier = ingestion?.artifact
+        ? ingestion.artifact.format === "fit"
+          ? "fit_artifact"
+          : "raw_samples"
+        : null;
+      const incomingEvidenceTier =
+        input.kind === "enrich"
+          ? (artifactEvidenceTier ?? existing?.canonical_evidence_tier ?? "raw_samples")
+          : (artifactEvidenceTier ??
+            provenance?.evidenceTier ??
+            (provenance ? "provider_summary" : "raw_samples"));
+      if (
+        provenance &&
+        existing &&
+        !canCanonicalEvidenceReplace(existing.canonical_evidence_tier, incomingEvidenceTier)
+      ) {
+        await options.beforePersist?.(tx);
+        await attachActivitySourceReference(tx, {
           profileId: input.profileId,
           activityId,
           integrationId: provenance.integrationId,
@@ -1210,105 +922,412 @@ export async function submitActivity(
           ...(options.importRunId === undefined ? {} : { importRunId: options.importRunId }),
           now,
         });
-      } catch (error) {
-        throw new ActivitySourceReferenceError(error);
+        noOp = true;
+        return;
       }
-      if (attached.activityId !== activityId)
-        throw new Error("Canonical activity source race selected a different activity");
-    }
 
-    if (evidence) {
-      let reconciliation: Awaited<
-        ReturnType<typeof reconcileGeneratedActivityEvidenceWithProfileLockHeld>
-      >;
-      try {
-        const efforts = (() => {
-          try {
-            return assignEffortSegments(evidence.efforts, segmentSet);
-          } catch (error) {
-            throw new ActivityCalibrationEvidenceError("activity_effort_segment_mismatch", error);
-          }
-        })();
-        reconciliation = await reconcileGeneratedActivityEvidenceWithProfileLockHeld(tx, {
-          activityId,
-          profileId: input.profileId,
-          efforts,
-          detectedLTHR: evidence.detectedLTHR,
-          ...(preInvalidatedCalibrationIdentities.length === 0
-            ? {}
-            : { preInvalidatedCalibrationIdentities }),
-          now,
-        });
-      } catch (error) {
-        if (error instanceof ActivityCalibrationEvidenceError) throw error;
-        throw new ActivityCalibrationEvidenceError(
-          error instanceof Error && error.name === "ZodError"
-            ? "activity_calibration_evidence_invalid"
-            : "activity_effort_reconciliation_invalid",
-          error,
-        );
-      }
-      effortMaterialRecordedAt = reconciliation.effortMaterialRecordedAt;
-    }
-    if (input.kind !== "enrich" && input.composition) {
-      compositionResult = await input.composition.persist(tx, { activityId, now });
-    }
-    if (ingestion && artifactId) {
-      try {
-        await persistReadyActivityFileIngestion(tx, {
-          activityId,
-          artifactId,
-          profileId: input.profileId,
-          ingestion,
-          now,
-        });
-      } catch (error) {
-        throw new ActivityFileIngestionPersistenceError(error);
-      }
-    }
-    let athleteStateEvidence: Awaited<ReturnType<typeof materializeActivityAthleteStateEvidence>>;
-    try {
-      athleteStateEvidence = await materializeActivityAthleteStateEvidence(tx, {
-        profileId: input.profileId,
-        activityId,
-        computedAt: now,
-        contextDb: db,
-        canonicalEvidenceMaterialChanged,
-        effortMaterialRecordedAt,
-        ...(options.deferAthleteStateRefresh === undefined
-          ? {}
-          : { deferAthleteStateRefresh: options.deferAthleteStateRefresh }),
-      });
-    } catch (error) {
-      throw new ActivityAthleteStateEvidenceError(error);
-    }
-    if (athleteStateEvidence.materialChanged && provenance && options.importRunId) {
-      if (!athleteStateEvidence.effectiveAt) {
-        throw new Error("Material athlete evidence is missing its effective time");
-      }
-      let marked: { id: string } | undefined;
-      try {
-        [marked] = await tx
-          .update(activitySourceReferences)
-          .set({
-            last_material_import_run_id: options.importRunId,
-            last_material_effective_at: athleteStateEvidence.effectiveAt,
-            updated_at: now,
-          })
+      if (provenance && existing) {
+        const [sourceReference] = await tx
+          .select({ providerRevision: activitySourceReferences.provider_revision })
+          .from(activitySourceReferences)
           .where(
             and(
               eq(activitySourceReferences.profile_id, input.profileId),
               eq(activitySourceReferences.provider, provenance.provider),
               eq(activitySourceReferences.provider_external_id, provenance.externalId),
-              eq(activitySourceReferences.activity_id, activityId),
             ),
           )
-          .returning({ id: activitySourceReferences.id });
-      } catch (error) {
-        throw new ActivityMaterialEvidenceMarkerError(error);
+          .limit(1);
+        const incomingUpdatedAt = provenance.providerUpdatedAt
+          ? new Date(provenance.providerUpdatedAt)
+          : null;
+        if (ingestion?.artifact) {
+          const decision = providerProjectionDecision({
+            existingProviderUpdatedAt: sourceReference?.providerRevision
+              ? new Date(sourceReference.providerRevision)
+              : null,
+            incomingProviderUpdatedAt: incomingUpdatedAt,
+            existingDigest: existingArtifactDigest,
+            incomingDigest: ingestion.artifact.sha256,
+            existingParserVersion: existing.parser_version,
+            existingDecodedVersion: existing.decoded_contract_version,
+            existingMaterializerVersion: existing.materializer_version,
+          });
+          if (decision === "stale") {
+            await attachActivitySourceReference(tx, {
+              profileId: input.profileId,
+              activityId,
+              integrationId: provenance.integrationId,
+              provider: provenance.provider,
+              providerExternalId: provenance.externalId,
+              providerRevision: sourceReference?.providerRevision ?? provenance.providerUpdatedAt,
+              ...sourceOrigin,
+              artifactSha256: ingestion.artifact.sha256,
+              ...(options.importRunId === undefined ? {} : { importRunId: options.importRunId }),
+              now,
+            });
+            noOp = true;
+            return;
+          }
+          if (decision === "conflict") {
+            throw new Error("Provider payload digest conflicts with the current provider revision");
+          }
+          if (decision === "unsupported-persisted-version") {
+            throw new UnsupportedPersistedActivityVersionError();
+          }
+          if (decision === "exact-redelivery") {
+            await persistReadyActivityFileIngestion(tx, {
+              activityId,
+              artifactId: activityArtifactId(
+                input.profileId,
+                ingestion.artifact.sha256,
+                ingestion.artifact.byteSize,
+              ),
+              profileId: input.profileId,
+              ingestion,
+              now,
+            });
+            await attachActivitySourceReference(tx, {
+              profileId: input.profileId,
+              activityId,
+              integrationId: provenance.integrationId,
+              provider: provenance.provider,
+              providerExternalId: provenance.externalId,
+              providerRevision: provenance.providerUpdatedAt,
+              ...sourceOrigin,
+              artifactSha256: ingestion.artifact.sha256,
+              ...(options.importRunId === undefined ? {} : { importRunId: options.importRunId }),
+              now,
+            });
+            noOp = true;
+            return;
+          }
+        }
       }
-      if (!marked) throw new Error("Material activity import source marker could not be persisted");
-    }
-  });
+
+      const elapsedMs =
+        input.kind === "enrich"
+          ? (input.summaryValues.elapsed_ms ??
+            (input.startedAt && input.finishedAt
+              ? input.finishedAt.getTime() - input.startedAt.getTime()
+              : existing?.elapsed_ms))
+          : input.elapsedMs;
+      if (!elapsedMs || elapsedMs <= 0) throw new Error("Activity elapsed time must be positive");
+      const movingMs =
+        input.kind === "enrich"
+          ? (input.summaryValues.moving_ms ?? existing?.moving_ms ?? null)
+          : (input.movingMs ?? null);
+      if (!input.segmentSet)
+        throw new Error("Activity submission requires an ordered segment manifest");
+      const segmentSet = parseActivitySegments(input.segmentSet);
+      const existingSegments = existing
+        ? await tx
+            .select()
+            .from(activitySegments)
+            .where(eq(activitySegments.activity_id, activityId))
+            .orderBy(asc(activitySegments.ordinal))
+        : [];
+      const canonicalEvidenceMaterialChanged = Boolean(
+        existing &&
+          ((ingestion?.artifact !== undefined &&
+            existingArtifactDigest !== ingestion.artifact.sha256) ||
+            canonicalEvidenceTierRank[incomingEvidenceTier] >
+              canonicalEvidenceTierRank[existing.canonical_evidence_tier] ||
+            canonicalSegmentEvidenceChanged(existingSegments, segmentSet) ||
+            (ingestion?.artifact === undefined &&
+              incomingEvidenceTier === "raw_samples" &&
+              input.kind === "enrich")),
+      );
+      const revision = (existing?.segments_revision ?? 0) + 1;
+      const parserVersion = SUBMISSION_PARSER_VERSION;
+      let laps: ReturnType<typeof activityLapRecordListSchema.parse> | undefined;
+      try {
+        laps =
+          input.laps === undefined
+            ? undefined
+            : activityLapRecordListSchema.parse(input.laps ?? []);
+      } catch (error) {
+        throw new ActivitySubmissionValidationError("activity_laps_invalid", error);
+      }
+      const visibility = input.contentVisibility ?? existing?.content_visibility ?? "private";
+      const targetSnapshot = existing
+        ? null
+        : await captureCompletedActivityPerformanceTargets(tx, { profileId: input.profileId, now });
+      const baseValues = {
+        activity_plan_id:
+          input.activityPlanId === undefined
+            ? (existing?.activity_plan_id ?? null)
+            : input.activityPlanId,
+        name: input.name ?? existing?.name ?? "Activity",
+        notes: input.notes === undefined ? (existing?.notes ?? null) : input.notes,
+        content_visibility: visibility,
+        started_at: input.startedAt ?? existing?.started_at ?? now,
+        finished_at: input.finishedAt ?? existing?.finished_at ?? now,
+        elapsed_ms: elapsedMs,
+        active_ms:
+          input.kind === "enrich"
+            ? (input.summaryValues.active_ms ?? existing?.active_ms ?? null)
+            : (input.activeMs ?? null),
+        moving_ms: movingMs,
+        timing_coverage:
+          input.kind === "enrich"
+            ? (input.summaryValues.timing_coverage ?? existing?.timing_coverage ?? "unavailable")
+            : (input.timingCoverage ?? "unavailable"),
+        segments_revision: revision,
+        parser_version: parserVersion,
+        decoded_contract_version: DECODED_CONTRACT_VERSION,
+        materializer_version: MATERIALIZER_VERSION,
+        canonical_evidence_tier: incomingEvidenceTier,
+        segments_generated_at: now,
+        updated_at: now,
+      };
+
+      await options.beforePersist?.(tx);
+      try {
+        if (existing) {
+          const summaryValues = input.kind === "enrich" ? input.summaryValues : {};
+          const {
+            id: _id,
+            activity_id: _activityId,
+            profile_id: _profileId,
+            created_at: _createdAt,
+            performance_target_snapshot: _performanceTargetSnapshot,
+            ...safeSummaryValues
+          } = summaryValues as typeof summaryValues & {
+            activity_id?: string;
+            performance_target_snapshot?: unknown;
+          };
+          const [updated] = await tx
+            .update(activities)
+            .set({
+              ...safeSummaryValues,
+              ...baseValues,
+              ...(input.kind === "enrich"
+                ? {}
+                : {
+                    pool_length_meters: input.poolLengthMeters ?? null,
+                    total_strokes: input.totalStrokes ?? null,
+                    avg_swolf: input.avgSwolf ?? null,
+                  }),
+              device_manufacturer: stringOrNull(input.deviceManufacturer),
+              device_product: stringOrNull(input.deviceProduct),
+              ...(input.mapBounds === undefined ? {} : { map_bounds: input.mapBounds }),
+              ...(input.polyline === undefined ? {} : { polyline: input.polyline }),
+              ...(laps === undefined ? {} : { laps }),
+            })
+            .where(
+              and(
+                eq(activities.id, activityId),
+                eq(activities.profile_id, input.profileId),
+                eq(activities.segments_revision, existing.segments_revision),
+              ),
+            )
+            .returning({ id: activities.id });
+          if (!updated) throw new Error("Stale activity materialization revision");
+        } else {
+          if (input.kind === "enrich") throw new Error("Activity not found for profile");
+          await tx.insert(activities).values({
+            id: activityId,
+            profile_id: input.profileId,
+            ...baseValues,
+            distance_meters: input.distanceMeters,
+            elevation_gain_meters: input.elevationGainMeters,
+            calories: input.calories,
+            avg_heart_rate: input.avgHeartRate,
+            max_heart_rate: input.maxHeartRate,
+            avg_power: input.avgPower,
+            max_power: input.maxPower,
+            avg_cadence: input.avgCadence,
+            max_cadence: input.maxCadence,
+            avg_speed_mps: input.avgSpeedMps,
+            max_speed_mps: input.maxSpeedMps,
+            normalized_speed_mps: input.normalizedSpeedMps,
+            avg_temperature: input.avgTemperature,
+            pool_length_meters: input.poolLengthMeters ?? null,
+            total_strokes: input.totalStrokes ?? null,
+            avg_swolf: input.avgSwolf ?? null,
+            device_manufacturer: stringOrNull(input.deviceManufacturer),
+            device_product: stringOrNull(input.deviceProduct),
+            map_bounds: input.mapBounds,
+            polyline: input.polyline,
+            laps: laps ?? [],
+            performance_target_snapshot: targetSnapshot,
+            created_at: now,
+          });
+        }
+      } catch (error) {
+        throw new ActivityParentPersistenceError(error);
+      }
+
+      if (existing && evidence) {
+        preInvalidatedCalibrationIdentities = await readThresholdImpactForActivity(tx, {
+          profileId: input.profileId,
+          activityId,
+        });
+        await deleteThresholdEvidenceForActivity(tx, {
+          profileId: input.profileId,
+          activityId,
+          impacts: preInvalidatedCalibrationIdentities,
+        });
+      }
+
+      let artifactId: string | undefined;
+      if (ingestion) {
+        const artifact = ingestion.artifact;
+        if (!artifact) {
+          throw new Error("Ready activity file ingestion requires an accepted artifact");
+        }
+        try {
+          artifactId = await persistArtifactAndLink(tx, {
+            activityId,
+            profileId: input.profileId,
+            artifact,
+            providerRevision:
+              input.kind === "enrich"
+                ? null
+                : (input.providerProvenance?.providerUpdatedAt ?? null),
+            now,
+          });
+        } catch (error) {
+          if (error instanceof ActivityArtifactLifecycleRetryableError) throw error;
+          throw new ActivityArtifactPersistenceError(error);
+        }
+      }
+      try {
+        await replaceSegments(tx, {
+          activityId,
+          profileId: input.profileId,
+          artifactId,
+          segmentSet,
+          revision,
+          parserVersion,
+          now,
+        });
+      } catch (error) {
+        throw new ActivitySegmentPersistenceError(error);
+      }
+
+      if (provenance) {
+        let attached: Awaited<ReturnType<typeof attachActivitySourceReference>>;
+        try {
+          attached = await attachActivitySourceReference(tx, {
+            profileId: input.profileId,
+            activityId,
+            integrationId: provenance.integrationId,
+            provider: provenance.provider,
+            providerExternalId: provenance.externalId,
+            providerRevision: provenance.providerUpdatedAt,
+            ...sourceOrigin,
+            ...(ingestion?.artifact?.sha256 === undefined
+              ? {}
+              : { artifactSha256: ingestion.artifact.sha256 }),
+            ...(options.importRunId === undefined ? {} : { importRunId: options.importRunId }),
+            now,
+          });
+        } catch (error) {
+          throw new ActivitySourceReferenceError(error);
+        }
+        if (attached.activityId !== activityId)
+          throw new Error("Canonical activity source race selected a different activity");
+      }
+
+      if (evidence) {
+        let reconciliation: Awaited<
+          ReturnType<typeof reconcileGeneratedActivityEvidenceWithProfileLockHeld>
+        >;
+        try {
+          const efforts = (() => {
+            try {
+              return assignEffortSegments(evidence.efforts, segmentSet);
+            } catch (error) {
+              throw new ActivityCalibrationEvidenceError("activity_effort_segment_mismatch", error);
+            }
+          })();
+          reconciliation = await reconcileGeneratedActivityEvidenceWithProfileLockHeld(tx, {
+            activityId,
+            profileId: input.profileId,
+            efforts,
+            detectedLTHR: evidence.detectedLTHR,
+            ...(preInvalidatedCalibrationIdentities.length === 0
+              ? {}
+              : { preInvalidatedCalibrationIdentities }),
+            ...(options.deferPerformanceCalibration === undefined
+              ? {}
+              : { deferPerformanceCalibration: options.deferPerformanceCalibration }),
+            now,
+          });
+        } catch (error) {
+          if (error instanceof ActivityCalibrationEvidenceError) throw error;
+          throw new ActivityCalibrationEvidenceError(
+            error instanceof Error && error.name === "ZodError"
+              ? "activity_calibration_evidence_invalid"
+              : "activity_effort_reconciliation_invalid",
+            error,
+          );
+        }
+        effortMaterialRecordedAt = reconciliation.effortMaterialRecordedAt;
+      }
+      if (input.kind !== "enrich" && input.composition) {
+        compositionResult = await input.composition.persist(tx, { activityId, now });
+      }
+      if (ingestion && artifactId) {
+        try {
+          await persistReadyActivityFileIngestion(tx, {
+            activityId,
+            artifactId,
+            profileId: input.profileId,
+            ingestion,
+            now,
+          });
+        } catch (error) {
+          throw new ActivityFileIngestionPersistenceError(error);
+        }
+      }
+      let athleteStateEvidence: Awaited<ReturnType<typeof materializeActivityAthleteStateEvidence>>;
+      try {
+        athleteStateEvidence = await materializeActivityAthleteStateEvidence(tx, {
+          profileId: input.profileId,
+          activityId,
+          computedAt: now,
+          contextDb: tx,
+          canonicalEvidenceMaterialChanged,
+          effortMaterialRecordedAt,
+          ...(options.deferAthleteStateRefresh === undefined
+            ? {}
+            : { deferAthleteStateRefresh: options.deferAthleteStateRefresh }),
+        });
+      } catch (error) {
+        throw new ActivityAthleteStateEvidenceError(error);
+      }
+      if (athleteStateEvidence.materialChanged && provenance && options.importRunId) {
+        if (!athleteStateEvidence.effectiveAt) {
+          throw new Error("Material athlete evidence is missing its effective time");
+        }
+        let marked: { id: string } | undefined;
+        try {
+          [marked] = await tx
+            .update(activitySourceReferences)
+            .set({
+              last_material_import_run_id: options.importRunId,
+              last_material_effective_at: athleteStateEvidence.effectiveAt,
+              updated_at: now,
+            })
+            .where(
+              and(
+                eq(activitySourceReferences.profile_id, input.profileId),
+                eq(activitySourceReferences.provider, provenance.provider),
+                eq(activitySourceReferences.provider_external_id, provenance.externalId),
+                eq(activitySourceReferences.activity_id, activityId),
+              ),
+            )
+            .returning({ id: activitySourceReferences.id });
+        } catch (error) {
+          throw new ActivityMaterialEvidenceMarkerError(error);
+        }
+        if (!marked)
+          throw new Error("Material activity import source marker could not be persisted");
+      }
+    },
+  );
   return { id: activityId, compositionResult, noOp };
 }

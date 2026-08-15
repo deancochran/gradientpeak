@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { analyzeActivityDerivedMetrics } from "../../activity-analysis";
 import { SWIMMING_HEART_RATE_NUMERICAL_TRUST_FIXTURES_V1 as fixtures } from "../../calculations/__tests__/fixtures/swimming-heart-rate-numerical-trust-v1";
 import { calculateCyclingNormalizedPower } from "../../calculations/normalized-power";
-import { buildPerformanceTargetFactsFixture } from "../../performance-model/__tests__/fixtures/target-facts";
+import { buildPerformanceTargetFactsFixture } from "../../testing/performance-model";
 import {
   calculateHeartRateDuration,
   type HeartRateDurationEvidence,

@@ -1,5 +1,11 @@
-import type { AthletePerformanceOverview } from "@repo/core/performance-model";
-import { buildPerformanceOverviewFixture } from "@repo/core/testing/performance-model";
+import {
+  type AthletePerformanceOverview,
+  projectAthletePerformanceOverview,
+} from "@repo/core/performance-model";
+import {
+  buildPerformanceOverviewFixture,
+  buildPerformanceTargetFactsFixture,
+} from "@repo/core/testing/performance-model";
 import { createHost } from "../../test/mock-components";
 import { renderNative, screen } from "../../test/render-native";
 import { PerformanceModelSummary } from "./PerformanceModelSummary";
@@ -21,47 +27,46 @@ jest.mock("@repo/ui/components/text", () => ({
 }));
 
 function overviewFixture(): AthletePerformanceOverview {
-  const overview = buildPerformanceOverviewFixture();
-  return {
-    ...overview,
-    bike: {
-      ...overview.bike,
-      fiveSecondPower: {
-        status: "partial",
-        value: "1,200 W",
-        confidence: "low",
-        freshness: "current",
-        trainingImpact: "Training targets stay unchanged.",
-        action: "Record more activity data.",
-      },
-    },
-  };
+  return buildPerformanceOverviewFixture();
 }
 
 describe("PerformanceModelSummary", () => {
-  it("aligns available, limited, and unavailable athlete states", () => {
+  it("renders the shared canonical summary through native accessibility", () => {
     renderNative(<PerformanceModelSummary overview={overviewFixture()} />);
 
     expect(
       screen.getByLabelText(
-        "Bike Planning threshold power: 247 W, Available. Confidence: High. Freshness: Current. Training impact: Sets cycling power zones and cycling power targets.",
+        "Bike Threshold Power: 250 W, Available. Confidence: High. Freshness: Current. Training impact: Sets cycling power zones and cycling power targets.",
       ),
     ).toBeTruthy();
     expect(
       screen.getByLabelText(
-        "Bike Five-second power: 1,200 W, Limited. Confidence: Low. Freshness: Current. Training impact: Training targets stay unchanged. Record more activity data.",
+        "Run Threshold Pace: 4:10 min/km, Available. Confidence: High. Freshness: Current. Training impact: Sets running pace targets.",
       ),
     ).toBeTruthy();
     expect(
       screen.getByLabelText(
-        "Run Planning threshold pace: Not available, Not available. Training impact: Training targets stay unchanged. Record more activity data.",
-      ),
-    ).toBeTruthy();
-    expect(
-      screen.getByLabelText(
-        "Swim CSS pace: Not available, Not available. Training impact: Training targets stay unchanged.",
+        "Swim Threshold Pace: 1:20 min/100m, Available. Confidence: High. Freshness: Current. Training impact: Sets swimming pace targets.",
       ),
     ).toBeTruthy();
     expect(screen.queryByText(/canonical|as-of|protocol|progressive|max-HR/i)).toBeNull();
+  });
+
+  it("preserves the canonical stale guidance from the shared projection", () => {
+    const overview = projectAthletePerformanceOverview(
+      buildPerformanceTargetFactsFixture({
+        asOf: "2026-07-31T12:00:00.000Z",
+        thresholdEffectiveAt: "2025-01-01T12:00:00.000Z",
+        runThresholdMetersPerSecond: 4,
+      }),
+    );
+
+    renderNative(<PerformanceModelSummary overview={overview} />);
+
+    expect(
+      screen.getByLabelText(
+        "Run Threshold Pace: 4:10 min/km, Available. Confidence: High. Freshness: Out of date. Training impact: Sets running pace targets. Record more recent activity data.",
+      ),
+    ).toBeTruthy();
   });
 });

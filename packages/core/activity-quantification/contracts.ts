@@ -198,7 +198,6 @@ export const activityNativeIntensityValueSchema = z
           "ftp",
           "critical_power",
           "threshold_speed",
-          "css",
           "lthr",
           "provider_threshold",
           "unspecified_threshold",

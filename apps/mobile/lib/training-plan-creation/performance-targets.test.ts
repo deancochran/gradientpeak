@@ -11,7 +11,8 @@ describe("resolveMobilePlanningPerformanceTargets", () => {
   it("preserves an owner-only canonical snapshot and its evidence identity", () => {
     const snapshot = buildPerformanceTargetFactsFixture({
       asOf,
-      planningThresholdPowerWatts: 250,
+      thresholdEffectiveAt: "2025-01-01T00:00:00.000Z",
+      bikeThresholdWatts: 250,
     });
 
     expect(
@@ -20,9 +21,14 @@ describe("resolveMobilePlanningPerformanceTargets", () => {
         fallbackAsOf: "2026-06-02T00:00:00.000Z",
       }),
     ).toBe(snapshot);
-    expect(snapshot.cycling.planningThresholdPower.sourceEvidenceIds).toEqual([
-      "planning-threshold-power-evidence",
-    ]);
+    expect(snapshot.thresholds.bike).toMatchObject({
+      freshness: "stale",
+      thresholdId: "bike-threshold-test-fixture",
+      evaluationId: "bike-evaluation-test-fixture",
+      sourceEvaluationIds: ["bike-evaluation-test-fixture"],
+      sourceEffortIds: ["bike-effort-test-fixture"],
+      sourceActivityIds: ["bike-activity-test-fixture"],
+    });
   });
 
   it("uses an explicit unavailable snapshot instead of a numeric fallback on query failure", () => {
@@ -32,12 +38,12 @@ describe("resolveMobilePlanningPerformanceTargets", () => {
     });
 
     expect(snapshot.asOf).toBe(asOf);
-    expect(snapshot.cycling.planningThresholdPower).toMatchObject({
+    expect(snapshot.thresholds.bike).toMatchObject({
       status: "unavailable",
       value: null,
     });
-    expect(snapshot.running.planningThresholdPace.value).toBeNull();
-    expect(snapshot.swimming.css.value).toBeNull();
+    expect(snapshot.thresholds.run.value).toBeNull();
+    expect(snapshot.thresholds.swim.value).toBeNull();
     expect(snapshot.heartRate.bike.lthr.valueBpm).toBeNull();
   });
 

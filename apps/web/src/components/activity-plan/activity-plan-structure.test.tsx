@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { createUnavailableAthletePerformanceTargetFacts } from "@repo/core/performance-model";
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { ActivityPlanStructure } from "./activity-plan-structure";
@@ -37,22 +38,11 @@ const structure = {
 describe("ActivityPlanStructure", () => {
   afterEach(cleanup);
   it("shows confirmed personalized targets with their abstract source context", () => {
-    const unavailable = createUnavailableAthletePerformanceTargetFacts(asOf, "athlete-1");
-    const performanceTargets = {
-      ...unavailable,
-      cycling: {
-        planningThresholdPower: {
-          ...unavailable.cycling.planningThresholdPower,
-          status: "available" as const,
-          calibrationState: "confirmed" as const,
-          value: 300,
-          confidence: "high" as const,
-          expiresAt: "2026-08-13T12:00:00.000Z",
-          sourceEvidenceIds: ["evidence-1"],
-          evidenceTime: { observedFrom: asOf, observedThrough: asOf, computedAt: asOf },
-        },
-      },
-    };
+    const performanceTargets = buildPerformanceTargetFactsFixture({
+      asOf,
+      athleteId: "athlete-1",
+      bikeThresholdWatts: 300,
+    });
 
     render(
       <ActivityPlanStructure
@@ -65,23 +55,16 @@ describe("ActivityPlanStructure", () => {
     expect(screen.getByText(/240 W \(80% FTP\)/)).toBeTruthy();
   });
 
-  it("keeps an expired confirmed target abstract even when the snapshot predates expiry", () => {
-    const unavailable = createUnavailableAthletePerformanceTargetFacts(asOf, "athlete-1");
-    const performanceTargets = {
-      ...unavailable,
-      cycling: {
-        planningThresholdPower: {
-          ...unavailable.cycling.planningThresholdPower,
-          status: "available" as const,
-          calibrationState: "confirmed" as const,
-          value: 300,
-          confidence: "high" as const,
-          expiresAt: "2026-08-13T12:00:00.000Z",
-          sourceEvidenceIds: ["evidence-1"],
-          evidenceTime: { observedFrom: asOf, observedThrough: asOf, computedAt: asOf },
-        },
-      },
-    };
+  it("keeps a stale canonical threshold usable without expiry suppression", () => {
+    const performanceTargets = buildPerformanceTargetFactsFixture({
+      asOf,
+      athleteId: "athlete-1",
+      bikeThresholdWatts: 300,
+    });
+    if (performanceTargets.thresholds.bike.status !== "available") {
+      throw new Error("Expected an available bike threshold fixture.");
+    }
+    performanceTargets.thresholds.bike.freshness = "stale";
 
     render(
       <ActivityPlanStructure
@@ -91,8 +74,7 @@ describe("ActivityPlanStructure", () => {
       />,
     );
 
-    expect(screen.getByText(/80% FTP$/, { exact: false })).toBeTruthy();
-    expect(screen.queryByText(/240 W/)).toBeNull();
+    expect(screen.getByText(/240 W \(80% FTP\)/)).toBeTruthy();
   });
 
   it("keeps targets abstract when their calibration is unavailable", () => {

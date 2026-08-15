@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { BEST_EFFORT_CALCULATION_VERSION } from "../calculations/best-efforts";
+import { metersPerSecondToSecondsPerKilometer } from "../units";
 import {
   type CanonicalRunningDurationEffortEvidence,
   canonicalRunningDurationEffortEvidenceSchema,
@@ -555,7 +556,7 @@ function fitFailureReason(reason: InverseDurationFitFailure): RunningPerformance
 }
 
 function pace(speedMetersPerSecond: number): number {
-  return 1_000 / speedMetersPerSecond;
+  return metersPerSecondToSecondsPerKilometer(speedMetersPerSecond);
 }
 
 function unavailableLevel(input: {

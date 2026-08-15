@@ -26,6 +26,7 @@ import { canonicalActivityCategoryDbValues } from "./canonical-activity-categori
 import { athleteReadScopeDbValues, organizationRoleKeyDbValues } from "./core-enum-parity";
 
 import {
+  activityEffortSourceSeriesEnum,
   activityFileIngestionSourceEnum,
   activityFileIngestionStatusEnum,
   activitySessionRpeSourceEnum,
@@ -39,11 +40,11 @@ import {
   likeEntityTypeEnum,
   notificationTypeEnum,
   onboardingStatusEnum,
-  performanceCalibrationEvidenceStateEnum,
-  performanceCalibrationMetricKeyEnum,
-  performanceCalibrationRejectionReasonEnum,
-  performanceCalibrationSourceSemanticsEnum,
   profileMetricTypeEnum,
+  thresholdEvaluationEffortRoleEnum,
+  thresholdEvaluationOutcomeEnum,
+  thresholdEvaluationRejectionReasonEnum,
+  thresholdMetricEnum,
 } from "./enums";
 
 const preferredUnitSystemDbValues =
@@ -1620,6 +1621,14 @@ export const activitySegments = pgTable(
       table.profile_id,
       table.activity_category,
     ),
+    unique("activity_segments_effort_source_unique").on(
+      table.id,
+      table.activity_id,
+      table.profile_id,
+      table.activity_category,
+      table.source_artifact_id,
+      table.segment_revision,
+    ),
     unique("activity_segments_activity_ordinal_unique").on(table.activity_id, table.ordinal),
     check("activity_segments_ordinal_check", sql`${table.ordinal} >= 0`),
     check(
@@ -1863,9 +1872,15 @@ export const activityEfforts = pgTable(
       .notNull()
       .references(() => canonicalActivityCategories.code, { onDelete: "restrict" }),
     effort_type: effortTypeEnum("effort_type").notNull(),
+    source_series: activityEffortSourceSeriesEnum("source_series").notNull(),
     duration_seconds: integer("duration_seconds").notNull(),
     distance_meters: integer("distance_meters"),
-    start_offset: integer("start_offset"),
+    source_artifact_id: uuid("source_artifact_id").notNull(),
+    source_revision: integer("source_revision").notNull(),
+    start_offset_ms: bigint("start_offset_ms", { mode: "number" }).notNull(),
+    end_offset_ms: bigint("end_offset_ms", { mode: "number" }).notNull(),
+    window_coverage: numeric("window_coverage", { mode: "number" }).notNull(),
+    max_gap_seconds: numeric("max_gap_seconds", { mode: "number" }).notNull(),
     unit: text("unit").notNull(),
     value: real("value").notNull(),
     source: evidenceObservationSourceEnum("source").notNull(),
@@ -1876,25 +1891,70 @@ export const activityEfforts = pgTable(
   },
   (table) => [
     foreignKey({
-      columns: [table.segment_id, table.activity_id, table.profile_id, table.activity_category],
+      columns: [
+        table.segment_id,
+        table.activity_id,
+        table.profile_id,
+        table.activity_category,
+        table.source_artifact_id,
+        table.source_revision,
+      ],
       foreignColumns: [
         activitySegments.id,
         activitySegments.activity_id,
         activitySegments.profile_id,
         activitySegments.activity_category,
+        activitySegments.source_artifact_id,
+        activitySegments.segment_revision,
       ],
-      name: "activity_efforts_segment_activity_profile_category_fkey",
+      name: "activity_efforts_exact_source_fkey",
     }).onDelete("cascade"),
+    unique("activity_efforts_ownership_unique").on(
+      table.id,
+      table.profile_id,
+      table.activity_id,
+      table.activity_category,
+      table.effort_type,
+      table.source_series,
+      table.source_revision,
+    ),
+    unique("activity_efforts_deterministic_source_window_unique").on(
+      table.activity_id,
+      table.segment_id,
+      table.source_artifact_id,
+      table.source_revision,
+      table.effort_type,
+      table.source_series,
+      table.start_offset_ms,
+      table.end_offset_ms,
+      table.method,
+      table.calculation_version,
+    ),
     index("idx_activity_efforts_activity_id").on(table.activity_id),
     index("idx_activity_efforts_segment_id").on(table.segment_id),
-    index("idx_activity_efforts_athlete_state_replay").on(table.profile_id, table.id),
-    check(
-      "activity_efforts_duration_seconds_bounds_check",
-      sql`${table.duration_seconds} between 1 and 14400`,
+    index("idx_activity_efforts_source_revision").on(
+      table.activity_id,
+      table.source_revision,
+      table.source_artifact_id,
     ),
+    index("idx_activity_efforts_athlete_state_replay").on(table.profile_id, table.id),
+    check("activity_efforts_duration_seconds_positive_check", sql`${table.duration_seconds} > 0`),
     check(
       "activity_efforts_distance_meters_bounds_check",
-      sql`${table.distance_meters} is null or ${table.distance_meters} between 1 and 1000000`,
+      sql`${table.distance_meters} is null or ${table.distance_meters} > 0`,
+    ),
+    check("activity_efforts_source_revision_check", sql`${table.source_revision} > 0`),
+    check(
+      "activity_efforts_window_check",
+      sql`${table.start_offset_ms} >= 0 and ${table.end_offset_ms} = ${table.start_offset_ms} + ${table.duration_seconds}::bigint * 1000`,
+    ),
+    check(
+      "activity_efforts_coverage_finite_range_check",
+      sql`${table.window_coverage} between 0 and 1 and ${table.window_coverage} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
+    ),
+    check(
+      "activity_efforts_max_gap_finite_check",
+      sql`${table.max_gap_seconds} > 0 and ${table.max_gap_seconds} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
     ),
     check(
       "activity_efforts_value_finite_positive_check",
@@ -1902,7 +1962,7 @@ export const activityEfforts = pgTable(
     ),
     check(
       "activity_efforts_supported_combination_check",
-      sql`(${table.activity_category} = 'bike' and ${table.effort_type} = 'power') or (${table.activity_category} in ('run', 'swim') and ${table.effort_type} = 'speed') or (${table.activity_category} in ('bike', 'run', 'swim') and ${table.effort_type}::text = 'heart_rate')`,
+      sql`(${table.activity_category} = 'bike' and ${table.effort_type} = 'power' and ${table.source_series} = 'power') or (${table.activity_category} = 'run' and ${table.effort_type} = 'speed' and ${table.source_series} in ('grade_adjusted_speed', 'raw_speed')) or (${table.activity_category} = 'swim' and ${table.effort_type} = 'speed' and ${table.source_series} = 'swim_speed') or (${table.activity_category} in ('bike', 'run', 'swim') and ${table.effort_type}::text = 'heart_rate' and ${table.source_series} = 'heart_rate')`,
     ),
     check(
       "activity_efforts_unit_compatibility_check",
@@ -1940,427 +2000,272 @@ export const activityEfforts = pgTable(
   ],
 );
 
-/** Qualified source protocol only; CSS remains a derived Core model output. */
-export const swimmingCssProtocolEvidence = pgTable(
-  "swimming_css_protocol_evidence",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    protocol_id: text("protocol_id").notNull(),
-    evidence_id: text("evidence_id").notNull(),
-    evidence_revision: integer("evidence_revision").notNull(),
-    profile_id: uuid("profile_id").notNull(),
-    activity_id: uuid("activity_id").notNull(),
-    source_artifact_id: uuid("source_artifact_id").notNull(),
-    source_artifact_digest: text("source_artifact_digest").notNull(),
-    observed_at: timestamp("observed_at", { withTimezone: true, mode: "date" }).notNull(),
-    protocol: text("protocol").notNull(),
-    environment: text("environment").notNull(),
-    pool_length_meters: real("pool_length_meters").notNull(),
-    timing_basis: text("timing_basis").notNull(),
-    status: text("status", { enum: ["qualified"] }).notNull(),
-    reasons: jsonb("reasons").notNull().default(sql`'[]'::jsonb`),
-    effort_400_id: uuid("effort_400_id").notNull(),
-    effort_400_evidence_revision: integer("effort_400_evidence_revision").notNull(),
-    effort_400_segment_id: uuid("effort_400_segment_id").notNull(),
-    effort_400_observed_at: timestamp("effort_400_observed_at", {
-      withTimezone: true,
-      mode: "date",
-    }).notNull(),
-    effort_400_duration_seconds: integer("effort_400_duration_seconds").notNull(),
-    effort_400_start_offset_ms: bigint("effort_400_start_offset_ms", { mode: "number" }).notNull(),
-    effort_400_end_offset_ms: bigint("effort_400_end_offset_ms", { mode: "number" }).notNull(),
-    effort_200_id: uuid("effort_200_id").notNull(),
-    effort_200_evidence_revision: integer("effort_200_evidence_revision").notNull(),
-    effort_200_segment_id: uuid("effort_200_segment_id").notNull(),
-    effort_200_observed_at: timestamp("effort_200_observed_at", {
-      withTimezone: true,
-      mode: "date",
-    }).notNull(),
-    effort_200_duration_seconds: integer("effort_200_duration_seconds").notNull(),
-    effort_200_start_offset_ms: bigint("effort_200_start_offset_ms", { mode: "number" }).notNull(),
-    effort_200_end_offset_ms: bigint("effort_200_end_offset_ms", { mode: "number" }).notNull(),
-    calculation_version: text("calculation_version").notNull(),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    foreignKey({
-      columns: [table.activity_id, table.profile_id],
-      foreignColumns: [activities.id, activities.profile_id],
-      name: "swimming_css_protocol_evidence_activity_profile_fkey",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [table.activity_id, table.source_artifact_id, table.profile_id],
-      foreignColumns: [
-        activityArtifactLinks.activity_id,
-        activityArtifactLinks.artifact_id,
-        activityArtifactLinks.profile_id,
-      ],
-      name: "swimming_css_protocol_evidence_source_link_fkey",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [table.effort_400_id],
-      foreignColumns: [activityEfforts.id],
-      name: "swimming_css_protocol_evidence_effort_400_fkey",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [table.effort_200_id],
-      foreignColumns: [activityEfforts.id],
-      name: "swimming_css_protocol_evidence_effort_200_fkey",
-    }).onDelete("cascade"),
-    unique("swimming_css_protocol_evidence_profile_protocol_id_unique").on(
-      table.profile_id,
-      table.protocol_id,
-    ),
-    unique("swimming_css_protocol_evidence_profile_activity_protocol_unique").on(
-      table.profile_id,
-      table.activity_id,
-      table.protocol,
-    ),
-    unique("swimming_css_protocol_evidence_profile_evidence_id_unique").on(
-      table.profile_id,
-      table.evidence_id,
-    ),
-    check(
-      "swimming_css_protocol_evidence_protocol_identity_check",
-      sql`${table.protocol} = 'css_400m_200m' and ${table.protocol_id} = 'css_400m_200m:' || ${table.activity_id}::text`,
-    ),
-    check(
-      "swimming_css_protocol_evidence_content_identity_check",
-      sql`${table.evidence_id} ~ '^sha256:[0-9a-f]{64}$' and ${table.source_artifact_digest} ~ '^[0-9a-f]{64}$'`,
-    ),
-    check(
-      "swimming_css_protocol_evidence_context_check",
-      sql`${table.environment} = 'pool' and ${table.timing_basis} = 'pool_length_timing' and ${table.pool_length_meters} between 10 and 100 and ${table.pool_length_meters} not in ('NaN'::real, 'Infinity'::real, '-Infinity'::real)`,
-    ),
-    check(
-      "swimming_css_protocol_evidence_status_check",
-      sql`${table.status} = 'qualified' and jsonb_typeof(${table.reasons}) = 'array' and jsonb_array_length(${table.reasons}) = 0`,
-    ),
-    check(
-      "swimming_css_protocol_evidence_revision_check",
-      sql`${table.evidence_revision} > 0 and ${table.effort_400_evidence_revision} = ${table.evidence_revision} and ${table.effort_200_evidence_revision} = ${table.evidence_revision}`,
-    ),
-    check(
-      "swimming_css_protocol_evidence_distinct_efforts_check",
-      sql`${table.effort_400_id} <> ${table.effort_200_id} and ${table.effort_400_segment_id} <> ${table.effort_200_segment_id}`,
-    ),
-    check(
-      "swimming_css_protocol_evidence_duration_check",
-      sql`${table.effort_400_duration_seconds} between 1 and 14400 and ${table.effort_200_duration_seconds} between 1 and 14400 and ${table.effort_400_duration_seconds} > 2 * ${table.effort_200_duration_seconds} and (${table.effort_400_duration_seconds} - ${table.effort_200_duration_seconds})::double precision / 2 between 45 and 600`,
-    ),
-    check(
-      "swimming_css_protocol_evidence_order_check",
-      sql`${table.effort_400_start_offset_ms} >= 0 and ${table.effort_400_end_offset_ms} > ${table.effort_400_start_offset_ms} and ${table.effort_200_start_offset_ms} >= ${table.effort_400_end_offset_ms} and ${table.effort_200_end_offset_ms} > ${table.effort_200_start_offset_ms} and ${table.effort_400_observed_at} <= ${table.effort_200_observed_at} and ${table.observed_at} = ${table.effort_200_observed_at}`,
-    ),
-    check(
-      "swimming_css_protocol_evidence_calculation_version_check",
-      sql`${table.calculation_version} = 'canonical-swim-css-protocol-evidence-v1'`,
-    ),
-    index("idx_swimming_css_protocol_evidence_profile_observed")
-      .on(table.profile_id, table.observed_at, table.id)
-      .where(sql`${table.status} = 'qualified'`),
-    index("idx_swimming_css_protocol_evidence_activity").on(table.activity_id),
-    index("idx_swimming_css_protocol_evidence_source_artifact").on(table.source_artifact_id),
-  ],
-);
-
-/** Immutable policy evaluations over accepted activity source revisions. */
-export const performanceCalibrationEvidence = pgTable(
-  "performance_calibration_evidence",
+/** Immutable, idempotent policy outcomes over one activity source revision. */
+export const thresholdEvaluations = pgTable(
+  "threshold_evaluations",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     profile_id: uuid("profile_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
-    metric_key: performanceCalibrationMetricKeyEnum("metric_key").notNull(),
     activity_category: text("activity_category", { enum: canonicalActivityCategoryDbValues })
       .notNull()
       .references(() => canonicalActivityCategories.code, { onDelete: "restrict" }),
+    metric: thresholdMetricEnum("metric").notNull(),
+    method: text("method").notNull(),
+    outcome: thresholdEvaluationOutcomeEnum("outcome").notNull(),
     value: numeric("value", { mode: "number" }),
     unit: text("unit").notNull(),
+    confidence: numeric("confidence", { mode: "number" }),
     observed_at: timestamp("observed_at", { withTimezone: true, mode: "date" }).notNull(),
-    activity_id: uuid("activity_id").notNull(),
-    segment_id: uuid("segment_id").notNull(),
-    segment_revision: bigint("segment_revision", { mode: "number" }).notNull(),
-    source_artifact_id: uuid("source_artifact_id").notNull(),
-    state: performanceCalibrationEvidenceStateEnum("state").notNull(),
-    rejection_reason: performanceCalibrationRejectionReasonEnum("rejection_reason"),
+    rejection_reason: thresholdEvaluationRejectionReasonEnum("rejection_reason"),
     policy_version: text("policy_version").notNull(),
-    source_semantics: performanceCalibrationSourceSemanticsEnum("source_semantics").notNull(),
     diagnostics: jsonb("diagnostics").notNull(),
+    source_activity_id: uuid("source_activity_id").notNull(),
+    source_revision: integer("source_revision").notNull(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
-    invalidated_at: timestamp("invalidated_at", { withTimezone: true, mode: "date" }),
-    invalidation_reason: text("invalidation_reason"),
   },
   (table) => [
-    unique("performance_calibration_evidence_source_policy_unique").on(
-      table.activity_id,
-      table.segment_id,
-      table.segment_revision,
-      table.source_artifact_id,
-      table.metric_key,
+    foreignKey({
+      columns: [table.source_activity_id, table.profile_id],
+      foreignColumns: [activities.id, activities.profile_id],
+      name: "threshold_evaluations_source_activity_profile_fkey",
+    }).onDelete("cascade"),
+    unique("threshold_evaluations_idempotency_unique").on(
+      table.profile_id,
+      table.source_activity_id,
+      table.source_revision,
+      table.activity_category,
+      table.metric,
+      table.method,
       table.policy_version,
     ),
-    unique("performance_calibration_evidence_identity_unique").on(
+    unique("threshold_evaluations_ownership_unique").on(
       table.id,
       table.profile_id,
-      table.metric_key,
       table.activity_category,
+      table.metric,
+    ),
+    unique("threshold_evaluations_qualified_identity_unique").on(
+      table.id,
+      table.profile_id,
+      table.activity_category,
+      table.metric,
+      table.outcome,
     ),
     check(
-      "performance_calibration_evidence_state_values_check",
-      sql`(${table.state} = 'candidate' and ${table.value} is not null and ${table.rejection_reason} is null and ${table.invalidated_at} is null and ${table.invalidation_reason} is null) or (${table.state} = 'rejected' and ${table.value} is null and ${table.rejection_reason} is not null and ${table.invalidated_at} is null and ${table.invalidation_reason} is null) or (${table.state} = 'invalidated' and ${table.value} is not null and ${table.rejection_reason} is null and ${table.invalidated_at} is not null and ${table.invalidated_at} >= ${table.created_at} and ${table.invalidation_reason} is not null and btrim(${table.invalidation_reason}) <> '')`,
+      "threshold_evaluations_outcome_check",
+      sql`(${table.outcome} = 'qualified' and ${table.value} is not null and ${table.confidence} is not null and ${table.rejection_reason} is null) or (${table.outcome} = 'rejected' and ${table.value} is null and ${table.confidence} is null and ${table.rejection_reason} is not null)`,
     ),
     check(
-      "performance_calibration_evidence_unit_check",
-      sql`(${table.metric_key} = 'threshold_power' and ${table.unit} = 'watts') or (${table.metric_key} = 'threshold_speed' and ${table.unit} = 'meters_per_second') or (${table.metric_key} = 'threshold_heart_rate' and ${table.unit} = 'beats_per_minute')`,
+      "threshold_evaluations_identity_check",
+      sql`(${table.activity_category} = 'bike' and ${table.metric} = 'power' and ${table.method} = 'bike_power_30m' and ${table.unit} = 'watts') or (${table.activity_category} = 'run' and ${table.metric} = 'speed' and ${table.method} = 'run_speed_30m' and ${table.unit} = 'meters_per_second') or (${table.activity_category} = 'swim' and ${table.metric} = 'speed' and ${table.method} = 'swim_speed_15m' and ${table.unit} = 'meters_per_second')`,
     ),
     check(
-      "performance_calibration_evidence_identity_check",
-      sql`(${table.metric_key} = 'threshold_power' and ${table.activity_category} = 'bike') or (${table.metric_key} = 'threshold_speed' and ${table.activity_category} in ('run', 'swim')) or (${table.metric_key} = 'threshold_heart_rate' and ${table.activity_category} in ('bike', 'run'))`,
+      "threshold_evaluations_value_finite_positive_check",
+      sql`${table.value} is null or (${table.value} > 0 and ${table.value} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric))`,
     ),
     check(
-      "performance_calibration_evidence_value_check",
-      sql`${table.value} is null or ${table.value} > 0`,
+      "threshold_evaluations_confidence_finite_range_check",
+      sql`${table.confidence} is null or (${table.confidence} between 0 and 1 and ${table.confidence} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric))`,
     ),
-    check("performance_calibration_evidence_revision_check", sql`${table.segment_revision} > 0`),
+    check("threshold_evaluations_source_revision_check", sql`${table.source_revision} > 0`),
     check(
-      "performance_calibration_evidence_created_after_observed_check",
+      "threshold_evaluations_created_after_observed_check",
       sql`${table.created_at} >= ${table.observed_at}`,
     ),
+    check("threshold_evaluations_policy_check", sql`btrim(${table.policy_version}) <> ''`),
     check(
-      "performance_calibration_evidence_policy_check",
-      sql`btrim(${table.policy_version}) <> ''`,
-    ),
-    check(
-      "performance_calibration_evidence_diagnostics_check",
+      "threshold_evaluations_diagnostics_check",
       sql`jsonb_typeof(${table.diagnostics}) = 'object' and pg_column_size(${table.diagnostics}) <= 16384`,
     ),
-    index("performance_calibration_evidence_current_profile_identity_observed_idx")
-      .on(table.profile_id, table.metric_key, table.activity_category, table.observed_at.desc())
-      .where(sql`${table.state} = 'candidate' and ${table.invalidated_at} is null`),
-    index("performance_calibration_evidence_source_revision_idx").on(
-      table.activity_id,
-      table.segment_id,
-      table.segment_revision,
+    index("threshold_evaluations_profile_identity_observed_idx").on(
+      table.profile_id,
+      table.activity_category,
+      table.metric,
+      table.observed_at.desc(),
+      table.id,
+    ),
+    index("threshold_evaluations_source_revision_idx").on(
+      table.source_activity_id,
+      table.source_revision,
+      table.id,
     ),
   ],
 );
 
-/** Immutable snapshots of every accepted effort selected by a bike threshold model run. */
-export const performanceCalibrationModelInputs = pgTable(
-  "performance_calibration_model_inputs",
+/** Optional measured inputs; qualified evaluations require one primary exact-window effort. */
+export const thresholdEvaluationEfforts = pgTable(
+  "threshold_evaluation_efforts",
   {
-    calibration_evidence_id: uuid("calibration_evidence_id").notNull(),
+    evaluation_id: uuid("evaluation_id").notNull(),
     effort_id: uuid("effort_id").notNull(),
     profile_id: uuid("profile_id").notNull(),
-    metric_key: performanceCalibrationMetricKeyEnum("metric_key").notNull(),
     activity_category: text("activity_category", { enum: canonicalActivityCategoryDbValues })
       .notNull()
       .references(() => canonicalActivityCategories.code, { onDelete: "restrict" }),
     activity_id: uuid("activity_id").notNull(),
-    segment_id: uuid("segment_id").notNull(),
-    segment_revision: bigint("segment_revision", { mode: "number" }).notNull(),
-    source_artifact_id: uuid("source_artifact_id").notNull(),
-    source_artifact_digest: text("source_artifact_digest").notNull(),
-    observed_at: timestamp("observed_at", { withTimezone: true, mode: "date" }).notNull(),
-    duration_seconds: integer("duration_seconds").notNull(),
-    value: numeric("value", { mode: "number" }).notNull(),
-    calculation_version: text("calculation_version").notNull(),
+    source_revision: integer("source_revision").notNull(),
+    metric: thresholdMetricEnum("metric").notNull(),
+    effort_type: effortTypeEnum("effort_type").notNull(),
+    source_series: activityEffortSourceSeriesEnum("source_series").notNull(),
+    role: thresholdEvaluationEffortRoleEnum("role").notNull(),
     ordinal: integer("ordinal").notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.calibration_evidence_id, table.effort_id] }),
-    unique("performance_calibration_model_inputs_evidence_ordinal_unique").on(
-      table.calibration_evidence_id,
+    primaryKey({ columns: [table.evaluation_id, table.effort_id] }),
+    unique("threshold_evaluation_efforts_role_ordinal_unique").on(
+      table.evaluation_id,
+      table.role,
       table.ordinal,
     ),
     foreignKey({
+      columns: [table.evaluation_id, table.profile_id, table.activity_category, table.metric],
+      foreignColumns: [
+        thresholdEvaluations.id,
+        thresholdEvaluations.profile_id,
+        thresholdEvaluations.activity_category,
+        thresholdEvaluations.metric,
+      ],
+      name: "threshold_evaluation_efforts_evaluation_ownership_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
       columns: [
-        table.calibration_evidence_id,
+        table.effort_id,
         table.profile_id,
-        table.metric_key,
+        table.activity_id,
         table.activity_category,
+        table.effort_type,
+        table.source_series,
+        table.source_revision,
       ],
       foreignColumns: [
-        performanceCalibrationEvidence.id,
-        performanceCalibrationEvidence.profile_id,
-        performanceCalibrationEvidence.metric_key,
-        performanceCalibrationEvidence.activity_category,
+        activityEfforts.id,
+        activityEfforts.profile_id,
+        activityEfforts.activity_id,
+        activityEfforts.activity_category,
+        activityEfforts.effort_type,
+        activityEfforts.source_series,
+        activityEfforts.source_revision,
       ],
-      name: "performance_calibration_model_inputs_evidence_identity_fkey",
+      name: "threshold_evaluation_efforts_effort_ownership_fkey",
     }).onDelete("cascade"),
     check(
-      "performance_calibration_model_inputs_identity_check",
-      sql`${table.metric_key} = 'threshold_power' and ${table.activity_category} = 'bike'`,
+      "threshold_evaluation_efforts_metric_check",
+      sql`(${table.metric} = 'power' and ${table.activity_category} = 'bike' and ${table.effort_type} = 'power' and ${table.source_series} = 'power') or (${table.metric} = 'speed' and ${table.activity_category} = 'run' and ${table.effort_type} = 'speed' and ${table.source_series} in ('grade_adjusted_speed', 'raw_speed')) or (${table.metric} = 'speed' and ${table.activity_category} = 'swim' and ${table.effort_type} = 'speed' and ${table.source_series} = 'swim_speed')`,
     ),
+    check("threshold_evaluation_efforts_ordinal_check", sql`${table.ordinal} between 0 and 63`),
     check(
-      "performance_calibration_model_inputs_revision_check",
-      sql`${table.segment_revision} > 0`,
+      "threshold_evaluation_efforts_primary_ordinal_check",
+      sql`${table.role} <> 'primary' or ${table.ordinal} = 0`,
     ),
-    check(
-      "performance_calibration_model_inputs_artifact_digest_check",
-      sql`${table.source_artifact_digest} ~ '^[0-9a-f]{64}$'`,
+    index("threshold_evaluation_efforts_effort_evaluation_idx").on(
+      table.effort_id,
+      table.evaluation_id,
     ),
-    check(
-      "performance_calibration_model_inputs_duration_check",
-      sql`${table.duration_seconds} between 1 and 14400`,
-    ),
-    check(
-      "performance_calibration_model_inputs_value_check",
-      sql`${table.value} > 0 and ${table.value} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
-    ),
-    check(
-      "performance_calibration_model_inputs_calculation_version_check",
-      sql`btrim(${table.calculation_version}) <> ''`,
-    ),
-    check(
-      "performance_calibration_model_inputs_ordinal_check",
-      sql`${table.ordinal} between 0 and 1999`,
-    ),
-    index("performance_calibration_model_inputs_activity_revision_idx").on(
+    index("threshold_evaluation_efforts_activity_evaluation_idx").on(
       table.activity_id,
-      table.segment_id,
-      table.segment_revision,
+      table.source_revision,
+      table.evaluation_id,
     ),
-    index("performance_calibration_model_inputs_source_artifact_idx").on(table.source_artifact_id),
   ],
 );
 
-/** Append-only effective-dated selections; the latest eligible row is current. */
-export const performanceCalibrations = pgTable(
-  "performance_calibrations",
+/** Immutable effective-dated threshold truth selected from one qualified evaluation. */
+export const thresholds = pgTable(
+  "thresholds",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     profile_id: uuid("profile_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
-    metric_key: performanceCalibrationMetricKeyEnum("metric_key").notNull(),
     activity_category: text("activity_category", { enum: canonicalActivityCategoryDbValues })
       .notNull()
       .references(() => canonicalActivityCategories.code, { onDelete: "restrict" }),
+    metric: thresholdMetricEnum("metric").notNull(),
+    evaluation_id: uuid("evaluation_id").notNull(),
+    evaluation_outcome: thresholdEvaluationOutcomeEnum("evaluation_outcome")
+      .notNull()
+      .default("qualified"),
     value: numeric("value", { mode: "number" }).notNull(),
     unit: text("unit").notNull(),
+    confidence: numeric("confidence", { mode: "number" }).notNull(),
+    method: text("method").notNull(),
     effective_at: timestamp("effective_at", { withTimezone: true, mode: "date" }).notNull(),
-    expires_at: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
     policy_version: text("policy_version").notNull(),
-    selection_diagnostics: jsonb("selection_diagnostics").notNull(),
     supersedes_id: uuid("supersedes_id"),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
   },
   (table) => [
-    unique("performance_calibrations_identity_unique").on(
+    unique("thresholds_ownership_unique").on(
       table.id,
       table.profile_id,
-      table.metric_key,
       table.activity_category,
+      table.metric,
     ),
-    unique("performance_calibrations_supersedes_unique").on(table.supersedes_id),
+    unique("thresholds_evaluation_unique").on(table.evaluation_id),
+    unique("thresholds_supersedes_unique").on(table.supersedes_id),
     foreignKey({
-      columns: [table.supersedes_id, table.profile_id, table.metric_key, table.activity_category],
-      foreignColumns: [table.id, table.profile_id, table.metric_key, table.activity_category],
-      name: "performance_calibrations_supersedes_identity_fkey",
-    }).onDelete("restrict"),
-    check("performance_calibrations_value_check", sql`${table.value} > 0`),
-    check(
-      "performance_calibrations_unit_check",
-      sql`(${table.metric_key} = 'threshold_power' and ${table.unit} = 'watts') or (${table.metric_key} = 'threshold_speed' and ${table.unit} = 'meters_per_second') or (${table.metric_key} = 'threshold_heart_rate' and ${table.unit} = 'beats_per_minute')`,
-    ),
-    check(
-      "performance_calibrations_identity_check",
-      sql`(${table.metric_key} = 'threshold_power' and ${table.activity_category} = 'bike') or (${table.metric_key} = 'threshold_speed' and ${table.activity_category} in ('run', 'swim')) or (${table.metric_key} = 'threshold_heart_rate' and ${table.activity_category} in ('bike', 'run'))`,
-    ),
-    check(
-      "performance_calibrations_expiry_check",
-      sql`${table.expires_at} >= ${table.effective_at}`,
-    ),
-    check(
-      "performance_calibrations_created_after_effective_check",
-      sql`${table.created_at} >= ${table.effective_at}`,
-    ),
-    check("performance_calibrations_policy_check", sql`btrim(${table.policy_version}) <> ''`),
-    check(
-      "performance_calibrations_diagnostics_check",
-      sql`jsonb_typeof(${table.selection_diagnostics}) = 'object' and pg_column_size(${table.selection_diagnostics}) <= 16384`,
-    ),
-    check(
-      "performance_calibrations_supersedes_check",
-      sql`${table.supersedes_id} is null or ${table.supersedes_id} <> ${table.id}`,
-    ),
-    index("performance_calibrations_profile_identity_effective_idx").on(
-      table.profile_id,
-      table.metric_key,
-      table.activity_category,
-      table.effective_at.desc(),
-    ),
-    index("performance_calibrations_due_idx").on(table.profile_id, table.expires_at),
-    index("performance_calibrations_supersedes_idx")
-      .on(table.supersedes_id)
-      .where(sql`${table.supersedes_id} is not null`),
-  ],
-);
-
-/** Normalized immutable provenance edges; not a third calibration-state entity. */
-export const performanceCalibrationSelectionEvidence = pgTable(
-  "performance_calibration_selection_evidence",
-  {
-    calibration_id: uuid("calibration_id").notNull(),
-    evidence_id: uuid("evidence_id").notNull(),
-    profile_id: uuid("profile_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    metric_key: performanceCalibrationMetricKeyEnum("metric_key").notNull(),
-    activity_category: text("activity_category", { enum: canonicalActivityCategoryDbValues })
-      .notNull()
-      .references(() => canonicalActivityCategories.code, { onDelete: "restrict" }),
-    ordinal: integer("ordinal").notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.calibration_id, table.evidence_id] }),
-    unique("performance_calibration_selection_evidence_calibration_ordinal_unique").on(
-      table.calibration_id,
-      table.ordinal,
-    ),
-    foreignKey({
-      columns: [table.calibration_id, table.profile_id, table.metric_key, table.activity_category],
-      foreignColumns: [
-        performanceCalibrations.id,
-        performanceCalibrations.profile_id,
-        performanceCalibrations.metric_key,
-        performanceCalibrations.activity_category,
+      columns: [
+        table.evaluation_id,
+        table.profile_id,
+        table.activity_category,
+        table.metric,
+        table.evaluation_outcome,
       ],
-      name: "performance_calibration_selection_evidence_calibration_identity_fkey",
+      foreignColumns: [
+        thresholdEvaluations.id,
+        thresholdEvaluations.profile_id,
+        thresholdEvaluations.activity_category,
+        thresholdEvaluations.metric,
+        thresholdEvaluations.outcome,
+      ],
+      name: "thresholds_qualified_evaluation_ownership_fkey",
     }).onDelete("cascade"),
     foreignKey({
-      columns: [table.evidence_id, table.profile_id, table.metric_key, table.activity_category],
-      foreignColumns: [
-        performanceCalibrationEvidence.id,
-        performanceCalibrationEvidence.profile_id,
-        performanceCalibrationEvidence.metric_key,
-        performanceCalibrationEvidence.activity_category,
-      ],
-      name: "performance_calibration_selection_evidence_evidence_identity_fkey",
-    }).onDelete("restrict"),
-    index("performance_calibration_selection_evidence_evidence_idx").on(
-      table.evidence_id,
-      table.profile_id,
-      table.metric_key,
-      table.activity_category,
-      table.calibration_id,
+      columns: [table.supersedes_id],
+      foreignColumns: [table.id],
+      name: "thresholds_supersedes_fkey",
+    }).onDelete("no action"),
+    check("thresholds_qualified_evaluation_check", sql`${table.evaluation_outcome} = 'qualified'`),
+    check(
+      "thresholds_identity_check",
+      sql`(${table.activity_category} = 'bike' and ${table.metric} = 'power' and ${table.method} = 'bike_power_30m' and ${table.unit} = 'watts') or (${table.activity_category} = 'run' and ${table.metric} = 'speed' and ${table.method} = 'run_speed_30m' and ${table.unit} = 'meters_per_second') or (${table.activity_category} = 'swim' and ${table.metric} = 'speed' and ${table.method} = 'swim_speed_15m' and ${table.unit} = 'meters_per_second')`,
     ),
     check(
-      "performance_calibration_selection_evidence_ordinal_check",
-      sql`${table.ordinal} between 0 and 63`,
+      "thresholds_value_finite_positive_check",
+      sql`${table.value} > 0 and ${table.value} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
     ),
+    check(
+      "thresholds_confidence_finite_range_check",
+      sql`${table.confidence} between 0 and 1 and ${table.confidence} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
+    ),
+    check(
+      "thresholds_created_after_effective_check",
+      sql`${table.created_at} >= ${table.effective_at}`,
+    ),
+    check("thresholds_policy_check", sql`btrim(${table.policy_version}) <> ''`),
+    check(
+      "thresholds_supersedes_check",
+      sql`${table.supersedes_id} is null or ${table.supersedes_id} <> ${table.id}`,
+    ),
+    index("thresholds_profile_identity_effective_idx").on(
+      table.profile_id,
+      table.activity_category,
+      table.metric,
+      table.effective_at.desc(),
+      table.id,
+    ),
+    uniqueIndex("thresholds_identity_root_unique")
+      .on(table.profile_id, table.activity_category, table.metric)
+      .where(sql`${table.supersedes_id} is null`),
+    index("thresholds_supersedes_idx")
+      .on(table.supersedes_id)
+      .where(sql`${table.supersedes_id} is not null`),
   ],
 );
 
@@ -2808,6 +2713,7 @@ export const activityImportRuns = pgTable(
     discovered_count: integer("discovered_count").notNull().default(0),
     imported_count: integer("imported_count").notNull().default(0),
     skipped_count: integer("skipped_count").notNull().default(0),
+    skipped_diagnostics: jsonb("skipped_diagnostics").notNull().default(sql`'[]'::jsonb`),
     failed_count: integer("failed_count").notNull().default(0),
     material_change_count: integer("material_change_count").notNull().default(0),
     material_effective_from_at: timestamp("material_effective_from_at", {
@@ -2865,6 +2771,10 @@ export const activityImportRuns = pgTable(
     check(
       "activity_import_runs_counts_check",
       sql`${table.discovered_count} >= 0 and ${table.imported_count} >= 0 and ${table.skipped_count} >= 0 and ${table.failed_count} >= 0 and ${table.material_change_count} >= 0`,
+    ),
+    check(
+      "activity_import_runs_skipped_diagnostics_check",
+      sql`jsonb_typeof(${table.skipped_diagnostics}) = 'array' and jsonb_array_length(${table.skipped_diagnostics}) <= 120 and pg_column_size(${table.skipped_diagnostics}) <= 16384`,
     ),
     check(
       "activity_import_runs_next_page_check",

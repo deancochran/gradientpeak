@@ -1,15 +1,5 @@
-import {
-  activities,
-  activityEfforts,
-  profileMetrics,
-  profiles,
-  swimmingCssProtocolEvidence,
-} from "@repo/db";
+import { activities, activityEfforts, profileMetrics, profiles } from "@repo/db";
 import { describe, expect, it, vi } from "vitest";
-import {
-  createTestHeartRateCalibrationRow,
-  createTestPerformanceModelEffortRows,
-} from "../../test-support/performance-model";
 
 const analysisMocks = vi.hoisted(() => ({
   buildActivitySegmentDerivedSummaries: vi.fn(),
@@ -32,12 +22,7 @@ vi.mock("../../infrastructure/repositories", () => ({
 
 import { profilesRouter } from "../profiles";
 
-type TableName =
-  | "activities"
-  | "activityEfforts"
-  | "profileMetrics"
-  | "profiles"
-  | "swimmingCssProtocolEvidence";
+type TableName = "activities" | "activityEfforts" | "profileMetrics" | "profiles";
 
 type SelectPlan = Partial<Record<TableName, Array<unknown[]>>>;
 
@@ -55,7 +40,6 @@ function getTableName(table: unknown): TableName {
   if (table === profileMetrics) return "profileMetrics";
   if (table === activityEfforts) return "activityEfforts";
   if (table === activities) return "activities";
-  if (table === swimmingCssProtocolEvidence) return "swimmingCssProtocolEvidence";
   throw new Error(`Unhandled table: ${String(table)}`);
 }
 
@@ -81,32 +65,12 @@ function createProfileRow(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-function performanceModelMetricQueue({
-  bikeLthr = [],
-  runLthr = [],
-  swimLthr = [],
-  bikeMaxHr = [],
-  runMaxHr = [],
-  swimMaxHr = [],
-}: Partial<
-  Record<"bikeLthr" | "runLthr" | "swimLthr" | "bikeMaxHr" | "runMaxHr" | "swimMaxHr", unknown[]>
-> = {}) {
-  return [bikeLthr, bikeMaxHr, runLthr, runMaxHr, swimLthr, swimMaxHr];
-}
-
-function allObjectKeys(value: unknown): string[] {
-  if (Array.isArray(value)) return value.flatMap(allObjectKeys);
-  if (value === null || typeof value !== "object") return [];
-  return Object.entries(value).flatMap(([key, nested]) => [key, ...allObjectKeys(nested)]);
-}
-
 function createDbMock(plan: DbPlan = {}) {
   const selectQueues = {
     profiles: [...(plan.select?.profiles ?? [])],
     profileMetrics: [...(plan.select?.profileMetrics ?? [])],
     activityEfforts: [...(plan.select?.activityEfforts ?? [])],
     activities: [...(plan.select?.activities ?? [])],
-    swimmingCssProtocolEvidence: [...(plan.select?.swimmingCssProtocolEvidence ?? [])],
   } satisfies Record<TableName, Array<unknown[]>>;
   const executeQueue = [...(plan.execute ?? [])];
 

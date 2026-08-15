@@ -4,6 +4,7 @@ import {
   type BestEffortMetric,
   DEFAULT_BEST_EFFORT_MAX_GAP_SECONDS,
   extractBestEfforts,
+  selectExactBestEffortWindow,
 } from "../best-efforts";
 
 function extract(input: {
@@ -34,6 +35,12 @@ function extract(input: {
     },
   });
 }
+
+const longActivityThresholdCases = [
+  ["bike", "power", 1_800, 320, 140],
+  ["run", "grade_adjusted_speed", 1_800, 4.5, 2.5],
+  ["swim", "speed", 900, 1.6, 0.9],
+] as const;
 
 describe("extractBestEfforts", () => {
   it("uses the current observation for the preceding interval and preserves exact boundaries", () => {
@@ -251,5 +258,78 @@ describe("extractBestEfforts", () => {
         config: { durationsSeconds: [5, 5] },
       }),
     ).toThrow();
+  });
+
+  it("selects only an exact configured window", () => {
+    const extraction = extract({
+      values: [100, 100, 200, 200, 200],
+      timestamps: [0, 1, 2, 3, 4],
+      durationSeconds: 3,
+    });
+
+    expect(selectExactBestEffortWindow(extraction, 3)).toMatchObject({
+      status: "found",
+      result: { durationSeconds: 3, value: 200 },
+    });
+    expect(selectExactBestEffortWindow(extraction, 2)).toEqual({ status: "missing" });
+  });
+
+  it("finds an exact threshold-sized window inside a much longer activity", () => {
+    const activitySeconds = 7_200;
+    const extraction = extractBestEfforts({
+      metric: "power",
+      samples: Array.from({ length: activitySeconds + 1 }, (_, timestampSeconds) => ({
+        timestampSeconds,
+        value: timestampSeconds > 3_600 && timestampSeconds <= 5_400 ? 300 : 150,
+      })),
+      config: { durationsSeconds: [1_800], maxGapSeconds: 2 },
+    });
+
+    expect(selectExactBestEffortWindow(extraction, 1_800)).toMatchObject({
+      status: "found",
+      result: {
+        status: "available",
+        durationSeconds: 1_800,
+        value: 300,
+        startTimestampSeconds: 3_600,
+        endTimestampSeconds: 5_400,
+      },
+    });
+  });
+
+  it.each(
+    longActivityThresholdCases,
+  )("%s selects its threshold window after hour 12 of a 13-hour activity", (_activityCategory, metric, durationSeconds, bestValue, baselineValue) => {
+    const activitySeconds = 13 * 3_600;
+    const bestStartTimestampSeconds = 12 * 3_600;
+    const bestEndTimestampSeconds = bestStartTimestampSeconds + durationSeconds;
+    const extraction = extractBestEfforts({
+      metric,
+      samples: Array.from({ length: activitySeconds + 1 }, (_, timestampSeconds) => ({
+        timestampSeconds,
+        value:
+          timestampSeconds > bestStartTimestampSeconds &&
+          timestampSeconds <= bestEndTimestampSeconds
+            ? bestValue
+            : baselineValue,
+      })),
+      config: { durationsSeconds: [durationSeconds], maxGapSeconds: 2 },
+    });
+
+    const selected = selectExactBestEffortWindow(extraction, durationSeconds);
+    expect(selected).toMatchObject({
+      status: "found",
+      result: {
+        status: "available",
+        durationSeconds,
+        startTimestampSeconds: bestStartTimestampSeconds,
+        endTimestampSeconds: bestEndTimestampSeconds,
+      },
+    });
+    if (selected.status !== "found" || selected.result.status === "unavailable") {
+      throw new Error("Expected a numeric best-effort window");
+    }
+    expect(selected.result.value).toBeCloseTo(bestValue, 10);
+    expect(extraction.diagnostics.sourceSpanSeconds).toBe(activitySeconds);
   });
 });

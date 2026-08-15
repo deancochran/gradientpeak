@@ -25,40 +25,42 @@ export const activityFileIngestionStatusEnum = pgEnum("activity_file_ingestion_s
 
 export const effortTypeEnum = pgEnum("effort_type", ["power", "speed", "heart_rate"]);
 
-export const performanceCalibrationMetricKeyEnum = pgEnum("performance_calibration_metric_key", [
-  "threshold_power",
-  "threshold_speed",
-  "threshold_heart_rate",
+export const activityEffortSourceSeriesEnum = pgEnum("activity_effort_source_series", [
+  "power",
+  "grade_adjusted_speed",
+  "raw_speed",
+  "swim_speed",
+  "heart_rate",
 ]);
 
-export const performanceCalibrationEvidenceStateEnum = pgEnum(
-  "performance_calibration_evidence_state",
-  ["candidate", "rejected", "invalidated"],
-);
+export const thresholdMetricEnum = pgEnum("threshold_metric", ["power", "speed"]);
 
-export const performanceCalibrationRejectionReasonEnum = pgEnum(
-  "performance_calibration_rejection_reason",
+export const thresholdEvaluationOutcomeEnum = pgEnum("threshold_evaluation_outcome", [
+  "qualified",
+  "rejected",
+]);
+
+export const thresholdEvaluationRejectionReasonEnum = pgEnum(
+  "threshold_evaluation_rejection_reason",
   [
-    "metric_not_enabled",
     "source_not_accepted",
-    "stream_coverage_insufficient",
-    "stream_gap_exceeded",
-    "output_variability_exceeded",
-    "supporting_threshold_unavailable",
-    "supporting_output_not_threshold_like",
-    "duration_insufficient",
-    "grade_coverage_insufficient",
-    "protocol_incomplete",
-    "model_history_insufficient",
-    "model_quality_insufficient",
-    "value_out_of_range",
+    "ownership_unverified",
+    "series_missing",
+    "series_ambiguous",
+    "exact_window_missing",
+    "exact_window_ambiguous",
+    "exact_window_incomplete",
+    "source_incomplete",
+    "coverage_insufficient",
+    "gap_bound_exceeded",
+    "value_implausible",
   ],
 );
 
-export const performanceCalibrationSourceSemanticsEnum = pgEnum(
-  "performance_calibration_source_semantics",
-  ["measured", "derived"],
-);
+export const thresholdEvaluationEffortRoleEnum = pgEnum("threshold_evaluation_effort_role", [
+  "primary",
+  "supporting",
+]);
 
 export const activitySessionRpeSourceEnum = pgEnum("activity_session_rpe_source", [
   "user",

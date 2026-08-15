@@ -23,7 +23,7 @@ import {
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, asc, count, desc, eq, gte, ilike, lt, lte, or, sql } from "drizzle-orm";
-import type { getRequiredDb } from "../../db";
+import { type getRequiredDb, withRepeatableReadSnapshot } from "../../db";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
 import {
   type ActivityQuantifiedDerivedSummary,
@@ -280,134 +280,131 @@ export async function listActivitiesForProfile({
     (input.activity_category !== undefined &&
       (input.sort_by === "distance" || input.sort_by === "duration"));
   if (requiresBoundedMetricScan) {
-    return db.transaction(
-      async (tx) => {
-        // Drizzle transactions expose the read APIs used below but intentionally omit the
-        // root client's `$client` property from their type.
-        const snapshotDb = tx as unknown as Db;
-        const totalRows = await tx.select({ total: count() }).from(activities).where(whereClause);
-        const total = Number(totalRows[0]?.total ?? 0);
-        // Exact sorting by dynamically derived Common Load is necessarily O(N). The explicit ceiling
-        // bounds request memory/CPU while keeping the existing index cursor and global ordering
-        // contract truthful. Callers above the ceiling must narrow the activity filters.
-        if (total > commonLoadSortMaximumHistory) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message:
-              input.sort_by === "common_load"
-                ? `Common Load sorting supports at most ${commonLoadSortMaximumHistory} matching activities; narrow the activity filters.`
-                : `ActivityCategory metric sorting supports at most ${commonLoadSortMaximumHistory} matching activities; narrow the activity filters.`,
-          });
-        }
+    return withRepeatableReadSnapshot(db, async (tx) => {
+      // Drizzle transactions expose the read APIs used below but intentionally omit the
+      // root client's `$client` property from their type.
+      const snapshotDb = tx as unknown as Db;
+      const totalRows = await tx.select({ total: count() }).from(activities).where(whereClause);
+      const total = Number(totalRows[0]?.total ?? 0);
+      // Exact sorting by dynamically derived Common Load is necessarily O(N). The explicit ceiling
+      // bounds request memory/CPU while keeping the existing index cursor and global ordering
+      // contract truthful. Callers above the ceiling must narrow the activity filters.
+      if (total > commonLoadSortMaximumHistory) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            input.sort_by === "common_load"
+              ? `Common Load sorting supports at most ${commonLoadSortMaximumHistory} matching activities; narrow the activity filters.`
+              : `ActivityCategory metric sorting supports at most ${commonLoadSortMaximumHistory} matching activities; narrow the activity filters.`,
+        });
+      }
 
-        // Scan the transaction snapshot by the stable (started_at, id) key instead of offset so
-        // every internal batch has an indexable plan and cannot skip/duplicate rows. Evidence and
-        // likes are loaded through the same transaction, preserving one repeatable-read snapshot.
-        const candidates: ActivityMetricCandidate[] = [];
-        let scanCursor: Pick<ActivityRow, "id" | "started_at"> | undefined;
-        while (candidates.length < total) {
-          const scanWhere = scanCursor
-            ? and(
-                whereClause,
-                or(
-                  lt(activities.started_at, scanCursor.started_at),
-                  and(
-                    eq(activities.started_at, scanCursor.started_at),
-                    lt(activities.id, scanCursor.id),
-                  ),
+      // Scan the transaction snapshot by the stable (started_at, id) key instead of offset so
+      // every internal batch has an indexable plan and cannot skip/duplicate rows. Evidence and
+      // likes are loaded through the same transaction, preserving one repeatable-read snapshot.
+      const candidates: ActivityMetricCandidate[] = [];
+      let scanCursor: Pick<ActivityRow, "id" | "started_at"> | undefined;
+      while (candidates.length < total) {
+        const scanWhere = scanCursor
+          ? and(
+              whereClause,
+              or(
+                lt(activities.started_at, scanCursor.started_at),
+                and(
+                  eq(activities.started_at, scanCursor.started_at),
+                  lt(activities.id, scanCursor.id),
                 ),
-              )
-            : whereClause;
-          const batch = (await tx
-            .select()
-            .from(activities)
-            .where(scanWhere)
-            .orderBy(desc(activities.started_at), desc(activities.id))
-            .limit(Math.min(commonLoadSortBatchSize, total - candidates.length))) as ActivityRow[];
-          if (batch.length === 0) break;
+              ),
+            )
+          : whereClause;
+        const batch = (await tx
+          .select()
+          .from(activities)
+          .where(scanWhere)
+          .orderBy(desc(activities.started_at), desc(activities.id))
+          .limit(Math.min(commonLoadSortBatchSize, total - candidates.length))) as ActivityRow[];
+        if (batch.length === 0) break;
 
-          const normalizedBatch = batch.map(normalizeActivityLaps);
-          const segments = await loadActivitySegmentsByActivityId(
-            snapshotDb,
-            normalizedBatch.map((activity) => activity.id),
-          );
-          candidates.push(
-            ...normalizedBatch.map((activity) => ({
-              activity: { ...activity, segments: segments.get(activity.id) ?? [] },
-              derived: null,
-              matchedCategorySummary: null,
-            })),
-          );
-          const lastActivity = normalizedBatch.at(-1);
-          if (!lastActivity || batch.length < commonLoadSortBatchSize) break;
-          scanCursor = {
-            id: lastActivity.id,
-            started_at: lastActivity.started_at,
-          };
-        }
-
-        const analysisStore = createActivityAnalysisStore(snapshotDb);
-        const analysis = await buildActivityDerivedSummaries({
-          store: analysisStore,
-          profileId,
-          activities: candidates.map(({ activity }) => activity),
-        });
-        const derivedByActivityId = analysis.parent;
-        const segmentDerived = analysis.segments;
-        const segmentDerivedByActivityId = new Map<string, typeof segmentDerived>();
-        for (const summary of segmentDerived) {
-          segmentDerivedByActivityId.set(summary.activity_id, [
-            ...(segmentDerivedByActivityId.get(summary.activity_id) ?? []),
-            summary,
-          ]);
-        }
-        for (const candidate of candidates) {
-          const derivedSegments = segmentDerivedByActivityId.get(candidate.activity.id);
-          candidate.derived = derivedByActivityId.get(candidate.activity.id) ?? null;
-          candidate.matchedCategorySummary = input.activity_category
-            ? summarizeMatchedCategory({
-                segments: candidate.activity.segments,
-                activity_category: input.activity_category,
-                ...(derivedSegments === undefined ? {} : { derivedSegments }),
-              })
-            : null;
-        }
-
-        const page = candidates
-          .sort((a, b) =>
-            compareMetricCandidates(
-              a,
-              b,
-              input.sort_by as "distance" | "duration" | "common_load",
-              input.sort_order,
-            ),
-          )
-          .slice(offset, offset + input.limit);
-        const likeStats = await loadLikeStats(snapshotDb, {
-          entityType: "activity",
-          entityIds: page.map(({ activity }) => activity.id),
-          viewerProfileId: profileId,
-        });
-        const items = page.map(({ activity, derived, matchedCategorySummary }) => {
-          const item = mapActivityToListDerivedResponse({
-            activity: {
-              ...decorateActivity(activity, matchedCategorySummary),
-              likes_count: getLikeStats(likeStats, activity.id).likes_count,
-            },
-            has_liked: getLikeStats(likeStats, activity.id).has_liked,
-            derived,
-            segment_loads: segmentDerivedByActivityId.get(activity.id) ?? [],
-          });
-          return toActivityDisplayModel({ activity: item, viewerId: profileId });
-        });
-        return {
-          items,
-          total,
-          ...buildIndexPageInfo({ offset, limit: input.limit, total }),
+        const normalizedBatch = batch.map(normalizeActivityLaps);
+        const segments = await loadActivitySegmentsByActivityId(
+          snapshotDb,
+          normalizedBatch.map((activity) => activity.id),
+        );
+        candidates.push(
+          ...normalizedBatch.map((activity) => ({
+            activity: { ...activity, segments: segments.get(activity.id) ?? [] },
+            derived: null,
+            matchedCategorySummary: null,
+          })),
+        );
+        const lastActivity = normalizedBatch.at(-1);
+        if (!lastActivity || batch.length < commonLoadSortBatchSize) break;
+        scanCursor = {
+          id: lastActivity.id,
+          started_at: lastActivity.started_at,
         };
-      },
-      { isolationLevel: "repeatable read", accessMode: "read only" },
-    );
+      }
+
+      const analysisStore = createActivityAnalysisStore(snapshotDb);
+      const analysis = await buildActivityDerivedSummaries({
+        store: analysisStore,
+        profileId,
+        activities: candidates.map(({ activity }) => activity),
+      });
+      const derivedByActivityId = analysis.parent;
+      const segmentDerived = analysis.segments;
+      const segmentDerivedByActivityId = new Map<string, typeof segmentDerived>();
+      for (const summary of segmentDerived) {
+        segmentDerivedByActivityId.set(summary.activity_id, [
+          ...(segmentDerivedByActivityId.get(summary.activity_id) ?? []),
+          summary,
+        ]);
+      }
+      for (const candidate of candidates) {
+        const derivedSegments = segmentDerivedByActivityId.get(candidate.activity.id);
+        candidate.derived = derivedByActivityId.get(candidate.activity.id) ?? null;
+        candidate.matchedCategorySummary = input.activity_category
+          ? summarizeMatchedCategory({
+              segments: candidate.activity.segments,
+              activity_category: input.activity_category,
+              ...(derivedSegments === undefined ? {} : { derivedSegments }),
+            })
+          : null;
+      }
+
+      const page = candidates
+        .sort((a, b) =>
+          compareMetricCandidates(
+            a,
+            b,
+            input.sort_by as "distance" | "duration" | "common_load",
+            input.sort_order,
+          ),
+        )
+        .slice(offset, offset + input.limit);
+      const likeStats = await loadLikeStats(snapshotDb, {
+        entityType: "activity",
+        entityIds: page.map(({ activity }) => activity.id),
+        viewerProfileId: profileId,
+      });
+      const items = page.map(({ activity, derived, matchedCategorySummary }) => {
+        const item = mapActivityToListDerivedResponse({
+          activity: {
+            ...decorateActivity(activity, matchedCategorySummary),
+            likes_count: getLikeStats(likeStats, activity.id).likes_count,
+          },
+          has_liked: getLikeStats(likeStats, activity.id).has_liked,
+          derived,
+          segment_loads: segmentDerivedByActivityId.get(activity.id) ?? [],
+        });
+        return toActivityDisplayModel({ activity: item, viewerId: profileId });
+      });
+      return {
+        items,
+        total,
+        ...buildIndexPageInfo({ offset, limit: input.limit, total }),
+      };
+    });
   }
 
   const rowsPromise =

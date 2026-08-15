@@ -1,46 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { createUnavailableAthletePerformanceTargetFacts } from "../../performance-model";
+import { buildPerformanceTargetFactsFixture } from "../../testing/performance-model";
 import { resolveActivityPlanTargetPresentation } from "../target-presentation";
 
 const asOf = "2026-08-12T12:00:00.000Z";
 
 function confirmedFacts() {
-  const unavailable = createUnavailableAthletePerformanceTargetFacts(asOf, "athlete-1");
-  return {
-    ...unavailable,
-    cycling: {
-      planningThresholdPower: {
-        ...unavailable.cycling.planningThresholdPower,
-        status: "available" as const,
-        calibrationState: "confirmed" as const,
-        value: 300,
-        confidence: "high" as const,
-        expiresAt: "2026-08-13T12:00:00.000Z",
-        sourceEvidenceIds: ["evidence-1"],
-        evidenceTime: { observedFrom: asOf, observedThrough: asOf, computedAt: asOf },
-      },
-    },
-    heartRate: {
-      ...unavailable.heartRate,
-      run: {
-        ...unavailable.heartRate.run,
-        lthr: {
-          ...unavailable.heartRate.run.lthr,
-          status: "available" as const,
-          calibrationState: "confirmed" as const,
-          valueBpm: 180,
-          observedAt: asOf,
-          expiresAt: "2026-08-13T12:00:00.000Z",
-          sourceEvidenceId: "evidence-1",
-          sourceActivityId: "activity-1",
-          source: "activity_file" as const,
-          method: "performance_calibration" as const,
-          calculationVersion: "v1",
-          reason: null,
-        },
-      },
-    },
-  };
+  return buildPerformanceTargetFactsFixture({
+    asOf,
+    athleteId: "athlete-1",
+    thresholdEffectiveAt: "2026-08-11T12:00:00.000Z",
+    bikeThresholdWatts: 300,
+    lthrBpm: { run: 180 },
+    expiresAt: "2026-08-13T12:00:00.000Z",
+  });
 }
 
 describe("resolveActivityPlanTargetPresentation", () => {
@@ -75,18 +48,14 @@ describe("resolveActivityPlanTargetPresentation", () => {
   });
 
   it.each([
-    ["partial", "confirmed", "2026-08-13T12:00:00.000Z"],
-    ["available", "provisional", "2026-08-13T12:00:00.000Z"],
-    ["available", "stale", "2026-08-13T12:00:00.000Z"],
-    ["available", "confirmed", "2026-08-11T12:00:00.000Z"],
-  ] as const)("keeps FTP abstract for %s/%s/%s facts", (status, calibrationState, expiresAt) => {
+    ["provisional", "fresh"],
+    ["confirmed", "stale"],
+  ] as const)("keeps FTP abstract for %s/%s facts", (state, freshness) => {
     const performanceTargets = confirmedFacts();
-    performanceTargets.cycling.planningThresholdPower = {
-      ...performanceTargets.cycling.planningThresholdPower,
-      status,
-      calibrationState,
-      expiresAt,
-    } as typeof performanceTargets.cycling.planningThresholdPower;
+    if (performanceTargets.thresholds.bike.status !== "available")
+      throw new Error("Expected bike threshold");
+    performanceTargets.thresholds.bike.state = state;
+    performanceTargets.thresholds.bike.freshness = freshness;
     expect(
       resolveActivityPlanTargetPresentation({
         target: { type: "%FTP", intensity: 80 },

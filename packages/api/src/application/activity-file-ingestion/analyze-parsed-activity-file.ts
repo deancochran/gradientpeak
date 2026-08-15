@@ -836,6 +836,7 @@ export async function analyzeParsedActivityFile(
         activityStartedAt: startTime,
         segmentStartOffsetSeconds: segment.startOffsetMs / 1_000,
         segmentEndOffsetSeconds: segment.endOffsetMs / 1_000,
+        ...(input.artifactId === undefined ? {} : { sourceArtifactId: input.artifactId }),
         activityCategory: segment.activity_category,
         ...(segment.activity_category !== "swim"
           ? {}

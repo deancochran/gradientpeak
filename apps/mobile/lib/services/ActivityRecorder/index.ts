@@ -29,7 +29,6 @@ import {
   type MetricSourceType,
   type RecordingActivityCategory,
   type RecordingBoundaryJournalEntry,
-  type RecordingCheckpoint,
   RecordingConfigResolver,
   type RecordingConfiguration,
   type RecordingExecutionManifest,
@@ -62,6 +61,8 @@ import {
   type ActivityRecorderCheckpoint,
   clearRecordingCheckpoint,
   hashRecordingPlan,
+  MOBILE_RECORDING_CHECKPOINT_SCHEMA_VERSION,
+  type PlannedRecordingCheckpoint,
   persistRecordingCheckpoint,
   releaseRecordingCheckpointClaim,
 } from "./checkpointStorage";
@@ -455,7 +456,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private readonly planExecution = new PlanExecution();
   private completedOccurrences: RecordingOccurrenceResult[] = [];
   private boundaryJournal: RecordingBoundaryJournalEntry[] = [];
-  private rewindJournal: NonNullable<RecordingCheckpoint["rewindJournal"]> = [];
+  private rewindJournal: NonNullable<PlannedRecordingCheckpoint["rewindJournal"]> = [];
   private checkpointRevision = 0;
   private planHash: string | null = null;
   /** In-memory-only execution contract for the active free recording. */
@@ -469,7 +470,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private checkpointWriteInFlight: Promise<void> | null = null;
   private checkpointWriteTimer?: ReturnType<typeof setTimeout>;
   private lastCheckpointWriteAt = 0;
-  private recoveredCheckpoint: ActivityRecorderCheckpoint | RecordingCheckpoint | null = null;
+  private recoveredCheckpoint: ActivityRecorderCheckpoint | null = null;
   private recoveredReplay: DurableStreamReplay | null = null;
   private readonly trainerControl: TrainerControl;
   private _permissionsStatus: AllPermissionsStatus = {
@@ -2223,7 +2224,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.checkpointRevision += 1;
     if (!structureResult.success || !this.planHash) {
       await persistRecordingCheckpoint({
-        schemaVersion: 4,
+        schemaVersion: MOBILE_RECORDING_CHECKPOINT_SCHEMA_VERSION,
         variant: "unplanned",
         sessionId: snapshot.identity.sessionId,
         profileId: this.profile.id,
@@ -2256,7 +2257,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return;
     }
     await persistRecordingCheckpoint({
-      schemaVersion: 2,
+      schemaVersion: MOBILE_RECORDING_CHECKPOINT_SCHEMA_VERSION,
       variant: "planned",
       compilerVersion: ACTIVITY_PLAN_COMPILER_VERSION,
       sessionId: snapshot.identity.sessionId,
@@ -2446,7 +2447,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   private async prepareFitEncoderForRewind(
-    rewindJournal: NonNullable<RecordingCheckpoint["rewindJournal"]>,
+    rewindJournal: NonNullable<PlannedRecordingCheckpoint["rewindJournal"]>,
     retainsCompletedPrefix: boolean,
   ): Promise<{ encoder: GarminFitEncoder; lastDistanceMeters: number } | undefined> {
     if (!this.fitEncoder || !this.startTime) return undefined;
@@ -2981,9 +2982,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   /** Revalidates and stages a claimed checkpoint without starting hardware side effects. */
-  public async stageRecoveredCheckpoint(
-    checkpoint: ActivityRecorderCheckpoint | RecordingCheckpoint,
-  ): Promise<void> {
+  public async stageRecoveredCheckpoint(checkpoint: ActivityRecorderCheckpoint): Promise<void> {
     if (checkpoint.profileId !== this.profile.id) throw new Error("Checkpoint profile mismatch");
     if ("variant" in checkpoint && checkpoint.variant === "unplanned") {
       // The durable unplanned checkpoint intentionally stores only the selected

@@ -2,8 +2,8 @@
 
 ## First contribution
 
-The supported first-run path uses Turbo to start the development graph. It runs locally and does
-not require a public tunnel, provider credentials, a mobile device, or E2E tooling.
+The full development graph uses the Cloudflare Tunnel for public callbacks. The focused local web lane
+does not require a public tunnel, provider credentials, a mobile device, or E2E tooling.
 
 1. Install the pinned tools and dependencies:
 
@@ -21,24 +21,28 @@ not require a public tunnel, provider credentials, a mobile device, or E2E tooli
    ```
 
 3. Install and start Docker Desktop or Docker Engine, then confirm `docker info` succeeds before
-   running the preflight for the full development graph:
+   running the preflight. For local-only web development:
 
    ```bash
-pnpm run doctor -- --lane dev
+pnpm run doctor -- --lane web
    ```
 
    Doctor must report no required failures. It checks the pinned Node and pnpm versions, Docker,
    Supabase, and local environment files.
 
-4. Start development:
+4. Start local-only web development:
 
    ```bash
-pnpm exec turbo run dev
+pnpm dev:web:local
    ```
 
-   This starts local Supabase setup plus the web and mobile development tasks. Open
-   http://localhost:3000 for the web app. On the first local Supabase start, run `pnpm db:status`
-   and copy the local API keys into both app environment files before restarting the graph.
+    This starts the web app and Wahoo worker. Open http://localhost:3000 for the web app. On the first
+    local Supabase start, run `pnpm db:status` and copy the local API keys into both app environment
+    files before restarting the graph.
+
+   For provider OAuth or webhooks, copy `apps/web/.env.tunnel.example` to `apps/web/.env.tunnel`,
+   configure the named Cloudflare Tunnel token, run `pnpm run doctor -- --lane dev`, then start
+   `pnpm exec turbo run dev`.
 
 5. Make a small scoped change and run its focused check. For example:
 
@@ -60,19 +64,20 @@ pnpm exec turbo run dev
 | Web only | `pnpm exec turbo run dev --filter=web` |
 | Mobile Metro only | `pnpm exec turbo run dev --filter=mobile` |
 | Web without a public tunnel | `pnpm dev:web:local` |
-| Public provider callback or webhook | Included in `pnpm exec turbo run dev`; configure ngrok and provider credentials first |
+| Public provider callback or webhook | Included in `pnpm exec turbo run dev`; configure Cloudflare Tunnel and provider credentials first |
 | Web E2E | `apps/web/README.md` |
 | Mobile device/E2E | `apps/mobile/README.md` |
 | Database or schema work | `packages/db/README.md` |
 
 `pnpm dev` is a convenience wrapper for `pnpm exec turbo run dev`. The normal web `dev` task includes
-the reserved ngrok tunnel so provider callbacks work. Use `pnpm dev:web:local` to opt out.
+the Cloudflare Tunnel for `https://dev.gradientpeak.com`, so provider callbacks work. Use
+`pnpm dev:web:local` to opt out.
 
 ## Environment rules
 
 - Keep environment files with the owning app or package; never commit local `.env` files.
 - Local Supabase supplies the local URL and keys. Use `pnpm db:status` after it starts.
-- The full development lane requires the configured ngrok tunnel for provider OAuth and webhooks.
+- The full development lane requires the configured Cloudflare Tunnel for provider OAuth and webhooks.
   Use the focused local web lane when public callback support is intentionally unnecessary.
 - Use `pnpm run doctor -- --lane web`, `mobile`, `db`, or `e2e` for a lane-specific preflight.
 

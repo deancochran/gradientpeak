@@ -7,6 +7,7 @@ import {
   ActivitySubmissionValidationError,
   MATERIALIZER_VERSION,
 } from "../../../application/activities/submit-activity";
+import { ActivityAnalysisValidationError } from "../../../application/activity-file-ingestion/analyze-parsed-activity-file";
 import { ImportedActivityAnalysisError } from "../../../application/activity-file-ingestion/submit-imported-activity-artifact";
 import {
   createActivityImporter,
@@ -1377,6 +1378,71 @@ describe("activity-importer", () => {
     const repository = createRepositoryMock();
     repository.submitActivity.mockRejectedValueOnce(
       new ImportedActivityAnalysisError("activity_laps_invalid", new Error("invalid laps")),
+    );
+    const importer = createTestImporter({
+      activityFileStorage: { uploadActivityFile: vi.fn().mockResolvedValue(undefined) },
+      repository,
+      submitActivity: repository.submitActivity,
+    });
+    fetchMock.mockResolvedValueOnce(
+      activityFileResponse(new TextEncoder().encode("fit-binary-data")),
+    );
+
+    await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
+      success: true,
+      skipped: true,
+      reason: "Activity file semantics are unsupported",
+      failureReason: "unsupported_activity_file",
+    });
+  });
+
+  it("skips an activity whose analyzed artifact fails schema validation", async () => {
+    const repository = createRepositoryMock();
+    let validationError: unknown;
+    try {
+      z.object({ duration: z.number().finite() }).parse({ duration: Number.NaN });
+    } catch (error) {
+      validationError = error;
+    }
+    repository.submitActivity.mockRejectedValueOnce(
+      new ImportedActivityAnalysisError("activity_analysis_failed", validationError),
+    );
+    const importer = createTestImporter({
+      activityFileStorage: { uploadActivityFile: vi.fn().mockResolvedValue(undefined) },
+      repository,
+      submitActivity: repository.submitActivity,
+    });
+    fetchMock.mockResolvedValueOnce(
+      activityFileResponse(new TextEncoder().encode("fit-binary-data")),
+    );
+
+    await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
+      success: true,
+      skipped: true,
+      reason: "Activity file semantics are unsupported",
+      failureReason: "unsupported_activity_file",
+    });
+    expect(console.warn).toHaveBeenCalledWith(
+      "Wahoo activity import skipped",
+      expect.objectContaining({
+        application_code: "activity_analysis_failed",
+        error_class: "ImportedActivityAnalysisError",
+        operation: "analyze_activity",
+        provider: "wahoo",
+      }),
+    );
+  });
+
+  it("skips an activity whose analyzed segments are invalid", async () => {
+    const repository = createRepositoryMock();
+    repository.submitActivity.mockRejectedValueOnce(
+      new ImportedActivityAnalysisError(
+        "activity_analysis_failed",
+        new ActivityAnalysisValidationError(
+          "activity_analysis_segments_invalid",
+          new Error("invalid segment schema"),
+        ),
+      ),
     );
     const importer = createTestImporter({
       activityFileStorage: { uploadActivityFile: vi.fn().mockResolvedValue(undefined) },

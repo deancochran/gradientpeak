@@ -6,6 +6,7 @@ import { getRequestHeaders } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { getSafeAppRedirectTarget, toAbsoluteAppUrl } from "../app-url";
 import { buildFlashHref } from "../flash";
+import { signInWithEmailAndForwardSession } from "./email-sign-in";
 import { getLoginFormError, getSignUpFormError, getUpdatePasswordFormError } from "./form-errors";
 import {
   forgotPasswordFormSchema,
@@ -150,11 +151,9 @@ export const signInWithEmailAction = createServerFn({ method: "POST" })
     const auth = getGradientPeakAuth();
 
     try {
-      await auth.api.signInEmail({
-        body: {
-          email: data.email,
-          password: data.password,
-        },
+      await signInWithEmailAndForwardSession(auth.api, {
+        email: data.email,
+        password: data.password,
       });
     } catch (error) {
       const formError = getLoginFormError(error);

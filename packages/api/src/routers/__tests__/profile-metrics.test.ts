@@ -38,30 +38,6 @@ function createProfileMetricRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function createActivityEffortRow(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "00000000-0000-4000-8000-000000000010",
-    created_at: new Date("2026-07-14T09:00:00.000Z"),
-    updated_at: new Date("2026-07-14T09:00:00.000Z"),
-    profile_id: "11111111-1111-4111-8111-111111111111",
-    activity_id: null,
-    segment_id: null,
-    recorded_at: new Date("2026-07-14T09:00:00.000Z"),
-    activity_category: "swim",
-    effort_type: "speed",
-    duration_seconds: 360,
-    start_offset: null,
-    unit: "meters_per_second",
-    value: 400 / 360,
-    source: "test",
-    method: "css_400m_200m_test",
-    calculation_version: "css_400m_200m_v1",
-    quality_score: 1,
-    provenance: { observation_type: "validated_test", trusted: true },
-    ...overrides,
-  };
-}
-
 function createDbMock(plan: QueryPlan = {}) {
   const callLog: DbCall[] = [];
   let insertIndex = 0;

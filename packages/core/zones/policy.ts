@@ -28,8 +28,8 @@ export interface ProfileZonePolicyResult {
  * It does not infer max HR or mix run/swim LTHR into bike zones.
  */
 export function resolveProfileZones(facts: {
-  cycling: {
-    planningThresholdPower: {
+  thresholds: {
+    bike: {
       status: "available" | "partial" | "unavailable";
       value: number | null;
     };
@@ -40,9 +40,7 @@ export function resolveProfileZones(facts: {
     };
   };
 }): ProfileZonePolicyResult {
-  const planningThresholdPower = getAvailablePerformanceTargetValue(
-    facts.cycling.planningThresholdPower,
-  );
+  const planningThresholdPower = getAvailablePerformanceTargetValue(facts.thresholds.bike);
   const bikeLthr = facts.heartRate.bike.lthr;
   const powerBounds =
     planningThresholdPower === null ? [] : getPowerZoneUpperBoundsFromFtp(planningThresholdPower);

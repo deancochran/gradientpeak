@@ -30,11 +30,11 @@ export async function seedOwnedActivityPlan(pool: Pool, profileId: string) {
 
   const structure = {
     version: 3,
+    activity_category: "bike",
     segments: [
       {
         id: "e1000000-0000-4000-8000-000000000001",
         role: "activity",
-        activity_category: "bike",
         name: "Tempo ride",
         intervals: [
           {
@@ -68,11 +68,11 @@ export async function seedOwnedActivityPlan(pool: Pool, profileId: string) {
     const activity_category = index % 2 === 0 ? "run" : "bike";
     const libraryStructure = {
       version: 3,
+      activity_category,
       segments: [
         {
           id: `f1000000-0000-4000-8000-${String(index * 10).padStart(12, "0")}`,
           role: "activity",
-          activity_category,
           name: `${activity_category} segment`,
           intervals: [
             {

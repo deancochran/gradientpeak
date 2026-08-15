@@ -12,9 +12,9 @@ export type ActivityPerformanceCurveKind =
   | "grade_adjusted_speed_duration"
   | "swim_speed_duration";
 export type ActivityPerformanceThresholdKind =
-  | "planning_threshold_power"
-  | "planning_threshold_pace"
-  | "swimming_css";
+  | "bike_power_threshold"
+  | "run_speed_threshold"
+  | "swim_speed_threshold";
 
 export type CompletedActivityCalculationPolicy = {
   performanceCurve: ActivityPerformanceCurveKind | null;
@@ -35,17 +35,17 @@ export const activityThresholdMethodsByActivityCategory = {
 export const completedActivityCalculationPolicy = {
   run: {
     performanceCurve: "grade_adjusted_speed_duration",
-    threshold: "planning_threshold_pace",
+    threshold: "run_speed_threshold",
     thresholdMethods: ["run_pace_threshold", "heart_rate_threshold"],
   },
   bike: {
     performanceCurve: "power_duration",
-    threshold: "planning_threshold_power",
+    threshold: "bike_power_threshold",
     thresholdMethods: ["power_threshold", "heart_rate_threshold"],
   },
   swim: {
     performanceCurve: "swim_speed_duration",
-    threshold: "swimming_css",
+    threshold: "swim_speed_threshold",
     thresholdMethods: ["swim_pace_threshold", "heart_rate_threshold"],
   },
   strength: {

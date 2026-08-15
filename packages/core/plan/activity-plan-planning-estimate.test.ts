@@ -8,6 +8,7 @@ import { getNormalizedIntensity } from "../load";
 import {
   athletePerformanceTargetFactsSchema,
   createUnavailableAthletePerformanceTargetFacts,
+  materializeAthletePerformanceTargetFacts,
 } from "../performance-model";
 import {
   type ActivityPlanPlanningEstimate,
@@ -47,35 +48,49 @@ const singleBike = activityPlanStructureSchema.parse({
 const unavailableTargets = createUnavailableAthletePerformanceTargetFacts(
   "2026-06-01T00:00:00.000Z",
 );
-const availableTarget = (
-  fact: typeof unavailableTargets.cycling.planningThresholdPower,
-  value: number,
-) => ({
-  ...fact,
+const bikeThresholdSource = {
+  id: "bike-threshold-test",
   status: "available" as const,
-  value,
-  calculationVersion: "activity-plan-planning-test-v1",
-  sourceEvidenceIds: ["test-evidence"],
-  evidenceTime: {
-    observedFrom: "2026-05-30T00:00:00.000Z",
-    observedThrough: "2026-05-30T00:00:00.000Z",
-    computedAt: unavailableTargets.asOf,
-  },
-  confidence: "high" as const,
-  expiresAt: "2026-08-30T00:00:00.000Z",
-  reasons: [],
+  activityCategory: "bike" as const,
+  metric: "power" as const,
+  unit: "watts" as const,
+  method: "bike_power_30m" as const,
+  value: 250,
+  effectiveAt: "2026-05-30T00:00:00.000Z",
+  policyVersion: "threshold-policy-v1",
+  state: "confirmed" as const,
+  confidence: 0.9,
+  sourceEvaluationIds: ["test-evidence"],
+  sourceEffortIds: ["test-effort"],
+  sourceActivityIds: ["test-activity"],
+};
+const performanceTargets = materializeAthletePerformanceTargetFacts({
+  athleteId: unavailableTargets.athleteId,
+  asOf: unavailableTargets.asOf,
+  thresholds: [bikeThresholdSource],
 });
-const performanceTargets = athletePerformanceTargetFactsSchema.parse({
-  ...unavailableTargets,
-  cycling: {
-    planningThresholdPower: availableTarget(unavailableTargets.cycling.planningThresholdPower, 250),
-  },
-});
-const runPerformanceTargets = athletePerformanceTargetFactsSchema.parse({
-  ...performanceTargets,
-  running: {
-    planningThresholdPace: availableTarget(unavailableTargets.running.planningThresholdPace, 250),
-  },
+const runPerformanceTargets = materializeAthletePerformanceTargetFacts({
+  athleteId: unavailableTargets.athleteId,
+  asOf: unavailableTargets.asOf,
+  thresholds: [
+    bikeThresholdSource,
+    {
+      id: "run-threshold-test",
+      status: "available",
+      activityCategory: "run",
+      metric: "speed",
+      unit: "meters_per_second",
+      method: "run_speed_30m",
+      value: 4,
+      effectiveAt: "2026-05-30T00:00:00.000Z",
+      policyVersion: "threshold-policy-v1",
+      state: "confirmed",
+      confidence: 0.9,
+      sourceEvaluationIds: ["run-test-evidence"],
+      sourceEffortIds: ["run-test-effort"],
+      sourceActivityIds: ["run-test-activity"],
+    },
+  ],
 });
 
 function onlyPrescription(estimate: ActivityPlanPlanningEstimate) {
@@ -287,33 +302,6 @@ describe("estimateActivityPlanForTrainingContext", () => {
     const recomputedTargets = {
       ...performanceTargets,
       asOf: "2026-06-02T00:00:00.000Z",
-      cycling: {
-        planningThresholdPower: {
-          ...performanceTargets.cycling.planningThresholdPower,
-          evidenceTime: {
-            ...performanceTargets.cycling.planningThresholdPower.evidenceTime,
-            computedAt: "2026-06-02T00:00:00.000Z",
-          },
-        },
-      },
-      running: {
-        planningThresholdPace: {
-          ...performanceTargets.running.planningThresholdPace,
-          evidenceTime: {
-            ...performanceTargets.running.planningThresholdPace.evidenceTime,
-            computedAt: "2026-06-02T00:00:00.000Z",
-          },
-        },
-      },
-      swimming: {
-        css: {
-          ...performanceTargets.swimming.css,
-          evidenceTime: {
-            ...performanceTargets.swimming.css.evidenceTime,
-            computedAt: "2026-06-02T00:00:00.000Z",
-          },
-        },
-      },
     };
     const recomputed = estimateActivityPlanForTrainingContext({
       structure: singleBike,
@@ -323,11 +311,16 @@ describe("estimateActivityPlanForTrainingContext", () => {
     });
     const revisedTargets = athletePerformanceTargetFactsSchema.parse({
       ...performanceTargets,
-      cycling: {
-        planningThresholdPower: {
-          ...performanceTargets.cycling.planningThresholdPower,
+      thresholds: {
+        ...performanceTargets.thresholds,
+        bike: {
+          ...performanceTargets.thresholds.bike,
           value: 260,
-          sourceEvidenceIds: ["test-evidence-2"],
+          thresholdId: "bike-threshold-test-2",
+          evaluationId: "test-evidence-2",
+          sourceEvaluationIds: ["test-evidence-2"],
+          sourceEffortIds: ["test-effort-2"],
+          sourceActivityIds: ["test-activity-2"],
         },
       },
     });

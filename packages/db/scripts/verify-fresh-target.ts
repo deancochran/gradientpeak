@@ -2,6 +2,7 @@
 
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { Pool } from "pg";
 import {
   applySqlFile,
   bootstrapSupabaseSchemas,
@@ -255,15 +256,32 @@ async function assertActivitySourceIdentityContract(target: {
       timing_coverage, parser_version, decoded_contract_version, materializer_version
     ) values (
       '77777777-7777-4777-8777-777777777773', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      'source owner fixture', now(), now() + interval '1 second', 1000, 1000, 1000,
+      'source owner fixture', now() - interval '2 days 31 minutes', now() - interval '2 days 31 minutes' + interval '1 second', 1000, 1000, 1000,
       'complete', 'fixture', 'fixture', 'fixture'
+    );
+    insert into public.activity_artifacts (
+      id, profile_id, digest, byte_size, bucket, path, media_type, format
+    ) values (
+      '77777777-7777-4777-8777-777777777769', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      repeat('a', 64), 1, 'activity-files',
+      public.activity_artifact_content_path('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', repeat('a', 64)),
+      'application/vnd.ant.fit', 'fit'
+    );
+    insert into public.activity_artifact_links (
+      id, activity_id, artifact_id, profile_id, role, ordinal, is_current
+    ) values (
+      '77777777-7777-4777-8777-777777777768', '77777777-7777-4777-8777-777777777773',
+      '77777777-7777-4777-8777-777777777769', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'source', 0, true
     );
     insert into public.activity_segments (
       id, activity_id, profile_id, ordinal, role, activity_category, start_offset_ms, end_offset_ms,
-      summary, timing_coverage, active_ms, moving_ms, parser_version, materializer_version
+      source_artifact_id, summary, timing_coverage, active_ms, moving_ms,
+      parser_version, materializer_version
     ) values (
       '77777777-7777-4777-8777-777777777770', '77777777-7777-4777-8777-777777777773',
       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 0, 'activity', 'bike', 0, 1000,
+      '77777777-7777-4777-8777-777777777769',
       '{"version":"1","timing":{"timingCoverage":"complete","activeMs":1000,"movingMs":1000}}'::jsonb,
       'complete', 1000, 1000, 'fixture', 'fixture'
     );
@@ -346,14 +364,16 @@ async function assertStrictlyPositiveActivityEfforts(target: {
     await target.query(`
       insert into public.activity_efforts (
         id, created_at, profile_id, activity_id, segment_id, recorded_at, activity_category,
-        effort_type, duration_seconds, start_offset, unit, value, source, method,
+        effort_type, source_series, duration_seconds, source_artifact_id, source_revision, start_offset_ms,
+        end_offset_ms, window_coverage, max_gap_seconds, unit, value, source, method,
         calculation_version, provenance
       ) values (
         '44444444-4444-4444-8444-444444444440', now(),
         'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
         '77777777-7777-4777-8777-777777777773',
         '77777777-7777-4777-8777-777777777770', now(), 'bike',
-        'power', 1, 0, 'watts', 0, 'test', 'fresh_target_constraint',
+        'power', 'power', 1, '77777777-7777-4777-8777-777777777769', 1, 0, 1000,
+        1, 1, 'watts', 0, 'test', 'fresh_target_constraint',
         'test-v1', '{"observation_id":"44444444-4444-4444-8444-444444444440"}'::jsonb
       )
     `);
@@ -368,6 +388,734 @@ async function assertStrictlyPositiveActivityEfforts(target: {
     throw error;
   }
   throw new Error("activity_efforts accepted a zero value");
+}
+
+type VerificationTarget = {
+  query: <Row extends Record<string, unknown>>(
+    text: string,
+    values?: unknown[],
+  ) => Promise<{ rows: Row[] }>;
+};
+
+async function expectDatabaseError(
+  target: VerificationTarget,
+  statement: string,
+  expected: { code: string; constraint?: string },
+) {
+  try {
+    await target.query(statement);
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? error.code : null;
+    const constraint =
+      error && typeof error === "object" && "constraint" in error ? error.constraint : null;
+    if (code === expected.code && (!expected.constraint || constraint === expected.constraint))
+      return;
+    throw error;
+  }
+  throw new Error(`expected database error ${expected.code}:${expected.constraint ?? "any"}`);
+}
+
+async function expectServiceRoleDenied(target: VerificationTarget, statement: string) {
+  await target.query("set role service_role");
+  try {
+    await expectDatabaseError(target, statement, { code: "42501" });
+  } finally {
+    await target.query("reset role");
+  }
+}
+
+async function assertThresholdRootConcurrency(
+  target: VerificationTarget,
+  connectionString: string,
+) {
+  await target.query(`
+    begin;
+    insert into public.activity_artifacts (
+      id, profile_id, digest, byte_size, bucket, path, media_type, format
+    ) values (
+      '22222222-2222-4222-8222-222222222221', '11111111-1111-4111-8111-111111111111',
+      repeat('f', 64), 1, 'activity-files',
+      public.activity_artifact_content_path('11111111-1111-4111-8111-111111111111', repeat('f', 64)),
+      'application/vnd.ant.fit', 'fit'
+    );
+    insert into public.activity_artifact_links (
+      id, activity_id, artifact_id, profile_id, role, ordinal, is_current
+    ) values (
+      '22222222-2222-4222-8222-222222222223', '22222222-2222-4222-8222-222222222222',
+      '22222222-2222-4222-8222-222222222221', '11111111-1111-4111-8111-111111111111',
+      'source', 0, true
+    );
+    update public.activities
+    set started_at = now() - interval '40 minutes', finished_at = now() - interval '10 minutes',
+        elapsed_ms = 1800000, active_ms = 1800000, moving_ms = 1800000
+    where id = '22222222-2222-4222-8222-222222222222';
+    update public.activity_segments
+    set source_artifact_id = '22222222-2222-4222-8222-222222222221',
+        end_offset_ms = 1800000, active_ms = 1800000, moving_ms = 1800000,
+        summary = '{"version":"1","timing":{"timingCoverage":"complete","activeMs":1800000,"movingMs":1800000}}'::jsonb
+    where id = '33333333-3333-4333-8333-333333333333';
+    insert into public.activity_efforts (
+      id, created_at, profile_id, activity_id, segment_id, recorded_at, activity_category,
+      effort_type, source_series, duration_seconds, source_artifact_id, source_revision, start_offset_ms,
+      end_offset_ms, window_coverage, max_gap_seconds, unit, value, source, method,
+      calculation_version, provenance
+    ) select
+      effort_id, now(), profile_id, id,
+      '33333333-3333-4333-8333-333333333333', finished_at, 'run', 'speed', source_series, 1800,
+      '22222222-2222-4222-8222-222222222221', 1, 0, 1800000, 1, 1,
+      'meters_per_second', value, 'derived', 'best_effort', 'test-v1', '{}'::jsonb
+    from public.activities
+    cross join (values
+      ('44444444-4444-4444-8444-444444444443'::uuid, 'raw_speed'::public.activity_effort_source_series, 4::real),
+      ('44444444-4444-4444-8444-444444444444'::uuid, 'grade_adjusted_speed'::public.activity_effort_source_series, 4.1::real)
+    ) series(effort_id, source_series, value)
+    where id = '22222222-2222-4222-8222-222222222222';
+
+    insert into public.threshold_evaluations (
+      id, profile_id, activity_category, metric, method, outcome, value, unit, confidence,
+      observed_at, policy_version, diagnostics, source_activity_id, source_revision
+    )
+    select evaluation_id, profile_id, 'bike', 'power', 'bike_power_30m', 'qualified',
+      237.5, 'watts', 0.9, finished_at, policy_version, '{}'::jsonb, id, segments_revision
+    from public.activities
+    cross join (values
+      ('55555555-5555-4555-8555-555555555557'::uuid, 'threshold-race-a'),
+      ('55555555-5555-4555-8555-555555555558'::uuid, 'threshold-race-b')
+    ) candidate(evaluation_id, policy_version)
+    where id = '77777777-7777-4777-8777-777777777773';
+    insert into public.threshold_evaluations (
+      id, profile_id, activity_category, metric, method, outcome, value, unit, confidence,
+      observed_at, policy_version, diagnostics, source_activity_id, source_revision
+    ) select
+      '55555555-5555-4555-8555-555555555559', profile_id, 'run', 'speed',
+      'run_speed_30m', 'qualified', 3.8, 'meters_per_second', 0.9, finished_at,
+      'threshold-race-run', '{}'::jsonb, id, segments_revision
+    from public.activities where id = '22222222-2222-4222-8222-222222222222';
+    insert into public.threshold_evaluations (
+      id, profile_id, activity_category, metric, method, outcome, value, unit, confidence,
+      observed_at, policy_version, diagnostics, source_activity_id, source_revision
+    ) select
+      '55555555-5555-4555-8555-555555555556', profile_id, 'run', 'speed',
+      'run_speed_30m', 'qualified', 3.9, 'meters_per_second', 0.88, finished_at,
+      'threshold-race-run-grade', '{}'::jsonb, id, segments_revision
+    from public.activities where id = '22222222-2222-4222-8222-222222222222';
+    insert into public.threshold_evaluation_efforts
+    select evaluation.id, '44444444-4444-4444-8444-444444444441', evaluation.profile_id,
+      evaluation.activity_category, evaluation.source_activity_id, evaluation.source_revision,
+      evaluation.metric, 'power', 'power', 'primary', 0
+    from public.threshold_evaluations evaluation
+    where evaluation.id in (
+      '55555555-5555-4555-8555-555555555557',
+      '55555555-5555-4555-8555-555555555558'
+    );
+    insert into public.threshold_evaluation_efforts values (
+      '55555555-5555-4555-8555-555555555559', '44444444-4444-4444-8444-444444444443',
+      '11111111-1111-4111-8111-111111111111', 'run',
+      '22222222-2222-4222-8222-222222222222', 1, 'speed', 'speed', 'raw_speed', 'primary', 0
+    );
+    insert into public.threshold_evaluation_efforts values (
+      '55555555-5555-4555-8555-555555555556', '44444444-4444-4444-8444-444444444444',
+      '11111111-1111-4111-8111-111111111111', 'run',
+      '22222222-2222-4222-8222-222222222222', 1, 'speed', 'speed',
+      'grade_adjusted_speed', 'primary', 0
+    );
+    commit;
+  `);
+
+  await expectDatabaseError(
+    target,
+    `insert into public.activity_efforts (
+      id, created_at, profile_id, activity_id, segment_id, recorded_at, activity_category,
+      effort_type, source_series, duration_seconds, source_artifact_id, source_revision,
+      start_offset_ms, end_offset_ms, window_coverage, max_gap_seconds, unit, value, source,
+      method, calculation_version, provenance
+    ) select
+      '44444444-4444-4444-8444-444444444446', now(), profile_id, id,
+      '33333333-3333-4333-8333-333333333333', finished_at, 'run', 'speed', 'raw_speed',
+      1800, '22222222-2222-4222-8222-222222222221', 1, 0, 1800000, 1, 1,
+      'meters_per_second', 4, 'derived', 'best_effort', 'test-v1', '{}'::jsonb
+    from public.activities where id = '22222222-2222-4222-8222-222222222222'`,
+    { code: "23505", constraint: "activity_efforts_deterministic_source_window_unique" },
+  );
+  const runSeries = await target.query<{ effort_count: string; link_count: string }>(`
+    select
+      (select count(*) from public.activity_efforts
+       where activity_id = '22222222-2222-4222-8222-222222222222'
+         and duration_seconds = 1800
+         and source_series in ('raw_speed', 'grade_adjusted_speed'))::text as effort_count,
+      (select count(*) from public.threshold_evaluation_efforts
+       where activity_id = '22222222-2222-4222-8222-222222222222'
+         and source_series in ('raw_speed', 'grade_adjusted_speed'))::text as link_count
+  `);
+  if (runSeries.rows[0]?.effort_count !== "2" || runSeries.rows[0]?.link_count !== "2") {
+    throw new Error("run source series did not coexist idempotently with owned evaluation links");
+  }
+  await target.query(
+    "delete from public.activity_efforts where id = '44444444-4444-4444-8444-444444444444'",
+  );
+  const seriesCascade = await target.query<{ grade_count: string; raw_count: string }>(`
+    select
+      (select count(*) from public.threshold_evaluations
+       where id = '55555555-5555-4555-8555-555555555556')::text as grade_count,
+      (select count(*) from public.threshold_evaluations
+       where id = '55555555-5555-4555-8555-555555555559')::text as raw_count
+  `);
+  if (seriesCascade.rows[0]?.grade_count !== "0" || seriesCascade.rows[0]?.raw_count !== "1") {
+    throw new Error(
+      "source-series effort deletion did not preserve unrelated evaluation ownership",
+    );
+  }
+  console.log(
+    "[db:activity-effort-series] raw and grade-adjusted 1800s windows coexist idempotently, link independently, and cascade independently",
+  );
+
+  const insertThreshold = (thresholdId: string, evaluationId: string) => `
+    insert into public.thresholds (
+      id, profile_id, activity_category, metric, evaluation_id, value, unit, confidence,
+      method, effective_at, policy_version
+    ) select
+      '${thresholdId}', profile_id, activity_category, metric, id, value, unit, confidence,
+      method, observed_at, policy_version
+    from public.threshold_evaluations where id = '${evaluationId}'
+  `;
+  const sessions = new Pool({ connectionString, max: 2 });
+  const first = await sessions.connect();
+  const second = await sessions.connect();
+  try {
+    await first.query("begin");
+    await second.query("begin");
+    await first.query(
+      insertThreshold(
+        "66666666-6666-4666-8666-666666666667",
+        "55555555-5555-4555-8555-555555555557",
+      ),
+    );
+    const competingInsert = second
+      .query(
+        insertThreshold(
+          "66666666-6666-4666-8666-666666666668",
+          "55555555-5555-4555-8555-555555555558",
+        ),
+      )
+      .then(() => ({ code: null, constraint: null }))
+      .catch((error: unknown) => ({
+        code: error && typeof error === "object" && "code" in error ? error.code : null,
+        constraint:
+          error && typeof error === "object" && "constraint" in error ? error.constraint : null,
+      }));
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    await first.query("commit");
+    const competingResult = await competingInsert;
+    if (
+      competingResult.code !== "23505" ||
+      competingResult.constraint !== "thresholds_identity_root_unique"
+    ) {
+      throw new Error(
+        "concurrent first threshold roots were not serialized by database uniqueness",
+      );
+    }
+    await second.query("rollback");
+
+    const racedRoots = await target.query<{ count: string }>(`
+      select count(*)::text as count from public.thresholds
+      where profile_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+        and activity_category = 'bike' and metric = 'power' and supersedes_id is null
+    `);
+    if (racedRoots.rows[0]?.count !== "1") {
+      throw new Error("same-identity threshold race did not leave exactly one root");
+    }
+    await target.query(
+      "delete from public.thresholds where id = '66666666-6666-4666-8666-666666666667'",
+    );
+
+    await first.query("begin");
+    await second.query("begin");
+    await Promise.all([
+      first.query(
+        insertThreshold(
+          "66666666-6666-4666-8666-666666666669",
+          "55555555-5555-4555-8555-555555555557",
+        ),
+      ),
+      second.query(
+        insertThreshold(
+          "66666666-6666-4666-8666-666666666670",
+          "55555555-5555-4555-8555-555555555559",
+        ),
+      ),
+    ]);
+    await Promise.all([first.query("commit"), second.query("commit")]);
+    const separateRoots = await target.query<{ count: string }>(`
+      select count(*)::text as count from public.thresholds
+      where id in (
+        '66666666-6666-4666-8666-666666666669',
+        '66666666-6666-4666-8666-666666666670'
+      ) and supersedes_id is null
+    `);
+    if (separateRoots.rows[0]?.count !== "2") {
+      throw new Error("separate threshold identities did not commit independently");
+    }
+  } finally {
+    await Promise.allSettled([first.query("rollback"), second.query("rollback")]);
+    first.release();
+    second.release();
+    await sessions.end();
+  }
+  await target.query(`
+    delete from public.threshold_evaluations where id in (
+      '55555555-5555-4555-8555-555555555557',
+      '55555555-5555-4555-8555-555555555558',
+      '55555555-5555-4555-8555-555555555559'
+    )
+  `);
+  console.log("[db:threshold-roots] same-identity race rejected and separate identities committed");
+}
+
+async function assertThresholdChain(
+  target: VerificationTarget,
+  expected: Array<{ id: string; supersedesId: string | null }>,
+) {
+  const chain = await target.query<{ id: string; supersedes_id: string | null }>(`
+    select id::text, supersedes_id::text
+    from public.thresholds
+    where profile_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+      and activity_category = 'bike' and metric = 'power'
+    order by effective_at, id
+  `);
+  const actual = chain.rows.map(({ id, supersedes_id }) => ({ id, supersedesId: supersedes_id }));
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(`threshold chain mismatch: ${JSON.stringify(actual)}`);
+  }
+  if (
+    actual.length > 0 &&
+    actual.filter(({ supersedesId }) => supersedesId === null).length !== 1
+  ) {
+    throw new Error("threshold chain must retain exactly one root");
+  }
+}
+
+async function assertThresholdTruthContract(target: VerificationTarget, connectionString: string) {
+  await target.query(`
+    update public.activities
+    set finished_at = started_at + interval '30 minutes',
+        elapsed_ms = 1800000, active_ms = 1800000, moving_ms = 1800000
+    where id = '77777777-7777-4777-8777-777777777773';
+    update public.activity_segments
+    set end_offset_ms = 1800000, active_ms = 1800000, moving_ms = 1800000,
+        summary = '{"version":"1","timing":{"timingCoverage":"complete","activeMs":1800000,"movingMs":1800000}}'::jsonb
+    where id = '77777777-7777-4777-8777-777777777770';
+    insert into public.activity_efforts (
+      id, created_at, profile_id, activity_id, segment_id, recorded_at, activity_category,
+      effort_type, source_series, duration_seconds, source_artifact_id, source_revision, start_offset_ms,
+      end_offset_ms, window_coverage, max_gap_seconds, unit, value, source, method,
+      calculation_version, provenance
+    ) select
+      '44444444-4444-4444-8444-444444444441', now(), profile_id, id,
+      '77777777-7777-4777-8777-777777777770', finished_at, 'bike', 'power', 'power', 1800,
+      '77777777-7777-4777-8777-777777777769', 1, 0, 1800000, 1, 2,
+      'watts', 250, 'derived', 'best_effort', 'test-v1', '{}'::jsonb
+    from public.activities where id = '77777777-7777-4777-8777-777777777773';
+  `);
+  await assertThresholdRootConcurrency(target, connectionString);
+
+  await target.query(`
+    insert into public.threshold_evaluations (
+      id, profile_id, activity_category, metric, method, outcome, unit, observed_at,
+      rejection_reason, policy_version, diagnostics, source_activity_id, source_revision
+    ) select
+      '55555555-5555-4555-8555-555555555554', profile_id, 'bike', 'power',
+      'bike_power_30m', 'rejected', 'watts', finished_at, 'exact_window_missing',
+      'threshold-rejected-zero-v1', '{"window":"missing"}'::jsonb, id, segments_revision
+    from public.activities where id = '77777777-7777-4777-8777-777777777773';
+
+    insert into public.activity_efforts (
+      id, created_at, profile_id, activity_id, segment_id, recorded_at, activity_category,
+      effort_type, source_series, duration_seconds, source_artifact_id, source_revision,
+      start_offset_ms, end_offset_ms, window_coverage, max_gap_seconds, unit, value, source,
+      method, calculation_version, provenance
+    ) select
+      '44444444-4444-4444-8444-444444444448', now(), profile_id, id,
+      '77777777-7777-4777-8777-777777777770', finished_at, 'bike', 'power', 'power',
+      1800, '77777777-7777-4777-8777-777777777769', 1, 0, 1800000, 0.8, 10,
+      'watts', 245, 'derived', 'rejected-window', 'test-v1', '{}'::jsonb
+    from public.activities where id = '77777777-7777-4777-8777-777777777773';
+    begin;
+    insert into public.threshold_evaluations (
+      id, profile_id, activity_category, metric, method, outcome, unit, observed_at,
+      rejection_reason, policy_version, diagnostics, source_activity_id, source_revision
+    ) select
+      '55555555-5555-4555-8555-555555555555', profile_id, 'bike', 'power',
+      'bike_power_30m', 'rejected', 'watts', finished_at, 'coverage_insufficient',
+      'threshold-rejected-linked-v1', '{"coverage":0.8}'::jsonb, id, segments_revision
+    from public.activities where id = '77777777-7777-4777-8777-777777777773';
+    insert into public.threshold_evaluation_efforts values (
+      '55555555-5555-4555-8555-555555555555', '44444444-4444-4444-8444-444444444448',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'bike',
+      '77777777-7777-4777-8777-777777777773', 1, 'power', 'power', 'power', 'primary', 0
+    );
+    commit;
+  `);
+  const rejectedForms = await target.query<{ linked_count: string; zero_link_count: string }>(`
+    select
+      (select count(*) from public.threshold_evaluation_efforts
+       where evaluation_id = '55555555-5555-4555-8555-555555555555')::text as linked_count,
+      (select count(*) from public.threshold_evaluation_efforts
+       where evaluation_id = '55555555-5555-4555-8555-555555555554')::text as zero_link_count
+  `);
+  if (
+    rejectedForms.rows[0]?.linked_count !== "1" ||
+    rejectedForms.rows[0]?.zero_link_count !== "0"
+  ) {
+    throw new Error("rejected evaluations did not preserve linked and zero-link forms");
+  }
+  await expectDatabaseError(
+    target,
+    `insert into public.thresholds (
+      id, profile_id, activity_category, metric, evaluation_id, value, unit, confidence,
+      method, effective_at, policy_version
+    ) select
+      '66666666-6666-4666-8666-666666666665', profile_id, activity_category, metric,
+      id, 250, unit, 0.5, method, observed_at, policy_version
+    from public.threshold_evaluations where id = '55555555-5555-4555-8555-555555555554'`,
+    { code: "23514", constraint: "thresholds_evaluation_snapshot" },
+  );
+  await target.query(
+    "delete from public.activity_efforts where id = '44444444-4444-4444-8444-444444444448'",
+  );
+  const rejectedCascade = await target.query<{ linked_count: string; zero_count: string }>(`
+    select
+      (select count(*) from public.threshold_evaluations
+       where id = '55555555-5555-4555-8555-555555555555')::text as linked_count,
+      (select count(*) from public.threshold_evaluations
+       where id = '55555555-5555-4555-8555-555555555554')::text as zero_count
+  `);
+  if (
+    rejectedCascade.rows[0]?.linked_count !== "0" ||
+    rejectedCascade.rows[0]?.zero_count !== "1"
+  ) {
+    throw new Error("rejected linked evaluation cascade affected zero-link diagnostics");
+  }
+  console.log(
+    "[db:threshold-rejections] zero-link and measured-link rejections persist; linked cascade and publication denial passed",
+  );
+
+  await expectDatabaseError(
+    target,
+    `begin;
+     insert into public.threshold_evaluations (
+       id, profile_id, activity_category, metric, method, outcome, value, unit, confidence,
+       observed_at, policy_version, diagnostics, source_activity_id, source_revision
+     ) select
+       '55555555-5555-4555-8555-555555555550', profile_id, 'bike', 'power',
+       'bike_power_30m', 'qualified', 237.5, 'watts', 0.9, finished_at,
+       'threshold-policy-v1', '{}'::jsonb, id, segments_revision
+     from public.activities where id = '77777777-7777-4777-8777-777777777773';
+     commit;`,
+    { code: "23514", constraint: "threshold_evaluations_primary_effort" },
+  );
+  await target.query("rollback");
+
+  await target.query(`
+    begin;
+    insert into public.threshold_evaluations (
+      id, profile_id, activity_category, metric, method, outcome, value, unit, confidence,
+      observed_at, policy_version, diagnostics, source_activity_id, source_revision
+    ) select
+      '55555555-5555-4555-8555-555555555551', profile_id, 'bike', 'power',
+      'bike_power_30m', 'qualified', 237.5, 'watts', 0.9, finished_at,
+      'threshold-policy-v1', '{}'::jsonb, id, segments_revision
+    from public.activities where id = '77777777-7777-4777-8777-777777777773';
+    insert into public.threshold_evaluation_efforts (
+      evaluation_id, effort_id, profile_id, activity_category, activity_id,
+      source_revision, metric, effort_type, source_series, role, ordinal
+    ) values (
+      '55555555-5555-4555-8555-555555555551',
+      '44444444-4444-4444-8444-444444444441',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'bike',
+      '77777777-7777-4777-8777-777777777773', 1, 'power', 'power', 'power', 'primary', 0
+    );
+    commit;
+    insert into public.thresholds (
+      id, profile_id, activity_category, metric, evaluation_id, value, unit, confidence,
+      method, effective_at, policy_version
+    ) select
+      '66666666-6666-4666-8666-666666666661', profile_id, activity_category, metric,
+      id, value, unit, confidence, method, observed_at, policy_version
+    from public.threshold_evaluations where id = '55555555-5555-4555-8555-555555555551';
+
+    insert into public.activities (
+      id, profile_id, name, started_at, finished_at, elapsed_ms, active_ms, moving_ms,
+      timing_coverage, parser_version, decoded_contract_version, materializer_version
+    ) select
+      '77777777-7777-4777-8777-777777777761', profile_id, 'second threshold source',
+      started_at + interval '1 day', finished_at + interval '1 day', elapsed_ms, active_ms,
+      moving_ms, timing_coverage, parser_version, decoded_contract_version, materializer_version
+    from public.activities where id = '77777777-7777-4777-8777-777777777773';
+    insert into public.activity_artifacts (
+      id, profile_id, digest, byte_size, bucket, path, media_type, format
+    ) values (
+      '77777777-7777-4777-8777-777777777762', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      repeat('b', 64), 1, 'activity-files',
+      public.activity_artifact_content_path('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', repeat('b', 64)),
+      'application/vnd.ant.fit', 'fit'
+    );
+    insert into public.activity_artifact_links (
+      id, activity_id, artifact_id, profile_id, role, ordinal, is_current
+    ) values (
+      '77777777-7777-4777-8777-777777777763', '77777777-7777-4777-8777-777777777761',
+      '77777777-7777-4777-8777-777777777762', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'source', 0, true
+    );
+    insert into public.activity_segments (
+      id, activity_id, profile_id, ordinal, role, activity_category, start_offset_ms,
+      end_offset_ms, source_artifact_id, summary, timing_coverage, active_ms, moving_ms,
+      parser_version, materializer_version
+    ) values (
+      '77777777-7777-4777-8777-777777777764', '77777777-7777-4777-8777-777777777761',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 0, 'activity', 'bike', 0, 1800000,
+      '77777777-7777-4777-8777-777777777762',
+      '{"version":"1","timing":{"timingCoverage":"complete","activeMs":1800000,"movingMs":1800000}}'::jsonb,
+      'complete', 1800000, 1800000, 'fixture', 'fixture'
+    );
+    insert into public.activity_efforts (
+      id, created_at, profile_id, activity_id, segment_id, recorded_at, activity_category,
+      effort_type, source_series, duration_seconds, source_artifact_id, source_revision, start_offset_ms,
+      end_offset_ms, window_coverage, max_gap_seconds, unit, value, source, method,
+      calculation_version, provenance
+    ) select
+      '44444444-4444-4444-8444-444444444442', now(), profile_id, id,
+      '77777777-7777-4777-8777-777777777764', finished_at, 'bike', 'power', 'power', 1800,
+      '77777777-7777-4777-8777-777777777762', 1, 0, 1800000, 1, 2,
+      'watts', 260, 'derived', 'best_effort', 'test-v1', '{}'::jsonb
+    from public.activities where id = '77777777-7777-4777-8777-777777777761';
+    begin;
+    insert into public.threshold_evaluations (
+      id, profile_id, activity_category, metric, method, outcome, value, unit, confidence,
+      observed_at, policy_version, diagnostics, source_activity_id, source_revision
+    ) select
+      '55555555-5555-4555-8555-555555555552', profile_id, 'bike', 'power',
+      'bike_power_30m', 'qualified', 247, 'watts', 0.92, finished_at,
+      'threshold-policy-v1', '{}'::jsonb, id, segments_revision
+    from public.activities where id = '77777777-7777-4777-8777-777777777761';
+    insert into public.threshold_evaluation_efforts values (
+      '55555555-5555-4555-8555-555555555552', '44444444-4444-4444-8444-444444444442',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'bike',
+      '77777777-7777-4777-8777-777777777761', 1, 'power', 'power', 'power', 'primary', 0
+    );
+    commit;
+    insert into public.thresholds (
+      id, profile_id, activity_category, metric, evaluation_id, value, unit, confidence,
+      method, effective_at, policy_version, supersedes_id
+    ) select
+      '66666666-6666-4666-8666-666666666662', profile_id, activity_category, metric,
+      id, value, unit, confidence, method, observed_at, policy_version,
+      '66666666-6666-4666-8666-666666666661'
+    from public.threshold_evaluations where id = '55555555-5555-4555-8555-555555555552';
+
+    insert into public.activities (
+      id, profile_id, name, started_at, finished_at, elapsed_ms, active_ms, moving_ms,
+      timing_coverage, parser_version, decoded_contract_version, materializer_version
+    ) select
+      '77777777-7777-4777-8777-777777777751', profile_id, 'third threshold source',
+      started_at + interval '2 days', finished_at + interval '2 days', elapsed_ms, active_ms,
+      moving_ms, timing_coverage, parser_version, decoded_contract_version, materializer_version
+    from public.activities where id = '77777777-7777-4777-8777-777777777773';
+    insert into public.activity_artifacts (
+      id, profile_id, digest, byte_size, bucket, path, media_type, format
+    ) values (
+      '77777777-7777-4777-8777-777777777752', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      repeat('8', 64), 1, 'activity-files',
+      public.activity_artifact_content_path('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', repeat('8', 64)),
+      'application/vnd.ant.fit', 'fit'
+    );
+    insert into public.activity_artifact_links (
+      id, activity_id, artifact_id, profile_id, role, ordinal, is_current
+    ) values (
+      '77777777-7777-4777-8777-777777777753', '77777777-7777-4777-8777-777777777751',
+      '77777777-7777-4777-8777-777777777752', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'source', 0, true
+    );
+    insert into public.activity_segments (
+      id, activity_id, profile_id, ordinal, role, activity_category, start_offset_ms,
+      end_offset_ms, source_artifact_id, summary, timing_coverage, active_ms, moving_ms,
+      parser_version, materializer_version
+    ) values (
+      '77777777-7777-4777-8777-777777777754', '77777777-7777-4777-8777-777777777751',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 0, 'activity', 'bike', 0, 1800000,
+      '77777777-7777-4777-8777-777777777752',
+      '{"version":"1","timing":{"timingCoverage":"complete","activeMs":1800000,"movingMs":1800000}}'::jsonb,
+      'complete', 1800000, 1800000, 'fixture', 'fixture'
+    );
+    insert into public.activity_efforts (
+      id, created_at, profile_id, activity_id, segment_id, recorded_at, activity_category,
+      effort_type, source_series, duration_seconds, source_artifact_id, source_revision, start_offset_ms,
+      end_offset_ms, window_coverage, max_gap_seconds, unit, value, source, method,
+      calculation_version, provenance
+    ) select
+      '44444444-4444-4444-8444-444444444445', now(), profile_id, id,
+      '77777777-7777-4777-8777-777777777754', finished_at, 'bike', 'power', 'power', 1800,
+      '77777777-7777-4777-8777-777777777752', 1, 0, 1800000, 1, 2,
+      'watts', 270, 'derived', 'best_effort', 'test-v1', '{}'::jsonb
+    from public.activities where id = '77777777-7777-4777-8777-777777777751';
+    begin;
+    insert into public.threshold_evaluations (
+      id, profile_id, activity_category, metric, method, outcome, value, unit, confidence,
+      observed_at, policy_version, diagnostics, source_activity_id, source_revision
+    ) select
+      '55555555-5555-4555-8555-555555555553', profile_id, 'bike', 'power',
+      'bike_power_30m', 'qualified', 256.5, 'watts', 0.94, finished_at,
+      'threshold-policy-v1', '{}'::jsonb, id, segments_revision
+    from public.activities where id = '77777777-7777-4777-8777-777777777751';
+    insert into public.threshold_evaluation_efforts values (
+      '55555555-5555-4555-8555-555555555553', '44444444-4444-4444-8444-444444444445',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'bike',
+      '77777777-7777-4777-8777-777777777751', 1, 'power', 'power', 'power', 'primary', 0
+    );
+    commit;
+    insert into public.thresholds (
+      id, profile_id, activity_category, metric, evaluation_id, value, unit, confidence,
+      method, effective_at, policy_version, supersedes_id
+    ) select
+      '66666666-6666-4666-8666-666666666663', profile_id, activity_category, metric,
+      id, value, unit, confidence, method, observed_at, policy_version,
+      '66666666-6666-4666-8666-666666666662'
+    from public.threshold_evaluations where id = '55555555-5555-4555-8555-555555555553';
+  `);
+  await assertThresholdChain(target, [
+    { id: "66666666-6666-4666-8666-666666666661", supersedesId: null },
+    {
+      id: "66666666-6666-4666-8666-666666666662",
+      supersedesId: "66666666-6666-4666-8666-666666666661",
+    },
+    {
+      id: "66666666-6666-4666-8666-666666666663",
+      supersedesId: "66666666-6666-4666-8666-666666666662",
+    },
+  ]);
+
+  await expectDatabaseError(
+    target,
+    `begin;
+     insert into public.threshold_evaluations (
+       id, profile_id, activity_category, metric, method, outcome, unit, observed_at,
+       rejection_reason, policy_version, diagnostics, source_activity_id, source_revision
+     ) select
+       '55555555-5555-4555-8555-555555555549', profile_id, 'bike', 'power',
+       'bike_power_30m', 'rejected', 'watts', finished_at, 'coverage_insufficient',
+       'threshold-rejected-cross-source-v1', '{"coverage":0.5}'::jsonb, id, segments_revision
+     from public.activities where id = '77777777-7777-4777-8777-777777777773';
+     insert into public.threshold_evaluation_efforts values (
+       '55555555-5555-4555-8555-555555555549', '44444444-4444-4444-8444-444444444442',
+       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'bike',
+       '77777777-7777-4777-8777-777777777761', 1, 'power', 'power', 'power',
+       'supporting', 0
+     );
+     commit;`,
+    { code: "23514", constraint: "threshold_evaluations_rejected_effort_source" },
+  );
+  await target.query("rollback");
+
+  await expectDatabaseError(
+    target,
+    "update public.activity_efforts set value = 251 where id = '44444444-4444-4444-8444-444444444441'",
+    { code: "23514", constraint: "threshold_truth_immutable" },
+  );
+  for (const statement of [
+    "update public.activity_efforts set value = value where id = '44444444-4444-4444-8444-444444444441'",
+    "delete from public.activity_efforts where id = '44444444-4444-4444-8444-444444444441'",
+    "update public.threshold_evaluations set confidence = confidence where id = '55555555-5555-4555-8555-555555555551'",
+    "delete from public.threshold_evaluations where id = '55555555-5555-4555-8555-555555555551'",
+    "update public.threshold_evaluation_efforts set ordinal = ordinal where evaluation_id = '55555555-5555-4555-8555-555555555551'",
+    "delete from public.threshold_evaluation_efforts where evaluation_id = '55555555-5555-4555-8555-555555555551'",
+    "update public.thresholds set value = value where id = '66666666-6666-4666-8666-666666666661'",
+    "delete from public.thresholds where id = '66666666-6666-4666-8666-666666666661'",
+  ]) {
+    await expectServiceRoleDenied(target, statement);
+  }
+
+  await target.query(
+    "delete from public.activity_efforts where id = '44444444-4444-4444-8444-444444444445'",
+  );
+  await assertThresholdChain(target, [
+    { id: "66666666-6666-4666-8666-666666666661", supersedesId: null },
+    {
+      id: "66666666-6666-4666-8666-666666666662",
+      supersedesId: "66666666-6666-4666-8666-666666666661",
+    },
+  ]);
+
+  await target.query(`
+    insert into public.activity_efforts (
+      id, created_at, profile_id, activity_id, segment_id, recorded_at, activity_category,
+      effort_type, source_series, duration_seconds, source_artifact_id, source_revision, start_offset_ms,
+      end_offset_ms, window_coverage, max_gap_seconds, unit, value, source, method,
+      calculation_version, provenance
+    ) select
+      '44444444-4444-4444-8444-444444444445', now(), profile_id, id,
+      '77777777-7777-4777-8777-777777777754', finished_at, 'bike', 'power', 'power', 1800,
+      '77777777-7777-4777-8777-777777777752', 1, 0, 1800000, 1, 2,
+      'watts', 270, 'derived', 'best_effort', 'test-v1', '{}'::jsonb
+    from public.activities where id = '77777777-7777-4777-8777-777777777751';
+    begin;
+    insert into public.threshold_evaluations (
+      id, profile_id, activity_category, metric, method, outcome, value, unit, confidence,
+      observed_at, policy_version, diagnostics, source_activity_id, source_revision
+    ) select
+      '55555555-5555-4555-8555-555555555553', profile_id, 'bike', 'power',
+      'bike_power_30m', 'qualified', 256.5, 'watts', 0.94, finished_at,
+      'threshold-policy-v1', '{}'::jsonb, id, segments_revision
+    from public.activities where id = '77777777-7777-4777-8777-777777777751';
+    insert into public.threshold_evaluation_efforts values (
+      '55555555-5555-4555-8555-555555555553', '44444444-4444-4444-8444-444444444445',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'bike',
+      '77777777-7777-4777-8777-777777777751', 1, 'power', 'power', 'power', 'primary', 0
+    );
+    commit;
+    insert into public.thresholds (
+      id, profile_id, activity_category, metric, evaluation_id, value, unit, confidence,
+      method, effective_at, policy_version, supersedes_id
+    ) select
+      '66666666-6666-4666-8666-666666666663', profile_id, activity_category, metric,
+      id, value, unit, confidence, method, observed_at, policy_version,
+      '66666666-6666-4666-8666-666666666662'
+    from public.threshold_evaluations where id = '55555555-5555-4555-8555-555555555553';
+  `);
+
+  const immutableSuccessorBefore = await target.query<{ snapshot: string }>(`
+    select (to_jsonb(thresholds) - 'supersedes_id')::text as snapshot
+    from public.thresholds where id = '66666666-6666-4666-8666-666666666663'
+  `);
+  await target.query(
+    "delete from public.activities where id = '77777777-7777-4777-8777-777777777761'",
+  );
+  await assertThresholdChain(target, [
+    { id: "66666666-6666-4666-8666-666666666661", supersedesId: null },
+    {
+      id: "66666666-6666-4666-8666-666666666663",
+      supersedesId: "66666666-6666-4666-8666-666666666661",
+    },
+  ]);
+  const immutableSuccessorAfter = await target.query<{ snapshot: string }>(`
+    select (to_jsonb(thresholds) - 'supersedes_id')::text as snapshot
+    from public.thresholds where id = '66666666-6666-4666-8666-666666666663'
+  `);
+  if (immutableSuccessorBefore.rows[0]?.snapshot !== immutableSuccessorAfter.rows[0]?.snapshot) {
+    throw new Error("middle deletion mutated immutable successor fields during chain rewiring");
+  }
+
+  await target.query(
+    "delete from public.activity_efforts where id = '44444444-4444-4444-8444-444444444441'",
+  );
+  await assertThresholdChain(target, [
+    { id: "66666666-6666-4666-8666-666666666663", supersedesId: null },
+  ]);
+  await target.query(
+    "delete from public.activities where id = '77777777-7777-4777-8777-777777777751'",
+  );
+  await assertThresholdChain(target, []);
+  console.log(
+    "[db:threshold-truth] root, middle, and leaf source cascades preserved one immutable linear chain",
+  );
 }
 
 type ProfileGoalConstraintInput = {
@@ -757,17 +1505,58 @@ async function assertProfileObservationsDoNotInvalidateAthleteState(target: {
     select tgname
     from pg_catalog.pg_trigger
     where not tgisinternal
-      and tgrelid in (
-        'public.profile_metrics'::regclass,
-        'public.swimming_css_protocol_evidence'::regclass
-      )
-      and tgname in (
-        'profile_metrics_bump_athlete_state_source_revision',
-        'swimming_css_bump_athlete_state_source_revision'
-      )
+      and tgrelid = pg_catalog.to_regclass('public.profile_metrics')
+      and tgname = 'profile_metrics_bump_athlete_state_source_revision'
   `);
   if (triggers.rows.length > 0) {
     throw new Error("profile observations must not invalidate athlete state");
+  }
+}
+
+async function assertLegacyThresholdObjectsAbsent(target: {
+  query: <Row extends Record<string, unknown>>(
+    text: string,
+    values?: unknown[],
+  ) => Promise<{ rows: Row[] }>;
+}) {
+  const legacy = await target.query<{ kind: string; name: string }>(`
+    with legacy_relations(name) as (
+      values
+        ('performance_calibration_evidence'),
+        ('performance_calibration_model_inputs'),
+        ('performance_calibration_selection_evidence'),
+        ('performance_calibrations'),
+        ('swimming_css_protocol_evidence')
+    ), legacy_types(name) as (
+      values
+        ('performance_calibration_metric_key'),
+        ('performance_calibration_evidence_state'),
+        ('performance_calibration_rejection_reason'),
+        ('performance_calibration_source_semantics')
+    )
+    select 'relation' as kind, name
+    from legacy_relations
+    where pg_catalog.to_regclass('public.' || name) is not null
+    union all
+    select 'type' as kind, name
+    from legacy_types
+    where pg_catalog.to_regtype('public.' || name) is not null
+    union all
+    select 'function' as kind, p.proname as name
+    from pg_catalog.pg_proc p
+    join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and (p.proname like 'performance_calibration%' or p.proname like '%performance_calibration%')
+    union all
+    select 'trigger' as kind, t.tgname as name
+    from pg_catalog.pg_trigger t
+    where not t.tgisinternal
+      and (t.tgname like 'performance_calibration%' or t.tgname like '%swimming_css%')
+  `);
+  if (legacy.rows.length > 0) {
+    throw new Error(
+      `fresh baseline retained legacy threshold objects: ${legacy.rows.map(({ kind, name }) => `${kind}:${name}`).join(", ")}`,
+    );
   }
 }
 
@@ -842,10 +1631,12 @@ async function main() {
     await assertActivityAnalysisRevisionContract(target);
     await assertActivitySourceIdentityContract(target);
     await assertStrictlyPositiveActivityEfforts(target);
+    await assertThresholdTruthContract(target, targetUrl);
     await assertProfileGoalConstraints(target);
     await assertArtifactLifecycleFunctionPrivileges(target);
     await assertRouteStorageLifecycle(target);
     await assertProfileObservationsDoNotInvalidateAthleteState(target);
+    await assertLegacyThresholdObjectsAbsent(target);
     await assertDeclineOnlyGroupEventRsvps(target);
 
     const env = {

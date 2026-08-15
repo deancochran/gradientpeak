@@ -23,10 +23,11 @@ CREATE TYPE "public"."activity_file_ingestion_source" AS ENUM('mobile_recording'
 CREATE TYPE "public"."activity_file_ingestion_status" AS ENUM('pending_upload', 'uploaded', 'processing', 'ready', 'failed');
 CREATE TYPE "public"."activity_session_rpe_source" AS ENUM('user', 'provider', 'manual');
 CREATE TYPE "public"."effort_type" AS ENUM('power', 'speed', 'heart_rate');
-CREATE TYPE "public"."performance_calibration_metric_key" AS ENUM('threshold_power', 'threshold_speed', 'threshold_heart_rate');
-CREATE TYPE "public"."performance_calibration_evidence_state" AS ENUM('candidate', 'rejected', 'invalidated');
-CREATE TYPE "public"."performance_calibration_rejection_reason" AS ENUM('metric_not_enabled', 'source_not_accepted', 'stream_coverage_insufficient', 'stream_gap_exceeded', 'output_variability_exceeded', 'supporting_threshold_unavailable', 'supporting_output_not_threshold_like', 'duration_insufficient', 'grade_coverage_insufficient', 'protocol_incomplete', 'model_history_insufficient', 'model_quality_insufficient', 'value_out_of_range');
-CREATE TYPE "public"."performance_calibration_source_semantics" AS ENUM('measured', 'derived');
+CREATE TYPE "public"."activity_effort_source_series" AS ENUM('power', 'grade_adjusted_speed', 'raw_speed', 'swim_speed', 'heart_rate');
+CREATE TYPE "public"."threshold_metric" AS ENUM('power', 'speed');
+CREATE TYPE "public"."threshold_evaluation_outcome" AS ENUM('qualified', 'rejected');
+CREATE TYPE "public"."threshold_evaluation_rejection_reason" AS ENUM('source_not_accepted', 'ownership_unverified', 'series_missing', 'series_ambiguous', 'exact_window_missing', 'exact_window_ambiguous', 'exact_window_incomplete', 'source_incomplete', 'coverage_insufficient', 'gap_bound_exceeded', 'value_implausible');
+CREATE TYPE "public"."threshold_evaluation_effort_role" AS ENUM('primary', 'supporting');
 CREATE TYPE "public"."event_status" AS ENUM('scheduled', 'completed', 'cancelled');
 CREATE TYPE "public"."event_type" AS ENUM('planned', 'race_target', 'custom');
 CREATE TYPE "public"."evidence_observation_source" AS ENUM('manual', 'test', 'imported', 'provider', 'estimated', 'derived');
@@ -215,9 +216,15 @@ CREATE TABLE "activity_efforts" (
 	"recorded_at" timestamp with time zone NOT NULL,
 	"activity_category" text NOT NULL,
 	"effort_type" "effort_type" NOT NULL,
+	"source_series" "activity_effort_source_series" NOT NULL,
 	"duration_seconds" integer NOT NULL,
 	"distance_meters" integer,
-	"start_offset" integer,
+	"source_artifact_id" uuid NOT NULL,
+	"source_revision" integer NOT NULL,
+	"start_offset_ms" bigint NOT NULL,
+	"end_offset_ms" bigint NOT NULL,
+	"window_coverage" numeric NOT NULL,
+	"max_gap_seconds" numeric NOT NULL,
 	"unit" text NOT NULL,
 	"value" real NOT NULL,
 	"source" "evidence_observation_source" NOT NULL,
@@ -225,10 +232,16 @@ CREATE TABLE "activity_efforts" (
 	"calculation_version" text NOT NULL,
 	"quality_score" numeric,
 	"provenance" jsonb NOT NULL,
-	CONSTRAINT "activity_efforts_duration_seconds_bounds_check" CHECK ("activity_efforts"."duration_seconds" between 1 and 14400),
-	CONSTRAINT "activity_efforts_distance_meters_bounds_check" CHECK ("activity_efforts"."distance_meters" is null or "activity_efforts"."distance_meters" between 1 and 1000000),
+	CONSTRAINT "activity_efforts_ownership_unique" UNIQUE("id","profile_id","activity_id","activity_category","effort_type","source_series","source_revision"),
+	CONSTRAINT "activity_efforts_deterministic_source_window_unique" UNIQUE("activity_id","segment_id","source_artifact_id","source_revision","effort_type","source_series","start_offset_ms","end_offset_ms","method","calculation_version"),
+	CONSTRAINT "activity_efforts_duration_seconds_positive_check" CHECK ("activity_efforts"."duration_seconds" > 0),
+	CONSTRAINT "activity_efforts_distance_meters_bounds_check" CHECK ("activity_efforts"."distance_meters" is null or "activity_efforts"."distance_meters" > 0),
+	CONSTRAINT "activity_efforts_source_revision_check" CHECK ("activity_efforts"."source_revision" > 0),
+	CONSTRAINT "activity_efforts_window_check" CHECK ("activity_efforts"."start_offset_ms" >= 0 and "activity_efforts"."end_offset_ms" = "activity_efforts"."start_offset_ms" + "activity_efforts"."duration_seconds"::bigint * 1000),
+	CONSTRAINT "activity_efforts_coverage_finite_range_check" CHECK ("activity_efforts"."window_coverage" between 0 and 1 and "activity_efforts"."window_coverage" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
+	CONSTRAINT "activity_efforts_max_gap_finite_check" CHECK ("activity_efforts"."max_gap_seconds" > 0 and "activity_efforts"."max_gap_seconds" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
 	CONSTRAINT "activity_efforts_value_finite_positive_check" CHECK ("activity_efforts"."value" > 0 and "activity_efforts"."value" not in ('NaN'::real, 'Infinity'::real, '-Infinity'::real)),
-	CONSTRAINT "activity_efforts_supported_combination_check" CHECK (("activity_efforts"."activity_category" = 'bike' and "activity_efforts"."effort_type" = 'power') or ("activity_efforts"."activity_category" in ('run', 'swim') and "activity_efforts"."effort_type" = 'speed') or ("activity_efforts"."activity_category" in ('bike', 'run', 'swim') and "activity_efforts"."effort_type"::text = 'heart_rate')),
+	CONSTRAINT "activity_efforts_supported_combination_check" CHECK (("activity_efforts"."activity_category" = 'bike' and "activity_efforts"."effort_type" = 'power' and "activity_efforts"."source_series" = 'power') or ("activity_efforts"."activity_category" = 'run' and "activity_efforts"."effort_type" = 'speed' and "activity_efforts"."source_series" in ('grade_adjusted_speed', 'raw_speed')) or ("activity_efforts"."activity_category" = 'swim' and "activity_efforts"."effort_type" = 'speed' and "activity_efforts"."source_series" = 'swim_speed') or ("activity_efforts"."activity_category" in ('bike', 'run', 'swim') and "activity_efforts"."effort_type"::text = 'heart_rate' and "activity_efforts"."source_series" = 'heart_rate')),
 	CONSTRAINT "activity_efforts_unit_compatibility_check" CHECK (("activity_efforts"."activity_category" = 'bike' and "activity_efforts"."effort_type" = 'power' and "activity_efforts"."unit" = 'watts') or ("activity_efforts"."activity_category" in ('run', 'swim') and "activity_efforts"."effort_type" = 'speed' and "activity_efforts"."unit" = 'meters_per_second') or ("activity_efforts"."effort_type"::text = 'heart_rate' and "activity_efforts"."unit" = 'bpm')),
 	CONSTRAINT "activity_efforts_bike_power_max_check" CHECK ("activity_efforts"."activity_category" <> 'bike' or "activity_efforts"."effort_type" <> 'power' or "activity_efforts"."value" <= 3000),
 	CONSTRAINT "activity_efforts_run_speed_bounds_check" CHECK ("activity_efforts"."activity_category" <> 'run' or "activity_efforts"."effort_type" <> 'speed' or ("activity_efforts"."value" >= 0.3 and "activity_efforts"."value" <= 13)),
@@ -238,53 +251,6 @@ CREATE TABLE "activity_efforts" (
 	CONSTRAINT "activity_efforts_calculation_version_not_blank_check" CHECK (btrim("activity_efforts"."calculation_version") <> ''),
 	CONSTRAINT "activity_efforts_quality_score_range_check" CHECK ("activity_efforts"."quality_score" is null or ("activity_efforts"."quality_score" >= 0 and "activity_efforts"."quality_score" <= 1)),
 	CONSTRAINT "activity_efforts_provenance_object_check" CHECK (jsonb_typeof("activity_efforts"."provenance") = 'object')
-);
-
-CREATE TABLE "swimming_css_protocol_evidence" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"protocol_id" text NOT NULL,
-	"evidence_id" text NOT NULL,
-	"evidence_revision" integer NOT NULL,
-	"profile_id" uuid NOT NULL,
-	"activity_id" uuid NOT NULL,
-	"source_artifact_id" uuid NOT NULL,
-	"source_artifact_digest" text NOT NULL,
-	"observed_at" timestamp with time zone NOT NULL,
-	"protocol" text NOT NULL,
-	"environment" text NOT NULL,
-	"pool_length_meters" real NOT NULL,
-	"timing_basis" text NOT NULL,
-	"status" text NOT NULL,
-	"reasons" jsonb DEFAULT '[]'::jsonb NOT NULL,
-	"effort_400_id" uuid NOT NULL,
-	"effort_400_evidence_revision" integer NOT NULL,
-	"effort_400_segment_id" uuid NOT NULL,
-	"effort_400_observed_at" timestamp with time zone NOT NULL,
-	"effort_400_duration_seconds" integer NOT NULL,
-	"effort_400_start_offset_ms" bigint NOT NULL,
-	"effort_400_end_offset_ms" bigint NOT NULL,
-	"effort_200_id" uuid NOT NULL,
-	"effort_200_evidence_revision" integer NOT NULL,
-	"effort_200_segment_id" uuid NOT NULL,
-	"effort_200_observed_at" timestamp with time zone NOT NULL,
-	"effort_200_duration_seconds" integer NOT NULL,
-	"effort_200_start_offset_ms" bigint NOT NULL,
-	"effort_200_end_offset_ms" bigint NOT NULL,
-	"calculation_version" text NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "swimming_css_protocol_evidence_profile_protocol_id_unique" UNIQUE("profile_id","protocol_id"),
-	CONSTRAINT "swimming_css_protocol_evidence_profile_activity_protocol_unique" UNIQUE("profile_id","activity_id","protocol"),
-	CONSTRAINT "swimming_css_protocol_evidence_profile_evidence_id_unique" UNIQUE("profile_id","evidence_id"),
-	CONSTRAINT "swimming_css_protocol_evidence_protocol_identity_check" CHECK ("swimming_css_protocol_evidence"."protocol" = 'css_400m_200m' and "swimming_css_protocol_evidence"."protocol_id" = 'css_400m_200m:' || "swimming_css_protocol_evidence"."activity_id"::text),
-	CONSTRAINT "swimming_css_protocol_evidence_content_identity_check" CHECK ("swimming_css_protocol_evidence"."evidence_id" ~ '^sha256:[0-9a-f]{64}$' and "swimming_css_protocol_evidence"."source_artifact_digest" ~ '^[0-9a-f]{64}$'),
-	CONSTRAINT "swimming_css_protocol_evidence_context_check" CHECK ("swimming_css_protocol_evidence"."environment" = 'pool' and "swimming_css_protocol_evidence"."timing_basis" = 'pool_length_timing' and "swimming_css_protocol_evidence"."pool_length_meters" between 10 and 100 and "swimming_css_protocol_evidence"."pool_length_meters" not in ('NaN'::real, 'Infinity'::real, '-Infinity'::real)),
-	CONSTRAINT "swimming_css_protocol_evidence_status_check" CHECK ("swimming_css_protocol_evidence"."status" = 'qualified' and jsonb_typeof("swimming_css_protocol_evidence"."reasons") = 'array' and jsonb_array_length("swimming_css_protocol_evidence"."reasons") = 0),
-	CONSTRAINT "swimming_css_protocol_evidence_revision_check" CHECK ("swimming_css_protocol_evidence"."evidence_revision" > 0 and "swimming_css_protocol_evidence"."effort_400_evidence_revision" = "swimming_css_protocol_evidence"."evidence_revision" and "swimming_css_protocol_evidence"."effort_200_evidence_revision" = "swimming_css_protocol_evidence"."evidence_revision"),
-	CONSTRAINT "swimming_css_protocol_evidence_distinct_efforts_check" CHECK ("swimming_css_protocol_evidence"."effort_400_id" <> "swimming_css_protocol_evidence"."effort_200_id" and "swimming_css_protocol_evidence"."effort_400_segment_id" <> "swimming_css_protocol_evidence"."effort_200_segment_id"),
-	CONSTRAINT "swimming_css_protocol_evidence_duration_check" CHECK ("swimming_css_protocol_evidence"."effort_400_duration_seconds" between 1 and 14400 and "swimming_css_protocol_evidence"."effort_200_duration_seconds" between 1 and 14400 and "swimming_css_protocol_evidence"."effort_400_duration_seconds" > 2 * "swimming_css_protocol_evidence"."effort_200_duration_seconds" and ("swimming_css_protocol_evidence"."effort_400_duration_seconds" - "swimming_css_protocol_evidence"."effort_200_duration_seconds")::double precision / 2 between 45 and 600),
-	CONSTRAINT "swimming_css_protocol_evidence_order_check" CHECK ("swimming_css_protocol_evidence"."effort_400_start_offset_ms" >= 0 and "swimming_css_protocol_evidence"."effort_400_end_offset_ms" > "swimming_css_protocol_evidence"."effort_400_start_offset_ms" and "swimming_css_protocol_evidence"."effort_200_start_offset_ms" >= "swimming_css_protocol_evidence"."effort_400_end_offset_ms" and "swimming_css_protocol_evidence"."effort_200_end_offset_ms" > "swimming_css_protocol_evidence"."effort_200_start_offset_ms" and "swimming_css_protocol_evidence"."effort_400_observed_at" <= "swimming_css_protocol_evidence"."effort_200_observed_at" and "swimming_css_protocol_evidence"."observed_at" = "swimming_css_protocol_evidence"."effort_200_observed_at"),
-	CONSTRAINT "swimming_css_protocol_evidence_calculation_version_check" CHECK ("swimming_css_protocol_evidence"."calculation_version" = 'canonical-swim-css-protocol-evidence-v1')
 );
 
 CREATE TABLE "activity_file_ingestions" (
@@ -418,6 +384,7 @@ CREATE TABLE "activity_segments" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "activity_segments_id_activity_profile_unique" UNIQUE("id","activity_id","profile_id"),
 	CONSTRAINT "activity_segments_effort_category_unique" UNIQUE("id","activity_id","profile_id","activity_category"),
+	CONSTRAINT "activity_segments_effort_source_unique" UNIQUE("id","activity_id","profile_id","activity_category","source_artifact_id","segment_revision"),
 	CONSTRAINT "activity_segments_activity_ordinal_unique" UNIQUE("activity_id","ordinal"),
 	CONSTRAINT "activity_segments_ordinal_check" CHECK ("activity_segments"."ordinal" >= 0),
 	CONSTRAINT "activity_segments_offset_check" CHECK ("activity_segments"."start_offset_ms" >= 0 and "activity_segments"."end_offset_ms" > "activity_segments"."start_offset_ms"),
@@ -1080,6 +1047,7 @@ CREATE TABLE "activity_import_runs" (
 	"discovered_count" integer DEFAULT 0 NOT NULL,
 	"imported_count" integer DEFAULT 0 NOT NULL,
 	"skipped_count" integer DEFAULT 0 NOT NULL,
+	"skipped_diagnostics" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"failed_count" integer DEFAULT 0 NOT NULL,
 	"material_change_count" integer DEFAULT 0 NOT NULL,
 	"material_effective_from_at" timestamp with time zone,
@@ -1096,6 +1064,7 @@ CREATE TABLE "activity_import_runs" (
 	CONSTRAINT "activity_import_runs_kind_check" CHECK ("activity_import_runs"."kind" in ('onboarding', 'history_sync', 'manual_sync')),
 	CONSTRAINT "activity_import_runs_status_check" CHECK ("activity_import_runs"."status" in ('queued', 'running', 'completed', 'failed', 'cancelled')),
 	CONSTRAINT "activity_import_runs_counts_check" CHECK ("activity_import_runs"."discovered_count" >= 0 and "activity_import_runs"."imported_count" >= 0 and "activity_import_runs"."skipped_count" >= 0 and "activity_import_runs"."failed_count" >= 0 and "activity_import_runs"."material_change_count" >= 0),
+	CONSTRAINT "activity_import_runs_skipped_diagnostics_check" CHECK (jsonb_typeof("activity_import_runs"."skipped_diagnostics") = 'array' and jsonb_array_length("activity_import_runs"."skipped_diagnostics") <= 120 and pg_column_size("activity_import_runs"."skipped_diagnostics") <= 16384),
 	CONSTRAINT "activity_import_runs_next_page_check" CHECK ("activity_import_runs"."next_page" is null or "activity_import_runs"."next_page" >= 1),
 	CONSTRAINT "activity_import_runs_cursor_page_check" CHECK (num_nonnulls("activity_import_runs"."next_cursor", "activity_import_runs"."next_page") <= 1),
 	CONSTRAINT "activity_import_runs_integration_generation_check" CHECK (("activity_import_runs"."integration_id" is null) = ("activity_import_runs"."integration_generation" is null)),
@@ -1259,100 +1228,80 @@ CREATE TABLE "training_plans" (
 	CONSTRAINT "training_plans_projection_validation_check" CHECK (num_nonnulls("training_plans"."validated_state_revision", "training_plans"."validated_at", "training_plans"."projection_algorithm_version") in (0, 3) and ("training_plans"."validated_state_revision" is null or "training_plans"."validated_state_revision" >= 0) and ("training_plans"."projection_algorithm_version" is null or btrim("training_plans"."projection_algorithm_version") <> ''))
 );
 
-CREATE TABLE "performance_calibration_evidence" (
+CREATE TABLE "threshold_evaluations" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"profile_id" uuid NOT NULL,
-	"metric_key" "performance_calibration_metric_key" NOT NULL,
 	"activity_category" text NOT NULL,
+	"metric" "threshold_metric" NOT NULL,
+	"method" text NOT NULL,
+	"outcome" "threshold_evaluation_outcome" NOT NULL,
 	"value" numeric,
 	"unit" text NOT NULL,
+	"confidence" numeric,
 	"observed_at" timestamp with time zone NOT NULL,
-	"activity_id" uuid NOT NULL,
-	"segment_id" uuid NOT NULL,
-	"segment_revision" bigint NOT NULL,
-	"source_artifact_id" uuid NOT NULL,
-	"state" "performance_calibration_evidence_state" NOT NULL,
-	"rejection_reason" "performance_calibration_rejection_reason",
+	"rejection_reason" "threshold_evaluation_rejection_reason",
 	"policy_version" text NOT NULL,
-	"source_semantics" "performance_calibration_source_semantics" NOT NULL,
 	"diagnostics" jsonb NOT NULL,
+	"source_activity_id" uuid NOT NULL,
+	"source_revision" integer NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"invalidated_at" timestamp with time zone,
-	"invalidation_reason" text,
-	CONSTRAINT "performance_calibration_evidence_source_policy_unique" UNIQUE("activity_id","segment_id","segment_revision","source_artifact_id","metric_key","policy_version"),
-	CONSTRAINT "performance_calibration_evidence_identity_unique" UNIQUE("id","profile_id","metric_key","activity_category"),
-	CONSTRAINT "performance_calibration_evidence_state_values_check" CHECK (("performance_calibration_evidence"."state" = 'candidate' and "performance_calibration_evidence"."value" is not null and "performance_calibration_evidence"."rejection_reason" is null and "performance_calibration_evidence"."invalidated_at" is null and "performance_calibration_evidence"."invalidation_reason" is null) or ("performance_calibration_evidence"."state" = 'rejected' and "performance_calibration_evidence"."value" is null and "performance_calibration_evidence"."rejection_reason" is not null and "performance_calibration_evidence"."invalidated_at" is null and "performance_calibration_evidence"."invalidation_reason" is null) or ("performance_calibration_evidence"."state" = 'invalidated' and "performance_calibration_evidence"."value" is not null and "performance_calibration_evidence"."rejection_reason" is null and "performance_calibration_evidence"."invalidated_at" is not null and "performance_calibration_evidence"."invalidated_at" >= "performance_calibration_evidence"."created_at" and "performance_calibration_evidence"."invalidation_reason" is not null and btrim("performance_calibration_evidence"."invalidation_reason") <> '')),
-	CONSTRAINT "performance_calibration_evidence_unit_check" CHECK (("performance_calibration_evidence"."metric_key" = 'threshold_power' and "performance_calibration_evidence"."unit" = 'watts') or ("performance_calibration_evidence"."metric_key" = 'threshold_speed' and "performance_calibration_evidence"."unit" = 'meters_per_second') or ("performance_calibration_evidence"."metric_key" = 'threshold_heart_rate' and "performance_calibration_evidence"."unit" = 'beats_per_minute')),
-	CONSTRAINT "performance_calibration_evidence_identity_check" CHECK (("performance_calibration_evidence"."metric_key" = 'threshold_power' and "performance_calibration_evidence"."activity_category" = 'bike') or ("performance_calibration_evidence"."metric_key" = 'threshold_speed' and "performance_calibration_evidence"."activity_category" in ('run', 'swim')) or ("performance_calibration_evidence"."metric_key" = 'threshold_heart_rate' and "performance_calibration_evidence"."activity_category" in ('bike', 'run'))),
-	CONSTRAINT "performance_calibration_evidence_value_check" CHECK ("performance_calibration_evidence"."value" is null or "performance_calibration_evidence"."value" > 0),
-	CONSTRAINT "performance_calibration_evidence_revision_check" CHECK ("performance_calibration_evidence"."segment_revision" > 0),
-	CONSTRAINT "performance_calibration_evidence_created_after_observed_check" CHECK ("performance_calibration_evidence"."created_at" >= "performance_calibration_evidence"."observed_at"),
-	CONSTRAINT "performance_calibration_evidence_policy_check" CHECK (btrim("performance_calibration_evidence"."policy_version") <> ''),
-	CONSTRAINT "performance_calibration_evidence_diagnostics_check" CHECK (jsonb_typeof("performance_calibration_evidence"."diagnostics") = 'object' and pg_column_size("performance_calibration_evidence"."diagnostics") <= 16384)
+	CONSTRAINT "threshold_evaluations_idempotency_unique" UNIQUE("profile_id","source_activity_id","source_revision","activity_category","metric","method","policy_version"),
+	CONSTRAINT "threshold_evaluations_ownership_unique" UNIQUE("id","profile_id","activity_category","metric"),
+	CONSTRAINT "threshold_evaluations_qualified_identity_unique" UNIQUE("id","profile_id","activity_category","metric","outcome"),
+	CONSTRAINT "threshold_evaluations_outcome_check" CHECK (("threshold_evaluations"."outcome" = 'qualified' and "threshold_evaluations"."value" is not null and "threshold_evaluations"."confidence" is not null and "threshold_evaluations"."rejection_reason" is null) or ("threshold_evaluations"."outcome" = 'rejected' and "threshold_evaluations"."value" is null and "threshold_evaluations"."confidence" is null and "threshold_evaluations"."rejection_reason" is not null)),
+	CONSTRAINT "threshold_evaluations_identity_check" CHECK (("threshold_evaluations"."activity_category" = 'bike' and "threshold_evaluations"."metric" = 'power' and "threshold_evaluations"."method" = 'bike_power_30m' and "threshold_evaluations"."unit" = 'watts') or ("threshold_evaluations"."activity_category" = 'run' and "threshold_evaluations"."metric" = 'speed' and "threshold_evaluations"."method" = 'run_speed_30m' and "threshold_evaluations"."unit" = 'meters_per_second') or ("threshold_evaluations"."activity_category" = 'swim' and "threshold_evaluations"."metric" = 'speed' and "threshold_evaluations"."method" = 'swim_speed_15m' and "threshold_evaluations"."unit" = 'meters_per_second')),
+	CONSTRAINT "threshold_evaluations_value_finite_positive_check" CHECK ("threshold_evaluations"."value" is null or ("threshold_evaluations"."value" > 0 and "threshold_evaluations"."value" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric))),
+	CONSTRAINT "threshold_evaluations_confidence_finite_range_check" CHECK ("threshold_evaluations"."confidence" is null or ("threshold_evaluations"."confidence" between 0 and 1 and "threshold_evaluations"."confidence" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric))),
+	CONSTRAINT "threshold_evaluations_source_revision_check" CHECK ("threshold_evaluations"."source_revision" > 0),
+	CONSTRAINT "threshold_evaluations_created_after_observed_check" CHECK ("threshold_evaluations"."created_at" >= "threshold_evaluations"."observed_at"),
+	CONSTRAINT "threshold_evaluations_policy_check" CHECK (btrim("threshold_evaluations"."policy_version") <> ''),
+	CONSTRAINT "threshold_evaluations_diagnostics_check" CHECK (jsonb_typeof("threshold_evaluations"."diagnostics") = 'object' and pg_column_size("threshold_evaluations"."diagnostics") <= 16384)
 );
 
-CREATE TABLE "performance_calibration_model_inputs" (
-	"calibration_evidence_id" uuid NOT NULL,
+CREATE TABLE "threshold_evaluation_efforts" (
+	"evaluation_id" uuid NOT NULL,
 	"effort_id" uuid NOT NULL,
 	"profile_id" uuid NOT NULL,
-	"metric_key" "performance_calibration_metric_key" NOT NULL,
 	"activity_category" text NOT NULL,
 	"activity_id" uuid NOT NULL,
-	"segment_id" uuid NOT NULL,
-	"segment_revision" bigint NOT NULL,
-	"source_artifact_id" uuid NOT NULL,
-	"source_artifact_digest" text NOT NULL,
-	"observed_at" timestamp with time zone NOT NULL,
-	"duration_seconds" integer NOT NULL,
-	"value" numeric NOT NULL,
-	"calculation_version" text NOT NULL,
+	"source_revision" integer NOT NULL,
+	"metric" "threshold_metric" NOT NULL,
+	"effort_type" "effort_type" NOT NULL,
+	"source_series" "activity_effort_source_series" NOT NULL,
+	"role" "threshold_evaluation_effort_role" NOT NULL,
 	"ordinal" integer NOT NULL,
-	CONSTRAINT "performance_calibration_model_inputs_calibration_evidence_id_effort_id_pk" PRIMARY KEY("calibration_evidence_id","effort_id"),
-	CONSTRAINT "performance_calibration_model_inputs_evidence_ordinal_unique" UNIQUE("calibration_evidence_id","ordinal"),
-	CONSTRAINT "performance_calibration_model_inputs_identity_check" CHECK ("performance_calibration_model_inputs"."metric_key" = 'threshold_power' and "performance_calibration_model_inputs"."activity_category" = 'bike'),
-	CONSTRAINT "performance_calibration_model_inputs_revision_check" CHECK ("performance_calibration_model_inputs"."segment_revision" > 0),
-	CONSTRAINT "performance_calibration_model_inputs_artifact_digest_check" CHECK ("performance_calibration_model_inputs"."source_artifact_digest" ~ '^[0-9a-f]{64}$'),
-	CONSTRAINT "performance_calibration_model_inputs_duration_check" CHECK ("performance_calibration_model_inputs"."duration_seconds" between 1 and 14400),
-	CONSTRAINT "performance_calibration_model_inputs_value_check" CHECK ("performance_calibration_model_inputs"."value" > 0 and "performance_calibration_model_inputs"."value" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
-	CONSTRAINT "performance_calibration_model_inputs_calculation_version_check" CHECK (btrim("performance_calibration_model_inputs"."calculation_version") <> ''),
-	CONSTRAINT "performance_calibration_model_inputs_ordinal_check" CHECK ("performance_calibration_model_inputs"."ordinal" between 0 and 1999)
+	CONSTRAINT "threshold_evaluation_efforts_evaluation_id_effort_id_pk" PRIMARY KEY("evaluation_id","effort_id"),
+	CONSTRAINT "threshold_evaluation_efforts_role_ordinal_unique" UNIQUE("evaluation_id","role","ordinal"),
+	CONSTRAINT "threshold_evaluation_efforts_metric_check" CHECK (("threshold_evaluation_efforts"."metric" = 'power' and "threshold_evaluation_efforts"."activity_category" = 'bike' and "threshold_evaluation_efforts"."effort_type" = 'power' and "threshold_evaluation_efforts"."source_series" = 'power') or ("threshold_evaluation_efforts"."metric" = 'speed' and "threshold_evaluation_efforts"."activity_category" = 'run' and "threshold_evaluation_efforts"."effort_type" = 'speed' and "threshold_evaluation_efforts"."source_series" in ('grade_adjusted_speed', 'raw_speed')) or ("threshold_evaluation_efforts"."metric" = 'speed' and "threshold_evaluation_efforts"."activity_category" = 'swim' and "threshold_evaluation_efforts"."effort_type" = 'speed' and "threshold_evaluation_efforts"."source_series" = 'swim_speed')),
+	CONSTRAINT "threshold_evaluation_efforts_ordinal_check" CHECK ("threshold_evaluation_efforts"."ordinal" between 0 and 63),
+	CONSTRAINT "threshold_evaluation_efforts_primary_ordinal_check" CHECK ("threshold_evaluation_efforts"."role" <> 'primary' or "threshold_evaluation_efforts"."ordinal" = 0)
 );
 
-CREATE TABLE "performance_calibrations" (
+CREATE TABLE "thresholds" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"profile_id" uuid NOT NULL,
-	"metric_key" "performance_calibration_metric_key" NOT NULL,
 	"activity_category" text NOT NULL,
+	"metric" "threshold_metric" NOT NULL,
+	"evaluation_id" uuid NOT NULL,
+	"evaluation_outcome" "threshold_evaluation_outcome" DEFAULT 'qualified' NOT NULL,
 	"value" numeric NOT NULL,
 	"unit" text NOT NULL,
+	"confidence" numeric NOT NULL,
+	"method" text NOT NULL,
 	"effective_at" timestamp with time zone NOT NULL,
-	"expires_at" timestamp with time zone NOT NULL,
 	"policy_version" text NOT NULL,
-	"selection_diagnostics" jsonb NOT NULL,
 	"supersedes_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "performance_calibrations_identity_unique" UNIQUE("id","profile_id","metric_key","activity_category"),
-	CONSTRAINT "performance_calibrations_supersedes_unique" UNIQUE("supersedes_id"),
-	CONSTRAINT "performance_calibrations_value_check" CHECK ("performance_calibrations"."value" > 0),
-	CONSTRAINT "performance_calibrations_unit_check" CHECK (("performance_calibrations"."metric_key" = 'threshold_power' and "performance_calibrations"."unit" = 'watts') or ("performance_calibrations"."metric_key" = 'threshold_speed' and "performance_calibrations"."unit" = 'meters_per_second') or ("performance_calibrations"."metric_key" = 'threshold_heart_rate' and "performance_calibrations"."unit" = 'beats_per_minute')),
-	CONSTRAINT "performance_calibrations_identity_check" CHECK (("performance_calibrations"."metric_key" = 'threshold_power' and "performance_calibrations"."activity_category" = 'bike') or ("performance_calibrations"."metric_key" = 'threshold_speed' and "performance_calibrations"."activity_category" in ('run', 'swim')) or ("performance_calibrations"."metric_key" = 'threshold_heart_rate' and "performance_calibrations"."activity_category" in ('bike', 'run'))),
-	CONSTRAINT "performance_calibrations_expiry_check" CHECK ("performance_calibrations"."expires_at" >= "performance_calibrations"."effective_at"),
-	CONSTRAINT "performance_calibrations_created_after_effective_check" CHECK ("performance_calibrations"."created_at" >= "performance_calibrations"."effective_at"),
-	CONSTRAINT "performance_calibrations_policy_check" CHECK (btrim("performance_calibrations"."policy_version") <> ''),
-	CONSTRAINT "performance_calibrations_diagnostics_check" CHECK (jsonb_typeof("performance_calibrations"."selection_diagnostics") = 'object' and pg_column_size("performance_calibrations"."selection_diagnostics") <= 16384),
-	CONSTRAINT "performance_calibrations_supersedes_check" CHECK ("performance_calibrations"."supersedes_id" is null or "performance_calibrations"."supersedes_id" <> "performance_calibrations"."id")
-);
-
-CREATE TABLE "performance_calibration_selection_evidence" (
-	"calibration_id" uuid NOT NULL,
-	"evidence_id" uuid NOT NULL,
-	"profile_id" uuid NOT NULL,
-	"metric_key" "performance_calibration_metric_key" NOT NULL,
-	"activity_category" text NOT NULL,
-	"ordinal" integer NOT NULL,
-	CONSTRAINT "performance_calibration_selection_evidence_calibration_id_evidence_id_pk" PRIMARY KEY("calibration_id","evidence_id"),
-	CONSTRAINT "performance_calibration_selection_evidence_calibration_ordinal_unique" UNIQUE("calibration_id","ordinal"),
-	CONSTRAINT "performance_calibration_selection_evidence_ordinal_check" CHECK ("performance_calibration_selection_evidence"."ordinal" between 0 and 63)
+	CONSTRAINT "thresholds_ownership_unique" UNIQUE("id","profile_id","activity_category","metric"),
+	CONSTRAINT "thresholds_evaluation_unique" UNIQUE("evaluation_id"),
+	CONSTRAINT "thresholds_supersedes_unique" UNIQUE("supersedes_id"),
+	CONSTRAINT "thresholds_qualified_evaluation_check" CHECK ("thresholds"."evaluation_outcome" = 'qualified'),
+	CONSTRAINT "thresholds_identity_check" CHECK (("thresholds"."activity_category" = 'bike' and "thresholds"."metric" = 'power' and "thresholds"."method" = 'bike_power_30m' and "thresholds"."unit" = 'watts') or ("thresholds"."activity_category" = 'run' and "thresholds"."metric" = 'speed' and "thresholds"."method" = 'run_speed_30m' and "thresholds"."unit" = 'meters_per_second') or ("thresholds"."activity_category" = 'swim' and "thresholds"."metric" = 'speed' and "thresholds"."method" = 'swim_speed_15m' and "thresholds"."unit" = 'meters_per_second')),
+	CONSTRAINT "thresholds_value_finite_positive_check" CHECK ("thresholds"."value" > 0 and "thresholds"."value" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
+	CONSTRAINT "thresholds_confidence_finite_range_check" CHECK ("thresholds"."confidence" between 0 and 1 and "thresholds"."confidence" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
+	CONSTRAINT "thresholds_created_after_effective_check" CHECK ("thresholds"."created_at" >= "thresholds"."effective_at"),
+	CONSTRAINT "thresholds_policy_check" CHECK (btrim("thresholds"."policy_version") <> ''),
+	CONSTRAINT "thresholds_supersedes_check" CHECK ("thresholds"."supersedes_id" is null or "thresholds"."supersedes_id" <> "thresholds"."id")
 );
 
 ALTER TABLE "accounts" ADD CONSTRAINT "accounts_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
@@ -1366,22 +1315,17 @@ ALTER TABLE "activity_artifacts" ADD CONSTRAINT "activity_artifacts_profile_id_p
 ALTER TABLE "activity_efforts" ADD CONSTRAINT "activity_efforts_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE no action ON UPDATE no action;
 ALTER TABLE "activity_efforts" ADD CONSTRAINT "activity_efforts_activity_id_activities_id_fk" FOREIGN KEY ("activity_id") REFERENCES "public"."activities"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "activity_efforts" ADD CONSTRAINT "activity_efforts_activity_category_canonical_activity_categories_code_fk" FOREIGN KEY ("activity_category") REFERENCES "public"."canonical_activity_categories"("code") ON DELETE restrict ON UPDATE no action;
-ALTER TABLE "activity_efforts" ADD CONSTRAINT "activity_efforts_segment_activity_profile_category_fkey" FOREIGN KEY ("segment_id","activity_id","profile_id","activity_category") REFERENCES "public"."activity_segments"("id","activity_id","profile_id","activity_category") ON DELETE cascade ON UPDATE no action;
-ALTER TABLE "swimming_css_protocol_evidence" ADD CONSTRAINT "swimming_css_protocol_evidence_activity_profile_fkey" FOREIGN KEY ("activity_id","profile_id") REFERENCES "public"."activities"("id","profile_id") ON DELETE cascade ON UPDATE no action;
-ALTER TABLE "swimming_css_protocol_evidence" ADD CONSTRAINT "swimming_css_protocol_evidence_source_link_fkey" FOREIGN KEY ("activity_id","source_artifact_id","profile_id") REFERENCES "public"."activity_artifact_links"("activity_id","artifact_id","profile_id") ON DELETE cascade ON UPDATE no action;
-ALTER TABLE "swimming_css_protocol_evidence" ADD CONSTRAINT "swimming_css_protocol_evidence_effort_400_fkey" FOREIGN KEY ("effort_400_id") REFERENCES "public"."activity_efforts"("id") ON DELETE cascade ON UPDATE no action;
-ALTER TABLE "swimming_css_protocol_evidence" ADD CONSTRAINT "swimming_css_protocol_evidence_effort_200_fkey" FOREIGN KEY ("effort_200_id") REFERENCES "public"."activity_efforts"("id") ON DELETE cascade ON UPDATE no action;
-ALTER TABLE "performance_calibration_evidence" ADD CONSTRAINT "performance_calibration_evidence_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
-ALTER TABLE "performance_calibration_evidence" ADD CONSTRAINT "performance_calibration_evidence_activity_category_canonical_activity_categories_code_fk" FOREIGN KEY ("activity_category") REFERENCES "public"."canonical_activity_categories"("code") ON DELETE restrict ON UPDATE no action;
-ALTER TABLE "performance_calibration_model_inputs" ADD CONSTRAINT "performance_calibration_model_inputs_activity_category_canonical_activity_categories_code_fk" FOREIGN KEY ("activity_category") REFERENCES "public"."canonical_activity_categories"("code") ON DELETE restrict ON UPDATE no action;
-ALTER TABLE "performance_calibration_model_inputs" ADD CONSTRAINT "performance_calibration_model_inputs_evidence_identity_fkey" FOREIGN KEY ("calibration_evidence_id","profile_id","metric_key","activity_category") REFERENCES "public"."performance_calibration_evidence"("id","profile_id","metric_key","activity_category") ON DELETE cascade ON UPDATE no action;
-ALTER TABLE "performance_calibrations" ADD CONSTRAINT "performance_calibrations_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
-ALTER TABLE "performance_calibrations" ADD CONSTRAINT "performance_calibrations_activity_category_canonical_activity_categories_code_fk" FOREIGN KEY ("activity_category") REFERENCES "public"."canonical_activity_categories"("code") ON DELETE restrict ON UPDATE no action;
-ALTER TABLE "performance_calibrations" ADD CONSTRAINT "performance_calibrations_supersedes_identity_fkey" FOREIGN KEY ("supersedes_id","profile_id","metric_key","activity_category") REFERENCES "public"."performance_calibrations"("id","profile_id","metric_key","activity_category") ON DELETE restrict ON UPDATE no action;
-ALTER TABLE "performance_calibration_selection_evidence" ADD CONSTRAINT "performance_calibration_selection_evidence_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
-ALTER TABLE "performance_calibration_selection_evidence" ADD CONSTRAINT "performance_calibration_selection_evidence_activity_category_canonical_activity_categories_code_fk" FOREIGN KEY ("activity_category") REFERENCES "public"."canonical_activity_categories"("code") ON DELETE restrict ON UPDATE no action;
-ALTER TABLE "performance_calibration_selection_evidence" ADD CONSTRAINT "performance_calibration_selection_evidence_calibration_identity_fkey" FOREIGN KEY ("calibration_id","profile_id","metric_key","activity_category") REFERENCES "public"."performance_calibrations"("id","profile_id","metric_key","activity_category") ON DELETE cascade ON UPDATE no action;
-ALTER TABLE "performance_calibration_selection_evidence" ADD CONSTRAINT "performance_calibration_selection_evidence_evidence_identity_fkey" FOREIGN KEY ("evidence_id","profile_id","metric_key","activity_category") REFERENCES "public"."performance_calibration_evidence"("id","profile_id","metric_key","activity_category") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "activity_efforts" ADD CONSTRAINT "activity_efforts_exact_source_fkey" FOREIGN KEY ("segment_id","activity_id","profile_id","activity_category","source_artifact_id","source_revision") REFERENCES "public"."activity_segments"("id","activity_id","profile_id","activity_category","source_artifact_id","segment_revision") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "threshold_evaluations" ADD CONSTRAINT "threshold_evaluations_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "threshold_evaluations" ADD CONSTRAINT "threshold_evaluations_activity_category_canonical_activity_categories_code_fk" FOREIGN KEY ("activity_category") REFERENCES "public"."canonical_activity_categories"("code") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "threshold_evaluations" ADD CONSTRAINT "threshold_evaluations_source_activity_profile_fkey" FOREIGN KEY ("source_activity_id","profile_id") REFERENCES "public"."activities"("id","profile_id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "threshold_evaluation_efforts" ADD CONSTRAINT "threshold_evaluation_efforts_activity_category_canonical_activity_categories_code_fk" FOREIGN KEY ("activity_category") REFERENCES "public"."canonical_activity_categories"("code") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "threshold_evaluation_efforts" ADD CONSTRAINT "threshold_evaluation_efforts_evaluation_ownership_fkey" FOREIGN KEY ("evaluation_id","profile_id","activity_category","metric") REFERENCES "public"."threshold_evaluations"("id","profile_id","activity_category","metric") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "threshold_evaluation_efforts" ADD CONSTRAINT "threshold_evaluation_efforts_effort_ownership_fkey" FOREIGN KEY ("effort_id","profile_id","activity_id","activity_category","effort_type","source_series","source_revision") REFERENCES "public"."activity_efforts"("id","profile_id","activity_id","activity_category","effort_type","source_series","source_revision") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "thresholds" ADD CONSTRAINT "thresholds_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "thresholds" ADD CONSTRAINT "thresholds_activity_category_canonical_activity_categories_code_fk" FOREIGN KEY ("activity_category") REFERENCES "public"."canonical_activity_categories"("code") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "thresholds" ADD CONSTRAINT "thresholds_qualified_evaluation_ownership_fkey" FOREIGN KEY ("evaluation_id","profile_id","activity_category","metric","evaluation_outcome") REFERENCES "public"."threshold_evaluations"("id","profile_id","activity_category","metric","outcome") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "thresholds" ADD CONSTRAINT "thresholds_supersedes_fkey" FOREIGN KEY ("supersedes_id") REFERENCES "public"."thresholds"("id") ON DELETE no action ON UPDATE no action DEFERRABLE INITIALLY DEFERRED;
 ALTER TABLE "activity_file_ingestions" ADD CONSTRAINT "activity_file_ingestions_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "activity_file_ingestions" ADD CONSTRAINT "activity_file_ingestions_integration_id_integrations_id_fk" FOREIGN KEY ("integration_id") REFERENCES "public"."integrations"("id") ON DELETE set null ON UPDATE no action;
 ALTER TABLE "activity_file_ingestions" ADD CONSTRAINT "activity_file_ingestions_activity_profile_fkey" FOREIGN KEY ("activity_id","profile_id") REFERENCES "public"."activities"("id","profile_id") ON DELETE cascade ON UPDATE no action;
@@ -1488,10 +1432,8 @@ CREATE INDEX "idx_activity_artifact_links_artifact" ON "activity_artifact_links"
 CREATE INDEX "idx_activity_artifacts_profile" ON "activity_artifacts" USING btree ("profile_id");
 CREATE INDEX "idx_activity_efforts_activity_id" ON "activity_efforts" USING btree ("activity_id");
 CREATE INDEX "idx_activity_efforts_segment_id" ON "activity_efforts" USING btree ("segment_id");
+CREATE INDEX "idx_activity_efforts_source_revision" ON "activity_efforts" USING btree ("activity_id","source_revision","source_artifact_id");
 CREATE INDEX "idx_activity_efforts_athlete_state_replay" ON "activity_efforts" USING btree ("profile_id","id");
-CREATE INDEX "idx_swimming_css_protocol_evidence_profile_observed" ON "swimming_css_protocol_evidence" USING btree ("profile_id","observed_at","id") WHERE "swimming_css_protocol_evidence"."status" = 'qualified';
-CREATE INDEX "idx_swimming_css_protocol_evidence_activity" ON "swimming_css_protocol_evidence" USING btree ("activity_id");
-CREATE INDEX "idx_swimming_css_protocol_evidence_source_artifact" ON "swimming_css_protocol_evidence" USING btree ("source_artifact_id");
 CREATE INDEX "idx_activity_file_ingestions_activity_profile" ON "activity_file_ingestions" USING btree ("activity_id","profile_id") WHERE "activity_file_ingestions"."activity_id" is not null;
 CREATE INDEX "idx_activity_file_ingestions_activity_id" ON "activity_file_ingestions" USING btree ("activity_id") WHERE "activity_file_ingestions"."activity_id" is not null;
 CREATE INDEX "idx_activity_file_ingestions_artifact_id" ON "activity_file_ingestions" USING btree ("artifact_id") WHERE "activity_file_ingestions"."artifact_id" is not null;
@@ -1604,14 +1546,13 @@ CREATE INDEX "idx_profile_metrics_reference_activity" ON "profile_metrics" USING
 CREATE INDEX "idx_profile_metrics_temporal_lookup" ON "profile_metrics" USING btree ("profile_id","metric_type","recorded_at");
 CREATE INDEX "profile_athlete_state_claim_idx" ON "profile_athlete_state" USING btree ("retry_after","dirty_from_at","updated_at");
 CREATE INDEX "profile_performance_estimates_profile_revision_idx" ON "profile_performance_estimates" USING btree ("profile_id","source_revision");
-CREATE INDEX "performance_calibration_evidence_current_profile_identity_observed_idx" ON "performance_calibration_evidence" USING btree ("profile_id","metric_key","activity_category","observed_at" DESC NULLS LAST) WHERE "performance_calibration_evidence"."state" = 'candidate' and "performance_calibration_evidence"."invalidated_at" is null;
-CREATE INDEX "performance_calibration_evidence_source_revision_idx" ON "performance_calibration_evidence" USING btree ("activity_id","segment_id","segment_revision");
-CREATE INDEX "performance_calibration_model_inputs_activity_revision_idx" ON "performance_calibration_model_inputs" USING btree ("activity_id","segment_id","segment_revision");
-CREATE INDEX "performance_calibration_model_inputs_source_artifact_idx" ON "performance_calibration_model_inputs" USING btree ("source_artifact_id");
-CREATE INDEX "performance_calibrations_profile_identity_effective_idx" ON "performance_calibrations" USING btree ("profile_id","metric_key","activity_category","effective_at" DESC NULLS LAST);
-CREATE INDEX "performance_calibrations_due_idx" ON "performance_calibrations" USING btree ("profile_id","expires_at");
-CREATE INDEX "performance_calibrations_supersedes_idx" ON "performance_calibrations" USING btree ("supersedes_id") WHERE "performance_calibrations"."supersedes_id" is not null;
-CREATE INDEX "performance_calibration_selection_evidence_evidence_idx" ON "performance_calibration_selection_evidence" USING btree ("evidence_id","profile_id","metric_key","activity_category","calibration_id");
+CREATE INDEX "threshold_evaluations_profile_identity_observed_idx" ON "threshold_evaluations" USING btree ("profile_id","activity_category","metric","observed_at" DESC NULLS LAST,"id");
+CREATE INDEX "threshold_evaluations_source_revision_idx" ON "threshold_evaluations" USING btree ("source_activity_id","source_revision","id");
+CREATE INDEX "threshold_evaluation_efforts_effort_evaluation_idx" ON "threshold_evaluation_efforts" USING btree ("effort_id","evaluation_id");
+CREATE INDEX "threshold_evaluation_efforts_activity_evaluation_idx" ON "threshold_evaluation_efforts" USING btree ("activity_id","source_revision","evaluation_id");
+CREATE INDEX "thresholds_profile_identity_effective_idx" ON "thresholds" USING btree ("profile_id","activity_category","metric","effective_at" DESC NULLS LAST,"id");
+CREATE UNIQUE INDEX "thresholds_identity_root_unique" ON "thresholds" USING btree ("profile_id","activity_category","metric") WHERE "thresholds"."supersedes_id" is null;
+CREATE INDEX "thresholds_supersedes_idx" ON "thresholds" USING btree ("supersedes_id") WHERE "thresholds"."supersedes_id" is not null;
 CREATE INDEX "activity_import_runs_profile_status_updated_idx" ON "activity_import_runs" USING btree ("profile_id","status","updated_at");
 CREATE INDEX "activity_import_runs_integration_status_updated_idx" ON "activity_import_runs" USING btree ("integration_id","status","updated_at") WHERE "activity_import_runs"."integration_id" is not null;
 CREATE UNIQUE INDEX "activity_import_runs_running_bulk_profile_unique" ON "activity_import_runs" USING btree ("profile_id") WHERE "activity_import_runs"."status" = 'running' and "activity_import_runs"."kind" in ('onboarding', 'history_sync', 'manual_sync');
@@ -3000,8 +2941,8 @@ begin
   select start_offset_ms,end_offset_ms,activity_category into segment_record from public.activity_segments
     where id=new.segment_id and activity_id=new.activity_id and profile_id=new.profile_id;
   if not found or segment_record.activity_category<>new.activity_category
-    or new.start_offset is null or new.start_offset*1000<segment_record.start_offset_ms
-    or (new.start_offset+new.duration_seconds)*1000>segment_record.end_offset_ms then
+    or new.start_offset_ms<segment_record.start_offset_ms
+    or new.end_offset_ms>segment_record.end_offset_ms then
     raise exception 'activity effort must be contained by its matching-category segment';
   end if;
   return new;
@@ -3310,807 +3251,266 @@ BEGIN
 END
 $_$;
 
-CREATE FUNCTION public.performance_calibration_lifecycle_policy() RETURNS jsonb
-LANGUAGE sql
-IMMUTABLE
-SET search_path = pg_catalog
-AS $$
-  SELECT '{
-    "expiryDays": 90,
-    "maximumSelectionCandidates": 64,
-    "confirmation": {"evidenceCount": 2, "minimumDaySpan": 7, "maximumDaySpan": 42},
-    "decrease": {"evidenceCount": 3, "minimumDaySpan": 14, "maximumDaySpan": 56},
-    "heartRateChange": {"evidenceCount": 3, "minimumDaySpan": 14, "maximumDaySpan": 56},
-    "relativeTolerance": 0.03,
-    "heartRateToleranceBpm": 3,
-    "materialRelativeChange": 0.03,
-    "materialHeartRateChangeBpm": 4
-  }'::jsonb
-$$;
-
-CREATE FUNCTION public.performance_calibration_evidence_is_current(target_evidence_id uuid)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SET search_path = pg_catalog, public
-AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.performance_calibration_evidence AS evidence
-    JOIN public.activities AS activity
-      ON activity.id = evidence.activity_id
-     AND activity.profile_id = evidence.profile_id
-     AND activity.finished_at = evidence.observed_at
-    JOIN public.activity_segments AS segment
-      ON segment.id = evidence.segment_id
-     AND segment.activity_id = evidence.activity_id
-     AND segment.profile_id = evidence.profile_id
-     AND segment.activity_category = evidence.activity_category
-     AND segment.segment_revision = evidence.segment_revision
-     AND segment.segment_revision = activity.segments_revision
-     AND segment.source_artifact_id = evidence.source_artifact_id
-    JOIN public.activity_artifact_links AS source_link
-      ON source_link.activity_id = evidence.activity_id
-     AND source_link.artifact_id = evidence.source_artifact_id
-     AND source_link.profile_id = evidence.profile_id
-     AND source_link.role = 'source'
-     AND source_link.is_current = true
-    JOIN public.activity_artifacts AS artifact
-      ON artifact.id = evidence.source_artifact_id
-     AND artifact.profile_id = evidence.profile_id
-     AND artifact.availability = 'accepted'
-    WHERE evidence.id = target_evidence_id
-      AND evidence.state = 'candidate'
-      AND evidence.invalidated_at IS NULL
-      AND NOT EXISTS (
-        SELECT 1
-        FROM public.performance_calibration_model_inputs AS model_input
-        WHERE model_input.calibration_evidence_id = evidence.id
-          AND NOT EXISTS (
-            SELECT 1
-            FROM public.activities AS model_activity
-            JOIN public.activity_segments AS model_segment
-              ON model_segment.id = model_input.segment_id
-             AND model_segment.activity_id = model_input.activity_id
-             AND model_segment.profile_id = model_input.profile_id
-             AND model_segment.segment_revision = model_input.segment_revision
-             AND model_segment.segment_revision = model_activity.segments_revision
-             AND model_segment.source_artifact_id = model_input.source_artifact_id
-            JOIN public.activity_efforts AS model_effort
-              ON model_effort.id = model_input.effort_id
-             AND model_effort.activity_id = model_input.activity_id
-             AND model_effort.segment_id = model_input.segment_id
-             AND model_effort.profile_id = model_input.profile_id
-            JOIN public.activity_artifact_links AS model_source_link
-              ON model_source_link.activity_id = model_input.activity_id
-             AND model_source_link.artifact_id = model_input.source_artifact_id
-             AND model_source_link.profile_id = model_input.profile_id
-             AND model_source_link.role = 'source'
-             AND model_source_link.is_current = true
-            JOIN public.activity_artifacts AS model_artifact
-              ON model_artifact.id = model_input.source_artifact_id
-             AND model_artifact.profile_id = model_input.profile_id
-             AND model_artifact.digest = model_input.source_artifact_digest
-             AND model_artifact.availability = 'accepted'
-            WHERE model_activity.id = model_input.activity_id
-              AND model_activity.profile_id = model_input.profile_id
-          )
-      )
-  )
-$$;
-
-CREATE FUNCTION public.guard_performance_calibration_evidence_history() RETURNS trigger
+CREATE FUNCTION public.validate_threshold_evaluation_insert() RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = pg_catalog, public
 AS $$
 BEGIN
-  IF TG_OP = 'INSERT' THEN
-    IF NOT EXISTS (
-      SELECT 1
-      FROM public.activities AS activity
-      JOIN public.activity_segments AS segment
-        ON segment.id = NEW.segment_id
-       AND segment.activity_id = NEW.activity_id
-       AND segment.profile_id = NEW.profile_id
-       AND segment.activity_category = NEW.activity_category
-       AND segment.segment_revision = NEW.segment_revision
-       AND segment.source_artifact_id = NEW.source_artifact_id
-      JOIN public.activity_artifact_links AS source_link
-        ON source_link.activity_id = NEW.activity_id
-       AND source_link.artifact_id = NEW.source_artifact_id
-       AND source_link.profile_id = NEW.profile_id
-       AND source_link.role = 'source'
-       AND source_link.is_current = true
-      JOIN public.activity_artifacts AS artifact
-        ON artifact.id = NEW.source_artifact_id
-       AND artifact.profile_id = NEW.profile_id
-       AND artifact.availability = 'accepted'
-      WHERE activity.id = NEW.activity_id
-        AND activity.profile_id = NEW.profile_id
-        AND activity.segments_revision = NEW.segment_revision
-        AND activity.finished_at = NEW.observed_at
-        AND activity.finished_at <= pg_catalog.statement_timestamp()
-    ) THEN
-      RAISE EXCEPTION 'calibration evidence source is not the exact accepted current segment revision'
-        USING ERRCODE = '23514',
-          CONSTRAINT = 'performance_calibration_evidence_source_integrity';
-    END IF;
-    NEW.created_at := pg_catalog.statement_timestamp();
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.activities AS activity
+    WHERE activity.id = NEW.source_activity_id
+      AND activity.profile_id = NEW.profile_id
+      AND activity.segments_revision = NEW.source_revision
+      AND activity.finished_at = NEW.observed_at
+      AND activity.finished_at <= pg_catalog.statement_timestamp()
+  ) THEN
+    RAISE EXCEPTION 'threshold evaluation must cite the exact current activity source revision'
+      USING ERRCODE = '23514', CONSTRAINT = 'threshold_evaluations_source_integrity';
+  END IF;
+  NEW.created_at := pg_catalog.statement_timestamp();
+  RETURN NEW;
+END
+$$;
+
+CREATE FUNCTION public.enforce_threshold_truth_immutability() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog
+AS $$
+BEGIN
+  RAISE EXCEPTION 'immutable derived rows cannot be updated directly'
+    USING ERRCODE = '23514', CONSTRAINT = 'threshold_truth_immutable';
+END
+$$;
+
+CREATE FUNCTION public.enforce_threshold_immutability() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  expected_rewire text;
+BEGIN
+  expected_rewire := OLD.supersedes_id::text || ':' || coalesce(NEW.supersedes_id::text, '');
+  IF pg_trigger_depth() > 1
+    AND current_user = (
+      SELECT pg_catalog.pg_get_userbyid(class.relowner)
+      FROM pg_catalog.pg_class AS class
+      WHERE class.oid = TG_RELID
+    )
+    AND pg_catalog.current_setting('gradientpeak.threshold_rewire', true) = expected_rewire
+    AND (to_jsonb(NEW) - 'supersedes_id') IS NOT DISTINCT FROM (to_jsonb(OLD) - 'supersedes_id')
+    AND NOT EXISTS (SELECT 1 FROM public.thresholds WHERE id = OLD.supersedes_id)
+    AND (
+      NEW.supersedes_id IS NULL
+      OR EXISTS (
+        SELECT 1 FROM public.thresholds AS parent
+        WHERE parent.id = NEW.supersedes_id
+          AND parent.profile_id = NEW.profile_id
+          AND parent.activity_category = NEW.activity_category
+          AND parent.metric = NEW.metric
+      )
+    )
+  THEN
     RETURN NEW;
   END IF;
+  RAISE EXCEPTION 'threshold rows are immutable outside referential supersession cleanup'
+    USING ERRCODE = '23514', CONSTRAINT = 'thresholds_immutable';
+END
+$$;
 
-  IF TG_OP = 'UPDATE' THEN
-    IF OLD.state <> 'candidate'
-      OR NEW.state <> 'invalidated'
-      OR NEW.invalidation_reason IS NULL
-      OR pg_catalog.btrim(NEW.invalidation_reason) = ''
-      OR (to_jsonb(NEW) - ARRAY['state', 'invalidated_at', 'invalidation_reason']::text[])
-         IS DISTINCT FROM
-         (to_jsonb(OLD) - ARRAY['state', 'invalidated_at', 'invalidation_reason']::text[])
-    THEN
-      RAISE EXCEPTION 'calibration evidence is immutable except for candidate invalidation'
-        USING ERRCODE = '23514',
-          CONSTRAINT = 'performance_calibration_evidence_invalidation_only';
-    END IF;
-    NEW.invalidated_at := pg_catalog.statement_timestamp();
-    RETURN NEW;
-  END IF;
+CREATE FUNCTION public.rewire_threshold_successor_after_delete() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  rewired_count integer;
+BEGIN
+  PERFORM pg_catalog.set_config(
+    'gradientpeak.threshold_rewire',
+    OLD.id::text || ':' || coalesce(OLD.supersedes_id::text, ''),
+    true
+  );
+  UPDATE public.thresholds AS successor
+  SET supersedes_id = OLD.supersedes_id
+  WHERE successor.supersedes_id = OLD.id
+    AND successor.profile_id = OLD.profile_id
+    AND successor.activity_category = OLD.activity_category
+    AND successor.metric = OLD.metric;
+  GET DIAGNOSTICS rewired_count = ROW_COUNT;
+  PERFORM pg_catalog.set_config('gradientpeak.threshold_rewire', '', true);
 
-  IF EXISTS (SELECT 1 FROM public.profiles WHERE id = OLD.profile_id) THEN
-    RAISE EXCEPTION 'calibration evidence history cannot be deleted while its profile exists'
-      USING ERRCODE = '23514',
-        CONSTRAINT = 'performance_calibration_evidence_retained';
+  IF rewired_count > 1 OR EXISTS (
+    SELECT 1 FROM public.thresholds AS successor
+    WHERE successor.supersedes_id = OLD.id
+  ) THEN
+    RAISE EXCEPTION 'threshold successor chain is branched or crosses identity'
+      USING ERRCODE = '23514', CONSTRAINT = 'thresholds_successor_rewire_identity';
   END IF;
   RETURN OLD;
 END
 $$;
 
-CREATE FUNCTION public.guard_performance_calibration_insert() RETURNS trigger
+REVOKE ALL ON FUNCTION public.rewire_threshold_successor_after_delete() FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION public.validate_threshold_evaluation_efforts() RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = pg_catalog, public
 AS $$
 DECLARE
-  prior public.performance_calibrations%ROWTYPE;
+  target_evaluation_id uuid;
+  evaluation public.threshold_evaluations%ROWTYPE;
+  primary_count integer;
+  primary_activity_id uuid;
+  primary_revision integer;
 BEGIN
+  IF TG_TABLE_NAME = 'threshold_evaluations' THEN
+    target_evaluation_id := NEW.id;
+  ELSE
+    target_evaluation_id := NEW.evaluation_id;
+  END IF;
+
+  SELECT * INTO evaluation
+  FROM public.threshold_evaluations
+  WHERE id = target_evaluation_id;
+  IF NOT FOUND THEN RETURN NULL; END IF;
+
+  SELECT count(*)::integer
+  INTO primary_count
+  FROM public.threshold_evaluation_efforts
+  WHERE evaluation_id = target_evaluation_id
+    AND role = 'primary';
+
+  SELECT activity_id, source_revision
+  INTO primary_activity_id, primary_revision
+  FROM public.threshold_evaluation_efforts
+  WHERE evaluation_id = target_evaluation_id
+    AND role = 'primary'
+  LIMIT 1;
+
+  IF evaluation.outcome = 'rejected' AND EXISTS (
+    SELECT 1
+    FROM public.threshold_evaluation_efforts AS linked_effort
+    WHERE linked_effort.evaluation_id = target_evaluation_id
+      AND (
+        linked_effort.activity_id IS DISTINCT FROM evaluation.source_activity_id
+        OR linked_effort.source_revision IS DISTINCT FROM evaluation.source_revision
+      )
+  ) THEN
+    RAISE EXCEPTION 'rejected threshold evaluation links must match its source activity revision'
+      USING ERRCODE = '23514', CONSTRAINT = 'threshold_evaluations_rejected_effort_source';
+  END IF;
+
+  IF primary_count > 1 THEN
+    RAISE EXCEPTION 'threshold evaluation cannot have multiple primary efforts'
+      USING ERRCODE = '23514', CONSTRAINT = 'threshold_evaluations_primary_effort';
+  END IF;
+
+  IF evaluation.outcome = 'qualified' AND primary_count <> 1 THEN
+    RAISE EXCEPTION 'qualified threshold evaluation requires exactly one primary effort'
+      USING ERRCODE = '23514', CONSTRAINT = 'threshold_evaluations_primary_effort';
+  END IF;
+
+  -- Rejected evaluations may have no measured window; all linked evidence is source-local.
+  IF primary_count = 1 AND (
+      primary_activity_id IS DISTINCT FROM evaluation.source_activity_id
+      OR primary_revision IS DISTINCT FROM evaluation.source_revision
+    )
+  THEN
+    RAISE EXCEPTION 'threshold evaluation primary effort does not match its source revision'
+      USING ERRCODE = '23514', CONSTRAINT = 'threshold_evaluations_primary_effort';
+  END IF;
+  RETURN NULL;
+END
+$$;
+
+CREATE FUNCTION public.validate_threshold_insert() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  evaluation public.threshold_evaluations%ROWTYPE;
+  prior public.thresholds%ROWTYPE;
+BEGIN
+  SELECT * INTO evaluation
+  FROM public.threshold_evaluations
+  WHERE id = NEW.evaluation_id
+    AND profile_id = NEW.profile_id
+    AND activity_category = NEW.activity_category
+    AND metric = NEW.metric
+    AND outcome = 'qualified';
+
+  IF NOT FOUND
+    OR NEW.value IS DISTINCT FROM evaluation.value
+    OR NEW.unit IS DISTINCT FROM evaluation.unit
+    OR NEW.confidence IS DISTINCT FROM evaluation.confidence
+    OR NEW.method IS DISTINCT FROM evaluation.method
+    OR NEW.policy_version IS DISTINCT FROM evaluation.policy_version
+    OR NEW.effective_at < evaluation.observed_at
+  THEN
+    RAISE EXCEPTION 'threshold must exactly publish its qualified evaluation'
+      USING ERRCODE = '23514', CONSTRAINT = 'thresholds_evaluation_snapshot';
+  END IF;
+
   NEW.created_at := pg_catalog.statement_timestamp();
   IF NEW.effective_at > NEW.created_at THEN
-    RAISE EXCEPTION 'calibration effective_at cannot be in the future'
-      USING ERRCODE = '23514',
-        CONSTRAINT = 'performance_calibrations_not_future';
+    RAISE EXCEPTION 'threshold effective_at cannot be in the future'
+      USING ERRCODE = '23514', CONSTRAINT = 'thresholds_not_future';
   END IF;
 
   IF NEW.supersedes_id IS NULL THEN
     IF EXISTS (
-      SELECT 1
-      FROM public.performance_calibrations AS existing
+      SELECT 1 FROM public.thresholds AS existing
       WHERE existing.profile_id = NEW.profile_id
-        AND existing.metric_key = NEW.metric_key
         AND existing.activity_category = NEW.activity_category
+        AND existing.metric = NEW.metric
     ) THEN
-      RAISE EXCEPTION 'calibration history requires an exact supersession edge'
-        USING ERRCODE = '23514',
-          CONSTRAINT = 'performance_calibrations_linear_history';
+      RAISE EXCEPTION 'threshold history requires an exact supersession edge'
+        USING ERRCODE = '23514', CONSTRAINT = 'thresholds_linear_history';
     END IF;
   ELSE
-    SELECT existing.*
-    INTO prior
-    FROM public.performance_calibrations AS existing
-    WHERE existing.id = NEW.supersedes_id
-      AND existing.profile_id = NEW.profile_id
-      AND existing.metric_key = NEW.metric_key
-      AND existing.activity_category = NEW.activity_category;
+    SELECT * INTO prior FROM public.thresholds
+    WHERE id = NEW.supersedes_id
+      AND profile_id = NEW.profile_id
+      AND activity_category = NEW.activity_category
+      AND metric = NEW.metric;
     IF NOT FOUND OR NEW.effective_at < prior.effective_at THEN
-      RAISE EXCEPTION 'calibration supersession is cross-identity or backdated'
-        USING ERRCODE = '23514',
-          CONSTRAINT = 'performance_calibrations_supersession_order';
+      RAISE EXCEPTION 'threshold supersession is cross-identity or backdated'
+        USING ERRCODE = '23514', CONSTRAINT = 'thresholds_supersession_order';
     END IF;
     IF EXISTS (
-      SELECT 1
-      FROM public.performance_calibrations AS existing
+      SELECT 1 FROM public.thresholds AS existing
       WHERE existing.profile_id = NEW.profile_id
-        AND existing.metric_key = NEW.metric_key
         AND existing.activity_category = NEW.activity_category
+        AND existing.metric = NEW.metric
         AND (existing.effective_at, existing.created_at, existing.id)
           > (prior.effective_at, prior.created_at, prior.id)
     ) THEN
-      RAISE EXCEPTION 'calibration must supersede the latest history row'
-        USING ERRCODE = '23514',
-          CONSTRAINT = 'performance_calibrations_latest_supersession';
+      RAISE EXCEPTION 'threshold must supersede the latest history row'
+        USING ERRCODE = '23514', CONSTRAINT = 'thresholds_latest_supersession';
     END IF;
   END IF;
   RETURN NEW;
 END
 $$;
 
-CREATE FUNCTION public.guard_performance_calibration_append_only() RETURNS trigger
+CREATE FUNCTION public.delete_effort_dependent_threshold_evaluations() RETURNS trigger
 LANGUAGE plpgsql
+SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $$
 BEGIN
-  IF TG_OP = 'UPDATE' THEN
-    RAISE EXCEPTION 'calibration provenance is append-only'
-      USING ERRCODE = '23514',
-        CONSTRAINT = 'performance_calibration_provenance_append_only';
-  END IF;
-  IF EXISTS (SELECT 1 FROM public.profiles WHERE id = OLD.profile_id) THEN
-    RAISE EXCEPTION 'calibration provenance cannot be deleted while its profile exists'
-      USING ERRCODE = '23514',
-        CONSTRAINT = 'performance_calibration_provenance_retained';
-  END IF;
+  DELETE FROM public.threshold_evaluations AS evaluation
+  WHERE evaluation.id IN (
+    SELECT link.evaluation_id
+    FROM public.threshold_evaluation_efforts AS link
+    WHERE link.effort_id = OLD.id
+  );
   RETURN OLD;
 END
 $$;
 
-CREATE FUNCTION public.guard_performance_calibration_selection_insert() RETURNS trigger
-LANGUAGE plpgsql
-SET search_path = pg_catalog, public
-AS $$
-DECLARE
-  evidence_state public.performance_calibration_evidence_state;
-  evidence_observed_at timestamptz;
-  calibration_effective_at timestamptz;
-BEGIN
-  SELECT evidence.state, evidence.observed_at, calibration.effective_at
-  INTO evidence_state, evidence_observed_at, calibration_effective_at
-  FROM public.performance_calibration_evidence AS evidence
-  JOIN public.activities AS activity
-    ON activity.id = evidence.activity_id
-   AND activity.profile_id = evidence.profile_id
-   AND activity.finished_at = evidence.observed_at
-  JOIN public.activity_segments AS segment
-    ON segment.id = evidence.segment_id
-   AND segment.activity_id = evidence.activity_id
-   AND segment.profile_id = evidence.profile_id
-   AND segment.activity_category = evidence.activity_category
-   AND segment.segment_revision = evidence.segment_revision
-   AND segment.segment_revision = activity.segments_revision
-   AND segment.source_artifact_id = evidence.source_artifact_id
-  JOIN public.activity_artifact_links AS source_link
-    ON source_link.activity_id = evidence.activity_id
-   AND source_link.artifact_id = evidence.source_artifact_id
-   AND source_link.profile_id = evidence.profile_id
-   AND source_link.role = 'source'
-   AND source_link.is_current = true
-  JOIN public.activity_artifacts AS artifact
-    ON artifact.id = evidence.source_artifact_id
-   AND artifact.profile_id = evidence.profile_id
-   AND artifact.availability = 'accepted'
-  JOIN public.performance_calibrations AS calibration
-    ON calibration.id = NEW.calibration_id
-   AND calibration.profile_id = NEW.profile_id
-   AND calibration.metric_key = NEW.metric_key
-   AND calibration.activity_category = NEW.activity_category
-  WHERE evidence.id = NEW.evidence_id
-    AND evidence.profile_id = NEW.profile_id
-    AND evidence.metric_key = NEW.metric_key
-    AND evidence.activity_category = NEW.activity_category
-    AND evidence.policy_version = calibration.policy_version
-    AND public.performance_calibration_evidence_is_current(evidence.id)
-    AND NOT EXISTS (
-      SELECT 1
-      FROM public.performance_calibration_model_inputs AS model_input
-      WHERE model_input.calibration_evidence_id = evidence.id
-        AND NOT EXISTS (
-          SELECT 1
-          FROM public.activities AS model_activity
-          JOIN public.activity_segments AS model_segment
-            ON model_segment.id = model_input.segment_id
-           AND model_segment.activity_id = model_input.activity_id
-           AND model_segment.profile_id = model_input.profile_id
-           AND model_segment.segment_revision = model_input.segment_revision
-           AND model_segment.segment_revision = model_activity.segments_revision
-           AND model_segment.source_artifact_id = model_input.source_artifact_id
-          JOIN public.activity_efforts AS model_effort
-            ON model_effort.id = model_input.effort_id
-           AND model_effort.activity_id = model_input.activity_id
-           AND model_effort.segment_id = model_input.segment_id
-           AND model_effort.profile_id = model_input.profile_id
-          JOIN public.activity_artifact_links AS model_source_link
-            ON model_source_link.activity_id = model_input.activity_id
-           AND model_source_link.artifact_id = model_input.source_artifact_id
-           AND model_source_link.profile_id = model_input.profile_id
-           AND model_source_link.role = 'source'
-           AND model_source_link.is_current = true
-          JOIN public.activity_artifacts AS model_artifact
-            ON model_artifact.id = model_input.source_artifact_id
-           AND model_artifact.profile_id = model_input.profile_id
-           AND model_artifact.digest = model_input.source_artifact_digest
-           AND model_artifact.availability = 'accepted'
-          WHERE model_activity.id = model_input.activity_id
-            AND model_activity.profile_id = model_input.profile_id
-        )
-    );
-  IF NOT FOUND
-    OR evidence_state <> 'candidate'
-    OR evidence_observed_at > calibration_effective_at
-  THEN
-    RAISE EXCEPTION 'calibration selection must cite qualifying same-identity evidence as of effectiveness'
-      USING ERRCODE = '23514',
-        CONSTRAINT = 'performance_calibration_selection_source_integrity';
-  END IF;
-  RETURN NEW;
-END
-$$;
-
-CREATE FUNCTION public.guard_performance_calibration_model_input_insert() RETURNS trigger
-LANGUAGE plpgsql
-SET search_path = pg_catalog, public
-AS $$
-DECLARE
-  evidence_observed_at timestamptz;
-BEGIN
-  SELECT evidence.observed_at
-  INTO evidence_observed_at
-  FROM public.performance_calibration_evidence AS evidence
-  WHERE evidence.id = NEW.calibration_evidence_id
-    AND evidence.profile_id = NEW.profile_id
-    AND evidence.metric_key = NEW.metric_key
-    AND evidence.activity_category = NEW.activity_category;
-  IF NOT FOUND OR NEW.observed_at > evidence_observed_at THEN
-    RAISE EXCEPTION 'calibration model input is outside its evidence model run'
-      USING ERRCODE = '23514',
-        CONSTRAINT = 'performance_calibration_model_inputs_evidence_time';
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1
-    FROM public.activities AS activity
-    JOIN public.activity_segments AS segment
-      ON segment.id = NEW.segment_id
-     AND segment.activity_id = NEW.activity_id
-     AND segment.profile_id = NEW.profile_id
-     AND segment.activity_category = 'bike'
-     AND segment.segment_revision = NEW.segment_revision
-     AND segment.source_artifact_id = NEW.source_artifact_id
-    JOIN public.activity_efforts AS effort
-      ON effort.id = NEW.effort_id
-     AND effort.activity_id = NEW.activity_id
-     AND effort.segment_id = NEW.segment_id
-     AND effort.profile_id = NEW.profile_id
-     AND effort.activity_category = 'bike'
-     AND effort.effort_type = 'power'
-     AND effort.recorded_at = NEW.observed_at
-     AND effort.duration_seconds = NEW.duration_seconds
-     AND pg_catalog.abs(effort.value::double precision - NEW.value::double precision)
-       <= greatest(
-         0.000001::double precision,
-         pg_catalog.abs(effort.value::double precision) * 0.000005::double precision
-       )
-     AND effort.calculation_version = NEW.calculation_version
-    JOIN public.activity_artifact_links AS source_link
-      ON source_link.activity_id = NEW.activity_id
-     AND source_link.artifact_id = NEW.source_artifact_id
-     AND source_link.profile_id = NEW.profile_id
-     AND source_link.role = 'source'
-     AND source_link.is_current = true
-    JOIN public.activity_artifacts AS artifact
-      ON artifact.id = NEW.source_artifact_id
-     AND artifact.profile_id = NEW.profile_id
-     AND artifact.digest = NEW.source_artifact_digest
-     AND artifact.availability = 'accepted'
-    WHERE activity.id = NEW.activity_id
-      AND activity.profile_id = NEW.profile_id
-      AND activity.segments_revision = NEW.segment_revision
-      AND activity.finished_at <= evidence_observed_at
-  ) THEN
-    RAISE EXCEPTION 'calibration model input is not an exact accepted current source effort'
-      USING ERRCODE = '23514',
-        CONSTRAINT = 'performance_calibration_model_inputs_source_integrity';
-  END IF;
-  RETURN NEW;
-END
-$$;
-
-CREATE FUNCTION public.validate_performance_calibration_selection() RETURNS trigger
-LANGUAGE plpgsql
-SET search_path = pg_catalog, public
-AS $$
-DECLARE
-  calibration_id_to_validate uuid;
-  calibration public.performance_calibrations%ROWTYPE;
-  prior_calibration public.performance_calibrations%ROWTYPE;
-  lifecycle_policy jsonb := public.performance_calibration_lifecycle_policy();
-  selected_count integer;
-  distinct_activity_count integer;
-  distinct_day_count integer;
-  minimum_ordinal integer;
-  maximum_ordinal integer;
-  minimum_observed_at timestamptz;
-  maximum_observed_at timestamptz;
-  minimum_observed_day date;
-  maximum_observed_day date;
-  minimum_value double precision;
-  maximum_value double precision;
-  median_value double precision;
-  selected_evidence_ids jsonb;
-  selected_activity_ids jsonb;
-  selection_reason text;
-  selection_trend text;
-  required_evidence_count integer;
-  minimum_day_span integer;
-  maximum_day_span integer;
-  day_span integer;
-  tolerance double precision;
-  material_change double precision;
-  prior_is_eligible boolean := false;
-  current_band_support_exists boolean := false;
-  lifecycle_semantics_valid boolean := true;
-BEGIN
-  IF TG_TABLE_NAME = 'performance_calibrations' THEN
-    calibration_id_to_validate := NEW.id;
-  ELSE
-    calibration_id_to_validate := NEW.calibration_id;
-  END IF;
-  SELECT * INTO calibration
-  FROM public.performance_calibrations
-  WHERE id = calibration_id_to_validate;
-  IF NOT FOUND THEN RETURN NULL; END IF;
-
-  SELECT count(*)::integer,
-    count(DISTINCT evidence.activity_id)::integer,
-    count(DISTINCT (evidence.observed_at AT TIME ZONE 'UTC')::date)::integer,
-    min(link.ordinal),
-    max(link.ordinal),
-    min(evidence.observed_at),
-    max(evidence.observed_at),
-    min((evidence.observed_at AT TIME ZONE 'UTC')::date),
-    max((evidence.observed_at AT TIME ZONE 'UTC')::date),
-    min(evidence.value::double precision),
-    max(evidence.value::double precision),
-    percentile_cont(0.5) WITHIN GROUP (ORDER BY evidence.value::double precision),
-    jsonb_agg(to_jsonb(evidence.id::text) ORDER BY link.ordinal),
-    jsonb_agg(to_jsonb(evidence.activity_id::text) ORDER BY link.ordinal)
-  INTO selected_count,
-    distinct_activity_count,
-    distinct_day_count,
-    minimum_ordinal,
-    maximum_ordinal,
-    minimum_observed_at,
-    maximum_observed_at,
-    minimum_observed_day,
-    maximum_observed_day,
-    minimum_value,
-    maximum_value,
-    median_value,
-    selected_evidence_ids,
-    selected_activity_ids
-  FROM public.performance_calibration_selection_evidence AS link
-  JOIN public.performance_calibration_evidence AS evidence
-    ON evidence.id = link.evidence_id
-   AND evidence.profile_id = link.profile_id
-   AND evidence.metric_key = link.metric_key
-   AND evidence.activity_category = link.activity_category
-  WHERE link.calibration_id = calibration.id;
-
-  IF selected_count = 0
-    OR minimum_ordinal <> 0
-    OR maximum_ordinal <> selected_count - 1
-    OR maximum_observed_at IS DISTINCT FROM calibration.effective_at
-    OR calibration.selection_diagnostics -> 'selectedEvidenceIds' IS DISTINCT FROM selected_evidence_ids
-    OR calibration.selection_diagnostics -> 'selectedActivityIds' IS DISTINCT FROM selected_activity_ids
-    OR (calibration.selection_diagnostics ->> 'evidenceCount')::integer IS DISTINCT FROM selected_count
-    OR calibration.selection_diagnostics ->> 'policyVersion' IS DISTINCT FROM calibration.policy_version
-  THEN
-    RAISE EXCEPTION 'calibration selection provenance does not match immutable history'
-      USING ERRCODE = '23514',
-        CONSTRAINT = 'performance_calibrations_selection_integrity';
-  END IF;
-
-  IF calibration.expires_at IS DISTINCT FROM
-      calibration.effective_at
-        + ((lifecycle_policy ->> 'expiryDays')::integer * INTERVAL '24 hours')
-  THEN
-    RAISE EXCEPTION 'calibration expiry does not match lifecycle policy'
-      USING ERRCODE = '23514',
-        CONSTRAINT = 'performance_calibrations_lifecycle_semantics';
-  END IF;
-
-  selection_reason := calibration.selection_diagnostics ->> 'selectionReason';
-  selection_trend := calibration.selection_diagnostics ->> 'trend';
-  day_span := maximum_observed_day - minimum_observed_day;
-  tolerance := CASE
-    WHEN calibration.metric_key = 'threshold_heart_rate'
-      THEN (lifecycle_policy ->> 'heartRateToleranceBpm')::double precision
-    ELSE (lifecycle_policy ->> 'relativeTolerance')::double precision
-  END;
-  material_change := CASE
-    WHEN calibration.metric_key = 'threshold_heart_rate'
-      THEN (lifecycle_policy ->> 'materialHeartRateChangeBpm')::double precision
-    ELSE (lifecycle_policy ->> 'materialRelativeChange')::double precision
-  END;
-
-  IF (calibration.selection_diagnostics ->> 'tolerance')::double precision
-      IS DISTINCT FROM tolerance
-  THEN
-    lifecycle_semantics_valid := false;
-  END IF;
-
-  IF calibration.supersedes_id IS NOT NULL THEN
-    SELECT * INTO prior_calibration
-    FROM public.performance_calibrations
-    WHERE id = calibration.supersedes_id;
-
-    prior_is_eligible := FOUND
-      AND prior_calibration.policy_version = calibration.policy_version
-      AND calibration.effective_at >= prior_calibration.effective_at
-      AND NOT EXISTS (
-        SELECT 1
-        FROM public.performance_calibration_selection_evidence AS prior_link
-        WHERE prior_link.calibration_id = prior_calibration.id
-          AND NOT public.performance_calibration_evidence_is_current(prior_link.evidence_id)
-      );
-  END IF;
-
-  IF selection_reason = 'first_qualifying_evidence' THEN
-    lifecycle_semantics_valid := lifecycle_semantics_valid
-      AND selected_count = 1
-      AND distinct_activity_count = 1
-      AND distinct_day_count = 1
-      AND selection_trend = 'initial'
-      AND abs(calibration.value::double precision - median_value)
-        <= greatest(1e-9, abs(median_value) * 1e-9)
-      AND (
-        calibration.supersedes_id IS NULL
-        OR calibration.effective_at >= prior_calibration.expires_at
-        OR NOT prior_is_eligible
-      );
-  ELSIF selection_reason = 'complete_protocol' THEN
-    lifecycle_semantics_valid := lifecycle_semantics_valid
-      AND calibration.metric_key = 'threshold_speed'
-      AND calibration.activity_category = 'swim'
-      AND selected_count = 1
-      AND distinct_activity_count = 1
-      AND distinct_day_count = 1
-      AND selection_trend = 'initial'
-      AND abs(calibration.value::double precision - median_value)
-        <= greatest(1e-9, abs(median_value) * 1e-9)
-      AND (
-        calibration.supersedes_id IS NULL
-        OR NOT prior_is_eligible
-      );
-  ELSIF selection_reason = 'independent_confirmation' THEN
-    required_evidence_count := (lifecycle_policy #>> '{confirmation,evidenceCount}')::integer;
-    minimum_day_span := (lifecycle_policy #>> '{confirmation,minimumDaySpan}')::integer;
-    maximum_day_span := (lifecycle_policy #>> '{confirmation,maximumDaySpan}')::integer;
-    lifecycle_semantics_valid := lifecycle_semantics_valid
-      AND selected_count = required_evidence_count
-      AND distinct_activity_count = required_evidence_count
-      AND distinct_day_count = required_evidence_count
-      AND day_span BETWEEN minimum_day_span AND maximum_day_span
-      AND (
-        (calibration.metric_key = 'threshold_heart_rate' AND maximum_value - minimum_value <= tolerance)
-        OR (calibration.metric_key <> 'threshold_heart_rate' AND maximum_value / minimum_value - 1 <= tolerance)
-      )
-      AND abs(calibration.value::double precision - median_value)
-        <= greatest(1e-9, abs(median_value) * 1e-9)
-      AND (
-        (calibration.supersedes_id IS NULL AND selection_trend = 'initial')
-        OR (
-          calibration.supersedes_id IS NOT NULL
-          AND (
-            (
-              NOT prior_is_eligible
-              AND selection_trend = 'initial'
-            )
-            OR (
-              prior_is_eligible
-              AND selection_trend = 'stable'
-              AND (
-                (
-                  prior_calibration.selection_diagnostics ->> 'selectionReason'
-                    = 'first_qualifying_evidence'
-                  AND calibration.effective_at < prior_calibration.expires_at
-                  AND maximum_observed_at >= prior_calibration.effective_at
-                )
-                OR (
-                  calibration.effective_at >= prior_calibration.expires_at
-                  AND minimum_observed_at >= prior_calibration.expires_at
-                )
-              )
-            )
-          )
-        )
-      );
-  ELSIF selection_reason IN ('supported_increase', 'supported_decrease', 'unchanged') THEN
-    lifecycle_semantics_valid := lifecycle_semantics_valid
-      AND calibration.supersedes_id IS NOT NULL
-      AND prior_is_eligible
-      AND prior_calibration.selection_diagnostics ->> 'selectionReason' <> 'first_qualifying_evidence'
-      AND calibration.effective_at < prior_calibration.expires_at
-      AND minimum_observed_at >= prior_calibration.effective_at;
-
-    IF selection_reason = 'unchanged' THEN
-      required_evidence_count := (lifecycle_policy #>> '{confirmation,evidenceCount}')::integer;
-      minimum_day_span := (lifecycle_policy #>> '{confirmation,minimumDaySpan}')::integer;
-      maximum_day_span := (lifecycle_policy #>> '{confirmation,maximumDaySpan}')::integer;
-      lifecycle_semantics_valid := lifecycle_semantics_valid
-        AND selected_count = required_evidence_count
-        AND distinct_activity_count = required_evidence_count
-        AND distinct_day_count = required_evidence_count
-        AND day_span BETWEEN minimum_day_span AND maximum_day_span
-        AND selection_trend = 'stable'
-        AND calibration.value IS NOT DISTINCT FROM prior_calibration.value
-        AND (
-          (
-            calibration.metric_key = 'threshold_heart_rate'
-            AND maximum_value - minimum_value <= tolerance
-            AND abs(minimum_value - prior_calibration.value::double precision) <= tolerance
-            AND abs(maximum_value - prior_calibration.value::double precision) <= tolerance
-          )
-          OR (
-            calibration.metric_key <> 'threshold_heart_rate'
-            AND maximum_value / minimum_value - 1 <= tolerance
-            AND abs(minimum_value / prior_calibration.value::double precision - 1) <= tolerance
-            AND abs(maximum_value / prior_calibration.value::double precision - 1) <= tolerance
-          )
-        );
-    ELSE
-      IF selection_reason = 'supported_increase'
-        AND calibration.metric_key <> 'threshold_heart_rate'
-      THEN
-        required_evidence_count := (lifecycle_policy #>> '{confirmation,evidenceCount}')::integer;
-        minimum_day_span := (lifecycle_policy #>> '{confirmation,minimumDaySpan}')::integer;
-        maximum_day_span := (lifecycle_policy #>> '{confirmation,maximumDaySpan}')::integer;
-      ELSIF selection_reason = 'supported_increase' THEN
-        required_evidence_count := (lifecycle_policy #>> '{heartRateChange,evidenceCount}')::integer;
-        minimum_day_span := (lifecycle_policy #>> '{heartRateChange,minimumDaySpan}')::integer;
-        maximum_day_span := (lifecycle_policy #>> '{heartRateChange,maximumDaySpan}')::integer;
-      ELSE
-        required_evidence_count := (lifecycle_policy #>> '{decrease,evidenceCount}')::integer;
-        minimum_day_span := (lifecycle_policy #>> '{decrease,minimumDaySpan}')::integer;
-        maximum_day_span := (lifecycle_policy #>> '{decrease,maximumDaySpan}')::integer;
-      END IF;
-
-      lifecycle_semantics_valid := lifecycle_semantics_valid
-        AND selected_count = required_evidence_count
-        AND distinct_activity_count = required_evidence_count
-        AND distinct_day_count = required_evidence_count
-        AND day_span BETWEEN minimum_day_span AND maximum_day_span
-        AND abs(calibration.value::double precision - median_value)
-          <= greatest(1e-9, abs(median_value) * 1e-9)
-        AND (
-          (calibration.metric_key = 'threshold_heart_rate' AND maximum_value - minimum_value <= tolerance)
-          OR (calibration.metric_key <> 'threshold_heart_rate' AND maximum_value / minimum_value - 1 <= tolerance)
-        );
-
-      IF selection_reason = 'supported_increase' THEN
-        lifecycle_semantics_valid := lifecycle_semantics_valid
-          AND selection_trend = 'increasing'
-          AND (
-            (
-              calibration.metric_key = 'threshold_heart_rate'
-              AND median_value - prior_calibration.value::double precision >= material_change
-            )
-            OR (
-              calibration.metric_key <> 'threshold_heart_rate'
-              AND median_value / prior_calibration.value::double precision - 1 >= material_change
-            )
-          );
-      ELSE
-        lifecycle_semantics_valid := lifecycle_semantics_valid
-          AND selection_trend = 'decreasing'
-          AND (
-            (
-              calibration.metric_key = 'threshold_heart_rate'
-              AND prior_calibration.value::double precision - median_value >= material_change
-            )
-            OR (
-              calibration.metric_key <> 'threshold_heart_rate'
-              AND prior_calibration.value::double precision / median_value - 1 >= material_change
-            )
-          );
-
-        WITH lifecycle_candidates AS (
-          SELECT evidence.id,
-            evidence.activity_id,
-            evidence.observed_at,
-            evidence.value::double precision AS value
-          FROM public.performance_calibration_evidence AS evidence
-          WHERE evidence.profile_id = calibration.profile_id
-            AND evidence.metric_key = calibration.metric_key
-            AND evidence.activity_category = calibration.activity_category
-            AND evidence.policy_version = calibration.policy_version
-            AND evidence.observed_at >= prior_calibration.effective_at
-            AND evidence.observed_at <= calibration.effective_at
-            AND public.performance_calibration_evidence_is_current(evidence.id)
-          ORDER BY evidence.observed_at DESC, evidence.id DESC
-          LIMIT (lifecycle_policy ->> 'maximumSelectionCandidates')::integer
-        )
-        SELECT EXISTS (
-          SELECT 1
-          FROM lifecycle_candidates AS left_evidence
-          JOIN lifecycle_candidates AS right_evidence
-            ON right_evidence.id > left_evidence.id
-           AND right_evidence.activity_id <> left_evidence.activity_id
-           AND (right_evidence.observed_at AT TIME ZONE 'UTC')::date
-             <> (left_evidence.observed_at AT TIME ZONE 'UTC')::date
-          WHERE abs(
-              (right_evidence.observed_at AT TIME ZONE 'UTC')::date
-              - (left_evidence.observed_at AT TIME ZONE 'UTC')::date
-            ) BETWEEN
-              (lifecycle_policy #>> '{confirmation,minimumDaySpan}')::integer
-              AND (lifecycle_policy #>> '{confirmation,maximumDaySpan}')::integer
-            AND (
-              (
-                calibration.metric_key = 'threshold_heart_rate'
-                AND abs(right_evidence.value - left_evidence.value) <= tolerance
-                AND abs(right_evidence.value - prior_calibration.value::double precision) <= tolerance
-                AND abs(left_evidence.value - prior_calibration.value::double precision) <= tolerance
-              )
-              OR (
-                calibration.metric_key <> 'threshold_heart_rate'
-                AND greatest(right_evidence.value, left_evidence.value)
-                  / least(right_evidence.value, left_evidence.value) - 1 <= tolerance
-                AND abs(right_evidence.value / prior_calibration.value::double precision - 1) <= tolerance
-                AND abs(left_evidence.value / prior_calibration.value::double precision - 1) <= tolerance
-              )
-            )
-        ) INTO current_band_support_exists;
-        lifecycle_semantics_valid := lifecycle_semantics_valid AND NOT current_band_support_exists;
-      END IF;
-    END IF;
-  ELSE
-    lifecycle_semantics_valid := false;
-  END IF;
-
-  IF lifecycle_semantics_valid IS NOT TRUE THEN
-    RAISE EXCEPTION 'calibration selection violates lifecycle semantics'
-      USING ERRCODE = '23514',
-        CONSTRAINT = 'performance_calibrations_lifecycle_semantics';
-  END IF;
-  RETURN NULL;
-END
-$$;
-
-CREATE FUNCTION public.validate_performance_calibration_model_inputs() RETURNS trigger
-LANGUAGE plpgsql
-SET search_path = pg_catalog, public
-AS $$
-DECLARE
-  evidence_id_to_validate uuid;
-  evidence public.performance_calibration_evidence%ROWTYPE;
-  input_count integer;
-  minimum_ordinal integer;
-  maximum_ordinal integer;
-  actual_effort_ids jsonb;
-  expected_effort_ids jsonb;
-BEGIN
-  IF TG_TABLE_NAME = 'performance_calibration_evidence' THEN
-    evidence_id_to_validate := NEW.id;
-  ELSE
-    evidence_id_to_validate := NEW.calibration_evidence_id;
-  END IF;
-  SELECT * INTO evidence
-  FROM public.performance_calibration_evidence
-  WHERE id = evidence_id_to_validate;
-  IF NOT FOUND THEN RETURN NULL; END IF;
-
-  SELECT count(*)::integer,
-    min(model_input.ordinal),
-    max(model_input.ordinal),
-    coalesce(
-      jsonb_agg(to_jsonb(model_input.effort_id::text) ORDER BY model_input.ordinal),
-      '[]'::jsonb
-    )
-  INTO input_count, minimum_ordinal, maximum_ordinal, actual_effort_ids
-  FROM public.performance_calibration_model_inputs AS model_input
-  WHERE model_input.calibration_evidence_id = evidence.id;
-
-  expected_effort_ids := coalesce(
-    evidence.diagnostics #> '{model,sourceEvidenceIds}',
-    '[]'::jsonb
-  );
-  IF actual_effort_ids IS DISTINCT FROM expected_effort_ids
-    OR (input_count > 0 AND (minimum_ordinal <> 0 OR maximum_ordinal <> input_count - 1))
-    OR coalesce((evidence.diagnostics #>> '{model,evidenceCount}')::integer, 0) <> input_count
-  THEN
-    RAISE EXCEPTION 'calibration model inputs do not match immutable model-run diagnostics'
-      USING ERRCODE = '23514',
-        CONSTRAINT = 'performance_calibration_model_inputs_complete';
-  END IF;
-  RETURN NULL;
-END
-$$;
+REVOKE ALL ON FUNCTION public.delete_effort_dependent_threshold_evaluations() FROM PUBLIC, anon, authenticated;
 
 ALTER TABLE "public"."accounts" ENABLE ROW LEVEL SECURITY;
 
@@ -4208,13 +3608,11 @@ ALTER TABLE "public"."profile_athlete_state" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."profile_performance_estimates" ENABLE ROW LEVEL SECURITY;
 
-ALTER TABLE "public"."performance_calibration_evidence" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."threshold_evaluations" ENABLE ROW LEVEL SECURITY;
 
-ALTER TABLE "public"."performance_calibration_model_inputs" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."threshold_evaluation_efforts" ENABLE ROW LEVEL SECURITY;
 
-ALTER TABLE "public"."performance_calibrations" ENABLE ROW LEVEL SECURITY;
-
-ALTER TABLE "public"."performance_calibration_selection_evidence" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."thresholds" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."profile_training_settings" ENABLE ROW LEVEL SECURITY;
 
@@ -4229,8 +3627,6 @@ ALTER TABLE "public"."provider_webhook_receipts" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."rate_limits" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."sessions" ENABLE ROW LEVEL SECURITY;
-
-ALTER TABLE "public"."swimming_css_protocol_evidence" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."training_plans" ENABLE ROW LEVEL SECURITY;
 
@@ -4261,20 +3657,19 @@ CREATE POLICY "Users can read their own activity files" ON storage.objects FOR S
 CREATE POLICY "Users can upload their own activity files" ON storage.objects FOR INSERT TO public WITH CHECK (bucket_id = 'activity-files' AND (storage.foldername(name))[1] = 'activities' AND auth.uid()::text = (storage.foldername(name))[2]);
 
 CREATE CONSTRAINT TRIGGER activities_validate_segment_set AFTER INSERT OR UPDATE ON public.activities DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.activity_parent_segment_set_constraint_trigger();
-CREATE TRIGGER performance_calibration_evidence_history_guard BEFORE INSERT OR DELETE OR UPDATE ON public.performance_calibration_evidence FOR EACH ROW EXECUTE FUNCTION public.guard_performance_calibration_evidence_history();
-CREATE TRIGGER performance_calibrations_insert_guard BEFORE INSERT ON public.performance_calibrations FOR EACH ROW EXECUTE FUNCTION public.guard_performance_calibration_insert();
-CREATE TRIGGER performance_calibrations_append_only BEFORE DELETE OR UPDATE ON public.performance_calibrations FOR EACH ROW EXECUTE FUNCTION public.guard_performance_calibration_append_only();
-CREATE TRIGGER performance_calibration_selection_insert_guard BEFORE INSERT ON public.performance_calibration_selection_evidence FOR EACH ROW EXECUTE FUNCTION public.guard_performance_calibration_selection_insert();
-CREATE TRIGGER performance_calibration_selection_append_only BEFORE DELETE OR UPDATE ON public.performance_calibration_selection_evidence FOR EACH ROW EXECUTE FUNCTION public.guard_performance_calibration_append_only();
-CREATE TRIGGER performance_calibration_model_inputs_insert_guard BEFORE INSERT ON public.performance_calibration_model_inputs FOR EACH ROW EXECUTE FUNCTION public.guard_performance_calibration_model_input_insert();
-CREATE TRIGGER performance_calibration_model_inputs_append_only BEFORE DELETE OR UPDATE ON public.performance_calibration_model_inputs FOR EACH ROW EXECUTE FUNCTION public.guard_performance_calibration_append_only();
-CREATE CONSTRAINT TRIGGER performance_calibrations_selection_guard AFTER INSERT ON public.performance_calibrations DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.validate_performance_calibration_selection();
-CREATE CONSTRAINT TRIGGER performance_calibration_selection_history_guard AFTER INSERT ON public.performance_calibration_selection_evidence DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.validate_performance_calibration_selection();
-CREATE CONSTRAINT TRIGGER performance_calibration_evidence_model_inputs_guard AFTER INSERT ON public.performance_calibration_evidence DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.validate_performance_calibration_model_inputs();
-CREATE CONSTRAINT TRIGGER performance_calibration_model_inputs_complete_guard AFTER INSERT ON public.performance_calibration_model_inputs DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.validate_performance_calibration_model_inputs();
+CREATE TRIGGER threshold_evaluations_insert_guard BEFORE INSERT ON public.threshold_evaluations FOR EACH ROW EXECUTE FUNCTION public.validate_threshold_evaluation_insert();
+CREATE TRIGGER activity_efforts_immutable BEFORE UPDATE ON public.activity_efforts FOR EACH ROW EXECUTE FUNCTION public.enforce_threshold_truth_immutability();
+CREATE TRIGGER threshold_evaluations_immutable BEFORE UPDATE ON public.threshold_evaluations FOR EACH ROW EXECUTE FUNCTION public.enforce_threshold_truth_immutability();
+CREATE TRIGGER threshold_evaluation_efforts_immutable BEFORE UPDATE ON public.threshold_evaluation_efforts FOR EACH ROW EXECUTE FUNCTION public.enforce_threshold_truth_immutability();
+CREATE TRIGGER thresholds_insert_guard BEFORE INSERT ON public.thresholds FOR EACH ROW EXECUTE FUNCTION public.validate_threshold_insert();
+CREATE TRIGGER thresholds_immutable BEFORE UPDATE ON public.thresholds FOR EACH ROW EXECUTE FUNCTION public.enforce_threshold_immutability();
+CREATE TRIGGER thresholds_rewire_successor AFTER DELETE ON public.thresholds FOR EACH ROW EXECUTE FUNCTION public.rewire_threshold_successor_after_delete();
+CREATE CONSTRAINT TRIGGER threshold_evaluations_efforts_guard AFTER INSERT ON public.threshold_evaluations DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.validate_threshold_evaluation_efforts();
+CREATE CONSTRAINT TRIGGER threshold_evaluation_efforts_complete_guard AFTER INSERT ON public.threshold_evaluation_efforts DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.validate_threshold_evaluation_efforts();
 CREATE TRIGGER activity_artifacts_block_direct_delete BEFORE DELETE ON public.activity_artifacts FOR EACH ROW EXECUTE FUNCTION public.block_activity_artifact_direct_delete();
 CREATE TRIGGER activity_artifacts_immutable_before_update BEFORE UPDATE ON public.activity_artifacts FOR EACH ROW EXECUTE FUNCTION public.enforce_activity_artifact_immutable();
 CREATE TRIGGER activity_efforts_validate_segment_range BEFORE INSERT OR UPDATE ON public.activity_efforts FOR EACH ROW EXECUTE FUNCTION public.validate_activity_effort_segment_range();
+CREATE TRIGGER activity_efforts_delete_threshold_dependents BEFORE DELETE ON public.activity_efforts FOR EACH ROW EXECUTE FUNCTION public.delete_effort_dependent_threshold_evaluations();
 CREATE TRIGGER activities_performance_target_snapshot_immutable BEFORE UPDATE OF performance_target_snapshot ON public.activities FOR EACH ROW EXECUTE FUNCTION public.reject_activity_performance_target_snapshot_mutation();
 CREATE TRIGGER activity_analysis_revisions_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.activity_analysis_revisions FOR EACH ROW EXECUTE FUNCTION public.enforce_activity_analysis_revision_immutability();
 CREATE TRIGGER events_require_ready_route BEFORE INSERT OR UPDATE OF route_id ON public.events FOR EACH ROW EXECUTE FUNCTION public.enforce_ready_activity_route_reference();
@@ -4299,22 +3694,14 @@ CREATE TRIGGER organizations_root_owner_transfer_command_guard BEFORE UPDATE OF 
 
 GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
-REVOKE TRUNCATE ON TABLE
-  public.performance_calibration_evidence,
-  public.performance_calibration_model_inputs,
-  public.performance_calibrations,
-  public.performance_calibration_selection_evidence
+REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE
+  public.activity_efforts,
+  public.threshold_evaluations,
+  public.threshold_evaluation_efforts,
+  public.thresholds
 FROM service_role;
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon, authenticated;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated;
-REVOKE ALL ON FUNCTION
-  public.performance_calibration_lifecycle_policy(),
-  public.performance_calibration_evidence_is_current(uuid)
-FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION
-  public.performance_calibration_lifecycle_policy(),
-  public.performance_calibration_evidence_is_current(uuid)
-TO service_role;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE
   public.organizations,
   public.organization_memberships,

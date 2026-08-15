@@ -72,7 +72,7 @@ async function seedFixture() {
   const performanceTargets = buildPerformanceTargetFactsFixture({
     asOf: publishedAt.toISOString(),
     athleteId: profileId,
-    planningThresholdPowerWatts: 285,
+    bikeThresholdWatts: 285,
   });
   await db.insert(profilePerformanceEstimates).values({
     profile_id: profileId,
@@ -86,7 +86,7 @@ async function seedFixture() {
     evidence_window_end_at: publishedAt,
     algorithm_version: "athlete-state-projection-v1",
     source_revision: 1,
-    target_fact: performanceTargets.cycling.planningThresholdPower,
+    target_fact: performanceTargets.thresholds.bike,
     computed_at: publishedAt,
   });
   const activityStructure = {

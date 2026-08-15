@@ -334,7 +334,7 @@ describe("planning ledger", () => {
     }));
 
     await readPlanningLedger({
-      db: { transaction } as never,
+      db: { $client: {}, transaction } as never,
       profileId: "profile-1",
       request: { period: "week", anchorDate: "2026-04-15" },
       asOf: new Date("2026-04-15T12:00:00.000Z"),

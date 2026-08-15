@@ -22,4 +22,10 @@ describe("telemetry sanitizer", () => {
       }),
     ).toEqual({ procedure_group: "groups", procedure_type: "mutation", outcome: "success" });
   });
+
+  it("preserves the bounded unsupported-activity outcome used by provider imports", () => {
+    expect(sanitizeTelemetryContext({ outcome: "unsupported_activity_file" })).toEqual({
+      outcome: "unsupported_activity_file",
+    });
+  });
 });

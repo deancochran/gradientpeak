@@ -3,8 +3,8 @@ import { RUNNING_NUMERICAL_TRUST_FIXTURES_V1 } from "../../calculations/__tests_
 import { calculateRunningNormalizedGradedPace } from "../../calculations/normalized-graded-pace";
 import { calculateCyclingNormalizedPower } from "../../calculations/normalized-power";
 import { aggregateCommonLoad, type CommonLoadResult } from "../../load/common-relative-load";
-import { buildPerformanceTargetFactsFixture } from "../../performance-model/__tests__/fixtures/target-facts";
 import { athletePerformanceTargetFactsSchema } from "../../performance-model/projections";
+import { buildPerformanceTargetFactsFixture } from "../../testing/performance-model";
 import { type ActivitySummaryForAnalysis, analyzeActivityDerivedMetrics } from "../stress";
 
 const STARTED_AT = "2026-07-31T10:00:00.000Z";
@@ -46,7 +46,7 @@ function analyzeFixture(fixture: CommonFixture, thresholdAvailable = true): Comm
       performanceTargets: buildPerformanceTargetFactsFixture(
         thresholdAvailable
           ? {
-              planningThresholdPaceSecondsPerKm: 1_000 / fixture.thresholdSpeedMetersPerSecond,
+              runThresholdMetersPerSecond: fixture.thresholdSpeedMetersPerSecond,
             }
           : {},
       ),
@@ -85,16 +85,16 @@ describe("running Common Load v1", () => {
   it("calculates normal Load from a provisional valid run threshold", () => {
     const fixture = RUNNING_NUMERICAL_TRUST_FIXTURES_V1.canonicalThresholdHour;
     const targets = buildPerformanceTargetFactsFixture({
-      planningThresholdPaceSecondsPerKm: 1_000 / fixture.thresholdSpeedMetersPerSecond,
+      runThresholdMetersPerSecond: fixture.thresholdSpeedMetersPerSecond,
     });
     const performanceTargets = athletePerformanceTargetFactsSchema.parse({
       ...targets,
-      running: {
-        planningThresholdPace: {
-          ...targets.running.planningThresholdPace,
-          status: "partial",
-          calibrationState: "provisional",
-          confidence: "low",
+      thresholds: {
+        ...targets.thresholds,
+        run: {
+          ...targets.thresholds.run,
+          state: "provisional",
+          confidence: 0.6,
         },
       },
     });
@@ -145,7 +145,7 @@ describe("running Common Load v1", () => {
       context: {
         profileMetrics: {},
         performanceTargets: buildPerformanceTargetFactsFixture({
-          planningThresholdPaceSecondsPerKm: 250,
+          runThresholdMetersPerSecond: 4,
         }),
         recentEfforts: [],
         profile: {},
@@ -177,7 +177,7 @@ describe("running Common Load v1", () => {
       context: {
         profileMetrics: {},
         performanceTargets: buildPerformanceTargetFactsFixture({
-          planningThresholdPaceSecondsPerKm: 250,
+          runThresholdMetersPerSecond: 4,
         }),
         recentEfforts: [],
         profile: {},

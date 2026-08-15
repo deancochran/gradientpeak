@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { AthletePerformanceTargetFacts } from "@repo/core/performance-model";
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Route } from "./$activityPlanId";
@@ -7,6 +9,7 @@ import { Route } from "./$activityPlanId";
 const mocks = vi.hoisted(() => ({
   createEvent: vi.fn(),
   eventListInput: undefined as unknown,
+  performanceTargets: undefined as AthletePerformanceTargetFacts | undefined,
   plan: undefined as unknown,
 }));
 
@@ -24,8 +27,14 @@ vi.mock("../../../components/activity-plan/activity-plan-structure", () => ({
   ActivityPlanStructure: ({
     performanceTargets,
   }: {
-    performanceTargets?: { cycling?: unknown };
-  }) => <p>{performanceTargets ? "240 W (80% FTP)" : "Read-only structure"}</p>,
+    performanceTargets?: AthletePerformanceTargetFacts;
+  }) => (
+    <p>
+      {performanceTargets?.thresholds.bike.value
+        ? `${performanceTargets.thresholds.bike.value * 0.8} W (80% FTP)`
+        : "Read-only structure"}
+    </p>
+  ),
 }));
 vi.mock("../../../components/protected/activity-route-primitives", () => ({
   DetailPageIntro: ({ actions, title }: { actions: React.ReactNode; title: string }) => (
@@ -49,7 +58,11 @@ vi.mock("../../../lib/api/client", () => ({
       delete: { useMutation: () => ({ isPending: false, mutate: vi.fn(), mutateAsync: vi.fn() }) },
     },
     athleteIntelligence: {
-      getReadModel: { useQuery: () => ({ data: { publishedState: { performanceTargets: {} } } }) },
+      getReadModel: {
+        useQuery: () => ({
+          data: { publishedState: { performanceTargets: mocks.performanceTargets } },
+        }),
+      },
     },
     calendar: {
       range: {
@@ -93,6 +106,10 @@ vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 beforeEach(() => {
   mocks.createEvent.mockReset();
   mocks.eventListInput = undefined;
+  mocks.performanceTargets = buildPerformanceTargetFactsFixture({
+    asOf: "2026-07-01T00:00:00.000Z",
+    bikeThresholdWatts: 300,
+  });
   mocks.plan = {
     content_visibility: "private",
     created_at: "2026-07-01T00:00:00.000Z",

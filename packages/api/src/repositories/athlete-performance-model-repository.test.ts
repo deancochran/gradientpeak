@@ -35,7 +35,7 @@ function effortProvenance(
     source_time_coverage: 1,
     extraction_status: "available",
     extraction_reason: null,
-    persisted_start_offset_quantization: "floor_seconds_v1",
+    persisted_start_offset_quantization: "nearest_millisecond_v1",
     calculation_version: "best-effort-extraction-v1",
     ...overrides,
   };
@@ -52,8 +52,14 @@ function row(overrides: Partial<ActivityEffortPerformanceRow> = {}): ActivityEff
     recorded_at: recordedAt,
     activity_category: "bike",
     effort_type: "power",
+    source_series: "power",
     duration_seconds: durationSeconds,
-    start_offset: 0,
+    source_artifact_id: artifactId,
+    source_revision: 3,
+    start_offset_ms: 0,
+    end_offset_ms: durationSeconds * 1_000,
+    window_coverage: 1,
+    max_gap_seconds: 2,
     unit: "watts",
     value: 300,
     source: "imported",
@@ -105,6 +111,7 @@ describe("adaptActivityEffortToCanonicalPerformanceEvidence", () => {
     const raw = row({
       activity_category: "run",
       effort_type: "speed",
+      source_series: "raw_speed",
       unit: "meters_per_second",
       value: 4,
       segment_activity_category: "run",
@@ -113,6 +120,7 @@ describe("adaptActivityEffortToCanonicalPerformanceEvidence", () => {
     const adjusted = row({
       ...raw,
       id: "00000000-0000-4000-8000-000000000005",
+      source_series: "grade_adjusted_speed",
       provenance: effortProvenance(300, {
         observation_id: "00000000-0000-4000-8000-000000000005",
         source_series: "grade_adjusted_speed",
@@ -148,6 +156,7 @@ describe("adaptActivityEffortToCanonicalPerformanceEvidence", () => {
     const swim = row({
       activity_category: "swim",
       effort_type: "speed",
+      source_series: "swim_speed",
       unit: "meters_per_second",
       value: 1.4,
       segment_activity_category: "swim",
@@ -180,6 +189,7 @@ describe("adaptActivityEffortToCanonicalPerformanceEvidence", () => {
     const swim = row({
       activity_category: "swim",
       effort_type: "speed",
+      source_series: "swim_speed",
       unit: "meters_per_second",
       value: 1.4,
       segment_activity_category: "swim",
@@ -209,14 +219,17 @@ describe("adaptActivityEffortToCanonicalPerformanceEvidence", () => {
 });
 
 describe("createAthletePerformanceModelRepository", () => {
-  function transactionFixture() {
+  function transactionFixture(rowsBySelect: unknown[][] = []) {
+    let selectIndex = 0;
     const select = vi.fn(() => {
+      const rows = rowsBySelect[selectIndex] ?? [];
+      selectIndex += 1;
       const builder = {
         from: () => builder,
         innerJoin: () => builder,
         where: () => builder,
         orderBy: () => builder,
-        limit: async () => [],
+        limit: async () => rows,
       };
       return builder;
     });
@@ -225,7 +238,7 @@ describe("createAthletePerformanceModelRepository", () => {
     const transaction = vi.fn(async (operation: (executor: typeof tx) => Promise<unknown>) =>
       operation(tx),
     );
-    return { db: { transaction }, execute, select, transaction };
+    return { db: { transaction }, execute, select, transaction, tx };
   }
 
   it("reads one immutable evidence snapshot in a read-only repeatable-read transaction", async () => {
@@ -242,15 +255,15 @@ describe("createAthletePerformanceModelRepository", () => {
       accessMode: "read only",
       isolationLevel: "repeatable read",
     });
-    expect(fixture.select).toHaveBeenCalledTimes(7);
-    expect(fixture.execute).toHaveBeenCalledOnce();
+    expect(fixture.select).toHaveBeenCalledTimes(6);
+    expect(fixture.execute).not.toHaveBeenCalled();
     expect(Object.isFrozen(snapshot)).toBe(true);
     expect(Object.isFrozen(snapshot.effortReads)).toBe(true);
     expect(Object.isFrozen(snapshot.effortReads.bike.rows)).toBe(true);
     expect(Object.isFrozen(snapshot.heartRateReads.bike)).toBe(true);
   });
 
-  it("uses a fixed eight-query evidence batch independent of request count", async () => {
+  it("uses a fixed six-query evidence batch independent of request count", async () => {
     const fixture = transactionFixture();
     const repository = createAthletePerformanceModelRepository(fixture.db as never);
     const requests = Array.from({ length: 25 }, (_, index) => ({
@@ -259,11 +272,43 @@ describe("createAthletePerformanceModelRepository", () => {
     }));
 
     await expect(repository.readEvidenceBatch?.(requests)).resolves.toHaveLength(25);
-    expect(fixture.select).toHaveBeenCalledTimes(7);
-    expect(fixture.execute).toHaveBeenCalledOnce();
+    expect(fixture.select).toHaveBeenCalledTimes(6);
+    expect(fixture.execute).not.toHaveBeenCalled();
     expect(fixture.transaction).toHaveBeenCalledWith(expect.any(Function), {
       accessMode: "read only",
       isolationLevel: "repeatable read",
     });
+  });
+
+  it("uses one fixed three-query HR batch and preserves historical as-of filtering", async () => {
+    const recordedAt = new Date("2026-07-09T12:00:00.000Z");
+    const maxHrRow = {
+      id: evidenceId,
+      profile_id: athleteId,
+      metric_type: "max_hr",
+      recorded_at: recordedAt,
+      unit: "bpm",
+      value: 190,
+      source: "derived",
+      method: "max_hr_progressive_test_v1",
+      calculation_version: "max_hr_progressive_test_v1",
+      provenance: {},
+      reference_activity_id: activityId,
+      reference_activity_finished_at: recordedAt,
+      activity_category: "run",
+    };
+    const fixture = transactionFixture([[], [maxHrRow], []]);
+    const repository = createAthletePerformanceModelRepository(fixture.db as never);
+
+    const reads = await repository.readHeartRateCapabilityEvidenceBatch(fixture.tx as never, [
+      { athleteId, asOf: new Date("2026-07-08T12:00:00.000Z") },
+      { athleteId, asOf: new Date("2026-07-10T12:00:00.000Z") },
+    ]);
+
+    expect(fixture.select).toHaveBeenCalledTimes(3);
+    expect(fixture.transaction).not.toHaveBeenCalled();
+    expect(reads[0]?.run.maxHr.rows).toEqual([]);
+    expect(reads[1]?.run.maxHr.rows).toEqual([maxHrRow]);
+    expect(Object.isFrozen(reads[1]?.run.maxHr.rows)).toBe(true);
   });
 });

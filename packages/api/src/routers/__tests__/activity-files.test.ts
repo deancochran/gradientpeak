@@ -148,9 +148,26 @@ vi.mock("../../storage-service", () => ({
   }),
 }));
 
-vi.mock("../../db", () => ({
-  getRequiredDb: () => mocks.db.current,
-}));
+vi.mock("../../db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../db")>();
+  return {
+    ...actual,
+    getRequiredDb: () => mocks.db.current,
+    withProfileFencedRepeatableReadSnapshot: async <Result>(
+      db: Parameters<typeof actual.withRepeatableReadSnapshot>[0],
+      profileId: string,
+      write: Parameters<typeof actual.withRepeatableReadSnapshot<Result>>[1],
+    ) =>
+      actual.withRepeatableReadSnapshot(
+        db,
+        async (tx) => {
+          await tx.execute({ profileId } as never);
+          return write(tx);
+        },
+        { accessMode: "read write" },
+      ),
+  };
+});
 
 vi.mock("../../infrastructure/repositories/drizzle-activity-analysis-repository", () => ({
   createActivityAnalysisStore: mocks.createActivityAnalysisStore,
@@ -224,6 +241,7 @@ function createDbMock(plan: MockDbPlan = {}) {
   };
 
   const db = {
+    $client: {},
     execute: vi.fn(async (query: unknown) => {
       callLog.executeCalls.push(query);
       return (executeResults.shift() as { rows?: unknown[] } | undefined) ?? { rows: [] };
@@ -263,7 +281,10 @@ function createDbMock(plan: MockDbPlan = {}) {
         return undefined;
       }),
     })),
-    transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(db)),
+    transaction: vi.fn(async (callback: (tx: unknown) => unknown) => {
+      const { $client: _rootClient, ...transactionExecutor } = db;
+      return callback(transactionExecutor);
+    }),
     query: {
       activities: {
         findFirst: vi.fn(async (args: unknown) => {
@@ -364,7 +385,7 @@ beforeEach(() => {
           athleteId: profileId,
           heartRateObservedAt: "2026-02-20T00:00:00.000Z",
           lthrBpm: { bike: 180 },
-          planningThresholdPowerWatts: 300,
+          bikeThresholdWatts: 300,
         }),
       ),
   );
@@ -1053,12 +1074,12 @@ describe("activityFilesRouter", () => {
           power: {
             threshold: 300,
             threshold_identity: {
-              source: "modeled",
+              source: "observed_effort",
               observed_at: "2026-02-28T10:00:00.000Z",
               confidence: "high",
               stale: false,
-              estimate: true,
-              calculation_version: "performance-target-test-fixture-v1",
+              estimate: false,
+              calculation_version: "threshold-policy-v1",
             },
             time_weighted_average: 270,
             quality: { status: "sufficient", integrated_seconds: 20, coverage_ratio: 1 },

@@ -25,7 +25,7 @@ describe("TrainerControl QA regressions", () => {
   it("uses immutable eligible threshold power plus the session intensity override for ERG targets", async () => {
     const performanceTargets = buildPerformanceTargetFactsFixture({
       asOf: "2026-06-01T00:00:00.000Z",
-      planningThresholdPowerWatts: 250,
+      bikeThresholdWatts: 250,
     });
     const trainer = createFtmsCandidate({
       isControllable: true,

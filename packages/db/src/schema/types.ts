@@ -42,10 +42,6 @@ import type {
   organizationMembershipRoleGrants,
   organizationMemberships,
   organizations,
-  performanceCalibrationEvidence,
-  performanceCalibrationModelInputs,
-  performanceCalibrationSelectionEvidence,
-  performanceCalibrations,
   profileAthleteState,
   profileGoals,
   profileMetrics,
@@ -55,7 +51,9 @@ import type {
   providerSyncJobs,
   providerSyncState,
   providerWebhookReceipts,
-  swimmingCssProtocolEvidence,
+  thresholdEvaluationEfforts,
+  thresholdEvaluations,
+  thresholds,
   trainingPlans,
 } from "./tables";
 
@@ -154,11 +152,6 @@ export type ContentAccessGrantInsert = InferInsertModel<typeof contentAccessGran
 export type ActivityEffortRow = InferSelectModel<typeof activityEfforts>;
 export type ActivityEffortInsert = InferInsertModel<typeof activityEfforts>;
 
-export type SwimmingCssProtocolEvidenceRow = InferSelectModel<typeof swimmingCssProtocolEvidence>;
-export type SwimmingCssProtocolEvidenceInsert = InferInsertModel<
-  typeof swimmingCssProtocolEvidence
->;
-
 export type ActivitySessionRpeEvidenceRow = InferSelectModel<typeof activitySessionRpeEvidence>;
 export type ActivitySessionRpeEvidenceInsert = InferInsertModel<typeof activitySessionRpeEvidence>;
 
@@ -183,26 +176,12 @@ export type ProfileAthleteStateRow = InferSelectModel<typeof profileAthleteState
 export type ProfileAthleteStateInsert = InferInsertModel<typeof profileAthleteState>;
 export type ProfilePerformanceEstimateRow = InferSelectModel<typeof profilePerformanceEstimates>;
 export type ProfilePerformanceEstimateInsert = InferInsertModel<typeof profilePerformanceEstimates>;
-export type PerformanceCalibrationEvidenceRow = InferSelectModel<
-  typeof performanceCalibrationEvidence
->;
-export type PerformanceCalibrationEvidenceInsert = InferInsertModel<
-  typeof performanceCalibrationEvidence
->;
-export type PerformanceCalibrationModelInputRow = InferSelectModel<
-  typeof performanceCalibrationModelInputs
->;
-export type PerformanceCalibrationModelInputInsert = InferInsertModel<
-  typeof performanceCalibrationModelInputs
->;
-export type PerformanceCalibrationRow = InferSelectModel<typeof performanceCalibrations>;
-export type PerformanceCalibrationInsert = InferInsertModel<typeof performanceCalibrations>;
-export type PerformanceCalibrationSelectionEvidenceRow = InferSelectModel<
-  typeof performanceCalibrationSelectionEvidence
->;
-export type PerformanceCalibrationSelectionEvidenceInsert = InferInsertModel<
-  typeof performanceCalibrationSelectionEvidence
->;
+export type ThresholdEvaluationRow = InferSelectModel<typeof thresholdEvaluations>;
+export type ThresholdEvaluationInsert = InferInsertModel<typeof thresholdEvaluations>;
+export type ThresholdEvaluationEffortRow = InferSelectModel<typeof thresholdEvaluationEfforts>;
+export type ThresholdEvaluationEffortInsert = InferInsertModel<typeof thresholdEvaluationEfforts>;
+export type ThresholdRow = InferSelectModel<typeof thresholds>;
+export type ThresholdInsert = InferInsertModel<typeof thresholds>;
 
 export type ProfileTrainingSettingsRow = InferSelectModel<typeof profileTrainingSettings>;
 export type ProfileTrainingSettingsInsert = InferInsertModel<typeof profileTrainingSettings>;

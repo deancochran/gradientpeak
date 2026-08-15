@@ -1,6 +1,7 @@
 import type { AthletePerformanceTargetFacts } from "@repo/core";
 import { activities, activitySegments, type DrizzleDbClient, profiles } from "@repo/db";
 import { and, asc, eq, gte, inArray, lt } from "drizzle-orm";
+import { withRepeatableReadSnapshot } from "../../db";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
 import {
   type ActivityWithSegments,
@@ -44,6 +45,7 @@ export type ProfileActivityAnalysisReprocessResult = {
   changedActivities: number;
   appendedRevisions: number;
   availableSegments: number;
+  partialSegments: number;
   unavailableSegments: number;
   unavailableReasons: Record<string, number>;
   athleteStateRebuild: "blocked" | "completed" | "failed" | "not_needed" | "not_requested";
@@ -176,14 +178,18 @@ async function evaluate(
   const candidates: Evaluation["candidates"] = [];
   const unavailableReasons: Record<string, number> = {};
   let availableSegments = 0;
+  let partialSegments = 0;
   let unavailableSegments = 0;
   for (const activity of activitiesWithSegments) {
     const activitySummaries = summariesByActivity.get(activity.id) ?? [];
     if (activitySummaries.length === 0) continue;
     const projection = buildProjection(activitySummaries);
     for (const segment of projection.segments) {
-      if (segment.commonLoad.status === "available") availableSegments += 1;
-      else {
+      if (segment.commonLoad.status === "available") {
+        availableSegments += 1;
+      } else if (segment.commonLoad.status === "partial") {
+        partialSegments += 1;
+      } else {
         unavailableSegments += 1;
         const reason = segment.commonLoad.reason;
         unavailableReasons[reason] = (unavailableReasons[reason] ?? 0) + 1;
@@ -221,6 +227,7 @@ async function evaluate(
     changedActivities: candidates.length,
     appendedRevisions: 0,
     availableSegments,
+    partialSegments,
     unavailableSegments,
     unavailableReasons,
     candidates,
@@ -249,7 +256,8 @@ export async function reprocessProfileActivityAnalysis(
     const { candidates: _candidates, ...result } = evaluation;
     return { ...result, mode: "dry_run", athleteStateRebuild: "not_requested" };
   }
-  const applied = await db.transaction(
+  const applied = await withRepeatableReadSnapshot(
+    db,
     async (tx) => {
       await lockProfileActivityAnalysisScope(tx, input.profileId);
       const evaluation = await evaluate(tx, input, now);
@@ -291,10 +299,7 @@ export async function reprocessProfileActivityAnalysis(
         requiresAthleteStateRebuild: materialEffectiveTimes.length > 0,
       };
     },
-    // The advisory lock is the first statement. READ COMMITTED gives every
-    // subsequent evaluation statement a fresh snapshot after a contending run
-    // releases the lock; REPEATABLE READ would retain the pre-wait snapshot.
-    { isolationLevel: "read committed" },
+    { accessMode: "read write" },
   );
   const { requiresAthleteStateRebuild, ...result } = applied;
   if (!requiresAthleteStateRebuild) {

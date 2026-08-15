@@ -166,8 +166,7 @@ export function mergeCompletedCommonLoadObservations(input: {
         hasUnavailableCompletedActivity:
           existingMetadata?.hasUnavailableCompletedActivity === true ||
           !knownAggregate ||
-          !identitiesCompatible ||
-          aggregate.status !== "complete",
+          !identitiesCompatible,
         identity:
           knownAggregate && identitiesCompatible
             ? { model: aggregate.model, version: aggregate.version }

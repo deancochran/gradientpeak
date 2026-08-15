@@ -73,9 +73,9 @@ function preserveLocalAthleteContextOverrides(
         current.physiology.planningThresholdPaceSecondsPerKm,
         incoming.physiology.planningThresholdPaceSecondsPerKm,
       ),
-      swimmingCssSecondsPer100m: keepOverride(
-        current.physiology.swimmingCssSecondsPer100m,
-        incoming.physiology.swimmingCssSecondsPer100m,
+      swimThresholdPaceSecondsPer100m: keepOverride(
+        current.physiology.swimThresholdPaceSecondsPer100m,
+        incoming.physiology.swimThresholdPaceSecondsPer100m,
       ),
       restingHeartRateBpm: keepOverride(
         current.physiology.restingHeartRateBpm,

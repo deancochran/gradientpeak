@@ -61,6 +61,7 @@ export async function submitImportedActivityArtifact(
     beforePersist?: (tx: ActivitySubmissionTransaction) => Promise<void>;
     importRunId?: string;
     deferAthleteStateRefresh?: boolean;
+    deferPerformanceCalibration?: boolean;
   },
 ) {
   const [existingActivity] = await db
@@ -197,6 +198,7 @@ export async function submitImportedActivityArtifact(
         ...(input.beforePersist ? { beforePersist: input.beforePersist } : {}),
         ...(input.importRunId ? { importRunId: input.importRunId } : {}),
         ...(input.deferAthleteStateRefresh ? { deferAthleteStateRefresh: true } : {}),
+        ...(input.deferPerformanceCalibration ? { deferPerformanceCalibration: true } : {}),
       });
     },
   });

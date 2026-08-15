@@ -4,7 +4,7 @@ import { resolveProfileZones } from "../policy";
 describe("resolveProfileZones", () => {
   it("uses the canonical unrounded FTP and bike-LTHR policy boundaries", () => {
     const facts = {
-      cycling: { planningThresholdPower: { status: "available" as const, value: 250 } },
+      thresholds: { bike: { status: "available" as const, value: 250 } },
       heartRate: { bike: { lthr: { status: "available" as const, valueBpm: 170 } } },
     };
 
@@ -24,7 +24,7 @@ describe("resolveProfileZones", () => {
 
   it("returns unavailable zones for stale or non-bike calibration", () => {
     const facts = {
-      cycling: { planningThresholdPower: { status: "unavailable" as const, value: null } },
+      thresholds: { bike: { status: "unavailable" as const, value: null } },
       heartRate: { bike: { lthr: { status: "unavailable" as const, valueBpm: null } } },
     };
 

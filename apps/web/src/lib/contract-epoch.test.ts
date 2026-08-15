@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   CONTRACT_EPOCH_DATABASE_DELETE_TIMEOUT_MS,
+  CONTRACT_EPOCH_RESET_TIMEOUT_MS,
   CONTRACT_EPOCH_STORAGE_KEY,
   ensureCurrentBrowserContractEpoch,
   ensureCurrentContractEpoch,
@@ -160,6 +161,25 @@ describe("ensureCurrentContractEpoch", () => {
       `Timed out deleting ${LEGACY_WEB_RECORDING_DATABASE_NAME}`,
     );
     await vi.advanceTimersByTimeAsync(CONTRACT_EPOCH_DATABASE_DELETE_TIMEOUT_MS);
+    await rejection;
+
+    expect(localStorage.setItem).not.toHaveBeenCalled();
+  });
+
+  it("bounds the entire reset when listing browser databases never completes", async () => {
+    vi.useFakeTimers();
+    const localStorage = createStorage();
+    const sessionStorage = createStorage();
+
+    const reset = ensureCurrentContractEpoch({
+      localStorage,
+      sessionStorage,
+      deleteDatabase: vi.fn(),
+      listDatabaseNames: vi.fn(() => new Promise<readonly string[]>(() => undefined)),
+    });
+
+    const rejection = expect(reset).rejects.toThrow("Timed out checking local browser data.");
+    await vi.advanceTimersByTimeAsync(CONTRACT_EPOCH_RESET_TIMEOUT_MS);
     await rejection;
 
     expect(localStorage.setItem).not.toHaveBeenCalled();

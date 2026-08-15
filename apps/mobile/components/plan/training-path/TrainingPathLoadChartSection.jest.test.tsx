@@ -276,13 +276,48 @@ describe("TrainingPathLoadChartSection", () => {
     );
     expect(screen.getByTestId("training-path-period-summary")).toBeTruthy();
     expect(screen.getByText("Week · Jun 29")).toBeTruthy();
-    expect(screen.getByText("Partial data")).toBeTruthy();
+    expect(screen.queryByText("Partial data")).toBeNull();
     expect(screen.getByLabelText("Completed load: 10")).toBeTruthy();
     expect(screen.getByLabelText("Planned load: 30")).toBeTruthy();
     fireEvent.press(screen.getByTestId("training-path-view-details"));
     expect(onViewDetails).toHaveBeenCalledWith({ period: "week", anchorDate: "2026-06-29" });
     fireEvent.press(screen.getByTestId("training-path-range-dropdown-monthly"));
     expect(onChartRangeChange).toHaveBeenCalledWith("monthly");
+  });
+
+  it("keeps the compact selected-period indicator visible above View details", () => {
+    render(
+      <TrainingPathLoadChartSection
+        dailyPoints={[
+          {
+            date: "2026-06-29",
+            effectiveLoadStatus: "complete",
+            effectiveCompletedLoad: 10,
+            effectiveRemainingLoad: 20,
+          },
+        ]}
+        onViewDetails={jest.fn()}
+        selectedDate="2026-06-29"
+        showSelectedPointTray={false}
+      />,
+    );
+
+    expect(mockDailyChartProps.at(-1)).toMatchObject({ showSelectedPointTray: false });
+    expect(screen.getByTestId("training-path-period-summary")).toBeTruthy();
+    expect(screen.getByTestId("training-path-view-details")).toBeTruthy();
+  });
+
+  it("keeps the legend behind the Help button when inline legend space is disabled", () => {
+    render(
+      <TrainingPathLoadChartSection
+        dailyPoints={[{ date: "2026-06-29", effectiveRemainingLoad: 20 }]}
+        showInlineLegend={false}
+      />,
+    );
+
+    expect(screen.queryByTestId("training-path-primary-legend")).toBeNull();
+    fireEvent.press(screen.getByTestId("training-path-legend-button"));
+    expect(screen.getByTestId("training-path-legend-modal")).toBeTruthy();
   });
 
   it("does not render the Plan activity/event feed beneath the analytical chart", () => {

@@ -20,6 +20,26 @@ vi.mock("node:crypto", async (importOriginal) => ({
   randomUUID: () => "33333333-3333-4333-8333-333333333333",
 }));
 
+vi.mock("../../db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../db")>();
+  return {
+    ...actual,
+    withProfileFencedRepeatableReadSnapshot: async <Result>(
+      db: Parameters<typeof actual.withRepeatableReadSnapshot>[0],
+      profileId: string,
+      write: Parameters<typeof actual.withRepeatableReadSnapshot<Result>>[1],
+    ) =>
+      actual.withRepeatableReadSnapshot(
+        db,
+        async (tx) => {
+          await tx.execute({ profileId } as never);
+          return write(tx);
+        },
+        { accessMode: "read write" },
+      ),
+  };
+});
+
 const pgDialect = new PgDialect();
 
 const mockActivityAnalysis = vi.hoisted(() => ({
@@ -701,7 +721,7 @@ function createDbMock(options: {
   const insertValues = vi.fn();
   const deleteBuilder = {
     returning: vi.fn(() =>
-      Promise.resolve([{ id: ACTIVITY_ID, startedAt: new Date("2026-01-01T12:00:00.000Z") }]),
+      Promise.resolve([{ id: ACTIVITY_ID, finishedAt: new Date("2026-01-01T12:00:00.000Z") }]),
     ),
     then: (onFulfilled: (value: undefined) => unknown) =>
       Promise.resolve(undefined).then(onFulfilled),
@@ -771,6 +791,7 @@ function createDbMock(options: {
   }
 
   const db = {
+    $client: {},
     select: vi.fn((fields?: Record<string, unknown>) => {
       if (fields && "total" in fields) {
         return {
@@ -879,7 +900,8 @@ function createDbMock(options: {
         commonLoadScanIndex = 0;
         commonLoadScanBatchNumber = 0;
         try {
-          return await callback(db);
+          const { $client: _rootClient, ...transactionExecutor } = db;
+          return await callback(transactionExecutor);
         } finally {
           transactionActivityRows = undefined;
         }
@@ -1890,9 +1912,15 @@ describe("activitiesRouter", () => {
       recorded_at: new Date("2026-01-09T08:20:00.000Z"),
       activity_category: "run",
       effort_type: "speed",
+      source_series: "raw_speed",
       duration_seconds: 1200,
       distance_meters: 5000,
-      start_offset: 0,
+      source_artifact_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      source_revision: 1,
+      start_offset_ms: 0,
+      end_offset_ms: 1_200_000,
+      window_coverage: 1,
+      max_gap_seconds: 2,
       unit: "meters_per_second",
       value: 4.2,
       source: "derived",

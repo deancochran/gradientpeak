@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:net";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 const checks = [];
 const laneFlagIndex = process.argv.indexOf("--lane");
@@ -19,6 +21,7 @@ if (!supportedLanes.has(lane)) {
 const requiresLocalDatabase = ["all", "dev", "web", "db", "e2e"].includes(lane);
 const requiresWebEnv = ["all", "dev", "web", "e2e"].includes(lane);
 const requiresMobileEnv = ["all", "dev", "mobile", "e2e"].includes(lane);
+const requiresPublicTunnel = ["all", "dev"].includes(lane);
 
 function addCheck(name, status, message, required = false) {
   checks.push({ name, status, message, required });
@@ -118,13 +121,58 @@ if (commandExists("docker")) {
   );
 }
 
-for (const tool of ["maestro", "adb", "ngrok"]) {
+for (const tool of ["maestro", "adb"]) {
   addCheck(
     tool,
     commandExists(tool) ? "pass" : "warn",
     commandExists(tool)
       ? `${tool} is available`
       : `${tool} is missing; related workflows are optional`,
+  );
+}
+
+const cloudflaredAvailable = commandExists("cloudflared");
+addCheck(
+  "cloudflared",
+  cloudflaredAvailable ? "pass" : requiresPublicTunnel ? "fail" : "warn",
+  cloudflaredAvailable
+    ? "cloudflared is available"
+    : requiresPublicTunnel
+      ? "install cloudflared before starting the public callback lane"
+      : "cloudflared is missing; the public callback lane requires it",
+  requiresPublicTunnel,
+);
+
+if (requiresPublicTunnel) {
+  const tunnelTokenFile =
+    process.env.CLOUDFLARE_TUNNEL_TOKEN_FILE ??
+    join(homedir(), ".config", "gradientpeak", "gradientpeak-dev.tunnel-token");
+  addCheck(
+    "Cloudflare tunnel token",
+    existsSync(tunnelTokenFile) ? "pass" : "fail",
+    existsSync(tunnelTokenFile)
+      ? `token file is available at ${tunnelTokenFile}`
+      : `save the named tunnel token at ${tunnelTokenFile} or set CLOUDFLARE_TUNNEL_TOKEN_FILE`,
+    true,
+  );
+  if (existsSync(tunnelTokenFile) && process.platform !== "win32") {
+    const ownerOnly = (statSync(tunnelTokenFile).mode & 0o077) === 0;
+    addCheck(
+      "Cloudflare tunnel token permissions",
+      ownerOnly ? "pass" : "fail",
+      ownerOnly
+        ? "token file is readable only by its owner"
+        : `run chmod 600 ${tunnelTokenFile} before starting the public callback lane`,
+      true,
+    );
+  }
+  addCheck(
+    "apps/web/.env.tunnel",
+    existsSync("apps/web/.env.tunnel") ? "pass" : "fail",
+    existsSync("apps/web/.env.tunnel")
+      ? "public callback environment exists"
+      : "copy apps/web/.env.tunnel.example before starting the public callback lane",
+    true,
   );
 }
 

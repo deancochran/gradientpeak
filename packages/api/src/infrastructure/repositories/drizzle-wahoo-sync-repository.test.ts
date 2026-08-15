@@ -120,24 +120,47 @@ describe("onboarding queue ownership", () => {
     profileId: "profile-1",
     provider: "wahoo",
     resourceKind: "activity" as const,
+    status: "queued",
+    trigger: "onboarding",
   };
 
   it("reuses an exact queued or running onboarding identity idempotently", () => {
     expect(onboardingJobIdentityMatches(existing, input, 1)).toBe(true);
   });
 
-  it.each([
-    "manual",
-    "connect",
-  ])("rejects queued %s work rather than relabeling it onboarding", () => {
+  it("adopts equivalent queued connection work when onboarding begins", () => {
     expect(() =>
-      assertOnboardingJobOwnership({ ...existing, payloadMatches: false }, input, 1),
+      assertOnboardingJobOwnership(
+        { ...existing, payloadMatches: false, trigger: "connect" },
+        input,
+        1,
+      ),
+    ).not.toThrow();
+  });
+
+  it.each(["manual", "connect"])("rejects incompatible queued %s work", (trigger) => {
+    expect(() =>
+      assertOnboardingJobOwnership(
+        { ...existing, jobType: "other", payloadMatches: false, trigger },
+        input,
+        1,
+      ),
     ).toThrow("Existing provider work must finish");
   });
 
   it("rejects a running identity mismatch", () => {
-    expect(() => assertOnboardingJobOwnership({ ...existing, jobType: "other" }, input, 1)).toThrow(
-      "Existing provider work must finish",
-    );
+    expect(() =>
+      assertOnboardingJobOwnership({ ...existing, jobType: "other", status: "running" }, input, 1),
+    ).toThrow("Existing provider work must finish");
+  });
+
+  it("does not take over an equivalent running connection job", () => {
+    expect(() =>
+      assertOnboardingJobOwnership(
+        { ...existing, payloadMatches: false, status: "running", trigger: "connect" },
+        input,
+        1,
+      ),
+    ).toThrow("Existing provider work must finish");
   });
 });

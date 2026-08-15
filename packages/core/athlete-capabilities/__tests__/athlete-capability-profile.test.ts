@@ -114,10 +114,11 @@ describe("AthleteCapabilityProfile composition", () => {
     expect(swim.shortDurationCapacity.value).toBe(
       ATHLETE_CAPABILITY_FIXTURE_V1.expected.swimming.shortDurationCapacityMetersPerSecond,
     );
-    expect(swim.thresholdCapacity.value).toBeCloseTo(
-      ATHLETE_CAPABILITY_FIXTURE_V1.expected.swimming.thresholdCapacityMetersPerSecond,
-      12,
-    );
+    expect(swim.thresholdCapacity).toMatchObject({
+      status: "unavailable",
+      value: null,
+      reasons: ["source_concept_not_produced"],
+    });
     expect(swim.longDurationCapacity.value).toBe(
       ATHLETE_CAPABILITY_FIXTURE_V1.expected.swimming.longDurationCapacityMetersPerSecond,
     );

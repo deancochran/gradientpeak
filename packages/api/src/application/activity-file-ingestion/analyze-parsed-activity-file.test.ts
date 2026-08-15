@@ -10,7 +10,6 @@ import { CYCLING_NUMERICAL_TRUST_FIXTURES_V1 } from "@repo/core/testing/cycling-
 import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { describe, expect, it, vi } from "vitest";
 import type { getRequiredDb } from "../../db";
-import { buildAthletePerformanceModelFromEvidenceReads } from "../performance-model/get-athlete-performance-model-as-of";
 import { analyzeParsedActivityFile } from "./analyze-parsed-activity-file";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
@@ -71,7 +70,7 @@ function explicitBikeSegment(startedAt: Date, seconds: number) {
 function cyclingPerformanceTargets(asOf: string, thresholdPowerWatts: number) {
   return buildPerformanceTargetFactsFixture({
     asOf,
-    planningThresholdPowerWatts: thresholdPowerWatts,
+    bikeThresholdWatts: thresholdPowerWatts,
     calculationVersion: "cycling-parity-threshold-v1",
   });
 }
@@ -252,10 +251,11 @@ describe("analyzeParsedActivityFile", () => {
       },
       context: {
         profileMetrics: {},
-        performanceTargets: cyclingPerformanceTargets(
-          finishedAt.toISOString(),
-          fixture.thresholdPowerWatts,
-        ),
+        performanceTargets: buildPerformanceTargetFactsFixture({
+          asOf: finishedAt.toISOString(),
+          bikeThresholdWatts: fixture.thresholdPowerWatts,
+          calculationVersion: "cycling-parity-threshold-v1",
+        }),
         recentEfforts: [],
         profile: {},
       },
@@ -519,8 +519,8 @@ describe("analyzeParsedActivityFile", () => {
     expect(efforts.filter((effort) => effort.activity_category === "run")).not.toHaveLength(0);
     expect(
       efforts.every((effort) => {
-        const start = effort.start_offset ?? 0;
-        const end = start + effort.duration_seconds;
+        const start = effort.start_offset_ms / 1_000;
+        const end = effort.end_offset_ms / 1_000;
         return effort.activity_category === "bike"
           ? start >= 70 && end <= 130
           : (start >= 0 && end <= 60) || (start >= 140 && end <= 200);
@@ -1035,6 +1035,55 @@ describe("analyzeParsedActivityFile", () => {
     );
   });
 
+  it("retains both exact run source-series efforts through full parsed-file analysis", async () => {
+    const startedAt = new Date("2026-01-01T10:00:00Z");
+    const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "activity-1",
+      profileId: "profile-1",
+      refreshWeather: false,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "running" },
+        summary: { totalTime: 1_800, totalDistance: 7_200 },
+        records: Array.from({ length: 1_801 }, (_, second) => ({
+          sessionMessageIndex: 0,
+          timestamp: new Date(startedAt.getTime() + second * 1_000),
+          speed: 4,
+          altitude: second * 0.01,
+        })),
+        segments: [
+          {
+            sessionMessageIndex: 0,
+            role: "activity",
+            activity_category: "run",
+            rawSport: "running",
+            startTime: startedAt,
+            endTime: new Date(startedAt.getTime() + 1_800_000),
+          },
+        ],
+      },
+    });
+
+    const exact = result.effortsToInsert.filter(
+      (effort) => effort.duration_seconds === 1_800 && effort.effort_type === "speed",
+    );
+    expect(exact.map(({ source_series }) => source_series)).toEqual([
+      "grade_adjusted_speed",
+      "raw_speed",
+    ]);
+    expect(exact).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source_series: "grade_adjusted_speed",
+          provenance: expect.objectContaining({ source_series: "grade_adjusted_speed" }),
+        }),
+        expect.objectContaining({
+          source_series: "raw_speed",
+          provenance: expect.objectContaining({ source_series: "raw_speed" }),
+        }),
+      ]),
+    );
+  });
+
   it("treats a supported artifact with no eligible stream as analyzed with zero efforts", async () => {
     const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
       activityId: "activity-1",
@@ -1264,31 +1313,6 @@ describe("analyzeParsedActivityFile", () => {
         (extraction) => extraction.metric === "speed",
       ),
     ).toBeDefined();
-
-    const noHeartRateEvidence = {
-      lthr: { rows: [], truncated: false },
-      maxHr: { rows: [], truncated: false },
-    };
-    const model = buildAthletePerformanceModelFromEvidenceReads(
-      { athleteId: "profile-1", asOf: new Date("2026-01-02T00:00:00.000Z") },
-      {
-        effortReads: {
-          bike: { rows: [], truncated: false },
-          run: { rows: [], truncated: false },
-          swim: { rows: [], truncated: false },
-        },
-        swimmingCssProtocolRead: { rows: [], truncated: false },
-        heartRateReads: {
-          bike: noHeartRateEvidence,
-          run: noHeartRateEvidence,
-          swim: noHeartRateEvidence,
-        },
-      },
-    );
-    expect(model.categories.swim.css).toMatchObject({
-      status: "unavailable",
-      value: null,
-    });
   });
 
   it("omits partial swim length metrics and leaves multisport parent swim fields null", async () => {

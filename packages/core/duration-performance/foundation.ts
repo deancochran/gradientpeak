@@ -439,7 +439,7 @@ function curvePoints<T extends DurationEvidenceLike>(
 
 /**
  * Builds only the shared canonical curve foundation. Category semantics (power,
- * pace, CSS, or session evidence) remain in their owning model.
+ * pace or session evidence) remain in their owning model.
  */
 export function buildCanonicalDurationPerformanceCurve<
   T extends CanonicalQualifiedDurationEffortEvidence,

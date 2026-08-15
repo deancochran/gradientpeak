@@ -1,5 +1,4 @@
-import { projectAthletePerformanceTargetFacts } from "@repo/core";
-import { buildPerformanceModelSnapshotFixture } from "@repo/core/testing/performance-model";
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import React from "react";
 import { Alert } from "react-native";
 import { createButtonComponent, createHost } from "../../../../test/mock-components";
@@ -12,14 +11,13 @@ const pauseMock = jest.fn();
 const resumeMock = jest.fn();
 const finishMock = jest.fn(async () => undefined);
 const requestPermissionMock = jest.fn(async () => true);
-const mockPerformanceModel = buildPerformanceModelSnapshotFixture({
+const mockPerformanceTargets = buildPerformanceTargetFactsFixture({
   asOf: "2026-06-01T00:00:00.000Z",
 });
-const mockPerformanceTargets = projectAthletePerformanceTargetFacts(mockPerformanceModel);
 const mockPublishedState = {
   status: { freshness: "fresh" as const, rebuildStatus: "fresh" as const },
   publishedState: {
-    publishedAt: mockPerformanceModel.asOf,
+    publishedAt: mockPerformanceTargets.asOf,
     performanceTargets: mockPerformanceTargets,
   },
   currentBaseline: {
@@ -347,13 +345,10 @@ describe("record screen", () => {
       expect(service.updateMetrics).toHaveBeenCalledWith({ weightKg: 72 });
     });
     expect(service.updateMetrics).not.toHaveBeenCalledWith(
-      expect.objectContaining({ ftp: expect.any(Number) }),
+      expect.objectContaining({ bikeThresholdWatts: expect.any(Number) }),
     );
     expect(service.updateMetrics).not.toHaveBeenCalledWith(
-      expect.objectContaining({ thresholdHr: expect.any(Number) }),
-    );
-    expect(service.updateMetrics).not.toHaveBeenCalledWith(
-      expect.objectContaining({ thresholdPaceSecondsPerKm: expect.any(Number) }),
+      expect.objectContaining({ lthrBpm: expect.any(Number) }),
     );
   });
 
@@ -386,33 +381,31 @@ describe("record screen", () => {
     expect(service.updatePerformanceTargets).toHaveBeenLastCalledWith(
       expect.objectContaining({
         asOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
-        cycling: expect.objectContaining({
-          planningThresholdPower: expect.objectContaining({
-            status: "unavailable",
-            value: null,
-          }),
+        thresholds: expect.objectContaining({
+          bike: expect.objectContaining({ status: "unavailable", value: null }),
         }),
       }),
     );
     expect(startMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        cycling: expect.objectContaining({
-          planningThresholdPower: expect.objectContaining({ status: "unavailable" }),
+        thresholds: expect.objectContaining({
+          bike: expect.objectContaining({ status: "unavailable" }),
         }),
       }),
     );
   });
 
   it("uses the validated start targets unchanged when continuing after a validation dialog", async () => {
-    const initialModel = buildPerformanceModelSnapshotFixture({
+    const initialTargets = buildPerformanceTargetFactsFixture({
       asOf: "2026-07-31T01:00:00.000Z",
+      thresholdEffectiveAt: "2025-01-01T00:00:00.000Z",
+      bikeThresholdWatts: 275,
     });
-    const initialTargets = projectAthletePerformanceTargetFacts(initialModel);
     mockFetchPublishedState.mockResolvedValueOnce({
       ...mockPublishedState,
       publishedState: {
-        publishedAt: initialModel.asOf,
-        performanceTargets: projectAthletePerformanceTargetFacts(initialModel),
+        publishedAt: initialTargets.asOf,
+        performanceTargets: initialTargets,
       },
     });
     service.validatePlanRequirements.mockReturnValue({

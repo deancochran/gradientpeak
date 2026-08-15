@@ -54,7 +54,6 @@ export const athleteCapabilityMeasurementBasisSchema = z.enum([
   "running_3600_second_maximal_mean_speed",
   "running_1200_to_3600_duration_retention",
   "swimming_pool_60_second_maximal_mean_speed",
-  "swimming_pool_css",
   "swimming_1800_second_long_duration_speed",
   "swimming_fixed_distance_repeat_speed_retention",
   "strength_fixed_resistance_repetition_retention",
@@ -72,7 +71,6 @@ export const athleteCapabilitySourceConceptSchema = z.enum([
   "running_planning_threshold_pace",
   "running_duration_retention",
   "swimming_sprint_capacity",
-  "swimming_css",
   "swimming_aerobic_capacity",
   "swimming_repeated_effort_decay",
   "strength_repeatability",
@@ -331,9 +329,6 @@ function measurementMatchesCapability(input: {
         input.unit === "meters_per_second" &&
         input.measurementBasis === "swimming_pool_60_second_maximal_mean_speed"
       );
-    }
-    if (input.capability === "thresholdCapacity") {
-      return input.unit === "meters_per_second" && input.measurementBasis === "swimming_pool_css";
     }
     if (input.capability === "longDurationCapacity") {
       return (

@@ -8,6 +8,7 @@ import {
   athletePerformanceTargetFactsSchema,
   getAvailablePerformanceTargetValue,
 } from "../performance-model";
+import { metersPerSecondToSecondsPerMeter } from "../units";
 import { summarizeActivityPlanDuration } from "./totals";
 
 const durationValueSecondsSchema = z.number().int().positive();
@@ -107,14 +108,12 @@ function targetSecondsPerMeter(
 ): number | null {
   if (!performanceTargets) return null;
   if (activityCategory === "run") {
-    const pace = getAvailablePerformanceTargetValue(
-      performanceTargets.running.planningThresholdPace,
-    );
-    return pace === null ? null : pace / 1_000;
+    const speed = getAvailablePerformanceTargetValue(performanceTargets.thresholds.run);
+    return speed === null ? null : metersPerSecondToSecondsPerMeter(speed);
   }
   if (activityCategory === "swim") {
-    const pace = getAvailablePerformanceTargetValue(performanceTargets.swimming.css);
-    return pace === null ? null : pace / 100;
+    const speed = getAvailablePerformanceTargetValue(performanceTargets.thresholds.swim);
+    return speed === null ? null : metersPerSecondToSecondsPerMeter(speed);
   }
   return null;
 }

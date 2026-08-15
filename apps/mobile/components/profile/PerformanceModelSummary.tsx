@@ -58,7 +58,7 @@ export function PerformanceModelSummary({
               {group.items.map((item, index) => (
                 <View
                   accessible
-                  accessibilityLabel={`${group.title} ${item.label}: ${item.valueLabel}, ${item.statusLabel}.${item.status === "unavailable" ? "" : ` Confidence: ${item.confidenceLabel}. Freshness: ${item.freshnessLabel}.`} Training impact: ${item.trainingImpact}${item.action ? ` ${item.action}` : ""}`}
+                  accessibilityLabel={`${item.label.startsWith(`${group.title} `) ? item.label : `${group.title} ${item.label}`}: ${item.valueLabel}, ${item.statusLabel}.${item.status === "unavailable" ? "" : ` Confidence: ${item.confidenceLabel}. Freshness: ${item.freshnessLabel}.`} Training impact: ${item.trainingImpact}${item.action ? ` ${item.action}` : ""}`}
                   className={`gap-2 ${index === 0 ? "" : "border-t border-border pt-4"}`}
                   key={item.id}
                   testID={`performance-model-item-${item.id}`}

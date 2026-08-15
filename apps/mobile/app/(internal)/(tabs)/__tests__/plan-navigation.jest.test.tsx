@@ -935,6 +935,7 @@ describe("plan dashboard navigation", () => {
     expect(screen.getByText("Weekly Training Path")).toBeTruthy();
     expect(mockTrainingPathSectionProps).toHaveBeenCalledWith(
       expect.objectContaining({
+        chartHeight: expect.any(Number),
         onViewDetails: expect.any(Function),
         onSelectedWeekChange: expect.any(Function),
       }),

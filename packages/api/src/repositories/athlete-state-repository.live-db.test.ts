@@ -28,6 +28,7 @@ import { readAthleteReadModel } from "../application/athlete-intelligence/athlet
 import { materializeActivityAthleteStateEvidence } from "../application/athlete-intelligence/athlete-state-evidence";
 import { AthleteStateWorkerService } from "../application/athlete-intelligence/athlete-state-worker";
 import { readPublishedAthleteStateSnapshot } from "../application/athlete-intelligence/published-athlete-state";
+import { withRepeatableReadSnapshot } from "../db";
 import { createActivityImportRepository } from "./activity-import-repository";
 import {
   attachActivitySourceReference,
@@ -322,13 +323,24 @@ describe("athlete state persistence", () => {
       finishedAt: new Date("2026-08-06T13:00:00.000Z"),
     });
     const segments = await db
-      .select({ activityId: activitySegments.activity_id, id: activitySegments.id })
+      .select({
+        activityId: activitySegments.activity_id,
+        id: activitySegments.id,
+        sourceArtifactId: activitySegments.source_artifact_id,
+        sourceRevision: activitySegments.segment_revision,
+      })
       .from(activitySegments)
       .where(inArray(activitySegments.activity_id, [pastActivityId, futureActivityId]));
     const segmentByActivity = new Map(segments.map((row) => [row.activityId, row.id]));
+    const sourceByActivity = new Map(segments.map((row) => [row.activityId, row]));
     const pastSegmentId = segmentByActivity.get(pastActivityId);
     const futureSegmentId = segmentByActivity.get(futureActivityId);
     if (!pastSegmentId || !futureSegmentId) throw new Error("Expected seeded activity segments");
+    const pastSource = sourceByActivity.get(pastActivityId);
+    const futureSource = sourceByActivity.get(futureActivityId);
+    if (!pastSource?.sourceArtifactId || !futureSource?.sourceArtifactId) {
+      throw new Error("Expected seeded effort sources");
+    }
     const pastEffortId = randomUUID();
     const futureEffortId = randomUUID();
     const futureRecordedEffortId = randomUUID();
@@ -342,9 +354,15 @@ describe("athlete state persistence", () => {
         recorded_at: new Date("2026-08-06T10:50:00.000Z"),
         activity_category: "run" as const,
         effort_type: "speed" as const,
+        source_series: "raw_speed" as const,
         duration_seconds: 60,
         distance_meters: 240,
-        start_offset: 0,
+        source_artifact_id: pastSource.sourceArtifactId,
+        source_revision: pastSource.sourceRevision,
+        start_offset_ms: 0,
+        end_offset_ms: 60_000,
+        window_coverage: 1,
+        max_gap_seconds: 2,
         unit: "meters_per_second",
         value: 4,
         source: "test" as const,
@@ -361,9 +379,15 @@ describe("athlete state persistence", () => {
         recorded_at: new Date("2026-08-06T12:50:00.000Z"),
         activity_category: "run" as const,
         effort_type: "speed" as const,
+        source_series: "raw_speed" as const,
         duration_seconds: 60,
         distance_meters: 300,
-        start_offset: 0,
+        source_artifact_id: futureSource.sourceArtifactId,
+        source_revision: futureSource.sourceRevision,
+        start_offset_ms: 0,
+        end_offset_ms: 60_000,
+        window_coverage: 1,
+        max_gap_seconds: 2,
         unit: "meters_per_second",
         value: 5,
         source: "test" as const,
@@ -380,9 +404,15 @@ describe("athlete state persistence", () => {
         recorded_at: new Date("2026-08-06T13:10:00.000Z"),
         activity_category: "run" as const,
         effort_type: "speed" as const,
+        source_series: "raw_speed" as const,
         duration_seconds: 60,
         distance_meters: 270,
-        start_offset: 0,
+        source_artifact_id: pastSource.sourceArtifactId,
+        source_revision: pastSource.sourceRevision,
+        start_offset_ms: 0,
+        end_offset_ms: 60_000,
+        window_coverage: 1,
+        max_gap_seconds: 2,
         unit: "meters_per_second",
         value: 4.5,
         source: "test" as const,
@@ -580,11 +610,15 @@ describe("athlete state persistence", () => {
     await seedActivity({ profileId, finishedAt: futureFinishedAt, commonLoad: 30 });
     const currentNow = new Date("2026-08-06T12:00:00.000Z");
     const [currentSegment] = await db
-      .select({ id: activitySegments.id })
+      .select({
+        id: activitySegments.id,
+        sourceArtifactId: activitySegments.source_artifact_id,
+        sourceRevision: activitySegments.segment_revision,
+      })
       .from(activitySegments)
       .where(eq(activitySegments.activity_id, currentActivityId))
       .limit(1);
-    if (!currentSegment) throw new Error("Expected current activity segment");
+    if (!currentSegment?.sourceArtifactId) throw new Error("Expected current activity segment");
     await db.insert(activityEfforts).values({
       id: randomUUID(),
       created_at: currentNow,
@@ -594,9 +628,15 @@ describe("athlete state persistence", () => {
       recorded_at: futureEffortRecordedAt,
       activity_category: "run",
       effort_type: "speed",
+      source_series: "raw_speed",
       duration_seconds: 60,
       distance_meters: 250,
-      start_offset: 0,
+      source_artifact_id: currentSegment.sourceArtifactId,
+      source_revision: currentSegment.sourceRevision,
+      start_offset_ms: 0,
+      end_offset_ms: 60_000,
+      window_coverage: 1,
+      max_gap_seconds: 2,
       unit: "meters_per_second",
       value: 4.1667,
       source: "test",
@@ -687,11 +727,15 @@ describe("athlete state persistence", () => {
 
     await db.transaction(async (tx) => {
       const [segment] = await tx
-        .select({ id: activitySegments.id })
+        .select({
+          id: activitySegments.id,
+          sourceArtifactId: activitySegments.source_artifact_id,
+          sourceRevision: activitySegments.segment_revision,
+        })
         .from(activitySegments)
         .where(eq(activitySegments.activity_id, activityId))
         .limit(1);
-      if (!segment) throw new Error("Expected future-effort segment");
+      if (!segment?.sourceArtifactId) throw new Error("Expected future-effort segment");
       await tx.insert(activityEfforts).values({
         id: randomUUID(),
         created_at: beforeDue,
@@ -701,8 +745,14 @@ describe("athlete state persistence", () => {
         recorded_at: effortRecordedAt,
         activity_category: "run",
         effort_type: "heart_rate",
+        source_series: "heart_rate",
         duration_seconds: 1_200,
-        start_offset: 0,
+        source_artifact_id: segment.sourceArtifactId,
+        source_revision: segment.sourceRevision,
+        start_offset_ms: 0,
+        end_offset_ms: 1_200_000,
+        window_coverage: 1,
+        max_gap_seconds: 2,
         unit: "bpm",
         value: 178,
         source: "derived",
@@ -787,11 +837,15 @@ describe("athlete state persistence", () => {
 
     await db.transaction(async (tx) => {
       const [segment] = await tx
-        .select({ id: activitySegments.id })
+        .select({
+          id: activitySegments.id,
+          sourceArtifactId: activitySegments.source_artifact_id,
+          sourceRevision: activitySegments.segment_revision,
+        })
         .from(activitySegments)
         .where(eq(activitySegments.activity_id, activityId))
         .limit(1);
-      if (!segment) throw new Error("Expected future parent segment");
+      if (!segment?.sourceArtifactId) throw new Error("Expected future parent segment");
       await tx.insert(activityEfforts).values({
         id: randomUUID(),
         created_at: beforeDue,
@@ -801,8 +855,14 @@ describe("athlete state persistence", () => {
         recorded_at: effortRecordedAt,
         activity_category: "run",
         effort_type: "heart_rate",
+        source_series: "heart_rate",
         duration_seconds: 1_200,
-        start_offset: 0,
+        source_artifact_id: segment.sourceArtifactId,
+        source_revision: segment.sourceRevision,
+        start_offset_ms: 0,
+        end_offset_ms: 1_200_000,
+        window_coverage: 1,
+        max_gap_seconds: 2,
         unit: "bpm",
         value: 176,
         source: "derived",
@@ -1233,11 +1293,15 @@ describe("athlete state persistence", () => {
 
     await db.transaction(async (tx) => {
       const [segment] = await tx
-        .select({ id: activitySegments.id })
+        .select({
+          id: activitySegments.id,
+          sourceArtifactId: activitySegments.source_artifact_id,
+          sourceRevision: activitySegments.segment_revision,
+        })
         .from(activitySegments)
         .where(eq(activitySegments.activity_id, activityId))
         .limit(1);
-      if (!segment) throw new Error("Expected seeded activity segment");
+      if (!segment?.sourceArtifactId) throw new Error("Expected seeded activity segment");
       await tx.insert(activityEfforts).values({
         id: randomUUID(),
         created_at: new Date("2026-08-01T10:00:00.000Z"),
@@ -1247,9 +1311,15 @@ describe("athlete state persistence", () => {
         recorded_at: new Date("2026-08-01T10:00:00.000Z"),
         activity_category: "run",
         effort_type: "speed",
+        source_series: "raw_speed",
         duration_seconds: 60,
         distance_meters: 250,
-        start_offset: 0,
+        source_artifact_id: segment.sourceArtifactId,
+        source_revision: segment.sourceRevision,
+        start_offset_ms: 0,
+        end_offset_ms: 60_000,
+        window_coverage: 1,
+        max_gap_seconds: 2,
         unit: "meters_per_second",
         value: 4.1667,
         source: "derived",
@@ -1387,17 +1457,16 @@ describe("athlete state persistence", () => {
     ).resolves.toEqual([{ sourceRevision: 1 }]);
   });
 
-  it("does not install profile metric or CSS athlete-state triggers", async () => {
+  it("does not install profile metric athlete-state triggers", async () => {
     const { rows } = await pool.query<{ tgname: string }>(
       `select tgname from pg_trigger
-       where tgrelid in ('public.profile_metrics'::regclass, 'public.swimming_css_protocol_evidence'::regclass)
+       where tgrelid = 'public.profile_metrics'::regclass
          and not tgisinternal
        order by tgname`,
     );
     expect(rows).not.toContainEqual({
       tgname: "profile_metrics_bump_athlete_state_source_revision",
     });
-    expect(rows).not.toContainEqual({ tgname: "swimming_css_bump_athlete_state_source_revision" });
   });
 
   it("invalidates one revision for a summary-to-raw webhook correction with equal reduced evidence", async () => {
@@ -1582,13 +1651,16 @@ describe("athlete state persistence", () => {
         },
       });
       await expect(
-        db.transaction((tx) =>
-          readPublishedAthleteStateSnapshot({
-            db: tx,
-            profileId,
-            now: publishAt,
-            lockStateForUpdate: true,
-          }),
+        withRepeatableReadSnapshot(
+          db,
+          (tx) =>
+            readPublishedAthleteStateSnapshot({
+              db: tx,
+              profileId,
+              now: publishAt,
+              lockStateForUpdate: true,
+            }),
+          { accessMode: "read write" },
         ),
       ).resolves.toMatchObject({
         revisions: { source: 2, published: 2 },

@@ -64,10 +64,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-type PlanningTargetFact =
-  | AthletePerformanceTargetFacts["cycling"]["planningThresholdPower"]
-  | AthletePerformanceTargetFacts["running"]["planningThresholdPace"]
-  | AthletePerformanceTargetFacts["swimming"]["css"];
+type PlanningTargetFact = AthletePerformanceTargetFacts["thresholds"]["bike"];
 
 function performanceTargetValue(fact: PlanningTargetFact | undefined): number | null {
   return fact ? getAvailablePerformanceTargetValue(fact) : null;
@@ -173,11 +170,11 @@ export function deriveCreationContext(input: DeriveCreationContextInput): Creati
   const primaryCategory = input.activity_context?.primary_category;
   const primaryThreshold =
     primaryCategory === "bike"
-      ? performanceTargets?.cycling.planningThresholdPower
+      ? performanceTargets?.thresholds.bike
       : primaryCategory === "run"
-        ? performanceTargets?.running.planningThresholdPace
+        ? performanceTargets?.thresholds.run
         : primaryCategory === "swim"
-          ? performanceTargets?.swimming.css
+          ? performanceTargets?.thresholds.swim
           : undefined;
   const primaryLthr =
     primaryCategory === "bike" || primaryCategory === "run" || primaryCategory === "swim"
@@ -186,9 +183,9 @@ export function deriveCreationContext(input: DeriveCreationContextInput): Creati
   const anyThreshold =
     primaryThreshold ??
     [
-      performanceTargets?.cycling.planningThresholdPower,
-      performanceTargets?.running.planningThresholdPace,
-      performanceTargets?.swimming.css,
+      performanceTargets?.thresholds.bike,
+      performanceTargets?.thresholds.run,
+      performanceTargets?.thresholds.swim,
     ].find((fact) => performanceTargetValue(fact) !== null);
   const anyLthr =
     primaryLthr ??

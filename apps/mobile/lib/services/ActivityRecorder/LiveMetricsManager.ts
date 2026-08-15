@@ -139,9 +139,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.streamBuffer = new StreamBuffer();
 
     console.log("[LiveMetricsManager] Initialized with profile:", {
-      ftpWatts: this.profile.ftpWatts,
+      bikeThresholdWatts: this.profile.bikeThresholdWatts,
       lthrBpm: this.profile.lthrBpm,
-      thresholdPaceSecondsPerKm: this.profile.thresholdPaceSecondsPerKm,
       weightKg: this.profile.weightKg,
     });
   }
@@ -198,9 +197,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.emit("metricsUpdated", { profile: this.profile, zones: this.zones });
 
     console.log("[LiveMetricsManager] Metrics updated:", {
-      ftpWatts: this.profile.ftpWatts,
+      bikeThresholdWatts: this.profile.bikeThresholdWatts,
       lthrBpm: this.profile.lthrBpm,
-      thresholdPaceSecondsPerKm: this.profile.thresholdPaceSecondsPerKm,
       weightKg: this.profile.weightKg,
     });
   }
@@ -1634,28 +1632,19 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   }
 
   private applyPerformanceTargetProfile(snapshot: AthletePerformanceTargetFacts | null): void {
-    delete this.profile.ftpWatts;
+    delete this.profile.bikeThresholdWatts;
     delete this.profile.lthrBpm;
-    delete this.profile.thresholdPaceSecondsPerKm;
     if (snapshot === null) return;
 
     const category = this.activityCategory;
     if (category === "bike") {
-      const ftpWatts = getAvailablePerformanceTargetValue(snapshot.cycling.planningThresholdPower);
-      if (ftpWatts !== null) this.profile.ftpWatts = ftpWatts;
+      const bikeThresholdWatts = getAvailablePerformanceTargetValue(snapshot.thresholds.bike);
+      if (bikeThresholdWatts !== null) this.profile.bikeThresholdWatts = bikeThresholdWatts;
     }
     if (category === "bike" || category === "run" || category === "swim") {
       const lthr = snapshot.heartRate[category].lthr;
       const lthrBpm = lthr.status === "available" ? lthr.valueBpm : null;
       if (lthrBpm !== null) this.profile.lthrBpm = lthrBpm;
-    }
-    if (category === "run") {
-      const thresholdPaceSecondsPerKm = getAvailablePerformanceTargetValue(
-        snapshot.running.planningThresholdPace,
-      );
-      if (thresholdPaceSecondsPerKm !== null) {
-        this.profile.thresholdPaceSecondsPerKm = thresholdPaceSecondsPerKm;
-      }
     }
   }
 
@@ -1680,7 +1669,9 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     return {
       hrZones: profile.lthrBpm === undefined ? [] : getHrZoneUpperBoundsFromLthr(profile.lthrBpm),
       powerZones:
-        profile.ftpWatts === undefined ? [] : getPowerZoneUpperBoundsFromFtp(profile.ftpWatts),
+        profile.bikeThresholdWatts === undefined
+          ? []
+          : getPowerZoneUpperBoundsFromFtp(profile.bikeThresholdWatts),
     };
   }
 

@@ -127,6 +127,7 @@ export function createWahooSyncRuntime() {
         beforePersist: options.beforePersist,
         ...(options.importRunId ? { importRunId: options.importRunId } : {}),
         ...(options.deferAthleteStateRefresh ? { deferAthleteStateRefresh: true } : {}),
+        ...(options.deferPerformanceCalibration ? { deferPerformanceCalibration: true } : {}),
         parsedActivity,
       }),
     activityFileStorage: createWahooImportActivityFileStorage({

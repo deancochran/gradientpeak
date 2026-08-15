@@ -829,6 +829,13 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
             eq(schema.groupEventRsvps.profile_id, profileId),
           ),
         )
+        .leftJoin(
+          schema.groupEventSeriesRsvps,
+          and(
+            eq(schema.groupEventSeriesRsvps.group_event_series_id, schema.groupEvents.series_id),
+            eq(schema.groupEventSeriesRsvps.profile_id, profileId),
+          ),
+        )
         .innerJoin(
           schema.profileTrainingSettings,
           eq(schema.profileTrainingSettings.profile_id, profileId),

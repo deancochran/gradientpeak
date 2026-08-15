@@ -1,338 +1,196 @@
 import { describe, expect, it } from "vitest";
-
-import { prescribedActivityIntensitySchema } from "../../activity-quantification";
-import { calculateSwimmingDurationPerformance } from "../../duration-performance";
-import { SWIMMING_DURATION_PERFORMANCE_FIXTURE_V1 } from "../../duration-performance/__tests__/fixtures/duration-performance-v1";
-import { resolvePrescriptionSpeedMetersPerSecond } from "../../plan/activity-plan-planning-estimate";
-import { buildPerformanceModelSnapshotFixture } from "../../testing/performance-model";
 import {
+  buildPerformanceModelSnapshotFixture,
+  buildPerformanceTargetFactsFixture,
+} from "../../testing/performance-model";
+import {
+  ATHLETE_PERFORMANCE_TARGET_FACTS_VERSION,
+  athletePerformanceModelSnapshotSchema,
   athletePerformanceTargetFactsSchema,
+  completedActivityPerformanceTargetSnapshotSchema,
   createUnavailableAthletePerformanceTargetFacts,
   getAvailablePerformanceTargetValue,
-  performanceTargetEvidenceTimeSchema,
-  projectAthletePerformanceTargetFacts,
+  materializeAthletePerformanceTargetFacts,
 } from "..";
 
-const asOf = "2026-07-31T12:00:00.000Z";
+const asOf = "2026-08-10T12:00:00.000Z";
 
-describe("performance-model target contracts", () => {
-  it("defaults unavailable and non-calibration target metadata compatibly", () => {
-    const targets = createUnavailableAthletePerformanceTargetFacts(asOf, "athlete-1");
-    expect(targets.cycling.planningThresholdPower).toMatchObject({
-      evidenceCount: 0,
-      trend: "unavailable",
-    });
-    expect(targets.heartRate.run.lthr).toMatchObject({
-      evidenceCount: 0,
-      trend: "unavailable",
-    });
-  });
+function source(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "run-threshold",
+    status: "available" as const,
+    activityCategory: "run" as const,
+    metric: "speed" as const,
+    unit: "meters_per_second" as const,
+    method: "run_speed_30m" as const,
+    value: 4,
+    effectiveAt: "2026-08-01T12:00:00.000Z",
+    policyVersion: "threshold-policy-v1",
+    state: "confirmed" as const,
+    confidence: 0.9,
+    sourceEvaluationIds: ["evaluation-1"],
+    sourceEffortIds: ["effort-1"],
+    sourceActivityIds: ["activity-1"],
+    ...overrides,
+  };
+}
 
-  it("projects typed model values into their exact target slots", () => {
-    const targets = projectAthletePerformanceTargetFacts(
-      buildPerformanceModelSnapshotFixture({ asOf, athleteId: "athlete-1" }),
-    );
-
-    expect(targets.cycling.planningThresholdPower).toMatchObject({
-      status: "available",
-      unit: "watts",
-      evidenceTime: {
-        observedFrom: "2026-07-30T12:00:00.000Z",
-        observedThrough: "2026-07-30T12:00:00.000Z",
-        computedAt: asOf,
-      },
-    });
-    if (targets.cycling.planningThresholdPower.status !== "unavailable") {
-      expect(targets.cycling.planningThresholdPower.value).toBeCloseTo(247, 6);
-    }
-    expect(targets.running.planningThresholdPace.status).toBe("unavailable");
-    expect(targets.swimming.css.status).toBe("unavailable");
-  });
-
-  it("keeps provisional and stale source-valid numeric thresholds usable", () => {
-    const provisionalSnapshot = buildPerformanceModelSnapshotFixture({
-      asOf,
+describe("AthletePerformanceTargetFacts", () => {
+  it("publishes one strict native-unit threshold shape with separate heart-rate capability facts", () => {
+    const facts = materializeAthletePerformanceTargetFacts({
       athleteId: "athlete-1",
-    });
-    const provisionalCalibration = provisionalSnapshot.calibrations[0];
-    if (!provisionalCalibration) throw new Error("Expected bike calibration fixture");
-    provisionalCalibration.selectionDiagnostics.selectionReason = "first_qualifying_evidence";
-    const provisional = projectAthletePerformanceTargetFacts(provisionalSnapshot);
-
-    expect(provisional.cycling.planningThresholdPower).toMatchObject({
-      status: "available",
-      calibrationState: "provisional",
-      confidence: "low",
-    });
-    expect(
-      getAvailablePerformanceTargetValue(provisional.cycling.planningThresholdPower),
-    ).toBeCloseTo(247, 6);
-
-    provisionalCalibration.expiresAt = asOf;
-    const stale = projectAthletePerformanceTargetFacts(provisionalSnapshot);
-    expect(stale.cycling.planningThresholdPower).toMatchObject({
-      status: "available",
-      calibrationState: "stale",
-      reasons: ["stale_evidence"],
-    });
-    expect(getAvailablePerformanceTargetValue(stale.cycling.planningThresholdPower)).toBeCloseTo(
-      247,
-      6,
-    );
-  });
-
-  it("keeps missing, malformed, and wrong-sport thresholds unusable", () => {
-    const unavailable = createUnavailableAthletePerformanceTargetFacts(asOf, "athlete-1");
-    expect(
-      getAvailablePerformanceTargetValue(unavailable.cycling.planningThresholdPower),
-    ).toBeNull();
-    expect(getAvailablePerformanceTargetValue({ status: "partial", value: Number.NaN })).toBeNull();
-    expect(getAvailablePerformanceTargetValue({ status: "available", value: -1 })).toBeNull();
-
-    const wrongSport = buildPerformanceModelSnapshotFixture({ asOf, athleteId: "athlete-1" });
-    const calibration = wrongSport.calibrations[0];
-    if (!calibration) throw new Error("Expected bike calibration fixture");
-    calibration.identity.activityCategory = "run";
-    expect(
-      projectAthletePerformanceTargetFacts(wrongSport).cycling.planningThresholdPower,
-    ).toMatchObject({
-      status: "unavailable",
-      value: null,
-    });
-  });
-
-  it("projects swimming CSS only from canonical protocol-backed model output", () => {
-    const swimFixture = SWIMMING_DURATION_PERFORMANCE_FIXTURE_V1;
-    const snapshot = buildPerformanceModelSnapshotFixture({
-      asOf: swimFixture.input.assessmentAsOf,
-      athleteId: swimFixture.input.athleteId,
-    });
-    snapshot.categories.swim = calculateSwimmingDurationPerformance(swimFixture.input);
-    snapshot.calibrations.push({
-      id: "swim-css-calibration",
-      identity: { metricKey: "threshold_speed", activityCategory: "swim" },
-      value: 100 / swimFixture.expected.cssSecondsPer100Meters,
-      unit: "meters_per_second",
-      effectiveAt:
-        swimFixture.input.cssProtocols[0]?.recordedAt ?? swimFixture.input.assessmentAsOf,
-      expiresAt: new Date(
-        Date.parse(swimFixture.input.assessmentAsOf) + 90 * 86_400_000,
-      ).toISOString(),
-      policyVersion: "performance-calibration-v1",
-      selectionDiagnostics: {
-        selectedEvidenceIds: [swimFixture.input.cssProtocols[0]?.evidenceId ?? "css-evidence"],
-        selectedActivityIds: ["swim-css-activity"],
-        evidenceCount: 1,
-        selectionReason: "complete_protocol",
-        trend: "initial",
-        tolerance: 0.03,
-        policyVersion: "performance-calibration-v1",
-      },
+      asOf,
+      thresholds: [source()],
     });
 
-    const targets = projectAthletePerformanceTargetFacts(snapshot);
-
-    expect(targets.swimming.css).toMatchObject({
-      status: "available",
-      value: swimFixture.expected.cssSecondsPer100Meters,
-      sourceEvidenceIds: [swimFixture.input.cssProtocols[0]?.evidenceId],
-      evidenceCount: 1,
-      trend: "initial",
-      evidenceTime: {
-        observedFrom: swimFixture.input.cssProtocols[0]?.recordedAt,
-        observedThrough: swimFixture.input.cssProtocols[0]?.recordedAt,
-        computedAt: swimFixture.input.assessmentAsOf,
-      },
-    });
-    const prescribedIntensity = prescribedActivityIntensitySchema.parse({
-      status: "available",
-      evidenceRole: "prescribed",
-      values: [
-        {
-          metric: "relative_threshold",
-          reference: "css",
-          unit: "percent",
-          magnitude: { kind: "point", value: 100 },
-        },
-      ],
-    });
-    expect(
-      resolvePrescriptionSpeedMetersPerSecond({
-        activityCategory: "swim",
-        prescribedIntensity,
-        performanceTargets: targets,
-      }),
-    ).toEqual({
-      status: "available",
-      value: 100 / swimFixture.expected.cssSecondsPer100Meters,
-      unit: "meters_per_second",
-      source: "relative_category_calibration",
-    });
-    const withoutProtocol = calculateSwimmingDurationPerformance({
-      ...swimFixture.input,
-      cssProtocols: [],
-    });
-    snapshot.categories.swim = withoutProtocol;
-    snapshot.calibrations = snapshot.calibrations.filter(
-      ({ identity }) => identity.activityCategory !== "swim",
-    );
-    expect(projectAthletePerformanceTargetFacts(snapshot).swimming.css).toMatchObject({
-      status: "unavailable",
-      value: null,
-      reasons: ["calibration_unavailable"],
-    });
-  });
-
-  it("keeps observation bounds stable while a later as-of model gets a new computation instant", () => {
-    const evidenceRecordedAt = "2026-07-29T09:30:00.000Z";
-    const first = projectAthletePerformanceTargetFacts(
-      buildPerformanceModelSnapshotFixture({
-        asOf: "2026-07-30T12:00:00.000Z",
-        athleteId: "athlete-1",
-        evidenceRecordedAt,
-      }),
-    );
-    const second = projectAthletePerformanceTargetFacts(
-      buildPerformanceModelSnapshotFixture({
-        asOf: "2026-07-31T12:00:00.000Z",
-        athleteId: "athlete-1",
-        evidenceRecordedAt,
-      }),
-    );
-
-    expect(second.cycling.planningThresholdPower.evidenceTime).toEqual({
-      observedFrom: evidenceRecordedAt,
-      observedThrough: evidenceRecordedAt,
-      computedAt: "2026-07-31T12:00:00.000Z",
-    });
-    expect(second.cycling.planningThresholdPower.evidenceTime.observedThrough).toBe(
-      first.cycling.planningThresholdPower.evidenceTime.observedThrough,
-    );
-  });
-
-  it("uses the immutable calibration effective instant instead of mutable raw effort times", () => {
-    const snapshot = buildPerformanceModelSnapshotFixture({ asOf, athleteId: "athlete-1" });
-    const curve = snapshot.categories.bike.maximalMeanPowerCurve;
-    const threshold = snapshot.categories.bike.parameters.planningThresholdPower;
-    if (curve.status === "unavailable" || threshold.status === "unavailable") {
-      throw new Error("Expected available cycling evidence");
-    }
-    const supportingEvidenceIds = new Set(threshold.sourceEvidenceIds);
-    const supportingPoints = curve.value.points.filter((point) =>
-      supportingEvidenceIds.has(point.sourceEvidenceId),
-    );
-    supportingPoints.forEach((point, index) => {
-      point.recordedAt = new Date(
-        Date.parse("2026-07-28T08:00:00.000Z") + index * 3_600_000,
-      ).toISOString();
-    });
-    const supportingTimes = supportingPoints
-      .map((point) => point.recordedAt)
-      .sort((left, right) => Date.parse(left) - Date.parse(right));
-
-    const targets = projectAthletePerformanceTargetFacts(snapshot);
-
-    expect(targets.cycling.planningThresholdPower.evidenceTime).toMatchObject({
-      observedFrom: "2026-07-30T12:00:00.000Z",
-      observedThrough: "2026-07-30T12:00:00.000Z",
-      computedAt: asOf,
-    });
-    expect(supportingTimes[0]).not.toBe(supportingTimes.at(-1));
-  });
-
-  it("rejects partial, inverted, future, and non-strict evidence-time contracts", () => {
-    expect(
-      performanceTargetEvidenceTimeSchema.safeParse({
-        observedFrom: "2026-07-30T00:00:00.000Z",
-        observedThrough: null,
-        computedAt: asOf,
-      }).success,
-    ).toBe(false);
-    expect(
-      performanceTargetEvidenceTimeSchema.safeParse({
-        observedFrom: "2026-07-31T00:00:00.000Z",
-        observedThrough: "2026-07-30T00:00:00.000Z",
-        computedAt: asOf,
-      }).success,
-    ).toBe(false);
-    expect(
-      performanceTargetEvidenceTimeSchema.safeParse({
-        observedFrom: "2026-07-31T13:00:00.000Z",
-        observedThrough: "2026-07-31T13:00:00.000Z",
-        computedAt: asOf,
-      }).success,
-    ).toBe(false);
-    expect(
-      performanceTargetEvidenceTimeSchema.safeParse({
-        observedFrom: null,
-        observedThrough: null,
-        computedAt: asOf,
-        refreshedAt: asOf,
-      }).success,
-    ).toBe(false);
-  });
-
-  it("rejects status and confidence combinations that claim unavailable evidence is usable", () => {
-    const targets = createUnavailableAthletePerformanceTargetFacts(asOf, "athlete-1");
-    const invalid = {
-      ...targets,
-      cycling: {
-        planningThresholdPower: {
-          ...targets.cycling.planningThresholdPower,
+    expect(facts).toMatchObject({
+      contractVersion: ATHLETE_PERFORMANCE_TARGET_FACTS_VERSION,
+      thresholds: {
+        bike: { status: "unavailable", unit: "watts" },
+        run: {
           status: "available",
-          value: 250,
+          value: 4,
+          unit: "meters_per_second",
+          thresholdId: "run-threshold",
+          evaluationId: "evaluation-1",
+          method: "run_speed_30m",
+          state: "confirmed",
+          freshness: "fresh",
+          sourceEffortIds: ["effort-1"],
+          sourceActivityIds: ["activity-1"],
         },
+        swim: { status: "unavailable", unit: "meters_per_second" },
       },
-    };
-
-    expect(athletePerformanceTargetFactsSchema.safeParse(invalid).success).toBe(false);
+      heartRate: { run: { lthr: { status: "unavailable" } } },
+    });
+    expect(facts).not.toHaveProperty("cycling");
+    expect(facts).not.toHaveProperty("running");
+    expect(facts).not.toHaveProperty("swimming");
+    expect(getAvailablePerformanceTargetValue(facts.thresholds.run)).toBe(4);
   });
 
-  it("rejects target facts whose evidence IDs and observation bounds disagree", () => {
-    const targets = createUnavailableAthletePerformanceTargetFacts(asOf, "athlete-1");
-    const missingBounds = {
-      ...targets,
-      cycling: {
-        planningThresholdPower: {
-          ...targets.cycling.planningThresholdPower,
-          sourceEvidenceIds: ["unbounded-evidence"],
-        },
-      },
-    };
-    const orphanedBounds = {
-      ...targets,
-      running: {
-        planningThresholdPace: {
-          ...targets.running.planningThresholdPace,
-          evidenceTime: {
-            observedFrom: "2026-07-30T12:00:00.000Z",
-            observedThrough: "2026-07-30T12:00:00.000Z",
-            computedAt: asOf,
-          },
-        },
-      },
-    };
-
-    expect(athletePerformanceTargetFactsSchema.safeParse(missingBounds).success).toBe(false);
-    expect(athletePerformanceTargetFactsSchema.safeParse(orphanedBounds).success).toBe(false);
+  it("derives stale metadata without discarding usable threshold truth", () => {
+    const facts = materializeAthletePerformanceTargetFacts({
+      athleteId: "athlete-1",
+      asOf: "2027-01-01T12:00:00.000Z",
+      thresholds: [source()],
+    });
+    expect(facts.thresholds.run).toMatchObject({ freshness: "stale", value: 4 });
+    expect(getAvailablePerformanceTargetValue(facts.thresholds.run)).toBe(4);
   });
 
-  it("rejects heart-rate facts placed in the wrong category or metric slot", () => {
-    const targets = createUnavailableAthletePerformanceTargetFacts(asOf, "athlete-1");
-    const invalid = {
-      ...targets,
-      heartRate: {
-        ...targets.heartRate,
-        bike: {
-          ...targets.heartRate.bike,
-          lthr: {
-            ...targets.heartRate.bike.lthr,
-            activityCategory: "run",
-          },
-        },
-      },
-    };
+  it("creates a complete fail-closed target contract", () => {
+    const facts = createUnavailableAthletePerformanceTargetFacts(asOf, "athlete-1");
+    expect(facts.thresholds).toEqual({
+      bike: expect.objectContaining({ status: "unavailable", metric: "power", unit: "watts" }),
+      run: expect.objectContaining({
+        status: "unavailable",
+        metric: "speed",
+        unit: "meters_per_second",
+      }),
+      swim: expect.objectContaining({
+        status: "unavailable",
+        metric: "speed",
+        unit: "meters_per_second",
+      }),
+    });
+    expect(facts.heartRate.bike.lthr.status).toBe("unavailable");
+  });
 
-    expect(athletePerformanceTargetFactsSchema.safeParse(invalid).success).toBe(false);
+  it("rejects compatibility aliases and pace primary units", () => {
+    const facts = createUnavailableAthletePerformanceTargetFacts(asOf, "athlete-1");
+    expect(
+      athletePerformanceTargetFactsSchema.safeParse({
+        ...facts,
+        cycling: { planningThresholdPower: facts.thresholds.bike },
+      }).success,
+    ).toBe(false);
+    expect(() =>
+      materializeAthletePerformanceTargetFacts({
+        athleteId: "athlete-1",
+        asOf,
+        thresholds: [source({ unit: "seconds_per_kilometer" })],
+      }),
+    ).toThrow();
+    expect(() =>
+      materializeAthletePerformanceTargetFacts({
+        athleteId: "athlete-1",
+        asOf,
+        thresholds: [source({ freshness: { status: "fresh", ageSeconds: 1, freshForSeconds: 1 } })],
+      }),
+    ).toThrow("Unrecognized key");
+  });
+
+  it("rejects duplicate category facts, policy mismatches, and misaligned provenance", () => {
+    expect(() =>
+      materializeAthletePerformanceTargetFacts({
+        athleteId: "athlete-1",
+        asOf,
+        thresholds: [source(), source({ id: "run-threshold-2" })],
+      }),
+    ).toThrow("duplicated");
+    expect(() =>
+      materializeAthletePerformanceTargetFacts({
+        athleteId: "athlete-1",
+        asOf,
+        thresholds: [source({ method: "swim_speed_15m" })],
+      }),
+    ).toThrow();
+    expect(() =>
+      materializeAthletePerformanceTargetFacts({
+        athleteId: "athlete-1",
+        asOf,
+        thresholds: [source({ sourceEffortIds: [] })],
+      }),
+    ).toThrow("provenance must align");
+  });
+
+  it("uses the canonical target contract in completed-activity captures", () => {
+    const targets = createUnavailableAthletePerformanceTargetFacts(asOf, "athlete-1");
+    expect(
+      completedActivityPerformanceTargetSnapshotSchema.parse({
+        contractVersion: "completed-activity-performance-target-snapshot-v2",
+        capturedAt: asOf,
+        publishedRevision: 1,
+        publicationStatus: "available",
+        targets,
+      }).targets,
+    ).toEqual(targets);
+  });
+
+  it("rejects future heart-rate observations at both schema and materializer boundaries", () => {
+    const valid = buildPerformanceTargetFactsFixture({
+      athleteId: "athlete-1",
+      asOf,
+      maxHrBpm: { run: 190 },
+    });
+    const futureHeartRate = structuredClone(valid.heartRate);
+    if (futureHeartRate.run.maxHr.status !== "available") {
+      throw new Error("Expected available max-HR fixture");
+    }
+    futureHeartRate.run.maxHr.observedAt = "2026-08-10T12:00:00.001Z";
+
+    expect(
+      athletePerformanceTargetFactsSchema.safeParse({ ...valid, heartRate: futureHeartRate })
+        .success,
+    ).toBe(false);
+    expect(() =>
+      materializeAthletePerformanceTargetFacts({
+        athleteId: "athlete-1",
+        asOf,
+        thresholds: [],
+        heartRate: futureHeartRate,
+      }),
+    ).toThrow("cannot come from the future");
+  });
+});
+
+describe("AthletePerformanceModelSnapshot", () => {
+  it("keeps capability models and heart rate separate from canonical threshold authority", () => {
+    const snapshot = buildPerformanceModelSnapshotFixture({ asOf, athleteId: "athlete-1" });
+    expect(athletePerformanceModelSnapshotSchema.parse(snapshot)).toEqual(snapshot);
+    expect(
+      athletePerformanceModelSnapshotSchema.safeParse({ ...snapshot, calibrations: [] }).success,
+    ).toBe(false);
   });
 });

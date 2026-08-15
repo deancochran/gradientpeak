@@ -1,4 +1,3 @@
-import type { CalibrationRecord } from "@repo/core";
 import type {
   ActivityEffortPerformanceRow,
   AthletePerformanceModelRepository,
@@ -48,8 +47,14 @@ export function createTestPerformanceModelEffortRows(input: {
       recorded_at: new Date((startTimestampSeconds + durationSeconds) * 1_000),
       activity_category: input.activityCategory,
       effort_type: input.activityCategory === "bike" ? "power" : "speed",
+      source_series: sourceSeries,
       duration_seconds: durationSeconds,
-      start_offset: 0,
+      source_artifact_id: artifactId,
+      source_revision: 1,
+      start_offset_ms: 0,
+      end_offset_ms: durationSeconds * 1_000,
+      window_coverage: 1,
+      max_gap_seconds: 2,
       unit: input.activityCategory === "bike" ? "watts" : "meters_per_second",
       value: intercept + reserve / durationSeconds,
       source: "imported",
@@ -72,7 +77,7 @@ export function createTestPerformanceModelEffortRows(input: {
         source_time_coverage: 1,
         extraction_status: "available",
         extraction_reason: null,
-        persisted_start_offset_quantization: "floor_seconds_v1",
+        persisted_start_offset_quantization: "nearest_millisecond_v1",
         calculation_version: "best-effort-extraction-v1",
       },
       segment_revision: 1,
@@ -132,37 +137,6 @@ export function createTestHeartRateCalibrationRow(input: {
   };
 }
 
-function createTestLthrCalibration(input: {
-  athleteId: string;
-  asOf: Date;
-  activityCategory: "bike" | "run";
-  valueBpm: number;
-}): CalibrationRecord {
-  const offset = input.activityCategory === "bike" ? 0 : 100;
-  const effectiveAt = new Date(input.asOf.getTime() - 86_400_000);
-  return {
-    id: uuid(500 + offset),
-    identity: {
-      metricKey: "threshold_heart_rate",
-      activityCategory: input.activityCategory,
-    },
-    value: input.valueBpm,
-    unit: "beats_per_minute",
-    effectiveAt: effectiveAt.toISOString(),
-    expiresAt: new Date(effectiveAt.getTime() + 90 * 86_400_000).toISOString(),
-    policyVersion: "performance-calibration-v1",
-    selectionDiagnostics: {
-      selectedEvidenceIds: [uuid(501 + offset)],
-      selectedActivityIds: [uuid(502 + offset)],
-      evidenceCount: 1,
-      selectionReason: "first_qualifying_evidence",
-      trend: "initial",
-      tolerance: 3,
-      policyVersion: "performance-calibration-v1",
-    },
-  };
-}
-
 /** Canonical strict repository fixture; no legacy profile-threshold rows are synthesized. */
 export function createTestPerformanceModelRepository(
   options: TestPerformanceModelOptions = {},
@@ -213,28 +187,13 @@ export function createTestPerformanceModelRepository(
           maxHr: { rows: rows(maxHr), truncated: false },
         };
       };
-      const calibrationReads = (["bike", "run"] as const).flatMap((activityCategory) => {
-        const valueBpm = options.lthrBpm?.[activityCategory];
-        return valueBpm === undefined
-          ? []
-          : [
-              createTestLthrCalibration({
-                athleteId: input.athleteId,
-                asOf: input.asOf,
-                activityCategory,
-                valueBpm,
-              }),
-            ];
-      });
       return {
         effortReads: { bike: lane("bike"), run: lane("run"), swim: lane("swim") },
-        swimmingCssProtocolRead: { rows: [], truncated: false },
         heartRateReads: {
           bike: heartRateLane("bike"),
           run: heartRateLane("run"),
           swim: heartRateLane("swim"),
         },
-        calibrationReads,
       };
     },
   };

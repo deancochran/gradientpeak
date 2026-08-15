@@ -121,9 +121,6 @@ describe(`duration-performance seeded properties (seed 0x${PROPERTY_SEED.toStrin
       ).toEqual(expectedStrength);
     }
     expect(expectedRun.calculationIdentity.evidenceSetFingerprint).toMatch(/^fnv1a-32:/);
-    expect(expectedSwim.evidenceSummary.selectedCssProtocolEvidenceIds).toEqual([
-      swimmingFixture.input.cssProtocols[0]?.evidenceId,
-    ]);
     expect(expectedStrength.evidenceSummary.selectedProtocolEvidenceIds).toEqual([
       "strength-repeat",
     ]);

@@ -20,6 +20,7 @@ import type { GeneratedActivityLthrEvidence } from "./reconcile-activity-evidenc
 import {
   type ActivitySubmission,
   canCanonicalEvidenceReplace,
+  type ExistingActivityEnrichmentSubmission,
   MATERIALIZER_VERSION,
   manualImportActivityId,
   providerActivityId,
@@ -27,6 +28,26 @@ import {
   recordingSessionActivityId,
   submitActivity,
 } from "./submit-activity";
+
+vi.mock("../../db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../db")>();
+  return {
+    ...actual,
+    withProfileFencedRepeatableReadSnapshot: async <Result>(
+      db: Parameters<typeof actual.withRepeatableReadSnapshot>[0],
+      profileId: string,
+      write: Parameters<typeof actual.withRepeatableReadSnapshot<Result>>[1],
+    ) =>
+      actual.withRepeatableReadSnapshot(
+        db,
+        async (tx) => {
+          await tx.execute({ profileId } as never);
+          return write(tx);
+        },
+        { accessMode: "read write" },
+      ),
+  };
+});
 
 vi.mock("../athlete-intelligence/athlete-state-evidence", () => ({
   materializeActivityAthleteStateEvidence: vi.fn().mockResolvedValue({
@@ -283,101 +304,135 @@ function createDb(
   },
 ) {
   const committed: unknown[] = [];
+  const databaseStatements: string[] = [];
   const insertedValues: Array<{ table: unknown; values: unknown }> = [];
   const updatedValues: Array<{ table: unknown; values: unknown }> = [];
   let activityRow = existingActivity;
   let segmentRows: unknown[] = [];
-  const transaction = vi.fn(async (callback: (tx: MockTx) => Promise<unknown>) => {
-    const staged: unknown[] = [];
-    const selectBuilder = (rows: unknown[]) => {
-      let builder: MockSelectBuilder;
-      builder = Object.assign(Promise.resolve(rows), {
-        for: vi.fn(() => builder),
-        innerJoin: vi.fn(() => builder),
-        leftJoin: vi.fn(() => builder),
-        limit: vi.fn(() => builder),
-        orderBy: vi.fn(() => builder),
-        where: vi.fn(() => builder),
-      });
-      return builder;
-    };
-    const tx = {
-      select: vi.fn(() => ({
-        from: vi.fn((table: unknown) =>
-          selectBuilder(
-            table === activities && activityRow
-              ? [activityRow]
-              : table === activitySegments
-                ? segmentRows
-                : [],
-          ),
-        ),
-      })),
-      execute: vi.fn().mockResolvedValue({ rows: [] }),
-      insert: vi.fn((table: unknown) => ({
-        values: vi.fn((values: unknown) => {
-          if (table === failOn) throw new Error("write failed");
-          staged.push(table);
-          insertedValues.push({ table, values });
-          if (table === activities)
-            activityRow = {
-              athlete_state_common_load: null,
-              athlete_state_activity_category: null,
-              athlete_state_evidence_confidence: null,
-              athlete_state_capability_distance_meters: null,
-              athlete_state_capability_duration_minutes: null,
-              athlete_state_input_version: null,
-              athlete_state_computed_at: null,
-              ...(values as object),
-            };
-          if (table === activitySegments) segmentRows = Array.isArray(values) ? values : [values];
-          const conflictResult = {
-            returning: vi.fn().mockResolvedValue(
-              table === activitySourceReferences
-                ? [
-                    {
-                      activityId: (values as { activity_id: string }).activity_id,
-                    },
-                  ]
-                : [{ id: "persisted-id", sourceRevision: 1 }],
+  const transaction = vi.fn(
+    async (
+      callback: (tx: MockTx) => Promise<unknown>,
+      _config?: { accessMode: "read write"; isolationLevel: "repeatable read" },
+    ) => {
+      const staged: unknown[] = [];
+      const selectBuilder = (rows: unknown[]) => {
+        let builder: MockSelectBuilder;
+        builder = Object.assign(Promise.resolve(rows), {
+          for: vi.fn(() => builder),
+          innerJoin: vi.fn(() => builder),
+          leftJoin: vi.fn(() => builder),
+          limit: vi.fn(() => builder),
+          orderBy: vi.fn(() => builder),
+          where: vi.fn(() => builder),
+        });
+        return builder;
+      };
+      const tx = {
+        select: vi.fn((projection?: Record<string, unknown>) => {
+          databaseStatements.push("select");
+          return {
+            from: vi.fn((table: unknown) =>
+              selectBuilder(
+                table === activities && projection?.sourceArtifactId && activityRow
+                  ? segmentRows.map((segment) => ({
+                      finishedAt: (activityRow as { finished_at: Date }).finished_at,
+                      sourceRevision: (activityRow as { segments_revision: number })
+                        .segments_revision,
+                      segmentId: (segment as { id: string }).id,
+                      activityCategory: (segment as { activity_category: string | null })
+                        .activity_category,
+                      sourceArtifactId:
+                        (segment as { source_artifact_id?: string | null }).source_artifact_id ??
+                        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                      summary: (segment as { summary: unknown }).summary,
+                    }))
+                  : table === activitySegments && projection?.sourceArtifactId
+                    ? segmentRows.map((segment) => ({
+                        segmentId: (segment as { id: string }).id,
+                        sourceArtifactId:
+                          (segment as { source_artifact_id?: string | null }).source_artifact_id ??
+                          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                        sourceRevision: (segment as { segment_revision: number }).segment_revision,
+                      }))
+                    : table === activities && activityRow
+                      ? [activityRow]
+                      : table === activitySegments
+                        ? segmentRows
+                        : [],
+              ),
             ),
           };
-          return {
-            onConflictDoUpdate: vi.fn(() => conflictResult),
-            onConflictDoNothing: vi.fn(() => conflictResult),
-            returning: vi.fn().mockResolvedValue([{ id: "persisted-id" }]),
-          };
         }),
-      })),
-      update: vi.fn((table: unknown) => ({
-        set: vi.fn((values: unknown) => ({
-          where: vi.fn(() => {
-            updatedValues.push({ table, values });
-            if (table === activities && activityRow)
-              activityRow = { ...(activityRow as object), ...(values as object) };
+        execute: vi.fn(async () => {
+          databaseStatements.push("execute");
+          return { rows: [] };
+        }),
+        insert: vi.fn((table: unknown) => ({
+          values: vi.fn((values: unknown) => {
             if (table === failOn) throw new Error("write failed");
             staged.push(table);
-            const result = Promise.resolve(undefined);
-            return Object.assign(result, {
-              returning: vi.fn().mockResolvedValue([{ id: "activity-1" }]),
-            });
+            insertedValues.push({ table, values });
+            if (table === activities)
+              activityRow = {
+                athlete_state_common_load: null,
+                athlete_state_activity_category: null,
+                athlete_state_evidence_confidence: null,
+                athlete_state_capability_distance_meters: null,
+                athlete_state_capability_duration_minutes: null,
+                athlete_state_input_version: null,
+                athlete_state_computed_at: null,
+                ...(values as object),
+              };
+            if (table === activitySegments) segmentRows = Array.isArray(values) ? values : [values];
+            const conflictResult = {
+              returning: vi.fn().mockResolvedValue(
+                table === activitySourceReferences
+                  ? [
+                      {
+                        activityId: (values as { activity_id: string }).activity_id,
+                      },
+                    ]
+                  : [{ id: "persisted-id", sourceRevision: 1 }],
+              ),
+            };
+            return {
+              onConflictDoUpdate: vi.fn(() => conflictResult),
+              onConflictDoNothing: vi.fn(() => conflictResult),
+              returning: vi.fn().mockResolvedValue([{ id: "persisted-id" }]),
+            };
           }),
         })),
-      })),
-      delete: vi.fn((table: unknown) => ({
-        where: vi.fn(async () => {
-          if (table === failOn) throw new Error("write failed");
-          staged.push(table);
-        }),
-      })),
-    };
-    const result = await callback(tx);
-    committed.push(...staged);
-    return result;
-  });
+        update: vi.fn((table: unknown) => ({
+          set: vi.fn((values: unknown) => ({
+            where: vi.fn(() => {
+              updatedValues.push({ table, values });
+              if (table === activities && activityRow)
+                activityRow = { ...(activityRow as object), ...(values as object) };
+              if (table === failOn) throw new Error("write failed");
+              staged.push(table);
+              const result = Promise.resolve(undefined);
+              return Object.assign(result, {
+                returning: vi.fn().mockResolvedValue([{ id: "activity-1" }]),
+              });
+            }),
+          })),
+        })),
+        delete: vi.fn((table: unknown) => ({
+          where: vi.fn(async () => {
+            if (table === failOn) throw new Error("write failed");
+            staged.push(table);
+          }),
+        })),
+      };
+      const result = await callback(tx);
+      committed.push(...staged);
+      return result;
+    },
+  );
   return {
-    db: { transaction } as unknown as DbClient,
+    db: { $client: {}, transaction } as unknown as DbClient,
     committed,
+    databaseStatements,
     getActivityRow: () => activityRow,
     insertedValues,
     updatedValues,
@@ -424,7 +479,7 @@ function createInput(): ActivitySubmission {
 
 describe("submitActivity", () => {
   it("captures the published target authority on a newly completed activity", async () => {
-    const { db, insertedValues } = createDb(undefined, null);
+    const { db, insertedValues, transaction } = createDb(undefined, null);
 
     await submitActivity(db, createInput());
 
@@ -432,19 +487,56 @@ describe("submitActivity", () => {
       | Record<string, unknown>
       | undefined;
     expect(insertedActivity?.performance_target_snapshot).toMatchObject({
-      contractVersion: "completed-activity-performance-target-snapshot-v1",
+      contractVersion: "completed-activity-performance-target-snapshot-v2",
       publishedRevision: null,
       publicationStatus: "unavailable",
       targets: {
         athleteId: "profile-1",
-        cycling: {
-          planningThresholdPower: {
-            calibrationState: "unavailable",
-            calibrationId: null,
+        thresholds: {
+          bike: {
+            status: "unavailable",
+            thresholdId: null,
+            state: "unavailable",
           },
         },
       },
     });
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
+      accessMode: "read write",
+      isolationLevel: "repeatable read",
+    });
+  });
+
+  it.each([
+    "manual",
+    "provider",
+    "enrichment",
+  ] as const)("acquires exactly one profile fence as the first database statement for %s submission", async (path) => {
+    const fixture = createDb(undefined, path === "enrichment" ? undefined : null);
+    const provider = createInput();
+    const input: ActivitySubmission | ExistingActivityEnrichmentSubmission =
+      path === "provider"
+        ? provider
+        : path === "manual"
+          ? (({ providerProvenance: _providerProvenance, ...manual }) => manual)(provider)
+          : {
+              kind: "enrich",
+              activityId: "activity-1",
+              profileId: "profile-1",
+              deviceManufacturer: null,
+              deviceProduct: null,
+              summaryValues: { elapsed_ms: 3_600_000 },
+              segmentSet,
+              efforts: [],
+              detectedLTHR: null,
+            };
+
+    await submitActivity(fixture.db, input);
+
+    expect(fixture.databaseStatements[0]).toBe("execute");
+    expect(fixture.databaseStatements.filter((statement) => statement === "execute")).toHaveLength(
+      1,
+    );
   });
 
   it("rejects generated efforts that cross or mismatch segment boundaries", async () => {
@@ -462,15 +554,21 @@ describe("submitActivity", () => {
               segment_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
               activity_category: "bike",
               effort_type: "power",
+              source_series: "power",
               duration_seconds: 300,
-              start_offset: 3_500,
+              source_artifact_id: "00000000-0000-0000-0000-000000000000",
+              source_revision: 1,
+              start_offset_ms: 3_500_000,
+              end_offset_ms: 3_800_000,
+              window_coverage: 1,
+              max_gap_seconds: 2,
               recorded_at: new Date(),
               unit: "watts",
               value: 250,
               source: "derived",
               method: "activity_file_best_effort",
               calculation_version: "best-effort-extraction-v1",
-              provenance: { observation_id: "effort-crossing" },
+              provenance: { observation_id: "effort-crossing", source_series: "power" },
             },
           ],
           detectedLTHR: null,
@@ -673,14 +771,21 @@ describe("submitActivity", () => {
             segment_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             activity_category: "bike",
             effort_type: "power",
+            source_series: "power",
             duration_seconds: 300,
+            source_artifact_id: "00000000-0000-0000-0000-000000000000",
+            source_revision: 1,
+            start_offset_ms: 0,
+            end_offset_ms: 300_000,
+            window_coverage: 1,
+            max_gap_seconds: 2,
             recorded_at: new Date("2026-01-01T11:00:00Z"),
             unit: "watts",
             value: 250,
             source: "derived",
             method: "activity_file_best_effort",
             calculation_version: "best-effort-extraction-v1",
-            provenance: { observation_id: "effort-1" },
+            provenance: { observation_id: "effort-1", source_series: "power" },
           },
         ],
         detectedLTHR: null,
@@ -1076,8 +1181,15 @@ describe("submitActivity", () => {
           profile_id: "profile-1",
           segment_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
           effort_type: "power",
+          source_series: "power",
           activity_category: "bike",
           duration_seconds: 5,
+          source_artifact_id: "00000000-0000-0000-0000-000000000000",
+          source_revision: 1,
+          start_offset_ms: 0,
+          end_offset_ms: 5_000,
+          window_coverage: 1,
+          max_gap_seconds: 2,
           value: 300,
           unit: "watts",
           recorded_at: new Date("2026-01-01T11:00:00Z"),
@@ -1085,7 +1197,7 @@ describe("submitActivity", () => {
           source: "derived",
           method: "activity_file_best_effort",
           calculation_version: "best-effort-extraction-v1",
-          provenance: { observation_id: "effort-1" },
+          provenance: { observation_id: "effort-1", source_series: "power" },
         },
       ],
       detectedLTHR: detectedLthr(170),
@@ -1101,7 +1213,7 @@ describe("submitActivity", () => {
 
   it("cannot replace the target snapshot captured when an activity was completed", async () => {
     const capturedSnapshot = {
-      contractVersion: "completed-activity-performance-target-snapshot-v1",
+      contractVersion: "completed-activity-performance-target-snapshot-v2",
       capturedAt: "2026-08-09T10:00:00.000Z",
       publishedRevision: 7,
       publicationStatus: "ready",
@@ -1136,7 +1248,7 @@ describe("submitActivity", () => {
       summaryValues: {
         elapsed_ms: 3_600_000,
         performance_target_snapshot: {
-          contractVersion: "completed-activity-performance-target-snapshot-v1",
+          contractVersion: "completed-activity-performance-target-snapshot-v2",
           capturedAt: "2026-08-10T10:00:00.000Z",
           publishedRevision: 8,
           publicationStatus: "ready",
@@ -1248,8 +1360,15 @@ describe("submitActivity", () => {
           profile_id: "foreign-profile",
           segment_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
           effort_type: "power",
+          source_series: "power",
           activity_category: "bike",
           duration_seconds: 5,
+          source_artifact_id: "00000000-0000-0000-0000-000000000000",
+          source_revision: 1,
+          start_offset_ms: 0,
+          end_offset_ms: 5_000,
+          window_coverage: 1,
+          max_gap_seconds: 2,
           value: 300,
           unit: "watts",
           recorded_at: new Date(),
@@ -1257,7 +1376,7 @@ describe("submitActivity", () => {
           source: "derived",
           method: "activity_file_best_effort",
           calculation_version: "best-effort-extraction-v1",
-          provenance: { observation_id: "effort-1" },
+          provenance: { observation_id: "effort-1", source_series: "power" },
         },
       ],
       detectedLTHR: null,
@@ -1301,13 +1420,20 @@ describe("submitActivity", () => {
             recorded_at: new Date(),
             activity_category: "bike",
             effort_type: "power",
+            source_series: "power",
             duration_seconds: 300,
+            source_artifact_id: "00000000-0000-0000-0000-000000000000",
+            source_revision: 1,
+            start_offset_ms: 0,
+            end_offset_ms: 300_000,
+            window_coverage: 1,
+            max_gap_seconds: 2,
             unit: "watts",
             value: 250,
             source: "derived",
             method: "activity_file_best_effort",
             calculation_version: "best-effort-extraction-v1",
-            provenance: { observation_id: "effort-1" },
+            provenance: { observation_id: "effort-1", source_series: "power" },
           },
         ],
         detectedLTHR: null,

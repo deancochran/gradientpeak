@@ -1,18 +1,26 @@
-import { ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION } from "@repo/core";
+import {
+  ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
+  createUnavailableAthletePerformanceTargetFacts,
+} from "@repo/core";
 import { profileGoals, profiles } from "@repo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readPublishedAthleteStateSnapshotData } from "../../repositories/athlete-state-repository";
 import { getGoalAssessment } from "./goal-assessment";
 
+const getAthleteThresholdTargetFactsAsOf = vi.hoisted(() => vi.fn());
+
 vi.mock("../../repositories/athlete-state-repository", () => ({
   readPublishedAthleteStateSnapshotData: vi.fn(),
+}));
+vi.mock("../performance-model/get-athlete-performance-model-as-of", () => ({
+  getAthleteThresholdTargetFactsAsOf,
 }));
 
 const profileId = "11111111-1111-4111-8111-111111111111";
 const goalId = "22222222-2222-4222-8222-222222222222";
 
 function dbWithGoal(input: { planningTimezone?: string; targetDate?: string } = {}) {
-  return {
+  const snapshotExecutor = {
     select: () => {
       let table: unknown;
       const builder = {
@@ -43,6 +51,12 @@ function dbWithGoal(input: { planningTimezone?: string; targetDate?: string } = 
       };
       return builder;
     },
+  };
+  return {
+    ...snapshotExecutor,
+    $client: {},
+    transaction: async (read: (executor: typeof snapshotExecutor) => Promise<unknown>) =>
+      read(snapshotExecutor),
   } as never;
 }
 
@@ -101,6 +115,11 @@ function mockSnapshot(
 
 beforeEach(() => {
   vi.mocked(readPublishedAthleteStateSnapshotData).mockReset();
+  getAthleteThresholdTargetFactsAsOf
+    .mockReset()
+    .mockImplementation(({ athleteId, asOf }) =>
+      createUnavailableAthletePerformanceTargetFacts(asOf.toISOString(), athleteId),
+    );
 });
 
 describe("goal assessment", () => {

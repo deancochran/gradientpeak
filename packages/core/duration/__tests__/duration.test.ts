@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { activityPlanStructureSchema, compileActivityPlan } from "../../activity-plan";
 import {
-  athletePerformanceTargetFactsSchema,
   createUnavailableAthletePerformanceTargetFacts,
+  materializeAthletePerformanceTargetFacts,
 } from "../../performance-model";
 import {
   activityPlanDurationEstimateSchema,
@@ -21,25 +21,27 @@ const ids = Array.from(
 
 const asOf = "2026-07-12T12:00:00.000Z";
 const unavailableTargets = createUnavailableAthletePerformanceTargetFacts(asOf);
-const runPerformanceTargets = athletePerformanceTargetFactsSchema.parse({
-  ...unavailableTargets,
-  running: {
-    planningThresholdPace: {
-      ...unavailableTargets.running.planningThresholdPace,
+const runPerformanceTargets = materializeAthletePerformanceTargetFacts({
+  athleteId: unavailableTargets.athleteId,
+  asOf,
+  thresholds: [
+    {
+      id: "run-threshold-1",
       status: "available",
-      value: 300,
-      calculationVersion: "duration-test-v1",
-      sourceEvidenceIds: ["run-pace-1"],
-      evidenceTime: {
-        observedFrom: "2026-07-10T12:00:00.000Z",
-        observedThrough: "2026-07-10T12:00:00.000Z",
-        computedAt: asOf,
-      },
-      confidence: "high",
-      expiresAt: "2026-10-10T12:00:00.000Z",
-      reasons: [],
+      activityCategory: "run",
+      metric: "speed",
+      unit: "meters_per_second",
+      method: "run_speed_30m",
+      value: 1_000 / 300,
+      effectiveAt: "2026-07-10T12:00:00.000Z",
+      policyVersion: "threshold-policy-v1",
+      state: "confirmed",
+      confidence: 1,
+      sourceEvaluationIds: ["run-evaluation-1"],
+      sourceEffortIds: ["run-effort-1"],
+      sourceActivityIds: ["run-activity-1"],
     },
-  },
+  ],
 });
 
 function singleStepPlan(input: {

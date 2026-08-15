@@ -24,6 +24,10 @@ function createHttpCaller(headerValue?: string, duplicate = false) {
 }
 
 describe("contract epoch", () => {
+  it("pins the current hard-cut epoch", () => {
+    expect(CURRENT_CONTRACT_EPOCH).toBe(2);
+  });
+
   it("accepts the exact current epoch for public and protected procedures", async () => {
     const caller = createHttpCaller(String(CURRENT_CONTRACT_EPOCH));
 
@@ -36,7 +40,7 @@ describe("contract epoch", () => {
     "",
     "01",
     "1.0",
-    "2",
+    "1",
     "client-build-999",
   ])("rejects an unsupported epoch value %#", async (headerValue) => {
     await expect(createHttpCaller(headerValue).publicEndpoint()).rejects.toMatchObject({
@@ -46,7 +50,9 @@ describe("contract epoch", () => {
   });
 
   it("rejects duplicate epoch header values", async () => {
-    await expect(createHttpCaller("1", true).publicEndpoint()).rejects.toMatchObject({
+    await expect(
+      createHttpCaller(String(CURRENT_CONTRACT_EPOCH), true).publicEndpoint(),
+    ).rejects.toMatchObject({
       code: "PRECONDITION_FAILED",
       message: "Client contract epoch is unsupported",
     });

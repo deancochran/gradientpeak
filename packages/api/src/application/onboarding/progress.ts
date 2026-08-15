@@ -58,8 +58,10 @@ const terminalStates = new Set<OnboardingProviderState>([
   "complete_with_limitations",
 ]);
 
-function providerMilestone(state: OnboardingProviderState): Milestone {
+function providerMilestone(state: OnboardingProviderState, importedCount: number): Milestone {
   if (state === "importing") return 50;
+  // A queued retry after an imported history must not make the visible progress move backwards.
+  if (state === "queued" && importedCount > 0) return 50;
   if (state === "deriving") return 75;
   if (terminalStates.has(state)) return 100;
   return 25;
@@ -213,7 +215,7 @@ export function deriveOnboardingProgress(
       .map((provider) =>
         provider.state === "recovery_required"
           ? (recoveryMilestones.get(provider.provider) ?? 25)
-          : providerMilestone(provider.state),
+          : providerMilestone(provider.state, provider.progress.imported_count),
       );
     const percent = (milestones.length > 0 ? Math.min(...milestones) : 25) as Milestone;
     const message = `${label} needs attention before setup can continue.`;
@@ -253,7 +255,7 @@ export function deriveOnboardingProgress(
 
   const unresolvedMilestones = orderedProviders
     .filter((provider) => !terminalStates.has(provider.state))
-    .map((provider) => providerMilestone(provider.state));
+    .map((provider) => providerMilestone(provider.state, provider.progress.imported_count));
   const percent = (
     unresolvedMilestones.length > 0 ? Math.min(...unresolvedMilestones) : 100
   ) as Milestone;

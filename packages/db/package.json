@@ -19,6 +19,10 @@
     "./validation": {
       "types": "./src/validation/index.ts",
       "default": "./src/validation/index.ts"
+    },
+    "./testing/disposable-database": {
+      "types": "./scripts/disposable-database-test-harness.ts",
+      "default": "./scripts/disposable-database-test-harness.ts"
     }
   },
   "scripts": {

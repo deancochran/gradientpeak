@@ -107,6 +107,7 @@ describe("canonical activity-file best-effort evidence", () => {
   it("persists canonical units and import provenance", () => {
     expect(rowsFor("bike")[0]).toMatchObject({
       effort_type: "power",
+      source_series: "power",
       unit: "watts",
       source: "imported",
       method: "activity_file_best_effort",
@@ -121,6 +122,7 @@ describe("canonical activity-file best-effort evidence", () => {
     });
     expect(rowsFor("swim")[0]).toMatchObject({
       effort_type: "speed",
+      source_series: "swim_speed",
       unit: "meters_per_second",
     });
   });
@@ -144,44 +146,6 @@ describe("canonical activity-file best-effort evidence", () => {
     });
   });
 
-  it("retains exact pool-segment observations as CSS protocol source efforts", () => {
-    const calculation = calculateActivityFileStreamDerivedCalculations({
-      ...base,
-      activityCategory: "swim",
-      distance: 400,
-      duration: 340,
-      activeDuration: 320,
-      segmentEndOffsetSeconds: 340,
-      swimmingEvidenceContext: {
-        environment: "pool",
-        timingBasis: "pool_length_timing",
-        poolLengthMeters: 25,
-      },
-      streamMetadata: collectActivityFileStreamMetadata([]),
-    });
-
-    expect(calculation.effortsToInsert).toContainEqual(
-      expect.objectContaining({
-        activity_id: base.activityId,
-        segment_id: base.segmentId,
-        distance_meters: 400,
-        duration_seconds: 320,
-        value: 1.25,
-        source: "imported",
-        method: "activity_file_swim_distance_effort",
-        calculation_version: "activity-file-swim-distance-effort-v1",
-        provenance: expect.objectContaining({
-          protocol_id: `css_400m_200m:${base.activityId}`,
-          protocol: "css_400m_200m",
-          derived_from: "activity_file_swim_segment",
-          environment: "pool",
-          timing_basis: "pool_length_timing",
-          pool_length_meters: 25,
-        }),
-      }),
-    );
-  });
-
   it("persists maximum sustained HR curve points without inventing trial semantics", () => {
     const rows = calculationsFor({
       activityCategory: "bike",
@@ -195,6 +159,7 @@ describe("canonical activity-file best-effort evidence", () => {
     expect(rows).toContainEqual(
       expect.objectContaining({
         effort_type: "heart_rate",
+        source_series: "heart_rate",
         duration_seconds: 1200,
         value: 170,
         unit: "bpm",
@@ -238,7 +203,7 @@ describe("canonical activity-file best-effort evidence", () => {
 
     expect(
       rows.find((row) => row.effort_type === metric && row.duration_seconds === 5),
-    ).toMatchObject({ start_offset: 4 });
+    ).toMatchObject({ start_offset_ms: 4_000 });
   });
 
   it("retains exact fractional effort boundaries in provenance when the offset column quantizes", () => {
@@ -256,14 +221,15 @@ describe("canonical activity-file best-effort evidence", () => {
     const effort = rows.find((row) => row.effort_type === "power" && row.duration_seconds === 5);
 
     expect(effort).toMatchObject({
-      start_offset: 0,
+      start_offset_ms: 500,
+      end_offset_ms: 5_500,
       recorded_at: new Date(5_500),
       provenance: {
         exact_window_start_timestamp_seconds: 0.5,
         exact_window_end_timestamp_seconds: 5.5,
         exact_window_start_offset_seconds: 0.5,
         exact_window_end_offset_seconds: 5.5,
-        persisted_start_offset_quantization: "floor_seconds_v1",
+        persisted_start_offset_quantization: "nearest_millisecond_v1",
       },
     });
   });
@@ -334,7 +300,7 @@ describe("canonical activity-file best-effort evidence", () => {
     });
   });
 
-  it("uses grade-adjusted running speed when complete and raw speed when grade evidence is unavailable", () => {
+  it("persists grade-adjusted and raw running speed independently when both are available", () => {
     const graded = calculationsFor({
       activityCategory: "run",
       records: Array.from({ length: 61 }, (_, second) => ({
@@ -351,12 +317,19 @@ describe("canonical activity-file best-effort evidence", () => {
       })),
     });
 
+    expect(
+      graded.effortsToInsert
+        .filter((effort) => effort.duration_seconds === 60)
+        .map((effort) => effort.source_series),
+    ).toEqual(["grade_adjusted_speed", "raw_speed"]);
     expect(graded.effortsToInsert[0]).toMatchObject({
       effort_type: "speed",
+      source_series: "grade_adjusted_speed",
       provenance: { source_series: "grade_adjusted_speed" },
     });
     expect(rawFallback.effortsToInsert[0]).toMatchObject({
       effort_type: "speed",
+      source_series: "raw_speed",
       value: 4,
       provenance: { source_series: "raw_speed" },
     });

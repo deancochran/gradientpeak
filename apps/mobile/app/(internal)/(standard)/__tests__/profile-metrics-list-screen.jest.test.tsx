@@ -1,4 +1,8 @@
 import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
+import {
+  secondsPer100MetersToMetersPerSecond,
+  secondsPerKilometerToMetersPerSecond,
+} from "@repo/core/units";
 import React from "react";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
@@ -153,13 +157,14 @@ describe("profile metrics list screen", () => {
     mockPublishedStateUseQuery.mockReset();
     const performanceTargets = buildPerformanceTargetFactsFixture({
       asOf: "2026-07-31T12:00:00.000Z",
-      planningThresholdPowerWatts: 285,
-      planningThresholdPaceSecondsPerKm: 240,
-      swimmingCssSecondsPer100m: 95,
+      thresholdEffectiveAt: "2025-01-01T12:00:00.000Z",
+      bikeThresholdWatts: 285,
+      runThresholdMetersPerSecond: secondsPerKilometerToMetersPerSecond(240),
+      swimThresholdMetersPerSecond: secondsPer100MetersToMetersPerSecond(95),
     });
     mockPublishedStateUseQuery.mockReturnValue({
       data: {
-        status: { freshness: "fresh", rebuildStatus: "fresh" },
+        status: { freshness: "stale", rebuildStatus: "stale" },
         publishedState: { publishedAt: performanceTargets.asOf, performanceTargets },
       },
       error: null,
@@ -203,14 +208,14 @@ describe("profile metrics list screen", () => {
     expect(screen.getByTestId("profile-metric-type-max_hr")).toBeTruthy();
   });
 
-  it("loads and renders the published performance target summary", () => {
+  it("loads and renders stale published performance thresholds as usable", () => {
     renderNative(<ProfileMetricsListScreen />);
 
     expect(screen.getByTestId("performance-model-summary")).toBeTruthy();
     expect(screen.getByTestId("performance-model-bike")).toBeTruthy();
     expect(screen.getByTestId("performance-model-run")).toBeTruthy();
     expect(screen.getByTestId("performance-model-swim")).toBeTruthy();
-    expect(screen.getByTestId("performance-model-item-bike_five_second_power")).toBeTruthy();
+    expect(screen.getByTestId("performance-model-item-bike_threshold_power")).toBeTruthy();
     expect(mockPublishedStateUseQuery).toHaveBeenCalledWith(
       { profileId: "user-1", sections: { publishedState: true, status: true } },
       { enabled: true },

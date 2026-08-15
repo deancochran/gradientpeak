@@ -14,6 +14,37 @@ export function createActivityArtifactRetentionService(
   db: DbClient,
   storage: ActivityArtifactStorage,
 ) {
+  async function listExclusiveArtifactIdsForActivity(input: {
+    activityId: string;
+    profileId: string;
+    limit?: number;
+  }) {
+    const otherLinks = alias(activityArtifactLinks, "other_activity_artifact_links");
+    return db
+      .select({ id: activityArtifacts.id })
+      .from(activityArtifactLinks)
+      .innerJoin(activityArtifacts, eq(activityArtifacts.id, activityArtifactLinks.artifact_id))
+      .where(
+        and(
+          eq(activityArtifactLinks.activity_id, input.activityId),
+          eq(activityArtifactLinks.profile_id, input.profileId),
+          notExists(
+            db
+              .select({ value: sql`1` })
+              .from(otherLinks)
+              .where(
+                and(
+                  eq(otherLinks.artifact_id, activityArtifactLinks.artifact_id),
+                  ne(otherLinks.activity_id, input.activityId),
+                ),
+              ),
+          ),
+        ),
+      )
+      .orderBy(asc(activityArtifactLinks.ordinal), asc(activityArtifacts.id))
+      .limit(Math.max(1, Math.min(input.limit ?? 100, 10_000)));
+  }
+
   async function deleteForProfile(input: {
     artifactId: string;
     profileId: string;
@@ -76,6 +107,7 @@ export function createActivityArtifactRetentionService(
 
   return {
     deleteForProfile,
+    listExclusiveArtifactIdsForActivity,
 
     async resumeDeletionForProfile(profileId: string, batchSize = 100) {
       const incomplete = await db
@@ -93,34 +125,9 @@ export function createActivityArtifactRetentionService(
     },
 
     async deleteForActivity(input: { activityId: string; profileId: string }) {
-      const otherLinks = alias(activityArtifactLinks, "other_activity_artifact_links");
       let deleted = 0;
       while (true) {
-        const linked = await db
-          .select({ id: activityArtifacts.id })
-          .from(activityArtifactLinks)
-          .innerJoin(activityArtifacts, eq(activityArtifacts.id, activityArtifactLinks.artifact_id))
-          .where(
-            and(
-              eq(activityArtifactLinks.activity_id, input.activityId),
-              eq(activityArtifactLinks.profile_id, input.profileId),
-              // Content-addressed artifacts may be shared by duplicate imports. The parent cascade
-              // removes this activity's link, but bytes remain while another activity needs them.
-              notExists(
-                db
-                  .select({ value: sql`1` })
-                  .from(otherLinks)
-                  .where(
-                    and(
-                      eq(otherLinks.artifact_id, activityArtifactLinks.artifact_id),
-                      ne(otherLinks.activity_id, input.activityId),
-                    ),
-                  ),
-              ),
-            ),
-          )
-          .orderBy(asc(activityArtifactLinks.ordinal), asc(activityArtifacts.id))
-          .limit(100);
+        const linked = await listExclusiveArtifactIdsForActivity(input);
         if (linked.length === 0) return deleted;
         deleted += await deleteArtifactRows(linked, input.profileId);
       }

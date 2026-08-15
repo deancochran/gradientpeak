@@ -3,6 +3,7 @@ import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { calculateProvisionalRecordingMetrics } from "@repo/core/recording-metrics";
 import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { SWIMMING_HEART_RATE_NUMERICAL_TRUST_FIXTURES_V1 as fixtures } from "@repo/core/testing/swimming-heart-rate-numerical-trust";
+import { secondsPer100MetersToMetersPerSecond } from "@repo/core/units";
 import { describe, expect, it } from "vitest";
 
 import { calculateActivityFileHeartRateEvidence } from "./heart-rate-evidence";
@@ -18,7 +19,24 @@ const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ sampl
 function performanceTargets(asOf: string) {
   return buildPerformanceTargetFactsFixture({
     asOf,
-    swimmingCssSecondsPer100m: fixtures.swimTiming.thresholdHour.cssSecondsPer100m,
+    swimThresholdMetersPerSecond: secondsPer100MetersToMetersPerSecond(
+      fixtures.swimTiming.thresholdHour.thresholdPaceSecondsPer100m,
+    ),
+    lthrBpm: {
+      bike: fixtures.heartRate.lthrBpm,
+      run: fixtures.heartRate.lthrBpm,
+      swim: fixtures.heartRate.lthrBpm,
+    },
+    calculationVersion: "phase5-threshold-v1",
+  });
+}
+
+function completedPerformanceTargets(asOf: string) {
+  return buildPerformanceTargetFactsFixture({
+    asOf,
+    swimThresholdMetersPerSecond: secondsPer100MetersToMetersPerSecond(
+      fixtures.swimTiming.thresholdHour.thresholdPaceSecondsPer100m,
+    ),
     lthrBpm: {
       bike: fixtures.heartRate.lthrBpm,
       run: fixtures.heartRate.lthrBpm,
@@ -74,7 +92,7 @@ describe("Phase 5 imported/live swimming and HR parity", () => {
       },
       context: {
         profileMetrics: {},
-        performanceTargets: performanceTargets(finishedAt.toISOString()),
+        performanceTargets: completedPerformanceTargets(finishedAt.toISOString()),
         recentEfforts: [],
         profile: {},
       },
@@ -118,7 +136,7 @@ describe("Phase 5 imported/live swimming and HR parity", () => {
     }
   });
 
-  it("keeps active-only CSS Load numeric while final analysis remains authoritative", () => {
+  it("keeps active-only threshold Load numeric while final analysis remains authoritative", () => {
     const fixture = fixtures.swimTiming.thresholdHour;
     const finishedAt = new Date(STARTED_AT.getTime() + fixture.elapsedDurationSeconds * 1_000);
     const activeRecords = Array.from(
@@ -176,7 +194,7 @@ describe("Phase 5 imported/live swimming and HR parity", () => {
       },
       context: {
         profileMetrics: {},
-        performanceTargets: performanceTargets(finishedAt.toISOString()),
+        performanceTargets: completedPerformanceTargets(finishedAt.toISOString()),
         recentEfforts: [],
         profile: {},
       },

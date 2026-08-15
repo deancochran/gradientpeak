@@ -134,10 +134,10 @@ function CalendarIndexPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
           <Button asChild>
-            <a href={`/calendar/new?date=${date}&type=custom`}>
+            <Link to="/calendar/new" search={{ date, type: "custom" }}>
               <Plus className="mr-2 h-4 w-4" />
               Create
-            </a>
+            </Link>
           </Button>
           <Button
             aria-label="Previous calendar period"
@@ -353,12 +353,13 @@ function CalendarIndexPage() {
                           </a>
                         ),
                       )}
-                      <a
-                        href={`/calendar/new?date=${dateKey}&type=custom`}
+                      <Link
+                        to="/calendar/new"
+                        search={{ date: dateKey, type: "custom" }}
                         className="block text-xs text-primary hover:underline"
                       >
                         Add
-                      </a>
+                      </Link>
                     </div>
                   </div>
                 );

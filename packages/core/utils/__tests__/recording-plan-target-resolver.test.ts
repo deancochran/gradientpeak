@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compileActivityPlan } from "../../activity-plan";
-import {
-  athletePerformanceTargetFactsSchema,
-  createUnavailableAthletePerformanceTargetFacts,
-} from "../../performance-model";
 import type { ActivityTarget } from "../../targets";
+import { buildPerformanceTargetFactsFixture } from "../../testing/performance-model";
 import {
   resolveActivityOccurrenceTrainerIntents,
   resolvePerformanceTargetValue,
@@ -20,62 +17,18 @@ function targets(
     runMaxHr?: number;
   } = {},
 ) {
-  const unavailable = createUnavailableAthletePerformanceTargetFacts(asOf);
-  const heartRate = (metric: "lthr" | "max_hr", valueBpm: number | undefined) =>
-    valueBpm === undefined
-      ? metric === "lthr"
-        ? unavailable.heartRate.run.lthr
-        : unavailable.heartRate.run.maxHr
-      : {
-          ...(metric === "lthr" ? unavailable.heartRate.run.lthr : unavailable.heartRate.run.maxHr),
-          status: "available" as const,
-          valueBpm,
-          observedAt: "2026-05-30T00:00:00.000Z",
-          expiresAt: "2026-08-28T00:00:00.000Z",
-          sourceEvidenceId: `run-${metric}`,
-          sourceActivityId: `run-${metric}-activity`,
-          source: "activity_file" as const,
-          method:
-            metric === "lthr"
-              ? ("activity_file_lthr_detection" as const)
-              : ("max_hr_progressive_test_v1" as const),
-          calculationVersion:
-            metric === "lthr"
-              ? ("activity-file-lthr-v1" as const)
-              : ("max_hr_progressive_test_v1" as const),
-          reason: null,
-        };
-  return athletePerformanceTargetFactsSchema.parse({
-    ...unavailable,
-    cycling: {
-      planningThresholdPower:
-        input.power === undefined
-          ? unavailable.cycling.planningThresholdPower
-          : {
-              ...unavailable.cycling.planningThresholdPower,
-              status: input.powerState === "provisional" ? "partial" : "available",
-              calibrationState: input.powerState ?? "confirmed",
-              value: input.power,
-              calculationVersion: "recording-target-test-v1",
-              sourceEvidenceIds: ["power-evidence"],
-              evidenceTime: {
-                observedFrom: "2026-05-30T00:00:00.000Z",
-                observedThrough: "2026-05-30T00:00:00.000Z",
-                computedAt: asOf,
-              },
-              confidence: (input.powerState ?? "confirmed") === "confirmed" ? "high" : "low",
-              expiresAt: "2026-08-28T00:00:00.000Z",
-              reasons: [],
-            },
-    },
-    heartRate: {
-      ...unavailable.heartRate,
-      run: {
-        lthr: heartRate("lthr", input.runLthr),
-        maxHr: heartRate("max_hr", input.runMaxHr),
-      },
-    },
+  const facts = buildPerformanceTargetFactsFixture({
+    asOf,
+    thresholdEffectiveAt: "2026-05-30T00:00:00.000Z",
+    ...(input.power === undefined ? {} : { bikeThresholdWatts: input.power }),
+    lthrBpm: input.runLthr === undefined ? {} : { run: input.runLthr },
+    maxHrBpm: input.runMaxHr === undefined ? {} : { run: input.runMaxHr },
   });
+  if (facts.thresholds.bike.status === "available" && input.powerState) {
+    facts.thresholds.bike.state = input.powerState === "stale" ? "confirmed" : input.powerState;
+    facts.thresholds.bike.freshness = input.powerState === "stale" ? "stale" : "fresh";
+  }
+  return facts;
 }
 
 function occurrence(activity_category: "run" | "bike" | "swim", targets: ActivityTarget[]) {
@@ -186,7 +139,7 @@ describe("resolveActivityOccurrenceTrainerIntents", () => {
     expect(resolution.unresolvedTargets).toEqual([{ type: "%FTP", intensity: 80 }]);
   });
 
-  it("does not export a bike threshold into a wrong-sport target", () => {
+  it("does not export a bike threshold into a mismatched activity-category target", () => {
     expect(
       resolvePerformanceTargetValue({
         target: { type: "%FTP", intensity: 80 },

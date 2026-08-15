@@ -1,7 +1,6 @@
 import {
   COMPLETED_ACTIVITY_PERFORMANCE_TARGET_SNAPSHOT_VERSION,
   completedSegmentSummarySchema,
-  createUnavailableAthletePerformanceTargetFacts,
 } from "@repo/core";
 import {
   type CyclingNormalizedPowerResult,
@@ -31,12 +30,11 @@ type NumericNormalizedPowerResult = Exclude<
 >;
 const NORMALIZED_POWER_BY_DURATION = new Map<number, NumericNormalizedPowerResult>();
 
-function unavailableTargets(asOf: Date, reason?: string) {
-  const targets = createUnavailableAthletePerformanceTargetFacts(asOf.toISOString(), PROFILE_ID);
-  if (reason !== undefined) {
-    targets.cycling.planningThresholdPower.reasons = [reason];
-  }
-  return targets;
+function unavailableTargets(asOf: Date, _reason?: string) {
+  return buildPerformanceTargetFactsFixture({
+    asOf: asOf.toISOString(),
+    athleteId: PROFILE_ID,
+  });
 }
 
 function normalizedPowerForDuration(durationSeconds: number): NumericNormalizedPowerResult {
@@ -187,7 +185,7 @@ function store() {
       buildPerformanceTargetFactsFixture({
         athleteId: PROFILE_ID,
         asOf: asOf.toISOString(),
-        planningThresholdPowerWatts: 250,
+        bikeThresholdWatts: 250,
       }),
     ),
     getContextSnapshot: vi.fn(async () => snapshot),
@@ -210,8 +208,8 @@ function contextRequestKeyForTest(request: ActivityAnalysisContextEvidenceReques
 function heartRateStore(
   input: {
     lthrCategory?: "bike" | "run";
-    planningThresholdPaceSecondsPerKm?: number;
-    planningThresholdPowerWatts?: number;
+    runThresholdMetersPerSecond?: number;
+    bikeThresholdWatts?: number;
   } = {},
 ) {
   const lthrCategory = input.lthrCategory ?? "run";
@@ -222,12 +220,14 @@ function heartRateStore(
         asOf: asOf.toISOString(),
         heartRateObservedAt: "2026-06-15T10:30:00.000Z",
         lthrBpm: { [lthrCategory]: 150 },
-        ...(input.planningThresholdPaceSecondsPerKm === undefined
+        ...(input.runThresholdMetersPerSecond === undefined
           ? {}
-          : { planningThresholdPaceSecondsPerKm: input.planningThresholdPaceSecondsPerKm }),
-        ...(input.planningThresholdPowerWatts === undefined
+          : {
+              runThresholdMetersPerSecond: input.runThresholdMetersPerSecond,
+            }),
+        ...(input.bikeThresholdWatts === undefined
           ? {}
-          : { planningThresholdPowerWatts: input.planningThresholdPowerWatts }),
+          : { bikeThresholdWatts: input.bikeThresholdWatts }),
       }),
     ),
     loadContextEvidence: vi.fn(
@@ -279,43 +279,16 @@ function heartRateStore(
   };
 }
 
-function cssStore(generic = false) {
-  const recordedAt = new Date("2026-06-15T10:30:00.000Z");
-  const effort400Id = "22222222-2222-4222-8222-222222222222";
-  const effort200Id = "33333333-3333-4333-8333-333333333333";
-  const operationId = "44444444-4444-4444-8444-444444444444";
-  const testId = "55555555-5555-4555-8555-555555555555";
-  const method = generic ? "generic_swim_test" : "css_400m_200m_test";
-  const effort = (id: string, distance: 200 | 400, duration: number) => ({
-    id,
-    activity_id: null,
-    activity_category: "swim" as const,
-    duration_seconds: duration,
-    distance_meters: distance,
-    effort_type: "speed" as const,
-    recorded_at: recordedAt,
-    unit: "meters_per_second",
-    value: distance / duration,
-    source: "test",
-    method,
-    calculation_version: "css_400m_200m_v1",
-    provenance: {
-      operation_id: operationId,
-      test_id: testId,
-      protocol: "css_400m_200m",
-      distance_meters: distance,
-      derived_from: "manual_test_result",
-    },
-  });
+function swimThresholdStore(available = true) {
   return {
     getPerformanceTargetsAsOf: vi.fn(async ({ asOf }: { asOf: Date }) =>
-      generic
-        ? unavailableTargets(asOf)
-        : buildPerformanceTargetFactsFixture({
+      available
+        ? buildPerformanceTargetFactsFixture({
             athleteId: PROFILE_ID,
             asOf: asOf.toISOString(),
-            swimmingCssSecondsPer100m: 100,
-          }),
+            swimThresholdMetersPerSecond: 1,
+          })
+        : unavailableTargets(asOf),
     ),
     loadContextEvidence: vi.fn(
       async () =>
@@ -325,7 +298,7 @@ function cssStore(generic = false) {
             {
               profile: { dob: null, gender: null },
               profileMetrics: [],
-              recentEfforts: [effort(effort400Id, 400, 300), effort(effort200Id, 200, 100)],
+              recentEfforts: [],
             },
           ],
         ]),
@@ -578,14 +551,14 @@ describe("segment-derived activity analysis", () => {
     const capturedTargets = buildPerformanceTargetFactsFixture({
       athleteId: PROFILE_ID,
       asOf: input.started_at.toISOString(),
-      planningThresholdPowerWatts: 250,
+      bikeThresholdWatts: 250,
     });
     const changedStore = store();
     changedStore.getPerformanceTargetsAsOf.mockImplementation(async ({ asOf }) =>
       buildPerformanceTargetFactsFixture({
         athleteId: PROFILE_ID,
         asOf: asOf.toISOString(),
-        planningThresholdPowerWatts: 400,
+        bikeThresholdWatts: 400,
       }),
     );
 
@@ -718,7 +691,7 @@ describe("segment-derived activity analysis", () => {
           buildPerformanceTargetFactsFixture({
             athleteId: PROFILE_ID,
             asOf: request.asOf.toISOString(),
-            planningThresholdPowerWatts: 250,
+            bikeThresholdWatts: 250,
           }),
         ),
     );
@@ -772,7 +745,9 @@ describe("segment-derived activity analysis", () => {
     ).toBe(true);
     expect(summaries.at(-1)?.common_load).toMatchObject({
       status: "available",
-      thresholdEvidence: { sourceFingerprint: "planning-threshold-power-evidence" },
+      thresholdEvidence: {
+        sourceFingerprint: "bike-threshold-test-fixture:bike-evaluation-test-fixture",
+      },
     });
   }, 15_000);
 
@@ -804,7 +779,7 @@ describe("segment-derived activity analysis", () => {
         ? buildPerformanceTargetFactsFixture({
             athleteId: PROFILE_ID,
             asOf: asOf.toISOString(),
-            planningThresholdPowerWatts: 250,
+            bikeThresholdWatts: 250,
           })
         : unavailableTargets(asOf),
     );
@@ -857,7 +832,7 @@ describe("segment-derived activity analysis", () => {
     });
   });
 
-  it("fails completed-activity calibration closed when the bulk evidence sentinel is reached", async () => {
+  it("does not treat an old evidence sentinel as threshold authority", async () => {
     const input = activity([
       segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000),
     ]);
@@ -903,19 +878,19 @@ describe("segment-derived activity analysis", () => {
     });
 
     expect(summary).toMatchObject({
-      common_load: { status: "unavailable", reason: "evidence_truncated" },
+      common_load: { status: "unavailable", reason: "threshold_missing" },
       observationQuantification: {
         members: [
           {
             kind: "observation",
-            commonLoad: { status: "unavailable", reason: "evidence_truncated" },
+            commonLoad: { status: "unavailable", reason: "threshold_missing" },
           },
         ],
       },
     });
   });
 
-  it("preserves bulk reader overflow as evidence-truncated completed Load", async () => {
+  it("does not translate bulk reader overflow into canonical threshold facts", async () => {
     const input = activity([
       segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000),
     ]);
@@ -933,17 +908,25 @@ describe("segment-derived activity analysis", () => {
 
     expect(summary?.common_load).toMatchObject({
       status: "unavailable",
-      reason: "evidence_truncated",
+      reason: "threshold_missing",
     });
   });
 
-  it("preserves stale calibration as stale completed Load", async () => {
+  it("keeps a stale canonical threshold usable and visibly stale", async () => {
     const input = activity([
       segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000),
     ]);
     const staleStore = {
       getPerformanceTargetsAsOf: vi.fn(async ({ asOf }: { asOf: Date }) =>
-        unavailableTargets(asOf, "stale_evidence"),
+        (() => {
+          const effectiveAt = new Date(asOf.getTime() - 91 * 86_400_000).toISOString();
+          return buildPerformanceTargetFactsFixture({
+            athleteId: PROFILE_ID,
+            asOf: asOf.toISOString(),
+            thresholdEffectiveAt: effectiveAt,
+            bikeThresholdWatts: 250,
+          });
+        })(),
       ),
       loadContextEvidence: vi.fn(
         async () =>
@@ -967,8 +950,9 @@ describe("segment-derived activity analysis", () => {
     });
 
     expect(summary?.common_load).toMatchObject({
-      status: "unavailable",
-      reason: "stale_threshold",
+      status: "available",
+      thresholdEvidence: { freshness: "stale" },
+      quality: { stale: true },
     });
   });
 
@@ -1094,7 +1078,7 @@ describe("segment-derived activity analysis", () => {
     expect(summaries[0]?.common_load).toMatchObject({ status: "unavailable" });
   });
 
-  it("uses corrected active-duration swim speed for CSS-backed Load", async () => {
+  it("uses corrected active-duration swim speed for threshold-backed Load", async () => {
     const activityId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const segmentId = "11111111-1111-4111-8111-111111111111";
     const activeSeconds = 3_622;
@@ -1151,7 +1135,7 @@ describe("segment-derived activity analysis", () => {
         buildPerformanceTargetFactsFixture({
           athleteId: PROFILE_ID,
           asOf: asOf.toISOString(),
-          swimmingCssSecondsPer100m: 100,
+          swimThresholdMetersPerSecond: 1,
         }),
       ),
       loadContextEvidence: vi.fn(
@@ -1162,50 +1146,7 @@ describe("segment-derived activity analysis", () => {
               {
                 profile: { dob: null, gender: null },
                 profileMetrics: [],
-                recentEfforts: [
-                  {
-                    id: "33333333-3333-4333-8333-333333333333",
-                    activity_id: null,
-                    recorded_at: new Date("2026-06-30T08:00:00.000Z"),
-                    activity_category: "swim",
-                    effort_type: "speed",
-                    duration_seconds: 300,
-                    distance_meters: 400,
-                    unit: "meters_per_second",
-                    value: 400 / 300,
-                    source: "test",
-                    method: "css_400m_200m_test",
-                    calculation_version: "css_400m_200m_v1",
-                    provenance: {
-                      operation_id: "11111111-1111-4111-8111-111111111111",
-                      test_id: "22222222-2222-4222-8222-222222222222",
-                      protocol: "css_400m_200m",
-                      distance_meters: 400,
-                      derived_from: "manual_test_result",
-                    },
-                  },
-                  {
-                    id: "44444444-4444-4444-8444-444444444444",
-                    activity_id: null,
-                    recorded_at: new Date("2026-06-30T08:00:00.000Z"),
-                    activity_category: "swim",
-                    effort_type: "speed",
-                    duration_seconds: 100,
-                    distance_meters: 200,
-                    unit: "meters_per_second",
-                    value: 2,
-                    source: "test",
-                    method: "css_400m_200m_test",
-                    calculation_version: "css_400m_200m_v1",
-                    provenance: {
-                      operation_id: "11111111-1111-4111-8111-111111111111",
-                      test_id: "22222222-2222-4222-8222-222222222222",
-                      protocol: "css_400m_200m",
-                      distance_meters: 200,
-                      derived_from: "manual_test_result",
-                    },
-                  },
-                ],
+                recentEfforts: [],
               },
             ],
           ]),
@@ -1399,7 +1340,7 @@ describe("segment-derived activity analysis", () => {
     });
 
     const [summary] = await buildActivitySegmentDerivedSummaries({
-      store: heartRateStore({ planningThresholdPaceSecondsPerKm: 300 }) as never,
+      store: heartRateStore({ runThresholdMetersPerSecond: 1_000 / 300 }) as never,
       profileId: PROFILE_ID,
       activities: [activity([unavailable])],
     });
@@ -1512,7 +1453,7 @@ describe("segment-derived activity analysis", () => {
     const [summary] = await buildActivitySegmentDerivedSummaries({
       store: heartRateStore({
         lthrCategory: "bike",
-        planningThresholdPowerWatts: 250,
+        bikeThresholdWatts: 250,
       }) as never,
       profileId: PROFILE_ID,
       activities: [activity([unavailable])],
@@ -1526,13 +1467,13 @@ describe("segment-derived activity analysis", () => {
     });
   });
 
-  it("bulk completed-activity swim Load uses modeled CSS and rejects unmodeled generic evidence", async () => {
+  it("bulk completed-activity swim Load uses canonical threshold facts and rejects missing facts", async () => {
     const input = activity([
       segment("22222222-2222-4222-8222-222222222222", 0, "swim", 0, 3_600_000),
     ]);
 
     const [accepted] = await buildActivitySegmentDerivedSummaries({
-      store: cssStore() as never,
+      store: swimThresholdStore() as never,
       profileId: PROFILE_ID,
       activities: [input],
     });
@@ -1541,7 +1482,7 @@ describe("segment-derived activity analysis", () => {
     });
 
     const [generic] = await buildActivitySegmentDerivedSummaries({
-      store: cssStore(true) as never,
+      store: swimThresholdStore(false) as never,
       profileId: PROFILE_ID,
       activities: [input],
     });
@@ -1750,7 +1691,7 @@ describe("segment-derived activity analysis", () => {
     const selectedTargets = buildPerformanceTargetFactsFixture({
       athleteId: PROFILE_ID,
       asOf: startedAt.toISOString(),
-      planningThresholdPowerWatts: 250,
+      bikeThresholdWatts: 250,
     });
     const input = {
       ...activity([segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000)]),
@@ -1800,7 +1741,7 @@ describe("segment-derived activity analysis", () => {
       buildPerformanceTargetFactsFixture({
         athleteId: PROFILE_ID,
         asOf: startedAt.toISOString(),
-        planningThresholdPowerWatts: 250,
+        bikeThresholdWatts: 250,
       }),
     );
     const input = {

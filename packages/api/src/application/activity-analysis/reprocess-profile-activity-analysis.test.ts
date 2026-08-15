@@ -1,4 +1,5 @@
 import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
+import { secondsPerKilometerToMetersPerSecond } from "@repo/core/units";
 import { activities, profiles } from "@repo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -64,9 +65,27 @@ const available = {
   estimated: false,
 };
 
+const partial = {
+  status: "partial" as const,
+  model: "gradientpeak_relative_load" as const,
+  version: "1" as const,
+  activity_category: "run" as const,
+  contributingDurationSeconds: 1800,
+  knownDurationSeconds: 2400,
+  contributingActivityCount: 1,
+  partialActivityCount: 1,
+  unavailableActivityCount: 0,
+  totalActivityCount: 1,
+  activityCountCoverage: 1,
+  knownDurationCoverage: 0.75,
+  unknownDurationActivityCount: 0,
+  load: 42,
+  intensity: 0.8,
+};
+
 function createFakeDb(input: { profileExists?: boolean } = {}) {
   const originalSnapshot = Object.freeze({
-    contractVersion: "completed-activity-performance-target-snapshot-v1",
+    contractVersion: "completed-activity-performance-target-snapshot-v2",
     original: "immutable",
   });
   const activity = {
@@ -123,9 +142,13 @@ function createFakeDb(input: { profileExists?: boolean } = {}) {
     };
     return builder;
   });
+  const transactionExecutor = { select };
   const db = {
+    $client: {},
     select,
-    transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(db)),
+    transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback(transactionExecutor),
+    ),
   };
   return { activity, db: db as never, originalSnapshot, select, transaction: db.transaction };
 }
@@ -134,7 +157,8 @@ describe("manual profile activity analysis reprocessing", () => {
   const targets = buildPerformanceTargetFactsFixture({
     athleteId: PROFILE_ID,
     asOf: startedAt.toISOString(),
-    planningThresholdPaceSecondsPerKm: 300,
+    thresholdEffectiveAt: "2026-01-10T08:00:00.000Z",
+    runThresholdMetersPerSecond: secondsPerKilometerToMetersPerSecond(300),
   });
   const getPerformanceTargetsForRequests = vi.fn(async ({ requests }: { requests: unknown[] }) =>
     requests.map(() => targets),
@@ -178,6 +202,9 @@ describe("manual profile activity analysis reprocessing", () => {
       evaluatedSegments: 1,
       changedActivities: 1,
       appendedRevisions: 0,
+      availableSegments: 1,
+      partialSegments: 0,
+      unavailableSegments: 0,
       athleteStateRebuild: "not_requested",
     });
     expect(getPerformanceTargetsForRequests).toHaveBeenCalledWith({
@@ -193,6 +220,31 @@ describe("manual profile activity analysis reprocessing", () => {
     expect(mocks.materialize).not.toHaveBeenCalled();
     expect(mocks.claim).not.toHaveBeenCalled();
     expect(activity.performance_target_snapshot).toBe(originalSnapshot);
+  });
+
+  it("reports partial load separately from unavailable threshold results", async () => {
+    const { db } = createFakeDb();
+    mocks.buildSummaries.mockResolvedValueOnce([
+      {
+        activity_id: ACTIVITY_ID,
+        segment_id: SEGMENT_ID,
+        activity_category: "run",
+        common_load: partial,
+        observationQuantification: { members: [{ commonLoad: partial }] },
+      },
+    ]);
+
+    const result = await reprocessProfileActivityAnalysis(db, {
+      profileId: PROFILE_ID,
+      apply: false,
+    });
+
+    expect(result).toMatchObject({
+      availableSegments: 0,
+      partialSegments: 1,
+      unavailableSegments: 0,
+      unavailableReasons: {},
+    });
   });
 
   it("appends and materializes revisions before replaying only the named profile", async () => {
@@ -212,7 +264,8 @@ describe("manual profile activity analysis reprocessing", () => {
       athleteStateRebuild: "completed",
     });
     expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
-      isolationLevel: "read committed",
+      accessMode: "read write",
+      isolationLevel: "repeatable read",
     });
     expect(mocks.lock).toHaveBeenCalledWith(expect.anything(), PROFILE_ID);
     expect(mocks.append).toHaveBeenCalledWith(
@@ -224,6 +277,14 @@ describe("manual profile activity analysis reprocessing", () => {
         performanceTargets: targets,
       }),
     );
+    expect(mocks.append.mock.calls[0]?.[1]?.performanceTargets.thresholds.run).toMatchObject({
+      thresholdId: "run-threshold-test-fixture",
+      evaluationId: "run-evaluation-test-fixture",
+      method: "run_speed_30m",
+      effectiveAt: "2026-01-10T08:00:00.000Z",
+      calculationVersion: "threshold-policy-v1",
+      confidence: 0.9,
+    });
     expect(mocks.materialize).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -268,7 +329,8 @@ describe("manual profile activity analysis reprocessing", () => {
     });
 
     expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
-      isolationLevel: "read committed",
+      accessMode: "read write",
+      isolationLevel: "repeatable read",
     });
     const lockOrder = mocks.lock.mock.invocationCallOrder[0];
     const firstEvaluationReadOrder = select.mock.invocationCallOrder[0];

@@ -7,17 +7,13 @@ export type PerformanceModelSummaryItem = AthletePerformanceOverviewItem & {
   confidenceLabel: string;
   freshnessLabel: string;
   id:
-    | "bike_five_second_power"
-    | "bike_planning_threshold_power"
-    | "bike_estimated_threshold_duration"
-    | "bike_duration_retention"
+    | "bike_threshold_power"
     | "bike_lthr"
     | "bike_max_heart_rate"
-    | "run_planning_threshold_pace"
-    | "run_duration_retention"
+    | "run_threshold_pace"
     | "run_lthr"
     | "run_max_heart_rate"
-    | "swim_css_pace"
+    | "swim_threshold_pace"
     | "swim_lthr"
     | "swim_max_heart_rate";
   label: string;
@@ -33,7 +29,6 @@ export type PerformanceModelSummaryGroup = {
 
 function statusLabel(status: AthletePerformanceOverviewItem["status"]): string {
   if (status === "available") return "Available";
-  if (status === "partial") return "Limited";
   return "Not available";
 }
 
@@ -75,47 +70,27 @@ export function buildPerformanceModelSummary(
       activityCategory: "bike",
       title: "Bike",
       items: [
-        summaryItem("bike_five_second_power", "Five-second power", overview.bike.fiveSecondPower),
-        summaryItem(
-          "bike_planning_threshold_power",
-          "Planning threshold power",
-          overview.bike.planningThresholdPower,
-        ),
-        summaryItem(
-          "bike_estimated_threshold_duration",
-          "Estimated threshold duration",
-          overview.bike.estimatedThresholdDuration,
-        ),
-        summaryItem(
-          "bike_duration_retention",
-          "Duration retention",
-          overview.bike.durationRetention,
-        ),
-        summaryItem("bike_lthr", "LTHR", overview.bike.lthr),
-        summaryItem("bike_max_heart_rate", "Max heart rate", overview.bike.maxHeartRate),
+        summaryItem("bike_threshold_power", "Threshold Power", overview.thresholds.bike),
+        summaryItem("bike_lthr", "LTHR", overview.heartRate.bike.lthr),
+        summaryItem("bike_max_heart_rate", "Max heart rate", overview.heartRate.bike.maxHeartRate),
       ],
     },
     {
       activityCategory: "run",
       title: "Run",
       items: [
-        summaryItem(
-          "run_planning_threshold_pace",
-          "Planning threshold pace",
-          overview.run.planningThresholdPace,
-        ),
-        summaryItem("run_duration_retention", "Duration retention", overview.run.durationRetention),
-        summaryItem("run_lthr", "LTHR", overview.run.lthr),
-        summaryItem("run_max_heart_rate", "Max heart rate", overview.run.maxHeartRate),
+        summaryItem("run_threshold_pace", "Threshold Pace", overview.thresholds.run),
+        summaryItem("run_lthr", "LTHR", overview.heartRate.run.lthr),
+        summaryItem("run_max_heart_rate", "Max heart rate", overview.heartRate.run.maxHeartRate),
       ],
     },
     {
       activityCategory: "swim",
       title: "Swim",
       items: [
-        summaryItem("swim_css_pace", "CSS pace", overview.swim.cssPace),
-        summaryItem("swim_lthr", "LTHR", overview.swim.lthr),
-        summaryItem("swim_max_heart_rate", "Max heart rate", overview.swim.maxHeartRate),
+        summaryItem("swim_threshold_pace", "Swim Threshold Pace", overview.thresholds.swim),
+        summaryItem("swim_lthr", "LTHR", overview.heartRate.swim.lthr),
+        summaryItem("swim_max_heart_rate", "Max heart rate", overview.heartRate.swim.maxHeartRate),
       ],
     },
   ];

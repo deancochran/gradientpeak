@@ -31,6 +31,26 @@ function getJobTrigger(payload: unknown): unknown {
     : undefined;
 }
 
+function canOnboardingReplaceQueuedConnectJob(
+  job: Parameters<typeof onboardingJobIdentityMatches>[0],
+  input: Parameters<typeof onboardingJobIdentityMatches>[1],
+  integrationGeneration: number,
+) {
+  return (
+    job.status === "queued" &&
+    job.trigger === "connect" &&
+    getJobTrigger(input.payload) === "onboarding" &&
+    job.profileId === input.profileId &&
+    job.provider === input.provider &&
+    job.integrationId === input.integrationId &&
+    job.integrationGeneration === integrationGeneration &&
+    job.jobType === input.jobType &&
+    job.operation === (input.operation ?? null) &&
+    job.resourceKind === (input.resourceKind ?? null) &&
+    job.internalResourceId === (input.internalResourceId ?? null)
+  );
+}
+
 export function onboardingJobIdentityMatches(
   job: {
     integrationGeneration: number;
@@ -43,6 +63,8 @@ export function onboardingJobIdentityMatches(
     profileId: string;
     provider: string;
     resourceKind: WahooSyncJobRecord["resourceKind"];
+    status: string;
+    trigger: unknown;
   },
   input: Parameters<WahooSyncRepository["enqueueJobInTransaction"]>[1],
   integrationGeneration: number,
@@ -68,7 +90,8 @@ export function assertOnboardingJobOwnership(
 ) {
   if (
     getJobTrigger(input.payload) === "onboarding" &&
-    !onboardingJobIdentityMatches(job, input, integrationGeneration)
+    !onboardingJobIdentityMatches(job, input, integrationGeneration) &&
+    !canOnboardingReplaceQueuedConnectJob(job, input, integrationGeneration)
   ) {
     throw new OnboardingProviderWorkConflictError();
   }
@@ -511,6 +534,7 @@ export function createWahooSyncRepository({
               operation: schema.providerSyncJobs.operation,
               payloadHash: schema.providerSyncJobs.payload_hash,
               payloadMatches: sql<boolean>`${schema.providerSyncJobs.payload} = ${JSON.stringify(input.payload)}::jsonb`,
+              trigger: sql<unknown>`${schema.providerSyncJobs.payload}->>'trigger'`,
               profileId: schema.providerSyncJobs.profile_id,
               provider: schema.providerSyncJobs.provider,
               integrationId: schema.providerSyncJobs.integration_id,
@@ -583,6 +607,7 @@ export function createWahooSyncRepository({
               operation: schema.providerSyncJobs.operation,
               payloadHash: schema.providerSyncJobs.payload_hash,
               payloadMatches: sql<boolean>`${schema.providerSyncJobs.payload} = ${JSON.stringify(input.payload)}::jsonb`,
+              trigger: sql<unknown>`${schema.providerSyncJobs.payload}->>'trigger'`,
               profileId: schema.providerSyncJobs.profile_id,
               provider: schema.providerSyncJobs.provider,
               integrationId: schema.providerSyncJobs.integration_id,

@@ -52,6 +52,7 @@ jest.mock("../activitySubmissionQueue/localArtifact", () => ({
 }));
 
 jest.mock("./checkpointStorage", () => ({
+  MOBILE_RECORDING_CHECKPOINT_SCHEMA_VERSION: 5,
   clearRecordingCheckpoint: jest.fn(async () => undefined),
   hashRecordingPlan: jest.fn(async () => "0".repeat(64)),
   persistRecordingCheckpoint: jest.fn(async (checkpoint: { sessionId: string }) => {
@@ -125,6 +126,7 @@ jest.mock("./trainerControl", () => ({
 
 import { createUnavailableAthletePerformanceTargetFacts } from "@repo/core";
 import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
+import { secondsPerKilometerToMetersPerSecond } from "@repo/core/units";
 import { rebaseRetainedFitRecordDistances } from "./fitRecordWriter";
 import { ActivityRecorderService } from "./index";
 import { compileRecordingPlan, createFreeRecordingExecutionPlan } from "./plan";
@@ -195,8 +197,8 @@ function createPerformanceTargets(
   const asOf = "2026-07-31T00:00:00.000Z";
   return buildPerformanceTargetFactsFixture({
     asOf,
-    planningThresholdPowerWatts: values.power,
-    planningThresholdPaceSecondsPerKm: values.runPace,
+    bikeThresholdWatts: values.power,
+    runThresholdMetersPerSecond: secondsPerKilometerToMetersPerSecond(values.runPace),
     lthrBpm: { bike: values.bikeLthr, run: values.runLthr },
   });
 }
@@ -497,7 +499,7 @@ describe("ActivityRecorderService lifecycle", () => {
     expect(mutable.liveMetricsManager.updatePerformanceTargets).toHaveBeenLastCalledWith(
       performanceTargets,
     );
-    expect(mutable.performanceTargets.cycling.planningThresholdPower.value).toBe(300);
+    expect(mutable.performanceTargets.thresholds.bike.value).toBe(300);
   });
 
   it("atomically captures start-supplied targets despite concurrent preview hydration", async () => {
@@ -585,7 +587,7 @@ describe("ActivityRecorderService lifecycle", () => {
     if (loaded.status !== "recovered") throw new Error("expected persisted recovery");
     expect(loaded.checkpoint.performanceTargets).toMatchObject({
       asOf: new Date(1_000).toISOString(),
-      cycling: { planningThresholdPower: { status: "unavailable", value: null } },
+      thresholds: { bike: { status: "unavailable", value: null } },
     });
 
     const recovered = createService();
@@ -972,6 +974,8 @@ describe("ActivityRecorderService lifecycle", () => {
     });
     const persisted = checkpointStorageMocks.persistRecordingCheckpoint.mock.calls.at(-1)?.[0];
     expect(persisted).toMatchObject({
+      schemaVersion: 5,
+      variant: "planned",
       currentOccurrenceId: service.currentStep?.occurrenceId,
       completedOccurrences: [],
     });
@@ -1672,7 +1676,7 @@ describe("ActivityRecorderService lifecycle", () => {
     });
 
     await service.stageRecoveredCheckpoint({
-      schemaVersion: 2,
+      schemaVersion: 5,
       compilerVersion: 1,
       sessionId: "profile-1:recovery",
       profileId: "profile-1",
@@ -1762,7 +1766,7 @@ describe("ActivityRecorderService lifecycle", () => {
     mutable.sensorsManager.reconnectAll = jest.fn(async () => undefined);
     mutable.sensorsManager.getConnectedSensors = jest.fn(() => []);
     const checkpoint = {
-      schemaVersion: 2,
+      schemaVersion: 5,
       compilerVersion: 1,
       sessionId: "profile-1:session-1",
       profileId: "profile-1",
@@ -1891,7 +1895,7 @@ describe("ActivityRecorderService lifecycle", () => {
   it("rebuilds an unplanned execution manifest and preserves its operation identity", async () => {
     const { service, mutable } = createService();
     const checkpoint = {
-      schemaVersion: 4 as const,
+      schemaVersion: 5 as const,
       variant: "unplanned" as const,
       sessionId: "profile-1:unplanned-operation",
       profileId: "profile-1",

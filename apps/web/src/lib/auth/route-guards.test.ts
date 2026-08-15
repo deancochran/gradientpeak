@@ -7,7 +7,11 @@ const { getWebAuthSession } = vi.hoisted(() => ({
 
 vi.mock("./client", () => ({ getWebAuthSession }));
 
-import { getProtectedAccessRedirect, resolveRouteAuthSession } from "./route-guards";
+import {
+  getAuthenticatedEntryDestination,
+  getProtectedAccessRedirect,
+  resolveRouteAuthSession,
+} from "./route-guards";
 
 const authenticatedSession = {
   sessionId: "session-1",
@@ -73,5 +77,15 @@ describe("getProtectedAccessRedirect", () => {
 
   it("allows verified users with completed onboarding into the protected shell", () => {
     expect(getProtectedAccessRedirect(authenticatedSession, "completed", "/")).toBeNull();
+  });
+});
+
+describe("getAuthenticatedEntryDestination", () => {
+  it("sends verified incomplete users directly to onboarding", () => {
+    expect(getAuthenticatedEntryDestination(authenticatedSession, "processing")).toBe("onboarding");
+  });
+
+  it("sends completed users home", () => {
+    expect(getAuthenticatedEntryDestination(authenticatedSession, "completed")).toBe("home");
   });
 });

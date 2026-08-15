@@ -9,7 +9,6 @@ export * from "./normalized-series";
 export * from "./normalized-speed";
 export * from "./power-curve";
 export * from "./speed-curve";
-export * from "./swim-pace-curve";
 export * from "./threshold-detection";
 export * from "./training-effect";
 export * from "./vo2max";

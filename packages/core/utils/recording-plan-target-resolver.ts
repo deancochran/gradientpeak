@@ -118,7 +118,7 @@ export function resolvePerformanceTargetValue(input: {
   if (input.target.type === "%FTP") {
     if (input.activityCategory !== "bike") return null;
     const planningThresholdPower = getAvailablePerformanceTargetValue(
-      performanceTargets.cycling.planningThresholdPower,
+      performanceTargets.thresholds.bike,
     );
     if (planningThresholdPower === null) return null;
     const scale = input.intensityScale ?? 1;

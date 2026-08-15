@@ -17,8 +17,8 @@ import {
   type AthletePerformanceOverview,
   type AthletePerformanceTargetFacts,
   athletePerformanceModelSnapshotSchema,
-  athletePerformanceTargetFactsSchema,
   createUnavailableAthletePerformanceTargetFacts,
+  materializeAthletePerformanceTargetFacts,
   projectAthletePerformanceOverview,
 } from "../../performance-model";
 
@@ -105,7 +105,6 @@ export function buildPerformanceModelSnapshotFixture(
     athleteId,
     evidenceReadCoverage: emptyCoverage,
     efforts: [],
-    cssProtocols: [],
     repeatedEffortProtocols: [],
   });
   const emptySessionModel = (activityCategory: "strength" | "other") =>
@@ -131,39 +130,21 @@ export function buildPerformanceModelSnapshotFixture(
       other: emptySessionModel("other"),
     },
     heartRate: unavailableTargets.heartRate,
-    calibrations:
-      bike.parameters.planningThresholdPower.status === "unavailable"
-        ? []
-        : [
-            {
-              id: "fixture-bike-threshold-calibration",
-              identity: { metricKey: "threshold_power", activityCategory: "bike" },
-              value: bike.parameters.planningThresholdPower.value.watts,
-              unit: "watts",
-              effectiveAt: recordedAt,
-              expiresAt: new Date(Date.parse(recordedAt) + 90 * 86_400_000).toISOString(),
-              policyVersion: "performance-calibration-v1",
-              selectionDiagnostics: {
-                selectedEvidenceIds: bike.parameters.planningThresholdPower.sourceEvidenceIds,
-                selectedActivityIds: bike.parameters.planningThresholdPower.sourceEvidenceIds.map(
-                  (evidenceId) => `activity-for-${evidenceId}`,
-                ),
-                evidenceCount: bike.parameters.planningThresholdPower.sourceEvidenceIds.length,
-                selectionReason: "independent_confirmation",
-                trend: "stable",
-                tolerance: 0.03,
-                policyVersion: "performance-calibration-v1",
-              },
-            },
-          ],
   });
 }
 
 /** Athlete-safe overview fixture projected through the production boundary. */
 export function buildPerformanceOverviewFixture(
-  input: { asOf?: string; athleteId?: string; evidenceRecordedAt?: string } = {},
+  input: { asOf?: string; athleteId?: string } = {},
 ): AthletePerformanceOverview {
-  return projectAthletePerformanceOverview(buildPerformanceModelSnapshotFixture(input));
+  return projectAthletePerformanceOverview(
+    buildPerformanceTargetFactsFixture({
+      ...input,
+      bikeThresholdWatts: 250,
+      runThresholdMetersPerSecond: 4,
+      swimThresholdMetersPerSecond: 1.25,
+    }),
+  );
 }
 
 /** Strict canonical target-fact fixture shared by package and application tests. */
@@ -173,49 +154,24 @@ export function buildPerformanceTargetFactsFixture(
     athleteId?: string;
     expiresAt?: string;
     heartRateObservedAt?: string;
-    targetObservedFrom?: string;
-    targetObservedThrough?: string;
     calculationVersion?: string;
-    planningThresholdPowerWatts?: number;
-    planningThresholdPaceSecondsPerKm?: number;
-    swimmingCssSecondsPer100m?: number;
+    thresholdEffectiveAt?: string;
+    bikeThresholdWatts?: number;
+    runThresholdMetersPerSecond?: number;
+    swimThresholdMetersPerSecond?: number;
     lthrBpm?: Partial<Record<Category, number>>;
     maxHrBpm?: Partial<Record<Category, number>>;
   } = {},
 ): AthletePerformanceTargetFacts {
   const asOf = input.asOf ?? "2026-02-28T12:00:00.000Z";
   const expiresAt = input.expiresAt ?? "2026-10-29T12:00:00.000Z";
-  const calculationVersion = input.calculationVersion ?? "performance-target-test-fixture-v1";
-  const targetObservedFrom =
-    input.targetObservedFrom ?? new Date(Date.parse(asOf) - 86_400_000).toISOString();
-  const targetObservedThrough = input.targetObservedThrough ?? targetObservedFrom;
+  const calculationVersion = input.calculationVersion ?? "threshold-policy-v1";
+  const thresholdEffectiveAt =
+    input.thresholdEffectiveAt ?? new Date(Date.parse(asOf) - 86_400_000).toISOString();
   const unavailable = createUnavailableAthletePerformanceTargetFacts(
     asOf,
     input.athleteId ?? "test-athlete",
   );
-  const target = <T extends { value: number | null }>(
-    fact: T,
-    value: number | undefined,
-    evidenceId: string,
-  ) =>
-    value === undefined
-      ? fact
-      : {
-          ...fact,
-          status: "available" as const,
-          calibrationState: "confirmed" as const,
-          value,
-          calculationVersion,
-          sourceEvidenceIds: [evidenceId],
-          evidenceTime: {
-            observedFrom: targetObservedFrom,
-            observedThrough: targetObservedThrough,
-            computedAt: asOf,
-          },
-          confidence: "high" as const,
-          expiresAt,
-          reasons: [],
-        };
   const heartRate = (
     category: Category,
     metric: "lthr" | "max_hr",
@@ -252,29 +208,56 @@ export function buildPerformanceTargetFactsFixture(
     lthr: heartRate(category, "lthr", input.lthrBpm?.[category]),
     maxHr: heartRate(category, "max_hr", input.maxHrBpm?.[category]),
   });
-  return athletePerformanceTargetFactsSchema.parse({
-    ...unavailable,
-    cycling: {
-      planningThresholdPower: target(
-        unavailable.cycling.planningThresholdPower,
-        input.planningThresholdPowerWatts,
-        "planning-threshold-power-evidence",
-      ),
-    },
-    running: {
-      planningThresholdPace: target(
-        unavailable.running.planningThresholdPace,
-        input.planningThresholdPaceSecondsPerKm,
-        "planning-threshold-pace-evidence",
-      ),
-    },
-    swimming: {
-      css: target(
-        unavailable.swimming.css,
-        input.swimmingCssSecondsPer100m,
-        "swimming-css-evidence",
-      ),
-    },
+  const thresholdSources = [
+    ...(input.bikeThresholdWatts === undefined
+      ? []
+      : [
+          {
+            activityCategory: "bike" as const,
+            metric: "power" as const,
+            unit: "watts" as const,
+            method: "bike_power_30m" as const,
+            value: input.bikeThresholdWatts,
+          },
+        ]),
+    ...(input.runThresholdMetersPerSecond === undefined
+      ? []
+      : [
+          {
+            activityCategory: "run" as const,
+            metric: "speed" as const,
+            unit: "meters_per_second" as const,
+            method: "run_speed_30m" as const,
+            value: input.runThresholdMetersPerSecond,
+          },
+        ]),
+    ...(input.swimThresholdMetersPerSecond === undefined
+      ? []
+      : [
+          {
+            activityCategory: "swim" as const,
+            metric: "speed" as const,
+            unit: "meters_per_second" as const,
+            method: "swim_speed_15m" as const,
+            value: input.swimThresholdMetersPerSecond,
+          },
+        ]),
+  ].map((threshold) => ({
+    ...threshold,
+    id: `${threshold.activityCategory}-threshold-test-fixture`,
+    status: "available" as const,
+    effectiveAt: thresholdEffectiveAt,
+    policyVersion: calculationVersion,
+    state: "confirmed" as const,
+    confidence: 0.9,
+    sourceEvaluationIds: [`${threshold.activityCategory}-evaluation-test-fixture`],
+    sourceEffortIds: [`${threshold.activityCategory}-effort-test-fixture`],
+    sourceActivityIds: [`${threshold.activityCategory}-activity-test-fixture`],
+  }));
+  return materializeAthletePerformanceTargetFacts({
+    athleteId: input.athleteId ?? "test-athlete",
+    asOf,
+    thresholds: thresholdSources,
     heartRate: {
       bike: categoryHeartRate("bike"),
       run: categoryHeartRate("run"),

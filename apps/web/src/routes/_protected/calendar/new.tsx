@@ -6,14 +6,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 
 import {
   AgendaCreateForm,
   type AgendaCreateType,
 } from "../../../components/planning/agenda-create-form";
-import { getTodayDateKey, isValidDateKey } from "../../../lib/planning";
+import { getMonthKey, getTodayDateKey, isValidDateKey } from "../../../lib/planning";
 
 export const Route = createFileRoute("/_protected/calendar/new")({
   validateSearch: (
@@ -35,10 +35,10 @@ function AgendaCreatePage() {
   return (
     <div className="space-y-6">
       <Button asChild variant="outline" size="sm">
-        <a href="/calendar">
+        <Link to="/calendar" search={{ month: getMonthKey(new Date()), view: "month" }}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to calendar
-        </a>
+        </Link>
       </Button>
       <Card>
         <CardHeader>
@@ -54,9 +54,9 @@ function AgendaCreatePage() {
           />
           <div className="border-t pt-4">
             <Button asChild variant="outline">
-              <a href={`/goals/new?date=${search.date ?? getTodayDateKey()}`}>
+              <Link to="/goals/new" search={{ date: search.date ?? getTodayDateKey() }}>
                 Create goal instead
-              </a>
+              </Link>
             </Button>
           </div>
         </CardContent>

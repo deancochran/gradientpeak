@@ -113,7 +113,7 @@ describe("AthleteBaselineFields", () => {
 
     expect(screen.queryByLabelText("Running threshold pace (Optional)")).toBeNull();
     expect(screen.queryByTestId("athlete-baseline-ftp")).toBeNull();
-    expect(screen.queryByLabelText("Swim CSS (Optional)")).toBeNull();
+    expect(screen.queryByLabelText("Swimming threshold pace (Optional)")).toBeNull();
   });
 
   it("reports optional clears with an explicit cleared source", () => {

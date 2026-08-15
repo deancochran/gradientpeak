@@ -1,10 +1,9 @@
 import { COMMON_RELATIVE_LOAD_MODEL, COMMON_RELATIVE_LOAD_VERSION } from "@repo/core/load";
-import { keepPreviousData } from "@tanstack/react-query";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
-import { addDaysToDateKey, isCanonicalDateKey } from "@/lib/calendar/dateMath";
+import { addDaysToDateKey } from "@/lib/calendar/dateMath";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { normalizeDailyTrainingAdjustmentPoints } from "@/lib/training-path/dailyTrainingPathModel";
@@ -21,7 +20,7 @@ import { buildTrainingPathViewModel, getWeekStartDateKey } from "./trainingPathU
 import { useScrollableTrainingPathWindow } from "./useScrollableTrainingPathWindow";
 
 const DORMANT_DATE_KEY = "1970-01-01";
-const PLAN_TAB_DAY_RADIUS = 44;
+const PLAN_TAB_DAY_RADIUS = 28;
 
 function useTrainingPathTodayKey(planningTimezone: string | null) {
   const [todayState, setTodayState] = useState(() => {
@@ -82,23 +81,20 @@ export function usePlanTrainingPathData() {
   const [selectedWeekStart, setSelectedWeekStart] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [pendingSelectedWeekStart, setPendingSelectedWeekStart] = useState<string | null>(null);
-  const planningTimezone = profile?.planning_timezone ?? null;
+  // A legacy or partially completed profile can lack a timezone. Do not turn
+  // that profile gap into a Plan-tab outage: UTC is a safe request anchor, and
+  // the server projection remains authoritative for the returned planning zone.
+  const planningTimezone = profile?.planning_timezone ?? "UTC";
   const planningTodayKey = useTrainingPathTodayKey(planningTimezone);
-  const planningTimezoneState = profileLoading
-    ? "loading"
-    : planningTodayKey
-      ? "ready"
-      : "unavailable";
+  const planningTimezoneState = profileLoading ? "loading" : "ready";
   const todayKey = planningTodayKey ?? "";
   const queryEnabled = useAuthStore(
     (state) => state.ready && !!state.session && hasSessionAuthCredentials() && !!planningTodayKey,
   );
-  const dataAnchor =
-    selectedDate && isCanonicalDateKey(selectedDate)
-      ? selectedDate
-      : selectedWeekStart && isCanonicalDateKey(selectedWeekStart)
-        ? selectedWeekStart
-        : (planningTodayKey ?? DORMANT_DATE_KEY);
+  // Selection is presentation state. Keep one stable server window around the
+  // planning date so scrubbing or choosing a week does not recompute an 89-day
+  // projection with a new query key.
+  const dataAnchor = planningTodayKey ?? DORMANT_DATE_KEY;
   const queryStartDate = queryEnabled
     ? addDaysToDateKey(dataAnchor, -PLAN_TAB_DAY_RADIUS)
     : DORMANT_DATE_KEY;
@@ -110,7 +106,10 @@ export function usePlanTrainingPathData() {
     {
       ...scheduleAwareReadQueryOptions,
       enabled: queryEnabled,
-      placeholderData: keepPreviousData,
+      // This projection performs bounded server composition. Avoid multiplying
+      // deterministic server timeouts through the global retry policy.
+      retry: false,
+      staleTime: 60_000,
     },
   );
   const projection = planningTodayKey ? projectionQuery.data : undefined;
@@ -294,10 +293,8 @@ export function usePlanTrainingPathData() {
     profileLoading ||
     (planningTimezoneState === "ready" && (!queryEnabled || projectionQuery.isLoading));
   const chartUnavailable =
-    planningTimezoneState === "unavailable" ||
-    (planningTimezoneState === "ready" && !projectionQuery.isLoading && !projection?.timeline);
-  const queryFailureCount =
-    (projectionQuery.isError ? 1 : 0) + (planningTimezoneState === "unavailable" ? 1 : 0);
+    planningTimezoneState === "ready" && !projectionQuery.isLoading && !projection?.timeline;
+  const queryFailureCount = projectionQuery.isError ? 1 : 0;
   const hasUsableData = Boolean(
     projection?.currentScheduledPlan ||
       goalMarkers.length ||

@@ -266,7 +266,18 @@ function PlanPage() {
                 </DialogContent>
               </Dialog>
               <Button asChild size="sm" variant="outline">
-                <a href="/goals">All goals</a>
+                <Link
+                  to="/goals"
+                  search={{
+                    category: undefined,
+                    flash: undefined,
+                    flashType: undefined,
+                    q: "",
+                    sort: "target_date",
+                  }}
+                >
+                  All goals
+                </Link>
               </Button>
             </div>
           </CardHeader>
@@ -334,7 +345,12 @@ function PlanPage() {
           </Link>
         </Button>
         <Button asChild variant="outline">
-          <a href="/calendar?view=agenda&scheduled=true">Scheduled activities</a>
+          <Link
+            to="/calendar"
+            search={{ month: getMonthKey(new Date()), scheduled: true, view: "agenda" }}
+          >
+            Scheduled activities
+          </Link>
         </Button>
       </div>
     </div>

@@ -8,7 +8,7 @@ import {
 } from "@repo/core";
 import { getCalendarDateInIanaZone } from "@repo/core/calendar";
 import { COMMON_RELATIVE_LOAD_MODEL, COMMON_RELATIVE_LOAD_VERSION } from "@repo/core/load";
-import type { DrizzleQueryExecutor } from "../../db";
+import { type DrizzleQueryExecutor, withRepeatableReadSnapshot } from "../../db";
 import { createEventReadRepository } from "../../infrastructure/repositories";
 import { readSelectedGroupEventsForCalendar } from "../groups/groupEventViews";
 import {
@@ -392,24 +392,21 @@ export async function readPlanningLedger(input: {
   const { periodStart, periodEnd } = resolvePlanningLedgerPeriod(request);
   const dependencies = input.dependencies ?? defaultDependencies;
   const asOf = input.asOf ?? new Date();
-  return input.db.transaction(
-    async (tx) => {
-      const projection = await dependencies.readProjection({
-        db: tx,
-        profileId: input.profileId,
-        request: { startDate: periodStart, endDate: periodEnd },
-        asOf,
-        dependencies: input.projectionDependencies,
-      });
-      const calendarFacts = await dependencies.readCalendarFacts({
-        db: tx,
-        profileId: input.profileId,
-        periodStart,
-        periodEndExclusive: addDaysDateKey(periodEnd, 1),
-        planningTimezone: projection.planningTimezone,
-      });
-      return buildPlanningLedger({ projection, request, calendarFacts });
-    },
-    { accessMode: "read only", isolationLevel: "repeatable read" },
-  );
+  return withRepeatableReadSnapshot(input.db, async (tx) => {
+    const projection = await dependencies.readProjection({
+      db: tx,
+      profileId: input.profileId,
+      request: { startDate: periodStart, endDate: periodEnd },
+      asOf,
+      dependencies: input.projectionDependencies,
+    });
+    const calendarFacts = await dependencies.readCalendarFacts({
+      db: tx,
+      profileId: input.profileId,
+      periodStart,
+      periodEndExclusive: addDaysDateKey(periodEnd, 1),
+      planningTimezone: projection.planningTimezone,
+    });
+    return buildPlanningLedger({ projection, request, calendarFacts });
+  });
 }

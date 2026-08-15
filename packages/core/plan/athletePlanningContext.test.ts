@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  athletePerformanceTargetFactsSchema,
   createUnavailableAthletePerformanceTargetFacts,
+  materializeAthletePerformanceTargetFacts,
 } from "../performance-model";
 import {
   createAthletePlanningContextFromSnapshot,
@@ -51,7 +51,7 @@ describe("athletePlanningContext", () => {
       value: null,
       source: "unknown",
     });
-    expect(context.physiology.swimmingCssSecondsPer100m).toMatchObject({
+    expect(context.physiology.swimThresholdPaceSecondsPer100m).toMatchObject({
       value: null,
       source: "unknown",
     });
@@ -72,27 +72,27 @@ describe("athletePlanningContext", () => {
   });
 
   it("accepts equivalent asOf spellings and preserves canonical performance targets", () => {
-    const unavailable = createUnavailableAthletePerformanceTargetFacts("2026-06-01T00:00:00.000Z");
-    const performanceTargets = athletePerformanceTargetFactsSchema.parse({
-      ...unavailable,
+    const performanceTargets = materializeAthletePerformanceTargetFacts({
+      athleteId: "planning-context-athlete",
       asOf: "2026-06-01T00:00:00Z",
-      cycling: {
-        planningThresholdPower: {
-          ...unavailable.cycling.planningThresholdPower,
+      thresholds: [
+        {
+          id: "bike-threshold-1",
           status: "available",
+          activityCategory: "bike",
+          metric: "power",
+          unit: "watts",
+          method: "bike_power_30m",
           value: 250,
-          calculationVersion: "planning-context-test-v1",
-          sourceEvidenceIds: ["power-evidence-1"],
-          evidenceTime: {
-            observedFrom: "2026-05-30T00:00:00.000Z",
-            observedThrough: "2026-05-30T00:00:00.000Z",
-            computedAt: "2026-06-01T00:00:00.000Z",
-          },
-          confidence: "high",
-          expiresAt: "2026-08-29T00:00:00.000Z",
-          reasons: [],
+          effectiveAt: "2026-05-30T00:00:00.000Z",
+          policyVersion: "threshold-policy-v1",
+          state: "confirmed",
+          confidence: 1,
+          sourceEvaluationIds: ["power-evaluation-1"],
+          sourceEffortIds: ["power-effort-1"],
+          sourceActivityIds: ["power-activity-1"],
         },
-      },
+      ],
     });
 
     const implicitSnapshot = createEffectiveAthleteSnapshot({

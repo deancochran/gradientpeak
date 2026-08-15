@@ -257,12 +257,16 @@ export async function getEffectivePlanLoad(input: {
     })),
   });
   const completedQuantificationById = new Map<string, ActivityObservationQuantificationBundle>();
+  let completedQuantificationIncomplete = false;
   for (const [activityId, summary] of summaries.parent) {
     const parsed = parseQuantificationBundle(
       summary.observationQuantification,
       activityObservationQuantificationBundleSchema,
     );
-    if (parsed.status === "unavailable") return unavailable(parsed.reason);
+    if (parsed.status === "unavailable") {
+      completedQuantificationIncomplete = true;
+      continue;
+    }
     completedQuantificationById.set(activityId, parsed.value);
   }
   const activityPlansById = new Map(
@@ -289,17 +293,19 @@ export async function getEffectivePlanLoad(input: {
     const date = localDate(activity.started_at, planningTimezone);
     return date >= startDate && date <= endDate;
   });
-  if (activitiesInRange.some((activity) => !completedQuantificationById.has(activity.id))) {
-    return unavailable("missing_quantification");
-  }
-  const completedActivities = activitiesInRange.map((activity) => {
+  completedQuantificationIncomplete ||= activitiesInRange.some(
+    (activity) => !completedQuantificationById.has(activity.id),
+  );
+  const completedActivities = activitiesInRange.flatMap((activity) => {
     const source = completedQuantificationById.get(activity.id);
-    if (!source) throw new Error("Validated completed quantification was not retained");
-    return {
-      completedActivityId: activity.id,
-      completedDate: localDate(activity.started_at, planningTimezone),
-      observationQuantification: source,
-    };
+    if (!source) return [];
+    return [
+      {
+        completedActivityId: activity.id,
+        completedDate: localDate(activity.started_at, planningTimezone),
+        observationQuantification: source,
+      },
+    ];
   });
   const scheduledItems = facts.events.map((event) => {
     const planned = plannedQuantificationById.get(event.activity_plan_id ?? "");
@@ -343,7 +349,7 @@ export async function getEffectivePlanLoad(input: {
             endDate,
           },
     completedSource:
-      facts.sourceCoverage.activities?.status === "complete"
+      facts.sourceCoverage.activities?.status === "complete" && !completedQuantificationIncomplete
         ? {
             status: "complete",
             startDate,

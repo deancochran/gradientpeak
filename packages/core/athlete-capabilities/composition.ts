@@ -361,11 +361,6 @@ function swimmingSourceActivities(
       : model.paceDurationCurve.value.points.flatMap((point) =>
           sourceIds.has(point.sourceEvidenceId) ? [point.activityId] : [],
         );
-  const cssActivities =
-    model.css.status !== "unavailable" &&
-    model.css.sourceEvidenceIds.some((sourceId) => sourceIds.has(sourceId))
-      ? [model.css.value.sourceActivityId]
-      : [];
   const repeatActivities =
     model.capabilities.repeatedEffortDecay.status !== "unavailable" &&
     model.capabilities.repeatedEffortDecay.sourceEvidenceIds.some((sourceId) =>
@@ -373,7 +368,7 @@ function swimmingSourceActivities(
     )
       ? [model.capabilities.repeatedEffortDecay.value.sourceActivityId]
       : [];
-  return [...curveActivities, ...cssActivities, ...repeatActivities];
+  return [...curveActivities, ...repeatActivities];
 }
 
 function categoryProfile(input: {
@@ -599,14 +594,7 @@ export function composeSwimmingCategoryCapabilityProfile(
       selectValue: (value) => value.sixtySecondSpeedMetersPerSecond,
     }),
     anaerobicReserve: missing("anaerobicReserve"),
-    thresholdCapacity: fromSource({
-      capability: "thresholdCapacity",
-      unit: "meters_per_second",
-      measurementBasis: "swimming_pool_css",
-      concept: "swimming_css",
-      outcome: parsed.css,
-      selectValue: (value) => value.cssMetersPerSecond,
-    }),
+    thresholdCapacity: missing("thresholdCapacity"),
     longDurationCapacity: fromSource({
       capability: "longDurationCapacity",
       unit: "meters_per_second",
@@ -614,7 +602,7 @@ export function composeSwimmingCategoryCapabilityProfile(
       concept: "swimming_aerobic_capacity",
       outcome: parsed.capabilities.aerobic,
       selectValue: (value) =>
-        value.basis === "pool_css_and_long_duration"
+        value.basis === "pool_duration_curve"
           ? value.longDurationSpeedMetersPerSecond
           : (value.speedsByDuration.find((point) => point.durationSeconds === 1_800)
               ?.speedMetersPerSecond ?? null),

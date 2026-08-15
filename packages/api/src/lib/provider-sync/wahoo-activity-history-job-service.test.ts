@@ -329,6 +329,7 @@ describe("WahooActivityHistoryJobService", () => {
       integrationId: "integration-1",
       importRunId: "import-run-1",
       deferAthleteStateRefresh: true,
+      deferPerformanceCalibration: true,
       signal: expect.any(AbortSignal),
     });
     expect(deps.providerSyncRepository.completeJobWithSyncState).toHaveBeenCalledWith({
@@ -818,6 +819,76 @@ describe("WahooActivityHistoryJobService", () => {
         resource: "historical_activities",
         status: "failed",
         workerId: expect.stringMatching(/^wahoo-activity-history-worker:/),
+      }),
+    );
+  });
+
+  it("records every skipped Wahoo activity with a controlled reason", async () => {
+    const deps = createDeps();
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([historyJob()]);
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
+    deps.wahooClient.listWorkoutSummaries.mockResolvedValueOnce({
+      sourceCount: 2,
+      summaries: [createSummary(123), createSummary(124)],
+    });
+    deps.importer.importWorkoutSummary
+      .mockResolvedValueOnce({
+        success: true,
+        skipped: true,
+        reason: "Activity file semantics are unsupported",
+      })
+      .mockResolvedValueOnce({ success: true, skipped: true, reason: "Activity already imported" });
+
+    const service = new WahooActivityHistoryJobService({
+      importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
+      providerSyncRepository: deps.providerSyncRepository as never,
+      wahooClientFactory: () => deps.wahooClient,
+      wahooRepository: deps.wahooRepository,
+    });
+
+    await expect(service.processDueJobs({ workerId: "worker-1" })).resolves.toMatchObject({
+      completed: 1,
+    });
+    expect(deps.importRuns.recordPageCommitted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skipped: 2,
+        skippedDiagnostics: [
+          { providerExternalId: "123", reason: "unsupported_activity_file" },
+          { providerExternalId: "124", reason: "already_imported" },
+        ],
+      }),
+    );
+  });
+
+  it("records an unrecognized skip message as unspecified", async () => {
+    const deps = createDeps();
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([historyJob()]);
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
+    deps.wahooClient.listWorkoutSummaries.mockResolvedValueOnce({
+      sourceCount: 1,
+      summaries: [createSummary(123)],
+    });
+    deps.importer.importWorkoutSummary.mockResolvedValueOnce({
+      success: true,
+      skipped: true,
+      reason: "provider response included sensitive details",
+    });
+
+    const service = new WahooActivityHistoryJobService({
+      importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
+      providerSyncRepository: deps.providerSyncRepository as never,
+      wahooClientFactory: () => deps.wahooClient,
+      wahooRepository: deps.wahooRepository,
+    });
+
+    await expect(service.processDueJobs({ workerId: "worker-1" })).resolves.toMatchObject({
+      completed: 1,
+    });
+    expect(deps.importRuns.recordPageCommitted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skippedDiagnostics: [{ providerExternalId: "123", reason: "unspecified" }],
       }),
     );
   });

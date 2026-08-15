@@ -141,7 +141,6 @@ describe("onboarding schema composition", () => {
     "lthr",
     "ftp",
     "threshold_pace_seconds_per_km",
-    "css_seconds_per_hundred_meters",
   ])("rejects removed onboarding threshold field %s", (field) => {
     expect(
       completeOnboardingSchema.safeParse({

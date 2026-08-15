@@ -3,6 +3,7 @@ import {
   type AthletePerformanceModelSnapshot,
   type AthletePerformanceTargetFacts,
   athletePerformanceModelSnapshotSchema,
+  athletePerformanceTargetFactsSchema,
   CYCLING_DURATION_PERFORMANCE_INPUT_VERSION,
   calculateCyclingDurationPerformance,
   calculateRunningDurationPerformance,
@@ -10,21 +11,24 @@ import {
   calculateSwimmingDurationPerformance,
   HEART_RATE_CALIBRATION_POLICY_VERSION,
   heartRateCalibrationFactSchema,
-  projectAthletePerformanceTargetFacts,
+  materializeAthletePerformanceTargetFacts,
   RUNNING_DURATION_PERFORMANCE_INPUT_VERSION,
   STRENGTH_OTHER_PERFORMANCE_INPUT_VERSION,
   SWIMMING_DURATION_PERFORMANCE_INPUT_VERSION,
 } from "@repo/core";
 import { z } from "zod";
+import { type DrizzleQueryExecutor, withRepeatableReadSnapshot } from "../../db";
 import {
   type AthletePerformanceEvidenceReads,
+  type AthletePerformanceHeartRateReads,
+  type AthletePerformanceHeartRateRepository,
   type AthletePerformanceModelReadInput,
   type AthletePerformanceModelRepository,
   adaptActivityEffortToCanonicalPerformanceEvidence,
-  adaptQualifiedSwimmingCssProtocolEvidence,
   adaptQualifiedSwimmingPerformanceEvidence,
   type HeartRateCalibrationCandidateRow,
 } from "../../repositories/athlete-performance-model-repository";
+import { readThresholdsForRequests } from "../../repositories/threshold-repository";
 
 const HEART_RATE_FRESHNESS_WINDOW_MS = 90 * 86_400_000;
 const uuidSchema = z.string().uuid();
@@ -63,10 +67,15 @@ function unavailableHeartRateFact(input: {
     method: null,
     calculationVersion: null,
     reason: input.reason,
+    ageSeconds: null,
+    freshness: "unavailable",
+    sourceSemantics: "unavailable",
+    evaluationSemantics: "unavailable",
   });
 }
 
 function adaptHeartRateFact(input: {
+  athleteId: string;
   activityCategory: ActivityCategory;
   metric: "max_hr";
   rows: readonly HeartRateCalibrationCandidateRow[];
@@ -89,7 +98,7 @@ function adaptHeartRateFact(input: {
     });
   }
   if (
-    row.profile_id.trim().length === 0 ||
+    row.profile_id !== input.athleteId ||
     row.metric_type !== input.metric ||
     row.activity_category !== input.activityCategory ||
     row.reference_activity_id === null ||
@@ -139,19 +148,49 @@ function adaptHeartRateFact(input: {
     method: expectedMethod,
     calculationVersion: expectedCalculationVersion,
     reason: null,
+    ageSeconds: Math.floor((input.asOf.getTime() - row.recorded_at.getTime()) / 1_000),
+    freshness: "fresh",
+    sourceSemantics: "measured",
+    evaluationSemantics: "direct_measurement",
   });
+}
+
+export function buildHeartRateCapabilityFactsFromEvidenceReads(input: {
+  athleteId: string;
+  asOf: Date;
+  reads: AthletePerformanceHeartRateReads;
+}) {
+  return Object.fromEntries(
+    (["bike", "run", "swim"] as const).map((activityCategory) => [
+      activityCategory,
+      {
+        lthr: unavailableHeartRateFact({
+          activityCategory,
+          metric: "lthr",
+          reason: "no_eligible_evidence",
+        }),
+        maxHr: adaptHeartRateFact({
+          athleteId: input.athleteId,
+          activityCategory,
+          metric: "max_hr",
+          ...input.reads[activityCategory].maxHr,
+          asOf: input.asOf,
+        }),
+      },
+    ]),
+  );
 }
 
 /**
  * Runs each canonical Core category model over one bounded, strict as-of read.
- * No legacy CP/CSS/FTP snapshot is consulted or synthesized.
+ * No legacy fitted-threshold snapshot is consulted or synthesized.
  */
 export function buildAthletePerformanceModelFromEvidenceReads(
   input: AthletePerformanceModelReadInput,
   reads: AthletePerformanceEvidenceReads,
 ): AthletePerformanceModelSnapshot {
   if (!Number.isFinite(input.asOf.getTime())) throw new Error("Performance-model asOf is invalid");
-  const { effortReads, heartRateReads, swimmingCssProtocolRead } = reads;
+  const { effortReads, heartRateReads } = reads;
   const efforts = {
     bike: effortReads.bike.rows.map(adaptActivityEffortToCanonicalPerformanceEvidence),
     run: effortReads.run.rows.map(adaptActivityEffortToCanonicalPerformanceEvidence),
@@ -193,14 +232,8 @@ export function buildAthletePerformanceModelFromEvidenceReads(
     contractVersion: SWIMMING_DURATION_PERFORMANCE_INPUT_VERSION,
     assessmentAsOf: asOf,
     athleteId: input.athleteId,
-    evidenceReadCoverage: readCoverage(
-      effortReads.swim.truncated || swimmingCssProtocolRead.truncated,
-    ),
+    evidenceReadCoverage: readCoverage(effortReads.swim.truncated),
     efforts: efforts.swim.filter((effort) => effort.activityCategory === "swim"),
-    cssProtocols: swimmingCssProtocolRead.rows.flatMap((row) => {
-      const evidence = adaptQualifiedSwimmingCssProtocolEvidence(row);
-      return evidence === null ? [] : [evidence];
-    }),
     repeatedEffortProtocols: [],
   });
   const emptySessionModel = (activityCategory: "strength" | "other") =>
@@ -213,26 +246,11 @@ export function buildAthletePerformanceModelFromEvidenceReads(
       observations: [],
       repeatedEffortProtocols: [],
     });
-  const heartRate = Object.fromEntries(
-    (["bike", "run", "swim"] as const).map((activityCategory) => [
-      activityCategory,
-      {
-        // Automatic LTHR has exactly one authority: selected calibration history.
-        // Legacy profile_metrics detections are intentionally not a fallback.
-        lthr: unavailableHeartRateFact({
-          activityCategory,
-          metric: "lthr",
-          reason: "no_eligible_evidence",
-        }),
-        maxHr: adaptHeartRateFact({
-          activityCategory,
-          metric: "max_hr",
-          ...heartRateReads[activityCategory].maxHr,
-          asOf: input.asOf,
-        }),
-      },
-    ]),
-  );
+  const heartRate = buildHeartRateCapabilityFactsFromEvidenceReads({
+    athleteId: input.athleteId,
+    asOf: input.asOf,
+    reads: heartRateReads,
+  });
 
   return athletePerformanceModelSnapshotSchema.parse({
     contractVersion: ATHLETE_PERFORMANCE_MODEL_SNAPSHOT_VERSION,
@@ -246,7 +264,6 @@ export function buildAthletePerformanceModelFromEvidenceReads(
       other: emptySessionModel("other"),
     },
     heartRate,
-    calibrations: reads.calibrationReads ?? [],
   });
 }
 
@@ -264,6 +281,62 @@ export async function getAthletePerformanceModelAsOf(
   };
   const evidenceSnapshot = await repository.readAthletePerformanceEvidenceSnapshot(repositoryInput);
   return buildAthletePerformanceModelFromEvidenceReads(input, evidenceSnapshot);
+}
+
+/**
+ * Canonical hard-cut threshold facts. Consumers move to these facts in Gate 4;
+ * this read does not translate native threshold facts into fitted duration models.
+ */
+export async function getAthleteThresholdTargetFactsAsOf(
+  input: { athleteId: string; asOf: Date; excludedActivityId?: string },
+  db: DrizzleQueryExecutor,
+): Promise<AthletePerformanceTargetFacts> {
+  const [facts] = await getAthleteThresholdTargetFactsForRequests([input], db);
+  if (!facts) throw new Error("Canonical threshold batch reader omitted a result");
+  return facts;
+}
+
+async function getAthleteThresholdTargetFactsForRequestsInSnapshot(
+  inputs: readonly { athleteId: string; asOf: Date; excludedActivityId?: string }[],
+  db: DrizzleQueryExecutor,
+): Promise<AthletePerformanceTargetFacts[]> {
+  if (inputs.length === 0) return [];
+  for (const input of inputs) {
+    if (!Number.isFinite(input.asOf.getTime())) throw new Error("Threshold-fact asOf is invalid");
+  }
+  const thresholdsByRequest = await readThresholdsForRequests(
+    db,
+    inputs.map((input) => ({
+      profileId: input.athleteId,
+      asOf: input.asOf,
+      ...(input.excludedActivityId === undefined
+        ? {}
+        : { excludedActivityId: input.excludedActivityId }),
+    })),
+  );
+  if (thresholdsByRequest.length !== inputs.length) {
+    throw new Error("Canonical threshold batch reader returned an invalid result count");
+  }
+  return inputs.map((input, index) =>
+    materializeAthletePerformanceTargetFacts({
+      athleteId: input.athleteId,
+      asOf: input.asOf.toISOString(),
+      thresholds: thresholdsByRequest[index] ?? [],
+    }),
+  );
+}
+
+export async function getAthleteThresholdTargetFactsForRequests(
+  inputs: readonly { athleteId: string; asOf: Date; excludedActivityId?: string }[],
+  db: DrizzleQueryExecutor,
+): Promise<AthletePerformanceTargetFacts[]> {
+  if (inputs.length === 0) return [];
+  for (const input of inputs) {
+    if (!Number.isFinite(input.asOf.getTime())) throw new Error("Threshold-fact asOf is invalid");
+  }
+  return withRepeatableReadSnapshot(db, (tx) =>
+    getAthleteThresholdTargetFactsForRequestsInSnapshot(inputs, tx),
+  );
 }
 
 export type AthletePerformanceModelReader = (input: {
@@ -305,21 +378,24 @@ export function createAthletePerformanceModelReader(
 
 /** Narrow target projection for planning, recording, and outbound provider effects. */
 export function createAthletePerformanceTargetFactsReader(
-  repository: AthletePerformanceModelRepository,
+  repository: AthletePerformanceHeartRateRepository,
+  db: DrizzleQueryExecutor,
 ): AthletePerformanceTargetFactsReader {
-  const readModel = createAthletePerformanceModelReader(repository);
-  return async (input) => projectAthletePerformanceTargetFacts(await readModel(input));
+  const readBatch = createAthletePerformanceTargetFactsBatchReader(repository, db);
+  return async (input) => {
+    const [facts] = await readBatch([input]);
+    if (!facts) throw new Error("Canonical performance-target batch reader omitted a result");
+    return facts;
+  };
 }
 
 /** Set-based target reader for historical segment fan-out; query count is independent of batch size. */
 export function createAthletePerformanceTargetFactsBatchReader(
-  repository: AthletePerformanceModelRepository,
+  repository: AthletePerformanceHeartRateRepository,
+  db: DrizzleQueryExecutor,
 ): AthletePerformanceTargetFactsBatchReader {
   return async (inputs) => {
     if (inputs.length === 0) return [];
-    if (!repository.readEvidenceBatch) {
-      throw new Error("Canonical performance-model batch reader is unavailable");
-    }
     const repositoryInputs = inputs.map((input) => ({
       athleteId: input.actorProfileId,
       asOf: input.asOf,
@@ -327,18 +403,39 @@ export function createAthletePerformanceTargetFactsBatchReader(
         ? {}
         : { excludedActivityId: input.excludedActivityId }),
     }));
-    const reads = await repository.readEvidenceBatch(repositoryInputs);
-    if (reads.length !== inputs.length) {
-      throw new Error("Canonical performance-model batch reader returned an invalid result count");
-    }
-    return repositoryInputs.map((repositoryInput, index) => {
-      const evidenceReads = reads[index];
-      if (!evidenceReads) {
-        throw new Error("Canonical performance-model batch reader omitted a result");
+    const readSnapshot = async (executor: DrizzleQueryExecutor) => {
+      const [heartRateReads, thresholdFacts] = await Promise.all([
+        repository.readHeartRateCapabilityEvidenceBatch(executor, repositoryInputs),
+        getAthleteThresholdTargetFactsForRequests(
+          inputs.map((input) => ({
+            athleteId: input.actorProfileId,
+            asOf: input.asOf,
+            ...(input.excludedActivityId === undefined
+              ? {}
+              : { excludedActivityId: input.excludedActivityId }),
+          })),
+          executor,
+        ),
+      ]);
+      if (heartRateReads.length !== inputs.length || thresholdFacts.length !== inputs.length) {
+        throw new Error(
+          "Canonical performance-target batch reader returned an invalid result count",
+        );
       }
-      return projectAthletePerformanceTargetFacts(
-        buildAthletePerformanceModelFromEvidenceReads(repositoryInput, evidenceReads),
-      );
-    });
+      return repositoryInputs.map((repositoryInput, index) => {
+        const reads = heartRateReads[index];
+        if (!reads) throw new Error("Canonical heart-rate batch reader omitted a result");
+        const facts = thresholdFacts?.[index];
+        if (!facts) throw new Error("Canonical threshold batch reader omitted a result");
+        const heartRate = buildHeartRateCapabilityFactsFromEvidenceReads({
+          athleteId: repositoryInput.athleteId,
+          asOf: repositoryInput.asOf,
+          reads,
+        });
+        return athletePerformanceTargetFactsSchema.parse({ ...facts, heartRate });
+      });
+    };
+
+    return withRepeatableReadSnapshot(db, readSnapshot);
   };
 }

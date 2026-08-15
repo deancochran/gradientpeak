@@ -6,8 +6,6 @@ import {
   strengthOtherPerformanceModelSchema,
   swimmingDurationPerformanceModelSchema,
 } from "../duration-performance";
-import { calibrationRecordSchema, calibrationTrendSchema } from "../performance-calibration";
-
 export const ATHLETE_PERFORMANCE_MODEL_SNAPSHOT_VERSION =
   "athlete-performance-model-snapshot-v1" as const;
 export const HEART_RATE_CALIBRATION_POLICY_VERSION =
@@ -16,6 +14,7 @@ export const HEART_RATE_CALIBRATION_POLICY_VERSION =
 const opaqueIdSchema = z.string().trim().min(1).max(256);
 const dateTimeSchema = z.string().datetime();
 const activityCategorySchema = z.enum(["bike", "run", "swim"]);
+const heartRateTrendSchema = z.enum(["initial", "stable", "increasing", "decreasing", "expired"]);
 
 const heartRateFactIdentityShape = {
   calibrationId: opaqueIdSchema.nullable().default(null),
@@ -24,7 +23,13 @@ const heartRateFactIdentityShape = {
   unit: z.literal("beats_per_minute"),
   policyVersion: z.string().trim().min(1).max(128),
   evidenceCount: z.number().int().nonnegative().max(64).default(0),
-  trend: calibrationTrendSchema.or(z.literal("unavailable")).default("unavailable"),
+  trend: heartRateTrendSchema.or(z.literal("unavailable")).default("unavailable"),
+  ageSeconds: z.number().int().nonnegative().nullable().default(null),
+  freshness: z.enum(["fresh", "stale", "unavailable"]).default("unavailable"),
+  sourceSemantics: z.enum(["measured", "derived", "unavailable"]).default("unavailable"),
+  evaluationSemantics: z
+    .enum(["validated_threshold", "direct_measurement", "unavailable"])
+    .default("unavailable"),
 };
 
 export const heartRateCalibrationFactSchema = z.discriminatedUnion("status", [
@@ -118,20 +123,9 @@ export const athletePerformanceModelSnapshotSchema = z
       })
       .strict(),
     heartRate: athleteHeartRateCalibrationFactsSchema,
-    calibrations: z.array(calibrationRecordSchema).max(5).default([]),
   })
   .strict()
   .superRefine((snapshot, context) => {
-    const calibrationIdentities = snapshot.calibrations.map(
-      ({ identity }) => `${identity.metricKey}/${identity.activityCategory}`,
-    );
-    if (new Set(calibrationIdentities).size !== calibrationIdentities.length) {
-      context.addIssue({
-        code: "custom",
-        path: ["calibrations"],
-        message: "Performance snapshot calibration identities must be unique",
-      });
-    }
     const models = Object.entries(snapshot.categories);
     for (const [category, model] of models) {
       if (model.athleteId !== snapshot.athleteId || model.assessmentAsOf !== snapshot.asOf) {

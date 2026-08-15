@@ -21,15 +21,24 @@ vi.mock("../../repositories/athlete-state-repository", () => ({
 const profileId = "11111111-1111-4111-8111-111111111111";
 
 function dbWithProfile(planningTimezone: string | null = "UTC") {
-  return {
+  const snapshotExecutor = {
+    execute: vi.fn(async () => ({ rows: [] })),
     select: () => {
       const builder = {
         from: () => builder,
+        leftJoin: () => builder,
         where: () => builder,
+        orderBy: async () => [],
         limit: async () => [{ planningTimezone }],
       };
       return builder;
     },
+  };
+  return {
+    ...snapshotExecutor,
+    $client: {},
+    transaction: async (read: (executor: typeof snapshotExecutor) => Promise<unknown>) =>
+      read(snapshotExecutor),
   } as never;
 }
 

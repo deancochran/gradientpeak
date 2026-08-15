@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  athletePerformanceTargetFactsSchema,
-  createUnavailableAthletePerformanceTargetFacts,
-} from "../../performance-model";
+import { materializeAthletePerformanceTargetFacts } from "../../performance-model";
 import { ALL_SAMPLE_PLANS } from "../../samples";
 import {
   SYSTEM_PLAN_FIXTURE_CATALOG,
@@ -97,26 +94,27 @@ describe("system plan template resolution audit", () => {
 
   it("does not use threshold pace as an assumed planned pace for a distance template", () => {
     const asOf = "2026-07-12T12:00:00.000Z";
-    const unavailable = createUnavailableAthletePerformanceTargetFacts(asOf);
-    const performanceTargets = athletePerformanceTargetFactsSchema.parse({
-      ...unavailable,
-      running: {
-        planningThresholdPace: {
-          ...unavailable.running.planningThresholdPace,
+    const performanceTargets = materializeAthletePerformanceTargetFacts({
+      athleteId: "system-plan-athlete",
+      asOf,
+      thresholds: [
+        {
+          id: "system-plan-run-threshold",
           status: "available",
-          value: 300,
-          calculationVersion: "system-plan-run-pace-test-v1",
-          sourceEvidenceIds: ["system-plan-run-pace"],
-          evidenceTime: {
-            observedFrom: "2026-07-11T12:00:00.000Z",
-            observedThrough: "2026-07-11T12:00:00.000Z",
-            computedAt: asOf,
-          },
-          confidence: "high",
-          expiresAt: "2026-10-10T12:00:00.000Z",
-          reasons: [],
+          activityCategory: "run",
+          metric: "speed",
+          unit: "meters_per_second",
+          method: "run_speed_30m",
+          value: 1_000 / 300,
+          effectiveAt: "2026-07-11T12:00:00.000Z",
+          policyVersion: "threshold-policy-v1",
+          state: "confirmed",
+          confidence: 1,
+          sourceEvaluationIds: ["system-plan-run-evaluation"],
+          sourceEffortIds: ["system-plan-run-effort"],
+          sourceActivityIds: ["system-plan-run-activity"],
         },
-      },
+      ],
     });
     const longRunId = "d8e4f7a6-1b5c-4d9e-8f3a-5b2c8d7e6f4b";
     const audit = buildAllSystemTrainingPlanAudits({ performanceTargets, asOf }).find((candidate) =>

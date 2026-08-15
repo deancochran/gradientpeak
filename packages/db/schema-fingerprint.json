@@ -1,6 +1,10 @@
 {
   "enums": [
     {
+      "name": "activity_effort_source_series",
+      "values": ["power", "grade_adjusted_speed", "raw_speed", "swim_speed", "heart_rate"]
+    },
+    {
       "name": "activity_file_ingestion_source",
       "values": ["mobile_recording", "manual_import", "provider_sync"]
     },
@@ -67,36 +71,6 @@
       "values": ["provider_selection", "processing", "review", "completed"]
     },
     {
-      "name": "performance_calibration_evidence_state",
-      "values": ["candidate", "rejected", "invalidated"]
-    },
-    {
-      "name": "performance_calibration_metric_key",
-      "values": ["threshold_power", "threshold_speed", "threshold_heart_rate"]
-    },
-    {
-      "name": "performance_calibration_rejection_reason",
-      "values": [
-        "metric_not_enabled",
-        "source_not_accepted",
-        "stream_coverage_insufficient",
-        "stream_gap_exceeded",
-        "output_variability_exceeded",
-        "supporting_threshold_unavailable",
-        "supporting_output_not_threshold_like",
-        "duration_insufficient",
-        "grade_coverage_insufficient",
-        "protocol_incomplete",
-        "model_history_insufficient",
-        "model_quality_insufficient",
-        "value_out_of_range"
-      ]
-    },
-    {
-      "name": "performance_calibration_source_semantics",
-      "values": ["measured", "derived"]
-    },
-    {
       "name": "profile_metric_type",
       "values": [
         "weight_kg",
@@ -111,6 +85,34 @@
         "wellness_score",
         "max_hr"
       ]
+    },
+    {
+      "name": "threshold_evaluation_effort_role",
+      "values": ["primary", "supporting"]
+    },
+    {
+      "name": "threshold_evaluation_outcome",
+      "values": ["qualified", "rejected"]
+    },
+    {
+      "name": "threshold_evaluation_rejection_reason",
+      "values": [
+        "source_not_accepted",
+        "ownership_unverified",
+        "series_missing",
+        "series_ambiguous",
+        "exact_window_missing",
+        "exact_window_ambiguous",
+        "exact_window_incomplete",
+        "source_incomplete",
+        "coverage_insufficient",
+        "gap_bound_exceeded",
+        "value_implausible"
+      ]
+    },
+    {
+      "name": "threshold_metric",
+      "values": ["power", "speed"]
     },
     {
       "name": "training_effect_label",
@@ -149,7 +151,7 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arm/postgres}",
       "rls": true,
       "name": "activity_efforts",
       "forceRls": false
@@ -383,30 +385,6 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdxtm/postgres}",
-      "rls": true,
-      "name": "performance_calibration_evidence",
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdxtm/postgres}",
-      "rls": true,
-      "name": "performance_calibration_model_inputs",
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdxtm/postgres}",
-      "rls": true,
-      "name": "performance_calibration_selection_evidence",
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdxtm/postgres}",
-      "rls": true,
-      "name": "performance_calibrations",
-      "forceRls": false
-    },
-    {
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
       "name": "profile_athlete_state",
@@ -473,9 +451,21 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arm/postgres}",
       "rls": true,
-      "name": "swimming_css_protocol_evidence",
+      "name": "threshold_evaluation_efforts",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arm/postgres}",
+      "rls": true,
+      "name": "threshold_evaluations",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arm/postgres}",
+      "rls": true,
+      "name": "thresholds",
       "forceRls": false
     },
     {
@@ -1579,13 +1569,23 @@
       "generated": ""
     },
     {
+      "name": "source_series",
+      "type": "activity_effort_source_series",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
       "name": "duration_seconds",
       "type": "integer",
       "table": "activity_efforts",
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 9,
+      "position": 10,
       "generated": ""
     },
     {
@@ -1595,17 +1595,67 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 10,
+      "position": 11,
       "generated": ""
     },
     {
-      "name": "start_offset",
+      "name": "source_artifact_id",
+      "type": "uuid",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 12,
+      "generated": ""
+    },
+    {
+      "name": "source_revision",
       "type": "integer",
       "table": "activity_efforts",
       "default": "",
-      "notNull": false,
+      "notNull": true,
       "identity": "",
-      "position": 11,
+      "position": 13,
+      "generated": ""
+    },
+    {
+      "name": "start_offset_ms",
+      "type": "bigint",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 14,
+      "generated": ""
+    },
+    {
+      "name": "end_offset_ms",
+      "type": "bigint",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 15,
+      "generated": ""
+    },
+    {
+      "name": "window_coverage",
+      "type": "numeric",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 16,
+      "generated": ""
+    },
+    {
+      "name": "max_gap_seconds",
+      "type": "numeric",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 17,
       "generated": ""
     },
     {
@@ -1615,7 +1665,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 12,
+      "position": 18,
       "generated": ""
     },
     {
@@ -1625,7 +1675,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 13,
+      "position": 19,
       "generated": ""
     },
     {
@@ -1635,7 +1685,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 14,
+      "position": 20,
       "generated": ""
     },
     {
@@ -1645,7 +1695,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 15,
+      "position": 21,
       "generated": ""
     },
     {
@@ -1655,7 +1705,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 16,
+      "position": 22,
       "generated": ""
     },
     {
@@ -1665,7 +1715,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 17,
+      "position": 23,
       "generated": ""
     },
     {
@@ -1675,7 +1725,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 18,
+      "position": 24,
       "generated": ""
     },
     {
@@ -2129,17 +2179,17 @@
       "generated": ""
     },
     {
-      "name": "failed_count",
-      "type": "integer",
+      "name": "skipped_diagnostics",
+      "type": "jsonb",
       "table": "activity_import_runs",
-      "default": "0",
+      "default": "'[]'::jsonb",
       "notNull": true,
       "identity": "",
       "position": 14,
       "generated": ""
     },
     {
-      "name": "material_change_count",
+      "name": "failed_count",
       "type": "integer",
       "table": "activity_import_runs",
       "default": "0",
@@ -2149,17 +2199,17 @@
       "generated": ""
     },
     {
-      "name": "material_effective_from_at",
-      "type": "timestamp with time zone",
+      "name": "material_change_count",
+      "type": "integer",
       "table": "activity_import_runs",
-      "default": "",
-      "notNull": false,
+      "default": "0",
+      "notNull": true,
       "identity": "",
       "position": 16,
       "generated": ""
     },
     {
-      "name": "earliest_activity_at",
+      "name": "material_effective_from_at",
       "type": "timestamp with time zone",
       "table": "activity_import_runs",
       "default": "",
@@ -2169,7 +2219,7 @@
       "generated": ""
     },
     {
-      "name": "latest_activity_at",
+      "name": "earliest_activity_at",
       "type": "timestamp with time zone",
       "table": "activity_import_runs",
       "default": "",
@@ -2179,7 +2229,7 @@
       "generated": ""
     },
     {
-      "name": "started_at",
+      "name": "latest_activity_at",
       "type": "timestamp with time zone",
       "table": "activity_import_runs",
       "default": "",
@@ -2189,7 +2239,7 @@
       "generated": ""
     },
     {
-      "name": "completed_at",
+      "name": "started_at",
       "type": "timestamp with time zone",
       "table": "activity_import_runs",
       "default": "",
@@ -2199,13 +2249,23 @@
       "generated": ""
     },
     {
+      "name": "completed_at",
+      "type": "timestamp with time zone",
+      "table": "activity_import_runs",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 21,
+      "generated": ""
+    },
+    {
       "name": "last_error_code",
       "type": "text",
       "table": "activity_import_runs",
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 21,
+      "position": 22,
       "generated": ""
     },
     {
@@ -2215,7 +2275,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 22,
+      "position": 23,
       "generated": ""
     },
     {
@@ -2225,7 +2285,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 23,
+      "position": 24,
       "generated": ""
     },
     {
@@ -2235,7 +2295,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 24,
+      "position": 25,
       "generated": ""
     },
     {
@@ -2245,7 +2305,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 25,
+      "position": 26,
       "generated": ""
     },
     {
@@ -5669,526 +5729,6 @@
       "generated": ""
     },
     {
-      "name": "id",
-      "type": "uuid",
-      "table": "performance_calibration_evidence",
-      "default": "gen_random_uuid()",
-      "notNull": true,
-      "identity": "",
-      "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "profile_id",
-      "type": "uuid",
-      "table": "performance_calibration_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
-      "generated": ""
-    },
-    {
-      "name": "metric_key",
-      "type": "performance_calibration_metric_key",
-      "table": "performance_calibration_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 3,
-      "generated": ""
-    },
-    {
-      "name": "activity_category",
-      "type": "text",
-      "table": "performance_calibration_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 4,
-      "generated": ""
-    },
-    {
-      "name": "value",
-      "type": "numeric",
-      "table": "performance_calibration_evidence",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 5,
-      "generated": ""
-    },
-    {
-      "name": "unit",
-      "type": "text",
-      "table": "performance_calibration_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 6,
-      "generated": ""
-    },
-    {
-      "name": "observed_at",
-      "type": "timestamp with time zone",
-      "table": "performance_calibration_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 7,
-      "generated": ""
-    },
-    {
-      "name": "activity_id",
-      "type": "uuid",
-      "table": "performance_calibration_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 8,
-      "generated": ""
-    },
-    {
-      "name": "segment_id",
-      "type": "uuid",
-      "table": "performance_calibration_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 9,
-      "generated": ""
-    },
-    {
-      "name": "segment_revision",
-      "type": "bigint",
-      "table": "performance_calibration_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 10,
-      "generated": ""
-    },
-    {
-      "name": "source_artifact_id",
-      "type": "uuid",
-      "table": "performance_calibration_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 11,
-      "generated": ""
-    },
-    {
-      "name": "state",
-      "type": "performance_calibration_evidence_state",
-      "table": "performance_calibration_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 12,
-      "generated": ""
-    },
-    {
-      "name": "rejection_reason",
-      "type": "performance_calibration_rejection_reason",
-      "table": "performance_calibration_evidence",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 13,
-      "generated": ""
-    },
-    {
-      "name": "policy_version",
-      "type": "text",
-      "table": "performance_calibration_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 14,
-      "generated": ""
-    },
-    {
-      "name": "source_semantics",
-      "type": "performance_calibration_source_semantics",
-      "table": "performance_calibration_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 15,
-      "generated": ""
-    },
-    {
-      "name": "diagnostics",
-      "type": "jsonb",
-      "table": "performance_calibration_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 16,
-      "generated": ""
-    },
-    {
-      "name": "created_at",
-      "type": "timestamp with time zone",
-      "table": "performance_calibration_evidence",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 17,
-      "generated": ""
-    },
-    {
-      "name": "invalidated_at",
-      "type": "timestamp with time zone",
-      "table": "performance_calibration_evidence",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 18,
-      "generated": ""
-    },
-    {
-      "name": "invalidation_reason",
-      "type": "text",
-      "table": "performance_calibration_evidence",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 19,
-      "generated": ""
-    },
-    {
-      "name": "calibration_evidence_id",
-      "type": "uuid",
-      "table": "performance_calibration_model_inputs",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "effort_id",
-      "type": "uuid",
-      "table": "performance_calibration_model_inputs",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
-      "generated": ""
-    },
-    {
-      "name": "profile_id",
-      "type": "uuid",
-      "table": "performance_calibration_model_inputs",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 3,
-      "generated": ""
-    },
-    {
-      "name": "metric_key",
-      "type": "performance_calibration_metric_key",
-      "table": "performance_calibration_model_inputs",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 4,
-      "generated": ""
-    },
-    {
-      "name": "activity_category",
-      "type": "text",
-      "table": "performance_calibration_model_inputs",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 5,
-      "generated": ""
-    },
-    {
-      "name": "activity_id",
-      "type": "uuid",
-      "table": "performance_calibration_model_inputs",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 6,
-      "generated": ""
-    },
-    {
-      "name": "segment_id",
-      "type": "uuid",
-      "table": "performance_calibration_model_inputs",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 7,
-      "generated": ""
-    },
-    {
-      "name": "segment_revision",
-      "type": "bigint",
-      "table": "performance_calibration_model_inputs",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 8,
-      "generated": ""
-    },
-    {
-      "name": "source_artifact_id",
-      "type": "uuid",
-      "table": "performance_calibration_model_inputs",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 9,
-      "generated": ""
-    },
-    {
-      "name": "source_artifact_digest",
-      "type": "text",
-      "table": "performance_calibration_model_inputs",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 10,
-      "generated": ""
-    },
-    {
-      "name": "observed_at",
-      "type": "timestamp with time zone",
-      "table": "performance_calibration_model_inputs",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 11,
-      "generated": ""
-    },
-    {
-      "name": "duration_seconds",
-      "type": "integer",
-      "table": "performance_calibration_model_inputs",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 12,
-      "generated": ""
-    },
-    {
-      "name": "value",
-      "type": "numeric",
-      "table": "performance_calibration_model_inputs",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 13,
-      "generated": ""
-    },
-    {
-      "name": "calculation_version",
-      "type": "text",
-      "table": "performance_calibration_model_inputs",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 14,
-      "generated": ""
-    },
-    {
-      "name": "ordinal",
-      "type": "integer",
-      "table": "performance_calibration_model_inputs",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 15,
-      "generated": ""
-    },
-    {
-      "name": "calibration_id",
-      "type": "uuid",
-      "table": "performance_calibration_selection_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "evidence_id",
-      "type": "uuid",
-      "table": "performance_calibration_selection_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
-      "generated": ""
-    },
-    {
-      "name": "profile_id",
-      "type": "uuid",
-      "table": "performance_calibration_selection_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 3,
-      "generated": ""
-    },
-    {
-      "name": "metric_key",
-      "type": "performance_calibration_metric_key",
-      "table": "performance_calibration_selection_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 4,
-      "generated": ""
-    },
-    {
-      "name": "activity_category",
-      "type": "text",
-      "table": "performance_calibration_selection_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 5,
-      "generated": ""
-    },
-    {
-      "name": "ordinal",
-      "type": "integer",
-      "table": "performance_calibration_selection_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 6,
-      "generated": ""
-    },
-    {
-      "name": "id",
-      "type": "uuid",
-      "table": "performance_calibrations",
-      "default": "gen_random_uuid()",
-      "notNull": true,
-      "identity": "",
-      "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "profile_id",
-      "type": "uuid",
-      "table": "performance_calibrations",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
-      "generated": ""
-    },
-    {
-      "name": "metric_key",
-      "type": "performance_calibration_metric_key",
-      "table": "performance_calibrations",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 3,
-      "generated": ""
-    },
-    {
-      "name": "activity_category",
-      "type": "text",
-      "table": "performance_calibrations",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 4,
-      "generated": ""
-    },
-    {
-      "name": "value",
-      "type": "numeric",
-      "table": "performance_calibrations",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 5,
-      "generated": ""
-    },
-    {
-      "name": "unit",
-      "type": "text",
-      "table": "performance_calibrations",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 6,
-      "generated": ""
-    },
-    {
-      "name": "effective_at",
-      "type": "timestamp with time zone",
-      "table": "performance_calibrations",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 7,
-      "generated": ""
-    },
-    {
-      "name": "expires_at",
-      "type": "timestamp with time zone",
-      "table": "performance_calibrations",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 8,
-      "generated": ""
-    },
-    {
-      "name": "policy_version",
-      "type": "text",
-      "table": "performance_calibrations",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 9,
-      "generated": ""
-    },
-    {
-      "name": "selection_diagnostics",
-      "type": "jsonb",
-      "table": "performance_calibrations",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 10,
-      "generated": ""
-    },
-    {
-      "name": "supersedes_id",
-      "type": "uuid",
-      "table": "performance_calibrations",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 11,
-      "generated": ""
-    },
-    {
-      "name": "created_at",
-      "type": "timestamp with time zone",
-      "table": "performance_calibrations",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 12,
-      "generated": ""
-    },
-    {
       "name": "profile_id",
       "type": "uuid",
       "table": "profile_athlete_state",
@@ -7669,19 +7209,19 @@
       "generated": ""
     },
     {
-      "name": "id",
+      "name": "evaluation_id",
       "type": "uuid",
-      "table": "swimming_css_protocol_evidence",
-      "default": "gen_random_uuid()",
+      "table": "threshold_evaluation_efforts",
+      "default": "",
       "notNull": true,
       "identity": "",
       "position": 1,
       "generated": ""
     },
     {
-      "name": "protocol_id",
-      "type": "text",
-      "table": "swimming_css_protocol_evidence",
+      "name": "effort_id",
+      "type": "uuid",
+      "table": "threshold_evaluation_efforts",
       "default": "",
       "notNull": true,
       "identity": "",
@@ -7689,9 +7229,9 @@
       "generated": ""
     },
     {
-      "name": "evidence_id",
-      "type": "text",
-      "table": "swimming_css_protocol_evidence",
+      "name": "profile_id",
+      "type": "uuid",
+      "table": "threshold_evaluation_efforts",
       "default": "",
       "notNull": true,
       "identity": "",
@@ -7699,9 +7239,9 @@
       "generated": ""
     },
     {
-      "name": "evidence_revision",
-      "type": "integer",
-      "table": "swimming_css_protocol_evidence",
+      "name": "activity_category",
+      "type": "text",
+      "table": "threshold_evaluation_efforts",
       "default": "",
       "notNull": true,
       "identity": "",
@@ -7709,9 +7249,9 @@
       "generated": ""
     },
     {
-      "name": "profile_id",
+      "name": "activity_id",
       "type": "uuid",
-      "table": "swimming_css_protocol_evidence",
+      "table": "threshold_evaluation_efforts",
       "default": "",
       "notNull": true,
       "identity": "",
@@ -7719,9 +7259,9 @@
       "generated": ""
     },
     {
-      "name": "activity_id",
-      "type": "uuid",
-      "table": "swimming_css_protocol_evidence",
+      "name": "source_revision",
+      "type": "integer",
+      "table": "threshold_evaluation_efforts",
       "default": "",
       "notNull": true,
       "identity": "",
@@ -7729,9 +7269,9 @@
       "generated": ""
     },
     {
-      "name": "source_artifact_id",
-      "type": "uuid",
-      "table": "swimming_css_protocol_evidence",
+      "name": "metric",
+      "type": "threshold_metric",
+      "table": "threshold_evaluation_efforts",
       "default": "",
       "notNull": true,
       "identity": "",
@@ -7739,9 +7279,9 @@
       "generated": ""
     },
     {
-      "name": "source_artifact_digest",
-      "type": "text",
-      "table": "swimming_css_protocol_evidence",
+      "name": "effort_type",
+      "type": "effort_type",
+      "table": "threshold_evaluation_efforts",
       "default": "",
       "notNull": true,
       "identity": "",
@@ -7749,9 +7289,9 @@
       "generated": ""
     },
     {
-      "name": "observed_at",
-      "type": "timestamp with time zone",
-      "table": "swimming_css_protocol_evidence",
+      "name": "source_series",
+      "type": "activity_effort_source_series",
+      "table": "threshold_evaluation_efforts",
       "default": "",
       "notNull": true,
       "identity": "",
@@ -7759,9 +7299,9 @@
       "generated": ""
     },
     {
-      "name": "protocol",
-      "type": "text",
-      "table": "swimming_css_protocol_evidence",
+      "name": "role",
+      "type": "threshold_evaluation_effort_role",
+      "table": "threshold_evaluation_efforts",
       "default": "",
       "notNull": true,
       "identity": "",
@@ -7769,9 +7309,9 @@
       "generated": ""
     },
     {
-      "name": "environment",
-      "type": "text",
-      "table": "swimming_css_protocol_evidence",
+      "name": "ordinal",
+      "type": "integer",
+      "table": "threshold_evaluation_efforts",
       "default": "",
       "notNull": true,
       "identity": "",
@@ -7779,9 +7319,119 @@
       "generated": ""
     },
     {
-      "name": "pool_length_meters",
-      "type": "real",
-      "table": "swimming_css_protocol_evidence",
+      "name": "id",
+      "type": "uuid",
+      "table": "threshold_evaluations",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "profile_id",
+      "type": "uuid",
+      "table": "threshold_evaluations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "activity_category",
+      "type": "text",
+      "table": "threshold_evaluations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "metric",
+      "type": "threshold_metric",
+      "table": "threshold_evaluations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "method",
+      "type": "text",
+      "table": "threshold_evaluations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "outcome",
+      "type": "threshold_evaluation_outcome",
+      "table": "threshold_evaluations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "value",
+      "type": "numeric",
+      "table": "threshold_evaluations",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "unit",
+      "type": "text",
+      "table": "threshold_evaluations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "confidence",
+      "type": "numeric",
+      "table": "threshold_evaluations",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "observed_at",
+      "type": "timestamp with time zone",
+      "table": "threshold_evaluations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "rejection_reason",
+      "type": "threshold_evaluation_rejection_reason",
+      "table": "threshold_evaluations",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "policy_version",
+      "type": "text",
+      "table": "threshold_evaluations",
       "default": "",
       "notNull": true,
       "identity": "",
@@ -7789,9 +7439,9 @@
       "generated": ""
     },
     {
-      "name": "timing_basis",
-      "type": "text",
-      "table": "swimming_css_protocol_evidence",
+      "name": "diagnostics",
+      "type": "jsonb",
+      "table": "threshold_evaluations",
       "default": "",
       "notNull": true,
       "identity": "",
@@ -7799,9 +7449,9 @@
       "generated": ""
     },
     {
-      "name": "status",
-      "type": "text",
-      "table": "swimming_css_protocol_evidence",
+      "name": "source_activity_id",
+      "type": "uuid",
+      "table": "threshold_evaluations",
       "default": "",
       "notNull": true,
       "identity": "",
@@ -7809,183 +7459,163 @@
       "generated": ""
     },
     {
-      "name": "reasons",
-      "type": "jsonb",
-      "table": "swimming_css_protocol_evidence",
-      "default": "'[]'::jsonb",
+      "name": "source_revision",
+      "type": "integer",
+      "table": "threshold_evaluations",
+      "default": "",
       "notNull": true,
       "identity": "",
       "position": 15,
       "generated": ""
     },
     {
-      "name": "effort_400_id",
-      "type": "uuid",
-      "table": "swimming_css_protocol_evidence",
-      "default": "",
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "threshold_evaluations",
+      "default": "now()",
       "notNull": true,
       "identity": "",
       "position": 16,
       "generated": ""
     },
     {
-      "name": "effort_400_evidence_revision",
-      "type": "integer",
-      "table": "swimming_css_protocol_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 17,
-      "generated": ""
-    },
-    {
-      "name": "effort_400_segment_id",
+      "name": "id",
       "type": "uuid",
-      "table": "swimming_css_protocol_evidence",
-      "default": "",
+      "table": "thresholds",
+      "default": "gen_random_uuid()",
       "notNull": true,
       "identity": "",
-      "position": 18,
+      "position": 1,
       "generated": ""
     },
     {
-      "name": "effort_400_observed_at",
-      "type": "timestamp with time zone",
-      "table": "swimming_css_protocol_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 19,
-      "generated": ""
-    },
-    {
-      "name": "effort_400_duration_seconds",
-      "type": "integer",
-      "table": "swimming_css_protocol_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 20,
-      "generated": ""
-    },
-    {
-      "name": "effort_400_start_offset_ms",
-      "type": "bigint",
-      "table": "swimming_css_protocol_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 21,
-      "generated": ""
-    },
-    {
-      "name": "effort_400_end_offset_ms",
-      "type": "bigint",
-      "table": "swimming_css_protocol_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 22,
-      "generated": ""
-    },
-    {
-      "name": "effort_200_id",
+      "name": "profile_id",
       "type": "uuid",
-      "table": "swimming_css_protocol_evidence",
+      "table": "thresholds",
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 23,
+      "position": 2,
       "generated": ""
     },
     {
-      "name": "effort_200_evidence_revision",
-      "type": "integer",
-      "table": "swimming_css_protocol_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 24,
-      "generated": ""
-    },
-    {
-      "name": "effort_200_segment_id",
-      "type": "uuid",
-      "table": "swimming_css_protocol_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 25,
-      "generated": ""
-    },
-    {
-      "name": "effort_200_observed_at",
-      "type": "timestamp with time zone",
-      "table": "swimming_css_protocol_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 26,
-      "generated": ""
-    },
-    {
-      "name": "effort_200_duration_seconds",
-      "type": "integer",
-      "table": "swimming_css_protocol_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 27,
-      "generated": ""
-    },
-    {
-      "name": "effort_200_start_offset_ms",
-      "type": "bigint",
-      "table": "swimming_css_protocol_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 28,
-      "generated": ""
-    },
-    {
-      "name": "effort_200_end_offset_ms",
-      "type": "bigint",
-      "table": "swimming_css_protocol_evidence",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 29,
-      "generated": ""
-    },
-    {
-      "name": "calculation_version",
+      "name": "activity_category",
       "type": "text",
-      "table": "swimming_css_protocol_evidence",
+      "table": "thresholds",
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 30,
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "metric",
+      "type": "threshold_metric",
+      "table": "thresholds",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "evaluation_id",
+      "type": "uuid",
+      "table": "thresholds",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "evaluation_outcome",
+      "type": "threshold_evaluation_outcome",
+      "table": "thresholds",
+      "default": "'qualified'::threshold_evaluation_outcome",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "value",
+      "type": "numeric",
+      "table": "thresholds",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "unit",
+      "type": "text",
+      "table": "thresholds",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "confidence",
+      "type": "numeric",
+      "table": "thresholds",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "method",
+      "type": "text",
+      "table": "thresholds",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "effective_at",
+      "type": "timestamp with time zone",
+      "table": "thresholds",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "policy_version",
+      "type": "text",
+      "table": "thresholds",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 12,
+      "generated": ""
+    },
+    {
+      "name": "supersedes_id",
+      "type": "uuid",
+      "table": "thresholds",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 13,
       "generated": ""
     },
     {
       "name": "created_at",
       "type": "timestamp with time zone",
-      "table": "swimming_css_protocol_evidence",
+      "table": "thresholds",
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 31,
-      "generated": ""
-    },
-    {
-      "name": "updated_at",
-      "type": "timestamp with time zone",
-      "table": "swimming_css_protocol_evidence",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 32,
+      "position": 14,
       "generated": ""
     },
     {
@@ -8421,6 +8051,16 @@
       "definition": "CREATE INDEX idx_activity_artifacts_profile ON public.activity_artifacts USING btree (profile_id)"
     },
     {
+      "name": "activity_efforts_deterministic_source_window_unique",
+      "table": "activity_efforts",
+      "definition": "CREATE UNIQUE INDEX activity_efforts_deterministic_source_window_unique ON public.activity_efforts USING btree (activity_id, segment_id, source_artifact_id, source_revision, effort_type, source_series, start_offset_ms, end_offset_ms, method, calculation_version)"
+    },
+    {
+      "name": "activity_efforts_ownership_unique",
+      "table": "activity_efforts",
+      "definition": "CREATE UNIQUE INDEX activity_efforts_ownership_unique ON public.activity_efforts USING btree (id, profile_id, activity_id, activity_category, effort_type, source_series, source_revision)"
+    },
+    {
       "name": "activity_efforts_pkey",
       "table": "activity_efforts",
       "definition": "CREATE UNIQUE INDEX activity_efforts_pkey ON public.activity_efforts USING btree (id)"
@@ -8439,6 +8079,11 @@
       "name": "idx_activity_efforts_segment_id",
       "table": "activity_efforts",
       "definition": "CREATE INDEX idx_activity_efforts_segment_id ON public.activity_efforts USING btree (segment_id)"
+    },
+    {
+      "name": "idx_activity_efforts_source_revision",
+      "table": "activity_efforts",
+      "definition": "CREATE INDEX idx_activity_efforts_source_revision ON public.activity_efforts USING btree (activity_id, source_revision, source_artifact_id)"
     },
     {
       "name": "activity_file_ingestions_pkey",
@@ -8584,6 +8229,11 @@
       "name": "activity_segments_effort_category_unique",
       "table": "activity_segments",
       "definition": "CREATE UNIQUE INDEX activity_segments_effort_category_unique ON public.activity_segments USING btree (id, activity_id, profile_id, activity_category)"
+    },
+    {
+      "name": "activity_segments_effort_source_unique",
+      "table": "activity_segments",
+      "definition": "CREATE UNIQUE INDEX activity_segments_effort_source_unique ON public.activity_segments USING btree (id, activity_id, profile_id, activity_category, source_artifact_id, segment_revision)"
     },
     {
       "name": "activity_segments_id_activity_profile_unique",
@@ -9301,96 +8951,6 @@
       "definition": "CREATE UNIQUE INDEX organizations_slug_unique_idx ON public.organizations USING btree (slug)"
     },
     {
-      "name": "performance_calibration_evidence_current_profile_identity_obser",
-      "table": "performance_calibration_evidence",
-      "definition": "CREATE INDEX performance_calibration_evidence_current_profile_identity_obser ON public.performance_calibration_evidence USING btree (profile_id, metric_key, activity_category, observed_at DESC NULLS LAST) WHERE ((state = 'candidate'::performance_calibration_evidence_state) AND (invalidated_at IS NULL))"
-    },
-    {
-      "name": "performance_calibration_evidence_identity_unique",
-      "table": "performance_calibration_evidence",
-      "definition": "CREATE UNIQUE INDEX performance_calibration_evidence_identity_unique ON public.performance_calibration_evidence USING btree (id, profile_id, metric_key, activity_category)"
-    },
-    {
-      "name": "performance_calibration_evidence_pkey",
-      "table": "performance_calibration_evidence",
-      "definition": "CREATE UNIQUE INDEX performance_calibration_evidence_pkey ON public.performance_calibration_evidence USING btree (id)"
-    },
-    {
-      "name": "performance_calibration_evidence_source_policy_unique",
-      "table": "performance_calibration_evidence",
-      "definition": "CREATE UNIQUE INDEX performance_calibration_evidence_source_policy_unique ON public.performance_calibration_evidence USING btree (activity_id, segment_id, segment_revision, source_artifact_id, metric_key, policy_version)"
-    },
-    {
-      "name": "performance_calibration_evidence_source_revision_idx",
-      "table": "performance_calibration_evidence",
-      "definition": "CREATE INDEX performance_calibration_evidence_source_revision_idx ON public.performance_calibration_evidence USING btree (activity_id, segment_id, segment_revision)"
-    },
-    {
-      "name": "performance_calibration_model_inputs_activity_revision_idx",
-      "table": "performance_calibration_model_inputs",
-      "definition": "CREATE INDEX performance_calibration_model_inputs_activity_revision_idx ON public.performance_calibration_model_inputs USING btree (activity_id, segment_id, segment_revision)"
-    },
-    {
-      "name": "performance_calibration_model_inputs_calibration_evidence_id_ef",
-      "table": "performance_calibration_model_inputs",
-      "definition": "CREATE UNIQUE INDEX performance_calibration_model_inputs_calibration_evidence_id_ef ON public.performance_calibration_model_inputs USING btree (calibration_evidence_id, effort_id)"
-    },
-    {
-      "name": "performance_calibration_model_inputs_evidence_ordinal_unique",
-      "table": "performance_calibration_model_inputs",
-      "definition": "CREATE UNIQUE INDEX performance_calibration_model_inputs_evidence_ordinal_unique ON public.performance_calibration_model_inputs USING btree (calibration_evidence_id, ordinal)"
-    },
-    {
-      "name": "performance_calibration_model_inputs_source_artifact_idx",
-      "table": "performance_calibration_model_inputs",
-      "definition": "CREATE INDEX performance_calibration_model_inputs_source_artifact_idx ON public.performance_calibration_model_inputs USING btree (source_artifact_id)"
-    },
-    {
-      "name": "performance_calibration_selection_evidence_calibration_id_evide",
-      "table": "performance_calibration_selection_evidence",
-      "definition": "CREATE UNIQUE INDEX performance_calibration_selection_evidence_calibration_id_evide ON public.performance_calibration_selection_evidence USING btree (calibration_id, evidence_id)"
-    },
-    {
-      "name": "performance_calibration_selection_evidence_calibration_ordinal_",
-      "table": "performance_calibration_selection_evidence",
-      "definition": "CREATE UNIQUE INDEX performance_calibration_selection_evidence_calibration_ordinal_ ON public.performance_calibration_selection_evidence USING btree (calibration_id, ordinal)"
-    },
-    {
-      "name": "performance_calibration_selection_evidence_evidence_idx",
-      "table": "performance_calibration_selection_evidence",
-      "definition": "CREATE INDEX performance_calibration_selection_evidence_evidence_idx ON public.performance_calibration_selection_evidence USING btree (evidence_id, profile_id, metric_key, activity_category, calibration_id)"
-    },
-    {
-      "name": "performance_calibrations_due_idx",
-      "table": "performance_calibrations",
-      "definition": "CREATE INDEX performance_calibrations_due_idx ON public.performance_calibrations USING btree (profile_id, expires_at)"
-    },
-    {
-      "name": "performance_calibrations_identity_unique",
-      "table": "performance_calibrations",
-      "definition": "CREATE UNIQUE INDEX performance_calibrations_identity_unique ON public.performance_calibrations USING btree (id, profile_id, metric_key, activity_category)"
-    },
-    {
-      "name": "performance_calibrations_pkey",
-      "table": "performance_calibrations",
-      "definition": "CREATE UNIQUE INDEX performance_calibrations_pkey ON public.performance_calibrations USING btree (id)"
-    },
-    {
-      "name": "performance_calibrations_profile_identity_effective_idx",
-      "table": "performance_calibrations",
-      "definition": "CREATE INDEX performance_calibrations_profile_identity_effective_idx ON public.performance_calibrations USING btree (profile_id, metric_key, activity_category, effective_at DESC NULLS LAST)"
-    },
-    {
-      "name": "performance_calibrations_supersedes_idx",
-      "table": "performance_calibrations",
-      "definition": "CREATE INDEX performance_calibrations_supersedes_idx ON public.performance_calibrations USING btree (supersedes_id) WHERE (supersedes_id IS NOT NULL)"
-    },
-    {
-      "name": "performance_calibrations_supersedes_unique",
-      "table": "performance_calibrations",
-      "definition": "CREATE UNIQUE INDEX performance_calibrations_supersedes_unique ON public.performance_calibrations USING btree (supersedes_id)"
-    },
-    {
       "name": "profile_athlete_state_claim_idx",
       "table": "profile_athlete_state",
       "definition": "CREATE INDEX profile_athlete_state_claim_idx ON public.profile_athlete_state USING btree (retry_after, dirty_from_at, updated_at)"
@@ -9591,39 +9151,89 @@
       "definition": "CREATE INDEX \"sessions_userId_idx\" ON public.sessions USING btree (user_id)"
     },
     {
-      "name": "idx_swimming_css_protocol_evidence_activity",
-      "table": "swimming_css_protocol_evidence",
-      "definition": "CREATE INDEX idx_swimming_css_protocol_evidence_activity ON public.swimming_css_protocol_evidence USING btree (activity_id)"
+      "name": "threshold_evaluation_efforts_activity_evaluation_idx",
+      "table": "threshold_evaluation_efforts",
+      "definition": "CREATE INDEX threshold_evaluation_efforts_activity_evaluation_idx ON public.threshold_evaluation_efforts USING btree (activity_id, source_revision, evaluation_id)"
     },
     {
-      "name": "idx_swimming_css_protocol_evidence_profile_observed",
-      "table": "swimming_css_protocol_evidence",
-      "definition": "CREATE INDEX idx_swimming_css_protocol_evidence_profile_observed ON public.swimming_css_protocol_evidence USING btree (profile_id, observed_at, id) WHERE (status = 'qualified'::text)"
+      "name": "threshold_evaluation_efforts_effort_evaluation_idx",
+      "table": "threshold_evaluation_efforts",
+      "definition": "CREATE INDEX threshold_evaluation_efforts_effort_evaluation_idx ON public.threshold_evaluation_efforts USING btree (effort_id, evaluation_id)"
     },
     {
-      "name": "idx_swimming_css_protocol_evidence_source_artifact",
-      "table": "swimming_css_protocol_evidence",
-      "definition": "CREATE INDEX idx_swimming_css_protocol_evidence_source_artifact ON public.swimming_css_protocol_evidence USING btree (source_artifact_id)"
+      "name": "threshold_evaluation_efforts_evaluation_id_effort_id_pk",
+      "table": "threshold_evaluation_efforts",
+      "definition": "CREATE UNIQUE INDEX threshold_evaluation_efforts_evaluation_id_effort_id_pk ON public.threshold_evaluation_efforts USING btree (evaluation_id, effort_id)"
     },
     {
-      "name": "swimming_css_protocol_evidence_pkey",
-      "table": "swimming_css_protocol_evidence",
-      "definition": "CREATE UNIQUE INDEX swimming_css_protocol_evidence_pkey ON public.swimming_css_protocol_evidence USING btree (id)"
+      "name": "threshold_evaluation_efforts_role_ordinal_unique",
+      "table": "threshold_evaluation_efforts",
+      "definition": "CREATE UNIQUE INDEX threshold_evaluation_efforts_role_ordinal_unique ON public.threshold_evaluation_efforts USING btree (evaluation_id, role, ordinal)"
     },
     {
-      "name": "swimming_css_protocol_evidence_profile_activity_protocol_unique",
-      "table": "swimming_css_protocol_evidence",
-      "definition": "CREATE UNIQUE INDEX swimming_css_protocol_evidence_profile_activity_protocol_unique ON public.swimming_css_protocol_evidence USING btree (profile_id, activity_id, protocol)"
+      "name": "threshold_evaluations_idempotency_unique",
+      "table": "threshold_evaluations",
+      "definition": "CREATE UNIQUE INDEX threshold_evaluations_idempotency_unique ON public.threshold_evaluations USING btree (profile_id, source_activity_id, source_revision, activity_category, metric, method, policy_version)"
     },
     {
-      "name": "swimming_css_protocol_evidence_profile_evidence_id_unique",
-      "table": "swimming_css_protocol_evidence",
-      "definition": "CREATE UNIQUE INDEX swimming_css_protocol_evidence_profile_evidence_id_unique ON public.swimming_css_protocol_evidence USING btree (profile_id, evidence_id)"
+      "name": "threshold_evaluations_ownership_unique",
+      "table": "threshold_evaluations",
+      "definition": "CREATE UNIQUE INDEX threshold_evaluations_ownership_unique ON public.threshold_evaluations USING btree (id, profile_id, activity_category, metric)"
     },
     {
-      "name": "swimming_css_protocol_evidence_profile_protocol_id_unique",
-      "table": "swimming_css_protocol_evidence",
-      "definition": "CREATE UNIQUE INDEX swimming_css_protocol_evidence_profile_protocol_id_unique ON public.swimming_css_protocol_evidence USING btree (profile_id, protocol_id)"
+      "name": "threshold_evaluations_pkey",
+      "table": "threshold_evaluations",
+      "definition": "CREATE UNIQUE INDEX threshold_evaluations_pkey ON public.threshold_evaluations USING btree (id)"
+    },
+    {
+      "name": "threshold_evaluations_profile_identity_observed_idx",
+      "table": "threshold_evaluations",
+      "definition": "CREATE INDEX threshold_evaluations_profile_identity_observed_idx ON public.threshold_evaluations USING btree (profile_id, activity_category, metric, observed_at DESC NULLS LAST, id)"
+    },
+    {
+      "name": "threshold_evaluations_qualified_identity_unique",
+      "table": "threshold_evaluations",
+      "definition": "CREATE UNIQUE INDEX threshold_evaluations_qualified_identity_unique ON public.threshold_evaluations USING btree (id, profile_id, activity_category, metric, outcome)"
+    },
+    {
+      "name": "threshold_evaluations_source_revision_idx",
+      "table": "threshold_evaluations",
+      "definition": "CREATE INDEX threshold_evaluations_source_revision_idx ON public.threshold_evaluations USING btree (source_activity_id, source_revision, id)"
+    },
+    {
+      "name": "thresholds_evaluation_unique",
+      "table": "thresholds",
+      "definition": "CREATE UNIQUE INDEX thresholds_evaluation_unique ON public.thresholds USING btree (evaluation_id)"
+    },
+    {
+      "name": "thresholds_identity_root_unique",
+      "table": "thresholds",
+      "definition": "CREATE UNIQUE INDEX thresholds_identity_root_unique ON public.thresholds USING btree (profile_id, activity_category, metric) WHERE (supersedes_id IS NULL)"
+    },
+    {
+      "name": "thresholds_ownership_unique",
+      "table": "thresholds",
+      "definition": "CREATE UNIQUE INDEX thresholds_ownership_unique ON public.thresholds USING btree (id, profile_id, activity_category, metric)"
+    },
+    {
+      "name": "thresholds_pkey",
+      "table": "thresholds",
+      "definition": "CREATE UNIQUE INDEX thresholds_pkey ON public.thresholds USING btree (id)"
+    },
+    {
+      "name": "thresholds_profile_identity_effective_idx",
+      "table": "thresholds",
+      "definition": "CREATE INDEX thresholds_profile_identity_effective_idx ON public.thresholds USING btree (profile_id, activity_category, metric, effective_at DESC NULLS LAST, id)"
+    },
+    {
+      "name": "thresholds_supersedes_idx",
+      "table": "thresholds",
+      "definition": "CREATE INDEX thresholds_supersedes_idx ON public.thresholds USING btree (supersedes_id) WHERE (supersedes_id IS NOT NULL)"
+    },
+    {
+      "name": "thresholds_supersedes_unique",
+      "table": "thresholds",
+      "definition": "CREATE UNIQUE INDEX thresholds_supersedes_unique ON public.thresholds USING btree (supersedes_id)"
     },
     {
       "name": "idx_training_plans_content_visibility",
@@ -9713,6 +9323,18 @@
       "table": "activity_artifacts",
       "schema": "public",
       "definition": "CREATE TRIGGER activity_artifacts_immutable_before_update BEFORE UPDATE ON activity_artifacts FOR EACH ROW EXECUTE FUNCTION enforce_activity_artifact_immutable()"
+    },
+    {
+      "name": "activity_efforts_delete_threshold_dependents",
+      "table": "activity_efforts",
+      "schema": "public",
+      "definition": "CREATE TRIGGER activity_efforts_delete_threshold_dependents BEFORE DELETE ON activity_efforts FOR EACH ROW EXECUTE FUNCTION delete_effort_dependent_threshold_evaluations()"
+    },
+    {
+      "name": "activity_efforts_immutable",
+      "table": "activity_efforts",
+      "schema": "public",
+      "definition": "CREATE TRIGGER activity_efforts_immutable BEFORE UPDATE ON activity_efforts FOR EACH ROW EXECUTE FUNCTION enforce_threshold_truth_immutability()"
     },
     {
       "name": "activity_efforts_validate_segment_range",
@@ -9841,70 +9463,52 @@
       "definition": "CREATE TRIGGER organizations_root_owner_transfer_command_guard BEFORE UPDATE OF root_owner_membership_id ON organizations FOR EACH ROW EXECUTE FUNCTION guard_organization_root_owner_transfer()"
     },
     {
-      "name": "performance_calibration_evidence_history_guard",
-      "table": "performance_calibration_evidence",
+      "name": "threshold_evaluation_efforts_complete_guard",
+      "table": "threshold_evaluation_efforts",
       "schema": "public",
-      "definition": "CREATE TRIGGER performance_calibration_evidence_history_guard BEFORE INSERT OR DELETE OR UPDATE ON performance_calibration_evidence FOR EACH ROW EXECUTE FUNCTION guard_performance_calibration_evidence_history()"
+      "definition": "CREATE CONSTRAINT TRIGGER threshold_evaluation_efforts_complete_guard AFTER INSERT ON threshold_evaluation_efforts DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_threshold_evaluation_efforts()"
     },
     {
-      "name": "performance_calibration_evidence_model_inputs_guard",
-      "table": "performance_calibration_evidence",
+      "name": "threshold_evaluation_efforts_immutable",
+      "table": "threshold_evaluation_efforts",
       "schema": "public",
-      "definition": "CREATE CONSTRAINT TRIGGER performance_calibration_evidence_model_inputs_guard AFTER INSERT ON performance_calibration_evidence DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_performance_calibration_model_inputs()"
+      "definition": "CREATE TRIGGER threshold_evaluation_efforts_immutable BEFORE UPDATE ON threshold_evaluation_efforts FOR EACH ROW EXECUTE FUNCTION enforce_threshold_truth_immutability()"
     },
     {
-      "name": "performance_calibration_model_inputs_append_only",
-      "table": "performance_calibration_model_inputs",
+      "name": "threshold_evaluations_efforts_guard",
+      "table": "threshold_evaluations",
       "schema": "public",
-      "definition": "CREATE TRIGGER performance_calibration_model_inputs_append_only BEFORE DELETE OR UPDATE ON performance_calibration_model_inputs FOR EACH ROW EXECUTE FUNCTION guard_performance_calibration_append_only()"
+      "definition": "CREATE CONSTRAINT TRIGGER threshold_evaluations_efforts_guard AFTER INSERT ON threshold_evaluations DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_threshold_evaluation_efforts()"
     },
     {
-      "name": "performance_calibration_model_inputs_complete_guard",
-      "table": "performance_calibration_model_inputs",
+      "name": "threshold_evaluations_immutable",
+      "table": "threshold_evaluations",
       "schema": "public",
-      "definition": "CREATE CONSTRAINT TRIGGER performance_calibration_model_inputs_complete_guard AFTER INSERT ON performance_calibration_model_inputs DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_performance_calibration_model_inputs()"
+      "definition": "CREATE TRIGGER threshold_evaluations_immutable BEFORE UPDATE ON threshold_evaluations FOR EACH ROW EXECUTE FUNCTION enforce_threshold_truth_immutability()"
     },
     {
-      "name": "performance_calibration_model_inputs_insert_guard",
-      "table": "performance_calibration_model_inputs",
+      "name": "threshold_evaluations_insert_guard",
+      "table": "threshold_evaluations",
       "schema": "public",
-      "definition": "CREATE TRIGGER performance_calibration_model_inputs_insert_guard BEFORE INSERT ON performance_calibration_model_inputs FOR EACH ROW EXECUTE FUNCTION guard_performance_calibration_model_input_insert()"
+      "definition": "CREATE TRIGGER threshold_evaluations_insert_guard BEFORE INSERT ON threshold_evaluations FOR EACH ROW EXECUTE FUNCTION validate_threshold_evaluation_insert()"
     },
     {
-      "name": "performance_calibration_selection_append_only",
-      "table": "performance_calibration_selection_evidence",
+      "name": "thresholds_immutable",
+      "table": "thresholds",
       "schema": "public",
-      "definition": "CREATE TRIGGER performance_calibration_selection_append_only BEFORE DELETE OR UPDATE ON performance_calibration_selection_evidence FOR EACH ROW EXECUTE FUNCTION guard_performance_calibration_append_only()"
+      "definition": "CREATE TRIGGER thresholds_immutable BEFORE UPDATE ON thresholds FOR EACH ROW EXECUTE FUNCTION enforce_threshold_immutability()"
     },
     {
-      "name": "performance_calibration_selection_history_guard",
-      "table": "performance_calibration_selection_evidence",
+      "name": "thresholds_insert_guard",
+      "table": "thresholds",
       "schema": "public",
-      "definition": "CREATE CONSTRAINT TRIGGER performance_calibration_selection_history_guard AFTER INSERT ON performance_calibration_selection_evidence DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_performance_calibration_selection()"
+      "definition": "CREATE TRIGGER thresholds_insert_guard BEFORE INSERT ON thresholds FOR EACH ROW EXECUTE FUNCTION validate_threshold_insert()"
     },
     {
-      "name": "performance_calibration_selection_insert_guard",
-      "table": "performance_calibration_selection_evidence",
+      "name": "thresholds_rewire_successor",
+      "table": "thresholds",
       "schema": "public",
-      "definition": "CREATE TRIGGER performance_calibration_selection_insert_guard BEFORE INSERT ON performance_calibration_selection_evidence FOR EACH ROW EXECUTE FUNCTION guard_performance_calibration_selection_insert()"
-    },
-    {
-      "name": "performance_calibrations_append_only",
-      "table": "performance_calibrations",
-      "schema": "public",
-      "definition": "CREATE TRIGGER performance_calibrations_append_only BEFORE DELETE OR UPDATE ON performance_calibrations FOR EACH ROW EXECUTE FUNCTION guard_performance_calibration_append_only()"
-    },
-    {
-      "name": "performance_calibrations_insert_guard",
-      "table": "performance_calibrations",
-      "schema": "public",
-      "definition": "CREATE TRIGGER performance_calibrations_insert_guard BEFORE INSERT ON performance_calibrations FOR EACH ROW EXECUTE FUNCTION guard_performance_calibration_insert()"
-    },
-    {
-      "name": "performance_calibrations_selection_guard",
-      "table": "performance_calibrations",
-      "schema": "public",
-      "definition": "CREATE CONSTRAINT TRIGGER performance_calibrations_selection_guard AFTER INSERT ON performance_calibrations DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_performance_calibration_selection()"
+      "definition": "CREATE TRIGGER thresholds_rewire_successor AFTER DELETE ON thresholds FOR EACH ROW EXECUTE FUNCTION rewire_threshold_successor_after_delete()"
     }
   ],
   "functions": [
@@ -10036,6 +9640,15 @@
     },
     {
       "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog, public"],
+      "identity": "delete_effort_dependent_threshold_evaluations()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.delete_effort_dependent_threshold_evaluations()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nBEGIN\n  DELETE FROM public.threshold_evaluations AS evaluation\n  WHERE evaluation.id IN (\n    SELECT link.evaluation_id\n    FROM public.threshold_evaluation_efforts AS link\n    WHERE link.effort_id = OLD.id\n  );\n  RETURN OLD;\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
       "config": ["search_path=pg_catalog"],
       "identity": "end_coaching_engagement(uuid,uuid,uuid,text,uuid)",
       "language": "plpgsql",
@@ -10089,6 +9702,24 @@
       "securityDefiner": true
     },
     {
+      "acl": "",
+      "config": ["search_path=pg_catalog, public"],
+      "identity": "enforce_threshold_immutability()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.enforce_threshold_immutability()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE\n  expected_rewire text;\nBEGIN\n  expected_rewire := OLD.supersedes_id::text || ':' || coalesce(NEW.supersedes_id::text, '');\n  IF pg_trigger_depth() > 1\n    AND current_user = (\n      SELECT pg_catalog.pg_get_userbyid(class.relowner)\n      FROM pg_catalog.pg_class AS class\n      WHERE class.oid = TG_RELID\n    )\n    AND pg_catalog.current_setting('gradientpeak.threshold_rewire', true) = expected_rewire\n    AND (to_jsonb(NEW) - 'supersedes_id') IS NOT DISTINCT FROM (to_jsonb(OLD) - 'supersedes_id')\n    AND NOT EXISTS (SELECT 1 FROM public.thresholds WHERE id = OLD.supersedes_id)\n    AND (\n      NEW.supersedes_id IS NULL\n      OR EXISTS (\n        SELECT 1 FROM public.thresholds AS parent\n        WHERE parent.id = NEW.supersedes_id\n          AND parent.profile_id = NEW.profile_id\n          AND parent.activity_category = NEW.activity_category\n          AND parent.metric = NEW.metric\n      )\n    )\n  THEN\n    RETURN NEW;\n  END IF;\n  RAISE EXCEPTION 'threshold rows are immutable outside referential supersession cleanup'\n    USING ERRCODE = '23514', CONSTRAINT = 'thresholds_immutable';\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog"],
+      "identity": "enforce_threshold_truth_immutability()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.enforce_threshold_truth_immutability()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n  RAISE EXCEPTION 'immutable derived rows cannot be updated directly'\n    USING ERRCODE = '23514', CONSTRAINT = 'threshold_truth_immutable';\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
       "acl": "{postgres=X/postgres,service_role=X/postgres}",
       "config": ["search_path=\"\""],
       "identity": "finalize_activity_artifact_deletion(uuid,boolean)",
@@ -10107,51 +9738,6 @@
       "securityDefiner": false
     },
     {
-      "acl": "",
-      "config": ["search_path=pg_catalog, public"],
-      "identity": "guard_performance_calibration_append_only()",
-      "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.guard_performance_calibration_append_only()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nBEGIN\n  IF TG_OP = 'UPDATE' THEN\n    RAISE EXCEPTION 'calibration provenance is append-only'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibration_provenance_append_only';\n  END IF;\n  IF EXISTS (SELECT 1 FROM public.profiles WHERE id = OLD.profile_id) THEN\n    RAISE EXCEPTION 'calibration provenance cannot be deleted while its profile exists'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibration_provenance_retained';\n  END IF;\n  RETURN OLD;\nEND\n$function$\n",
-      "volatility": "v",
-      "securityDefiner": false
-    },
-    {
-      "acl": "",
-      "config": ["search_path=pg_catalog, public"],
-      "identity": "guard_performance_calibration_evidence_history()",
-      "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.guard_performance_calibration_evidence_history()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nBEGIN\n  IF TG_OP = 'INSERT' THEN\n    IF NOT EXISTS (\n      SELECT 1\n      FROM public.activities AS activity\n      JOIN public.activity_segments AS segment\n        ON segment.id = NEW.segment_id\n       AND segment.activity_id = NEW.activity_id\n       AND segment.profile_id = NEW.profile_id\n       AND segment.activity_category = NEW.activity_category\n       AND segment.segment_revision = NEW.segment_revision\n       AND segment.source_artifact_id = NEW.source_artifact_id\n      JOIN public.activity_artifact_links AS source_link\n        ON source_link.activity_id = NEW.activity_id\n       AND source_link.artifact_id = NEW.source_artifact_id\n       AND source_link.profile_id = NEW.profile_id\n       AND source_link.role = 'source'\n       AND source_link.is_current = true\n      JOIN public.activity_artifacts AS artifact\n        ON artifact.id = NEW.source_artifact_id\n       AND artifact.profile_id = NEW.profile_id\n       AND artifact.availability = 'accepted'\n      WHERE activity.id = NEW.activity_id\n        AND activity.profile_id = NEW.profile_id\n        AND activity.segments_revision = NEW.segment_revision\n        AND activity.finished_at = NEW.observed_at\n        AND activity.finished_at <= pg_catalog.statement_timestamp()\n    ) THEN\n      RAISE EXCEPTION 'calibration evidence source is not the exact accepted current segment revision'\n        USING ERRCODE = '23514',\n          CONSTRAINT = 'performance_calibration_evidence_source_integrity';\n    END IF;\n    NEW.created_at := pg_catalog.statement_timestamp();\n    RETURN NEW;\n  END IF;\n\n  IF TG_OP = 'UPDATE' THEN\n    IF OLD.state <> 'candidate'\n      OR NEW.state <> 'invalidated'\n      OR NEW.invalidation_reason IS NULL\n      OR pg_catalog.btrim(NEW.invalidation_reason) = ''\n      OR (to_jsonb(NEW) - ARRAY['state', 'invalidated_at', 'invalidation_reason']::text[])\n         IS DISTINCT FROM\n         (to_jsonb(OLD) - ARRAY['state', 'invalidated_at', 'invalidation_reason']::text[])\n    THEN\n      RAISE EXCEPTION 'calibration evidence is immutable except for candidate invalidation'\n        USING ERRCODE = '23514',\n          CONSTRAINT = 'performance_calibration_evidence_invalidation_only';\n    END IF;\n    NEW.invalidated_at := pg_catalog.statement_timestamp();\n    RETURN NEW;\n  END IF;\n\n  IF EXISTS (SELECT 1 FROM public.profiles WHERE id = OLD.profile_id) THEN\n    RAISE EXCEPTION 'calibration evidence history cannot be deleted while its profile exists'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibration_evidence_retained';\n  END IF;\n  RETURN OLD;\nEND\n$function$\n",
-      "volatility": "v",
-      "securityDefiner": false
-    },
-    {
-      "acl": "",
-      "config": ["search_path=pg_catalog, public"],
-      "identity": "guard_performance_calibration_insert()",
-      "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.guard_performance_calibration_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE\n  prior public.performance_calibrations%ROWTYPE;\nBEGIN\n  NEW.created_at := pg_catalog.statement_timestamp();\n  IF NEW.effective_at > NEW.created_at THEN\n    RAISE EXCEPTION 'calibration effective_at cannot be in the future'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibrations_not_future';\n  END IF;\n\n  IF NEW.supersedes_id IS NULL THEN\n    IF EXISTS (\n      SELECT 1\n      FROM public.performance_calibrations AS existing\n      WHERE existing.profile_id = NEW.profile_id\n        AND existing.metric_key = NEW.metric_key\n        AND existing.activity_category = NEW.activity_category\n    ) THEN\n      RAISE EXCEPTION 'calibration history requires an exact supersession edge'\n        USING ERRCODE = '23514',\n          CONSTRAINT = 'performance_calibrations_linear_history';\n    END IF;\n  ELSE\n    SELECT existing.*\n    INTO prior\n    FROM public.performance_calibrations AS existing\n    WHERE existing.id = NEW.supersedes_id\n      AND existing.profile_id = NEW.profile_id\n      AND existing.metric_key = NEW.metric_key\n      AND existing.activity_category = NEW.activity_category;\n    IF NOT FOUND OR NEW.effective_at < prior.effective_at THEN\n      RAISE EXCEPTION 'calibration supersession is cross-identity or backdated'\n        USING ERRCODE = '23514',\n          CONSTRAINT = 'performance_calibrations_supersession_order';\n    END IF;\n    IF EXISTS (\n      SELECT 1\n      FROM public.performance_calibrations AS existing\n      WHERE existing.profile_id = NEW.profile_id\n        AND existing.metric_key = NEW.metric_key\n        AND existing.activity_category = NEW.activity_category\n        AND (existing.effective_at, existing.created_at, existing.id)\n          > (prior.effective_at, prior.created_at, prior.id)\n    ) THEN\n      RAISE EXCEPTION 'calibration must supersede the latest history row'\n        USING ERRCODE = '23514',\n          CONSTRAINT = 'performance_calibrations_latest_supersession';\n    END IF;\n  END IF;\n  RETURN NEW;\nEND\n$function$\n",
-      "volatility": "v",
-      "securityDefiner": false
-    },
-    {
-      "acl": "",
-      "config": ["search_path=pg_catalog, public"],
-      "identity": "guard_performance_calibration_model_input_insert()",
-      "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.guard_performance_calibration_model_input_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE\n  evidence_observed_at timestamptz;\nBEGIN\n  SELECT evidence.observed_at\n  INTO evidence_observed_at\n  FROM public.performance_calibration_evidence AS evidence\n  WHERE evidence.id = NEW.calibration_evidence_id\n    AND evidence.profile_id = NEW.profile_id\n    AND evidence.metric_key = NEW.metric_key\n    AND evidence.activity_category = NEW.activity_category;\n  IF NOT FOUND OR NEW.observed_at > evidence_observed_at THEN\n    RAISE EXCEPTION 'calibration model input is outside its evidence model run'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibration_model_inputs_evidence_time';\n  END IF;\n\n  IF NOT EXISTS (\n    SELECT 1\n    FROM public.activities AS activity\n    JOIN public.activity_segments AS segment\n      ON segment.id = NEW.segment_id\n     AND segment.activity_id = NEW.activity_id\n     AND segment.profile_id = NEW.profile_id\n     AND segment.activity_category = 'bike'\n     AND segment.segment_revision = NEW.segment_revision\n     AND segment.source_artifact_id = NEW.source_artifact_id\n    JOIN public.activity_efforts AS effort\n      ON effort.id = NEW.effort_id\n     AND effort.activity_id = NEW.activity_id\n     AND effort.segment_id = NEW.segment_id\n     AND effort.profile_id = NEW.profile_id\n     AND effort.activity_category = 'bike'\n     AND effort.effort_type = 'power'\n     AND effort.recorded_at = NEW.observed_at\n     AND effort.duration_seconds = NEW.duration_seconds\n     AND pg_catalog.abs(effort.value::double precision - NEW.value::double precision)\n       <= greatest(\n         0.000001::double precision,\n         pg_catalog.abs(effort.value::double precision) * 0.000005::double precision\n       )\n     AND effort.calculation_version = NEW.calculation_version\n    JOIN public.activity_artifact_links AS source_link\n      ON source_link.activity_id = NEW.activity_id\n     AND source_link.artifact_id = NEW.source_artifact_id\n     AND source_link.profile_id = NEW.profile_id\n     AND source_link.role = 'source'\n     AND source_link.is_current = true\n    JOIN public.activity_artifacts AS artifact\n      ON artifact.id = NEW.source_artifact_id\n     AND artifact.profile_id = NEW.profile_id\n     AND artifact.digest = NEW.source_artifact_digest\n     AND artifact.availability = 'accepted'\n    WHERE activity.id = NEW.activity_id\n      AND activity.profile_id = NEW.profile_id\n      AND activity.segments_revision = NEW.segment_revision\n      AND activity.finished_at <= evidence_observed_at\n  ) THEN\n    RAISE EXCEPTION 'calibration model input is not an exact accepted current source effort'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibration_model_inputs_source_integrity';\n  END IF;\n  RETURN NEW;\nEND\n$function$\n",
-      "volatility": "v",
-      "securityDefiner": false
-    },
-    {
-      "acl": "",
-      "config": ["search_path=pg_catalog, public"],
-      "identity": "guard_performance_calibration_selection_insert()",
-      "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.guard_performance_calibration_selection_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE\n  evidence_state public.performance_calibration_evidence_state;\n  evidence_observed_at timestamptz;\n  calibration_effective_at timestamptz;\nBEGIN\n  SELECT evidence.state, evidence.observed_at, calibration.effective_at\n  INTO evidence_state, evidence_observed_at, calibration_effective_at\n  FROM public.performance_calibration_evidence AS evidence\n  JOIN public.activities AS activity\n    ON activity.id = evidence.activity_id\n   AND activity.profile_id = evidence.profile_id\n   AND activity.finished_at = evidence.observed_at\n  JOIN public.activity_segments AS segment\n    ON segment.id = evidence.segment_id\n   AND segment.activity_id = evidence.activity_id\n   AND segment.profile_id = evidence.profile_id\n   AND segment.activity_category = evidence.activity_category\n   AND segment.segment_revision = evidence.segment_revision\n   AND segment.segment_revision = activity.segments_revision\n   AND segment.source_artifact_id = evidence.source_artifact_id\n  JOIN public.activity_artifact_links AS source_link\n    ON source_link.activity_id = evidence.activity_id\n   AND source_link.artifact_id = evidence.source_artifact_id\n   AND source_link.profile_id = evidence.profile_id\n   AND source_link.role = 'source'\n   AND source_link.is_current = true\n  JOIN public.activity_artifacts AS artifact\n    ON artifact.id = evidence.source_artifact_id\n   AND artifact.profile_id = evidence.profile_id\n   AND artifact.availability = 'accepted'\n  JOIN public.performance_calibrations AS calibration\n    ON calibration.id = NEW.calibration_id\n   AND calibration.profile_id = NEW.profile_id\n   AND calibration.metric_key = NEW.metric_key\n   AND calibration.activity_category = NEW.activity_category\n  WHERE evidence.id = NEW.evidence_id\n    AND evidence.profile_id = NEW.profile_id\n    AND evidence.metric_key = NEW.metric_key\n    AND evidence.activity_category = NEW.activity_category\n    AND evidence.policy_version = calibration.policy_version\n    AND public.performance_calibration_evidence_is_current(evidence.id)\n    AND NOT EXISTS (\n      SELECT 1\n      FROM public.performance_calibration_model_inputs AS model_input\n      WHERE model_input.calibration_evidence_id = evidence.id\n        AND NOT EXISTS (\n          SELECT 1\n          FROM public.activities AS model_activity\n          JOIN public.activity_segments AS model_segment\n            ON model_segment.id = model_input.segment_id\n           AND model_segment.activity_id = model_input.activity_id\n           AND model_segment.profile_id = model_input.profile_id\n           AND model_segment.segment_revision = model_input.segment_revision\n           AND model_segment.segment_revision = model_activity.segments_revision\n           AND model_segment.source_artifact_id = model_input.source_artifact_id\n          JOIN public.activity_efforts AS model_effort\n            ON model_effort.id = model_input.effort_id\n           AND model_effort.activity_id = model_input.activity_id\n           AND model_effort.segment_id = model_input.segment_id\n           AND model_effort.profile_id = model_input.profile_id\n          JOIN public.activity_artifact_links AS model_source_link\n            ON model_source_link.activity_id = model_input.activity_id\n           AND model_source_link.artifact_id = model_input.source_artifact_id\n           AND model_source_link.profile_id = model_input.profile_id\n           AND model_source_link.role = 'source'\n           AND model_source_link.is_current = true\n          JOIN public.activity_artifacts AS model_artifact\n            ON model_artifact.id = model_input.source_artifact_id\n           AND model_artifact.profile_id = model_input.profile_id\n           AND model_artifact.digest = model_input.source_artifact_digest\n           AND model_artifact.availability = 'accepted'\n          WHERE model_activity.id = model_input.activity_id\n            AND model_activity.profile_id = model_input.profile_id\n        )\n    );\n  IF NOT FOUND\n    OR evidence_state <> 'candidate'\n    OR evidence_observed_at > calibration_effective_at\n  THEN\n    RAISE EXCEPTION 'calibration selection must cite qualifying same-identity evidence as of effectiveness'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibration_selection_source_integrity';\n  END IF;\n  RETURN NEW;\nEND\n$function$\n",
-      "volatility": "v",
-      "securityDefiner": false
-    },
-    {
       "acl": "{postgres=X/postgres}",
       "config": ["search_path=\"\""],
       "identity": "handle_new_user()",
@@ -10159,24 +9745,6 @@
       "definition": "CREATE OR REPLACE FUNCTION public.handle_new_user()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n    full_name text;\n    user_email text;\n    base_username text;\n    unique_suffix text;\n    final_username text;\nbegin\n    full_name := nullif(btrim(coalesce(\n        new.raw_user_meta_data->>'full_name',\n        new.raw_user_meta_data->>'name',\n        concat_ws(' ',\n            new.raw_user_meta_data->>'first_name',\n            new.raw_user_meta_data->>'last_name'\n        )\n    )), '');\n\n    user_email := coalesce(\n        nullif(new.email, ''),\n        nullif(new.raw_user_meta_data->>'email', ''),\n        new.id::text || '@users.local'\n    );\n\n    base_username := coalesce(\n        nullif(concat_ws('',\n            new.raw_user_meta_data->>'first_name',\n            new.raw_user_meta_data->>'last_name'\n        ), ''),\n        split_part(user_email, '@', 1),\n        'user'\n    );\n\n    unique_suffix := substring(replace(new.id::text, '-', '') from 1 for 6);\n    final_username := left(base_username || unique_suffix, 50);\n\n    insert into public.users (id, name, email, email_verified, image)\n    values (\n        new.id,\n        coalesce(full_name, split_part(user_email, '@', 1), 'User'),\n        user_email,\n        coalesce(new.email_confirmed_at is not null, false),\n        new.raw_user_meta_data->>'avatar_url'\n    )\n    on conflict (id) do update\n    set\n        name = coalesce(public.users.name, excluded.name),\n        email = coalesce(public.users.email, excluded.email),\n        image = coalesce(public.users.image, excluded.image),\n        updated_at = now();\n\n    insert into public.profiles (id, email, full_name, username, avatar_url)\n    values (\n        new.id,\n        new.email,\n        full_name,\n        final_username,\n        new.raw_user_meta_data->>'avatar_url'\n    )\n    on conflict (id) do update\n    set\n        email = coalesce(public.profiles.email, excluded.email),\n        full_name = coalesce(public.profiles.full_name, excluded.full_name),\n        username = coalesce(public.profiles.username, excluded.username),\n        avatar_url = coalesce(public.profiles.avatar_url, excluded.avatar_url),\n        updated_at = now();\n\n    return new;\nend;\n$function$\n",
       "volatility": "v",
       "securityDefiner": true
-    },
-    {
-      "acl": "{postgres=X/postgres,service_role=X/postgres}",
-      "config": ["search_path=pg_catalog, public"],
-      "identity": "performance_calibration_evidence_is_current(uuid)",
-      "language": "sql",
-      "definition": "CREATE OR REPLACE FUNCTION public.performance_calibration_evidence_is_current(target_evidence_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\n  SELECT EXISTS (\n    SELECT 1\n    FROM public.performance_calibration_evidence AS evidence\n    JOIN public.activities AS activity\n      ON activity.id = evidence.activity_id\n     AND activity.profile_id = evidence.profile_id\n     AND activity.finished_at = evidence.observed_at\n    JOIN public.activity_segments AS segment\n      ON segment.id = evidence.segment_id\n     AND segment.activity_id = evidence.activity_id\n     AND segment.profile_id = evidence.profile_id\n     AND segment.activity_category = evidence.activity_category\n     AND segment.segment_revision = evidence.segment_revision\n     AND segment.segment_revision = activity.segments_revision\n     AND segment.source_artifact_id = evidence.source_artifact_id\n    JOIN public.activity_artifact_links AS source_link\n      ON source_link.activity_id = evidence.activity_id\n     AND source_link.artifact_id = evidence.source_artifact_id\n     AND source_link.profile_id = evidence.profile_id\n     AND source_link.role = 'source'\n     AND source_link.is_current = true\n    JOIN public.activity_artifacts AS artifact\n      ON artifact.id = evidence.source_artifact_id\n     AND artifact.profile_id = evidence.profile_id\n     AND artifact.availability = 'accepted'\n    WHERE evidence.id = target_evidence_id\n      AND evidence.state = 'candidate'\n      AND evidence.invalidated_at IS NULL\n      AND NOT EXISTS (\n        SELECT 1\n        FROM public.performance_calibration_model_inputs AS model_input\n        WHERE model_input.calibration_evidence_id = evidence.id\n          AND NOT EXISTS (\n            SELECT 1\n            FROM public.activities AS model_activity\n            JOIN public.activity_segments AS model_segment\n              ON model_segment.id = model_input.segment_id\n             AND model_segment.activity_id = model_input.activity_id\n             AND model_segment.profile_id = model_input.profile_id\n             AND model_segment.segment_revision = model_input.segment_revision\n             AND model_segment.segment_revision = model_activity.segments_revision\n             AND model_segment.source_artifact_id = model_input.source_artifact_id\n            JOIN public.activity_efforts AS model_effort\n              ON model_effort.id = model_input.effort_id\n             AND model_effort.activity_id = model_input.activity_id\n             AND model_effort.segment_id = model_input.segment_id\n             AND model_effort.profile_id = model_input.profile_id\n            JOIN public.activity_artifact_links AS model_source_link\n              ON model_source_link.activity_id = model_input.activity_id\n             AND model_source_link.artifact_id = model_input.source_artifact_id\n             AND model_source_link.profile_id = model_input.profile_id\n             AND model_source_link.role = 'source'\n             AND model_source_link.is_current = true\n            JOIN public.activity_artifacts AS model_artifact\n              ON model_artifact.id = model_input.source_artifact_id\n             AND model_artifact.profile_id = model_input.profile_id\n             AND model_artifact.digest = model_input.source_artifact_digest\n             AND model_artifact.availability = 'accepted'\n            WHERE model_activity.id = model_input.activity_id\n              AND model_activity.profile_id = model_input.profile_id\n          )\n      )\n  )\n$function$\n",
-      "volatility": "s",
-      "securityDefiner": false
-    },
-    {
-      "acl": "{postgres=X/postgres,service_role=X/postgres}",
-      "config": ["search_path=pg_catalog"],
-      "identity": "performance_calibration_lifecycle_policy()",
-      "language": "sql",
-      "definition": "CREATE OR REPLACE FUNCTION public.performance_calibration_lifecycle_policy()\n RETURNS jsonb\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'pg_catalog'\nAS $function$\n  SELECT '{\n    \"expiryDays\": 90,\n    \"maximumSelectionCandidates\": 64,\n    \"confirmation\": {\"evidenceCount\": 2, \"minimumDaySpan\": 7, \"maximumDaySpan\": 42},\n    \"decrease\": {\"evidenceCount\": 3, \"minimumDaySpan\": 14, \"maximumDaySpan\": 56},\n    \"heartRateChange\": {\"evidenceCount\": 3, \"minimumDaySpan\": 14, \"maximumDaySpan\": 56},\n    \"relativeTolerance\": 0.03,\n    \"heartRateToleranceBpm\": 3,\n    \"materialRelativeChange\": 0.03,\n    \"materialHeartRateChangeBpm\": 4\n  }'::jsonb\n$function$\n",
-      "volatility": "i",
-      "securityDefiner": false
     },
     {
       "acl": "",
@@ -10278,6 +9846,15 @@
       "securityDefiner": true
     },
     {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog, public"],
+      "identity": "rewire_threshold_successor_after_delete()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.rewire_threshold_successor_after_delete()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE\n  rewired_count integer;\nBEGIN\n  PERFORM pg_catalog.set_config(\n    'gradientpeak.threshold_rewire',\n    OLD.id::text || ':' || coalesce(OLD.supersedes_id::text, ''),\n    true\n  );\n  UPDATE public.thresholds AS successor\n  SET supersedes_id = OLD.supersedes_id\n  WHERE successor.supersedes_id = OLD.id\n    AND successor.profile_id = OLD.profile_id\n    AND successor.activity_category = OLD.activity_category\n    AND successor.metric = OLD.metric;\n  GET DIAGNOSTICS rewired_count = ROW_COUNT;\n  PERFORM pg_catalog.set_config('gradientpeak.threshold_rewire', '', true);\n\n  IF rewired_count > 1 OR EXISTS (\n    SELECT 1 FROM public.thresholds AS successor\n    WHERE successor.supersedes_id = OLD.id\n  ) THEN\n    RAISE EXCEPTION 'threshold successor chain is branched or crosses identity'\n      USING ERRCODE = '23514', CONSTRAINT = 'thresholds_successor_rewire_identity';\n  END IF;\n  RETURN OLD;\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
+    {
       "acl": "{postgres=X/postgres,service_role=X/postgres}",
       "config": ["search_path=\"\""],
       "identity": "switch_activity_source_artifact(uuid,uuid,uuid,text)",
@@ -10300,7 +9877,7 @@
       "config": ["search_path=\"\""],
       "identity": "validate_activity_effort_segment_range()",
       "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.validate_activity_effort_segment_range()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\ndeclare segment_record record;\nbegin\n  if new.activity_id is null then return new; end if;\n  select start_offset_ms,end_offset_ms,activity_category into segment_record from public.activity_segments\n    where id=new.segment_id and activity_id=new.activity_id and profile_id=new.profile_id;\n  if not found or segment_record.activity_category<>new.activity_category\n    or new.start_offset is null or new.start_offset*1000<segment_record.start_offset_ms\n    or (new.start_offset+new.duration_seconds)*1000>segment_record.end_offset_ms then\n    raise exception 'activity effort must be contained by its matching-category segment';\n  end if;\n  return new;\nend $function$\n",
+      "definition": "CREATE OR REPLACE FUNCTION public.validate_activity_effort_segment_range()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\ndeclare segment_record record;\nbegin\n  if new.activity_id is null then return new; end if;\n  select start_offset_ms,end_offset_ms,activity_category into segment_record from public.activity_segments\n    where id=new.segment_id and activity_id=new.activity_id and profile_id=new.profile_id;\n  if not found or segment_record.activity_category<>new.activity_category\n    or new.start_offset_ms<segment_record.start_offset_ms\n    or new.end_offset_ms>segment_record.end_offset_ms then\n    raise exception 'activity effort must be contained by its matching-category segment';\n  end if;\n  return new;\nend $function$\n",
       "volatility": "v",
       "securityDefiner": false
     },
@@ -10342,28 +9919,37 @@
     },
     {
       "acl": "",
-      "config": ["search_path=pg_catalog, public"],
-      "identity": "validate_performance_calibration_model_inputs()",
-      "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.validate_performance_calibration_model_inputs()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE\n  evidence_id_to_validate uuid;\n  evidence public.performance_calibration_evidence%ROWTYPE;\n  input_count integer;\n  minimum_ordinal integer;\n  maximum_ordinal integer;\n  actual_effort_ids jsonb;\n  expected_effort_ids jsonb;\nBEGIN\n  IF TG_TABLE_NAME = 'performance_calibration_evidence' THEN\n    evidence_id_to_validate := NEW.id;\n  ELSE\n    evidence_id_to_validate := NEW.calibration_evidence_id;\n  END IF;\n  SELECT * INTO evidence\n  FROM public.performance_calibration_evidence\n  WHERE id = evidence_id_to_validate;\n  IF NOT FOUND THEN RETURN NULL; END IF;\n\n  SELECT count(*)::integer,\n    min(model_input.ordinal),\n    max(model_input.ordinal),\n    coalesce(\n      jsonb_agg(to_jsonb(model_input.effort_id::text) ORDER BY model_input.ordinal),\n      '[]'::jsonb\n    )\n  INTO input_count, minimum_ordinal, maximum_ordinal, actual_effort_ids\n  FROM public.performance_calibration_model_inputs AS model_input\n  WHERE model_input.calibration_evidence_id = evidence.id;\n\n  expected_effort_ids := coalesce(\n    evidence.diagnostics #> '{model,sourceEvidenceIds}',\n    '[]'::jsonb\n  );\n  IF actual_effort_ids IS DISTINCT FROM expected_effort_ids\n    OR (input_count > 0 AND (minimum_ordinal <> 0 OR maximum_ordinal <> input_count - 1))\n    OR coalesce((evidence.diagnostics #>> '{model,evidenceCount}')::integer, 0) <> input_count\n  THEN\n    RAISE EXCEPTION 'calibration model inputs do not match immutable model-run diagnostics'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibration_model_inputs_complete';\n  END IF;\n  RETURN NULL;\nEND\n$function$\n",
-      "volatility": "v",
-      "securityDefiner": false
-    },
-    {
-      "acl": "",
-      "config": ["search_path=pg_catalog, public"],
-      "identity": "validate_performance_calibration_selection()",
-      "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.validate_performance_calibration_selection()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE\n  calibration_id_to_validate uuid;\n  calibration public.performance_calibrations%ROWTYPE;\n  prior_calibration public.performance_calibrations%ROWTYPE;\n  lifecycle_policy jsonb := public.performance_calibration_lifecycle_policy();\n  selected_count integer;\n  distinct_activity_count integer;\n  distinct_day_count integer;\n  minimum_ordinal integer;\n  maximum_ordinal integer;\n  minimum_observed_at timestamptz;\n  maximum_observed_at timestamptz;\n  minimum_observed_day date;\n  maximum_observed_day date;\n  minimum_value double precision;\n  maximum_value double precision;\n  median_value double precision;\n  selected_evidence_ids jsonb;\n  selected_activity_ids jsonb;\n  selection_reason text;\n  selection_trend text;\n  required_evidence_count integer;\n  minimum_day_span integer;\n  maximum_day_span integer;\n  day_span integer;\n  tolerance double precision;\n  material_change double precision;\n  prior_is_eligible boolean := false;\n  current_band_support_exists boolean := false;\n  lifecycle_semantics_valid boolean := true;\nBEGIN\n  IF TG_TABLE_NAME = 'performance_calibrations' THEN\n    calibration_id_to_validate := NEW.id;\n  ELSE\n    calibration_id_to_validate := NEW.calibration_id;\n  END IF;\n  SELECT * INTO calibration\n  FROM public.performance_calibrations\n  WHERE id = calibration_id_to_validate;\n  IF NOT FOUND THEN RETURN NULL; END IF;\n\n  SELECT count(*)::integer,\n    count(DISTINCT evidence.activity_id)::integer,\n    count(DISTINCT (evidence.observed_at AT TIME ZONE 'UTC')::date)::integer,\n    min(link.ordinal),\n    max(link.ordinal),\n    min(evidence.observed_at),\n    max(evidence.observed_at),\n    min((evidence.observed_at AT TIME ZONE 'UTC')::date),\n    max((evidence.observed_at AT TIME ZONE 'UTC')::date),\n    min(evidence.value::double precision),\n    max(evidence.value::double precision),\n    percentile_cont(0.5) WITHIN GROUP (ORDER BY evidence.value::double precision),\n    jsonb_agg(to_jsonb(evidence.id::text) ORDER BY link.ordinal),\n    jsonb_agg(to_jsonb(evidence.activity_id::text) ORDER BY link.ordinal)\n  INTO selected_count,\n    distinct_activity_count,\n    distinct_day_count,\n    minimum_ordinal,\n    maximum_ordinal,\n    minimum_observed_at,\n    maximum_observed_at,\n    minimum_observed_day,\n    maximum_observed_day,\n    minimum_value,\n    maximum_value,\n    median_value,\n    selected_evidence_ids,\n    selected_activity_ids\n  FROM public.performance_calibration_selection_evidence AS link\n  JOIN public.performance_calibration_evidence AS evidence\n    ON evidence.id = link.evidence_id\n   AND evidence.profile_id = link.profile_id\n   AND evidence.metric_key = link.metric_key\n   AND evidence.activity_category = link.activity_category\n  WHERE link.calibration_id = calibration.id;\n\n  IF selected_count = 0\n    OR minimum_ordinal <> 0\n    OR maximum_ordinal <> selected_count - 1\n    OR maximum_observed_at IS DISTINCT FROM calibration.effective_at\n    OR calibration.selection_diagnostics -> 'selectedEvidenceIds' IS DISTINCT FROM selected_evidence_ids\n    OR calibration.selection_diagnostics -> 'selectedActivityIds' IS DISTINCT FROM selected_activity_ids\n    OR (calibration.selection_diagnostics ->> 'evidenceCount')::integer IS DISTINCT FROM selected_count\n    OR calibration.selection_diagnostics ->> 'policyVersion' IS DISTINCT FROM calibration.policy_version\n  THEN\n    RAISE EXCEPTION 'calibration selection provenance does not match immutable history'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibrations_selection_integrity';\n  END IF;\n\n  IF calibration.expires_at IS DISTINCT FROM\n      calibration.effective_at\n        + ((lifecycle_policy ->> 'expiryDays')::integer * INTERVAL '24 hours')\n  THEN\n    RAISE EXCEPTION 'calibration expiry does not match lifecycle policy'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibrations_lifecycle_semantics';\n  END IF;\n\n  selection_reason := calibration.selection_diagnostics ->> 'selectionReason';\n  selection_trend := calibration.selection_diagnostics ->> 'trend';\n  day_span := maximum_observed_day - minimum_observed_day;\n  tolerance := CASE\n    WHEN calibration.metric_key = 'threshold_heart_rate'\n      THEN (lifecycle_policy ->> 'heartRateToleranceBpm')::double precision\n    ELSE (lifecycle_policy ->> 'relativeTolerance')::double precision\n  END;\n  material_change := CASE\n    WHEN calibration.metric_key = 'threshold_heart_rate'\n      THEN (lifecycle_policy ->> 'materialHeartRateChangeBpm')::double precision\n    ELSE (lifecycle_policy ->> 'materialRelativeChange')::double precision\n  END;\n\n  IF (calibration.selection_diagnostics ->> 'tolerance')::double precision\n      IS DISTINCT FROM tolerance\n  THEN\n    lifecycle_semantics_valid := false;\n  END IF;\n\n  IF calibration.supersedes_id IS NOT NULL THEN\n    SELECT * INTO prior_calibration\n    FROM public.performance_calibrations\n    WHERE id = calibration.supersedes_id;\n\n    prior_is_eligible := FOUND\n      AND prior_calibration.policy_version = calibration.policy_version\n      AND calibration.effective_at >= prior_calibration.effective_at\n      AND NOT EXISTS (\n        SELECT 1\n        FROM public.performance_calibration_selection_evidence AS prior_link\n        WHERE prior_link.calibration_id = prior_calibration.id\n          AND NOT public.performance_calibration_evidence_is_current(prior_link.evidence_id)\n      );\n  END IF;\n\n  IF selection_reason = 'first_qualifying_evidence' THEN\n    lifecycle_semantics_valid := lifecycle_semantics_valid\n      AND selected_count = 1\n      AND distinct_activity_count = 1\n      AND distinct_day_count = 1\n      AND selection_trend = 'initial'\n      AND abs(calibration.value::double precision - median_value)\n        <= greatest(1e-9, abs(median_value) * 1e-9)\n      AND (\n        calibration.supersedes_id IS NULL\n        OR calibration.effective_at >= prior_calibration.expires_at\n        OR NOT prior_is_eligible\n      );\n  ELSIF selection_reason = 'complete_protocol' THEN\n    lifecycle_semantics_valid := lifecycle_semantics_valid\n      AND calibration.metric_key = 'threshold_speed'\n      AND calibration.activity_category = 'swim'\n      AND selected_count = 1\n      AND distinct_activity_count = 1\n      AND distinct_day_count = 1\n      AND selection_trend = 'initial'\n      AND abs(calibration.value::double precision - median_value)\n        <= greatest(1e-9, abs(median_value) * 1e-9)\n      AND (\n        calibration.supersedes_id IS NULL\n        OR NOT prior_is_eligible\n      );\n  ELSIF selection_reason = 'independent_confirmation' THEN\n    required_evidence_count := (lifecycle_policy #>> '{confirmation,evidenceCount}')::integer;\n    minimum_day_span := (lifecycle_policy #>> '{confirmation,minimumDaySpan}')::integer;\n    maximum_day_span := (lifecycle_policy #>> '{confirmation,maximumDaySpan}')::integer;\n    lifecycle_semantics_valid := lifecycle_semantics_valid\n      AND selected_count = required_evidence_count\n      AND distinct_activity_count = required_evidence_count\n      AND distinct_day_count = required_evidence_count\n      AND day_span BETWEEN minimum_day_span AND maximum_day_span\n      AND (\n        (calibration.metric_key = 'threshold_heart_rate' AND maximum_value - minimum_value <= tolerance)\n        OR (calibration.metric_key <> 'threshold_heart_rate' AND maximum_value / minimum_value - 1 <= tolerance)\n      )\n      AND abs(calibration.value::double precision - median_value)\n        <= greatest(1e-9, abs(median_value) * 1e-9)\n      AND (\n        (calibration.supersedes_id IS NULL AND selection_trend = 'initial')\n        OR (\n          calibration.supersedes_id IS NOT NULL\n          AND (\n            (\n              NOT prior_is_eligible\n              AND selection_trend = 'initial'\n            )\n            OR (\n              prior_is_eligible\n              AND selection_trend = 'stable'\n              AND (\n                (\n                  prior_calibration.selection_diagnostics ->> 'selectionReason'\n                    = 'first_qualifying_evidence'\n                  AND calibration.effective_at < prior_calibration.expires_at\n                  AND maximum_observed_at >= prior_calibration.effective_at\n                )\n                OR (\n                  calibration.effective_at >= prior_calibration.expires_at\n                  AND minimum_observed_at >= prior_calibration.expires_at\n                )\n              )\n            )\n          )\n        )\n      );\n  ELSIF selection_reason IN ('supported_increase', 'supported_decrease', 'unchanged') THEN\n    lifecycle_semantics_valid := lifecycle_semantics_valid\n      AND calibration.supersedes_id IS NOT NULL\n      AND prior_is_eligible\n      AND prior_calibration.selection_diagnostics ->> 'selectionReason' <> 'first_qualifying_evidence'\n      AND calibration.effective_at < prior_calibration.expires_at\n      AND minimum_observed_at >= prior_calibration.effective_at;\n\n    IF selection_reason = 'unchanged' THEN\n      required_evidence_count := (lifecycle_policy #>> '{confirmation,evidenceCount}')::integer;\n      minimum_day_span := (lifecycle_policy #>> '{confirmation,minimumDaySpan}')::integer;\n      maximum_day_span := (lifecycle_policy #>> '{confirmation,maximumDaySpan}')::integer;\n      lifecycle_semantics_valid := lifecycle_semantics_valid\n        AND selected_count = required_evidence_count\n        AND distinct_activity_count = required_evidence_count\n        AND distinct_day_count = required_evidence_count\n        AND day_span BETWEEN minimum_day_span AND maximum_day_span\n        AND selection_trend = 'stable'\n        AND calibration.value IS NOT DISTINCT FROM prior_calibration.value\n        AND (\n          (\n            calibration.metric_key = 'threshold_heart_rate'\n            AND maximum_value - minimum_value <= tolerance\n            AND abs(minimum_value - prior_calibration.value::double precision) <= tolerance\n            AND abs(maximum_value - prior_calibration.value::double precision) <= tolerance\n          )\n          OR (\n            calibration.metric_key <> 'threshold_heart_rate'\n            AND maximum_value / minimum_value - 1 <= tolerance\n            AND abs(minimum_value / prior_calibration.value::double precision - 1) <= tolerance\n            AND abs(maximum_value / prior_calibration.value::double precision - 1) <= tolerance\n          )\n        );\n    ELSE\n      IF selection_reason = 'supported_increase'\n        AND calibration.metric_key <> 'threshold_heart_rate'\n      THEN\n        required_evidence_count := (lifecycle_policy #>> '{confirmation,evidenceCount}')::integer;\n        minimum_day_span := (lifecycle_policy #>> '{confirmation,minimumDaySpan}')::integer;\n        maximum_day_span := (lifecycle_policy #>> '{confirmation,maximumDaySpan}')::integer;\n      ELSIF selection_reason = 'supported_increase' THEN\n        required_evidence_count := (lifecycle_policy #>> '{heartRateChange,evidenceCount}')::integer;\n        minimum_day_span := (lifecycle_policy #>> '{heartRateChange,minimumDaySpan}')::integer;\n        maximum_day_span := (lifecycle_policy #>> '{heartRateChange,maximumDaySpan}')::integer;\n      ELSE\n        required_evidence_count := (lifecycle_policy #>> '{decrease,evidenceCount}')::integer;\n        minimum_day_span := (lifecycle_policy #>> '{decrease,minimumDaySpan}')::integer;\n        maximum_day_span := (lifecycle_policy #>> '{decrease,maximumDaySpan}')::integer;\n      END IF;\n\n      lifecycle_semantics_valid := lifecycle_semantics_valid\n        AND selected_count = required_evidence_count\n        AND distinct_activity_count = required_evidence_count\n        AND distinct_day_count = required_evidence_count\n        AND day_span BETWEEN minimum_day_span AND maximum_day_span\n        AND abs(calibration.value::double precision - median_value)\n          <= greatest(1e-9, abs(median_value) * 1e-9)\n        AND (\n          (calibration.metric_key = 'threshold_heart_rate' AND maximum_value - minimum_value <= tolerance)\n          OR (calibration.metric_key <> 'threshold_heart_rate' AND maximum_value / minimum_value - 1 <= tolerance)\n        );\n\n      IF selection_reason = 'supported_increase' THEN\n        lifecycle_semantics_valid := lifecycle_semantics_valid\n          AND selection_trend = 'increasing'\n          AND (\n            (\n              calibration.metric_key = 'threshold_heart_rate'\n              AND median_value - prior_calibration.value::double precision >= material_change\n            )\n            OR (\n              calibration.metric_key <> 'threshold_heart_rate'\n              AND median_value / prior_calibration.value::double precision - 1 >= material_change\n            )\n          );\n      ELSE\n        lifecycle_semantics_valid := lifecycle_semantics_valid\n          AND selection_trend = 'decreasing'\n          AND (\n            (\n              calibration.metric_key = 'threshold_heart_rate'\n              AND prior_calibration.value::double precision - median_value >= material_change\n            )\n            OR (\n              calibration.metric_key <> 'threshold_heart_rate'\n              AND prior_calibration.value::double precision / median_value - 1 >= material_change\n            )\n          );\n\n        WITH lifecycle_candidates AS (\n          SELECT evidence.id,\n            evidence.activity_id,\n            evidence.observed_at,\n            evidence.value::double precision AS value\n          FROM public.performance_calibration_evidence AS evidence\n          WHERE evidence.profile_id = calibration.profile_id\n            AND evidence.metric_key = calibration.metric_key\n            AND evidence.activity_category = calibration.activity_category\n            AND evidence.policy_version = calibration.policy_version\n            AND evidence.observed_at >= prior_calibration.effective_at\n            AND evidence.observed_at <= calibration.effective_at\n            AND public.performance_calibration_evidence_is_current(evidence.id)\n          ORDER BY evidence.observed_at DESC, evidence.id DESC\n          LIMIT (lifecycle_policy ->> 'maximumSelectionCandidates')::integer\n        )\n        SELECT EXISTS (\n          SELECT 1\n          FROM lifecycle_candidates AS left_evidence\n          JOIN lifecycle_candidates AS right_evidence\n            ON right_evidence.id > left_evidence.id\n           AND right_evidence.activity_id <> left_evidence.activity_id\n           AND (right_evidence.observed_at AT TIME ZONE 'UTC')::date\n             <> (left_evidence.observed_at AT TIME ZONE 'UTC')::date\n          WHERE abs(\n              (right_evidence.observed_at AT TIME ZONE 'UTC')::date\n              - (left_evidence.observed_at AT TIME ZONE 'UTC')::date\n            ) BETWEEN\n              (lifecycle_policy #>> '{confirmation,minimumDaySpan}')::integer\n              AND (lifecycle_policy #>> '{confirmation,maximumDaySpan}')::integer\n            AND (\n              (\n                calibration.metric_key = 'threshold_heart_rate'\n                AND abs(right_evidence.value - left_evidence.value) <= tolerance\n                AND abs(right_evidence.value - prior_calibration.value::double precision) <= tolerance\n                AND abs(left_evidence.value - prior_calibration.value::double precision) <= tolerance\n              )\n              OR (\n                calibration.metric_key <> 'threshold_heart_rate'\n                AND greatest(right_evidence.value, left_evidence.value)\n                  / least(right_evidence.value, left_evidence.value) - 1 <= tolerance\n                AND abs(right_evidence.value / prior_calibration.value::double precision - 1) <= tolerance\n                AND abs(left_evidence.value / prior_calibration.value::double precision - 1) <= tolerance\n              )\n            )\n        ) INTO current_band_support_exists;\n        lifecycle_semantics_valid := lifecycle_semantics_valid AND NOT current_band_support_exists;\n      END IF;\n    END IF;\n  ELSE\n    lifecycle_semantics_valid := false;\n  END IF;\n\n  IF lifecycle_semantics_valid IS NOT TRUE THEN\n    RAISE EXCEPTION 'calibration selection violates lifecycle semantics'\n      USING ERRCODE = '23514',\n        CONSTRAINT = 'performance_calibrations_lifecycle_semantics';\n  END IF;\n  RETURN NULL;\nEND\n$function$\n",
-      "volatility": "v",
-      "securityDefiner": false
-    },
-    {
-      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "validate_policy_supersession()",
       "language": "plpgsql",
       "definition": "CREATE OR REPLACE FUNCTION public.validate_policy_supersession()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  predecessor_effective_from timestamp with time zone;\nBEGIN\n  IF NEW.supersedes_policy_version_id IS NULL THEN\n    RETURN NULL;\n  END IF;\n  SELECT effective_from INTO predecessor_effective_from\n  FROM public.athlete_consent_policy_versions\n  WHERE id = NEW.supersedes_policy_version_id AND scope_key = NEW.scope_key;\n  IF predecessor_effective_from IS NULL OR NEW.effective_from < predecessor_effective_from THEN\n    RAISE EXCEPTION 'policy supersession must retain scope and cannot move effective chronology backward';\n  END IF;\n  RETURN NULL;\nEND $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog, public"],
+      "identity": "validate_threshold_evaluation_efforts()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.validate_threshold_evaluation_efforts()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE\n  target_evaluation_id uuid;\n  evaluation public.threshold_evaluations%ROWTYPE;\n  primary_count integer;\n  primary_activity_id uuid;\n  primary_revision integer;\nBEGIN\n  IF TG_TABLE_NAME = 'threshold_evaluations' THEN\n    target_evaluation_id := NEW.id;\n  ELSE\n    target_evaluation_id := NEW.evaluation_id;\n  END IF;\n\n  SELECT * INTO evaluation\n  FROM public.threshold_evaluations\n  WHERE id = target_evaluation_id;\n  IF NOT FOUND THEN RETURN NULL; END IF;\n\n  SELECT count(*)::integer\n  INTO primary_count\n  FROM public.threshold_evaluation_efforts\n  WHERE evaluation_id = target_evaluation_id\n    AND role = 'primary';\n\n  SELECT activity_id, source_revision\n  INTO primary_activity_id, primary_revision\n  FROM public.threshold_evaluation_efforts\n  WHERE evaluation_id = target_evaluation_id\n    AND role = 'primary'\n  LIMIT 1;\n\n  IF evaluation.outcome = 'rejected' AND EXISTS (\n    SELECT 1\n    FROM public.threshold_evaluation_efforts AS linked_effort\n    WHERE linked_effort.evaluation_id = target_evaluation_id\n      AND (\n        linked_effort.activity_id IS DISTINCT FROM evaluation.source_activity_id\n        OR linked_effort.source_revision IS DISTINCT FROM evaluation.source_revision\n      )\n  ) THEN\n    RAISE EXCEPTION 'rejected threshold evaluation links must match its source activity revision'\n      USING ERRCODE = '23514', CONSTRAINT = 'threshold_evaluations_rejected_effort_source';\n  END IF;\n\n  IF primary_count > 1 THEN\n    RAISE EXCEPTION 'threshold evaluation cannot have multiple primary efforts'\n      USING ERRCODE = '23514', CONSTRAINT = 'threshold_evaluations_primary_effort';\n  END IF;\n\n  IF evaluation.outcome = 'qualified' AND primary_count <> 1 THEN\n    RAISE EXCEPTION 'qualified threshold evaluation requires exactly one primary effort'\n      USING ERRCODE = '23514', CONSTRAINT = 'threshold_evaluations_primary_effort';\n  END IF;\n\n  -- Rejected evaluations may have no measured window; all linked evidence is source-local.\n  IF primary_count = 1 AND (\n      primary_activity_id IS DISTINCT FROM evaluation.source_activity_id\n      OR primary_revision IS DISTINCT FROM evaluation.source_revision\n    )\n  THEN\n    RAISE EXCEPTION 'threshold evaluation primary effort does not match its source revision'\n      USING ERRCODE = '23514', CONSTRAINT = 'threshold_evaluations_primary_effort';\n  END IF;\n  RETURN NULL;\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog, public"],
+      "identity": "validate_threshold_evaluation_insert()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.validate_threshold_evaluation_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nBEGIN\n  IF NOT EXISTS (\n    SELECT 1\n    FROM public.activities AS activity\n    WHERE activity.id = NEW.source_activity_id\n      AND activity.profile_id = NEW.profile_id\n      AND activity.segments_revision = NEW.source_revision\n      AND activity.finished_at = NEW.observed_at\n      AND activity.finished_at <= pg_catalog.statement_timestamp()\n  ) THEN\n    RAISE EXCEPTION 'threshold evaluation must cite the exact current activity source revision'\n      USING ERRCODE = '23514', CONSTRAINT = 'threshold_evaluations_source_integrity';\n  END IF;\n  NEW.created_at := pg_catalog.statement_timestamp();\n  RETURN NEW;\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog, public"],
+      "identity": "validate_threshold_insert()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.validate_threshold_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE\n  evaluation public.threshold_evaluations%ROWTYPE;\n  prior public.thresholds%ROWTYPE;\nBEGIN\n  SELECT * INTO evaluation\n  FROM public.threshold_evaluations\n  WHERE id = NEW.evaluation_id\n    AND profile_id = NEW.profile_id\n    AND activity_category = NEW.activity_category\n    AND metric = NEW.metric\n    AND outcome = 'qualified';\n\n  IF NOT FOUND\n    OR NEW.value IS DISTINCT FROM evaluation.value\n    OR NEW.unit IS DISTINCT FROM evaluation.unit\n    OR NEW.confidence IS DISTINCT FROM evaluation.confidence\n    OR NEW.method IS DISTINCT FROM evaluation.method\n    OR NEW.policy_version IS DISTINCT FROM evaluation.policy_version\n    OR NEW.effective_at < evaluation.observed_at\n  THEN\n    RAISE EXCEPTION 'threshold must exactly publish its qualified evaluation'\n      USING ERRCODE = '23514', CONSTRAINT = 'thresholds_evaluation_snapshot';\n  END IF;\n\n  NEW.created_at := pg_catalog.statement_timestamp();\n  IF NEW.effective_at > NEW.created_at THEN\n    RAISE EXCEPTION 'threshold effective_at cannot be in the future'\n      USING ERRCODE = '23514', CONSTRAINT = 'thresholds_not_future';\n  END IF;\n\n  IF NEW.supersedes_id IS NULL THEN\n    IF EXISTS (\n      SELECT 1 FROM public.thresholds AS existing\n      WHERE existing.profile_id = NEW.profile_id\n        AND existing.activity_category = NEW.activity_category\n        AND existing.metric = NEW.metric\n    ) THEN\n      RAISE EXCEPTION 'threshold history requires an exact supersession edge'\n        USING ERRCODE = '23514', CONSTRAINT = 'thresholds_linear_history';\n    END IF;\n  ELSE\n    SELECT * INTO prior FROM public.thresholds\n    WHERE id = NEW.supersedes_id\n      AND profile_id = NEW.profile_id\n      AND activity_category = NEW.activity_category\n      AND metric = NEW.metric;\n    IF NOT FOUND OR NEW.effective_at < prior.effective_at THEN\n      RAISE EXCEPTION 'threshold supersession is cross-identity or backdated'\n        USING ERRCODE = '23514', CONSTRAINT = 'thresholds_supersession_order';\n    END IF;\n    IF EXISTS (\n      SELECT 1 FROM public.thresholds AS existing\n      WHERE existing.profile_id = NEW.profile_id\n        AND existing.activity_category = NEW.activity_category\n        AND existing.metric = NEW.metric\n        AND (existing.effective_at, existing.created_at, existing.id)\n          > (prior.effective_at, prior.created_at, prior.id)\n    ) THEN\n      RAISE EXCEPTION 'threshold must supersede the latest history row'\n        USING ERRCODE = '23514', CONSTRAINT = 'thresholds_latest_supersession';\n    END IF;\n  END IF;\n  RETURN NEW;\nEND\n$function$\n",
       "volatility": "v",
       "securityDefiner": false
     },
@@ -10764,17 +10350,38 @@
     },
     {
       "kind": "c",
-      "name": "activity_efforts_distance_meters_bounds_check",
+      "name": "activity_efforts_coverage_finite_range_check",
       "table": "activity_efforts",
       "validated": true,
-      "definition": "CHECK (distance_meters IS NULL OR distance_meters >= 1 AND distance_meters <= 1000000)"
+      "definition": "CHECK (window_coverage >= 0::numeric AND window_coverage <= 1::numeric AND (window_coverage <> ALL (ARRAY['NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric])))"
+    },
+    {
+      "kind": "u",
+      "name": "activity_efforts_deterministic_source_window_unique",
+      "table": "activity_efforts",
+      "validated": true,
+      "definition": "UNIQUE (activity_id, segment_id, source_artifact_id, source_revision, effort_type, source_series, start_offset_ms, end_offset_ms, method, calculation_version)"
     },
     {
       "kind": "c",
-      "name": "activity_efforts_duration_seconds_bounds_check",
+      "name": "activity_efforts_distance_meters_bounds_check",
       "table": "activity_efforts",
       "validated": true,
-      "definition": "CHECK (duration_seconds >= 1 AND duration_seconds <= 14400)"
+      "definition": "CHECK (distance_meters IS NULL OR distance_meters > 0)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_efforts_duration_seconds_positive_check",
+      "table": "activity_efforts",
+      "validated": true,
+      "definition": "CHECK (duration_seconds > 0)"
+    },
+    {
+      "kind": "f",
+      "name": "activity_efforts_exact_source_fkey",
+      "table": "activity_efforts",
+      "validated": true,
+      "definition": "FOREIGN KEY (segment_id, activity_id, profile_id, activity_category, source_artifact_id, source_revision) REFERENCES activity_segments(id, activity_id, profile_id, activity_category, source_artifact_id, segment_revision) ON DELETE CASCADE"
     },
     {
       "kind": "c",
@@ -10785,10 +10392,24 @@
     },
     {
       "kind": "c",
+      "name": "activity_efforts_max_gap_finite_check",
+      "table": "activity_efforts",
+      "validated": true,
+      "definition": "CHECK (max_gap_seconds > 0::numeric AND (max_gap_seconds <> ALL (ARRAY['NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric])))"
+    },
+    {
+      "kind": "c",
       "name": "activity_efforts_method_not_blank_check",
       "table": "activity_efforts",
       "validated": true,
       "definition": "CHECK (btrim(method) <> ''::text)"
+    },
+    {
+      "kind": "u",
+      "name": "activity_efforts_ownership_unique",
+      "table": "activity_efforts",
+      "validated": true,
+      "definition": "UNIQUE (id, profile_id, activity_id, activity_category, effort_type, source_series, source_revision)"
     },
     {
       "kind": "p",
@@ -10826,18 +10447,18 @@
       "definition": "CHECK (activity_category <> 'run'::text OR effort_type <> 'speed'::effort_type OR value >= 0.3::double precision AND value <= 13::double precision)"
     },
     {
-      "kind": "f",
-      "name": "activity_efforts_segment_activity_profile_category_fkey",
+      "kind": "c",
+      "name": "activity_efforts_source_revision_check",
       "table": "activity_efforts",
       "validated": true,
-      "definition": "FOREIGN KEY (segment_id, activity_id, profile_id, activity_category) REFERENCES activity_segments(id, activity_id, profile_id, activity_category) ON DELETE CASCADE"
+      "definition": "CHECK (source_revision > 0)"
     },
     {
       "kind": "c",
       "name": "activity_efforts_supported_combination_check",
       "table": "activity_efforts",
       "validated": true,
-      "definition": "CHECK (activity_category = 'bike'::text AND effort_type = 'power'::effort_type OR (activity_category = ANY (ARRAY['run'::text, 'swim'::text])) AND effort_type = 'speed'::effort_type OR (activity_category = ANY (ARRAY['bike'::text, 'run'::text, 'swim'::text])) AND effort_type::text = 'heart_rate'::text)"
+      "definition": "CHECK (activity_category = 'bike'::text AND effort_type = 'power'::effort_type AND source_series = 'power'::activity_effort_source_series OR activity_category = 'run'::text AND effort_type = 'speed'::effort_type AND (source_series = ANY (ARRAY['grade_adjusted_speed'::activity_effort_source_series, 'raw_speed'::activity_effort_source_series])) OR activity_category = 'swim'::text AND effort_type = 'speed'::effort_type AND source_series = 'swim_speed'::activity_effort_source_series OR (activity_category = ANY (ARRAY['bike'::text, 'run'::text, 'swim'::text])) AND effort_type::text = 'heart_rate'::text AND source_series = 'heart_rate'::activity_effort_source_series)"
     },
     {
       "kind": "c",
@@ -10859,6 +10480,13 @@
       "table": "activity_efforts",
       "validated": true,
       "definition": "CHECK (value > 0::double precision AND (value <> ALL (ARRAY['NaN'::real, 'Infinity'::real, '-Infinity'::real])))"
+    },
+    {
+      "kind": "c",
+      "name": "activity_efforts_window_check",
+      "table": "activity_efforts",
+      "validated": true,
+      "definition": "CHECK (start_offset_ms >= 0 AND end_offset_ms = (start_offset_ms + duration_seconds::bigint * 1000))"
     },
     {
       "kind": "f",
@@ -11027,6 +10655,13 @@
       "table": "activity_import_runs",
       "validated": true,
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "activity_import_runs_skipped_diagnostics_check",
+      "table": "activity_import_runs",
+      "validated": true,
+      "definition": "CHECK (jsonb_typeof(skipped_diagnostics) = 'array'::text AND jsonb_array_length(skipped_diagnostics) <= 120 AND pg_column_size(skipped_diagnostics) <= 16384)"
     },
     {
       "kind": "c",
@@ -11223,6 +10858,13 @@
       "table": "activity_segments",
       "validated": true,
       "definition": "UNIQUE (id, activity_id, profile_id, activity_category)"
+    },
+    {
+      "kind": "u",
+      "name": "activity_segments_effort_source_unique",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "UNIQUE (id, activity_id, profile_id, activity_category, source_artifact_id, segment_revision)"
     },
     {
       "kind": "u",
@@ -12569,321 +12211,6 @@
       "definition": "CHECK (btrim(timezone) <> ''::text)"
     },
     {
-      "kind": "f",
-      "name": "performance_calibration_evidence_activity_category_canonical_ac",
-      "table": "performance_calibration_evidence",
-      "validated": true,
-      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibration_evidence_created_after_observed_check",
-      "table": "performance_calibration_evidence",
-      "validated": true,
-      "definition": "CHECK (created_at >= observed_at)"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibration_evidence_diagnostics_check",
-      "table": "performance_calibration_evidence",
-      "validated": true,
-      "definition": "CHECK (jsonb_typeof(diagnostics) = 'object'::text AND pg_column_size(diagnostics) <= 16384)"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibration_evidence_identity_check",
-      "table": "performance_calibration_evidence",
-      "validated": true,
-      "definition": "CHECK (metric_key = 'threshold_power'::performance_calibration_metric_key AND activity_category = 'bike'::text OR metric_key = 'threshold_speed'::performance_calibration_metric_key AND (activity_category = ANY (ARRAY['run'::text, 'swim'::text])) OR metric_key = 'threshold_heart_rate'::performance_calibration_metric_key AND (activity_category = ANY (ARRAY['bike'::text, 'run'::text])))"
-    },
-    {
-      "kind": "u",
-      "name": "performance_calibration_evidence_identity_unique",
-      "table": "performance_calibration_evidence",
-      "validated": true,
-      "definition": "UNIQUE (id, profile_id, metric_key, activity_category)"
-    },
-    {
-      "kind": "p",
-      "name": "performance_calibration_evidence_pkey",
-      "table": "performance_calibration_evidence",
-      "validated": true,
-      "definition": "PRIMARY KEY (id)"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibration_evidence_policy_check",
-      "table": "performance_calibration_evidence",
-      "validated": true,
-      "definition": "CHECK (btrim(policy_version) <> ''::text)"
-    },
-    {
-      "kind": "f",
-      "name": "performance_calibration_evidence_profile_id_profiles_id_fk",
-      "table": "performance_calibration_evidence",
-      "validated": true,
-      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibration_evidence_revision_check",
-      "table": "performance_calibration_evidence",
-      "validated": true,
-      "definition": "CHECK (segment_revision > 0)"
-    },
-    {
-      "kind": "u",
-      "name": "performance_calibration_evidence_source_policy_unique",
-      "table": "performance_calibration_evidence",
-      "validated": true,
-      "definition": "UNIQUE (activity_id, segment_id, segment_revision, source_artifact_id, metric_key, policy_version)"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibration_evidence_state_values_check",
-      "table": "performance_calibration_evidence",
-      "validated": true,
-      "definition": "CHECK (state = 'candidate'::performance_calibration_evidence_state AND value IS NOT NULL AND rejection_reason IS NULL AND invalidated_at IS NULL AND invalidation_reason IS NULL OR state = 'rejected'::performance_calibration_evidence_state AND value IS NULL AND rejection_reason IS NOT NULL AND invalidated_at IS NULL AND invalidation_reason IS NULL OR state = 'invalidated'::performance_calibration_evidence_state AND value IS NOT NULL AND rejection_reason IS NULL AND invalidated_at IS NOT NULL AND invalidated_at >= created_at AND invalidation_reason IS NOT NULL AND btrim(invalidation_reason) <> ''::text)"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibration_evidence_unit_check",
-      "table": "performance_calibration_evidence",
-      "validated": true,
-      "definition": "CHECK (metric_key = 'threshold_power'::performance_calibration_metric_key AND unit = 'watts'::text OR metric_key = 'threshold_speed'::performance_calibration_metric_key AND unit = 'meters_per_second'::text OR metric_key = 'threshold_heart_rate'::performance_calibration_metric_key AND unit = 'beats_per_minute'::text)"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibration_evidence_value_check",
-      "table": "performance_calibration_evidence",
-      "validated": true,
-      "definition": "CHECK (value IS NULL OR value > 0::numeric)"
-    },
-    {
-      "kind": "f",
-      "name": "performance_calibration_model_inputs_activity_category_canonica",
-      "table": "performance_calibration_model_inputs",
-      "validated": true,
-      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibration_model_inputs_artifact_digest_check",
-      "table": "performance_calibration_model_inputs",
-      "validated": true,
-      "definition": "CHECK (source_artifact_digest ~ '^[0-9a-f]{64}$'::text)"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibration_model_inputs_calculation_version_check",
-      "table": "performance_calibration_model_inputs",
-      "validated": true,
-      "definition": "CHECK (btrim(calculation_version) <> ''::text)"
-    },
-    {
-      "kind": "p",
-      "name": "performance_calibration_model_inputs_calibration_evidence_id_ef",
-      "table": "performance_calibration_model_inputs",
-      "validated": true,
-      "definition": "PRIMARY KEY (calibration_evidence_id, effort_id)"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibration_model_inputs_duration_check",
-      "table": "performance_calibration_model_inputs",
-      "validated": true,
-      "definition": "CHECK (duration_seconds >= 1 AND duration_seconds <= 14400)"
-    },
-    {
-      "kind": "f",
-      "name": "performance_calibration_model_inputs_evidence_identity_fkey",
-      "table": "performance_calibration_model_inputs",
-      "validated": true,
-      "definition": "FOREIGN KEY (calibration_evidence_id, profile_id, metric_key, activity_category) REFERENCES performance_calibration_evidence(id, profile_id, metric_key, activity_category) ON DELETE CASCADE"
-    },
-    {
-      "kind": "u",
-      "name": "performance_calibration_model_inputs_evidence_ordinal_unique",
-      "table": "performance_calibration_model_inputs",
-      "validated": true,
-      "definition": "UNIQUE (calibration_evidence_id, ordinal)"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibration_model_inputs_identity_check",
-      "table": "performance_calibration_model_inputs",
-      "validated": true,
-      "definition": "CHECK (metric_key = 'threshold_power'::performance_calibration_metric_key AND activity_category = 'bike'::text)"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibration_model_inputs_ordinal_check",
-      "table": "performance_calibration_model_inputs",
-      "validated": true,
-      "definition": "CHECK (ordinal >= 0 AND ordinal <= 1999)"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibration_model_inputs_revision_check",
-      "table": "performance_calibration_model_inputs",
-      "validated": true,
-      "definition": "CHECK (segment_revision > 0)"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibration_model_inputs_value_check",
-      "table": "performance_calibration_model_inputs",
-      "validated": true,
-      "definition": "CHECK (value > 0::numeric AND (value <> ALL (ARRAY['NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric])))"
-    },
-    {
-      "kind": "f",
-      "name": "performance_calibration_selection_evidence_activity_category_ca",
-      "table": "performance_calibration_selection_evidence",
-      "validated": true,
-      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
-    },
-    {
-      "kind": "p",
-      "name": "performance_calibration_selection_evidence_calibration_id_evide",
-      "table": "performance_calibration_selection_evidence",
-      "validated": true,
-      "definition": "PRIMARY KEY (calibration_id, evidence_id)"
-    },
-    {
-      "kind": "f",
-      "name": "performance_calibration_selection_evidence_calibration_identity",
-      "table": "performance_calibration_selection_evidence",
-      "validated": true,
-      "definition": "FOREIGN KEY (calibration_id, profile_id, metric_key, activity_category) REFERENCES performance_calibrations(id, profile_id, metric_key, activity_category) ON DELETE CASCADE"
-    },
-    {
-      "kind": "u",
-      "name": "performance_calibration_selection_evidence_calibration_ordinal_",
-      "table": "performance_calibration_selection_evidence",
-      "validated": true,
-      "definition": "UNIQUE (calibration_id, ordinal)"
-    },
-    {
-      "kind": "f",
-      "name": "performance_calibration_selection_evidence_evidence_identity_fk",
-      "table": "performance_calibration_selection_evidence",
-      "validated": true,
-      "definition": "FOREIGN KEY (evidence_id, profile_id, metric_key, activity_category) REFERENCES performance_calibration_evidence(id, profile_id, metric_key, activity_category) ON DELETE RESTRICT"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibration_selection_evidence_ordinal_check",
-      "table": "performance_calibration_selection_evidence",
-      "validated": true,
-      "definition": "CHECK (ordinal >= 0 AND ordinal <= 63)"
-    },
-    {
-      "kind": "f",
-      "name": "performance_calibration_selection_evidence_profile_id_profiles_",
-      "table": "performance_calibration_selection_evidence",
-      "validated": true,
-      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
-    },
-    {
-      "kind": "f",
-      "name": "performance_calibrations_activity_category_canonical_activity_c",
-      "table": "performance_calibrations",
-      "validated": true,
-      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibrations_created_after_effective_check",
-      "table": "performance_calibrations",
-      "validated": true,
-      "definition": "CHECK (created_at >= effective_at)"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibrations_diagnostics_check",
-      "table": "performance_calibrations",
-      "validated": true,
-      "definition": "CHECK (jsonb_typeof(selection_diagnostics) = 'object'::text AND pg_column_size(selection_diagnostics) <= 16384)"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibrations_expiry_check",
-      "table": "performance_calibrations",
-      "validated": true,
-      "definition": "CHECK (expires_at >= effective_at)"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibrations_identity_check",
-      "table": "performance_calibrations",
-      "validated": true,
-      "definition": "CHECK (metric_key = 'threshold_power'::performance_calibration_metric_key AND activity_category = 'bike'::text OR metric_key = 'threshold_speed'::performance_calibration_metric_key AND (activity_category = ANY (ARRAY['run'::text, 'swim'::text])) OR metric_key = 'threshold_heart_rate'::performance_calibration_metric_key AND (activity_category = ANY (ARRAY['bike'::text, 'run'::text])))"
-    },
-    {
-      "kind": "u",
-      "name": "performance_calibrations_identity_unique",
-      "table": "performance_calibrations",
-      "validated": true,
-      "definition": "UNIQUE (id, profile_id, metric_key, activity_category)"
-    },
-    {
-      "kind": "p",
-      "name": "performance_calibrations_pkey",
-      "table": "performance_calibrations",
-      "validated": true,
-      "definition": "PRIMARY KEY (id)"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibrations_policy_check",
-      "table": "performance_calibrations",
-      "validated": true,
-      "definition": "CHECK (btrim(policy_version) <> ''::text)"
-    },
-    {
-      "kind": "f",
-      "name": "performance_calibrations_profile_id_profiles_id_fk",
-      "table": "performance_calibrations",
-      "validated": true,
-      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibrations_supersedes_check",
-      "table": "performance_calibrations",
-      "validated": true,
-      "definition": "CHECK (supersedes_id IS NULL OR supersedes_id <> id)"
-    },
-    {
-      "kind": "f",
-      "name": "performance_calibrations_supersedes_identity_fkey",
-      "table": "performance_calibrations",
-      "validated": true,
-      "definition": "FOREIGN KEY (supersedes_id, profile_id, metric_key, activity_category) REFERENCES performance_calibrations(id, profile_id, metric_key, activity_category) ON DELETE RESTRICT"
-    },
-    {
-      "kind": "u",
-      "name": "performance_calibrations_supersedes_unique",
-      "table": "performance_calibrations",
-      "validated": true,
-      "definition": "UNIQUE (supersedes_id)"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibrations_unit_check",
-      "table": "performance_calibrations",
-      "validated": true,
-      "definition": "CHECK (metric_key = 'threshold_power'::performance_calibration_metric_key AND unit = 'watts'::text OR metric_key = 'threshold_speed'::performance_calibration_metric_key AND unit = 'meters_per_second'::text OR metric_key = 'threshold_heart_rate'::performance_calibration_metric_key AND unit = 'beats_per_minute'::text)"
-    },
-    {
-      "kind": "c",
-      "name": "performance_calibrations_value_check",
-      "table": "performance_calibrations",
-      "validated": true,
-      "definition": "CHECK (value > 0::numeric)"
-    },
-    {
       "kind": "c",
       "name": "profile_athlete_state_algorithm_check",
       "table": "profile_athlete_state",
@@ -13305,122 +12632,269 @@
     },
     {
       "kind": "f",
-      "name": "swimming_css_protocol_evidence_activity_profile_fkey",
-      "table": "swimming_css_protocol_evidence",
+      "name": "threshold_evaluation_efforts_activity_category_canonical_activi",
+      "table": "threshold_evaluation_efforts",
       "validated": true,
-      "definition": "FOREIGN KEY (activity_id, profile_id) REFERENCES activities(id, profile_id) ON DELETE CASCADE"
-    },
-    {
-      "kind": "c",
-      "name": "swimming_css_protocol_evidence_calculation_version_check",
-      "table": "swimming_css_protocol_evidence",
-      "validated": true,
-      "definition": "CHECK (calculation_version = 'canonical-swim-css-protocol-evidence-v1'::text)"
-    },
-    {
-      "kind": "c",
-      "name": "swimming_css_protocol_evidence_content_identity_check",
-      "table": "swimming_css_protocol_evidence",
-      "validated": true,
-      "definition": "CHECK (evidence_id ~ '^sha256:[0-9a-f]{64}$'::text AND source_artifact_digest ~ '^[0-9a-f]{64}$'::text)"
-    },
-    {
-      "kind": "c",
-      "name": "swimming_css_protocol_evidence_context_check",
-      "table": "swimming_css_protocol_evidence",
-      "validated": true,
-      "definition": "CHECK (environment = 'pool'::text AND timing_basis = 'pool_length_timing'::text AND pool_length_meters >= 10::double precision AND pool_length_meters <= 100::double precision AND (pool_length_meters <> ALL (ARRAY['NaN'::real, 'Infinity'::real, '-Infinity'::real])))"
-    },
-    {
-      "kind": "c",
-      "name": "swimming_css_protocol_evidence_distinct_efforts_check",
-      "table": "swimming_css_protocol_evidence",
-      "validated": true,
-      "definition": "CHECK (effort_400_id <> effort_200_id AND effort_400_segment_id <> effort_200_segment_id)"
-    },
-    {
-      "kind": "c",
-      "name": "swimming_css_protocol_evidence_duration_check",
-      "table": "swimming_css_protocol_evidence",
-      "validated": true,
-      "definition": "CHECK (effort_400_duration_seconds >= 1 AND effort_400_duration_seconds <= 14400 AND effort_200_duration_seconds >= 1 AND effort_200_duration_seconds <= 14400 AND effort_400_duration_seconds > (2 * effort_200_duration_seconds) AND ((effort_400_duration_seconds - effort_200_duration_seconds)::double precision / 2::double precision) >= 45::double precision AND ((effort_400_duration_seconds - effort_200_duration_seconds)::double precision / 2::double precision) <= 600::double precision)"
+      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
     },
     {
       "kind": "f",
-      "name": "swimming_css_protocol_evidence_effort_200_fkey",
-      "table": "swimming_css_protocol_evidence",
+      "name": "threshold_evaluation_efforts_effort_ownership_fkey",
+      "table": "threshold_evaluation_efforts",
       "validated": true,
-      "definition": "FOREIGN KEY (effort_200_id) REFERENCES activity_efforts(id) ON DELETE CASCADE"
-    },
-    {
-      "kind": "f",
-      "name": "swimming_css_protocol_evidence_effort_400_fkey",
-      "table": "swimming_css_protocol_evidence",
-      "validated": true,
-      "definition": "FOREIGN KEY (effort_400_id) REFERENCES activity_efforts(id) ON DELETE CASCADE"
-    },
-    {
-      "kind": "c",
-      "name": "swimming_css_protocol_evidence_order_check",
-      "table": "swimming_css_protocol_evidence",
-      "validated": true,
-      "definition": "CHECK (effort_400_start_offset_ms >= 0 AND effort_400_end_offset_ms > effort_400_start_offset_ms AND effort_200_start_offset_ms >= effort_400_end_offset_ms AND effort_200_end_offset_ms > effort_200_start_offset_ms AND effort_400_observed_at <= effort_200_observed_at AND observed_at = effort_200_observed_at)"
+      "definition": "FOREIGN KEY (effort_id, profile_id, activity_id, activity_category, effort_type, source_series, source_revision) REFERENCES activity_efforts(id, profile_id, activity_id, activity_category, effort_type, source_series, source_revision) ON DELETE CASCADE"
     },
     {
       "kind": "p",
-      "name": "swimming_css_protocol_evidence_pkey",
-      "table": "swimming_css_protocol_evidence",
+      "name": "threshold_evaluation_efforts_evaluation_id_effort_id_pk",
+      "table": "threshold_evaluation_efforts",
+      "validated": true,
+      "definition": "PRIMARY KEY (evaluation_id, effort_id)"
+    },
+    {
+      "kind": "f",
+      "name": "threshold_evaluation_efforts_evaluation_ownership_fkey",
+      "table": "threshold_evaluation_efforts",
+      "validated": true,
+      "definition": "FOREIGN KEY (evaluation_id, profile_id, activity_category, metric) REFERENCES threshold_evaluations(id, profile_id, activity_category, metric) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "threshold_evaluation_efforts_metric_check",
+      "table": "threshold_evaluation_efforts",
+      "validated": true,
+      "definition": "CHECK (metric = 'power'::threshold_metric AND activity_category = 'bike'::text AND effort_type = 'power'::effort_type AND source_series = 'power'::activity_effort_source_series OR metric = 'speed'::threshold_metric AND activity_category = 'run'::text AND effort_type = 'speed'::effort_type AND (source_series = ANY (ARRAY['grade_adjusted_speed'::activity_effort_source_series, 'raw_speed'::activity_effort_source_series])) OR metric = 'speed'::threshold_metric AND activity_category = 'swim'::text AND effort_type = 'speed'::effort_type AND source_series = 'swim_speed'::activity_effort_source_series)"
+    },
+    {
+      "kind": "c",
+      "name": "threshold_evaluation_efforts_ordinal_check",
+      "table": "threshold_evaluation_efforts",
+      "validated": true,
+      "definition": "CHECK (ordinal >= 0 AND ordinal <= 63)"
+    },
+    {
+      "kind": "c",
+      "name": "threshold_evaluation_efforts_primary_ordinal_check",
+      "table": "threshold_evaluation_efforts",
+      "validated": true,
+      "definition": "CHECK (role <> 'primary'::threshold_evaluation_effort_role OR ordinal = 0)"
+    },
+    {
+      "kind": "u",
+      "name": "threshold_evaluation_efforts_role_ordinal_unique",
+      "table": "threshold_evaluation_efforts",
+      "validated": true,
+      "definition": "UNIQUE (evaluation_id, role, ordinal)"
+    },
+    {
+      "kind": "f",
+      "name": "threshold_evaluations_activity_category_canonical_activity_cate",
+      "table": "threshold_evaluations",
+      "validated": true,
+      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "threshold_evaluations_confidence_finite_range_check",
+      "table": "threshold_evaluations",
+      "validated": true,
+      "definition": "CHECK (confidence IS NULL OR confidence >= 0::numeric AND confidence <= 1::numeric AND (confidence <> ALL (ARRAY['NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric])))"
+    },
+    {
+      "kind": "c",
+      "name": "threshold_evaluations_created_after_observed_check",
+      "table": "threshold_evaluations",
+      "validated": true,
+      "definition": "CHECK (created_at >= observed_at)"
+    },
+    {
+      "kind": "c",
+      "name": "threshold_evaluations_diagnostics_check",
+      "table": "threshold_evaluations",
+      "validated": true,
+      "definition": "CHECK (jsonb_typeof(diagnostics) = 'object'::text AND pg_column_size(diagnostics) <= 16384)"
+    },
+    {
+      "kind": "u",
+      "name": "threshold_evaluations_idempotency_unique",
+      "table": "threshold_evaluations",
+      "validated": true,
+      "definition": "UNIQUE (profile_id, source_activity_id, source_revision, activity_category, metric, method, policy_version)"
+    },
+    {
+      "kind": "c",
+      "name": "threshold_evaluations_identity_check",
+      "table": "threshold_evaluations",
+      "validated": true,
+      "definition": "CHECK (activity_category = 'bike'::text AND metric = 'power'::threshold_metric AND method = 'bike_power_30m'::text AND unit = 'watts'::text OR activity_category = 'run'::text AND metric = 'speed'::threshold_metric AND method = 'run_speed_30m'::text AND unit = 'meters_per_second'::text OR activity_category = 'swim'::text AND metric = 'speed'::threshold_metric AND method = 'swim_speed_15m'::text AND unit = 'meters_per_second'::text)"
+    },
+    {
+      "kind": "c",
+      "name": "threshold_evaluations_outcome_check",
+      "table": "threshold_evaluations",
+      "validated": true,
+      "definition": "CHECK (outcome = 'qualified'::threshold_evaluation_outcome AND value IS NOT NULL AND confidence IS NOT NULL AND rejection_reason IS NULL OR outcome = 'rejected'::threshold_evaluation_outcome AND value IS NULL AND confidence IS NULL AND rejection_reason IS NOT NULL)"
+    },
+    {
+      "kind": "u",
+      "name": "threshold_evaluations_ownership_unique",
+      "table": "threshold_evaluations",
+      "validated": true,
+      "definition": "UNIQUE (id, profile_id, activity_category, metric)"
+    },
+    {
+      "kind": "p",
+      "name": "threshold_evaluations_pkey",
+      "table": "threshold_evaluations",
       "validated": true,
       "definition": "PRIMARY KEY (id)"
     },
     {
-      "kind": "u",
-      "name": "swimming_css_protocol_evidence_profile_activity_protocol_unique",
-      "table": "swimming_css_protocol_evidence",
-      "validated": true,
-      "definition": "UNIQUE (profile_id, activity_id, protocol)"
-    },
-    {
-      "kind": "u",
-      "name": "swimming_css_protocol_evidence_profile_evidence_id_unique",
-      "table": "swimming_css_protocol_evidence",
-      "validated": true,
-      "definition": "UNIQUE (profile_id, evidence_id)"
-    },
-    {
-      "kind": "u",
-      "name": "swimming_css_protocol_evidence_profile_protocol_id_unique",
-      "table": "swimming_css_protocol_evidence",
-      "validated": true,
-      "definition": "UNIQUE (profile_id, protocol_id)"
-    },
-    {
       "kind": "c",
-      "name": "swimming_css_protocol_evidence_protocol_identity_check",
-      "table": "swimming_css_protocol_evidence",
+      "name": "threshold_evaluations_policy_check",
+      "table": "threshold_evaluations",
       "validated": true,
-      "definition": "CHECK (protocol = 'css_400m_200m'::text AND protocol_id = ('css_400m_200m:'::text || activity_id::text))"
-    },
-    {
-      "kind": "c",
-      "name": "swimming_css_protocol_evidence_revision_check",
-      "table": "swimming_css_protocol_evidence",
-      "validated": true,
-      "definition": "CHECK (evidence_revision > 0 AND effort_400_evidence_revision = evidence_revision AND effort_200_evidence_revision = evidence_revision)"
+      "definition": "CHECK (btrim(policy_version) <> ''::text)"
     },
     {
       "kind": "f",
-      "name": "swimming_css_protocol_evidence_source_link_fkey",
-      "table": "swimming_css_protocol_evidence",
+      "name": "threshold_evaluations_profile_id_profiles_id_fk",
+      "table": "threshold_evaluations",
       "validated": true,
-      "definition": "FOREIGN KEY (activity_id, source_artifact_id, profile_id) REFERENCES activity_artifact_links(activity_id, artifact_id, profile_id) ON DELETE CASCADE"
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "u",
+      "name": "threshold_evaluations_qualified_identity_unique",
+      "table": "threshold_evaluations",
+      "validated": true,
+      "definition": "UNIQUE (id, profile_id, activity_category, metric, outcome)"
+    },
+    {
+      "kind": "f",
+      "name": "threshold_evaluations_source_activity_profile_fkey",
+      "table": "threshold_evaluations",
+      "validated": true,
+      "definition": "FOREIGN KEY (source_activity_id, profile_id) REFERENCES activities(id, profile_id) ON DELETE CASCADE"
     },
     {
       "kind": "c",
-      "name": "swimming_css_protocol_evidence_status_check",
-      "table": "swimming_css_protocol_evidence",
+      "name": "threshold_evaluations_source_revision_check",
+      "table": "threshold_evaluations",
       "validated": true,
-      "definition": "CHECK (status = 'qualified'::text AND jsonb_typeof(reasons) = 'array'::text AND jsonb_array_length(reasons) = 0)"
+      "definition": "CHECK (source_revision > 0)"
+    },
+    {
+      "kind": "c",
+      "name": "threshold_evaluations_value_finite_positive_check",
+      "table": "threshold_evaluations",
+      "validated": true,
+      "definition": "CHECK (value IS NULL OR value > 0::numeric AND (value <> ALL (ARRAY['NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric])))"
+    },
+    {
+      "kind": "f",
+      "name": "thresholds_activity_category_canonical_activity_categories_code",
+      "table": "thresholds",
+      "validated": true,
+      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "thresholds_confidence_finite_range_check",
+      "table": "thresholds",
+      "validated": true,
+      "definition": "CHECK (confidence >= 0::numeric AND confidence <= 1::numeric AND (confidence <> ALL (ARRAY['NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric])))"
+    },
+    {
+      "kind": "c",
+      "name": "thresholds_created_after_effective_check",
+      "table": "thresholds",
+      "validated": true,
+      "definition": "CHECK (created_at >= effective_at)"
+    },
+    {
+      "kind": "u",
+      "name": "thresholds_evaluation_unique",
+      "table": "thresholds",
+      "validated": true,
+      "definition": "UNIQUE (evaluation_id)"
+    },
+    {
+      "kind": "c",
+      "name": "thresholds_identity_check",
+      "table": "thresholds",
+      "validated": true,
+      "definition": "CHECK (activity_category = 'bike'::text AND metric = 'power'::threshold_metric AND method = 'bike_power_30m'::text AND unit = 'watts'::text OR activity_category = 'run'::text AND metric = 'speed'::threshold_metric AND method = 'run_speed_30m'::text AND unit = 'meters_per_second'::text OR activity_category = 'swim'::text AND metric = 'speed'::threshold_metric AND method = 'swim_speed_15m'::text AND unit = 'meters_per_second'::text)"
+    },
+    {
+      "kind": "u",
+      "name": "thresholds_ownership_unique",
+      "table": "thresholds",
+      "validated": true,
+      "definition": "UNIQUE (id, profile_id, activity_category, metric)"
+    },
+    {
+      "kind": "p",
+      "name": "thresholds_pkey",
+      "table": "thresholds",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "c",
+      "name": "thresholds_policy_check",
+      "table": "thresholds",
+      "validated": true,
+      "definition": "CHECK (btrim(policy_version) <> ''::text)"
+    },
+    {
+      "kind": "f",
+      "name": "thresholds_profile_id_profiles_id_fk",
+      "table": "thresholds",
+      "validated": true,
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "thresholds_qualified_evaluation_check",
+      "table": "thresholds",
+      "validated": true,
+      "definition": "CHECK (evaluation_outcome = 'qualified'::threshold_evaluation_outcome)"
+    },
+    {
+      "kind": "f",
+      "name": "thresholds_qualified_evaluation_ownership_fkey",
+      "table": "thresholds",
+      "validated": true,
+      "definition": "FOREIGN KEY (evaluation_id, profile_id, activity_category, metric, evaluation_outcome) REFERENCES threshold_evaluations(id, profile_id, activity_category, metric, outcome) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "thresholds_supersedes_check",
+      "table": "thresholds",
+      "validated": true,
+      "definition": "CHECK (supersedes_id IS NULL OR supersedes_id <> id)"
+    },
+    {
+      "kind": "f",
+      "name": "thresholds_supersedes_fkey",
+      "table": "thresholds",
+      "validated": true,
+      "definition": "FOREIGN KEY (supersedes_id) REFERENCES thresholds(id) DEFERRABLE INITIALLY DEFERRED"
+    },
+    {
+      "kind": "u",
+      "name": "thresholds_supersedes_unique",
+      "table": "thresholds",
+      "validated": true,
+      "definition": "UNIQUE (supersedes_id)"
+    },
+    {
+      "kind": "c",
+      "name": "thresholds_value_finite_positive_check",
+      "table": "thresholds",
+      "validated": true,
+      "definition": "CHECK (value > 0::numeric AND (value <> ALL (ARRAY['NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric])))"
     },
     {
       "kind": "c",
@@ -13606,7 +13080,7 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arm/postgres}",
       "rls": true,
       "kind": "r",
       "name": "activity_efforts",
@@ -13918,38 +13392,6 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdxtm/postgres}",
-      "rls": true,
-      "kind": "r",
-      "name": "performance_calibration_evidence",
-      "managed": true,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdxtm/postgres}",
-      "rls": true,
-      "kind": "r",
-      "name": "performance_calibration_model_inputs",
-      "managed": true,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdxtm/postgres}",
-      "rls": true,
-      "kind": "r",
-      "name": "performance_calibration_selection_evidence",
-      "managed": true,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdxtm/postgres}",
-      "rls": true,
-      "kind": "r",
-      "name": "performance_calibrations",
-      "managed": true,
-      "forceRls": false
-    },
-    {
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
       "kind": "r",
@@ -14038,10 +13480,26 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arm/postgres}",
       "rls": true,
       "kind": "r",
-      "name": "swimming_css_protocol_evidence",
+      "name": "threshold_evaluation_efforts",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "threshold_evaluations",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "thresholds",
       "managed": true,
       "forceRls": false
     },

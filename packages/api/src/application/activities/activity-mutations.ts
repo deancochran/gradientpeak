@@ -1,13 +1,14 @@
-import type { CalibrationIdentity, ContentVisibility } from "@repo/core";
+import type { ContentVisibility } from "@repo/core";
 import { activities } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import { markAthleteStateDirty } from "../../repositories/athlete-state-repository";
 import {
-  invalidateAllCalibrationEvidenceForActivity,
-  resolveCalibrationWithProfileLockHeld,
-} from "../../repositories/performance-calibration-repository";
+  deleteThresholdChainsForImpacts,
+  readThresholdImpactForActivity,
+  rebuildThresholdChainWithProfileLockHeld,
+} from "../../repositories/threshold-repository";
 import { createActivityArtifactRetentionService } from "../activity-file-ingestion/artifact-retention";
 import type { ActivityArtifactStorage } from "../activity-file-ingestion/artifact-storage";
 import { updateCanonicalActivityFields } from "./submit-activity";
@@ -66,76 +67,56 @@ export async function deleteActivityForProfile({
     });
   }
 
-  const calibrationInvalidatedAt = new Date();
-  const preInvalidatedCalibrationIdentities = await db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${profileId}, 0))`);
-    const affectedCalibrationIdentities = await invalidateAllCalibrationEvidenceForActivity(tx, {
-      activityId,
-      profileId,
-      now: calibrationInvalidatedAt,
-      reason: "activity_deleted",
-    });
-    for (const identity of affectedCalibrationIdentities) {
-      await resolveCalibrationWithProfileLockHeld(tx, {
-        profileId,
-        identity,
-        asOf: calibrationInvalidatedAt,
-        now: calibrationInvalidatedAt,
-      });
-    }
-    if (affectedCalibrationIdentities.length > 0) {
-      await markAthleteStateDirty(tx, {
-        profileId,
-        effectiveAt: calibrationInvalidatedAt,
-        now: calibrationInvalidatedAt,
-      });
-    }
-    return affectedCalibrationIdentities;
-  });
-
   const retention = createActivityArtifactRetentionService(db, artifactStorage);
   // A failed storage call leaves a deletion_pending tombstone. Resume those first so a retry
   // can finish even though the lifecycle request already revoked the original activity link.
   while ((await retention.resumeDeletionForProfile(profileId)) > 0) {}
-  await retention.deleteForActivity({ activityId, profileId });
+  const exclusiveArtifacts = await retention.listExclusiveArtifactIdsForActivity({
+    activityId,
+    profileId,
+    limit: 10_000,
+  });
 
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${profileId}, 0))`);
-    const finalInvalidatedAt = new Date();
-    const concurrentCalibrationIdentities = await invalidateAllCalibrationEvidenceForActivity(tx, {
+    const now = new Date();
+    const impacts = await readThresholdImpactForActivity(tx, {
       activityId,
       profileId,
-      now: finalInvalidatedAt,
-      reason: "activity_deleted_final_fence",
     });
-    const affectedCalibrationIdentities = [
-      ...new Map(
-        [...preInvalidatedCalibrationIdentities, ...concurrentCalibrationIdentities].map(
-          (identity: CalibrationIdentity) => [
-            `${identity.metricKey}/${identity.activityCategory}`,
-            identity,
-          ],
-        ),
-      ).values(),
-    ];
+    // The self-referencing threshold chain is removed first; deleting the source
+    // activity then cascades its efforts, normalized links, and evaluations.
+    await deleteThresholdChainsForImpacts(tx, { profileId, impacts });
     const [deleted] = await tx
       .delete(activities)
       .where(and(eq(activities.id, activityId), eq(activities.profile_id, profileId)))
       .returning({ id: activities.id, finishedAt: activities.finished_at });
     if (!deleted) throw new Error("Activity deletion lost ownership before commit");
-    for (const identity of affectedCalibrationIdentities) {
-      await resolveCalibrationWithProfileLockHeld(tx, {
+    for (const impact of impacts) {
+      await rebuildThresholdChainWithProfileLockHeld(tx, {
         profileId,
-        identity,
-        asOf: finalInvalidatedAt,
-        now: finalInvalidatedAt,
+        identity: { activityCategory: impact.activityCategory, metric: impact.metric },
+        asOf: now,
+        now,
       });
     }
     await markAthleteStateDirty(tx, {
       profileId,
-      effectiveAt: deleted.finishedAt,
+      effectiveAt: new Date(
+        Math.min(
+          deleted.finishedAt.getTime(),
+          ...impacts.map(({ effectiveAt }) => effectiveAt.getTime()),
+        ),
+      ),
+      now,
     });
   });
+
+  // Database truth is removed first so activity-effort source FKs cascade cleanly.
+  // Object storage cleanup is retryable through deletion_pending tombstones.
+  for (const artifact of exclusiveArtifacts) {
+    await retention.deleteForProfile({ artifactId: artifact.id, profileId });
+  }
 
   return { success: true, deletedActivityId: activityId };
 }

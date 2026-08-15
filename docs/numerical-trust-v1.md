@@ -37,7 +37,7 @@ clinical, device, lab, race-outcome, or third-party-platform validation.
 | Cycling | `cycling-normalized-power-v1`, Common Load `1` | `cycling-numerical-trust-fixtures-v1` | `direct-one-second-resampling-reference-v1` |
 | Running | `running-normalized-graded-pace-v1`, Common Load `1` | `running-numerical-trust-fixtures-v1` | `direct-running-ngp-reference-v1` |
 | Aerobic | `aerobic-efficiency-factor-v1`, `aerobic-decoupling-v1`, `aerobic-analysis-qualification-v1` | `aerobic-numerical-trust-fixtures-v1` | `direct-duration-weighted-aerobic-reference-v1` |
-| Swimming and HR | `critical-swim-speed-400m-200m-v1`, `swim-active-rest-duration-v1`, `heart-rate-zone-duration-v1`, `heart-rate-common-load-v1` | `swimming-heart-rate-numerical-trust-fixtures-v1` | `independent-swimming-heart-rate-reference-v1` |
+| Swimming and HR | `threshold-policy-v1`, `swim-active-rest-duration-v1`, `heart-rate-zone-duration-v1`, `heart-rate-common-load-v1` | `swimming-heart-rate-numerical-trust-fixtures-v1` | `independent-swimming-heart-rate-reference-v1` |
 | Segment propagation | segment summary schema `1` | deterministic in-suite fixtures | exact structural comparison |
 
 Changing an equation, qualification boundary, interval convention, status meaning, or diagnostic
@@ -104,11 +104,12 @@ minimum duration, low coverage, zone boundaries, timestamp ordering, and determi
 properties. HR-derived Load requires at least thirty contributing seconds and sufficient coverage;
 unqualified duration evidence remains visible rather than becoming zero Load.
 
-### Critical Swim Speed and pool timing
+### Threshold swim speed and pool timing
 
-For qualified 400 m and 200 m tests, CSS pace is
-`(time400Seconds - time200Seconds) / 2` seconds per 100 m and CSS speed is
-`100 / cssSecondsPer100m`. Invalid, incomplete, or implausible tests abstain.
+Threshold swim speed is selected from a continuous 900-second active-speed window. Known rest or
+idle time is excluded rather than compacted into the window. Qualification requires at least 95%
+window coverage, no gap longer than 10 seconds, and the method identity `swim_speed_15m`. Invalid,
+incomplete, or implausible evidence abstains.
 
 Pool timing adds active length timer time (falling back to elapsed time) and rest/idle elapsed time
 (falling back to timer time). Complete known timing equal to session elapsed time is available;
@@ -131,7 +132,7 @@ references. They are not UI rounding rules.
 | Aerobic | EF / decoupling / coverage | `1e-12` |
 | Aerobic | duration | `1e-9 s` |
 | Swimming and HR | duration / intensity / Common Load | `1e-12` |
-| CSS canonical and contract fields | literal/reference identity | exact |
+| Threshold swim canonical and contract fields | literal/reference identity | exact |
 
 Available/partial/unavailable status, reason, unit, version, qualification flags, gap accounting,
 and scalar/result invariants compare exactly.

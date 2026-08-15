@@ -184,9 +184,8 @@ export interface ZoneConfig {
 
 // === Profile Information ===
 export interface ProfileMetrics {
-  ftpWatts?: number;
+  bikeThresholdWatts?: number;
   lthrBpm?: number;
-  thresholdPaceSecondsPerKm?: number;
   weightKg?: number;
 }
 

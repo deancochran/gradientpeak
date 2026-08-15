@@ -3,7 +3,7 @@ import { Skeleton } from "@repo/ui/components/skeleton";
 import { Text } from "@repo/ui/components/text";
 import { useRouter } from "expo-router";
 import { useCallback } from "react";
-import { RefreshControl, ScrollView, View } from "react-native";
+import { RefreshControl, ScrollView, useWindowDimensions, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import type { TrainingPathLedgerSelection } from "@/components/plan/training-path/TrainingPathLoadChartSection";
 import { TrainingPathSection } from "@/components/plan/training-path/TrainingPathSection";
@@ -20,6 +20,11 @@ function PlanDashboardScreen() {
   const chartRange = usePlanDisplayPreferences((state) => state.range);
   const chartPreferencesHydrated = usePlanDisplayPreferences((state) => state.hydrated);
   const setChartRange = usePlanDisplayPreferences((state) => state.setRange);
+  const { height: viewportHeight } = useWindowDimensions();
+  // Derive from the stable device viewport, never from ScrollView content.
+  // The chart is the primary surface, so it receives most of the tab height;
+  // the clamp still protects compact phones and large tablet layouts.
+  const chartHeight = Math.max(320, Math.min(540, Math.floor(viewportHeight * 0.58)));
   const hasBlockingFailure = trainingPath.queryFailureCount > 0 && !trainingPath.hasUsableData;
 
   const navigateToCreateGoal = useCallback(
@@ -44,7 +49,7 @@ function PlanDashboardScreen() {
           />
         }
       >
-        <View className="gap-5 px-2 pb-6 pt-3">
+        <View className="gap-3 px-2 pb-3 pt-2">
           {trainingPath.queryFailureCount > 0 ? (
             <View
               accessibilityRole={hasBlockingFailure ? "alert" : undefined}
@@ -74,6 +79,7 @@ function PlanDashboardScreen() {
           ) : null}
           {!hasBlockingFailure && chartPreferencesHydrated ? (
             <TrainingPathSection
+              chartHeight={chartHeight}
               chartRange={chartRange}
               dailyPoints={trainingPath.dailyTrainingPathPoints}
               chartLoading={trainingPath.chartLoading}

@@ -2,14 +2,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const retention = vi.hoisted(() => ({
   resumeDeletionForProfile: vi.fn().mockResolvedValue(0),
-  deleteForActivity: vi.fn().mockResolvedValue(1),
+  listExclusiveArtifactIdsForActivity: vi.fn().mockResolvedValue([{ id: "artifact-1" }]),
+  deleteForProfile: vi.fn().mockResolvedValue({ status: "purged" }),
 }));
 const markAthleteStateDirty = vi.hoisted(() => vi.fn(async () => 1));
-const calibrationDeletion = vi.hoisted(() => ({
-  invalidate: vi
-    .fn()
-    .mockResolvedValue([{ metricKey: "threshold_power", activityCategory: "bike" }]),
-  resolve: vi.fn().mockResolvedValue({ changed: true, calibration: null }),
+const updateCanonicalActivityFields = vi.hoisted(() => vi.fn(async () => ({ id: "activity-1" })));
+const thresholdDeletion = vi.hoisted(() => ({
+  readImpact: vi.fn().mockResolvedValue([
+    {
+      activityCategory: "bike",
+      metric: "power",
+      effectiveAt: new Date("2026-06-01T00:00:00.000Z"),
+    },
+  ]),
+  deleteChains: vi.fn().mockResolvedValue(undefined),
+  rebuild: vi.fn().mockResolvedValue({ changed: true, count: 0 }),
 }));
 
 vi.mock("../activity-file-ingestion/artifact-retention", () => ({
@@ -19,26 +26,30 @@ vi.mock("../../repositories/athlete-state-repository", async (importOriginal) =>
   ...(await importOriginal<typeof import("../../repositories/athlete-state-repository")>()),
   markAthleteStateDirty,
 }));
-vi.mock("../../repositories/performance-calibration-repository", () => ({
-  invalidateAllCalibrationEvidenceForActivity: calibrationDeletion.invalidate,
-  resolveCalibrationWithProfileLockHeld: calibrationDeletion.resolve,
+vi.mock("../../repositories/threshold-repository", () => ({
+  readThresholdImpactForActivity: thresholdDeletion.readImpact,
+  deleteThresholdChainsForImpacts: thresholdDeletion.deleteChains,
+  rebuildThresholdChainWithProfileLockHeld: thresholdDeletion.rebuild,
 }));
+vi.mock("./submit-activity", () => ({ updateCanonicalActivityFields }));
 
 import { deleteActivityForProfile, updateActivityForProfile } from "./activity-mutations";
 
 beforeEach(() => {
   markAthleteStateDirty.mockClear();
-  calibrationDeletion.invalidate.mockClear();
-  calibrationDeletion.resolve.mockClear();
+  updateCanonicalActivityFields.mockClear();
+  thresholdDeletion.readImpact.mockClear();
+  thresholdDeletion.deleteChains.mockClear();
+  thresholdDeletion.rebuild.mockClear();
   retention.resumeDeletionForProfile.mockReset().mockResolvedValue(0);
-  retention.deleteForActivity.mockReset().mockResolvedValue(1);
+  retention.listExclusiveArtifactIdsForActivity
+    .mockReset()
+    .mockResolvedValue([{ id: "artifact-1" }]);
+  retention.deleteForProfile.mockReset().mockResolvedValue({ status: "purged" });
 });
 
 describe("deleteActivityForProfile", () => {
-  it("final-lock invalidates a concurrent source candidate before deleting its activity", async () => {
-    calibrationDeletion.invalidate
-      .mockResolvedValueOnce([{ metricKey: "threshold_power", activityCategory: "bike" }])
-      .mockResolvedValueOnce([{ metricKey: "threshold_speed", activityCategory: "run" }]);
+  it("identifies impact, deletes the source, rebuilds, and dirties under one final fence", async () => {
     const returning = vi
       .fn()
       .mockResolvedValue([{ id: "activity-1", finishedAt: new Date("2026-07-01T00:00:00.000Z") }]);
@@ -60,67 +71,63 @@ describe("deleteActivityForProfile", () => {
     ).resolves.toEqual({ success: true, deletedActivityId: "activity-1" });
 
     expect(retention.resumeDeletionForProfile).toHaveBeenCalledWith("profile-1");
-    expect(retention.deleteForActivity).toHaveBeenCalledWith({
+    expect(retention.listExclusiveArtifactIdsForActivity).toHaveBeenCalledWith({
+      activityId: "activity-1",
+      profileId: "profile-1",
+      limit: 10_000,
+    });
+    expect(thresholdDeletion.readImpact).toHaveBeenCalledWith(tx, {
       activityId: "activity-1",
       profileId: "profile-1",
     });
-    expect(calibrationDeletion.invalidate).toHaveBeenNthCalledWith(
-      1,
-      tx,
-      expect.objectContaining({
-        activityId: "activity-1",
-        profileId: "profile-1",
-        reason: "activity_deleted",
-      }),
-    );
-    expect(calibrationDeletion.invalidate.mock.invocationCallOrder[0]).toBeLessThan(
-      retention.deleteForActivity.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
-    );
-    expect(calibrationDeletion.resolve).toHaveBeenCalledWith(
+    expect(thresholdDeletion.deleteChains).toHaveBeenCalledWith(
       tx,
       expect.objectContaining({
         profileId: "profile-1",
-        identity: { metricKey: "threshold_power", activityCategory: "bike" },
       }),
     );
-    expect(retention.deleteForActivity.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(retention.listExclusiveArtifactIdsForActivity.mock.invocationCallOrder[0]).toBeLessThan(
+      thresholdDeletion.readImpact.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+    expect(thresholdDeletion.readImpact.mock.invocationCallOrder[0]).toBeLessThan(
       deleteParent.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
     );
-    expect(calibrationDeletion.invalidate).toHaveBeenNthCalledWith(
-      2,
-      tx,
-      expect.objectContaining({
-        activityId: "activity-1",
-        profileId: "profile-1",
-        reason: "activity_deleted_final_fence",
-      }),
-    );
-    expect(retention.deleteForActivity.mock.invocationCallOrder[0]).toBeLessThan(
-      calibrationDeletion.invalidate.mock.invocationCallOrder[1] ?? Number.POSITIVE_INFINITY,
-    );
-    expect(calibrationDeletion.invalidate.mock.invocationCallOrder[1]).toBeLessThan(
-      deleteParent.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
-    );
-    expect(calibrationDeletion.resolve).toHaveBeenCalledWith(
+    expect(thresholdDeletion.rebuild).toHaveBeenCalledWith(
       tx,
       expect.objectContaining({
         profileId: "profile-1",
-        identity: { metricKey: "threshold_speed", activityCategory: "run" },
+        identity: { activityCategory: "bike", metric: "power" },
       }),
     );
     expect(deleteParent.mock.invocationCallOrder[0]).toBeLessThan(
-      calibrationDeletion.resolve.mock.invocationCallOrder.at(-1) ?? Number.POSITIVE_INFINITY,
+      thresholdDeletion.rebuild.mock.invocationCallOrder.at(-1) ?? Number.POSITIVE_INFINITY,
     );
-    expect(markAthleteStateDirty).toHaveBeenCalledWith(tx, {
+    expect(deleteParent.mock.invocationCallOrder[0]).toBeLessThan(
+      retention.deleteForProfile.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+    expect(retention.deleteForProfile).toHaveBeenCalledWith({
+      artifactId: "artifact-1",
       profileId: "profile-1",
-      effectiveAt: new Date("2026-07-01T00:00:00.000Z"),
     });
+    expect(markAthleteStateDirty).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        profileId: "profile-1",
+        effectiveAt: new Date("2026-06-01T00:00:00.000Z"),
+      }),
+    );
   });
 
-  it("re-resolves removed calibration evidence when artifact deletion needs a retry", async () => {
+  it("leaves a rebuilt database state when post-commit artifact deletion needs a retry", async () => {
     const storageError = new Error("storage deletion failed");
-    retention.deleteForActivity.mockRejectedValueOnce(storageError);
-    const tx = { execute: vi.fn().mockResolvedValue([]) };
+    retention.deleteForProfile.mockRejectedValueOnce(storageError);
+    const returning = vi
+      .fn()
+      .mockResolvedValue([{ id: "activity-1", finishedAt: new Date("2026-07-01T00:00:00.000Z") }]);
+    const tx = {
+      execute: vi.fn().mockResolvedValue([]),
+      delete: vi.fn(() => ({ where: vi.fn(() => ({ returning })) })),
+    };
     const db = {
       query: { activities: { findFirst: vi.fn().mockResolvedValue({ id: "activity-1" }) } },
       transaction: vi.fn((callback) => callback(tx)),
@@ -135,26 +142,16 @@ describe("deleteActivityForProfile", () => {
       }),
     ).rejects.toBe(storageError);
 
-    expect(calibrationDeletion.resolve).toHaveBeenCalledWith(
-      tx,
-      expect.objectContaining({
-        profileId: "profile-1",
-        identity: { metricKey: "threshold_power", activityCategory: "bike" },
-      }),
-    );
-    expect(markAthleteStateDirty).toHaveBeenCalledWith(
-      tx,
-      expect.objectContaining({ profileId: "profile-1" }),
-    );
+    expect(thresholdDeletion.readImpact).toHaveBeenCalled();
+    expect(thresholdDeletion.deleteChains).toHaveBeenCalled();
+    expect(thresholdDeletion.rebuild).toHaveBeenCalled();
+    expect(markAthleteStateDirty).toHaveBeenCalled();
   });
 });
 
 describe("updateActivityForProfile", () => {
   it("persists only canonical editable parent fields", async () => {
-    const set = vi.fn(() => ({
-      where: vi.fn(() => ({ returning: vi.fn().mockResolvedValue([{ id: "activity-1" }]) })),
-    }));
-    const tx = { update: vi.fn(() => ({ set })) };
+    const tx = {};
     const db = { transaction: vi.fn((callback) => callback(tx)) };
 
     await updateActivityForProfile({
@@ -163,7 +160,11 @@ describe("updateActivityForProfile", () => {
       profileId: "profile-1",
     });
 
-    expect(set).toHaveBeenCalledWith(expect.objectContaining({ name: "Renamed" }));
+    expect(updateCanonicalActivityFields).toHaveBeenCalledWith(tx, {
+      activityId: "activity-1",
+      profileId: "profile-1",
+      fields: { id: "activity-1", name: "Renamed" },
+    });
     expect(markAthleteStateDirty).not.toHaveBeenCalled();
   });
 });

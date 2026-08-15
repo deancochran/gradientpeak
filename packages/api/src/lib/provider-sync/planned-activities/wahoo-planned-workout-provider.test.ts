@@ -18,7 +18,7 @@ function performanceTargets(
     ...buildPerformanceTargetFactsFixture({
       asOf: operationTime.toISOString(),
       athleteId: "profile-1",
-      planningThresholdPowerWatts: 250,
+      bikeThresholdWatts: 250,
       lthrBpm: { bike: 170, run: 175 },
       maxHrBpm: { bike: 190, run: 195 },
     }),
@@ -147,13 +147,12 @@ describe("WahooPlannedActivityProvider", () => {
     const targets = performanceTargets();
     const performanceTargetsWithState = athletePerformanceTargetFactsSchema.parse({
       ...targets,
-      cycling: {
-        planningThresholdPower: {
-          ...targets.cycling.planningThresholdPower,
-          status: calibrationState === "provisional" ? "partial" : "available",
-          calibrationState,
-          confidence: "low",
-          reasons: calibrationState === "stale" ? ["stale_evidence"] : [],
+      thresholds: {
+        ...targets.thresholds,
+        bike: {
+          ...targets.thresholds.bike,
+          state: calibrationState === "stale" ? "confirmed" : calibrationState,
+          freshness: calibrationState === "stale" ? "stale" : "fresh",
         },
       },
     });
@@ -170,8 +169,13 @@ describe("WahooPlannedActivityProvider", () => {
     });
   });
 
-  it("exports a structured run workout from a provisional sport-specific HR threshold", async () => {
-    const targets = performanceTargets();
+  it("exports a historical as-of HR fact into a structured run activity plan", async () => {
+    const targets = buildPerformanceTargetFactsFixture({
+      asOf: operationTime.toISOString(),
+      athleteId: "profile-1",
+      heartRateObservedAt: "2026-07-27T12:00:00.000Z",
+      lthrBpm: { run: 175 },
+    });
     targets.heartRate.run.lthr.calibrationState = "provisional";
     const { enqueueJob, provider } = providerFixture({
       performanceTargets: targets,
@@ -182,6 +186,9 @@ describe("WahooPlannedActivityProvider", () => {
     expect(enqueueJob.mock.calls[0]?.[0].payload.projectionSnapshot).toMatchObject({
       plan: { header: { threshold_hr: 175 } },
     });
+    expect(enqueueJob.mock.calls[0]?.[0].payload.performanceModelAsOf).toBe(
+      operationTime.toISOString(),
+    );
   });
 
   it("changes queued desired state when the scheduled time changes", async () => {

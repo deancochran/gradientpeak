@@ -16,7 +16,6 @@ type PerformanceModelSummaryProps = {
 
 function statusVariant(item: PerformanceModelSummaryItem): "default" | "secondary" | "outline" {
   if (item.status === "available") return "default";
-  if (item.status === "partial") return "secondary";
   return "outline";
 }
 
@@ -39,13 +38,23 @@ export function PerformanceModelSummary({
 
       {isLoading ? (
         <Card>
-          <CardContent className="py-6 text-sm text-muted-foreground">
+          <CardContent
+            aria-atomic="true"
+            aria-live="polite"
+            className="py-6 text-sm text-muted-foreground"
+            role="status"
+          >
             Loading current performance…
           </CardContent>
         </Card>
       ) : error ? (
         <Card>
-          <CardContent className="flex flex-col items-start gap-3 py-6">
+          <CardContent
+            aria-atomic="true"
+            aria-live="assertive"
+            className="flex flex-col items-start gap-3 py-6"
+            role="alert"
+          >
             <p className="font-medium">Current performance could not be loaded.</p>
             {onRetry ? (
               <Button onClick={onRetry} size="sm" type="button" variant="outline">
@@ -64,7 +73,7 @@ export function PerformanceModelSummary({
               <CardContent className="divide-y">
                 {group.items.map((item) => (
                   <article
-                    aria-label={`${group.title} ${item.label}: ${item.valueLabel}, ${item.statusLabel}`}
+                    aria-label={`${item.label.startsWith(`${group.title} `) ? "" : `${group.title} `}${item.label}: ${item.valueLabel}, ${item.statusLabel}`}
                     className="space-y-2 py-4 first:pt-0 last:pb-0"
                     key={item.id}
                   >

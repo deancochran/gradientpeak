@@ -1,3 +1,8 @@
+import {
+  metersPerSecondToSecondsPerKilometer,
+  secondsPerKilometerToMetersPerSecond,
+} from "../units";
+
 /**
  * Pace and Speed Conversions
  *
@@ -16,12 +21,7 @@
  * // Returns: 3.33 m/s
  */
 export function paceToSpeed(secondsPerKm: number): number {
-  if (secondsPerKm <= 0) {
-    throw new Error("Pace must be greater than 0");
-  }
-
-  // Speed (m/s) = 1000 meters / seconds
-  return 1000 / secondsPerKm;
+  return secondsPerKilometerToMetersPerSecond(secondsPerKm);
 }
 
 /**
@@ -36,12 +36,7 @@ export function paceToSpeed(secondsPerKm: number): number {
  * // Returns: 300 (5:00/km)
  */
 export function speedToPace(metersPerSecond: number): number {
-  if (metersPerSecond <= 0) {
-    throw new Error("Speed must be greater than 0");
-  }
-
-  // Pace (s/km) = 1000 meters / speed (m/s)
-  return Math.round(1000 / metersPerSecond);
+  return Math.round(metersPerSecondToSecondsPerKilometer(metersPerSecond));
 }
 
 /**

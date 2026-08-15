@@ -4,6 +4,7 @@ import { createInsertSchema, createSelectSchema, createUpdateSchema } from "driz
 import { z } from "zod";
 
 import {
+  activityEffortSourceSeriesEnum,
   activityFileIngestionSourceEnum,
   activityFileIngestionStatusEnum,
   activitySessionRpeSourceEnum,
@@ -15,11 +16,11 @@ import {
   integrationProviderEnum,
   integrationResourceKindEnum,
   notificationTypeEnum,
-  performanceCalibrationEvidenceStateEnum,
-  performanceCalibrationMetricKeyEnum,
-  performanceCalibrationRejectionReasonEnum,
-  performanceCalibrationSourceSemanticsEnum,
   profileMetricTypeEnum,
+  thresholdEvaluationEffortRoleEnum,
+  thresholdEvaluationOutcomeEnum,
+  thresholdEvaluationRejectionReasonEnum,
+  thresholdMetricEnum,
   trainingEffectLabelEnum,
 } from "../schema/enums";
 import {
@@ -43,10 +44,6 @@ import {
   messages,
   notifications,
   oauthStates,
-  performanceCalibrationEvidence,
-  performanceCalibrationModelInputs,
-  performanceCalibrationSelectionEvidence,
-  performanceCalibrations,
   profileGoals,
   profileMetrics,
   profiles,
@@ -54,6 +51,9 @@ import {
   providerSyncJobs,
   providerSyncState,
   providerWebhookReceipts,
+  thresholdEvaluationEfforts,
+  thresholdEvaluations,
+  thresholds,
   trainingPlans,
 } from "../schema/tables";
 
@@ -69,6 +69,9 @@ export const publicEvidenceObservationSourceSchema = z.enum(
   evidenceObservationSourceEnum.enumValues,
 );
 export const publicEffortTypeSchema = z.enum(effortTypeEnum.enumValues);
+export const publicActivityEffortSourceSeriesSchema = z.enum(
+  activityEffortSourceSeriesEnum.enumValues,
+);
 export const publicEventStatusSchema = z.enum(eventStatusEnum.enumValues);
 export const publicEventTypeSchema = z.enum(eventTypeEnum.enumValues);
 export const publicGenderSchema = z.enum(genderEnum.enumValues);
@@ -77,17 +80,15 @@ export const publicIntegrationProviderSchema = z.enum(integrationProviderEnum.en
 export const publicNotificationTypeSchema = z.enum(notificationTypeEnum.enumValues);
 export const publicProfileMetricTypeSchema = z.enum(profileMetricTypeEnum.enumValues);
 export const publicTrainingEffectLabelSchema = z.enum(trainingEffectLabelEnum.enumValues);
-export const publicPerformanceCalibrationMetricKeySchema = z.enum(
-  performanceCalibrationMetricKeyEnum.enumValues,
+export const publicThresholdMetricSchema = z.enum(thresholdMetricEnum.enumValues);
+export const publicThresholdEvaluationOutcomeSchema = z.enum(
+  thresholdEvaluationOutcomeEnum.enumValues,
 );
-export const publicPerformanceCalibrationEvidenceStateSchema = z.enum(
-  performanceCalibrationEvidenceStateEnum.enumValues,
+export const publicThresholdEvaluationRejectionReasonSchema = z.enum(
+  thresholdEvaluationRejectionReasonEnum.enumValues,
 );
-export const publicPerformanceCalibrationRejectionReasonSchema = z.enum(
-  performanceCalibrationRejectionReasonEnum.enumValues,
-);
-export const publicPerformanceCalibrationSourceSemanticsSchema = z.enum(
-  performanceCalibrationSourceSemanticsEnum.enumValues,
+export const publicThresholdEvaluationEffortRoleSchema = z.enum(
+  thresholdEvaluationEffortRoleEnum.enumValues,
 );
 export const publicProfilesRowSchema = createSelectSchema(profiles);
 export const publicProfilesInsertSchema = createInsertSchema(profiles);
@@ -140,9 +141,7 @@ export const publicActivityEffortsRowSchema = createSelectSchema(activityEfforts
 export const publicActivityEffortsInsertSchema = createInsertSchema(activityEfforts).extend({
   unit: canonicalEffortUnitSchema,
 });
-export const publicActivityEffortsUpdateSchema = createUpdateSchema(activityEfforts).extend({
-  unit: canonicalEffortUnitSchema.optional(),
-});
+export const publicActivityEffortsUpdateSchema = z.never();
 
 export const publicActivitySessionRpeEvidenceRowSchema = createSelectSchema(
   activitySessionRpeEvidence,
@@ -191,33 +190,19 @@ export const publicProfileMetricsRowSchema = createSelectSchema(profileMetrics);
 export const publicProfileMetricsInsertSchema = createInsertSchema(profileMetrics);
 export const publicProfileMetricsUpdateSchema = createUpdateSchema(profileMetrics);
 
-export const publicPerformanceCalibrationEvidenceRowSchema = createSelectSchema(
-  performanceCalibrationEvidence,
+export const publicThresholdEvaluationsRowSchema = createSelectSchema(thresholdEvaluations);
+export const publicThresholdEvaluationsInsertSchema = createInsertSchema(thresholdEvaluations);
+export const publicThresholdEvaluationsUpdateSchema = z.never();
+export const publicThresholdEvaluationEffortsRowSchema = createSelectSchema(
+  thresholdEvaluationEfforts,
 );
-export const publicPerformanceCalibrationEvidenceInsertSchema = createInsertSchema(
-  performanceCalibrationEvidence,
+export const publicThresholdEvaluationEffortsInsertSchema = createInsertSchema(
+  thresholdEvaluationEfforts,
 );
-/** Evidence is immutable except for repository-owned invalidation. */
-export const publicPerformanceCalibrationEvidenceUpdateSchema = z.never();
-export const publicPerformanceCalibrationModelInputsRowSchema = createSelectSchema(
-  performanceCalibrationModelInputs,
-);
-export const publicPerformanceCalibrationModelInputsInsertSchema = createInsertSchema(
-  performanceCalibrationModelInputs,
-);
-export const publicPerformanceCalibrationModelInputsUpdateSchema = z.never();
-export const publicPerformanceCalibrationsRowSchema = createSelectSchema(performanceCalibrations);
-export const publicPerformanceCalibrationsInsertSchema =
-  createInsertSchema(performanceCalibrations);
-/** Effective-dated selections are append-only. */
-export const publicPerformanceCalibrationsUpdateSchema = z.never();
-export const publicPerformanceCalibrationSelectionEvidenceRowSchema = createSelectSchema(
-  performanceCalibrationSelectionEvidence,
-);
-export const publicPerformanceCalibrationSelectionEvidenceInsertSchema = createInsertSchema(
-  performanceCalibrationSelectionEvidence,
-);
-export const publicPerformanceCalibrationSelectionEvidenceUpdateSchema = z.never();
+export const publicThresholdEvaluationEffortsUpdateSchema = z.never();
+export const publicThresholdsRowSchema = createSelectSchema(thresholds);
+export const publicThresholdsInsertSchema = createInsertSchema(thresholds);
+export const publicThresholdsUpdateSchema = z.never();
 
 export const publicProfileTrainingSettingsRowSchema = createSelectSchema(profileTrainingSettings);
 export const publicProfileTrainingSettingsInsertSchema =
@@ -278,6 +263,9 @@ export type PublicActivityFileIngestionStatus = z.infer<
 >;
 export type PublicEvidenceObservationSource = z.infer<typeof publicEvidenceObservationSourceSchema>;
 export type PublicEffortType = z.infer<typeof publicEffortTypeSchema>;
+export type PublicActivityEffortSourceSeries = z.infer<
+  typeof publicActivityEffortSourceSeriesSchema
+>;
 export type PublicActivitySessionRpeSource = z.infer<typeof publicActivitySessionRpeSourceSchema>;
 export type PublicEventStatus = z.infer<typeof publicEventStatusSchema>;
 export type PublicEventType = z.infer<typeof publicEventTypeSchema>;

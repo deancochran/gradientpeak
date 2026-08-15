@@ -1,10 +1,8 @@
-import { randomUUID } from "node:crypto";
-import { type CalibrationIdentity, SWIMMING_CSS_SOURCE_EFFORT_METHOD } from "@repo/core";
-import { activityEfforts } from "@repo/db";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { activityEfforts, activitySegments } from "@repo/db";
+import { and, eq, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
-import { reconcilePerformanceCalibrationsWithProfileLockHeld } from "../performance-model/reconcile-performance-calibrations";
-import { reconcileSwimmingCssProtocolEvidenceWithProfileLockHeld } from "../performance-model/reconcile-swimming-css-protocol-evidence";
+import { type ThresholdImpact, thresholdEffortId } from "../../repositories/threshold-repository";
+import { reconcileThresholdsWithProfileLockHeld } from "../performance-model/reconcile-thresholds";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 type TransactionClient = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
@@ -43,7 +41,8 @@ export interface GeneratedActivityEvidenceInput {
   profileId: string;
   efforts: EffortInsert[];
   detectedLTHR: GeneratedActivityLthrEvidence | null;
-  preInvalidatedCalibrationIdentities?: CalibrationIdentity[];
+  preInvalidatedCalibrationIdentities?: ThresholdImpact[];
+  deferPerformanceCalibration?: boolean;
   now: Date;
 }
 
@@ -60,8 +59,13 @@ function effortIdentity(
     | "segment_id"
     | "activity_category"
     | "effort_type"
+    | "source_series"
     | "duration_seconds"
     | "distance_meters"
+    | "source_artifact_id"
+    | "source_revision"
+    | "start_offset_ms"
+    | "end_offset_ms"
     | "unit"
     | "method"
   >,
@@ -70,8 +74,13 @@ function effortIdentity(
     effort.segment_id ?? null,
     effort.activity_category,
     effort.effort_type,
+    effort.source_series,
     effort.duration_seconds,
     effort.distance_meters ?? null,
+    effort.source_artifact_id,
+    effort.source_revision,
+    effort.start_offset_ms,
+    effort.end_offset_ms,
     effort.unit,
     effort.method ?? null,
   ]);
@@ -84,6 +93,9 @@ function bindGeneratedEffortObservationId(
   const provenance = effort.provenance;
   if (provenance === null || typeof provenance !== "object" || Array.isArray(provenance)) {
     throw new Error("Generated activity effort requires object provenance");
+  }
+  if (!("source_series" in provenance) || provenance.source_series !== effort.source_series) {
+    throw new Error("Generated activity effort source-series identity must match provenance");
   }
   return {
     ...effort,
@@ -115,9 +127,15 @@ function hasSameEffortEvidence(left: EffortRow, right: EffortInsert): boolean {
     left.recorded_at.getTime() === right.recorded_at.getTime() &&
     left.activity_category === right.activity_category &&
     left.effort_type === right.effort_type &&
+    left.source_series === right.source_series &&
     left.duration_seconds === right.duration_seconds &&
     left.distance_meters === (right.distance_meters ?? null) &&
-    left.start_offset === (right.start_offset ?? null) &&
+    left.source_artifact_id === right.source_artifact_id &&
+    left.source_revision === right.source_revision &&
+    left.start_offset_ms === right.start_offset_ms &&
+    left.end_offset_ms === right.end_offset_ms &&
+    left.window_coverage === right.window_coverage &&
+    left.max_gap_seconds === right.max_gap_seconds &&
     left.unit === right.unit &&
     hasSamePostgresRealValue(left.value, right.value) &&
     left.source === right.source &&
@@ -133,12 +151,7 @@ export function planGeneratedActivityEvidenceReconciliation(input: {
   generated: GeneratedActivityEvidenceInput;
 }) {
   const generatedEfforts = input.existingEfforts
-    .filter(
-      (effort) =>
-        (effort.method === GENERATED_EFFORT_METHOD ||
-          effort.method === SWIMMING_CSS_SOURCE_EFFORT_METHOD) &&
-        effort.source === "imported",
-    )
+    .filter((effort) => effort.method === GENERATED_EFFORT_METHOD && effort.source === "imported")
     .sort(
       (left, right) =>
         effortIdentity(left).localeCompare(effortIdentity(right)) ||
@@ -152,6 +165,7 @@ export function planGeneratedActivityEvidenceReconciliation(input: {
 
   const effortDeleteIds: string[] = [];
   const effortInserts: EffortInsert[] = [];
+  const reconciledEfforts: EffortInsert[] = [];
   const effortMaterialTimes: Date[] = [];
   for (const desired of input.generated.efforts) {
     const existing = availableByIdentity.get(effortIdentity(desired))?.shift();
@@ -162,10 +176,7 @@ export function planGeneratedActivityEvidenceReconciliation(input: {
           activity_id: input.generated.activityId,
           profile_id: input.generated.profileId,
           source: "imported" as const,
-          method:
-            desired.method === SWIMMING_CSS_SOURCE_EFFORT_METHOD
-              ? SWIMMING_CSS_SOURCE_EFFORT_METHOD
-              : GENERATED_EFFORT_METHOD,
+          method: GENERATED_EFFORT_METHOD,
         }
       : null;
     if (
@@ -173,37 +184,36 @@ export function planGeneratedActivityEvidenceReconciliation(input: {
       normalizedRetainedValues &&
       hasSameEffortEvidence(existing, normalizedRetainedValues)
     ) {
+      reconciledEfforts.push(normalizedRetainedValues);
       continue;
     }
 
-    const observationId = desired.id && desired.id !== existing?.id ? desired.id : randomUUID();
+    const observationId = desired.id;
     const values = {
       ...bindGeneratedEffortObservationId(desired, observationId),
       activity_id: input.generated.activityId,
       profile_id: input.generated.profileId,
       source: "imported" as const,
-      method:
-        desired.method === SWIMMING_CSS_SOURCE_EFFORT_METHOD
-          ? SWIMMING_CSS_SOURCE_EFFORT_METHOD
-          : GENERATED_EFFORT_METHOD,
+      method: GENERATED_EFFORT_METHOD,
       created_at: desired.created_at ?? input.generated.now,
     };
     if (existing) {
-      effortDeleteIds.push(existing.id);
-      effortInserts.push(values);
-      effortMaterialTimes.push(existing.recorded_at, desired.recorded_at);
+      throw new Error("Activity effort replay diverged from immutable source revision");
     } else {
       effortInserts.push(values);
+      reconciledEfforts.push(values);
       effortMaterialTimes.push(desired.recorded_at);
     }
   }
 
   const effortDeletes = [...availableByIdentity.values()].flat();
-  effortDeleteIds.push(...effortDeletes.map((effort) => effort.id));
-  effortMaterialTimes.push(...effortDeletes.map((effort) => effort.recorded_at));
+  if (effortDeletes.length > 0) {
+    throw new Error("Activity effort replay omitted immutable source-revision evidence");
+  }
   return {
     effortDeleteIds,
     effortInserts,
+    reconciledEfforts,
     effortMaterialRecordedAt:
       effortMaterialTimes.length === 0
         ? null
@@ -223,6 +233,47 @@ export async function reconcileGeneratedActivityEvidenceWithProfileLockHeld(
   tx: TransactionClient,
   input: GeneratedActivityEvidenceInput,
 ) {
+  const sourceRows = await tx
+    .select({
+      segmentId: activitySegments.id,
+      sourceArtifactId: activitySegments.source_artifact_id,
+      sourceRevision: activitySegments.segment_revision,
+    })
+    .from(activitySegments)
+    .where(
+      and(
+        eq(activitySegments.activity_id, input.activityId),
+        eq(activitySegments.profile_id, input.profileId),
+      ),
+    );
+  const sources = new Map(sourceRows.map((source) => [source.segmentId, source]));
+  const boundEfforts = input.efforts.map((effort) => {
+    const source = sources.get(effort.segment_id);
+    if (!source?.sourceArtifactId) {
+      throw new Error("Generated activity effort has no accepted source identity");
+    }
+    const id = thresholdEffortId({
+      activityId: input.activityId,
+      segmentId: effort.segment_id,
+      sourceArtifactId: source.sourceArtifactId,
+      sourceRevision: source.sourceRevision,
+      effortType: effort.effort_type,
+      sourceSeries: effort.source_series,
+      startOffsetMs: effort.start_offset_ms,
+      endOffsetMs: effort.end_offset_ms,
+      method: effort.method,
+      calculationVersion: effort.calculation_version,
+    });
+    return {
+      ...bindGeneratedEffortObservationId(effort, id),
+      id,
+      activity_id: input.activityId,
+      profile_id: input.profileId,
+      source_artifact_id: source.sourceArtifactId,
+      source_revision: source.sourceRevision,
+      created_at: input.now,
+    } satisfies EffortInsert;
+  });
   const existingEfforts = await tx
     .select()
     .from(activityEfforts)
@@ -234,34 +285,24 @@ export async function reconcileGeneratedActivityEvidenceWithProfileLockHeld(
     );
   const plan = planGeneratedActivityEvidenceReconciliation({
     existingEfforts,
-    generated: input,
+    generated: { ...input, efforts: boundEfforts },
   });
 
-  if (plan.effortDeleteIds.length) {
-    await tx.delete(activityEfforts).where(inArray(activityEfforts.id, plan.effortDeleteIds));
-  }
   if (plan.effortInserts.length) await tx.insert(activityEfforts).values(plan.effortInserts);
-  const reconcilesSwimmingCss = [...existingEfforts, ...input.efforts].some(
-    (effort) => effort.method === SWIMMING_CSS_SOURCE_EFFORT_METHOD,
-  );
-  const swimmingCssResult = reconcilesSwimmingCss
-    ? await reconcileSwimmingCssProtocolEvidenceWithProfileLockHeld(tx, {
-        activityId: input.activityId,
+  const calibrationReconciliation = input.deferPerformanceCalibration
+    ? null
+    : await reconcileThresholdsWithProfileLockHeld(tx, {
         profileId: input.profileId,
+        activityId: input.activityId,
+        // Analysis allocates provisional observation IDs. Calibration diagnostics
+        // must cite the canonical retained/inserted IDs selected by reconciliation,
+        // otherwise an identical artifact replay would diverge immutable evidence.
+        efforts: plan.reconciledEfforts,
+        ...(input.preInvalidatedCalibrationIdentities === undefined
+          ? {}
+          : { preInvalidatedIdentities: input.preInvalidatedCalibrationIdentities }),
         now: input.now,
-      })
-    : null;
-  const calibrationReconciliation = await reconcilePerformanceCalibrationsWithProfileLockHeld(tx, {
-    profileId: input.profileId,
-    activityId: input.activityId,
-    efforts: input.efforts,
-    detectedLTHR: input.detectedLTHR,
-    swimmingCssResult,
-    ...(input.preInvalidatedCalibrationIdentities === undefined
-      ? {}
-      : { preInvalidatedIdentities: input.preInvalidatedCalibrationIdentities }),
-    now: input.now,
-  });
+      });
 
   return { ...plan, calibrationReconciliation };
 }

@@ -55,7 +55,7 @@ new scalar from raw evidence:
 | Run | Repeated effort recovery | Unavailable; the running kernel produces no qualified repeat protocol concept |
 | Swim | Short duration | Existing pool 60-second sprint-capacity speed |
 | Swim | Anaerobic reserve | Unavailable; no reserve concept is produced |
-| Swim | Threshold | Existing pool CSS speed |
+| Swim | Threshold | Not produced; canonical target facts own swim threshold speed |
 | Swim | Long duration | Existing 1,800-second aerobic-capacity speed |
 | Swim | Durability | Unavailable; no durability concept is produced |
 | Swim | Repeated effort recovery | Existing fixed-distance repeat final-speed retention ratio |

@@ -20,8 +20,8 @@
   result. Complete status additionally requires every owned length to be recognized and timed, the
   optional active count to match, and all elapsed time to be accounted for.
 - **Threshold intensity and Load:** when complete timing supplies active duration, swim speed is
-  evidenced distance divided by active duration. CSS threshold speed is `100 / cssSecondsPer100m`;
-  intensity is `swimSpeed / cssSpeed`; Common Load is
+  evidenced distance divided by active duration. The canonical swim threshold is supplied directly
+  in meters per second; intensity is `swimSpeed / thresholdSpeed`; Common Load is
   `(activeDurationSeconds / 3600) * intensity^2 * 100`. Partial timing can carry only partial Load;
   unavailable timing cannot fabricate zero or elapsed-time Load.
 - **Ordering and rounding:** length totals are additive and independent of record ordering. Core

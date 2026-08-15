@@ -130,7 +130,7 @@ function buildService(overrides: RecordingServiceOverrides = {}): ActivityRecord
   const { currentRoute, ...serviceOverrides } = overrides;
   const performanceTargets = buildPerformanceTargetFactsFixture({
     asOf: "2026-06-01T00:00:00.000Z",
-    planningThresholdPowerWatts: 250,
+    bikeThresholdWatts: 250,
   });
   Object.assign(service, {
     selectedActivityCategory: "bike",

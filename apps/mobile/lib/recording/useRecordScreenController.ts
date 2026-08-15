@@ -67,11 +67,7 @@ export function useRecordScreenController() {
     },
   );
   const performanceTargets = React.useMemo(() => {
-    if (
-      publishedAthleteState?.status?.freshness === "fresh" &&
-      publishedAthleteState.status.rebuildStatus === "fresh" &&
-      publishedAthleteState.publishedState?.performanceTargets
-    ) {
+    if (publishedAthleteState?.publishedState?.performanceTargets) {
       return publishedAthleteState.publishedState.performanceTargets;
     }
     return createUnavailableAthletePerformanceTargetFacts(
@@ -266,11 +262,7 @@ export function useRecordScreenController() {
         profileId: user.id,
         sections: { publishedState: true, status: true },
       });
-      if (
-        published.status?.freshness !== "fresh" ||
-        published.status.rebuildStatus !== "fresh" ||
-        !published.publishedState?.performanceTargets
-      ) {
+      if (!published.publishedState?.performanceTargets) {
         console.warn(
           `[RecordModal] Start-time performance targets ${published.status?.freshness ?? "unavailable"}`,
         );

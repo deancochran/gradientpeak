@@ -190,7 +190,7 @@ export function buildServerEffectiveLoadSummaries(input: {
           remainingLoad: aggregateValue(remaining),
           hasUnavailableCompletedLoad:
             firmItems.some((item) => item.kind === "completed") &&
-            (completed.status === "unavailable" || completed.status === "partial"),
+            completed.status === "unavailable",
           ...recommendation,
         },
       ];

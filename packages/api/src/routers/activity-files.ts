@@ -13,7 +13,7 @@ import {
   analyzeActivityStreams,
   canonicalActivityCategorySchema,
   contentVisibilitySchema,
-  getAvailablePerformanceTargetValue,
+  type PerformanceThresholdFact,
 } from "@repo/core";
 import {
   activityArtifactSemanticsSchema,
@@ -69,22 +69,15 @@ const activityFileTypeSchema = z.enum(["fit", "gpx", "tcx"]);
 const ACTIVITY_FILE_NAME_PATTERN = /^[^/\\\0]+$/;
 
 function toStreamTargetIdentity(
-  fact:
-    | AthletePerformanceTargetFacts["cycling"]["planningThresholdPower"]
-    | AthletePerformanceTargetFacts["running"]["planningThresholdPace"]
-    | AthletePerformanceTargetFacts["swimming"]["css"],
+  fact: PerformanceThresholdFact,
 ): ActivityStreamThresholdIdentity | null {
-  if (
-    getAvailablePerformanceTargetValue(fact) === null ||
-    fact.evidenceTime.observedThrough === null
-  )
-    return null;
+  if (fact.status !== "available") return null;
   return {
-    source: "modeled",
-    observed_at: fact.evidenceTime.observedThrough,
-    confidence: fact.confidence === "unavailable" ? "unknown" : fact.confidence,
-    stale: fact.calibrationState === "stale",
-    estimate: true,
+    source: "observed_effort",
+    observed_at: fact.effectiveAt,
+    confidence: fact.confidence >= 0.85 ? "high" : fact.confidence >= 0.7 ? "medium" : "low",
+    stale: fact.freshness === "stale",
+    estimate: false,
     calculation_version: fact.calculationVersion,
   };
 }
@@ -1094,13 +1087,15 @@ export const activityFilesRouter = createTRPCRouter({
           activityCategoryHeartRate?.lthr.status === "available"
             ? activityCategoryHeartRate.lthr.valueBpm
             : null;
-        const planningThresholdPower = getAvailablePerformanceTargetValue(
-          performanceTargets.cycling.planningThresholdPower,
-        );
-        const planningThresholdPace = getAvailablePerformanceTargetValue(
-          performanceTargets.running.planningThresholdPace,
-        );
-        const swimmingCss = getAvailablePerformanceTargetValue(performanceTargets.swimming.css);
+        const bikeThreshold = performanceTargets.thresholds.bike;
+        const runThreshold = performanceTargets.thresholds.run;
+        const swimThreshold = performanceTargets.thresholds.swim;
+        const planningThresholdPower =
+          bikeThreshold.status === "available" ? bikeThreshold.value : null;
+        const runThresholdSpeedMps =
+          runThreshold.status === "available" ? runThreshold.value : null;
+        const swimThresholdSpeedMps =
+          swimThreshold.status === "available" ? swimThreshold.value : null;
         const analysis = analyzeActivityStreams({
           records: scopedRecords,
           activity_category,
@@ -1109,10 +1104,8 @@ export const activityFilesRouter = createTRPCRouter({
               ? {}
               : { lthrByActivityCategory: { [activity_category]: activityCategoryLthr } }),
             ...(planningThresholdPower === null ? {} : { ftpWatts: planningThresholdPower }),
-            ...(planningThresholdPace === null
-              ? {}
-              : { runThresholdSpeedMps: 1_000 / planningThresholdPace }),
-            ...(swimmingCss === null ? {} : { swimThresholdSpeedMps: 100 / swimmingCss }),
+            ...(runThresholdSpeedMps === null ? {} : { runThresholdSpeedMps }),
+            ...(swimThresholdSpeedMps === null ? {} : { swimThresholdSpeedMps }),
             identities: {
               lthrByActivityCategory: {
                 [activity_category]:
@@ -1120,11 +1113,9 @@ export const activityFilesRouter = createTRPCRouter({
                     ? null
                     : toStreamHeartRateIdentity(activityCategoryHeartRate.lthr),
               },
-              ftpWatts: toStreamTargetIdentity(performanceTargets.cycling.planningThresholdPower),
-              runThresholdSpeedMps: toStreamTargetIdentity(
-                performanceTargets.running.planningThresholdPace,
-              ),
-              swimThresholdSpeedMps: toStreamTargetIdentity(performanceTargets.swimming.css),
+              ftpWatts: toStreamTargetIdentity(bikeThreshold),
+              runThresholdSpeedMps: toStreamTargetIdentity(runThreshold),
+              swimThresholdSpeedMps: toStreamTargetIdentity(swimThreshold),
             },
           },
         });

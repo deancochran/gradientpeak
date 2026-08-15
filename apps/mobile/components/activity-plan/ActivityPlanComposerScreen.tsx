@@ -199,9 +199,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   );
   const performanceTargets = useMemo(
     () =>
-      publishedStateQuery.data?.status?.freshness === "fresh" &&
-      publishedStateQuery.data.status.rebuildStatus === "fresh" &&
-      publishedStateQuery.data.publishedState?.performanceTargets
+      publishedStateQuery.data?.publishedState?.performanceTargets
         ? publishedStateQuery.data.publishedState.performanceTargets
         : createUnavailableAthletePerformanceTargetFacts(
             publishedStateQuery.data?.publishedState?.publishedAt ?? performanceModelAsOf,
@@ -210,9 +208,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   );
   const targetAnchors = useMemo<ActivityPlanTargetAnchors>(
     () => ({
-      ftpWatts:
-        getAvailablePerformanceTargetValue(performanceTargets.cycling.planningThresholdPower) ??
-        undefined,
+      ftpWatts: getAvailablePerformanceTargetValue(performanceTargets.thresholds.bike) ?? undefined,
       maxHeartRateBpm: activityCategoryHeartRateValue(
         performanceTargets,
         "max_hr",
@@ -496,11 +492,11 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
             }}
           />
 
-          {publishedStateQuery.data && publishedStateQuery.data.status?.freshness !== "fresh" ? (
+          {publishedStateQuery.data?.publishedState?.performanceTargets &&
+          publishedStateQuery.data.status?.freshness === "stale" ? (
             <Text className="text-sm text-muted-foreground">
-              Published performance targets are{" "}
-              {publishedStateQuery.data.status?.freshness ?? "unavailable"}; relative targets remain
-              unavailable until athlete state is current.
+              Using the last published performance targets. They remain usable, but newer activity
+              data may update them.
             </Text>
           ) : null}
 

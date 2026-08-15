@@ -3,13 +3,18 @@ import {
   activities,
   activityEfforts,
   activityImportRuns,
-  performanceCalibrations,
   profileAthleteState,
   profilePerformanceEstimates,
+  thresholds,
 } from "@repo/db";
 import { and, asc, eq, gt, lte, sql } from "drizzle-orm";
 import { z } from "zod";
-import type { DrizzleQueryExecutor, DrizzleTransactionClient, getRequiredDb } from "../db";
+import {
+  type DrizzleQueryExecutor,
+  type DrizzleTransactionClient,
+  type getRequiredDb,
+  withRepeatableReadSnapshot,
+} from "../db";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
@@ -291,13 +296,17 @@ export async function publishAthleteState(
       lastActivityAt: Date | null;
       algorithmVersion: string;
     };
-    estimates: Array<typeof profilePerformanceEstimates.$inferInsert>;
+    estimates:
+      | Array<typeof profilePerformanceEstimates.$inferInsert>
+      | ((
+          tx: DrizzleTransactionClient,
+        ) => Promise<Array<typeof profilePerformanceEstimates.$inferInsert>>);
     now: Date;
     afterPublishInTransaction?: (tx: DrizzleTransactionClient) => Promise<void>;
   },
 ) {
   try {
-    return await db.transaction(async (tx) => {
+    const publish = async (tx: DrizzleTransactionClient) => {
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtextextended(${input.claim.profileId}, 0))`,
       );
@@ -338,40 +347,19 @@ export async function publishAthleteState(
         );
       const [futureCalibrationChange] = await tx
         .select({
-          dirtyFromAt: sql<Date | string | null>`min(${performanceCalibrations.effective_at})`,
+          dirtyFromAt: sql<Date | string | null>`min(${thresholds.effective_at})`,
         })
-        .from(performanceCalibrations)
+        .from(thresholds)
         .where(
           and(
-            eq(performanceCalibrations.profile_id, input.claim.profileId),
-            gt(performanceCalibrations.effective_at, input.now),
-          ),
-        );
-      const [futureCalibrationExpiry] = await tx
-        .select({
-          dirtyFromAt: sql<Date | string | null>`min(${performanceCalibrations.expires_at})`,
-        })
-        .from(performanceCalibrations)
-        .where(
-          and(
-            eq(performanceCalibrations.profile_id, input.claim.profileId),
-            gt(performanceCalibrations.expires_at, input.now),
-            sql`not exists (
-              select 1 from ${performanceCalibrations} newer
-              where newer.profile_id = ${performanceCalibrations.profile_id}
-                and newer.metric_key = ${performanceCalibrations.metric_key}
-                and newer.activity_category = ${performanceCalibrations.activity_category}
-                and newer.effective_at <= ${performanceCalibrations.expires_at}
-                and (newer.effective_at, newer.created_at, newer.id) >
-                    (${performanceCalibrations.effective_at}, ${performanceCalibrations.created_at}, ${performanceCalibrations.id})
-            )`,
+            eq(thresholds.profile_id, input.claim.profileId),
+            gt(thresholds.effective_at, input.now),
           ),
         );
       const futureDirtyFromAt = earliestTimestamp(
         parseDatabaseTimestamp(futureActivityEvidence?.dirtyFromAt),
         parseDatabaseTimestamp(futureEffortEvidence?.dirtyFromAt),
         parseDatabaseTimestamp(futureCalibrationChange?.dirtyFromAt),
-        parseDatabaseTimestamp(futureCalibrationExpiry?.dirtyFromAt),
       );
       const [owned] = await tx
         .select({ profileId: profileAthleteState.profile_id })
@@ -393,11 +381,12 @@ export async function publishAthleteState(
         .limit(1)
         .for("update");
       if (!owned) return false;
+      const estimates =
+        typeof input.estimates === "function" ? await input.estimates(tx) : input.estimates;
       await tx
         .delete(profilePerformanceEstimates)
         .where(eq(profilePerformanceEstimates.profile_id, input.claim.profileId));
-      if (input.estimates.length > 0)
-        await tx.insert(profilePerformanceEstimates).values(input.estimates);
+      if (estimates.length > 0) await tx.insert(profilePerformanceEstimates).values(estimates);
       const [published] = await tx
         .update(profileAthleteState)
         .set({
@@ -439,7 +428,8 @@ export async function publishAthleteState(
       if (!published) throw new AthleteStatePublishFenceLostError();
       await input.afterPublishInTransaction?.(tx);
       return true;
-    });
+    };
+    return await withRepeatableReadSnapshot(db, publish, { accessMode: "read write" });
   } catch (error) {
     if (error instanceof AthleteStatePublishFenceLostError) return false;
     throw error;

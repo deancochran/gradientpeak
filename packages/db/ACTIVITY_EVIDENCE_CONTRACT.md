@@ -15,11 +15,11 @@ This document defines how GradientPeak uses `profile_metrics` and `activity_effo
 
 Prescriptive performance targets are projections of canonical models over eligible activity evidence. A profile metric or provider summary never becomes a cycling, running, or swimming target by being relabeled or expanded into synthetic curve points.
 
-`swimming_css_protocol_evidence` is a separate qualified protocol projection. One row retains the
-canonical pool `css_400m_200m` identity, current accepted source artifact content identity, accepted
-segment revision, and the distinct observed 400 m then 200 m effort identities and complete timing.
-It never stores CSS pace or speed. Core calculates CSS from an eligible protocol at the requested
-as-of instant; profile metrics and standalone/manual effort rows have no CSS authority.
+Threshold evidence uses the same activity-effort lineage for every activity category. Bike and run
+use an exact continuous 30-minute window; swim uses an exact continuous 15-minute window. A
+qualified or rejected `threshold_evaluations` row links to its immutable source efforts through
+`threshold_evaluation_efforts`. Only a qualified evaluation can publish an effective-dated row in
+`thresholds`. No activity-category-specific threshold evidence table is authoritative.
 
 ## Evidence contract
 
@@ -29,7 +29,7 @@ Every consumer must preserve these dimensions:
 - **Observation time:** `recorded_at` is domain evidence time. `created_at` and `updated_at` are transaction metadata and must never renew freshness.
 - **As-of time:** calculations use only evidence with `recorded_at <= asOf`. Pass `asOf` explicitly; do not read the clock inside a deterministic calculation.
 - **Accepted artifact:** imported effort evidence is eligible only when its segment belongs to the parent activity's accepted segment revision and the segment's source artifact is that activity's current, accepted, owner-matched source link.
-- **CSS protocol identity:** qualified CSS evidence requires one activity-scoped protocol identity, one pool length and pool-length timing basis, exact complete 400 m then 200 m source segments, matching source-effort observation IDs, and one accepted evidence revision. A source artifact switch or segment revision change makes the old protocol ineligible until reconciliation replaces it.
+- **Threshold window identity:** threshold evidence requires the configured exact window, structured source series, matching activity/segment/artifact ownership, and one accepted source revision. A source artifact switch or segment revision change removes the dependent evaluation and threshold through the activity-owned lineage before chronological recalculation.
 - **Units:** new database and API writes use canonical metric units. Presentation preference is an app-boundary concern. Core's central evidence adapter temporarily accepts documented legacy aliases for existing rows; feature code must not add new alias branches.
 - **Provenance:** `source`, `method`, `calculation_version`, and `provenance` travel together through repository, DTO, and Core snapshot boundaries. Dropping them changes trust semantics.
 - **Quality:** absence of a quality score means unknown, not perfect quality. Eligibility policy belongs in Core and may use provenance even when quality is unknown.
