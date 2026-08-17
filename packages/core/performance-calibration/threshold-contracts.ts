@@ -213,6 +213,13 @@ export const thresholdSelectionDecisionSchema = z
         message: "Threshold selection evidence and activity provenance must align",
       });
     }
+    if (new Set(decision.selectedEvidenceIds).size !== decision.selectedEvidenceIds.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["selectedEvidenceIds"],
+        message: "Threshold selection evidence IDs must be unique",
+      });
+    }
     if (new Set(decision.selectedActivityIds).size !== decision.selectedActivityIds.length) {
       context.addIssue({
         code: "custom",

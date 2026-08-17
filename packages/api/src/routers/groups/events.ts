@@ -22,6 +22,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import { and, asc, eq, gt, gte, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { z } from "zod";
+import { removeGroupEventAssociationsForDeletion } from "../../application/calendar/remove-group-event-associations";
 import {
   type GroupEventRow,
   type GroupEventRsvpRow,
@@ -760,6 +761,11 @@ export const groupEventsRouter = createTRPCRouter({
       if (!cancelledEvent) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Group event not found" });
       }
+
+      await removeGroupEventAssociationsForDeletion({
+        db: tx,
+        groupEventIds: cancelledEvents.map((candidate) => candidate.id),
+      });
 
       await notifyActiveGroupMembersOfCancellation(tx, {
         actorProfileId: profileId,

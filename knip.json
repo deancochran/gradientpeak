@@ -6,7 +6,7 @@
     "types": "error"
   },
   "treatConfigHintsAsErrors": true,
-  "ignoreBinaries": ["ngrok", "printf"],
+  "ignoreBinaries": ["cloudflared", "printf"],
   "ignoreFiles": ["apps/web/src/routeTree.gen.ts"],
   "workspaces": {
     "apps/mobile": {

@@ -12,16 +12,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { withRepeatableReadSnapshot } from "../../db";
 import {
   type PublishedAthleteStateRead,
+  publishIncrementalAthleteStateContribution,
   readPublishedAthleteStateSnapshotData,
 } from "../../repositories/athlete-state-repository";
 import {
   readCachedPublishedAthletePerformanceTargets,
   readPublishedAthleteStateSnapshot,
+  tryPublishIncrementalAthleteStateContribution,
 } from "./published-athlete-state";
 
 const getAthleteThresholdTargetFactsAsOf = vi.hoisted(() => vi.fn());
 
 vi.mock("../../repositories/athlete-state-repository", () => ({
+  publishIncrementalAthleteStateContribution: vi.fn(),
   readPublishedAthleteStateSnapshotData: vi.fn(),
 }));
 vi.mock("../performance-model/get-athlete-performance-model-as-of", () => ({
@@ -106,9 +109,66 @@ beforeEach(() => {
     .mockResolvedValue(
       createUnavailableAthletePerformanceTargetFacts("2026-07-02T00:30:00.000Z", profileId),
     );
+  vi.mocked(publishIncrementalAthleteStateContribution).mockReset().mockResolvedValue(true);
 });
 
 describe("published athlete-state snapshot", () => {
+  it("publishes the next chronological activity as a revision-fenced contribution", async () => {
+    const tx = {} as never;
+    await expect(
+      tryPublishIncrementalAthleteStateContribution({
+        tx,
+        profileId,
+        contribution: {
+          activityId: "22222222-2222-4222-8222-222222222222",
+          finishedAt: new Date("2026-07-02T01:00:00.000Z"),
+          commonLoad: 60,
+          activityCategory: "run",
+          evidenceConfidence: 0.9,
+          capabilityDistanceMeters: 10_000,
+          capabilityDurationMinutes: 50,
+        },
+        now: new Date("2026-07-02T01:01:00.000Z"),
+      }),
+    ).resolves.toBe(true);
+
+    expect(readPublishedAthleteStateSnapshotData).toHaveBeenCalledWith(tx, {
+      profileId,
+      lockStateForUpdate: true,
+    });
+    expect(publishIncrementalAthleteStateContribution).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        profileId,
+        expectedRevision: 4,
+        state: expect.objectContaining({
+          coverageEndAt: new Date("2026-07-02T01:00:00.000Z"),
+          algorithmVersion: ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
+        }),
+      }),
+    );
+  });
+
+  it("coalesces same-day contributions into the fenced rebuild instead of applying in arrival order", async () => {
+    await expect(
+      tryPublishIncrementalAthleteStateContribution({
+        tx: {} as never,
+        profileId,
+        contribution: {
+          activityId: "22222222-2222-4222-8222-222222222222",
+          finishedAt: new Date("2026-07-01T23:45:00.000Z"),
+          commonLoad: 20,
+          activityCategory: "run",
+          evidenceConfidence: 0.9,
+          capabilityDistanceMeters: 5_000,
+          capabilityDurationMinutes: 25,
+        },
+        now: new Date("2026-07-02T00:30:00.000Z"),
+      }),
+    ).resolves.toBe(false);
+    expect(publishIncrementalAthleteStateContribution).not.toHaveBeenCalled();
+  });
+
   it("uses one profile-local current day and returns revision, freshness, import, and coverage", async () => {
     vi.mocked(readPublishedAthleteStateSnapshotData).mockResolvedValue(
       snapshotRead("America/Los_Angeles"),

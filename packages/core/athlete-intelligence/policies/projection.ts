@@ -498,7 +498,7 @@ export function assembleWholeAthleteProjection(
       effortCurve: supplied?.effortCurve,
       dimensions: dimensionsForGoal({
         demand,
-        curve: supplied?.effortCurve,
+        ...(supplied?.effortCurve === undefined ? {} : { curve: supplied.effortCurve }),
         physiology: input.physiology,
         activity: activityCapabilities(
           input.model,

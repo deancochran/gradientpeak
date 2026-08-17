@@ -62,6 +62,17 @@ function verificationRules(definition, kind) {
   return Array.isArray(value) ? value : [value];
 }
 
+function preservesVerificationRules(previous = {}, current = {}) {
+  return Object.entries(previous).every(([kind, value]) => {
+    const nextRules = verificationRules({ verification: current }, kind);
+    return (Array.isArray(value) ? value : [value]).every((rule) =>
+      nextRules.some(
+        (next) => JSON.stringify(canonicalize(next)) === JSON.stringify(canonicalize(rule)),
+      ),
+    );
+  });
+}
+
 function commandReferenceIsValid(root, rule, defaultPackageJson, manifestCache) {
   const packageJson = rule.packageJson ?? defaultPackageJson;
   if (!packageJson || !rule.script) return false;
@@ -1291,12 +1302,20 @@ export function compareMergeBaseProtection(current, previous, approved = false) 
       findings.push(policyFinding("merge-base-coverage-weakening", { removedOwner: owner }));
       continue;
     }
-    for (const field of ["roots", "packageJson", "aliases", "verification"]) {
+    for (const field of ["roots", "packageJson", "aliases"]) {
       if (JSON.stringify(definition[field] ?? null) !== JSON.stringify(next[field] ?? null)) {
         findings.push(
           policyFinding("merge-base-policy-widening", { owner, changedOwnershipField: field }),
         );
       }
+    }
+    if (!preservesVerificationRules(definition.verification, next.verification)) {
+      findings.push(
+        policyFinding("merge-base-policy-widening", {
+          owner,
+          changedOwnershipField: "verification",
+        }),
+      );
     }
   }
   for (const collection of ["exceptions", "reviewedIgnores"]) {

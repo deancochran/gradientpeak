@@ -283,7 +283,7 @@ function lthrSubmission(input: {
         source: "provider_sync",
         provider: "wahoo",
         externalId,
-        operationKey: `provider_sync:wahoo:${externalId}:${digest}`,
+        operationId: `provider_sync:wahoo:${externalId}:${digest}`,
         artifact: {
           sha256: digest,
           byteSize: 1_024,

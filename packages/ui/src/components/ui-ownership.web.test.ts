@@ -99,6 +99,7 @@ describe("UI ownership guardrails", () => {
       "protected/user-nav.tsx",
       "providers/app-providers.tsx",
       "providers/auth-provider.tsx",
+      "providers/recording-storage-boundary.tsx",
       "providers/theme-provider.tsx",
       "recording/route-preview-map.tsx",
       "route-flash-toast.tsx",

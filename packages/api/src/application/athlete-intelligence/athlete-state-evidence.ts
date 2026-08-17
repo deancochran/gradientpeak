@@ -1,13 +1,33 @@
-import { completedSegmentSummarySchema } from "@repo/core";
+import {
+  completedActivityPerformanceTargetSnapshotSchema,
+  completedSegmentSummarySchema,
+  getCalendarDateInIanaZone,
+} from "@repo/core";
+import {
+  ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION,
+  activityTrainingEffectSchema,
+} from "@repo/core/athlete-derived-state";
 import { activities, activitySegments } from "@repo/db";
 import { and, asc, eq } from "drizzle-orm";
 import type { DrizzleQueryExecutor, DrizzleTransactionClient } from "../../db";
-import { createActivityAnalysisStore } from "../../infrastructure/repositories";
+import {
+  createActivityAnalysisStore,
+  createDrizzleAthleteDerivedStateRepository,
+} from "../../infrastructure/repositories";
 import {
   buildActivitySegmentDerivedSummaries,
   projectCanonicalCompletedObservationLoads,
 } from "../../lib/activity-analysis";
-import { markAthleteStateDirty } from "../../repositories/athlete-state-repository";
+import {
+  activityAnalysisFingerprint,
+  appendActivityAnalysisRevision,
+  readMatchingActivityAnalysisRevision,
+} from "../../repositories/activity-analysis-revision-repository";
+import { recordActivityTrainingEffect } from "./record-activity-training-effect";
+import {
+  buildAthleteRecalculationRequest,
+  requestAthleteRecalculation,
+} from "./request-athlete-recalculation";
 
 function confidenceForQuality(value: "high" | "low" | "medium" | "unknown") {
   return value === "high" ? 0.95 : value === "medium" ? 0.8 : value === "low" ? 0.6 : 0.5;
@@ -44,7 +64,9 @@ export async function materializeActivityAthleteStateEvidence(
     computedAt: Date;
     contextDb: DrizzleQueryExecutor;
     canonicalEvidenceMaterialChanged?: boolean;
+    allowIncrementalApply?: boolean;
     deferAthleteStateRefresh?: boolean;
+    targetSourceRevision?: number;
     effortMaterialRecordedAt?: Date | null;
   },
 ) {
@@ -70,6 +92,43 @@ export async function materializeActivityAthleteStateEvidence(
     activities: [{ ...activity, segments }],
     computedAsOf: input.computedAt,
   });
+  let analysisRevision = await readMatchingActivityAnalysisRevision(tx, {
+    activityId: input.activityId,
+    profileId: input.profileId,
+    sourceSegmentsRevision: activity.segments_revision ?? 1,
+  });
+  if (
+    !analysisRevision &&
+    (!input.deferAthleteStateRefresh || input.targetSourceRevision !== undefined)
+  ) {
+    const originalSnapshot = completedActivityPerformanceTargetSnapshotSchema.parse(
+      activity.performance_target_snapshot,
+    );
+    const projection = {
+      version: 1 as const,
+      segments: summaries.map((summary) => {
+        const observation = summary.observationQuantification.members[0];
+        if (!observation || summary.observationQuantification.members.length !== 1) {
+          throw new Error("Activity analysis segment must contain exactly one observation");
+        }
+        return {
+          segmentId: summary.segment_id,
+          activityCategory: summary.activity_category,
+          commonLoad: observation.commonLoad,
+        };
+      }),
+    };
+    analysisRevision = await appendActivityAnalysisRevision(tx, {
+      activityId: input.activityId,
+      profileId: input.profileId,
+      sourceSegmentsRevision: activity.segments_revision ?? 1,
+      performanceTargets: originalSnapshot.targets,
+      targetFingerprint: activityAnalysisFingerprint(originalSnapshot.targets),
+      segmentLoadProjection: projection,
+      outputFingerprint: activityAnalysisFingerprint(projection),
+      computedAt: input.computedAt,
+    });
+  }
   const availableLoads = projectCanonicalCompletedObservationLoads(summaries).filter(
     (observation) => observation.commonLoad.status === "available",
   );
@@ -102,10 +161,24 @@ export async function materializeActivityAthleteStateEvidence(
         );
     }
     if (effectiveAt !== null && !input.deferAthleteStateRefresh) {
-      await markAthleteStateDirty(tx, {
+      if (!analysisRevision) throw new Error("Activity analysis revision is unavailable");
+      const repository = createDrizzleAthleteDerivedStateRepository(tx);
+      const state = await repository.lockPublicationState({ profileId: input.profileId });
+      if (!state) throw new Error("Athlete publication state is unavailable");
+      await requestAthleteRecalculation({
+        repository,
         profileId: input.profileId,
-        effectiveAt,
-        now: input.computedAt,
+        request: buildAthleteRecalculationRequest({
+          profileId: input.profileId,
+          earliestAffectedAt: effectiveAt.toISOString(),
+          earliestAffectedPlanningDate: getCalendarDateInIanaZone(
+            effectiveAt.toISOString(),
+            state.planningTimezone,
+          ),
+          sourceRevision: state.sourceRevision + 1,
+          reasons: [analysisRevision.revision === 1 ? "activity_created" : "analysis_replaced"],
+          requestedAt: input.computedAt.toISOString(),
+        }),
       });
     }
     return { commonLoad: null, confidence: null, effectiveAt, materialChanged };
@@ -175,12 +248,62 @@ export async function materializeActivityAthleteStateEvidence(
       athlete_state_computed_at: input.computedAt,
     })
     .where(and(eq(activities.id, input.activityId), eq(activities.profile_id, input.profileId)));
-  if (!input.deferAthleteStateRefresh) {
-    await markAthleteStateDirty(tx, {
+  if (!input.deferAthleteStateRefresh || input.targetSourceRevision !== undefined) {
+    if (!analysisRevision) throw new Error("Activity analysis revision is unavailable");
+    const repository = createDrizzleAthleteDerivedStateRepository(tx);
+    const state = await repository.lockPublicationState({ profileId: input.profileId });
+    if (!state) throw new Error("Athlete publication state is unavailable");
+    const targetSourceRevision = input.targetSourceRevision ?? state.sourceRevision + 1;
+    const effect = activityTrainingEffectSchema.parse({
+      contractVersion: ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION,
       profileId: input.profileId,
-      effectiveAt,
-      now: input.computedAt,
+      activityId: input.activityId,
+      activityAnalysisRevision: analysisRevision.revision,
+      effectiveAt: activity.finished_at.toISOString(),
+      planningDate: getCalendarDateInIanaZone(
+        activity.finished_at.toISOString(),
+        state.planningTimezone,
+      ),
+      sourceRevision: targetSourceRevision,
+      calculationVersion: analysisRevision.analysisVersion,
+      inputFingerprint: analysisRevision.outputFingerprint.replace(/^sha256:/, ""),
+      stimulus: {
+        kind: "observed",
+        sourceId: input.activityId,
+        occurredAt: activity.finished_at.toISOString(),
+        activityCategory: primary.commonLoad.activity_category,
+        commonLoad,
+        evidenceConfidence: confidence,
+        capabilityObservation:
+          capabilityDistanceMeters === null && capabilityDurationMinutes === null
+            ? null
+            : {
+                distanceMeters: capabilityDistanceMeters,
+                durationMinutes: capabilityDurationMinutes,
+              },
+      },
     });
+    if (input.deferAthleteStateRefresh) {
+      const written = await repository.upsertActivityTrainingEffect({
+        profileId: input.profileId,
+        effect,
+      });
+      if (written.status === "identity_conflict") {
+        throw new Error("Activity training effect identity conflict");
+      }
+    } else {
+      await recordActivityTrainingEffect({
+        repository,
+        request: {
+          profileId: input.profileId,
+          expectedPublishedRevision: state.publishedRevision,
+          targetSourceRevision,
+          effect,
+        },
+        reason: analysisRevision.revision === 1 ? "activity_created" : "analysis_replaced",
+        requestedAt: input.computedAt.toISOString(),
+      });
+    }
   }
   return { commonLoad, confidence, effectiveAt, materialChanged };
 }

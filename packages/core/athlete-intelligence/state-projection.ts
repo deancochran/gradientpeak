@@ -8,6 +8,12 @@ import {
 import { canonicalActivityCategorySchema } from "../schemas/activity-category";
 
 export const ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION = "athlete-state-projection-v1" as const;
+/** Maximum accepted absolute error when checking form = fitness - fatigue. */
+export const FORM_MATCH_TOLERANCE = 1e-9;
+export const MAX_TRAINING_STIMULUS_COMMON_LOAD = 10_000;
+// A plan is bounded to 366 sessions. Keeping the same worst-case envelope for a
+// planning-day sum allows every valid bounded plan while rejecting runaway input.
+export const MAX_DAILY_AGGREGATE_COMMON_LOAD = 366 * MAX_TRAINING_STIMULUS_COMMON_LOAD;
 
 const instantSchema = z.string().datetime({ offset: true });
 const confidenceSchema = z.number().finite().min(0).max(1);
@@ -49,7 +55,9 @@ export const athleteStateBaselineSchema = z
   })
   .strict()
   .superRefine((state, context) => {
-    if (Math.abs(state.loadBalance - (state.longTermLoad - state.recentLoad)) > 1e-9)
+    if (
+      Math.abs(state.loadBalance - (state.longTermLoad - state.recentLoad)) > FORM_MATCH_TOLERANCE
+    )
       context.addIssue({
         code: "custom",
         path: ["loadBalance"],
@@ -81,7 +89,7 @@ export const observedTrainingStimulusSchema = z
     sourceId: z.string().trim().min(1).max(256),
     occurredAt: instantSchema,
     activityCategory: canonicalActivityCategorySchema,
-    commonLoad: finiteNonnegativeSchema.max(10_000),
+    commonLoad: finiteNonnegativeSchema.max(MAX_TRAINING_STIMULUS_COMMON_LOAD),
     evidenceConfidence: confidenceSchema,
     capabilityObservation: capabilityObservationSchema.nullable(),
   })
@@ -93,12 +101,14 @@ export const projectedTrainingStimulusSchema = z
     sourceId: z.string().trim().min(1).max(256),
     scheduledAt: instantSchema,
     activityCategory: canonicalActivityCategorySchema,
-    commonLoad: finiteNonnegativeSchema.max(10_000),
+    commonLoad: finiteNonnegativeSchema.max(MAX_TRAINING_STIMULUS_COMMON_LOAD),
   })
   .strict();
 
-/** A bounded collection's same-day sum; finite and non-negative but not a per-session value. */
-export const dailyAggregateCommonLoadSchema = finiteNonnegativeSchema;
+/** A bounded collection's same-day sum; larger than a session, but still explicitly finite. */
+export const dailyAggregateCommonLoadSchema = finiteNonnegativeSchema.max(
+  MAX_DAILY_AGGREGATE_COMMON_LOAD,
+);
 export const observedDailyTrainingStimulusSchema = observedTrainingStimulusSchema.extend({
   commonLoad: dailyAggregateCommonLoadSchema,
 });

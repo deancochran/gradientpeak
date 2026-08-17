@@ -319,7 +319,7 @@ export function useDailyTrainingAdjustmentChartPresentation({
   const chartData = useMemo(
     () =>
       buildDailyTrainingAdjustmentChartData(points, {
-        bucketCenters,
+        ...(bucketCenters !== undefined ? { bucketCenters } : {}),
         todayDate: todayDate ?? null,
       }),
     [bucketCenters, points, todayDate],

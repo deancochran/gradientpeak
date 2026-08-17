@@ -757,7 +757,7 @@ describe("WahooActivityHistoryJobService", () => {
     });
   });
 
-  it("fails retryably after continuing past a per-summary import failure", async () => {
+  it("completes onboarding history when one activity cannot be imported", async () => {
     const deps = createDeps();
     vi.spyOn(console, "warn").mockImplementation(() => {});
     deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
@@ -802,25 +802,25 @@ describe("WahooActivityHistoryJobService", () => {
     });
 
     await expect(service.processDueJobs({})).resolves.toEqual({
-      completed: 0,
-      failed: 1,
+      completed: 1,
+      failed: 0,
       processed: 1,
     });
 
     expect(deps.importer.importWorkoutSummary).toHaveBeenCalledTimes(2);
-    expect(deps.providerSyncRepository.markJobSucceeded).not.toHaveBeenCalled();
-    expect(deps.providerSyncRepository.failJobWithSyncState).toHaveBeenCalledWith(
+    expect(deps.importRuns.recordPageCommitted).toHaveBeenCalledWith(
       expect.objectContaining({
-        expectedIntegrationGeneration: 1,
-        id: "job-1",
-        integrationId: "integration-1",
-        lastError: "activity_import_failed",
-        provider: "wahoo",
-        resource: "historical_activities",
-        status: "failed",
-        workerId: expect.stringMatching(/^wahoo-activity-history-worker:/),
+        failed: 0,
+        skipped: 2,
+        skippedDiagnostics: [
+          { providerExternalId: "123", reason: "activity_import_failed" },
+          { providerExternalId: "124", reason: "already_imported" },
+        ],
       }),
     );
+    expect(deps.providerSyncRepository.completeJobWithSyncState).toHaveBeenCalled();
+    expect(deps.providerSyncRepository.failJobWithSyncState).not.toHaveBeenCalled();
+    expect(deps.importRuns.fail).not.toHaveBeenCalled();
   });
 
   it("records every skipped Wahoo activity with a controlled reason", async () => {
@@ -932,6 +932,7 @@ describe("WahooActivityHistoryJobService", () => {
       status: "dead_lettered",
       workerId: expect.stringMatching(/^worker-1:/),
     });
+    expect(deps.importRuns.fail).toHaveBeenCalledWith("import-run-1", lastError);
   });
 
   it("no-ops safely when the integration was disconnected before processing", async () => {

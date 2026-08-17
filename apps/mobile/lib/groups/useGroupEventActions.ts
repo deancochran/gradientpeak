@@ -14,61 +14,75 @@ export function useGroupEventActions() {
 
   const createMutation = api.groups.events.create.useMutation({
     onSuccess: async (data) => {
+      const event = data.event;
+      if (!event) return;
       await invalidateGroupEventMutationQueries(utils, {
-        groupEventId: data.event.id,
-        groupId: data.event.group_id,
+        groupEventId: event.id,
+        groupId: event.group_id,
       });
     },
   });
   const createRecurringEventSeriesMutation =
     api.groups.events.createRecurringEventSeries.useMutation({
       onSuccess: async (data) => {
+        const event = data.event;
+        if (!event) return;
         await invalidateGroupEventMutationQueries(utils, {
-          groupEventId: data.event.id,
-          groupId: data.event.group_id,
+          groupEventId: event.id,
+          groupId: event.group_id,
         });
       },
     });
   const updateMutation = api.groups.events.update.useMutation({
     onSuccess: async (data) => {
+      const event = data.event;
+      if (!event) return;
       await invalidateGroupEventMutationQueries(utils, {
-        groupEventId: data.event.id,
-        groupId: data.event.group_id,
+        groupEventId: event.id,
+        groupId: event.group_id,
       });
     },
   });
   const updateEventOccurrenceMutation = api.groups.events.updateEventOccurrence.useMutation({
     onSuccess: async (data) => {
+      const event = data.event;
+      if (!event) return;
       await invalidateGroupEventMutationQueries(utils, {
-        groupEventId: data.event.id,
-        groupId: data.event.group_id,
+        groupEventId: event.id,
+        groupId: event.group_id,
       });
-      if (data.event.series_id) {
-        await utils.groups.events.detail.invalidate({ groupEventId: data.event.series_id });
+      if (event.series_id) {
+        await utils.groups.events.detail.invalidate({ groupEventId: event.series_id });
       }
     },
   });
   const cancelMutation = api.groups.events.cancel.useMutation({
     onSuccess: async (data) => {
+      const event = data.event;
+      if (!event) return;
       await invalidateGroupEventMutationQueries(utils, {
-        groupEventId: data.event.id,
-        groupId: data.event.group_id,
+        groupEventId: event.id,
+        groupId: event.group_id,
       });
     },
   });
   const rsvpMutation = api.groups.events.rsvp.useMutation({
     onSuccess: async (data) => {
+      const event = data.event;
+      if (!event) return;
       await invalidateGroupEventMutationQueries(utils, {
-        groupEventId: data.event.id,
-        groupId: data.event.group_id,
+        groupEventId: event.id,
+        groupId: event.group_id,
       });
     },
   });
   const rsvpEventSeriesMutation = api.groups.events.rsvpEventSeries.useMutation({
     onSuccess: async (data) => {
+      const event = data.event;
+      if (!event) return;
       await invalidateGroupEventMutationQueries(utils, {
-        groupEventId: data.event.id,
-        groupId: data.event.group_id,
+        groupEventId: event.id,
+        groupId: event.group_id,
       });
     },
   });

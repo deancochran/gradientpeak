@@ -182,8 +182,10 @@ function OnboardingPage() {
   const getAuthUrlMutation = api.integrations.getAuthUrl.useMutation();
   const [status, setStatus] = useState(() =>
     resolveLoadedOnboardingStatus({
-      readinessStatus: data.progress?.status,
-      profileStatus: data.profile?.onboarding_status,
+      ...(data.progress?.status !== undefined ? { readinessStatus: data.progress.status } : {}),
+      ...(data.profile?.onboarding_status !== undefined
+        ? { profileStatus: data.profile.onboarding_status }
+        : {}),
     }),
   );
   const [progress, setProgress] = useState(data.progress);
@@ -366,7 +368,9 @@ function OnboardingPage() {
       } else {
         const nextStatus = resolveLoadedOnboardingStatus({
           readinessStatus: null,
-          profileStatus: next.profile?.onboarding_status,
+          ...(next.profile?.onboarding_status !== undefined
+            ? { profileStatus: next.profile.onboarding_status }
+            : {}),
         });
         if (nextStatus) setStatus(nextStatus);
       }
@@ -609,7 +613,9 @@ function OnboardingPage() {
                   <div className="grid gap-3 sm:grid-cols-2">
                     {intents.map(([value, label]) => (
                       <CheckboxChoice
-                        defaultChecked={draft?.intents.includes(value)}
+                        {...(draft !== null && draft !== undefined
+                          ? { defaultChecked: draft.intents.includes(value) }
+                          : {})}
                         key={value}
                         label={label}
                         name="intents"
@@ -674,14 +680,14 @@ function OnboardingPage() {
                   step="0.1"
                 />
                 <BaselineField
-                  defaultValue={draft?.max_hr}
+                  {...(draft?.max_hr !== undefined ? { defaultValue: draft.max_hr } : {})}
                   field="max_hr"
                   label="Maximum heart rate (bpm)"
                   max={250}
                   min={100}
                 />
                 <BaselineField
-                  defaultValue={draft?.resting_hr}
+                  {...(draft?.resting_hr !== undefined ? { defaultValue: draft.resting_hr } : {})}
                   field="resting_hr"
                   label="Resting heart rate (bpm)"
                   max={120}

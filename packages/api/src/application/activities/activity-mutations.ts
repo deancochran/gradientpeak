@@ -1,9 +1,12 @@
-import type { ContentVisibility } from "@repo/core";
+import { type ContentVisibility, getCalendarDateInIanaZone } from "@repo/core";
 import { activities } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
-import { markAthleteStateDirty } from "../../repositories/athlete-state-repository";
+import {
+  createDrizzleAthleteDerivedStateRepository,
+  createDrizzlePlannedSessionRepository,
+} from "../../infrastructure/repositories";
 import {
   deleteThresholdChainsForImpacts,
   readThresholdImpactForActivity,
@@ -11,6 +14,12 @@ import {
 } from "../../repositories/threshold-repository";
 import { createActivityArtifactRetentionService } from "../activity-file-ingestion/artifact-retention";
 import type { ActivityArtifactStorage } from "../activity-file-ingestion/artifact-storage";
+import { deleteThresholdEvidence } from "../athlete-intelligence/replace-threshold-evidence";
+import {
+  buildAthleteRecalculationRequest,
+  requestAthleteRecalculation,
+} from "../athlete-intelligence/request-athlete-recalculation";
+import { unlinkDeletedActivityCompletionsForActivity } from "../calendar/unlink-deleted-activity-completion";
 import { updateCanonicalActivityFields } from "./submit-activity";
 
 type ActivitiesDb = ReturnType<typeof getRequiredDb>;
@@ -80,9 +89,21 @@ export async function deleteActivityForProfile({
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${profileId}, 0))`);
     const now = new Date();
+    await unlinkDeletedActivityCompletionsForActivity({
+      repository: createDrizzlePlannedSessionRepository(tx),
+      profileId,
+      activityId,
+      unlinkedAt: now.toISOString(),
+    });
     const impacts = await readThresholdImpactForActivity(tx, {
       activityId,
       profileId,
+    });
+    const athleteRepository = createDrizzleAthleteDerivedStateRepository(tx);
+    await deleteThresholdEvidence({
+      repository: athleteRepository,
+      profileId,
+      activityId,
     });
     // The self-referencing threshold chain is removed first; deleting the source
     // activity then cascades its efforts, normalized links, and evaluations.
@@ -100,15 +121,28 @@ export async function deleteActivityForProfile({
         now,
       });
     }
-    await markAthleteStateDirty(tx, {
-      profileId,
-      effectiveAt: new Date(
-        Math.min(
-          deleted.finishedAt.getTime(),
-          ...impacts.map(({ effectiveAt }) => effectiveAt.getTime()),
-        ),
+    const effectiveAt = new Date(
+      Math.min(
+        deleted.finishedAt.getTime(),
+        ...impacts.map(({ effectiveAt }) => effectiveAt.getTime()),
       ),
-      now,
+    );
+    const state = await athleteRepository.lockPublicationState({ profileId });
+    if (!state) throw new Error("Athlete publication state is unavailable after activity deletion");
+    await requestAthleteRecalculation({
+      repository: athleteRepository,
+      profileId,
+      request: buildAthleteRecalculationRequest({
+        profileId,
+        earliestAffectedAt: effectiveAt.toISOString(),
+        earliestAffectedPlanningDate: getCalendarDateInIanaZone(
+          effectiveAt.toISOString(),
+          state.planningTimezone,
+        ),
+        sourceRevision: state.sourceRevision + 1,
+        reasons: ["activity_deleted"],
+        requestedAt: now.toISOString(),
+      }),
     });
   });
 

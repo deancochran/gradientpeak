@@ -19,10 +19,9 @@ import {
   type DrizzleQueryExecutor,
   type DrizzleTransactionClient,
   type getRequiredDb,
-  withRepeatableReadSnapshot,
+  withProfileFencedRepeatableReadSnapshot,
 } from "../../db";
 import { createContentAccessPermissions } from "../../permissions/content-access";
-import { lockProfileAdvisoryFence } from "../../repositories/profile-advisory-fence";
 import { estimateActivityPlans } from "../activity-plans/estimate-activity-plans";
 import { activityPlanStructureHash } from "../activity-plans/structure-hash";
 import { readAthleteReadModel } from "../athlete-intelligence/athlete-read-model";
@@ -506,10 +505,11 @@ export async function commitTrainingPlan(input: {
 }) {
   const values = trainingPlanCommitInputSchema.parse(input.values);
   const now = input.now ?? new Date();
-  return withRepeatableReadSnapshot(
+  return withProfileFencedRepeatableReadSnapshot(
     input.db,
+    // Establish the profile fence before PostgreSQL fixes the repeatable-read snapshot.
+    input.profileId,
     async (tx) => {
-      await lockProfileAdvisoryFence(tx, input.profileId);
       let currentPlanRevision: number | null = null;
       let currentPlanStructureHash: string | null = null;
       if (values.kind === "update") {
@@ -642,7 +642,6 @@ export async function commitTrainingPlan(input: {
         simulation: projection.simulation,
       });
     },
-    { accessMode: "read write" },
   );
 }
 

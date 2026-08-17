@@ -10,6 +10,13 @@ const mocks = vi.hoisted(() => ({
   cleanupOwnedPromotedActivityArtifact: vi.fn(),
   promoteActivityArtifact: vi.fn(),
   readObjectBounded: vi.fn(),
+  beginIntake: vi.fn(),
+  claimIntake: vi.fn(),
+  acceptIntake: vi.fn(),
+  failIntake: vi.fn(),
+  completeCleanup: vi.fn(),
+  deferCleanup: vi.fn(),
+  getOperation: vi.fn(),
 }));
 
 vi.mock("./analyze-parsed-activity-file", () => ({
@@ -32,6 +39,21 @@ vi.mock("../../storage-service", () => ({
     readObjectBounded: mocks.readObjectBounded,
   }),
 }));
+vi.mock("./direct-activity-ingestion", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./direct-activity-ingestion")>()),
+  acceptActivityIngestion: mocks.acceptIntake,
+  beginActivityIngestionOperation: mocks.beginIntake,
+  claimActivityIngestionProcessing: mocks.claimIntake,
+  failActivityIngestion: mocks.failIntake,
+  completeActivityIngestionCleanup: mocks.completeCleanup,
+  deferActivityIngestionCleanup: mocks.deferCleanup,
+}));
+vi.mock("../../infrastructure/repositories", () => ({
+  createDrizzleActivityIngestionRepository: () => ({
+    getOwned: mocks.getOperation,
+    getOwnedByOperation: mocks.getOperation,
+  }),
+}));
 
 import { submitImportedActivityArtifact } from "./submit-imported-activity-artifact";
 
@@ -41,6 +63,23 @@ describe("submitImportedActivityArtifact", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.readObjectBounded.mockResolvedValue({ data: new Uint8Array([1, 2, 3]), contentType: "" });
+    const operation = {
+      id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      profileId: "11111111-1111-4111-8111-111111111111",
+      operationId: "a".repeat(64),
+      source: "provider_sync",
+      status: "awaiting_upload",
+      activityId: null,
+      stagingCleanupPending: false,
+    };
+    mocks.beginIntake.mockResolvedValue(operation);
+    mocks.claimIntake.mockResolvedValue({
+      status: "claimed",
+      operation: { ...operation, status: "processing" },
+    });
+    mocks.completeCleanup.mockResolvedValue(true);
+    mocks.deferCleanup.mockResolvedValue(true);
+    mocks.getOperation.mockResolvedValue(null);
     mocks.promoteActivityArtifact.mockResolvedValue({
       sha256: "a".repeat(64),
       byteSize: 123,
@@ -51,6 +90,83 @@ describe("submitImportedActivityArtifact", () => {
       stagingPath: "activities/profile-1/providers/wahoo/123.fit",
       createdDestination: false,
     });
+  });
+
+  it("removes a newly uploaded staging file when a completed provider operation replays", async () => {
+    mocks.getOperation.mockResolvedValue({
+      id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      profileId: "11111111-1111-4111-8111-111111111111",
+      status: "succeeded",
+      activityId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      stagingCleanupPending: false,
+      expectedSha256: "a".repeat(64),
+    });
+    await expect(
+      submitImportedActivityArtifact({ select: vi.fn() } as never, {
+        activity: {
+          activityFilePath:
+            "activities/11111111-1111-4111-8111-111111111111/providers/wahoo/123.fit",
+          profileId: "11111111-1111-4111-8111-111111111111",
+          provider: "wahoo",
+          externalId: "123",
+          providerUpdatedAt: null,
+        } as never,
+        parsedActivity: {} as never,
+      }),
+    ).resolves.toMatchObject({
+      id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      noOp: true,
+    });
+    expect(mocks.cleanupActivityArtifactStaging).toHaveBeenCalledWith(expect.anything(), {
+      bucket: "activity-files",
+      stagingPath: "activities/11111111-1111-4111-8111-111111111111/providers/wahoo/123.fit",
+      path: `artifacts/sha256/11111111-1111-4111-8111-111111111111/${"a".repeat(64)}`,
+    });
+    expect(mocks.readObjectBounded).not.toHaveBeenCalled();
+    expect(mocks.submitActivity).not.toHaveBeenCalled();
+  });
+
+  it("returns an in-progress provider replay without processing and cleans only its fresh staging file", async () => {
+    const operation = {
+      id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      profileId: "11111111-1111-4111-8111-111111111111",
+      operationId: "a".repeat(64),
+      source: "provider_sync" as const,
+      status: "processing" as const,
+      activityId: null,
+      stagingPath: "activities/owner/providers/wahoo/original.fit",
+      expectedSha256: "a".repeat(64),
+      stagingCleanupPending: false,
+    };
+    mocks.beginIntake.mockResolvedValue(operation);
+    mocks.claimIntake.mockResolvedValue({ status: "existing", operation });
+    const db = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({ where: vi.fn(() => ({ limit: vi.fn(async () => []) })) })),
+      })),
+    } as unknown as DbClient;
+
+    const result = await submitImportedActivityArtifact(db, {
+      activity: {
+        activityFilePath: "activities/owner/providers/wahoo/replay.fit",
+        profileId: operation.profileId,
+        provider: "wahoo",
+        externalId: "123",
+        integrationId: "22222222-2222-4222-8222-222222222222",
+        providerUpdatedAt: null,
+      } as never,
+      parsedActivity: {} as never,
+      artifactSha256: "a".repeat(64),
+    });
+
+    expect(result).toMatchObject({ noOp: true, inProgress: true });
+    expect(mocks.cleanupActivityArtifactStaging).toHaveBeenCalledWith(expect.anything(), {
+      bucket: "activity-files",
+      stagingPath: "activities/owner/providers/wahoo/replay.fit",
+      path: `artifacts/sha256/${operation.profileId}/${"a".repeat(64)}`,
+    });
+    expect(mocks.promoteActivityArtifact).not.toHaveBeenCalled();
+    expect(mocks.submitActivity).not.toHaveBeenCalled();
   });
 
   it("uses only canonical source identity before artifact submission", async () => {
@@ -137,7 +253,7 @@ describe("submitImportedActivityArtifact", () => {
 
     await submitImportedActivityArtifact(db, {
       activity: {
-        activityFilePath: "activities/profile-1/providers/wahoo/123.fit",
+        activityFilePath: "activities/11111111-1111-4111-8111-111111111111/providers/wahoo/123.fit",
         activityFileSize: 123,
         activityPlanId: null,
         avgCadence: null,
@@ -150,14 +266,14 @@ describe("submitImportedActivityArtifact", () => {
         elevationGainMeters: null,
         externalId: "123",
         finishedAt: completedAt.toISOString(),
-        integrationId: "integration-1",
+        integrationId: "22222222-2222-4222-8222-222222222222",
         integrationGeneration: 1,
         contentVisibility: "private",
         providerActiveDurationSeconds: 3500,
         name: "bike Activity",
         normalizedPower: null,
         polyline: null,
-        profileId: "profile-1",
+        profileId: "11111111-1111-4111-8111-111111111111",
         provider: "wahoo",
         providerUpdatedAt: null,
         startedAt: "2026-01-01T10:00:00Z",
@@ -178,7 +294,7 @@ describe("submitImportedActivityArtifact", () => {
     expect(mocks.submitActivity).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
-        profileId: "profile-1",
+        profileId: "11111111-1111-4111-8111-111111111111",
         requestedActivityId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
         providerProvenance: expect.objectContaining({ externalId: "123", provider: "wahoo" }),
         elapsedMs: 3_600_000,
@@ -189,11 +305,10 @@ describe("submitImportedActivityArtifact", () => {
         analysis: {
           efforts: [effort],
           detectedLTHR: null,
-          ingestion: {
+          ingestion: expect.objectContaining({
             source: "provider_sync",
-            provider: "wahoo",
-            externalId: "123",
-            operationKey: `provider_sync:wahoo:123:${"a".repeat(64)}`,
+            operationId: expect.stringMatching(/^[0-9a-f]{64}$/),
+            ingestionId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
             artifact: {
               sha256: "a".repeat(64),
               byteSize: 123,
@@ -203,11 +318,15 @@ describe("submitImportedActivityArtifact", () => {
               format: "fit",
               originalName: "123.fit",
             },
-          },
+          }),
         },
       }),
       {},
     );
-    expect(mocks.providerActivityId).toHaveBeenCalledWith("profile-1", "wahoo", "123");
+    expect(mocks.providerActivityId).toHaveBeenCalledWith(
+      "11111111-1111-4111-8111-111111111111",
+      "wahoo",
+      "123",
+    );
   });
 });

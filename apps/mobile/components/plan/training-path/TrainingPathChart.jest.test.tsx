@@ -301,7 +301,7 @@ describe("TrainingPathChart interactions", () => {
     expect(strokedBars).toHaveLength(0);
   });
 
-  it("renders current and planned fitness solid while keeping a goal-backed recommendation dotted", () => {
+  it("renders current and planned fitness solid while keeping goal-backed data out of the legend", () => {
     const recommendationModel: TrainingPathViewModel = {
       ...model,
       goalMarkers: [
@@ -327,25 +327,19 @@ describe("TrainingPathChart interactions", () => {
     const idealCtlLine = lines.find(
       (line: ReactTestInstance) => line.props.color === "rgba(15, 23, 42, 0.42)",
     );
-    const legendDottedSwatch = getHostNodes("View").find(
-      (view: ReactTestInstance) => view.props.style?.borderStyle === "dotted",
-    );
     if (!plannedCtlLine || !idealCtlLine)
       throw new Error("Expected planned and ideal Fitness lines");
 
     expect(plannedCtlLine.props.children).toBeUndefined();
     expect(idealCtlLine.props.children.type).toEqual(expect.any(Function));
     expect(idealCtlLine.props.children.props.intervals).toEqual([4, 4]);
-    expect(screen.getByText("Current fitness")).toBeTruthy();
-    expect(screen.getByText("Planned projection")).toBeTruthy();
-    expect(screen.getByText("Recommended projection")).toBeTruthy();
-    expect(screen.getByText("Recommended")).toBeTruthy();
+    expect(screen.getByText("Actual fitness")).toBeTruthy();
+    expect(screen.getByText("Planned fitness projection")).toBeTruthy();
+    expect(screen.queryByText("Recommended projection")).toBeNull();
+    expect(screen.queryByText("Recommended")).toBeNull();
     expect(screen.getByTestId("training-path-today-boundary")).toBeTruthy();
     expect(screen.getByLabelText("Left axis: Load, Common Load")).toBeTruthy();
     expect(screen.getByLabelText("Right axis: Fitness")).toBeTruthy();
-    expect(legendDottedSwatch?.props.style).toEqual(
-      expect.objectContaining({ borderStyle: "dotted" }),
-    );
   });
 
   it("renders completed and planned common Load without the legacy target series", () => {

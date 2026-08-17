@@ -8,6 +8,11 @@ import {
 } from "@repo/core";
 import { getCalendarDateInIanaZone } from "@repo/core/calendar";
 import { COMMON_RELATIVE_LOAD_MODEL, COMMON_RELATIVE_LOAD_VERSION } from "@repo/core/load";
+import {
+  type PlanningRange,
+  planningRangeRequestSchema,
+  planningRangeSchema,
+} from "../../contracts/planning-range";
 import { type DrizzleQueryExecutor, withRepeatableReadSnapshot } from "../../db";
 import { createEventReadRepository } from "../../infrastructure/repositories";
 import { readSelectedGroupEventsForCalendar } from "../groups/groupEventViews";
@@ -398,7 +403,9 @@ export async function readPlanningLedger(input: {
       profileId: input.profileId,
       request: { startDate: periodStart, endDate: periodEnd },
       asOf,
-      dependencies: input.projectionDependencies,
+      ...(input.projectionDependencies !== undefined
+        ? { dependencies: input.projectionDependencies }
+        : {}),
     });
     const calendarFacts = await dependencies.readCalendarFacts({
       db: tx,
@@ -408,5 +415,144 @@ export async function readPlanningLedger(input: {
       planningTimezone: projection.planningTimezone,
     });
     return buildPlanningLedger({ projection, request, calendarFacts });
+  });
+}
+
+function planningRangeValue(status: LoadStatus, amount: number | null) {
+  return value(status, amount);
+}
+
+export function buildPlanningRange(input: {
+  projection: PlanTabProjection;
+  ledger: PlanningLedger;
+  startDate: string;
+  endDate: string;
+}): PlanningRange {
+  const days: PlanningRange["days"] = [];
+  for (let date = input.startDate; date <= input.endDate; date = addDaysDateKey(date, 1)) {
+    const summary = input.projection.dayLoads[date];
+    days.push({
+      date,
+      actual: summary
+        ? planningRangeValue(summary.completedLoadStatus, summary.completedLoad)
+        : planningRangeValue("unavailable", null),
+      committed: summary
+        ? planningRangeValue(summary.remainingLoadStatus, summary.remainingLoad)
+        : planningRangeValue("unavailable", null),
+      target: summary
+        ? planningRangeValue(summary.recommendedLoadStatus, summary.recommendedLoad)
+        : planningRangeValue("unavailable", null),
+      effective: summary
+        ? planningRangeValue(summary.status, summary.commonLoad)
+        : planningRangeValue("unavailable", null),
+    });
+  }
+  const byWeek = new Map<string, typeof days>();
+  for (const day of days) {
+    const weekStart = getWeekStartDateKey(day.date);
+    const entries = byWeek.get(weekStart) ?? [];
+    entries.push(day);
+    byWeek.set(weekStart, entries);
+  }
+  const weeks = [...byWeek.entries()].map(([weekStartDate, entries]) => ({
+    weekStartDate,
+    actual: aggregate(entries.map((entry) => entry.actual)),
+    committed: aggregate(entries.map((entry) => entry.committed)),
+    target: aggregate(entries.map((entry) => entry.target)),
+    effective: aggregate(entries.map((entry) => entry.effective)),
+  }));
+  return planningRangeSchema.parse({
+    contractVersion: "planning-range-v1",
+    startDate: input.startDate,
+    endDate: input.endDate,
+    planningTimezone: input.projection.planningTimezone ?? "UTC",
+    asOf: input.projection.asOf,
+    publishedRevision: input.projection.publishedRevision,
+    algorithmVersion: input.projection.algorithmVersion,
+    days,
+    weeks,
+    trajectories: {
+      actual: input.projection.fitness.actual,
+      committed: input.projection.fitness.scheduled,
+      target: input.projection.fitness.recommended,
+    },
+    goals: input.projection.goalMarkers,
+    calendarItems: input.ledger.entries.map((entry) => ({
+      id: entry.id,
+      date: entry.date,
+      startsAt: entry.startsAt,
+      kind: entry.kind,
+      title: entry.title,
+      status: entry.status,
+      load: entry.load,
+      navigation: entry.navigation,
+    })),
+    coverage: {
+      state:
+        input.projection.publishedRevision !== null && input.projection.timeline !== null
+          ? "available"
+          : "unavailable",
+      activities: input.projection.sourceCoverage.activities,
+      scheduledItems: input.projection.sourceCoverage.scheduledItems,
+      calendarEvents: input.ledger.sourceCoverage.calendarEvents,
+      groupEvents: input.ledger.sourceCoverage.groupEvents,
+      entriesTruncated: input.ledger.entriesTruncated,
+    },
+  });
+}
+
+/** One repeatable-read composition over calendar, completed work, goals, and the AthleteReadModel. */
+export async function readPlanningRange(input: {
+  db: ProjectionDb;
+  profileId: string;
+  request: { startDate: string; endDate: string };
+  asOf?: Date;
+  projectionDependencies?: PlanTabProjectionDependencies;
+  dependencies?: PlanningLedgerDependencies;
+}) {
+  const request = planningRangeRequestSchema.parse(input.request);
+  const dependencies = input.dependencies ?? defaultDependencies;
+  const asOf = input.asOf ?? new Date();
+  return withRepeatableReadSnapshot(input.db, async (tx) => {
+    const projection = await dependencies.readProjection({
+      db: tx,
+      profileId: input.profileId,
+      request,
+      asOf,
+      ...(input.projectionDependencies === undefined
+        ? {}
+        : { dependencies: input.projectionDependencies }),
+    });
+    const calendarFacts = await dependencies.readCalendarFacts({
+      db: tx,
+      profileId: input.profileId,
+      periodStart: request.startDate,
+      periodEndExclusive: addDaysDateKey(request.endDate, 1),
+      planningTimezone: projection.planningTimezone,
+    });
+    const ledger = buildPlanningLedger({
+      projection,
+      request: { period: "day", anchorDate: request.startDate },
+      calendarFacts,
+    });
+    // The range owns all requested days even though the legacy ledger's period
+    // selector is used only to assemble its bounded, calendar-authoritative items.
+    const rangeLedger = planningLedgerSchema.parse({
+      ...ledger,
+      periodStart: request.startDate,
+      periodEnd: request.endDate,
+      entries: ledger.entries.filter(
+        (entry) => entry.date >= request.startDate && entry.date <= request.endDate,
+      ),
+      milestones: projection.goalMarkers.filter(
+        (goal) => goal.targetDate >= request.startDate && goal.targetDate <= request.endDate,
+      ),
+    });
+    return buildPlanningRange({
+      projection,
+      ledger: rangeLedger,
+      startDate: request.startDate,
+      endDate: request.endDate,
+    });
   });
 }

@@ -1,4 +1,4 @@
-import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
+import type { InferInsertModel, InferSelectModel, Table } from "drizzle-orm";
 
 import type {
   activities,
@@ -14,14 +14,17 @@ import type {
   activitySegments,
   activitySessionRpeEvidence,
   activitySourceReferences,
+  activityTrainingEffects,
   athleteConsentPolicyVersions,
   athleteDataSharingConsents,
+  athleteRecalculationQueue,
   coachingAssignments,
   coachingEngagements,
   comments,
   contentAccessGrants,
   conversationParticipants,
   conversations,
+  dailyTrainingLoad,
   events,
   follows,
   groupEventRsvps,
@@ -42,6 +45,7 @@ import type {
   organizationMembershipRoleGrants,
   organizationMemberships,
   organizations,
+  plannedSessions,
   profileAthleteState,
   profileGoals,
   profileMetrics,
@@ -53,9 +57,12 @@ import type {
   providerWebhookReceipts,
   thresholdEvaluationEfforts,
   thresholdEvaluations,
+  thresholdEvidence,
   thresholds,
   trainingPlans,
 } from "./tables";
+
+type InferUpdateModel<TTable extends Table> = Partial<InferInsertModel<TTable>>;
 
 export type ProfileRow = InferSelectModel<typeof profiles>;
 export type ProfileInsert = InferInsertModel<typeof profiles>;
@@ -142,9 +149,25 @@ export type ActivitySegmentInsert = InferInsertModel<typeof activitySegments>;
 
 export type ActivityFileIngestionRow = InferSelectModel<typeof activityFileIngestions>;
 export type ActivityFileIngestionInsert = InferInsertModel<typeof activityFileIngestions>;
+export type ActivityFileIngestionUpdate = InferUpdateModel<typeof activityFileIngestions>;
+export type ActivityTrainingEffectRow = InferSelectModel<typeof activityTrainingEffects>;
+export type ActivityTrainingEffectInsert = InferInsertModel<typeof activityTrainingEffects>;
+export type ActivityTrainingEffectUpdate = InferUpdateModel<typeof activityTrainingEffects>;
+export type DailyTrainingLoadRow = InferSelectModel<typeof dailyTrainingLoad>;
+export type DailyTrainingLoadInsert = InferInsertModel<typeof dailyTrainingLoad>;
+export type DailyTrainingLoadUpdate = InferUpdateModel<typeof dailyTrainingLoad>;
+export type AthleteRecalculationQueueRow = InferSelectModel<typeof athleteRecalculationQueue>;
+export type AthleteRecalculationQueueInsert = InferInsertModel<typeof athleteRecalculationQueue>;
+export type AthleteRecalculationQueueUpdate = InferUpdateModel<typeof athleteRecalculationQueue>;
+export type ThresholdEvidenceRow = InferSelectModel<typeof thresholdEvidence>;
+export type ThresholdEvidenceInsert = InferInsertModel<typeof thresholdEvidence>;
+export type ThresholdEvidenceUpdate = InferUpdateModel<typeof thresholdEvidence>;
 
 export type EventRow = InferSelectModel<typeof events>;
 export type EventInsert = InferInsertModel<typeof events>;
+export type PlannedSessionRow = InferSelectModel<typeof plannedSessions>;
+export type PlannedSessionInsert = InferInsertModel<typeof plannedSessions>;
+export type PlannedSessionUpdate = InferUpdateModel<typeof plannedSessions>;
 
 export type ContentAccessGrantRow = InferSelectModel<typeof contentAccessGrants>;
 export type ContentAccessGrantInsert = InferInsertModel<typeof contentAccessGrants>;
@@ -174,6 +197,7 @@ export type ProfileMetricRow = InferSelectModel<typeof profileMetrics>;
 export type ProfileMetricInsert = InferInsertModel<typeof profileMetrics>;
 export type ProfileAthleteStateRow = InferSelectModel<typeof profileAthleteState>;
 export type ProfileAthleteStateInsert = InferInsertModel<typeof profileAthleteState>;
+export type ProfileAthleteStateUpdate = InferUpdateModel<typeof profileAthleteState>;
 export type ProfilePerformanceEstimateRow = InferSelectModel<typeof profilePerformanceEstimates>;
 export type ProfilePerformanceEstimateInsert = InferInsertModel<typeof profilePerformanceEstimates>;
 export type ThresholdEvaluationRow = InferSelectModel<typeof thresholdEvaluations>;

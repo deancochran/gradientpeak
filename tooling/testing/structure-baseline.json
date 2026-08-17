@@ -20,7 +20,6 @@
     "ui-component:percent-slider-input:missing-native-test",
     "ui-component:percent-slider-input:missing-web-test",
     "ui-component:popover:missing-native-only-marker",
-    "ui-component:progress:missing-native-only-marker",
     "ui-component:resizable:missing-web-only-marker",
     "ui-component:scroll-area:missing-web-only-marker",
     "ui-component:settings-group:missing-native-only-marker",

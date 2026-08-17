@@ -28,6 +28,27 @@ assert.doesNotMatch(
   "Deleting a training-plan template must never cascade into Calendar Scheduled Sessions",
 );
 
+assert.match(
+  schemaSource,
+  /"events_recurrence_occurrence_key_required",\s*sql`\$\{table\.recurrence_rule\} is null or btrim\(\$\{table\.occurrence_key\}\) <> ''`/,
+  "Drizzle must require an occurrence key for the recurring anchor as well as its children",
+);
+assert.match(
+  schemaSource,
+  /"events_occurrence_scheduled_date_identity",\s*sql`\$\{table\.occurrence_key\} = '' or \$\{table\.scheduled_date\} = \$\{table\.occurrence_key\}`/,
+  "Drizzle must preserve recurrence occurrenceKey as the scheduled planning date",
+);
+assert.match(
+  baselineSource,
+  /CONSTRAINT "events_recurrence_occurrence_key_required" CHECK \("events"\."recurrence_rule" is null or btrim\("events"\."occurrence_key"\) <> ''\)/,
+  "The fresh baseline must require an occurrence key for every materialized recurrence row",
+);
+assert.match(
+  baselineSource,
+  /CONSTRAINT "events_occurrence_scheduled_date_identity" CHECK \("events"\."occurrence_key" = '' or "events"\."scheduled_date" = "events"\."occurrence_key"\)/,
+  "The fresh baseline must reject recurrence rows whose scheduled date differs from occurrenceKey",
+);
+
 console.log(
-  "Training-plan deletion preserves Calendar Scheduled Sessions by detaching template IDs.",
+  "Training-plan deletion and recurrence schedule-date identity preserve Calendar ownership.",
 );

@@ -1,33 +1,32 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { db, pool } from "@repo/db/client";
-import { activityFileIngestions, profiles, users } from "@repo/db/schema";
-import { and, eq } from "drizzle-orm";
+import { activities, activityArtifacts, integrations, profiles, users } from "@repo/db/schema";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { readActivityIngestionSafeStatus } from "../../application/activity-file-ingestion/activity-ingestion-actions";
 import {
-  ActivityFileIngestionClaimLostError,
-  createActivityFileIngestion,
-  markProcessing,
-  markUploaded,
-} from "../../application/activity-file-ingestion/ingestion-state";
-import {
-  claimMobileRecordingUpload,
-  createOrLoadMobileRecordingUploadClaim,
-  markMobileRecordingUploadFailed,
-} from "../../repositories/mobile-recording-upload-repository";
+  ActivityIngestionOperationConflictError,
+  acceptActivityIngestion,
+  activityIngestionOperationId,
+  beginActivityIngestionOperation,
+  claimActivityIngestionProcessing,
+  failActivityIngestion,
+  recordActivityIngestionUpload,
+  startActivityIngestionProcessing,
+} from "../../application/activity-file-ingestion/direct-activity-ingestion";
+import { beginMobileRecordingUploadClaim } from "../../application/activity-file-ingestion/mobile-recording-upload";
+import { createDrizzleActivityIngestionRepository } from "../../infrastructure/repositories";
 
 const profileIds: string[] = [];
 
 async function seedProfile() {
   const id = randomUUID();
   const email = `${id}@gradientpeak.test`;
-  const now = new Date();
   await db.insert(users).values({
     id,
     name: "Ingestion Live DB Test",
     email,
     emailVerified: true,
-    createdAt: now,
-    updatedAt: now,
   });
   await db.insert(profiles).values({
     id,
@@ -37,188 +36,397 @@ async function seedProfile() {
     onboarding_status: "completed",
     is_public: false,
     planning_timezone: "UTC",
-    created_at: now,
-    updated_at: now,
   });
   profileIds.push(id);
   return id;
 }
 
-afterEach(async () => {
-  while (profileIds.length) {
-    const id = profileIds.pop();
-    if (!id) continue;
-    await db.delete(profiles).where(eq(profiles.id, id));
-    await db.delete(users).where(eq(users.id, id));
-  }
-});
-
-afterAll(async () => {
-  await pool.end();
-});
-
-describe("activity file ingestion lease fencing", () => {
-  it("reclaims only an expired processing lease using the database clock", async () => {
-    const profileId = await seedProfile();
-    const ingestion = await createActivityFileIngestion(db, {
-      activityId: null,
-      profileId,
-      source: "manual_import",
-      operationKey: `manual_import:${randomUUID()}`,
+async function seedAcceptedTargets(
+  profileId: string,
+  digest: string,
+  requestedActivityId?: string,
+) {
+  const activityId = requestedActivityId ?? randomUUID();
+  const artifactId = randomUUID();
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`set local session_replication_role = replica`);
+    await tx.insert(activities).values({
+      id: activityId,
+      profile_id: profileId,
+      name: "Ingestion race accepted activity",
+      started_at: new Date("2026-08-16T10:00:00.000Z"),
+      finished_at: new Date("2026-08-16T11:00:00.000Z"),
+      elapsed_ms: 3_600_000,
+      parser_version: "live-db-v1",
+      decoded_contract_version: "live-db-v1",
+      materializer_version: "live-db-v1",
     });
-    await markUploaded(db, { id: ingestion.id, profileId });
-    await db
-      .update(activityFileIngestions)
-      .set({
-        status: "processing",
-        claim_token: randomUUID(),
-        lease_expires_at: new Date(Date.now() - 1_000),
-      })
-      .where(
-        and(
-          eq(activityFileIngestions.id, ingestion.id),
-          eq(activityFileIngestions.profile_id, profileId),
-        ),
-      );
-
-    const reclaimed = await markProcessing(db, { id: ingestion.id, profileId });
-    expect(reclaimed.claim_token).not.toBeNull();
-    expect(reclaimed.attempt_count).toBe(1);
-
-    await expect(markProcessing(db, { id: ingestion.id, profileId })).rejects.toBeInstanceOf(
-      ActivityFileIngestionClaimLostError,
-    );
   });
-
-  it("reuses one nullable row for concurrent same-operation creation", async () => {
-    const profileId = await seedProfile();
-    const operationKey = `manual_import:${randomUUID()}`;
-    const [first, second] = await Promise.all([
-      createActivityFileIngestion(db, {
-        activityId: null,
-        profileId,
-        source: "manual_import",
-        operationKey,
-      }),
-      createActivityFileIngestion(db, {
-        activityId: null,
-        profileId,
-        source: "manual_import",
-        operationKey,
-      }),
-    ]);
-    expect(first.id).toBe(second.id);
-    expect(first.activity_id).toBeNull();
+  await db.insert(activityArtifacts).values({
+    id: artifactId,
+    profile_id: profileId,
+    digest_algorithm: "sha256",
+    digest,
+    byte_size: 3,
+    bucket: "activity-files",
+    path: `artifacts/sha256/${profileId}/${digest}`,
+    media_type: "application/vnd.ant.fit",
+    format: "fit",
+    availability: "accepted",
+    first_accepted_at: new Date(),
   });
+  return { activityId, artifactId };
+}
 
-  it("creates one immutable mobile claim and grants only one active lease", async () => {
+afterEach(async () => {
+  for (const id of profileIds.splice(0)) await db.delete(users).where(eq(users.id, id));
+});
+
+afterAll(async () => pool.end());
+
+describe("direct activity ingestion lifecycle", () => {
+  it("converges exact replays, rejects metadata conflicts, and scopes ownership", async () => {
     const profileId = await seedProfile();
-    const operationKey = `mobile-recording:${randomUUID()}`;
-    const expectedSha256 = "a".repeat(64);
+    const otherProfileId = await seedProfile();
+    const operationId = activityIngestionOperationId(`manual:${randomUUID()}`);
     const input = {
       profileId,
-      operationKey,
+      operationId,
+      source: "manual_import" as const,
       stagingBucket: "activity-files",
-      stagingPath: `mobile-recordings/${profileId}/session.fit`,
-      expectedSha256,
+      stagingPath: `activities/${profileId}/upload.fit`,
+      expectedSha256: "a".repeat(64),
       expectedByteSize: 3,
       expectedFormat: "fit" as const,
-      expectedMediaType: "application/vnd.ant.fit",
+      expectedMediaType: "application/vnd.ant.fit" as const,
+      uploaded: true,
     };
-
     const [first, second] = await Promise.all([
-      createOrLoadMobileRecordingUploadClaim(db, input),
-      createOrLoadMobileRecordingUploadClaim(db, input),
+      beginActivityIngestionOperation(db, input),
+      beginActivityIngestionOperation(db, input),
     ]);
     expect(first.id).toBe(second.id);
-    expect(first).toMatchObject({
-      status: "pending_upload",
-      expected_sha256: expectedSha256,
-      expected_byte_size: 3,
-      expected_format: "fit",
-    });
-
-    const [claimA, claimB] = await Promise.all([
-      claimMobileRecordingUpload(db, {
+    expect(first.status).toBe("awaiting_upload");
+    await expect(
+      beginActivityIngestionOperation(db, { ...input, stagingPath: "different.fit" }),
+    ).rejects.toBeInstanceOf(ActivityIngestionOperationConflictError);
+    await expect(
+      createDrizzleActivityIngestionRepository(db).readSafeStatus({
+        profileId: otherProfileId,
         ingestionId: first.id,
-        profileId,
-        operationKey,
       }),
-      claimMobileRecordingUpload(db, {
-        ingestionId: first.id,
-        profileId,
-        operationKey,
-      }),
-    ]);
-    const claimed = claimA ?? claimB;
-    expect(claimed?.status).toBe("processing");
-    expect([claimA, claimB].filter(Boolean)).toHaveLength(1);
-    expect(claimed?.claim_token).not.toBeNull();
-
-    expect(
-      await markMobileRecordingUploadFailed(db, {
-        ingestionId: first.id,
-        profileId,
-        operationKey,
-        claimToken: randomUUID(),
-        errorCode: "wrong_worker",
-        errorMessage: "Wrong worker must not complete the lease",
-      }),
-    ).toBe(false);
-    expect(
-      await markMobileRecordingUploadFailed(db, {
-        ingestionId: first.id,
-        profileId,
-        operationKey,
-        claimToken: claimed?.claim_token ?? randomUUID(),
-        errorCode: "test_failure",
-        errorMessage: "Synthetic failure",
-      }),
-    ).toBe(true);
+    ).resolves.toBeNull();
   });
 
-  it("enforces complete hash-bound claim and cleanup metadata", async () => {
+  it("moves retryable failures back through processing on request resubmission", async () => {
     const profileId = await seedProfile();
-    const base = {
-      profile_id: profileId,
-      source: "mobile_recording" as const,
-      operation_key: `mobile-recording:${randomUUID()}`,
+    const operationId = activityIngestionOperationId(`manual:${randomUUID()}`);
+    const operation = await beginActivityIngestionOperation(db, {
+      profileId,
+      operationId,
+      source: "manual_import",
+      stagingBucket: "activity-files",
+      stagingPath: `activities/${profileId}/upload.fit`,
+      expectedSha256: "b".repeat(64),
+      expectedByteSize: 3,
+      expectedFormat: "fit",
+      expectedMediaType: "application/vnd.ant.fit",
+      uploaded: true,
+    });
+    await expect(
+      startActivityIngestionProcessing(db, {
+        profileId,
+        ingestionId: operation.id,
+        operationId,
+        source: "manual_import",
+      }),
+    ).resolves.toMatchObject({ status: "processing" });
+    await expect(
+      failActivityIngestion(db, {
+        profileId,
+        ingestionId: operation.id,
+        failureCode: "promotion_failed",
+        retryable: true,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      startActivityIngestionProcessing(db, {
+        profileId,
+        ingestionId: operation.id,
+        operationId,
+        source: "manual_import",
+      }),
+    ).resolves.toMatchObject({ status: "processing", failureCode: null, failedAt: null });
+  });
+
+  it("reissues the mobile upload claim after a server failure and converges on one activity", async () => {
+    const profileId = await seedProfile();
+    const recordingSessionId = `mobile-retry-${randomUUID()}`;
+    const bytes = new Uint8Array([97, 98, 99]);
+    const digest = createHash("sha256").update(bytes).digest("hex");
+    const claimInput = {
+      profileId,
+      recordingSessionId,
+      byteSize: bytes.byteLength,
+      sha256: digest,
+      format: "fit" as const,
     };
+    const firstClaim = await beginMobileRecordingUploadClaim(db, claimInput);
+    expect(firstClaim).toMatchObject({ status: "upload" });
+    await recordActivityIngestionUpload(db, {
+      profileId,
+      ingestionId: firstClaim.ingestionId,
+    });
+    await expect(
+      startActivityIngestionProcessing(db, {
+        profileId,
+        ingestionId: firstClaim.ingestionId,
+        operationId: activityIngestionOperationId(`mobile_recording:${recordingSessionId}`),
+        source: "mobile_recording",
+      }),
+    ).resolves.toMatchObject({ status: "processing" });
+    await expect(
+      failActivityIngestion(db, {
+        profileId,
+        ingestionId: firstClaim.ingestionId,
+        failureCode: "internal",
+        retryable: true,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      readActivityIngestionSafeStatus({ db, profileId, ingestionId: firstClaim.ingestionId }),
+    ).resolves.toMatchObject({ status: "failed_retryable", actions: { retry: true } });
+
+    const retryClaim = await beginMobileRecordingUploadClaim(db, claimInput);
+    expect(retryClaim).toMatchObject({
+      status: "upload",
+      ingestionId: firstClaim.ingestionId,
+      activityId: firstClaim.activityId,
+    });
+    const resetStatus = await readActivityIngestionSafeStatus({
+      db,
+      profileId,
+      ingestionId: firstClaim.ingestionId,
+    });
+    expect(resetStatus).toMatchObject({ status: "awaiting_upload", actions: { retry: false } });
+    expect(resetStatus).not.toHaveProperty("failureCode");
+    expect(resetStatus).not.toHaveProperty("failedAt");
+
+    await recordActivityIngestionUpload(db, {
+      profileId,
+      ingestionId: retryClaim.ingestionId,
+    });
+    const retryProcessingClaims = await Promise.all([
+      claimActivityIngestionProcessing(db, {
+        profileId,
+        ingestionId: retryClaim.ingestionId,
+        operationId: activityIngestionOperationId(`mobile_recording:${recordingSessionId}`),
+        source: "mobile_recording",
+      }),
+      claimActivityIngestionProcessing(db, {
+        profileId,
+        ingestionId: retryClaim.ingestionId,
+        operationId: activityIngestionOperationId(`mobile_recording:${recordingSessionId}`),
+        source: "mobile_recording",
+      }),
+    ]);
+    expect(retryProcessingClaims.map((claim) => claim.status).sort()).toEqual([
+      "claimed",
+      "existing",
+    ]);
+
+    const accepted = await seedAcceptedTargets(profileId, digest, retryClaim.activityId);
+    await acceptActivityIngestion(db, {
+      profileId,
+      ingestionId: retryClaim.ingestionId,
+      operationId: activityIngestionOperationId(`mobile_recording:${recordingSessionId}`),
+      source: "mobile_recording",
+      ...accepted,
+      completedAt: new Date(),
+    });
+    await expect(beginMobileRecordingUploadClaim(db, claimInput)).resolves.toMatchObject({
+      status: "ready",
+      ingestionId: retryClaim.ingestionId,
+      activityId: retryClaim.activityId,
+    });
+    const [activityCount] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(activities)
+      .where(eq(activities.id, retryClaim.activityId));
+    expect(activityCount?.count).toBe(1);
+  });
+
+  it("gives one concurrent manual replay ownership, then reaches success after one transient failure", async () => {
+    const profileId = await seedProfile();
+    const operationId = activityIngestionOperationId(`manual-race:${randomUUID()}`);
+    const operation = await beginActivityIngestionOperation(db, {
+      profileId,
+      operationId,
+      source: "manual_import",
+      stagingBucket: "activity-files",
+      stagingPath: `activities/${profileId}/concurrent.fit`,
+      expectedSha256: "d".repeat(64),
+      expectedByteSize: 3,
+      expectedFormat: "fit",
+      expectedMediaType: "application/vnd.ant.fit",
+      uploaded: true,
+    });
+
+    const concurrent = await Promise.all([
+      claimActivityIngestionProcessing(db, {
+        profileId,
+        ingestionId: operation.id,
+        operationId,
+        source: "manual_import",
+      }),
+      claimActivityIngestionProcessing(db, {
+        profileId,
+        ingestionId: operation.id,
+        operationId,
+        source: "manual_import",
+      }),
+    ]);
+    expect(concurrent.map((claim) => claim.status).sort()).toEqual(["claimed", "existing"]);
+    expect(concurrent.find((claim) => claim.status === "existing")?.operation.status).toBe(
+      "processing",
+    );
 
     await expect(
-      db.insert(activityFileIngestions).values({
-        ...base,
-        staging_bucket: "activity-files",
+      failActivityIngestion(db, {
+        profileId,
+        ingestionId: operation.id,
+        failureCode: "dependency_unavailable",
+        retryable: true,
       }),
-    ).rejects.toThrow();
-
+    ).resolves.toBe(true);
     await expect(
-      db.insert(activityFileIngestions).values({
-        ...base,
-        operation_key: `mobile-recording:${randomUUID()}`,
-        staging_bucket: "activity-files",
-        staging_path: `mobile-recordings/${profileId}/invalid.fit`,
-        expected_sha256: "INVALID",
-        expected_byte_size: 3,
-        expected_format: "fit",
-        expected_media_type: "application/vnd.ant.fit",
+      claimActivityIngestionProcessing(db, {
+        profileId,
+        ingestionId: operation.id,
+        operationId,
+        source: "manual_import",
       }),
-    ).rejects.toThrow();
+    ).resolves.toMatchObject({ status: "claimed", operation: { status: "processing" } });
 
+    const accepted = await seedAcceptedTargets(profileId, "d".repeat(64));
     await expect(
-      db.insert(activityFileIngestions).values({
-        ...base,
-        operation_key: `mobile-recording:${randomUUID()}`,
-        status: "processing",
+      acceptActivityIngestion(db, {
+        profileId,
+        ingestionId: operation.id,
+        operationId,
+        source: "manual_import",
+        ...accepted,
+        completedAt: new Date(),
       }),
-    ).rejects.toThrow();
+    ).resolves.toMatchObject({ status: "succeeded" });
+  });
 
-    await expect(
-      db.insert(activityFileIngestions).values({
-        ...base,
-        operation_key: `mobile-recording:${randomUUID()}`,
-        staging_cleanup_pending: true,
+  it("keeps provider identity and fresh staging across a concurrent replay and retry", async () => {
+    const profileId = await seedProfile();
+    const [integration] = await db
+      .insert(integrations)
+      .values({ profile_id: profileId, provider: "wahoo", external_id: randomUUID() })
+      .returning({ id: integrations.id });
+    expect(integration).toBeDefined();
+    const operationId = activityIngestionOperationId(`provider-race:${randomUUID()}`);
+    const baseInput = {
+      profileId,
+      operationId,
+      source: "provider_sync" as const,
+      provider: "wahoo" as const,
+      externalId: "provider-concurrent-1",
+      integrationId: integration?.id ?? "",
+      stagingBucket: "activity-files",
+      stagingPath: `activities/${profileId}/provider-original.fit`,
+      expectedSha256: "e".repeat(64),
+      expectedByteSize: 3,
+      expectedFormat: "fit" as const,
+      expectedMediaType: "application/vnd.ant.fit" as const,
+      uploaded: true,
+    };
+    const operation = await beginActivityIngestionOperation(db, baseInput);
+    const concurrent = await Promise.all([
+      claimActivityIngestionProcessing(db, {
+        profileId,
+        ingestionId: operation.id,
+        operationId,
+        source: "provider_sync",
       }),
-    ).rejects.toThrow();
+      claimActivityIngestionProcessing(db, {
+        profileId,
+        ingestionId: operation.id,
+        operationId,
+        source: "provider_sync",
+      }),
+    ]);
+    expect(concurrent.map((claim) => claim.status).sort()).toEqual(["claimed", "existing"]);
+
+    await failActivityIngestion(db, {
+      profileId,
+      ingestionId: operation.id,
+      failureCode: "dependency_unavailable",
+      retryable: true,
+    });
+    const retryPath = `activities/${profileId}/provider-retry.fit`;
+    const retry = await beginActivityIngestionOperation(db, {
+      ...baseInput,
+      stagingPath: retryPath,
+    });
+    expect(retry).toMatchObject({
+      id: operation.id,
+      provider: "wahoo",
+      externalId: "provider-concurrent-1",
+      stagingPath: retryPath,
+    });
+    await expect(
+      claimActivityIngestionProcessing(db, {
+        profileId,
+        ingestionId: operation.id,
+        operationId,
+        source: "provider_sync",
+      }),
+    ).resolves.toMatchObject({ status: "claimed" });
+
+    const accepted = await seedAcceptedTargets(profileId, "e".repeat(64));
+    await acceptActivityIngestion(db, {
+      profileId,
+      ingestionId: operation.id,
+      operationId,
+      source: "provider_sync",
+      ...accepted,
+      completedAt: new Date(),
+    });
+    await expect(
+      beginActivityIngestionOperation(db, { ...baseInput, stagingPath: retryPath }),
+    ).resolves.toMatchObject({
+      id: operation.id,
+      status: "succeeded",
+      provider: "wahoo",
+      externalId: "provider-concurrent-1",
+    });
+  });
+
+  it("projects status without staging or internal failure details", async () => {
+    const profileId = await seedProfile();
+    const operation = await beginActivityIngestionOperation(db, {
+      profileId,
+      operationId: activityIngestionOperationId(`mobile:${randomUUID()}`),
+      source: "mobile_recording",
+      stagingBucket: "activity-files",
+      stagingPath: `mobile-recordings/${profileId}/session.fit`,
+      expectedSha256: "c".repeat(64),
+      expectedByteSize: 3,
+      expectedFormat: "fit",
+      expectedMediaType: "application/vnd.ant.fit",
+      uploaded: false,
+    });
+    const safe = await createDrizzleActivityIngestionRepository(db).readSafeStatus({
+      profileId,
+      ingestionId: operation.id,
+    });
+    expect(safe).toMatchObject({ id: operation.id, status: "awaiting_upload" });
+    expect(safe).not.toHaveProperty("stagingPath");
+    expect(safe).not.toHaveProperty("stagingCleanupError");
+    expect(safe).not.toHaveProperty("provider");
   });
 });

@@ -1,15 +1,12 @@
 import { createHash } from "node:crypto";
 import type { ContentVisibility } from "@repo/core";
+import type { ActivityFileIngestionOperation } from "@repo/core/activity-files";
 import type { ActivityFileType } from "@repo/core/server/activity-files";
-import {
-  type ActivityFileIngestionRow,
-  type ActivityRow,
-  activities,
-  activityFileIngestions,
-} from "@repo/db";
+import { type ActivityRow, activities } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
+import { createDrizzleActivityIngestionRepository } from "../../infrastructure/repositories";
 import {
   activityArtifactId,
   manualImportActivityId,
@@ -20,14 +17,19 @@ import {
   type ParsedActivityFileForAnalysis,
 } from "./analyze-parsed-activity-file";
 import { type ActivityArtifactStorage, cleanupActivityArtifactStaging } from "./artifact-storage";
-import { finalizeActivityArtifactIngestion } from "./finalize-activity-artifact-ingestion";
 import {
-  ActivityFileIngestionClaimLostError,
-  createActivityFileIngestion,
-  markFailed,
-  markProcessing,
-  markUploaded,
-} from "./ingestion-state";
+  ActivityIngestionOperationConflictError,
+  activityIngestionOperationId,
+  beginActivityIngestionOperation,
+  claimActivityIngestionProcessing,
+  completeActivityIngestionCleanup,
+  deferActivityIngestionCleanup,
+  failActivityIngestion,
+} from "./direct-activity-ingestion";
+import {
+  type ActivityArtifactIngestionFailureStage,
+  finalizeActivityArtifactIngestion,
+} from "./finalize-activity-artifact-ingestion";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
@@ -69,10 +71,12 @@ function digest(bytes: Uint8Array) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function safeFailure(error: unknown) {
-  return error instanceof TRPCError && error.code === "BAD_REQUEST"
-    ? { code: "parse_failed", message: "Unable to parse activity file" }
-    : { code: "process_failed", message: "Activity file processing failed" };
+function mediaType(fileType: ActivityFileType) {
+  return fileType === "fit"
+    ? ("application/vnd.ant.fit" as const)
+    : fileType === "gpx"
+      ? ("application/gpx+xml" as const)
+      : ("application/vnd.garmin.tcx+xml" as const);
 }
 
 function isTrpcError(error: unknown): error is TRPCError {
@@ -87,105 +91,148 @@ function isTrpcError(error: unknown): error is TRPCError {
   );
 }
 
+function failureForStage(stage: ActivityArtifactIngestionFailureStage) {
+  switch (stage) {
+    case "parse":
+      return { failureCode: "invalid_activity" as const, retryable: false };
+    case "hash":
+      return { failureCode: "hash_mismatch" as const, retryable: false };
+    case "promotion":
+      return { failureCode: "promotion_failed" as const, retryable: true };
+    case "persistence":
+      return { failureCode: "internal" as const, retryable: true };
+  }
+}
+
 async function loadOwnedActivity(db: DbClient, profileId: string, activityId: string) {
   return db.query.activities.findFirst({
     where: and(eq(activities.id, activityId), eq(activities.profile_id, profileId)),
   });
 }
 
-async function claimManualIngestion(
+async function retryCompletedCleanup(
   db: DbClient,
-  ingestion: ActivityFileIngestionRow,
-  profileId: string,
+  storage: ActivityArtifactStorage,
+  operation: ActivityFileIngestionOperation,
 ) {
-  if (ingestion.status === "ready") return ingestion;
-  if (ingestion.status === "processing") {
-    // Reclaim only by issuing a fresh conditional claim; never reuse its token.
-    return markProcessing(db, { id: ingestion.id, profileId });
-  }
+  if (
+    !operation.stagingCleanupPending ||
+    !operation.stagingBucket ||
+    !operation.stagingPath ||
+    !operation.expectedSha256
+  )
+    return;
   try {
-    if (ingestion.status === "pending_upload" || ingestion.status === "failed") {
-      ingestion = await markUploaded(db, { id: ingestion.id, profileId });
-    }
-    if (ingestion.status === "uploaded") {
-      return await markProcessing(db, { id: ingestion.id, profileId });
-    }
-  } catch (cause) {
-    throw new TRPCError({
-      code: "CONFLICT",
-      message: "Activity file ingestion is already being processed",
-      cause,
+    await cleanupActivityArtifactStaging(storage, {
+      bucket: operation.stagingBucket,
+      stagingPath: operation.stagingPath,
+      path: `artifacts/sha256/${operation.profileId}/${operation.expectedSha256}`,
     });
-  }
-  throw new TRPCError({ code: "CONFLICT", message: "Activity file ingestion cannot be claimed" });
-}
-
-async function markManualIngestionFailed(
-  db: DbClient,
-  deps: ProcessManualActivityFileDependencies,
-  input: { ingestionId: string; profileId: string; claimToken?: string; error: unknown },
-) {
-  if (!input.claimToken) return;
-  try {
-    const failure = safeFailure(input.error);
-    await markFailed(db, {
-      id: input.ingestionId,
-      profileId: input.profileId,
-      claimToken: input.claimToken,
-      errorCode: failure.code,
-      errorMessage: failure.message,
+    await completeActivityIngestionCleanup(db, {
+      profileId: operation.profileId,
+      ingestionId: operation.id,
     });
   } catch {
-    deps.logger.error("manual_activity_import.mark_failed.process_failed", {
-      outcome: "unexpected_error",
-    });
+    await deferActivityIngestionCleanup(db, {
+      profileId: operation.profileId,
+      ingestionId: operation.id,
+    }).catch(() => false);
   }
 }
 
-/** Converges manual staging uploads through the shared ingestion state machine and canonical writer. */
+/** Converges direct manual submissions through one idempotent operation and canonical writer. */
 export async function processManualActivityFile(
   db: DbClient,
   input: ProcessManualActivityFileInput,
   deps: ProcessManualActivityFileDependencies,
-): Promise<{ activity: ActivityRow; ingestion: ActivityFileIngestionRow }> {
+): Promise<{ activity: ActivityRow; ingestion: ActivityFileIngestionOperation }> {
+  const operationId = activityIngestionOperationId(
+    `manual_import:${input.profileId}:${input.activityFilePath}`,
+  );
+  const operationRepository = createDrizzleActivityIngestionRepository(db);
+  const replay = await operationRepository.getOwnedByOperation({
+    profileId: input.profileId,
+    operationId,
+  });
+  if (replay?.status === "succeeded") {
+    if (!replay.activityId) throw new Error("Succeeded ingestion is missing activity identity");
+    const activity = await loadOwnedActivity(db, input.profileId, replay.activityId);
+    if (!activity) throw new Error("Succeeded ingestion activity was not found");
+    await retryCompletedCleanup(db, deps.storage, replay);
+    return { activity, ingestion: replay };
+  }
   const stored = await deps.readStoredActivityFile({
     activityFilePath: input.activityFilePath,
     removeOnParseFailure: false,
   });
   const sha256 = digest(stored.data);
-  const operationKey = `manual_import:${sha256}`;
   const activityId = manualImportActivityId(input.profileId, sha256);
-  const ingestion = await createActivityFileIngestion(db, {
-    activityId: null,
-    profileId: input.profileId,
-    source: "manual_import",
-    operationKey,
-    filePath: input.activityFilePath,
-    fileSize: stored.activityFile.size ?? stored.data.byteLength,
-    fileType: input.fileType,
-  });
-
-  if (ingestion.status === "ready") {
-    if (!ingestion.activity_id)
-      throw new Error("Ready activity file ingestion is missing activity identity");
-    const activity = await loadOwnedActivity(db, input.profileId, ingestion.activity_id);
-    if (!activity) throw new Error("Ready activity file ingestion activity was not found");
-    await cleanupActivityArtifactStaging(deps.storage, {
-      bucket: "activity-files",
+  const contentVisibility =
+    input.contentVisibility ?? (await deps.getProfileDefaultContentVisibility(db, input.profileId));
+  let operation: ActivityFileIngestionOperation;
+  try {
+    operation = await beginActivityIngestionOperation(db, {
+      profileId: input.profileId,
+      operationId,
+      source: "manual_import",
+      stagingBucket: "activity-files",
       stagingPath: input.activityFilePath,
-      path: `artifacts/sha256/${input.profileId}/${sha256}`,
+      expectedSha256: sha256,
+      expectedByteSize: stored.activityFile.size ?? stored.data.byteLength,
+      expectedFormat: input.fileType,
+      expectedMediaType: mediaType(input.fileType),
+      uploaded: true,
     });
-    return { activity, ingestion };
+  } catch (error) {
+    if (error instanceof ActivityIngestionOperationConflictError) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "Activity file ingestion metadata conflicts with an existing operation",
+        cause: error,
+      });
+    }
+    throw error;
   }
 
-  let claimToken: string | undefined;
+  if (operation.status === "succeeded") {
+    if (!operation.activityId) throw new Error("Succeeded ingestion is missing activity identity");
+    const activity = await loadOwnedActivity(db, input.profileId, operation.activityId);
+    if (!activity) throw new Error("Succeeded ingestion activity was not found");
+    await retryCompletedCleanup(db, deps.storage, operation);
+    return { activity, ingestion: operation };
+  }
+
   try {
-    const claimed = await claimManualIngestion(db, ingestion, input.profileId);
-    claimToken = claimed.claim_token ?? undefined;
-    if (!claimToken) {
-      throw new TRPCError({ code: "CONFLICT", message: "Activity file ingestion claim was lost" });
+    const claim = await claimActivityIngestionProcessing(db, {
+      profileId: input.profileId,
+      ingestionId: operation.id,
+      operationId,
+      source: "manual_import",
+    });
+    operation = claim.operation;
+    if (claim.status === "existing") {
+      if (operation.status === "succeeded" && operation.activityId) {
+        const activity = await loadOwnedActivity(db, input.profileId, operation.activityId);
+        if (!activity) throw new Error("Succeeded ingestion activity was not found");
+        await retryCompletedCleanup(db, deps.storage, operation);
+        return { activity, ingestion: operation };
+      }
+      throw new ActivityIngestionOperationConflictError(
+        "Activity ingestion is already being processed",
+      );
     }
-    const activeClaimToken = claimToken;
+  } catch (error) {
+    if (error instanceof ActivityIngestionOperationConflictError) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "Activity file ingestion cannot be processed",
+        cause: error,
+      });
+    }
+    throw error;
+  }
+
+  try {
     return await finalizeActivityArtifactIngestion(db, {
       profileId: input.profileId,
       storage: deps.storage,
@@ -194,12 +241,33 @@ export async function processManualActivityFile(
       bytes: stored.data,
       format: input.fileType,
       ...(stored.activityFile.type === undefined ? {} : { mediaType: stored.activityFile.type }),
+      expectedSha256: sha256,
       parse: () =>
         deps.decodeActivityFile({
           data: stored.data,
           activityFilePath: input.activityFilePath,
           fileType: input.fileType,
         }),
+      onFailure: async (stage: ActivityArtifactIngestionFailureStage) => {
+        await failActivityIngestion(db, {
+          profileId: input.profileId,
+          ingestionId: operation.id,
+          ...failureForStage(stage),
+        });
+      },
+      onCleanup: async ({ cleaned }: { cleaned: boolean }) => {
+        if (cleaned) {
+          await completeActivityIngestionCleanup(db, {
+            profileId: input.profileId,
+            ingestionId: operation.id,
+          });
+        } else {
+          await deferActivityIngestionCleanup(db, {
+            profileId: input.profileId,
+            ingestionId: operation.id,
+          });
+        }
+      },
       submit: async ({ parsedData, artifact: promoted }) => {
         const artifactId = activityArtifactId(input.profileId, promoted.sha256, promoted.byteSize);
         const analysis = await analyzeParsedActivityFile(db, {
@@ -208,14 +276,11 @@ export async function processManualActivityFile(
           parsedData,
           artifactId,
         });
-        const contentVisibility =
-          input.contentVisibility ??
-          (await deps.getProfileDefaultContentVisibility(db, input.profileId));
         await submitActivity(db, {
           requestedActivityId: activityId,
           profileId: input.profileId,
           name: input.name,
-          notes: input.notes || null,
+          notes: input.notes ?? null,
           contentVisibility,
           startedAt: analysis.startedAt,
           finishedAt: analysis.activityCompletedAt,
@@ -249,9 +314,8 @@ export async function processManualActivityFile(
             detectedLTHR: analysis.detectedLTHR,
             ingestion: {
               source: "manual_import",
-              operationKey,
-              ingestionId: ingestion.id,
-              claimToken: activeClaimToken,
+              operationId,
+              ingestionId: operation.id,
               artifact: { ...promoted, originalName: input.originalName ?? null },
             },
           },
@@ -259,36 +323,27 @@ export async function processManualActivityFile(
         });
         const activity = await loadOwnedActivity(db, input.profileId, activityId);
         if (!activity) throw new Error("Failed to load created activity record");
-        const ready =
-          (await db.query.activityFileIngestions.findFirst({
-            where: and(
-              eq(activityFileIngestions.profile_id, input.profileId),
-              eq(activityFileIngestions.operation_key, operationKey),
-            ),
-          })) ?? claimed;
-        return { activity, ingestion: ready };
+        const ingestion = await operationRepository.getOwned({
+          profileId: input.profileId,
+          ingestionId: operation.id,
+        });
+        if (!ingestion) throw new Error("Accepted ingestion could not be loaded");
+        return { activity, ingestion };
       },
     });
   } catch (error) {
-    const failure = safeFailure(error);
-    deps.logger.error(`manual_activity_import.process.${failure.code}`, {
-      outcome: failure.code === "parse_failed" ? "expected_error" : "unexpected_error",
-    });
-    const claimLost = error instanceof ActivityFileIngestionClaimLostError;
-    if (!(claimLost || (isTrpcError(error) && error.code === "CONFLICT"))) {
-      await markManualIngestionFailed(db, deps, {
-        ingestionId: ingestion.id,
-        profileId: input.profileId,
-        ...(claimToken === undefined ? {} : { claimToken }),
-        error,
-      });
-    }
-    if (claimLost || (isTrpcError(error) && error.code === "CONFLICT"))
+    const parseFailure = isTrpcError(error) && error.code === "BAD_REQUEST";
+    deps.logger.error(
+      `manual_activity_import.process.${parseFailure ? "parse_failed" : "process_failed"}`,
+      { outcome: parseFailure ? "expected_error" : "unexpected_error" },
+    );
+    if (isTrpcError(error) && error.code === "CONFLICT") {
       throw new TRPCError({
         code: "CONFLICT",
         message: "Activity file ingestion is already being processed",
       });
-    if (isTrpcError(error) && error.code === "BAD_REQUEST")
+    }
+    if (parseFailure)
       throw new TRPCError({ code: "BAD_REQUEST", message: "Unable to parse activity file" });
     if (isTrpcError(error) && (error.code === "FORBIDDEN" || error.code === "NOT_FOUND"))
       throw error;

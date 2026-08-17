@@ -15,12 +15,11 @@ import {
   activityArtifactLinks,
   activityArtifacts,
   type activityEfforts,
-  activityFileIngestions,
   activitySegments,
   activitySourceReferences,
   integrations,
 } from "@repo/db";
-import { and, asc, desc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { type getRequiredDb, withProfileFencedRepeatableReadSnapshot } from "../../db";
 import {
   attachActivitySourceReferenceWithProfileLockHeld as attachActivitySourceReference,
@@ -31,7 +30,7 @@ import {
   readThresholdImpactForActivity,
   type ThresholdImpact,
 } from "../../repositories/threshold-repository";
-import { ActivityFileIngestionClaimLostError } from "../activity-file-ingestion/ingestion-state";
+import { acceptActivityIngestion } from "../activity-file-ingestion/direct-activity-ingestion";
 import { materializeActivityAthleteStateEvidence } from "../athlete-intelligence/athlete-state-evidence";
 import { readPublishedAthletePerformanceTargets } from "../athlete-intelligence/published-athlete-state";
 import {
@@ -312,24 +311,11 @@ interface ReadyIngestionSubmission {
   source: "mobile_recording" | "manual_import" | "provider_sync";
   provider?: "strava" | "wahoo" | "trainingpeaks" | "garmin" | "zwift" | null;
   externalId?: string | null;
-  operationKey?: string;
+  operationId?: string;
   ingestionId?: string;
-  claimToken?: string;
   stagingCleanupPending?: boolean;
-  artifact?: ActivityArtifactSubmission;
+  artifact: ActivityArtifactSubmission;
   fileType?: ActivityFileType;
-}
-
-function ingestionOperationKey(ingestion: ReadyIngestionSubmission, activityId: string): string {
-  return (
-    ingestion.operationKey ??
-    [
-      ingestion.source,
-      ingestion.provider ?? "direct",
-      ingestion.externalId ?? activityId,
-      ingestion.artifact?.sha256 ?? "no-artifact",
-    ].join(":")
-  );
 }
 
 function assignEffortSegments(
@@ -663,95 +649,19 @@ async function persistReadyActivityFileIngestion(
     now: Date;
   },
 ) {
-  const operationKey = ingestionOperationKey(input.ingestion, input.activityId);
-  if (input.ingestion.claimToken) {
-    if (!input.ingestion.ingestionId || !input.ingestion.artifact) {
-      throw new Error("Claimed activity file ingestion requires its exact claim and artifact");
-    }
-    const [ready] = await tx
-      .update(activityFileIngestions)
-      .set({
-        activity_id: input.activityId,
-        artifact_id: input.artifactId,
-        status: "ready",
-        uploaded_at: input.now,
-        staging_cleanup_pending: input.ingestion.stagingCleanupPending ?? false,
-        staging_cleaned_at: null,
-        staging_cleanup_error: null,
-        claim_token: null,
-        lease_expires_at: null,
-        completed_at: input.now,
-        updated_at: input.now,
-      })
-      .where(
-        and(
-          eq(activityFileIngestions.profile_id, input.profileId),
-          eq(activityFileIngestions.id, input.ingestion.ingestionId),
-          eq(activityFileIngestions.operation_key, operationKey),
-          eq(activityFileIngestions.source, input.ingestion.source),
-          eq(activityFileIngestions.status, "processing"),
-          eq(activityFileIngestions.claim_token, input.ingestion.claimToken),
-          gt(activityFileIngestions.lease_expires_at, sql`clock_timestamp()`),
-        ),
-      )
-      .returning({ id: activityFileIngestions.id });
-    if (!ready) throw new ActivityFileIngestionClaimLostError();
-    return;
+  const { operationId, ingestionId } = input.ingestion;
+  if (!operationId || !ingestionId) {
+    throw new Error("Activity ingestion completion requires its exact operation");
   }
-  const artifact = input.ingestion.artifact;
-  if (!artifact) throw new Error("Ready activity file ingestion requires an accepted artifact");
-  const [ready] = await tx
-    .insert(activityFileIngestions)
-    .values({
-      id: uuidFromIdentity(`ingestion:${input.profileId}:${operationKey}`),
-      activity_id: input.activityId,
-      artifact_id: input.artifactId,
-      profile_id: input.profileId,
-      source: input.ingestion.source,
-      provider: input.ingestion.provider ?? null,
-      external_id: input.ingestion.externalId ?? null,
-      operation_key: operationKey,
-      status: "ready",
-      uploaded_at: input.now,
-      attempt_count: 1,
-      requested_at: input.now,
-      received_at: input.now,
-      started_at: input.now,
-      completed_at: input.now,
-      created_at: input.now,
-      updated_at: input.now,
-    })
-    .onConflictDoNothing({
-      target: [activityFileIngestions.profile_id, activityFileIngestions.operation_key],
-    })
-    .returning({ id: activityFileIngestions.id });
-  if (ready) return;
-
-  const [existing] = await tx
-    .select({
-      id: activityFileIngestions.id,
-      activityId: activityFileIngestions.activity_id,
-      artifactId: activityFileIngestions.artifact_id,
-      source: activityFileIngestions.source,
-      status: activityFileIngestions.status,
-    })
-    .from(activityFileIngestions)
-    .where(
-      and(
-        eq(activityFileIngestions.profile_id, input.profileId),
-        eq(activityFileIngestions.operation_key, operationKey),
-      ),
-    )
-    .limit(1);
-  if (
-    !existing ||
-    existing.activityId !== input.activityId ||
-    existing.artifactId !== input.artifactId ||
-    existing.source !== input.ingestion.source ||
-    existing.status !== "ready"
-  ) {
-    throw new Error("Activity file ingestion operation conflicts with an existing claim");
-  }
+  await acceptActivityIngestion(tx, {
+    profileId: input.profileId,
+    ingestionId,
+    operationId,
+    source: input.ingestion.source,
+    activityId: input.activityId,
+    artifactId: input.artifactId,
+    completedAt: input.now,
+  });
 }
 
 export async function updateCanonicalActivityFields(
@@ -844,30 +754,6 @@ export async function submitActivity(
           .limit(1)
           .for(evidence ? "update" : "share");
         if (!activeIntegration) throw new Error("integration_generation_inactive");
-      }
-      if (ingestion?.claimToken) {
-        if (!ingestion.ingestionId) {
-          throw new Error("Claimed activity file ingestion requires an ingestion ID");
-        }
-        const [claim] = await tx
-          .select({ id: activityFileIngestions.id })
-          .from(activityFileIngestions)
-          .where(
-            and(
-              eq(activityFileIngestions.profile_id, input.profileId),
-              eq(activityFileIngestions.id, ingestion.ingestionId),
-              eq(
-                activityFileIngestions.operation_key,
-                ingestionOperationKey(ingestion, activityId),
-              ),
-              eq(activityFileIngestions.source, ingestion.source),
-              eq(activityFileIngestions.status, "processing"),
-              eq(activityFileIngestions.claim_token, ingestion.claimToken),
-              gt(activityFileIngestions.lease_expires_at, sql`clock_timestamp()`),
-            ),
-          )
-          .limit(1);
-        if (!claim) throw new ActivityFileIngestionClaimLostError();
       }
       const [existing] = await tx
         .select()
@@ -1291,6 +1177,7 @@ export async function submitActivity(
           computedAt: now,
           contextDb: tx,
           canonicalEvidenceMaterialChanged,
+          allowIncrementalApply: !existing && !options.deferAthleteStateRefresh,
           effortMaterialRecordedAt,
           ...(options.deferAthleteStateRefresh === undefined
             ? {}

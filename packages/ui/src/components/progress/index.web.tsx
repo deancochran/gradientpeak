@@ -15,7 +15,11 @@ function ProgressBar({
   const boundedValue = clampProgressValue(value);
   return (
     <div
-      {...getWebTestProps({ accessibilityLabel, id, testId })}
+      {...getWebTestProps({
+        accessibilityLabel,
+        ...(id !== undefined ? { id } : {}),
+        ...(testId !== undefined ? { testId } : {}),
+      })}
       role="progressbar"
       aria-valuemax={100}
       aria-valuemin={0}

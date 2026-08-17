@@ -92,6 +92,7 @@ const mocks = vi.hoisted(() => ({
   processManualActivityFile: vi.fn(),
   beginMobileRecordingUploadClaim: vi.fn(),
   drainPendingMobileRecordingStagingCleanup: vi.fn(),
+  readActivityIngestionSafeStatus: vi.fn(),
   db: {
     current: null as any,
   },
@@ -175,6 +176,11 @@ vi.mock("../../infrastructure/repositories/drizzle-activity-analysis-repository"
 
 vi.mock("../../application/activity-file-ingestion/process-manual-activity-file", () => ({
   processManualActivityFile: mocks.processManualActivityFile,
+}));
+vi.mock("../../application/activity-file-ingestion/activity-ingestion-actions", () => ({
+  ActivityIngestionNotFoundError: class ActivityIngestionNotFoundError extends Error {},
+  ActivityIngestionStateConflictError: class ActivityIngestionStateConflictError extends Error {},
+  readActivityIngestionSafeStatus: mocks.readActivityIngestionSafeStatus,
 }));
 vi.mock(
   "../../application/activity-file-ingestion/mobile-recording-upload",
@@ -365,6 +371,21 @@ beforeEach(() => {
     cleaned: 1,
     pending: 0,
   });
+  const safeIngestion = {
+    ingestionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    profileId: "11111111-1111-4111-8111-111111111111",
+    operationId: "a".repeat(32),
+    source: "manual_import",
+    activityId: null,
+    artifactId: null,
+    requestedAt: "2026-08-10T08:00:00.000Z",
+    updatedAt: "2026-08-10T08:00:00.000Z",
+    status: "failed_retryable",
+    failureCode: "dependency_unavailable",
+    failedAt: "2026-08-10T08:00:00.000Z",
+    actions: { retry: true },
+  };
+  mocks.readActivityIngestionSafeStatus.mockResolvedValue(safeIngestion);
   mocks.calculateBounds.mockReturnValue({ minLat: 40, maxLat: 41, minLng: -74, maxLng: -73 });
   mocks.encodePolyline.mockReturnValue("encoded-polyline");
   mocks.inferActivityFileType.mockImplementation((fileName: string) => {
@@ -396,6 +417,44 @@ beforeEach(() => {
 });
 
 describe("activityFilesRouter", () => {
+  it("protects safe ingestion status and denies cross-profile access before the read", async () => {
+    const unauthenticated = activityFilesRouter.createCaller({
+      session: null,
+      headers: new Headers(),
+      clientType: "test",
+      trpcSource: "vitest",
+    } as never);
+    await expect(
+      unauthenticated.getIngestionStatus({
+        profileId: "11111111-1111-4111-8111-111111111111",
+        ingestionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+
+    await expect(
+      createCaller({ userId: "22222222-2222-4222-8222-222222222222" }).getIngestionStatus({
+        profileId: "11111111-1111-4111-8111-111111111111",
+        ingestionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(mocks.readActivityIngestionSafeStatus).not.toHaveBeenCalled();
+  });
+
+  it("returns only safe ingestion status and requires retries through source resubmission", async () => {
+    const caller = createCaller({ db: createDbMock().db });
+    const status = await caller.getIngestionStatus({
+      profileId: "11111111-1111-4111-8111-111111111111",
+      ingestionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    });
+    expect(status.actions).toEqual({ retry: true });
+    expect(status).not.toHaveProperty("claimToken");
+    expect(status).not.toHaveProperty("stagingPath");
+    expect(status).not.toHaveProperty("rawError");
+    expect(activityFilesRouter._def.procedures).not.toHaveProperty("retryIngestion");
+    expect(activityFilesRouter._def.procedures).not.toHaveProperty("cancelIngestion");
+    expect(activityFilesRouter._def.procedures).not.toHaveProperty("markUploadedAndProcess");
+  });
+
   it("does not expose evidence maintenance as an end-user procedure", () => {
     expect(activityFilesRouter._def.procedures).not.toHaveProperty("recalculateOwnedEvidence");
   });
@@ -704,214 +763,6 @@ describe("activityFilesRouter", () => {
       }),
     ).rejects.toThrow("Unrecognized key");
     expect(mocks.readObjectBounded).not.toHaveBeenCalled();
-  });
-
-  it("attaches an uploaded file to an existing activity and marks ingestion ready", async () => {
-    const userId = "11111111-1111-4111-8111-111111111111";
-    const activityId = "99999999-9999-4999-8999-999999999999";
-    const ingestionId = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
-    const startTime = new Date("2026-04-01T08:00:00.000Z");
-    const finishedAt = new Date("2026-04-01T09:00:00.000Z");
-    const activity = {
-      id: activityId,
-      profile_id: userId,
-      started_at: startTime,
-      finished_at: finishedAt,
-      elapsed_ms: 3_600_000,
-      active_ms: 3_600_000,
-      moving_ms: 3_600_000,
-      timing_coverage: "complete",
-      segments_revision: 1,
-      created_at: startTime,
-      updated_at: finishedAt,
-    };
-    const pendingIngestion = {
-      id: ingestionId,
-      activity_id: activityId,
-      profile_id: userId,
-      status: "pending_upload",
-      attempt_count: 0,
-    };
-    const uploadedIngestion = { ...pendingIngestion, status: "uploaded" };
-    const processingIngestion = {
-      ...pendingIngestion,
-      status: "processing",
-      attempt_count: 1,
-      claim_token: "bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb",
-      operation_key: `mobile_recording:direct:${activityId}`,
-      source: "mobile_recording" as const,
-      provider: null,
-      external_id: null,
-    };
-    const readyIngestion = { ...processingIngestion, status: "ready" };
-    const { db, callLog } = createDbMock({
-      selectResults: [
-        [{ activity, ingestion: pendingIngestion }],
-        [pendingIngestion],
-        [uploadedIngestion],
-        [uploadedIngestion],
-        [processingIngestion],
-        [{ value: "52" }],
-        [{ id: ingestionId }],
-        [],
-        [],
-        [],
-        [],
-      ],
-      activitySelectResult: [activity],
-      findFirstResults: [readyIngestion, activity],
-    });
-
-    mocks.parseActivityFile.mockReturnValue({
-      metadata: { type: "cycling", startTime, manufacturer: "Wahoo", product: "ELEMNT" },
-      summary: {
-        totalTime: 3600,
-        totalDistance: 40100,
-        calories: 850,
-        totalAscent: 375,
-        avgHeartRate: 158,
-        maxHeartRate: 180,
-        avgPower: 235,
-        maxPower: 440,
-        avgCadence: 87,
-        maxCadence: 101,
-        avgSpeed: 11.14,
-        maxSpeed: 17.9,
-      },
-      records: [
-        { timestamp: startTime, power: 230, heartRate: 155, cadence: 86, altitude: 100, speed: 11 },
-        {
-          timestamp: new Date("2026-04-01T08:20:00.000Z"),
-          power: 245,
-          heartRate: 165,
-          cadence: 90,
-          altitude: 130,
-          speed: 11.4,
-          positionLat: 40,
-          positionLong: -73,
-        },
-      ],
-      laps: [{ startTime }],
-      lengths: [],
-      segments: [
-        {
-          sessionMessageIndex: 0,
-          role: "activity",
-          activity_category: "bike",
-          rawSport: "cycling",
-          startTime,
-          endTime: finishedAt,
-        },
-      ],
-    });
-
-    const caller = createCaller({ db, userId });
-    const result = await caller.markUploadedAndProcess({
-      ingestionId,
-      activityId,
-      activityFilePath: `activities/${userId}/uploads/phase5.fit`,
-      fileSize: 12345,
-    });
-
-    expect(result).toMatchObject({
-      success: true,
-      activity: { id: activityId },
-      ingestion: { id: ingestionId, status: "ready" },
-    });
-    expect(callLog.updateCalls).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          set: expect.objectContaining({
-            elapsed_ms: 3_600_000,
-            laps: expect.any(Array),
-          }),
-        }),
-      ]),
-    );
-    expect(mocks.storage.remove).toHaveBeenCalledWith([`activities/${userId}/uploads/phase5.fit`]);
-  });
-
-  it("rejects attaching uploaded files when the activity or ingestion is not owned", async () => {
-    const { db } = createDbMock({ selectResults: [[]] });
-    const caller = createCaller({ db });
-
-    await expect(
-      caller.markUploadedAndProcess({
-        ingestionId: "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa",
-        activityId: "99999999-9999-4999-8999-999999999999",
-        activityFilePath: "activities/11111111-1111-4111-8111-111111111111/uploads/phase5.fit",
-      }),
-    ).rejects.toThrow("Activity file ingestion not found");
-    expect(mocks.readObjectBounded).not.toHaveBeenCalled();
-  });
-
-  it("rejects attaching uploaded files outside the user's storage prefix", async () => {
-    const { db } = createDbMock();
-    const caller = createCaller({ db });
-
-    await expect(
-      caller.markUploadedAndProcess({
-        ingestionId: "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa",
-        activityId: "99999999-9999-4999-8999-999999999999",
-        activityFilePath: "activities/22222222-2222-4222-8222-222222222222/uploads/phase5.fit",
-      }),
-    ).rejects.toThrow("Access denied");
-    expect(mocks.readObjectBounded).not.toHaveBeenCalled();
-  });
-
-  it("marks ingestion failed, preserves the activity, and cleans staging when parsing fails", async () => {
-    const userId = "11111111-1111-4111-8111-111111111111";
-    const activityId = "99999999-9999-4999-8999-999999999999";
-    const ingestionId = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
-    const activity = { id: activityId, profile_id: userId };
-    const pendingIngestion = {
-      id: ingestionId,
-      activity_id: activityId,
-      profile_id: userId,
-      status: "pending_upload",
-      attempt_count: 0,
-    };
-    const uploadedIngestion = { ...pendingIngestion, status: "uploaded" };
-    const processingIngestion = {
-      ...pendingIngestion,
-      status: "processing",
-      attempt_count: 1,
-      claim_token: "bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb",
-    };
-    const failedIngestion = { ...processingIngestion, status: "failed" };
-    const { db, callLog } = createDbMock({
-      selectResults: [
-        [{ activity, ingestion: pendingIngestion }],
-        [pendingIngestion],
-        [uploadedIngestion],
-        [uploadedIngestion],
-        [processingIngestion],
-        [processingIngestion],
-        [failedIngestion],
-      ],
-    });
-    mocks.parseActivityFile.mockImplementation(() => {
-      throw new Error("bad fit");
-    });
-
-    const caller = createCaller({ db, userId });
-
-    await expect(
-      caller.markUploadedAndProcess({
-        ingestionId,
-        activityId,
-        activityFilePath: `activities/${userId}/uploads/bad.fit`,
-      }),
-    ).rejects.toThrow("Unable to parse activity file");
-    expect(callLog.deleteCalls).toEqual([]);
-    expect(mocks.storage.remove).toHaveBeenCalledWith([`activities/${userId}/uploads/bad.fit`]);
-    expect(callLog.updateCalls).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          set: expect.objectContaining({ status: "failed", last_error_code: "parse_failed" }),
-        }),
-      ]),
-    );
   });
 
   it("rejects download URLs for another user's activity file", async () => {

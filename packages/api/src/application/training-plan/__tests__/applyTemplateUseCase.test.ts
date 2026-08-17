@@ -1,14 +1,21 @@
 import { SYSTEM_TEMPLATES } from "@repo/core";
 import type { DrizzleDbClient } from "@repo/db/client";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PLANNED_SESSION_CACHE_TAGS } from "../../../contracts/cache-receipts";
 import type { TrainingPlanRepository } from "../../../repositories";
 import { applyTrainingPlanTemplateUseCase } from "../applyTemplateUseCase";
 
 const { enqueueWahooPlannedActivitySyncAfterCalendarMutation } = vi.hoisted(() => ({
   enqueueWahooPlannedActivitySyncAfterCalendarMutation: vi.fn(async () => null),
 }));
+const { readPublishedAthleteStateSnapshotData } = vi.hoisted(() => ({
+  readPublishedAthleteStateSnapshotData: vi.fn(),
+}));
 vi.mock("../../../lib/provider-sync/planned-activities", () => ({
   enqueueWahooPlannedActivitySyncAfterCalendarMutation,
+}));
+vi.mock("../../../repositories/athlete-state-repository", () => ({
+  readPublishedAthleteStateSnapshotData,
 }));
 
 type TransactionClient = {
@@ -36,6 +43,25 @@ describe("applyTrainingPlanTemplateUseCase", () => {
     trainingPlanId: "22222222-2222-4222-8222-222222222222",
     trainingPlan: {},
   };
+  const plannedSessionRepository = {
+    activityPlanExistsForProfile: vi.fn(async () => true),
+    trainingPlanExistsForProfile: vi.fn(async () => true),
+    getOwned: vi.fn(async () => null),
+    listOwnedRange: vi.fn(async () => ({ items: [], truncated: false })),
+    listOwnedLinkedToActivity: vi.fn(async () => []),
+    mutateOwned: vi.fn(),
+    createOwned: vi.fn(async ({ session }) => ({ status: "created" as const, session })),
+  };
+
+  beforeEach(() => {
+    plannedSessionRepository.activityPlanExistsForProfile.mockClear();
+    plannedSessionRepository.trainingPlanExistsForProfile.mockClear();
+    plannedSessionRepository.getOwned.mockClear();
+    plannedSessionRepository.listOwnedRange.mockClear();
+    plannedSessionRepository.listOwnedLinkedToActivity.mockClear();
+    plannedSessionRepository.mutateOwned.mockClear();
+    plannedSessionRepository.createOwned.mockClear();
+  });
 
   function createApplicationDb(
     transaction: (callback: (tx: TransactionClient) => Promise<unknown>) => Promise<unknown>,
@@ -56,6 +82,7 @@ describe("applyTrainingPlanTemplateUseCase", () => {
             isSystem: true,
             routeId: null,
             structure: SYSTEM_TEMPLATES[0]?.structure,
+            updatedAt: new Date("2026-07-01T00:00:00.000Z"),
           },
         ],
       })),
@@ -75,6 +102,8 @@ describe("applyTrainingPlanTemplateUseCase", () => {
         profile_id: null,
         content_visibility: "public",
         is_system_template: true,
+        revision: 1,
+        updated_at: new Date("2026-07-01T00:00:00.000Z"),
         structure: {
           id: "11111111-1111-4111-8111-111111111111",
           version: 1,
@@ -91,6 +120,36 @@ describe("applyTrainingPlanTemplateUseCase", () => {
     replace_existing: true,
     application_mode: "full" as const,
   };
+
+  it("rejects application when the published athlete revision changed", async () => {
+    readPublishedAthleteStateSnapshotData.mockResolvedValueOnce({
+      planningTimezone: "UTC",
+      blockingImport: null,
+      current: {
+        estimates: [],
+        state: {
+          source_revision: 8,
+          published_revision: 8,
+          dirty_from_at: null,
+        },
+      },
+    });
+    const transaction = vi.fn(async (callback: (tx: TransactionClient) => Promise<unknown>) =>
+      callback({ execute: async () => ({ rows: [] }) } as TransactionClient),
+    );
+
+    await expect(
+      applyTrainingPlanTemplateUseCase({
+        db: createApplicationDb(transaction) as unknown as DrizzleDbClient,
+        permissions: { grantEventContentAccess: vi.fn(), revokeEventGrants: vi.fn() },
+        profileId: "44444444-4444-4444-8444-444444444444",
+        repository: createRepository() as unknown as TrainingPlanRepository,
+        plannedSessionRepositoryFactory: () => plannedSessionRepository as never,
+        basePublishedRevision: 7,
+        values: applicationValues,
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT", message: expect.stringContaining("changed") });
+  });
 
   it("rolls back replacement and leaves external state untouched when replacement insertion fails", async () => {
     let oldScheduleExists = true;
@@ -138,6 +197,7 @@ describe("applyTrainingPlanTemplateUseCase", () => {
         permissions,
         profileId: "44444444-4444-4444-8444-444444444444",
         repository: repository as unknown as TrainingPlanRepository,
+        plannedSessionRepositoryFactory: () => plannedSessionRepository as never,
         values: {
           ...applicationValues,
         },
@@ -147,6 +207,7 @@ describe("applyTrainingPlanTemplateUseCase", () => {
     expect(transaction).toHaveBeenCalledOnce();
     expect(oldScheduleExists).toBe(true);
     expect(insertedRows[0]?.id).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/));
+    expect(insertedRows[0]?.original_starts_at).toEqual(insertedRows[0]?.starts_at);
     expect(permissions.revokeEventGrants).toHaveBeenCalledWith("old-event");
     expect(permissions.grantEventContentAccess).not.toHaveBeenCalled();
   });
@@ -163,6 +224,7 @@ describe("applyTrainingPlanTemplateUseCase", () => {
         permissions: { grantEventContentAccess: vi.fn(), revokeEventGrants: vi.fn() },
         profileId: "44444444-4444-4444-8444-444444444444",
         repository: repository as unknown as TrainingPlanRepository,
+        plannedSessionRepositoryFactory: () => plannedSessionRepository as never,
         values: applicationValues,
       }),
     ).rejects.toMatchObject({
@@ -201,11 +263,12 @@ describe("applyTrainingPlanTemplateUseCase", () => {
       revokeEventGrants: vi.fn(),
     };
 
-    await applyTrainingPlanTemplateUseCase({
+    const result = await applyTrainingPlanTemplateUseCase({
       db: createApplicationDb(transaction) as unknown as DrizzleDbClient,
       permissions,
       profileId: "44444444-4444-4444-8444-444444444444",
       repository: createRepository() as unknown as TrainingPlanRepository,
+      plannedSessionRepositoryFactory: () => plannedSessionRepository as never,
       values: applicationValues,
     });
 
@@ -219,6 +282,62 @@ describe("applyTrainingPlanTemplateUseCase", () => {
       expect.objectContaining({ eventIds: expect.arrayContaining([reusedBatchOtherPlanEventId]) }),
     );
     expect(deletedIds).toEqual([candidateIds]);
+    expect(plannedSessionRepository.createOwned).toHaveBeenCalledWith({
+      profileId: "44444444-4444-4444-8444-444444444444",
+      session: expect.objectContaining({
+        planningDate: "2026-08-01",
+        originalTargetDate: "2026-08-01",
+        sessionRevision: 1,
+        source: {
+          kind: "training_plan",
+          sourceSessionKey: "2026-08-01:sessions.0",
+          trainingPlanId: "11111111-1111-4111-8111-111111111111",
+          trainingPlanRevision: 1,
+        },
+        prescription: expect.objectContaining({
+          activityPlanId: linkedPlanId,
+          capturedAt: "2026-07-01T00:00:00.000Z",
+          structure: SYSTEM_TEMPLATES[0]?.structure,
+        }),
+      }),
+    });
+    expect(result).toMatchObject({
+      planned_sessions_created: 1,
+      planned_sessions_replayed: 0,
+    });
+    expect(result.cache_tags).toEqual(PLANNED_SESSION_CACHE_TAGS);
+    expect(result.cache_tags).toContain("plannedSessions.range");
+    expect(result.cache_tags).toContain("home.getDashboard");
+  });
+
+  it("rejects another athlete's training plan even when the legacy lookup exposes it", async () => {
+    const transaction = vi.fn();
+    const repository = createRepository();
+    repository.getAccessibleTrainingPlan.mockResolvedValueOnce({
+      id: "11111111-1111-4111-8111-111111111111",
+      profile_id: "55555555-5555-4555-8555-555555555555",
+      content_visibility: "public",
+      is_system_template: false,
+      revision: 1,
+      updated_at: new Date("2026-07-01T00:00:00.000Z"),
+      structure: {
+        id: "11111111-1111-4111-8111-111111111111",
+        version: 1,
+        sessions: [{ offset_days: 0, activity_plan_id: linkedPlanId }],
+      },
+    } as never);
+
+    await expect(
+      applyTrainingPlanTemplateUseCase({
+        db: createApplicationDb(transaction) as unknown as DrizzleDbClient,
+        permissions: { grantEventContentAccess: vi.fn(), revokeEventGrants: vi.fn() },
+        profileId: "44444444-4444-4444-8444-444444444444",
+        repository: repository as unknown as TrainingPlanRepository,
+        plannedSessionRepositoryFactory: () => plannedSessionRepository as never,
+        values: applicationValues,
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(transaction).not.toHaveBeenCalled();
   });
 
   it("rejects template application when the profile has no planning timezone", async () => {
@@ -234,6 +353,7 @@ describe("applyTrainingPlanTemplateUseCase", () => {
         permissions: { grantEventContentAccess: vi.fn(), revokeEventGrants: vi.fn() },
         profileId: "44444444-4444-4444-8444-444444444444",
         repository: {} as TrainingPlanRepository,
+        plannedSessionRepositoryFactory: () => plannedSessionRepository as never,
         values: {
           template_type: "training_plan",
           template_id: "11111111-1111-4111-8111-111111111111",
@@ -257,6 +377,8 @@ describe("applyTrainingPlanTemplateUseCase", () => {
       getActivePlanFromFutureEvents: vi.fn(async () => null),
       getAccessibleTrainingPlan: vi.fn(async () => ({
         id: "11111111-1111-4111-8111-111111111111",
+        profile_id: null,
+        is_system_template: true,
         structure: {
           start_date: "2026-08-01",
           blocks: [{ sessions: [{ activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }] }],
@@ -270,6 +392,7 @@ describe("applyTrainingPlanTemplateUseCase", () => {
         permissions: { grantEventContentAccess: vi.fn(), revokeEventGrants: vi.fn() },
         profileId: "44444444-4444-4444-8444-444444444444",
         repository: repository as unknown as TrainingPlanRepository,
+        plannedSessionRepositoryFactory: () => plannedSessionRepository as never,
         values: {
           template_type: "training_plan",
           template_id: "11111111-1111-4111-8111-111111111111",

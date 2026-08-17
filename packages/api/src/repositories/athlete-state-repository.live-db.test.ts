@@ -10,6 +10,8 @@ import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { db, pool } from "@repo/db/client";
 import {
   activities,
+  activityArtifactLinks,
+  activityArtifacts,
   activityEfforts,
   activityImportRuns,
   activitySegments,
@@ -27,7 +29,10 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { readAthleteReadModel } from "../application/athlete-intelligence/athlete-read-model";
 import { materializeActivityAthleteStateEvidence } from "../application/athlete-intelligence/athlete-state-evidence";
 import { AthleteStateWorkerService } from "../application/athlete-intelligence/athlete-state-worker";
-import { readPublishedAthleteStateSnapshot } from "../application/athlete-intelligence/published-athlete-state";
+import {
+  readPublishedAthleteStateSnapshot,
+  tryPublishIncrementalAthleteStateContribution,
+} from "../application/athlete-intelligence/published-athlete-state";
 import { withRepeatableReadSnapshot } from "../db";
 import { createActivityImportRepository } from "./activity-import-repository";
 import {
@@ -122,9 +127,12 @@ async function seedActivity(input: {
   durationMs?: number;
 }) {
   const activityId = randomUUID();
+  const artifactId = randomUUID();
   const segmentId = randomUUID();
   const durationMs = input.durationMs ?? 60_000;
   const startedAt = new Date(input.finishedAt.getTime() - durationMs);
+  const digestSeed = randomUUID().replaceAll("-", "");
+  const digest = `${digestSeed}${digestSeed}`;
   await db.transaction(async (tx) => {
     await tx.insert(activities).values({
       id: activityId,
@@ -154,6 +162,29 @@ async function seedActivity(input: {
       created_at: input.finishedAt,
       updated_at: input.finishedAt,
     });
+    await tx.insert(activityArtifacts).values({
+      id: artifactId,
+      profile_id: input.profileId,
+      digest_algorithm: "sha256",
+      digest,
+      byte_size: 1_024,
+      bucket: "activity-files",
+      path: `artifacts/sha256/${input.profileId}/${digest}`,
+      media_type: "application/vnd.ant.fit",
+      format: "fit",
+      availability: "accepted",
+      first_accepted_at: input.finishedAt,
+    });
+    await tx.insert(activityArtifactLinks).values({
+      id: randomUUID(),
+      activity_id: activityId,
+      artifact_id: artifactId,
+      profile_id: input.profileId,
+      role: "source",
+      ordinal: 0,
+      is_current: true,
+      linked_at: input.finishedAt,
+    });
     await tx.insert(activitySegments).values({
       id: segmentId,
       activity_id: activityId,
@@ -163,6 +194,8 @@ async function seedActivity(input: {
       activity_category: "run",
       start_offset_ms: 0,
       end_offset_ms: durationMs,
+      source_artifact_id: artifactId,
+      source_session_index: 0,
       summary: {
         version: 1,
         timing: { timingCoverage: "complete", activeMs: durationMs, movingMs: durationMs },
@@ -192,14 +225,119 @@ async function markRunMaterial(runId: string, effectiveAt: Date) {
 afterEach(async () => {
   const profileIds = seededProfileIds.splice(0);
   if (profileIds.length === 0) return;
-  await db.delete(activityEfforts).where(inArray(activityEfforts.profile_id, profileIds));
-  await db.delete(profiles).where(inArray(profiles.id, profileIds));
-  await db.delete(users).where(inArray(users.id, profileIds));
+  await db.transaction(async (tx) => {
+    await tx.delete(activityEfforts).where(inArray(activityEfforts.profile_id, profileIds));
+    await tx.delete(activities).where(inArray(activities.profile_id, profileIds));
+    await tx.execute(
+      sql`select set_config('gradientpeak.artifact_lifecycle_authorized', 'on', true)`,
+    );
+    await tx
+      .update(activityArtifacts)
+      .set({ availability: "deletion_pending", deletion_requested_at: new Date() })
+      .where(inArray(activityArtifacts.profile_id, profileIds));
+    await tx
+      .update(activityArtifacts)
+      .set({ availability: "deleted", deleted_at: new Date() })
+      .where(inArray(activityArtifacts.profile_id, profileIds));
+    await tx.execute(
+      sql`select set_config('gradientpeak.artifact_hard_delete_authorized', 'on', true)`,
+    );
+    await tx.delete(activityArtifacts).where(inArray(activityArtifacts.profile_id, profileIds));
+    await tx.delete(profiles).where(inArray(profiles.id, profileIds));
+    await tx.delete(users).where(inArray(users.id, profileIds));
+  });
 });
 
 afterAll(async () => pool.end());
 
 describe("athlete state persistence", () => {
+  it("publishes a chronological contribution incrementally and agrees with a fenced rebuild", async () => {
+    const profileId = await seedProfile();
+    const firstFinishedAt = new Date("2026-01-01T10:00:00.000Z");
+    const firstActivityId = await seedActivity({
+      profileId,
+      finishedAt: firstFinishedAt,
+      commonLoad: 40,
+    });
+    const firstPublishAt = new Date("2026-01-01T12:00:00.000Z");
+    await db.transaction((tx) =>
+      markAthleteStateDirty(tx, {
+        profileId,
+        effectiveAt: firstFinishedAt,
+        now: firstPublishAt,
+      }),
+    );
+    await new AthleteStateWorkerService({ db }).processDueJobs({
+      limit: 1,
+      now: firstPublishAt,
+    });
+
+    const secondFinishedAt = new Date("2026-01-02T10:00:00.000Z");
+    const secondActivityId = await seedActivity({
+      profileId,
+      finishedAt: secondFinishedAt,
+      commonLoad: 60,
+    });
+    const secondPublishAt = new Date("2026-01-02T11:00:00.000Z");
+    await expect(
+      db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${profileId}, 0))`);
+        return tryPublishIncrementalAthleteStateContribution({
+          tx,
+          profileId,
+          contribution: {
+            activityId: secondActivityId,
+            finishedAt: secondFinishedAt,
+            commonLoad: 60,
+            activityCategory: "run",
+            evidenceConfidence: 0.9,
+            capabilityDistanceMeters: 1_000,
+            capabilityDurationMinutes: 1,
+          },
+          now: secondPublishAt,
+        });
+      }),
+    ).resolves.toBe(true);
+    const [incremental] = await db
+      .select()
+      .from(profileAthleteState)
+      .where(eq(profileAthleteState.profile_id, profileId));
+    expect(incremental).toMatchObject({
+      source_revision: 2,
+      published_revision: 2,
+      dirty_from_at: null,
+      computed_at: secondFinishedAt,
+    });
+
+    await db.transaction((tx) =>
+      markAthleteStateDirty(tx, {
+        profileId,
+        effectiveAt: firstFinishedAt,
+        now: secondPublishAt,
+      }),
+    );
+    await new AthleteStateWorkerService({ db }).processDueJobs({
+      limit: 1,
+      now: secondPublishAt,
+    });
+    const [rebuilt] = await db
+      .select()
+      .from(profileAthleteState)
+      .where(eq(profileAthleteState.profile_id, profileId));
+    expect(rebuilt).toMatchObject({
+      source_revision: 3,
+      published_revision: 3,
+      dirty_from_at: null,
+    });
+    expect(rebuilt?.fitness).toBeCloseTo(incremental?.fitness ?? -1, 10);
+    expect(rebuilt?.fatigue).toBeCloseTo(incremental?.fatigue ?? -1, 10);
+    await expect(readPublishedReadModel(profileId, secondPublishAt)).resolves.toMatchObject({
+      publishedRevision: 3,
+      status: { freshness: "fresh", rebuildStatus: "fresh" },
+    });
+    expect(firstActivityId).not.toBe(secondActivityId);
+  });
+
   it("renews only the current unexpired replay owner", async () => {
     const profileId = await seedProfile();
     const now = new Date();
@@ -217,6 +355,43 @@ describe("athlete state persistence", () => {
     await expect(renewAthleteStateClaim(db, { claim, leaseMilliseconds: 60_000 })).resolves.toBe(
       false,
     );
+  });
+
+  it("makes a newer coalesced dirty revision immediately claimable while old work is fenced", async () => {
+    const profileId = await seedProfile();
+    const now = new Date();
+    const firstDirtyFromAt = new Date(now.getTime() - 24 * 60 * 60_000);
+    const newerEarliestDirtyFromAt = new Date(now.getTime() - 48 * 60 * 60_000);
+    await db.transaction((tx) =>
+      markAthleteStateDirty(tx, { profileId, effectiveAt: firstDirtyFromAt, now }),
+    );
+    const staleClaim = await claimNextAthleteState(db, {
+      now,
+      leaseMilliseconds: 30 * 60_000,
+      profileId,
+    });
+    if (!staleClaim) throw new Error("Expected initial analysis claim");
+
+    await db.transaction((tx) =>
+      markAthleteStateDirty(tx, {
+        profileId,
+        effectiveAt: newerEarliestDirtyFromAt,
+        now,
+      }),
+    );
+    const replacementClaim = await claimNextAthleteState(db, {
+      now,
+      leaseMilliseconds: 60_000,
+      profileId,
+    });
+
+    expect(replacementClaim).toMatchObject({
+      profileId,
+      sourceRevision: staleClaim.sourceRevision + 1,
+      dirtyFromAt: newerEarliestDirtyFromAt,
+      activityAnalysisCursor: null,
+    });
+    expect(replacementClaim?.leaseToken).not.toBe(staleClaim.leaseToken);
   });
 
   it("backs off from the next consecutive failure count and fences changed revisions", async () => {
@@ -416,7 +591,7 @@ describe("athlete state persistence", () => {
         unit: "meters_per_second",
         value: 4.5,
         source: "test" as const,
-        method: "athlete_state_read_test",
+        method: "athlete_state_late_read_test",
         calculation_version: "test-v1",
         provenance: { observation_id: futureRecordedEffortId },
       },
@@ -672,9 +847,12 @@ describe("athlete state persistence", () => {
     });
     await expect(readPublishedReadModel(profileId, currentNow, true)).resolves.toMatchObject({
       publishedRevision: 2,
-      status: { freshness: "stale", rebuildStatus: "pending" },
+      status: { freshness: "fresh", rebuildStatus: "fresh" },
       currentBaseline: { baseline: expect.objectContaining({ stateRevision: 2 }) },
-      loadHistory: null,
+      loadHistory: expect.objectContaining({
+        publishedRevision: 2,
+        algorithmVersion: ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
+      }),
     });
 
     const futureNow = new Date("2026-08-07T12:00:00.000Z");
@@ -789,7 +967,7 @@ describe("athlete state persistence", () => {
     ).resolves.toEqual({ completed: 0, failed: 0, processed: 0 });
     await expect(readPublishedReadModel(profileId, beforeDue)).resolves.toMatchObject({
       publishedRevision: 1,
-      status: { freshness: "stale", rebuildStatus: "pending" },
+      status: { freshness: "fresh", rebuildStatus: "fresh" },
     });
     await expect(
       db
@@ -1696,7 +1874,7 @@ describe("athlete state persistence", () => {
     }
   });
 
-  it("serializes queued bulk creation ahead of a concurrent state publication", async () => {
+  it("preserves an in-flight publication snapshot while queued bulk creation commits", async () => {
     const profileId = await seedProfile();
     const integrationId = await seedIntegration(profileId, "wahoo");
     const now = new Date("2026-08-06T12:00:00.000Z");
@@ -1746,12 +1924,12 @@ describe("athlete state persistence", () => {
     });
     releaseCreation?.();
     await creation;
-    await expect(publication).resolves.toBe(false);
+    await expect(publication).resolves.toBe(true);
     const [state] = await db
       .select()
       .from(profileAthleteState)
       .where(eq(profileAthleteState.profile_id, profileId));
-    expect(state?.published_revision).toBe(0);
+    expect(state?.published_revision).toBe(1);
   });
 
   it("enriches a direct source with trusted identity metadata for later convergence", async () => {

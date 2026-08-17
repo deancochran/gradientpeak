@@ -74,6 +74,8 @@ const listActivityPlansSchema = z
     sort_by: z.enum(["newest", "oldest"]).optional(),
     limit: z.number().min(1).max(100).default(20),
     cursor: activityPlanCursorSchema.optional(),
+    // TanStack Query supplies this pagination metadata for infinite queries.
+    direction: z.enum(["forward", "backward"]).optional(),
   })
   .strict();
 

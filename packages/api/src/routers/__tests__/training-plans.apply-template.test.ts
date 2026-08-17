@@ -6,21 +6,52 @@ import { trainingPlansRouter } from "../planning/training-plans";
 const { enqueueWahooPlannedActivitySyncAfterCalendarMutation } = vi.hoisted(() => ({
   enqueueWahooPlannedActivitySyncAfterCalendarMutation: vi.fn(),
 }));
+const plannedSessionRepository = vi.hoisted(() => ({
+  activityPlanExistsForProfile: vi.fn(async () => true),
+  trainingPlanExistsForProfile: vi.fn(async () => true),
+  getOwned: vi.fn(async () => null),
+  listOwnedRange: vi.fn(async () => ({ items: [], truncated: false })),
+  listOwnedLinkedToActivity: vi.fn(async () => []),
+  mutateOwned: vi.fn(),
+  createOwned: vi.fn(async ({ session }) => ({ status: "created", session })),
+}));
 
 vi.mock("../../lib/provider-sync/planned-activities/wahoo-calendar-mutation-sync", () => ({
   enqueueWahooPlannedActivitySyncAfterCalendarMutation,
+}));
+vi.mock("../../infrastructure/repositories", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../infrastructure/repositories")>()),
+  createDrizzlePlannedSessionRepository: vi.fn(() => plannedSessionRepository),
 }));
 
 function createCaller(queryMap: QueryMap) {
   const trainingPlanResults = queryMap.training_plans;
   const canonicalizeResult = (result: QueryResult): QueryResult => {
-    const row = result.data as { id?: string; structure?: Record<string, unknown> } | null;
+    const row = result.data as {
+      id?: string;
+      profile_id?: string | null;
+      is_system_template?: boolean;
+      revision?: number;
+      structure?: Record<string, unknown>;
+      updated_at?: Date | string;
+    } | null;
     const sessions = Array.isArray(row?.structure?.sessions) ? row.structure.sessions : null;
-    if (!row?.id || !sessions || row.structure?.version === 1) return result;
+    if (!row?.id) return result;
+    const normalizedRow = {
+      ...row,
+      ...(row.profile_id === "template-owner" && !row.is_system_template
+        ? { profile_id: null, is_system_template: true }
+        : {}),
+      revision: row.revision ?? 1,
+      updated_at: row.updated_at ?? new Date("2026-03-01T00:00:00.000Z"),
+    };
+    if (!sessions || row.structure?.version === 1) {
+      return { ...result, data: normalizedRow };
+    }
     return {
       ...result,
       data: {
-        ...row,
+        ...normalizedRow,
         structure: {
           id: row.id,
           version: 1,
@@ -53,6 +84,9 @@ function createCaller(queryMap: QueryMap) {
                   ...(row as Record<string, unknown>),
                   structure:
                     (row as { structure?: unknown }).structure ?? SYSTEM_TEMPLATES[0]?.structure,
+                  updatedAt:
+                    (row as { updatedAt?: unknown }).updatedAt ??
+                    new Date("2026-03-01T00:00:00.000Z"),
                 }))
               : result.data
                 ? {
@@ -60,6 +94,9 @@ function createCaller(queryMap: QueryMap) {
                     structure:
                       (result.data as { structure?: unknown }).structure ??
                       SYSTEM_TEMPLATES[0]?.structure,
+                    updatedAt:
+                      (result.data as { updatedAt?: unknown }).updatedAt ??
+                      new Date("2026-03-01T00:00:00.000Z"),
                   }
                 : result.data,
           })),
@@ -76,7 +113,7 @@ function createCaller(queryMap: QueryMap) {
 
   const caller = trainingPlansRouter.createCaller({
     db: db as any,
-    session: { user: { id: "profile-123" } },
+    session: { user: { id: "99999999-9999-4999-8999-999999999999" } },
     headers: new Headers(),
     clientType: "test",
     trpcSource: "vitest",
@@ -103,7 +140,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
           id: "22222222-2222-4222-8222-222222222222",
           name: "Current Plan",
           description: null,
-          profile_id: "profile-123",
+          profile_id: "99999999-9999-4999-8999-999999999999",
           is_system_template: false,
           content_visibility: "private",
           sessions_per_week_target: 4,
@@ -167,7 +204,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
             id: "22222222-2222-4222-8222-222222222222",
             name: "Current Plan",
             description: null,
-            profile_id: "profile-123",
+            profile_id: "99999999-9999-4999-8999-999999999999",
             is_system_template: false,
             content_visibility: "private",
             sessions_per_week_target: 4,
@@ -209,7 +246,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
             id: "22222222-2222-4222-8222-222222222222",
             name: "Current Plan",
             description: null,
-            profile_id: "profile-123",
+            profile_id: "99999999-9999-4999-8999-999999999999",
             is_system_template: false,
             content_visibility: "private",
             sessions_per_week_target: 4,

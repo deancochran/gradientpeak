@@ -17,9 +17,15 @@ import {
 } from "../../lib/integrations/oauth-state-binding";
 import { hasWahooPlannedActivityScopes } from "../../lib/integrations/wahoo/planned-activity-scopes";
 import { enqueueWahooProfileEnrichment } from "../../lib/provider-sync/wahoo-profile-enrichment";
+import type { WahooSyncJobStatus } from "../../repositories/wahoo-sync-repository";
 import { WahooProfileSetupService } from "../wahoo-profile-setup-service";
-import { exchangeWahooOAuthCode, resolveWahooOAuthIdentity } from "./oauthCallbackUseCase";
 import {
+  exchangeWahooOAuthCode,
+  type ProviderOAuthTokenResponse,
+  resolveWahooOAuthIdentity,
+} from "./oauthCallbackUseCase";
+import {
+  type NormalizedProviderOAuthTokenResponse,
   type ProviderIntegrationOperationContext,
   type ProviderOperationAdapter,
   ProviderOperationUnavailableError,
@@ -74,6 +80,13 @@ function buildAuthorizationUrl(state: string, callbackUrl: string, returnUri: st
 
 function safeError(value: string | null | undefined) {
   return value ? "Provider sync needs attention" : null;
+}
+
+function isWahooSyncJobResult(value: {
+  id: string;
+  status: string;
+}): value is { id: string; status: WahooSyncJobStatus } {
+  return ["queued", "running", "completed", "failed", "dead_lettered"].includes(value.status);
 }
 
 async function readOverview(
@@ -193,6 +206,28 @@ function integrationCandidate(input: ProviderIntegrationOperationContext<"wahoo"
   };
 }
 
+function normalizeProviderIdentity(
+  identity: Exclude<ProviderOAuthTokenResponse["athlete"], undefined>,
+): Exclude<NormalizedProviderOAuthTokenResponse["athlete"], undefined> {
+  if (identity === null) return identity;
+  return identity.id === undefined ? {} : { id: identity.id };
+}
+
+function normalizeOAuthTokenResponse(
+  tokens: ProviderOAuthTokenResponse,
+): NormalizedProviderOAuthTokenResponse {
+  return {
+    access_token: tokens.access_token,
+    ...(tokens.refresh_token !== undefined ? { refresh_token: tokens.refresh_token } : {}),
+    ...(tokens.expires_in !== undefined ? { expires_in: tokens.expires_in } : {}),
+    ...(tokens.scope !== undefined ? { scope: tokens.scope } : {}),
+    ...(tokens.athlete !== undefined ? { athlete: normalizeProviderIdentity(tokens.athlete) } : {}),
+    ...(tokens.user !== undefined ? { user: normalizeProviderIdentity(tokens.user) } : {}),
+    ...(tokens.userId !== undefined ? { userId: tokens.userId } : {}),
+    ...(tokens.id !== undefined ? { id: tokens.id } : {}),
+  };
+}
+
 export const wahooProviderOperationAdapter: ProviderOperationAdapter<"wahoo"> = {
   provider: "wahoo",
   isConfigured: isWahooIntegrationEnabled,
@@ -205,7 +240,8 @@ export const wahooProviderOperationAdapter: ProviderOperationAdapter<"wahoo"> = 
       url: buildAuthorizationUrl(state, callbackUrl, returnUri),
     };
   },
-  exchangeOAuthCode: ({ code, state }) => exchangeWahooOAuthCode("wahoo", code, state),
+  exchangeOAuthCode: async ({ code, state }) =>
+    normalizeOAuthTokenResponse(await exchangeWahooOAuthCode("wahoo", code, state)),
   resolveOAuthIdentity: (tokens) => resolveWahooOAuthIdentity("wahoo", tokens),
   activateOAuthCredential: async (accessToken) => {
     const { activateWahooAccessToken } = await import("../../lib/integrations/wahoo/client");
@@ -240,11 +276,17 @@ export const wahooProviderOperationAdapter: ProviderOperationAdapter<"wahoo"> = 
       trigger: "connect",
     });
     if (!admission.admitted) throw new ProviderOperationUnavailableError("wahoo");
-    const repository = input.enqueueJob
-      ? ({
-          enqueueJobInTransaction: (_transaction: unknown, job: unknown) => input.enqueueJob?.(job),
-        } as unknown as ReturnType<typeof createWahooSyncRepository>)
-      : createWahooSyncRepository({ db: input.db });
+    const repository = createWahooSyncRepository({ db: input.db });
+    const enqueueJob = input.enqueueJob;
+    if (enqueueJob) {
+      repository.enqueueJobInTransaction = async (_transaction, job) => {
+        const queuedJob = await enqueueJob(job);
+        if (!isWahooSyncJobResult(queuedJob)) {
+          throw new ProviderOperationUnavailableError("wahoo");
+        }
+        return queuedJob;
+      };
+    }
     await enqueueWahooProfileEnrichment({
       admission,
       providerSyncRepository: repository,

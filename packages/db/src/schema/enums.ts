@@ -16,11 +16,62 @@ export const evidenceObservationSourceEnum = pgEnum("evidence_observation_source
 ]);
 
 export const activityFileIngestionStatusEnum = pgEnum("activity_file_ingestion_status", [
-  "pending_upload",
-  "uploaded",
+  "awaiting_upload",
   "processing",
-  "ready",
-  "failed",
+  "failed_retryable",
+  "succeeded",
+  "failed_terminal",
+]);
+
+export const activityIngestionFailureCodeEnum = pgEnum("activity_ingestion_failure_code", [
+  "artifact_missing",
+  "hash_mismatch",
+  "unsupported_format",
+  "invalid_activity",
+  "promotion_failed",
+  "dependency_unavailable",
+  "internal",
+]);
+
+export const athleteRecalculationReasonEnum = pgEnum("athlete_recalculation_reason", [
+  "activity_created",
+  "activity_changed",
+  "activity_deleted",
+  "analysis_replaced",
+  "threshold_changed",
+  "import_completed",
+  "algorithm_changed",
+  "timezone_changed",
+  "explicit_repair",
+]);
+
+export const thresholdEvidenceStatusEnum = pgEnum("threshold_evidence_status", [
+  "active",
+  "superseded",
+  "deleted",
+]);
+
+export const plannedSessionSourceKindEnum = pgEnum("planned_session_source_kind", [
+  "direct",
+  "training_plan",
+  "recurrence",
+]);
+
+export const plannedSessionStatusEnum = pgEnum("planned_session_status", [
+  "scheduled",
+  "cancelled",
+  "completed",
+]);
+
+export const plannedSessionCompletionStateEnum = pgEnum("planned_session_completion_state", [
+  "linked",
+  "activity_deleted",
+]);
+
+export const plannedSessionCancellationReasonEnum = pgEnum("planned_session_cancellation_reason", [
+  "user_requested",
+  "plan_replaced",
+  "series_cancelled",
 ]);
 
 export const effortTypeEnum = pgEnum("effort_type", ["power", "speed", "heart_rate"]);

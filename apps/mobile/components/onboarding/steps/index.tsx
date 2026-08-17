@@ -11,7 +11,7 @@ import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
 import { Activity, Check } from "lucide-react-native";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { ActivityIndicator, TouchableOpacity, View } from "react-native";
 import { z } from "zod";
 import {
@@ -413,15 +413,15 @@ export const GoalsPreferencesStep = ({ data, updateData }: StepProps) => {
     }
   };
 
-  const addGoal = () => {
+  const addGoal = useCallback(() => {
     const goalDraft = createEmptyGoalDraft();
     initialGoalDraftRef.current = goalDraft;
     updateData({ goal_draft: goalDraft, should_create_goal: true });
-  };
+  }, [updateData]);
 
   useEffect(() => {
     if (!data.should_create_goal) addGoal();
-  }, [data.should_create_goal]);
+  }, [addGoal, data.should_create_goal]);
 
   return (
     <View className="gap-8">

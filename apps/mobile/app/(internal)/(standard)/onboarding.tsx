@@ -11,6 +11,7 @@ import {
   ProfileAndIntentStep,
   TrainingBaselineStep,
 } from "@/components/onboarding/steps";
+import type { StepProps } from "@/components/onboarding/types";
 import { useOnboardingFlow } from "@/components/onboarding/useOnboardingFlow";
 import { useProviderConnection } from "@/components/onboarding/useProviderConnection";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
@@ -24,10 +25,12 @@ export default function OnboardingScreen() {
   const statusActionPendingRef = useRef(false);
   if (flow.lifecycleStatus === "completed") return null;
 
-  const shared = {
+  const shared: StepProps = {
     data: flow.data,
     fieldSources: flow.fieldSources,
-    integrationOverview: flow.integrationOverview,
+    ...(flow.integrationOverview !== undefined
+      ? { integrationOverview: flow.integrationOverview }
+      : {}),
     integrationOverviewError: flow.integrationOverviewError,
     integrationOverviewLoading: flow.integrationOverviewLoading,
     onboardingStatus: flow.lifecycleStatus,
@@ -147,9 +150,9 @@ export default function OnboardingScreen() {
               onPress: () => void handleModalPrimary(),
               testID: "onboarding-status-confirm",
             }}
-            secondaryAction={
-              flow.statusModal.onPrimary || flow.statusModal.onSecondary
-                ? {
+            {...(flow.statusModal.onPrimary || flow.statusModal.onSecondary
+              ? {
+                  secondaryAction: {
                     label: flow.statusModal.secondaryLabel ?? "Dismiss",
                     onPress: () => {
                       const modal = flow.statusModal;
@@ -158,9 +161,9 @@ export default function OnboardingScreen() {
                     },
                     testID: "onboarding-status-dismiss",
                     variant: "outline",
-                  }
-                : undefined
-            }
+                  },
+                }
+              : {})}
             testID="onboarding-status-modal"
             title={flow.statusModal.title}
           />

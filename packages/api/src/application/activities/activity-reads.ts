@@ -559,7 +559,7 @@ export async function getActivityByIdForViewer({
         id: true,
         status: true,
         source: true,
-        last_error_message: true,
+        failure_code: true,
       },
       where: and(
         eq(activityFileIngestions.activity_id, activityId),

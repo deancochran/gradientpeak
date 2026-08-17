@@ -1,8 +1,57 @@
 import { defaultShouldDehydrateQuery, QueryClient, type QueryKey } from "@tanstack/react-query";
 import superjson from "superjson";
+import type { ApiCacheTag } from "./contracts/cache-receipts";
 
 const DEFAULT_QUERY_STALE_TIME = 5 * 60 * 1000;
 const SCHEDULING_QUERY_STALE_TIME = 30 * 1000;
+
+type TrpcQueryKeyPrefix = readonly [readonly string[]];
+
+/**
+ * Exact tRPC Query key prefixes for every cache tag returned by the API.
+ * The prefix intentionally omits input so every cached input for the procedure is invalidated.
+ */
+export const API_CACHE_TAG_QUERY_KEYS = {
+  "activities.getById": [["activities", "getById"]],
+  "activities.listPaginated": [["activities", "listPaginated"]],
+  "activityFiles.getIngestionStatus": [["activityFiles", "getIngestionStatus"]],
+  "activityPlans.getById": [["activityPlans", "getById"]],
+  "athleteIntelligence.getCurrentState": [["athleteIntelligence", "getCurrentState"]],
+  "athleteIntelligence.getLoadRange": [["athleteIntelligence", "getLoadRange"]],
+  "athleteIntelligence.getThresholdEvidence": [["athleteIntelligence", "getThresholdEvidence"]],
+  "athleteIntelligence.getTrainingEffects": [["athleteIntelligence", "getTrainingEffects"]],
+  "calendar.day": [["calendar", "day"]],
+  "calendar.range": [["calendar", "range"]],
+  "home.getDashboard": [["home", "getDashboard"]],
+  "plannedSessions.range": [["plannedSessions", "range"]],
+  "trainingPlans.get": [["trainingPlans", "get"]],
+  "trainingPlans.getPlanTabProjection": [["trainingPlans", "getPlanTabProjection"]],
+  "trainingPlans.getPlanningLedger": [["trainingPlans", "getPlanningLedger"]],
+  "trainingPlans.list": [["trainingPlans", "list"]],
+} as const satisfies Record<ApiCacheTag, TrpcQueryKeyPrefix>;
+
+export const IDEMPOTENT_INGESTION_MUTATION_RETRY_OPTIONS = {
+  retry: 1,
+  retryDelay: 1000,
+} as const;
+
+export function queryKeysForCacheTags(
+  cacheTags: readonly ApiCacheTag[],
+): readonly TrpcQueryKeyPrefix[] {
+  return [...new Set(cacheTags)].map((tag) => API_CACHE_TAG_QUERY_KEYS[tag]);
+}
+
+/** Invalidates every tRPC query named by a server mutation receipt. */
+export async function invalidateReceiptCacheTags(
+  queryClient: QueryClient,
+  receipt: { readonly cache_tags: readonly ApiCacheTag[] },
+): Promise<void> {
+  await Promise.all(
+    queryKeysForCacheTags(receipt.cache_tags).map((queryKey) =>
+      queryClient.invalidateQueries({ queryKey }),
+    ),
+  );
+}
 
 export const SCHEDULING_REFRESH_CONTRACT = {
   eventMutation: [
@@ -174,9 +223,9 @@ export function createQueryClient() {
       },
 
       mutations: {
-        // Retry mutations once in case of network issues
-        // But not too many times since mutations have side effects
-        retry: 1,
+        // A lost response does not prove that a write failed. Do not replay mutations by default;
+        // proven idempotent ingestion calls may opt into the exported one-retry policy.
+        retry: false,
 
         // Shorter retry delay for mutations (1 second)
         retryDelay: 1000,

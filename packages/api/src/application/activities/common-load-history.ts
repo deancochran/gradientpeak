@@ -69,7 +69,11 @@ function parseStrictCoverageTimestamp(value: unknown): number {
 }
 
 type Db = ReturnType<typeof getRequiredDb>;
-type ActivityIdentity = { id: string; started_at: Date; sourceEvidence?: ActivitySourceEvidence };
+type ActivityIdentity = {
+  id: string;
+  started_at: Date;
+  sourceEvidence?: ActivitySourceEvidence | undefined;
+};
 type ActivityContribution = {
   coverageStatus: "complete" | "partial";
   observationQuantification: ActivityObservationQuantificationBundle | null;

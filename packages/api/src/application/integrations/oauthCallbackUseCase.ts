@@ -16,6 +16,7 @@ import {
   type OAuthIntegrationExpectation,
 } from "../../repositories/integrations-repository";
 import type { WahooSyncRepository } from "../../repositories/wahoo-sync-repository";
+import type { NormalizedProviderOAuthTokenResponse } from "./provider-operation-registry";
 import { getProviderOperationAdapter } from "./provider-operation-runtime";
 
 export type HandleOAuthCallbackInput = {
@@ -185,7 +186,11 @@ export async function exchangeWahooOAuthCode(
   });
   if (!response.ok) {
     const reason = await classifyOAuthRejection(response, provider);
-    logger.warn("OAuth token exchange failed", { provider, reason, status: response.status });
+    logger.warn("OAuth token exchange failed", {
+      operation: `oauth_token_${reason}`,
+      provider,
+      status: response.status,
+    });
     throw new OAuthTokenExchangeError("Token exchange failed", reason);
   }
   return parseOAuthTokenResponse(await response.json());
@@ -367,7 +372,7 @@ export async function handleOAuthCallback({
     };
   }
 
-  let tokens: ProviderOAuthTokenResponse;
+  let tokens: NormalizedProviderOAuthTokenResponse;
   let externalId: string;
   let requiresActivation: boolean;
   try {

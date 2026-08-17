@@ -41,6 +41,34 @@ const applicationScopedScheduleInputSchema = z
   })
   .strict();
 
+const revisionFencedApplicationInputSchema = z
+  .object({
+    template_type: z.literal("training_plan"),
+    template_id: z.string().uuid(),
+    application_mode: z.enum(["full", "remaining"]).default("full"),
+    start_date: z.iso.date().optional(),
+    target_date: z.iso.date().optional(),
+    replace_existing: z.boolean().optional(),
+    basePublishedRevision: z.number().int().positive(),
+  })
+  .strict()
+  .superRefine((data, context) => {
+    if (data.start_date && data.target_date) {
+      context.addIssue({
+        code: "custom",
+        message: "Cannot provide both start_date and target_date",
+        path: ["target_date"],
+      });
+    }
+    if (data.application_mode === "remaining" && !data.target_date) {
+      context.addIssue({
+        code: "custom",
+        message: "Remaining application requires a target_date",
+        path: ["target_date"],
+      });
+    }
+  });
+
 export const trainingPlansProcedures = {
   getPlanningLedger: protectedProcedure
     .input(planningLedgerRequestSchema)
@@ -193,6 +221,24 @@ export const trainingPlansProcedures = {
         repository: createTrainingPlanRepository(db),
         repositoryFactory: createTrainingPlanRepository,
         values: input,
+      });
+    }),
+
+  applyRevisioned: protectedProcedure
+    .input(revisionFencedApplicationInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { basePublishedRevision, ...values } = input;
+      const profileId = ctx.session.user.id;
+      const db = getRequiredDb(ctx);
+      return applyTrainingPlanTemplateUseCase({
+        db,
+        permissions: createContentAccessPermissions(db),
+        permissionsFactory: createContentAccessPermissions,
+        profileId,
+        repository: createTrainingPlanRepository(db),
+        repositoryFactory: createTrainingPlanRepository,
+        basePublishedRevision,
+        values,
       });
     }),
 

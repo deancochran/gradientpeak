@@ -15,6 +15,8 @@ import {
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
+export type ActivityArtifactIngestionFailureStage = "parse" | "promotion" | "hash" | "persistence";
+
 /**
  * Records cleanup authority before removing canonical bytes created by a failed
  * submission. The digest lock prevents deleting bytes accepted concurrently.
@@ -130,6 +132,8 @@ export async function finalizeActivityArtifactIngestion<TParsed, TResult>(
       parsedData: TParsed;
       artifact: PromotedActivityArtifact;
     }) => Promise<TResult>;
+    onFailure?: (stage: ActivityArtifactIngestionFailureStage, error: unknown) => Promise<void>;
+    onCleanup?: (result: { cleaned: boolean; error?: unknown }) => Promise<void>;
   },
 ): Promise<TResult> {
   let parsedData: TParsed;
@@ -137,6 +141,7 @@ export async function finalizeActivityArtifactIngestion<TParsed, TResult>(
     parsedData = await input.parse();
   } catch (error) {
     await cleanupUnpromotedStaging(input.storage, input).catch(() => undefined);
+    await Promise.resolve(input.onFailure?.("parse", error)).catch(() => undefined);
     throw error;
   }
 
@@ -151,17 +156,18 @@ export async function finalizeActivityArtifactIngestion<TParsed, TResult>(
       ...(input.mediaType === undefined ? {} : { mediaType: input.mediaType }),
     });
   } catch (error) {
-    await cleanupUnpromotedStaging(input.storage, input).catch(() => undefined);
+    // Promotion may be transient. Retain staging so resubmitting the same
+    // request can retry; parser and hash failures remain terminal.
+    await Promise.resolve(input.onFailure?.("promotion", error)).catch(() => undefined);
     throw error;
   }
 
+  let result: TResult;
   try {
     if (input.expectedSha256 && input.expectedSha256 !== promoted.sha256) {
       throw new Error("Activity artifact digest does not match staged bytes");
     }
-    const result = await input.submit({ parsedData, artifact: promoted });
-    await cleanupActivityArtifactStaging(input.storage, promoted);
-    return result;
+    result = await input.submit({ parsedData, artifact: promoted });
   } catch (error) {
     await cleanupActivityArtifactStaging(input.storage, promoted).catch(() => undefined);
     const deletionArtifactId = await quarantineFailedPromotion(db, promoted, input.profileId);
@@ -185,6 +191,22 @@ export async function finalizeActivityArtifactIngestion<TParsed, TResult>(
         // digest, or provider identity from this shared failure boundary.
       }
     }
+    await Promise.resolve(
+      input.onFailure?.(
+        input.expectedSha256 && input.expectedSha256 !== promoted.sha256 ? "hash" : "persistence",
+        error,
+      ),
+    ).catch(() => undefined);
     throw error;
   }
+
+  try {
+    await cleanupActivityArtifactStaging(input.storage, promoted);
+    await Promise.resolve(input.onCleanup?.({ cleaned: true })).catch(() => undefined);
+  } catch (error) {
+    // Canonical acceptance already committed. Keep the accepted result and
+    // retain cleanup state for a later cleanup-only retry.
+    await Promise.resolve(input.onCleanup?.({ cleaned: false, error })).catch(() => undefined);
+  }
+  return result;
 }

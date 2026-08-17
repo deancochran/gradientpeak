@@ -62,25 +62,32 @@ export async function withProfileFencedRepeatableReadSnapshot<T>(
   db: DrizzleDbClient,
   profileId: string,
   write: (tx: DrizzleTransactionClient) => Promise<T>,
+  options: { lockNamespace?: 0 | 1 } = {},
 ): Promise<T> {
+  const lockNamespace = options.lockNamespace ?? 0;
   const client = await db.$client.connect();
   const connectionDb = drizzle({ client, schema: relationalSchema, casing: "snake_case" });
   let sessionLockHeld = false;
   let destroyConnection = false;
   try {
-    await client.query("select pg_advisory_lock(hashtextextended($1, 0))", [profileId]);
+    await client.query("select pg_advisory_lock(hashtextextended($1, $2))", [
+      profileId,
+      lockNamespace,
+    ]);
     sessionLockHeld = true;
     return await connectionDb.transaction(
       async (tx) => {
         repeatableReadTransactions.set(tx, "read write");
         try {
-          await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${profileId}, 0))`);
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtextextended(${profileId}, ${lockNamespace}))`,
+          );
           const released = await client.query<{ released: boolean }>(
-            "select pg_advisory_unlock(hashtextextended($1, 0)) as released",
-            [profileId],
+            "select pg_advisory_unlock(hashtextextended($1, $2)) as released",
+            [profileId, lockNamespace],
           );
           if (released.rows[0]?.released !== true) {
-            throw new Error("Profile submission session fence could not be transferred");
+            throw new Error("Profile snapshot session fence could not be transferred");
           }
           sessionLockHeld = false;
           return await write(tx);
@@ -93,7 +100,10 @@ export async function withProfileFencedRepeatableReadSnapshot<T>(
   } finally {
     if (sessionLockHeld) {
       try {
-        await client.query("select pg_advisory_unlock(hashtextextended($1, 0))", [profileId]);
+        await client.query("select pg_advisory_unlock(hashtextextended($1, $2))", [
+          profileId,
+          lockNamespace,
+        ]);
       } catch {
         destroyConnection = true;
       }

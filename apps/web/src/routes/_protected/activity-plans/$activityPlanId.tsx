@@ -367,8 +367,12 @@ function ActivityPlanDetailPage() {
       </div>
 
       <ActivityPlanStructure
-        asOf={performanceTargetsQuery.data?.publishedState?.performanceTargets?.asOf}
-        performanceTargets={performanceTargetsQuery.data?.publishedState?.performanceTargets}
+        {...(performanceTargetsQuery.data?.publishedState?.performanceTargets
+          ? {
+              asOf: performanceTargetsQuery.data.publishedState.performanceTargets.asOf,
+              performanceTargets: performanceTargetsQuery.data.publishedState.performanceTargets,
+            }
+          : {})}
         structure={detail.structure}
       />
 

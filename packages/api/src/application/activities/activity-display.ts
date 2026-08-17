@@ -47,7 +47,7 @@ type ActivityDetailSource = {
     original_name: string | null;
     availability: "accepted";
   } | null;
-  ingestion?: { status?: string | null; last_error_message?: string | null } | null;
+  ingestion?: { status?: string | null; failure_code?: string | null } | null;
   effective_session_rpe: {
     id: string;
     rpe: number;
@@ -290,7 +290,9 @@ export function toActivityDetailDisplay(input: {
     ingestion: activity.ingestion?.status
       ? {
           status: activity.ingestion.status,
-          lastErrorMessage: activity.ingestion.last_error_message ?? null,
+          lastErrorMessage: activity.ingestion.failure_code
+            ? "Activity file processing did not complete"
+            : null,
         }
       : null,
     effectiveSessionRpe: activity.effective_session_rpe

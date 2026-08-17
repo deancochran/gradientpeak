@@ -82,6 +82,7 @@ function createDbMock(plan: DbPlan = {}) {
         where: () => builder,
         groupBy: () => builder,
         orderBy: () => builder,
+        for: () => Promise.resolve(selectQueue.shift() ?? []),
         limit: () => builder,
         then: (resolve: (rows: unknown[]) => unknown) =>
           Promise.resolve(selectQueue.shift() ?? []).then(resolve),
@@ -818,6 +819,7 @@ describe("groups.events router", () => {
         [{ id: VIEWER_ID }],
         [{ event: series, group: buildGroupRow() }],
         [{ role: "admin", status: "active" }],
+        [],
         [{ profile_id: VIEWER_ID }, { profile_id: "99999999-9999-4999-8999-999999999999" }],
         [],
         [],
@@ -891,6 +893,7 @@ describe("groups.events router", () => {
         [{ id: VIEWER_ID }],
         [{ event: occurrence, group: buildGroupRow() }],
         [{ role: "admin", status: "active" }],
+        [],
         [],
         [],
         [],

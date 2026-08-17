@@ -1,12 +1,72 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import {
+  claimNextAthleteState,
+  markAthleteStateDirty,
   publishAthleteState,
   readPublishedAthleteStateSnapshotData,
 } from "./athlete-state-repository";
 
 const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 const COMPUTED_AT = "2026-08-01T12:00:00.000Z";
+
+describe("athlete-state analysis work claim", () => {
+  it("carries the coalesced dirty boundary into the durable worker lease", async () => {
+    const dirtyFromAt = new Date("2026-05-01T08:00:00.000Z");
+    const execute = vi.fn().mockResolvedValue({
+      rows: [
+        {
+          profile_id: PROFILE_ID,
+          source_revision: 9,
+          planning_timezone: "UTC",
+          dirty_from_at: dirtyFromAt,
+          activity_analysis_cursor_started_at: null,
+          activity_analysis_cursor_activity_id: null,
+        },
+      ],
+    });
+
+    await expect(
+      claimNextAthleteState({ execute } as never, {
+        now: new Date(COMPUTED_AT),
+        leaseMilliseconds: 300_000,
+        profileId: PROFILE_ID,
+      }),
+    ).resolves.toMatchObject({
+      profileId: PROFILE_ID,
+      sourceRevision: 9,
+      dirtyFromAt,
+      activityAnalysisCursor: null,
+    });
+  });
+
+  it("cancels an old lease and cursor when newer dirty work is coalesced", async () => {
+    const returning = vi.fn().mockResolvedValue([{ sourceRevision: 10 }]);
+    const onConflictDoUpdate = vi.fn(() => ({ returning }));
+    const values = vi.fn(() => ({ onConflictDoUpdate }));
+    const tx = { insert: vi.fn(() => ({ values })) };
+    const effectiveAt = new Date("2026-04-01T08:00:00.000Z");
+
+    await expect(
+      markAthleteStateDirty(tx as never, {
+        profileId: PROFILE_ID,
+        effectiveAt,
+        now: new Date(COMPUTED_AT),
+      }),
+    ).resolves.toBe(10);
+
+    expect(onConflictDoUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        set: expect.objectContaining({
+          activity_analysis_cursor_started_at: null,
+          activity_analysis_cursor_activity_id: null,
+          lease_token: null,
+          lease_expires_at: null,
+        }),
+      }),
+    );
+  });
+});
 
 function publishedReadRow() {
   return {
@@ -134,6 +194,8 @@ describe("athlete-state publication fence", () => {
           sourceRevision: 5,
           leaseToken: "22222222-2222-4222-8222-222222222222",
           planningTimezone: "UTC",
+          dirtyFromAt: null,
+          activityAnalysisCursor: null,
         },
         state: {
           fitness: 1,
@@ -195,6 +257,8 @@ describe("athlete-state publication fence", () => {
           sourceRevision: 5,
           leaseToken: "22222222-2222-4222-8222-222222222222",
           planningTimezone: "UTC",
+          dirtyFromAt: null,
+          activityAnalysisCursor: null,
         },
         state: {
           fitness: 1,

@@ -7,7 +7,14 @@ const profileId = "11111111-1111-4111-8111-111111111111";
 const stagingPath = `activities/${profileId}/uploads/ride.fit`;
 const bytes = new Uint8Array([1, 2, 3]);
 
-function storageFixture(log: string[], options: { failCanonicalRemove?: boolean } = {}) {
+function storageFixture(
+  log: string[],
+  options: {
+    failCanonicalRemove?: boolean;
+    failPromotion?: boolean;
+    failStagingRemove?: boolean;
+  } = {},
+) {
   const objects = new Map<string, Uint8Array>();
   objects.set(stagingPath, bytes);
   const storage: ActivityArtifactStorage = {
@@ -15,12 +22,16 @@ function storageFixture(log: string[], options: { failCanonicalRemove?: boolean 
       from: () => ({
         upload: async (path, body) => {
           log.push(`upload:${path}`);
+          if (options.failPromotion) return { error: { message: "storage unavailable" } };
           objects.set(path, body);
           return { error: null };
         },
         remove: async (paths) => {
           for (const path of paths) {
             log.push(`remove:${path}`);
+            if (options.failStagingRemove && path === stagingPath) {
+              return { error: { message: "storage unavailable" } };
+            }
             if (options.failCanonicalRemove && path.startsWith("artifacts/sha256/")) {
               return { error: { message: "storage unavailable" } };
             }
@@ -149,6 +160,71 @@ describe("activity artifact ingestion finalizer", () => {
 
     expect(log.some((entry) => entry.startsWith("upload:"))).toBe(false);
     expect(objects.has(stagingPath)).toBe(false);
+  });
+
+  it("retains staging and reports a retryable promotion failure", async () => {
+    const log: string[] = [];
+    const { objects, storage } = storageFixture(log, { failPromotion: true });
+    const onFailure = vi.fn();
+    await expect(
+      finalizeActivityArtifactIngestion({} as never, {
+        profileId,
+        storage,
+        bucket: "activity-files",
+        stagingPath,
+        bytes,
+        format: "fit",
+        parse: () => ({ activity: "parsed" }),
+        submit: vi.fn(),
+        onFailure,
+      }),
+    ).rejects.toThrow("Failed to promote activity artifact");
+    expect(objects.has(stagingPath)).toBe(true);
+    expect(onFailure).toHaveBeenCalledWith("promotion", expect.any(Error));
+  });
+
+  it("returns accepted output and reports cleanup failure for durable retry", async () => {
+    const log: string[] = [];
+    const { objects, storage } = storageFixture(log, { failStagingRemove: true });
+    const onCleanup = vi.fn();
+    await expect(
+      finalizeActivityArtifactIngestion({} as never, {
+        profileId,
+        storage,
+        bucket: "activity-files",
+        stagingPath,
+        bytes,
+        format: "fit",
+        parse: () => ({ activity: "parsed" }),
+        submit: async () => ({ id: "activity-1" }),
+        onCleanup,
+      }),
+    ).resolves.toEqual({ id: "activity-1" });
+    expect(objects.has(stagingPath)).toBe(true);
+    expect(onCleanup).toHaveBeenCalledWith({ cleaned: false, error: expect.any(Error) });
+  });
+
+  it("reports a terminal hash mismatch before canonical submission", async () => {
+    const log: string[] = [];
+    const { storage } = storageFixture(log);
+    const onFailure = vi.fn();
+    const submit = vi.fn();
+    await expect(
+      finalizeActivityArtifactIngestion(quarantineDb().db, {
+        profileId,
+        storage,
+        bucket: "activity-files",
+        stagingPath,
+        bytes,
+        format: "fit",
+        expectedSha256: "f".repeat(64),
+        parse: () => ({ activity: "parsed" }),
+        submit,
+        onFailure,
+      }),
+    ).rejects.toThrow("digest does not match");
+    expect(submit).not.toHaveBeenCalled();
+    expect(onFailure).toHaveBeenCalledWith("hash", expect.any(Error));
   });
 
   it("records quarantine authority before deleting canonical bytes after persistence fails", async () => {

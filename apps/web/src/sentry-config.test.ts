@@ -145,7 +145,7 @@ describe("web Sentry configuration", () => {
     };
 
     expect(prepareSentryEvent(event)).toEqual({
-      extra: { procedure_group: "activities" },
+      extra: { procedure_group: "activities", operation: "save" },
       breadcrumbs: [{ data: { outcome: "success" } }],
     });
   });

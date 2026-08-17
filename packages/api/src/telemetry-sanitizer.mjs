@@ -195,8 +195,7 @@ export function sanitizeTelemetryContext(context) {
       continue;
     }
     if (key === "postgres_code") {
-      result[key] =
-        typeof value === "string" && /^[0-9A-Z]{5}$/.test(value) ? value : "unknown";
+      result[key] = typeof value === "string" && /^[0-9A-Z]{5}$/.test(value) ? value : "unknown";
       continue;
     }
     if (key === "postgres_constraint") {

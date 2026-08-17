@@ -35,10 +35,19 @@ function performanceTargets(options: {
   return buildPerformanceTargetFactsFixture({
     asOf: STARTED_AT,
     thresholdEffectiveAt: "2026-07-30T10:00:00.000Z",
-    bikeThresholdWatts: options.bikeThresholdWatts,
-    runThresholdMetersPerSecond: options.runThresholdMetersPerSecond,
-    swimThresholdMetersPerSecond: options.swimThresholdMetersPerSecond,
-    lthrBpm: { bike: options.bikeLthrBpm, run: options.runLthrBpm },
+    ...(options.bikeThresholdWatts !== undefined
+      ? { bikeThresholdWatts: options.bikeThresholdWatts }
+      : {}),
+    ...(options.runThresholdMetersPerSecond !== undefined
+      ? { runThresholdMetersPerSecond: options.runThresholdMetersPerSecond }
+      : {}),
+    ...(options.swimThresholdMetersPerSecond !== undefined
+      ? { swimThresholdMetersPerSecond: options.swimThresholdMetersPerSecond }
+      : {}),
+    lthrBpm: {
+      ...(options.bikeLthrBpm !== undefined ? { bike: options.bikeLthrBpm } : {}),
+      ...(options.runLthrBpm !== undefined ? { run: options.runLthrBpm } : {}),
+    },
   });
 }
 
@@ -52,14 +61,13 @@ function constantSamples(input: {
 }): RecordingMetricSample[] {
   return Array.from({ length: input.seconds + 1 }, (_, second) => ({
     timestampMs: STARTED_AT_MS + second * 1000,
-    powerWatts: input.powerWatts,
-    heartRateBpm: input.heartRateBpm,
-    speedMps: input.speedMps,
-    distanceMeters:
-      input.distanceMetersPerSecond === undefined
-        ? undefined
-        : input.distanceMetersPerSecond * second,
-    altitudeMeters: input.altitudeMeters,
+    ...(input.powerWatts !== undefined ? { powerWatts: input.powerWatts } : {}),
+    ...(input.heartRateBpm !== undefined ? { heartRateBpm: input.heartRateBpm } : {}),
+    ...(input.speedMps !== undefined ? { speedMps: input.speedMps } : {}),
+    ...(input.distanceMetersPerSecond !== undefined
+      ? { distanceMeters: input.distanceMetersPerSecond * second }
+      : {}),
+    ...(input.altitudeMeters !== undefined ? { altitudeMeters: input.altitudeMeters } : {}),
   }));
 }
 

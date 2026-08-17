@@ -74,6 +74,7 @@
     "./schemas/training-plan-structure": "./schemas/training-plan-structure/index.ts",
     "./schemas/*": "./schemas/*.ts",
     "./social": "./social/index.ts",
+    "./athlete-derived-state": "./athlete-derived-state/index.ts",
     "./server": "./server/index.ts",
     "./server/activity-files": "./activity-files/activity-file-parser.ts",
     "./server/fit-sdk-parser": "./lib/fit-sdk-parser.ts",

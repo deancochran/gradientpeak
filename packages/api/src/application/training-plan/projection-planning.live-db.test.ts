@@ -1,18 +1,25 @@
 import { randomUUID } from "node:crypto";
 
 import { DRAFT_PLAN_PROJECTION_ALGORITHM_VERSION, trainingPlanSchema } from "@repo/core";
-import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { db, pool } from "@repo/db/client";
 import {
+  activities,
+  activityArtifactLinks,
+  activityArtifacts,
+  activityEfforts,
   activityImportRuns,
   activityPlans,
+  activitySegments,
   profileAthleteState,
-  profilePerformanceEstimates,
   profiles,
+  thresholdEvaluationEfforts,
+  thresholdEvaluations,
+  thresholds,
   trainingPlans,
   users,
 } from "@repo/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { createActivityImportRepository } from "../../repositories/activity-import-repository";
 import { activityPlanStructureHash } from "../activity-plans/structure-hash";
@@ -35,6 +42,12 @@ async function seedFixture() {
   const profileId = randomUUID();
   const activityPlanId = randomUUID();
   const planId = randomUUID();
+  const sourceActivityId = randomUUID();
+  const sourceArtifactId = randomUUID();
+  const sourceSegmentId = randomUUID();
+  const sourceEffortId = randomUUID();
+  const thresholdEvaluationId = randomUUID();
+  const sourceDigest = randomUUID().replaceAll("-", "").repeat(2);
   const now = new Date("2026-08-01T00:00:00.000Z");
   const publishedAt = new Date("2026-08-01T01:00:00.000Z");
   const email = `${profileId}@projection-planning.test`;
@@ -69,33 +82,171 @@ async function seedFixture() {
     computed_at: publishedAt,
     updated_at: publishedAt,
   });
-  const performanceTargets = buildPerformanceTargetFactsFixture({
-    asOf: publishedAt.toISOString(),
-    athleteId: profileId,
-    bikeThresholdWatts: 285,
+  await db.transaction(async (tx) => {
+    await tx.insert(activities).values({
+      id: sourceActivityId,
+      profile_id: profileId,
+      name: "Canonical bike threshold source",
+      started_at: new Date("2026-07-31T00:30:00.000Z"),
+      finished_at: publishedAt,
+      elapsed_ms: 1_800_000,
+      active_ms: 1_800_000,
+      moving_ms: 1_800_000,
+      timing_coverage: "complete",
+      segments_revision: 1,
+      parser_version: "projection-planning-fixture-v1",
+      decoded_contract_version: "projection-planning-fixture-v1",
+      materializer_version: "projection-planning-fixture-v1",
+      segments_generated_at: now,
+      created_at: now,
+      updated_at: now,
+    });
+    await tx.insert(activityArtifacts).values({
+      id: sourceArtifactId,
+      profile_id: profileId,
+      digest_algorithm: "sha256",
+      digest: sourceDigest,
+      byte_size: 1_024,
+      bucket: "activity-files",
+      path: `artifacts/sha256/${profileId}/${sourceDigest}`,
+      media_type: "application/vnd.ant.fit",
+      format: "fit",
+      availability: "accepted",
+      first_accepted_at: now,
+    });
+    await tx.insert(activityArtifactLinks).values({
+      id: randomUUID(),
+      activity_id: sourceActivityId,
+      artifact_id: sourceArtifactId,
+      profile_id: profileId,
+      role: "source",
+      ordinal: 0,
+      is_current: true,
+      linked_at: now,
+    });
+    await tx.insert(activitySegments).values({
+      id: sourceSegmentId,
+      activity_id: sourceActivityId,
+      profile_id: profileId,
+      ordinal: 0,
+      role: "activity",
+      activity_category: "bike",
+      start_offset_ms: 0,
+      end_offset_ms: 1_800_000,
+      source_artifact_id: sourceArtifactId,
+      source_session_index: 0,
+      summary: {
+        version: 1,
+        timing: { timingCoverage: "complete", activeMs: 1_800_000, movingMs: 1_800_000 },
+      },
+      summary_version: 1,
+      timing_coverage: "complete",
+      active_ms: 1_800_000,
+      moving_ms: 1_800_000,
+      segment_revision: 1,
+      parser_version: "projection-planning-fixture-v1",
+      materializer_version: "projection-planning-fixture-v1",
+      created_at: now,
+    });
+    await tx.insert(activityEfforts).values({
+      id: sourceEffortId,
+      created_at: now,
+      profile_id: profileId,
+      activity_id: sourceActivityId,
+      segment_id: sourceSegmentId,
+      recorded_at: publishedAt,
+      activity_category: "bike",
+      effort_type: "power",
+      source_series: "power",
+      duration_seconds: 1_800,
+      source_artifact_id: sourceArtifactId,
+      source_revision: 1,
+      start_offset_ms: 0,
+      end_offset_ms: 1_800_000,
+      window_coverage: 1,
+      max_gap_seconds: 2,
+      unit: "watts",
+      value: 285,
+      source: "imported",
+      method: "activity_file_best_effort",
+      calculation_version: "best-effort-extraction-v1",
+      provenance: {
+        observation_id: sourceEffortId,
+        activity_id: sourceActivityId,
+        segment_id: sourceSegmentId,
+        derived_from: "activity_file_stream",
+        source_series: "power",
+        interval_convention: "current_sample_applies_to_preceding_interval",
+        exact_window_start_timestamp_seconds:
+          new Date("2026-07-31T00:30:00.000Z").getTime() / 1_000,
+        exact_window_end_timestamp_seconds: publishedAt.getTime() / 1_000,
+        exact_window_start_offset_seconds: 0,
+        exact_window_end_offset_seconds: 1_800,
+        duration_seconds: 1_800,
+        contributing_duration_seconds: 1_800,
+        window_coverage: 1,
+        source_time_coverage: 1,
+        extraction_status: "available",
+        extraction_reason: null,
+        persisted_start_offset_quantization: "nearest_millisecond_v1",
+        calculation_version: "best-effort-extraction-v1",
+      },
+    });
   });
-  await db.insert(profilePerformanceEstimates).values({
+  await db.transaction(async (tx) => {
+    await tx.insert(thresholdEvaluations).values({
+      id: thresholdEvaluationId,
+      profile_id: profileId,
+      activity_category: "bike",
+      metric: "power",
+      method: "bike_power_30m",
+      outcome: "qualified",
+      value: 285,
+      unit: "watts",
+      confidence: 0.9,
+      observed_at: publishedAt,
+      rejection_reason: null,
+      policy_version: "threshold-policy-v1",
+      diagnostics: { fixture: "projection-planning" },
+      source_activity_id: sourceActivityId,
+      source_revision: 1,
+      created_at: now,
+    });
+    await tx.insert(thresholdEvaluationEfforts).values({
+      evaluation_id: thresholdEvaluationId,
+      effort_id: sourceEffortId,
+      profile_id: profileId,
+      activity_category: "bike",
+      activity_id: sourceActivityId,
+      source_revision: 1,
+      metric: "power",
+      effort_type: "power",
+      source_series: "power",
+      role: "primary",
+      ordinal: 0,
+    });
+  });
+  await db.insert(thresholds).values({
     profile_id: profileId,
-    capability_kind: "bike_ftp",
     activity_category: "bike",
+    metric: "power",
+    evaluation_id: thresholdEvaluationId,
+    evaluation_outcome: "qualified",
     value: 285,
     unit: "watts",
     confidence: 0.9,
+    method: "bike_power_30m",
     effective_at: publishedAt,
-    evidence_window_start_at: new Date("2026-07-01T00:00:00.000Z"),
-    evidence_window_end_at: publishedAt,
-    algorithm_version: "athlete-state-projection-v1",
-    source_revision: 1,
-    target_fact: performanceTargets.thresholds.bike,
-    computed_at: publishedAt,
+    policy_version: "threshold-policy-v1",
+    created_at: now,
   });
-  const activityStructure = {
+  const activityStructure = activityPlanStructureSchema.parse({
     version: 3 as const,
+    activity_category: "bike" as const,
     segments: [
       {
         id: randomUUID(),
         role: "activity" as const,
-        activity_category: "bike" as const,
         name: "Projected ride",
         intervals: [
           {
@@ -114,7 +265,7 @@ async function seedFixture() {
         ],
       },
     ],
-  };
+  });
   await db.insert(activityPlans).values({
     id: activityPlanId,
     profile_id: profileId,
@@ -157,10 +308,25 @@ afterEach(async () => {
     await db.delete(activityImportRuns).where(eq(activityImportRuns.profile_id, profileId));
     await db.delete(trainingPlans).where(eq(trainingPlans.profile_id, profileId));
     await db.delete(activityPlans).where(eq(activityPlans.profile_id, profileId));
-    await db
-      .delete(profilePerformanceEstimates)
-      .where(eq(profilePerformanceEstimates.profile_id, profileId));
     await db.delete(profileAthleteState).where(eq(profileAthleteState.profile_id, profileId));
+    await db.delete(activities).where(eq(activities.profile_id, profileId));
+    await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select set_config('gradientpeak.artifact_lifecycle_authorized', 'on', true)`,
+      );
+      await tx
+        .update(activityArtifacts)
+        .set({ availability: "deletion_pending", deletion_requested_at: new Date() })
+        .where(eq(activityArtifacts.profile_id, profileId));
+      await tx
+        .update(activityArtifacts)
+        .set({ availability: "deleted", deleted_at: new Date() })
+        .where(eq(activityArtifacts.profile_id, profileId));
+      await tx.execute(
+        sql`select set_config('gradientpeak.artifact_hard_delete_authorized', 'on', true)`,
+      );
+      await tx.delete(activityArtifacts).where(eq(activityArtifacts.profile_id, profileId));
+    });
     await db.delete(profiles).where(eq(profiles.id, profileId));
     await db.delete(users).where(eq(users.id, profileId));
   }
@@ -227,9 +393,22 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
     ]);
     expect([first.status, second.status].sort()).toEqual(["saved", "stale"]);
     const saved = first.status === "saved" ? first : second.status === "saved" ? second : null;
+    const stale = first.status === "stale" ? first : second.status === "stale" ? second : null;
+    expect(saved).toMatchObject({ status: "saved", kind: "update", planRevision: 2 });
+    expect(stale).toMatchObject({
+      status: "stale",
+      reason: "plan_revision",
+      currentPlanRevision: 2,
+    });
     expect(projectionSemantics(saved?.simulation)).toEqual(
       projectionSemantics(updatePreview.simulation),
     );
+    await expect(
+      db
+        .select({ name: trainingPlans.name, revision: trainingPlans.revision })
+        .from(trainingPlans)
+        .where(eq(trainingPlans.id, fixture.planId)),
+    ).resolves.toEqual([{ name: "Projection plan updated", revision: 2 }]);
 
     const duplicateDraft = {
       sourcePlanId: fixture.planId,

@@ -49,6 +49,18 @@ async function assertCanonicalActivityCategories(target: {
       'complete', 1000, 1000, 'fixture', 'fixture'
     );
   `);
+  for (const contentVisibility of ["private", "followers", "public"] as const) {
+    await target.query(
+      `update public.activities set content_visibility = $1 where id = '22222222-2222-4222-8222-222222222222'`,
+      [contentVisibility],
+    );
+    const roundTrip = await target.query<{ content_visibility: string }>(
+      `select content_visibility from public.activities where id = '22222222-2222-4222-8222-222222222222'`,
+    );
+    if (roundTrip.rows[0]?.content_visibility !== contentVisibility) {
+      throw new Error(`content visibility did not round trip: ${contentVisibility}`);
+    }
+  }
 }
 
 async function expectActivityAnalysisRejection(
@@ -1621,6 +1633,292 @@ async function assertDeclineOnlyGroupEventRsvps(target: {
   console.log("[db:group-event-rsvps] decline-only constraints and absent default passed");
 }
 
+async function assertPrelaunchSchemaHardening(target: VerificationTarget) {
+  const profileId = "11111111-1111-4111-8111-111111111111";
+  const activityPlanId = "80000000-0000-4000-8000-000000000001";
+  const groupId = "80000000-0000-4000-8000-000000000002";
+  const groupEventId = "80000000-0000-4000-8000-000000000003";
+  const completedActivityId = "80000000-0000-4000-8000-000000000004";
+  const plannedSessionId = "80000000-0000-4000-8000-000000000005";
+  const thresholdActivityId = "80000000-0000-4000-8000-000000000006";
+  const prescription = {
+    version: 3,
+    activity_category: "run",
+    segments: [
+      {
+        id: "80000000-0000-4000-8000-000000000011",
+        role: "activity",
+        name: "Run",
+        intervals: [
+          {
+            id: "80000000-0000-4000-8000-000000000012",
+            name: "Work",
+            repetitions: 1,
+            steps: [
+              {
+                id: "80000000-0000-4000-8000-000000000013",
+                name: "Step",
+                duration: { type: "time", seconds: 60 },
+                targets: [{ type: "RPE", intensity: 5 }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  await target.query(
+    `insert into public.activity_plans (id, profile_id, name, structure, structure_hash)
+     values ($1::uuid, $2::uuid, 'planned-session hardening', $3::jsonb,
+       'v1:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')`,
+    [activityPlanId, profileId, JSON.stringify(prescription)],
+  );
+  await target.query(
+    `insert into public.groups (id, created_by_profile_id, name, slug)
+     values ($1::uuid, $2::uuid, 'planned-session group', 'planned-session-hardening')`,
+    [groupId, profileId],
+  );
+  await target.query(
+    `insert into public.group_events (id, group_id, created_by_profile_id, title, starts_at, timezone)
+     values ($1::uuid, $2::uuid, $3::uuid, 'group authority', now() + interval '1 day', 'UTC')`,
+    [groupEventId, groupId, profileId],
+  );
+  await target.query(`
+    begin;
+    insert into public.activities (
+      id, profile_id, name, started_at, finished_at, elapsed_ms, active_ms, moving_ms,
+      timing_coverage, parser_version, decoded_contract_version, materializer_version
+    ) values
+      ('${completedActivityId}', '${profileId}', 'planned completion',
+       now() - interval '1 hour', now(), 3600000, 3600000, 3600000,
+       'complete', 'fixture', 'fixture', 'fixture'),
+      ('${thresholdActivityId}', '${profileId}', 'threshold evidence',
+       now() - interval '1 hour', now(), 3600000, 3600000, 3600000,
+       'complete', 'fixture', 'fixture', 'fixture');
+    insert into public.activity_segments (
+      id, activity_id, profile_id, ordinal, role, activity_category, start_offset_ms,
+      end_offset_ms, summary, timing_coverage, active_ms, moving_ms,
+      parser_version, materializer_version
+    ) values
+      ('80000000-0000-4000-8000-000000000007', '${completedActivityId}', '${profileId}',
+       0, 'activity', 'run', 0, 3600000,
+       '{"version":"1","timing":{"timingCoverage":"complete","activeMs":3600000,"movingMs":3600000}}',
+       'complete', 3600000, 3600000, 'fixture', 'fixture'),
+      ('80000000-0000-4000-8000-000000000008', '${thresholdActivityId}', '${profileId}',
+       0, 'activity', 'bike', 0, 3600000,
+       '{"version":"1","timing":{"timingCoverage":"complete","activeMs":3600000,"movingMs":3600000}}',
+       'complete', 3600000, 3600000, 'fixture', 'fixture');
+    commit;
+  `);
+  await target.query(
+    `insert into public.planned_sessions (
+       id, profile_id, planning_date, original_target_date, source_kind, idempotency_key,
+       direct_operation_id, group_event_id, activity_plan_id, activity_plan_revision,
+       prescription_structure, prescription_captured_at, status, completed_activity_id,
+       completion_state, linked_at
+     ) values (
+       $1::uuid, $2::uuid, current_date, current_date, 'direct',
+       'direct:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+       $3::uuid, $4::uuid, 1, $5::jsonb, now(), 'completed', $6::uuid, 'linked', now()
+     )`,
+    [
+      plannedSessionId,
+      profileId,
+      groupEventId,
+      activityPlanId,
+      JSON.stringify(prescription),
+      completedActivityId,
+    ],
+  );
+  await expectDatabaseError(
+    target,
+    `insert into public.planned_sessions (
+       id, profile_id, planning_date, original_target_date, source_kind, idempotency_key,
+       direct_operation_id, group_event_id, activity_plan_id, activity_plan_revision,
+       prescription_structure, prescription_captured_at
+     ) values (
+       '80000000-0000-4000-8000-000000000015', '${profileId}', current_date, current_date,
+       'direct', 'direct:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+       'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', '${groupEventId}', '${activityPlanId}', 1,
+       '${JSON.stringify(prescription)}'::jsonb, now()
+     )`,
+    { code: "23505", constraint: "planned_sessions_profile_group_event_unique" },
+  );
+  await expectDatabaseError(
+    target,
+    `delete from public.activities where id = '${completedActivityId}'`,
+    { code: "23503", constraint: "planned_sessions_completed_activity_owner_fkey" },
+  );
+  await target.query(`
+    begin;
+    update public.planned_sessions
+    set completed_activity_id = null,
+        completion_state = 'activity_deleted',
+        completion_unlinked_at = now(),
+        updated_at = now()
+    where id = '${plannedSessionId}';
+    delete from public.activities where id = '${completedActivityId}';
+    commit;
+  `);
+  await target.query(`delete from public.group_events where id = '${groupEventId}'`);
+  const retainedSession = await target.query<{
+    completion_state: string;
+    completed_activity_id: string | null;
+    group_event_id: string | null;
+  }>(`
+    select completion_state, completed_activity_id::text, group_event_id::text
+    from public.planned_sessions where id = '${plannedSessionId}'
+  `);
+  if (
+    retainedSession.rows[0]?.completion_state !== "activity_deleted" ||
+    retainedSession.rows[0]?.completed_activity_id !== null ||
+    retainedSession.rows[0]?.group_event_id !== null
+  ) {
+    throw new Error("planned session did not retain explicit completion history after unlinking");
+  }
+
+  await target.query(`
+    insert into public.profile_athlete_state (
+      profile_id, source_revision, published_revision, dirty_from_at
+    ) values ('${profileId}', 2, 1, now())
+    on conflict (profile_id) do update set
+      source_revision = excluded.source_revision,
+      published_revision = excluded.published_revision,
+      dirty_from_at = excluded.dirty_from_at;
+    insert into public.daily_training_load (
+      profile_id, planning_date, common_load, fitness, fatigue, form, readiness,
+      coverage_status, contributing_activity_count, omitted_activity_count,
+      source_revision, calculation_version
+    ) values
+      ('${profileId}', current_date, 100, 10, 3, 7.0000000005, 80,
+       'complete', 1, 0, 1, 'fixture-v1'),
+      ('${profileId}', current_date, 120, 11, 4, 7, 82,
+       'complete', 2, 0, 2, 'fixture-v1');
+  `);
+  await expectDatabaseError(
+    target,
+    `insert into public.daily_training_load (
+       profile_id, planning_date, common_load, fitness, fatigue, form, readiness,
+       coverage_status, contributing_activity_count, omitted_activity_count,
+       source_revision, calculation_version
+     ) values ('${profileId}', current_date, 130, 10, 3, 7.0000000011, 80,
+       'complete', 1, 0, 3, 'fixture-v1')`,
+    { code: "23514", constraint: "daily_training_load_state_check" },
+  );
+  const publishedBefore = await target.query<{ common_load: string; source_revision: string }>(`
+    select load.common_load::text, load.source_revision::text
+    from public.profile_athlete_state state
+    join public.daily_training_load load
+      on load.profile_id = state.profile_id
+     and load.source_revision = state.published_revision
+    where state.profile_id = '${profileId}' and load.planning_date = current_date
+  `);
+  await target.query(
+    `update public.profile_athlete_state set published_revision = 2 where profile_id = $1::uuid`,
+    [profileId],
+  );
+  const publishedAfter = await target.query<{ common_load: string; source_revision: string }>(`
+    select load.common_load::text, load.source_revision::text
+    from public.profile_athlete_state state
+    join public.daily_training_load load
+      on load.profile_id = state.profile_id
+     and load.source_revision = state.published_revision
+    where state.profile_id = '${profileId}' and load.planning_date = current_date
+  `);
+  if (
+    publishedBefore.rows[0]?.source_revision !== "1" ||
+    publishedBefore.rows[0]?.common_load !== "100" ||
+    publishedAfter.rows[0]?.source_revision !== "2" ||
+    publishedAfter.rows[0]?.common_load !== "120"
+  ) {
+    throw new Error("daily training load publication pointer exposed a mixed revision");
+  }
+
+  await target.query(`
+    insert into public.athlete_recalculation_queue (
+      profile_id, idempotency_key, earliest_affected_at, earliest_affected_planning_date,
+      source_revision, reasons, requested_at
+    ) values (
+      '${profileId}', 'athlete-recalculation:${profileId}', now(), current_date, 2,
+      array['activity_changed']::public.athlete_recalculation_reason[], now()
+    );
+  `);
+  const queueLockColumns = await target.query<{ column_name: string }>(`
+    select column_name from information_schema.columns
+    where table_schema = 'public' and table_name = 'athlete_recalculation_queue'
+      and column_name in (
+        'state', 'attempt_count', 'available_at', 'claim_token', 'claimed_at',
+        'lease_expires_at', 'failure_code', 'failed_at', 'next_attempt_at', 'completed_at'
+      )
+  `);
+  const stateFenceColumns = await target.query<{ column_name: string }>(`
+    select column_name from information_schema.columns
+    where table_schema = 'public' and table_name = 'profile_athlete_state'
+      and column_name in ('source_revision', 'published_revision', 'lease_token', 'lease_expires_at')
+  `);
+  if (queueLockColumns.rows.length !== 0 || stateFenceColumns.rows.length !== 4) {
+    throw new Error("profile_athlete_state is not the sole publication and lease fence");
+  }
+
+  await target.query(`
+    insert into public.threshold_evidence (
+      id, profile_id, activity_id, activity_category, metric, unit, method, value,
+      source_series_id, source_series_metric, start_timestamp_seconds, end_timestamp_seconds,
+      exact_window_seconds, conversion_factor, policy_version, plausibility_version,
+      observed_at, calculation_version, confidence
+    ) values (
+      '80000000-0000-4000-8000-000000000021', '${profileId}', '${thresholdActivityId}',
+      'bike', 'power', 'watts', 'bike_power_30m', 250, 'power-series', 'power',
+      0, 1800, 1800, 0.95, 'threshold-policy-v1', 'threshold-plausibility-v1',
+      now(), 'fixture-v1', 0.9
+    )
+  `);
+  await expectDatabaseError(
+    target,
+    `insert into public.threshold_evidence (
+       id, profile_id, activity_id, activity_category, metric, unit, method, value,
+       source_series_id, source_series_metric, start_timestamp_seconds, end_timestamp_seconds,
+       exact_window_seconds, conversion_factor, policy_version, plausibility_version,
+       observed_at, calculation_version, confidence
+     ) values (
+       '80000000-0000-4000-8000-000000000022', '${profileId}', '${thresholdActivityId}',
+       'bike', 'power', 'watts', 'bike_power_30m', 251, 'replacement-series', 'power',
+       0, 1800, 1800, 0.95, 'threshold-policy-v1', 'threshold-plausibility-v1',
+       now(), 'fixture-v1', 0.9
+     )`,
+    { code: "23505", constraint: "threshold_evidence_profile_category_activity_unique" },
+  );
+
+  await target.query("set enable_seqscan = off");
+  const ingestionPlan = await target.query<Record<string, unknown>>(
+    `explain (format json) select * from public.activity_file_ingestions where activity_id = $1::uuid`,
+    [thresholdActivityId],
+  );
+  await target.query("reset enable_seqscan");
+  const ingestionIndexes = await target.query<{ indexname: string }>(`
+    select indexname from pg_catalog.pg_indexes
+    where schemaname = 'public' and tablename = 'activity_file_ingestions'
+      and indexname in (
+        'idx_activity_file_ingestions_activity_profile',
+        'idx_activity_file_ingestions_activity_id'
+      )
+    order by indexname
+  `);
+  if (
+    JSON.stringify(ingestionPlan.rows).includes("idx_activity_file_ingestions_activity_profile") ===
+      false ||
+    JSON.stringify(ingestionIndexes.rows.map(({ indexname }) => indexname)) !==
+      JSON.stringify(["idx_activity_file_ingestions_activity_profile"])
+  ) {
+    throw new Error("the composite ingestion index did not replace the redundant activity index");
+  }
+
+  console.log(
+    "[db:prelaunch-hardening] event ownership, explicit completion unlink, revision publication, sole lease fence, threshold identity, numeric tolerance, and index replacement passed",
+  );
+}
+
 async function main() {
   const args = process.argv.slice(2);
   await withDisposableDatabase(args, "fresh_verify", async (target, targetUrl) => {
@@ -1638,6 +1936,7 @@ async function main() {
     await assertProfileObservationsDoNotInvalidateAthleteState(target);
     await assertLegacyThresholdObjectsAbsent(target);
     await assertDeclineOnlyGroupEventRsvps(target);
+    await assertPrelaunchSchemaHardening(target);
 
     const env = {
       ...process.env,
@@ -1677,7 +1976,6 @@ async function main() {
     runSupabaseCli(
       ["db", "lint", "--db-url", targetUrl, "--schema", "public", "--fail-on", "warning"],
       dbPackageRoot,
-      "utf8",
     );
     if (args.includes("--diff")) {
       const diff = runSupabaseCli(

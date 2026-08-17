@@ -1,0 +1,187 @@
+import { planningDayIdentitySchema } from "@repo/core/athlete-intelligence";
+import {
+  type PlannedSession,
+  plannedSessionLifecycleSchema,
+  plannedSessionPrescriptionSnapshotSchema,
+  plannedSessionSchema,
+  plannedSessionSourceSchema,
+} from "@repo/core/calendar";
+import { z } from "zod";
+import { plannedSessionCacheTagsSchema } from "./cache-receipts";
+import { planningRangeRequestSchema } from "./planning-range";
+
+const uuidSchema = z.string().uuid();
+
+export const readPlannedSessionsRangeRequestSchema = z
+  .object({ profileId: uuidSchema, range: planningRangeRequestSchema })
+  .strict();
+
+export const createPlannedSessionRequestSchema = z
+  .object({ profileId: uuidSchema, session: plannedSessionSchema })
+  .strict()
+  .refine((input) => input.profileId === input.session.profileId, {
+    path: ["session", "profileId"],
+    message: "Planned-session request owner mismatch",
+  });
+
+export const plannedSessionMutationSchema = z.discriminatedUnion("action", [
+  z
+    .object({
+      action: z.literal("move"),
+      profileId: uuidSchema,
+      sessionId: uuidSchema,
+      expectedRevision: z.number().int().positive(),
+      planningDate: planningDayIdentitySchema,
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("cancel"),
+      profileId: uuidSchema,
+      sessionId: uuidSchema,
+      expectedRevision: z.number().int().positive(),
+      reason: z.enum(["user_requested", "plan_replaced", "series_cancelled"]),
+      cancelledAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("link_completion"),
+      profileId: uuidSchema,
+      sessionId: uuidSchema,
+      expectedRevision: z.number().int().positive(),
+      activityId: uuidSchema,
+      linkedAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("unlink_deleted_activity"),
+      profileId: uuidSchema,
+      sessionId: uuidSchema,
+      expectedRevision: z.number().int().positive(),
+      activityId: uuidSchema,
+      unlinkedAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("associate_group_event"),
+      profileId: uuidSchema,
+      sessionId: uuidSchema,
+      expectedRevision: z.number().int().positive(),
+      groupEventId: uuidSchema,
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("clear_group_event"),
+      profileId: uuidSchema,
+      sessionId: uuidSchema,
+      expectedRevision: z.number().int().positive(),
+      groupEventId: uuidSchema,
+    })
+    .strict(),
+]);
+
+export const plannedSessionMutationResultSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("updated"), session: plannedSessionSchema }).strict(),
+  z.object({ status: z.literal("not_found") }).strict(),
+  z
+    .object({
+      status: z.literal("stale_revision"),
+      currentRevision: z.number().int().positive(),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("conflict"),
+      reason: z.enum(["already_completed", "activity_not_owned", "group_event_already_linked"]),
+    })
+    .strict(),
+]);
+
+export const plannedSessionDtoSchema = z
+  .object({
+    id: uuidSchema,
+    profileId: uuidSchema,
+    sessionRevision: z.number().int().positive(),
+    planningDate: planningDayIdentitySchema,
+    originalTargetDate: planningDayIdentitySchema,
+    source: plannedSessionSourceSchema,
+    groupEventId: uuidSchema.nullable(),
+    prescription: plannedSessionPrescriptionSnapshotSchema,
+    lifecycle: plannedSessionLifecycleSchema,
+  })
+  .strict();
+
+export const createPlannedSessionDtoRequestSchema = z
+  .object({
+    profileId: uuidSchema,
+    session: z
+      .object({
+        planningDate: planningDayIdentitySchema,
+        source: plannedSessionSourceSchema,
+        groupEventId: uuidSchema.nullable().optional(),
+        prescription: plannedSessionPrescriptionSnapshotSchema,
+      })
+      .strict(),
+  })
+  .strict();
+
+const revisionedSessionRequest = {
+  profileId: uuidSchema,
+  sessionId: uuidSchema,
+  expectedRevision: z.number().int().positive(),
+} as const;
+
+export const movePlannedSessionDtoRequestSchema = z
+  .object({ ...revisionedSessionRequest, planningDate: planningDayIdentitySchema })
+  .strict();
+
+export const cancelPlannedSessionDtoRequestSchema = z
+  .object({
+    ...revisionedSessionRequest,
+    reason: z.literal("user_requested").default("user_requested"),
+  })
+  .strict();
+
+export const linkPlannedSessionCompletionDtoRequestSchema = z
+  .object({ ...revisionedSessionRequest, activityId: uuidSchema })
+  .strict();
+
+export const linkPlannedSessionGroupEventDtoRequestSchema = z
+  .object({ ...revisionedSessionRequest, groupEventId: uuidSchema })
+  .strict();
+
+export const plannedSessionRangeDtoSchema = z
+  .object({ items: z.array(plannedSessionDtoSchema).max(5_000), truncated: z.boolean() })
+  .strict();
+
+export const plannedSessionMutationReceiptSchema = z
+  .object({
+    outcome: z.enum(["created", "unchanged", "updated"]),
+    session: plannedSessionDtoSchema,
+    cache_tags: plannedSessionCacheTagsSchema,
+  })
+  .strict();
+
+export type ReadPlannedSessionsRangeRequest = z.infer<typeof readPlannedSessionsRangeRequestSchema>;
+export type CreatePlannedSessionRequest = z.infer<typeof createPlannedSessionRequestSchema>;
+export type PlannedSessionMutation = z.infer<typeof plannedSessionMutationSchema>;
+export type PlannedSessionMutationResult = z.infer<typeof plannedSessionMutationResultSchema>;
+export type PlannedSessionDto = z.infer<typeof plannedSessionDtoSchema>;
+
+export function toPlannedSessionDto(session: PlannedSession): PlannedSessionDto {
+  return plannedSessionDtoSchema.parse({
+    id: session.id,
+    profileId: session.profileId,
+    sessionRevision: session.sessionRevision,
+    planningDate: session.planningDate,
+    originalTargetDate: session.originalTargetDate,
+    source: session.source,
+    groupEventId: session.groupEventId ?? null,
+    prescription: session.prescription,
+    lifecycle: session.lifecycle,
+  });
+}

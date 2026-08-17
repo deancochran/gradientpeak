@@ -296,7 +296,10 @@ export async function readQualifiedThresholdEvidence(
   const evidence: ThresholdEvidence[] = [];
   let cursor: { observedAt: Date; id: string } | undefined;
   for (;;) {
-    const page = await readQualifiedThresholdEvidencePage(db, { ...input, cursor });
+    const page = await readQualifiedThresholdEvidencePage(db, {
+      ...input,
+      ...(cursor !== undefined ? { cursor } : {}),
+    });
     evidence.push(...page);
     const last = page.at(-1);
     if (!last || page.length < THRESHOLD_REBUILD_PAGE_SIZE) return evidence;

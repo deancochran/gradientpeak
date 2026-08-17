@@ -18,6 +18,7 @@ const TELEMETRY_PROCEDURE_GROUPS = new Set([
   "events",
   "goals",
   "activityFiles",
+  "plannedSessions",
   "integrations",
   "messaging",
   "notifications",

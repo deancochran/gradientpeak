@@ -1,8 +1,11 @@
-import type { AthletePerformanceTargetFacts } from "@repo/core";
+import { type AthletePerformanceTargetFacts, getCalendarDateInIanaZone } from "@repo/core";
 import { activities, activitySegments, type DrizzleDbClient, profiles } from "@repo/db";
-import { and, asc, eq, gte, inArray, lt } from "drizzle-orm";
-import { withRepeatableReadSnapshot } from "../../db";
-import { createActivityAnalysisStore } from "../../infrastructure/repositories";
+import { and, asc, eq, gt, gte, inArray, lt, or } from "drizzle-orm";
+import { withProfileFencedRepeatableReadSnapshot } from "../../db";
+import {
+  createActivityAnalysisStore,
+  createDrizzleAthleteDerivedStateRepository,
+} from "../../infrastructure/repositories";
 import {
   type ActivityWithSegments,
   buildActivitySegmentDerivedSummaries,
@@ -12,21 +15,23 @@ import {
   type ActivityAnalysisSegmentLoadProjection,
   activityAnalysisFingerprint,
   appendActivityAnalysisRevision,
-  lockProfileActivityAnalysisScope,
   readMatchingActivityAnalysisRevision,
 } from "../../repositories/activity-analysis-revision-repository";
 import {
+  type AthleteStateClaim,
+  advanceClaimedActivityAnalysisRefresh,
   claimNextAthleteState,
   failAthleteStateClaim,
-  markAthleteStateDirty,
+  verifyAthleteStateClaimForAnalysisRefresh,
 } from "../../repositories/athlete-state-repository";
 import { materializeActivityAthleteStateEvidence } from "../athlete-intelligence/athlete-state-evidence";
 import {
-  ATHLETE_STATE_LEASE_MILLISECONDS,
-  rebuildClaimedAthleteState,
-} from "../athlete-intelligence/athlete-state-worker";
+  buildAthleteRecalculationRequest,
+  requestAthleteRecalculation,
+} from "../athlete-intelligence/request-athlete-recalculation";
 
 const TARGET_BATCH_SIZE = 500;
+export const ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE = 25;
 
 export type ProfileActivityAnalysisReprocessInput = {
   profileId: string;
@@ -35,6 +40,7 @@ export type ProfileActivityAnalysisReprocessInput = {
   from?: Date;
   to?: Date;
   now?: Date;
+  claimedAthleteState?: AthleteStateClaim;
 };
 
 export type ProfileActivityAnalysisReprocessResult = {
@@ -49,9 +55,15 @@ export type ProfileActivityAnalysisReprocessResult = {
   unavailableSegments: number;
   unavailableReasons: Record<string, number>;
   athleteStateRebuild: "blocked" | "completed" | "failed" | "not_needed" | "not_requested";
+  durableRefresh: "completed" | "continued" | "not_requested";
 };
 
-type Evaluation = Omit<ProfileActivityAnalysisReprocessResult, "athleteStateRebuild" | "mode"> & {
+type Evaluation = Omit<
+  ProfileActivityAnalysisReprocessResult,
+  "athleteStateRebuild" | "durableRefresh" | "mode"
+> & {
+  hasMore: boolean;
+  nextCursor: { startedAt: Date; activityId: string } | null;
   candidates: Array<{
     activity: ActivityWithSegments;
     performanceTargets: AthletePerformanceTargetFacts;
@@ -60,6 +72,10 @@ type Evaluation = Omit<ProfileActivityAnalysisReprocessResult, "athleteStateRebu
     outputFingerprint: string;
   }>;
 };
+
+export class AnalysisRefreshFenceError extends Error {
+  override readonly name = "AnalysisRefreshFenceError";
+}
 
 function buildProjection(
   summaries: SegmentDerivedSummary[],
@@ -124,7 +140,7 @@ async function evaluate(
     .where(eq(profiles.id, input.profileId))
     .limit(1);
   if (!profile) throw new Error("Profile not found");
-  const scopedRows = await db
+  const scopedQuery = db
     .select()
     .from(activities)
     .where(
@@ -132,9 +148,30 @@ async function evaluate(
         eq(activities.profile_id, input.profileId),
         input.from ? gte(activities.started_at, input.from) : undefined,
         input.to ? lt(activities.started_at, input.to) : undefined,
+        input.claimedAthleteState?.activityAnalysisCursor
+          ? or(
+              gt(activities.started_at, input.claimedAthleteState.activityAnalysisCursor.startedAt),
+              and(
+                eq(
+                  activities.started_at,
+                  input.claimedAthleteState.activityAnalysisCursor.startedAt,
+                ),
+                gt(activities.id, input.claimedAthleteState.activityAnalysisCursor.activityId),
+              ),
+            )
+          : undefined,
       ),
-    )
-    .orderBy(asc(activities.started_at), asc(activities.id));
+    );
+  const scopedRowsWithLookahead = input.claimedAthleteState
+    ? await scopedQuery
+        .orderBy(asc(activities.started_at), asc(activities.id))
+        .limit(ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE + 1)
+    : await scopedQuery.orderBy(asc(activities.started_at), asc(activities.id));
+  const hasMore = scopedRowsWithLookahead.length > ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE;
+  const scopedRows = hasMore
+    ? scopedRowsWithLookahead.slice(0, ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE)
+    : scopedRowsWithLookahead;
+  const lastScopedActivity = scopedRows.at(-1);
   const segmentRows =
     scopedRows.length === 0
       ? []
@@ -230,6 +267,11 @@ async function evaluate(
     partialSegments,
     unavailableSegments,
     unavailableReasons,
+    hasMore,
+    nextCursor:
+      hasMore && lastScopedActivity
+        ? { startedAt: lastScopedActivity.started_at, activityId: lastScopedActivity.id }
+        : null,
     candidates,
   };
 }
@@ -251,15 +293,32 @@ export async function reprocessProfileActivityAnalysis(
   if (!input.apply && input.confirmProfileId !== undefined) {
     throw new Error("A confirmation profile ID is only valid when applying changes");
   }
+  if (input.claimedAthleteState) {
+    const pendingFrom = input.claimedAthleteState.dirtyFromAt;
+    if (
+      !input.apply ||
+      input.claimedAthleteState.profileId !== input.profileId ||
+      pendingFrom === null ||
+      input.from?.getTime() !== pendingFrom.getTime()
+    ) {
+      throw new Error("Claimed activity-analysis refresh does not match its pending profile range");
+    }
+  }
   if (!input.apply) {
     const evaluation = await evaluate(db, input, now);
     const { candidates: _candidates, ...result } = evaluation;
-    return { ...result, mode: "dry_run", athleteStateRebuild: "not_requested" };
+    const { hasMore: _hasMore, nextCursor: _nextCursor, ...publicResult } = result;
+    return {
+      ...publicResult,
+      mode: "dry_run",
+      athleteStateRebuild: "not_requested",
+      durableRefresh: "not_requested",
+    };
   }
-  const applied = await withRepeatableReadSnapshot(
+  const applied = await withProfileFencedRepeatableReadSnapshot(
     db,
+    input.profileId,
     async (tx) => {
-      await lockProfileActivityAnalysisScope(tx, input.profileId);
       const evaluation = await evaluate(tx, input, now);
       for (const candidate of evaluation.candidates) {
         await appendActivityAnalysisRevision(tx, {
@@ -273,6 +332,13 @@ export async function reprocessProfileActivityAnalysis(
           computedAt: now,
         });
       }
+      const athleteRepository = createDrizzleAthleteDerivedStateRepository(tx);
+      const publicationState = await athleteRepository.lockPublicationState({
+        profileId: input.profileId,
+      });
+      if (!publicationState) throw new Error("Athlete publication state is unavailable");
+      const targetSourceRevision =
+        input.claimedAthleteState?.sourceRevision ?? publicationState.sourceRevision + 1;
       const materialEffectiveTimes: Date[] = [];
       for (const candidate of evaluation.candidates) {
         const materialized = await materializeActivityAthleteStateEvidence(tx, {
@@ -280,17 +346,50 @@ export async function reprocessProfileActivityAnalysis(
           activityId: candidate.activity.id,
           computedAt: now,
           contextDb: tx,
+          canonicalEvidenceMaterialChanged: true,
           deferAthleteStateRefresh: true,
+          targetSourceRevision,
         });
         if (materialized.materialChanged && materialized.effectiveAt) {
           materialEffectiveTimes.push(materialized.effectiveAt);
         }
       }
-      if (materialEffectiveTimes.length > 0) {
+      if (materialEffectiveTimes.length > 0 && !input.claimedAthleteState) {
         const earliest = new Date(
           Math.min(...materialEffectiveTimes.map((value) => value.getTime())),
         );
-        await markAthleteStateDirty(tx, { profileId: input.profileId, effectiveAt: earliest, now });
+        await requestAthleteRecalculation({
+          repository: athleteRepository,
+          profileId: input.profileId,
+          request: buildAthleteRecalculationRequest({
+            profileId: input.profileId,
+            earliestAffectedAt: earliest.toISOString(),
+            earliestAffectedPlanningDate: getCalendarDateInIanaZone(
+              earliest.toISOString(),
+              publicationState.planningTimezone,
+            ),
+            sourceRevision: targetSourceRevision,
+            reasons: ["analysis_replaced"],
+            requestedAt: now.toISOString(),
+          }),
+        });
+      }
+      if (input.claimedAthleteState) {
+        const owned = evaluation.hasMore
+          ? evaluation.nextCursor !== null &&
+            (await advanceClaimedActivityAnalysisRefresh(tx, {
+              claim: input.claimedAthleteState,
+              nextCursor: evaluation.nextCursor,
+              now,
+            }))
+          : await verifyAthleteStateClaimForAnalysisRefresh(tx, {
+              claim: input.claimedAthleteState,
+            });
+        if (!owned) {
+          throw new AnalysisRefreshFenceError(
+            "Activity-analysis refresh lost its athlete-state lease",
+          );
+        }
       }
       const { candidates: _candidates, ...result } = evaluation;
       return {
@@ -299,24 +398,47 @@ export async function reprocessProfileActivityAnalysis(
         requiresAthleteStateRebuild: materialEffectiveTimes.length > 0,
       };
     },
-    { accessMode: "read write" },
+    { lockNamespace: 1 },
   );
-  const { requiresAthleteStateRebuild, ...result } = applied;
-  if (!requiresAthleteStateRebuild) {
-    return { ...result, mode: "apply", athleteStateRebuild: "not_needed" };
+  const { hasMore, nextCursor: _nextCursor, requiresAthleteStateRebuild, ...result } = applied;
+  if (input.claimedAthleteState) {
+    return {
+      ...result,
+      mode: "apply",
+      athleteStateRebuild: "not_requested",
+      durableRefresh: hasMore ? "continued" : "completed",
+    };
   }
+  if (!requiresAthleteStateRebuild) {
+    return {
+      ...result,
+      mode: "apply",
+      athleteStateRebuild: "not_needed",
+      durableRefresh: "not_requested",
+    };
+  }
+  const { ATHLETE_STATE_LEASE_MILLISECONDS, rebuildClaimedAthleteState } = await import(
+    "../athlete-intelligence/athlete-state-worker"
+  );
   const claim = await claimNextAthleteState(db, {
     now,
     leaseMilliseconds: ATHLETE_STATE_LEASE_MILLISECONDS,
     profileId: input.profileId,
   });
-  if (!claim) return { ...result, mode: "apply", athleteStateRebuild: "blocked" };
+  if (!claim)
+    return {
+      ...result,
+      mode: "apply",
+      athleteStateRebuild: "blocked",
+      durableRefresh: "not_requested",
+    };
   try {
     const published = await rebuildClaimedAthleteState({ db, claim, now });
     return {
       ...result,
       mode: "apply",
       athleteStateRebuild: published ? "completed" : "blocked",
+      durableRefresh: "not_requested",
     };
   } catch (error) {
     await failAthleteStateClaim(db, {
@@ -324,6 +446,11 @@ export async function reprocessProfileActivityAnalysis(
       now,
       failureCode: error instanceof Error ? error.name : "activity_analysis_rebuild_failed",
     });
-    return { ...result, mode: "apply", athleteStateRebuild: "failed" };
+    return {
+      ...result,
+      mode: "apply",
+      athleteStateRebuild: "failed",
+      durableRefresh: "not_requested",
+    };
   }
 }

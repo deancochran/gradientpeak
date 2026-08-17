@@ -16,6 +16,7 @@ export const activityImportSkipReasonCodes = [
   "unsupported_activity_invariant",
   "canonical_identity_mismatch",
   "canonical_evidence_unchanged",
+  "activity_import_failed",
   "unspecified",
 ] as const;
 

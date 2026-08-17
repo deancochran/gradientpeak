@@ -20,8 +20,10 @@ CREATE FUNCTION public.activity_plan_duration_is_canonical(input jsonb, rest_onl
 CREATE FUNCTION public.activity_plan_segment_is_canonical(input jsonb) RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$ SELECT true $$;
 
 CREATE TYPE "public"."activity_file_ingestion_source" AS ENUM('mobile_recording', 'manual_import', 'provider_sync');
-CREATE TYPE "public"."activity_file_ingestion_status" AS ENUM('pending_upload', 'uploaded', 'processing', 'ready', 'failed');
+CREATE TYPE "public"."activity_file_ingestion_status" AS ENUM('awaiting_upload', 'processing', 'failed_retryable', 'succeeded', 'failed_terminal');
+CREATE TYPE "public"."activity_ingestion_failure_code" AS ENUM('artifact_missing', 'hash_mismatch', 'unsupported_format', 'invalid_activity', 'promotion_failed', 'dependency_unavailable', 'internal');
 CREATE TYPE "public"."activity_session_rpe_source" AS ENUM('user', 'provider', 'manual');
+CREATE TYPE "public"."athlete_recalculation_reason" AS ENUM('activity_created', 'activity_changed', 'activity_deleted', 'analysis_replaced', 'threshold_changed', 'import_completed', 'algorithm_changed', 'timezone_changed', 'explicit_repair');
 CREATE TYPE "public"."effort_type" AS ENUM('power', 'speed', 'heart_rate');
 CREATE TYPE "public"."activity_effort_source_series" AS ENUM('power', 'grade_adjusted_speed', 'raw_speed', 'swim_speed', 'heart_rate');
 CREATE TYPE "public"."threshold_metric" AS ENUM('power', 'speed');
@@ -37,7 +39,12 @@ CREATE TYPE "public"."integration_resource_kind" AS ENUM('event', 'activity_plan
 CREATE TYPE "public"."like_entity_type" AS ENUM('activity', 'activity_plan', 'training_plan', 'route');
 CREATE TYPE "public"."notification_type" AS ENUM('new_message', 'coaching_invitation', 'coaching_invitation_accepted', 'coaching_invitation_declined', 'new_follower', 'follow_request', 'group_event_cancelled');
 CREATE TYPE "public"."onboarding_status" AS ENUM('provider_selection', 'processing', 'review', 'completed');
+CREATE TYPE "public"."planned_session_cancellation_reason" AS ENUM('user_requested', 'plan_replaced', 'series_cancelled');
+CREATE TYPE "public"."planned_session_completion_state" AS ENUM('linked', 'activity_deleted');
+CREATE TYPE "public"."planned_session_source_kind" AS ENUM('direct', 'training_plan', 'recurrence');
+CREATE TYPE "public"."planned_session_status" AS ENUM('scheduled', 'cancelled', 'completed');
 CREATE TYPE "public"."profile_metric_type" AS ENUM('weight_kg', 'resting_hr', 'sleep_hours', 'hrv_rmssd', 'vo2_max', 'body_fat_percentage', 'hydration_level', 'stress_score', 'soreness_level', 'wellness_score', 'max_hr');
+CREATE TYPE "public"."threshold_evidence_status" AS ENUM('active', 'superseded', 'deleted');
 CREATE TYPE "public"."training_effect_label" AS ENUM('recovery', 'base', 'tempo', 'threshold', 'vo2max');
 CREATE TABLE "accounts" (
 	"id" text PRIMARY KEY NOT NULL,
@@ -262,9 +269,8 @@ CREATE TABLE "activity_file_ingestions" (
 	"provider" "integration_provider",
 	"external_id" text,
 	"integration_id" uuid,
-	"operation_key" text NOT NULL,
-	"claim_token" uuid,
-	"lease_expires_at" timestamp with time zone,
+	"contract_version" text DEFAULT 'activity-intake-v1' NOT NULL,
+	"operation_id" text NOT NULL,
 	"staging_bucket" text,
 	"staging_path" text,
 	"expected_sha256" text,
@@ -276,25 +282,22 @@ CREATE TABLE "activity_file_ingestions" (
 	"staging_cleaned_at" timestamp with time zone,
 	"staging_cleanup_error" text,
 	"received_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"status" "activity_file_ingestion_status" DEFAULT 'pending_upload' NOT NULL,
-	"attempt_count" integer DEFAULT 0 NOT NULL,
-	"last_error_code" text,
-	"last_error_message" text,
+	"status" "activity_file_ingestion_status" DEFAULT 'awaiting_upload' NOT NULL,
+	"failure_code" "activity_ingestion_failure_code",
 	"requested_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"started_at" timestamp with time zone,
 	"completed_at" timestamp with time zone,
 	"failed_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "activity_file_ingestions_ready_check" CHECK ("activity_file_ingestions"."status" <> 'ready' or ("activity_file_ingestions"."activity_id" is not null and "activity_file_ingestions"."artifact_id" is not null)),
-	CONSTRAINT "activity_file_ingestions_claim_check" CHECK (("activity_file_ingestions"."claim_token" is null) = ("activity_file_ingestions"."lease_expires_at" is null)),
-	CONSTRAINT "activity_file_ingestions_operation_key_check" CHECK (btrim("activity_file_ingestions"."operation_key") <> ''),
-	CONSTRAINT "activity_file_ingestions_attempt_count_check" CHECK ("activity_file_ingestions"."attempt_count" >= 0),
+	CONSTRAINT "activity_file_ingestions_contract_version_check" CHECK ("activity_file_ingestions"."contract_version" = 'activity-intake-v1'),
+	CONSTRAINT "activity_file_ingestions_operation_id_check" CHECK ("activity_file_ingestions"."operation_id" ~ '^[A-Za-z0-9_-]{32,128}$'),
+	CONSTRAINT "activity_file_ingestions_provider_identity_check" CHECK (("activity_file_ingestions"."source" = 'provider_sync' and num_nonnulls("activity_file_ingestions"."provider", "activity_file_ingestions"."external_id", "activity_file_ingestions"."integration_id") = 3 and btrim("activity_file_ingestions"."external_id") <> '') or ("activity_file_ingestions"."source" <> 'provider_sync' and num_nonnulls("activity_file_ingestions"."provider", "activity_file_ingestions"."external_id", "activity_file_ingestions"."integration_id") = 0)),
 	CONSTRAINT "activity_file_ingestions_expected_size_check" CHECK ("activity_file_ingestions"."expected_byte_size" is null or "activity_file_ingestions"."expected_byte_size" > 0),
 	CONSTRAINT "activity_file_ingestions_expected_hash_check" CHECK ("activity_file_ingestions"."expected_sha256" is null or "activity_file_ingestions"."expected_sha256" ~ '^[0-9a-f]{64}$'),
 	CONSTRAINT "activity_file_ingestions_staging_metadata_check" CHECK (num_nonnulls("activity_file_ingestions"."staging_bucket", "activity_file_ingestions"."staging_path", "activity_file_ingestions"."expected_sha256", "activity_file_ingestions"."expected_byte_size", "activity_file_ingestions"."expected_format", "activity_file_ingestions"."expected_media_type") in (0, 6) and ("activity_file_ingestions"."staging_bucket" is null or (btrim("activity_file_ingestions"."staging_bucket") <> '' and btrim("activity_file_ingestions"."staging_path") <> '' and (("activity_file_ingestions"."expected_format" = 'fit' and "activity_file_ingestions"."expected_media_type" = 'application/vnd.ant.fit') or ("activity_file_ingestions"."expected_format" = 'gpx' and "activity_file_ingestions"."expected_media_type" = 'application/gpx+xml') or ("activity_file_ingestions"."expected_format" = 'tcx' and "activity_file_ingestions"."expected_media_type" = 'application/vnd.garmin.tcx+xml'))))),
-	CONSTRAINT "activity_file_ingestions_cleanup_state_check" CHECK ((not "activity_file_ingestions"."staging_cleanup_pending" or ("activity_file_ingestions"."status" = 'ready' and "activity_file_ingestions"."staging_path" is not null and "activity_file_ingestions"."artifact_id" is not null)) and ("activity_file_ingestions"."staging_cleaned_at" is null or (not "activity_file_ingestions"."staging_cleanup_pending" and "activity_file_ingestions"."staging_path" is not null)) and ("activity_file_ingestions"."staging_cleanup_error" is null or "activity_file_ingestions"."staging_cleanup_pending") and not ("activity_file_ingestions"."staging_cleaned_at" is not null and "activity_file_ingestions"."staging_cleanup_error" is not null)),
-	CONSTRAINT "activity_file_ingestions_processing_claim_check" CHECK (("activity_file_ingestions"."status" = 'processing' and "activity_file_ingestions"."claim_token" is not null and "activity_file_ingestions"."lease_expires_at" is not null) or ("activity_file_ingestions"."status" <> 'processing' and "activity_file_ingestions"."claim_token" is null and "activity_file_ingestions"."lease_expires_at" is null))
+	CONSTRAINT "activity_file_ingestions_cleanup_state_check" CHECK ((not "activity_file_ingestions"."staging_cleanup_pending" or ("activity_file_ingestions"."status" = 'succeeded' and "activity_file_ingestions"."staging_path" is not null and "activity_file_ingestions"."artifact_id" is not null)) and ("activity_file_ingestions"."staging_cleaned_at" is null or (not "activity_file_ingestions"."staging_cleanup_pending" and "activity_file_ingestions"."staging_path" is not null)) and ("activity_file_ingestions"."staging_cleanup_error" is null or "activity_file_ingestions"."staging_cleanup_pending") and not ("activity_file_ingestions"."staging_cleaned_at" is not null and "activity_file_ingestions"."staging_cleanup_error" is not null)),
+	CONSTRAINT "activity_file_ingestions_lifecycle_check" CHECK (("activity_file_ingestions"."status" = 'awaiting_upload' and "activity_file_ingestions"."activity_id" is null and "activity_file_ingestions"."artifact_id" is null and "activity_file_ingestions"."started_at" is null and num_nonnulls("activity_file_ingestions"."failure_code", "activity_file_ingestions"."completed_at", "activity_file_ingestions"."failed_at") = 0) or ("activity_file_ingestions"."status" = 'processing' and "activity_file_ingestions"."activity_id" is null and "activity_file_ingestions"."started_at" is not null and num_nonnulls("activity_file_ingestions"."failure_code", "activity_file_ingestions"."completed_at", "activity_file_ingestions"."failed_at") = 0) or ("activity_file_ingestions"."status" in ('failed_retryable', 'failed_terminal') and "activity_file_ingestions"."started_at" is not null and "activity_file_ingestions"."failure_code" is not null and "activity_file_ingestions"."failed_at" is not null and "activity_file_ingestions"."completed_at" is null) or ("activity_file_ingestions"."status" = 'succeeded' and "activity_file_ingestions"."activity_id" is not null and "activity_file_ingestions"."artifact_id" is not null and "activity_file_ingestions"."started_at" is not null and "activity_file_ingestions"."completed_at" is not null and "activity_file_ingestions"."failure_code" is null and "activity_file_ingestions"."failed_at" is null))
 );
 
 CREATE TABLE "activity_plans" (
@@ -603,6 +606,8 @@ CREATE TABLE "events" (
 	CONSTRAINT "events_recurrence_timezone_non_empty" CHECK ("events"."recurrence_timezone" is null or btrim("events"."recurrence_timezone") <> ''),
 	CONSTRAINT "events_recurrence_timezone_requires_rule" CHECK ("events"."recurrence_timezone" is null or "events"."recurrence_rule" is not null),
 	CONSTRAINT "events_series_occurrence_key_required" CHECK ("events"."series_id" is null or btrim("events"."occurrence_key") <> ''),
+	CONSTRAINT "events_recurrence_occurrence_key_required" CHECK ("events"."recurrence_rule" is null or btrim("events"."occurrence_key") <> ''),
+	CONSTRAINT "events_occurrence_scheduled_date_identity" CHECK ("events"."occurrence_key" = '' or "events"."scheduled_date" = "events"."occurrence_key"),
 	CONSTRAINT "events_series_not_self" CHECK ("events"."series_id" is null or "events"."series_id" <> "events"."id")
 );
 
@@ -986,6 +991,8 @@ CREATE TABLE "profile_athlete_state" (
 	"source_revision" bigint DEFAULT 0 NOT NULL,
 	"published_revision" bigint DEFAULT 0 NOT NULL,
 	"dirty_from_at" timestamp with time zone,
+	"activity_analysis_cursor_started_at" timestamp with time zone,
+	"activity_analysis_cursor_activity_id" uuid,
 	"fitness" numeric DEFAULT 0 NOT NULL,
 	"fatigue" numeric DEFAULT 0 NOT NULL,
 	"evidence_confidence" numeric DEFAULT 0 NOT NULL,
@@ -1005,6 +1012,7 @@ CREATE TABLE "profile_athlete_state" (
 	CONSTRAINT "profile_athlete_state_fatigue_check" CHECK ("profile_athlete_state"."fatigue" >= 0),
 	CONSTRAINT "profile_athlete_state_confidence_check" CHECK ("profile_athlete_state"."evidence_confidence" between 0 and 1),
 	CONSTRAINT "profile_athlete_state_lease_check" CHECK (num_nonnulls("profile_athlete_state"."lease_token", "profile_athlete_state"."lease_expires_at") in (0, 2)),
+	CONSTRAINT "profile_athlete_state_analysis_cursor_check" CHECK (num_nonnulls("profile_athlete_state"."activity_analysis_cursor_started_at", "profile_athlete_state"."activity_analysis_cursor_activity_id") in (0, 2)),
 	CONSTRAINT "profile_athlete_state_failures_check" CHECK ("profile_athlete_state"."consecutive_failures" >= 0),
 	CONSTRAINT "profile_athlete_state_algorithm_check" CHECK (btrim("profile_athlete_state"."algorithm_version") <> '')
 );
@@ -1304,6 +1312,154 @@ CREATE TABLE "thresholds" (
 	CONSTRAINT "thresholds_supersedes_check" CHECK ("thresholds"."supersedes_id" is null or "thresholds"."supersedes_id" <> "thresholds"."id")
 );
 
+CREATE TABLE "activity_training_effects" (
+	"profile_id" uuid NOT NULL,
+	"activity_id" uuid NOT NULL,
+	"activity_analysis_revision" integer NOT NULL,
+	"contract_version" text DEFAULT 'athlete-derived-state-persistence-v1' NOT NULL,
+	"effective_at" timestamp with time zone NOT NULL,
+	"planning_date" date NOT NULL,
+	"source_revision" bigint NOT NULL,
+	"calculation_version" text NOT NULL,
+	"input_fingerprint" text NOT NULL,
+	"activity_category" text NOT NULL,
+	"common_load" numeric NOT NULL,
+	"evidence_confidence" numeric NOT NULL,
+	"capability_observation" jsonb,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "activity_training_effects_activity_id_activity_analysis_revision_pk" PRIMARY KEY("activity_id","activity_analysis_revision"),
+	CONSTRAINT "activity_training_effects_contract_version_check" CHECK ("activity_training_effects"."contract_version" = 'athlete-derived-state-persistence-v1'),
+	CONSTRAINT "activity_training_effects_analysis_revision_check" CHECK ("activity_training_effects"."activity_analysis_revision" > 0),
+	CONSTRAINT "activity_training_effects_source_revision_check" CHECK ("activity_training_effects"."source_revision" >= 0),
+	CONSTRAINT "activity_training_effects_calculation_version_check" CHECK ("activity_training_effects"."calculation_version" ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
+	CONSTRAINT "activity_training_effects_input_fingerprint_check" CHECK ("activity_training_effects"."input_fingerprint" ~ '^[a-f0-9]{64}$'),
+	CONSTRAINT "activity_training_effects_common_load_check" CHECK ("activity_training_effects"."common_load" between 0 and 10000 and "activity_training_effects"."common_load" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
+	CONSTRAINT "activity_training_effects_confidence_check" CHECK ("activity_training_effects"."evidence_confidence" between 0 and 1 and "activity_training_effects"."evidence_confidence" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
+	CONSTRAINT "activity_training_effects_capability_check" CHECK ("activity_training_effects"."capability_observation" is null or (jsonb_typeof("activity_training_effects"."capability_observation") = 'object' and pg_column_size("activity_training_effects"."capability_observation") <= 4096 and (("activity_training_effects"."capability_observation"->>'distanceMeters') is not null or ("activity_training_effects"."capability_observation"->>'durationMinutes') is not null)))
+);
+
+CREATE TABLE "daily_training_load" (
+	"profile_id" uuid NOT NULL,
+	"planning_date" date NOT NULL,
+	"contract_version" text DEFAULT 'athlete-derived-state-persistence-v1' NOT NULL,
+	"common_load" numeric NOT NULL,
+	"fitness" numeric NOT NULL,
+	"fatigue" numeric NOT NULL,
+	"form" numeric NOT NULL,
+	"readiness" numeric,
+	"coverage_status" text NOT NULL,
+	"contributing_activity_count" integer NOT NULL,
+	"omitted_activity_count" integer NOT NULL,
+	"source_revision" bigint NOT NULL,
+	"calculation_version" text NOT NULL,
+	"published_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "daily_training_load_profile_id_planning_date_source_revision_pk" PRIMARY KEY("profile_id","planning_date","source_revision"),
+	CONSTRAINT "daily_training_load_contract_version_check" CHECK ("daily_training_load"."contract_version" = 'athlete-derived-state-persistence-v1'),
+	CONSTRAINT "daily_training_load_common_load_check" CHECK ("daily_training_load"."common_load" between 0 and 3660000 and "daily_training_load"."common_load" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
+	CONSTRAINT "daily_training_load_state_check" CHECK ("daily_training_load"."fitness" >= 0 and "daily_training_load"."fatigue" >= 0 and abs("daily_training_load"."form" - ("daily_training_load"."fitness" - "daily_training_load"."fatigue")) <= 0.000000001 and "daily_training_load"."fitness" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) and "daily_training_load"."fatigue" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) and "daily_training_load"."form" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
+	CONSTRAINT "daily_training_load_readiness_check" CHECK ("daily_training_load"."readiness" is null or ("daily_training_load"."readiness" between 0 and 100 and "daily_training_load"."readiness" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric))),
+	CONSTRAINT "daily_training_load_coverage_check" CHECK ("daily_training_load"."contributing_activity_count" >= 0 and (("daily_training_load"."coverage_status" = 'complete' and "daily_training_load"."omitted_activity_count" = 0) or ("daily_training_load"."coverage_status" = 'partial' and "daily_training_load"."omitted_activity_count" > 0))),
+	CONSTRAINT "daily_training_load_source_revision_check" CHECK ("daily_training_load"."source_revision" >= 0),
+	CONSTRAINT "daily_training_load_calculation_version_check" CHECK ("daily_training_load"."calculation_version" ~ '^[a-z0-9][a-z0-9._-]{0,63}$')
+);
+
+CREATE TABLE "athlete_recalculation_queue" (
+	"profile_id" uuid PRIMARY KEY NOT NULL,
+	"contract_version" text DEFAULT 'athlete-derived-state-persistence-v1' NOT NULL,
+	"idempotency_key" text NOT NULL,
+	"earliest_affected_at" timestamp with time zone NOT NULL,
+	"earliest_affected_planning_date" date NOT NULL,
+	"source_revision" bigint NOT NULL,
+	"reasons" "athlete_recalculation_reason"[] NOT NULL,
+	"requested_at" timestamp with time zone NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "athlete_recalculation_queue_idempotency_unique" UNIQUE("idempotency_key"),
+	CONSTRAINT "athlete_recalculation_queue_contract_version_check" CHECK ("athlete_recalculation_queue"."contract_version" = 'athlete-derived-state-persistence-v1'),
+	CONSTRAINT "athlete_recalculation_queue_idempotency_check" CHECK ("athlete_recalculation_queue"."idempotency_key" = 'athlete-recalculation:' || "athlete_recalculation_queue"."profile_id"::text),
+	CONSTRAINT "athlete_recalculation_queue_source_revision_check" CHECK ("athlete_recalculation_queue"."source_revision" >= 0),
+	CONSTRAINT "athlete_recalculation_queue_reasons_check" CHECK (cardinality("athlete_recalculation_queue"."reasons") between 1 and 9 and "athlete_recalculation_queue"."reasons" = array_remove(array[case when 'activity_created' = any("athlete_recalculation_queue"."reasons") then 'activity_created'::athlete_recalculation_reason end, case when 'activity_changed' = any("athlete_recalculation_queue"."reasons") then 'activity_changed'::athlete_recalculation_reason end, case when 'activity_deleted' = any("athlete_recalculation_queue"."reasons") then 'activity_deleted'::athlete_recalculation_reason end, case when 'analysis_replaced' = any("athlete_recalculation_queue"."reasons") then 'analysis_replaced'::athlete_recalculation_reason end, case when 'threshold_changed' = any("athlete_recalculation_queue"."reasons") then 'threshold_changed'::athlete_recalculation_reason end, case when 'import_completed' = any("athlete_recalculation_queue"."reasons") then 'import_completed'::athlete_recalculation_reason end, case when 'algorithm_changed' = any("athlete_recalculation_queue"."reasons") then 'algorithm_changed'::athlete_recalculation_reason end, case when 'timezone_changed' = any("athlete_recalculation_queue"."reasons") then 'timezone_changed'::athlete_recalculation_reason end, case when 'explicit_repair' = any("athlete_recalculation_queue"."reasons") then 'explicit_repair'::athlete_recalculation_reason end], null))
+);
+
+CREATE TABLE "threshold_evidence" (
+	"id" uuid PRIMARY KEY NOT NULL,
+	"profile_id" uuid NOT NULL,
+	"activity_id" uuid NOT NULL,
+	"contract_version" text DEFAULT 'athlete-derived-state-persistence-v1' NOT NULL,
+	"activity_category" text NOT NULL,
+	"metric" "threshold_metric" NOT NULL,
+	"unit" text NOT NULL,
+	"method" text NOT NULL,
+	"value" numeric NOT NULL,
+	"source_series_id" text NOT NULL,
+	"source_series_metric" text NOT NULL,
+	"start_timestamp_seconds" numeric NOT NULL,
+	"end_timestamp_seconds" numeric NOT NULL,
+	"exact_window_seconds" integer NOT NULL,
+	"conversion_factor" numeric NOT NULL,
+	"policy_version" text NOT NULL,
+	"plausibility_version" text NOT NULL,
+	"observed_at" timestamp with time zone NOT NULL,
+	"calculation_version" text NOT NULL,
+	"confidence" numeric NOT NULL,
+	"status" "threshold_evidence_status" DEFAULT 'active' NOT NULL,
+	"invalidated_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "threshold_evidence_id_profile_activity_unique" UNIQUE("id","profile_id","activity_id"),
+	CONSTRAINT "threshold_evidence_profile_category_activity_unique" UNIQUE("profile_id","activity_category","activity_id"),
+	CONSTRAINT "threshold_evidence_contract_version_check" CHECK ("threshold_evidence"."contract_version" = 'athlete-derived-state-persistence-v1'),
+	CONSTRAINT "threshold_evidence_identity_check" CHECK (("threshold_evidence"."activity_category" = 'bike' and "threshold_evidence"."metric" = 'power' and "threshold_evidence"."unit" = 'watts' and "threshold_evidence"."method" = 'bike_power_30m' and "threshold_evidence"."source_series_metric" = 'power') or ("threshold_evidence"."activity_category" = 'run' and "threshold_evidence"."metric" = 'speed' and "threshold_evidence"."unit" = 'meters_per_second' and "threshold_evidence"."method" = 'run_speed_30m' and "threshold_evidence"."source_series_metric" in ('speed', 'grade_adjusted_speed')) or ("threshold_evidence"."activity_category" = 'swim' and "threshold_evidence"."metric" = 'speed' and "threshold_evidence"."unit" = 'meters_per_second' and "threshold_evidence"."method" = 'swim_speed_15m' and "threshold_evidence"."source_series_metric" = 'speed')),
+	CONSTRAINT "threshold_evidence_value_check" CHECK ("threshold_evidence"."value" > 0 and "threshold_evidence"."value" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
+	CONSTRAINT "threshold_evidence_source_series_id_check" CHECK (char_length(btrim("threshold_evidence"."source_series_id")) between 1 and 256),
+	CONSTRAINT "threshold_evidence_window_check" CHECK ("threshold_evidence"."exact_window_seconds" > 0 and "threshold_evidence"."end_timestamp_seconds" = "threshold_evidence"."start_timestamp_seconds" + "threshold_evidence"."exact_window_seconds" and "threshold_evidence"."start_timestamp_seconds" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) and "threshold_evidence"."end_timestamp_seconds" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
+	CONSTRAINT "threshold_evidence_conversion_factor_check" CHECK ("threshold_evidence"."conversion_factor" > 0 and "threshold_evidence"."conversion_factor" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
+	CONSTRAINT "threshold_evidence_policy_check" CHECK ("threshold_evidence"."policy_version" = 'threshold-policy-v1'),
+	CONSTRAINT "threshold_evidence_plausibility_check" CHECK ("threshold_evidence"."plausibility_version" = 'threshold-plausibility-v1'),
+	CONSTRAINT "threshold_evidence_calculation_version_check" CHECK ("threshold_evidence"."calculation_version" ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
+	CONSTRAINT "threshold_evidence_confidence_check" CHECK ("threshold_evidence"."confidence" between 0 and 1 and "threshold_evidence"."confidence" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
+	CONSTRAINT "threshold_evidence_lifecycle_check" CHECK (("threshold_evidence"."status" = 'active' and "threshold_evidence"."invalidated_at" is null) or ("threshold_evidence"."status" in ('superseded', 'deleted') and "threshold_evidence"."invalidated_at" >= "threshold_evidence"."observed_at"))
+);
+
+CREATE TABLE "planned_sessions" (
+	"id" uuid PRIMARY KEY NOT NULL,
+	"profile_id" uuid NOT NULL,
+	"contract_version" text DEFAULT 'planned-session-v1' NOT NULL,
+	"session_revision" integer DEFAULT 1 NOT NULL,
+	"planning_date" date NOT NULL,
+	"original_target_date" date NOT NULL,
+	"source_kind" "planned_session_source_kind" NOT NULL,
+	"idempotency_key" text NOT NULL,
+	"direct_operation_id" text,
+	"training_plan_id" uuid,
+	"training_plan_revision" integer,
+	"source_session_key" text,
+	"series_id" uuid,
+	"occurrence_key" date,
+	"group_event_id" uuid,
+	"activity_plan_id" uuid NOT NULL,
+	"activity_plan_revision" integer NOT NULL,
+	"prescription_structure" jsonb NOT NULL,
+	"prescription_quantification" jsonb,
+	"prescription_captured_at" timestamp with time zone NOT NULL,
+	"status" "planned_session_status" DEFAULT 'scheduled' NOT NULL,
+	"cancellation_reason" "planned_session_cancellation_reason",
+	"cancelled_at" timestamp with time zone,
+	"completed_activity_id" uuid,
+	"completion_state" "planned_session_completion_state",
+	"linked_at" timestamp with time zone,
+	"completion_unlinked_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "planned_sessions_id_profile_unique" UNIQUE("id","profile_id"),
+	CONSTRAINT "planned_sessions_profile_idempotency_unique" UNIQUE("profile_id","idempotency_key"),
+	CONSTRAINT "planned_sessions_contract_version_check" CHECK ("planned_sessions"."contract_version" = 'planned-session-v1'),
+	CONSTRAINT "planned_sessions_revision_check" CHECK ("planned_sessions"."session_revision" > 0),
+	CONSTRAINT "planned_sessions_idempotency_length_check" CHECK (char_length("planned_sessions"."idempotency_key") between 1 and 512),
+	CONSTRAINT "planned_sessions_source_check" CHECK (("planned_sessions"."source_kind" = 'direct' and "planned_sessions"."direct_operation_id" ~ '^[A-Za-z0-9_-]{32,128}$' and "planned_sessions"."idempotency_key" = 'direct:' || "planned_sessions"."direct_operation_id" and num_nonnulls("planned_sessions"."training_plan_id", "planned_sessions"."training_plan_revision", "planned_sessions"."source_session_key", "planned_sessions"."series_id", "planned_sessions"."occurrence_key") = 0) or ("planned_sessions"."source_kind" = 'training_plan' and "planned_sessions"."training_plan_id" is not null and "planned_sessions"."training_plan_revision" > 0 and "planned_sessions"."source_session_key" is not null and char_length(btrim("planned_sessions"."source_session_key")) between 1 and 128 and "planned_sessions"."idempotency_key" = 'training-plan:' || "planned_sessions"."training_plan_id"::text || ':' || "planned_sessions"."training_plan_revision"::text || ':' || "planned_sessions"."source_session_key" and num_nonnulls("planned_sessions"."direct_operation_id", "planned_sessions"."series_id", "planned_sessions"."occurrence_key") = 0) or ("planned_sessions"."source_kind" = 'recurrence' and "planned_sessions"."series_id" is not null and "planned_sessions"."occurrence_key" is not null and "planned_sessions"."occurrence_key" = "planned_sessions"."original_target_date" and "planned_sessions"."idempotency_key" = 'recurrence:' || "planned_sessions"."series_id"::text || ':' || "planned_sessions"."occurrence_key"::text and num_nonnulls("planned_sessions"."direct_operation_id", "planned_sessions"."training_plan_id", "planned_sessions"."training_plan_revision", "planned_sessions"."source_session_key") = 0)),
+	CONSTRAINT "planned_sessions_prescription_check" CHECK ("planned_sessions"."activity_plan_revision" > 0 and jsonb_typeof("planned_sessions"."prescription_structure") = 'object' and pg_column_size("planned_sessions"."prescription_structure") <= 1048576 and ("planned_sessions"."prescription_quantification" is null or (jsonb_typeof("planned_sessions"."prescription_quantification") = 'object' and pg_column_size("planned_sessions"."prescription_quantification") <= 262144))),
+	CONSTRAINT "planned_sessions_lifecycle_check" CHECK (("planned_sessions"."status" = 'scheduled' and num_nonnulls("planned_sessions"."cancellation_reason", "planned_sessions"."cancelled_at", "planned_sessions"."completed_activity_id", "planned_sessions"."completion_state", "planned_sessions"."linked_at", "planned_sessions"."completion_unlinked_at") = 0) or ("planned_sessions"."status" = 'cancelled' and "planned_sessions"."cancellation_reason" is not null and "planned_sessions"."cancelled_at" is not null and num_nonnulls("planned_sessions"."completed_activity_id", "planned_sessions"."completion_state", "planned_sessions"."linked_at", "planned_sessions"."completion_unlinked_at") = 0) or ("planned_sessions"."status" = 'completed' and num_nonnulls("planned_sessions"."cancellation_reason", "planned_sessions"."cancelled_at") = 0 and (("planned_sessions"."completion_state" = 'linked' and "planned_sessions"."completed_activity_id" is not null and "planned_sessions"."linked_at" is not null and "planned_sessions"."completion_unlinked_at" is null) or ("planned_sessions"."completion_state" = 'activity_deleted' and "planned_sessions"."completed_activity_id" is null and "planned_sessions"."linked_at" is not null and "planned_sessions"."completion_unlinked_at" >= "planned_sessions"."linked_at")))),
+	CONSTRAINT "planned_sessions_series_not_self_check" CHECK ("planned_sessions"."series_id" is null or "planned_sessions"."series_id" <> "planned_sessions"."id")
+);
+
 ALTER TABLE "accounts" ADD CONSTRAINT "accounts_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "activities" ADD CONSTRAINT "activities_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
@@ -1327,9 +1483,20 @@ ALTER TABLE "thresholds" ADD CONSTRAINT "thresholds_activity_category_canonical_
 ALTER TABLE "thresholds" ADD CONSTRAINT "thresholds_qualified_evaluation_ownership_fkey" FOREIGN KEY ("evaluation_id","profile_id","activity_category","metric","evaluation_outcome") REFERENCES "public"."threshold_evaluations"("id","profile_id","activity_category","metric","outcome") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "thresholds" ADD CONSTRAINT "thresholds_supersedes_fkey" FOREIGN KEY ("supersedes_id") REFERENCES "public"."thresholds"("id") ON DELETE no action ON UPDATE no action DEFERRABLE INITIALLY DEFERRED;
 ALTER TABLE "activity_file_ingestions" ADD CONSTRAINT "activity_file_ingestions_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
-ALTER TABLE "activity_file_ingestions" ADD CONSTRAINT "activity_file_ingestions_integration_id_integrations_id_fk" FOREIGN KEY ("integration_id") REFERENCES "public"."integrations"("id") ON DELETE set null ON UPDATE no action;
 ALTER TABLE "activity_file_ingestions" ADD CONSTRAINT "activity_file_ingestions_activity_profile_fkey" FOREIGN KEY ("activity_id","profile_id") REFERENCES "public"."activities"("id","profile_id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "activity_file_ingestions" ADD CONSTRAINT "activity_file_ingestions_artifact_profile_fkey" FOREIGN KEY ("artifact_id","profile_id") REFERENCES "public"."activity_artifacts"("id","profile_id") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "activity_file_ingestions" ADD CONSTRAINT "activity_file_ingestions_integration_profile_fkey" FOREIGN KEY ("integration_id","profile_id") REFERENCES "public"."integrations"("id","profile_id") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "activity_training_effects" ADD CONSTRAINT "activity_training_effects_activity_category_canonical_activity_categories_code_fk" FOREIGN KEY ("activity_category") REFERENCES "public"."canonical_activity_categories"("code") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "activity_training_effects" ADD CONSTRAINT "activity_training_effects_analysis_revision_fkey" FOREIGN KEY ("activity_id","profile_id","activity_analysis_revision") REFERENCES "public"."activity_analysis_revisions"("activity_id","profile_id","revision") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "daily_training_load" ADD CONSTRAINT "daily_training_load_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "athlete_recalculation_queue" ADD CONSTRAINT "athlete_recalculation_queue_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "threshold_evidence" ADD CONSTRAINT "threshold_evidence_activity_owner_fkey" FOREIGN KEY ("activity_id","profile_id") REFERENCES "public"."activities"("id","profile_id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "planned_sessions" ADD CONSTRAINT "planned_sessions_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "planned_sessions" ADD CONSTRAINT "planned_sessions_training_plan_id_training_plans_id_fk" FOREIGN KEY ("training_plan_id") REFERENCES "public"."training_plans"("id") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "planned_sessions" ADD CONSTRAINT "planned_sessions_activity_plan_id_activity_plans_id_fk" FOREIGN KEY ("activity_plan_id") REFERENCES "public"."activity_plans"("id") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "planned_sessions" ADD CONSTRAINT "planned_sessions_series_owner_fkey" FOREIGN KEY ("series_id","profile_id") REFERENCES "public"."planned_sessions"("id","profile_id") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "planned_sessions" ADD CONSTRAINT "planned_sessions_completed_activity_owner_fkey" FOREIGN KEY ("completed_activity_id","profile_id") REFERENCES "public"."activities"("id","profile_id") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "planned_sessions" ADD CONSTRAINT "planned_sessions_group_event_fkey" FOREIGN KEY ("group_event_id") REFERENCES "public"."group_events"("id") ON DELETE set null ON UPDATE no action;
 ALTER TABLE "activity_plans" ADD CONSTRAINT "activity_plans_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "activity_routes" ADD CONSTRAINT "activity_routes_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "activity_route_deletion_receipts" ADD CONSTRAINT "activity_route_deletion_receipts_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
@@ -1435,12 +1602,25 @@ CREATE INDEX "idx_activity_efforts_segment_id" ON "activity_efforts" USING btree
 CREATE INDEX "idx_activity_efforts_source_revision" ON "activity_efforts" USING btree ("activity_id","source_revision","source_artifact_id");
 CREATE INDEX "idx_activity_efforts_athlete_state_replay" ON "activity_efforts" USING btree ("profile_id","id");
 CREATE INDEX "idx_activity_file_ingestions_activity_profile" ON "activity_file_ingestions" USING btree ("activity_id","profile_id") WHERE "activity_file_ingestions"."activity_id" is not null;
-CREATE INDEX "idx_activity_file_ingestions_activity_id" ON "activity_file_ingestions" USING btree ("activity_id") WHERE "activity_file_ingestions"."activity_id" is not null;
 CREATE INDEX "idx_activity_file_ingestions_artifact_id" ON "activity_file_ingestions" USING btree ("artifact_id") WHERE "activity_file_ingestions"."artifact_id" is not null;
 CREATE INDEX "idx_activity_file_ingestions_profile_id" ON "activity_file_ingestions" USING btree ("profile_id");
-CREATE INDEX "idx_activity_file_ingestions_status" ON "activity_file_ingestions" USING btree ("status");
+CREATE INDEX "idx_activity_file_ingestions_profile_status_updated" ON "activity_file_ingestions" USING btree ("profile_id","status","updated_at");
 CREATE INDEX "idx_activity_file_ingestions_provider_external" ON "activity_file_ingestions" USING btree ("provider","external_id") WHERE "activity_file_ingestions"."provider" is not null and "activity_file_ingestions"."external_id" is not null;
-CREATE UNIQUE INDEX "activity_file_ingestions_profile_operation_unique" ON "activity_file_ingestions" USING btree ("profile_id","operation_key");
+CREATE UNIQUE INDEX "activity_file_ingestions_profile_operation_unique" ON "activity_file_ingestions" USING btree ("profile_id","operation_id");
+CREATE INDEX "activity_training_effects_rebuild_idx" ON "activity_training_effects" USING btree ("profile_id","effective_at","activity_id","activity_analysis_revision");
+CREATE INDEX "activity_training_effects_profile_planning_date_idx" ON "activity_training_effects" USING btree ("profile_id","planning_date");
+CREATE INDEX "daily_training_load_revision_range_idx" ON "daily_training_load" USING btree ("profile_id","source_revision","planning_date");
+CREATE INDEX "athlete_recalculation_queue_pending_idx" ON "athlete_recalculation_queue" USING btree ("requested_at","profile_id");
+CREATE INDEX "threshold_evidence_active_profile_observed_idx" ON "threshold_evidence" USING btree ("profile_id","observed_at","id") WHERE "threshold_evidence"."status" = 'active';
+CREATE INDEX "threshold_evidence_activity_idx" ON "threshold_evidence" USING btree ("activity_id","id");
+CREATE INDEX "threshold_evidence_profile_identity_observed_idx" ON "threshold_evidence" USING btree ("profile_id","activity_category","metric","observed_at","id");
+CREATE INDEX "planned_sessions_profile_date_idx" ON "planned_sessions" USING btree ("profile_id","planning_date","id");
+CREATE INDEX "planned_sessions_profile_status_date_idx" ON "planned_sessions" USING btree ("profile_id","status","planning_date","id");
+CREATE INDEX "planned_sessions_training_plan_idx" ON "planned_sessions" USING btree ("training_plan_id","profile_id") WHERE "planned_sessions"."training_plan_id" is not null;
+CREATE INDEX "planned_sessions_activity_plan_idx" ON "planned_sessions" USING btree ("activity_plan_id");
+CREATE UNIQUE INDEX "planned_sessions_profile_group_event_unique" ON "planned_sessions" USING btree ("profile_id","group_event_id") WHERE "planned_sessions"."group_event_id" is not null;
+CREATE INDEX "planned_sessions_completed_activity_idx" ON "planned_sessions" USING btree ("completed_activity_id") WHERE "planned_sessions"."completed_activity_id" is not null;
+CREATE UNIQUE INDEX "planned_sessions_series_occurrence_unique" ON "planned_sessions" USING btree ("series_id","occurrence_key") WHERE "planned_sessions"."series_id" is not null;
 CREATE INDEX "idx_activity_plans_profile_id" ON "activity_plans" USING btree ("profile_id") WHERE "activity_plans"."profile_id" is not null;
 CREATE INDEX "idx_activity_plans_system_templates" ON "activity_plans" USING btree ("is_system_template") WHERE "activity_plans"."is_system_template" = true;
 CREATE INDEX "idx_activity_plans_content_visibility" ON "activity_plans" USING btree ("content_visibility");
@@ -2758,11 +2938,10 @@ begin
   if not found then raise exception 'artifact is not accepted or does not exist'; end if;
   update public.activity_segments set source_artifact_id=null,source_session_index=null,source_message_index=null
     where source_artifact_id=target_id;
-  update public.activity_file_ingestions set artifact_id=null,status='failed',claim_token=null,lease_expires_at=null,
-    uploaded_at=null,
+  update public.activity_file_ingestions set artifact_id=null,status='failed_terminal',uploaded_at=null,
     staging_cleanup_pending=false,staging_cleanup_error=null,
-    failed_at=coalesce(failed_at,now()),last_error_code='artifact_deletion_requested',
-    last_error_message='Accepted source artifact entered controlled deletion',updated_at=now()
+    failure_code='artifact_missing',completed_at=null,
+    failed_at=coalesce(failed_at,now()),updated_at=now()
     where artifact_id=target_id;
   delete from public.activity_artifact_links where artifact_id=target_id;
   perform set_config('gradientpeak.artifact_lifecycle_authorized','on',true);
@@ -3526,6 +3705,9 @@ ALTER TABLE "public"."activity_efforts" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."activity_file_ingestions" ENABLE ROW LEVEL SECURITY;
 
+
+ALTER TABLE "public"."activity_training_effects" ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE "public"."activity_plans" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."activity_routes" ENABLE ROW LEVEL SECURITY;
@@ -3542,6 +3724,8 @@ ALTER TABLE "public"."athlete_consent_policy_versions" ENABLE ROW LEVEL SECURITY
 
 ALTER TABLE "public"."athlete_data_sharing_consents" ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE "public"."athlete_recalculation_queue" ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE "public"."canonical_activity_categories" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."coaching_assignments" ENABLE ROW LEVEL SECURITY;
@@ -3555,6 +3739,8 @@ ALTER TABLE "public"."content_access_grants" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."conversation_participants" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."conversations" ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE "public"."daily_training_load" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."events" ENABLE ROW LEVEL SECURITY;
 
@@ -3596,6 +3782,8 @@ ALTER TABLE "public"."organization_memberships" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."organizations" ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE "public"."planned_sessions" ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE "public"."profile_goals" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."profile_metrics" ENABLE ROW LEVEL SECURITY;
@@ -3611,6 +3799,8 @@ ALTER TABLE "public"."profile_performance_estimates" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."threshold_evaluations" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."threshold_evaluation_efforts" ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE "public"."threshold_evidence" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."thresholds" ENABLE ROW LEVEL SECURITY;
 
@@ -3696,6 +3886,7 @@ GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
 REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE
   public.activity_efforts,
+  public.activity_training_effects,
   public.threshold_evaluations,
   public.threshold_evaluation_efforts,
   public.thresholds

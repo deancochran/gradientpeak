@@ -1,3 +1,9 @@
+import type { ActivityTrainingEffect } from "@repo/core/athlete-derived-state";
+import {
+  MAX_DAILY_AGGREGATE_COMMON_LOAD,
+  MAX_TRAINING_STIMULUS_COMMON_LOAD,
+} from "@repo/core/athlete-intelligence";
+import type { PlannedSessionPrescriptionSnapshot } from "@repo/core/calendar";
 import { type PreferredUnitSystem, preferredUnitSystemValues } from "@repo/core/units";
 import { sql } from "drizzle-orm";
 import {
@@ -29,7 +35,9 @@ import {
   activityEffortSourceSeriesEnum,
   activityFileIngestionSourceEnum,
   activityFileIngestionStatusEnum,
+  activityIngestionFailureCodeEnum,
   activitySessionRpeSourceEnum,
+  athleteRecalculationReasonEnum,
   effortTypeEnum,
   eventStatusEnum,
   eventTypeEnum,
@@ -40,15 +48,22 @@ import {
   likeEntityTypeEnum,
   notificationTypeEnum,
   onboardingStatusEnum,
+  plannedSessionCancellationReasonEnum,
+  plannedSessionCompletionStateEnum,
+  plannedSessionSourceKindEnum,
+  plannedSessionStatusEnum,
   profileMetricTypeEnum,
   thresholdEvaluationEffortRoleEnum,
   thresholdEvaluationOutcomeEnum,
   thresholdEvaluationRejectionReasonEnum,
+  thresholdEvidenceStatusEnum,
   thresholdMetricEnum,
 } from "./enums";
 
 const preferredUnitSystemDbValues =
   preferredUnitSystemValues satisfies readonly PreferredUnitSystem[];
+const maxTrainingStimulusCommonLoadSql = sql.raw(String(MAX_TRAINING_STIMULUS_COMMON_LOAD));
+const maxDailyAggregateCommonLoadSql = sql.raw(String(MAX_DAILY_AGGREGATE_COMMON_LOAD));
 
 export const profiles = pgTable(
   "profiles",
@@ -109,6 +124,11 @@ export const profileAthleteState = pgTable(
     source_revision: bigint("source_revision", { mode: "number" }).default(0).notNull(),
     published_revision: bigint("published_revision", { mode: "number" }).default(0).notNull(),
     dirty_from_at: timestamp("dirty_from_at", { withTimezone: true, mode: "date" }),
+    activity_analysis_cursor_started_at: timestamp("activity_analysis_cursor_started_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    activity_analysis_cursor_activity_id: uuid("activity_analysis_cursor_activity_id"),
     fitness: numeric("fitness", { mode: "number" }).default(0).notNull(),
     fatigue: numeric("fatigue", { mode: "number" }).default(0).notNull(),
     evidence_confidence: numeric("evidence_confidence", { mode: "number" }).default(0).notNull(),
@@ -145,6 +165,10 @@ export const profileAthleteState = pgTable(
     check(
       "profile_athlete_state_lease_check",
       sql`num_nonnulls(${table.lease_token}, ${table.lease_expires_at}) in (0, 2)`,
+    ),
+    check(
+      "profile_athlete_state_analysis_cursor_check",
+      sql`num_nonnulls(${table.activity_analysis_cursor_started_at}, ${table.activity_analysis_cursor_activity_id}) in (0, 2)`,
     ),
     check("profile_athlete_state_failures_check", sql`${table.consecutive_failures} >= 0`),
     check("profile_athlete_state_algorithm_check", sql`btrim(${table.algorithm_version}) <> ''`),
@@ -1193,6 +1217,14 @@ export const events = pgTable(
       sql`${table.series_id} is null or btrim(${table.occurrence_key}) <> ''`,
     ),
     check(
+      "events_recurrence_occurrence_key_required",
+      sql`${table.recurrence_rule} is null or btrim(${table.occurrence_key}) <> ''`,
+    ),
+    check(
+      "events_occurrence_scheduled_date_identity",
+      sql`${table.occurrence_key} = '' or ${table.scheduled_date} = ${table.occurrence_key}`,
+    ),
+    check(
       "events_series_not_self",
       sql`${table.series_id} is null or ${table.series_id} <> ${table.id}`,
     ),
@@ -1745,6 +1777,186 @@ export const activityAnalysisRevisions = pgTable(
   ],
 );
 
+export const activityTrainingEffects = pgTable(
+  "activity_training_effects",
+  {
+    profile_id: uuid("profile_id").notNull(),
+    activity_id: uuid("activity_id").notNull(),
+    activity_analysis_revision: integer("activity_analysis_revision").notNull(),
+    contract_version: text("contract_version")
+      .notNull()
+      .default("athlete-derived-state-persistence-v1"),
+    effective_at: timestamp("effective_at", { withTimezone: true, mode: "date" }).notNull(),
+    planning_date: date("planning_date").notNull(),
+    source_revision: bigint("source_revision", { mode: "number" }).notNull(),
+    calculation_version: text("calculation_version").notNull(),
+    input_fingerprint: text("input_fingerprint").notNull(),
+    activity_category: text("activity_category", { enum: canonicalActivityCategoryDbValues })
+      .notNull()
+      .references(() => canonicalActivityCategories.code, { onDelete: "restrict" }),
+    common_load: numeric("common_load", { mode: "number" }).notNull(),
+    evidence_confidence: numeric("evidence_confidence", { mode: "number" }).notNull(),
+    capability_observation:
+      jsonb("capability_observation").$type<
+        ActivityTrainingEffect["stimulus"]["capabilityObservation"]
+      >(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.activity_id, table.activity_analysis_revision] }),
+    foreignKey({
+      columns: [table.activity_id, table.profile_id, table.activity_analysis_revision],
+      foreignColumns: [
+        activityAnalysisRevisions.activity_id,
+        activityAnalysisRevisions.profile_id,
+        activityAnalysisRevisions.revision,
+      ],
+      name: "activity_training_effects_analysis_revision_fkey",
+    }).onDelete("cascade"),
+    check(
+      "activity_training_effects_contract_version_check",
+      sql`${table.contract_version} = 'athlete-derived-state-persistence-v1'`,
+    ),
+    check(
+      "activity_training_effects_analysis_revision_check",
+      sql`${table.activity_analysis_revision} > 0`,
+    ),
+    check("activity_training_effects_source_revision_check", sql`${table.source_revision} >= 0`),
+    check(
+      "activity_training_effects_calculation_version_check",
+      sql`${table.calculation_version} ~ '^[a-z0-9][a-z0-9._-]{0,63}$'`,
+    ),
+    check(
+      "activity_training_effects_input_fingerprint_check",
+      sql`${table.input_fingerprint} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      "activity_training_effects_common_load_check",
+      sql`${table.common_load} between 0 and ${maxTrainingStimulusCommonLoadSql} and ${table.common_load} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
+    ),
+    check(
+      "activity_training_effects_confidence_check",
+      sql`${table.evidence_confidence} between 0 and 1 and ${table.evidence_confidence} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
+    ),
+    check(
+      "activity_training_effects_capability_check",
+      sql`${table.capability_observation} is null or (jsonb_typeof(${table.capability_observation}) = 'object' and pg_column_size(${table.capability_observation}) <= 4096 and ((${table.capability_observation}->>'distanceMeters') is not null or (${table.capability_observation}->>'durationMinutes') is not null))`,
+    ),
+    index("activity_training_effects_rebuild_idx").on(
+      table.profile_id,
+      table.effective_at,
+      table.activity_id,
+      table.activity_analysis_revision,
+    ),
+    index("activity_training_effects_profile_planning_date_idx").on(
+      table.profile_id,
+      table.planning_date,
+    ),
+  ],
+);
+
+export const dailyTrainingLoad = pgTable(
+  "daily_training_load",
+  {
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    planning_date: date("planning_date").notNull(),
+    contract_version: text("contract_version")
+      .notNull()
+      .default("athlete-derived-state-persistence-v1"),
+    common_load: numeric("common_load", { mode: "number" }).notNull(),
+    fitness: numeric("fitness", { mode: "number" }).notNull(),
+    fatigue: numeric("fatigue", { mode: "number" }).notNull(),
+    form: numeric("form", { mode: "number" }).notNull(),
+    readiness: numeric("readiness", { mode: "number" }),
+    coverage_status: text("coverage_status", { enum: ["complete", "partial"] }).notNull(),
+    contributing_activity_count: integer("contributing_activity_count").notNull(),
+    omitted_activity_count: integer("omitted_activity_count").notNull(),
+    source_revision: bigint("source_revision", { mode: "number" }).notNull(),
+    calculation_version: text("calculation_version").notNull(),
+    published_at: timestamp("published_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.profile_id, table.planning_date, table.source_revision] }),
+    check(
+      "daily_training_load_contract_version_check",
+      sql`${table.contract_version} = 'athlete-derived-state-persistence-v1'`,
+    ),
+    check(
+      "daily_training_load_common_load_check",
+      sql`${table.common_load} between 0 and ${maxDailyAggregateCommonLoadSql} and ${table.common_load} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
+    ),
+    check(
+      "daily_training_load_state_check",
+      sql`${table.fitness} >= 0 and ${table.fatigue} >= 0 and abs(${table.form} - (${table.fitness} - ${table.fatigue})) <= 0.000000001 and ${table.fitness} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) and ${table.fatigue} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) and ${table.form} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
+    ),
+    check(
+      "daily_training_load_readiness_check",
+      sql`${table.readiness} is null or (${table.readiness} between 0 and 100 and ${table.readiness} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric))`,
+    ),
+    check(
+      "daily_training_load_coverage_check",
+      sql`${table.contributing_activity_count} >= 0 and ((${table.coverage_status} = 'complete' and ${table.omitted_activity_count} = 0) or (${table.coverage_status} = 'partial' and ${table.omitted_activity_count} > 0))`,
+    ),
+    check("daily_training_load_source_revision_check", sql`${table.source_revision} >= 0`),
+    check(
+      "daily_training_load_calculation_version_check",
+      sql`${table.calculation_version} ~ '^[a-z0-9][a-z0-9._-]{0,63}$'`,
+    ),
+    index("daily_training_load_revision_range_idx").on(
+      table.profile_id,
+      table.source_revision,
+      table.planning_date,
+    ),
+  ],
+);
+
+export const athleteRecalculationQueue = pgTable(
+  "athlete_recalculation_queue",
+  {
+    profile_id: uuid("profile_id")
+      .primaryKey()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    contract_version: text("contract_version")
+      .notNull()
+      .default("athlete-derived-state-persistence-v1"),
+    idempotency_key: text("idempotency_key").notNull(),
+    earliest_affected_at: timestamp("earliest_affected_at", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+    earliest_affected_planning_date: date("earliest_affected_planning_date").notNull(),
+    source_revision: bigint("source_revision", { mode: "number" }).notNull(),
+    reasons: athleteRecalculationReasonEnum("reasons").array().notNull(),
+    requested_at: timestamp("requested_at", { withTimezone: true, mode: "date" }).notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("athlete_recalculation_queue_idempotency_unique").on(table.idempotency_key),
+    check(
+      "athlete_recalculation_queue_contract_version_check",
+      sql`${table.contract_version} = 'athlete-derived-state-persistence-v1'`,
+    ),
+    check(
+      "athlete_recalculation_queue_idempotency_check",
+      sql`${table.idempotency_key} = 'athlete-recalculation:' || ${table.profile_id}::text`,
+    ),
+    check("athlete_recalculation_queue_source_revision_check", sql`${table.source_revision} >= 0`),
+    check(
+      "athlete_recalculation_queue_reasons_check",
+      sql`cardinality(${table.reasons}) between 1 and 9 and ${table.reasons} = array_remove(array[case when 'activity_created' = any(${table.reasons}) then 'activity_created'::athlete_recalculation_reason end, case when 'activity_changed' = any(${table.reasons}) then 'activity_changed'::athlete_recalculation_reason end, case when 'activity_deleted' = any(${table.reasons}) then 'activity_deleted'::athlete_recalculation_reason end, case when 'analysis_replaced' = any(${table.reasons}) then 'analysis_replaced'::athlete_recalculation_reason end, case when 'threshold_changed' = any(${table.reasons}) then 'threshold_changed'::athlete_recalculation_reason end, case when 'import_completed' = any(${table.reasons}) then 'import_completed'::athlete_recalculation_reason end, case when 'algorithm_changed' = any(${table.reasons}) then 'algorithm_changed'::athlete_recalculation_reason end, case when 'timezone_changed' = any(${table.reasons}) then 'timezone_changed'::athlete_recalculation_reason end, case when 'explicit_repair' = any(${table.reasons}) then 'explicit_repair'::athlete_recalculation_reason end], null)`,
+    ),
+    index("athlete_recalculation_queue_pending_idx").on(table.requested_at, table.profile_id),
+  ],
+);
+
 export const activityFileIngestions = pgTable(
   "activity_file_ingestions",
   {
@@ -1757,12 +1969,9 @@ export const activityFileIngestions = pgTable(
     source: activityFileIngestionSourceEnum("source").notNull(),
     provider: integrationProviderEnum("provider"),
     external_id: text("external_id"),
-    integration_id: uuid("integration_id").references(() => integrations.id, {
-      onDelete: "set null",
-    }),
-    operation_key: text("operation_key").notNull(),
-    claim_token: uuid("claim_token"),
-    lease_expires_at: timestamp("lease_expires_at", { withTimezone: true, mode: "date" }),
+    integration_id: uuid("integration_id"),
+    contract_version: text("contract_version").notNull().default("activity-intake-v1"),
+    operation_id: text("operation_id").notNull(),
     staging_bucket: text("staging_bucket"),
     staging_path: text("staging_path"),
     expected_sha256: text("expected_sha256"),
@@ -1776,10 +1985,8 @@ export const activityFileIngestions = pgTable(
     received_at: timestamp("received_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
-    status: activityFileIngestionStatusEnum("status").notNull().default("pending_upload"),
-    attempt_count: integer("attempt_count").notNull().default(0),
-    last_error_code: text("last_error_code"),
-    last_error_message: text("last_error_message"),
+    status: activityFileIngestionStatusEnum("status").notNull().default("awaiting_upload"),
+    failure_code: activityIngestionFailureCodeEnum("failure_code"),
     requested_at: timestamp("requested_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -1804,16 +2011,23 @@ export const activityFileIngestions = pgTable(
       foreignColumns: [activityArtifacts.id, activityArtifacts.profile_id],
       name: "activity_file_ingestions_artifact_profile_fkey",
     }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.integration_id, table.profile_id],
+      foreignColumns: [integrations.id, integrations.profile_id],
+      name: "activity_file_ingestions_integration_profile_fkey",
+    }).onDelete("restrict"),
     check(
-      "activity_file_ingestions_ready_check",
-      sql`${table.status} <> 'ready' or (${table.activity_id} is not null and ${table.artifact_id} is not null)`,
+      "activity_file_ingestions_contract_version_check",
+      sql`${table.contract_version} = 'activity-intake-v1'`,
     ),
     check(
-      "activity_file_ingestions_claim_check",
-      sql`(${table.claim_token} is null) = (${table.lease_expires_at} is null)`,
+      "activity_file_ingestions_operation_id_check",
+      sql`${table.operation_id} ~ '^[A-Za-z0-9_-]{32,128}$'`,
     ),
-    check("activity_file_ingestions_operation_key_check", sql`btrim(${table.operation_key}) <> ''`),
-    check("activity_file_ingestions_attempt_count_check", sql`${table.attempt_count} >= 0`),
+    check(
+      "activity_file_ingestions_provider_identity_check",
+      sql`(${table.source} = 'provider_sync' and num_nonnulls(${table.provider}, ${table.external_id}, ${table.integration_id}) = 3 and btrim(${table.external_id}) <> '') or (${table.source} <> 'provider_sync' and num_nonnulls(${table.provider}, ${table.external_id}, ${table.integration_id}) = 0)`,
+    ),
     check(
       "activity_file_ingestions_expected_size_check",
       sql`${table.expected_byte_size} is null or ${table.expected_byte_size} > 0`,
@@ -1828,30 +2042,153 @@ export const activityFileIngestions = pgTable(
     ),
     check(
       "activity_file_ingestions_cleanup_state_check",
-      sql`(not ${table.staging_cleanup_pending} or (${table.status} = 'ready' and ${table.staging_path} is not null and ${table.artifact_id} is not null)) and (${table.staging_cleaned_at} is null or (not ${table.staging_cleanup_pending} and ${table.staging_path} is not null)) and (${table.staging_cleanup_error} is null or ${table.staging_cleanup_pending}) and not (${table.staging_cleaned_at} is not null and ${table.staging_cleanup_error} is not null)`,
+      sql`(not ${table.staging_cleanup_pending} or (${table.status} = 'succeeded' and ${table.staging_path} is not null and ${table.artifact_id} is not null)) and (${table.staging_cleaned_at} is null or (not ${table.staging_cleanup_pending} and ${table.staging_path} is not null)) and (${table.staging_cleanup_error} is null or ${table.staging_cleanup_pending}) and not (${table.staging_cleaned_at} is not null and ${table.staging_cleanup_error} is not null)`,
     ),
     check(
-      "activity_file_ingestions_processing_claim_check",
-      sql`(${table.status} = 'processing' and ${table.claim_token} is not null and ${table.lease_expires_at} is not null) or (${table.status} <> 'processing' and ${table.claim_token} is null and ${table.lease_expires_at} is null)`,
+      "activity_file_ingestions_lifecycle_check",
+      sql`(${table.status} = 'awaiting_upload' and ${table.activity_id} is null and ${table.artifact_id} is null and ${table.started_at} is null and num_nonnulls(${table.failure_code}, ${table.completed_at}, ${table.failed_at}) = 0) or (${table.status} = 'processing' and ${table.activity_id} is null and ${table.started_at} is not null and num_nonnulls(${table.failure_code}, ${table.completed_at}, ${table.failed_at}) = 0) or (${table.status} in ('failed_retryable', 'failed_terminal') and ${table.started_at} is not null and ${table.failure_code} is not null and ${table.failed_at} is not null and ${table.completed_at} is null) or (${table.status} = 'succeeded' and ${table.activity_id} is not null and ${table.artifact_id} is not null and ${table.started_at} is not null and ${table.completed_at} is not null and ${table.failure_code} is null and ${table.failed_at} is null)`,
     ),
     index("idx_activity_file_ingestions_activity_profile")
       .on(table.activity_id, table.profile_id)
-      .where(sql`${table.activity_id} is not null`),
-    index("idx_activity_file_ingestions_activity_id")
-      .on(table.activity_id)
       .where(sql`${table.activity_id} is not null`),
     index("idx_activity_file_ingestions_artifact_id")
       .on(table.artifact_id)
       .where(sql`${table.artifact_id} is not null`),
     index("idx_activity_file_ingestions_profile_id").on(table.profile_id),
-    index("idx_activity_file_ingestions_status").on(table.status),
+    index("idx_activity_file_ingestions_profile_status_updated").on(
+      table.profile_id,
+      table.status,
+      table.updated_at,
+    ),
     index("idx_activity_file_ingestions_provider_external")
       .on(table.provider, table.external_id)
       .where(sql`${table.provider} is not null and ${table.external_id} is not null`),
     uniqueIndex("activity_file_ingestions_profile_operation_unique").on(
       table.profile_id,
-      table.operation_key,
+      table.operation_id,
     ),
+  ],
+);
+
+export const plannedSessions = pgTable(
+  "planned_sessions",
+  {
+    id: uuid("id").primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    contract_version: text("contract_version").notNull().default("planned-session-v1"),
+    session_revision: integer("session_revision").notNull().default(1),
+    planning_date: date("planning_date").notNull(),
+    original_target_date: date("original_target_date").notNull(),
+    source_kind: plannedSessionSourceKindEnum("source_kind").notNull(),
+    idempotency_key: text("idempotency_key").notNull(),
+    direct_operation_id: text("direct_operation_id"),
+    training_plan_id: uuid("training_plan_id").references(() => trainingPlans.id, {
+      onDelete: "restrict",
+    }),
+    training_plan_revision: integer("training_plan_revision"),
+    source_session_key: text("source_session_key"),
+    series_id: uuid("series_id"),
+    occurrence_key: date("occurrence_key"),
+    group_event_id: uuid("group_event_id"),
+    activity_plan_id: uuid("activity_plan_id")
+      .notNull()
+      .references(() => activityPlans.id, { onDelete: "restrict" }),
+    activity_plan_revision: integer("activity_plan_revision").notNull(),
+    prescription_structure: jsonb("prescription_structure")
+      .$type<PlannedSessionPrescriptionSnapshot["structure"]>()
+      .notNull(),
+    prescription_quantification: jsonb("prescription_quantification").$type<
+      PlannedSessionPrescriptionSnapshot["prescriptionQuantification"]
+    >(),
+    prescription_captured_at: timestamp("prescription_captured_at", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+    status: plannedSessionStatusEnum("status").notNull().default("scheduled"),
+    cancellation_reason: plannedSessionCancellationReasonEnum("cancellation_reason"),
+    cancelled_at: timestamp("cancelled_at", { withTimezone: true, mode: "date" }),
+    completed_activity_id: uuid("completed_activity_id"),
+    completion_state: plannedSessionCompletionStateEnum("completion_state"),
+    linked_at: timestamp("linked_at", { withTimezone: true, mode: "date" }),
+    completion_unlinked_at: timestamp("completion_unlinked_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("planned_sessions_id_profile_unique").on(table.id, table.profile_id),
+    unique("planned_sessions_profile_idempotency_unique").on(
+      table.profile_id,
+      table.idempotency_key,
+    ),
+    foreignKey({
+      columns: [table.series_id, table.profile_id],
+      foreignColumns: [table.id, table.profile_id],
+      name: "planned_sessions_series_owner_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.completed_activity_id, table.profile_id],
+      foreignColumns: [activities.id, activities.profile_id],
+      name: "planned_sessions_completed_activity_owner_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.group_event_id],
+      foreignColumns: [groupEvents.id],
+      name: "planned_sessions_group_event_fkey",
+    }).onDelete("set null"),
+    check(
+      "planned_sessions_contract_version_check",
+      sql`${table.contract_version} = 'planned-session-v1'`,
+    ),
+    check("planned_sessions_revision_check", sql`${table.session_revision} > 0`),
+    check(
+      "planned_sessions_idempotency_length_check",
+      sql`char_length(${table.idempotency_key}) between 1 and 512`,
+    ),
+    check(
+      "planned_sessions_source_check",
+      sql`(${table.source_kind} = 'direct' and ${table.direct_operation_id} ~ '^[A-Za-z0-9_-]{32,128}$' and ${table.idempotency_key} = 'direct:' || ${table.direct_operation_id} and num_nonnulls(${table.training_plan_id}, ${table.training_plan_revision}, ${table.source_session_key}, ${table.series_id}, ${table.occurrence_key}) = 0) or (${table.source_kind} = 'training_plan' and ${table.training_plan_id} is not null and ${table.training_plan_revision} > 0 and ${table.source_session_key} is not null and char_length(btrim(${table.source_session_key})) between 1 and 128 and ${table.idempotency_key} = 'training-plan:' || ${table.training_plan_id}::text || ':' || ${table.training_plan_revision}::text || ':' || ${table.source_session_key} and num_nonnulls(${table.direct_operation_id}, ${table.series_id}, ${table.occurrence_key}) = 0) or (${table.source_kind} = 'recurrence' and ${table.series_id} is not null and ${table.occurrence_key} is not null and ${table.occurrence_key} = ${table.original_target_date} and ${table.idempotency_key} = 'recurrence:' || ${table.series_id}::text || ':' || ${table.occurrence_key}::text and num_nonnulls(${table.direct_operation_id}, ${table.training_plan_id}, ${table.training_plan_revision}, ${table.source_session_key}) = 0)`,
+    ),
+    check(
+      "planned_sessions_prescription_check",
+      sql`${table.activity_plan_revision} > 0 and jsonb_typeof(${table.prescription_structure}) = 'object' and pg_column_size(${table.prescription_structure}) <= 1048576 and (${table.prescription_quantification} is null or (jsonb_typeof(${table.prescription_quantification}) = 'object' and pg_column_size(${table.prescription_quantification}) <= 262144))`,
+    ),
+    check(
+      "planned_sessions_lifecycle_check",
+      sql`(${table.status} = 'scheduled' and num_nonnulls(${table.cancellation_reason}, ${table.cancelled_at}, ${table.completed_activity_id}, ${table.completion_state}, ${table.linked_at}, ${table.completion_unlinked_at}) = 0) or (${table.status} = 'cancelled' and ${table.cancellation_reason} is not null and ${table.cancelled_at} is not null and num_nonnulls(${table.completed_activity_id}, ${table.completion_state}, ${table.linked_at}, ${table.completion_unlinked_at}) = 0) or (${table.status} = 'completed' and num_nonnulls(${table.cancellation_reason}, ${table.cancelled_at}) = 0 and ((${table.completion_state} = 'linked' and ${table.completed_activity_id} is not null and ${table.linked_at} is not null and ${table.completion_unlinked_at} is null) or (${table.completion_state} = 'activity_deleted' and ${table.completed_activity_id} is null and ${table.linked_at} is not null and ${table.completion_unlinked_at} >= ${table.linked_at})))`,
+    ),
+    check(
+      "planned_sessions_series_not_self_check",
+      sql`${table.series_id} is null or ${table.series_id} <> ${table.id}`,
+    ),
+    index("planned_sessions_profile_date_idx").on(table.profile_id, table.planning_date, table.id),
+    index("planned_sessions_profile_status_date_idx").on(
+      table.profile_id,
+      table.status,
+      table.planning_date,
+      table.id,
+    ),
+    index("planned_sessions_training_plan_idx")
+      .on(table.training_plan_id, table.profile_id)
+      .where(sql`${table.training_plan_id} is not null`),
+    index("planned_sessions_activity_plan_idx").on(table.activity_plan_id),
+    uniqueIndex("planned_sessions_profile_group_event_unique")
+      .on(table.profile_id, table.group_event_id)
+      .where(sql`${table.group_event_id} is not null`),
+    index("planned_sessions_completed_activity_idx")
+      .on(table.completed_activity_id)
+      .where(sql`${table.completed_activity_id} is not null`),
+    uniqueIndex("planned_sessions_series_occurrence_unique")
+      .on(table.series_id, table.occurrence_key)
+      .where(sql`${table.series_id} is not null`),
   ],
 );
 
@@ -2266,6 +2603,112 @@ export const thresholds = pgTable(
     index("thresholds_supersedes_idx")
       .on(table.supersedes_id)
       .where(sql`${table.supersedes_id} is not null`),
+  ],
+);
+
+export const thresholdEvidence = pgTable(
+  "threshold_evidence",
+  {
+    id: uuid("id").primaryKey(),
+    profile_id: uuid("profile_id").notNull(),
+    activity_id: uuid("activity_id").notNull(),
+    contract_version: text("contract_version")
+      .notNull()
+      .default("athlete-derived-state-persistence-v1"),
+    activity_category: text("activity_category", { enum: ["bike", "run", "swim"] }).notNull(),
+    metric: thresholdMetricEnum("metric").notNull(),
+    unit: text("unit", { enum: ["watts", "meters_per_second"] }).notNull(),
+    method: text("method", {
+      enum: ["bike_power_30m", "run_speed_30m", "swim_speed_15m"],
+    }).notNull(),
+    value: numeric("value", { mode: "number" }).notNull(),
+    source_series_id: text("source_series_id").notNull(),
+    source_series_metric: text("source_series_metric", {
+      enum: ["power", "speed", "grade_adjusted_speed", "heart_rate"],
+    }).notNull(),
+    start_timestamp_seconds: numeric("start_timestamp_seconds", { mode: "number" }).notNull(),
+    end_timestamp_seconds: numeric("end_timestamp_seconds", { mode: "number" }).notNull(),
+    exact_window_seconds: integer("exact_window_seconds").notNull(),
+    conversion_factor: numeric("conversion_factor", { mode: "number" }).notNull(),
+    policy_version: text("policy_version").notNull(),
+    plausibility_version: text("plausibility_version").notNull(),
+    observed_at: timestamp("observed_at", { withTimezone: true, mode: "date" }).notNull(),
+    calculation_version: text("calculation_version").notNull(),
+    confidence: numeric("confidence", { mode: "number" }).notNull(),
+    status: thresholdEvidenceStatusEnum("status").notNull().default("active"),
+    invalidated_at: timestamp("invalidated_at", { withTimezone: true, mode: "date" }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("threshold_evidence_id_profile_activity_unique").on(
+      table.id,
+      table.profile_id,
+      table.activity_id,
+    ),
+    unique("threshold_evidence_profile_category_activity_unique").on(
+      table.profile_id,
+      table.activity_category,
+      table.activity_id,
+    ),
+    foreignKey({
+      columns: [table.activity_id, table.profile_id],
+      foreignColumns: [activities.id, activities.profile_id],
+      name: "threshold_evidence_activity_owner_fkey",
+    }).onDelete("cascade"),
+    check(
+      "threshold_evidence_contract_version_check",
+      sql`${table.contract_version} = 'athlete-derived-state-persistence-v1'`,
+    ),
+    check(
+      "threshold_evidence_identity_check",
+      sql`(${table.activity_category} = 'bike' and ${table.metric} = 'power' and ${table.unit} = 'watts' and ${table.method} = 'bike_power_30m' and ${table.source_series_metric} = 'power') or (${table.activity_category} = 'run' and ${table.metric} = 'speed' and ${table.unit} = 'meters_per_second' and ${table.method} = 'run_speed_30m' and ${table.source_series_metric} in ('speed', 'grade_adjusted_speed')) or (${table.activity_category} = 'swim' and ${table.metric} = 'speed' and ${table.unit} = 'meters_per_second' and ${table.method} = 'swim_speed_15m' and ${table.source_series_metric} = 'speed')`,
+    ),
+    check(
+      "threshold_evidence_value_check",
+      sql`${table.value} > 0 and ${table.value} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
+    ),
+    check(
+      "threshold_evidence_source_series_id_check",
+      sql`char_length(btrim(${table.source_series_id})) between 1 and 256`,
+    ),
+    check(
+      "threshold_evidence_window_check",
+      sql`${table.exact_window_seconds} > 0 and ${table.end_timestamp_seconds} = ${table.start_timestamp_seconds} + ${table.exact_window_seconds} and ${table.start_timestamp_seconds} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) and ${table.end_timestamp_seconds} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
+    ),
+    check(
+      "threshold_evidence_conversion_factor_check",
+      sql`${table.conversion_factor} > 0 and ${table.conversion_factor} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
+    ),
+    check("threshold_evidence_policy_check", sql`${table.policy_version} = 'threshold-policy-v1'`),
+    check(
+      "threshold_evidence_plausibility_check",
+      sql`${table.plausibility_version} = 'threshold-plausibility-v1'`,
+    ),
+    check(
+      "threshold_evidence_calculation_version_check",
+      sql`${table.calculation_version} ~ '^[a-z0-9][a-z0-9._-]{0,63}$'`,
+    ),
+    check(
+      "threshold_evidence_confidence_check",
+      sql`${table.confidence} between 0 and 1 and ${table.confidence} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
+    ),
+    check(
+      "threshold_evidence_lifecycle_check",
+      sql`(${table.status} = 'active' and ${table.invalidated_at} is null) or (${table.status} in ('superseded', 'deleted') and ${table.invalidated_at} >= ${table.observed_at})`,
+    ),
+    index("threshold_evidence_active_profile_observed_idx")
+      .on(table.profile_id, table.observed_at, table.id)
+      .where(sql`${table.status} = 'active'`),
+    index("threshold_evidence_activity_idx").on(table.activity_id, table.id),
+    index("threshold_evidence_profile_identity_observed_idx").on(
+      table.profile_id,
+      table.activity_category,
+      table.metric,
+      table.observed_at,
+      table.id,
+    ),
   ],
 );
 

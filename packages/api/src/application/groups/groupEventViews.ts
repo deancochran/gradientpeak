@@ -173,12 +173,14 @@ export async function serializeGroupEventsForViewer(
         .filter((rsvp) => rsvp.group_event_series_id === (event.series_id ?? event.id))
         .map((rsvp) => [rsvp.profile_id, rsvp] as const),
     );
-    const goingCount = [...activeMembers].filter((memberId) =>
-      isGroupEventGoing({
-        occurrenceStatus: occurrenceRsvpByProfileId.get(memberId)?.status,
-        seriesStatus: seriesRsvpByProfileId.get(memberId)?.status,
-      }),
-    ).length;
+    const goingCount = [...activeMembers].filter((memberId) => {
+      const occurrenceStatus = occurrenceRsvpByProfileId.get(memberId)?.status;
+      const seriesStatus = seriesRsvpByProfileId.get(memberId)?.status;
+      return isGroupEventGoing({
+        ...(occurrenceStatus !== undefined ? { occurrenceStatus } : {}),
+        ...(seriesStatus !== undefined ? { seriesStatus } : {}),
+      });
+    }).length;
     return serializeGroupEvent(event, {
       acceptedRsvpCount: goingCount,
       group: input.groupById?.get(event.group_id) ?? null,

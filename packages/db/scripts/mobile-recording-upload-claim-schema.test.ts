@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { getTableConfig } from "drizzle-orm/pg-core";
+import { activityFileIngestionStatusEnum } from "../src/schema/enums";
 import { activityFileIngestions } from "../src/schema/tables";
 import { dbPackageRoot } from "./_helpers";
 
@@ -20,6 +21,9 @@ for (const columnName of [
   "staging_cleanup_pending",
   "staging_cleaned_at",
   "staging_cleanup_error",
+  "contract_version",
+  "operation_id",
+  "failure_code",
 ]) {
   assert.ok(columns.has(columnName), `activity_file_ingestions.${columnName} must exist`);
 }
@@ -30,17 +34,25 @@ assert.equal(columns.get("staging_cleanup_pending")?.default, false);
 
 const checkNames = new Set(config.checks.map((constraint) => constraint.name));
 for (const checkName of [
-  "activity_file_ingestions_claim_check",
-  "activity_file_ingestions_processing_claim_check",
+  "activity_file_ingestions_contract_version_check",
+  "activity_file_ingestions_operation_id_check",
+  "activity_file_ingestions_provider_identity_check",
   "activity_file_ingestions_expected_size_check",
   "activity_file_ingestions_expected_hash_check",
   "activity_file_ingestions_staging_metadata_check",
   "activity_file_ingestions_cleanup_state_check",
+  "activity_file_ingestions_lifecycle_check",
 ]) {
   assert.ok(checkNames.has(checkName), `${checkName} must exist`);
 }
 
 for (const removedColumn of [
+  "claim_token",
+  "lease_expires_at",
+  "attempt_count",
+  "last_error_message",
+  "recovery_context",
+  "cancellation_reason",
   "accepted_sha256",
   "accepted_byte_size",
   "accepted_bucket",
@@ -57,6 +69,13 @@ for (const removedColumn of [
 
 const indexNames = new Set(config.indexes.map((index) => index.config.name));
 assert.ok(indexNames.has("activity_file_ingestions_profile_operation_unique"));
+assert.deepEqual(activityFileIngestionStatusEnum.enumValues, [
+  "awaiting_upload",
+  "processing",
+  "failed_retryable",
+  "succeeded",
+  "failed_terminal",
+]);
 
 const migration = readFileSync(
   resolve(dbPackageRoot, "supabase/migrations/20260730000000_mvp_baseline.sql"),
@@ -68,5 +87,12 @@ for (const mediaType of ["application/vnd.ant.fit", "application/vnd.garmin.tcx+
     `activity-files must accept promoted ${mediaType} artifacts`,
   );
 }
+for (const deferredObject of ["activity_ingestion_jobs", "recovery_context"]) {
+  assert.equal(
+    migration.includes(deferredObject),
+    false,
+    `fresh baseline must not contain deferred ingestion recovery object ${deferredObject}`,
+  );
+}
 
-console.log("Mobile recording upload claim schema contract tests passed.");
+console.log("Direct activity intake business-record schema contract tests passed.");

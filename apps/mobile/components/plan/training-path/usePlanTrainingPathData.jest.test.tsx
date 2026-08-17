@@ -173,7 +173,6 @@ describe("usePlanTrainingPathData", () => {
       expect.objectContaining({
         enabled: true,
         retry: false,
-        staleTime: 60_000,
       }),
     );
     expect(result.current.queryFailureCount).toBe(0);

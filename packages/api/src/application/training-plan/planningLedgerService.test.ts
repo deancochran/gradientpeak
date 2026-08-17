@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 import { readSelectedGroupEventsForCalendar } from "../groups/groupEventViews";
 import {
   buildPlanningLedger,
+  buildPlanningRange,
   readPlanningLedger,
+  readPlanningRange,
   resolvePlanningLedgerPeriod,
 } from "./planningLedgerService";
 
@@ -154,6 +156,78 @@ const projection = {
 };
 
 describe("planning ledger", () => {
+  it("exposes actual, committed, target, and effective load without double counting", () => {
+    const ledger = buildPlanningLedger({
+      projection: { ...projection, goalMarkers: [] },
+      request: { period: "week", anchorDate: "2026-04-15" },
+    });
+    const range = buildPlanningRange({
+      projection: { ...projection, goalMarkers: [] },
+      ledger,
+      startDate: "2026-04-13",
+      endDate: "2026-04-14",
+    });
+
+    expect(range.days[0]).toMatchObject({
+      actual: { status: "complete", value: 20 },
+      committed: { status: "complete", value: 40 },
+      target: { status: "complete", value: 60 },
+      effective: { status: "complete", value: 60 },
+    });
+    expect(range.weeks[0]).toMatchObject({
+      actual: { value: 20 },
+      committed: { value: 40 },
+      target: { value: 60 },
+      effective: { value: 60 },
+    });
+    expect(range.publishedRevision).toBe(7);
+  });
+
+  it("composes the full 366-day PlanningRange through one repeatable read", async () => {
+    const tx = { marker: "planning-range-snapshot" };
+    const transaction = vi.fn(async (operation, config) => {
+      expect(config).toEqual({ accessMode: "read only", isolationLevel: "repeatable read" });
+      return operation(tx);
+    });
+    const readProjection = vi.fn(async () => ({ ...projection, goalMarkers: [] }));
+    const readCalendarFacts = vi.fn(async () => ({
+      entries: [],
+      sourceCoverage: {
+        calendarEvents: {
+          startDate: "2026-01-01",
+          endDate: "2027-01-01",
+          status: "complete" as const,
+        },
+        groupEvents: {
+          startDate: "2026-01-01",
+          endDate: "2027-01-01",
+          status: "complete" as const,
+        },
+      },
+    }));
+    const result = await readPlanningRange({
+      db: { $client: {}, transaction } as never,
+      profileId: "11111111-1111-4111-8111-111111111111",
+      request: { startDate: "2026-01-01", endDate: "2027-01-01" },
+      dependencies: { readProjection, readCalendarFacts },
+    });
+
+    expect(result.days).toHaveLength(366);
+    expect(readProjection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        db: tx,
+        request: { startDate: "2026-01-01", endDate: "2027-01-01" },
+      }),
+    );
+    expect(readCalendarFacts).toHaveBeenCalledWith(
+      expect.objectContaining({
+        db: tx,
+        periodStart: "2026-01-01",
+        periodEndExclusive: "2027-01-02",
+      }),
+    );
+  });
+
   it("uses canonical Monday week and calendar-month boundaries", () => {
     expect(resolvePlanningLedgerPeriod({ period: "week", anchorDate: "2026-04-15" })).toEqual({
       periodStart: "2026-04-13",

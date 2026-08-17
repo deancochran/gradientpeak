@@ -34,7 +34,7 @@ function targetLabel({
   const presentation = resolveActivityPlanTargetPresentation({
     target,
     activityCategory,
-    performanceTargets,
+    ...(performanceTargets !== undefined ? { performanceTargets } : {}),
     asOf,
   });
   if (target.type !== "%FTP") return presentation.label;
@@ -101,7 +101,9 @@ export function ActivityPlanStructure({
                                   targetLabel({
                                     target,
                                     activityCategory: parsed.data.activity_category,
-                                    performanceTargets,
+                                    ...(performanceTargets !== undefined
+                                      ? { performanceTargets }
+                                      : {}),
                                     asOf: presentationTime,
                                   }),
                                 )

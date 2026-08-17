@@ -52,6 +52,33 @@ export const loadOnboardingOptions = createServerFn({ method: "GET" }).handler(a
   const savedMetrics = metrics.status === "fulfilled" ? metrics.value.items : [];
   const savedGoal = goals.status === "fulfilled" ? goals.value.items[0] : undefined;
   const integrationsState = getOnboardingIntegrationsLoadState(integrations);
+  const draftSettings = savedSettings
+    ? {
+        ...(savedSettings.onboarding_intents !== undefined
+          ? { onboarding_intents: savedSettings.onboarding_intents }
+          : {}),
+        dose_limits: {
+          ...(savedSettings.dose_limits.min_sessions_per_week !== undefined
+            ? { min_sessions_per_week: savedSettings.dose_limits.min_sessions_per_week }
+            : {}),
+          ...(savedSettings.dose_limits.max_sessions_per_week !== undefined
+            ? { max_sessions_per_week: savedSettings.dose_limits.max_sessions_per_week }
+            : {}),
+          ...(savedSettings.dose_limits.max_single_session_duration_minutes !== undefined
+            ? {
+                max_single_session_duration_minutes:
+                  savedSettings.dose_limits.max_single_session_duration_minutes,
+              }
+            : {}),
+          ...(savedSettings.dose_limits.max_weekly_duration_minutes !== undefined
+            ? { max_weekly_duration_minutes: savedSettings.dose_limits.max_weekly_duration_minutes }
+            : {}),
+        },
+        training_style: {
+          progression_pace: savedSettings.training_style.progression_pace,
+        },
+      }
+    : undefined;
 
   return {
     profile,
@@ -59,7 +86,7 @@ export const loadOnboardingOptions = createServerFn({ method: "GET" }).handler(a
       ? buildOnboardingDraftDefaults({
           profile,
           metrics: savedMetrics,
-          ...(savedSettings ? { settings: savedSettings } : null),
+          ...(draftSettings ? { settings: draftSettings } : null),
           ...(savedGoal
             ? {
                 goal: {

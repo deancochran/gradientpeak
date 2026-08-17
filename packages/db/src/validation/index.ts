@@ -7,7 +7,9 @@ import {
   activityEffortSourceSeriesEnum,
   activityFileIngestionSourceEnum,
   activityFileIngestionStatusEnum,
+  activityIngestionFailureCodeEnum,
   activitySessionRpeSourceEnum,
+  athleteRecalculationReasonEnum,
   effortTypeEnum,
   eventStatusEnum,
   eventTypeEnum,
@@ -16,10 +18,15 @@ import {
   integrationProviderEnum,
   integrationResourceKindEnum,
   notificationTypeEnum,
+  plannedSessionCancellationReasonEnum,
+  plannedSessionCompletionStateEnum,
+  plannedSessionSourceKindEnum,
+  plannedSessionStatusEnum,
   profileMetricTypeEnum,
   thresholdEvaluationEffortRoleEnum,
   thresholdEvaluationOutcomeEnum,
   thresholdEvaluationRejectionReasonEnum,
+  thresholdEvidenceStatusEnum,
   thresholdMetricEnum,
   trainingEffectLabelEnum,
 } from "../schema/enums";
@@ -33,9 +40,12 @@ import {
   activityRoutes,
   activitySegments,
   activitySessionRpeEvidence,
+  activityTrainingEffects,
+  athleteRecalculationQueue,
   comments,
   conversationParticipants,
   conversations,
+  dailyTrainingLoad,
   events,
   follows,
   integrationResourceLinks,
@@ -44,6 +54,8 @@ import {
   messages,
   notifications,
   oauthStates,
+  plannedSessions,
+  profileAthleteState,
   profileGoals,
   profileMetrics,
   profiles,
@@ -53,6 +65,7 @@ import {
   providerWebhookReceipts,
   thresholdEvaluationEfforts,
   thresholdEvaluations,
+  thresholdEvidence,
   thresholds,
   trainingPlans,
 } from "../schema/tables";
@@ -63,6 +76,21 @@ export const publicActivityFileIngestionSourceSchema = z.enum(
 );
 export const publicActivityFileIngestionStatusSchema = z.enum(
   activityFileIngestionStatusEnum.enumValues,
+);
+export const publicActivityIngestionFailureCodeSchema = z.enum(
+  activityIngestionFailureCodeEnum.enumValues,
+);
+export const publicAthleteRecalculationReasonSchema = z.enum(
+  athleteRecalculationReasonEnum.enumValues,
+);
+export const publicThresholdEvidenceStatusSchema = z.enum(thresholdEvidenceStatusEnum.enumValues);
+export const publicPlannedSessionSourceKindSchema = z.enum(plannedSessionSourceKindEnum.enumValues);
+export const publicPlannedSessionStatusSchema = z.enum(plannedSessionStatusEnum.enumValues);
+export const publicPlannedSessionCompletionStateSchema = z.enum(
+  plannedSessionCompletionStateEnum.enumValues,
+);
+export const publicPlannedSessionCancellationReasonSchema = z.enum(
+  plannedSessionCancellationReasonEnum.enumValues,
 );
 export const publicActivitySessionRpeSourceSchema = z.enum(activitySessionRpeSourceEnum.enumValues);
 export const publicEvidenceObservationSourceSchema = z.enum(
@@ -167,6 +195,29 @@ export const publicActivitySessionRpeEvidenceUpdateSchema = z.never();
 export const publicActivityFileIngestionsRowSchema = createSelectSchema(activityFileIngestions);
 export const publicActivityFileIngestionsInsertSchema = createInsertSchema(activityFileIngestions);
 export const publicActivityFileIngestionsUpdateSchema = createUpdateSchema(activityFileIngestions);
+export const publicActivityTrainingEffectsRowSchema = createSelectSchema(activityTrainingEffects);
+export const publicActivityTrainingEffectsInsertSchema =
+  createInsertSchema(activityTrainingEffects);
+export const publicActivityTrainingEffectsUpdateSchema =
+  createUpdateSchema(activityTrainingEffects);
+export const publicDailyTrainingLoadRowSchema = createSelectSchema(dailyTrainingLoad);
+export const publicDailyTrainingLoadInsertSchema = createInsertSchema(dailyTrainingLoad);
+export const publicDailyTrainingLoadUpdateSchema = createUpdateSchema(dailyTrainingLoad);
+export const publicAthleteRecalculationQueueRowSchema =
+  createSelectSchema(athleteRecalculationQueue);
+export const publicAthleteRecalculationQueueInsertSchema =
+  createInsertSchema(athleteRecalculationQueue);
+export const publicAthleteRecalculationQueueUpdateSchema =
+  createUpdateSchema(athleteRecalculationQueue);
+export const publicProfileAthleteStateRowSchema = createSelectSchema(profileAthleteState);
+export const publicProfileAthleteStateInsertSchema = createInsertSchema(profileAthleteState);
+export const publicProfileAthleteStateUpdateSchema = createUpdateSchema(profileAthleteState);
+export const publicThresholdEvidenceRowSchema = createSelectSchema(thresholdEvidence);
+export const publicThresholdEvidenceInsertSchema = createInsertSchema(thresholdEvidence);
+export const publicThresholdEvidenceUpdateSchema = createUpdateSchema(thresholdEvidence);
+export const publicPlannedSessionsRowSchema = createSelectSchema(plannedSessions);
+export const publicPlannedSessionsInsertSchema = createInsertSchema(plannedSessions);
+export const publicPlannedSessionsUpdateSchema = createUpdateSchema(plannedSessions);
 
 export const publicIntegrationsRowSchema = createSelectSchema(integrations);
 export const publicIntegrationsInsertSchema = createInsertSchema(integrations);
@@ -261,6 +312,21 @@ export type PublicActivityFileIngestionSource = z.infer<
 export type PublicActivityFileIngestionStatus = z.infer<
   typeof publicActivityFileIngestionStatusSchema
 >;
+export type PublicActivityIngestionFailureCode = z.infer<
+  typeof publicActivityIngestionFailureCodeSchema
+>;
+export type PublicAthleteRecalculationReason = z.infer<
+  typeof publicAthleteRecalculationReasonSchema
+>;
+export type PublicThresholdEvidenceStatus = z.infer<typeof publicThresholdEvidenceStatusSchema>;
+export type PublicPlannedSessionSourceKind = z.infer<typeof publicPlannedSessionSourceKindSchema>;
+export type PublicPlannedSessionStatus = z.infer<typeof publicPlannedSessionStatusSchema>;
+export type PublicPlannedSessionCompletionState = z.infer<
+  typeof publicPlannedSessionCompletionStateSchema
+>;
+export type PublicPlannedSessionCancellationReason = z.infer<
+  typeof publicPlannedSessionCancellationReasonSchema
+>;
 export type PublicEvidenceObservationSource = z.infer<typeof publicEvidenceObservationSourceSchema>;
 export type PublicEffortType = z.infer<typeof publicEffortTypeSchema>;
 export type PublicActivityEffortSourceSeries = z.infer<
@@ -313,6 +379,36 @@ export type PublicActivityFileIngestionsInsert = z.infer<
 export type PublicActivityFileIngestionsUpdate = z.infer<
   typeof publicActivityFileIngestionsUpdateSchema
 >;
+export type PublicActivityTrainingEffectsRow = z.infer<
+  typeof publicActivityTrainingEffectsRowSchema
+>;
+export type PublicActivityTrainingEffectsInsert = z.infer<
+  typeof publicActivityTrainingEffectsInsertSchema
+>;
+export type PublicActivityTrainingEffectsUpdate = z.infer<
+  typeof publicActivityTrainingEffectsUpdateSchema
+>;
+export type PublicDailyTrainingLoadRow = z.infer<typeof publicDailyTrainingLoadRowSchema>;
+export type PublicDailyTrainingLoadInsert = z.infer<typeof publicDailyTrainingLoadInsertSchema>;
+export type PublicDailyTrainingLoadUpdate = z.infer<typeof publicDailyTrainingLoadUpdateSchema>;
+export type PublicAthleteRecalculationQueueRow = z.infer<
+  typeof publicAthleteRecalculationQueueRowSchema
+>;
+export type PublicAthleteRecalculationQueueInsert = z.infer<
+  typeof publicAthleteRecalculationQueueInsertSchema
+>;
+export type PublicAthleteRecalculationQueueUpdate = z.infer<
+  typeof publicAthleteRecalculationQueueUpdateSchema
+>;
+export type PublicProfileAthleteStateRow = z.infer<typeof publicProfileAthleteStateRowSchema>;
+export type PublicProfileAthleteStateInsert = z.infer<typeof publicProfileAthleteStateInsertSchema>;
+export type PublicProfileAthleteStateUpdate = z.infer<typeof publicProfileAthleteStateUpdateSchema>;
+export type PublicThresholdEvidenceRow = z.infer<typeof publicThresholdEvidenceRowSchema>;
+export type PublicThresholdEvidenceInsert = z.infer<typeof publicThresholdEvidenceInsertSchema>;
+export type PublicThresholdEvidenceUpdate = z.infer<typeof publicThresholdEvidenceUpdateSchema>;
+export type PublicPlannedSessionsRow = z.infer<typeof publicPlannedSessionsRowSchema>;
+export type PublicPlannedSessionsInsert = z.infer<typeof publicPlannedSessionsInsertSchema>;
+export type PublicPlannedSessionsUpdate = z.infer<typeof publicPlannedSessionsUpdateSchema>;
 export type PublicIntegrationsRow = z.infer<typeof publicIntegrationsRowSchema>;
 export type PublicIntegrationsInsert = z.infer<typeof publicIntegrationsInsertSchema>;
 export type PublicIntegrationsUpdate = z.infer<typeof publicIntegrationsUpdateSchema>;

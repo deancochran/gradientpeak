@@ -31,6 +31,7 @@ const coachingAuthorityReadOnlyTables = [
 const coachingAuthorityReadOnlyTableSet = new Set<string>(coachingAuthorityReadOnlyTables);
 const immutableDerivedTables = [
   "activity_efforts",
+  "activity_training_effects",
   "threshold_evaluations",
   "threshold_evaluation_efforts",
   "thresholds",
@@ -301,16 +302,28 @@ async function main() {
       throw new Error("default sequence privilege assertions failed");
     }
 
-    const advisorIndex = await client.query<{ exists: boolean }>(`
-      select exists (
-        select 1 from pg_catalog.pg_indexes
-        where schemaname = 'public'
-          and tablename = 'activity_file_ingestions'
-          and indexname = 'idx_activity_file_ingestions_activity_profile'
-      )
+    const advisorIndex = await client.query<{
+      composite_exists: boolean;
+      redundant_exists: boolean;
+    }>(`
+      select
+        exists (
+          select 1 from pg_catalog.pg_indexes
+          where schemaname = 'public'
+            and tablename = 'activity_file_ingestions'
+            and indexname = 'idx_activity_file_ingestions_activity_profile'
+        ) as composite_exists,
+        exists (
+          select 1 from pg_catalog.pg_indexes
+          where schemaname = 'public'
+            and tablename = 'activity_file_ingestions'
+            and indexname = 'idx_activity_file_ingestions_activity_id'
+        ) as redundant_exists
     `);
-    if (!advisorIndex.rows[0]?.exists) {
-      throw new Error("activity_file_ingestions composite foreign-key index is missing");
+    if (!advisorIndex.rows[0]?.composite_exists || advisorIndex.rows[0]?.redundant_exists) {
+      throw new Error(
+        "activity_file_ingestions must retain the composite foreign-key index without its redundant left-prefix duplicate",
+      );
     }
 
     console.log(

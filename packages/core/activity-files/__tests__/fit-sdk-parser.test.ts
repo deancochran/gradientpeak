@@ -292,7 +292,7 @@ describe("standards-first FIT decoding", () => {
   it("fails explicitly for malformed bytes and a valid FIT file without sessions", () => {
     expect(safeDecodeFitFile(Buffer.from([1, 2, 3])).errors[0]?.type).toBe("format");
     expect(() => decodeFitActivityArtifact(new Uint8Array([1, 2, 3]))).toThrow(
-      "Failed to decode FIT file",
+      expect.objectContaining({ code: "unsupported_format", name: "ActivityFileParseError" }),
     );
 
     const encoder = new Encoder();

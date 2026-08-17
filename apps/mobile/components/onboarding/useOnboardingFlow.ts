@@ -21,6 +21,7 @@ import {
   OnboardingRecoveryPayloadTooLargeError,
   type OnboardingRecoveryRecord,
   type OnboardingRecoverySection,
+  type OnboardingRecoverySettingsPatch,
   onboardingRecoveryExpiry,
   type PendingOnboardingRecoveryRecord,
   saveOnboardingRecovery,
@@ -36,6 +37,25 @@ import { runOnboardingRecoveryAction } from "./recovery-actions";
 import type { OnboardingData, OnboardingFieldSources, OnboardingStatusModal } from "./types";
 
 type SocialActionJob = { key: string; run: () => Promise<unknown> };
+
+function normalizeTrainingPreferencesPatch(
+  patch: OnboardingRecoverySettingsPatch | undefined,
+): OnboardingData["training_preferences_patch"] {
+  if (!patch) return {};
+  return {
+    ...(patch.preset !== undefined ? { preset: patch.preset } : {}),
+    ...(patch.minSessionsPerWeek !== undefined
+      ? { minSessionsPerWeek: patch.minSessionsPerWeek }
+      : {}),
+    ...(patch.maxSessionsPerWeek !== undefined
+      ? { maxSessionsPerWeek: patch.maxSessionsPerWeek }
+      : {}),
+    ...(patch.maxSingleSessionMinutes !== undefined
+      ? { maxSingleSessionMinutes: patch.maxSingleSessionMinutes }
+      : {}),
+    ...(patch.maxWeeklyMinutes !== undefined ? { maxWeeklyMinutes: patch.maxWeeklyMinutes } : {}),
+  };
+}
 
 export async function runSocialActionsWithLimit(jobs: SocialActionJob[], limit = 4) {
   const results: Array<{ key: string; status: "saved" | "failed" }> = [];
@@ -215,7 +235,7 @@ export function useOnboardingFlow() {
             social_action_statuses: record.social.statuses,
             should_create_goal: Boolean(record.goal),
             should_save_training_preferences: Boolean(record.settingsPatch),
-            training_preferences_patch: record.settingsPatch ?? {},
+            training_preferences_patch: normalizeTrainingPreferencesPatch(record.settingsPatch),
             training_preferences_hydration_status: "ready",
           };
           setData(recoveredData);
@@ -315,7 +335,12 @@ export function useOnboardingFlow() {
             value === null
               ? { kind: "cleared" }
               : options?.source === "imported"
-                ? { kind: "imported", label: options.sourceLabels?.[field] }
+                ? {
+                    kind: "imported",
+                    ...(options.sourceLabels?.[field] !== undefined
+                      ? { label: options.sourceLabels[field] }
+                      : {}),
+                  }
                 : options?.source === "estimated"
                   ? { kind: "estimated" }
                   : { kind: "manual" };
@@ -512,7 +537,9 @@ export function useOnboardingFlow() {
   const lifecycleStatus = resolveOnboardingLifecycleStatus({
     overrideStatus: lifecycleOverride,
     profileStatus: onboardingStatus,
-    progressStatus: progressQuery.data?.status,
+    ...(progressQuery.data?.status !== undefined
+      ? { progressStatus: progressQuery.data.status }
+      : {}),
   });
 
   useEffect(() => {
@@ -1060,12 +1087,12 @@ export function useOnboardingFlow() {
     restartProviderSelection,
     updateData,
     usernameAvailability: {
-      available:
-        usernameIsReadyToCheck &&
-        !usernameAvailabilityQuery.isError &&
-        !usernameAvailabilityQuery.isFetching
-          ? usernameAvailabilityQuery.data?.available
-          : undefined,
+      ...(usernameIsReadyToCheck &&
+      !usernameAvailabilityQuery.isError &&
+      !usernameAvailabilityQuery.isFetching &&
+      usernameAvailabilityQuery.data?.available !== undefined
+        ? { available: usernameAvailabilityQuery.data.available }
+        : {}),
       isChecking:
         isValidOnboardingUsername(username) &&
         (!usernameIsReadyToCheck || usernameAvailabilityQuery.isFetching),

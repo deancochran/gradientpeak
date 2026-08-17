@@ -206,14 +206,20 @@
       "verification": {
         "lint": { "script": "lint", "patterns": ["**/*"] },
         "static": { "script": "check", "patterns": ["**/*"] },
-        "test": {
-          "script": "test",
-          "patterns": [
-            "tests/parity/**/*.test.ts",
-            "tooling/architecture/**/*.test.mjs",
-            "tooling/testing/**/*.test.mjs"
-          ]
-        }
+        "test": [
+          {
+            "script": "test",
+            "patterns": [
+              "tests/parity/**/*.test.ts",
+              "tooling/architecture/**/*.test.mjs",
+              "tooling/testing/**/*.test.mjs"
+            ]
+          },
+          {
+            "script": "test:architecture",
+            "patterns": ["tooling/qa/profiles.test.mjs"]
+          }
+        ]
       }
     }
   },
@@ -258,6 +264,7 @@
       "apps/**/*",
       "packages/**/*",
       "tooling/architecture/**/*.test.mjs",
+      "tooling/qa/profiles.test.mjs",
       "tooling/testing/**/*.test.mjs",
       "tooling/typescript/**/*.test.mjs",
       "tests/parity/**/*.test.ts"

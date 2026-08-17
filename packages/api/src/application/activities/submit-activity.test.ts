@@ -9,12 +9,12 @@ import {
   activityArtifactLinks,
   activityArtifacts,
   activityEfforts,
-  activityFileIngestions,
   activitySegments,
   activitySourceReferences,
 } from "@repo/db";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { getRequiredDb } from "../../db";
+import { acceptActivityIngestion } from "../activity-file-ingestion/direct-activity-ingestion";
 import { materializeActivityAthleteStateEvidence } from "../athlete-intelligence/athlete-state-evidence";
 import type { GeneratedActivityLthrEvidence } from "./reconcile-activity-evidence";
 import {
@@ -69,6 +69,19 @@ vi.mock("../athlete-intelligence/published-athlete-state", async () => {
       }),
     ),
   };
+});
+
+vi.mock("../activity-file-ingestion/direct-activity-ingestion", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../activity-file-ingestion/direct-activity-ingestion")
+  >()),
+  acceptActivityIngestion: vi.fn(),
+}));
+
+beforeEach(() => {
+  vi.mocked(acceptActivityIngestion)
+    .mockReset()
+    .mockResolvedValue({} as never);
 });
 
 describe("recordingSessionActivityId", () => {
@@ -583,7 +596,8 @@ describe("submitActivity", () => {
     expect(committed).toEqual([]);
   });
 
-  it("aborts before projection when the ingestion claim is lost", async () => {
+  it("aborts before projection when direct ingestion acceptance fails", async () => {
+    vi.mocked(acceptActivityIngestion).mockRejectedValueOnce(new Error("state conflict"));
     const { db, committed } = createDb();
     await expect(
       submitActivity(db, {
@@ -598,9 +612,8 @@ describe("submitActivity", () => {
         detectedLTHR: null,
         ingestion: {
           source: "mobile_recording",
-          operationKey: "recording:1",
+          operationId: "recording:1",
           ingestionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-          claimToken: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
           artifact: {
             sha256: "a".repeat(64),
             byteSize: 3,
@@ -611,7 +624,7 @@ describe("submitActivity", () => {
           },
         },
       }),
-    ).rejects.toThrow("Activity file ingestion claim was lost");
+    ).rejects.toThrow("activity_ingestion_persistence_failed");
     expect(committed).toEqual([]);
   });
 
@@ -651,7 +664,7 @@ describe("submitActivity", () => {
           source: "provider_sync",
           provider: "strava",
           externalId: "strava-summary-1",
-          operationKey: "provider_sync:strava:strava-summary-1:artifact-a",
+          operationId: "provider_sync:strava:strava-summary-1:artifact-a",
           artifact: {
             sha256: "a".repeat(64),
             byteSize: 123,
@@ -724,6 +737,8 @@ describe("submitActivity", () => {
             source: "provider_sync",
             provider: "wahoo",
             externalId: "external-1",
+            operationId: "a".repeat(64),
+            ingestionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             artifact: {
               sha256: "b".repeat(64),
               byteSize: 321,
@@ -793,6 +808,8 @@ describe("submitActivity", () => {
           source: "provider_sync",
           provider: "wahoo",
           externalId: "external-1",
+          operationId: "a".repeat(64),
+          ingestionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
           fileType: "fit",
           artifact: {
             sha256: "a".repeat(64),
@@ -811,7 +828,6 @@ describe("submitActivity", () => {
         activities,
         activitySourceReferences,
         activityEfforts,
-        activityFileIngestions,
         activityArtifacts,
         activityArtifactLinks,
         activitySegments,
@@ -824,13 +840,9 @@ describe("submitActivity", () => {
         duration_seconds: 300,
       }),
     ]);
-    expect(insertedValues.find((entry) => entry.table === activityFileIngestions)?.values).toEqual(
-      expect.objectContaining({
-        source: "provider_sync",
-        status: "ready",
-        provider: "wahoo",
-        external_id: "external-1",
-      }),
+    expect(acceptActivityIngestion).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ source: "provider_sync" }),
     );
     expect(materializeActivityAthleteStateEvidence).toHaveBeenLastCalledWith(
       expect.anything(),

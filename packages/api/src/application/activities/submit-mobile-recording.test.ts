@@ -1,13 +1,17 @@
+import {
+  ACTIVITY_FILE_INGESTION_CONTRACT_VERSION,
+  activityFileIngestionOperationSchema,
+} from "@repo/core/activity-files";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const activityWriter = vi.hoisted(() => ({ submitActivity: vi.fn() }));
 const artifactFinalizer = vi.hoisted(() => ({ finalizeActivityArtifactIngestion: vi.fn() }));
 const uploadFlow = vi.hoisted(() => ({
   loadAcceptedArtifactForClaim: vi.fn(),
-  markPreparedMobileRecordingArtifactFailed: vi.fn(),
   prepareMobileRecordingArtifact: vi.fn(),
   retryMobileRecordingStagingCleanup: vi.fn(),
 }));
+const ingestionRepository = vi.hoisted(() => ({ getOwnedByOperation: vi.fn() }));
 
 vi.mock("./submit-activity", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./submit-activity")>()),
@@ -17,12 +21,15 @@ vi.mock("../activity-file-ingestion/finalize-activity-artifact-ingestion", () =>
 vi.mock("../activity-file-ingestion/mobile-recording-upload", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../activity-file-ingestion/mobile-recording-upload")>()),
   loadAcceptedArtifactForClaim: uploadFlow.loadAcceptedArtifactForClaim,
-  markPreparedMobileRecordingArtifactFailed: uploadFlow.markPreparedMobileRecordingArtifactFailed,
   prepareMobileRecordingArtifact: uploadFlow.prepareMobileRecordingArtifact,
   retryMobileRecordingStagingCleanup: uploadFlow.retryMobileRecordingStagingCleanup,
 }));
+vi.mock("../../infrastructure/repositories", () => ({
+  createDrizzleActivityIngestionRepository: () => ingestionRepository,
+}));
 
 import { recordingSummarySubmissionInputSchema } from "../../contracts/recording-submission";
+import { mobileRecordingOperationId } from "../activity-file-ingestion/mobile-recording-upload";
 import { recordingSessionActivityId } from "./submit-activity";
 import { submitMobileRecording } from "./submit-mobile-recording";
 
@@ -30,7 +37,6 @@ const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_PROFILE_ID = "11111111-1111-4111-8111-111111111112";
 const PLAN_ID = "11111111-1111-4111-8111-111111111113";
 const INGESTION_ID = "22222222-2222-4222-8222-222222222222";
-const CLAIM_TOKEN = "33333333-3333-4333-8333-333333333333";
 const ACCEPTED_SHA256 = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 const acceptedArtifact = {
   sha256: ACCEPTED_SHA256,
@@ -41,6 +47,55 @@ const acceptedArtifact = {
   format: "fit" as const,
   originalName: null,
 };
+const NOW = "2026-07-24T09:00:00.000Z";
+
+function ingestion(sessionId: string, overrides: Record<string, unknown> = {}) {
+  const activityId = recordingSessionActivityId(PROFILE_ID, sessionId);
+  return activityFileIngestionOperationSchema.parse({
+    id: INGESTION_ID,
+    profileId: PROFILE_ID,
+    contractVersion: ACTIVITY_FILE_INGESTION_CONTRACT_VERSION,
+    operationId: mobileRecordingOperationId(sessionId),
+    source: "mobile_recording",
+    provider: null,
+    externalId: null,
+    integrationId: null,
+    activityId: null,
+    artifactId: null,
+    stagingBucket: "activity-files",
+    stagingPath: `mobile-recordings/${PROFILE_ID}/${activityId}.fit`,
+    expectedSha256: ACCEPTED_SHA256,
+    expectedByteSize: 3,
+    expectedFormat: "fit",
+    expectedMediaType: "application/vnd.ant.fit",
+    uploadedAt: NOW,
+    stagingCleanupPending: false,
+    stagingCleanedAt: null,
+    stagingCleanupError: null,
+    status: "awaiting_upload",
+    failureCode: null,
+    requestedAt: NOW,
+    startedAt: null,
+    completedAt: null,
+    failedAt: null,
+    receivedAt: NOW,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides,
+  });
+}
+
+function acceptedIngestion(sessionId: string, id = INGESTION_ID) {
+  return ingestion(sessionId, {
+    id,
+    activityId: recordingSessionActivityId(PROFILE_ID, sessionId),
+    artifactId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    status: "succeeded",
+    startedAt: NOW,
+    completedAt: NOW,
+    stagingCleanupPending: true,
+  });
+}
 const submission = recordingSummarySubmissionInputSchema.parse({
   profileId: PROFILE_ID,
   recordingSessionId: "session-1",
@@ -101,11 +156,12 @@ function activityPlanStructure(activity_category: "bike" | "run", segmentCount =
 
 function createDb(input: {
   activities: Array<Record<string, unknown> | undefined>;
-  ingestions?: Array<Record<string, unknown> | undefined>;
+  ingestions?: Array<ReturnType<typeof ingestion> | undefined>;
   selectRows?: unknown[][];
 }) {
   const activities = [...input.activities];
   const ingestions = [...(input.ingestions ?? [])];
+  ingestionRepository.getOwnedByOperation.mockImplementation(async () => ingestions.shift());
   const selectRows = [...(input.selectRows ?? [[{ defaultContentVisibility: "private" }]])];
   const selectBuilder = {
     from: vi.fn(() => selectBuilder),
@@ -115,7 +171,6 @@ function createDb(input: {
   return {
     query: {
       activities: { findFirst: vi.fn(async () => activities.shift()) },
-      activityFileIngestions: { findFirst: vi.fn(async () => ingestions.shift()) },
     },
     select: vi.fn(() => selectBuilder),
   };
@@ -132,9 +187,8 @@ describe("submitMobileRecording", () => {
         input.submit({ parsedData: null, artifact: acceptedArtifact }),
     );
     uploadFlow.prepareMobileRecordingArtifact.mockResolvedValue({
-      status: "claimed",
-      ingestion: { id: INGESTION_ID, expected_sha256: ACCEPTED_SHA256 },
-      claimToken: CLAIM_TOKEN,
+      status: "processing",
+      ingestion: ingestion("session-1", { status: "processing", startedAt: NOW }),
       staging: {
         bucket: "activity-files",
         path: `staging/mobile-recordings/${PROFILE_ID}/artifact.fit`,
@@ -147,13 +201,11 @@ describe("submitMobileRecording", () => {
 
   it("attaches an accessible single-activity-category plan to a new recording", async () => {
     const db = createDb({
-      activities: [undefined, { id: "activity-1", profile_id: PROFILE_ID }],
+      activities: [{ id: "activity-1", profile_id: PROFILE_ID }],
       ingestions: [
+        undefined,
         {
-          id: INGESTION_ID,
-          profile_id: PROFILE_ID,
-          source: "mobile_recording",
-          status: "ready",
+          ...acceptedIngestion("single-activity-category-plan-session"),
         },
       ],
       selectRows: [
@@ -187,15 +239,8 @@ describe("submitMobileRecording", () => {
 
   it("rejects a legacy segment-category plan before storage work", async () => {
     const db = createDb({
-      activities: [undefined, { id: "activity-1", profile_id: PROFILE_ID }],
-      ingestions: [
-        {
-          id: INGESTION_ID,
-          profile_id: PROFILE_ID,
-          source: "mobile_recording",
-          status: "ready",
-        },
-      ],
+      activities: [],
+      ingestions: [undefined],
       selectRows: [
         [
           {
@@ -292,22 +337,15 @@ describe("submitMobileRecording", () => {
     expect(activityWriter.submitActivity).not.toHaveBeenCalled();
   });
 
-  it("passes the exact upload lease into the atomic activity finalization", async () => {
-    const readyIngestion = {
-      id: INGESTION_ID,
-      profile_id: PROFILE_ID,
-      source: "mobile_recording",
-      status: "ready",
-      staging_cleanup_pending: true,
-    };
+  it("passes the exact direct ingestion identity into atomic activity finalization", async () => {
+    const readyIngestion = acceptedIngestion("session-1");
     const db = createDb({
-      activities: [undefined, { id: "activity-1", profile_id: PROFILE_ID }],
-      ingestions: [readyIngestion],
+      activities: [{ id: "activity-1", profile_id: PROFILE_ID }],
+      ingestions: [undefined, readyIngestion],
     });
     uploadFlow.prepareMobileRecordingArtifact.mockResolvedValue({
-      status: "claimed",
-      ingestion: { id: INGESTION_ID, expected_sha256: ACCEPTED_SHA256 },
-      claimToken: CLAIM_TOKEN,
+      status: "processing",
+      ingestion: ingestion("session-1", { status: "processing", startedAt: NOW }),
       staging: {
         bucket: "activity-files",
         path: `staging/mobile-recordings/${PROFILE_ID}/artifact.fit`,
@@ -331,7 +369,6 @@ describe("submitMobileRecording", () => {
           ingestion: expect.objectContaining({
             source: "mobile_recording",
             ingestionId: INGESTION_ID,
-            claimToken: CLAIM_TOKEN,
             stagingCleanupPending: true,
             artifact: acceptedArtifact,
           }),
@@ -351,13 +388,7 @@ describe("submitMobileRecording", () => {
   });
 
   it("returns the same accepted result on replay and retries pending cleanup", async () => {
-    const readyIngestion = {
-      id: INGESTION_ID,
-      profile_id: PROFILE_ID,
-      source: "mobile_recording",
-      status: "ready",
-      staging_cleanup_pending: true,
-    };
+    const readyIngestion = acceptedIngestion("session-1");
     const db = createDb({
       activities: [{ id: "activity-1", profile_id: PROFILE_ID }],
       ingestions: [readyIngestion],
@@ -385,16 +416,10 @@ describe("submitMobileRecording", () => {
       uploadedArtifact: { ingestionId: INGESTION_ID },
       summary: { distanceMeters: 10_000 },
     });
-    const readyIngestion = {
-      id: INGESTION_ID,
-      profile_id: PROFILE_ID,
-      source: "mobile_recording",
-      status: "ready",
-      staging_cleanup_pending: false,
-    };
+    const readyIngestion = acceptedIngestion("uploaded-artifact-session-1", INGESTION_ID);
     const db = createDb({
-      activities: [undefined, { id: "activity-1", profile_id: PROFILE_ID }],
-      ingestions: [readyIngestion],
+      activities: [{ id: "activity-1", profile_id: PROFILE_ID }],
+      ingestions: [undefined, readyIngestion],
     });
     const storage = {
       storage: { from: vi.fn() },
@@ -415,7 +440,7 @@ describe("submitMobileRecording", () => {
         requestedActivityId: recordingSessionActivityId(PROFILE_ID, "uploaded-artifact-session-1"),
         analysis: expect.objectContaining({
           ingestion: expect.objectContaining({
-            operationKey: "mobile-recording:uploaded-artifact-session-1",
+            operationId: mobileRecordingOperationId("uploaded-artifact-session-1"),
           }),
         }),
       }),
@@ -436,7 +461,7 @@ describe("submitMobileRecording", () => {
     const db = createDb({
       activities: [{ id: "activity-1", profile_id: PROFILE_ID }],
       ingestions: [
-        { id: INGESTION_ID, profile_id: PROFILE_ID, source: "mobile_recording", status: "ready" },
+        acceptedIngestion("uploaded-artifact-session-1", "22222222-2222-4222-8222-222222222222"),
       ],
     });
     await expect(

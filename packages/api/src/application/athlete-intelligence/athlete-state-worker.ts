@@ -7,9 +7,17 @@ import {
   dailyAggregateCommonLoadSchema,
   getCalendarDateInIanaZone,
 } from "@repo/core";
+import {
+  type ActivityTrainingEffect,
+  ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION,
+  type DailyTrainingLoad,
+  dailyTrainingLoadSchema,
+} from "@repo/core/athlete-derived-state";
 import type { profilePerformanceEstimates } from "@repo/db";
 import type { DrizzleTransactionClient, getRequiredDb } from "../../db";
+import { createDrizzleAthleteDerivedStateRepository } from "../../infrastructure/repositories";
 import { enqueueWahooRelativeTargetRefreshes } from "../../lib/provider-sync/planned-activities/refresh-wahoo-relative-target-activities";
+import type { AthleteDerivedStateRepositoryPort } from "../../repositories/athlete-derived-state-repository-port";
 import { createAthletePerformanceModelRepository } from "../../repositories/athlete-performance-model-repository";
 import {
   type AthleteStateClaim,
@@ -17,15 +25,23 @@ import {
   failAthleteStateClaim,
   publishAthleteState,
   readAthleteStateEvidencePage,
+  releaseAthleteStateClaim,
   renewAthleteStateClaim,
 } from "../../repositories/athlete-state-repository";
+import {
+  AnalysisRefreshFenceError,
+  reprocessProfileActivityAnalysis,
+} from "../activity-analysis/reprocess-profile-activity-analysis";
 import { reconcileOnboardingStatus } from "../onboarding/readiness";
 import { createAthletePerformanceTargetFactsReader } from "../performance-model/get-athlete-performance-model-as-of";
+import { publishAthleteDailyLoad } from "./publish-athlete-daily-load";
 import { readCachedPublishedAthletePerformanceTargets } from "./published-athlete-state";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 const PAGE_SIZE = 100;
 export const ATHLETE_STATE_LEASE_MILLISECONDS = 5 * 60_000;
+const ACTIVITY_ANALYSIS_REFRESH_LEASE_MILLISECONDS = 30 * 60_000;
+const DERIVED_EFFECT_PAGE_SIZE = 500;
 
 export class AthleteStateLeaseLostError extends Error {
   override readonly name = "AthleteStateLeaseLostError";
@@ -51,6 +67,220 @@ export function safeDailyEvidenceInstant(latestObservedAt: Date, now: Date) {
 
 export function addDailyAthleteStateCommonLoad(current: number, next: number) {
   return dailyAggregateCommonLoadSchema.parse(current + next);
+}
+
+function buildRevisionedDailyLoads(input: {
+  profileId: string;
+  sourceRevision: number;
+  effects: ActivityTrainingEffect[];
+  fallbackAt: string;
+}) {
+  const groups = new Map<string, ActivityTrainingEffect[]>();
+  for (const effect of input.effects) {
+    groups.set(effect.planningDate, [...(groups.get(effect.planningDate) ?? []), effect]);
+  }
+  const orderedGroups = [...groups.entries()].sort(([left], [right]) => left.localeCompare(right));
+  let state = initialState(
+    {
+      profileId: input.profileId,
+      sourceRevision: input.sourceRevision,
+      leaseToken: "00000000-0000-4000-8000-000000000000",
+      planningTimezone: "UTC",
+      dirtyFromAt: null,
+      activityAnalysisCursor: null,
+    },
+    orderedGroups[0]?.[1][0]?.effectiveAt ?? input.fallbackAt,
+  );
+  let previousDay = orderedGroups[0]?.[0] ?? input.fallbackAt.slice(0, 10);
+  const days: DailyTrainingLoad[] = [];
+  for (const [planningDate, effects] of orderedGroups) {
+    const latest = effects.at(-1);
+    const first = effects[0];
+    if (!latest || !first) continue;
+    const commonLoad = effects.reduce(
+      (total, effect) => addDailyAthleteStateCommonLoad(total, effect.stimulus.commonLoad),
+      0,
+    );
+    const confidence = Math.min(...effects.map((effect) => effect.stimulus.evidenceConfidence));
+    const stimulus =
+      effects.length === 1
+        ? first.stimulus
+        : {
+            kind: "observed" as const,
+            sourceId: `athlete-day:${planningDate}`,
+            occurredAt: latest.effectiveAt,
+            activityCategory: "other" as const,
+            commonLoad,
+            evidenceConfidence: confidence,
+            capabilityObservation: null,
+          };
+    state = advanceObservedAthleteState({
+      baseline: state,
+      planningDays: { fromDay: previousDay, toDay: planningDate },
+      stimulus: { ...stimulus, commonLoad },
+    }).state;
+    previousDay = planningDate;
+    days.push(
+      dailyTrainingLoadSchema.parse({
+        contractVersion: ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION,
+        profileId: input.profileId,
+        planningDate,
+        sourceRevision: input.sourceRevision,
+        commonLoad,
+        fitness: state.longTermLoad,
+        fatigue: state.recentLoad,
+        form: state.loadBalance,
+        readiness: null,
+        coverage: {
+          status: "complete",
+          contributingActivityCount: effects.length,
+          omittedActivityCount: 0,
+        },
+        calculationVersion: ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
+      }),
+    );
+  }
+  return { days, state };
+}
+
+/** Rebuilds only the revisioned daily-load projection owned by the Phase 2 queue. */
+export class AthleteDerivedStateWorkerService {
+  constructor(
+    private readonly input: {
+      db: DbClient;
+      repository?: AthleteDerivedStateRepositoryPort;
+    },
+  ) {}
+
+  async processDueJobs(input: { limit?: number; now?: Date } = {}) {
+    const limit = Math.max(1, Math.min(input.limit ?? 5, 50));
+    const result = { completed: 0, failed: 0, processed: 0 };
+    const repository =
+      this.input.repository ?? createDrizzleAthleteDerivedStateRepository(this.input.db);
+    for (let index = 0; index < limit; index += 1) {
+      const now = input.now ?? new Date();
+      const claimToken = crypto.randomUUID();
+      const item = await repository.claimNextRecalculation({
+        claimToken,
+        claimedAt: now.toISOString(),
+        leaseExpiresAt: new Date(now.getTime() + ATHLETE_STATE_LEASE_MILLISECONDS).toISOString(),
+      });
+      if (!item) break;
+      result.processed += 1;
+      try {
+        const publication = await repository.lockPublicationState({
+          profileId: item.request.profileId,
+        });
+        if (!publication) throw new Error("Athlete publication state disappeared");
+        if (publication.publishedRevision === item.request.sourceRevision) {
+          const completed = await repository.transitionRecalculation({
+            profileId: item.request.profileId,
+            transition: {
+              action: "complete",
+              claimToken,
+              completedAt: now.toISOString(),
+              resultingPublishedRevision: item.request.sourceRevision,
+            },
+          });
+          if (completed.status !== "completed") throw new AthleteStateLeaseLostError();
+          result.completed += 1;
+          continue;
+        }
+        const effects: ActivityTrainingEffect[] = [];
+        let after:
+          | { effectiveAt: string; activityId: string; activityAnalysisRevision: number }
+          | undefined;
+        for (;;) {
+          const page = await repository.listActivityTrainingEffects({
+            profileId: item.request.profileId,
+            fromEffectiveAt: "1970-01-01T00:00:00.000Z",
+            throughSourceRevision: item.request.sourceRevision,
+            limit: DERIVED_EFFECT_PAGE_SIZE,
+            ...(after === undefined ? {} : { after }),
+          });
+          effects.push(...page.items);
+          const last = page.items.at(-1);
+          if (!page.hasMore || !last) break;
+          after = {
+            effectiveAt: last.effectiveAt,
+            activityId: last.activityId,
+            activityAnalysisRevision: last.activityAnalysisRevision,
+          };
+          const renewed = await repository.transitionRecalculation({
+            profileId: item.request.profileId,
+            transition: {
+              action: "renew",
+              claimToken,
+              renewedAt: now.toISOString(),
+              leaseExpiresAt: new Date(Date.now() + ATHLETE_STATE_LEASE_MILLISECONDS).toISOString(),
+            },
+          });
+          if (renewed.status !== "updated") throw new AthleteStateLeaseLostError();
+        }
+        const rebuilt = buildRevisionedDailyLoads({
+          profileId: item.request.profileId,
+          sourceRevision: item.request.sourceRevision,
+          effects,
+          fallbackAt: item.request.earliestAffectedAt,
+        });
+        const latestEffect = effects.at(-1);
+        const published = await publishAthleteDailyLoad({
+          repository,
+          profileId: item.request.profileId,
+          fromPlanningDate:
+            rebuilt.days[0]?.planningDate ?? item.request.earliestAffectedPlanningDate,
+          expectedPublishedRevision: publication.publishedRevision,
+          targetPublishedRevision: item.request.sourceRevision,
+          claimToken,
+          days: rebuilt.days,
+          state: {
+            computedAt: latestEffect?.effectiveAt ?? item.request.earliestAffectedAt,
+            fitness: rebuilt.state.longTermLoad,
+            fatigue: rebuilt.state.recentLoad,
+            evidenceConfidence: rebuilt.state.evidenceConfidence,
+            coverageStartAt: effects[0]?.effectiveAt ?? null,
+            coverageEndAt: latestEffect?.effectiveAt ?? null,
+            lastActivityAt: latestEffect?.effectiveAt ?? null,
+            calculationVersion: ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
+            capabilities: rebuilt.state.capabilities,
+          },
+        });
+        if (published.status !== "published") throw new AthleteStateLeaseLostError();
+        const completed = await repository.transitionRecalculation({
+          profileId: item.request.profileId,
+          transition: {
+            action: "complete",
+            claimToken,
+            completedAt: now.toISOString(),
+            resultingPublishedRevision: published.publishedRevision,
+          },
+        });
+        if (completed.status !== "completed") throw new AthleteStateLeaseLostError();
+        result.completed += 1;
+        await reconcileOnboardingStatus({
+          db: this.input.db,
+          profileId: item.request.profileId,
+        }).catch(() => undefined);
+      } catch (error) {
+        result.failed += 1;
+        if (!(error instanceof AthleteStateLeaseLostError)) {
+          await repository
+            .transitionRecalculation({
+              profileId: item.request.profileId,
+              transition: {
+                action: "retry",
+                claimToken,
+                failureCode: "internal",
+                failedAt: now.toISOString(),
+                nextAttemptAt: new Date(now.getTime() + 60_000).toISOString(),
+              },
+            })
+            .catch(() => undefined);
+        }
+      }
+    }
+    return result;
+  }
 }
 
 function initialState(claim: AthleteStateClaim, asOf: string): AthleteStateBaseline {
@@ -322,6 +552,18 @@ export class AthleteStateWorkerService {
     const result = { completed: 0, failed: 0, processed: 0 };
     for (let index = 0; index < limit; index += 1) {
       const now = input.now ?? new Date();
+      if ("$client" in this.input.db) {
+        const derived = await new AthleteDerivedStateWorkerService(this.input).processDueJobs({
+          limit: 1,
+          now,
+        });
+        if (derived.processed > 0) {
+          result.processed += derived.processed;
+          result.completed += derived.completed;
+          result.failed += derived.failed;
+          continue;
+        }
+      }
       const claim = await claimNextAthleteState(this.input.db, {
         now,
         leaseMilliseconds: ATHLETE_STATE_LEASE_MILLISECONDS,
@@ -329,6 +571,23 @@ export class AthleteStateWorkerService {
       if (!claim) break;
       result.processed += 1;
       try {
+        if (claim.dirtyFromAt !== null && claim.dirtyFromAt.getTime() <= now.getTime()) {
+          await renewClaimOrThrow(
+            this.input.db,
+            claim,
+            ACTIVITY_ANALYSIS_REFRESH_LEASE_MILLISECONDS,
+          );
+          const refresh = await reprocessProfileActivityAnalysis(this.input.db, {
+            profileId: claim.profileId,
+            apply: true,
+            confirmProfileId: claim.profileId,
+            from: claim.dirtyFromAt,
+            now,
+            claimedAthleteState: claim,
+          });
+          if (refresh.durableRefresh === "continued") continue;
+          await renewClaimOrThrow(this.input.db, claim, ATHLETE_STATE_LEASE_MILLISECONDS);
+        }
         const published = await rebuildClaimedAthleteState({
           db: this.input.db,
           claim,
@@ -343,7 +602,12 @@ export class AthleteStateWorkerService {
         } else result.failed += 1;
       } catch (error) {
         result.failed += 1;
-        if (!(error instanceof AthleteStateLeaseLostError)) {
+        if (
+          error instanceof AthleteStateLeaseLostError ||
+          error instanceof AnalysisRefreshFenceError
+        ) {
+          await releaseAthleteStateClaim(this.input.db, { claim, now }).catch(() => false);
+        } else {
           await failAthleteStateClaim(this.input.db, {
             claim,
             now,

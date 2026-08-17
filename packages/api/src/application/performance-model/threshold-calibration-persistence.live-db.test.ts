@@ -25,7 +25,10 @@ import {
 } from "../activity-file-ingestion/stream-derived-calculations";
 import { collectActivityFileStreamMetadata } from "../activity-file-ingestion/stream-metadata";
 import { readPublishedAthleteStateSnapshot } from "../athlete-intelligence/published-athlete-state";
-import { reconcileThresholdsWithProfileLockHeld } from "./reconcile-thresholds";
+import {
+  finalizeThresholdsAfterHistoryImport,
+  reconcileThresholdsWithProfileLockHeld,
+} from "./reconcile-thresholds";
 
 const seededProfileIds: string[] = [];
 const now = new Date("2026-08-10T18:00:00.000Z");
@@ -310,6 +313,39 @@ afterEach(async () => {
 afterAll(async () => pool.end());
 
 describe("threshold calibration persistence", () => {
+  it("preserves threshold evidence newer than a finalized history-import horizon", async () => {
+    const profileId = await seedProfile();
+    const imported = await seedRunEvidence({
+      profileId,
+      finishedAt: new Date("2026-08-01T12:00:00.000Z"),
+      rawValue: 4,
+    });
+    const newer = await seedRunEvidence({
+      profileId,
+      finishedAt: new Date("2026-08-09T12:00:00.000Z"),
+      rawValue: 4.02,
+    });
+    await reconcile(imported);
+    await reconcile(newer);
+
+    await db.transaction((tx) =>
+      finalizeThresholdsAfterHistoryImport(tx, {
+        profileId,
+        asOf: new Date("2026-08-02T00:00:00.000Z"),
+        now,
+      }),
+    );
+
+    await expect(readThresholdsAsOf(db, { profileId, asOf: now })).resolves.toEqual([
+      expect.objectContaining({
+        sourceActivityIds: expect.arrayContaining([imported.activityId, newer.activityId]),
+      }),
+    ]);
+    await expect(
+      db.select().from(thresholds).where(eq(thresholds.profile_id, profileId)),
+    ).resolves.toHaveLength(2);
+  });
+
   it.each([
     {
       name: "valid grade evidence",
@@ -765,7 +801,7 @@ describe("threshold calibration persistence", () => {
     if (!afterReplacementState) throw new Error("Expected dirty state after source replacement");
     expect(afterReplacementState).toMatchObject({
       source_revision: beforeState.source_revision + 1,
-      dirty_from_at: second.finishedAt,
+      dirty_from_at: first.finishedAt,
     });
     const persistedReplacementWindows = await db
       .select({

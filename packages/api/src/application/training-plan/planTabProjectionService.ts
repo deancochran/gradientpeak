@@ -27,6 +27,7 @@ import {
 import { type EffectivePlanLoadDto, getEffectivePlanLoad } from "./get-effective-plan-load";
 
 const MAX_PLAN_TAB_RANGE_DAYS = 90;
+const MAX_PLANNING_RANGE_DAYS = 366;
 export const PLAN_TAB_PROJECTION_VERSION = "plan-tab-projection-v1" as const;
 
 export const planTabProjectionInputSchema = z
@@ -428,7 +429,7 @@ function summarizeDate(response: EffectivePlanLoadDto, date: string) {
 
 function dateKeys(startDate: string, endDate: string) {
   const result: string[] = [];
-  for (let date = startDate, guard = 0; date <= endDate && guard <= MAX_PLAN_TAB_RANGE_DAYS; ) {
+  for (let date = startDate, guard = 0; date <= endDate && guard <= MAX_PLANNING_RANGE_DAYS; ) {
     result.push(date);
     date = addDaysDateKey(date, 1);
     guard += 1;

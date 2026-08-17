@@ -109,7 +109,6 @@ export function usePlanTrainingPathData() {
       // This projection performs bounded server composition. Avoid multiplying
       // deterministic server timeouts through the global retry policy.
       retry: false,
-      staleTime: 60_000,
     },
   );
   const projection = planningTodayKey ? projectionQuery.data : undefined;

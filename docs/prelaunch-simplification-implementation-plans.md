@@ -30,6 +30,7 @@ by this document.
 | Activity intake | Mobile recordings, manual files, and Wahoo imports converge on one server-owned intake operation. |
 | Provider scope | Preserve the abstract provider layer and its generic runtime contracts. Improve provider reliability, security, and observability without narrowing the architecture to Wahoo. |
 | Onboarding scope | Preserve the current onboarding lifecycle and its durable states. Improve its reliability and observability without reducing its states or flow. |
+| Existing table names | Keep every existing table name. Extend or retire its fields only when needed; do not rename a table as part of this simplification. |
 | Data compatibility | None is required before launch; calculate fresh derived data after the approved reset. |
 | Observability | One privacy-safe operational event contract. No raw payloads, identifiers, credentials, health data, routes, or free-form errors. |
 | Social and groups | Retain only what is already accepted in `simplification-program.md`. Defer any additional social/coaching reduction until its launch-scope decision is explicit. |
@@ -39,7 +40,7 @@ by this document.
 ```text
 0. Correctness gates and final target data-model decisions
 1. Auth and telemetry foundation
-2. Core sport-science, athlete read model, and activity-plan/content contracts
+2. Core athlete-derived-state, athlete read model, and activity-plan/content contracts
 3. Fresh database baseline supporting the settled model
 4. Unified activity intake
 5. Mobile recorder on the intake contract
@@ -209,7 +210,7 @@ baseline rewrites.
 
 ---
 
-## Plan 3 — One sport-science contract, athlete snapshot, and athlete read model
+## Plan 3 — One athlete-derived-state contract, athlete snapshot, and athlete read model
 
 ### Outcome
 
@@ -236,14 +237,17 @@ defaults, home, goals, and profile views.
 
 1. Capture golden fixtures for targets, load, trends, readiness, and planning.
    Resolve conflicting existing load definitions before changing any formula.
-2. Add `packages/core/sport-science/` with quantity, coverage, target, daily
+2. Add `packages/core/athlete-derived-state/` with quantity, coverage, target, daily
    load, threshold-lifecycle, snapshot, and pure transition contracts.
-3. Add persistent activity contributions, compact threshold state, daily load
-   rows, revision-matched performance facts, and a coalesced rebuild request to
-   the fresh baseline.
+3. Add these new tables to the fresh baseline: `activity_training_effects` for
+   one activity's calculated effect, `daily_training_load` for one athlete-day's
+   published load, `athlete_recalculation_queue` for one coalesced rebuild per
+   athlete, and `threshold_evidence` for activity-derived threshold support.
+   Keep `profile_athlete_state` and `profile_performance_facts` under their
+   existing names as the published current state.
 4. Replace broad athlete-state repository calls with contribution upsert,
    incremental publish, rebuild claim, rebuild publication, and snapshot reads.
-5. Have canonical activity analysis return one typed sport-science contribution.
+5. Have canonical activity analysis return one typed athlete-derived-state contribution.
 6. Implement a fast chronological apply path and make the existing worker
    rebuild-only. Keep lease renewal, retry backoff, revision fencing, and import
    blocking.
@@ -256,7 +260,7 @@ defaults, home, goals, and profile views.
 
 ### Primary paths
 
-- `packages/core/{sport-science,load,performance-calibration,performance-model}/**`
+- `packages/core/{athlete-derived-state,load,performance-calibration,performance-model}/**`
 - `packages/api/src/application/{athlete-intelligence,performance-model}/**`
 - `packages/api/src/application/athlete-intelligence/athlete-read-model.ts`
 - `packages/api/src/contracts/athlete.ts`
@@ -342,39 +346,46 @@ plan persistence and before Plan 6 implements plan preview, commit, and apply.
 
 ### Outcome
 
-Every activity source follows the same reliable server lifecycle:
+Every activity source follows the same direct server processing path:
 
 ```text
 recording, manual file, or Wahoo
-  -> intake operation
+  -> one activity_file_ingestions business record
   -> verified staging bytes
-  -> parse and derive once
-  -> atomic activity commit
-  -> asynchronous cleanup
+  -> parse, derive, and commit in one request
+  -> staging cleanup
 ```
 
 ### Key decisions
 
-- Use one opaque deterministic `operationId` per source operation.
-- Keep a simple operation state: `awaiting_upload`, `queued`, `processing`,
-  `failed_retryable`, `succeeded`, `failed_terminal`, or `cancelled`.
-- Keep worker lease details in a job record, not in the business operation.
+- `activity_file_ingestions` is the one idempotent business record for every
+  manual, mobile, and provider activity intake.
+- Manual and mobile retry resubmits the request data against that same record.
+  It does not create a job, recover a server-side request, or reconstruct a
+  missing payload.
+- Provider retries remain in generic `provider_sync_jobs`; provider acquisition
+  resubmits the intake request through the same direct-processing path.
+- There is no `activity_ingestion_jobs`, `recovery_context`, generic ingestion
+  scheduler, cancellation lifecycle, or automatic server reconstruction.
 - Preserve canonical activities, segments, efforts, artifact provenance, and
   source identity; eliminate source-specific parse/finalize/cleanup paths.
 
 ### Implementation steps
 
-1. Add Core and API intake contracts plus a state machine.
-2. Add `activity_intake_operations` and `activity_intake_jobs` to the fresh
-   baseline, including unique operation identity, source rules, worker claims,
-   retention, and private staging metadata.
-3. Add `activityIntake.beginMobileRecording`, `beginManualUpload`, `commitUpload`,
-   `getOperation`, and `retryOperation` procedures.
-4. Move verification, parser dispatch, derived analysis, artifact promotion,
-   canonical activity persistence, sport-science contribution, and cleanup into
-   one worker process.
-5. Make Wahoo acquisition create intake operations instead of writing activities
-   directly. Make web/mobile upload flows begin, upload, commit, and poll.
+1. Add Core and API intake contracts for the single idempotent business record.
+2. Extend `activity_file_ingestions` with request identity, source metadata,
+   staging expectation, accepted artifact, and resulting activity. Do not add a
+   worker table or generic ingestion queue.
+3. Accept complete manual/mobile request data and process it directly through
+   one application service. A retry resubmits the data and returns the existing
+   result when the request identity already succeeded.
+4. Verify staging bytes, parse, derive, promote the artifact, persist the
+   canonical activity, write its athlete-derived-state contribution, and clean staging
+   bytes in the same bounded request. Cleanup is safe to repeat and never
+   exposes private paths or payloads.
+5. Make Wahoo acquisition submit the same intake request. Keep provider retry
+   ownership in generic `provider_sync_jobs`; do not create provider-specific
+   ingestion records beyond `activity_file_ingestions`.
 6. Move stream viewing into a focused activity-streams route with the existing
    owner checks.
 7. Delete old mobile submission, manual processing, enrichment finalization,
@@ -392,13 +403,15 @@ recording, manual file, or Wahoo
 
 ### Proof
 
-- Replayed begin/commit calls return one operation; conflicting metadata fails.
-- Worker lease loss, process crashes, hash mismatch, parser failure, promotion
-  failure, and ambiguous responses converge without duplicates or data loss.
+- Replayed request data returns one operation and one activity; conflicting
+  immutable metadata fails.
+- Process failure, hash mismatch, parser failure, promotion failure, and an
+  ambiguous response are safe to retry only by resubmitting request data; no
+  server-side reconstruction occurs.
 - Manual FIT/GPX/TCX, mobile recording, and Wahoo input produce the same
   canonical activity result shape.
-- Non-owner stream access fails and telemetry canaries find no file, route, or
-  personal data leakage.
+- Failed or repeated staging cleanup is safe, and telemetry canaries find no
+  file, route, payload, or personal data leakage.
 
 ### Dependency
 
@@ -707,30 +720,54 @@ The simplification program is complete only when:
 This plan authorizes no database reset, data deletion, deploy, release, push, or
 external Wahoo configuration change. Each requires a separate explicit decision.
 
-## Concise schema before/after reference
+## Schema plan: existing names and new tables
 
-| Before | After | Why |
+### Existing tables: keep their names
+
+`profiles`, `activities`, `activity_artifacts`, `activity_segments`,
+`activity_source_references`, `activity_file_ingestions`, `activity_plans`,
+`training_plans`, `events`, `profile_goals`, `profile_athlete_state`,
+`profile_performance_facts`, provider tables, and onboarding tables retain their
+current names. The plan may add constraints or retire duplicate fields, but it
+does not rename them.
+
+### New tables: one purpose each
+
+| New table | Concrete purpose | Why it exists |
 | --- | --- | --- |
-| Several current-performance authorities, including persisted performance-model data and overlapping estimate reads | One published athlete snapshot plus revision-matched current performance facts | Every screen uses the same fitness, load, readiness, and target truth. |
-| `profile_metrics` serves both observations and calculated current state | `profile_metrics` is observation/configuration history only | Calculated state is not confused with athlete-entered facts. |
-| Full activity-history replay for ordinary athlete updates | Per-activity contributions, compact threshold state, daily load rows, and one coalesced rebuild request | New activities update quickly; imports and corrections rebuild once, safely. |
-| Separate mobile, manual-upload, enrichment, and Wahoo ingestion lifecycles | One intake operation and one retry/worker authority for all sources | A crash or retry cannot create competing upload states or duplicate activities. |
-| Ingestion rows repeat accepted file path, digest, size, format, and media details | The accepted `artifact_id` is the recovery link; only staging expectations remain on intake work | Removes duplicated file truth and reduces recovery mistakes. |
-| Provider-neutral runtime jobs, sync state, and webhook receipts | Retain the generic provider runtime; strengthen its leases, generation fences, retention, payload clearing, and adapter-specific validation | The abstraction remains available for future providers while Wahoo becomes more reliable now. |
-| Multi-stage onboarding status | Retain current states and transitions; add non-authoritative health/progress projections | Preserves the onboarding product experience while making interrupted provider work visible and recoverable. |
-| Training plans can act as a second editable future schedule | Training plans are templates/batches; calendar scheduled sessions are the only future schedule | Sessions cannot drift from the plan shown to the athlete. |
-| Overloaded personal event rows mixing date sessions, timed events, and recurrence fields | A clear date-based scheduled-session authority; a separate timed personal-event table only if explicitly approved | Makes date/timezone behavior predictable and avoids adding an unapproved feature. |
-| Activity-plan category and presentation values repeated in several fields | One root category, owner scope, and prescription-quantification bundle | Fewer contradictory plan fields and less client-side mapping. |
-| System templates exist through more than one content path | Core-owned versioned definitions materialized into the database with key, version, and hash | The available template catalogue is deterministic and testable. |
-| Legacy provider/external-ID columns and generic resource links overlap source references | `activity_source_references` is the provider activity identity | Prevents imported activities from having conflicting external identities. |
-| Parent activity fields duplicate single-segment analysis values | Segment summaries are canonical; parent duplicates are removed where no longer needed | One numerical source avoids analysis drift. |
-| Standalone/manual effort relationship states and effort mutations | Immutable activity-and-segment-backed effort evidence | Efforts always have clear provenance and cannot be edited into inconsistency. |
-| Multiple transport-only plan/event aliases and unused goal revision fields | Delete after all callers have moved | Smaller schema and fewer contracts without changing supported behavior. |
-| Browser-accessible risk around broad table permissions | Retain default-deny RLS, ownership foreign keys, private storage, and service-only worker access | Simplification must not weaken athlete privacy or tenant isolation. |
+| `activity_training_effects` | Stores the calculated training-load and athlete-state effect of one completed activity. | A newly completed activity can update current state quickly, while deleting or changing it identifies exactly what must be recalculated. |
+| `daily_training_load` | Stores the published load, fitness, fatigue, and readiness result for one athlete on one planning date. | Trends, charts, goals, and planning read a small date range instead of replaying every activity. |
+| `athlete_recalculation_queue` | Stores at most one pending recalculation per athlete, beginning at the earliest affected activity date. | Many edits, imports, or deletions combine into one safe rebuild rather than competing jobs. |
+| `threshold_evidence` | Links a threshold or performance fact to the activity evidence that supports it. | Deleting an activity removes its evidence, allowing the rebuild to select valid remaining threshold evidence. |
+| `planned_sessions` | Stores the actual date-based future workout schedule, its prescription, cancellation state, and optional completed-activity link. | `training_plans` remain templates; one table becomes the authoritative future calendar schedule. |
 
-### Explicitly retained
+### Required changes to existing tables
 
-Profiles, activities, artifacts, segments, activity source references, activity
-plans, training plans, calendar scheduled sessions, goals, Wahoo credentials,
-OAuth state, ownership constraints, leases, source uniqueness, RLS, and private
-storage remain part of the launch schema.
+| Existing table | Change | Why |
+| --- | --- | --- |
+| `profile_athlete_state` | Keep it as the one published current-state record; retain revision, lease, dirty-date, and recovery-cursor fields. | All current athlete reads use one coherent revision and interrupted calculation can resume safely. |
+| `profile_performance_facts` | Keep current threshold facts here and tie their support to `threshold_evidence`. | The current threshold remains quick to read while its source remains explainable and removable. |
+| `activity_file_ingestions` | Extend it to represent the single idempotent intake business record for recordings, uploads, and provider activity acquisition. | There is one request identity, ownership rule, and retry rule without a worker table or generic ingestion scheduler. |
+| `training_plans` | Keep reusable plan structure and original prescription; stop using it as the editable future schedule. | A plan cannot drift from the calendar sessions created from it. |
+| `events` | Keep its current name and retain approved event behavior; remove only overlapping future-workout authority after `planned_sessions` is live. | Existing event features remain stable while planned workouts gain a clear owner. |
+| `activity_artifacts` and `activity_source_references` | Keep them as the accepted file and source-of-truth links. | File provenance and provider deduplication remain intact. |
+
+### New-table responsibilities, inputs, and consumers
+
+| New table | Exact responsibilities | Inputs | Downstream consumers |
+| --- | --- | --- | --- |
+| `activity_training_effects` | Store the deterministic result of analyzing one accepted activity: its effective timestamp, training load, calculation version, input fingerprint, and the athlete-state change it contributes. It is immutable for a specific activity-analysis revision and is removed or superseded when that evidence is replaced. It does not store raw streams, editable athlete state, or queue leases. | Canonical accepted `activities`, `activity_segments`, immutable analysis result, and the calculation policy/version. | Incremental athlete-state publication; rebuild worker; `daily_training_load` materialization; training-plan actual-load calculation; activity-detail explanation. |
+| `daily_training_load` | Store the published end-of-day athlete result for one athlete and planning date: total load, fitness, fatigue, form/readiness, coverage, source revision, and calculation version. Replace all rows from the recalculation start date forward in one fenced publication. It does not accept manual edits or retain individual activity detail. | Ordered `activity_training_effects`; current `profile_performance_facts`; athlete calculation policy; rebuild or incremental publisher. | Athlete trends and home read model; goal assessment; `calendar.planningRange`; plan charts; recording defaults that use recent load. |
+| `athlete_recalculation_queue` | Hold one coalesced request per athlete to rebuild derived athlete state. Preserve the earliest affected timestamp, source revision, reason set, request time, lease, retry count, and terminal failure information. It does not contain calculated athlete results. | Activity create/edit/delete; analysis replacement; threshold change; import completion; algorithm or timezone change; explicit repair request. | Athlete rebuild worker; athlete-state freshness/read-status projection; safe retry and operational telemetry. |
+| `threshold_evidence` | Record which accepted activity evidence supports a threshold fact, with sport, fact kind, effective timestamp, confidence, calculation version, and supersession/deletion status. It is evidence history, not the current threshold value. | Accepted activity analysis, user-entered verification activity where supported, and threshold reconciliation rules. | Threshold reconciliation; `profile_performance_facts` publication; athlete rebuild; threshold explanation; deletion/correction invalidation. |
+| `planned_sessions` | Store the one authoritative future date-based workout schedule: athlete, planning date, activity-plan prescription snapshot, originating training-plan reference, occurrence identity, status, cancellation reason, and optional completed-activity link. It is editable future schedule state, not a reusable template or a generic timed event. | Training-plan apply/commit; direct calendar scheduling; recurrence materialization; move/cancel actions; activity completion linking. | Calendar day/range reads; `calendar.planningRange`; agenda and plan screens; provider planned-workout reconciliation; completion matching; plan adherence reporting. |
+
+### Existing-table interfaces required by the new tables
+
+| Existing table | Responsibility in this design | Inputs | Downstream consumers |
+| --- | --- | --- | --- |
+| `profile_athlete_state` | Publish the current revisioned athlete snapshot and calculation/recovery status. It is the only normal current-state authority. | Incremental publisher or fenced rebuild publication; `athlete_recalculation_queue` status. | Athlete read model; home, trends, goals, planning, recording defaults, and freshness messaging. |
+| `profile_performance_facts` | Publish the current selected threshold/performance values for each athlete and sport. | Threshold reconciliation from `threshold_evidence`; authorized direct settings where supported. | Athlete read model; activity analysis; activity-plan quantification; training targets; recording guidance. |
+| `activity_file_ingestions` | Remain the one idempotent business record for one incoming recording, upload, or provider activity, including owner, request identity, source, staging expectation, accepted artifact, and resulting activity. | Complete manual/mobile request data; provider acquisition request; retry resubmission. | Intake status API; direct verification/parse/derive/commit; staging cleanup. |
+| `training_plans` | Retain reusable plan structure and original prescription; never become the editable future schedule after application. | Plan authoring and revision-safe plan commit. | Plan library/detail; preview; creation of `planned_sessions`; historical target comparison. |
+| `events` | Retain approved generic event behavior and timed-event semantics. It does not own future workout scheduling once `planned_sessions` is live. | Existing event creation, groups, and approved calendar behavior. | Existing event views and group/event features; calendar composition alongside planned sessions. |

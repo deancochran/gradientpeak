@@ -1,3 +1,8 @@
+import { getCalendarDateInIanaZone } from "@repo/core";
+import {
+  ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION,
+  type PersistedThresholdEvidence,
+} from "@repo/core/athlete-derived-state";
 import {
   type BestEffortExtractionResult,
   bestEffortExtractionResultSchema,
@@ -11,9 +16,10 @@ import {
   type ThresholdExactWindowObservation,
   type ThresholdSelectionResult,
 } from "@repo/core/performance-calibration";
-import { activities, activityEfforts } from "@repo/db";
+import { activities, activityEfforts, thresholds } from "@repo/db";
 import { and, asc, eq, gt, inArray, lte, or, sql } from "drizzle-orm";
 import type { DrizzleTransactionClient } from "../../db";
+import { createDrizzleAthleteDerivedStateRepository } from "../../infrastructure/repositories";
 import { markAthleteStateDirty } from "../../repositories/athlete-state-repository";
 import {
   insertThresholdEvaluation,
@@ -25,8 +31,127 @@ import {
   type ThresholdImpact,
   thresholdEvaluationId,
 } from "../../repositories/threshold-repository";
+import { replaceThresholdEvidence } from "../athlete-intelligence/replace-threshold-evidence";
+import {
+  buildAthleteRecalculationRequest,
+  requestAthleteRecalculation,
+} from "../athlete-intelligence/request-athlete-recalculation";
 
 type EffortInsert = typeof activityEfforts.$inferInsert;
+const FULL_THRESHOLD_HISTORY_HORIZON = new Date("9999-12-31T23:59:59.999Z");
+
+type ThresholdHistoryRow = Pick<
+  typeof thresholds.$inferSelect,
+  "id" | "evaluation_id" | "value" | "confidence" | "effective_at" | "supersedes_id"
+>;
+
+async function queueThresholdRecalculation(
+  tx: DrizzleTransactionClient,
+  input: { profileId: string; effectiveAt: Date; sourceRevision: number; now: Date },
+) {
+  const repository = createDrizzleAthleteDerivedStateRepository(tx);
+  const state = await repository.lockPublicationState({ profileId: input.profileId });
+  if (!state) throw new Error("Athlete publication state is unavailable for threshold change");
+  await requestAthleteRecalculation({
+    repository,
+    profileId: input.profileId,
+    request: buildAthleteRecalculationRequest({
+      profileId: input.profileId,
+      earliestAffectedAt: input.effectiveAt.toISOString(),
+      earliestAffectedPlanningDate: getCalendarDateInIanaZone(
+        input.effectiveAt.toISOString(),
+        state.planningTimezone,
+      ),
+      sourceRevision: input.sourceRevision,
+      reasons: ["threshold_changed"],
+      requestedAt: input.now.toISOString(),
+    }),
+  });
+}
+
+async function readThresholdHistory(
+  tx: DrizzleTransactionClient,
+  input: { profileId: string; identity: ThresholdIdentity },
+): Promise<ThresholdHistoryRow[]> {
+  return tx
+    .select({
+      id: thresholds.id,
+      evaluation_id: thresholds.evaluation_id,
+      value: thresholds.value,
+      confidence: thresholds.confidence,
+      effective_at: thresholds.effective_at,
+      supersedes_id: thresholds.supersedes_id,
+    })
+    .from(thresholds)
+    .where(
+      and(
+        eq(thresholds.profile_id, input.profileId),
+        eq(thresholds.activity_category, input.identity.activityCategory),
+        eq(thresholds.metric, input.identity.metric),
+      ),
+    )
+    .orderBy(asc(thresholds.effective_at), asc(thresholds.id));
+}
+
+function thresholdHistoryRowsEqual(left: ThresholdHistoryRow, right: ThresholdHistoryRow) {
+  return (
+    left.id === right.id &&
+    left.evaluation_id === right.evaluation_id &&
+    left.value === right.value &&
+    left.confidence === right.confidence &&
+    left.effective_at.getTime() === right.effective_at.getTime() &&
+    left.supersedes_id === right.supersedes_id
+  );
+}
+
+export function earliestThresholdHistoryChange(
+  before: readonly ThresholdHistoryRow[],
+  after: readonly ThresholdHistoryRow[],
+) {
+  const length = Math.max(before.length, after.length);
+  for (let index = 0; index < length; index += 1) {
+    const previous = before[index];
+    const next = after[index];
+    if (previous && next && thresholdHistoryRowsEqual(previous, next)) continue;
+    const timestamps = [previous?.effective_at, next?.effective_at].filter(
+      (value): value is Date => value !== undefined,
+    );
+    return timestamps.length === 0
+      ? null
+      : new Date(Math.min(...timestamps.map((value) => value.getTime())));
+  }
+  return null;
+}
+
+async function rebuildThresholdHistoryAndScheduleRefresh(
+  tx: DrizzleTransactionClient,
+  input: {
+    profileId: string;
+    identity: ThresholdIdentity;
+    asOf: Date;
+    now: Date;
+    fallbackChangedFromAt: Date;
+  },
+) {
+  const { fallbackChangedFromAt, ...rebuildInput } = input;
+  const before = await readThresholdHistory(tx, rebuildInput);
+  const rebuilt = await rebuildThresholdChainWithProfileLockHeld(tx, rebuildInput);
+  if (!rebuilt.changed) return rebuilt;
+  const after = await readThresholdHistory(tx, rebuildInput);
+  const changedFromAt = earliestThresholdHistoryChange(before, after) ?? fallbackChangedFromAt;
+  const sourceRevision = await markAthleteStateDirty(tx, {
+    profileId: input.profileId,
+    effectiveAt: changedFromAt,
+    now: input.now,
+  });
+  await queueThresholdRecalculation(tx, {
+    profileId: input.profileId,
+    effectiveAt: changedFromAt,
+    sourceRevision,
+    now: input.now,
+  });
+  return { ...rebuilt, changedFromAt };
+}
 
 type ThresholdSeries = {
   seriesId: string;
@@ -305,6 +430,7 @@ export async function reconcileThresholdsWithProfileLockHeld(
     activityId: string;
     efforts: EffortInsert[];
     preInvalidatedIdentities?: ThresholdImpact[];
+    thresholdRebuildAsOf?: Date;
     now: Date;
   },
 ) {
@@ -316,6 +442,7 @@ export async function reconcileThresholdsWithProfileLockHeld(
     ]),
   );
   const evaluated = new Map<string, ThresholdIdentity>();
+  const persistedEvidence: PersistedThresholdEvidence[] = [];
   const sourcesByActivityCategory = new Map<ThresholdActivityCategory, typeof sources>();
   for (const source of sources) {
     if (
@@ -413,8 +540,30 @@ export async function reconcileThresholdsWithProfileLockHeld(
       effortLinks: persistence.effortLinks,
       now: input.now,
     });
+    if (selection.status === "qualified") {
+      persistedEvidence.push({
+        contractVersion: ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION,
+        profileId: input.profileId,
+        calculationVersion: "threshold-v1",
+        confidence: 1,
+        evidence: {
+          ...selection.candidate,
+          evidenceId: selection.selectedEvidenceId,
+          activityId: input.activityId,
+          observedAt: firstSource.finishedAt.toISOString(),
+        },
+        lifecycle: { status: "active", invalidatedAt: null },
+      });
+    }
     evaluated.set(`${identity.activityCategory}/${identity.metric}`, identity);
   }
+
+  await replaceThresholdEvidence({
+    repository: createDrizzleAthleteDerivedStateRepository(tx),
+    profileId: input.profileId,
+    activityId: input.activityId,
+    evidence: persistedEvidence,
+  });
 
   let changed = false;
   for (const identity of new Map(
@@ -426,23 +575,35 @@ export async function reconcileThresholdsWithProfileLockHeld(
       })),
     ].map((identity) => [`${identity.activityCategory}/${identity.metric}`, identity]),
   ).values()) {
-    const rebuilt = await rebuildThresholdChainWithProfileLockHeld(tx, {
-      profileId: input.profileId,
-      identity,
-      asOf: sources.reduce(
+    const latestSourceAt =
+      input.thresholdRebuildAsOf ??
+      sources.reduce(
         (latest, source) => (source.finishedAt > latest ? source.finishedAt : latest),
         input.now,
-      ),
-      now: input.now,
-    });
+      );
     const impact = impacts.get(`${identity.activityCategory}/${identity.metric}`);
+    const rebuilt = await rebuildThresholdHistoryAndScheduleRefresh(tx, {
+      profileId: input.profileId,
+      identity,
+      asOf: latestSourceAt,
+      now: input.now,
+      fallbackChangedFromAt: impact?.effectiveAt ?? latestSourceAt,
+    });
     if (rebuilt.changed || impact) {
       changed = true;
-      await markAthleteStateDirty(tx, {
-        profileId: input.profileId,
-        effectiveAt: impact?.effectiveAt ?? input.now,
-        now: input.now,
-      });
+      if (!rebuilt.changed && impact) {
+        const sourceRevision = await markAthleteStateDirty(tx, {
+          profileId: input.profileId,
+          effectiveAt: impact.effectiveAt,
+          now: input.now,
+        });
+        await queueThresholdRecalculation(tx, {
+          profileId: input.profileId,
+          effectiveAt: impact.effectiveAt,
+          sourceRevision,
+          now: input.now,
+        });
+      }
     }
   }
   return {
@@ -506,6 +667,7 @@ export async function finalizeThresholdsAfterHistoryImport(
         profileId: input.profileId,
         activityId: activity.id,
         efforts: effortsByActivity.get(activity.id) ?? [],
+        thresholdRebuildAsOf: FULL_THRESHOLD_HISTORY_HORIZON,
         now: input.now,
       });
       changed = reconciled.changed || changed;
@@ -520,14 +682,15 @@ export async function finalizeThresholdsAfterHistoryImport(
     return { activityCategory, metric: policy.metric } satisfies ThresholdIdentity;
   });
   for (const identity of identities) {
-    const rebuilt = await rebuildThresholdChainWithProfileLockHeld(tx, { ...input, identity });
+    const rebuilt = await rebuildThresholdHistoryAndScheduleRefresh(tx, {
+      profileId: input.profileId,
+      asOf: FULL_THRESHOLD_HISTORY_HORIZON,
+      now: input.now,
+      identity,
+      fallbackChangedFromAt: input.asOf,
+    });
     if (!rebuilt.changed) continue;
     changed = true;
-    await markAthleteStateDirty(tx, {
-      profileId: input.profileId,
-      effectiveAt: input.asOf,
-      now: input.now,
-    });
   }
   return { changed, identities };
 }

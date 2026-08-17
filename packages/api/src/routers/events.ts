@@ -46,7 +46,9 @@ import {
   updateEventUseCase,
 } from "../application/events";
 import { readSelectedGroupEventsForCalendar } from "../application/groups/groupEventViews";
+import { readPlanningRange } from "../application/training-plan/planningLedgerService";
 import type { Context } from "../context";
+import { planningRangeRequestSchema, planningRangeSchema } from "../contracts/planning-range";
 import { type DrizzleTransactionClient, getRequiredDb } from "../db";
 import {
   type ActivityPlanExecutionDto,
@@ -1341,6 +1343,16 @@ export const eventsRouter = createTRPCRouter({
 
 /** Date-keyed personal schedule projections. Event identity and mutations remain on eventsRouter. */
 export const calendarRouter = createTRPCRouter({
+  planningRange: protectedProcedure
+    .input(planningRangeRequestSchema)
+    .output(planningRangeSchema)
+    .query(({ ctx, input }) =>
+      readPlanningRange({
+        db: getRequiredDb(ctx),
+        profileId: ctx.session.user.id,
+        request: input,
+      }),
+    ),
   range: protectedProcedure
     .input(calendarRangeInputSchema)
     .query(({ ctx, input }) => readPersonalCalendarRange(ctx, ctx.session.user.id, input)),

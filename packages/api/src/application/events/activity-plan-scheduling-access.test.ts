@@ -1,11 +1,19 @@
 import { SYSTEM_TEMPLATES } from "@repo/core";
 import { describe, expect, it, vi } from "vitest";
+import type {
+  CreateOwnedEventInput,
+  EventWriteRepository,
+} from "../../repositories/event-write-repository";
 import { createEventUseCase } from "./createEventUseCase";
 import { updateEventUseCase } from "./updateEventUseCase";
 
 const activityPlanId = "11111111-1111-4111-8111-111111111111";
 const profileId = "viewer-profile";
-const activityPlan = { id: activityPlanId, structure: SYSTEM_TEMPLATES[0]?.structure };
+const activityPlan = {
+  id: activityPlanId,
+  name: "Readable activity plan",
+  structure: SYSTEM_TEMPLATES[0]?.structure,
+};
 
 function createdEvent() {
   return {
@@ -172,6 +180,79 @@ describe("ActivityPlan scheduling access", () => {
     });
 
     expect(updateOwnedEventsForScope).not.toHaveBeenCalled();
+  });
+
+  it("uses each recurrence occurrence key as its scheduled planning date", async () => {
+    type CreateOwnedEventsInput = {
+      anchor: CreateOwnedEventInput;
+      occurrences: Omit<CreateOwnedEventInput, "seriesId">[];
+    };
+    let persistedInput: CreateOwnedEventsInput | undefined;
+    const createOwnedEvents = vi.fn(async (input: CreateOwnedEventsInput) => {
+      persistedInput = input;
+      return [createdEvent(), createdEvent()];
+    });
+    const recurrenceOccurrences = [
+      {
+        startsAt: "2026-03-09T09:30:00.000Z",
+        endsAt: "2026-03-09T10:30:00.000Z",
+        occurrenceKey: "2026-03-08",
+      },
+      {
+        startsAt: "2026-03-16T08:30:00.000Z",
+        endsAt: "2026-03-16T09:30:00.000Z",
+        occurrenceKey: "2026-03-15",
+      },
+    ];
+
+    await createEventUseCase({
+      ctx: { session: { user: { id: profileId } } } as any,
+      input: {},
+      dependencies: {
+        assertRestDayWritesBlocked: () => undefined,
+        buildInsightRefreshHint: () => null,
+        buildMaterializedRecurrenceOccurrences: () => recurrenceOccurrences,
+        enqueueWahooPlannedActivityJobs: vi.fn(async () => null),
+        getContentPermissions: () => null,
+        getEventWriteRepository: () =>
+          ({
+            createOwnedEvents,
+            getAccessibleActivityPlan: vi.fn(async () => activityPlan),
+          }) as unknown as EventWriteRepository,
+        mapEvent: () => createdEvent(),
+        normalizeEventCreateInput: () => ({
+          activityPlanId,
+          allDay: false,
+          description: null,
+          endsAt: recurrenceOccurrences[0]?.endsAt ?? null,
+          eventType: "planned" as const,
+          notes: null,
+          recurrence: { rule: "FREQ=WEEKLY;COUNT=2", timezone: "America/Adak" },
+          routeId: null,
+          scheduledDate: "2026-03-08",
+          startsAt: recurrenceOccurrences[0]?.startsAt ?? "",
+          status: "scheduled" as const,
+          timezone: "America/Adak",
+          title: "Recurring plan",
+          trainingPlanId: null,
+        }),
+        toDbEventType: (eventType) => eventType,
+      },
+    });
+
+    expect([persistedInput?.anchor, ...(persistedInput?.occurrences ?? [])]).toEqual(
+      recurrenceOccurrences.map((occurrence, index) =>
+        expect.objectContaining({
+          occurrenceKey: occurrence.occurrenceKey,
+          scheduledDate: occurrence.occurrenceKey,
+          startsAt: occurrence.startsAt,
+          ...(index === 0 ? { seriesId: null } : {}),
+        }),
+      ),
+    );
+    expect(recurrenceOccurrences[0]?.startsAt.slice(0, 10)).not.toBe(
+      recurrenceOccurrences[0]?.occurrenceKey,
+    );
   });
 
   it("denies scheduling before loading a plan row", async () => {

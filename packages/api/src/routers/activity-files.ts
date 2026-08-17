@@ -35,18 +35,21 @@ import {
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { activityArtifactId, submitActivity } from "../application/activities/submit-activity";
 import {
-  analyzeParsedActivityFile,
-  type ParsedActivityFileForAnalysis,
-} from "../application/activity-file-ingestion/analyze-parsed-activity-file";
+  ActivityIngestionNotFoundError,
+  readActivityIngestionSafeStatus,
+} from "../application/activity-file-ingestion/activity-ingestion-actions";
+import type { ParsedActivityFileForAnalysis } from "../application/activity-file-ingestion/analyze-parsed-activity-file";
 import {
   beginMobileRecordingUploadClaim,
   drainPendingMobileRecordingStagingCleanup,
   MobileRecordingUploadError,
 } from "../application/activity-file-ingestion/mobile-recording-upload";
 import { processManualActivityFile } from "../application/activity-file-ingestion/process-manual-activity-file";
-import { processUploadedActivityFile } from "../application/activity-file-ingestion/process-uploaded-activity-file";
+import {
+  activityIngestionSafeStatusDtoSchema,
+  activityIngestionStatusRequestSchema,
+} from "../contracts/activity-ingestion";
 import {
   beginMobileRecordingUploadInputSchema,
   beginMobileRecordingUploadOutputSchema,
@@ -223,16 +226,6 @@ const processActivityFileInput = z
   })
   .strict();
 
-const markUploadedAndProcessInput = z
-  .object({
-    ingestionId: z.string().uuid(),
-    activityId: z.string().uuid(),
-    activityFilePath: activityStoragePathSchema,
-    fileSize: z.number().int().nonnegative().optional(),
-    fileType: z.enum(["fit", "gpx", "tcx"]).optional(),
-  })
-  .strict();
-
 async function getProfileDefaultContentVisibility(
   db: ReturnType<typeof getRequiredDb>,
   profileId: string,
@@ -270,6 +263,23 @@ function throwUnauthorizedActivityFileAccess(): never {
     code: "UNAUTHORIZED",
     message: "User not authenticated",
   });
+}
+
+function assertOwnedActivityIngestion(actorProfileId: string, profileId: string) {
+  if (actorProfileId !== profileId) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized for this ingestion" });
+  }
+}
+
+function mapActivityIngestionActionError(error: unknown): never {
+  if (error instanceof ActivityIngestionNotFoundError) {
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "Activity ingestion not found",
+      cause: error,
+    });
+  }
+  throw error;
 }
 
 function getErrorDetails(error: unknown) {
@@ -632,56 +642,18 @@ function decodeActivityFile(input: {
   }
 }
 
-async function upsertExistingActivityFileEnrichment(
-  db: DbClient,
-  input: {
-    activity: typeof activities.$inferSelect;
-    artifact: import("../application/activities/submit-activity").ActivityArtifactSubmission;
-    ingestion: import("@repo/db").ActivityFileIngestionRow;
-    claimToken: string;
-    parsedData: ParsedActivityFileForAnalysis;
-  },
-) {
-  const artifactId = activityArtifactId(
-    input.activity.profile_id,
-    input.artifact.sha256,
-    input.artifact.byteSize,
-  );
-  const enrichment = await analyzeParsedActivityFile(db, {
-    profileId: input.activity.profile_id,
-    activityId: input.activity.id,
-    parsedData: input.parsedData,
-    artifactId,
-  });
-
-  await submitActivity(db, {
-    kind: "enrich",
-    activityId: input.activity.id,
-    profileId: input.activity.profile_id,
-    deviceManufacturer: input.parsedData.metadata.manufacturer,
-    deviceProduct: input.parsedData.metadata.product,
-    laps: input.parsedData.laps,
-    mapBounds: enrichment.geometry.mapBounds,
-    polyline: enrichment.geometry.polyline,
-    summaryValues: enrichment.summaryValues,
-    segmentSet: enrichment.segmentSet,
-    efforts: enrichment.effortsToInsert,
-    detectedLTHR: enrichment.detectedLTHR,
-    startedAt: enrichment.startedAt,
-    finishedAt: enrichment.activityCompletedAt,
-    ingestion: {
-      source: input.ingestion.source,
-      provider: input.ingestion.provider,
-      externalId: input.ingestion.external_id,
-      operationKey: input.ingestion.operation_key,
-      ingestionId: input.ingestion.id,
-      claimToken: input.claimToken,
-      artifact: input.artifact,
-    },
-  });
-}
-
 export const activityFilesRouter = createTRPCRouter({
+  getIngestionStatus: protectedProcedure
+    .input(activityIngestionStatusRequestSchema)
+    .output(activityIngestionSafeStatusDtoSchema)
+    .query(async ({ ctx, input }) => {
+      assertOwnedActivityIngestion(ctx.session.user.id, input.profileId);
+      try {
+        return await readActivityIngestionSafeStatus({ db: getRequiredDb(ctx), ...input });
+      } catch (error) {
+        return mapActivityIngestionActionError(error);
+      }
+    }),
   beginMobileRecordingUpload: protectedProcedure
     .input(beginMobileRecordingUploadInputSchema)
     .output(beginMobileRecordingUploadOutputSchema)
@@ -888,55 +860,6 @@ export const activityFilesRouter = createTRPCRouter({
           message: failure.message,
         });
       }
-    }),
-
-  markUploadedAndProcess: protectedProcedure
-    .input(markUploadedAndProcessInput)
-    .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session?.user?.id;
-      const db = getRequiredDb(ctx);
-
-      if (!userId) {
-        throwUnauthorizedActivityFileAccess();
-      }
-
-      if (!isOwnedActivityFilePath(userId, input.activityFilePath)) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Access denied: You can only process your own activity files",
-        });
-      }
-
-      const activityFileType =
-        input.fileType ?? getActivityFileTypeFromPath(input.activityFilePath);
-
-      const result = await processUploadedActivityFile(
-        db,
-        {
-          userId,
-          ingestionId: input.ingestionId,
-          activityId: input.activityId,
-          activityFilePath: input.activityFilePath,
-          ...(input.fileSize === undefined ? {} : { fileSize: input.fileSize }),
-          fileType: activityFileType,
-        },
-        {
-          readStoredActivityFile,
-          decodeActivityFile,
-          upsertExistingActivityFileEnrichment,
-          logger,
-        },
-      );
-
-      return {
-        success: true,
-        activity: serializeActivityDates(result.activity),
-        ingestion: {
-          id: result.ingestion.id,
-          status: result.ingestion.status,
-          activityId: result.ingestion.activity_id,
-        },
-      };
     }),
 
   /**

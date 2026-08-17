@@ -19,6 +19,7 @@ function requireMiddleware<T>(middleware: T | undefined): T {
 
 const clientMiddleware = requireMiddleware(contractEpochFunctionMiddleware.options.client);
 const serverMiddleware = requireMiddleware(contractEpochFunctionMiddleware.options.server);
+const FUTURE_CONTRACT_EPOCH = String(CURRENT_CONTRACT_EPOCH + 1);
 
 describe("contract epoch server-function middleware", () => {
   it("emits the exact current epoch header", async () => {
@@ -65,7 +66,7 @@ describe("contract epoch server-function middleware", () => {
     undefined,
     "",
     "1.0",
-    "2",
+    FUTURE_CONTRACT_EPOCH,
   ])("rejects a native form with a missing or mismatched epoch", async (epoch) => {
     request.headers = new Headers();
     const data = new FormData();
@@ -96,7 +97,7 @@ describe("contract epoch server-function middleware", () => {
     "",
     "01",
     "1.0",
-    "2",
+    FUTURE_CONTRACT_EPOCH,
   ])("rejects a missing or mismatched transported mutation before its handler runs", async (epoch) => {
     request.headers = new Headers({
       "x-tsr-serverFn": "true",

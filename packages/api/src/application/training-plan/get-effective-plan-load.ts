@@ -38,7 +38,7 @@ import {
 type Db = ReturnType<typeof getRequiredDb>;
 
 const dateSchema = dateOnlySchema;
-export const MAX_EFFECTIVE_PLAN_LOAD_RANGE_DAYS = 90;
+export const MAX_EFFECTIVE_PLAN_LOAD_RANGE_DAYS = 366;
 const sourceCountsSchema = z
   .object({ activities: z.number().int().nonnegative(), events: z.number().int().nonnegative() })
   .strict();

@@ -45,6 +45,10 @@
       "types": "./src/telemetry-sanitizer.mjs",
       "default": "./src/telemetry-sanitizer.mjs"
     },
+    "./test-support/client-contract-v1": {
+      "types": "./src/test-support/client-contract-v1.ts",
+      "default": "./src/test-support/client-contract-v1.ts"
+    },
     "./webhooks": {
       "types": "./src/webhooks.ts",
       "default": "./src/webhooks.ts"
@@ -59,6 +63,8 @@
     "reprocess-profile-activity-analysis": "tsx scripts/reprocess-profile-activity-analysis.ts",
     "test": "vitest run",
     "test:live-db": "vitest run --config vitest.live-db.config.ts",
+    "test:activity-ingestion:disposable": "tsx scripts/activity-ingestion.disposable.test.ts --disposable --local",
+    "test:planned-sessions:disposable": "tsx scripts/planned-sessions.disposable.test.ts --disposable --local",
     "test:calibration-history:disposable": "tsx scripts/completed-activity-calibration-history.disposable.test.ts --disposable --local",
     "verify:api": "pnpm check-types && pnpm test"
   },

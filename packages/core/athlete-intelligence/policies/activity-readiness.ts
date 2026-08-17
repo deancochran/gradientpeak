@@ -158,7 +158,7 @@ function fieldEligibility(
     : resolveFieldEvidenceEligibility({
         ...evidence,
         asOf,
-        requiredActivityCategory: activity_category,
+        ...(activity_category === undefined ? {} : { requiredActivityCategory: activity_category }),
       });
 }
 

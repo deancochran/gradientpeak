@@ -251,12 +251,12 @@ describe("getEffectivePlanLoad", () => {
     expect(
       getEffectivePlanLoadInputSchema.safeParse({
         startDate: "2026-01-01",
-        endDate: "2026-03-31",
+        endDate: "2027-01-01",
       }).success,
     ).toBe(true);
     const overLimit = getEffectivePlanLoadInputSchema.safeParse({
       startDate: "2026-01-01",
-      endDate: "2026-04-01",
+      endDate: "2027-01-02",
     });
     expect(overLimit.success).toBe(false);
     if (!overLimit.success) {

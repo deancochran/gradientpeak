@@ -540,6 +540,17 @@ test("merge-base canonical policy covers every enforcement surface", () => {
         0,
     );
   }
+
+  const strengthened = structuredClone(config);
+  strengthened.owners.core.verification.lint = [
+    strengthened.owners.core.verification.lint,
+    { script: "lint", patterns: ["packages/core/scripts/**/*"] },
+  ];
+  assert.equal(
+    compareMergeBaseProtection({ baseline, config: strengthened }, { baseline, config }).findings
+      .length,
+    0,
+  );
 });
 
 test("reviewed exceptions require bounded ownership and expiry metadata", () => {

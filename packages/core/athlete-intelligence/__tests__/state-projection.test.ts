@@ -7,6 +7,7 @@ import {
   deriveProjectedPlanStimuli,
   simulateTrainingPlan,
 } from "../../plan/athlete-state-simulation";
+import { planZeroCorrectnessFixture } from "../../testing/plan-zero";
 import {
   type AthleteStateBaseline,
   advanceAthleteStateTo,
@@ -14,67 +15,52 @@ import {
   advanceProjectedAthleteState,
   dailyAggregateCommonLoadSchema,
   evaluateGoalReadiness,
+  MAX_DAILY_AGGREGATE_COMMON_LOAD,
   observedDailyTrainingStimulusSchema,
   observedTrainingStimulusSchema,
 } from "../state-projection";
 
 function baseline(overrides: Partial<AthleteStateBaseline> = {}): AthleteStateBaseline {
   return {
-    contractVersion: "athlete-state-projection-v1",
-    athleteId: "athlete-1",
-    stateRevision: 7,
-    asOf: "2026-06-01T00:00:00.000Z",
-    longTermLoad: 50,
-    recentLoad: 40,
-    loadBalance: 10,
-    evidenceConfidence: 0.8,
-    capabilities: [
-      {
-        activityCategory: "run",
-        longestDistanceMeters: 42_195,
-        longestDurationMinutes: 240,
-        observedAt: "2026-05-01T00:00:00.000Z",
-        evidenceConfidence: 0.9,
-      },
-    ],
-    athleteAgeYears: 36,
+    ...planZeroCorrectnessFixture.athlete.baseline,
     ...overrides,
   };
 }
 
-const marathonGoal = {
-  goalId: "marathon",
-  activityCategory: "run" as const,
-  targetAt: "2026-07-01T08:00:00.000Z",
-  targetDistanceMeters: 42_195,
-  targetDurationMinutes: 240,
-};
+const marathonGoal = planZeroCorrectnessFixture.athlete.goal;
 
 describe("athlete state projection fixtures", () => {
   it("keeps per-session bounds while permitting several valid sessions in a daily aggregate", () => {
+    const { expectedAggregate } = planZeroCorrectnessFixture.dailyLoad;
     expect(
       observedTrainingStimulusSchema.safeParse({
         kind: "observed",
         sourceId: "activity:oversized",
         occurredAt: "2026-06-01T12:00:00.000Z",
         activityCategory: "other",
-        commonLoad: 12_000,
+        commonLoad: expectedAggregate,
         evidenceConfidence: 1,
         capabilityObservation: null,
       }).success,
     ).toBe(false);
-    expect(dailyAggregateCommonLoadSchema.parse(12_000)).toBe(12_000);
+    expect(dailyAggregateCommonLoadSchema.parse(expectedAggregate)).toBe(expectedAggregate);
+    expect(dailyAggregateCommonLoadSchema.parse(MAX_DAILY_AGGREGATE_COMMON_LOAD)).toBe(
+      MAX_DAILY_AGGREGATE_COMMON_LOAD,
+    );
+    expect(
+      dailyAggregateCommonLoadSchema.safeParse(MAX_DAILY_AGGREGATE_COMMON_LOAD + 1).success,
+    ).toBe(false);
     expect(
       observedDailyTrainingStimulusSchema.parse({
         kind: "observed",
         sourceId: "day:2026-06-01",
         occurredAt: "2026-06-01T23:00:00.000Z",
         activityCategory: "other",
-        commonLoad: 12_000,
+        commonLoad: expectedAggregate,
         evidenceConfidence: 1,
         capabilityObservation: null,
       }).commonLoad,
-    ).toBe(12_000);
+    ).toBe(expectedAggregate);
   });
 
   it("makes a late hard activity change later fatigue and form", () => {
@@ -342,6 +328,7 @@ describe("athlete state projection fixtures", () => {
   });
 
   it("accepts a finite daily aggregate above the per-session ceiling", () => {
+    const [firstLoad, secondLoad] = planZeroCorrectnessFixture.dailyLoad.perSessionLoads;
     const result = simulateTrainingPlan({
       baseline: baseline(),
       plannedSessions: [
@@ -350,14 +337,14 @@ describe("athlete state projection fixtures", () => {
           sourceId: "same-day-a",
           scheduledAt: "2026-06-02T08:00:00.000Z",
           activityCategory: "run",
-          commonLoad: 6_000,
+          commonLoad: firstLoad,
         },
         {
           kind: "projected",
           sourceId: "same-day-b",
           scheduledAt: "2026-06-02T18:00:00.000Z",
           activityCategory: "bike",
-          commonLoad: 6_000,
+          commonLoad: secondLoad,
         },
       ],
       simulationAt: "2026-06-02T18:00:00.000Z",
@@ -366,8 +353,12 @@ describe("athlete state projection fixtures", () => {
     });
 
     expect(result.transitions).toHaveLength(1);
-    expect(result.projectedState.longTermLoad).toBe(calculateLongTermLoad(50, 12_000, 36));
-    expect(result.projectedState.recentLoad).toBe(calculateRecentLoad(40, 12_000, 36));
+    expect(result.projectedState.longTermLoad).toBe(
+      calculateLongTermLoad(50, planZeroCorrectnessFixture.dailyLoad.expectedAggregate, 36),
+    );
+    expect(result.projectedState.recentLoad).toBe(
+      calculateRecentLoad(40, planZeroCorrectnessFixture.dailyLoad.expectedAggregate, 36),
+    );
   });
 
   it("allows high-quality observed evidence to update capability", () => {
@@ -446,44 +437,15 @@ describe("athlete state projection fixtures", () => {
   });
 
   it("derives canonical projected stimuli from a client draft without granting save authority", () => {
-    const planId = "11111111-1111-4111-8111-111111111111";
-    const activityPlanId = "22222222-2222-4222-8222-222222222222";
-    const structure = {
-      version: 1 as const,
-      sessions: [{ activity_plan_id: activityPlanId, offset_days: 2 }],
-      goal_blueprints: [
-        {
-          title: "10K",
-          priority: 8,
-          activity_category: "run" as const,
-          target_offset_days: 30,
-          objective: {
-            type: "event_performance",
-            activity_category: "run",
-            distance_m: 10_000,
-            target_time_s: 3_600,
-          },
-        },
-      ],
-      builder_planning_snapshot: {
-        version: 1 as const,
-        plan_preferences: {
-          duration_weeks: 1,
-          weekly_session_count: 1,
-          target_weekly_hours: null,
-          rest_days_per_week: 6,
-        },
-        scheduling: { preferred_weekdays: [3] },
-        goal_context: { selected_goals: [] },
-      },
-    };
+    const { activityPlans, notBefore, planId, planningTimezone, startDate, structure } =
+      planZeroCorrectnessFixture.planApplication;
     const result = deriveProjectedPlanStimuli({
       planId,
       structure,
-      activityPlans: [{ activityPlanId, activityCategory: "run", commonLoad: 80 }],
-      planningTimezone: "UTC",
-      startDate: "2026-06-01",
-      notBefore: "2026-06-01T00:00:00.000Z",
+      activityPlans,
+      planningTimezone,
+      startDate,
+      notBefore,
     });
 
     expect(result).toEqual({
@@ -502,8 +464,8 @@ describe("athlete state projection fixtures", () => {
       derivePlanGoalReadinessContext({
         planId,
         structure,
-        planningTimezone: "UTC",
-        startDate: "2026-06-01",
+        planningTimezone,
+        startDate,
       }),
     ).toMatchObject({
       goalId: `${planId}:goal:0`,
@@ -516,9 +478,9 @@ describe("athlete state projection fixtures", () => {
       baseline: observedBaseline,
       planId,
       structure,
-      activityPlans: [{ activityPlanId, activityCategory: "run", commonLoad: 80 }],
-      planningTimezone: "UTC",
-      startDate: "2026-06-01",
+      activityPlans,
+      planningTimezone,
+      startDate,
     });
     expect(draftProjection).toMatchObject({
       status: "available",

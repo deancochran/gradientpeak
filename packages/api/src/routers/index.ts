@@ -17,6 +17,7 @@ import {
   calendarRouter,
   eventsRouter,
   goalsRouter,
+  plannedSessionsRouter,
   trainingPlansRouter,
 } from "./planning";
 import { integrationsRouter, storageRouter } from "./platform";
@@ -36,6 +37,7 @@ export const appRouter = createTRPCRouter({
   events: eventsRouter,
   goals: goalsRouter,
   activityFiles: activityFilesRouter,
+  plannedSessions: plannedSessionsRouter,
   integrations: integrationsRouter,
   messaging: messagingRouter,
   notifications: notificationsRouter,

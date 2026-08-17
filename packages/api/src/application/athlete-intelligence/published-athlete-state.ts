@@ -1,5 +1,7 @@
 import {
+  ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
   advanceAthleteStateTo,
+  advanceObservedAthleteState,
   athletePerformanceTargetFactsSchema,
   athleteStateBaselineSchema,
   createUnavailableAthletePerformanceTargetFacts,
@@ -13,6 +15,7 @@ import { z } from "zod";
 import { type DrizzleQueryExecutor, withRepeatableReadSnapshot } from "../../db";
 import {
   type PublishedAthleteStateRead,
+  publishIncrementalAthleteStateContribution,
   readPublishedAthleteStateSnapshotData,
 } from "../../repositories/athlete-state-repository";
 import { getAthleteThresholdTargetFactsAsOf } from "../performance-model/get-athlete-performance-model-as-of";
@@ -66,6 +69,96 @@ function buildPublishedAthleteStateBaseline(profileId: string, current: Publishe
       };
     }),
     athleteAgeYears: null,
+  });
+}
+
+/**
+ * Applies the normal one-activity fast path. Same-day additions, corrections,
+ * imports, threshold changes, and older evidence deliberately fall back to the
+ * coalesced rebuild row because the current schema has no independent daily
+ * aggregate that could be replaced safely.
+ */
+export async function tryPublishIncrementalAthleteStateContribution(input: {
+  tx: import("../../db").DrizzleTransactionClient;
+  profileId: string;
+  contribution: {
+    activityId: string;
+    finishedAt: Date;
+    commonLoad: number;
+    activityCategory: "bike" | "other" | "run" | "strength" | "swim";
+    evidenceConfidence: number;
+    capabilityDistanceMeters: number | null;
+    capabilityDurationMinutes: number | null;
+  };
+  now: Date;
+}) {
+  if (input.contribution.finishedAt.getTime() > input.now.getTime()) return false;
+  const snapshot = await readPublishedAthleteStateSnapshotData(input.tx, {
+    profileId: input.profileId,
+    lockStateForUpdate: true,
+  });
+  const current = snapshot?.current;
+  if (
+    !current ||
+    snapshot.blockingImport !== null ||
+    current.state.source_revision <= 0 ||
+    current.state.source_revision !== current.state.published_revision ||
+    current.state.dirty_from_at !== null ||
+    current.state.lease_token !== null ||
+    current.state.computed_at === null ||
+    current.state.algorithm_version !== ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION ||
+    input.contribution.finishedAt.getTime() < current.state.computed_at.getTime()
+  ) {
+    return false;
+  }
+  const planningTimezone = ianaTimezoneSchema.safeParse(snapshot.planningTimezone).data ?? "UTC";
+  const contributionDay = formatDateOnlyInTimeZone(input.contribution.finishedAt, planningTimezone);
+  const coverageEndDay = current.state.coverage_end_at
+    ? formatDateOnlyInTimeZone(current.state.coverage_end_at, planningTimezone)
+    : null;
+  // Replacing a same-day aggregate must be order-independent, so it remains a
+  // rebuild until daily aggregate persistence is available in the approved DB shape.
+  if (coverageEndDay !== null && contributionDay <= coverageEndDay) return false;
+
+  const baseline = buildPublishedAthleteStateBaseline(input.profileId, current);
+  const advanced = advanceObservedAthleteState({
+    baseline,
+    planningDays: {
+      fromDay: formatDateOnlyInTimeZone(new Date(baseline.asOf), planningTimezone),
+      toDay: contributionDay,
+    },
+    stimulus: {
+      kind: "observed",
+      sourceId: `activity:${input.contribution.activityId}`,
+      occurredAt: input.contribution.finishedAt.toISOString(),
+      activityCategory: input.contribution.activityCategory,
+      commonLoad: input.contribution.commonLoad,
+      evidenceConfidence: input.contribution.evidenceConfidence,
+      capabilityObservation: {
+        distanceMeters: input.contribution.capabilityDistanceMeters,
+        durationMinutes: input.contribution.capabilityDurationMinutes,
+      },
+    },
+  }).state;
+  const coverageStartAt = current.state.coverage_start_at ?? input.contribution.finishedAt;
+  return publishIncrementalAthleteStateContribution(input.tx, {
+    profileId: input.profileId,
+    expectedRevision: current.state.published_revision,
+    expectedComputedAt: current.state.computed_at,
+    state: {
+      fitness: advanced.longTermLoad,
+      fatigue: advanced.recentLoad,
+      evidenceConfidence: advanced.evidenceConfidence,
+      coverageStartAt,
+      coverageEndAt: input.contribution.finishedAt,
+      lastActivityAt: input.contribution.finishedAt,
+      algorithmVersion: ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
+      capabilities: advanced.capabilities.map((capability) => ({
+        ...capability,
+        observedAt: new Date(capability.observedAt),
+      })),
+    },
+    now: input.now,
   });
 }
 

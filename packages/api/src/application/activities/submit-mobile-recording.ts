@@ -4,18 +4,23 @@ import {
   completedActivitySegmentSetSchema,
 } from "@repo/core/activity-segments";
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
-import { activities, activityFileIngestions, activityPlans, profiles } from "@repo/db";
+import { activities, activityPlans, profiles } from "@repo/db";
 import { and, eq } from "drizzle-orm";
 import type { MobileRecordingSubmissionInput } from "../../contracts/recording-submission";
 import type { getRequiredDb } from "../../db";
+import { createDrizzleActivityIngestionRepository } from "../../infrastructure/repositories";
 import { createContentAccessPermissions } from "../../permissions/content-access";
 import type { ActivityArtifactStorage } from "../activity-file-ingestion/artifact-storage";
+import {
+  completeActivityIngestionCleanup,
+  deferActivityIngestionCleanup,
+  failActivityIngestion,
+} from "../activity-file-ingestion/direct-activity-ingestion";
 import { finalizeActivityArtifactIngestion } from "../activity-file-ingestion/finalize-activity-artifact-ingestion";
 import {
   loadAcceptedArtifactForClaim,
   MobileRecordingUploadError,
-  markPreparedMobileRecordingArtifactFailed,
-  mobileRecordingOperationKey,
+  mobileRecordingOperationId,
   prepareMobileRecordingArtifact,
   retryMobileRecordingStagingCleanup,
 } from "../activity-file-ingestion/mobile-recording-upload";
@@ -136,6 +141,12 @@ async function resolveRecordingActivityPlanId(
       "Activity plan is not available for mobile recording",
     );
   }
+  if (plan.ownerProfileId !== input.profileId) {
+    throw new MobileRecordingSubmissionError(
+      "forbidden",
+      "Activity plan is not available for mobile recording",
+    );
+  }
 
   const access = await createContentAccessPermissions(db).canReadForRow({
     actorProfileId: input.profileId,
@@ -168,25 +179,24 @@ async function loadAcceptedSubmission(
   db: DbClient,
   input: { profileId: string; replayIdentity: string },
 ) {
-  const activityId = recordingSessionActivityId(input.profileId, input.replayIdentity);
-  const activity = await db.query.activities.findFirst({
-    where: and(eq(activities.id, activityId), eq(activities.profile_id, input.profileId)),
+  const ingestion = await createDrizzleActivityIngestionRepository(db).getOwnedByOperation({
+    profileId: input.profileId,
+    operationId: mobileRecordingOperationId(input.replayIdentity),
   });
-  if (!activity) return null;
-
-  const ingestion = await db.query.activityFileIngestions.findFirst({
-    where: and(
-      eq(activityFileIngestions.activity_id, activityId),
-      eq(activityFileIngestions.profile_id, input.profileId),
-      eq(activityFileIngestions.source, "mobile_recording"),
-      eq(activityFileIngestions.operation_key, mobileRecordingOperationKey(input.replayIdentity)),
-      eq(activityFileIngestions.status, "ready"),
-    ),
-  });
-  if (!ingestion) {
+  if (!ingestion || ingestion.status !== "succeeded") return null;
+  if (ingestion.source !== "mobile_recording" || !ingestion.activityId) {
     throw new MobileRecordingSubmissionError(
       "submission_failed",
       "Recording activity is missing its accepted ingestion",
+    );
+  }
+  const activity = await db.query.activities.findFirst({
+    where: and(eq(activities.id, ingestion.activityId), eq(activities.profile_id, input.profileId)),
+  });
+  if (!activity) {
+    throw new MobileRecordingSubmissionError(
+      "submission_failed",
+      "Recording ingestion is missing its accepted activity",
     );
   }
   const acceptedArtifact = await loadAcceptedArtifactForClaim(db, ingestion);
@@ -217,9 +227,9 @@ function assertReplayMatches(
 }
 
 /**
- * Owns deterministic recording submission, claim promotion, the canonical
+ * Owns deterministic recording submission, artifact promotion, the canonical
  * activity transaction, and replay-safe cleanup. Storage work stays outside
- * the transaction; the claim token fences the final relational commit.
+ * the transaction; the ingestion identity is checked in the final commit.
  */
 export async function submitMobileRecording(
   db: DbClient,
@@ -288,10 +298,10 @@ export async function submitMobileRecording(
     return accepted;
   }
   const activityId = recordingSessionActivityId(submission.profileId, replayIdentity);
-  const operationKey = mobileRecordingOperationKey(replayIdentity);
+  const operationId = mobileRecordingOperationId(replayIdentity);
 
   try {
-    if (prepared.status !== "claimed") {
+    if (prepared.status !== "processing") {
       throw new MobileRecordingSubmissionError(
         "submission_failed",
         "Recording upload claim could not be finalized",
@@ -305,10 +315,38 @@ export async function submitMobileRecording(
       bytes: prepared.staging.bytes,
       format: prepared.staging.format,
       mediaType: prepared.staging.mediaType,
-      ...(prepared.ingestion.expected_sha256
-        ? { expectedSha256: prepared.ingestion.expected_sha256 }
+      ...(prepared.ingestion.expectedSha256
+        ? { expectedSha256: prepared.ingestion.expectedSha256 }
         : {}),
       parse: () => null,
+      onFailure: async (stage) => {
+        await failActivityIngestion(db, {
+          profileId: submission.profileId,
+          ingestionId: prepared.ingestion.id,
+          failureCode:
+            stage === "hash"
+              ? "hash_mismatch"
+              : stage === "promotion"
+                ? "promotion_failed"
+                : stage === "parse"
+                  ? "invalid_activity"
+                  : "internal",
+          retryable: stage === "promotion" || stage === "persistence",
+        });
+      },
+      onCleanup: async ({ cleaned }) => {
+        if (cleaned) {
+          await completeActivityIngestionCleanup(db, {
+            profileId: submission.profileId,
+            ingestionId: prepared.ingestion.id,
+          });
+        } else {
+          await deferActivityIngestionCleanup(db, {
+            profileId: submission.profileId,
+            ingestionId: prepared.ingestion.id,
+          });
+        }
+      },
       submit: async ({ artifact }) =>
         submitActivity(db, {
           requestedActivityId: activityId,
@@ -348,7 +386,7 @@ export async function submitMobileRecording(
             detectedLTHR: null,
             ingestion: {
               source: submission.source,
-              operationKey,
+              operationId,
               artifact: {
                 sha256: artifact.sha256,
                 byteSize: artifact.byteSize,
@@ -360,7 +398,6 @@ export async function submitMobileRecording(
               },
               fileType: artifact.format,
               ingestionId: prepared.ingestion.id,
-              claimToken: prepared.claimToken,
               stagingCleanupPending: true,
             },
           },
@@ -371,15 +408,6 @@ export async function submitMobileRecording(
     if (accepted) {
       assertReplayMatches(submission, accepted);
       return accepted;
-    }
-    if (prepared.status === "claimed") {
-      await markPreparedMobileRecordingArtifactFailed(db, {
-        profileId: submission.profileId,
-        recordingSessionId: submission.recordingSessionId,
-        ingestionId: prepared.ingestion.id,
-        claimToken: prepared.claimToken,
-        error,
-      });
     }
     if (error instanceof MobileRecordingUploadError) throw error;
     throw new MobileRecordingSubmissionError(

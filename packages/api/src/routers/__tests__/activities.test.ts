@@ -64,11 +64,22 @@ const mockActivityAnalysis = vi.hoisted(() => ({
 }));
 const mobileUploadFlow = vi.hoisted(() => ({
   loadAcceptedArtifactForClaim: vi.fn(),
-  markPreparedMobileRecordingArtifactFailed: vi.fn(),
   prepareMobileRecordingArtifact: vi.fn(),
   retryMobileRecordingStagingCleanup: vi.fn(),
 }));
 const artifactFinalizer = vi.hoisted(() => ({ finalizeActivityArtifactIngestion: vi.fn() }));
+const directIngestion = vi.hoisted(() => ({ acceptActivityIngestion: vi.fn() }));
+const athleteDerivedRepository = vi.hoisted(() => ({
+  deleteThresholdEvidenceForActivity: vi.fn(async () => 0),
+  invalidateThresholdEvidenceForActivity: vi.fn(async () => 0),
+  lockPublicationState: vi.fn(async ({ profileId }) => ({
+    profileId,
+    planningTimezone: "UTC",
+    sourceRevision: 1,
+    publishedRevision: 1,
+  })),
+  coalesceRecalculationRequest: vi.fn(async ({ request }) => request),
+}));
 
 vi.mock(
   "../../application/activity-file-ingestion/mobile-recording-upload",
@@ -77,10 +88,17 @@ vi.mock(
       typeof import("../../application/activity-file-ingestion/mobile-recording-upload")
     >()),
     loadAcceptedArtifactForClaim: mobileUploadFlow.loadAcceptedArtifactForClaim,
-    markPreparedMobileRecordingArtifactFailed:
-      mobileUploadFlow.markPreparedMobileRecordingArtifactFailed,
     prepareMobileRecordingArtifact: mobileUploadFlow.prepareMobileRecordingArtifact,
     retryMobileRecordingStagingCleanup: mobileUploadFlow.retryMobileRecordingStagingCleanup,
+  }),
+);
+vi.mock(
+  "../../application/activity-file-ingestion/direct-activity-ingestion",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("../../application/activity-file-ingestion/direct-activity-ingestion")
+    >()),
+    acceptActivityIngestion: directIngestion.acceptActivityIngestion,
   }),
 );
 vi.mock(
@@ -124,6 +142,26 @@ vi.mock("@repo/core", async () => {
 
 vi.mock("../../infrastructure/repositories", () => ({
   createActivityAnalysisStore: mockActivityAnalysis.createActivityAnalysisStore,
+  createDrizzleAthleteDerivedStateRepository: vi.fn(() => athleteDerivedRepository),
+  createDrizzlePlannedSessionRepository: vi.fn(() => ({
+    listOwnedLinkedToActivity: vi.fn(async () => []),
+    mutateOwned: vi.fn(),
+  })),
+  createDrizzleActivityIngestionRepository: vi.fn((db) => ({
+    getOwnedByOperation: async () => {
+      const row = await db.query.activityFileIngestions.findFirst();
+      return row
+        ? {
+            ...row,
+            profileId: row.profile_id,
+            operationId: row.operation_id ?? "a".repeat(64),
+            activityId: row.activity_id,
+            artifactId: row.artifact_id ?? null,
+            status: row.status === "ready" ? "succeeded" : row.status,
+          }
+        : null;
+    },
+  })),
 }));
 
 vi.mock("../../lib/activity-analysis", async (importOriginal) => {
@@ -986,10 +1024,10 @@ beforeEach(() => {
   mockActivityAnalysis.resolveActivityContextAsOf.mockResolvedValue({});
   mobileUploadFlow.loadAcceptedArtifactForClaim.mockResolvedValue(ACCEPTED_ARTIFACT);
   mobileUploadFlow.retryMobileRecordingStagingCleanup.mockResolvedValue(true);
+  directIngestion.acceptActivityIngestion.mockResolvedValue({});
   mobileUploadFlow.prepareMobileRecordingArtifact.mockResolvedValue({
-    status: "claimed",
-    ingestion: { id: INGESTION_ID, expected_sha256: ACCEPTED_ARTIFACT.sha256 },
-    claimToken: "33333333-3333-4333-8333-333333333333",
+    status: "processing",
+    ingestion: { id: INGESTION_ID, expectedSha256: ACCEPTED_ARTIFACT.sha256 },
     staging: {
       bucket: "activity-files",
       path: `mobile-recordings/${OWNER_ID}/${ACTIVITY_ID}.fit`,
@@ -1551,7 +1589,7 @@ describe("activitiesRouter", () => {
         activities: [createdActivity],
         activity_file_ingestions: [ingestion],
       },
-      queryActivitiesFindFirst: [undefined, createdActivity],
+      queryActivitiesFindFirst: [createdActivity],
       queryActivityFileIngestionsFindFirst: [undefined, ingestion],
       queryActivitySummariesFindFirst: [
         buildActivitySummaryRow({
@@ -1592,8 +1630,8 @@ describe("activitiesRouter", () => {
         activities: [createdActivity],
         activity_file_ingestions: [ingestion],
       },
-      queryActivitiesFindFirst: [undefined, createdActivity],
-      queryActivityFileIngestionsFindFirst: [ingestion],
+      queryActivitiesFindFirst: [createdActivity],
+      queryActivityFileIngestionsFindFirst: [undefined, ingestion],
       activityFileIngestionRows: [{ id: INGESTION_ID }],
     });
 
@@ -1686,7 +1724,7 @@ describe("activitiesRouter", () => {
         activity_file_ingestions: [ingestion],
       },
       queryActivitiesFindFirst: [undefined, createdActivity],
-      queryActivityFileIngestionsFindFirst: [ingestion],
+      queryActivityFileIngestionsFindFirst: [undefined, ingestion],
     });
 
     await expect(
@@ -1731,7 +1769,7 @@ describe("activitiesRouter", () => {
 
     expect(result).toMatchObject({
       id: ACTIVITY_ID,
-      ingestion: { id: ingestion.id, source: ingestion.source, status: ingestion.status },
+      ingestion: { id: ingestion.id, source: ingestion.source, status: "succeeded" },
     });
     expect(db.transaction).not.toHaveBeenCalled();
   });
@@ -1744,8 +1782,8 @@ describe("activitiesRouter", () => {
       status: "ready",
     });
     const db = createDbMock({
-      queryActivitiesFindFirst: [undefined, createdActivity],
-      queryActivityFileIngestionsFindFirst: [ingestion],
+      queryActivitiesFindFirst: [createdActivity],
+      queryActivityFileIngestionsFindFirst: [undefined, ingestion],
       transactionError: new Error("duplicate key"),
     });
     const caller = createCaller(db);

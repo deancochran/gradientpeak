@@ -7,7 +7,7 @@ import {
   profilePerformanceEstimates,
   thresholds,
 } from "@repo/db";
-import { and, asc, eq, gt, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   type DrizzleQueryExecutor,
@@ -22,6 +22,9 @@ const athleteStateClaimRowSchema = z.object({
   profile_id: z.string().uuid(),
   source_revision: z.coerce.number().int().nonnegative(),
   planning_timezone: z.string().nullable(),
+  dirty_from_at: z.coerce.date().nullable(),
+  activity_analysis_cursor_started_at: z.coerce.date().nullable(),
+  activity_analysis_cursor_activity_id: z.string().uuid().nullable(),
 });
 
 const publishedAthleteStateRowSchema = z
@@ -77,6 +80,8 @@ export type AthleteStateClaim = {
   sourceRevision: number;
   leaseToken: string;
   planningTimezone: string;
+  dirtyFromAt: Date | null;
+  activityAnalysisCursor: { startedAt: Date; activityId: string } | null;
 };
 
 export type PublishedAthleteStateRead = {
@@ -114,6 +119,8 @@ export async function markAthleteStateDirty(
       source_revision: 1,
       published_revision: 0,
       dirty_from_at: input.effectiveAt,
+      activity_analysis_cursor_started_at: null,
+      activity_analysis_cursor_activity_id: null,
       updated_at: now,
     })
     .onConflictDoUpdate({
@@ -121,6 +128,10 @@ export async function markAthleteStateDirty(
       set: {
         source_revision: sql`${profileAthleteState.source_revision} + 1`,
         dirty_from_at: sql`least(coalesce(${profileAthleteState.dirty_from_at}, ${input.effectiveAt}), ${input.effectiveAt})`,
+        activity_analysis_cursor_started_at: null,
+        activity_analysis_cursor_activity_id: null,
+        lease_token: null,
+        lease_expires_at: null,
         retry_after: null,
         updated_at: now,
       },
@@ -128,6 +139,245 @@ export async function markAthleteStateDirty(
     .returning({ sourceRevision: profileAthleteState.source_revision });
   if (!row) throw new Error("Athlete state revision update failed");
   return row.sourceRevision;
+}
+
+/**
+ * Publishes one already-materialized chronological contribution while the
+ * caller holds the profile advisory fence. The conditional state update is the
+ * revision fence; estimate revisions move only after that fence succeeds.
+ */
+export async function publishIncrementalAthleteStateContribution(
+  tx: DrizzleTransactionClient,
+  input: {
+    profileId: string;
+    expectedRevision: number;
+    expectedComputedAt: Date;
+    state: {
+      fitness: number;
+      fatigue: number;
+      evidenceConfidence: number;
+      coverageStartAt: Date;
+      coverageEndAt: Date;
+      lastActivityAt: Date;
+      algorithmVersion: string;
+      capabilities: Array<{
+        activityCategory: "bike" | "other" | "run" | "strength" | "swim";
+        longestDistanceMeters: number | null;
+        longestDurationMinutes: number | null;
+        observedAt: Date;
+        evidenceConfidence: number;
+      }>;
+    };
+    now: Date;
+  },
+) {
+  const nextRevision = input.expectedRevision + 1;
+  const [published] = await tx
+    .update(profileAthleteState)
+    .set({
+      source_revision: nextRevision,
+      published_revision: nextRevision,
+      dirty_from_at: null,
+      activity_analysis_cursor_started_at: null,
+      activity_analysis_cursor_activity_id: null,
+      fitness: input.state.fitness,
+      fatigue: input.state.fatigue,
+      evidence_confidence: input.state.evidenceConfidence,
+      coverage_start_at: input.state.coverageStartAt,
+      coverage_end_at: input.state.coverageEndAt,
+      last_activity_at: input.state.lastActivityAt,
+      algorithm_version: input.state.algorithmVersion,
+      computed_at: input.state.lastActivityAt,
+      retry_after: null,
+      consecutive_failures: 0,
+      last_failure_code: null,
+      updated_at: input.now,
+    })
+    .where(
+      and(
+        eq(profileAthleteState.profile_id, input.profileId),
+        eq(profileAthleteState.source_revision, input.expectedRevision),
+        eq(profileAthleteState.published_revision, input.expectedRevision),
+        eq(profileAthleteState.computed_at, input.expectedComputedAt),
+        eq(profileAthleteState.algorithm_version, input.state.algorithmVersion),
+        isNull(profileAthleteState.dirty_from_at),
+        isNull(profileAthleteState.lease_token),
+      ),
+    )
+    .returning({ profileId: profileAthleteState.profile_id });
+  if (!published) return false;
+
+  await tx
+    .update(profilePerformanceEstimates)
+    .set({ source_revision: nextRevision })
+    .where(
+      and(
+        eq(profilePerformanceEstimates.profile_id, input.profileId),
+        eq(profilePerformanceEstimates.source_revision, input.expectedRevision),
+      ),
+    );
+
+  const capabilityRows = input.state.capabilities.flatMap((capability) => {
+    const base = {
+      profile_id: input.profileId,
+      activity_category: capability.activityCategory,
+      confidence: capability.evidenceConfidence,
+      effective_at: capability.observedAt,
+      evidence_window_start_at: null,
+      evidence_window_end_at: input.state.lastActivityAt,
+      algorithm_version: input.state.algorithmVersion,
+      source_revision: nextRevision,
+      computed_at: input.now,
+    };
+    return [
+      ...(capability.longestDistanceMeters !== null && capability.longestDistanceMeters > 0
+        ? [
+            {
+              ...base,
+              capability_kind: "longest_distance",
+              value: capability.longestDistanceMeters,
+              unit: "meters",
+            },
+          ]
+        : []),
+      ...(capability.longestDurationMinutes !== null && capability.longestDurationMinutes > 0
+        ? [
+            {
+              ...base,
+              capability_kind: "longest_duration",
+              value: capability.longestDurationMinutes,
+              unit: "minutes",
+            },
+          ]
+        : []),
+    ];
+  });
+  if (capabilityRows.length > 0) {
+    await tx
+      .insert(profilePerformanceEstimates)
+      .values(capabilityRows)
+      .onConflictDoUpdate({
+        target: [
+          profilePerformanceEstimates.profile_id,
+          profilePerformanceEstimates.capability_kind,
+          profilePerformanceEstimates.activity_category,
+        ],
+        set: {
+          value: sql`excluded.value`,
+          unit: sql`excluded.unit`,
+          confidence: sql`excluded.confidence`,
+          effective_at: sql`excluded.effective_at`,
+          evidence_window_end_at: sql`excluded.evidence_window_end_at`,
+          algorithm_version: sql`excluded.algorithm_version`,
+          source_revision: sql`excluded.source_revision`,
+          computed_at: sql`excluded.computed_at`,
+        },
+      });
+  }
+  return true;
+}
+
+/** Fences analysis publication to the same durable claim that will rebuild athlete state. */
+export async function verifyAthleteStateClaimForAnalysisRefresh(
+  tx: DrizzleTransactionClient,
+  input: { claim: AthleteStateClaim },
+) {
+  const [owned] = await tx
+    .select({ profileId: profileAthleteState.profile_id })
+    .from(profileAthleteState)
+    .where(
+      and(
+        eq(profileAthleteState.profile_id, input.claim.profileId),
+        eq(profileAthleteState.source_revision, input.claim.sourceRevision),
+        eq(profileAthleteState.lease_token, input.claim.leaseToken),
+        input.claim.dirtyFromAt === null
+          ? sql`${profileAthleteState.dirty_from_at} is null`
+          : eq(profileAthleteState.dirty_from_at, input.claim.dirtyFromAt),
+        input.claim.activityAnalysisCursor === null
+          ? and(
+              sql`${profileAthleteState.activity_analysis_cursor_started_at} is null`,
+              sql`${profileAthleteState.activity_analysis_cursor_activity_id} is null`,
+            )
+          : and(
+              eq(
+                profileAthleteState.activity_analysis_cursor_started_at,
+                input.claim.activityAnalysisCursor.startedAt,
+              ),
+              eq(
+                profileAthleteState.activity_analysis_cursor_activity_id,
+                input.claim.activityAnalysisCursor.activityId,
+              ),
+            ),
+        sql`${profileAthleteState.lease_expires_at} > clock_timestamp()`,
+        sql`not exists (
+          select 1 from ${activityImportRuns} run
+          where run.profile_id = ${input.claim.profileId}
+            and run.kind in ('onboarding', 'history_sync', 'manual_sync')
+            and run.status in ('queued', 'running')
+        )`,
+      ),
+    )
+    .limit(1)
+    .for("update");
+  return Boolean(owned);
+}
+
+/** Commits one bounded analysis batch and makes its continuation immediately claimable. */
+export async function advanceClaimedActivityAnalysisRefresh(
+  tx: DrizzleTransactionClient,
+  input: {
+    claim: AthleteStateClaim;
+    nextCursor: { startedAt: Date; activityId: string };
+    now: Date;
+  },
+) {
+  const [advanced] = await tx
+    .update(profileAthleteState)
+    .set({
+      activity_analysis_cursor_started_at: input.nextCursor.startedAt,
+      activity_analysis_cursor_activity_id: input.nextCursor.activityId,
+      lease_token: null,
+      lease_expires_at: null,
+      retry_after: null,
+      updated_at: input.now,
+    })
+    .where(
+      and(
+        eq(profileAthleteState.profile_id, input.claim.profileId),
+        eq(profileAthleteState.source_revision, input.claim.sourceRevision),
+        eq(profileAthleteState.lease_token, input.claim.leaseToken),
+        input.claim.dirtyFromAt === null
+          ? sql`${profileAthleteState.dirty_from_at} is null`
+          : eq(profileAthleteState.dirty_from_at, input.claim.dirtyFromAt),
+        sql`${profileAthleteState.lease_expires_at} > clock_timestamp()`,
+        sql`not exists (
+          select 1 from ${activityImportRuns} run
+          where run.profile_id = ${input.claim.profileId}
+            and run.kind in ('onboarding', 'history_sync', 'manual_sync')
+            and run.status in ('queued', 'running')
+        )`,
+      ),
+    )
+    .returning({ profileId: profileAthleteState.profile_id });
+  return Boolean(advanced);
+}
+
+/** Releases only the still-current token; a successor claim is never disturbed. */
+export async function releaseAthleteStateClaim(
+  db: DrizzleQueryExecutor,
+  input: { claim: AthleteStateClaim; now: Date },
+) {
+  const [released] = await db
+    .update(profileAthleteState)
+    .set({ lease_token: null, lease_expires_at: null, updated_at: input.now })
+    .where(
+      and(
+        eq(profileAthleteState.profile_id, input.claim.profileId),
+        eq(profileAthleteState.lease_token, input.claim.leaseToken),
+      ),
+    )
+    .returning({ profileId: profileAthleteState.profile_id });
+  return Boolean(released);
 }
 
 export async function claimNextAthleteState(
@@ -139,6 +389,9 @@ export async function claimNextAthleteState(
     profile_id: string;
     source_revision: number;
     planning_timezone: string | null;
+    dirty_from_at: Date | string | null;
+    activity_analysis_cursor_started_at: Date | string | null;
+    activity_analysis_cursor_activity_id: string | null;
   }>`
     with candidate as (
       select state.profile_id
@@ -164,17 +417,31 @@ export async function claimNextAthleteState(
         updated_at = clock_timestamp()
     from candidate, profiles profile
     where state.profile_id = candidate.profile_id and profile.id = state.profile_id
-    returning state.profile_id, state.source_revision, profile.planning_timezone
+    returning state.profile_id,
+      state.source_revision,
+      profile.planning_timezone,
+      state.dirty_from_at,
+      state.activity_analysis_cursor_started_at,
+      state.activity_analysis_cursor_activity_id
   `);
   const row = athleteStateClaimRowSchema.safeParse(result.rows[0]);
-  return row.success
-    ? {
-        profileId: row.data.profile_id,
-        sourceRevision: row.data.source_revision,
-        leaseToken,
-        planningTimezone: ianaTimezoneSchema.safeParse(row.data.planning_timezone).data ?? "UTC",
-      }
-    : null;
+  if (!row.success) return null;
+  const cursor =
+    row.data.activity_analysis_cursor_started_at !== null &&
+    row.data.activity_analysis_cursor_activity_id !== null
+      ? {
+          startedAt: row.data.activity_analysis_cursor_started_at,
+          activityId: row.data.activity_analysis_cursor_activity_id,
+        }
+      : null;
+  return {
+    profileId: row.data.profile_id,
+    sourceRevision: row.data.source_revision,
+    leaseToken,
+    planningTimezone: ianaTimezoneSchema.safeParse(row.data.planning_timezone).data ?? "UTC",
+    dirtyFromAt: row.data.dirty_from_at,
+    activityAnalysisCursor: cursor,
+  };
 }
 
 /** Extend an unexpired claim with database time; any changed fence fails closed. */
@@ -395,6 +662,8 @@ export async function publishAthleteState(
             : input.claim.sourceRevision,
           published_revision: input.claim.sourceRevision,
           dirty_from_at: futureDirtyFromAt,
+          activity_analysis_cursor_started_at: null,
+          activity_analysis_cursor_activity_id: null,
           fitness: input.state.fitness,
           fatigue: input.state.fatigue,
           evidence_confidence: input.state.evidenceConfidence,

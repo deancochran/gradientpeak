@@ -347,6 +347,21 @@ describe("activityPlansRouter", () => {
     expect(result.nextCursor).toBe(`${firstPlan.created_at.toISOString()}_${firstPlan.id}`);
   });
 
+  it("list accepts infinite-query direction metadata", async () => {
+    const { caller } = createCaller({
+      state: {
+        "select:activity_plans": [[]],
+      },
+    });
+
+    await expect(
+      caller.list({ ownerScope: "all", limit: 25, direction: "forward" }),
+    ).resolves.toMatchObject({
+      items: [],
+      nextCursor: undefined,
+    });
+  });
+
   it("list accepts discoverable owner scope for public and system picker surfaces", async () => {
     const publicPlan = createActivityPlanRow({
       id: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa",

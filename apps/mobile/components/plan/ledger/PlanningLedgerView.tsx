@@ -89,6 +89,10 @@ function FactGrid({ facts }: { facts: Array<{ label: string; value: string; deta
   );
 }
 
+function fact(label: string, value: string, detail?: string) {
+  return { label, value, ...(detail !== undefined ? { detail } : {}) };
+}
+
 export function PlanningLedgerView({
   ledger,
   onOpenEntry,
@@ -135,20 +139,20 @@ export function PlanningLedgerView({
       <Section title="Load accounting" testID="planning-ledger-load">
         <FactGrid
           facts={[
-            { label: "Completed", value: formatLoad(ledger.load.completed) },
-            { label: "Planned", value: formatLoad(ledger.load.planned) },
-            { label: "Remaining", value: formatLoad(ledger.load.remaining) },
-            { label: "Effective", value: formatLoad(ledger.load.effective) },
-            {
-              label: "Intensity",
-              value: formatIntensity(ledger.intensity),
-              detail: statusDetail(ledger.intensity.status),
-            },
-            {
-              label: "Contributing duration",
-              value: formatDuration(ledger.contributingDurationSeconds),
-              detail: statusDetail(ledger.contributingDurationSeconds.status),
-            },
+            fact("Completed", formatLoad(ledger.load.completed)),
+            fact("Planned", formatLoad(ledger.load.planned)),
+            fact("Remaining", formatLoad(ledger.load.remaining)),
+            fact("Effective", formatLoad(ledger.load.effective)),
+            fact(
+              "Intensity",
+              formatIntensity(ledger.intensity),
+              statusDetail(ledger.intensity.status),
+            ),
+            fact(
+              "Contributing duration",
+              formatDuration(ledger.contributingDurationSeconds),
+              statusDetail(ledger.contributingDurationSeconds.status),
+            ),
           ]}
         />
       </Section>
@@ -156,34 +160,34 @@ export function PlanningLedgerView({
       <Section title="Training state" testID="planning-ledger-training-state">
         <FactGrid
           facts={[
-            {
-              label: "Actual fitness",
-              value: formatState(ledger.trainingState.actual.fitness),
-              detail: ledger.trainingState.actual.fitness.observedOn
+            fact(
+              "Actual fitness",
+              formatState(ledger.trainingState.actual.fitness),
+              ledger.trainingState.actual.fitness.observedOn
                 ? `Actual · ${formatDate(ledger.trainingState.actual.fitness.observedOn)}`
                 : undefined,
-            },
-            {
-              label: "Planned fitness projection",
-              value: formatState(ledger.trainingState.planned.fitness),
-              detail: ledger.trainingState.planned.fitness.observedOn
+            ),
+            fact(
+              "Planned fitness projection",
+              formatState(ledger.trainingState.planned.fitness),
+              ledger.trainingState.planned.fitness.observedOn
                 ? `Scheduled projection · ${formatDate(ledger.trainingState.planned.fitness.observedOn)}`
                 : undefined,
-            },
-            {
-              label: "Actual fatigue",
-              value: formatState(ledger.trainingState.actual.fatigue),
-              detail: ledger.trainingState.actual.fatigue.observedOn
+            ),
+            fact(
+              "Actual fatigue",
+              formatState(ledger.trainingState.actual.fatigue),
+              ledger.trainingState.actual.fatigue.observedOn
                 ? `Actual · ${formatDate(ledger.trainingState.actual.fatigue.observedOn)}`
                 : undefined,
-            },
-            {
-              label: "Planned fatigue projection",
-              value: formatState(ledger.trainingState.planned.fatigue),
-              detail: ledger.trainingState.planned.fatigue.observedOn
+            ),
+            fact(
+              "Planned fatigue projection",
+              formatState(ledger.trainingState.planned.fatigue),
+              ledger.trainingState.planned.fatigue.observedOn
                 ? `Scheduled projection · ${formatDate(ledger.trainingState.planned.fatigue.observedOn)}`
                 : undefined,
-            },
+            ),
           ]}
         />
       </Section>

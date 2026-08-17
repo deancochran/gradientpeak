@@ -39,6 +39,19 @@ const syncNowResultSchema = z
         status: z.enum(["queued", "succeeded", "partial", "failed"]),
       })
       .nullable(),
+    plannedActivitySync: z
+      .object({
+        affectedCount: z.number().int().nonnegative(),
+        error: z.string().optional(),
+        failedCount: z.number().int().nonnegative().optional(),
+        jobId: z.string().uuid().nullable().optional(),
+        operation: z.enum(["publish", "unsync"]),
+        queued: z.boolean(),
+        skippedCount: z.number().int().nonnegative().optional(),
+        success: z.boolean(),
+      })
+      .nullable()
+      .optional(),
   })
   .strict();
 const refreshSetupDataResultSchema = z
