@@ -66,6 +66,7 @@ describe("Plan upcoming scheduled work projection", () => {
         updatedAt: "2026-08-01T00:00:00.000Z",
         owner: null,
         activityCategory: "run",
+        activityPlanRevision: 1,
         structure: activityPlanStructureSchema.parse({
           version: 3,
           activity_category: "run",
@@ -92,6 +93,7 @@ describe("Plan upcoming scheduled work projection", () => {
             },
           ],
         }),
+        prescriptionQuantification: null,
         metrics: [],
         visibility: "private",
         isSystemTemplate: false,

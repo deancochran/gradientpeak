@@ -16,6 +16,7 @@ const calendarRangeUseQueryMock = jest.fn();
 const mockFlatListScrollToIndex = jest.fn();
 const mockFlatListScrollToOffset = jest.fn();
 const utilsEventsInvalidateMock = jest.fn(async () => undefined);
+const cancelPlannedSessionMock = jest.fn();
 let mockAuthReady = true;
 const fixedNow = new Date("2026-03-23T12:00:00.000Z");
 const today = fixedNow.toISOString().slice(0, 10);
@@ -64,7 +65,17 @@ type FlatListMockProps = {
   }) => React.ReactNode;
   testID?: string;
 };
-type AuthStoreFixture = { ready: boolean; session: { user: { id: string } } };
+type AuthStoreFixture = {
+  ready: boolean;
+  session: { user: { id: string } };
+  profile: { id: string };
+};
+
+jest.mock("@repo/api/react", () => ({
+  __esModule: true,
+  ...jest.requireActual("@repo/api/react"),
+  usePlannedSessionMutations: () => ({ cancel: { mutate: cancelPlannedSessionMock } }),
+}));
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
@@ -143,7 +154,11 @@ jest.mock("@/lib/auth/auth-headers", () => ({
 jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
   useAuthStore: <T,>(selector: (state: AuthStoreFixture) => T) =>
-    selector({ ready: mockAuthReady, session: { user: { id: "profile-1" } } }),
+    selector({
+      ready: mockAuthReady,
+      session: { user: { id: "profile-1" } },
+      profile: { id: "profile-1" },
+    }),
 }));
 
 jest.mock("@/lib/hooks/useLocalTodayKey", () => ({
@@ -387,7 +402,18 @@ jest.mock("@/lib/api", () => ({
       events: {
         invalidate: utilsEventsInvalidateMock,
       },
+      plannedSessions: { range: { fetch: jest.fn(async () => undefined) } },
     }),
+    plannedSessions: {
+      range: {
+        useQuery: () => ({
+          data: { items: [], truncated: false },
+          isError: false,
+          isLoading: false,
+          refetch: jest.fn(async () => undefined),
+        }),
+      },
+    },
     calendar: {
       range: {
         useQuery: (input?: unknown, options?: unknown) => {

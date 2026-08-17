@@ -1,3 +1,4 @@
+import { usePlannedSessionMutations } from "@repo/api/react";
 import type { CalendarProjectionItem } from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
@@ -91,6 +92,17 @@ function CalendarIndexPage() {
     ...(search.scheduled ? { eventTypes: ["planned" as const] } : {}),
     limit: 500,
   });
+  const profileQuery = api.profiles.get.useQuery();
+  const plannedSessionsQuery = api.plannedSessions.range.useQuery(
+    {
+      profileId: profileQuery.data?.id ?? "",
+      range: { startDate: startKey, endDate: endKey },
+    },
+    { enabled: Boolean(profileQuery.data?.id) },
+  );
+  const plannedSessionMutations = usePlannedSessionMutations({
+    onConflict: () => plannedSessionsQuery.refetch(),
+  });
 
   const projectionItems = eventsQuery.data?.items ?? [];
   const projectionItemsByDate = useMemo(() => {
@@ -134,7 +146,7 @@ function CalendarIndexPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
           <Button asChild>
-            <Link to="/calendar/new" search={{ date, type: "custom" }}>
+            <Link to="/calendar/new" search={{ date, type: "planned" }}>
               <Plus className="mr-2 h-4 w-4" />
               Create
             </Link>
@@ -224,6 +236,77 @@ function CalendarIndexPage() {
           </Button>
         </div>
       ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Personal planned sessions</CardTitle>
+          <CardDescription>
+            Immutable snapshots from your saved activity plans. Event-specific calendar items stay
+            in the calendar views below.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {plannedSessionsQuery.data?.truncated ? (
+            <p role="alert" className="text-sm text-destructive">
+              This range is too large to show completely. Narrow the calendar period before making
+              decisions from this list.
+            </p>
+          ) : null}
+          {plannedSessionsQuery.isError ? (
+            <div role="alert" className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm">Personal planned sessions could not be loaded.</p>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void plannedSessionsQuery.refetch()}
+              >
+                Retry
+              </Button>
+            </div>
+          ) : plannedSessionsQuery.isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading personal planned sessions...</p>
+          ) : (plannedSessionsQuery.data?.items.length ?? 0) > 0 ? (
+            <div className="space-y-2">
+              {plannedSessionsQuery.data?.items.map((session) => (
+                <div
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"
+                  key={session.id}
+                >
+                  <div>
+                    <p className="font-medium capitalize">
+                      {session.prescription.structure.activity_category} session
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {session.planningDate} · {session.lifecycle.status}
+                    </p>
+                  </div>
+                  {session.lifecycle.status === "scheduled" ? (
+                    <Button
+                      disabled={plannedSessionMutations.cancel.isPending}
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        plannedSessionMutations.cancel.mutate({
+                          profileId: session.profileId,
+                          sessionId: session.id,
+                          expectedRevision: session.sessionRevision,
+                          reason: "user_requested",
+                        })
+                      }
+                    >
+                      Cancel session
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No personal planned sessions in this period.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       <Tabs
         value={view}
@@ -355,7 +438,7 @@ function CalendarIndexPage() {
                       )}
                       <Link
                         to="/calendar/new"
-                        search={{ date: dateKey, type: "custom" }}
+                        search={{ date: dateKey, type: "planned" }}
                         className="block text-xs text-primary hover:underline"
                       >
                         Add

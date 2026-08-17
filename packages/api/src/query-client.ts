@@ -142,6 +142,9 @@ export async function invalidatePostActivityIngestionQueries(queryClient: QueryC
     ["calendar", "range"],
     ["calendar", "day"],
     ["events", "getById"],
+    ["athleteIntelligence", "getCurrentState"],
+    ["athleteIntelligence", "getLoadRange"],
+    // Activity analytics still have no API v1 replacement; preserve that bounded legacy cache.
     ["athleteIntelligence", "getReadModel"],
     ["trainingPlans", "getPlanTabProjection"],
     ["trainingPlans", "getPlanningLedger"],

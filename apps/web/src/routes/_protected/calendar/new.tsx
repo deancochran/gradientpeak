@@ -44,13 +44,14 @@ function AgendaCreatePage() {
         <CardHeader>
           <CardTitle>Create from agenda</CardTitle>
           <CardDescription>
-            Create a custom event, race, recurring series, planned activity, or continue to a goal.
+            Schedule a personal planned session from a saved activity plan. Event and goal creation
+            remain available as separate choices.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <AgendaCreateForm
             initialDate={search.date ?? getTodayDateKey()}
-            initialType={search.type ?? "custom"}
+            initialType={search.type ?? "planned"}
           />
           <div className="border-t pt-4">
             <Button asChild variant="outline">

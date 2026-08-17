@@ -55,6 +55,12 @@ export interface WebRecordingStorage extends TimerDraftStorage {
     now: string,
     activityId: string,
   ): Promise<PortableWebRecordingSubmissionJob | null>;
+  markSubmissionJobIngestionClaimed(
+    id: string,
+    claim: SubmissionJobClaim,
+    now: string,
+    ingestionId: string,
+  ): Promise<PortableWebRecordingSubmissionJob | null>;
   retrySubmissionNow(id: string, now: string): Promise<PortableWebRecordingSubmissionJob>;
   discardArtifact(id: string): Promise<boolean>;
 }
@@ -205,6 +211,28 @@ export function finalizeClaimedSubmissionJobEnvelope({
     claimOwner: null,
     claimExpiresAtMs: 0,
     revision: envelope.revision + 1,
+  };
+}
+
+export function checkpointClaimedSubmissionJobEnvelope({
+  envelope,
+  claim,
+  update,
+}: {
+  envelope: StoredSubmissionJobEnvelope;
+  claim: SubmissionJobClaim;
+  update: (job: PortableWebRecordingSubmissionJob) => PortableWebRecordingSubmissionJob;
+}): StoredSubmissionJobEnvelope | null {
+  if (
+    envelope.job.status !== "submitting" ||
+    envelope.claimOwner !== claim.owner ||
+    envelope.revision !== claim.revision
+  ) {
+    return null;
+  }
+  return {
+    ...envelope,
+    job: portableWebRecordingSubmissionJobSchema.parse(update(envelope.job)),
   };
 }
 
@@ -614,6 +642,22 @@ export class IndexedDbTimerDraftStorage implements WebRecordingStorage {
     }));
   }
 
+  async markSubmissionJobIngestionClaimed(
+    id: string,
+    claim: SubmissionJobClaim,
+    now: string,
+    ingestionId: string,
+  ): Promise<PortableWebRecordingSubmissionJob | null> {
+    return this.checkpointClaimedJob(id, claim, (job) => {
+      if (job.ingestionId && job.ingestionId !== ingestionId) {
+        throw new RecordingSubmissionOverwriteError(
+          "A recording upload claim cannot change during retry.",
+        );
+      }
+      return { ...job, ingestionId, updatedAt: now };
+    });
+  }
+
   async markSubmissionJobSubmitted(
     id: string,
     claim: SubmissionJobClaim,
@@ -739,6 +783,36 @@ export class IndexedDbTimerDraftStorage implements WebRecordingStorage {
         nowMs: Date.parse(now),
         update,
       });
+      if (!next) {
+        await transactionComplete(transaction);
+        return null;
+      }
+      store.put(next, id);
+      await transactionComplete(transaction);
+      return next.job;
+    } finally {
+      database.close();
+    }
+  }
+
+  private async checkpointClaimedJob(
+    id: string,
+    claim: SubmissionJobClaim,
+    update: (job: PortableWebRecordingSubmissionJob) => PortableWebRecordingSubmissionJob,
+  ): Promise<PortableWebRecordingSubmissionJob | null> {
+    const database = await this.openDatabase();
+    try {
+      const transaction = database.transaction(SUBMISSION_JOB_STORE_NAME, "readwrite");
+      const store = transaction.objectStore(SUBMISSION_JOB_STORE_NAME);
+      const current = parseStoredSubmissionJobEnvelope(
+        await requestResult(store.get(id)),
+        this.ownerId,
+      );
+      if (!current) {
+        await transactionComplete(transaction);
+        return null;
+      }
+      const next = checkpointClaimedSubmissionJobEnvelope({ envelope: current, claim, update });
       if (!next) {
         await transactionComplete(transaction);
         return null;

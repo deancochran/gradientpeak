@@ -6,6 +6,7 @@ import {
   PlannedSessionStateConflictError,
   sourceDescription,
 } from "./planned-session-errors";
+import { requirePlannedSessionGroupEventAccess } from "./require-planned-session-group-event-access";
 
 export async function createPlannedSession(input: {
   repository: PlannedSessionRepositoryPort;
@@ -53,14 +54,12 @@ export async function createPlannedSession(input: {
       throw new PlannedSessionAccessError("The recurrence series is not owned by this profile");
     }
   }
-  if (
-    session.groupEventId &&
-    !(await input.repository.groupEventExistsForProfile({
+  if (session.groupEventId) {
+    await requirePlannedSessionGroupEventAccess({
+      repository: input.repository,
       profileId: input.profileId,
       groupEventId: session.groupEventId,
-    }))
-  ) {
-    throw new PlannedSessionAccessError("The group event is unavailable to this profile");
+    });
   }
 
   const result = await input.repository.createOwned({ profileId: input.profileId, session });
@@ -68,6 +67,8 @@ export async function createPlannedSession(input: {
     case "created":
     case "unchanged":
       return result;
+    case "access_denied":
+      throw new PlannedSessionAccessError("The group event is unavailable to this profile");
     case "identity_conflict":
       throw new PlannedSessionIdentityConflictError(
         `A different planned session already uses source ${sourceDescription(session.source)}`,

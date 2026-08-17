@@ -1,3 +1,4 @@
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { type PlannedSession, plannedSessionSchema } from "@repo/core/calendar";
 import {
   activities,
@@ -9,12 +10,12 @@ import {
   plannedSessions,
   trainingPlans,
 } from "@repo/db";
-import { and, asc, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gte, isNull, lte, ne, or, sql } from "drizzle-orm";
 import type {
   PlannedSessionMutation,
   PlannedSessionMutationResult,
 } from "../../contracts/planned-sessions";
-import type { DrizzleQueryExecutor } from "../../db";
+import type { DrizzleQueryExecutor, DrizzleTransactionClient } from "../../db";
 import type {
   CreateOwnedPlannedSessionResult,
   PlannedSessionRepositoryPort,
@@ -189,14 +190,21 @@ function sessionValues(session: PlannedSession) {
   };
 }
 
-function immutableSessionMatches(existing: PlannedSession, replay: PlannedSession): boolean {
-  return (
+export function immutableSessionMatches(existing: PlannedSession, replay: PlannedSession): boolean {
+  const sharedIdentityMatches =
     existing.profileId === replay.profileId &&
     existing.idempotencyKey === replay.idempotencyKey &&
     existing.originalTargetDate === replay.originalTargetDate &&
     JSON.stringify(existing.source) === JSON.stringify(replay.source) &&
-    JSON.stringify(existing.prescription) === JSON.stringify(replay.prescription)
-  );
+    existing.groupEventId === replay.groupEventId;
+  if (!sharedIdentityMatches) return false;
+
+  // Direct request retries repeat client semantics while the server-derived
+  // capture time and quantification can differ from the first accepted write.
+  if (existing.source.kind === "direct" && replay.source.kind === "direct") {
+    return existing.prescription.activityPlanId === replay.prescription.activityPlanId;
+  }
+  return JSON.stringify(existing.prescription) === JSON.stringify(replay.prescription);
 }
 
 async function loadOwned(
@@ -231,6 +239,47 @@ async function planExists(
   return Boolean(row);
 }
 
+async function inTransaction<T>(
+  db: DrizzleQueryExecutor,
+  work: (tx: DrizzleTransactionClient) => Promise<T>,
+): Promise<T> {
+  return db.transaction(work);
+}
+
+/**
+ * Locks every durable authorization row before a session association is written.
+ * Event cancellation/deletion locks the event row, membership revocation locks the
+ * membership row, and group deletion locks the group row, so each competing change
+ * must commit before or after this write rather than between its check and mutation.
+ */
+async function lockActiveGroupEventForProfile(
+  db: DrizzleQueryExecutor,
+  input: { profileId: string; groupEventId: string },
+): Promise<boolean> {
+  const query = db
+    .select({ id: groupEvents.id })
+    .from(groupEvents)
+    .innerJoin(groups, eq(groups.id, groupEvents.group_id))
+    .innerJoin(
+      groupMemberships,
+      and(
+        eq(groupMemberships.group_id, groupEvents.group_id),
+        eq(groupMemberships.profile_id, input.profileId),
+      ),
+    )
+    .where(
+      and(
+        eq(groupEvents.id, input.groupEventId),
+        eq(groupMemberships.status, "active"),
+        isNull(groups.deleted_at),
+        isNull(groupEvents.cancelled_at),
+      ),
+    )
+    .limit(1);
+  const [event] = await query.for("update");
+  return Boolean(event);
+}
+
 async function mutationMiss(
   db: DrizzleQueryExecutor,
   mutation: PlannedSessionMutation,
@@ -240,6 +289,11 @@ async function mutationMiss(
     sessionId: mutation.sessionId,
   });
   if (!current) return { status: "not_found" };
+  if (isConvergedGroupEventMutation(current, mutation)) {
+    // `updated` means the requested state is applied. Returning the current row keeps a
+    // one-revision lost-response retry identical to the first successful public receipt.
+    return { status: "updated", session: current };
+  }
   if (current.sessionRevision !== mutation.expectedRevision) {
     return { status: "stale_revision", currentRevision: current.sessionRevision };
   }
@@ -280,6 +334,27 @@ async function mutationMiss(
   return { status: "not_found" };
 }
 
+/**
+ * Recognizes a no-op at the expected revision and an exact replay after one committed revision.
+ * Older revisions remain conflicts even if later work happens to restore the same association.
+ */
+export function isConvergedGroupEventMutation(
+  current: PlannedSession,
+  mutation: PlannedSessionMutation,
+): boolean {
+  if (mutation.action !== "associate_group_event" && mutation.action !== "clear_group_event") {
+    return false;
+  }
+  const revisionDelta = current.sessionRevision - mutation.expectedRevision;
+  if (revisionDelta !== 0 && revisionDelta !== 1) return false;
+  if (mutation.action === "associate_group_event") {
+    return (
+      current.lifecycle.status === "scheduled" && current.groupEventId === mutation.groupEventId
+    );
+  }
+  return current.groupEventId === null;
+}
+
 function isGroupEventUniqueViolation(error: unknown): boolean {
   const candidate = error as { code?: string; constraint?: string; cause?: unknown };
   const cause = candidate.cause as { code?: string; constraint?: string } | undefined;
@@ -297,54 +372,71 @@ export function createDrizzlePlannedSessionRepository(
     async createOwned(input): Promise<CreateOwnedPlannedSessionResult> {
       const session = plannedSessionSchema.parse(input.session);
       if (session.profileId !== input.profileId) return { status: "identity_conflict" };
-      if (
-        !(await planExists(db, activityPlans, {
-          profileId: input.profileId,
-          planId: session.prescription.activityPlanId,
-        }))
-      ) {
-        return { status: "identity_conflict" };
-      }
-      if (
-        session.source.kind === "training_plan" &&
-        !(await planExists(db, trainingPlans, {
-          profileId: input.profileId,
-          planId: session.source.trainingPlanId,
-        }))
-      ) {
-        return { status: "identity_conflict" };
-      }
-      let created: PlannedSessionRow | undefined;
-      try {
-        [created] = await db
+      const persist = async (
+        executor: DrizzleQueryExecutor,
+      ): Promise<CreateOwnedPlannedSessionResult> => {
+        if (
+          !(await planExists(executor, activityPlans, {
+            profileId: input.profileId,
+            planId: session.prescription.activityPlanId,
+          }))
+        ) {
+          return { status: "identity_conflict" };
+        }
+        if (
+          session.source.kind === "training_plan" &&
+          !(await planExists(executor, trainingPlans, {
+            profileId: input.profileId,
+            planId: session.source.trainingPlanId,
+          }))
+        ) {
+          return { status: "identity_conflict" };
+        }
+        const [created] = await executor
           .insert(plannedSessions)
           .values(sessionValues(session))
           .onConflictDoNothing({
             target: [plannedSessions.profile_id, plannedSessions.idempotency_key],
           })
           .returning();
+        if (created) return { status: "created", session: mapPlannedSessionRow(created) };
+        const [existingRow] = await executor
+          .select()
+          .from(plannedSessions)
+          .where(
+            and(
+              eq(plannedSessions.profile_id, input.profileId),
+              eq(plannedSessions.idempotency_key, session.idempotencyKey),
+            ),
+          )
+          .limit(1);
+        if (!existingRow) throw new Error("Conflicting planned session could not be loaded");
+        const existing = mapPlannedSessionRow(existingRow);
+        return immutableSessionMatches(existing, session)
+          ? { status: "unchanged", session: existing }
+          : { status: "identity_conflict" };
+      };
+
+      const groupEventId = session.groupEventId;
+      if (!groupEventId) return persist(db);
+      try {
+        return await inTransaction(db, async (tx) => {
+          if (
+            !(await lockActiveGroupEventForProfile(tx, {
+              profileId: input.profileId,
+              groupEventId,
+            }))
+          ) {
+            return { status: "access_denied", reason: "group_event_unavailable" };
+          }
+          return persist(tx);
+        });
       } catch (error) {
         if (isGroupEventUniqueViolation(error)) {
           return { status: "conflict", reason: "group_event_already_linked" };
         }
         throw error;
       }
-      if (created) return { status: "created", session: mapPlannedSessionRow(created) };
-      const [existingRow] = await db
-        .select()
-        .from(plannedSessions)
-        .where(
-          and(
-            eq(plannedSessions.profile_id, input.profileId),
-            eq(plannedSessions.idempotency_key, session.idempotencyKey),
-          ),
-        )
-        .limit(1);
-      if (!existingRow) throw new Error("Conflicting planned session could not be loaded");
-      const existing = mapPlannedSessionRow(existingRow);
-      return immutableSessionMatches(existing, session)
-        ? { status: "unchanged", session: existing }
-        : { status: "identity_conflict" };
     },
 
     async listOwnedRange(input) {
@@ -387,13 +479,15 @@ export function createDrizzlePlannedSessionRepository(
     },
 
     async mutateOwned(mutation) {
-      const common = and(
-        eq(plannedSessions.profile_id, mutation.profileId),
-        eq(plannedSessions.id, mutation.sessionId),
-        eq(plannedSessions.session_revision, mutation.expectedRevision),
-      );
-      try {
-        const [row] = await db
+      const mutate = async (
+        executor: DrizzleQueryExecutor,
+      ): Promise<PlannedSessionMutationResult> => {
+        const common = and(
+          eq(plannedSessions.profile_id, mutation.profileId),
+          eq(plannedSessions.id, mutation.sessionId),
+          eq(plannedSessions.session_revision, mutation.expectedRevision),
+        );
+        const [row] = await executor
           .update(plannedSessions)
           .set(
             mutation.action === "move"
@@ -462,14 +556,35 @@ export function createDrizzlePlannedSessionRepository(
               mutation.action === "clear_group_event"
                 ? eq(plannedSessions.group_event_id, mutation.groupEventId)
                 : undefined,
+              mutation.action === "associate_group_event"
+                ? or(
+                    isNull(plannedSessions.group_event_id),
+                    ne(plannedSessions.group_event_id, mutation.groupEventId),
+                  )
+                : undefined,
             ),
           )
           .returning();
         return row
           ? { status: "updated", session: mapPlannedSessionRow(row) }
-          : mutationMiss(db, mutation);
+          : mutationMiss(executor, mutation);
+      };
+
+      if (mutation.action !== "associate_group_event") return mutate(db);
+      try {
+        return await inTransaction(db, async (tx) => {
+          if (
+            !(await lockActiveGroupEventForProfile(tx, {
+              profileId: mutation.profileId,
+              groupEventId: mutation.groupEventId,
+            }))
+          ) {
+            return { status: "access_denied", reason: "group_event_unavailable" };
+          }
+          return mutate(tx);
+        });
       } catch (error) {
-        if (mutation.action === "associate_group_event" && isGroupEventUniqueViolation(error)) {
+        if (isGroupEventUniqueViolation(error)) {
           return { status: "conflict", reason: "group_event_already_linked" };
         }
         throw error;
@@ -488,6 +603,38 @@ export function createDrizzlePlannedSessionRepository(
         profileId: input.profileId,
         planId: input.activityPlanId,
       });
+    },
+
+    async getActivityPlanPrescriptionSource(input) {
+      const [row] = await db
+        .select({
+          id: activityPlans.id,
+          profileId: activityPlans.profile_id,
+          name: activityPlans.name,
+          description: activityPlans.description,
+          revision: activityPlans.revision,
+          structure: activityPlans.structure,
+          structureHash: activityPlans.structure_hash,
+          gpsRecordingEnabled: activityPlans.gps_recording_enabled,
+          updatedAt: activityPlans.updated_at,
+        })
+        .from(activityPlans)
+        .where(
+          and(
+            eq(activityPlans.id, input.activityPlanId),
+            or(
+              eq(activityPlans.profile_id, input.profileId),
+              eq(activityPlans.is_system_template, true),
+            ),
+          ),
+        )
+        .limit(1);
+      if (!row) return null;
+      return {
+        ...row,
+        structure: activityPlanStructureSchema.parse(row.structure),
+        updatedAt: toInstant(row.updatedAt, "activity_plan.updated_at"),
+      };
     },
 
     async groupEventExistsForProfile(input) {

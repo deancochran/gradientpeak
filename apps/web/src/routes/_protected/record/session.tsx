@@ -1,3 +1,8 @@
+import {
+  canRetryDirectIngestion,
+  IDEMPOTENT_INGESTION_MUTATION_RETRY_OPTIONS,
+  ingestionStatusPollingInterval,
+} from "@repo/api/client";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -17,7 +22,10 @@ import { uploadFileToSignedUrl } from "../../../lib/activity-route-upload";
 import { api } from "../../../lib/api/client";
 import { buildUploadedRecordingSummaryInput } from "../../../lib/recording/finalized-artifact";
 import { useTimerOnlyRecording } from "../../../lib/recording/provider";
-import { submitWebRecordingArtifact } from "../../../lib/recording/submission-queue";
+import {
+  type SubmitWebRecording,
+  submitWebRecordingArtifact,
+} from "../../../lib/recording/submission-queue";
 
 export const Route = createFileRoute("/_protected/record/session")({
   component: RecordSessionPage,
@@ -27,13 +35,24 @@ export function RecordSessionPage() {
   const recording = useTimerOnlyRecording();
   const { lifecycle, snapshot } = recording.state.reducer;
   const configuration = recording.state.configuration;
-  const beginRecordingUpload = api.activityFiles.beginMobileRecordingUpload.useMutation();
+  const beginRecordingUpload = api.activityFiles.beginMobileRecordingUpload.useMutation(
+    IDEMPOTENT_INGESTION_MUTATION_RETRY_OPTIONS,
+  );
   const createActivity = api.activities.createFromRecordingSummary.useMutation();
   const recordSessionRpe = api.activities.recordSessionRpe.useMutation();
   const [notes, setNotes] = useState("");
   const [perceivedEffort, setPerceivedEffort] = useState("");
   const [distanceMeters, setDistanceMeters] = useState("0");
   const [calories, setCalories] = useState("");
+  const [ingestionId, setIngestionId] = useState<string | null>(null);
+  const profileQuery = api.profiles.get.useQuery();
+  const ingestionStatusQuery = api.activityFiles.getIngestionStatus.useQuery(
+    { profileId: profileQuery.data?.id ?? "", ingestionId: ingestionId ?? "" },
+    {
+      enabled: Boolean(profileQuery.data?.id && ingestionId),
+      refetchInterval: (query) => ingestionStatusPollingInterval(query.state.data),
+    },
+  );
   const hasSavedActivity = isReviewFrozen(recording.submissionJob);
   const activityPersistenceName = recording.artifact?.review.name ?? "Activity";
 
@@ -45,8 +64,12 @@ export function RecordSessionPage() {
     setCalories(recording.artifact.review.calories?.toString() ?? "");
   }, [recording.artifact]);
 
-  const submit = useCallback(
-    async (artifact: NonNullable<typeof recording.artifact>) => {
+  useEffect(() => {
+    setIngestionId(recording.submissionJob?.ingestionId ?? null);
+  }, [recording.submissionJob?.ingestionId]);
+
+  const submit = useCallback<SubmitWebRecording>(
+    async (artifact: NonNullable<typeof recording.artifact>, progress) => {
       assertOnlineRecordingSubmission(navigator.onLine);
       const file = new File([artifact.fileText], artifact.fileName, {
         type: "application/vnd.garmin.tcx+xml",
@@ -57,6 +80,8 @@ export function RecordSessionPage() {
         sha256: artifact.sha256,
         format: "tcx",
       });
+      await progress.ingestionClaimed(uploadClaim.ingestionId);
+      setIngestionId(uploadClaim.ingestionId);
       if (uploadClaim.status === "upload") {
         await uploadFileToSignedUrl(file, uploadClaim.signedUrl);
       }
@@ -336,7 +361,8 @@ export function RecordSessionPage() {
                     detail page.
                   </p>
                 ) : null}
-                {recording.submissionJob?.status === "retry_wait" ? (
+                {recording.submissionJob?.status === "retry_wait" &&
+                (!ingestionId || canRetryDirectIngestion(ingestionStatusQuery.data)) ? (
                   <Button variant="outline" onClick={() => void recording.retrySubmission()}>
                     Retry now
                   </Button>
@@ -355,6 +381,11 @@ export function RecordSessionPage() {
               {recording.submissionJob ? (
                 <p role="status" className="text-sm text-muted-foreground">
                   {submissionRecoveryLabel(recording.submissionJob)}
+                </p>
+              ) : null}
+              {ingestionStatusQuery.data ? (
+                <p role="status" className="text-sm text-muted-foreground">
+                  Server intake: {ingestionStatusQuery.data.status.replaceAll("_", " ")}
                 </p>
               ) : null}
               {recording.submissionJob?.activityId ? (

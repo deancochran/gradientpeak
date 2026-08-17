@@ -16,9 +16,12 @@ function CalendarScreen() {
     hydrated,
     loadingEvents,
     onCreateEvent,
+    onCancelPersonalSession,
     onJumpToday,
     onSelectWeekDate,
     retryActivities,
+    personalSessions,
+    plannedSessionsTruncated,
     selectedDateKey,
     todayKey,
     weekDayIndicators,
@@ -40,9 +43,12 @@ function CalendarScreen() {
       hydrated={hydrated}
       dayListProps={dayListProps}
       onCreateEvent={onCreateEvent}
+      onCancelPersonalSession={onCancelPersonalSession}
       onJumpToday={onJumpToday}
       onRetry={retryActivities}
       onSelectWeekDate={onSelectWeekDate}
+      personalSessions={personalSessions}
+      plannedSessionsTruncated={plannedSessionsTruncated}
       selectedDateKey={selectedDateKey}
       todayKey={todayKey}
       weekDayIndicators={weekDayIndicators}

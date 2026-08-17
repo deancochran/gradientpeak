@@ -117,9 +117,22 @@ export function TrendsDashboard() {
     return { end, endDate: toIsoDate(end), start, startDate: toIsoDate(start) };
   }, [rangeDays]);
 
+  const profile = api.profiles.get.useQuery();
+  const athleteState = api.athleteIntelligence.getCurrentState.useQuery(
+    { profileId: profile.data?.id ?? "" },
+    { enabled: Boolean(profile.data?.id) },
+  );
+  const loadRange = api.athleteIntelligence.getLoadRange.useQuery(
+    {
+      profileId: profile.data?.id ?? "",
+      range: { startDate: range.startDate, endDate: range.endDate },
+    },
+    { enabled: Boolean(profile.data?.id) },
+  );
+  // API v1 does not yet supply activity analytics or profile observations. Keep those bounded
+  // sections rather than reconstructing them from load days on the client.
   const readModel = api.athleteIntelligence.getReadModel.useQuery({
     sections: {
-      loadHistory: true,
       profileObservations: {
         startAt: range.start.toISOString(),
         endAt: range.end.toISOString(),
@@ -139,11 +152,13 @@ export function TrendsDashboard() {
       ? readModel.data.activityAnalytics
       : null;
   const dashboard = analytics?.dashboard;
-  const load = readModel.data?.loadHistory?.result ?? null;
+  const load = loadRange.data ?? null;
   const peakPower = analytics?.peakPerformances ?? [];
   const profileMetricItems = readModel.data?.profileObservations?.items;
-  const isInitialLoading = readModel.data === undefined && readModel.isLoading;
-  const isRetrying = readModel.isRefetching;
+  const isInitialLoading =
+    (readModel.data === undefined && readModel.isLoading) ||
+    (Boolean(profile.data?.id) && loadRange.data === undefined && loadRange.isLoading);
+  const isRetrying = readModel.isRefetching || loadRange.isRefetching || athleteState.isRefetching;
 
   const metricRows = (profileMetricItems ?? []).filter((row) => row.metric_type === selectedMetric);
   const selectedMetricDefinition = profileMetricOptions.find(
@@ -153,9 +168,8 @@ export function TrendsDashboard() {
     label: "Weight",
     type: "weight_kg" as const,
   };
-  const availableLoadHistory = load?.status === "available" ? load : null;
-  const commonLoadPoints = (availableLoadHistory?.points ?? []).filter(
-    (point) => point.date >= range.startDate && point.date <= range.endDate,
+  const commonLoadPoints = (load?.days ?? []).filter(
+    (point) => point.planningDate >= range.startDate && point.planningDate <= range.endDate,
   );
   const latestLoad = commonLoadPoints.at(-1);
   const latestZones = dashboard?.zones.weeklyData.at(-1);
@@ -199,35 +213,40 @@ export function TrendsDashboard() {
         </Badge>
       </div>
 
-      {readModel.isError ? (
-        <TrendReadModelFailure isRetrying={isRetrying} onRetry={() => void readModel.refetch()} />
+      {readModel.isError || loadRange.isError || athleteState.isError ? (
+        <TrendReadModelFailure
+          isRetrying={isRetrying}
+          onRetry={() => {
+            void Promise.all([readModel.refetch(), loadRange.refetch(), athleteState.refetch()]);
+          }}
+        />
       ) : null}
 
       <div className="grid gap-6 xl:grid-cols-2">
-        {load?.status === "available" ? (
+        {load?.freshness !== "unavailable" && load ? (
           <SimpleTrendChart
             axisLabels={{ x: "Date", y: "Common Load" }}
             description="Long-term Common Load from complete versioned history."
             emptyMessage="Complete activity history is required to build Common Load trends."
             formatValue={(value) => number(value)}
             points={commonLoadPoints.map((point) => ({
-              id: point.date,
-              label: formatDate(point.date),
-              value: point.longTermLoad,
-              x: new Date(point.date).getTime(),
+              id: point.planningDate,
+              label: formatDate(point.planningDate),
+              value: point.fitness,
+              x: new Date(point.planningDate).getTime(),
             }))}
             title="Long-term Load"
           />
-        ) : load?.status === "unavailable" ? (
+        ) : load?.freshness === "unavailable" ? (
           <CommonLoadUnavailable
-            isRetrying={readModel.isRefetching}
-            onRetry={() => void readModel.refetch()}
-            reason={load.reason}
+            isRetrying={isRetrying}
+            onRetry={() => void Promise.all([loadRange.refetch(), athleteState.refetch()])}
+            reason="published_state_not_current"
           />
-        ) : readModel.isError ? (
+        ) : readModel.isError || loadRange.isError ? (
           <CommonLoadUnavailable
-            isRetrying={readModel.isRefetching}
-            onRetry={() => void readModel.refetch()}
+            isRetrying={isRetrying}
+            onRetry={() => void Promise.all([loadRange.refetch(), athleteState.refetch()])}
             reason="transport_error"
           />
         ) : (
@@ -347,23 +366,23 @@ export function TrendsDashboard() {
             </CardContent>
           </Card>
         ) : null}
-        {latestLoad && availableLoadHistory ? (
+        {latestLoad && load ? (
           <Card>
             <CardHeader>
               <CardTitle>Load evidence</CardTitle>
               <CardDescription>
-                {availableLoadHistory.maturity.status} baseline ·{" "}
-                {availableLoadHistory.coverageStatus} coverage
+                {athleteState.data?.freshness ?? load.freshness} state ·{" "}
+                {latestLoad.coverage.status} coverage
                 <span className="block">
                   Current Common Load metrics from complete versioned history.
                 </span>
               </CardDescription>
             </CardHeader>
             <CardContent className="grid grid-cols-2 gap-3 text-sm">
-              <Metric label="Long-term Load" value={number(latestLoad.longTermLoad)} />
-              <Metric label="Recent Load" value={number(latestLoad.recentLoad)} />
-              <Metric label="Load Balance" value={number(latestLoad.loadBalance)} />
-              <Metric label="Daily Load" value={number(latestLoad.dailyLoad)} />
+              <Metric label="Long-term Load" value={number(latestLoad.fitness)} />
+              <Metric label="Recent Load" value={number(latestLoad.fatigue)} />
+              <Metric label="Load Balance" value={number(latestLoad.form)} />
+              <Metric label="Daily Load" value={number(latestLoad.commonLoad)} />
             </CardContent>
           </Card>
         ) : null}

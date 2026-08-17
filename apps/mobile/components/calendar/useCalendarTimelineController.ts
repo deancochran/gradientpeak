@@ -1,3 +1,4 @@
+import { usePlannedSessionMutations } from "@repo/api/react";
 import type { CalendarProjectionItem } from "@repo/core";
 import { keepPreviousData } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -77,6 +78,7 @@ export function useCalendarTimelineController() {
   const eventsQueryEnabled = useAuthStore(
     (state) => state.ready && !!state.session && hasSessionAuthCredentials(),
   );
+  const profileId = useAuthStore((state) => state.profile?.id ?? null);
 
   const [initializedToday, setInitializedToday] = useState(false);
   const activeDate = initializedToday ? (persistedActiveDate ?? todayKey) : todayKey;
@@ -110,6 +112,20 @@ export function useCalendarTimelineController() {
       placeholderData: keepPreviousData,
     },
   );
+  const plannedSessionsQuery = api.plannedSessions.range.useQuery(
+    {
+      profileId: profileId ?? "",
+      range: { startDate: rangeStart, endDate: rangeEnd },
+    },
+    {
+      ...scheduleAwareReadQueryOptions,
+      enabled: eventsQueryEnabled && Boolean(profileId),
+      placeholderData: keepPreviousData,
+    },
+  );
+  const plannedSessionMutations = usePlannedSessionMutations({
+    onConflict: () => plannedSessionsQuery.refetch(),
+  });
 
   const projectionItems = eventsQuery.data?.items ?? [];
   const itemsByDate = useMemo(() => buildItemsByDate(projectionItems), [projectionItems]);
@@ -267,6 +283,9 @@ export function useCalendarTimelineController() {
     [visibleDateKey],
   );
   const hasPartialError = eventsQuery.isError;
+  const personalSessions = (plannedSessionsQuery.data?.items ?? []).filter(
+    (session) => session.planningDate === visibleDateKey,
+  );
 
   return {
     dayListProps,
@@ -275,14 +294,26 @@ export function useCalendarTimelineController() {
     weekDayIndicators,
     selectedDateKey: visibleDateKey,
     todayKey,
-    loadingEvents: !authReady || eventsQuery.isLoading,
-    hasActivitiesData: Boolean(eventsQuery.data),
-    hasPartialError,
+    loadingEvents:
+      !authReady || !profileId || eventsQuery.isLoading || plannedSessionsQuery.isLoading,
+    hasActivitiesData: Boolean(eventsQuery.data && plannedSessionsQuery.data),
+    hasPartialError: hasPartialError || plannedSessionsQuery.isError,
+    personalSessions,
+    plannedSessionsTruncated: plannedSessionsQuery.data?.truncated ?? false,
+    onCancelPersonalSession: (sessionId: string, expectedRevision: number) => {
+      if (!profileId) return;
+      plannedSessionMutations.cancel.mutate({
+        profileId,
+        sessionId,
+        expectedRevision,
+        reason: "user_requested",
+      });
+    },
     onCreateEvent: handleCreateEvent,
     onJumpToday: handleJumpToday,
     onSelectWeekDate: handleSelectWeekDate,
     retryActivities: async () => {
-      await eventsQuery.refetch();
+      await Promise.all([eventsQuery.refetch(), plannedSessionsQuery.refetch()]);
     },
   };
 }

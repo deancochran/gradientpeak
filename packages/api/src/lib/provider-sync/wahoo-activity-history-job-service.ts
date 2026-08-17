@@ -447,6 +447,8 @@ export class WahooActivityHistoryJobService {
               if (pageResult.page !== undefined && pageResult.page !== page)
                 throw new Error("activity_history_page_mismatch");
               let imported = 0;
+              let failed = 0;
+              let lastFailureCode: string | undefined;
               let skipped = 0;
               const skippedDiagnostics: ActivityImportSkipDiagnostic[] = [];
               let earliestTimestamp: number | null = null;
@@ -499,12 +501,8 @@ export class WahooActivityHistoryJobService {
                 );
                 await assertActive();
                 if (!result.success) {
-                  skipped += 1;
-                  const diagnostic = skippedImportDiagnostic(
-                    importSummary.id,
-                    "activity_import_failed",
-                  );
-                  if (diagnostic) skippedDiagnostics.push(diagnostic);
+                  failed += 1;
+                  lastFailureCode ??= result.errorCode ?? "activity_import_failed";
                   logger.warn("Wahoo activity history summary import failed", {
                     jobFamily: "activity_history",
                     provider: "wahoo",
@@ -537,7 +535,8 @@ export class WahooActivityHistoryJobService {
                 imported,
                 skipped,
                 skippedDiagnostics,
-                failed: 0,
+                failed,
+                ...(lastFailureCode === undefined ? {} : { lastErrorCode: lastFailureCode }),
                 earliestActivityAt: earliestTimestamp === null ? null : new Date(earliestTimestamp),
                 latestActivityAt: latestTimestamp === null ? null : new Date(latestTimestamp),
                 nextPage,

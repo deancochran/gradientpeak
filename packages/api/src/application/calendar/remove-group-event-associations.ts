@@ -1,4 +1,4 @@
-import { plannedSessions } from "@repo/db";
+import { groupEvents, plannedSessions } from "@repo/db";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleQueryExecutor } from "../../db";
 
@@ -17,6 +17,15 @@ export async function removeGroupEventAssociationsForDeletion(input: {
 }): Promise<number> {
   const groupEventIds = [...new Set(input.groupEventIds)];
   if (groupEventIds.length === 0) return 0;
+
+  // Association writes lock this same row before touching planned_sessions. Taking
+  // it first prevents a deletion from scanning past an uncommitted late association.
+  await input.db
+    .select({ id: groupEvents.id })
+    .from(groupEvents)
+    .where(inArray(groupEvents.id, groupEventIds))
+    .orderBy(asc(groupEvents.id))
+    .for("update");
 
   const linkedSessions = await input.db
     .select({

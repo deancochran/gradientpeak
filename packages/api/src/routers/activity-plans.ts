@@ -13,7 +13,7 @@ import {
   publicActivityPlansRowSchema,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, gt, gte, ilike, inArray, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, ilike, inArray, lt, or, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   ActivityPlanDeleteNotFoundError,
@@ -147,7 +147,7 @@ function serializeActivityPlanRow(row: ActivityPlanRow | unknown) {
   return serializedActivityPlanSchema.parse(row);
 }
 
-function toPublicActivityPlan<T extends { structure: unknown }>(plan: T) {
+function toPublicActivityPlan<T extends { structure: unknown; revision: number }>(plan: T) {
   const parsed = activityPlanStructureSchema.safeParse(plan.structure);
   if (!parsed.success)
     throw new TRPCError({
@@ -157,6 +157,7 @@ function toPublicActivityPlan<T extends { structure: unknown }>(plan: T) {
   return {
     ...plan,
     activity_category: parsed.data.activity_category,
+    activityPlanRevision: plan.revision,
   };
 }
 
@@ -556,6 +557,7 @@ export const activityPlansRouter = createTRPCRouter({
               name: plan.name,
               description: plan.description,
               notes: plan.notes,
+              activityPlanRevision: plan.revision,
               structure: plan.structure,
               structureHash: plan.structure_hash,
               gpsRecordingEnabled: plan.gps_recording_enabled,
@@ -707,7 +709,9 @@ export const activityPlansRouter = createTRPCRouter({
         }
       }
 
-      const updateValues: Partial<ActivityPlanInsert> = {
+      const updateValues: Omit<Partial<ActivityPlanInsert>, "revision"> & {
+        revision?: number | SQL;
+      } = {
         updated_at: new Date(),
         name: updates.name,
         description:
@@ -724,6 +728,13 @@ export const activityPlansRouter = createTRPCRouter({
         gps_recording_enabled: updates.gps_recording_enabled,
         content_visibility: updates.content_visibility,
       };
+
+      const structureChanged =
+        updates.structure !== undefined &&
+        !isDeepStrictEqual(updates.structure, existingRow.structure);
+      if (structureChanged) {
+        updateValues.revision = sql`${activityPlans.revision} + 1`;
+      }
 
       const [updatedRow] = await db
         .update(activityPlans)

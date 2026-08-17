@@ -13,15 +13,20 @@ import {
   groupEvents,
   groupMemberships,
   groups,
+  plannedSessions,
   profiles,
+  relationalSchema,
   thresholdEvidence,
   trainingPlans,
   users,
 } from "@repo/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, describe, expect, it } from "vitest";
 import { createDrizzleAthleteDerivedStateRepository } from "../../infrastructure/repositories/drizzle-athlete-derived-state-repository";
 import { createDrizzlePlannedSessionRepository } from "../../infrastructure/repositories/drizzle-planned-session-repository";
+import { groupEventsRouter } from "../../routers/groups/events";
+import { createRouterCaller } from "../../test/router";
 import { deleteActivityForProfile } from "../activities/activity-mutations";
 import { cancelPlannedSession } from "./cancel-planned-session";
 import { createPlannedSession } from "./create-planned-session";
@@ -125,6 +130,54 @@ function directSession(input: {
     },
     lifecycle: { status: "scheduled" },
   });
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
+async function waitForBackendBlockedBy(
+  blockingPid: number,
+  relationName: "group_events" | "group_memberships",
+  timeoutMs = 3_000,
+) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const result = await pool.query<{ count: number }>(
+      `
+        select count(*)::int as count
+        from pg_stat_activity
+        where datname = current_database()
+          and wait_event_type = 'Lock'
+          and query ilike $2
+          and $1 = any(pg_blocking_pids(pid))
+      `,
+      [blockingPid, `%${relationName}%`],
+    );
+    if (Number(result.rows[0]?.count) > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`Timed out waiting for a ${relationName} row lock`);
+}
+
+async function within<T>(promise: Promise<T>, timeoutMs = 5_000): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`Timed out after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 afterAll(async () => {
@@ -592,4 +645,289 @@ describeDisposable("planned-session services against a disposable database", () 
       await db.delete(activityPlans).where(eq(activityPlans.id, systemActivityPlanId));
     }
   });
+
+  it("serializes group-event association with revocation, cancellation, and deletion", async () => {
+    const profileId = await seedProfile("Concurrent planned session owner");
+    const activityPlanId = randomUUID();
+    const groupId = randomUUID();
+    const membershipRaceEventId = randomUUID();
+    const cancellationRaceEventId = randomUUID();
+    const lateLinkEventId = randomUUID();
+    const lateCreateEventId = randomUUID();
+    const eventIds = [
+      membershipRaceEventId,
+      cancellationRaceEventId,
+      lateLinkEventId,
+      lateCreateEventId,
+    ];
+
+    try {
+      await db.insert(activityPlans).values({
+        id: activityPlanId,
+        profile_id: profileId,
+        name: "Concurrent association plan",
+        structure,
+        structure_hash: `v1:sha256:${"9".repeat(64)}`,
+      });
+      await db.insert(groups).values({
+        id: groupId,
+        created_by_profile_id: profileId,
+        name: "Concurrent planned session group",
+        slug: `planned-concurrency-${groupId}`,
+      });
+      await db.insert(groupMemberships).values({
+        group_id: groupId,
+        profile_id: profileId,
+        role: "owner",
+        status: "active",
+      });
+      await db.insert(groupEvents).values(
+        eventIds.map((id, index) => ({
+          id,
+          group_id: groupId,
+          created_by_profile_id: profileId,
+          title: `Concurrent group ride ${index + 1}`,
+          starts_at: new Date(`2026-09-${String(index + 1).padStart(2, "0")}T12:00:00.000Z`),
+          timezone: "UTC",
+        })),
+      );
+
+      const repository = createDrizzlePlannedSessionRepository(db);
+
+      const membershipRaceSession = directSession({
+        profileId,
+        activityPlanId,
+        operationId: `membership_${"a".repeat(32)}`,
+        planningDate: "2026-09-01",
+        groupEventId: membershipRaceEventId,
+      });
+      const revokingConnection = await pool.connect();
+      let revocationCommitted = false;
+      let pendingCreate: ReturnType<typeof createPlannedSession> | undefined;
+      try {
+        const blockerPid = Number(
+          (await revokingConnection.query("select pg_backend_pid() as pid")).rows[0]?.pid,
+        );
+        await revokingConnection.query("begin");
+        await revokingConnection.query(
+          `
+            update group_memberships
+            set status = 'removed', updated_at = now()
+            where group_id = $1 and profile_id = $2
+          `,
+          [groupId, profileId],
+        );
+
+        pendingCreate = createPlannedSession({
+          repository,
+          profileId,
+          session: membershipRaceSession,
+        });
+        await waitForBackendBlockedBy(blockerPid, "group_memberships");
+        await revokingConnection.query("commit");
+        revocationCommitted = true;
+
+        await expect(within(pendingCreate)).rejects.toBeInstanceOf(PlannedSessionAccessError);
+      } finally {
+        if (!revocationCommitted) {
+          await revokingConnection.query("rollback").catch(() => undefined);
+        }
+        revokingConnection.release();
+        await pendingCreate?.catch(() => undefined);
+      }
+      await expect(
+        db
+          .select({ id: plannedSessions.id })
+          .from(plannedSessions)
+          .where(eq(plannedSessions.id, membershipRaceSession.id)),
+      ).resolves.toEqual([]);
+      await db
+        .update(groupMemberships)
+        .set({ status: "active", updated_at: new Date() })
+        .where(
+          and(eq(groupMemberships.group_id, groupId), eq(groupMemberships.profile_id, profileId)),
+        );
+
+      const cancellationRaceSession = directSession({
+        profileId,
+        activityPlanId,
+        operationId: `cancellation_${"b".repeat(32)}`,
+        planningDate: "2026-09-02",
+      });
+      await createPlannedSession({ repository, profileId, session: cancellationRaceSession });
+      const cancellingConnection = await pool.connect();
+      let cancellationCommitted = false;
+      let pendingLink: ReturnType<typeof linkPlannedSessionGroupEvent> | undefined;
+      try {
+        const blockerPid = Number(
+          (await cancellingConnection.query("select pg_backend_pid() as pid")).rows[0]?.pid,
+        );
+        await cancellingConnection.query("begin");
+        await cancellingConnection.query(
+          "update group_events set cancelled_at = now(), updated_at = now() where id = $1",
+          [cancellationRaceEventId],
+        );
+
+        pendingLink = linkPlannedSessionGroupEvent({
+          repository,
+          profileId,
+          sessionId: cancellationRaceSession.id,
+          expectedRevision: 1,
+          groupEventId: cancellationRaceEventId,
+        });
+        await waitForBackendBlockedBy(blockerPid, "group_events");
+        await cancellingConnection.query("commit");
+        cancellationCommitted = true;
+
+        await expect(within(pendingLink)).rejects.toBeInstanceOf(PlannedSessionAccessError);
+      } finally {
+        if (!cancellationCommitted) {
+          await cancellingConnection.query("rollback").catch(() => undefined);
+        }
+        cancellingConnection.release();
+        await pendingLink?.catch(() => undefined);
+      }
+      await expect(
+        repository.getOwned({ profileId, sessionId: cancellationRaceSession.id }),
+      ).resolves.toMatchObject({ groupEventId: null, sessionRevision: 1 });
+
+      const lateLinkSession = directSession({
+        profileId,
+        activityPlanId,
+        operationId: `late_link_${"c".repeat(32)}`,
+        planningDate: "2026-09-03",
+      });
+      await createPlannedSession({ repository, profileId, session: lateLinkSession });
+      const linkingConnection = await pool.connect();
+      const linkingDb = drizzle({
+        client: linkingConnection,
+        schema: relationalSchema,
+        casing: "snake_case",
+      });
+      const linkingPid = Number(
+        (await linkingConnection.query("select pg_backend_pid() as pid")).rows[0]?.pid,
+      );
+      const linkReady = deferred<void>();
+      const releaseLink = deferred<void>();
+      let cancellation: Promise<unknown> | undefined;
+      const linking = linkingDb.transaction(async (tx) => {
+        try {
+          const transactionRepository = createDrizzlePlannedSessionRepository(tx);
+          const linked = await linkPlannedSessionGroupEvent({
+            repository: transactionRepository,
+            profileId,
+            sessionId: lateLinkSession.id,
+            expectedRevision: 1,
+            groupEventId: lateLinkEventId,
+          });
+          const replayed = await linkPlannedSessionGroupEvent({
+            repository: transactionRepository,
+            profileId,
+            sessionId: lateLinkSession.id,
+            expectedRevision: 1,
+            groupEventId: lateLinkEventId,
+          });
+          linkReady.resolve(undefined);
+          await releaseLink.promise;
+          return { linked, replayed };
+        } catch (error) {
+          linkReady.reject(error);
+          throw error;
+        }
+      });
+      try {
+        await within(linkReady.promise);
+        const caller = createRouterCaller(groupEventsRouter, { db, userId: profileId });
+        cancellation = caller.cancel({ groupEventId: lateLinkEventId, scope: "single" });
+        await waitForBackendBlockedBy(linkingPid, "group_events");
+        releaseLink.resolve(undefined);
+
+        const linked = await within(linking);
+        expect(linked.replayed).toEqual(linked.linked);
+        expect(linked.linked).toMatchObject({
+          groupEventId: lateLinkEventId,
+          sessionRevision: 2,
+        });
+        await expect(within(cancellation)).resolves.toMatchObject({
+          event: { id: lateLinkEventId },
+        });
+      } finally {
+        releaseLink.resolve(undefined);
+        await linking.catch(() => undefined);
+        await cancellation?.catch(() => undefined);
+        linkingConnection.release();
+      }
+      await expect(
+        repository.getOwned({ profileId, sessionId: lateLinkSession.id }),
+      ).resolves.toMatchObject({ groupEventId: null, sessionRevision: 3 });
+
+      const lateCreateSession = directSession({
+        profileId,
+        activityPlanId,
+        operationId: `late_create_${"d".repeat(32)}`,
+        planningDate: "2026-09-04",
+        groupEventId: lateCreateEventId,
+      });
+      const creatingConnection = await pool.connect();
+      const creatingDb = drizzle({
+        client: creatingConnection,
+        schema: relationalSchema,
+        casing: "snake_case",
+      });
+      const creatingPid = Number(
+        (await creatingConnection.query("select pg_backend_pid() as pid")).rows[0]?.pid,
+      );
+      const createReady = deferred<void>();
+      const releaseCreate = deferred<void>();
+      let deletion: Promise<number> | undefined;
+      const creating = creatingDb.transaction(async (tx) => {
+        try {
+          const result = await createPlannedSession({
+            repository: createDrizzlePlannedSessionRepository(tx),
+            profileId,
+            session: lateCreateSession,
+          });
+          createReady.resolve(undefined);
+          await releaseCreate.promise;
+          return result;
+        } catch (error) {
+          createReady.reject(error);
+          throw error;
+        }
+      });
+      try {
+        await within(createReady.promise);
+        deletion = db.transaction(async (tx) => {
+          const removed = await removeGroupEventAssociationsForDeletion({
+            db: tx,
+            groupEventIds: [lateCreateEventId],
+          });
+          await tx.delete(groupEvents).where(eq(groupEvents.id, lateCreateEventId));
+          return removed;
+        });
+        await waitForBackendBlockedBy(creatingPid, "group_events");
+        releaseCreate.resolve(undefined);
+
+        await expect(within(creating)).resolves.toMatchObject({ status: "created" });
+        await expect(within(deletion)).resolves.toBe(1);
+      } finally {
+        releaseCreate.resolve(undefined);
+        await creating.catch(() => undefined);
+        await deletion?.catch(() => undefined);
+        creatingConnection.release();
+      }
+      await expect(
+        repository.getOwned({ profileId, sessionId: lateCreateSession.id }),
+      ).resolves.toMatchObject({ groupEventId: null, sessionRevision: 2 });
+      await expect(
+        db
+          .select({ id: groupEvents.id })
+          .from(groupEvents)
+          .where(eq(groupEvents.id, lateCreateEventId)),
+      ).resolves.toEqual([]);
+    } finally {
+      await db.delete(groups).where(eq(groups.id, groupId));
+      await db.delete(users).where(eq(users.id, profileId));
+    }
+  }, 30_000);
 });

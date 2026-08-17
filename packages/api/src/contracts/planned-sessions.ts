@@ -2,6 +2,7 @@ import { planningDayIdentitySchema } from "@repo/core/athlete-intelligence";
 import {
   type PlannedSession,
   plannedSessionLifecycleSchema,
+  plannedSessionOperationIdSchema,
   plannedSessionPrescriptionSnapshotSchema,
   plannedSessionSchema,
   plannedSessionSourceSchema,
@@ -89,6 +90,12 @@ export const plannedSessionMutationResultSchema = z.discriminatedUnion("status",
   z.object({ status: z.literal("not_found") }).strict(),
   z
     .object({
+      status: z.literal("access_denied"),
+      reason: z.literal("group_event_unavailable"),
+    })
+    .strict(),
+  z
+    .object({
       status: z.literal("stale_revision"),
       currentRevision: z.number().int().positive(),
     })
@@ -121,9 +128,14 @@ export const createPlannedSessionDtoRequestSchema = z
     session: z
       .object({
         planningDate: planningDayIdentitySchema,
-        source: plannedSessionSourceSchema,
+        source: z
+          .object({
+            kind: z.literal("direct"),
+            operationId: plannedSessionOperationIdSchema,
+          })
+          .strict(),
         groupEventId: uuidSchema.nullable().optional(),
-        prescription: plannedSessionPrescriptionSnapshotSchema,
+        activityPlanId: uuidSchema,
       })
       .strict(),
   })
@@ -171,6 +183,9 @@ export type CreatePlannedSessionRequest = z.infer<typeof createPlannedSessionReq
 export type PlannedSessionMutation = z.infer<typeof plannedSessionMutationSchema>;
 export type PlannedSessionMutationResult = z.infer<typeof plannedSessionMutationResultSchema>;
 export type PlannedSessionDto = z.infer<typeof plannedSessionDtoSchema>;
+export type CreatePlannedSessionDtoRequest = z.infer<typeof createPlannedSessionDtoRequestSchema>;
+export type PlannedSessionRangeDto = z.infer<typeof plannedSessionRangeDtoSchema>;
+export type PlannedSessionMutationReceipt = z.infer<typeof plannedSessionMutationReceiptSchema>;
 
 export function toPlannedSessionDto(session: PlannedSession): PlannedSessionDto {
   return plannedSessionDtoSchema.parse({

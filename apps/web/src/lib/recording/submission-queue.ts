@@ -29,6 +29,12 @@ export interface WebRecordingSubmissionQueueStorage {
     now: string,
     activityId: string,
   ): Promise<PortableWebRecordingSubmissionJob | null>;
+  markSubmissionJobIngestionClaimed(
+    id: string,
+    claim: SubmissionJobClaim,
+    now: string,
+    ingestionId: string,
+  ): Promise<PortableWebRecordingSubmissionJob | null>;
 }
 
 export type SubmissionJobClaim = Readonly<{ owner: string; revision: number }>;
@@ -38,6 +44,9 @@ export type ClaimedWebRecordingSubmissionJob = PortableWebRecordingSubmissionJob
 
 export type SubmitWebRecording = (
   artifact: PortableWebRecordingArtifact,
+  progress: {
+    ingestionClaimed: (ingestionId: string) => Promise<void>;
+  },
 ) => Promise<{ activityId: string }>;
 
 export class PostCreateSubmissionError extends Error {
@@ -94,6 +103,7 @@ export function createQueuedSubmissionJob(
     nextAttemptAt: null,
     lastError: null,
     activityId: null,
+    ingestionId: null,
     updatedAt: now,
   });
 }
@@ -118,7 +128,17 @@ export async function drainWebRecordingSubmissionQueue(
     const submitting = await storage.claimSubmissionJob(job.id, nowIso);
     if (!submitting) continue;
     try {
-      const result = await submit(submitting.artifact);
+      const result = await submit(submitting.artifact, {
+        ingestionClaimed: async (ingestionId) => {
+          const checkpoint = await storage.markSubmissionJobIngestionClaimed(
+            job.id,
+            submitting.claim,
+            nowIso,
+            ingestionId,
+          );
+          if (!checkpoint) throw new Error("Recording submission claim was lost");
+        },
+      });
       const terminal = await storage.markSubmissionJobSubmitted(
         job.id,
         submitting.claim,

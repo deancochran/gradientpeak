@@ -15,12 +15,13 @@ function testDb(returning: Array<{ id: string }>) {
     groupEventId,
     sessionRevision: 4,
   };
+  const selectQueue = [[{ id: groupEventId }], [selected]];
   const selectBuilder: Record<string, unknown> = {};
   Object.assign(selectBuilder, {
     from: vi.fn(() => selectBuilder),
     where: vi.fn(() => selectBuilder),
     orderBy: vi.fn(() => selectBuilder),
-    for: vi.fn(async () => [selected]),
+    for: vi.fn(async () => selectQueue.shift() ?? []),
   });
   const returningMock = vi.fn(async () => returning);
   const whereMock = vi.fn(() => ({ returning: returningMock }));
@@ -42,6 +43,7 @@ describe("removeGroupEventAssociationsForDeletion", () => {
     expect(setMock).toHaveBeenCalledWith(
       expect.objectContaining({ group_event_id: null, session_revision: expect.anything() }),
     );
+    expect(db.select).toHaveBeenCalledTimes(2);
   });
 
   it("fails the deletion transaction if a stale association cannot be revisioned", async () => {

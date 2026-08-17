@@ -1,10 +1,12 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { createTRPCProxyClient, httpBatchLink } from "@trpc/client";
 import { createTRPCReact } from "@trpc/react-query";
 
 export { loggerLink } from "@trpc/client";
 
 import superjson from "superjson";
-import { createQueryClient } from "./query-client";
+import { isPlannedSessionConflict } from "./planned-session-client";
+import { createQueryClient, invalidateReceiptCacheTags } from "./query-client";
 import type { AppRouter } from "./routers";
 
 type BatchLinkOptions = Parameters<typeof httpBatchLink<AppRouter>>[0];
@@ -48,6 +50,37 @@ export function createVanillaApiClient(options: {
 }
 
 export type ApiReactUtils = ReturnType<typeof api.useUtils>;
+type CacheReceipt = Parameters<typeof invalidateReceiptCacheTags>[1];
+
+/**
+ * Shared receipt-aware planned-session actions for web and mobile.
+ * Conflict callers supply a range refetch and never manufacture a newer revision locally.
+ */
+export function usePlannedSessionMutations(options: {
+  onConflict: () => Promise<unknown>;
+  onReceipt?: () => Promise<unknown> | unknown;
+}) {
+  const queryClient = useQueryClient();
+  const mutationOptions = {
+    retry: false as const,
+    onSuccess: async (receipt: CacheReceipt) => {
+      await invalidateReceiptCacheTags(queryClient, receipt);
+      await options.onReceipt?.();
+    },
+    onError: async (error: unknown) => {
+      if (isPlannedSessionConflict(error)) await options.onConflict();
+    },
+  };
+
+  return {
+    create: api.plannedSessions.create.useMutation(mutationOptions),
+    move: api.plannedSessions.move.useMutation(mutationOptions),
+    cancel: api.plannedSessions.cancel.useMutation(mutationOptions),
+    linkCompletion: api.plannedSessions.linkCompletion.useMutation(mutationOptions),
+    linkGroupEvent: api.plannedSessions.linkGroupEvent.useMutation(mutationOptions),
+    unlinkGroupEvent: api.plannedSessions.unlinkGroupEvent.useMutation(mutationOptions),
+  };
+}
 export async function invalidateNotificationQueries(utils: ApiReactUtils) {
   await Promise.all([
     utils.notifications.getRecent.invalidate(),

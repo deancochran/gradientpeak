@@ -1,6 +1,7 @@
 import { plannedSessionMutationSchema } from "../../contracts/planned-sessions";
 import type { PlannedSessionRepositoryPort } from "../../repositories/planned-session-repository-port";
-import { PlannedSessionAccessError, requireUpdatedPlannedSession } from "./planned-session-errors";
+import { requireUpdatedPlannedSession } from "./planned-session-errors";
+import { requirePlannedSessionGroupEventAccess } from "./require-planned-session-group-event-access";
 
 export async function linkPlannedSessionGroupEvent(input: {
   repository: PlannedSessionRepositoryPort;
@@ -9,14 +10,7 @@ export async function linkPlannedSessionGroupEvent(input: {
   expectedRevision: number;
   groupEventId: string;
 }) {
-  if (
-    !(await input.repository.groupEventExistsForProfile({
-      profileId: input.profileId,
-      groupEventId: input.groupEventId,
-    }))
-  ) {
-    throw new PlannedSessionAccessError("Group event is unavailable to this profile");
-  }
+  await requirePlannedSessionGroupEventAccess(input);
   return requireUpdatedPlannedSession(
     await input.repository.mutateOwned(
       plannedSessionMutationSchema.parse({

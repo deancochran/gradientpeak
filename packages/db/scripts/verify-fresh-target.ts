@@ -1641,6 +1641,7 @@ async function assertPrelaunchSchemaHardening(target: VerificationTarget) {
   const completedActivityId = "80000000-0000-4000-8000-000000000004";
   const plannedSessionId = "80000000-0000-4000-8000-000000000005";
   const thresholdActivityId = "80000000-0000-4000-8000-000000000006";
+  const revisionActivityPlanId = "80000000-0000-4000-8000-000000000014";
   const prescription = {
     version: 3,
     activity_category: "run",
@@ -1674,6 +1675,41 @@ async function assertPrelaunchSchemaHardening(target: VerificationTarget) {
        'v1:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')`,
     [activityPlanId, profileId, JSON.stringify(prescription)],
   );
+  await target.query(
+    `insert into public.activity_plans (id, profile_id, name, structure, structure_hash)
+     values ($1::uuid, $2::uuid, 'revision contract', $3::jsonb,
+       'v1:sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')`,
+    [revisionActivityPlanId, profileId, JSON.stringify(prescription)],
+  );
+  await target.query(
+    `update public.activity_plans set name = 'metadata only', revision = 99 where id = $1::uuid`,
+    [revisionActivityPlanId],
+  );
+  const metadataRevision = await target.query<{ revision: string }>(
+    `select revision::text from public.activity_plans where id = $1::uuid`,
+    [revisionActivityPlanId],
+  );
+  if (metadataRevision.rows[0]?.revision !== "1") {
+    throw new Error("activity plan revision changed without a prescription structure change");
+  }
+  await target.query(
+    `update public.activity_plans
+     set structure = jsonb_set(structure, '{segments,0,name}', '"Changed run"'::jsonb),
+         revision = 99
+     where id = $1::uuid`,
+    [revisionActivityPlanId],
+  );
+  await target.query(
+    `update public.activity_plans set notes = 'metadata after change', revision = 99 where id = $1::uuid`,
+    [revisionActivityPlanId],
+  );
+  const structureRevision = await target.query<{ revision: string }>(
+    `select revision::text from public.activity_plans where id = $1::uuid`,
+    [revisionActivityPlanId],
+  );
+  if (structureRevision.rows[0]?.revision !== "2") {
+    throw new Error("activity plan revision did not increment exactly once for a structure change");
+  }
   await target.query(
     `insert into public.groups (id, created_by_profile_id, name, slug)
      values ($1::uuid, $2::uuid, 'planned-session group', 'planned-session-hardening')`,

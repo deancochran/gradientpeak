@@ -24,7 +24,12 @@
  * ```
  */
 
-import { invalidatePostActivityIngestionQueries } from "@repo/api/client";
+import {
+  canRetryDirectIngestion,
+  IDEMPOTENT_INGESTION_MUTATION_RETRY_OPTIONS,
+  ingestionStatusPollingInterval,
+  invalidatePostActivityIngestionQueries,
+} from "@repo/api/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
@@ -68,6 +73,7 @@ interface SubmissionState {
   hasStreams: boolean;
   activityId: string | null;
   queueStatus: ActivitySubmissionQueueJobStatus | null;
+  ingestionId: string | null;
 }
 
 type Action =
@@ -85,7 +91,19 @@ type Action =
         content_visibility?: ActivitySubmissionQueueDraft["content_visibility"];
       };
     }
-  | { type: "QUEUE_STATUS"; status: ActivitySubmissionQueueJobStatus; activityId?: string | null }
+  | {
+      type: "QUEUE_STATUS";
+      status: ActivitySubmissionQueueJobStatus;
+      activityId?: string | null;
+      ingestionId?: string | null;
+    }
+  | {
+      type: "RESTORE_QUEUE";
+      status: ActivitySubmissionQueueJobStatus;
+      activityId?: string | null;
+      ingestionId?: string | null;
+      error?: string | null;
+    }
   | { type: "SUCCESS"; activityId?: string | null }
   | { type: "ERROR"; error: string };
 
@@ -104,6 +122,7 @@ function submissionReducer(state: SubmissionState, action: Action): SubmissionSt
         hasStreams: action.hasStreams,
         activityId: null,
         queueStatus: null,
+        ingestionId: null,
       };
 
     case "UPDATE":
@@ -128,10 +147,26 @@ function submissionReducer(state: SubmissionState, action: Action): SubmissionSt
         ...state,
         phase: phaseByStatus[action.status],
         activityId: action.activityId ?? state.activityId,
+        ingestionId: action.ingestionId ?? state.ingestionId,
         error: action.status === "failed" ? state.error : null,
         queueStatus: action.status,
       };
     }
+
+    case "RESTORE_QUEUE":
+      return {
+        ...state,
+        phase:
+          action.status === "complete"
+            ? "success"
+            : action.status === "failed"
+              ? "error"
+              : state.phase,
+        activityId: action.activityId ?? state.activityId,
+        ingestionId: action.ingestionId ?? state.ingestionId,
+        error: action.status === "failed" ? (action.error ?? "Activity upload failed") : null,
+        queueStatus: action.status,
+      };
 
     case "SUCCESS":
       return { ...state, phase: "success", activityId: action.activityId ?? state.activityId };
@@ -237,6 +272,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     hasStreams: false,
     activityId: null,
     queueStatus: null,
+    ingestionId: null,
   });
 
   // ================================
@@ -278,8 +314,21 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
 
       const hasStreams = artifact.streamArtifactPaths.length > 0;
 
+      const existingJob = await loadActivitySubmissionQueueJobByArtifactId(
+        artifact.sessionId,
+        profileId,
+      );
       console.log("[useActivitySubmission] Activity processed successfully");
       dispatch({ type: "READY", artifact, activity, hasStreams });
+      if (existingJob) {
+        dispatch({
+          type: "RESTORE_QUEUE",
+          status: existingJob.status,
+          activityId: existingJob.activityId ?? null,
+          ingestionId: existingJob.ingestionId ?? null,
+          error: existingJob.lastError ?? null,
+        });
+      }
     } catch (err) {
       console.error("[useActivitySubmission] Processing failed:", err);
       dispatch({
@@ -322,7 +371,16 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
   );
 
   const createActivityMutation = api.activities.createFromRecordingSummary.useMutation();
-  const beginRecordingUploadMutation = api.activityFiles.beginMobileRecordingUpload.useMutation();
+  const beginRecordingUploadMutation = api.activityFiles.beginMobileRecordingUpload.useMutation(
+    IDEMPOTENT_INGESTION_MUTATION_RETRY_OPTIONS,
+  );
+  const ingestionStatusQuery = api.activityFiles.getIngestionStatus.useQuery(
+    { profileId: profile?.id ?? "", ingestionId: state.ingestionId ?? "" },
+    {
+      enabled: Boolean(profile?.id && state.ingestionId),
+      refetchInterval: (query) => ingestionStatusPollingInterval(query.state.data),
+    },
+  );
 
   // ================================
   // Durable Queue Submission
@@ -411,6 +469,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
               type: "QUEUE_STATUS",
               status: job.status,
               activityId: job.activityId ?? null,
+              ingestionId: job.ingestionId ?? null,
             });
 
             if (job.activityId && !createdActivityId) {
@@ -542,7 +601,11 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
             : state.phase === "success"
               ? "Activity saved. Upload processing is complete."
               : state.phase === "error"
-                ? "Activity upload failed. You can retry."
+                ? ingestionStatusQuery.data?.status === "failed_terminal"
+                  ? "Activity processing failed and cannot be retried. Your local recording remains available."
+                  : canRetryDirectIngestion(ingestionStatusQuery.data)
+                    ? "Activity processing failed. You can retry with the saved local recording."
+                    : "Activity upload failed. Checking whether it can be retried."
                 : null;
 
   // ================================
@@ -565,6 +628,9 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     hasStreams: state.hasStreams,
     activityId: state.activityId,
     queueStatus: state.queueStatus,
+    ingestionId: state.ingestionId,
+    ingestionStatus: ingestionStatusQuery.data ?? null,
+    canRetryIngestion: canRetryDirectIngestion(ingestionStatusQuery.data),
     statusMessage,
 
     // Actions

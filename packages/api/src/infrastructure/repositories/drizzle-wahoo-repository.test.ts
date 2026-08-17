@@ -56,6 +56,36 @@ describe("Wahoo repository activity persistence boundary", () => {
     expect(repository).not.toHaveProperty("createImportedActivityResourceLink");
   });
 
+  it("queries the current terminal ingestion status for analysis readiness", async () => {
+    let selection: Record<string, unknown> | undefined;
+    const db = {
+      select: vi.fn((nextSelection: Record<string, unknown>) => {
+        selection = nextSelection;
+        return {
+          from: vi.fn(() => ({
+            innerJoin: vi.fn(() => ({
+              leftJoin: vi.fn(() => ({
+                leftJoin: vi.fn(() => ({
+                  where: vi.fn(() => ({ limit: vi.fn().mockResolvedValue([]) })),
+                })),
+              })),
+            })),
+          })),
+        };
+      }),
+    };
+
+    await createWahooRepository({ db: db as never }).findImportedActivityByProviderExternalId({
+      externalId: "wahoo-activity-1",
+      profileId: "00000000-0000-4000-8000-000000000001",
+      provider: "wahoo",
+    });
+
+    const query = new PgDialect().sqlToQuery(selection?.analysisReady as never);
+    expect(query.sql).toContain('"activity_file_ingestions"."status" = \'succeeded\'');
+    expect(query.sql).not.toContain("'ready'");
+  });
+
   it("binds planned-activity link writes to the active profile integration generation", () => {
     const query = new PgDialect().sqlToQuery(
       wahooActiveIntegrationGenerationPredicate({

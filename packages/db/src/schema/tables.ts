@@ -893,6 +893,7 @@ export const activityPlans = pgTable(
     notes: text("notes"),
     structure: jsonb("structure").notNull(),
     structure_hash: text("structure_hash").notNull(),
+    revision: integer("revision").notNull().default(1),
     gps_recording_enabled: boolean("gps_recording_enabled").notNull().default(true),
     content_visibility: text("content_visibility", { enum: ["private", "followers", "public"] })
       .notNull()
@@ -915,6 +916,7 @@ export const activityPlans = pgTable(
       "activity_plans_structure_hash_check",
       sql`${table.structure_hash} ~ '^v1:sha256:[0-9a-f]{64}$'`,
     ),
+    check("activity_plans_revision_check", sql`${table.revision} >= 1`),
     check(
       "activity_plans_content_visibility_check",
       sql`${table.content_visibility} in ('private', 'followers', 'public')`,

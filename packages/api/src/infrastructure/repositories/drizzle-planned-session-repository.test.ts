@@ -1,7 +1,13 @@
 import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import type { PlannedSessionRow } from "@repo/db";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
-import { mapPlannedSessionRow } from "./drizzle-planned-session-repository";
+import {
+  createDrizzlePlannedSessionRepository,
+  immutableSessionMatches,
+  isConvergedGroupEventMutation,
+  mapPlannedSessionRow,
+} from "./drizzle-planned-session-repository";
 
 const linkedAt = new Date("2026-08-01T12:00:00.000Z");
 const unlinkedAt = new Date("2026-08-02T12:00:00.000Z");
@@ -86,5 +92,131 @@ describe("planned-session Drizzle mapper", () => {
   it("rejects malformed source and date rows rather than returning persistence data", () => {
     expect(() => mapPlannedSessionRow({ ...row, direct_operation_id: "short" })).toThrow();
     expect(() => mapPlannedSessionRow({ ...row, planning_date: "08/03/2026" })).toThrow();
+  });
+
+  it("treats a direct-operation replay with a different group event as a conflict", () => {
+    const existing = mapPlannedSessionRow(row);
+    expect(
+      immutableSessionMatches(existing, {
+        ...existing,
+        id: "77777777-7777-4777-8777-777777777777",
+        groupEventId: "88888888-8888-4888-8888-888888888888",
+        prescription: {
+          ...existing.prescription,
+          capturedAt: "2026-08-03T12:00:00.000Z",
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it("allows a truthful direct replay to keep its first server capture timestamp", () => {
+    const existing = mapPlannedSessionRow(row);
+    expect(
+      immutableSessionMatches(existing, {
+        ...existing,
+        id: "77777777-7777-4777-8777-777777777777",
+        prescription: {
+          ...existing.prescription,
+          capturedAt: "2026-08-03T12:00:00.000Z",
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it("converges only current no-ops and exact one-revision group-event retries", () => {
+    const scheduled = {
+      ...mapPlannedSessionRow({
+        ...row,
+        session_revision: 3,
+        group_event_id: "88888888-8888-4888-8888-888888888888",
+        status: "scheduled" as const,
+        completion_state: null,
+        linked_at: null,
+        completion_unlinked_at: null,
+      }),
+      lifecycle: { status: "scheduled" as const },
+    };
+    const link = {
+      action: "associate_group_event" as const,
+      profileId: scheduled.profileId,
+      sessionId: scheduled.id,
+      groupEventId: scheduled.groupEventId as string,
+    };
+
+    expect(isConvergedGroupEventMutation(scheduled, { ...link, expectedRevision: 3 })).toBe(true);
+    expect(isConvergedGroupEventMutation(scheduled, { ...link, expectedRevision: 2 })).toBe(true);
+    expect(isConvergedGroupEventMutation(scheduled, { ...link, expectedRevision: 1 })).toBe(false);
+    expect(
+      isConvergedGroupEventMutation(scheduled, {
+        ...link,
+        expectedRevision: 2,
+        groupEventId: "99999999-9999-4999-8999-999999999999",
+      }),
+    ).toBe(false);
+
+    const unlinked = { ...scheduled, groupEventId: null };
+    expect(
+      isConvergedGroupEventMutation(unlinked, {
+        action: "clear_group_event",
+        profileId: unlinked.profileId,
+        sessionId: unlinked.id,
+        expectedRevision: 2,
+        groupEventId: "88888888-8888-4888-8888-888888888888",
+      }),
+    ).toBe(true);
+    expect(
+      isConvergedGroupEventMutation(unlinked, {
+        action: "clear_group_event",
+        profileId: unlinked.profileId,
+        sessionId: unlinked.id,
+        expectedRevision: 1,
+        groupEventId: "88888888-8888-4888-8888-888888888888",
+      }),
+    ).toBe(false);
+    expect(
+      isConvergedGroupEventMutation(scheduled, {
+        action: "clear_group_event",
+        profileId: scheduled.profileId,
+        sessionId: scheduled.id,
+        expectedRevision: 2,
+        groupEventId: "88888888-8888-4888-8888-888888888888",
+      }),
+    ).toBe(false);
+  });
+
+  it("uses active membership and excludes deleted groups and cancelled events", async () => {
+    let whereCondition: unknown;
+    const db = {
+      select: () => ({
+        from: () => ({
+          innerJoin: () => ({
+            innerJoin: () => ({
+              where: (condition: unknown) => {
+                whereCondition = condition;
+                return { limit: async () => [] };
+              },
+            }),
+          }),
+        }),
+      }),
+    };
+    const repository = createDrizzlePlannedSessionRepository(db as never);
+
+    await expect(
+      repository.groupEventExistsForProfile({
+        profileId: row.profile_id,
+        groupEventId: "88888888-8888-4888-8888-888888888888",
+      }),
+    ).resolves.toBe(false);
+
+    const query = new PgDialect().sqlToQuery(whereCondition as never);
+    expect(query.sql).toContain('"group_memberships"."profile_id" =');
+    expect(query.sql).toContain('"group_memberships"."status" =');
+    expect(query.sql).toContain('"group_events"."id" =');
+    expect(query.sql).toContain('"groups"."deleted_at" is null');
+    expect(query.sql).toContain('"group_events"."cancelled_at" is null');
+    expect(query.params).toEqual(
+      expect.arrayContaining([row.profile_id, "active", "88888888-8888-4888-8888-888888888888"]),
+    );
   });
 });

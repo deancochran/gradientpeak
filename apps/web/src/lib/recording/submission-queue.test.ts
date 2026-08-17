@@ -166,6 +166,16 @@ class MemoryQueue implements WebRecordingSubmissionQueueStorage {
     };
     return this.job;
   }
+  async markSubmissionJobIngestionClaimed(
+    _id: string,
+    claim: SubmissionJobClaim,
+    now: string,
+    ingestionId: string,
+  ) {
+    if (claim !== this.claim) return null;
+    this.job = { ...this.job, ingestionId, updatedAt: now };
+    return this.job;
+  }
 }
 
 describe("web recording submission queue", () => {
@@ -209,6 +219,27 @@ describe("web recording submission queue", () => {
     });
   });
 
+  it("retains the ingestion identity when a reload happens after upload claim", async () => {
+    const storage = new MemoryQueue();
+    const submit = vi.fn(
+      async (
+        _artifact: typeof artifact,
+        progress: { ingestionClaimed: (ingestionId: string) => Promise<void> },
+      ) => {
+        await progress.ingestionClaimed("ingestion-1");
+        throw new TypeError("response lost");
+      },
+    );
+
+    await drainWebRecordingSubmissionQueue(storage, submit, new Date("2026-07-20T10:32:00.000Z"));
+
+    expect(storage.job).toMatchObject({
+      status: "retry_wait",
+      ingestionId: "ingestion-1",
+      lastError: "network_unavailable",
+    });
+  });
+
   it("skips submission when another tab has already claimed the job", async () => {
     const storage = new MemoryQueue();
     storage.rejectClaim = true;
@@ -249,6 +280,7 @@ describe("web recording submission queue", () => {
       expect.objectContaining({
         sessionRpeOperationId: "66666666-6666-4666-8666-666666666666",
       }),
+      expect.objectContaining({ ingestionClaimed: expect.any(Function) }),
     );
     expect(storage.job).toMatchObject({ status: "submitted", activityId: "activity-1" });
   });
@@ -322,6 +354,7 @@ describe("web recording submission queue", () => {
       expect.objectContaining({
         sessionRpeOperationId: "66666666-6666-4666-8666-666666666666",
       }),
+      expect.objectContaining({ ingestionClaimed: expect.any(Function) }),
     );
     expect(storage.job).toMatchObject({ status: "submitted", activityId: "activity-1" });
     expect(storage.job.artifact.sessionRpeOperationId).toBe("66666666-6666-4666-8666-666666666666");

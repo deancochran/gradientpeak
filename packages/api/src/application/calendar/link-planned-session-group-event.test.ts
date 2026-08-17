@@ -24,4 +24,19 @@ describe("linkPlannedSessionGroupEvent", () => {
     });
     expect(repository.mutateOwned).not.toHaveBeenCalled();
   });
+
+  it("denies access lost after the initial check but before the atomic association", async () => {
+    const repository = {
+      groupEventExistsForProfile: vi.fn(async () => true),
+      mutateOwned: vi.fn(async () => ({
+        status: "access_denied" as const,
+        reason: "group_event_unavailable" as const,
+      })),
+    };
+
+    await expect(
+      linkPlannedSessionGroupEvent({ repository: repository as never, ...input }),
+    ).rejects.toBeInstanceOf(PlannedSessionAccessError);
+    expect(repository.mutateOwned).toHaveBeenCalledOnce();
+  });
 });

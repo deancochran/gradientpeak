@@ -7,7 +7,7 @@ export const PLANNED_SESSION_CONTRACT_VERSION = "planned-session-v1" as const;
 
 const uuidSchema = z.string().uuid();
 const instantSchema = z.string().datetime({ offset: true });
-const plannedSessionOperationIdSchema = z
+export const plannedSessionOperationIdSchema = z
   .string()
   .min(32)
   .max(128)

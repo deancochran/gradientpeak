@@ -92,7 +92,10 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
     ]);
   }, [service, router]);
 
-  const canSubmit = Boolean(submission.artifact && submission.activity) && !submission.isSubmitting;
+  const retryAllowed =
+    !submission.isError || !submission.ingestionId || submission.canRetryIngestion;
+  const canSubmit =
+    Boolean(submission.artifact && submission.activity) && !submission.isSubmitting && retryAllowed;
 
   const submitForm = useZodFormSubmit<ActivitySubmissionFormData>({
     form,
@@ -101,7 +104,7 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
   });
   const submitButtonState = submitForm.getSubmitButtonState({
     disabled: !canSubmit,
-    label: "Save Activity",
+    label: submission.isError && submission.canRetryIngestion ? "Retry upload" : "Save Activity",
     submittingLabel: "Saving...",
   });
 

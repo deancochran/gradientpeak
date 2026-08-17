@@ -5,6 +5,7 @@ import { Text } from "@repo/ui/components/text";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useRef, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from "react-native";
+import { PersonalPlannedSessionCreate } from "@/components/calendar/PersonalPlannedSessionCreate";
 import {
   type CreateEventDefaults,
   CreateEventFlow,
@@ -14,6 +15,7 @@ import { GoalEditorForm, type GoalEditorFormHandle } from "@/components/goals";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { markEstimated } from "@/lib/estimatedMetrics";
+import { useLocalTodayKey } from "@/lib/hooks/useLocalTodayKey";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
 type AgendaCreateType = "event" | "planned" | "goal";
@@ -106,6 +108,7 @@ export default function AgendaCreateScreen() {
     type?: string;
   }>();
   const createDate = readParam(params.date);
+  const todayKey = useLocalTodayKey();
   const planSuggestionDefaults = useMemo(
     () =>
       buildPlanSuggestionDefaults({
@@ -118,7 +121,7 @@ export default function AgendaCreateScreen() {
   const requestedType = readParam(params.type);
   const initialType: AgendaCreateType = isCreateType(requestedType)
     ? requestedType
-    : (planSuggestionDefaults?.targetType ?? "event");
+    : (planSuggestionDefaults?.targetType ?? "planned");
   const [createType, setCreateType] = useState<AgendaCreateType>(initialType);
   const initialGoalDraft = useMemo(
     () => ({
@@ -169,20 +172,24 @@ export default function AgendaCreateScreen() {
       <Stack.Screen
         options={{
           title: "Create",
-          headerRight: () => (
-            <LoadingButton
-              disabled={createGoalMutation.isPending}
-              loading={createGoalMutation.isPending}
-              loadingLabel="Creating..."
-              loadingTextClassName="text-primary"
-              onPress={handleCreate}
-              size="sm"
-              testID="agenda-create-submit-button"
-              variant="ghost"
-            >
-              <Text className="text-sm font-semibold text-primary">Create</Text>
-            </LoadingButton>
-          ),
+          ...(createType === "planned"
+            ? {}
+            : {
+                headerRight: () => (
+                  <LoadingButton
+                    disabled={createGoalMutation.isPending}
+                    loading={createGoalMutation.isPending}
+                    loadingLabel="Creating..."
+                    loadingTextClassName="text-primary"
+                    onPress={handleCreate}
+                    size="sm"
+                    testID="agenda-create-submit-button"
+                    variant="ghost"
+                  >
+                    <Text className="text-sm font-semibold text-primary">Create</Text>
+                  </LoadingButton>
+                ),
+              }),
         }}
       />
       <ScrollView
@@ -229,6 +236,8 @@ export default function AgendaCreateScreen() {
             showSubmitAction={false}
             submitLabel="Create Goal"
           />
+        ) : createType === "planned" ? (
+          <PersonalPlannedSessionCreate planningDate={createDate ?? todayKey} />
         ) : (
           <CreateEventFlow
             key={createType}
@@ -236,7 +245,7 @@ export default function AgendaCreateScreen() {
             createDate={createDate}
             defaults={{
               ...planSuggestionDefaults,
-              createEventType: createType === "planned" ? "planned" : "custom",
+              createEventType: "custom",
             }}
             onCancel={() => router.back()}
             onCreated={(createdEvent) => router.replace(ROUTES.PLAN.EVENT_DETAIL(createdEvent.id))}

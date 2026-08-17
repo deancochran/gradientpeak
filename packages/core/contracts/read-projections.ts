@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { activityPlanStructureSchema } from "../activity-plan/structure-schema";
+import { activityPrescriptionQuantificationBundleSchema } from "../activity-quantification/bundle";
 import { completedSegmentSummarySchema } from "../activity-segments/completed-segment-schema";
 import { activityLapRecordListSchema } from "../schemas/activity_streams";
 import { canonicalActivityCategorySchema } from "../schemas/activity-category";
@@ -210,7 +211,9 @@ const activityPlanSummaryShape = {
   updatedAt: instantSchema,
   owner: projectionOwnerSchema.nullable(),
   activityCategory: canonicalActivityCategorySchema,
+  activityPlanRevision: z.number().int().positive(),
   structure: activityPlanStructureSchema,
+  prescriptionQuantification: activityPrescriptionQuantificationBundleSchema.nullable(),
   metrics: z.array(semanticMetricSchema).max(8),
   visibility: z.enum(["private", "followers", "public"]),
   isSystemTemplate: z.boolean(),

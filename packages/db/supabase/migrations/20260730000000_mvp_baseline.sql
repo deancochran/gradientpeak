@@ -310,6 +310,7 @@ CREATE TABLE "activity_plans" (
 	"notes" text,
 	"structure" jsonb NOT NULL,
 	"structure_hash" text NOT NULL,
+	"revision" integer DEFAULT 1 NOT NULL,
 	"gps_recording_enabled" boolean DEFAULT true NOT NULL,
 	"content_visibility" text DEFAULT 'private' NOT NULL,
 	"is_system_template" boolean DEFAULT false NOT NULL,
@@ -319,11 +320,31 @@ CREATE TABLE "activity_plans" (
 	CONSTRAINT "activity_plans_structure_v3_check" CHECK (jsonb_typeof("activity_plans"."structure") = 'object' and "activity_plans"."structure"->>'version' = '3' and "activity_plans"."structure"->>'activity_category' in ('run', 'bike', 'swim', 'strength', 'other') and jsonb_typeof("activity_plans"."structure"->'segments') = 'array' and jsonb_array_length("activity_plans"."structure"->'segments') between 1 and 64 and pg_column_size("activity_plans"."structure") <= 1048576),
 	CONSTRAINT "activity_plans_structure_canonical_check" CHECK (public.activity_plan_structure_is_canonical("activity_plans"."structure")),
 	CONSTRAINT "activity_plans_structure_hash_check" CHECK ("activity_plans"."structure_hash" ~ '^v1:sha256:[0-9a-f]{64}$'),
+	CONSTRAINT "activity_plans_revision_check" CHECK ("activity_plans"."revision" >= 1),
 	CONSTRAINT "activity_plans_content_visibility_check" CHECK ("activity_plans"."content_visibility" in ('private', 'followers', 'public')),
 	CONSTRAINT "activity_plans_system_templates_public_check" CHECK ("activity_plans"."is_system_template" = false or "activity_plans"."content_visibility" = 'public'),
 	CONSTRAINT "activity_plans_system_template_check" CHECK (("activity_plans"."is_system_template" = true and "activity_plans"."profile_id" is null) or ("activity_plans"."is_system_template" = false and "activity_plans"."profile_id" is not null)),
 	CONSTRAINT "activity_plans_system_content_identity_check" CHECK (("activity_plans"."is_system_template" and "activity_plans"."system_content_key" is not null and btrim("activity_plans"."system_content_key") <> '' and "activity_plans"."system_content_version" > 0 and "activity_plans"."system_content_hash" ~ '^v1:sha256:[0-9a-f]{64}$') or (not "activity_plans"."is_system_template" and num_nonnulls("activity_plans"."system_content_key", "activity_plans"."system_content_version", "activity_plans"."system_content_hash") = 0))
 );
+
+CREATE OR REPLACE FUNCTION public.enforce_activity_plan_revision()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  IF NEW.structure IS DISTINCT FROM OLD.structure THEN
+    NEW.revision := OLD.revision + 1;
+  ELSE
+    NEW.revision := OLD.revision;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER activity_plans_enforce_revision
+BEFORE UPDATE ON public.activity_plans
+FOR EACH ROW EXECUTE FUNCTION public.enforce_activity_plan_revision();
 
 CREATE TABLE "activity_routes" (
 	"id" uuid PRIMARY KEY NOT NULL,

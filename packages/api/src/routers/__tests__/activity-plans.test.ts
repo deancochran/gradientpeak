@@ -1,3 +1,4 @@
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { activityPlans, contentAccessGrants, events, groupEvents, likes, profiles } from "@repo/db";
 import type { TRPCError } from "@trpc/server";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -7,12 +8,12 @@ const { estimationState, plannedActivitySyncState } = vi.hoisted(() => ({
   estimationState: {
     estimateActivityPlan: vi.fn(async (plan: any) => ({
       ...plan,
-      prescriptionQuantification: { summary: { commonLoad: { status: "available", load: 88 } } },
+      prescriptionQuantification: null,
     })),
     estimateActivityPlans: vi.fn(async (plans: any[]) =>
       plans.map((plan) => ({
         ...plan,
-        prescriptionQuantification: { summary: { commonLoad: { status: "available", load: 88 } } },
+        prescriptionQuantification: null,
       })),
     ),
   },
@@ -124,6 +125,7 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
     notes: "Bring bottles",
     structure: sampleStructure,
     structure_hash: activityPlanStructureHash(sampleStructure),
+    revision: 1,
     gps_recording_enabled: true,
     content_visibility: "private",
     is_system_template: false,
@@ -870,6 +872,43 @@ describe("activityPlansRouter", () => {
       content_visibility: "public",
     });
     expect(result).toMatchObject({ id: existingRow.id, visibility: "public" });
+  });
+
+  it("increments the plan revision only when the prescription structure changes", async () => {
+    const existingRow = createActivityPlanRow({ revision: 4 });
+    const changedStructure = activityPlanStructureSchema.parse(
+      createCompositionStructure("bike", 2),
+    );
+    const changedRow = createActivityPlanRow({
+      revision: 5,
+      structure: changedStructure,
+      structure_hash: activityPlanStructureHash(changedStructure),
+    });
+    const metadataRow = createActivityPlanRow({ revision: 4, notes: "Updated notes" });
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[existingRow], [existingRow]],
+        "update:activity_plans": [[changedRow], [metadataRow]],
+      },
+    });
+
+    const changed = await caller.update({
+      id: existingRow.id,
+      expectedStructureHash: existingRow.structure_hash,
+      structure: changedStructure,
+    });
+    await caller.update({
+      id: existingRow.id,
+      expectedStructureHash: existingRow.structure_hash,
+      notes: "Updated notes",
+    });
+
+    const updates = callLog.filter(
+      (call) => call.operation === "update" && call.table === "activity_plans",
+    );
+    expect(updates[0]?.payload).toHaveProperty("revision");
+    expect(updates[1]?.payload).not.toHaveProperty("revision");
+    expect(changed).toMatchObject({ activityPlanRevision: 5 });
   });
 
   it("update rejects route linkage and never persists it", async () => {

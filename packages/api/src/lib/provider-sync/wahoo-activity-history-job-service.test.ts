@@ -96,6 +96,7 @@ function createDeps() {
         skipped: number;
         failed: number;
         earliestActivityAt: Date | null;
+        lastErrorCode?: string;
         latestActivityAt: Date | null;
         nextPage?: number | null;
         now?: Date;
@@ -106,6 +107,7 @@ function createDeps() {
           imported_count: importRun.imported_count + input.imported,
           skipped_count: importRun.skipped_count + input.skipped,
           failed_count: importRun.failed_count + input.failed,
+          last_error_code: input.lastErrorCode ?? importRun.last_error_code,
           earliest_activity_at:
             input.earliestActivityAt &&
             (!importRun.earliest_activity_at ||
@@ -124,7 +126,13 @@ function createDeps() {
       },
     ),
     complete: vi.fn(async (_id: string, now = new Date()) => {
-      importRun = { ...importRun, status: "completed", completed_at: now, next_page: null };
+      importRun = {
+        ...importRun,
+        status: "completed",
+        completed_at: now,
+        last_error_code: importRun.failed_count > 0 ? importRun.last_error_code : null,
+        next_page: null,
+      };
       return importRun;
     }),
     fail: vi.fn(async (_id: string, errorCode: string, now = new Date()) => {
@@ -757,7 +765,7 @@ describe("WahooActivityHistoryJobService", () => {
     });
   });
 
-  it("completes onboarding history when one activity cannot be imported", async () => {
+  it("records an unsuccessful activity import as failed without misclassifying real skips", async () => {
     const deps = createDeps();
     vi.spyOn(console, "warn").mockImplementation(() => {});
     deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
@@ -790,7 +798,11 @@ describe("WahooActivityHistoryJobService", () => {
       summaries: [createSummary(123), createSummary(124)],
     });
     deps.importer.importWorkoutSummary
-      .mockResolvedValueOnce({ success: false, error: "storage offline" })
+      .mockResolvedValueOnce({
+        success: false,
+        error: "storage offline",
+        errorCode: "activity_import_failed",
+      })
       .mockResolvedValueOnce({ success: true, skipped: true, reason: "Activity already imported" });
 
     const service = new WahooActivityHistoryJobService({
@@ -810,14 +822,18 @@ describe("WahooActivityHistoryJobService", () => {
     expect(deps.importer.importWorkoutSummary).toHaveBeenCalledTimes(2);
     expect(deps.importRuns.recordPageCommitted).toHaveBeenCalledWith(
       expect.objectContaining({
-        failed: 0,
-        skipped: 2,
-        skippedDiagnostics: [
-          { providerExternalId: "123", reason: "activity_import_failed" },
-          { providerExternalId: "124", reason: "already_imported" },
-        ],
+        failed: 1,
+        lastErrorCode: "activity_import_failed",
+        skipped: 1,
+        skippedDiagnostics: [{ providerExternalId: "124", reason: "already_imported" }],
       }),
     );
+    expect(deps.getImportRun()).toMatchObject({
+      failed_count: 1,
+      last_error_code: "activity_import_failed",
+      skipped_count: 1,
+      status: "completed",
+    });
     expect(deps.providerSyncRepository.completeJobWithSyncState).toHaveBeenCalled();
     expect(deps.providerSyncRepository.failJobWithSyncState).not.toHaveBeenCalled();
     expect(deps.importRuns.fail).not.toHaveBeenCalled();

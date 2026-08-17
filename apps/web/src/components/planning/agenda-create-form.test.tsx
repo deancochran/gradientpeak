@@ -7,6 +7,7 @@ import { AgendaCreateForm } from "./agenda-create-form";
 
 const mocks = vi.hoisted(() => ({
   action: vi.fn(),
+  plannedCreate: vi.fn(),
   activityPlansQuery: {
     data: { items: [] as Array<{ id: string; name: string }> },
     isError: false,
@@ -16,8 +17,21 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@tanstack/react-start", () => ({ useServerFn: () => mocks.action }));
+vi.mock("@repo/api/react", () => ({
+  usePlannedSessionMutations: () => ({
+    create: { isPending: false, mutateAsync: mocks.plannedCreate },
+  }),
+}));
 vi.mock("../../lib/api/client", () => ({
-  api: { activityPlans: { list: { useQuery: () => mocks.activityPlansQuery } } },
+  api: {
+    useUtils: () => ({ plannedSessions: { range: { fetch: vi.fn() } } }),
+    activityPlans: { list: { useQuery: () => mocks.activityPlansQuery } },
+    profiles: {
+      get: {
+        useQuery: () => ({ data: { id: "11111111-1111-4111-8111-111111111111" }, isError: false }),
+      },
+    },
+  },
 }));
 vi.mock("../../lib/planning/server-actions", () => ({
   createCalendarEventAction: { url: "/actions/calendar/create" },
@@ -26,6 +40,7 @@ vi.mock("../../lib/planning/server-actions", () => ({
 afterEach(() => {
   cleanup();
   mocks.action.mockReset();
+  mocks.plannedCreate.mockReset();
   mocks.activityPlansQuery.data = { items: [] };
   mocks.activityPlansQuery.isError = false;
   mocks.activityPlansQuery.isLoading = false;
@@ -81,18 +96,59 @@ describe("AgendaCreateForm", () => {
   });
 
   it("submits the selected activity plan when creating planned work", async () => {
-    mocks.activityPlansQuery.data = { items: [{ id: "plan-1", name: "Tempo ride" }] };
+    mocks.activityPlansQuery.data = {
+      items: [
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          name: "Tempo ride",
+          activityPlanRevision: 4,
+          prescriptionQuantification: null,
+          structure: {
+            version: 3,
+            activity_category: "bike",
+            segments: [
+              {
+                id: "33333333-3333-4333-8333-333333333333",
+                role: "activity",
+                name: "Ride",
+                intervals: [
+                  {
+                    id: "44444444-4444-4444-8444-444444444444",
+                    name: "Tempo",
+                    repetitions: 1,
+                    steps: [
+                      {
+                        id: "55555555-5555-4555-8555-555555555555",
+                        name: "Work",
+                        duration: { type: "time", seconds: 600 },
+                        targets: [{ type: "RPE", intensity: 7 }],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        } as never,
+      ],
+    };
     render(<AgendaCreateForm initialDate="2026-10-26" initialType="planned" />);
 
-    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Tempo ride" } });
-    fireEvent.change(screen.getByLabelText("Activity plan"), { target: { value: "plan-1" } });
+    fireEvent.change(screen.getByLabelText("Activity plan"), {
+      target: { value: "22222222-2222-4222-8222-222222222222" },
+    });
     fireEvent.submit(getForm());
 
-    await waitFor(() => expect(mocks.action).toHaveBeenCalledTimes(1));
-    const request = mocks.action.mock.calls[0]?.[0] as { data: FormData };
-    expect(request.data.get("event_type")).toBe("planned");
-    expect(request.data.get("activity_plan_id")).toBe("plan-1");
-    expect(request.data.get("scheduled_date")).toBe("2026-10-26");
+    await waitFor(() => expect(mocks.plannedCreate).toHaveBeenCalledTimes(1));
+    expect(mocks.action).not.toHaveBeenCalled();
+    expect(mocks.plannedCreate.mock.calls[0]?.[0]).toMatchObject({
+      profileId: "11111111-1111-4111-8111-111111111111",
+      session: {
+        planningDate: "2026-10-26",
+        activityPlanId: "22222222-2222-4222-8222-222222222222",
+      },
+    });
+    expect(mocks.plannedCreate.mock.calls[0]?.[0].session).not.toHaveProperty("prescription");
   });
 
   it("lets users retry loading activity plans", () => {

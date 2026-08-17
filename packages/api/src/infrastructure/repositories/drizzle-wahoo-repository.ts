@@ -514,7 +514,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
             select 1 from ${schema.activityFileIngestions}
             where ${schema.activityFileIngestions.activity_id} = ${schema.activities.id}
               and ${schema.activityFileIngestions.source} = 'provider_sync'
-              and ${schema.activityFileIngestions.status} = 'ready'
+              and ${schema.activityFileIngestions.status} = 'succeeded'
           )`,
         })
         .from(schema.activitySourceReferences)

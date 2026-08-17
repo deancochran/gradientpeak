@@ -680,6 +680,12 @@ export const groupEventsRouter = createTRPCRouter({
           })
           .where(eq(groupEvents.id, input.groupEventId))
           .returning();
+        if (updatedEvent && input.cancelledAt) {
+          await removeGroupEventAssociationsForDeletion({
+            db: tx,
+            groupEventIds: [updatedEvent.id],
+          });
+        }
         return [updatedEvent];
       });
 
@@ -727,6 +733,12 @@ export const groupEventsRouter = createTRPCRouter({
           })
           .where(eq(groupEvents.id, input.groupEventId))
           .returning();
+        if (updatedEvent && input.cancelledAt) {
+          await removeGroupEventAssociationsForDeletion({
+            db: tx,
+            groupEventIds: [updatedEvent.id],
+          });
+        }
         return [updatedEvent];
       });
 

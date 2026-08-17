@@ -130,6 +130,13 @@ describe("portable web recording contracts", () => {
     });
 
     expect(job.id).toBe(job.artifact.recordingSessionId);
+    expect(job.ingestionId).toBeNull();
+    expect(
+      portableWebRecordingSubmissionJobSchema.parse({
+        ...job,
+        ingestionId: "55555555-5555-4555-8555-555555555555",
+      }).ingestionId,
+    ).toBe("55555555-5555-4555-8555-555555555555");
     expect(
       portableWebRecordingSubmissionJobSchema.safeParse({ ...job, id: "another-id" }).success,
     ).toBe(false);

@@ -25,6 +25,9 @@ const localArtifactMetadataMock = jest.fn(async (_filePath: string) => ({
   byteSize: 1234,
 }));
 const atomicHandoffMock = jest.fn();
+const getIngestionStatusUseQueryMock = jest.fn((_input: unknown, _options: unknown) => ({
+  data: undefined,
+}));
 
 jest.mock("@/lib/services/ActivityRecorder/recordingEvidenceJournal", () => ({
   createFinalizedArtifactQueueHandoff: (...args: unknown[]) => atomicHandoffMock(...args),
@@ -48,6 +51,9 @@ jest.mock("@tanstack/react-query", () => ({
 
 jest.mock("@repo/api/client", () => ({
   __esModule: true,
+  canRetryDirectIngestion: () => false,
+  IDEMPOTENT_INGESTION_MUTATION_RETRY_OPTIONS: { retry: 1, retryDelay: 1000 },
+  ingestionStatusPollingInterval: () => false,
   invalidatePostActivityIngestionQueries: (...args: unknown[]) =>
     (invalidatePostActivityIngestionQueriesMock as jest.Mock)(...args),
 }));
@@ -83,6 +89,10 @@ jest.mock("@/lib/api", () => ({
       },
     },
     activityFiles: {
+      getIngestionStatus: {
+        useQuery: (input: unknown, options: unknown) =>
+          getIngestionStatusUseQueryMock(input, options),
+      },
       beginMobileRecordingUpload: {
         useMutation: () => ({ mutateAsync: beginMobileRecordingUploadMock }),
       },
@@ -234,7 +244,7 @@ describe("useActivitySubmission", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 
-  it("continues a persisted failed job without rebuilding completed progress", async () => {
+  it("restores ingestion identity and continues a persisted job without rebuilding progress", async () => {
     await queueStorage.upsertActivitySubmissionQueueJob({
       schemaVersion: 3,
       id: "session-1",
@@ -270,7 +280,12 @@ describe("useActivitySubmission", () => {
     const { result } = renderHook(() =>
       useActivitySubmission(service as unknown as ActivityRecorderService),
     );
-    await waitFor(() => expect(result.current.isReady).toBe(true));
+    await waitFor(() => expect(result.current.ingestionId).toBe("ingestion-existing"));
+    expect(result.current.isError).toBe(true);
+    expect(getIngestionStatusUseQueryMock).toHaveBeenLastCalledWith(
+      { profileId: "profile-1", ingestionId: "ingestion-existing" },
+      expect.objectContaining({ enabled: true }),
+    );
 
     await act(async () => {
       await expect(result.current.submit()).resolves.toBe(true);
@@ -317,7 +332,8 @@ describe("useActivitySubmission", () => {
     const { result } = renderHook(() =>
       useActivitySubmission(service as unknown as ActivityRecorderService),
     );
-    await waitFor(() => expect(result.current.isReady).toBe(true));
+    await waitFor(() => expect(result.current.artifact).not.toBeNull());
+    expect(result.current.isError).toBe(true);
 
     await act(async () => {
       await result.current.submit();

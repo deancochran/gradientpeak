@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { plannedSessionIdempotencyKey, plannedSessionSchema } from "@repo/core/calendar";
 import { TRPCError } from "@trpc/server";
 import { cancelPlannedSession } from "../application/calendar/cancel-planned-session";
-import { createPlannedSession } from "../application/calendar/create-planned-session";
+import { createDirectPlannedSession } from "../application/calendar/create-direct-planned-session";
 import { linkPlannedSessionCompletion } from "../application/calendar/link-planned-session-completion";
 import {
   linkPlannedSessionGroupEvent,
@@ -34,7 +33,7 @@ import { createDrizzlePlannedSessionRepository } from "../infrastructure/reposit
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 type PlannedSessionRouterDependencies = {
-  create: typeof createPlannedSession;
+  createDirect: typeof createDirectPlannedSession;
   readRange: typeof readPlannedSessionRange;
   move: typeof movePlannedSession;
   cancel: typeof cancelPlannedSession;
@@ -42,6 +41,7 @@ type PlannedSessionRouterDependencies = {
   linkGroupEvent: typeof linkPlannedSessionGroupEvent;
   unlinkGroupEvent: typeof unlinkPlannedSessionGroupEvent;
   createId: () => string;
+  now: () => Date;
 };
 
 function assertOwnedProfile(actorProfileId: string, profileId: string) {
@@ -75,7 +75,7 @@ export function createPlannedSessionsRouter(
   dependencies: Partial<PlannedSessionRouterDependencies> = {},
 ) {
   const services: PlannedSessionRouterDependencies = {
-    create: dependencies.create ?? createPlannedSession,
+    createDirect: dependencies.createDirect ?? createDirectPlannedSession,
     readRange: dependencies.readRange ?? readPlannedSessionRange,
     move: dependencies.move ?? movePlannedSession,
     cancel: dependencies.cancel ?? cancelPlannedSession,
@@ -83,6 +83,7 @@ export function createPlannedSessionsRouter(
     linkGroupEvent: dependencies.linkGroupEvent ?? linkPlannedSessionGroupEvent,
     unlinkGroupEvent: dependencies.unlinkGroupEvent ?? unlinkPlannedSessionGroupEvent,
     createId: dependencies.createId ?? randomUUID,
+    now: dependencies.now ?? (() => new Date()),
   };
   const repository = (ctx: Parameters<typeof getRequiredDb>[0]) =>
     createDrizzlePlannedSessionRepository(getRequiredDb(ctx));
@@ -100,23 +101,17 @@ export function createPlannedSessionsRouter(
       .mutation(async ({ ctx, input }) => {
         assertOwnedProfile(ctx.session.user.id, input.profileId);
         try {
-          const session = plannedSessionSchema.parse({
-            contractVersion: "planned-session-v1",
-            id: services.createId(),
+          const db = getRequiredDb(ctx);
+          const result = await services.createDirect({
+            db,
+            repository: createDrizzlePlannedSessionRepository(db),
             profileId: input.profileId,
-            sessionRevision: 1,
             planningDate: input.session.planningDate,
-            originalTargetDate: input.session.planningDate,
             source: input.session.source,
-            idempotencyKey: plannedSessionIdempotencyKey(input.session.source),
+            sessionId: services.createId(),
             groupEventId: input.session.groupEventId ?? null,
-            prescription: input.session.prescription,
-            lifecycle: { status: "scheduled" },
-          });
-          const result = await services.create({
-            repository: repository(ctx),
-            profileId: input.profileId,
-            session,
+            activityPlanId: input.session.activityPlanId,
+            capturedAt: services.now(),
           });
           return receipt(result.status, toPlannedSessionDto(result.session));
         } catch (error) {

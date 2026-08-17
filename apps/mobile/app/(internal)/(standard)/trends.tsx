@@ -1131,6 +1131,26 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
     };
   }, []);
 
+  const profileQuery = api.profiles.get.useQuery();
+  const profileId = profileQuery.data?.id ?? "";
+  const planningRange = React.useMemo(
+    () => ({
+      startDate: range.startDate.toISOString().slice(0, 10),
+      endDate: range.endDate.toISOString().slice(0, 10),
+    }),
+    [range],
+  );
+  const athleteState = api.athleteIntelligence.getCurrentState.useQuery(
+    { profileId },
+    { enabled: Boolean(profileId) },
+  );
+  const loadRange = api.athleteIntelligence.getLoadRange.useQuery(
+    { profileId, range: planningRange },
+    { enabled: Boolean(profileId) },
+  );
+
+  // API v1 does not supply the existing multi-metric insight cards. Keep that bounded read rather
+  // than rebuilding those analytics from daily load or profile data on the client.
   const readModel = api.athleteIntelligence.getReadModel.useQuery({
     sections: {
       trendInsights: {
@@ -1146,23 +1166,28 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
   const handleRefresh = React.useCallback(async () => {
     setRefreshing(true);
     try {
-      await readModel.refetch();
+      await Promise.all([readModel.refetch(), athleteState.refetch(), loadRange.refetch()]);
     } finally {
       setRefreshing(false);
     }
-  }, [readModel]);
+  }, [athleteState, loadRange, readModel]);
 
-  const isLoading = readModel.isLoading;
-  const hasError = readModel.error;
+  const isLoading =
+    readModel.isLoading || (Boolean(profileId) && (athleteState.isLoading || loadRange.isLoading));
+  const hasError = readModel.error || athleteState.error || loadRange.error || profileQuery.error;
 
   const insights = React.useMemo(() => {
     return hydrateTrendInsights(readModel.data?.trendInsights?.items ?? []);
   }, [readModel.data?.trendInsights?.items]);
-  const hasLoadedSource = readModel.data?.trendInsights !== undefined;
+  const latestLoad = loadRange.data?.days.at(-1) ?? null;
+  const hasLoadedSource =
+    readModel.data?.trendInsights !== undefined ||
+    athleteState.data !== undefined ||
+    latestLoad !== null;
   const { showInitialLoading, showFullError, showPartialError } = getTrendsLoadState({
     hasError: Boolean(hasError),
     hasLoadedSource,
-    insightCount: hasLoadedSource ? insights.length : 0,
+    insightCount: hasLoadedSource ? insights.length + (latestLoad ? 1 : 0) : 0,
     isLoading,
   });
 
@@ -1252,6 +1277,23 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
             </Pressable>
           ) : null}
           <View className="flex-row flex-wrap gap-4">
+            {latestLoad ? (
+              <Card className="w-full">
+                <CardContent className="gap-2 p-4">
+                  <Text className="text-sm font-semibold text-foreground">
+                    Current training load
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">
+                    {athleteState.data?.freshness ?? loadRange.data?.freshness} state ·{" "}
+                    {latestLoad.coverage.status} coverage
+                  </Text>
+                  <Text className="text-sm text-foreground">
+                    Fitness {latestLoad.fitness.toFixed(1)} · Fatigue{" "}
+                    {latestLoad.fatigue.toFixed(1)} · Form {latestLoad.form.toFixed(1)}
+                  </Text>
+                </CardContent>
+              </Card>
+            ) : null}
             {insights.map((insight) => (
               <TrendInsightCard
                 key={insight.id}
@@ -1288,6 +1330,23 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
             </Pressable>
           ) : null}
           <View className="flex-row flex-wrap gap-4">
+            {latestLoad ? (
+              <Card className="w-full">
+                <CardContent className="gap-2 p-4">
+                  <Text className="text-sm font-semibold text-foreground">
+                    Current training load
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">
+                    {athleteState.data?.freshness ?? loadRange.data?.freshness} state ·{" "}
+                    {latestLoad.coverage.status} coverage
+                  </Text>
+                  <Text className="text-sm text-foreground">
+                    Fitness {latestLoad.fitness.toFixed(1)} · Fatigue{" "}
+                    {latestLoad.fatigue.toFixed(1)} · Form {latestLoad.form.toFixed(1)}
+                  </Text>
+                </CardContent>
+              </Card>
+            ) : null}
             {insights.map((insight) => (
               <TrendInsightCard
                 key={insight.id}

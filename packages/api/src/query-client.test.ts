@@ -39,6 +39,12 @@ describe("Plan scheduling cache contract", () => {
     await invalidatePostActivityIngestionQueries(queryClient);
     const ledgerQuery = { queryKey: ledgerKey } as unknown as Query;
     expect(predicates.filter((predicate) => predicate(ledgerQuery))).toHaveLength(2);
+    for (const procedure of ["getCurrentState", "getLoadRange"]) {
+      const query = {
+        queryKey: [["athleteIntelligence", procedure]],
+      } as unknown as Query;
+      expect(predicates.some((predicate) => predicate(query))).toBe(true);
+    }
   });
 
   it("applies the short stale window and always-on mount/reconnect policy to ledgers", () => {

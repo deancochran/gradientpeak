@@ -1,3 +1,4 @@
+import type { ActivityPlanStructure } from "@repo/core/activity-plan";
 import type { PlannedSession } from "@repo/core/calendar";
 import type {
   PlannedSessionMutation,
@@ -7,8 +8,22 @@ import type {
 export type CreateOwnedPlannedSessionResult =
   | { status: "created"; session: PlannedSession }
   | { status: "unchanged"; session: PlannedSession }
+  | { status: "access_denied"; reason: "group_event_unavailable" }
   | { status: "identity_conflict" }
   | { status: "conflict"; reason: "group_event_already_linked" };
+
+/** Explicit application shape for building a prescription without exposing a database row. */
+export type ActivityPlanPrescriptionSource = {
+  id: string;
+  profileId: string | null;
+  name: string;
+  description: string | null;
+  revision: number;
+  structure: ActivityPlanStructure;
+  structureHash: string;
+  gpsRecordingEnabled: boolean;
+  updatedAt: string;
+};
 
 /** Owner-scoped persistence for the future scheduled-work authority. */
 export interface PlannedSessionRepositoryPort {
@@ -27,6 +42,7 @@ export interface PlannedSessionRepositoryPort {
     profileId: string;
     activityId: string;
   }): Promise<PlannedSession[]>;
+  /** `updated` also covers an exact lost-response replay whose requested state is already applied. */
   mutateOwned(input: PlannedSessionMutation): Promise<PlannedSessionMutationResult>;
   trainingPlanExistsForProfile(input: {
     profileId: string;
@@ -36,5 +52,9 @@ export interface PlannedSessionRepositoryPort {
     profileId: string;
     activityPlanId: string;
   }): Promise<boolean>;
+  getActivityPlanPrescriptionSource(input: {
+    profileId: string;
+    activityPlanId: string;
+  }): Promise<ActivityPlanPrescriptionSource | null>;
   groupEventExistsForProfile(input: { profileId: string; groupEventId: string }): Promise<boolean>;
 }

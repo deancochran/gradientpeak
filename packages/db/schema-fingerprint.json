@@ -2451,13 +2451,23 @@
       "generated": ""
     },
     {
+      "name": "revision",
+      "type": "integer",
+      "table": "activity_plans",
+      "default": "1",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
       "name": "gps_recording_enabled",
       "type": "boolean",
       "table": "activity_plans",
       "default": "true",
       "notNull": true,
       "identity": "",
-      "position": 10,
+      "position": 11,
       "generated": ""
     },
     {
@@ -2467,7 +2477,7 @@
       "default": "'private'::text",
       "notNull": true,
       "identity": "",
-      "position": 11,
+      "position": 12,
       "generated": ""
     },
     {
@@ -2477,7 +2487,7 @@
       "default": "false",
       "notNull": true,
       "identity": "",
-      "position": 12,
+      "position": 13,
       "generated": ""
     },
     {
@@ -2487,7 +2497,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 13,
+      "position": 14,
       "generated": ""
     },
     {
@@ -2497,7 +2507,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 14,
+      "position": 15,
       "generated": ""
     },
     {
@@ -2507,7 +2517,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 15,
+      "position": 16,
       "generated": ""
     },
     {
@@ -10420,6 +10430,12 @@
       "definition": "CREATE TRIGGER activity_efforts_validate_segment_range BEFORE INSERT OR UPDATE ON activity_efforts FOR EACH ROW EXECUTE FUNCTION validate_activity_effort_segment_range()"
     },
     {
+      "name": "activity_plans_enforce_revision",
+      "table": "activity_plans",
+      "schema": "public",
+      "definition": "CREATE TRIGGER activity_plans_enforce_revision BEFORE UPDATE ON activity_plans FOR EACH ROW EXECUTE FUNCTION enforce_activity_plan_revision()"
+    },
+    {
       "name": "activity_segments_validate_set",
       "table": "activity_segments",
       "schema": "public",
@@ -10757,6 +10773,15 @@
       "identity": "enforce_activity_artifact_immutable()",
       "language": "plpgsql",
       "definition": "CREATE OR REPLACE FUNCTION public.enforce_activity_artifact_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\ndeclare lifecycle_owner name;\nbegin\n  if row(new.profile_id, new.digest_algorithm, new.digest, new.byte_size, new.bucket, new.path,\n         new.media_type, new.format, new.original_name, new.first_accepted_at)\n     is distinct from\n     row(old.profile_id, old.digest_algorithm, old.digest, old.byte_size, old.bucket, old.path,\n         old.media_type, old.format, old.original_name, old.first_accepted_at) then\n    raise exception 'accepted activity artifact byte identity is immutable';\n  end if;\n  if new.availability is distinct from old.availability then\n    select pg_catalog.pg_get_userbyid(procedure.proowner) into lifecycle_owner\n    from pg_catalog.pg_proc as procedure\n    where procedure.oid=pg_catalog.to_regprocedure('public.enforce_activity_artifact_immutable()');\n    if current_user is distinct from lifecycle_owner\n      or current_setting('gradientpeak.artifact_lifecycle_authorized',true) is distinct from 'on' then\n      raise exception 'activity artifact lifecycle requires authorized service workflow';\n    end if;\n    if not ((old.availability='accepted' and new.availability='deletion_pending')\n      or (old.availability='deletion_pending' and new.availability='deleted')) then\n      raise exception 'invalid activity artifact lifecycle transition';\n    end if;\n  end if;\n  return new;\nend $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=\"\""],
+      "identity": "enforce_activity_plan_revision()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.enforce_activity_plan_revision()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\nBEGIN\n  IF NEW.structure IS DISTINCT FROM OLD.structure THEN\n    NEW.revision := OLD.revision + 1;\n  ELSE\n    NEW.revision := OLD.revision;\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
       "volatility": "v",
       "securityDefiner": false
     },
@@ -11781,6 +11806,13 @@
       "table": "activity_plans",
       "validated": true,
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "activity_plans_revision_check",
+      "table": "activity_plans",
+      "validated": true,
+      "definition": "CHECK (revision >= 1)"
     },
     {
       "kind": "c",

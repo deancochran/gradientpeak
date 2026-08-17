@@ -30,6 +30,8 @@ export function requireUpdatedPlannedSession(result: PlannedSessionMutationResul
       return result.session;
     case "not_found":
       throw new PlannedSessionNotFoundError("Planned session not found");
+    case "access_denied":
+      throw new PlannedSessionAccessError("The group event is unavailable to this profile");
     case "stale_revision":
       throw new PlannedSessionStaleRevisionError(result.currentRevision);
     case "conflict":

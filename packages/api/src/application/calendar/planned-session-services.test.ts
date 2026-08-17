@@ -226,6 +226,21 @@ class MemoryPlannedSessionRepository implements PlannedSessionRepositoryPort {
     return input.profileId === profileId && this.activityPlans.has(input.activityPlanId);
   }
 
+  async getActivityPlanPrescriptionSource(input: { profileId: string; activityPlanId: string }) {
+    if (!(await this.activityPlanExistsForProfile(input))) return null;
+    return {
+      id: input.activityPlanId,
+      profileId: input.activityPlanId === systemActivityPlanId ? null : input.profileId,
+      name: "Saved ride",
+      description: null,
+      revision: 1,
+      structure,
+      structureHash: `v1:sha256:${"a".repeat(64)}`,
+      gpsRecordingEnabled: true,
+      updatedAt: "2026-08-01T00:00:00.000Z",
+    };
+  }
+
   async groupEventExistsForProfile(input: { profileId: string; groupEventId: string }) {
     return input.profileId === profileId && input.groupEventId.length > 0;
   }

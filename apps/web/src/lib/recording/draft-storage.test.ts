@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   canDiscardSubmissionJob,
   canStoreSubmissionArtifact,
+  checkpointClaimedSubmissionJobEnvelope,
   checkpointTimerDraft,
   claimSubmissionJobEnvelope,
   finalizeClaimedSubmissionJobEnvelope,
@@ -363,6 +364,30 @@ describe("web timer draft persistence", () => {
     });
 
     expect(submitted?.job).toMatchObject({ status: "submitted", activityId: "activity-1" });
+  });
+
+  it("checkpoints ingestion identity without releasing the active submission claim", () => {
+    const claimed = claimSubmissionJobEnvelope({
+      envelope: queuedSubmissionEnvelope(),
+      instanceId: "tab-a",
+      nowMs: 1_000,
+    });
+    if (!claimed) throw new Error("Expected a claim.");
+
+    const checkpoint = checkpointClaimedSubmissionJobEnvelope({
+      envelope: claimed,
+      claim: { owner: "tab-a", revision: claimed.revision },
+      update: (job) => ({ ...job, ingestionId: "ingestion-1" }),
+    });
+
+    expect(checkpoint).toMatchObject({
+      claimOwner: "tab-a",
+      revision: claimed.revision,
+      job: { status: "submitting", ingestionId: "ingestion-1" },
+    });
+    expect(parseStoredSubmissionJobEnvelope(checkpoint, "profile-1")?.job.ingestionId).toBe(
+      "ingestion-1",
+    );
   });
 
   it("does not discard a submitting artifact or replace it with a distinct artifact", () => {

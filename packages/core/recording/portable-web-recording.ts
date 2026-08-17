@@ -76,6 +76,7 @@ export const portableWebRecordingSubmissionJobSchema = z
     nextAttemptAt: isoTimestampSchema.nullable(),
     lastError: z.string().min(1).max(200).nullable(),
     activityId: z.string().min(1).nullable(),
+    ingestionId: z.string().min(1).nullable().default(null),
     updatedAt: isoTimestampSchema,
   })
   .strict()

@@ -50,17 +50,13 @@ vi.mock("../../infrastructure/repositories", () => ({
 vi.mock("../../application/activity-plans/estimate-activity-plans", () => ({
   estimateActivityPlan: vi.fn(async (plan: any) => ({
     ...plan,
-    prescriptionQuantification: plan.prescriptionQuantification ?? {
-      summary: { commonLoad: { status: "complete", load: 72, intensity: 0.88 } },
-    },
+    prescriptionQuantification: plan.prescriptionQuantification ?? null,
     route: plan.route ?? null,
   })),
   estimateActivityPlans: vi.fn(async (plans: any[]) =>
     plans.map((plan) => ({
       ...plan,
-      prescriptionQuantification: plan.prescriptionQuantification ?? {
-        summary: { commonLoad: { status: "complete", load: 72, intensity: 0.88 } },
-      },
+      prescriptionQuantification: plan.prescriptionQuantification ?? null,
       route: plan.route ?? null,
     })),
   ),
@@ -213,6 +209,7 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
     notes: null,
     structure: createActivityPlanStructure("run"),
     structure_hash: "test-structure-hash",
+    revision: 1,
     gps_recording_enabled: true,
     content_visibility: "private",
     is_system_template: false,

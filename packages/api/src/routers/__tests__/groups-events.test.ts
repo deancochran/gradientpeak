@@ -1,5 +1,11 @@
 import { SYSTEM_TEMPLATES } from "@repo/core";
-import { groupEventRsvps, groupEventSeriesRsvps, groupEvents, notifications } from "@repo/db";
+import {
+  groupEventRsvps,
+  groupEventSeriesRsvps,
+  groupEvents,
+  notifications,
+  plannedSessions,
+} from "@repo/db";
 import type { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
 import {
@@ -808,6 +814,38 @@ describe("groups.events router", () => {
     });
   });
 
+  it("revision-clears a planned-session link when an update cancels the event", async () => {
+    const sessionId = "99999999-9999-4999-8999-999999999999";
+    const cancelledEvent = buildGroupEventRow({ cancelled_at: NOW });
+    const mock = createDbMock({
+      select: [
+        [{ id: VIEWER_ID }],
+        [{ event: buildGroupEventRow(), group: buildGroupRow() }],
+        [{ role: "admin", status: "active" }],
+        [{ id: EVENT_ID }],
+        [{ id: sessionId, profileId: VIEWER_ID, groupEventId: EVENT_ID, sessionRevision: 1 }],
+        [],
+        [],
+        [],
+        [],
+      ],
+      updateReturning: [[cancelledEvent], [{ id: sessionId }]],
+    });
+    const caller = createCaller(mock.db);
+
+    await expect(
+      caller.events.update({
+        groupEventId: EVENT_ID,
+        cancelledAt: NOW.toISOString(),
+        timezone: "UTC",
+      }),
+    ).resolves.toMatchObject({ event: { id: EVENT_ID, cancelled_at: NOW.toISOString() } });
+    expect(mock.updateCalls[1]).toMatchObject({
+      table: plannedSessions,
+      values: { group_event_id: null, session_revision: expect.anything() },
+    });
+  });
+
   it("cancels an entire recurring series when requested", async () => {
     const series = buildGroupEventRow({ recurrence_rule: "FREQ=WEEKLY;COUNT=3" });
     const cancelledSeries = buildGroupEventRow({
@@ -819,6 +857,7 @@ describe("groups.events router", () => {
         [{ id: VIEWER_ID }],
         [{ event: series, group: buildGroupRow() }],
         [{ role: "admin", status: "active" }],
+        [],
         [],
         [{ profile_id: VIEWER_ID }, { profile_id: "99999999-9999-4999-8999-999999999999" }],
         [],
@@ -893,6 +932,7 @@ describe("groups.events router", () => {
         [{ id: VIEWER_ID }],
         [{ event: occurrence, group: buildGroupRow() }],
         [{ role: "admin", status: "active" }],
+        [],
         [],
         [],
         [],

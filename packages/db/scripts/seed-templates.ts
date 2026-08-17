@@ -7,7 +7,7 @@ import {
   type SystemActivityTemplateDefinition,
 } from "@repo/core";
 import { activityPlanStructureSchema } from "@repo/core/activity-plan";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { activityPlans } from "../src/schema/tables";
@@ -117,10 +117,12 @@ async function seedTemplates() {
           console.log(`📝 Updating "${template.name}" (${template.id})...`);
 
           if (!isDryRun) {
+            const structureChanged = seedValues.structure_hash !== existing.structure_hash;
             await db
               .update(activityPlans)
               .set({
                 ...seedValues,
+                ...(structureChanged ? { revision: sql`${activityPlans.revision} + 1` } : {}),
                 updated_at: new Date(),
               })
               .where(eq(activityPlans.id, existing.id));

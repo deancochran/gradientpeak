@@ -50,6 +50,7 @@ type RecordActivityImportPageInput = {
   skippedDiagnostics?: readonly ActivityImportSkipDiagnostic[];
   failed: number;
   earliestActivityAt: Date | null;
+  lastErrorCode?: string;
   latestActivityAt: Date | null;
   nextCursor?: string | null;
   nextPage?: number | null;
@@ -61,6 +62,10 @@ export function createActivityImportRepository(db: DbClient) {
     const now = input.now ?? new Date();
     const skippedDiagnostics = assertSkippedDiagnostics(input.skippedDiagnostics ?? []);
     const skippedDiagnosticsJson = JSON.stringify(skippedDiagnostics);
+    const lastErrorCode = input.lastErrorCode;
+    if (lastErrorCode && !/^[a-z][a-z0-9_]{0,63}$/.test(lastErrorCode)) {
+      throw new Error("Activity import run error code must be a bounded safe code");
+    }
     const [pageRecorded] = await tx
       .update(activityImportRuns)
       .set({
@@ -82,6 +87,7 @@ export function createActivityImportRepository(db: DbClient) {
                 ) as bounded_diagnostics
               )`,
         failed_count: sql`${activityImportRuns.failed_count} + ${input.failed}`,
+        last_error_code: lastErrorCode,
         earliest_activity_at: input.earliestActivityAt
           ? sql`least(coalesce(${activityImportRuns.earliest_activity_at}, ${input.earliestActivityAt}), ${input.earliestActivityAt})`
           : undefined,
@@ -310,7 +316,7 @@ export function createActivityImportRepository(db: DbClient) {
             completed_at: now,
             next_cursor: null,
             next_page: null,
-            last_error_code: null,
+            last_error_code: locked.failed_count > 0 ? locked.last_error_code : null,
             updated_at: now,
           })
           .where(and(eq(activityImportRuns.id, id), eq(activityImportRuns.status, "running")))
