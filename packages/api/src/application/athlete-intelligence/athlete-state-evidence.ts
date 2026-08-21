@@ -17,6 +17,7 @@ import {
 import {
   buildActivitySegmentDerivedSummaries,
   projectCanonicalCompletedObservationLoads,
+  type SegmentDerivedSummary,
 } from "../../lib/activity-analysis";
 import {
   activityAnalysisFingerprint,
@@ -68,6 +69,7 @@ export async function materializeActivityAthleteStateEvidence(
     deferAthleteStateRefresh?: boolean;
     targetSourceRevision?: number;
     effortMaterialRecordedAt?: Date | null;
+    preparedSegmentSummaries?: readonly SegmentDerivedSummary[];
   },
 ) {
   const [activity] = await tx
@@ -86,12 +88,23 @@ export async function materializeActivityAthleteStateEvidence(
       ),
     )
     .orderBy(asc(activitySegments.ordinal));
-  const summaries = await buildActivitySegmentDerivedSummaries({
-    store: createActivityAnalysisStore(input.contextDb),
-    profileId: input.profileId,
-    activities: [{ ...activity, segments }],
-    computedAsOf: input.computedAt,
-  });
+  const summaries = input.preparedSegmentSummaries
+    ? [...input.preparedSegmentSummaries]
+    : await buildActivitySegmentDerivedSummaries({
+        store: createActivityAnalysisStore(input.contextDb),
+        profileId: input.profileId,
+        activities: [{ ...activity, segments }],
+        computedAsOf: input.computedAt,
+      });
+  if (
+    summaries.length !== segments.length ||
+    summaries.some(
+      (summary, index) =>
+        summary.activity_id !== activity.id || summary.segment_id !== segments[index]?.id,
+    )
+  ) {
+    throw new Error("Prepared activity analysis does not match current activity segments");
+  }
   let analysisRevision = await readMatchingActivityAnalysisRevision(tx, {
     activityId: input.activityId,
     profileId: input.profileId,
@@ -99,6 +112,7 @@ export async function materializeActivityAthleteStateEvidence(
   });
   if (
     !analysisRevision &&
+    summaries.length > 0 &&
     (!input.deferAthleteStateRefresh || input.targetSourceRevision !== undefined)
   ) {
     const originalSnapshot = completedActivityPerformanceTargetSnapshotSchema.parse(
@@ -129,11 +143,43 @@ export async function materializeActivityAthleteStateEvidence(
       computedAt: input.computedAt,
     });
   }
-  const availableLoads = projectCanonicalCompletedObservationLoads(summaries).filter(
-    (observation) => observation.commonLoad.status === "available",
-  );
-  if (availableLoads.length === 0) {
-    const activityProjectionChanged = activity.athlete_state_common_load !== null;
+  const usableLoads: Array<{
+    activityCategory: SegmentDerivedSummary["activity_category"];
+    load: number;
+    qualityConfidence: "high" | "low" | "medium" | "unknown";
+    sourceTimeCoverage: number;
+  }> = [];
+  for (const observation of projectCanonicalCompletedObservationLoads(summaries)) {
+    const commonLoad = observation.commonLoad;
+    if (commonLoad.status === "available") {
+      usableLoads.push({
+        activityCategory: commonLoad.activity_category,
+        load: commonLoad.load,
+        qualityConfidence: commonLoad.quality.confidence,
+        sourceTimeCoverage: 1,
+      });
+    } else if (
+      commonLoad.status === "partial" &&
+      commonLoad.load !== null &&
+      commonLoad.quality !== null
+    ) {
+      usableLoads.push({
+        activityCategory: commonLoad.activity_category,
+        load: commonLoad.load,
+        qualityConfidence: commonLoad.quality.confidence,
+        sourceTimeCoverage: commonLoad.sourceTimeCoverage,
+      });
+    }
+  }
+  if (usableLoads.length === 0) {
+    const activityProjectionChanged =
+      activity.athlete_state_common_load !== null ||
+      activity.athlete_state_activity_category !== null ||
+      activity.athlete_state_evidence_confidence !== null ||
+      activity.athlete_state_capability_distance_meters !== null ||
+      activity.athlete_state_capability_duration_minutes !== null ||
+      activity.athlete_state_input_version !== null ||
+      activity.athlete_state_computed_at !== null;
     const activityMaterialChanged =
       activityProjectionChanged || input.canonicalEvidenceMaterialChanged === true;
     const effectiveAt = resolveAthleteStateMaterialEffectiveAt({
@@ -160,6 +206,10 @@ export async function materializeActivityAthleteStateEvidence(
           and(eq(activities.id, input.activityId), eq(activities.profile_id, input.profileId)),
         );
     }
+    await createDrizzleAthleteDerivedStateRepository(tx).deleteActivityTrainingEffects({
+      profileId: input.profileId,
+      activityId: input.activityId,
+    });
     if (effectiveAt !== null && !input.deferAthleteStateRefresh) {
       if (!analysisRevision) throw new Error("Activity analysis revision is unavailable");
       const repository = createDrizzleAthleteDerivedStateRepository(tx);
@@ -183,30 +233,21 @@ export async function materializeActivityAthleteStateEvidence(
     }
     return { commonLoad: null, confidence: null, effectiveAt, materialChanged };
   }
-  const primary = [...availableLoads].sort(
-    (left, right) =>
-      (right.commonLoad.status === "available" ? right.commonLoad.load : 0) -
-      (left.commonLoad.status === "available" ? left.commonLoad.load : 0),
-  )[0];
-  if (!primary || primary.commonLoad.status !== "available")
-    throw new Error("Canonical activity Common Load lost provenance");
+  const primary = [...usableLoads].sort((left, right) => right.load - left.load)[0];
+  if (!primary) throw new Error("Canonical activity Common Load lost provenance");
   let commonLoad = 0;
   let confidence = 1;
-  for (const observation of availableLoads) {
-    if (observation.commonLoad.status !== "available") continue;
-    commonLoad += observation.commonLoad.load;
+  for (const observation of usableLoads) {
+    commonLoad += observation.load;
     confidence = Math.min(
       confidence,
-      confidenceForQuality(observation.commonLoad.quality.confidence),
+      confidenceForQuality(observation.qualityConfidence) * observation.sourceTimeCoverage,
     );
   }
   let capabilityDistanceMeters: number | null = null;
   let capabilityDurationMinutes: number | null = null;
   for (const segment of segments) {
-    if (
-      segment.role !== "activity" ||
-      segment.activity_category !== primary.commonLoad.activity_category
-    )
+    if (segment.role !== "activity" || segment.activity_category !== primary.activityCategory)
       continue;
     const summary = completedSegmentSummarySchema.parse(segment.summary);
     capabilityDistanceMeters = Math.max(capabilityDistanceMeters ?? 0, summary.distanceMeters ?? 0);
@@ -222,7 +263,7 @@ export async function materializeActivityAthleteStateEvidence(
   const activityMaterialChanged =
     input.canonicalEvidenceMaterialChanged === true ||
     activity.athlete_state_common_load !== commonLoad ||
-    activity.athlete_state_activity_category !== primary.commonLoad.activity_category ||
+    activity.athlete_state_activity_category !== primary.activityCategory ||
     activity.athlete_state_evidence_confidence !== confidence ||
     activity.athlete_state_capability_distance_meters !== capabilityDistanceMeters ||
     activity.athlete_state_capability_duration_minutes !== capabilityDurationMinutes ||
@@ -240,7 +281,7 @@ export async function materializeActivityAthleteStateEvidence(
     .update(activities)
     .set({
       athlete_state_common_load: commonLoad,
-      athlete_state_activity_category: primary.commonLoad.activity_category,
+      athlete_state_activity_category: primary.activityCategory,
       athlete_state_evidence_confidence: confidence,
       athlete_state_capability_distance_meters: capabilityDistanceMeters,
       athlete_state_capability_duration_minutes: capabilityDurationMinutes,
@@ -271,7 +312,7 @@ export async function materializeActivityAthleteStateEvidence(
         kind: "observed",
         sourceId: input.activityId,
         occurredAt: activity.finished_at.toISOString(),
-        activityCategory: primary.commonLoad.activity_category,
+        activityCategory: primary.activityCategory,
         commonLoad,
         evidenceConfidence: confidence,
         capabilityObservation:

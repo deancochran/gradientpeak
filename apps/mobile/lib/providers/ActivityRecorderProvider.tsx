@@ -36,6 +36,7 @@ interface ActivityRecorderContextValue {
   discardRecovery: () => Promise<void> | undefined;
   service: ActivityRecorderService | null;
   recoveryCheckpoint: ActivityRecorderCheckpoint | null;
+  retryFinalizationRecovery: () => Promise<void> | undefined;
   resumeRecovery: () => Promise<void> | undefined;
 }
 
@@ -258,6 +259,7 @@ export function ActivityRecorderProvider({
     if (
       !owner ||
       !checkpoint ||
+      checkpoint.lifecycle === "finishing" ||
       !mountedRef.current ||
       desiredProfileIdRef.current !== checkpoint.profileId ||
       profileIdRef.current !== checkpoint.profileId
@@ -265,6 +267,34 @@ export function ActivityRecorderProvider({
       return undefined;
     }
     const operation = owner.resumeRecoveredRecording().then(() => {
+      if (
+        mountedRef.current &&
+        desiredProfileIdRef.current === checkpoint.profileId &&
+        profileIdRef.current === checkpoint.profileId &&
+        serviceRef.current === owner &&
+        recoveryCheckpointRef.current?.sessionId === checkpoint.sessionId
+      ) {
+        recoveryCheckpointRef.current = null;
+        setRecoveryCheckpoint(null);
+      }
+    });
+    return trackRecoveryTask(owner, checkpoint.profileId, operation);
+  }, [trackRecoveryTask]);
+
+  const retryFinalizationRecoveryCommand = useCallback((): Promise<void> | undefined => {
+    const owner = serviceRef.current;
+    const checkpoint = recoveryCheckpointRef.current;
+    if (
+      !owner ||
+      !checkpoint ||
+      checkpoint.lifecycle !== "finishing" ||
+      !mountedRef.current ||
+      desiredProfileIdRef.current !== checkpoint.profileId ||
+      profileIdRef.current !== checkpoint.profileId
+    ) {
+      return undefined;
+    }
+    const operation = owner.retryRecoveredFinalization().then(() => {
       if (
         mountedRef.current &&
         desiredProfileIdRef.current === checkpoint.profileId &&
@@ -417,9 +447,12 @@ export function ActivityRecorderProvider({
         });
     }
 
+    const isFinalizationRecovery = recoveryCheckpoint.lifecycle === "finishing";
     Alert.alert(
-      "Resume recording?",
-      "A recording was interrupted. Resume from its last committed segment boundary or discard its local data.",
+      isFinalizationRecovery ? "Finish saved activity?" : "Resume recording?",
+      isFinalizationRecovery
+        ? "Finishing was interrupted. Retry saving the activity without resuming recording, or discard its local data."
+        : "A recording was interrupted. Resume from its last committed segment boundary or discard its local data.",
       [
         {
           text: "Discard",
@@ -441,22 +474,28 @@ export function ActivityRecorderProvider({
           },
         },
         {
-          text: "Resume",
+          text: isFinalizationRecovery ? "Finish" : "Resume",
           onPress: () => {
             if (!isCurrentRecovery()) return;
-            const operation = resumeRecoveryCommand();
+            const operation = isFinalizationRecovery
+              ? retryFinalizationRecoveryCommand()
+              : resumeRecoveryCommand();
             if (!operation) return;
             void operation
               .then(() => {
                 if (!isCurrentRecoveryService()) return;
-                router.replace("/record");
+                router.replace(isFinalizationRecovery ? "/record/submit" : "/record");
               })
               .catch((error) => {
                 if (!isCurrentRecovery()) return;
                 promptedRecoverySessionRef.current = null;
                 Alert.alert(
-                  "Unable to resume",
-                  error instanceof Error ? error.message : "Recording recovery failed",
+                  isFinalizationRecovery ? "Unable to finish" : "Unable to resume",
+                  error instanceof Error
+                    ? error.message
+                    : isFinalizationRecovery
+                      ? "Finalization recovery failed"
+                      : "Recording recovery failed",
                 );
               });
           },
@@ -464,7 +503,13 @@ export function ActivityRecorderProvider({
       ],
       { cancelable: false },
     );
-  }, [discardRecoveryCommand, recoveryCheckpoint, resumeRecoveryCommand, service]);
+  }, [
+    discardRecoveryCommand,
+    recoveryCheckpoint,
+    resumeRecoveryCommand,
+    retryFinalizationRecoveryCommand,
+    service,
+  ]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -509,9 +554,16 @@ export function ActivityRecorderProvider({
       discardRecovery: discardRecoveryCommand,
       service,
       recoveryCheckpoint,
+      retryFinalizationRecovery: retryFinalizationRecoveryCommand,
       resumeRecovery: resumeRecoveryCommand,
     }),
-    [discardRecoveryCommand, recoveryCheckpoint, resumeRecoveryCommand, service],
+    [
+      discardRecoveryCommand,
+      recoveryCheckpoint,
+      resumeRecoveryCommand,
+      retryFinalizationRecoveryCommand,
+      service,
+    ],
   );
 
   return (

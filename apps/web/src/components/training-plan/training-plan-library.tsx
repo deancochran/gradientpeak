@@ -1,3 +1,4 @@
+import type { TrainingPlanPlannedSchedulePreview } from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
@@ -7,6 +8,7 @@ import { useState } from "react";
 
 import { api } from "../../lib/api/client";
 import { summarizeTrainingPlan } from "./training-plan-model";
+import { TrainingPlanPlannedPreview } from "./training-plan-planned-preview";
 
 type TrainingPlanLibraryProps = {
   onCreate: () => void;
@@ -43,6 +45,7 @@ type LibraryPlan = {
   name: string;
   sessions_per_week_target?: number | null;
   structure?: unknown;
+  plannedSchedulePreview?: TrainingPlanPlannedSchedulePreview | null;
 };
 
 function PlanGrid({ plans, onOpen }: { plans: LibraryPlan[]; onOpen: (id: string) => void }) {
@@ -74,6 +77,12 @@ function PlanGrid({ plans, onOpen }: { plans: LibraryPlan[]; onOpen: (id: string
                   ? `${summary.sessionCount} activities · ${summary.weekCount} weeks`
                   : `${plan.sessions_per_week_target ?? "Flexible"} sessions/week · ${plan.duration_hours ?? "Flexible"} hours`}
               </p>
+              <TrainingPlanPlannedPreview
+                compact
+                planId={plan.id}
+                preview={plan.plannedSchedulePreview}
+                structure={plan.structure}
+              />
               <Button
                 data-testid={`training-plan-card-${plan.id}-open`}
                 onClick={() => onOpen(plan.id)}

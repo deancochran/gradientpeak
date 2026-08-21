@@ -4,6 +4,8 @@ import {
   completedActivitySegmentSetSchema,
 } from "@repo/core/activity-segments";
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
+import { parseActivityFile } from "@repo/core/server/activity-files";
+import { safeDecodeFitFile } from "@repo/core/server/fit-sdk-parser";
 import { activities, activityPlans, profiles } from "@repo/db";
 import { and, eq } from "drizzle-orm";
 import type { MobileRecordingSubmissionInput } from "../../contracts/recording-submission";
@@ -69,7 +71,8 @@ function aggregateSegmentTiming(segmentSet: CompletedActivitySegmentSet) {
 
 function segmentSetFromExecutionManifest(input: MobileRecordingSubmissionInput) {
   const parentStartMs = new Date(input.startedAt).getTime();
-  const elapsedMs = new Date(input.finishedAt).getTime() - parentStartMs;
+  const elapsedMs =
+    input.sessionTiming?.elapsedMs ?? new Date(input.finishedAt).getTime() - parentStartMs;
   const grouped = new Map<string, (typeof input.executionManifest.occurrences)[number][]>();
   for (const occurrence of input.executionManifest.occurrences) {
     const entries = grouped.get(occurrence.segmentId) ?? [];
@@ -80,25 +83,59 @@ function segmentSetFromExecutionManifest(input: MobileRecordingSubmissionInput) 
     const first = occurrences[0];
     const last = occurrences.at(-1);
     if (!first || !last) throw new Error("Execution manifest segment group must not be empty");
+    const classifiedOccurrences = occurrences.flatMap((occurrence) =>
+      occurrence.completion
+        ? [
+            {
+              occurrenceId: occurrence.occurrenceId,
+              globalOrdinal: occurrence.globalOrdinal,
+              completion: occurrence.completion,
+            },
+          ]
+        : [],
+    );
     const base = {
       id: first.segmentId,
       ordinal,
       role: first.role,
-      startOffsetMs: new Date(first.startedAt).getTime() - parentStartMs,
-      endOffsetMs: new Date(last.completedAt).getTime() - parentStartMs,
+      startOffsetMs:
+        first.timingEvidence?.startOffsetMs ?? new Date(first.startedAt).getTime() - parentStartMs,
+      endOffsetMs:
+        last.timingEvidence?.endOffsetMs ?? new Date(last.completedAt).getTime() - parentStartMs,
       summary: {
         version: 1 as const,
         normalizedPowerResult: unavailableNormalizedPowerResult,
-        timing: {
-          timingCoverage: "complete" as const,
-          activeMs: Math.round(
-            occurrences.reduce((sum, item) => sum + item.activeSeconds, 0) * 1_000,
-          ),
-          movingMs: Math.round(
-            occurrences.reduce((sum, item) => sum + item.movingSeconds, 0) * 1_000,
-          ),
-        },
+        timing: input.sessionTiming
+          ? {
+              timingCoverage: "partial" as const,
+              activeMs: Math.round(
+                occurrences.reduce((sum, item) => sum + item.activeSeconds, 0) * 1_000,
+              ),
+            }
+          : {
+              timingCoverage: "complete" as const,
+              activeMs: Math.round(
+                occurrences.reduce((sum, item) => sum + item.activeSeconds, 0) * 1_000,
+              ),
+              movingMs: Math.round(
+                occurrences.reduce((sum, item) => sum + item.movingSeconds, 0) * 1_000,
+              ),
+            },
         distanceMeters: occurrences.reduce((sum, item) => sum + item.distanceMeters, 0),
+        ...(classifiedOccurrences.length > 0
+          ? {
+              recordingExecution: {
+                version: 1 as const,
+                source: "recording_execution_manifest" as const,
+                coverage:
+                  classifiedOccurrences.length === occurrences.length
+                    ? ("complete" as const)
+                    : ("partial" as const),
+                occurrenceCount: occurrences.length,
+                occurrences: classifiedOccurrences,
+              },
+            }
+          : {}),
       },
     };
     if (first.role === "activity") {
@@ -213,6 +250,67 @@ function submissionReplayIdentity(submission: MobileRecordingSubmissionInput) {
   return submission.recordingSessionId;
 }
 
+const fitPositionFieldNames = new Set([
+  "positionLat",
+  "positionLong",
+  "startPositionLat",
+  "startPositionLong",
+  "endPositionLat",
+  "endPositionLong",
+  "necLat",
+  "necLong",
+  "swcLat",
+  "swcLong",
+  "destinationLat",
+  "destinationLong",
+]);
+
+function rawArtifactContainsPosition(input: { bytes: Uint8Array; format: "fit" | "gpx" | "tcx" }) {
+  if (input.format === "fit") {
+    const decoded = safeDecodeFitFile(Buffer.from(input.bytes));
+    return Object.values(decoded.messages ?? {}).some((messages) =>
+      messages.some((message) =>
+        Object.entries(message).some(
+          ([field, value]) =>
+            fitPositionFieldNames.has(field) && value !== undefined && value !== null,
+        ),
+      ),
+    );
+  }
+
+  const xml = new TextDecoder().decode(input.bytes);
+  return (
+    /\b(?:lat|lon)\s*=/iu.test(xml) ||
+    /<(?:[\w.-]+:)?(?:LatitudeDegrees|LongitudeDegrees)\b/iu.test(xml)
+  );
+}
+
+function assertMobileRecordingArtifactHasNoPosition(input: {
+  bytes: Uint8Array;
+  format: "fit" | "gpx" | "tcx";
+}) {
+  let parsed: ReturnType<typeof parseActivityFile>;
+  try {
+    parsed = parseActivityFile({ data: input.bytes, fileType: input.format });
+  } catch (error) {
+    throw new MobileRecordingSubmissionError("artifact_invalid", "Recording artifact is invalid", {
+      cause: error,
+    });
+  }
+
+  if (
+    rawArtifactContainsPosition(input) ||
+    parsed.records.some(
+      (record) => record.positionLat !== undefined || record.positionLong !== undefined,
+    )
+  ) {
+    throw new MobileRecordingSubmissionError(
+      "artifact_invalid",
+      "Live recording artifacts cannot contain location data",
+    );
+  }
+}
+
 function assertReplayMatches(
   input: MobileRecordingSubmissionInput,
   accepted: Awaited<ReturnType<typeof loadAcceptedSubmission>>,
@@ -318,7 +416,11 @@ export async function submitMobileRecording(
       ...(prepared.ingestion.expectedSha256
         ? { expectedSha256: prepared.ingestion.expectedSha256 }
         : {}),
-      parse: () => null,
+      parse: () =>
+        assertMobileRecordingArtifactHasNoPosition({
+          bytes: prepared.staging.bytes,
+          format: prepared.staging.format,
+        }),
       onFailure: async (stage) => {
         await failActivityIngestion(db, {
           profileId: submission.profileId,
@@ -378,7 +480,7 @@ export async function submitMobileRecording(
           poolLengthMeters: submission.summary.poolLengthMeters ?? null,
           deviceManufacturer: null,
           deviceProduct: null,
-          laps: null,
+          laps: submission.laps ?? [],
           mapBounds: null,
           polyline: null,
           analysis: {
@@ -409,7 +511,12 @@ export async function submitMobileRecording(
       assertReplayMatches(submission, accepted);
       return accepted;
     }
-    if (error instanceof MobileRecordingUploadError) throw error;
+    if (
+      error instanceof MobileRecordingUploadError ||
+      error instanceof MobileRecordingSubmissionError
+    ) {
+      throw error;
+    }
     throw new MobileRecordingSubmissionError(
       "submission_failed",
       "Recording activity could not be committed",

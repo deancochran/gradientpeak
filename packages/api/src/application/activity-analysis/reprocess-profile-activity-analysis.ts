@@ -58,16 +58,23 @@ export type ProfileActivityAnalysisReprocessResult = {
   durableRefresh: "completed" | "continued" | "not_requested";
 };
 
+type ReprocessActivity = ActivityWithSegments & typeof activities.$inferSelect;
+
 type Evaluation = Omit<
   ProfileActivityAnalysisReprocessResult,
   "athleteStateRebuild" | "durableRefresh" | "mode"
 > & {
   hasMore: boolean;
   nextCursor: { startedAt: Date; activityId: string } | null;
+  materializationOnlyActivities: Array<{
+    activity: ReprocessActivity;
+    summaries: SegmentDerivedSummary[];
+  }>;
   candidates: Array<{
-    activity: ActivityWithSegments;
+    activity: ReprocessActivity;
     performanceTargets: AthletePerformanceTargetFacts;
     projection: ActivityAnalysisSegmentLoadProjection;
+    summaries: SegmentDerivedSummary[];
     targetFingerprint: string;
     outputFingerprint: string;
   }>;
@@ -94,6 +101,18 @@ function buildProjection(
       };
     }),
   };
+}
+
+function hasPersistedAthleteStateEvidence(activity: ReprocessActivity): boolean {
+  return (
+    activity.athlete_state_common_load !== null ||
+    activity.athlete_state_activity_category !== null ||
+    activity.athlete_state_evidence_confidence !== null ||
+    activity.athlete_state_capability_distance_meters !== null ||
+    activity.athlete_state_capability_duration_minutes !== null ||
+    activity.athlete_state_input_version !== null ||
+    activity.athlete_state_computed_at !== null
+  );
 }
 
 async function readCurrentTargets(
@@ -204,6 +223,7 @@ async function evaluate(
     activities: activitiesWithSegments,
     computedAsOf: now,
     performanceTargetsByActivityId: targetsByActivityId,
+    contextEvidenceScope: "thresholds",
   });
   const summariesByActivity = new Map<string, SegmentDerivedSummary[]>();
   for (const summary of summaries) {
@@ -213,13 +233,19 @@ async function evaluate(
     ]);
   }
   const candidates: Evaluation["candidates"] = [];
+  const materializationOnlyActivities: Evaluation["materializationOnlyActivities"] = [];
   const unavailableReasons: Record<string, number> = {};
   let availableSegments = 0;
   let partialSegments = 0;
   let unavailableSegments = 0;
   for (const activity of activitiesWithSegments) {
     const activitySummaries = summariesByActivity.get(activity.id) ?? [];
-    if (activitySummaries.length === 0) continue;
+    if (activitySummaries.length === 0) {
+      if (hasPersistedAthleteStateEvidence(activity)) {
+        materializationOnlyActivities.push({ activity, summaries: [] });
+      }
+      continue;
+    }
     const projection = buildProjection(activitySummaries);
     for (const segment of projection.segments) {
       if (segment.commonLoad.status === "available") {
@@ -252,16 +278,19 @@ async function evaluate(
         activity,
         performanceTargets,
         projection,
+        summaries: activitySummaries,
         targetFingerprint,
         outputFingerprint,
       });
+    } else if (!hasPersistedAthleteStateEvidence(activity)) {
+      materializationOnlyActivities.push({ activity, summaries: activitySummaries });
     }
   }
   return {
     profileId: input.profileId,
     scopedActivities: activitiesWithSegments.length,
     evaluatedSegments: summaries.length,
-    changedActivities: candidates.length,
+    changedActivities: candidates.length + materializationOnlyActivities.length,
     appendedRevisions: 0,
     availableSegments,
     partialSegments,
@@ -272,6 +301,7 @@ async function evaluate(
       hasMore && lastScopedActivity
         ? { startedAt: lastScopedActivity.started_at, activityId: lastScopedActivity.id }
         : null,
+    materializationOnlyActivities,
     candidates,
   };
 }
@@ -306,7 +336,11 @@ export async function reprocessProfileActivityAnalysis(
   }
   if (!input.apply) {
     const evaluation = await evaluate(db, input, now);
-    const { candidates: _candidates, ...result } = evaluation;
+    const {
+      candidates: _candidates,
+      materializationOnlyActivities: _materializationOnlyActivities,
+      ...result
+    } = evaluation;
     const { hasMore: _hasMore, nextCursor: _nextCursor, ...publicResult } = result;
     return {
       ...publicResult,
@@ -349,6 +383,21 @@ export async function reprocessProfileActivityAnalysis(
           canonicalEvidenceMaterialChanged: true,
           deferAthleteStateRefresh: true,
           targetSourceRevision,
+          preparedSegmentSummaries: candidate.summaries,
+        });
+        if (materialized.materialChanged && materialized.effectiveAt) {
+          materialEffectiveTimes.push(materialized.effectiveAt);
+        }
+      }
+      for (const { activity, summaries } of evaluation.materializationOnlyActivities) {
+        const materialized = await materializeActivityAthleteStateEvidence(tx, {
+          profileId: input.profileId,
+          activityId: activity.id,
+          computedAt: now,
+          contextDb: tx,
+          deferAthleteStateRefresh: true,
+          targetSourceRevision,
+          preparedSegmentSummaries: summaries,
         });
         if (materialized.materialChanged && materialized.effectiveAt) {
           materialEffectiveTimes.push(materialized.effectiveAt);
@@ -391,7 +440,11 @@ export async function reprocessProfileActivityAnalysis(
           );
         }
       }
-      const { candidates: _candidates, ...result } = evaluation;
+      const {
+        candidates: _candidates,
+        materializationOnlyActivities: _materializationOnlyActivities,
+        ...result
+      } = evaluation;
       return {
         ...result,
         appendedRevisions: evaluation.candidates.length,

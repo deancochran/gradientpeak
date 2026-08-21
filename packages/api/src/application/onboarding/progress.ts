@@ -110,29 +110,13 @@ function countDetail(readiness: OnboardingReadiness, phase: OnboardingProgress["
     (total, provider) => total + provider.progress.imported_count,
     0,
   );
-  const skipped = readiness.providers.reduce(
-    (total, provider) => total + provider.progress.skipped_count,
-    0,
-  );
-  const failed = readiness.providers.reduce(
-    (total, provider) => total + provider.progress.failed_count,
-    0,
-  );
   const parts: string[] = [];
   if (imported > 0) {
     parts.push(
       `${imported} ${imported === 1 ? "activity" : "activities"} imported${phase === "importing_activities" ? " so far" : ""}`,
     );
   }
-  if (skipped > 0) parts.push(`${skipped} skipped`);
-  if (failed > 0) parts.push(`${failed} failed`);
   if (parts.length > 0) return `${parts.join(" · ")}.`;
-  const hasLimitations = readiness.providers.some(
-    (provider) => provider.state === "complete_with_limitations",
-  );
-  if (phase === "ready" && hasLimitations) {
-    return "Preparation completed with limited activity evidence.";
-  }
   if (phase === "ready") return "No activities were available to import.";
   if (phase === "preparing_accounts") {
     const count = readiness.providers.length;

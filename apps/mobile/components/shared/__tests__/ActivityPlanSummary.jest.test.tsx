@@ -54,26 +54,18 @@ const structure = {
 };
 
 describe("ActivityPlanSummary", () => {
-  it("keeps prescribed structure intensity when canonical normalized values are unavailable", () => {
+  it("omits steps, authored targets, and unavailable summary quantities", () => {
     renderNative(
-      <ActivityPlanSummary
-        estimatedDuration={900}
-        showAttribution={false}
-        structure={structure}
-        title="Tempo repeats"
-      />,
+      <ActivityPlanSummary showAttribution={false} structure={structure} title="Tempo repeats" />,
     );
 
-    expect(screen.getByText("Duration")).toBeTruthy();
-    expect(screen.getByText("Steps")).toBeTruthy();
-    expect(screen.getByText("3")).toBeTruthy();
-    expect(screen.getByText("Common Load")).toBeTruthy();
-    expect(screen.getByText("Normalized intensity")).toBeTruthy();
-    expect(screen.getAllByText("Unavailable")).toHaveLength(2);
-    expect(screen.getByText("Prescribed intensity: RPE 6 · Prescribed")).toBeTruthy();
+    expect(screen.queryByText("Duration")).toBeNull();
+    expect(screen.queryByText("Steps")).toBeNull();
+    expect(screen.queryByText(/RPE 6|Prescribed intensity/)).toBeNull();
+    expect(screen.queryByText(/^0(?:\.00|m)?$/)).toBeNull();
   });
 
-  it("shows canonical prescribed Common Load, normalized intensity, method, and evidence", () => {
+  it("shows canonical prescribed Common Load and normalized intensity", () => {
     renderNative(
       <ActivityPlanSummary
         prescriptionQuantification={createPrescriptionQuantificationBundleFixture()}
@@ -82,17 +74,14 @@ describe("ActivityPlanSummary", () => {
       />,
     );
 
-    expect(screen.getByText("Common Load")).toBeTruthy();
+    expect(screen.getByText("Load")).toBeTruthy();
     expect(screen.getByText("64")).toBeTruthy();
-    expect(screen.getByText("Normalized intensity")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
     expect(screen.getByText("0.80")).toBeTruthy();
-    expect(
-      screen.getByText("Derived. Common Load is available using Run pace threshold."),
-    ).toBeTruthy();
-    expect(screen.getByText("Prescribed intensity: RPE 7/10 · Prescribed")).toBeTruthy();
+    expect(screen.queryByText(/RPE|Prescribed/)).toBeNull();
   });
 
-  it("distinguishes calibrated prescribed evidence from an estimated prescription", () => {
+  it("keeps cards summary-only beside a complete planned estimate", () => {
     renderNative(
       <ActivityPlanSummary
         prescriptionQuantification={createPrescriptionQuantificationBundleFixture({
@@ -103,33 +92,65 @@ describe("ActivityPlanSummary", () => {
       />,
     );
 
-    expect(
-      screen.getByText("Derived. Common Load is available using Run pace threshold."),
-    ).toBeTruthy();
-    expect(screen.getByText("Prescribed intensity: RPE 7/10 · Prescribed")).toBeTruthy();
+    expect(screen.queryByText(/RPE|Prescribed/)).toBeNull();
   });
 
-  it("marks partial canonical evidence without substituting zero", () => {
+  it("labels partial planned evidence without substituting zero", () => {
     renderNative(
       <ActivityPlanSummary
         prescriptionQuantification={createPrescriptionQuantificationBundleFixture({
           status: "partial",
         })}
         showAttribution={false}
-        title="Partial tempo run"
+        title="Tempo run"
       />,
     );
 
-    expect(screen.getByText("32")).toBeTruthy();
-    expect(screen.getByText("0.80")).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Derived · Partial. Common Load is partial using Run pace threshold; missing evidence is not treated as zero.",
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText(/32 known \(partial\)/)).toBeTruthy();
+    expect(screen.getByText(/0\.80 known \(partial\)/)).toBeTruthy();
+    expect(screen.queryByText(/^0(?:\.00|m)?$/)).toBeNull();
   });
 
-  it("keeps private quantification unavailable and emits no retired metric labels", () => {
+  it("shows known partial projection values as partial", () => {
+    renderNative(
+      <ActivityPlanSummary
+        projectionMetrics={[
+          {
+            key: "elapsed_duration",
+            label: "Duration",
+            status: "partial",
+            value: 900,
+            unit: "seconds",
+            reason: "estimate_incomplete",
+          },
+          {
+            key: "common_load",
+            label: "Common Load",
+            status: "partial",
+            value: 88,
+            unit: "score",
+            reason: "estimate_incomplete",
+          },
+          {
+            key: "normalized_intensity",
+            label: "Normalized intensity",
+            status: "partial",
+            value: 0.9,
+            unit: "ratio",
+            reason: "estimate_incomplete",
+          },
+        ]}
+        showAttribution={false}
+        title="Incomplete plan"
+      />,
+    );
+
+    expect(screen.getByText(/15 min known \(partial\)/)).toBeTruthy();
+    expect(screen.getByText(/88 known \(partial\)/)).toBeTruthy();
+    expect(screen.getByText(/0\.90 known \(partial\)/)).toBeTruthy();
+  });
+
+  it("omits private calculated quantities and emits no invented zero", () => {
     const rendered = renderNative(
       <ActivityPlanSummary
         prescriptionQuantification={createPrescriptionQuantificationBundleFixture({
@@ -140,12 +161,9 @@ describe("ActivityPlanSummary", () => {
       />,
     );
 
-    expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
-    expect(
-      screen.getByText(
-        "Required activity data is private. Allow access to the required activity data.",
-      ),
-    ).toBeTruthy();
+    expect(screen.queryByText("Load")).toBeNull();
+    expect(screen.queryByText("Intensity")).toBeNull();
+    expect(screen.queryByText(/^0(?:\.00|m)?$/)).toBeNull();
     expect(JSON.stringify(rendered.toJSON())).not.toMatch(
       /TSS|\bIF\b|intensityFactor|category_load/,
     );

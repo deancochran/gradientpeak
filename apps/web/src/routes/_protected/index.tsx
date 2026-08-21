@@ -6,7 +6,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
 import { createFileRoute } from "@tanstack/react-router";
 import { Activity, CalendarDays, Target } from "lucide-react";
 import { ActivityFeed } from "../../components/feed/activity-feed";
@@ -18,16 +17,18 @@ export const Route = createFileRoute("/_protected/")({
   component: DashboardPage,
 });
 
-function ScheduleQuantification({ value }: { value: unknown }) {
-  const presented = getActivityQuantificationPresentation(value);
+function ScheduleQuantification({
+  intensity,
+  load,
+}: {
+  intensity: number | null;
+  load: number | null;
+}) {
   return (
-    <>
-      <p>
-        {presented.commonLoad.label} {presented.commonLoad.value} ·{" "}
-        {presented.normalizedIntensity.label} {presented.normalizedIntensity.value}
-      </p>
-      <p className="text-xs">{presented.commonLoad.evidence}</p>
-    </>
+    <p>
+      Common Load {load === null ? "unavailable" : Math.round(load * 10) / 10} · Normalized
+      intensity {intensity === null ? "unavailable" : intensity.toFixed(2)}
+    </p>
   );
 }
 
@@ -66,15 +67,15 @@ function DashboardPage() {
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <MetricCard
-          title="Long-term Load"
+          title="Fitness"
           value={
             dashboard?.currentLoadStatus
-              ? String(dashboard.currentLoadStatus.longTermLoad)
+              ? dashboard.currentLoadStatus.longTermLoad.toFixed(1)
               : "Unavailable"
           }
           description={
             dashboard?.currentLoadStatus
-              ? `Common Load · ${dashboard.currentLoadStatus.maturity} maturity`
+              ? `Long-term load · ${dashboard.currentLoadStatus.maturity} maturity`
               : dashboard
                 ? "Complete Common Load history is unavailable"
                 : "Loading Common Load history"
@@ -82,29 +83,29 @@ function DashboardPage() {
           icon={<Activity className="h-4 w-4" />}
         />
         <MetricCard
-          title="Recent Load"
+          title="Fatigue"
           value={
             dashboard?.currentLoadStatus
-              ? String(dashboard.currentLoadStatus.recentLoad)
+              ? dashboard.currentLoadStatus.recentLoad.toFixed(1)
               : "Unavailable"
           }
           description={
             dashboard?.currentLoadStatus
-              ? "Common Load"
+              ? "Recent load"
               : "Complete Common Load history is unavailable"
           }
           icon={<Activity className="h-4 w-4" />}
         />
         <MetricCard
-          title="Load Balance"
+          title="Form"
           value={
             dashboard?.currentLoadStatus
-              ? String(dashboard.currentLoadStatus.loadBalance)
+              ? dashboard.currentLoadStatus.loadBalance.toFixed(1)
               : "Unavailable"
           }
           description={
             dashboard?.currentLoadStatus
-              ? `${dashboard.currentLoadStatus.coverageStatus} coverage`
+              ? `Load balance · ${dashboard.currentLoadStatus.coverageStatus} coverage`
               : "Complete Common Load history is unavailable"
           }
           icon={<Activity className="h-4 w-4" />}
@@ -157,7 +158,7 @@ function DashboardPage() {
                           ? "Duration unavailable"
                           : `${Math.round(item.estimatedDuration / 60)} min`}
                       </p>
-                      <ScheduleQuantification value={item.prescriptionQuantification} />
+                      <ScheduleQuantification intensity={item.intensity} load={item.load} />
                     </div>
                   </div>
                 ))}

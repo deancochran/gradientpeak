@@ -55,37 +55,11 @@ export function getEndOfMonthKey(dateKey: string): string {
   return getDeviceCalendarMonthEnd(dateKey);
 }
 
-export function getMonthAnchor(dateKey: string): string {
-  return getStartOfMonthKey(dateKey);
-}
-
-export function buildMonthStartKeys(rangeStart: string, rangeEnd: string): string[] {
-  const keys: string[] = [];
-  let cursor = getStartOfMonthKey(rangeStart);
-  const lastKey = getStartOfMonthKey(rangeEnd);
-
-  while (cursor <= lastKey) {
-    keys.push(cursor);
-    cursor = getStartOfMonthKey(addMonthsToDateKey(cursor, 1));
-  }
-
-  return keys;
-}
-
 export function getMonthGridStartKey(monthStartKey: string): string {
   const date = parseDateKey(monthStartKey);
   const weekday = date.getDay();
   const mondayOffset = (weekday + 6) % 7;
   return addDaysToDateKey(monthStartKey, -mondayOffset);
-}
-
-export function getMonthGridDayCount(monthStartKey: string): number {
-  const monthStart = parseDateKey(getStartOfMonthKey(monthStartKey));
-  const monthEnd = parseDateKey(getEndOfMonthKey(monthStartKey));
-  const startOffset = (monthStart.getDay() + 6) % 7;
-  const endOffset = (6 - ((monthEnd.getDay() + 6) % 7) + 7) % 7;
-
-  return startOffset + monthEnd.getDate() + endOffset;
 }
 
 export function isSameMonth(dateKey: string, monthStartKey: string): boolean {

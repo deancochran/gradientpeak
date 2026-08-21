@@ -1,4 +1,5 @@
 import {
+  completeOnboardingSchema,
   createEmptyGoalDraft,
   formatWeightForDisplay,
   getGoalDraftQualityFeedback,
@@ -13,7 +14,6 @@ import { useZodForm } from "@repo/ui/hooks";
 import { Activity, Check } from "lucide-react-native";
 import { useCallback, useEffect, useRef } from "react";
 import { ActivityIndicator, TouchableOpacity, View } from "react-native";
-import { z } from "zod";
 import {
   type AthleteBaselineChange,
   type AthleteBaselineFieldSources,
@@ -83,19 +83,9 @@ function SectionHeading({ title, description }: { title: string; description?: s
   );
 }
 
-const identityStepSchema = z.object({
-  full_name: z
-    .string()
-    .refine((value) => value.trim().length <= 50, "Full name must be 50 characters or less"),
-  username: z
-    .string()
-    .refine(
-      (value) => value.length === 0 || isValidOnboardingUsername(value),
-      "Username must be 3-30 letters, numbers, or underscores",
-    ),
-});
+const identityStepSchema = completeOnboardingSchema.pick({ full_name: true, username: true });
 
-type IdentityStepForm = z.infer<typeof identityStepSchema>;
+type IdentityStepForm = Pick<OnboardingData, "full_name" | "username">;
 
 export const IntroStep = () => (
   <View className="items-center justify-center flex-1 py-8">

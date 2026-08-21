@@ -1,5 +1,6 @@
-import { Encoder, Profile, Utils } from "@garmin/fitsdk";
-import { describe, expect, it } from "vitest";
+import { Buffer } from "node:buffer";
+import { Decoder, Encoder, Profile, Utils } from "@garmin/fitsdk";
+import { describe, expect, it, vi } from "vitest";
 
 import { compareActivityArtifactSemantics } from "../../activity-artifacts";
 import {
@@ -37,6 +38,16 @@ describe("standards-first FIT decoding", () => {
       rawSport: 1,
       rawSubSport: 2,
     });
+  });
+
+  it("decodes each standard activity only once", () => {
+    const read = vi.spyOn(Decoder.prototype, "read");
+    try {
+      parseFitFileWithSDK(fitFixtures.singleRun());
+      expect(read).toHaveBeenCalledTimes(1);
+    } finally {
+      read.mockRestore();
+    }
   });
 
   it("decodes a lap swim with pool, length, lap, and record evidence", () => {
@@ -304,5 +315,38 @@ describe("standards-first FIT decoding", () => {
       timeCreated: Utils.convertDateToDateTime(new Date("2026-01-01T00:00:00Z")),
     });
     expect(() => decodeFitActivityArtifact(encoder.close())).toThrow("No session message found");
+  });
+
+  it("stops FIT decoding at the record limit instead of allocating the full record source", () => {
+    const source = fitFixtures.triathlon();
+    const decoded = safeDecodeFitFile(Buffer.from(source), { maxRecords: 2 });
+    const allocatedRecords = decoded.messages?.recordMesgs ?? [];
+
+    expect(decoded.errors).toEqual([
+      expect.objectContaining({ type: "limit", message: "FIT records limit exceeded" }),
+    ]);
+    // The Garmin listener runs immediately after the current message is appended,
+    // so allocation is bounded to the configured limit plus one sentinel record.
+    expect(allocatedRecords).toHaveLength(3);
+    expect(allocatedRecords.length).toBeLessThan(10);
+    expect(() => decodeFitActivityArtifact(source, { maxRecords: 2 })).toThrow(
+      expect.objectContaining({ code: "corrupt_artifact" }),
+    );
+  });
+
+  it("also bounds total FIT message work independently of record count", () => {
+    const decoded = safeDecodeFitFile(Buffer.from(fitFixtures.singleRun()), {
+      maxRecords: 100,
+      maxMessages: 3,
+    });
+    const allocatedMessageCount = Object.values(decoded.messages ?? {}).reduce(
+      (total, messages) => total + messages.length,
+      0,
+    );
+
+    expect(decoded.errors).toEqual([
+      expect.objectContaining({ type: "limit", message: "FIT messages limit exceeded" }),
+    ]);
+    expect(allocatedMessageCount).toBe(4);
   });
 });

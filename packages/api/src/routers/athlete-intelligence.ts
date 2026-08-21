@@ -12,10 +12,8 @@ import {
 import { readPublishedAthleteStateSnapshot } from "../application/athlete-intelligence/published-athlete-state";
 import { PublishedAthleteLoadUnavailableError } from "../application/athlete-intelligence/read-published-athlete-load";
 import {
-  readUserVisibleAthleteLoadRange,
   readUserVisibleThresholdEvidence,
   readUserVisibleTrainingEffects,
-  toAthleteCurrentStateDto,
 } from "../application/athlete-intelligence/read-user-visible-athlete-state";
 import {
   AthleteRecalculationRepairUnavailableError,
@@ -27,10 +25,6 @@ import {
   withResolvedAuthorizedAthleteReadAcrossOrganizations,
 } from "../application/organizations/authorize-athlete-read";
 import {
-  athleteCurrentStateDtoSchema,
-  athleteCurrentStateRequestSchema,
-  athleteLoadRangeDtoSchema,
-  athleteLoadRangeRequestSchema,
   athleteRecalculationRepairReceiptSchema,
   athleteRecalculationRepairRequestSchema,
 } from "../contracts/athlete-load-range";
@@ -75,7 +69,6 @@ export async function resolveGoalProfile(input: {
 
 type AthleteStateTransportDependencies = {
   readCurrentState: typeof readPublishedAthleteStateSnapshot;
-  readLoadRange: typeof readUserVisibleAthleteLoadRange;
   readTrainingEffects: typeof readUserVisibleTrainingEffects;
   readThresholdEvidence: typeof readUserVisibleThresholdEvidence;
   requestRepair: typeof requestExplicitAthleteRecalculationRepair;
@@ -111,7 +104,6 @@ export function createAthleteIntelligenceRouter(
 ) {
   const stateServices: AthleteStateTransportDependencies = {
     readCurrentState: transportDependencies.readCurrentState ?? readPublishedAthleteStateSnapshot,
-    readLoadRange: transportDependencies.readLoadRange ?? readUserVisibleAthleteLoadRange,
     readTrainingEffects:
       transportDependencies.readTrainingEffects ?? readUserVisibleTrainingEffects,
     readThresholdEvidence:
@@ -176,46 +168,6 @@ export function createAthleteIntelligenceRouter(
               now: new Date(),
             }),
         });
-      }),
-    getLoadRange: protectedProcedure
-      .input(athleteLoadRangeRequestSchema)
-      .output(athleteLoadRangeDtoSchema)
-      .query(async ({ ctx, input }) => {
-        assertOwnedAthleteProfile(ctx.session.user.id, input.profileId);
-        const db = getRequiredDb(ctx);
-        try {
-          const currentState = await stateServices.readCurrentState({
-            db,
-            profileId: input.profileId,
-            now: new Date(),
-            advanceBaselineToReadTime: false,
-          });
-          return await stateServices.readLoadRange({
-            repository: createDrizzleAthleteDerivedStateRepository(db),
-            profileId: input.profileId,
-            startDate: input.range.startDate,
-            endDate: input.range.endDate,
-            currentState,
-          });
-        } catch (error) {
-          return mapAthleteStateTransportError(error);
-        }
-      }),
-    getCurrentState: protectedProcedure
-      .input(athleteCurrentStateRequestSchema)
-      .output(athleteCurrentStateDtoSchema)
-      .query(async ({ ctx, input }) => {
-        assertOwnedAthleteProfile(ctx.session.user.id, input.profileId);
-        try {
-          const state = await stateServices.readCurrentState({
-            db: getRequiredDb(ctx),
-            profileId: input.profileId,
-            now: new Date(),
-          });
-          return toAthleteCurrentStateDto(input.profileId, state);
-        } catch (error) {
-          return mapAthleteStateTransportError(error);
-        }
       }),
     getTrainingEffects: protectedProcedure
       .input(trainingEffectsRequestSchema)

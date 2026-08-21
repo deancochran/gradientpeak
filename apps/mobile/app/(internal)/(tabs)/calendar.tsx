@@ -9,22 +9,23 @@ import { usePerformanceScreenReady } from "@/lib/performance";
 
 function CalendarScreen() {
   const {
-    dayListProps,
+    activeMonthKey,
+    calendarProjectionTruncated,
     hasActivitiesData,
     hasPartialError,
-    headerTitle,
     hydrated,
+    isLoadingAdjacentPage,
+    itemsByDate,
     loadingEvents,
+    monthTitle,
     onCreateEvent,
-    onCancelPersonalSession,
-    onJumpToday,
-    onSelectWeekDate,
+    onMoveMonth,
+    onOpenItem,
+    onSelectDate,
+    onToday,
     retryActivities,
-    personalSessions,
-    plannedSessionsTruncated,
     selectedDateKey,
     todayKey,
-    weekDayIndicators,
   } = useCalendarTimelineController();
   usePerformanceScreenReady("route-calendar", hasActivitiesData);
 
@@ -38,20 +39,21 @@ function CalendarScreen() {
 
   return (
     <CalendarReadyScreen
-      headerTitle={headerTitle}
+      activeMonthKey={activeMonthKey}
       hasPartialError={hasPartialError}
       hydrated={hydrated}
-      dayListProps={dayListProps}
+      isLoadingAdjacentPage={isLoadingAdjacentPage}
+      itemsByDate={itemsByDate}
+      monthTitle={monthTitle}
       onCreateEvent={onCreateEvent}
-      onCancelPersonalSession={onCancelPersonalSession}
-      onJumpToday={onJumpToday}
+      onMoveMonth={onMoveMonth}
+      onOpenItem={onOpenItem}
+      onSelectDate={onSelectDate}
+      onToday={onToday}
       onRetry={retryActivities}
-      onSelectWeekDate={onSelectWeekDate}
-      personalSessions={personalSessions}
-      plannedSessionsTruncated={plannedSessionsTruncated}
+      calendarProjectionTruncated={calendarProjectionTruncated}
       selectedDateKey={selectedDateKey}
       todayKey={todayKey}
-      weekDayIndicators={weekDayIndicators}
     />
   );
 }

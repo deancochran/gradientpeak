@@ -139,6 +139,9 @@ jest.mock("@/lib/api", () => ({
       delete: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
       update: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
     },
+    athleteIntelligence: {
+      getReadModel: { useQuery: () => ({ data: null }) },
+    },
     events: {
       getById: { useQuery: () => ({ data: null, error: null, isLoading: false }) },
       delete: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },

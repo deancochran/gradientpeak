@@ -27,11 +27,15 @@ describe("Wahoo internal drain route", () => {
   });
 
   it("is the sole production owner and drains the sync family that owns disconnect jobs", async () => {
-    const [{ Route }, routeSource, directSource] = await Promise.all([
+    const [{ Route }, routeSource, directSource, schedulerSource] = await Promise.all([
       import("./drain"),
       readFile(new URL("./drain.ts", import.meta.url), "utf8"),
       readFile(
         new URL("../../../../../../scripts/drain-wahoo-provider-sync-direct.ts", import.meta.url),
+        "utf8",
+      ),
+      readFile(
+        new URL("../../../../../../scripts/drain-wahoo-provider-sync.mjs", import.meta.url),
         "utf8",
       ),
     ]);
@@ -62,6 +66,11 @@ describe("Wahoo internal drain route", () => {
     expect(directSource).toContain('fetch(new URL("/api/internal/provider-sync/wahoo/drain"');
     expect(directSource).not.toContain("createWahooSyncRuntime");
     expect(directSource).not.toContain("processDueJobs");
+    expect(schedulerSource).toContain('WAHOO_PROVIDER_SYNC_DRAIN_INTERVAL_MS ?? "5000"');
+    expect(schedulerSource).toContain("await drain()");
+    expect(schedulerSource.indexOf("await drain()")).toBeLessThan(
+      schedulerSource.indexOf("setTimeout(resolve"),
+    );
   });
 
   it("keeps athlete-state draining while Wahoo provider work is disabled", async () => {

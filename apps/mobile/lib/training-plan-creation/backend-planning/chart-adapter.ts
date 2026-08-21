@@ -39,10 +39,10 @@ export function deriveTrainingPathChartFromBackendProjection(input: {
       : transition.toAsOf.slice(0, 10);
     return {
       date,
-      plannedLoad: null,
+      plannedLoad: 0,
       completedLoad: null,
-      targetLoad: null,
-      actualOrScheduledLoad: null,
+      targetLoad: 0,
+      actualOrScheduledLoad: 0,
       loadDelta: null,
       plannedDelta: null,
       completedCommonLoadIdentity: null,
@@ -70,10 +70,8 @@ export function deriveTrainingPathChartFromBackendProjection(input: {
       weekEnd: addDaysDateOnlyUtc(weekStart, 6),
       label: `Week ${index + 1}`,
       completedLoad: null,
-      plannedLoad: plannedValues.some((value) => value !== null)
-        ? plannedValues.reduce<number>((sum, value) => sum + (value ?? 0), 0)
-        : null,
-      targetLoad: null,
+      plannedLoad: plannedValues.reduce<number>((sum, value) => sum + (value ?? 0), 0),
+      targetLoad: 0,
       fitness: finalPoint?.fitnessCtl ?? null,
       scheduledFitness: finalPoint?.scheduledFitnessCtl ?? null,
       targetFitness: null,

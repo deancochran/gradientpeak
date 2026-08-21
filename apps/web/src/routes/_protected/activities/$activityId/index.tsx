@@ -60,6 +60,7 @@ import {
   summarizeActivityStreams,
 } from "../../../../lib/activity-route-helpers";
 import { api } from "../../../../lib/api/client";
+import { summarizeRecordingExecution } from "../../../../lib/recording/execution-review";
 
 type ContentVisibility = "private" | "followers" | "public";
 
@@ -116,6 +117,7 @@ function ActivityDetailPage() {
   }, [detail?.segments]);
   const normalizedPowerPresentation = normalizedPowerAnalysis.presentation;
   const normalizedPowerAnalysisStatus = normalizedPowerAnalysis.segment?.status;
+  const recordingExecutionReview = summarizeRecordingExecution(detail?.segments ?? []);
   const currentArtifactLabel =
     detail?.currentArtifact?.originalName ?? detail?.currentArtifact?.format ?? null;
   const activityStreamSegments = (detail?.segments ?? [])
@@ -478,6 +480,53 @@ function ActivityDetailPage() {
         <p className="text-sm text-destructive" data-testid="segment-analysis-failed">
           Segment analysis failed: {normalizedPowerAnalysis.segment.reason}
         </p>
+      ) : null}
+
+      {recordingExecutionReview ? (
+        <Card data-testid="recording-execution-review">
+          <CardHeader>
+            <CardTitle aria-level={2} role="heading">
+              Plan execution
+            </CardTitle>
+            <CardDescription>
+              Saved recorder evidence. This reports timer actions, not target adherence or sensor
+              performance.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <dt className="text-sm text-muted-foreground">Completed</dt>
+                <dd className="text-xl font-semibold">
+                  {recordingExecutionReview.completedOccurrences}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-sm text-muted-foreground">Skipped</dt>
+                <dd className="text-xl font-semibold">
+                  {recordingExecutionReview.skippedOccurrences}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-sm text-muted-foreground">Automatic completions</dt>
+                <dd className="text-xl font-semibold">
+                  {recordingExecutionReview.automaticallyCompletedOccurrences}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-sm text-muted-foreground">Manual completions</dt>
+                <dd className="text-xl font-semibold">
+                  {recordingExecutionReview.manuallyCompletedOccurrences}
+                </dd>
+              </div>
+            </dl>
+            <p className="text-sm text-muted-foreground">
+              {recordingExecutionReview.coverage === "complete"
+                ? `All ${recordingExecutionReview.totalOccurrences} recorded plan steps have a saved completion status.`
+                : `${recordingExecutionReview.classifiedOccurrences} of ${recordingExecutionReview.totalOccurrences} recorded plan steps have a saved completion status.`}
+            </p>
+          </CardContent>
+        </Card>
       ) : null}
 
       <Card data-testid="activity-derived-efforts">

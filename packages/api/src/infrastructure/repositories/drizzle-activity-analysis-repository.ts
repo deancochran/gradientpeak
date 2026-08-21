@@ -208,47 +208,52 @@ export function createActivityAnalysisStore(db: DrizzleQueryExecutor): ActivityA
       )
       .orderBy(desc(schema.profileMetrics.recorded_at), desc(schema.profileMetrics.id))
       .limit(metricQueryLimit + (metricTheoreticalLimit > metricQueryLimit ? 1 : 0));
-    const effortQuery = db
-      .select({
-        id: schema.activityEfforts.id,
-        activity_id: schema.activityEfforts.activity_id,
-        profile_id: schema.activityEfforts.profile_id,
-        activity_category: schema.activityEfforts.activity_category,
-        duration_seconds: schema.activityEfforts.duration_seconds,
-        distance_meters: schema.activityEfforts.distance_meters,
-        effort_type: schema.activityEfforts.effort_type,
-        recorded_at: schema.activityEfforts.recorded_at,
-        unit: schema.activityEfforts.unit,
-        value: schema.activityEfforts.value,
-        method: schema.activityEfforts.method,
-        calculation_version: schema.activityEfforts.calculation_version,
-        provenance: schema.activityEfforts.provenance,
-        source: schema.activityEfforts.source,
-      })
-      .from(schema.activityEfforts)
-      .where(
-        and(
-          or(...effortWindowPredicates),
-          inArray(schema.activityEfforts.effort_type, effortTypes),
-          or(
-            and(
-              eq(schema.activityEfforts.activity_category, "bike"),
-              eq(schema.activityEfforts.effort_type, "power"),
-              inArray(
-                schema.activityEfforts.duration_seconds,
-                CYCLING_DURATION_PERFORMANCE_POLICY.criticalPowerFitDurationsSeconds,
+    // The historical reprocessor supplies canonical as-of targets explicitly.
+    // Re-reading best-effort history cannot alter its target-based load result.
+    const effortQuery =
+      evidenceScope === "thresholds"
+        ? Promise.resolve([])
+        : db
+            .select({
+              id: schema.activityEfforts.id,
+              activity_id: schema.activityEfforts.activity_id,
+              profile_id: schema.activityEfforts.profile_id,
+              activity_category: schema.activityEfforts.activity_category,
+              duration_seconds: schema.activityEfforts.duration_seconds,
+              distance_meters: schema.activityEfforts.distance_meters,
+              effort_type: schema.activityEfforts.effort_type,
+              recorded_at: schema.activityEfforts.recorded_at,
+              unit: schema.activityEfforts.unit,
+              value: schema.activityEfforts.value,
+              method: schema.activityEfforts.method,
+              calculation_version: schema.activityEfforts.calculation_version,
+              provenance: schema.activityEfforts.provenance,
+              source: schema.activityEfforts.source,
+            })
+            .from(schema.activityEfforts)
+            .where(
+              and(
+                or(...effortWindowPredicates),
+                inArray(schema.activityEfforts.effort_type, effortTypes),
+                or(
+                  and(
+                    eq(schema.activityEfforts.activity_category, "bike"),
+                    eq(schema.activityEfforts.effort_type, "power"),
+                    inArray(
+                      schema.activityEfforts.duration_seconds,
+                      CYCLING_DURATION_PERFORMANCE_POLICY.criticalPowerFitDurationsSeconds,
+                    ),
+                  ),
+                  and(
+                    eq(schema.activityEfforts.activity_category, "run"),
+                    eq(schema.activityEfforts.effort_type, "speed"),
+                    eq(schema.activityEfforts.duration_seconds, 1200),
+                  ),
+                ),
               ),
-            ),
-            and(
-              eq(schema.activityEfforts.activity_category, "run"),
-              eq(schema.activityEfforts.effort_type, "speed"),
-              eq(schema.activityEfforts.duration_seconds, 1200),
-            ),
-          ),
-        ),
-      )
-      .orderBy(desc(schema.activityEfforts.recorded_at), desc(schema.activityEfforts.id))
-      .limit(effortQueryLimit + (effortTheoreticalLimit > effortQueryLimit ? 1 : 0));
+            )
+            .orderBy(desc(schema.activityEfforts.recorded_at), desc(schema.activityEfforts.id))
+            .limit(effortQueryLimit + (effortTheoreticalLimit > effortQueryLimit ? 1 : 0));
     const [profiles, rawProfileMetrics, rawRecentEfforts] = await Promise.all([
       db
         .select({

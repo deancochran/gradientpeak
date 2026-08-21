@@ -51,8 +51,11 @@ export function ConstraintIndicator({
     return null;
   }
 
+  const valuesMissing = currentValue === null || newValue === null;
+  const resolvedStatus: ConstraintStatus = valuesMissing ? "satisfied" : status;
+
   const getStatusColor = (): string => {
-    switch (status) {
+    switch (resolvedStatus) {
       case "satisfied":
         return "text-green-600";
       case "warning":
@@ -65,7 +68,7 @@ export function ConstraintIndicator({
   };
 
   const getStatusBgColor = (): string => {
-    switch (status) {
+    switch (resolvedStatus) {
       case "satisfied":
         return "bg-green-100";
       case "warning":
@@ -81,7 +84,7 @@ export function ConstraintIndicator({
     const iconSize = 20;
     const colorClass = getStatusColor();
 
-    switch (status) {
+    switch (resolvedStatus) {
       case "satisfied":
         return <Check size={iconSize} className={colorClass} />;
       case "warning":
@@ -93,10 +96,8 @@ export function ConstraintIndicator({
     }
   };
 
-  const valuesUnavailable = currentValue === null || newValue === null;
-
   const formatValue = (value: number | string | null | undefined): string => {
-    if (value === null) return "Unavailable";
+    if (value === null) return "0";
     if (value === undefined) return "—";
     return typeof value === "number" ? Math.round(value).toString() : value;
   };
@@ -136,15 +137,11 @@ export function ConstraintIndicator({
       )}
 
       {/* Status Message */}
-      {status === "warning" && (
+      {resolvedStatus === "warning" && (
         <Text className="mt-2 text-xs text-yellow-700 ml-9">⚠️ Close to limit</Text>
       )}
-      {status === "violated" && (
-        <Text className="mt-2 text-xs text-red-700 ml-9">
-          {valuesUnavailable
-            ? "❌ Common Load unavailable; this constraint cannot be evaluated"
-            : "❌ Exceeds recommended limit"}
-        </Text>
+      {resolvedStatus === "violated" && (
+        <Text className="mt-2 text-xs text-red-700 ml-9">❌ Exceeds recommended limit</Text>
       )}
     </View>
   );

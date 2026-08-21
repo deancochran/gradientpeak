@@ -1,5 +1,5 @@
 import { View } from "react-native";
-import type { DailyTrainingAdjustmentPoint } from "@/lib/training-path/dailyTrainingPathModel";
+import type { DailyTrainingAdjustmentPoint } from "./DailyTrainingAdjustmentChart";
 import {
   type TrainingPathLedgerSelection,
   TrainingPathLoadChartSection,
@@ -15,8 +15,6 @@ type TrainingPathSectionProps = {
   chartHeight?: number;
   chartRange?: PlanTrainingChartRange;
   onChartRangeChange?: (range: PlanTrainingChartRange) => void;
-  onScrollNearEnd?: () => void;
-  onScrollNearStart?: () => void;
   onCreateGoal?: () => void;
   onViewDetails: (selection: TrainingPathLedgerSelection) => void;
   onSelectedWeekChange: (weekStart: string) => void;
@@ -31,8 +29,6 @@ export function TrainingPathSection({
   chartUnavailable = false,
   chartHeight = 300,
   chartRange,
-  onScrollNearEnd,
-  onScrollNearStart,
   onCreateGoal,
   onChartRangeChange,
   onViewDetails,
@@ -40,12 +36,13 @@ export function TrainingPathSection({
   onSelectedDateChange,
 }: TrainingPathSectionProps) {
   return (
-    <View className="gap-3" testID="training-path-section">
+    <View className="min-h-0 flex-1" testID="training-path-section">
       <TrainingPathLoadChartSection
         dailyPoints={dailyPoints}
-        dailyDensity="standard"
+        dailyDensity="compact"
         chartHeight={chartHeight}
         chartRange={chartRange}
+        fillAvailableHeight
         emptyState={
           chartUnavailable
             ? {
@@ -60,8 +57,6 @@ export function TrainingPathSection({
         onCreateGoal={onCreateGoal}
         onChartRangeChange={onChartRangeChange}
         onViewDetails={onViewDetails}
-        onScrollNearEnd={onScrollNearEnd}
-        onScrollNearStart={onScrollNearStart}
         selectedDate={selectedDate}
         selectionMode="day"
         showInlineLegend={false}

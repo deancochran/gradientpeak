@@ -1,4 +1,8 @@
-import { contentVisibilitySchema, recordingExecutionManifestSchema } from "@repo/core";
+import {
+  activityLapRecordListSchema,
+  contentVisibilitySchema,
+  recordingExecutionManifestSchema,
+} from "@repo/core";
 import {
   MAX_ACTIVITY_FILE_SIZE_BYTES,
   supportedActivityFileExtensionSchema,
@@ -45,6 +49,19 @@ const recordingSummarySubmissionBaseShape = {
   finishedAt: z.string().datetime({ offset: true }),
   activityPlanId: z.string().uuid().nullable().optional(),
   executionManifest: recordingExecutionManifestSchema,
+  laps: activityLapRecordListSchema.optional(),
+  sessionTiming: z
+    .object({
+      source: z.literal("manual_timer"),
+      coverage: z.literal("partial"),
+      elapsedMs: z.number().int().positive(),
+      activeMs: z.number().int().nonnegative(),
+    })
+    .strict()
+    .refine((timing) => timing.activeMs <= timing.elapsedMs, {
+      message: "Manual active time must not exceed elapsed time",
+    })
+    .optional(),
   summary: recordingSummarySchema,
   source: z.literal("mobile_recording").default("mobile_recording"),
 } satisfies z.ZodRawShape;

@@ -79,15 +79,21 @@ describe("PlanVsActualChart", () => {
           {
             date: "2026-03-02",
             recommended_common_load: 320,
+            recommended_common_load_status: "complete",
             scheduled_common_load: 300,
+            scheduled_common_load_status: "complete",
             completed_common_load: 280,
+            completed_common_load_status: "complete",
             adherence_score: 0.9,
           },
           {
             date: "2026-03-09",
             recommended_common_load: 340,
+            recommended_common_load_status: "complete",
             scheduled_common_load: 330,
+            scheduled_common_load_status: "complete",
             completed_common_load: 310,
+            completed_common_load_status: "complete",
             adherence_score: 0.92,
           },
         ]}
@@ -112,22 +118,31 @@ describe("PlanVsActualChart", () => {
           {
             date: "2026-03-02",
             recommended_common_load: 320,
+            recommended_common_load_status: "complete",
             scheduled_common_load: 300,
+            scheduled_common_load_status: "complete",
             completed_common_load: 280,
+            completed_common_load_status: "complete",
             adherence_score: 0.9,
           },
           {
             date: "2026-03-09",
             recommended_common_load: 340,
+            recommended_common_load_status: "complete",
             scheduled_common_load: 330,
+            scheduled_common_load_status: "complete",
             completed_common_load: 310,
+            completed_common_load_status: "complete",
             adherence_score: 0.92,
           },
           {
             date: "2026-03-16",
             recommended_common_load: 350,
+            recommended_common_load_status: "complete",
             scheduled_common_load: 345,
+            scheduled_common_load_status: "complete",
             completed_common_load: 320,
+            completed_common_load_status: "complete",
             adherence_score: 0.94,
           },
         ]}
@@ -147,21 +162,27 @@ describe("PlanVsActualChart", () => {
     expect(goalLines).toHaveLength(2);
   });
 
-  it("renders planned and completed load as zero when no load is found", () => {
+  it("renders explicitly established zero planned and completed load", () => {
     renderNative(
       <PlanVsActualChart
         timeline={[
           {
             date: "2026-03-02",
             recommended_common_load: 320,
+            recommended_common_load_status: "complete",
             scheduled_common_load: 0,
+            scheduled_common_load_status: "known_zero",
             completed_common_load: 0,
+            completed_common_load_status: "known_zero",
           },
           {
             date: "2026-03-09",
             recommended_common_load: 340,
+            recommended_common_load_status: "complete",
             scheduled_common_load: 0,
+            scheduled_common_load_status: "known_zero",
             completed_common_load: 0,
+            completed_common_load_status: "known_zero",
           },
         ]}
         actualData={[]}
@@ -171,5 +192,49 @@ describe("PlanVsActualChart", () => {
 
     expect(screen.getByText("Scheduled")).toBeTruthy();
     expect(screen.getByText("Actual")).toBeTruthy();
+  });
+
+  it("keeps unavailable planned and completed load as chart gaps", () => {
+    renderNative(
+      <PlanVsActualChart
+        timeline={[
+          {
+            date: "2026-03-02",
+            recommended_common_load: 320,
+            recommended_common_load_status: "complete",
+            scheduled_common_load: 300,
+            scheduled_common_load_status: "complete",
+            completed_common_load: 280,
+            completed_common_load_status: "complete",
+          },
+          {
+            date: "2026-03-09",
+            recommended_common_load: null,
+            recommended_common_load_status: "unavailable",
+            scheduled_common_load: null,
+            scheduled_common_load_status: "unavailable",
+            completed_common_load: null,
+            completed_common_load_status: "unavailable",
+          },
+          {
+            date: "2026-03-16",
+            recommended_common_load: 350,
+            recommended_common_load_status: "complete",
+            scheduled_common_load: 345,
+            scheduled_common_load_status: "complete",
+            completed_common_load: 320,
+            completed_common_load_status: "complete",
+          },
+        ]}
+        actualData={[]}
+        projectedData={[]}
+      />,
+    );
+
+    expect(getHostNodes("CartesianChart")[0]?.props.data).toEqual([
+      expect.objectContaining({ projection: 320, planned: 300 }),
+      expect.objectContaining({ projection: null, planned: null, actual: null }),
+      expect.objectContaining({ projection: 350, planned: 345 }),
+    ]);
   });
 });

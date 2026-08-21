@@ -1,5 +1,4 @@
 import { isValidDateOnlyUtc } from "@repo/core";
-import { Badge } from "@repo/ui/components/badge";
 import { Button, buttonVariants } from "@repo/ui/components/button";
 import {
   Card,
@@ -11,6 +10,7 @@ import {
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 
+import { CalendarProjectionCard } from "../../../../components/calendar/calendar-projection-card";
 import { PlannedDaySummary } from "../../../../components/planning/planned-day-summary";
 import { api } from "../../../../lib/api/client";
 import {
@@ -85,7 +85,7 @@ function CalendarDayPage() {
         </Link>
         <Link
           to="/calendar/new"
-          search={{ date: routeDate, type: "custom" }}
+          search={{ date: routeDate }}
           className={buttonVariants({ variant: "outline", size: "sm" })}
         >
           Create event for this day
@@ -100,15 +100,7 @@ function CalendarDayPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {goals.map((goal) => (
-              <div key={goal.id} className="rounded-xl border p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-medium">{goal.title}</p>
-                    <p className="text-sm text-muted-foreground">Goal marker</p>
-                  </div>
-                  <Badge>{goal.status}</Badge>
-                </div>
-              </div>
+              <CalendarProjectionCard item={goal} key={goal.id} />
             ))}
           </CardContent>
         </Card>
@@ -150,29 +142,7 @@ function CalendarDayPage() {
           ) : agendaCount > 0 ? (
             <div className="space-y-3">
               {agendaItems.map((item) => (
-                <a
-                  key={`${item.kind}-${item.id}`}
-                  href={item.navigation.href}
-                  className="block rounded-xl border p-4 transition-colors hover:border-primary hover:bg-accent/40"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium">{item.title}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {item.timing.allDay
-                          ? "All day"
-                          : item.timing.startsAt
-                            ? new Date(item.timing.startsAt).toLocaleTimeString([], {
-                                hour: "numeric",
-                                minute: "2-digit",
-                                timeZone: item.timing.timezone,
-                              })
-                            : "Scheduled"}
-                      </p>
-                    </div>
-                    <Badge variant="outline">{item.status}</Badge>
-                  </div>
-                </a>
+                <CalendarProjectionCard item={item} key={`${item.kind}-${item.id}`} />
               ))}
             </div>
           ) : (

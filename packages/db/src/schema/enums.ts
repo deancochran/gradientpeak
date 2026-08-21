@@ -1,5 +1,13 @@
 import { pgEnum } from "drizzle-orm/pg-core";
 
+export const activityCategoryEnum = pgEnum("activity_category", [
+  "run",
+  "bike",
+  "swim",
+  "strength",
+  "other",
+]);
+
 export const activityFileIngestionSourceEnum = pgEnum("activity_file_ingestion_source", [
   "mobile_recording",
   "manual_import",
@@ -177,12 +185,4 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "new_follower",
   "follow_request",
   "group_event_cancelled",
-]);
-
-export const trainingEffectLabelEnum = pgEnum("training_effect_label", [
-  "recovery",
-  "base",
-  "tempo",
-  "threshold",
-  "vo2max",
 ]);

@@ -6,10 +6,11 @@ import type { TrainingPathRange } from "./trainingPathTypes";
 type LegendItem = {
   color: string;
   label: string;
-  shape: "fill" | "line";
+  shape: "fill" | "line" | "marker";
 };
 
 export function TrainingPathLegend({
+  mode = "daily",
   showUnavailableLoad = false,
   variant = "full",
 }: {
@@ -30,17 +31,36 @@ export function TrainingPathLegend({
     planned: isDark ? "rgba(59, 130, 246, 0.74)" : "rgba(37, 99, 235, 0.68)",
     plannedProjection: isDark ? "rgba(96, 165, 250, 0.95)" : "rgba(37, 99, 235, 0.95)",
     plannedFatigue: isDark ? "rgba(251, 191, 36, 0.95)" : "rgba(217, 119, 6, 0.95)",
+    form: isDark ? "rgba(196, 181, 253, 0.95)" : "rgba(124, 58, 237, 0.95)",
   };
   const workloadItems: LegendItem[] = [
     { label: "Completed", color: colors.completed, shape: "fill" },
     { label: "Planned", color: colors.planned, shape: "fill" },
+    ...(showUnavailableLoad
+      ? [{ label: "Completed load unavailable", color: colors.completed, shape: "marker" as const }]
+      : []),
   ];
-  const stateItems: LegendItem[] = [
-    { label: "Actual fitness", color: colors.completed, shape: "line" },
-    { label: "Planned fitness projection", color: colors.plannedProjection, shape: "line" },
-    { label: "Actual fatigue", color: colors.fatigue, shape: "line" },
-    { label: "Planned fatigue projection", color: colors.plannedFatigue, shape: "line" },
-  ];
+  const stateItems: LegendItem[] =
+    mode === "weekly"
+      ? [
+          { label: "Current fitness", color: colors.completed, shape: "line" },
+          {
+            label: "Planned fitness projection",
+            color: colors.plannedProjection,
+            shape: "line",
+          },
+        ]
+      : [
+          { label: "Actual fitness", color: colors.completed, shape: "line" },
+          {
+            label: "Planned fitness projection",
+            color: colors.plannedProjection,
+            shape: "line",
+          },
+          { label: "Actual fatigue", color: colors.fatigue, shape: "line" },
+          { label: "Planned fatigue projection", color: colors.plannedFatigue, shape: "line" },
+          { label: "Form (zero centered)", color: colors.form, shape: "line" },
+        ];
 
   return (
     <View
@@ -49,12 +69,6 @@ export function TrainingPathLegend({
     >
       <LegendGroup items={workloadItems} label="Workload" />
       <LegendGroup items={stateItems} label="Training state" />
-      {showUnavailableLoad ? (
-        <Text className="text-[10px] text-muted-foreground">
-          A check marker means an activity was completed but its Common Load could not be
-          calculated.
-        </Text>
-      ) : null}
     </View>
   );
 }
@@ -69,7 +83,13 @@ function LegendGroup({ items, label }: { items: LegendItem[]; label: string }) {
         {items.map((item) => (
           <View key={item.label} className="flex-row items-center gap-1.5">
             <View
-              className={item.shape === "fill" ? "h-2.5 w-2.5 rounded-sm" : "h-0 w-4 border-t-2"}
+              className={
+                item.shape === "fill"
+                  ? "h-2.5 w-2.5 rounded-sm"
+                  : item.shape === "marker"
+                    ? "h-2.5 w-4 border-b-[3px]"
+                    : "h-0 w-4 border-t-2"
+              }
               style={{
                 backgroundColor: item.shape === "fill" ? item.color : "transparent",
                 borderColor: item.color,

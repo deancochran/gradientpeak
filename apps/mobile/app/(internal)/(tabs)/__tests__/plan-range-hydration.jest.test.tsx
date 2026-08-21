@@ -20,6 +20,12 @@ jest.mock("@/components/ErrorBoundary", () => ({
   ScreenErrorFallback: createHost("Fallback"),
 }));
 jest.mock("@/components/shared", () => ({ AppHeader: createHost("AppHeader") }));
+jest.mock("@/components/calendar/CalendarAgendaSheet", () => ({
+  CalendarAgendaSheet: createHost("CalendarAgendaSheet"),
+}));
+jest.mock("@/components/plan/ledger/PlanningLedgerSheet", () => ({
+  PlanningLedgerSheet: createHost("PlanningLedgerSheet"),
+}));
 jest.mock("@/components/plan/training-path/TrainingPathSection", () => ({
   TrainingPathSection: (props: Record<string, unknown>) => {
     sectionProps(props);
@@ -37,8 +43,6 @@ jest.mock("@/components/plan/training-path/usePlanTrainingPathData", () => ({
     chartUnavailable: false,
     trainingPath: {},
     selectedDate: "2026-01-01",
-    extendTrainingPathWindowEnd: jest.fn(),
-    extendTrainingPathWindowStart: jest.fn(),
     handleSelectedDateChange: jest.fn(),
     handleSelectedWeekChange: jest.fn(),
   }),
@@ -62,12 +66,17 @@ describe("Plan range hydration", () => {
   it.each([
     "weekly",
     "monthly",
-  ] as const)("never renders Daily before saved %s hydration completes", (savedRange) => {
+  ] as const)("keeps the chart mounted with saved %s while hydration completes", (savedRange) => {
     range = savedRange;
     const rendered = renderNative(<Plan />);
-    expect(screen.getByTestId("plan-chart-preferences-loading")).toBeTruthy();
-    expect(screen.queryByTestId("training-path")).toBeNull();
-    expect(sectionProps).not.toHaveBeenCalled();
+    expect(screen.getByTestId("training-path")).toBeTruthy();
+    expect(sectionProps).toHaveBeenCalledWith(expect.objectContaining({ chartRange: savedRange }));
+    expect(sectionProps).toHaveBeenCalledWith(
+      expect.not.objectContaining({ onScrollNearEnd: expect.any(Function) }),
+    );
+    expect(sectionProps).toHaveBeenCalledWith(
+      expect.not.objectContaining({ onScrollNearStart: expect.any(Function) }),
+    );
 
     hydrated = true;
     rendered.rerender(<Plan />);

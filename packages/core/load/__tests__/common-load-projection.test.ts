@@ -3,7 +3,69 @@ import {
   COMMON_LOAD_HISTORY_LONG_TERM_DAYS,
   COMMON_LOAD_HISTORY_RECENT_DAYS,
   projectCommonLoadTrend,
+  reconstructCommonLoadTrendHistory,
 } from "../index";
+
+describe("reconstructCommonLoadTrendHistory", () => {
+  it("sorts daily loads and reconstructs a finite series that reaches the trusted baseline", () => {
+    const result = reconstructCommonLoadTrendHistory({
+      baseline: { date: "2026-07-28", longTermLoad: 40, recentLoad: 35 },
+      days: [
+        { date: "2026-07-28", load: 0 },
+        { date: "2026-07-26", load: 0 },
+        { date: "2026-07-27", load: 80 },
+      ],
+    });
+
+    expect(result.status).toBe("complete");
+    expect(result.points.map((point) => point.date)).toEqual([
+      "2026-07-26",
+      "2026-07-27",
+      "2026-07-28",
+    ]);
+    expect(result.points.at(-1)).toEqual({
+      date: "2026-07-28",
+      longTermLoad: 40,
+      recentLoad: 35,
+      loadBalance: 5,
+    });
+    expect(
+      result.points.every((point) =>
+        [point.longTermLoad, point.recentLoad, point.loadBalance].every(Number.isFinite),
+      ),
+    ).toBe(true);
+    if (result.status !== "complete") throw new Error("Expected a complete reconstruction");
+    const firstPoint = result.points[0];
+    if (!firstPoint) throw new Error("Expected a reconstructed starting point");
+    const replayed = projectCommonLoadTrend({
+      baseline: firstPoint,
+      days: [
+        { date: "2026-07-27", state: "available", load: 80 },
+        { date: "2026-07-28", state: "known_zero" },
+      ],
+    });
+    expect(replayed.points.at(-1)?.longTermLoad).toBeCloseTo(40, 10);
+    expect(replayed.points.at(-1)?.recentLoad).toBeCloseTo(35, 10);
+  });
+
+  it("rejects gaps and non-finite loads instead of emitting a misleading series", () => {
+    expect(
+      reconstructCommonLoadTrendHistory({
+        baseline: { date: "2026-07-28", longTermLoad: 40, recentLoad: 35 },
+        days: [
+          { date: "2026-07-26", load: 0 },
+          { date: "2026-07-28", load: 0 },
+        ],
+      }),
+    ).toMatchObject({ status: "unavailable", reason: "nonconsecutive_days" });
+    expect(
+      reconstructCommonLoadTrendHistory({
+        baseline: { date: "2026-07-28", longTermLoad: 40, recentLoad: 35 },
+        days: [{ date: "2026-07-28", load: Number.POSITIVE_INFINITY }],
+      }),
+    ).toMatchObject({ status: "unavailable", reason: "invalid_input" });
+  });
+});
 
 describe("projectCommonLoadTrend", () => {
   it("projects consecutive available and known-zero common Load days", () => {

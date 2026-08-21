@@ -1,3 +1,4 @@
+import type { TrainingPlanPlannedSchedulePreview as TrainingPlanPlannedSchedulePreviewModel } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";
@@ -6,12 +7,9 @@ import {
   ResourceLikeButton,
   ResourceOwnerActionRow,
 } from "@/components/shared/ResourceCardPrimitives";
-import { TrainingPlanPeriodizationPreview } from "@/components/shared/TrainingPlanPeriodizationPreview";
+import { TrainingPlanPlannedPreview } from "@/components/shared/TrainingPlanPlannedPreview";
 import { markEstimated } from "@/lib/estimatedMetrics";
-import {
-  deriveTrainingPlanSummaryMetrics,
-  deriveTrainingPlanVisual,
-} from "@/lib/trainingPlanVisual";
+import { deriveTrainingPlanSummaryMetrics } from "@/lib/trainingPlanVisual";
 import { TrainingPlanSummaryHeader } from "./TrainingPlanSummaryHeader";
 
 interface TrainingPlanDetailHeaderActionsSectionProps {
@@ -31,8 +29,11 @@ interface TrainingPlanDetailHeaderActionsSectionProps {
   plan: {
     created_at: string | Date;
     description?: string | null;
+    id?: string;
     name: string;
     owner?: EntityOwner | null;
+    plannedSchedulePreview?: TrainingPlanPlannedSchedulePreviewModel | null;
+    structure?: unknown;
     [key: string]: unknown;
   };
 }
@@ -48,7 +49,6 @@ export function TrainingPlanDetailHeaderActionsSection({
   plan,
 }: TrainingPlanDetailHeaderActionsSectionProps) {
   const summaryMetrics = useMemo(() => deriveTrainingPlanSummaryMetrics(plan), [plan]);
-  const visualModel = useMemo(() => deriveTrainingPlanVisual(plan), [plan]);
 
   return (
     <View className="gap-4 rounded-3xl border border-border bg-card p-4">
@@ -127,12 +127,11 @@ export function TrainingPlanDetailHeaderActionsSection({
         </View>
       </View>
 
-      {visualModel ? (
-        <View className="gap-2">
-          <Text className="text-sm font-medium text-foreground">Plan snapshot</Text>
-          <TrainingPlanPeriodizationPreview model={visualModel} />
-        </View>
-      ) : null}
+      <TrainingPlanPlannedPreview
+        planId={typeof plan.id === "string" ? plan.id : "detail"}
+        preview={plan.plannedSchedulePreview}
+        structure={plan.structure}
+      />
 
       {overview ? (
         <View className="gap-2">

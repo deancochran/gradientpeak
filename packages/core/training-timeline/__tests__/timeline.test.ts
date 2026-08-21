@@ -18,10 +18,15 @@ describe("training timeline", () => {
       }),
     ).toEqual({
       plannedLoad: 75,
+      plannedLoadStatus: "complete",
       scheduledLoad: 75,
+      scheduledLoadStatus: "complete",
       completedLoad: 40,
+      completedLoadStatus: "complete",
       remainingLoad: 35,
+      remainingLoadStatus: "complete",
       recommendedLoad: 80,
+      recommendedLoadStatus: "complete",
       deltaLoad: -35,
     });
   });
@@ -47,7 +52,9 @@ describe("training timeline", () => {
     });
 
     expect(day.load.plannedLoad).toBe(90);
+    expect(day.load.plannedLoadStatus).toBe("complete");
     expect(day.load.scheduledLoad).toBe(75);
+    expect(day.load.scheduledLoadStatus).toBe("complete");
     expect(day.load.completedLoad).toBe(30);
   });
 
@@ -74,8 +81,12 @@ describe("training timeline", () => {
 
     expect(window.days).toHaveLength(7);
     expect(window.weeks).toHaveLength(1);
-    expect(window.weeks[0]?.load.plannedLoad).toBeNull();
+    expect(window.weeks[0]?.load.plannedLoad).toBe(90);
+    expect(window.weeks[0]?.load.plannedLoadStatus).toBe("partial");
+    expect(window.weeks[0]?.load.scheduledLoad).toBe(50);
+    expect(window.weeks[0]?.load.scheduledLoadStatus).toBe("partial");
     expect(window.weeks[0]?.load.completedLoad).toBe(35);
+    expect(window.weeks[0]?.load.completedLoadStatus).toBe("partial");
   });
 
   it("adapts existing training load timelines without changing callers", () => {
@@ -89,6 +100,7 @@ describe("training timeline", () => {
           recommended_common_load: 100,
           scheduled_common_load: 80,
           completed_common_load: 20,
+          completed_common_load_status: "partial",
         },
       ],
     });
@@ -102,9 +114,10 @@ describe("training timeline", () => {
       remaining: "60 Common Load",
       delta: "-60 Common Load",
     });
+    expect(window.days[0]?.load.completedLoadStatus).toBe("partial");
   });
 
-  it("preserves explicit unavailable values and does not replace a known zero with item load", () => {
+  it("preserves explicit unavailable scheduled values and genuine known zero", () => {
     const unavailable = buildTrainingDaySummary({
       date: "2026-07-09",
       loadPoint: {
@@ -161,8 +174,10 @@ describe("training timeline", () => {
     });
 
     expect(unavailable.load.scheduledLoad).toBeNull();
+    expect(unavailable.load.scheduledLoadStatus).toBe("unavailable");
     expect(unavailable.load.completedLoad).toBeNull();
     expect(knownZero.load.scheduledLoad).toBe(0);
+    expect(knownZero.load.scheduledLoadStatus).toBe("known_zero");
     expect(knownZero.load.completedLoad).toBe(0);
   });
 
@@ -174,5 +189,118 @@ describe("training timeline", () => {
         completedLoad: 0,
       }),
     ).toMatchObject({ remainingLoad: 0, deltaLoad: 0 });
+  });
+
+  it("uses known zero only when complete source coverage establishes an empty day", () => {
+    const knownEmpty = buildTrainingDaySummary({
+      date: "2026-07-11",
+      scheduledItems: [],
+      scheduledSourceStatus: "complete",
+      completedItems: [],
+      completedSourceStatus: "complete",
+    });
+    const unknownEmpty = buildTrainingDaySummary({ date: "2026-07-12" });
+
+    expect(knownEmpty.load).toMatchObject({
+      scheduledLoad: 0,
+      scheduledLoadStatus: "known_zero",
+      completedLoad: 0,
+      completedLoadStatus: "known_zero",
+    });
+    expect(unknownEmpty.load).toMatchObject({
+      scheduledLoad: null,
+      scheduledLoadStatus: "unavailable",
+      completedLoad: null,
+      completedLoadStatus: "unavailable",
+    });
+  });
+
+  it("keeps unavailable completed work and a mixed known subtotal status-aware", () => {
+    const unavailable = buildTrainingDaySummary({
+      date: "2026-07-11",
+      completedItems: [
+        {
+          id: "completed-unavailable",
+          source: "completed_activity",
+          date: "2026-07-11",
+          title: "Activity without Load",
+          completedLoad: null,
+          completedLoadStatus: "unavailable",
+        },
+      ],
+      completedSourceStatus: "complete",
+    });
+    const partial = buildTrainingDaySummary({
+      date: "2026-07-12",
+      completedItems: [
+        {
+          id: "completed-known",
+          source: "completed_activity",
+          date: "2026-07-12",
+          title: "Known activity",
+          completedLoad: 42,
+          completedLoadStatus: "complete",
+        },
+        {
+          id: "completed-unknown",
+          source: "completed_activity",
+          date: "2026-07-12",
+          title: "Unknown activity",
+          completedLoad: null,
+          completedLoadStatus: "unavailable",
+        },
+      ],
+      completedSourceStatus: "complete",
+    });
+    const partialCoverage = buildTrainingDaySummary({
+      date: "2026-07-13",
+      completedItems: [
+        {
+          id: "completed-known-partial-source",
+          source: "completed_activity",
+          date: "2026-07-13",
+          title: "Known activity from partial source",
+          completedLoad: 18,
+          completedLoadStatus: "complete",
+        },
+      ],
+      completedSourceStatus: "partial",
+    });
+
+    expect(unavailable.load).toMatchObject({
+      completedLoad: null,
+      completedLoadStatus: "unavailable",
+    });
+    expect(partial.load).toMatchObject({
+      completedLoad: 42,
+      completedLoadStatus: "partial",
+    });
+    expect(partialCoverage.load).toMatchObject({
+      completedLoad: 18,
+      completedLoadStatus: "partial",
+    });
+  });
+
+  it("retains an explicitly measured zero completed Load", () => {
+    const day = buildTrainingDaySummary({
+      date: "2026-07-13",
+      completedItems: [
+        {
+          id: "completed-zero",
+          source: "completed_activity",
+          date: "2026-07-13",
+          title: "Zero-load activity",
+          completedLoad: 0,
+          completedLoadStatus: "known_zero",
+        },
+      ],
+      completedSourceStatus: "complete",
+    });
+
+    expect(day.completedItems[0]).toMatchObject({
+      completedLoad: 0,
+      completedLoadStatus: "known_zero",
+    });
+    expect(day.load).toMatchObject({ completedLoad: 0, completedLoadStatus: "known_zero" });
   });
 });

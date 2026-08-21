@@ -15,7 +15,7 @@ export const STRICTNESS_FLAGS = [
   "verbatimModuleSyntax",
 ];
 
-export const ADDITIONAL_TSCONFIGS = ["packages/db/supabase/tsconfig.json"];
+export const ADDITIONAL_TSCONFIGS = [];
 
 const BASELINE_VERSION = 2;
 

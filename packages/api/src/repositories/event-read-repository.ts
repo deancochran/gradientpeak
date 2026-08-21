@@ -179,6 +179,10 @@ export interface EventReadRepository {
     startedAtGte: string;
     startedAtLt: string;
   }): Promise<CalendarCompletedActivityRecord[]>;
+  listCalendarCompletedActivitiesByIds(input: {
+    activityIds: string[];
+    profileId: string;
+  }): Promise<CalendarCompletedActivityRecord[]>;
   listCalendarGoals(input: {
     endDateExclusive: string;
     limit: number;

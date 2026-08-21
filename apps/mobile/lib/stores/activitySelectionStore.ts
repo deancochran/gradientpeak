@@ -6,12 +6,13 @@ export interface RecordingLaunchPayload extends ActivityPayload {
 }
 
 export function defaultRecordLaunchPayload(
-  activity_category: RecordingActivityCategory = "run",
+  activity_category: RecordingActivityCategory = "bike",
 ): RecordingLaunchPayload {
   return {
     launchSource: "record_tab",
     activity_category,
-    gpsRecordingEnabled: activity_category === "run" || activity_category === "bike",
+    // Recording opens for an indoor ride first. GPS stays opt-in for outdoor sessions.
+    gpsRecordingEnabled: false,
   };
 }
 

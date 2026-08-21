@@ -1,12 +1,8 @@
-import { Text } from "@repo/ui/components/text";
+import type { TrainingPlanPlannedSchedulePreview } from "@repo/core";
 import { CalendarRange } from "lucide-react-native";
 import { useMemo } from "react";
-import { View } from "react-native";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
-import {
-  deriveTrainingPlanSummaryMetrics,
-  deriveTrainingPlanVisual,
-} from "@/lib/trainingPlanVisual";
+import { deriveTrainingPlanSummaryMetrics } from "@/lib/trainingPlanVisual";
 import type { EntityOwner } from "./EntityOwnerRow";
 import {
   type ResourceCardAccessory,
@@ -16,7 +12,7 @@ import {
   ResourceMetricsRow,
   ResourceOwnerActionRow,
 } from "./ResourceCardPrimitives";
-import { TrainingPlanPeriodizationPreview } from "./TrainingPlanPeriodizationPreview";
+import { TrainingPlanPlannedPreview } from "./TrainingPlanPlannedPreview";
 
 export interface TrainingPlanCardPlan {
   id: string;
@@ -36,6 +32,7 @@ export interface TrainingPlanCardPlan {
   updated_at?: string | Date | null;
   owner?: EntityOwner | null;
   structure?: unknown;
+  plannedSchedulePreview?: TrainingPlanPlannedSchedulePreview | null;
 }
 
 type TrainingPlanCardProps = {
@@ -58,7 +55,6 @@ export function TrainingPlanCard({
   const isList = variant === "list";
   const isCompact = variant === "compact";
   const summaryMetrics = useMemo(() => deriveTrainingPlanSummaryMetrics(plan), [plan]);
-  const visualModel = useMemo(() => deriveTrainingPlanVisual(plan), [plan]);
   const {
     isLiked,
     isPending: isLikePending,
@@ -144,12 +140,12 @@ export function TrainingPlanCard({
             ]}
           />
 
-          {visualModel ? (
-            <View className="gap-2">
-              <Text className="text-sm font-medium text-foreground">Plan snapshot</Text>
-              <TrainingPlanPeriodizationPreview compact={isCompact} model={visualModel} />
-            </View>
-          ) : null}
+          <TrainingPlanPlannedPreview
+            compact={isCompact}
+            planId={plan.id}
+            preview={plan.plannedSchedulePreview}
+            structure={plan.structure}
+          />
         </>
       )}
     </ResourceCardShell>

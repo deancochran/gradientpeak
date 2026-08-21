@@ -22,6 +22,8 @@ describe("dailyTrainingPathModel", () => {
       loadDelta: null,
       plannedDelta: -10,
     });
+    expect(points[0]).toMatchObject({ plannedLoad: null, targetLoad: null });
+    expect(points[2]).toMatchObject({ plannedLoad: null, targetLoad: null });
   });
 
   it("combines completed load with remaining scheduled load", () => {
@@ -96,7 +98,7 @@ describe("dailyTrainingPathModel", () => {
       weekEndDate: "2026-06-07",
       plannedLoad: null,
       targetLoad: null,
-      loadDelta: null,
+      plannedDelta: null,
     });
     expect(weeks[1]).toMatchObject({
       weekStartDate: "2026-06-08",
@@ -104,6 +106,21 @@ describe("dailyTrainingPathModel", () => {
       plannedLoad: 30,
       targetLoad: 10,
       loadDelta: null,
+    });
+  });
+
+  it("preserves an explicit planned zero as known instead of unavailable", () => {
+    const [point] = normalizeDailyTrainingAdjustmentPoints({
+      startDate: "2026-06-01",
+      endDate: "2026-06-01",
+      points: [{ date: "2026-06-01", completedLoad: 0, plannedLoad: 0, targetLoad: 0 }],
+    });
+
+    expect(point).toMatchObject({
+      actualOrScheduledLoad: 0,
+      completedLoad: 0,
+      plannedLoad: 0,
+      targetLoad: 0,
     });
   });
 

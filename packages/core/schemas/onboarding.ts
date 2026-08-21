@@ -107,8 +107,19 @@ export const onboardingIntentArraySchema = z
  * Used to calculate age and baseline performance estimates.
  */
 export const onboardingStep1Schema = z.object({
-  full_name: z.string().trim().min(1, { message: "Full name is required" }),
-  username: z.string().trim().min(1, { message: "Username is required" }),
+  full_name: z
+    .string()
+    .trim()
+    .min(1, { message: "Full name is required" })
+    .max(120, { message: "Full name must be 120 characters or less" }),
+  username: z
+    .string()
+    .trim()
+    .min(3, { message: "Username must be at least 3 characters" })
+    .max(30, { message: "Username must be 30 characters or less" })
+    .regex(/^[a-zA-Z0-9_]+$/, {
+      message: "Username can only contain letters, numbers, and underscores",
+    }),
 
   // Experience level (NEW - determines flow)
   experience_level: experienceLevelSchema.default("skip"),
@@ -198,7 +209,7 @@ export const completeOnboardingSchema = z
     ...onboardingStep2Schema.shape,
     ...onboardingStep3Schema.shape,
     intents: onboardingIntentArraySchema.default([]),
-    baseline_field_sources: onboardingBaselineFieldSourcesSchema,
+    baseline_field_sources: onboardingBaselineFieldSourcesSchema.default({}),
   })
   .strict();
 

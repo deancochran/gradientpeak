@@ -17,7 +17,6 @@ The semantic usage contract for athlete observations and effort curves is docume
 - Drizzle schema in `src/schema/**` is the relational source of truth.
 - `supabase/migrations/` contains exactly one mutable pre-release MVP baseline authority.
 - No active forward chain, backfill, or upgrade path exists; verify only fresh disposable targets and reset only the guarded repository-managed local target.
-- `supabase/migrations-archive/` and `migration-lock.json` preserve immutable historical evidence and are never read or edited by active tooling.
 - Drizzle has no deploy command. Its config points at the Supabase authority, while Studio remains available for inspection.
 
 ## Common commands
@@ -46,7 +45,7 @@ pnpm --filter @repo/db self-host:down
 
 ## Fresh-only MVP workflow
 
-`supabase/migrations/` contains exactly one transactional MVP baseline. Fresh disposable targets are the only supported endpoint. Archives and the lock are inert immutable evidence.
+`supabase/migrations/` contains exactly one transactional MVP baseline. Fresh disposable targets are the only supported endpoint.
 
 1. Treat the Supabase baseline as the only authoring location. Never add a second active SQL file.
 2. Run `db:baseline:check` to require exactly one regular transactional MVP baseline and reject reintroduced Drizzle mirror, policy, or active-ledger artifacts.
@@ -57,10 +56,6 @@ pnpm --filter @repo/db self-host:down
 The checked-in fingerprint covers every public relation and sequence (including unmanaged extras), managed columns/defaults/indexes/constraints/enums, RLS and ACL state, default privileges for policy-declared owners, policy-declared extensions, public/auth functions and triggers, and owned storage buckets/policies. Supabase platform extensions and platform-role default privileges are intentionally outside repository ownership and are not serialized as environment noise. Update the fingerprint only with `db:fresh:verify -- --write-fingerprint`; direct edits and unguarded writers are unsupported.
 
 `db:verify:static` needs no database. `db:verify` builds fresh disposable targets twice, fingerprints all owned surfaces, checks storage/security, lints them, verifies empty diffs, and rejects zero, multiple, stale, or mismatched active baseline artifacts.
-
-## Baseline provenance
-
-The MVP baseline includes the final schema, owned storage policies, and the `auth.users` profile trigger. Historical archives and locks remain immutable evidence only; recreate a disposable database rather than attempting to adapt an existing one.
 
 ## Access model
 

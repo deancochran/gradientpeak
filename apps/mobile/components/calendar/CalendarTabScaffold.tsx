@@ -1,30 +1,33 @@
-import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
+import type { CalendarProjectionItem } from "@repo/core";
 import { PlanCalendarSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
-import { ScrollView, TouchableOpacity, View } from "react-native";
+import { useState } from "react";
+import { ActivityIndicator, ScrollView, TouchableOpacity, View } from "react-native";
 import { AppHeader } from "@/components/shared";
-import { CalendarDayList, type CalendarDayListProps } from "./CalendarDayList";
-import { type CalendarWeekDayIndicators, CalendarWeekStrip } from "./CalendarWeekStrip";
+import { CalendarAgendaSheet } from "./CalendarAgendaSheet";
+import { CalendarMonthPage } from "./CalendarMonthPage";
+import { CalendarTimelineToolbar } from "./CalendarTimelineToolbar";
 
 type CalendarErrorScreenProps = {
   onRetry: () => void;
 };
 
 type CalendarReadyScreenProps = {
-  hydrated: boolean;
+  activeMonthKey: string;
+  calendarProjectionTruncated: boolean;
   hasPartialError: boolean;
-  headerTitle: string;
+  hydrated: boolean;
+  isLoadingAdjacentPage: boolean;
+  itemsByDate: Map<string, CalendarProjectionItem[]>;
+  monthTitle: string;
+  onCreateEvent: () => void;
+  onMoveMonth: (months: number) => void;
+  onOpenItem: (item: CalendarProjectionItem) => void;
+  onSelectDate: (dateKey: string) => void;
+  onToday: () => void;
+  onRetry: () => void;
   selectedDateKey: string;
   todayKey: string;
-  weekDayIndicators: Map<string, CalendarWeekDayIndicators>;
-  dayListProps: CalendarDayListProps;
-  personalSessions: inferRouterOutputs<AppRouter>["plannedSessions"]["range"]["items"];
-  plannedSessionsTruncated: boolean;
-  onCreateEvent: () => void;
-  onJumpToday: () => void;
-  onRetry: () => void;
-  onSelectWeekDate: (dateKey: string) => void;
-  onCancelPersonalSession: (sessionId: string, expectedRevision: number) => void;
 };
 
 export function CalendarLoadingScreen() {
@@ -48,9 +51,11 @@ export function CalendarErrorScreen({ onRetry }: CalendarErrorScreenProps) {
           Unable to load calendar events right now.
         </Text>
         <TouchableOpacity
-          onPress={onRetry}
+          accessibilityLabel="Retry loading calendar"
+          accessibilityRole="button"
           className="rounded-full border border-border bg-card px-4 py-2"
-          activeOpacity={0.85}
+          onPress={onRetry}
+          testID="calendar-retry"
         >
           <Text className="text-sm text-foreground">Retry</Text>
         </TouchableOpacity>
@@ -59,36 +64,33 @@ export function CalendarErrorScreen({ onRetry }: CalendarErrorScreenProps) {
   );
 }
 
-export function CalendarReadyScreen({
-  hydrated,
-  hasPartialError,
-  headerTitle,
-  selectedDateKey,
-  todayKey,
-  weekDayIndicators,
-  dayListProps,
-  personalSessions,
-  plannedSessionsTruncated,
-  onCreateEvent,
-  onJumpToday,
-  onRetry,
-  onSelectWeekDate,
-  onCancelPersonalSession,
-}: CalendarReadyScreenProps) {
+export function CalendarReadyScreen(props: CalendarReadyScreenProps) {
+  const [isAgendaVisible, setIsAgendaVisible] = useState(false);
+
+  const handleCreateEvent = () => {
+    setIsAgendaVisible(false);
+    props.onCreateEvent();
+  };
+
+  const handleOpenItem = (item: CalendarProjectionItem) => {
+    setIsAgendaVisible(false);
+    props.onOpenItem(item);
+  };
+
   return (
     <View className="flex-1 bg-background" testID="calendar-screen-ready">
       <AppHeader title="Calendar" />
-      <CalendarWeekStrip
-        dayIndicators={weekDayIndicators}
-        monthTitle={headerTitle}
-        onCreateEvent={onCreateEvent}
-        onResetToday={onJumpToday}
-        selectedDateKey={selectedDateKey}
-        todayKey={todayKey}
-        onSelectDate={onSelectWeekDate}
+      <CalendarTimelineToolbar
+        dateKey={props.selectedDateKey}
+        isJumpLoading={props.isLoadingAdjacentPage}
+        monthTitle={props.monthTitle}
+        onCreateEvent={props.onCreateEvent}
+        onJumpDate={props.onSelectDate}
+        onMoveMonth={props.onMoveMonth}
+        onResetToday={props.onToday}
       />
 
-      {hasPartialError ? (
+      {props.hasPartialError ? (
         <View
           className="mx-4 mb-2 flex-row items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2"
           testID="calendar-partial-error"
@@ -99,57 +101,51 @@ export function CalendarReadyScreen({
           <TouchableOpacity
             accessibilityLabel="Retry loading calendar items"
             accessibilityRole="button"
-            activeOpacity={0.85}
-            className="rounded-full border border-border bg-card px-3 py-1.5"
-            onPress={onRetry}
+            onPress={props.onRetry}
           >
             <Text className="text-xs font-medium text-foreground">Retry</Text>
           </TouchableOpacity>
         </View>
       ) : null}
 
-      {plannedSessionsTruncated ? (
-        <View className="mx-4 mb-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2">
+      {props.calendarProjectionTruncated ? (
+        <View
+          className="mx-4 mb-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2"
+          testID="calendar-projection-truncated"
+        >
           <Text accessibilityRole="alert" className="text-xs text-foreground">
-            Personal planned sessions are truncated. Narrow the visible date range before relying on
-            this list.
+            This date page contains more calendar items than can be shown.
           </Text>
         </View>
       ) : null}
 
-      {personalSessions.length > 0 ? (
-        <View className="mx-4 mb-2 gap-2 rounded-xl border border-border bg-card p-3">
-          <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Personal planned sessions
-          </Text>
-          {personalSessions.map((session) => (
-            <View className="flex-row items-center justify-between gap-3" key={session.id}>
-              <View className="min-w-0 flex-1">
-                <Text className="text-sm font-medium capitalize text-foreground">
-                  {session.prescription.structure.activity_category} session
-                </Text>
-                <Text className="text-xs text-muted-foreground">{session.lifecycle.status}</Text>
-              </View>
-              {session.lifecycle.status === "scheduled" ? (
-                <TouchableOpacity
-                  accessibilityLabel="Cancel personal planned session"
-                  accessibilityRole="button"
-                  className="rounded-full border border-border px-3 py-1.5"
-                  onPress={() => onCancelPersonalSession(session.id, session.sessionRevision)}
-                >
-                  <Text className="text-xs text-foreground">Cancel</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
-          ))}
-        </View>
-      ) : null}
-
-      <View className="flex-1" testID="calendar-screen-content-ready">
-        <CalendarDayList {...dayListProps} />
+      <View className="flex-1">
+        <CalendarMonthPage
+          activeMonthKey={props.activeMonthKey}
+          itemsByDate={props.itemsByDate}
+          onOpenSelectedDay={() => setIsAgendaVisible(true)}
+          onSelectDate={props.onSelectDate}
+          selectedDateKey={props.selectedDateKey}
+          todayKey={props.todayKey}
+        />
       </View>
 
-      {!hydrated ? <View testID="calendar-store-pending" /> : null}
+      <CalendarAgendaSheet
+        dateKey={props.selectedDateKey}
+        onClose={() => setIsAgendaVisible(false)}
+        onCreateEvent={handleCreateEvent}
+        onOpenItem={handleOpenItem}
+        visible={isAgendaVisible}
+      />
+
+      {props.isLoadingAdjacentPage ? (
+        <ActivityIndicator
+          accessibilityLabel="Loading calendar month"
+          size="small"
+          testID="calendar-month-loading"
+        />
+      ) : null}
+      {!props.hydrated ? <View testID="calendar-store-pending" /> : null}
     </View>
   );
 }

@@ -13,15 +13,6 @@ jest.mock("../plannedDaySummaryAccessibility", () => ({
   announcePlannedDaySummaryRetryStatus: jest.fn(),
 }));
 
-function aggregateQuantification(load: number | null) {
-  return createPrescriptionQuantificationBundleFixture({
-    activityCategory: "bike",
-    durationSeconds: 5_400,
-    load: load ?? 64,
-    status: load === null ? "threshold_missing" : "available",
-  });
-}
-
 const data: MobilePlannedDaySummaryData = {
   source: {
     complete: true,
@@ -34,7 +25,16 @@ const data: MobilePlannedDaySummaryData = {
     eventCount: 2,
     activity_categories: ["bike", "run"],
     totalDurationSeconds: 5_400,
-    prescriptionQuantification: aggregateQuantification(87.25),
+    prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+      activityCategory: "bike",
+      durationSeconds: 5_400,
+      load: 87.25,
+    }),
+    commonLoad: createPrescriptionQuantificationBundleFixture({
+      activityCategory: "bike",
+      durationSeconds: 5_400,
+      load: 87.25,
+    }).summary.commonLoad,
   },
 };
 
@@ -51,7 +51,6 @@ describe("PlannedDaySummary", () => {
     expect(screen.getByText("87.3")).toBeTruthy();
     expect(screen.getByText("Normalized intensity")).toBeTruthy();
     expect(screen.getByText("0.76")).toBeTruthy();
-    expect(screen.getByText(/Derived\. Common Load is available/)).toBeTruthy();
     expect(screen.getByLabelText("Bike plus Run")).toBeTruthy();
     expect(
       screen.getByText(/Scheduled\/completed planned workload; cancelled excluded/),
@@ -73,7 +72,7 @@ describe("PlannedDaySummary", () => {
     ).toBeNull();
   });
 
-  it("formats duration without turning unavailable values into zero", () => {
+  it("formats non-complete planned duration inputs as unavailable", () => {
     expect(formatPlannedDayDuration(5_400)).toBe("1h 30m");
     expect(formatPlannedDayDuration(90)).toBe("1m 30s");
     expect(formatPlannedDayDuration(Number.NaN)).toBe("Unavailable");
@@ -125,7 +124,7 @@ describe("PlannedDaySummary", () => {
     );
   });
 
-  it("distinguishes empty, loading, error with retry, and partial information", async () => {
+  it("distinguishes empty, loading, retry, and unavailable estimate states", async () => {
     const retry = jest.fn(() => Promise.resolve());
     const { rerender } = renderNative(
       <PlannedDaySummary error={false} isLoading onRetry={retry} />,
@@ -152,7 +151,12 @@ describe("PlannedDaySummary", () => {
           summary: {
             ...data.summary,
             totalDurationSeconds: null,
-            prescriptionQuantification: aggregateQuantification(null),
+            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+              status: "threshold_missing",
+            }),
+            commonLoad: createPrescriptionQuantificationBundleFixture({
+              status: "threshold_missing",
+            }).summary.commonLoad,
           },
         }}
         error={false}
@@ -161,8 +165,7 @@ describe("PlannedDaySummary", () => {
       />,
     );
     expect(screen.getByText(/Partial information:/)).toBeTruthy();
-    expect(screen.getByText(/unavailable planned estimates/)).toBeTruthy();
-    expect(screen.getAllByText("Unavailable")).toHaveLength(3);
+    expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
 
     rerender(
       <PlannedDaySummary

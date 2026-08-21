@@ -3,14 +3,14 @@ import { describe, expect, it } from "vitest";
 import { getNextGpsRecordingEnabled, shouldStartGpsTracking } from "./gpsRuntime";
 
 describe("gpsRuntime", () => {
-  it("toggles GPS recording state", () => {
+  it("keeps GPS recording disabled for new live recordings", () => {
     expect(getNextGpsRecordingEnabled(true)).toBe(false);
-    expect(getNextGpsRecordingEnabled(false)).toBe(true);
+    expect(getNextGpsRecordingEnabled(false)).toBe(false);
   });
 
-  it("starts GPS tracking only when GPS recording is enabled and state is active", () => {
-    expect(shouldStartGpsTracking("recording", true)).toBe(true);
-    expect(shouldStartGpsTracking("paused", true)).toBe(true);
+  it("never starts GPS tracking", () => {
+    expect(shouldStartGpsTracking("recording", true)).toBe(false);
+    expect(shouldStartGpsTracking("paused", true)).toBe(false);
     expect(shouldStartGpsTracking("ready", true)).toBe(false);
     expect(shouldStartGpsTracking("recording", false)).toBe(false);
   });

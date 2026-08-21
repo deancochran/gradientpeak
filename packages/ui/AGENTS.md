@@ -41,7 +41,6 @@ Use this file when working in `packages/ui`.
 
 - Use `pnpm --filter @repo/ui check-types` and `pnpm --filter @repo/ui test` while iterating.
 - Run `pnpm --filter @repo/ui check:testing-artifacts` after changing generated UI testing inputs.
-- For accessible web form behavior, begin with the [web form exemplar](../../docs/agent-exemplars.md); preserve equivalent semantics on native rather than importing web implementation details.
 
 ## Avoid
 

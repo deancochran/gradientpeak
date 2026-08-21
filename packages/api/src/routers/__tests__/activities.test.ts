@@ -1051,6 +1051,14 @@ beforeEach(() => {
 });
 
 describe("activitiesRouter", () => {
+  it("rejects an effort-profile cache identity that does not match the session", async () => {
+    const caller = createCaller({});
+
+    await expect(
+      caller.getEffortProfile({ id: ACTIVITY_ID, viewerId: OTHER_ID }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
   it("lists paginated owned activities with like and derived summaries", async () => {
     const rows = [buildActivityRow()];
     const firstRow = rows[0];
@@ -1088,6 +1096,7 @@ describe("activitiesRouter", () => {
       ]),
     );
     expect(result.items[0]?.capabilities).toMatchObject({ canEdit: true, canDelete: true });
+    expect(result.items[0]).not.toHaveProperty("effortProfile");
     expect(result.items[0]).not.toHaveProperty("profile_id");
     expect(result.items[0]).not.toHaveProperty("derived");
     expect(result.items[0]).not.toHaveProperty("matched_category_summary");

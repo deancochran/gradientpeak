@@ -329,10 +329,10 @@ describe("deriveOnboardingReadiness", () => {
     expect(result.providers[0]?.state).toBe("recovery_required");
   });
 
-  it("fails closed when an import completes with failed items", () => {
+  it("does not block review when an import completes with failed items", () => {
     const result = deriveOnboardingReadiness({
-      profile,
-      athleteState: null,
+      profile: { ...profile, onboarding_status: "review" },
+      athleteState: { source_revision: 3, published_revision: 3 },
       providers: [
         {
           ...provider,
@@ -364,8 +364,8 @@ describe("deriveOnboardingReadiness", () => {
         },
       ],
     });
-    expect(result.providers[0]?.state).toBe("recovery_required");
-    expect(result.ready_to_finalize).toBe(false);
+    expect(result.providers[0]).toMatchObject({ state: "complete", next_actions: ["review"] });
+    expect(result.ready_to_finalize).toBe(true);
   });
 
   it("waits for a material athlete-state revision to publish", () => {
@@ -448,7 +448,7 @@ describe("deriveOnboardingReadiness", () => {
       ],
     });
 
-    expect(result.providers[0]?.state).toBe("complete_with_limitations");
+    expect(result.providers[0]?.state).toBe("complete");
   });
 
   it("does not require athlete state for imported rows without durable material change", () => {

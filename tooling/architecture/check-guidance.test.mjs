@@ -8,18 +8,8 @@ import { validateGuidance } from "./check-guidance.mjs";
 const architectureRoot = dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => resolve(architectureRoot, "fixtures/guidance", name);
 
-test("accepts local active exemplars, adjacent deprecated caveats, route-group paths, workspace paths, and scripts", () => {
+test("accepts valid guidance links, route-group paths, workspace paths, and scripts", () => {
   assert.deepEqual(validateGuidance(fixture("valid")), []);
-});
-
-test("reports missing catalog links and deprecated exemplars without a caveat", () => {
-  const errors = validateGuidance(fixture("invalid-catalog"));
-  assert(
-    errors.some((error) =>
-      error.includes("linked exemplar target is missing: ../apps/demo/missing.md"),
-    ),
-  );
-  assert(errors.some((error) => error.includes("deprecated.md contains @deprecated")));
 });
 
 test("reports invalid AGENTS links, workspace paths, and every package script in a chained span but ignores generic pnpm commands", () => {

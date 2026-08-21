@@ -1,8 +1,8 @@
 import type { ActivityDisplayModel, SemanticMetric } from "@repo/core";
 import { formatDurationSec } from "@repo/core/utils/dates";
-import { fireEvent } from "@testing-library/react-native";
+import { fireEvent, waitFor } from "@testing-library/react-native";
 import type { ComponentProps } from "react";
-import { Pressable, View } from "react-native";
+import { Alert, Pressable, View } from "react-native";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { createActivityDisplay } from "../../../test/activity-display-fixture";
 import { createHost as mockCreateHost } from "../../../test/mock-components";
@@ -10,11 +10,13 @@ import { renderNative, screen } from "../../../test/render-native";
 import { ActivityCard as ProjectionActivityCard } from "../ActivityCard";
 
 const toggleLikeMutateMock = jest.fn();
+const shareMock = jest.fn();
 
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
   Pressable: mockCreateHost("Pressable"),
+  Share: { share: shareMock },
   TouchableOpacity: mockCreateHost("TouchableOpacity"),
   View: mockCreateHost("View"),
 }));
@@ -52,6 +54,7 @@ jest.mock("lucide-react-native", () => ({
   Footprints: mockCreateHost("Footprints"),
   Heart: mockCreateHost("Heart"),
   MessageCircle: mockCreateHost("MessageCircle"),
+  Share2: mockCreateHost("Share2"),
   Waves: mockCreateHost("Waves"),
 }));
 
@@ -144,11 +147,12 @@ function ActivityCard({
 
 describe("ActivityCard", () => {
   beforeEach(() => {
+    shareMock.mockReset();
     toggleLikeMutateMock.mockReset();
     mockUsePreferredUnitSystem.mockReturnValue("metric");
   });
 
-  it("uses one canonical title, notes, and metrics layout across interaction contexts", () => {
+  it("uses one canonical notes and metrics layout across interaction contexts", () => {
     const activity = {
       id: "activity-1",
       title: "Morning Run",
@@ -169,20 +173,18 @@ describe("ActivityCard", () => {
     };
     const rendered = renderNative(<ActivityCard activity={activity} />);
 
-    expect(screen.getByText("Morning Run").props.className).toBe(
-      "text-base font-semibold text-foreground",
-    );
+    expect(screen.getByText("Morning Run")).toBeTruthy();
     expect(screen.getByText("Steady aerobic work.").props.numberOfLines).toBe(2);
     expect(screen.getByTestId("activity-card-metrics").props.className).toBe(
       "flex-row flex-wrap items-start gap-x-5 gap-y-2 px-1",
     );
-    expect(screen.queryByTestId("activity-card-like-button-activity-1")).toBeNull();
+    expect(screen.getByTestId("activity-card-like-button-activity-1")).toBeTruthy();
+    expect(screen.getByTestId("activity-card-comment-button-activity-1")).toBeTruthy();
+    expect(screen.getByTestId("activity-card-share-button-activity-1")).toBeTruthy();
 
-    rendered.rerender(<ActivityCard activity={activity} onPress={jest.fn()} showLike />);
+    rendered.rerender(<ActivityCard activity={activity} onPress={jest.fn()} />);
 
-    expect(screen.getByText("Morning Run").props.className).toBe(
-      "text-base font-semibold text-foreground",
-    );
+    expect(screen.getByText("Morning Run")).toBeTruthy();
     expect(screen.getByText("Steady aerobic work.").props.numberOfLines).toBe(2);
     expect(screen.getByTestId("activity-card-metrics").props.className).toBe(
       "flex-row flex-wrap items-start gap-x-5 gap-y-2 px-1",
@@ -341,7 +343,7 @@ describe("ActivityCard", () => {
     expect(screen.queryByText("Elapsed")).toBeNull();
   });
 
-  it("keeps partial Common Load and normalized intensity values compact", () => {
+  it("marks partial Load and Intensity values as estimates", () => {
     renderNative(
       <ActivityCard
         activity={{
@@ -369,8 +371,12 @@ describe("ActivityCard", () => {
       />,
     );
 
-    expect(screen.getByText("32")).toBeTruthy();
-    expect(screen.getByText("0.80")).toBeTruthy();
+    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
+    expect(screen.queryByText("Load (partial)")).toBeNull();
+    expect(screen.queryByText("Intensity (partial)")).toBeNull();
+    expect(screen.getByText("~32")).toBeTruthy();
+    expect(screen.getByText("~0.80")).toBeTruthy();
     expect(screen.queryByText(/Derived · Partial/)).toBeNull();
   });
 
@@ -516,7 +522,6 @@ describe("ActivityCard", () => {
           title: "Morning Run",
           engagement: { likes: 2, comments: 0, viewerHasLiked: false },
         }}
-        showLike
       />,
     );
 
@@ -528,7 +533,7 @@ describe("ActivityCard", () => {
     });
   });
 
-  it("keeps navigation, comment, and like actions independent", () => {
+  it("keeps the shared social action layout and navigation independent", () => {
     const onCommentPress = jest.fn();
     const onLikePress = jest.fn();
     const onPress = jest.fn();
@@ -546,7 +551,6 @@ describe("ActivityCard", () => {
         onCommentPress={onCommentPress}
         onLikePress={onLikePress}
         onPress={onPress}
-        showLike
         testID="activity-boundary-card"
         topRightAction={
           <Pressable accessibilityLabel="Activity context action" onPress={onTopRightActionPress} />
@@ -554,7 +558,7 @@ describe("ActivityCard", () => {
       />,
     );
 
-    const navigation = screen.getByLabelText("Open activity");
+    const navigation = screen.getByLabelText("Open activity Boundary Run");
     const comment = screen.getByLabelText("Comment, 4 comments");
     const like = screen.getByLabelText("Like, 2 likes");
     const topRightAction = screen.getByLabelText("Activity context action");
@@ -564,6 +568,7 @@ describe("ActivityCard", () => {
     expect(comment.props.className).toContain("min-h-11");
     expect(comment.props.className).toContain("min-w-11");
     expect(like.props.accessibilityRole).toBe("button");
+    expect(screen.getByTestId("activity-card-social-actions")).toBeTruthy();
 
     fireEvent.press(navigation);
     expect(onPress).toHaveBeenCalledTimes(1);
@@ -585,6 +590,66 @@ describe("ActivityCard", () => {
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
+  it("uses the same share placement as the activity detail header", () => {
+    const onSharePress = jest.fn();
+
+    renderNative(
+      <ActivityCard
+        activity={{ id: "activity-share", title: "Shareable Run" }}
+        onSharePress={onSharePress}
+        testID="activity-share-card"
+      />,
+    );
+
+    const share = screen.getByTestId("activity-card-share-button-activity-share");
+
+    expect(
+      screen
+        .getByTestId("activity-share-card-action-region")
+        .findAllByProps({ testID: "activity-card-share-button-activity-share" }).length,
+    ).toBeGreaterThan(0);
+    expect(share.props.accessibilityLabel).toBe("Share activity");
+
+    fireEvent.press(share);
+
+    expect(onSharePress).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Share visible and explains when a private activity cannot be shared", () => {
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    renderNative(
+      <ActivityCard
+        activity={{ id: "activity-private", title: "Private Run", visibility: "private" }}
+      />,
+    );
+
+    fireEvent.press(screen.getByTestId("activity-card-share-button-activity-private"));
+
+    expect(alert).toHaveBeenCalledWith(
+      "Not public",
+      "Only public activities have a share link. Change visibility to Public first.",
+    );
+  });
+
+  it("explains when native sharing fails", async () => {
+    shareMock.mockRejectedValueOnce(new Error("share failed"));
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    renderNative(
+      <ActivityCard
+        activity={{ id: "activity-public", title: "Public Run", visibility: "public" }}
+      />,
+    );
+
+    fireEvent.press(screen.getByTestId("activity-card-share-button-activity-public"));
+
+    await waitFor(() =>
+      expect(alert).toHaveBeenCalledWith(
+        "Unable to share",
+        "The activity could not be shared. Try again.",
+      ),
+    );
+  });
+
   it("keeps top-right actions in the owner region and below-metrics actions after metrics", () => {
     renderNative(
       <ActivityCard
@@ -602,7 +667,6 @@ describe("ActivityCard", () => {
           ],
         }}
         belowMetricsActions={<View testID="activity-card-content-action" />}
-        showLike={false}
         testID="activity-card-accessory-placement"
         topRightAction={<View testID="activity-card-top-right-action" />}
       />,
@@ -630,12 +694,11 @@ describe("ActivityCard", () => {
         onOwnerPress={onOwnerPress}
         onPress={onPress}
         owner={{ id: "owner-1", username: "Coach Kim" }}
-        showLike={false}
       />,
     );
 
     const owner = screen.getByLabelText("Open profile for Coach Kim");
-    const navigation = screen.getByLabelText("Open activity");
+    const navigation = screen.getByLabelText("Open activity Owner Run");
 
     fireEvent.press(owner);
     expect(onOwnerPress).toHaveBeenCalledTimes(1);

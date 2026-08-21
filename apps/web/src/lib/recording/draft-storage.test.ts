@@ -19,12 +19,16 @@ import {
 } from "./draft-storage";
 import { createQueuedSubmissionJob } from "./submission-queue";
 import {
+  captureTimerOnlyLap,
+  completeCurrentPlanStep,
   configureTimerOnlyRecording,
   createInitialTimerOnlyRecordingState,
   finishTimerOnlyRecording,
+  getTimerOnlyPlanStatus,
   getTimerOnlyRecordingTimes,
   pauseTimerOnlyRecording,
   recoverTimerOnlyRecording,
+  resumeTimerOnlyRecording,
   startTimerOnlyRecording,
 } from "./timer-runtime";
 
@@ -53,6 +57,56 @@ function startedRecording() {
     activityPlanId: "00000000-0000-4000-8000-000000000003",
   }).state;
   return startTimerOnlyRecording(configured, 2_000, "web-session-1").state;
+}
+
+function startedPlannedRecording() {
+  const structure = {
+    version: 3,
+    activity_category: "run",
+    segments: [
+      {
+        id: "10000000-0000-4000-8000-000000000001",
+        name: "Main",
+        role: "activity",
+        intervals: [
+          {
+            id: "20000000-0000-4000-8000-000000000001",
+            name: "Set",
+            repetitions: 1,
+            steps: [
+              {
+                id: "30000000-0000-4000-8000-000000000001",
+                name: "Distance",
+                duration: { type: "distance", meters: 100 },
+                targets: [{ type: "RPE", intensity: 4 }],
+              },
+              {
+                id: "30000000-0000-4000-8000-000000000002",
+                name: "Reps",
+                duration: { type: "repetitions", count: 5 },
+                targets: [{ type: "RPE", intensity: 6 }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  } as const;
+  const configured = configureTimerOnlyRecording(createInitialTimerOnlyRecordingState(), {
+    activity_category: "run",
+    eventId: "00000000-0000-4000-8000-000000000001",
+    activityPlanId: "00000000-0000-4000-8000-000000000003",
+    plan: {
+      activityPlanId: "00000000-0000-4000-8000-000000000003",
+      scheduledEventId: "00000000-0000-4000-8000-000000000001",
+      name: "Structured run",
+      description: null,
+      activityPlanRevision: 1,
+      structureHash: `v1:sha256:${"b".repeat(64)}`,
+      structure,
+    },
+  }).state;
+  return startTimerOnlyRecording(configured, 2_000, "planned-web-session").state;
 }
 
 const submissionArtifact = portableWebRecordingArtifactSchema.parse({
@@ -170,6 +224,42 @@ describe("web timer draft persistence", () => {
     });
   });
 
+  it("round-trips the current plan step, manual transition, lap, and checkpoint", async () => {
+    const storage = new FakeTimerDraftStorage();
+    let state = startedPlannedRecording();
+    state = completeCurrentPlanStep(state, 5_000).state;
+    state = captureTimerOnlyLap(state, 6_000).state;
+    state = pauseTimerOnlyRecording(state, 7_000).state;
+
+    await checkpointTimerDraft(storage, state, 8_000, "profile-1");
+    const loaded = await loadTimerDraft(storage, "profile-1");
+    if (!loaded.draft) throw new Error("Expected a structured draft.");
+    const recovered = recoverTimerOnlyRecording(loaded.draft);
+
+    expect(recovered.state.planExecution).toMatchObject({
+      currentOccurrenceIndex: 1,
+      completedOccurrenceIds: [expect.stringContaining("30000000-0000-4000-8000-000000000001")],
+      skippedOccurrenceIds: [],
+      laps: [{ lapNumber: 1, occurrenceIndex: 1, elapsedMs: 4_000 }],
+    });
+    expect(recovered.state.planExecution?.checkpoints.length).toBeGreaterThanOrEqual(3);
+    expect(getTimerOnlyRecordingTimes(recovered.state, 100_000)).toMatchObject({
+      elapsedSeconds: 6,
+      activeSeconds: 5,
+    });
+    expect(getTimerOnlyPlanStatus(recovered.state, 100_000)).toMatchObject({
+      currentOccurrenceIndex: 1,
+      currentStepElapsedSeconds: 2,
+      currentLapElapsedSeconds: 2,
+    });
+
+    const resumed = resumeTimerOnlyRecording(recovered.state, 100_000).state;
+    expect(getTimerOnlyRecordingTimes(resumed, 101_000)).toMatchObject({
+      elapsedSeconds: 7,
+      activeSeconds: 6,
+    });
+  });
+
   it("recovers saved values into paused state without auto-resuming", async () => {
     const storage = new FakeTimerDraftStorage();
     await checkpointTimerDraft(storage, startedRecording(), 7_500, "profile-1");
@@ -186,8 +276,40 @@ describe("web timer draft persistence", () => {
     });
     expect(recovered.state.timer.startedAtMs).toBe(Date.parse(loaded.draft.timing.startedAt));
     expect(getTimerOnlyRecordingTimes(recovered.state, 100_000)).toEqual({
-      elapsedSeconds: 98,
+      elapsedSeconds: 5,
+      activeSeconds: 5,
       movingSeconds: 5,
+    });
+  });
+
+  it("recovers an older timer-only draft that has no structured execution state", async () => {
+    const storage = new FakeTimerDraftStorage();
+    await checkpointTimerDraft(storage, startedRecording(), 7_500, "profile-1");
+    const legacy = structuredClone(storage.value) as Record<string, unknown>;
+    delete legacy.planExecution;
+    storage.value = legacy;
+
+    const loaded = await loadTimerDraft(storage, "profile-1");
+    expect(loaded.status).toBe("valid");
+    if (!loaded.draft) throw new Error("Expected a legacy draft.");
+    const recovered = recoverTimerOnlyRecording(loaded.draft);
+    expect(recovered.rejectedReason).toBeNull();
+    expect(recovered.state.planExecution).toMatchObject({
+      currentOccurrenceIndex: null,
+      laps: [],
+    });
+  });
+
+  it("discards malformed structured execution state instead of guessing", async () => {
+    const storage = new FakeTimerDraftStorage();
+    await checkpointTimerDraft(storage, startedRecording(), 7_500, "profile-1");
+    const malformed = structuredClone(storage.value) as Record<string, unknown>;
+    malformed.planExecution = { currentOccurrenceIndex: -1 };
+    storage.value = malformed;
+
+    await expect(loadTimerDraft(storage, "profile-1")).resolves.toEqual({
+      status: "discarded-invalid",
+      draft: null,
     });
   });
 

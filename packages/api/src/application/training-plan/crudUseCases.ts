@@ -8,6 +8,7 @@ import { getTrainingPlanEditorMetadata } from "./projection-planning";
 import {
   mapTrainingPlanContentIdentity,
   mapTrainingPlanOwnerIdentity,
+  mapTrainingPlanPlannedSchedulePreview,
   sanitizeTrainingPlanForViewer,
   serializeTrainingPlanForViewer,
 } from "./trainingPlanMapping";
@@ -90,7 +91,11 @@ export async function listTrainingPlansUseCase(input: {
   return {
     items: pageItems.map((plan) => ({
       ...mapTrainingPlanOwnerIdentity(
-        mapTrainingPlanContentIdentity(sanitizeTrainingPlanForViewer(plan, input.profileId)),
+        mapTrainingPlanContentIdentity(
+          mapTrainingPlanPlannedSchedulePreview(
+            sanitizeTrainingPlanForViewer(plan, input.profileId),
+          ),
+        ),
         profileIdentityMap,
       ),
       ...getLikeStats(likeStats, plan.id),

@@ -612,10 +612,6 @@ function buildReanchoredSeries(input: {
   provenance: ReadinessSeriesPoint["provenance"];
   historicalStartDate?: string;
 }): ReadinessSeries {
-  if (input.dailyLoad.length === 0) {
-    return { id: input.id, label: input.label, points: [] };
-  }
-
   const historicalEndDate = input.today < input.endDate ? input.today : input.endDate;
   const historicalStartDate = input.historicalStartDate ?? input.startDate;
   const historicalDates =
@@ -700,8 +696,6 @@ export function buildReadinessForecastTimeline(
     ...(input.confidenceReasonCodes ?? []),
     todayState.usedFallback ? "projection_fallback_baseline" : undefined,
     input.actualDailyLoad.length === 0 ? "missing_recent_history" : undefined,
-    input.scheduledDailyLoad.length === 0 ? "scheduled_path_unavailable" : undefined,
-    input.recommendedDailyLoad.length === 0 ? "recommended_path_unavailable" : undefined,
     input.scheduledDailyLoad.some((load) => load.confidence === "low")
       ? "missing_scheduled_intensity"
       : undefined,

@@ -43,6 +43,7 @@ const unavailableReasons: Record<
   string
 > = {
   activity_data_missing: "required activity data is missing",
+  ambiguous_target: "multiple authored targets imply different intensities",
   duration_missing: "eligible duration is missing",
   evidence_truncated: "the bounded calibration evidence read was incomplete",
   insufficient_coverage: "activity data coverage is insufficient",

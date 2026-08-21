@@ -13,7 +13,8 @@ interface UseActivityPlanSchedulingActionsParams {
   eventId?: string;
   plannedActivity: { id: string; scheduled_date?: string | null } | null | undefined;
   planId?: string;
-  canCreateNewPlanWork?: boolean;
+  canDuplicatePlan?: boolean;
+  canSchedulePlan?: boolean;
   queryClient: ReturnType<typeof import("@tanstack/react-query").useQueryClient>;
   router: Pick<Router, "back" | "navigate" | "replace">;
   utils: ReturnType<typeof api.useUtils>;
@@ -26,7 +27,8 @@ export function useActivityPlanSchedulingActions({
   eventId,
   plannedActivity,
   planId,
-  canCreateNewPlanWork = false,
+  canDuplicatePlan = false,
+  canSchedulePlan = false,
   queryClient,
   router,
   utils,
@@ -69,7 +71,7 @@ export function useActivityPlanSchedulingActions({
   });
 
   const handleSchedule = () => {
-    if (!canCreateNewPlanWork) {
+    if (!canSchedulePlan) {
       Alert.alert(
         "Scheduling unavailable",
         "Only executable single-activity-category plans can be scheduled.",
@@ -115,7 +117,7 @@ export function useActivityPlanSchedulingActions({
   };
 
   const handleDuplicate = () => {
-    if (!canCreateNewPlanWork) {
+    if (!canDuplicatePlan) {
       Alert.alert(
         "Duplicate unavailable",
         "Only executable single-activity-category plans can be duplicated.",
@@ -135,7 +137,7 @@ export function useActivityPlanSchedulingActions({
   };
 
   React.useEffect(() => {
-    if (action !== "schedule" || !activityPlan?.id || !canCreateNewPlanWork) return;
+    if (action !== "schedule" || !activityPlan?.id || !canSchedulePlan) return;
     if (eventId && !plannedActivity?.id) return;
     const scheduleKey = `${activityPlan.id}:${eventId ?? "none"}:${action}`;
     if (scheduleActionHandledRef.current === scheduleKey) return;
@@ -151,7 +153,7 @@ export function useActivityPlanSchedulingActions({
         mode: "create",
       },
     });
-  }, [action, activityPlan?.id, eventId, plannedActivity?.id, canCreateNewPlanWork, router]);
+  }, [action, activityPlan?.id, eventId, plannedActivity?.id, canSchedulePlan, router]);
 
   return {
     duplicatePending: duplicatePlanMutation.isPending,

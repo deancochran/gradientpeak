@@ -1,4 +1,7 @@
-import { compileActivityPlan } from "@repo/core/activity-plan";
+import {
+  activityPlanStructureSchema,
+  resolveActivityPlanSessionFlow,
+} from "@repo/core/activity-plan";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -21,8 +24,10 @@ import {
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { ActivityPlanSessionFlow } from "../../../../../components/activity-plan/activity-plan-session-flow";
+import { ActivityPlanStructure } from "../../../../../components/activity-plan/activity-plan-structure";
 import { RouteFlashToast, type RouteFlashType } from "../../../../../components/route-flash-toast";
 import { getActivityBadgeLabel } from "../../../../../lib/activity-route-helpers";
 import { api } from "../../../../../lib/api/client";
@@ -57,7 +62,19 @@ function EventDetailPage() {
   const { eventId } = Route.useParams();
   const navigate = Route.useNavigate();
   const { flash, flashType, month, view } = Route.useSearch();
-  const eventQuery = api.events.getById.useQuery({ id: eventId }, { enabled: Boolean(eventId) });
+  const [personalizationChoice, setPersonalizationChoice] = useState<boolean | null>(null);
+  useEffect(() => {
+    setPersonalizationChoice(null);
+  }, [eventId]);
+
+  const eventQuery = api.events.getById.useQuery(
+    { id: eventId, personalize: false },
+    { enabled: Boolean(eventId) },
+  );
+  const performanceTargetsQuery = api.athleteIntelligence.getReadModel.useQuery(
+    { sections: { publishedState: true } },
+    { enabled: Boolean(eventQuery.data?.activityPlanSummary?.capabilities.canEdit) },
+  );
   const event = eventQuery.data;
   const trainingPlanQuery = api.trainingPlans.get.useQuery(
     { id: event?.training_plan_id ?? "00000000-0000-0000-0000-000000000000" },
@@ -88,9 +105,22 @@ function EventDetailPage() {
     return <p className="text-sm text-muted-foreground">Event schedule is unavailable.</p>;
   }
 
-  const compiledActivityPlan = event.activityPlanSummary
-    ? compileActivityPlan(event.activityPlanSummary.structure)
+  const parsedAuthoringStructure = activityPlanStructureSchema.safeParse(
+    event.activityPlanSummary?.structure,
+  );
+  const authoringStructure = parsedAuthoringStructure.success
+    ? parsedAuthoringStructure.data
     : null;
+  const performanceTargets = performanceTargetsQuery.data?.publishedState?.performanceTargets;
+  const personalizationEligibility = resolveActivityPlanSessionFlow({
+    structure: authoringStructure,
+    ...(performanceTargets ? { performanceTargets } : {}),
+    personalize: false,
+  }).eligibility;
+  const canPersonalize = event.activityPlanSummary?.capabilities.canEdit ?? false;
+  const personalizeTargets = Boolean(
+    canPersonalize && personalizationEligibility.eligible && (personalizationChoice ?? true),
+  );
 
   return (
     <div className="space-y-6">
@@ -175,8 +205,8 @@ function EventDetailPage() {
             <div className="flex flex-wrap gap-2">
               <Badge variant="outline">{getEventTypeLabel(event.event_type)}</Badge>
               {event.status ? <Badge variant="secondary">{event.status}</Badge> : null}
-              {compiledActivityPlan ? (
-                <Badge>{getActivityBadgeLabel(compiledActivityPlan.activity_category)}</Badge>
+              {event.activityPlanSummary ? (
+                <Badge>{getActivityBadgeLabel(event.activityPlanSummary.activityCategory)}</Badge>
               ) : null}
             </div>
             <DetailRow
@@ -208,6 +238,19 @@ function EventDetailPage() {
           </CardContent>
         </Card>
       </div>
+      {event.activityPlanSummary && authoringStructure ? (
+        <div className="space-y-6">
+          <ActivityPlanSessionFlow
+            structure={authoringStructure}
+            {...(performanceTargets ? { performanceTargets } : {})}
+            personalizeTargets={personalizeTargets}
+            onPersonalizeTargetsChange={setPersonalizationChoice}
+            showPersonalizationControl={canPersonalize}
+            personalizationFactsLoading={performanceTargetsQuery.isLoading}
+          />
+          <ActivityPlanStructure structure={authoringStructure} />
+        </div>
+      ) : null}
     </div>
   );
 }

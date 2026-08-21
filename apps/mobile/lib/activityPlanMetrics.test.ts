@@ -19,22 +19,22 @@ describe("getActivityPlanQuantitySummary", () => {
     expect(summary.commonLoad).toBeCloseTo(64);
   });
 
-  it("treats an absent canonical bundle as unavailable", () => {
+  it("normalizes an absent canonical bundle to zero planned quantities", () => {
     expect(getActivityPlanQuantitySummary({})).toEqual({
-      commonIntensity: null,
-      commonLoad: null,
+      commonIntensity: 0,
+      commonLoad: 0,
       distanceMeters: null,
-      durationSeconds: null,
+      durationSeconds: 0,
     });
   });
 
-  it("does not promote partial Common Load to a complete scalar", () => {
+  it("normalizes partial planned Common Load to zero", () => {
     const summary = getActivityPlanQuantitySummary(
       createPrescriptionQuantificationBundleFixture({ status: "partial" }),
     );
 
-    expect(summary.commonIntensity).toBeNull();
-    expect(summary.commonLoad).toBeNull();
+    expect(summary.commonIntensity).toBe(0);
+    expect(summary.commonLoad).toBe(0);
     expect(summary.durationSeconds).toBe(3_600);
   });
 });

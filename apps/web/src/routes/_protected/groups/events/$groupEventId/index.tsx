@@ -1,7 +1,11 @@
+import {
+  type GroupEventRsvpStatus as RsvpStatus,
+  resolveGroupEventRsvpStatus,
+} from "@repo/core/groups";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
   GroupEventCard,
@@ -14,8 +18,6 @@ import { api } from "../../../../../lib/api/client";
 export const Route = createFileRoute("/_protected/groups/events/$groupEventId/")({
   component: GroupEventDetailPage,
 });
-
-type RsvpStatus = "declined";
 
 function GroupEventDetailPage() {
   const { groupEventId } = Route.useParams();
@@ -51,7 +53,10 @@ function GroupEventDetailPage() {
   const mutationError = rsvpMutation.error ?? seriesRsvpMutation.error ?? cancelMutation.error;
   const canManage = Boolean(group.data?.viewer.canCreateGroupEvent);
   const seriesId = event?.series_id ?? (event?.is_recurring_series ? event.id : null);
-  const effectiveRsvp = event?.viewerRsvp?.status ?? event?.viewerSeriesRsvp?.status ?? "going";
+  const effectiveRsvp = resolveGroupEventRsvpStatus({
+    occurrenceStatus: event?.viewerRsvp?.status,
+    seriesStatus: event?.viewerSeriesRsvp?.status,
+  });
 
   const setOccurrenceRsvp = (status: RsvpStatus | null) =>
     rsvpMutation.mutate(
@@ -220,7 +225,17 @@ function GroupEventDetailPage() {
                       {plan.isLoading ? (
                         <p>Loading activity plan…</p>
                       ) : plan.data?.items[0] ? (
-                        <p className="font-semibold">{plan.data.items[0].name}</p>
+                        <div className="space-y-3">
+                          <p className="font-semibold">{plan.data.items[0].name}</p>
+                          <Button asChild type="button" variant="outline">
+                            <Link
+                              params={{ activityPlanId: plan.data.items[0].id }}
+                              to="/activity-plans/$activityPlanId"
+                            >
+                              View activity plan
+                            </Link>
+                          </Button>
+                        </div>
                       ) : (
                         <p className="text-muted-foreground" role="status">
                           This attached activity plan is not available to your account.
@@ -238,7 +253,7 @@ function GroupEventDetailPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-sm text-muted-foreground">
-                  Effective response: {effectiveRsvp}
+                  Effective response: {effectiveRsvp ?? "no response (defaults to going)"}
                   {event.viewerRsvp
                     ? " (this date overrides the series)"
                     : event.viewerSeriesRsvp
@@ -248,8 +263,8 @@ function GroupEventDetailPage() {
                 <div className="flex flex-wrap gap-2">
                   {effectiveRsvp === "declined" ? (
                     <Button
-                      disabled={rsvpMutation.isPending}
-                      onClick={() => setOccurrenceRsvp(null)}
+                      disabled={rsvpMutation.isPending || Boolean(event.cancelled_at)}
+                      onClick={() => setOccurrenceRsvp("going")}
                       type="button"
                       variant="default"
                     >
@@ -272,8 +287,8 @@ function GroupEventDetailPage() {
                     <div className="flex flex-wrap gap-2">
                       {event.viewerSeriesRsvp?.status === "declined" ? (
                         <Button
-                          disabled={seriesRsvpMutation.isPending}
-                          onClick={() => setSeriesRsvp(null)}
+                          disabled={seriesRsvpMutation.isPending || Boolean(event.cancelled_at)}
+                          onClick={() => setSeriesRsvp("going")}
                           type="button"
                           variant="default"
                         >

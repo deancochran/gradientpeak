@@ -898,63 +898,6 @@ export const futureJourneyBlueprints = [
   ),
 
   journey(
-    "metrics.library-crud",
-    "athlete",
-    "/profile-metrics",
-    ["dense dated metric history", "manual metric cleanup", "failure injection"],
-    [
-      testId("profile-metric-library", "metric groups have a stable root"),
-      testIdPrefix("profile-metric-row-", "measurement rows expose identity and source"),
-    ],
-    [
-      "Metric selection/ranges plus manual create/read/edit/delete persist through reload.",
-      "Invalid values/dates, cancel, failure, retry, pagination, empty, and source labels are asserted.",
-    ],
-  ),
-  journey(
-    "metrics.override",
-    "athlete",
-    "/profile-metrics",
-    ["provider/activity sourced metric", "manual override cleanup"],
-    [
-      testId("profile-metric-source", "source provenance is explicit"),
-      testId("profile-metric-manual-override", "override is separate from source editing"),
-    ],
-    [
-      "Manual override creates a separate row while preserving immutable source evidence.",
-      "Duplicate/boundary validation, failure, retry, and authorization are asserted.",
-    ],
-  ),
-  journey(
-    "trends.analytics",
-    "athlete",
-    "/trends",
-    ["dense activity/metric history", "zones and peak performance evidence"],
-    [
-      testId("trends-dashboard", "analytics share a stable dashboard"),
-      testId("trends-range-controls", "range changes are stable"),
-    ],
-    [
-      "Volume, load, consistency, zones, and performance use deterministic persisted evidence and units.",
-      "Range changes, empty history, unavailable evidence, and authorization are asserted.",
-    ],
-  ),
-  journey(
-    "trends.partial-retry",
-    "athlete",
-    "/trends",
-    ["independently fail-able trend sources", "cached successful source data"],
-    [
-      testId("trends-partial-error", "partial failure is explicit"),
-      testId("trends-retry", "failed sources can recover without dropping successful data"),
-    ],
-    [
-      "One failed source preserves successful analytics and identifies only unavailable panels.",
-      "Retry recovers the failed source without duplicating or resetting the healthy data.",
-    ],
-  ),
-
-  journey(
     "profile.hub",
     "athlete",
     "/profile",

@@ -124,14 +124,6 @@ function runtimeSupportFor(id: string): RuntimeSupport {
       support: ["../utils/testData.ts"],
     };
   }
-  if (domain === "metrics" || domain === "efforts" || domain === "trends") {
-    return {
-      runtimeBlocker:
-        "The implemented metrics/efforts/trends behavior is runtime-unverified because its confirmed athlete history fixture requires a local Supabase service-role credential.",
-      spec: "metrics-efforts-trends.spec.ts",
-      support: ["../utils/testData.ts"],
-    };
-  }
   if (domain === "integrations") {
     return {
       runtimeBlocker:
@@ -676,36 +668,6 @@ export const mobileWebJourneyDomains: MobileWebJourneyDomain[] = [
         "Attach and preview route before recording",
         "needs-seed",
         "recording route seed",
-      ),
-    ],
-  },
-  {
-    id: "metrics-efforts-trends",
-    title: "Profile metrics and trends",
-    journeys: [
-      blocked(
-        "metrics.library-crud",
-        "Metric groups, ranges, create, edit and delete",
-        "needs-seed",
-        "dense metric history seed",
-      ),
-      blocked(
-        "metrics.override",
-        "Source-preserving manual override",
-        "needs-seed",
-        "provider/activity metric seed",
-      ),
-      blocked(
-        "trends.analytics",
-        "Volume, load, consistency, zones and performance",
-        "needs-seed",
-        "web trends route",
-      ),
-      blocked(
-        "trends.partial-retry",
-        "Partial source failure and recovery",
-        "needs-seed",
-        "web trends error composition",
       ),
     ],
   },

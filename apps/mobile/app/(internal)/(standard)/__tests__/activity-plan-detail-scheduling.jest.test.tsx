@@ -1,3 +1,4 @@
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { act, waitFor } from "@testing-library/react-native";
 import React from "react";
 import {
@@ -44,6 +45,9 @@ var fetchedPlanMock = {
 var plannedActivityMock = {
   current: null as PlannedActivityMock | null,
 };
+var activityPlanQueryInputs = [] as unknown[];
+var eventQueryInputs = [] as unknown[];
+var readModelQueryOptions = [] as unknown[];
 var localSearchParamsMock = {} as Record<string, string | undefined>;
 var routerMock = {
   back: jest.fn(),
@@ -88,6 +92,11 @@ jest.mock("react-native-maps", () => ({
 jest.mock("@/components/activity-plan/activity/TimelineChart", () => ({
   __esModule: true,
   TimelineChart: createHost("TimelineChart"),
+}));
+
+jest.mock("@/components/shared/ProfilePreviewChart", () => ({
+  __esModule: true,
+  ProfilePreviewChart: createHost("ProfilePreviewChart"),
 }));
 
 jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
@@ -175,10 +184,13 @@ jest.mock("@/lib/api", () => ({
     }),
     activityPlans: {
       getById: {
-        useQuery: () => ({
-          data: fetchedPlanMock.current ? { detail: fetchedPlanMock.current, edit: null } : null,
-          isLoading: false,
-        }),
+        useQuery: (input: unknown) => {
+          activityPlanQueryInputs.push(input);
+          return {
+            data: fetchedPlanMock.current ? { detail: fetchedPlanMock.current, edit: null } : null,
+            isLoading: false,
+          };
+        },
       },
       duplicate: {
         useMutation: (options: DuplicateMutationOptions) => ({
@@ -196,9 +208,33 @@ jest.mock("@/lib/api", () => ({
         useMutation: () => ({ mutate: jest.fn(), isPending: false }),
       },
     },
+    athleteIntelligence: {
+      getReadModel: {
+        useQuery: (_input: unknown, options: unknown) => {
+          readModelQueryOptions.push(options);
+          return {
+            data:
+              (options as { enabled?: boolean }).enabled === true
+                ? {
+                    publishedState: {
+                      performanceTargets: buildPerformanceTargetFactsFixture({
+                        asOf: "2026-08-18T12:00:00.000Z",
+                        athleteId: "profile-1",
+                        bikeThresholdWatts: 300,
+                      }),
+                    },
+                  }
+                : undefined,
+          };
+        },
+      },
+    },
     events: {
       getById: {
-        useQuery: () => ({ data: plannedActivityMock.current, error: null, isLoading: false }),
+        useQuery: (input: unknown) => {
+          eventQueryInputs.push(input);
+          return { data: plannedActivityMock.current, error: null, isLoading: false };
+        },
       },
       delete: {
         useMutation: () => ({ mutate: jest.fn(), isPending: false }),
@@ -296,6 +332,9 @@ const _findButton = (matcher: (label: string) => boolean) =>
 const resetTestState = () => {
   fetchedPlanMock.current = null;
   plannedActivityMock.current = null;
+  activityPlanQueryInputs = [];
+  eventQueryInputs = [];
+  readModelQueryOptions = [];
   alertMock.mockReset();
   nativeAlertMock.mockReset();
   duplicateMutateMock.mockReset();
@@ -337,7 +376,7 @@ describe("activity plan detail scheduling", () => {
     });
   });
 
-  it("opens event creation directly for a shared public template", async () => {
+  it("keeps shared-plan scheduling available while rendering the authored prescription", () => {
     localSearchParamsMock.template = JSON.stringify(
       createActivityPlanSummary({
         id: "11111111-1111-1111-1111-111111111111",
@@ -346,21 +385,26 @@ describe("activity plan detail scheduling", () => {
           canLike: true,
           canEdit: false,
           canDelete: false,
-          canDuplicate: true,
+          canDuplicate: false,
           canSchedule: true,
-          canRecord: true,
+          canRecord: false,
         },
       }),
     );
 
     renderNative(<ActivityPlanDetail />);
 
+    expect(screen.getByTestId("activity-plan-options-schedule")).toBeTruthy();
+    expect(screen.queryByTestId("activity-plan-options-duplicate")).toBeNull();
+    expect(screen.queryByTestId("activity-plan-options-start")).toBeNull();
+    expect(screen.queryByTestId("activity-plan-personalize-targets")).toBeNull();
+    expect(screen.getByTestId("activity-plan-content-preview")).toBeTruthy();
+    expect(screen.getByText("5 RPE · 5min")).toBeTruthy();
+
     act(() => {
       screen.getByTestId("activity-plan-options-schedule").props.onPress();
     });
 
-    expect(nativeAlertMock).not.toHaveBeenCalled();
-    expect(duplicateMutateMock).not.toHaveBeenCalled();
     expect(routerMock.navigate).toHaveBeenCalledWith({
       pathname: "/event-detail",
       params: {
@@ -370,11 +414,21 @@ describe("activity plan detail scheduling", () => {
     });
   });
 
-  it("duplicates a shared activity plan into the owned detail flow", async () => {
+  it("duplicates a public system template into the owned detail flow", async () => {
     localSearchParamsMock.template = JSON.stringify(
       createActivityPlanSummary({
         id: "11111111-1111-1111-1111-111111111111",
         name: "Tempo Builder",
+        visibility: "public",
+        isSystemTemplate: true,
+        capabilities: {
+          canLike: true,
+          canEdit: false,
+          canDelete: false,
+          canDuplicate: true,
+          canSchedule: true,
+          canRecord: false,
+        },
       }),
     );
 
@@ -502,5 +556,66 @@ describe("activity plan detail scheduling", () => {
     expect(screen.getByText("Keep the recoveries honest.")).toBeTruthy();
     expect(screen.getByText("Comments (0)")).toBeTruthy();
     expect(screen.queryByText("Share")).toBeNull();
+  });
+
+  it("defaults an eligible owner session flow on without changing the authored API projection", () => {
+    const plan = createActivityPlanDetail({ id: "bike-plan-1", activityCategory: "bike" });
+    if (!plan.structure) throw new Error("Expected owner authoring structure");
+    const structure = structuredClone(plan.structure);
+    structure.activity_category = "bike";
+    const segment = structure.segments[0];
+    if (!segment || segment.role !== "activity") throw new Error("Expected activity segment");
+    const step = segment.intervals[0]?.steps[0];
+    if (!step) throw new Error("Expected activity step");
+    step.targets = [{ type: "%FTP", intensity: 80 }];
+    fetchedPlanMock.current = createActivityPlanDetail({
+      id: "bike-plan-1",
+      activityCategory: "bike",
+      structure,
+    });
+
+    const view = renderNative(<ActivityPlanDetail />);
+
+    const toggle = screen.getByTestId("activity-plan-personalize-targets");
+    expect(toggle.props.checked).toBe(true);
+    expect(screen.getByText(/240 W \(80% FTP\)/)).toBeTruthy();
+    expect(activityPlanQueryInputs).toContainEqual(expect.objectContaining({ personalize: false }));
+    expect(eventQueryInputs).toContainEqual(expect.objectContaining({ personalize: false }));
+    expect(readModelQueryOptions).toContainEqual(
+      expect.objectContaining({ enabled: true, refetchOnWindowFocus: false }),
+    );
+
+    act(() => toggle.props.onCheckedChange(false));
+
+    expect(screen.getByText(/80% FTP/)).toBeTruthy();
+    expect(screen.queryByText(/240 W/)).toBeNull();
+    expect(activityPlanQueryInputs).not.toContainEqual(
+      expect.objectContaining({ personalize: true }),
+    );
+    expect(eventQueryInputs).not.toContainEqual(expect.objectContaining({ personalize: true }));
+
+    fetchedPlanMock.current = createActivityPlanDetail({
+      id: "bike-plan-2",
+      activityCategory: "bike",
+      structure,
+    });
+    localSearchParamsMock.planId = "bike-plan-2";
+    view.rerender(<ActivityPlanDetail />);
+    expect(screen.getByTestId("activity-plan-personalize-targets").props.checked).toBe(true);
+  });
+
+  it("keeps an owner RPE session flow off and explains why it cannot be personalized", () => {
+    fetchedPlanMock.current = createActivityPlanDetail({
+      id: "rpe-plan-1",
+      activityCategory: "run",
+    });
+
+    renderNative(<ActivityPlanDetail />);
+
+    const toggle = screen.getByTestId("activity-plan-personalize-targets");
+    expect(toggle.props.checked).toBe(false);
+    expect(toggle.props.disabled).toBe(true);
+    expect(screen.getByText(/RPE targets cannot be represented as physical values/)).toBeTruthy();
+    expect(screen.getByText(/5 RPE/)).toBeTruthy();
   });
 });

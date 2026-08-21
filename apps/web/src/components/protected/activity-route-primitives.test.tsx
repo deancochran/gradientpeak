@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ActivityCategoryBadges } from "../activity-category-presentation";
@@ -15,8 +15,19 @@ import {
 vi.mock("../../hooks/use-viewing-user-preferred-unit-system", () => ({
   useViewingUserPreferredUnitSystem: () => ({ unitSystem: "metric" }),
 }));
+vi.mock("../../lib/api/client", () => ({
+  api: {
+    social: {
+      toggleLike: {
+        useMutation: () => ({ isPending: false, mutate: vi.fn() }),
+      },
+    },
+  },
+}));
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+});
 
 describe("ActivityListCard", () => {
   const activity = {
@@ -69,11 +80,19 @@ describe("ActivityListCard", () => {
     },
   };
 
-  it("renders the canonical display projection", () => {
-    render(<ActivityListCard activity={activity} onOpen={() => undefined} />);
+  it("renders the mobile-aligned activity summary", () => {
+    render(
+      <ActivityListCard
+        activity={{ ...activity, notes: "Steady aerobic work." }}
+        onOpen={() => undefined}
+      />,
+    );
 
     expect(screen.getByRole("heading", { name: "Activity" })).toBeTruthy();
-    expect(screen.getByText("Run • Ride")).toBeTruthy();
+    expect(screen.getByText("@runner")).toBeTruthy();
+    expect(screen.getByText("Run")).toBeTruthy();
+    expect(screen.getByText("Ride")).toBeTruthy();
+    expect(screen.getByText("Steady aerobic work.")).toBeTruthy();
     expect(screen.getByText("1h 30m")).toBeTruthy();
     expect(screen.getByText("Load")).toBeTruthy();
     expect(screen.getByText("Intensity")).toBeTruthy();
@@ -82,6 +101,61 @@ describe("ActivityListCard", () => {
     expect(
       screen.getByTestId("activity-card-11111111-1111-4111-8111-111111111111-open"),
     ).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Like activity Activity/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Comment on activity Activity/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Share activity Activity" })).toBeTruthy();
+  });
+
+  it("uses a descriptive activity link when rendered as navigation", () => {
+    render(<ActivityListCard activity={activity} href={activity.href} />);
+
+    expect(screen.getByRole("link", { name: "Open activity Activity" }).getAttribute("href")).toBe(
+      activity.href,
+    );
+  });
+
+  it("keeps Share visible and explains when a private activity cannot be shared", () => {
+    const alert = vi.spyOn(window, "alert").mockImplementation(() => undefined);
+    render(<ActivityListCard activity={activity} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Share activity Activity" }));
+
+    expect(alert).toHaveBeenCalledWith("Only public activities can be shared.");
+  });
+
+  it("marks partial Load and Intensity values as estimates", () => {
+    render(
+      <ActivityListCard
+        activity={{
+          ...activity,
+          metrics: [
+            {
+              key: "common_load",
+              label: "Load",
+              status: "partial",
+              value: 32,
+              unit: "score",
+              reason: "quantification_partial",
+            },
+            {
+              key: "normalized_intensity",
+              label: "Intensity",
+              status: "partial",
+              value: 0.8,
+              unit: "ratio",
+              reason: "quantification_partial",
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
+    expect(screen.queryByText("Load (partial)")).toBeNull();
+    expect(screen.queryByText("Intensity (partial)")).toBeNull();
+    expect(screen.getByText("~32")).toBeTruthy();
+    expect(screen.getByText("~0.80")).toBeTruthy();
   });
 });
 

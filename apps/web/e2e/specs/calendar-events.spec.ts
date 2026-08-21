@@ -17,14 +17,12 @@ async function createEvent(
     title: string;
     allDay?: boolean;
     notes?: string;
-    race?: boolean;
     repeat?: boolean;
   },
 ) {
   await resetLocalAuthRateLimits();
-  await page.goto(`/calendar/new?date=${input.date}&type=${input.race ? "race_target" : "custom"}`);
+  await page.goto(`/calendar/new?date=${input.date}`);
   await expect(page.locator("#agenda-date-field")).toHaveValue(input.date);
-  if (input.race) await page.getByLabel("Race").check();
   await page.getByLabel("Title").fill(input.title);
   if (input.notes) await page.getByLabel("Notes").fill(input.notes);
   if (input.allDay) await page.getByLabel("All day").check();
@@ -81,12 +79,11 @@ test("calendar.events creates durable one-off, all-day, and bounded recurring ev
     await expect(athletePage).toHaveURL(/\/calendar(?:\?.*)?$/);
     await expect.poll(() => fixture.getSeries(eventId)).toHaveLength(0);
 
-    const allDayTitle = planningTestIdentity("Area 9 all-day race");
+    const allDayTitle = planningTestIdentity("Area 9 all-day event");
     const allDayId = await createEvent(athletePage, {
       date: "2026-10-28",
       title: allDayTitle,
       allDay: true,
-      race: true,
     });
     fixture.rememberSeries(allDayId);
     await expect(athletePage.getByText("All day").locator("..").getByText("Yes")).toBeVisible();

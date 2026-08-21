@@ -1,6 +1,9 @@
 import { compileActivityPlan } from "@repo/core/activity-plan";
 import type { CommonLoadResult } from "@repo/core/load";
-import type { AthletePerformanceTargetFacts } from "@repo/core/performance-model";
+import {
+  type AthletePerformanceTargetFacts,
+  createUnavailableAthletePerformanceTargetFacts,
+} from "@repo/core/performance-model";
 import {
   type ActivityPlanPlanningEstimate,
   createUnavailableActivityPlanPlanningEstimate,
@@ -27,6 +30,8 @@ export type ActivityPlanWithEstimate<TPlan extends EstimatableActivityPlan> = TP
 export type CurrentActivityPlanEstimateOptions = {
   /** Stable request time used to assess the published snapshot. */
   asOf?: Date;
+  /** Opts into estimates derived from the authenticated viewer's current performance facts. */
+  personalize?: boolean;
 };
 
 function buildEstimatedPlan<TPlan extends EstimatableActivityPlan>(
@@ -96,13 +101,24 @@ export async function estimateActivityPlans<TPlan extends SupportedActivityPlan>
   if (normalizedPlans.length === 0) return [];
 
   const asOf = options?.asOf ?? new Date();
+  if (!options?.personalize) {
+    const planIntentTargets = createUnavailableAthletePerformanceTargetFacts(
+      asOf.toISOString(),
+      profileId,
+    );
+    return normalizedPlans.map((plan) => {
+      try {
+        return buildEstimatedPlan(plan, estimatePlan(plan, planIntentTargets));
+      } catch (error) {
+        console.error(
+          `Failed to estimate activity plan ${plan.id}: ${error instanceof Error ? error.message : "unknown estimation error"}`,
+        );
+        return unavailablePlan(plan, asOf, "invalid_data");
+      }
+    });
+  }
   try {
     const published = await readPublishedAthletePerformanceTargets({ db, profileId, now: asOf });
-    // Projection freshness is descriptive. A stale canonical threshold remains
-    // usable; only an unavailable target fact activates range/RPE fallback.
-    if (published.status === "unavailable") {
-      return normalizedPlans.map((plan) => unavailablePlan(plan, asOf));
-    }
     const memo = new Map<string, ActivityPlanPlanningEstimate>();
     return normalizedPlans.map((plan) => {
       const key = JSON.stringify({ id: plan.id, structure: plan.structure });

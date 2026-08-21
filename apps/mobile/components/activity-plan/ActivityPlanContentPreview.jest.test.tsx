@@ -1,3 +1,4 @@
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { createHost } from "../../test/mock-components";
 import { renderNative, screen } from "../../test/render-native";
 import { ActivityPlanContentPreview } from "./ActivityPlanContentPreview";
@@ -116,7 +117,7 @@ describe("ActivityPlanContentPreview", () => {
 
     expect(screen.getAllByText("Swim")).toHaveLength(1);
     expect(screen.queryByText("swim")).toBeNull();
-    expect(screen.getByText("RPE 5 · 20min")).toBeTruthy();
+    expect(screen.getByText("5 RPE · 20min")).toBeTruthy();
   });
 
   it("keeps distinct hierarchy labels and formats longer target summaries", () => {
@@ -142,8 +143,8 @@ describe("ActivityPlanContentPreview", () => {
                         name: "कि",
                         duration: { type: "time", seconds: 600 },
                         targets: [
-                          { type: "speed", intensity: 30 },
                           { type: "cadence", intensity: 90 },
+                          { type: "speed", intensity: 30 },
                         ],
                       },
                     ],
@@ -161,5 +162,81 @@ describe("ActivityPlanContentPreview", () => {
     expect(screen.getByText("क · 2x")).toBeTruthy();
     expect(screen.getByText("कि")).toBeTruthy();
     expect(screen.getByText("30 km/h · 90 rpm · 10min")).toBeTruthy();
+  });
+
+  it("shows authored fallback by default and viewer-personalized output only when enabled", () => {
+    const bikeStructure = structuredClone(structure);
+    bikeStructure.activity_category = "bike";
+    bikeStructure.segments[0].intervals[0].steps[0].targets = [{ type: "%FTP", intensity: 80 }];
+    const performanceTargets = buildPerformanceTargetFactsFixture({
+      asOf: "2026-08-18T12:00:00.000Z",
+      athleteId: "viewer-1",
+      bikeThresholdWatts: 300,
+    });
+    const { rerender } = renderNative(
+      <ActivityPlanContentPreview
+        performanceTargets={performanceTargets}
+        plan={{ structure: bikeStructure }}
+        size="large"
+      />,
+    );
+
+    expect(screen.getByText(/80% FTP/)).toBeTruthy();
+    expect(screen.queryByText(/240 W/)).toBeNull();
+
+    rerender(
+      <ActivityPlanContentPreview
+        personalizeTargets
+        performanceTargets={performanceTargets}
+        plan={{ structure: bikeStructure }}
+        size="large"
+      />,
+    );
+    expect(screen.getByText(/240 W \(80% FTP\)/)).toBeTruthy();
+  });
+
+  it("shows every authored instruction annotation on the full detail preview", () => {
+    renderNative(
+      <ActivityPlanContentPreview
+        plan={{
+          structure: {
+            version: 3,
+            activity_category: "run",
+            segments: [
+              {
+                id: id(30),
+                role: "activity",
+                name: "Tempo run",
+                notes: "Keep the warm-up easy.",
+                intervals: [
+                  {
+                    id: id(31),
+                    name: "Work",
+                    notes: "Jog the recoveries.",
+                    repetitions: 1,
+                    steps: [
+                      {
+                        id: id(32),
+                        name: "Tempo",
+                        description: "Hold a controlled hard effort.",
+                        notes: "Relax your shoulders.",
+                        duration: { type: "time", seconds: 300 },
+                        targets: [{ type: "RPE", intensity: 7 }],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        }}
+        size="large"
+      />,
+    );
+
+    expect(screen.getByText("Keep the warm-up easy.")).toBeTruthy();
+    expect(screen.getByText("Jog the recoveries.")).toBeTruthy();
+    expect(screen.getByText("Hold a controlled hard effort.")).toBeTruthy();
+    expect(screen.getByText("Relax your shoulders.")).toBeTruthy();
   });
 });

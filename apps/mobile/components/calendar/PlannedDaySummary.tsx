@@ -1,25 +1,14 @@
-import type { ActivityPrescriptionQuantificationBundle } from "@repo/core";
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import { Text } from "@repo/ui/components/text";
 import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
 import { useState } from "react";
 import { TouchableOpacity, View } from "react-native";
 import { announcePlannedDaySummaryRetryStatus } from "./plannedDaySummaryAccessibility";
 
-export type MobilePlannedDaySummaryData = {
-  summary: {
-    eventCount: number;
-    activity_categories: string[];
-    totalDurationSeconds: number | null;
-    prescriptionQuantification: ActivityPrescriptionQuantificationBundle;
-  };
-  source: {
-    complete: true;
-    eventCount: number;
-    unavailableEstimateCount: number;
-    unavailablePlanCount: number;
-    unlinkedPlanCount: number;
-  };
-};
+export type MobilePlannedDaySummaryData = Pick<
+  inferRouterOutputs<AppRouter>["calendar"]["day"]["plannedLoadSummary"],
+  "source" | "summary"
+>;
 
 function pluralize(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
@@ -105,10 +94,6 @@ function PlannedDaySummaryDetails({ data }: { data: MobilePlannedDaySummaryData 
           {quantification.normalizedIntensity.value}
         </Text>
       </View>
-      <Text className="text-xs text-muted-foreground">
-        {quantification.commonLoad.evidence}. {quantification.commonLoad.explanation}
-      </Text>
-
       {hasPartialInformation ? (
         <Text accessibilityLiveRegion="polite" className="text-sm text-muted-foreground">
           Partial information:{" "}

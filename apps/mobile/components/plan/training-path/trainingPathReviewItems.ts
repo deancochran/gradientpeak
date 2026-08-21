@@ -3,6 +3,7 @@ import type {
   ActivityObservationQuantificationBundle,
   ActivityPrescriptionQuantificationBundle,
 } from "@repo/core";
+import { isGroupEventGoing } from "@repo/core/groups";
 import { getCompleteActivityQuantificationCommonLoad } from "@/lib/activity-load-presentation";
 import { getTrainingPathDateKey } from "./trainingPathPlanningTime";
 import type { TrainingPathCompletedActivity, TrainingPathScheduledItem } from "./trainingPathTypes";
@@ -159,9 +160,11 @@ export function buildTrainingPathScheduledReviewItems(input: {
     .map((event, index) => toTrainingPathScheduledItem(event, index, input.planningTimezone))
     .filter((item): item is TrainingPathScheduledItem => item != null);
   const groupEvents = (input.groupEvents ?? [])
-    .filter(
-      (event) =>
-        event.viewerRsvp?.status !== "declined" && event.viewerSeriesRsvp?.status !== "declined",
+    .filter((event) =>
+      isGroupEventGoing({
+        occurrenceStatus: event.viewerRsvp?.status,
+        seriesStatus: event.viewerSeriesRsvp?.status,
+      }),
     )
     .map<TrainingPathScheduledItem | null>((event, index) => {
       const date = getTrainingPathDateKey(event.starts_at, input.planningTimezone);
@@ -213,9 +216,11 @@ export function buildTrainingPathGroupEventReviewItems(input: {
 }) {
   if (!input.planningTimezone?.trim()) return [];
   return (input.groupEvents ?? [])
-    .filter(
-      (event) =>
-        event.viewerRsvp?.status !== "declined" && event.viewerSeriesRsvp?.status !== "declined",
+    .filter((event) =>
+      isGroupEventGoing({
+        occurrenceStatus: event.viewerRsvp?.status,
+        seriesStatus: event.viewerSeriesRsvp?.status,
+      }),
     )
     .map<TrainingPathScheduledItem | null>((event, index) => {
       const date = getTrainingPathDateKey(event.starts_at, input.planningTimezone);

@@ -111,7 +111,7 @@ export async function retryOnboardingProviderProcessing(input: {
         )
         .returning({ id: providerSyncJobs.id });
       queued = Boolean(retried);
-    } else if (provider.importRun?.failed_count || provider.importRun?.status === "cancelled") {
+    } else if (provider.importRun?.status === "cancelled") {
       throw new OnboardingProviderRecoveryConflictError(
         "The anchored import run cannot be replaced; repair the linked run before retrying",
       );

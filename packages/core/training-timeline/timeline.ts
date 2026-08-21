@@ -2,11 +2,14 @@ import {
   addDaysDateKey,
   getWeekStartDateKey,
   normalizeTrainingLoadTimelinePoint,
-  type TrainingLoadTimelinePoint,
+  type TrainingLoadTimelineInputPoint,
+  type TrainingLoadValueStatus,
 } from "../plan/trainingLoadTimeline";
 import {
   type CompletedTrainingItem,
   completedTrainingItemSchema,
+  type ParsedCompletedTrainingItem,
+  type ParsedScheduledTrainingItem,
   type ScheduledTrainingItem,
   scheduledTrainingItemSchema,
   type TrainingDaySummary,
@@ -21,12 +24,14 @@ import {
   trainingWeekSummarySchema,
 } from "./schemas";
 
-type TrainingTimelineLoadPoint = Partial<TrainingLoadTimelinePoint> & { date: string };
+type TrainingTimelineLoadPoint = TrainingLoadTimelineInputPoint;
 
 type TrainingTimelineDayMetadata = {
   annotations?: TrainingTimelineAnnotation[];
   confidence?: TrainingTimelineConfidence | null;
 };
+
+type TrainingTimelineSourceStatus = "complete" | "partial" | "unavailable";
 
 export type BuildTrainingTimelineWindowInput = {
   today: string;
@@ -34,7 +39,9 @@ export type BuildTrainingTimelineWindowInput = {
   endDate: string;
   loadPoints?: TrainingTimelineLoadPoint[];
   scheduledItems?: ScheduledTrainingItem[];
+  scheduledSourceStatus?: TrainingTimelineSourceStatus;
   completedItems?: CompletedTrainingItem[];
+  completedSourceStatus?: TrainingTimelineSourceStatus;
   dayMetadata?: Record<string, TrainingTimelineDayMetadata>;
 };
 
@@ -48,32 +55,75 @@ function roundSignedLoad(value: number | null | undefined): number | null {
   return Math.round(value * 10) / 10;
 }
 
-function sumKnownItemLoads(values: readonly (number | null | undefined)[]): number | null {
-  if (values.length === 0) return 0;
-  if (values.some((value) => value == null)) return null;
-  const knownValues = values.filter((value): value is number => typeof value === "number");
-  return roundLoad(knownValues.reduce((sum, value) => sum + value, 0));
-}
-
-function sumAvailableLoads(values: readonly (number | null)[]): number | null {
-  if (values.some((value) => value === null)) return null;
-  const knownValues = values.filter((value): value is number => value !== null);
-  return roundLoad(knownValues.reduce((sum, value) => sum + value, 0));
-}
-
-function deriveExpectedLoad(input: {
-  plannedLoad: number | null;
-  scheduledLoad: number | null;
-}): number | null {
-  return input.scheduledLoad;
-}
-
 function hasExplicitLoad(point: TrainingTimelineLoadPoint | undefined, key: string): boolean {
   return (
     point !== undefined &&
-    Object.hasOwn(point, key) &&
-    point[key as keyof typeof point] !== undefined
+    ((Object.hasOwn(point, key) && point[key as keyof typeof point] !== undefined) ||
+      Object.hasOwn(point, `${key}_status`))
   );
+}
+
+type StatusAwareLoad = { load: number | null; status: TrainingLoadValueStatus };
+
+function normalizeStatusAwareLoad(
+  load: number | null | undefined,
+  status?: TrainingLoadValueStatus,
+): StatusAwareLoad {
+  const rounded = roundLoad(load);
+  if (status !== undefined) return { load: rounded, status };
+  if (rounded === null) return { load: null, status: "unavailable" };
+  return { load: rounded, status: rounded === 0 ? "known_zero" : "complete" };
+}
+
+function aggregateStatusAwareLoads(
+  values: readonly StatusAwareLoad[],
+  emptyStatus: "known_zero" | "unavailable",
+): StatusAwareLoad {
+  if (values.length === 0) {
+    return emptyStatus === "known_zero"
+      ? { load: 0, status: "known_zero" }
+      : { load: null, status: "unavailable" };
+  }
+  const known = values.filter(
+    (value): value is { load: number; status: TrainingLoadValueStatus } => value.load !== null,
+  );
+  if (known.length === 0) return { load: null, status: "unavailable" };
+  const load = roundLoad(known.reduce((sum, value) => sum + value.load, 0));
+  if (load === null) return { load: null, status: "unavailable" };
+  if (
+    known.length !== values.length ||
+    values.some((value) => value.status === "partial" || value.status === "unavailable")
+  ) {
+    return { load, status: "partial" };
+  }
+  if (values.every((value) => value.status === "known_zero")) {
+    return { load: 0, status: "known_zero" };
+  }
+  return { load, status: "complete" };
+}
+
+function scheduledItemLoad(
+  items: readonly ParsedScheduledTrainingItem[],
+  sourceStatus: TrainingTimelineSourceStatus,
+): StatusAwareLoad {
+  const aggregate = aggregateStatusAwareLoads(
+    items.map((item) => ({ load: item.plannedLoad, status: item.plannedLoadStatus })),
+    sourceStatus === "complete" ? "known_zero" : "unavailable",
+  );
+  if (sourceStatus === "complete" || aggregate.status === "unavailable") return aggregate;
+  return { ...aggregate, status: "partial" };
+}
+
+function completedItemLoad(
+  items: readonly ParsedCompletedTrainingItem[],
+  sourceStatus: TrainingTimelineSourceStatus,
+): StatusAwareLoad {
+  const aggregate = aggregateStatusAwareLoads(
+    items.map((item) => ({ load: item.completedLoad, status: item.completedLoadStatus })),
+    sourceStatus === "complete" ? "known_zero" : "unavailable",
+  );
+  if (sourceStatus === "complete" || aggregate.status === "unavailable") return aggregate;
+  return { ...aggregate, status: "partial" };
 }
 
 function dateKeyRange(startDate: string, endDate: string) {
@@ -98,30 +148,50 @@ function bucketByDate<Item extends { date: string }>(items: Item[]) {
 
 export function compareTrainingLoad(input: {
   plannedLoad?: number | null;
+  plannedLoadStatus?: TrainingLoadValueStatus;
   scheduledLoad?: number | null;
+  scheduledLoadStatus?: TrainingLoadValueStatus;
   completedLoad?: number | null;
+  completedLoadStatus?: TrainingLoadValueStatus;
   recommendedLoad?: number | null;
+  recommendedLoadStatus?: TrainingLoadValueStatus;
 }): TrainingLoadComparison {
-  const recommendedLoad = roundLoad(input.recommendedLoad);
-  const plannedLoad = roundLoad(
-    input.plannedLoad === undefined ? input.recommendedLoad : input.plannedLoad,
+  const recommended = normalizeStatusAwareLoad(input.recommendedLoad, input.recommendedLoadStatus);
+  const planned = normalizeStatusAwareLoad(
+    input.plannedLoad === undefined ? recommended.load : input.plannedLoad,
+    input.plannedLoadStatus ?? (input.plannedLoad === undefined ? recommended.status : undefined),
   );
-  const scheduledLoad = roundLoad(input.scheduledLoad);
-  const completedLoad = roundLoad(input.completedLoad);
-  const expectedLoad = deriveExpectedLoad({ plannedLoad, scheduledLoad });
+  const scheduled = normalizeStatusAwareLoad(input.scheduledLoad, input.scheduledLoadStatus);
+  const completed = normalizeStatusAwareLoad(input.completedLoad, input.completedLoadStatus);
+  const remaining =
+    scheduled.status === "known_zero"
+      ? ({ load: 0, status: "known_zero" } as const)
+      : scheduled.load === null || completed.load === null
+        ? ({ load: null, status: "unavailable" } as const)
+        : {
+            load: roundLoad(Math.max(0, scheduled.load - completed.load)),
+            status:
+              scheduled.status === "partial" || completed.status === "partial"
+                ? ("partial" as const)
+                : scheduled.load - completed.load <= 0
+                  ? ("known_zero" as const)
+                  : ("complete" as const),
+          };
   return trainingLoadComparisonSchema.parse({
-    plannedLoad,
-    scheduledLoad,
-    completedLoad,
-    remainingLoad:
-      expectedLoad === null || completedLoad === null
-        ? null
-        : roundLoad(Math.max(0, expectedLoad - completedLoad)),
-    recommendedLoad,
+    plannedLoad: planned.load,
+    plannedLoadStatus: planned.status,
+    scheduledLoad: scheduled.load,
+    scheduledLoadStatus: scheduled.status,
+    completedLoad: completed.load,
+    completedLoadStatus: completed.status,
+    remainingLoad: remaining.load,
+    remainingLoadStatus: remaining.status,
+    recommendedLoad: recommended.load,
+    recommendedLoadStatus: recommended.status,
     deltaLoad:
-      expectedLoad === null || completedLoad === null
+      scheduled.load === null || completed.load === null
         ? null
-        : roundSignedLoad(completedLoad - expectedLoad),
+        : roundSignedLoad(completed.load - scheduled.load),
   });
 }
 
@@ -129,7 +199,9 @@ export function buildTrainingDaySummary(input: {
   date: string;
   loadPoint?: TrainingTimelineLoadPoint;
   scheduledItems?: ScheduledTrainingItem[];
+  scheduledSourceStatus?: TrainingTimelineSourceStatus;
   completedItems?: CompletedTrainingItem[];
+  completedSourceStatus?: TrainingTimelineSourceStatus;
   annotations?: TrainingTimelineAnnotation[];
   confidence?: TrainingTimelineConfidence | null;
 }): TrainingDaySummary {
@@ -142,19 +214,35 @@ export function buildTrainingDaySummary(input: {
   const completedItems = (input.completedItems ?? []).map((item) =>
     completedTrainingItemSchema.parse(item),
   );
-  const scheduledItemLoad = sumKnownItemLoads(scheduledItems.map((item) => item.plannedLoad));
-  const completedItemLoad = sumKnownItemLoads(completedItems.map((item) => item.completedLoad));
+  const scheduledFallback = scheduledItemLoad(
+    scheduledItems,
+    input.scheduledSourceStatus ??
+      (input.scheduledItems === undefined ? "unavailable" : "complete"),
+  );
+  const completedFallback = completedItemLoad(
+    completedItems,
+    input.completedSourceStatus ??
+      (input.completedItems === undefined ? "unavailable" : "complete"),
+  );
   return trainingDaySummarySchema.parse({
     date: input.date,
     load: compareTrainingLoad({
       plannedLoad: normalizedLoad.recommended_common_load,
+      plannedLoadStatus: normalizedLoad.recommended_common_load_status,
       scheduledLoad: hasExplicitLoad(input.loadPoint, "scheduled_common_load")
         ? normalizedLoad.scheduled_common_load
-        : scheduledItemLoad,
+        : scheduledFallback.load,
+      scheduledLoadStatus: hasExplicitLoad(input.loadPoint, "scheduled_common_load")
+        ? normalizedLoad.scheduled_common_load_status
+        : scheduledFallback.status,
       completedLoad: hasExplicitLoad(input.loadPoint, "completed_common_load")
         ? normalizedLoad.completed_common_load
-        : completedItemLoad,
+        : completedFallback.load,
+      completedLoadStatus: hasExplicitLoad(input.loadPoint, "completed_common_load")
+        ? normalizedLoad.completed_common_load_status
+        : completedFallback.status,
       recommendedLoad: normalizedLoad.recommended_common_load,
+      recommendedLoadStatus: normalizedLoad.recommended_common_load_status,
     }),
     scheduledItems,
     completedItems,
@@ -184,12 +272,46 @@ export function buildTrainingWeekSummaries(days: TrainingDaySummary[]): Training
             (day.load.scheduledLoad !== null && day.load.scheduledLoad > 0) ||
             (day.load.completedLoad !== null && day.load.completedLoad > 0),
         ).length,
-        load: compareTrainingLoad({
-          plannedLoad: sumAvailableLoads(weekDays.map((day) => day.load.plannedLoad)),
-          scheduledLoad: sumAvailableLoads(weekDays.map((day) => day.load.scheduledLoad)),
-          completedLoad: sumAvailableLoads(weekDays.map((day) => day.load.completedLoad)),
-          recommendedLoad: sumAvailableLoads(weekDays.map((day) => day.load.recommendedLoad)),
-        }),
+        load: (() => {
+          const planned = aggregateStatusAwareLoads(
+            weekDays.map((day) => ({
+              load: day.load.plannedLoad,
+              status: day.load.plannedLoadStatus,
+            })),
+            "unavailable",
+          );
+          const scheduled = aggregateStatusAwareLoads(
+            weekDays.map((day) => ({
+              load: day.load.scheduledLoad,
+              status: day.load.scheduledLoadStatus,
+            })),
+            "unavailable",
+          );
+          const completed = aggregateStatusAwareLoads(
+            weekDays.map((day) => ({
+              load: day.load.completedLoad,
+              status: day.load.completedLoadStatus,
+            })),
+            "unavailable",
+          );
+          const recommended = aggregateStatusAwareLoads(
+            weekDays.map((day) => ({
+              load: day.load.recommendedLoad,
+              status: day.load.recommendedLoadStatus,
+            })),
+            "unavailable",
+          );
+          return compareTrainingLoad({
+            plannedLoad: planned.load,
+            plannedLoadStatus: planned.status,
+            scheduledLoad: scheduled.load,
+            scheduledLoadStatus: scheduled.status,
+            completedLoad: completed.load,
+            completedLoadStatus: completed.status,
+            recommendedLoad: recommended.load,
+            recommendedLoadStatus: recommended.status,
+          });
+        })(),
       }),
     );
 }
@@ -200,12 +322,20 @@ export function buildTrainingTimelineWindow(
   const loadByDate = new Map((input.loadPoints ?? []).map((point) => [point.date, point]));
   const scheduledByDate = bucketByDate(input.scheduledItems ?? []);
   const completedByDate = bucketByDate(input.completedItems ?? []);
+  const scheduledSourceStatus =
+    input.scheduledSourceStatus ??
+    (input.scheduledItems === undefined ? "unavailable" : "complete");
+  const completedSourceStatus =
+    input.completedSourceStatus ??
+    (input.completedItems === undefined ? "unavailable" : "complete");
   const days = dateKeyRange(input.startDate, input.endDate).map((date) =>
     buildTrainingDaySummary({
       date,
       loadPoint: loadByDate.get(date),
       scheduledItems: scheduledByDate.get(date),
+      scheduledSourceStatus,
       completedItems: completedByDate.get(date),
+      completedSourceStatus,
       annotations: input.dayMetadata?.[date]?.annotations,
       confidence: input.dayMetadata?.[date]?.confidence,
     }),

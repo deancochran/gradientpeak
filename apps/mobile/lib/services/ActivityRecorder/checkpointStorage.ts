@@ -54,6 +54,7 @@ const unplannedRecordingCheckpointSchema = z
             .object({ type: z.enum(["pause", "resume"]), timestamp: z.string().datetime() })
             .strict(),
         ),
+        manualLapsMs: z.array(z.number().int().min(0)).max(10_000).default([]),
       })
       .strict(),
     performanceTargets: athletePerformanceTargetFactsSchema,
@@ -312,6 +313,10 @@ export async function loadAndClaimRecordingCheckpoint(
     return { status: "recovered", checkpoint };
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Unreadable checkpoint";
+    // Parsing happens after the journal row is claimed. Release that in-process
+    // claim even when quarantine itself cannot complete, so a malformed row
+    // cannot hide later recovery attempts for the lifetime of the app process.
+    releaseRecordingEvidenceCheckpointClaim(row.sessionId);
     await quarantineRecoveredEvidence(row.sessionId, profileId, reason);
     return { status: "quarantined", reason };
   }

@@ -5,10 +5,15 @@ import {
   ORGANIZATION_ROLE_KEYS,
   type OrganizationRoleKey,
 } from "@repo/core/organizations/constants";
+import { canonicalActivityCategoryValues } from "@repo/core/schemas/activity-category";
 import { onboardingStatusValues } from "@repo/core/schemas/onboarding";
 import { socialCommentEntityTypeValues, socialLikeEntityTypeValues } from "@repo/core/social";
-import { canonicalActivityCategoryDbValues } from "./canonical-activity-categories";
-import { integrationProviderEnum, likeEntityTypeEnum, onboardingStatusEnum } from "./enums";
+import {
+  activityCategoryEnum,
+  integrationProviderEnum,
+  likeEntityTypeEnum,
+  onboardingStatusEnum,
+} from "./enums";
 
 // These literals are DB-owned: Core can validate their union membership but does not supply them.
 export const organizationRoleKeyDbValues = [
@@ -40,10 +45,10 @@ export const coreEnumParityManifest = {
     databaseValues: [...athleteReadScopeDbValues].sort(),
     strategy: "check-constraint" as const,
   },
-  canonical_activity_categories: {
-    coreValues: canonicalActivityCategoryDbValues,
-    databaseValues: canonicalActivityCategoryDbValues,
-    strategy: "reference-table-seed" as const,
+  activity_category: {
+    coreValues: canonicalActivityCategoryValues,
+    databaseValues: activityCategoryEnum.enumValues,
+    strategy: "exact" as const,
   },
   integration_provider: {
     coreValues: [...persistentIntegrationSourceIdValues].sort(),

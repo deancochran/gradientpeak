@@ -119,6 +119,7 @@ async function checkpoint(): Promise<ActivityRecorderCheckpoint> {
         distanceMeters: 100,
       },
     ],
+    manualLapsMs: [],
     boundaryJournal: [
       {
         revision: 2,
@@ -246,6 +247,7 @@ describe("recording checkpoint recovery", () => {
   it("quarantines corrupt serialized checkpoint data", async () => {
     journalMocks.row = { sessionId: "session-1", checkpointJson: "{not-json" };
     expect((await loadAndClaimRecordingCheckpoint("profile-1")).status).toBe("quarantined");
+    expect(journalMocks.release).toHaveBeenCalledWith("session-1");
     expect(journalMocks.quarantineSession).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: "session-1", profileId: "profile-1" }),
     );
@@ -323,7 +325,7 @@ describe("recording checkpoint recovery", () => {
       start: { startedAt: "2026-01-01T10:00:00.000Z", updatedAt: "2026-01-01T10:00:01.000Z" },
       draft: { activity_category: "run" as const, gpsMode: "off" as const },
       summary: { elapsedSeconds: 1, movingSeconds: 1, distanceMeters: 0 },
-      executionState: { timerEvents: [] },
+      executionState: { timerEvents: [], manualLapsMs: [] },
       performanceTargets: createUnavailableAthletePerformanceTargetFacts(
         "2026-01-01T10:00:00.000Z",
       ),
@@ -406,7 +408,7 @@ describe("recording checkpoint recovery", () => {
             },
             draft: { activity_category: "run" as const, gpsMode: "off" as const },
             summary: { elapsedSeconds: 1, movingSeconds: 1, distanceMeters: 0 },
-            executionState: { timerEvents: [] },
+            executionState: { timerEvents: [], manualLapsMs: [] },
             performanceTargets: createUnavailableAthletePerformanceTargetFacts(
               "2026-01-01T10:00:00.000Z",
             ),

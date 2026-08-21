@@ -102,7 +102,6 @@ export function ActivityPlanCard({
     plan.contractVersion === "scheduled-activity-plan-summary-v1"
       ? (plan.schedule.startsAt ?? plan.schedule.calendarDate)
       : null;
-  const estimatedDuration = plan.metrics.find((metric) => metric.key === "elapsed_duration")?.value;
   const categoryItems = getUniqueActivityCategoryConfigs([
     presentation?.activity_category ?? plan.activityCategory,
   ]).map((activity_category) => ({
@@ -167,7 +166,6 @@ export function ActivityPlanCard({
 
       <ActivityPlanSummary
         description={plan.description}
-        estimatedDuration={estimatedDuration ?? undefined}
         owner={
           plan.owner
             ? { id: plan.owner.id, username: plan.owner.username, avatar_url: plan.owner.avatarUrl }
@@ -179,6 +177,14 @@ export function ActivityPlanCard({
         title={plan.name}
         variant="standalone"
         showAttribution={false}
+      />
+
+      <ActivityPlanContentPreview
+        compact={isCompact}
+        size={isCompact ? "small" : "medium"}
+        plan={{ structure: plan.structure }}
+        presentation={presentation}
+        testIDPrefix={`activity-plan-card-preview-${plan.id}`}
       />
 
       {showScheduleInfo &&
@@ -198,16 +204,6 @@ export function ActivityPlanCard({
           </View>
         </View>
       ) : null}
-
-      <ActivityPlanContentPreview
-        compact={isCompact}
-        size={isCompact ? "small" : "medium"}
-        plan={{
-          structure: plan.structure,
-        }}
-        presentation={presentation}
-        testIDPrefix={`activity-plan-card-preview-${plan.id}`}
-      />
     </ResourceCardShell>
   );
 }

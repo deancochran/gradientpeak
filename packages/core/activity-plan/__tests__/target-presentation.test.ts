@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createUnavailableAthletePerformanceTargetFacts } from "../../performance-model";
 import { buildPerformanceTargetFactsFixture } from "../../testing/performance-model";
-import { resolveActivityPlanTargetPresentation } from "../target-presentation";
+import {
+  orderActivityPlanTargetsForPresentation,
+  resolveActivityPlanTargetPresentation,
+} from "../target-presentation";
 
 const asOf = "2026-08-12T12:00:00.000Z";
 
@@ -17,6 +20,24 @@ function confirmedFacts() {
 }
 
 describe("resolveActivityPlanTargetPresentation", () => {
+  it("orders conflicting target permutations identically without mutating authored data", () => {
+    const first = [
+      { type: "speed" as const, intensity: 18 },
+      { type: "speed" as const, intensity: 14.4 },
+      { type: "RPE" as const, intensity: 6 },
+    ];
+    const second = [
+      { type: "speed" as const, intensity: 14.4 },
+      { type: "RPE" as const, intensity: 6 },
+      { type: "speed" as const, intensity: 18 },
+    ];
+
+    expect(orderActivityPlanTargetsForPresentation(first)).toEqual(
+      orderActivityPlanTargetsForPresentation(second),
+    );
+    expect(first.map((target) => target.intensity)).toEqual([18, 14.4, 6]);
+  });
+
   it("keeps absolute authored targets exact", () => {
     expect(
       resolveActivityPlanTargetPresentation({
@@ -50,7 +71,7 @@ describe("resolveActivityPlanTargetPresentation", () => {
   it.each([
     ["provisional", "fresh"],
     ["confirmed", "stale"],
-  ] as const)("keeps FTP abstract for %s/%s facts", (state, freshness) => {
+  ] as const)("uses the viewer's available FTP fact for %s/%s facts", (state, freshness) => {
     const performanceTargets = confirmedFacts();
     if (performanceTargets.thresholds.bike.status !== "available")
       throw new Error("Expected bike threshold");
@@ -63,7 +84,7 @@ describe("resolveActivityPlanTargetPresentation", () => {
         performanceTargets,
         asOf,
       }),
-    ).toMatchObject({ kind: "abstract", label: "80% FTP" });
+    ).toMatchObject({ kind: "exact_personalized", label: "240 W (80% FTP)" });
   });
 
   it("keeps unavailable HR facts abstract", () => {
@@ -77,17 +98,14 @@ describe("resolveActivityPlanTargetPresentation", () => {
     ).toMatchObject({ kind: "abstract", label: "90% Max HR" });
   });
 
-  it.each([
-    ["provisional", "2026-08-13T12:00:00.000Z"],
-    ["stale", "2026-08-13T12:00:00.000Z"],
-    ["confirmed", "2026-08-11T12:00:00.000Z"],
-  ] as const)("keeps HR abstract for %s or expired facts", (calibrationState, expiresAt) => {
+  it("keeps Threshold HR and Max HR distinct while preserving each authored fallback", () => {
     const performanceTargets = confirmedFacts();
-    performanceTargets.heartRate.run.lthr = {
-      ...performanceTargets.heartRate.run.lthr,
-      calibrationState,
-      expiresAt,
-    } as typeof performanceTargets.heartRate.run.lthr;
+    performanceTargets.heartRate.run.maxHr = {
+      ...performanceTargets.heartRate.run.maxHr,
+      status: "available",
+      valueBpm: 200,
+      calibrationState: "confirmed",
+    } as typeof performanceTargets.heartRate.run.maxHr;
     expect(
       resolveActivityPlanTargetPresentation({
         target: { type: "%ThresholdHR", intensity: 90 },
@@ -95,6 +113,14 @@ describe("resolveActivityPlanTargetPresentation", () => {
         performanceTargets,
         asOf,
       }),
-    ).toMatchObject({ kind: "abstract", label: "90% Threshold HR" });
+    ).toMatchObject({ label: "162 bpm (90% Threshold HR)", sourceLabel: "90% Threshold HR" });
+    expect(
+      resolveActivityPlanTargetPresentation({
+        target: { type: "%MaxHR", intensity: 90 },
+        activityCategory: "run",
+        performanceTargets,
+        asOf,
+      }),
+    ).toMatchObject({ label: "180 bpm (90% Max HR)", sourceLabel: "90% Max HR" });
   });
 });

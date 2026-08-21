@@ -61,7 +61,7 @@ describe("TrainingPlanCard", () => {
     toggleLikeMutateMock.mockReset();
   });
 
-  it("renders title, metrics, snapshot, and attribution like the shared cards", () => {
+  it("renders title, an authored-average metric, and a truthful compact schedule distribution", () => {
     renderNative(
       <TrainingPlanCard
         plan={{
@@ -77,13 +77,19 @@ describe("TrainingPlanCard", () => {
     );
 
     expect(screen.getByText("Half Marathon Build")).toBeTruthy();
-    expect(screen.getByText("Plan snapshot")).toBeTruthy();
+    expect(screen.getByText("Plan schedule")).toBeTruthy();
     expect(screen.getByText("10 weeks")).toBeTruthy();
-    expect(screen.getByText("0.2/week")).toBeTruthy();
-    expect(screen.getByTestId("training-plan-periodization-preview")).toBeTruthy();
-    expect(screen.getByTestId("training-plan-visual-segment-9")).toBeTruthy();
-    expect(screen.queryByTestId("training-plan-visual-recovery-9")).toBeNull();
-    expect(screen.queryByTestId("training-plan-visual-segment-10")).toBeNull();
+    expect(screen.getByText("Authored avg: 0.2/week")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-planned-preview-training-plan-1")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-visual-week-9")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-visual-empty-1")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-visual-bar-0")).toBeTruthy();
+    expect(screen.queryByTestId("training-plan-visual-bar-1")).toBeNull();
+    expect(
+      screen.getByLabelText(
+        /Plan schedule\. 2 scheduled sessions across 10 weeks\..*empty weeks have a baseline only.*not athlete-specific training load/,
+      ),
+    ).toBeTruthy();
     expect(screen.getByText("GradientPeak")).toBeTruthy();
     expect(screen.getByText("Mar 21, 2026 • 8:00 AM")).toBeTruthy();
   });
@@ -131,14 +137,14 @@ describe("TrainingPlanCard", () => {
 
     expect(screen.getByText("Half Marathon Build")).toBeTruthy();
     expect(screen.getByText("10 weeks")).toBeTruthy();
-    expect(screen.getByText("0.2/week")).toBeTruthy();
+    expect(screen.getByText("Authored avg: 0.2/week")).toBeTruthy();
     expect(screen.getByText("run")).toBeTruthy();
     expect(screen.queryByText("Level")).toBeNull();
     expect(screen.queryByTestId("training-plan-card-like-button-training-plan-1")).toBeNull();
     expect(screen.queryByText("Coach Kim")).toBeNull();
     expect(screen.queryByText("Mar 21, 2026 • 8:00 AM")).toBeNull();
-    expect(screen.queryByText("Plan snapshot")).toBeNull();
-    expect(screen.queryByTestId("training-plan-periodization-preview")).toBeNull();
+    expect(screen.queryByText("Plan schedule")).toBeNull();
+    expect(screen.queryByTestId("training-plan-planned-preview-training-plan-1")).toBeNull();
     expect(screen.getByTestId("training-plan-card-training-plan-1")).toBeTruthy();
 
     fireEvent.press(screen.getByText("Half Marathon Build"));
@@ -173,5 +179,44 @@ describe("TrainingPlanCard", () => {
       entity_type: "training_plan",
     });
     expect(onPress).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Plan schedule")).toBeNull();
+  });
+
+  it("uses the explicit session target instead of deriving an authored average", () => {
+    renderNative(
+      <TrainingPlanCard
+        plan={{
+          id: "training-plan-1",
+          name: "Half Marathon Build",
+          sessions_per_week_target: 4,
+          structure: canonicalStructure,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Target: 4/week")).toBeTruthy();
+  });
+
+  it("renders metadata from a flattened public template projection", () => {
+    renderNative(
+      <TrainingPlanCard
+        plan={{
+          id: "template-1",
+          name: "Public Base Builder",
+          durationWeeks: { recommended: 12 },
+          activity_category: "run",
+          experienceLevel: "beginner",
+          sessionsPerWeek: 3,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("12 weeks")).toBeTruthy();
+    expect(screen.getByText("run")).toBeTruthy();
+    expect(screen.getByText("beginner")).toBeTruthy();
+    expect(screen.getByText("Authored avg: 3/week")).toBeTruthy();
+    expect(screen.queryByText("--")).toBeNull();
+    expect(screen.queryByText("Mixed")).toBeNull();
+    expect(screen.queryByText("All levels")).toBeNull();
   });
 });

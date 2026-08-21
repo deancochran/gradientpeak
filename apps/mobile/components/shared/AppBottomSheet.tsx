@@ -30,6 +30,7 @@ type AppBottomSheetProps = {
   children: ReactNode;
   contentKey?: string;
   contentMode?: "scroll" | "custom";
+  contentPanningGestureEnabled?: boolean;
   customHeaderInLayout?: boolean;
   contentPaddingBottom?: number;
   description?: string;
@@ -99,6 +100,7 @@ export function AppBottomSheet({
   children,
   contentKey,
   contentMode = "scroll",
+  contentPanningGestureEnabled = true,
   customHeaderInLayout = false,
   contentPaddingBottom,
   description,
@@ -213,6 +215,7 @@ export function AppBottomSheet({
       index={resolvedInitialSnapIndex}
       snapPoints={snapPoints}
       enableDynamicSizing={false}
+      enableContentPanningGesture={contentPanningGestureEnabled}
       enablePanDownToClose
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"

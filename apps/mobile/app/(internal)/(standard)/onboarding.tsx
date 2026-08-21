@@ -5,12 +5,7 @@ import { ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ProviderProcessingStep } from "@/components/onboarding/ProviderProcessingStep";
 import { ProviderSelectionStep } from "@/components/onboarding/ProviderSelectionStep";
-import {
-  GoalsPreferencesStep,
-  GroupsAndPeopleStep,
-  ProfileAndIntentStep,
-  TrainingBaselineStep,
-} from "@/components/onboarding/steps";
+import { IdentityStep } from "@/components/onboarding/steps";
 import type { StepProps } from "@/components/onboarding/types";
 import { useOnboardingFlow } from "@/components/onboarding/useOnboardingFlow";
 import { useProviderConnection } from "@/components/onboarding/useProviderConnection";
@@ -61,16 +56,33 @@ export default function OnboardingScreen() {
           contentContainerStyle={{ padding: 24, paddingBottom: 120 }}
           keyboardShouldPersistTaps="handled"
         >
-          {flow.lifecycleStatus === "provider_selection" ? (
-            <View className="gap-6" testID="onboarding-provider-selection">
-              <ProviderSelectionStep
-                integrations={flow.integrationOverview ?? []}
-                {...(flow.integrationOverviewError ? { error: flow.integrationOverviewError } : {})}
-                isLoading={flow.integrationOverviewLoading}
-                onConnect={(provider) => void providerConnection.connect(provider)}
-                onRetry={flow.refreshIntegrationState}
-                pendingProvider={providerConnection.pendingProvider}
-              />
+          {flow.lifecycleStatus === "provider_selection" || flow.lifecycleStatus === "review" ? (
+            <View className="gap-10" testID="onboarding-identity">
+              <View className="gap-2">
+                <Text className="text-2xl font-bold">Finish your profile</Text>
+                <Text className="text-muted-foreground">
+                  Add your name and username. Everything else can be set up later.
+                </Text>
+              </View>
+              <IdentityStep {...shared} />
+              {flow.lifecycleStatus === "provider_selection" ? (
+                <View className="gap-3" testID="onboarding-provider-selection">
+                  <Text className="text-lg font-semibold">Optional training account</Text>
+                  <Text className="text-muted-foreground">
+                    Connect an account now, or continue without one and manage integrations later.
+                  </Text>
+                  <ProviderSelectionStep
+                    integrations={flow.integrationOverview ?? []}
+                    {...(flow.integrationOverviewError
+                      ? { error: flow.integrationOverviewError }
+                      : {})}
+                    isLoading={flow.integrationOverviewLoading}
+                    onConnect={(provider) => void providerConnection.connect(provider)}
+                    onRetry={flow.refreshIntegrationState}
+                    pendingProvider={providerConnection.pendingProvider}
+                  />
+                </View>
+              ) : null}
             </View>
           ) : flow.lifecycleStatus === "processing" ? (
             <View className="gap-6" testID="onboarding-processing">
@@ -104,40 +116,19 @@ export default function OnboardingScreen() {
                 </View>
               ) : null}
             </View>
-          ) : (
-            <View className="gap-10" testID="onboarding-review">
-              <View className="gap-2">
-                <Text className="text-2xl font-bold">Review your setup</Text>
-                <Text className="text-muted-foreground">
-                  Provider-derived defaults are filled in. Add the remaining required information,
-                  including an initial goal, then finish once.
-                </Text>
-              </View>
-              <ProfileAndIntentStep {...shared} />
-              <TrainingBaselineStep {...shared} />
-              <GoalsPreferencesStep {...shared} />
-              <GroupsAndPeopleStep {...shared} />
-              <Button
-                disabled={flow.isBusy}
-                onPress={() => void flow.handleComplete()}
-                testID="onboarding-finish-button"
-              >
-                <Text className="font-semibold text-primary-foreground">Finalize setup</Text>
-              </Button>
-            </View>
-          )}
+          ) : null}
         </ScrollView>
-        {flow.lifecycleStatus === "provider_selection" ? (
+        {flow.lifecycleStatus === "provider_selection" || flow.lifecycleStatus === "review" ? (
           <View className="gap-2 border-t border-border bg-background p-4">
             <Button
               disabled={flow.isBusy}
-              onPress={() => void flow.startProviderProcessing()}
-              testID="onboarding-continue-provider-button"
+              onPress={() => void flow.handleComplete()}
+              testID="onboarding-finish-button"
             >
-              <Text className="font-semibold text-primary-foreground">Continue</Text>
+              <Text className="font-semibold text-primary-foreground">Finish setup</Text>
             </Button>
             <Text className="text-center text-sm text-muted-foreground">
-              You can add or manage accounts later.
+              Goals, preferences, metrics, groups, and people are available after setup.
             </Text>
           </View>
         ) : null}

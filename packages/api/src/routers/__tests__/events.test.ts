@@ -1,6 +1,9 @@
 import { activityPlanStructureSchema, SYSTEM_TEMPLATES } from "@repo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { estimateActivityPlans } from "../../application/activity-plans/estimate-activity-plans";
+import {
+  estimateActivityPlan,
+  estimateActivityPlans,
+} from "../../application/activity-plans/estimate-activity-plans";
 import { deleteEventUseCase } from "../../application/events/deleteEventUseCase";
 import { readSelectedGroupEventsForCalendar } from "../../application/groups/groupEventViews";
 import {
@@ -328,6 +331,14 @@ function createReadRepository(params: {
         payload: input,
       });
       return params.nextResult("calendar_activities").data ?? [];
+    },
+    async listCalendarCompletedActivitiesByIds(input: { activityIds: string[] }) {
+      params.callLog.push({
+        table: "calendar_linked_activities",
+        operation: "batch",
+        payload: input,
+      });
+      return params.nextResult("calendar_linked_activities").data ?? [];
     },
     async listCalendarGoals() {
       return params.nextResult("calendar_goals").data ?? [];
@@ -710,6 +721,34 @@ describe("eventsRouter generalization", () => {
     expect(result).not.toHaveProperty("plannedLoadSummaries");
   });
 
+  it("calendar page reads the exact fixed date window", async () => {
+    const { calendarCaller, callLog } = createCaller({
+      events: { data: [], error: null },
+      activities: { data: [], error: null },
+    });
+
+    const page = await calendarCaller.page({
+      pageStartDate: "2026-03-02",
+      pageSizeDays: 42,
+      includeAdhoc: true,
+      limit: 20,
+    });
+
+    expect(page).toMatchObject({
+      startDate: "2026-03-02",
+      endDateExclusive: "2026-04-13",
+    });
+    expect(page).not.toHaveProperty("previousCursor");
+    expect(page).not.toHaveProperty("nextCursor");
+    expect(callLog.filter((call) => call.table === "events")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          payload: expect.objectContaining({ dateFrom: "2026-03-02", dateTo: "2026-04-13" }),
+        }),
+      ]),
+    );
+  });
+
   it.each([
     null,
     "Not/A_Timezone",
@@ -789,6 +828,70 @@ describe("eventsRouter generalization", () => {
     });
   });
 
+  it("hydrates a linked completion even when it falls outside the date-bounded activity page", async () => {
+    const linkedActivityId = "00000000-0000-4000-8000-000000000199";
+    const { calendarCaller, callLog } = createCaller({
+      events: {
+        data: [
+          createEventRow({
+            id: "completed-event-with-outside-activity",
+            linked_activity_id: linkedActivityId,
+            scheduled_date: "2026-03-09",
+            starts_at: "2026-03-09T08:00:00.000Z",
+            status: "completed",
+          }),
+        ],
+        error: null,
+      },
+      calendar_activities: { data: [], error: null },
+      calendar_linked_activities: {
+        data: [
+          {
+            id: linkedActivityId,
+            profile_id: "profile-123",
+            content_visibility: "private",
+            name: "Midnight completion",
+            started_at: "2026-03-11T00:05:00.000Z",
+            profile: { username: "athlete", avatar_url: null },
+            distance_meters: 5_000,
+            active_ms: 1_800_000,
+            elapsed_ms: 1_900_000,
+          },
+        ],
+        error: null,
+      },
+    });
+
+    const result = await calendarCaller.range({
+      startDate: "2026-03-08",
+      endDateExclusive: "2026-03-10",
+      includeAdhoc: true,
+      limit: 20,
+    });
+
+    expect(callLog).toContainEqual({
+      table: "calendar_linked_activities",
+      operation: "batch",
+      payload: expect.objectContaining({ activityIds: [linkedActivityId] }),
+    });
+    expect(
+      result.items.find((item) => item.id === "completed-event-with-outside-activity"),
+    ).toMatchObject({
+      status: "completed",
+      activity: {
+        id: linkedActivityId,
+        metrics: expect.arrayContaining([
+          expect.objectContaining({ key: "common_load", status: "unavailable", value: null }),
+          expect.objectContaining({
+            key: "normalized_intensity",
+            status: "unavailable",
+            value: null,
+          }),
+        ]),
+      },
+    });
+  });
+
   it("projects personal timed events in the planning zone and selected group events in the organizer zone", async () => {
     vi.mocked(readSelectedGroupEventsForCalendar).mockResolvedValueOnce({
       items: [
@@ -800,6 +903,7 @@ describe("eventsRouter generalization", () => {
           activity_plan_id: null,
           group: { id: "group-1", name: "Tokyo runners" },
           viewerRsvp: null,
+          viewerSeriesRsvp: null,
         },
       ],
       truncated: false,
@@ -846,6 +950,7 @@ describe("eventsRouter generalization", () => {
           activity_plan_id: "private-plan-id",
           group: { id: "group-1", name: "Visible group" },
           viewerRsvp: null,
+          viewerSeriesRsvp: null,
         },
       ],
       truncated: false,
@@ -883,6 +988,7 @@ describe("eventsRouter generalization", () => {
             content_visibility: "private",
             name: "Morning ride",
             started_at: "2026-05-01T08:00:00.000Z",
+            profile: { username: "athlete", avatar_url: "not-a-valid-url" },
             distance_meters: 12_000,
             active_ms: 3_600_000,
             elapsed_ms: 3_700_000,
@@ -912,6 +1018,9 @@ describe("eventsRouter generalization", () => {
     expect(
       result.items.filter((item) => item.kind === "completed_activity").map((item) => item.title),
     ).toEqual(["Morning ride", "Completed activity"]);
+    expect(
+      result.items.find((item) => item.id === "named-activity")?.activity?.owner.avatarUrl,
+    ).toBeNull();
   });
 
   it("does not infer completion for a plan-less event from an unrelated same-day activity", async () => {
@@ -1146,13 +1255,35 @@ describe("eventsRouter generalization", () => {
     expect(result.activityPlanSummary).toMatchObject({
       id: "11111111-1111-4111-8111-111111111111",
       name: "Tempo Builder",
-      metrics: expect.arrayContaining([
-        expect.objectContaining({ key: "elapsed_duration", status: "available", value: 600 }),
-      ]),
       updatedAt: "2026-03-01T00:00:00.000Z",
       owner: expect.objectContaining({ username: "user-prof" }),
       activityCategory: "run",
+      capabilities: expect.objectContaining({ canRecord: false, canSchedule: true }),
     });
+    expect(result.activityPlanSummary?.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "elapsed_duration", provenance: "authored" }),
+      ]),
+    );
+    expect(result.activityPlanSummary?.structure).toEqual(createActivityPlanStructure("run"));
+    expect(result.activityPlanSummary).not.toHaveProperty("prescriptionQuantification");
+    expect(estimateActivityPlan).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: "11111111-1111-4111-8111-111111111111" }),
+      expect.anything(),
+      expect.any(String),
+      { personalize: false },
+    );
+
+    await caller.getById({
+      id: "00000000-0000-4000-8000-000000000012",
+      personalize: true,
+    });
+    expect(estimateActivityPlan).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: "11111111-1111-4111-8111-111111111111" }),
+      expect.anything(),
+      expect.any(String),
+      { personalize: false },
+    );
   });
 
   it("calendar range hydrates linked activity plans for planned events", async () => {
@@ -1194,13 +1325,18 @@ describe("eventsRouter generalization", () => {
     expect(plannedEvent?.plan).toMatchObject({
       id: "11111111-1111-4111-8111-111111111111",
       name: "Threshold Ride",
-      metrics: expect.arrayContaining([
-        expect.objectContaining({ key: "elapsed_duration", status: "available", value: 1200 }),
-      ]),
       updatedAt: "2026-03-02T00:00:00.000Z",
       owner: expect.objectContaining({ username: "user-prof" }),
       activityCategory: "bike",
+      capabilities: expect.objectContaining({ canRecord: false, canSchedule: true }),
     });
+    expect(plannedEvent?.plan?.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "elapsed_duration", provenance: "authored" }),
+      ]),
+    );
+    expect(plannedEvent?.plan?.structure).toEqual(createActivityPlanStructure("bike", 2));
+    expect(plannedEvent?.plan).not.toHaveProperty("prescriptionQuantification");
     expect(plannedEvent).toMatchObject({
       kind: "planned_activity",
       plan: {

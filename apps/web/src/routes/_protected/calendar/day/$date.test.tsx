@@ -60,8 +60,36 @@ function projectionItem(input: {
     estimated: false,
     partial: false,
     plan: null,
+    activity:
+      kind === "completed_activity"
+        ? {
+            contractVersion: "activity-display-v1",
+            id: input.id,
+            href: `/activities/${input.id}`,
+            owner: { id: "owner-1", username: "runner", avatarUrl: null },
+            time: { startedAt: input.startsAt ?? "2026-07-27T10:00:00.000Z", finishedAt: null },
+            activityComposition: { kind: "single", categories: ["bike"] },
+            title: input.title,
+            notes: null,
+            metrics: [],
+            visibility: "private",
+            engagement: { likes: 0, comments: 0, viewerHasLiked: false },
+            capabilities: {
+              canLike: true,
+              canComment: true,
+              canShare: false,
+              canEdit: true,
+              canDelete: true,
+              hasRoute: false,
+            },
+          }
+        : null,
   };
 }
+
+vi.mock("../../../../hooks/use-viewing-user-preferred-unit-system", () => ({
+  useViewingUserPreferredUnitSystem: () => ({ unitSystem: "metric" }),
+}));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
@@ -159,6 +187,11 @@ vi.mock("../../../../lib/api/client", () => ({
         },
       },
     },
+    social: {
+      toggleLike: {
+        useMutation: () => ({ isPending: false, mutate: vi.fn() }),
+      },
+    },
   },
 }));
 
@@ -195,8 +228,8 @@ describe("CalendarDayPage planned workload", () => {
         eventCount: 1,
         activity_categories: ["bike"],
         totalDurationSeconds: 3_600,
-        quantification: {},
-        commonLoad: {},
+        totalIntensity: 0.8,
+        totalLoad: 64,
       },
       source: {
         complete: true,
@@ -239,9 +272,9 @@ describe("CalendarDayPage planned workload", () => {
 
     render(<CalendarDayPage />);
 
-    expect(screen.getByRole("link", { name: /Morning ride/i }).getAttribute("href")).toBe(
-      "/activities/activity-1",
-    );
+    expect(
+      screen.getByRole("link", { name: "Open activity Morning ride" }).getAttribute("href"),
+    ).toBe("/activities/activity-1");
     expect(screen.getByText("Morning ride")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Club run/i }).getAttribute("href")).toBe(
       "/groups/events/group-event-1",

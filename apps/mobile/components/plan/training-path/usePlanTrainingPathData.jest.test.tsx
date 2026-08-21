@@ -8,15 +8,20 @@ let mockProfileLoading = false;
 
 const load = {
   plannedLoad: 70,
+  plannedLoadStatus: "complete" as const,
   scheduledLoad: 60,
+  scheduledLoadStatus: "complete" as const,
   completedLoad: 35,
+  completedLoadStatus: "complete" as const,
   remainingLoad: 25,
+  remainingLoadStatus: "complete" as const,
   recommendedLoad: 70,
+  recommendedLoadStatus: "complete" as const,
   deltaLoad: -10,
 };
 
 const projection = {
-  contractVersion: "plan-tab-projection-v1",
+  contractVersion: "plan-tab-projection-v1" as const,
   asOf: "2026-04-06T12:00:00.000Z",
   planningTimezone: "America/Los_Angeles",
   today: "2026-04-06",
@@ -42,6 +47,7 @@ const projection = {
             title: "Tempo ride",
             activityCategory: "bike",
             plannedLoad: 60,
+            plannedLoadStatus: "complete",
             status: "planned",
           },
         ],
@@ -53,6 +59,7 @@ const projection = {
             title: "Morning ride",
             activityCategory: "bike",
             completedLoad: 35,
+            completedLoadStatus: "complete",
           },
         ],
         annotations: [],
@@ -87,10 +94,11 @@ const projection = {
   },
   fitness: {
     actual: [{ date: "2026-04-06", longTermLoad: 40, recentLoad: 50, loadBalance: -10 }],
-    scheduled: [{ date: "2026-04-06", longTermLoad: 41, recentLoad: 52, loadBalance: -11 }],
+    scheduled: [{ date: "2026-04-06", longTermLoad: 40, recentLoad: 50, loadBalance: -10 }],
     recommended: [{ date: "2026-04-06", longTermLoad: 42, recentLoad: 53, loadBalance: -11 }],
   },
   recommendationPoints: [{ date: "2026-04-06", status: "complete", load: 70 }],
+  ledgerItems: [],
   sourceCoverage: {
     activities: { startDate: "2026-03-30", endDate: "2026-04-12", status: "complete" },
     scheduledItems: { startDate: "2026-03-30", endDate: "2026-04-12", status: "complete" },
@@ -117,6 +125,8 @@ function queryResult(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+let mockProjectionData = projection;
 
 jest.mock("@/lib/api", () => ({
   __esModule: true,
@@ -145,15 +155,11 @@ jest.mock("./trainingPathPlanningTime", () => ({
     timezone ? "2026-04-06" : null,
   millisecondsUntilNextTrainingPathDay: () => 60_000,
 }));
-jest.mock("./useScrollableTrainingPathWindow", () => ({
-  useScrollableTrainingPathWindow: () => ({
-    resolvedWeekWindow: { start: "2026-03-30", end: "2026-04-12" },
-    extendWindowEnd: jest.fn(),
-    extendWindowStart: jest.fn(),
-    resetWindow: jest.fn(),
-  }),
-}));
 
+import {
+  buildPlanTabProjectionPresentation,
+  type PlanTabProjection,
+} from "./planTabProjectionPresentation";
 import { usePlanTrainingPathData } from "./usePlanTrainingPathData";
 
 describe("usePlanTrainingPathData", () => {
@@ -161,15 +167,162 @@ describe("usePlanTrainingPathData", () => {
     jest.clearAllMocks();
     mockPlanningTimezone = "America/Los_Angeles";
     mockProfileLoading = false;
-    mockProjectionUseQuery.mockImplementation(() => queryResult());
+    mockProjectionData = projection;
+    mockProjectionUseQuery.mockImplementation(() => queryResult({ data: mockProjectionData }));
+  });
+
+  it("converts a projection into the existing chart and selected-week presentation", () => {
+    const result = buildPlanTabProjectionPresentation({
+      projection: projection as unknown as PlanTabProjection,
+      selectedWeekStart: "2026-04-06",
+      weekWindow: { start: "2026-03-30", end: "2026-04-12" },
+      todayKey: "2026-04-06",
+    });
+
+    expect(result.dailyTrainingPathPoints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          date: "2026-04-06",
+          completedLoad: 35,
+          effectiveLoad: 60,
+          fitnessCtl: 40,
+        }),
+      ]),
+    );
+    expect(result.selectedWeekGoals).toEqual([
+      expect.objectContaining({ label: "A race", status: "Goal due" }),
+    ]);
+    expect(result.selectedWeekEvents).toEqual([
+      expect.objectContaining({ title: "Tempo ride", estimatedLoad: 60 }),
+    ]);
+  });
+
+  it("derives unavailable and partial completed presentation from completed Load status", () => {
+    const buildVariant = (
+      completedLoadStatus: "partial" | "unavailable",
+      completedLoad: number | null,
+    ) => {
+      const day = projection.timeline.days[0];
+      const completedItem = day?.completedItems[0];
+      if (!day || !completedItem) throw new Error("Expected completed projection fixture");
+      return {
+        ...projection,
+        timeline: {
+          ...projection.timeline,
+          days: [
+            {
+              ...day,
+              load: { ...day.load, completedLoad, completedLoadStatus },
+              completedItems: [{ ...completedItem, completedLoad, completedLoadStatus }],
+            },
+          ],
+        },
+        dayLoads: {
+          ...projection.dayLoads,
+          "2026-04-06": {
+            ...projection.dayLoads["2026-04-06"],
+            completedLoad,
+            completedLoadStatus,
+            hasUnavailableCompletedLoad: completedLoadStatus === "unavailable",
+          },
+        },
+      } as unknown as PlanTabProjection;
+    };
+    const present = (variant: PlanTabProjection) =>
+      buildPlanTabProjectionPresentation({
+        projection: variant,
+        selectedWeekStart: "2026-04-06",
+        weekWindow: { start: "2026-03-30", end: "2026-04-12" },
+        todayKey: "2026-04-06",
+      });
+
+    const unavailable = present(buildVariant("unavailable", null));
+    expect(
+      unavailable.dailyTrainingPathPoints.find((point) => point.date === "2026-04-06"),
+    ).toMatchObject({
+      completedLoad: null,
+      completedObservationState: "unavailable",
+      effectiveCompletedLoad: null,
+      effectiveCompletedLoadStatus: "unavailable",
+    });
+    expect(
+      unavailable.trainingPath.weeks.find((week) => week.weekStart === "2026-04-06"),
+    ).toMatchObject({
+      completedLoad: null,
+      completedLoadStatus: "unavailable",
+    });
+
+    const partial = present(buildVariant("partial", 20));
+    expect(
+      partial.dailyTrainingPathPoints.find((point) => point.date === "2026-04-06"),
+    ).toMatchObject({
+      completedLoad: 20,
+      completedObservationState: "observed",
+      effectiveCompletedLoad: 20,
+      effectiveCompletedLoadStatus: "partial",
+    });
+    expect(
+      partial.trainingPath.weeks.find((week) => week.weekStart === "2026-04-06"),
+    ).toMatchObject({
+      completedLoad: 20,
+      completedLoadStatus: "partial",
+    });
+  });
+
+  it("preserves partial scheduled and remaining Load status from the API", () => {
+    const day = projection.timeline.days[0];
+    if (!day) throw new Error("Expected projection day fixture");
+    const partialProjection = {
+      ...projection,
+      timeline: {
+        ...projection.timeline,
+        days: [
+          {
+            ...day,
+            load: {
+              ...day.load,
+              scheduledLoad: 60,
+              scheduledLoadStatus: "partial",
+              remainingLoad: 25,
+              remainingLoadStatus: "partial",
+            },
+          },
+        ],
+      },
+      dayLoads: {
+        ...projection.dayLoads,
+        "2026-04-06": {
+          ...projection.dayLoads["2026-04-06"],
+          scheduledLoad: 60,
+          scheduledLoadStatus: "partial",
+          remainingLoad: 25,
+          remainingLoadStatus: "partial",
+        },
+      },
+    } as unknown as PlanTabProjection;
+
+    const result = buildPlanTabProjectionPresentation({
+      projection: partialProjection,
+      selectedWeekStart: "2026-04-06",
+      weekWindow: { start: "2026-03-30", end: "2026-04-12" },
+      todayKey: "2026-04-06",
+    });
+
+    expect(
+      result.dailyTrainingPathPoints.find((point) => point.date === "2026-04-06"),
+    ).toMatchObject({
+      plannedLoad: 60,
+      plannedLoadStatus: "partial",
+      effectiveRemainingLoad: 25,
+      effectiveRemainingLoadStatus: "partial",
+    });
   });
 
   it("loads the entire Plan tab through one bounded server projection", () => {
     const { result } = renderHook(() => usePlanTrainingPathData());
 
-    expect(mockProjectionUseQuery).toHaveBeenCalledTimes(1);
-    expect(mockProjectionUseQuery).toHaveBeenCalledWith(
-      { startDate: "2026-03-09", endDate: "2026-05-04" },
+    expect(mockProjectionUseQuery).toHaveBeenLastCalledWith(
+      { startDate: "2026-02-23", endDate: "2026-05-17" },
       expect.objectContaining({
         enabled: true,
         retry: false,
@@ -188,7 +341,8 @@ describe("usePlanTrainingPathData", () => {
           date: "2026-04-06",
           completedLoad: 35,
           effectiveLoad: 60,
-          scheduledFitnessCtl: 41,
+          fitnessCtl: 40,
+          scheduledFitnessCtl: 40,
         }),
       ]),
     );
@@ -209,9 +363,56 @@ describe("usePlanTrainingPathData", () => {
     act(() => result.current.handleSelectedDateChange("2026-08-01"));
 
     expect(mockProjectionUseQuery).toHaveBeenLastCalledWith(
-      { startDate: "2026-03-09", endDate: "2026-05-04" },
+      { startDate: "2026-02-23", endDate: "2026-05-17" },
       expect.objectContaining({ enabled: true }),
     );
+  });
+
+  it("reconciles selection when the authoritative range shifts", () => {
+    const { result, rerender } = renderHook(() => usePlanTrainingPathData());
+    act(() => result.current.handleSelectedDateChange("2026-03-30"));
+
+    mockProjectionData = {
+      ...projection,
+      timeline: {
+        ...projection.timeline,
+        startDate: "2026-04-06",
+        endDate: "2026-04-12",
+      },
+    } as unknown as typeof projection;
+    rerender({});
+    expect(result.current.selectedDate).toBe("2026-04-06");
+    expect(result.current.trainingPath.selectedWeekSummary?.weekStart).toBe("2026-04-06");
+
+    act(() => result.current.handleSelectedDateChange("2026-04-12"));
+    const shiftedDay = projection.timeline.days[0];
+    if (!shiftedDay) throw new Error("Expected projection day fixture");
+    mockProjectionData = {
+      ...projection,
+      timeline: {
+        ...projection.timeline,
+        startDate: "2026-05-04",
+        endDate: "2026-05-10",
+        days: [{ ...shiftedDay, date: "2026-05-04" }],
+      },
+      dayLoads: {
+        "2026-05-04": projection.dayLoads["2026-04-06"],
+      },
+    } as unknown as typeof projection;
+    rerender({});
+
+    expect(result.current.selectedDate).toBe("2026-05-04");
+    expect(result.current.trainingPath.selectedWeekSummary?.weekStart).toBe("2026-05-04");
+  });
+
+  it("uses one normal query and exposes no gesture-driven fetch actions", () => {
+    const { result } = renderHook(() => usePlanTrainingPathData());
+
+    expect(
+      new Set(mockProjectionUseQuery.mock.calls.map(([input]) => JSON.stringify(input))).size,
+    ).toBe(1);
+    expect(result.current).not.toHaveProperty("extendTrainingPathWindowStart");
+    expect(result.current).not.toHaveProperty("extendTrainingPathWindowEnd");
   });
 
   it("uses UTC as a safe request anchor when a legacy profile has no planning timezone", () => {
@@ -220,7 +421,7 @@ describe("usePlanTrainingPathData", () => {
     const { result } = renderHook(() => usePlanTrainingPathData());
 
     expect(mockProjectionUseQuery).toHaveBeenCalledWith(
-      { startDate: "2026-03-09", endDate: "2026-05-04" },
+      { startDate: "2026-02-23", endDate: "2026-05-17" },
       expect.objectContaining({ enabled: true }),
     );
     expect(result.current).toMatchObject({

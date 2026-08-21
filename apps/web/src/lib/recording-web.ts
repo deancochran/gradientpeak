@@ -3,21 +3,19 @@ import {
   formatDistance as formatPreferredDistance,
   type PreferredUnitSystem,
 } from "./units/presentation";
-
 export type RecordingGpsMode = "on" | "off";
 
 export type RecordingLauncherSearch = {
   activity_category: RecordingActivityCategory;
   gps: RecordingGpsMode;
   eventId?: string;
+  activityPlanId?: string;
+  /** Accepted only to safely discard route context from legacy links. */
   routeId?: string;
 };
 
-export type RouteCoordinate = {
-  latitude: number;
-  longitude: number;
-};
-
+/** Legacy route-preview component compatibility; not used by web recording. */
+export type RouteCoordinate = { latitude: number; longitude: number };
 export type ProjectedRoutePreview = {
   points: string;
   start: { x: number; y: number };
@@ -31,28 +29,15 @@ export const recordingActivityOptions: Array<{
   label: string;
   description: string;
 }> = [
-  { value: "run", label: "Run", description: "GPS-friendly outdoor session" },
-  { value: "bike", label: "Bike", description: "Road, trainer, or commute ride" },
-  { value: "swim", label: "Swim", description: "Import only on web right now" },
-  { value: "strength", label: "Strength", description: "Manual planning and import" },
-  { value: "other", label: "Other", description: "Fallback for unsupported activity categories" },
-];
-
-export const recordingGpsOptions: Array<{
-  value: RecordingGpsMode;
-  label: string;
-  description: string;
-}> = [
-  { value: "on", label: "GPS On", description: "Use browser geolocation when available" },
-  { value: "off", label: "GPS Off", description: "Indoor or browser-limited session" },
+  { value: "run", label: "Run", description: "Indoor timer session" },
+  { value: "bike", label: "Bike", description: "Indoor timer session" },
+  { value: "swim", label: "Swim", description: "Indoor timer session" },
+  { value: "strength", label: "Strength", description: "Indoor timer session" },
+  { value: "other", label: "Other", description: "Indoor timer session" },
 ];
 
 export function isRecordingActivityCategory(value: unknown): value is RecordingActivityCategory {
   return recordingActivityOptions.some((option) => option.value === value);
-}
-
-export function defaultGpsModeForCategory(category: RecordingActivityCategory): RecordingGpsMode {
-  return category === "run" || category === "bike" ? "on" : "off";
 }
 
 export function normalizeRecordingActivityCategory(
@@ -64,51 +49,21 @@ export function normalizeRecordingActivityCategory(
 
 export function validateRecordingSearch(search: Record<string, unknown>): RecordingLauncherSearch {
   const activityCategory = normalizeRecordingActivityCategory(search.activity_category, "run");
-  const gps =
-    search.gps === "on" || search.gps === "off"
-      ? search.gps
-      : defaultGpsModeForCategory(activityCategory);
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   return {
     activity_category: activityCategory,
-    gps,
+    // GPS and route values in old links are deliberately ignored. Web recording is indoor only.
+    gps: "off",
     eventId:
       typeof search.eventId === "string" && uuidPattern.test(search.eventId)
         ? search.eventId
         : undefined,
-    routeId:
-      typeof search.routeId === "string" && uuidPattern.test(search.routeId)
-        ? search.routeId
+    activityPlanId:
+      typeof search.activityPlanId === "string" && uuidPattern.test(search.activityPlanId)
+        ? search.activityPlanId
         : undefined,
   };
-}
-
-export function getBrowserRecordingCapabilities() {
-  if (typeof window === "undefined") {
-    return {
-      geolocation: false,
-      bluetooth: false,
-      secureContext: false,
-    };
-  }
-
-  return {
-    geolocation: "geolocation" in navigator,
-    bluetooth: "bluetooth" in navigator,
-    secureContext: window.isSecureContext,
-  };
-}
-
-export function formatDistance(
-  meters: number | null | undefined,
-  unitSystem: PreferredUnitSystem = "metric",
-) {
-  if (!meters || meters <= 0) {
-    return "-";
-  }
-
-  return formatPreferredDistance(meters, unitSystem);
 }
 
 export function formatScheduledTime(dateLike: string | Date | null | undefined) {
@@ -132,45 +87,39 @@ export function formatScheduledTime(dateLike: string | Date | null | undefined) 
   });
 }
 
-export function projectRoutePreview(
-  coordinates: RouteCoordinate[],
-  options?: { width?: number; height?: number; padding?: number },
-): ProjectedRoutePreview | null {
-  if (coordinates.length < 2) {
-    return null;
-  }
+/** Retained for the standalone route component; web recording no longer calls this. */
+export function formatDistance(
+  meters: number | null | undefined,
+  unitSystem: PreferredUnitSystem = "metric",
+) {
+  return !meters || meters <= 0 ? "-" : formatPreferredDistance(meters, unitSystem);
+}
 
-  const width = options?.width ?? 640;
-  const height = options?.height ?? 240;
-  const padding = options?.padding ?? 16;
+/** Retained for the standalone route component; web recording no longer calls this. */
+export function projectRoutePreview(coordinates: RouteCoordinate[]): ProjectedRoutePreview | null {
+  if (coordinates.length < 2) return null;
+  const width = 640;
+  const height = 240;
+  const padding = 16;
   const latitudes = coordinates.map((coordinate) => coordinate.latitude);
   const longitudes = coordinates.map((coordinate) => coordinate.longitude);
   const minLat = Math.min(...latitudes);
   const maxLat = Math.max(...latitudes);
   const minLng = Math.min(...longitudes);
   const maxLng = Math.max(...longitudes);
-  const latRange = Math.max(maxLat - minLat, 0.00001);
-  const lngRange = Math.max(maxLng - minLng, 0.00001);
-  const scale = Math.min((width - padding * 2) / lngRange, (height - padding * 2) / latRange);
-  const renderedWidth = lngRange * scale;
-  const renderedHeight = latRange * scale;
-  const offsetX = padding + (width - padding * 2 - renderedWidth) / 2;
-  const offsetY = padding + (height - padding * 2 - renderedHeight) / 2;
-
-  const projectedPoints = coordinates.map((coordinate) => ({
-    x: offsetX + (coordinate.longitude - minLng) * scale,
-    y: height - (offsetY + (coordinate.latitude - minLat) * scale),
+  const scale = Math.min(
+    (width - padding * 2) / Math.max(maxLng - minLng, 0.00001),
+    (height - padding * 2) / Math.max(maxLat - minLat, 0.00001),
+  );
+  const points = coordinates.map((coordinate) => ({
+    x: padding + (coordinate.longitude - minLng) * scale,
+    y: height - padding - (coordinate.latitude - minLat) * scale,
   }));
-
-  const start = projectedPoints[0];
-  const finish = projectedPoints[projectedPoints.length - 1];
-
-  if (!start || !finish) {
-    return null;
-  }
-
+  const start = points[0];
+  const finish = points.at(-1);
+  if (!start || !finish) return null;
   return {
-    points: projectedPoints.map((point) => `${point.x},${point.y}`).join(" "),
+    points: points.map((point) => `${point.x},${point.y}`).join(" "),
     start,
     finish,
     width,

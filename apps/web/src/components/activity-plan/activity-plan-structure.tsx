@@ -1,8 +1,7 @@
 import {
-  type AthletePerformanceTargetFacts,
   activityPlanStructureSchema,
+  orderActivityPlanTargetsForPresentation,
   resolveActivityPlanTargetPresentation,
-  resolvePerformanceTargetValue,
 } from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
 import {
@@ -12,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import { toRenderableActivityPlanStructure } from "./renderable-activity-plan-structure";
 
 function durationLabel(duration: {
   type: string;
@@ -28,36 +28,21 @@ function durationLabel(duration: {
 function targetLabel({
   target,
   activityCategory,
-  performanceTargets,
   asOf,
 }: Parameters<typeof resolveActivityPlanTargetPresentation>[0]): string {
   const presentation = resolveActivityPlanTargetPresentation({
     target,
     activityCategory,
-    ...(performanceTargets !== undefined ? { performanceTargets } : {}),
     asOf,
   });
-  if (target.type !== "%FTP") return presentation.label;
-
-  const resolved = resolvePerformanceTargetValue({
-    target,
-    activityCategory,
-    ...(performanceTargets ? { performanceTargets } : {}),
-  });
-  return resolved ? `${resolved.value} W (${presentation.sourceLabel})` : presentation.label;
+  return presentation.label;
 }
 
-export function ActivityPlanStructure({
-  structure,
-  performanceTargets,
-  asOf,
-}: {
-  structure: unknown;
-  performanceTargets?: AthletePerformanceTargetFacts | null;
-  asOf?: string;
-}) {
-  const parsed = activityPlanStructureSchema.safeParse(structure);
-  const presentationTime = asOf ?? new Date().toISOString();
+export function ActivityPlanStructure({ structure }: { structure: unknown }) {
+  const parsed = activityPlanStructureSchema.safeParse(
+    toRenderableActivityPlanStructure(structure),
+  );
+  const presentationTime = "1970-01-01T00:00:00.000Z";
 
   return (
     <Card data-testid="activity-plan-structure">
@@ -79,6 +64,9 @@ export function ActivityPlanStructure({
                   <Badge variant="outline">{parsed.data.activity_category}</Badge>
                 ) : null}
               </div>
+              {segment.notes ? (
+                <p className="mt-2 text-sm text-muted-foreground">{segment.notes}</p>
+              ) : null}
               {segment.role === "activity" ? (
                 <div className="mt-4 space-y-3">
                   {segment.intervals.map((interval) => (
@@ -87,28 +75,33 @@ export function ActivityPlanStructure({
                         {interval.name}
                         {interval.repetitions > 1 ? ` · ${interval.repetitions} rounds` : ""}
                       </p>
+                      {interval.notes ? (
+                        <p className="mt-1 text-sm text-muted-foreground">{interval.notes}</p>
+                      ) : null}
                       <ol className="mt-2 space-y-2">
                         {interval.steps.map((step) => (
-                          <li
-                            className="flex flex-wrap justify-between gap-2 text-sm"
-                            key={step.id}
-                          >
-                            <span>{step.name}</span>
-                            <span className="text-muted-foreground">
-                              {durationLabel(step.duration)} ·{" "}
-                              {step.targets
-                                .map((target) =>
-                                  targetLabel({
-                                    target,
-                                    activityCategory: parsed.data.activity_category,
-                                    ...(performanceTargets !== undefined
-                                      ? { performanceTargets }
-                                      : {}),
-                                    asOf: presentationTime,
-                                  }),
-                                )
-                                .join(", ")}
-                            </span>
+                          <li className="text-sm" key={step.id}>
+                            <div className="flex flex-wrap justify-between gap-2">
+                              <span>{step.name}</span>
+                              <span className="text-muted-foreground">
+                                {durationLabel(step.duration)} ·{" "}
+                                {orderActivityPlanTargetsForPresentation(step.targets)
+                                  .map((target) =>
+                                    targetLabel({
+                                      target,
+                                      activityCategory: parsed.data.activity_category,
+                                      asOf: presentationTime,
+                                    }),
+                                  )
+                                  .join(", ")}
+                              </span>
+                            </div>
+                            {step.description ? (
+                              <p className="mt-1 text-muted-foreground">{step.description}</p>
+                            ) : null}
+                            {step.notes ? (
+                              <p className="mt-1 text-muted-foreground">{step.notes}</p>
+                            ) : null}
                           </li>
                         ))}
                       </ol>

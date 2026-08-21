@@ -1,5 +1,13 @@
 import { activityPlanStructureSchema } from "@repo/core/activity-plan";
-import { activityPlans, contentAccessGrants, events, groupEvents, likes, profiles } from "@repo/db";
+import {
+  activityPlans,
+  contentAccessGrants,
+  events,
+  follows,
+  groupEvents,
+  likes,
+  profiles,
+} from "@repo/db";
 import type { TRPCError } from "@trpc/server";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -46,6 +54,7 @@ type MockTableName =
   | "activity_plans"
   | "content_access_grants"
   | "events"
+  | "follows"
   | "group_events"
   | "likes"
   | "profiles";
@@ -147,6 +156,10 @@ function resolveTableName(table: unknown): MockTableName {
 
   if (table === events) {
     return "events";
+  }
+
+  if (table === follows) {
+    return "follows";
   }
 
   if (table === groupEvents) {
@@ -340,6 +353,17 @@ describe("activityPlansRouter", () => {
           status: "available",
           value: 1800,
         }),
+        expect.objectContaining({
+          key: "common_load",
+          status: "available",
+          provenance: "plan_intent",
+        }),
+        expect.objectContaining({
+          key: "normalized_intensity",
+          status: "available",
+          value: 0.75,
+          provenance: "plan_intent",
+        }),
       ]),
     );
     expect(result.items[0]).not.toHaveProperty("common_load");
@@ -384,7 +408,21 @@ describe("activityPlansRouter", () => {
     expect(result.items[0]).toMatchObject({
       id: publicPlan.id,
       visibility: "public",
+      capabilities: { canRecord: false, canSchedule: true },
     });
+    expect(result.items[0]?.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "elapsed_duration",
+          value: 1_800,
+          provenance: "authored",
+        }),
+        expect.objectContaining({ key: "common_load", provenance: "plan_intent" }),
+      ]),
+    );
+    expect(result.items[0]?.structure).toEqual(publicPlan.structure);
+    expect(result.items[0]).not.toHaveProperty("prescriptionQuantification");
+    expect(JSON.stringify(result.items[0])).toMatch(/%FTP|targets|duration/i);
   });
 
   it("list omits malformed persisted plans without truncating pagination", async () => {
@@ -617,6 +655,94 @@ describe("activityPlansRouter", () => {
     ).rejects.toMatchObject({ code: "NOT_FOUND" } as Partial<TRPCError>);
   });
 
+  it("getById returns the authored prescription but omits owner-only fields for a public-plan viewer", async () => {
+    const publicPlan = createActivityPlanRow({
+      id: "99999999-9999-4999-8999-999999999998",
+      profile_id: OTHER_USER_ID,
+      content_visibility: "public",
+      notes: "Hold RPE 8 for 20 minutes",
+    });
+    const { caller } = createCaller({
+      state: {
+        "select:activity_plans": [[publicPlan]],
+        "select:likes": [[]],
+        "select:profiles": [
+          [createProfileRow({ id: OTHER_USER_ID, username: "Other", avatar_url: null })],
+        ],
+      },
+    });
+
+    const result = await caller.getById({ id: publicPlan.id, personalize: true });
+
+    expect(result.edit).toBeNull();
+    expect(result.detail.structure).toEqual(publicPlan.structure);
+    expect(result.detail.metrics).toEqual([
+      expect.objectContaining({ key: "distance", status: "unavailable", provenance: null }),
+      expect.objectContaining({
+        key: "elapsed_duration",
+        status: "available",
+        value: 1_800,
+        provenance: "authored",
+      }),
+      expect.objectContaining({
+        key: "common_load",
+        status: "available",
+        provenance: "plan_intent",
+      }),
+      expect.objectContaining({
+        key: "normalized_intensity",
+        status: "available",
+        value: 0.75,
+        provenance: "plan_intent",
+      }),
+    ]);
+    for (const key of [
+      "prescriptionQuantification",
+      "notes",
+      "structureHash",
+      "gpsRecordingEnabled",
+    ]) {
+      expect(result.detail).not.toHaveProperty(key);
+    }
+    expect(JSON.stringify(result.detail)).toMatch(/RPE|targets|duration/i);
+    expect(JSON.stringify(result.detail.metrics)).not.toMatch(
+      /athlete|thresholdEvidence|calibration|privateThresholdContext/i,
+    );
+    expect(estimationState.estimateActivityPlan).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: publicPlan.id }),
+      expect.anything(),
+      USER_ID,
+      { personalize: false },
+    );
+  });
+
+  it("passes an explicit default-off personalization choice to detail estimation", async () => {
+    const plan = createActivityPlanRow();
+    const state: MockDbState = {
+      "select:activity_plans": [[plan]],
+      "select:likes": [[]],
+      "select:profiles": [[createProfileRow()]],
+    };
+    const { caller: defaultCaller } = createCaller({ state });
+
+    await defaultCaller.getById({ id: plan.id });
+    expect(estimationState.estimateActivityPlan).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: plan.id }),
+      expect.anything(),
+      USER_ID,
+      { personalize: false },
+    );
+
+    const { caller: personalizedCaller } = createCaller({ state });
+    await personalizedCaller.getById({ id: plan.id, personalize: true });
+    expect(estimationState.estimateActivityPlan).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: plan.id }),
+      expect.anything(),
+      USER_ID,
+      { personalize: true },
+    );
+  });
+
   it("getById rejects unexpected input fields", async () => {
     const { caller } = createCaller();
 
@@ -670,6 +796,21 @@ describe("activityPlansRouter", () => {
     expect(result.items[1]?.engagement.likes).toBe(0);
     expect(result.items[0]?.owner?.id).toBe(USER_ID);
     expect(result.items[1]?.owner?.id).toBe(OTHER_USER_ID);
+    expect(result.items[0]).toHaveProperty("structure");
+    expect(result.items[0]).toHaveProperty("prescriptionQuantification");
+    expect(result.items[1]?.structure).toEqual(publicPlan.structure);
+    expect(result.items[1]).not.toHaveProperty("prescriptionQuantification");
+    expect(result.items[1]?.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "elapsed_duration",
+          value: 1_800,
+          provenance: "authored",
+        }),
+        expect.objectContaining({ key: "common_load", provenance: "plan_intent" }),
+      ]),
+    );
+    expect(JSON.stringify(result.items[1])).toMatch(/%FTP|targets|duration/i);
   });
 
   it("getManyByIds includes contextually granted private plans and omits denied private plans", async () => {
@@ -1187,18 +1328,205 @@ describe("activityPlansRouter", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
   });
 
-  it("duplicate creates a private copy from an accessible public plan", async () => {
+  it("duplicate preserves full private content only for the owner and serializes the persisted row", async () => {
     const originalRow = createActivityPlanRow({
       id: "88888888-8888-4888-8888-888888888888",
-      profile_id: OTHER_USER_ID,
-      content_visibility: "public",
-      name: "Shared Activity",
+      name: "Private Activity",
+      description: "Owner-only description",
+      notes: "Owner-only notes and targets",
     });
     const duplicatedRow = createActivityPlanRow({
       id: "99999999-8888-4888-8888-888888888888",
+      created_at: new Date("2026-08-19T12:00:00.000Z"),
+      updated_at: new Date("2026-08-19T12:00:01.000Z"),
       profile_id: USER_ID,
-      name: "Shared Activity (Copy)",
+      name: "Private Activity Copy",
+      description: originalRow.description,
+      notes: originalRow.notes,
+      structure: originalRow.structure,
       content_visibility: "private",
+    });
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[originalRow]],
+        "insert:activity_plans": [[duplicatedRow]],
+      },
+    });
+
+    const result = await caller.duplicate({
+      id: originalRow.id,
+      newName: " Private Activity Copy ",
+    });
+
+    const insertCall = callLog.find((call) => call.operation === "insert");
+    expect(insertCall?.payload).toMatchObject({
+      name: "Private Activity Copy",
+      description: "Owner-only description",
+      notes: "Owner-only notes and targets",
+      structure: sampleStructure,
+      profile_id: USER_ID,
+      content_visibility: "private",
+      is_system_template: false,
+    });
+    expect(result).toMatchObject({
+      id: duplicatedRow.id,
+      created_at: "2026-08-19T12:00:00.000Z",
+      updated_at: "2026-08-19T12:00:01.000Z",
+      description: "Owner-only description",
+      notes: "Owner-only notes and targets",
+      structure: sampleStructure,
+      profile_id: USER_ID,
+      content_visibility: "private",
+      visibility: "private",
+      is_system_template: false,
+    });
+    expect(JSON.stringify(result)).toMatch(/%FTP|"duration"|"targets"|Owner-only notes/);
+  });
+
+  it("duplicate clearly denies a readable public plan without copying private content", async () => {
+    const originalRow = createActivityPlanRow({
+      id: "88888888-8888-4888-8888-888888888881",
+      profile_id: OTHER_USER_ID,
+      content_visibility: "public",
+      notes: "Private public-plan notes",
+    });
+    const { caller, callLog } = createCaller({
+      state: { "select:activity_plans": [[originalRow]] },
+    });
+
+    await expect(caller.duplicate({ id: originalRow.id })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      message: "Only the plan owner can duplicate this activity plan",
+    } as Partial<TRPCError>);
+    expect(callLog.some((call) => call.operation === "insert")).toBe(false);
+  });
+
+  it("duplicate clearly denies an accepted follower without copying private content", async () => {
+    const originalRow = createActivityPlanRow({
+      id: "88888888-8888-4888-8888-888888888882",
+      profile_id: OTHER_USER_ID,
+      content_visibility: "followers",
+      notes: "Private follower-plan notes",
+    });
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [
+          [originalRow],
+          [
+            {
+              id: originalRow.id,
+              ownerProfileId: OTHER_USER_ID,
+              contentVisibility: "followers",
+              isSystem: false,
+            },
+          ],
+        ],
+        "select:follows": [[{ followerId: USER_ID }]],
+      },
+    });
+
+    await expect(caller.duplicate({ id: originalRow.id })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      message: "Only the plan owner can duplicate this activity plan",
+    } as Partial<TRPCError>);
+    expect(callLog.some((call) => call.operation === "insert")).toBe(false);
+  });
+
+  it("duplicate hides a follower plan after follow access is revoked", async () => {
+    const originalRow = createActivityPlanRow({
+      id: "88888888-8888-4888-8888-888888888883",
+      profile_id: OTHER_USER_ID,
+      content_visibility: "followers",
+    });
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [
+          [originalRow],
+          [
+            {
+              id: originalRow.id,
+              ownerProfileId: OTHER_USER_ID,
+              contentVisibility: "followers",
+              isSystem: false,
+            },
+          ],
+        ],
+        "select:follows": [[]],
+        "select:content_access_grants": [[]],
+      },
+    });
+
+    await expect(caller.duplicate({ id: originalRow.id })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Activity plan not found",
+    } as Partial<TRPCError>);
+    expect(callLog.some((call) => call.operation === "insert")).toBe(false);
+
+    const followRead = callLog.find(
+      (call) => call.operation === "select" && call.table === "follows",
+    );
+    expect(followRead?.where).toBeDefined();
+    expect(pgDialect.sqlToQuery(followRead?.where as never).sql).toContain(
+      '"follows"."status" = $',
+    );
+  });
+
+  it("duplicate hides a private plan with no active access and never inserts", async () => {
+    const originalRow = createActivityPlanRow({
+      id: "88888888-8888-4888-8888-888888888885",
+      profile_id: OTHER_USER_ID,
+      content_visibility: "private",
+    });
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [
+          [originalRow],
+          [
+            {
+              id: originalRow.id,
+              ownerProfileId: OTHER_USER_ID,
+              contentVisibility: "private",
+              isSystem: false,
+            },
+          ],
+        ],
+        // A revoked grant is absent from this active-only query, just like no grant.
+        "select:content_access_grants": [[]],
+      },
+    });
+
+    await expect(caller.duplicate({ id: originalRow.id })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Activity plan not found",
+    } as Partial<TRPCError>);
+    expect(callLog.some((call) => call.operation === "insert")).toBe(false);
+
+    const grantRead = callLog.find(
+      (call) => call.operation === "select" && call.table === "content_access_grants",
+    );
+    expect(grantRead?.where).toBeDefined();
+    const grantQuery = pgDialect.sqlToQuery(grantRead?.where as never).sql;
+    expect(grantQuery).toContain('"content_access_grants"."revoked_at" is null');
+    expect(grantQuery).toContain('"content_access_grants"."expires_at" is null');
+  });
+
+  it("duplicate retains full-copy semantics for a public system template", async () => {
+    const originalRow = createActivityPlanRow({
+      id: "88888888-8888-4888-8888-888888888884",
+      profile_id: null,
+      content_visibility: "public",
+      is_system_template: true,
+      name: "System Activity",
+      notes: "Curated system instructions",
+    });
+    const duplicatedRow = createActivityPlanRow({
+      id: "99999999-8888-4888-8888-888888888884",
+      profile_id: USER_ID,
+      name: "System Activity (Copy)",
+      notes: originalRow.notes,
+      structure: originalRow.structure,
+      content_visibility: "private",
+      is_system_template: false,
     });
     const { caller, callLog } = createCaller({
       state: {
@@ -1209,13 +1537,20 @@ describe("activityPlansRouter", () => {
 
     const result = await caller.duplicate({ id: originalRow.id });
 
-    const insertCall = callLog.find((call) => call.operation === "insert");
-    expect(insertCall?.payload).toMatchObject({
-      name: "Shared Activity (Copy)",
+    expect(callLog.find((call) => call.operation === "insert")?.payload).toMatchObject({
+      notes: "Curated system instructions",
+      structure: sampleStructure,
       profile_id: USER_ID,
       content_visibility: "private",
+      is_system_template: false,
     });
-    expect(result).toMatchObject({ id: duplicatedRow.id, visibility: "private" });
+    expect(result).toMatchObject({
+      id: duplicatedRow.id,
+      notes: "Curated system instructions",
+      structure: sampleStructure,
+      profile_id: USER_ID,
+      visibility: "private",
+    });
   });
 
   it("duplicate rejects unexpected input fields", async () => {

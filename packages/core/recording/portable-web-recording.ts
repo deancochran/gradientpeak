@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-import { recordingSessionSnapshotSchema } from "../schemas/recording-session";
+import {
+  portableWebPlanExecutionStateSchema,
+  portableWebRecordingSessionSnapshotSchema,
+} from "./portable-timer-draft";
 
 export const PORTABLE_WEB_RECORDING_SCHEMA_VERSION = 1;
 
@@ -14,6 +17,8 @@ export const portableWebRecordingReviewSchema = z
     perceivedEffort: z.number().int().min(1).max(10).nullable(),
     distanceMeters: z.number().finite().nonnegative(),
     calories: z.number().finite().nonnegative().nullable(),
+    distanceEnteredManually: z.boolean().optional(),
+    caloriesEnteredManually: z.boolean().optional(),
   })
   .strict();
 
@@ -23,11 +28,13 @@ export const portableWebRecordingArtifactSchema = z
     ownerId: z.string().min(1),
     recordingSessionId: z.string().min(1).max(200),
     segmentId: z.string().uuid(),
-    snapshot: recordingSessionSnapshotSchema,
+    snapshot: portableWebRecordingSessionSnapshotSchema,
     startedAt: isoTimestampSchema,
     finishedAt: isoTimestampSchema,
     elapsedMs: z.number().int().positive(),
     movingMs: z.number().int().nonnegative(),
+    excludedElapsedMs: z.number().int().nonnegative().optional(),
+    planExecution: portableWebPlanExecutionStateSchema.optional(),
     fileName: z.string().trim().min(1).max(200),
     fileText: z.string().min(1).max(1_000_000),
     sha256: sha256Schema,
@@ -57,7 +64,12 @@ export const portableWebRecordingArtifactSchema = z
         message: "Moving time must not exceed elapsed time.",
       });
     }
-    if (Date.parse(artifact.finishedAt) - Date.parse(artifact.startedAt) !== artifact.elapsedMs) {
+    if (
+      Date.parse(artifact.finishedAt) -
+        Date.parse(artifact.startedAt) -
+        (artifact.excludedElapsedMs ?? 0) !==
+      artifact.elapsedMs
+    ) {
       context.addIssue({
         code: "custom",
         path: ["elapsedMs"],

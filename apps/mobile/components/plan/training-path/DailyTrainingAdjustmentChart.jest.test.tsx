@@ -49,6 +49,34 @@ describe("DailyTrainingAdjustmentChart", () => {
     ).toBe(false);
   });
 
+  it("marks a known-zero completed load at the chart baseline", () => {
+    render(
+      <DailyTrainingAdjustmentChart
+        points={[
+          {
+            date: "2026-06-01",
+            effectiveCompletedLoad: 0,
+            effectiveCompletedLoadStatus: "known_zero",
+          },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.UNSAFE_root.findByProps({
+        testID: "known-zero-completed-load-marker-2026-06-01",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.UNSAFE_root.findAll(
+        (node: ReactTestInstance) =>
+          String(node.type) === "Rect" &&
+          node.props.height === 3 &&
+          node.props.color === "rgba(22, 163, 74, 0.86)",
+      ),
+    ).toHaveLength(1);
+  });
+
   it("keeps an unavailable marker alongside a known completed aggregate load", () => {
     expect(
       hasCompletedActivityWithoutLoad({
@@ -67,9 +95,10 @@ describe("DailyTrainingAdjustmentChart", () => {
     ).toBe(false);
   });
 
-  it("renders accessible markers only for unavailable completed activity loads", () => {
+  it("highlights every completed activity without a calculated load", () => {
     render(
       <DailyTrainingAdjustmentChart
+        selectedDate="2026-06-02"
         points={[
           {
             date: "2026-06-01",
@@ -96,11 +125,28 @@ describe("DailyTrainingAdjustmentChart", () => {
       />,
     );
 
-    expect(screen.getByTestId("completed-activity-marker-label-2026-06-01")).toBeTruthy();
-    expect(screen.getByLabelText("Completed activity without load on 2026-06-01")).toBeTruthy();
-    expect(screen.getByTestId("completed-activity-marker-label-2026-06-02")).toBeTruthy();
-    expect(screen.queryByTestId("completed-activity-marker-label-2026-06-03")).toBeNull();
-    expect(screen.queryByTestId("completed-activity-marker-label-2026-06-04")).toBeNull();
+    expect(
+      screen.UNSAFE_root.findByProps({
+        testID: "completed-activity-without-load-highlight-2026-06-01",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByLabelText("Completed activity without estimated load on 2026-06-01"),
+    ).toBeNull();
+    expect(
+      screen.UNSAFE_root.findByProps({
+        testID: "completed-activity-without-load-highlight-2026-06-02",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByLabelText("Completed activity without estimated load on 2026-06-02"),
+    ).toBeNull();
+    expect(screen.queryByTestId("completed-activity-without-load-highlight-2026-06-03")).toBeNull();
+    const bottomMarkers = screen.UNSAFE_root.findAll(
+      (node: ReactTestInstance) =>
+        String(node.type) === "Rect" && node.props.height === 3 && node.props.y === 97,
+    );
+    expect(bottomMarkers).toHaveLength(2);
   });
 
   it("derives a stable bounded chart window around the anchor date", () => {
@@ -244,7 +290,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     );
 
     expect(mockScrollTo).toHaveBeenCalledTimes(1);
-    expect(mockScrollTo).toHaveBeenCalledWith({ animated: false, x: 96, y: 0 });
+    expect(mockScrollTo).toHaveBeenCalledWith({ animated: false, x: 0, y: 0 });
   });
 
   it("does not let passive native mount scrolling replace the controlled date", () => {
@@ -284,7 +330,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     );
 
     fireEvent(screen.getByTestId("daily-training-adjustment-chart-scroll"), "momentumScrollEnd", {
-      nativeEvent: { contentOffset: { x: 42, y: 0 } },
+      nativeEvent: { contentOffset: { x: 0, y: 0 } },
     });
 
     expect(screen.getByText("2026-06-02")).toBeTruthy();
@@ -339,6 +385,8 @@ describe("DailyTrainingAdjustmentChart", () => {
     act(() => jest.runOnlyPendingTimers());
     expect(onSelectedDateChange).toHaveBeenCalledTimes(1);
     expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-02");
+    act(() => jest.runOnlyPendingTimers());
+    expect(mockScrollTo).not.toHaveBeenCalled();
     jest.useRealTimers();
   });
 
@@ -391,7 +439,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     fireEvent(scrollView, "scrollEndDrag", {
       nativeEvent: { contentOffset: { x: 31, y: 0 }, velocity: { x: 1, y: 0 } },
     });
-    act(() => jest.runOnlyPendingTimers());
+    act(() => jest.advanceTimersByTime(499));
     expect(onSelectedDateChange).not.toHaveBeenCalled();
 
     fireEvent(scrollView, "momentumScrollBegin");
@@ -400,6 +448,46 @@ describe("DailyTrainingAdjustmentChart", () => {
     });
     expect(onSelectedDateChange).toHaveBeenCalledTimes(1);
     expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-03");
+    jest.useRealTimers();
+  });
+
+  it("keeps the viewport stable when a velocity drag settles without momentum events", () => {
+    jest.useFakeTimers();
+    const onSelectedDateChange = jest.fn();
+    const initialPoints = [
+      { date: "2026-06-01", targetLoad: 40 },
+      { date: "2026-06-02", targetLoad: 50 },
+      { date: "2026-06-03", targetLoad: 60 },
+    ];
+    const { rerender } = render(
+      <DailyTrainingAdjustmentChart
+        onSelectedDateChange={onSelectedDateChange}
+        points={initialPoints}
+      />,
+    );
+    const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
+
+    fireEvent(scrollView, "scrollBeginDrag");
+    fireEvent(scrollView, "scrollEndDrag", {
+      nativeEvent: { contentOffset: { x: 31, y: 0 }, velocity: { x: 1, y: 0 } },
+    });
+    rerender(
+      <DailyTrainingAdjustmentChart
+        onSelectedDateChange={onSelectedDateChange}
+        points={[
+          ...initialPoints,
+          { date: "2026-06-04", targetLoad: 70 },
+          { date: "2026-06-05", targetLoad: 80 },
+        ]}
+      />,
+    );
+
+    expect(screen.queryByTestId("daily-training-adjustment-chart-bucket-2026-06-05")).toBeNull();
+    act(() => jest.advanceTimersByTime(500));
+
+    expect(onSelectedDateChange).toHaveBeenCalledTimes(1);
+    expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-02");
+    expect(screen.queryByTestId("daily-training-adjustment-chart-bucket-2026-06-05")).toBeNull();
     jest.useRealTimers();
   });
 
@@ -495,7 +583,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     const adjustable = screen.getByLabelText("Daily training adjustment chart");
     expect(adjustable.props.accessibilityRole).toBe("adjustable");
     expect(adjustable.props.accessibilityValue).toEqual({
-      text: "Selected date 2026-06-02",
+      text: "Selected date 2026-06-02. Planned Common Load unavailable",
     });
     expect(adjustable.props.accessibilityHint).toBe("Adjust to select the next or previous date");
 
@@ -515,8 +603,10 @@ describe("DailyTrainingAdjustmentChart", () => {
       />,
     );
 
-    const target = screen.getByTestId("daily-training-adjustment-chart-bucket-2026-06-01");
-    expect(target.props.accessibilityRole).toBe("button");
+    const target = screen.UNSAFE_root.findByProps({
+      testID: "daily-training-adjustment-chart-bucket-2026-06-01",
+    });
+    expect(target.props.accessible).toBe(false);
     expect(target.props.style.width).toBeGreaterThanOrEqual(44);
     fireEvent.press(target);
     expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-01");
@@ -533,7 +623,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     );
 
     const chart = screen.UNSAFE_getByType("CartesianChart" as never);
-    expect(chart.props.data.map((datum: { x: number }) => datum.x)).toEqual([120, 168]);
+    expect(chart.props.data.map((datum: { x: number }) => datum.x)).toEqual([60, 180]);
   });
 
   it("announces available selected load, fitness, and unavailable completed-load state", () => {
@@ -552,6 +642,7 @@ describe("DailyTrainingAdjustmentChart", () => {
             recommendedLoad: 80,
             fitnessCtl: 31.4,
             scheduledFitnessCtl: 33.2,
+            formTsb: -1.8,
             targetFitnessCtl: 35.1,
           },
         ]}
@@ -570,6 +661,7 @@ describe("DailyTrainingAdjustmentChart", () => {
         "Planned Common Load 25",
         "Actual fitness 31",
         "Planned fitness projection 33",
+        "Form -2",
       ].join(". "),
     });
   });
@@ -579,6 +671,12 @@ describe("DailyTrainingAdjustmentChart", () => {
       <DailyTrainingAdjustmentChart
         points={[
           {
+            date: "2026-05-31",
+            effectiveCompletedLoad: 15,
+            fitnessCtl: 39,
+            formTsb: -5,
+          },
+          {
             date: "2026-06-01",
             effectiveCompletedLoad: 20,
             fitnessCtl: 40,
@@ -586,6 +684,7 @@ describe("DailyTrainingAdjustmentChart", () => {
             targetFitnessCtl: 40,
             recommendedLoadStatus: "complete",
             recommendedLoad: 30,
+            formTsb: 0,
           },
           {
             date: "2026-06-02",
@@ -594,6 +693,7 @@ describe("DailyTrainingAdjustmentChart", () => {
             targetFitnessCtl: 43,
             recommendedLoadStatus: "complete",
             recommendedLoad: 35,
+            formTsb: 8,
           },
         ]}
         selectedDate="2026-06-01"
@@ -603,9 +703,14 @@ describe("DailyTrainingAdjustmentChart", () => {
     );
 
     expect(screen.getByLabelText("Left axis: Load, Common Load")).toBeTruthy();
-    expect(screen.getByLabelText("Right axis: Training state")).toBeTruthy();
-    expect(screen.getByTestId("daily-training-adjustment-chart-today-boundary")).toBeTruthy();
-    expect(screen.getByLabelText("Today boundary at 2026-06-01")).toBeTruthy();
+    expect(screen.getByLabelText("Right axis: Fitness / Fatigue")).toBeTruthy();
+    expect(screen.getByText("Form line shows recovery")).toBeTruthy();
+    expect(
+      screen.UNSAFE_root.findByProps({
+        testID: "daily-training-adjustment-chart-today-boundary",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Today boundary at 2026-06-01")).toBeNull();
 
     const lines = screen.UNSAFE_root.findAll(
       (node: ReactTestInstance) => String(node.type) === "Line",
@@ -616,6 +721,22 @@ describe("DailyTrainingAdjustmentChart", () => {
     const plannedProjection = lines.find(
       (line: ReactTestInstance) => line.props.color === "rgba(37, 99, 235, 0.95)",
     );
+    const form = lines.find(
+      (line: ReactTestInstance) => line.props.color === "rgba(124, 58, 237, 0.95)",
+    );
+    expect(currentFitness?.props.points).toHaveLength(3);
+    expect(plannedProjection?.props.points).toHaveLength(3);
+    expect(form?.props.points).toHaveLength(3);
+    expect(
+      currentFitness?.props.points.map((point: { yValue: number | null }) => point.yValue),
+    ).toEqual([39, 40, null]);
+    expect(
+      plannedProjection?.props.points.map((point: { yValue: number | null }) => point.yValue),
+    ).toEqual([null, 40, 42]);
+    expect(form?.props.points.map((point: { yValue: number }) => point.yValue)).toEqual([-5, 0, 8]);
+    expect(currentFitness?.props.connectMissingData).toBe(false);
+    expect(plannedProjection?.props.connectMissingData).toBe(false);
+    expect(form?.props.connectMissingData).toBe(false);
     expect(currentFitness?.props.children).toBeUndefined();
     expect(plannedProjection?.props.children).toBeUndefined();
     expect(
@@ -629,70 +750,108 @@ describe("DailyTrainingAdjustmentChart", () => {
     ).toHaveLength(1);
   });
 
-  it("prefetches more days before the user reaches either scroll edge", () => {
-    const onScrollNearStart = jest.fn();
-    const onScrollNearEnd = jest.fn();
+  it("keeps a visible line gap for a missing training-state value", () => {
     render(
       <DailyTrainingAdjustmentChart
-        maxVisiblePoints={20}
-        onScrollNearEnd={onScrollNearEnd}
-        onScrollNearStart={onScrollNearStart}
-        points={Array.from({ length: 40 }, (_, index) => ({
-          date: `2026-06-${String(index + 1).padStart(2, "0")}`,
-          targetLoad: 50,
-        }))}
-        selectedDate="2026-06-15"
+        points={[
+          { date: "2026-06-01", fitnessCtl: 40 },
+          { date: "2026-06-02", fitnessCtl: null },
+          { date: "2026-06-03", fitnessCtl: 44 },
+        ]}
       />,
     );
 
-    const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
-    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 0, y: 0 } } });
-    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 1000, y: 0 } } });
-
-    expect(onScrollNearStart).toHaveBeenCalledTimes(1);
-    expect(onScrollNearEnd).toHaveBeenCalledTimes(1);
+    const fitnessLine = screen.UNSAFE_root.findAll(
+      (node: ReactTestInstance) => String(node.type) === "Line",
+    ).find((line: ReactTestInstance) => line.props.color === "rgba(22, 163, 74, 0.95)");
+    expect(fitnessLine?.props.connectMissingData).toBe(false);
+    expect(
+      fitnessLine?.props.points.map((point: { yValue: number | null }) => point.yValue),
+    ).toEqual([40, null, 44]);
   });
 
-  it("keeps the chart anchored to the viewport instead of an old selected date while loading more days", () => {
-    const buildPoints = (length: number) =>
-      Array.from({ length }, (_, index) => ({
-        date: `2026-06-${String(index + 1).padStart(2, "0")}`,
-        targetLoad: 50,
-      }));
-
-    const { rerender } = render(
+  it("shows the native horizontal exploration indicator", () => {
+    render(
       <DailyTrainingAdjustmentChart
-        maxVisiblePoints={10}
-        points={buildPoints(24)}
-        selectedDate="2026-06-15"
+        points={[
+          { date: "2026-06-01", plannedLoad: 10 },
+          { date: "2026-06-02", plannedLoad: 20 },
+        ]}
       />,
     );
 
     const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
+    expect(scrollView.props.showsHorizontalScrollIndicator).toBe(true);
+    expect(scrollView.props.persistentScrollbar).toBe(true);
+  });
+
+  it("keeps today's plotted values unchanged after windowing backward and forward", () => {
+    const points = Array.from({ length: 25 }, (_, index) => {
+      const day = index + 1;
+      return {
+        date: `2026-06-${String(day).padStart(2, "0")}`,
+        effectiveCompletedLoad: day,
+        effectiveRemainingLoad: day * 2,
+        fitnessCtl: 30 + day,
+        scheduledFitnessCtl: 31 + day,
+        formTsb: day - 15,
+      };
+    });
+    render(
+      <DailyTrainingAdjustmentChart
+        maxVisiblePoints={10}
+        points={points}
+        selectedDate="2026-06-15"
+      />,
+    );
+    fireEvent(screen.getByTestId("daily-training-adjustment-chart-viewport"), "layout", {
+      nativeEvent: { layout: { height: 230, width: 240, x: 0, y: 0 } },
+    });
+    const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
+    fireEvent(scrollView, "contentSizeChange", 720, 230);
+    const todayBefore = screen.UNSAFE_getByType("CartesianChart" as never).props.data[5];
+
     fireEvent(scrollView, "scrollBeginDrag");
-    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 336, y: 0 } } });
+    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 0, y: 0 } } });
+    fireEvent(scrollView, "momentumScrollEnd", {
+      nativeEvent: { contentOffset: { x: 0, y: 0 } },
+    });
+    expect(screen.getByText("06/15", { includeHiddenElements: true })).toBeTruthy();
 
-    rerender(
-      <DailyTrainingAdjustmentChart
-        maxVisiblePoints={10}
-        points={buildPoints(40)}
-        selectedDate="2026-06-15"
-      />,
-    );
+    fireEvent(scrollView, "scrollBeginDrag");
+    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 480, y: 0 } } });
+    fireEvent(scrollView, "momentumScrollEnd", {
+      nativeEvent: { contentOffset: { x: 480, y: 0 } },
+    });
 
-    expect(screen.getByText("06/21", { includeHiddenElements: true })).toBeTruthy();
+    const todayAfter = screen
+      .UNSAFE_getByType("CartesianChart" as never)
+      .props.data.find(
+        (point: { actualFitness: number | null }) =>
+          point.actualFitness === todayBefore.actualFitness,
+      );
+    expect(todayAfter).toMatchObject({
+      actualFitness: todayBefore.actualFitness,
+      completedLoad: todayBefore.completedLoad,
+      form: todayBefore.form,
+      plannedLoad: todayBefore.plannedLoad,
+      projectedFitness: todayBefore.projectedFitness,
+    });
+    expect(screen.getByText("06/15", { includeHiddenElements: true })).toBeTruthy();
   });
 
-  it("restores the centered date after older dates are prepended", () => {
+  it("keeps the same dates visible when data arrives during drag and momentum", () => {
     const buildPoints = (startDay: number, endDay: number) =>
       Array.from({ length: endDay - startDay + 1 }, (_, index) => ({
         date: `2026-06-${String(startDay + index).padStart(2, "0")}`,
-        targetLoad: 50,
+        targetLoad: startDay,
       }));
+    const onSelectedDateChange = jest.fn();
 
     const { rerender } = render(
       <DailyTrainingAdjustmentChart
         maxVisiblePoints={10}
+        onSelectedDateChange={onSelectedDateChange}
         points={buildPoints(10, 19)}
         selectedDate="2026-06-15"
       />,
@@ -707,67 +866,47 @@ describe("DailyTrainingAdjustmentChart", () => {
       230,
     );
     mockScrollTo.mockClear();
-    fireEvent.scroll(screen.getByTestId("daily-training-adjustment-chart-scroll"), {
-      nativeEvent: { contentOffset: { x: 120, y: 0 } },
-    });
-    fireEvent(screen.getByTestId("daily-training-adjustment-chart-scroll"), "momentumScrollEnd", {
-      nativeEvent: { contentOffset: { x: 120, y: 0 } },
-    });
-    mockScrollTo.mockClear();
+    const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
+
+    fireEvent(scrollView, "scrollBeginDrag");
+    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 0, y: 0 } } });
+    const chartDataBefore = screen.UNSAFE_getByType("CartesianChart" as never).props.data;
 
     rerender(
       <DailyTrainingAdjustmentChart
         maxVisiblePoints={10}
-        points={buildPoints(5, 19)}
+        onSelectedDateChange={onSelectedDateChange}
+        points={buildPoints(1, 19)}
         selectedDate="2026-06-15"
       />,
     );
+    expect(screen.UNSAFE_getByType("CartesianChart" as never).props.data).toBe(chartDataBefore);
+    expect(screen.queryByTestId("daily-training-adjustment-chart-bucket-2026-06-05")).toBeNull();
 
-    expect(mockScrollTo).toHaveBeenCalledWith({ animated: false, x: 240, y: 0 });
-  });
-
-  it("preserves the final drag position when dates arrive during momentum", () => {
-    const buildPoints = (startDay: number, endDay: number) =>
-      Array.from({ length: endDay - startDay + 1 }, (_, index) => ({
-        date: `2026-06-${String(startDay + index).padStart(2, "0")}`,
-        targetLoad: 50,
-      }));
-    const { rerender } = render(
-      <DailyTrainingAdjustmentChart
-        maxVisiblePoints={10}
-        points={buildPoints(10, 19)}
-        selectedDate="2026-06-15"
-      />,
-    );
-    fireEvent(screen.getByTestId("daily-training-adjustment-chart-viewport"), "layout", {
-      nativeEvent: { layout: { height: 230, width: 240, x: 0, y: 0 } },
-    });
-    fireEvent(
-      screen.getByTestId("daily-training-adjustment-chart-scroll"),
-      "contentSizeChange",
-      600,
-      230,
-    );
-    fireEvent(screen.getByTestId("daily-training-adjustment-chart-scroll"), "scrollBeginDrag");
-    fireEvent.scroll(screen.getByTestId("daily-training-adjustment-chart-scroll"), {
-      nativeEvent: { contentOffset: { x: 120, y: 0 } },
-    });
-
+    fireEvent(scrollView, "momentumScrollBegin");
     rerender(
       <DailyTrainingAdjustmentChart
         maxVisiblePoints={10}
-        points={buildPoints(5, 19)}
+        onSelectedDateChange={onSelectedDateChange}
+        points={buildPoints(1, 25)}
         selectedDate="2026-06-15"
       />,
     );
-    mockScrollTo.mockClear();
-    fireEvent.scroll(screen.getByTestId("daily-training-adjustment-chart-scroll"), {
-      nativeEvent: { contentOffset: { x: 180, y: 0 } },
-    });
-    fireEvent(screen.getByTestId("daily-training-adjustment-chart-scroll"), "momentumScrollEnd", {
-      nativeEvent: { contentOffset: { x: 180, y: 0 } },
+    expect(screen.UNSAFE_getByType("CartesianChart" as never).props.data).toBe(chartDataBefore);
+
+    fireEvent(scrollView, "momentumScrollEnd", {
+      nativeEvent: { contentOffset: { x: 0, y: 0 } },
     });
 
-    expect(mockScrollTo).toHaveBeenCalledWith({ animated: false, x: 192, y: 0 });
+    expect(screen.UNSAFE_getByType("CartesianChart" as never).props.data).not.toBe(chartDataBefore);
+    expect(onSelectedDateChange).toHaveBeenLastCalledWith("2026-06-12");
+    expect(screen.getByText("2026-06-12")).toBeTruthy();
+    expect(screen.queryByTestId("daily-training-adjustment-chart-bucket-2026-06-05")).toBeNull();
+    expect(
+      screen.UNSAFE_root.findByProps({
+        testID: "daily-training-adjustment-chart-bucket-2026-06-12",
+      }),
+    ).toBeTruthy();
+    expect(mockScrollTo).not.toHaveBeenCalled();
   });
 });

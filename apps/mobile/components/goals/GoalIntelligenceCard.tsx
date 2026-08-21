@@ -57,13 +57,6 @@ export function GoalIntelligenceCard({
       <CardContent className="gap-4 p-4">
         <View className="gap-1">
           <Text className="text-sm font-semibold text-foreground">Goal readiness</Text>
-          <Text className="text-sm leading-5 text-muted-foreground">
-            {assessment.freshness} state · {Math.round(assessment.assessmentConfidence * 100)}%
-            confidence
-          </Text>
-          <Text className="text-xs leading-5 text-muted-foreground">
-            Assessed {assessment.computedAt}
-          </Text>
         </View>
 
         {isError ? (
@@ -88,13 +81,6 @@ export function GoalIntelligenceCard({
             <View className="gap-2 rounded-2xl border border-border px-3 py-3">
               <Text className="text-xs font-medium text-foreground">
                 {formatLabel(readiness.status)} · readiness {score(readiness.readiness)}
-              </Text>
-              <Text className="text-xs leading-5 text-muted-foreground">
-                Fitness {score(readiness.fitnessScore)} · specificity{" "}
-                {score(readiness.specificityScore)}
-              </Text>
-              <Text className="text-xs leading-5 text-muted-foreground">
-                Fatigue pressure {score(readiness.fatiguePenalty)}
               </Text>
             </View>
             <View className="gap-2">

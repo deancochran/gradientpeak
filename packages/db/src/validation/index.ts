@@ -28,7 +28,6 @@ import {
   thresholdEvaluationRejectionReasonEnum,
   thresholdEvidenceStatusEnum,
   thresholdMetricEnum,
-  trainingEffectLabelEnum,
 } from "../schema/enums";
 import {
   activities,
@@ -107,7 +106,6 @@ export const publicIntegrationResourceKindSchema = z.enum(integrationResourceKin
 export const publicIntegrationProviderSchema = z.enum(integrationProviderEnum.enumValues);
 export const publicNotificationTypeSchema = z.enum(notificationTypeEnum.enumValues);
 export const publicProfileMetricTypeSchema = z.enum(profileMetricTypeEnum.enumValues);
-export const publicTrainingEffectLabelSchema = z.enum(trainingEffectLabelEnum.enumValues);
 export const publicThresholdMetricSchema = z.enum(thresholdMetricEnum.enumValues);
 export const publicThresholdEvaluationOutcomeSchema = z.enum(
   thresholdEvaluationOutcomeEnum.enumValues,
@@ -340,7 +338,6 @@ export type PublicIntegrationResourceKind = z.infer<typeof publicIntegrationReso
 export type PublicIntegrationProvider = z.infer<typeof publicIntegrationProviderSchema>;
 export type PublicNotificationType = z.infer<typeof publicNotificationTypeSchema>;
 export type PublicProfileMetricType = z.infer<typeof publicProfileMetricTypeSchema>;
-export type PublicTrainingEffectLabel = z.infer<typeof publicTrainingEffectLabelSchema>;
 export type PublicProfilesRow = z.infer<typeof publicProfilesRowSchema>;
 export type PublicProfilesInsert = z.infer<typeof publicProfilesInsertSchema>;
 export type PublicProfilesUpdate = z.infer<typeof publicProfilesUpdateSchema>;

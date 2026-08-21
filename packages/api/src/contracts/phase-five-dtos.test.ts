@@ -1,7 +1,6 @@
 import superjson from "superjson";
 import { describe, expect, it } from "vitest";
 import { activityIngestionSafeStatusDtoSchema } from "./activity-ingestion";
-import { athleteLoadRangeDtoSchema } from "./athlete-load-range";
 import { plannedSessionDtoSchema } from "./planned-sessions";
 import { thresholdEvidenceExplanationDtoSchema } from "./threshold-evidence";
 import { trainingEffectDtoSchema } from "./training-effects";
@@ -136,28 +135,6 @@ describe("Phase 5 public DTOs", () => {
         claimToken: "private-worker-claim",
         stagingPath: "private/path.fit",
         rawError: "private error",
-      }).success,
-    ).toBe(false);
-    expect(
-      athleteLoadRangeDtoSchema.safeParse({
-        profileId: id(11),
-        range: { startDate: "2026-08-10", endDate: "2026-08-10" },
-        publishedRevision: 3,
-        freshness: "fresh",
-        coverage: { startAt: now, endAt: now, lastActivityAt: now },
-        days: [
-          {
-            planningDate: "2026-08-10",
-            commonLoad: 50,
-            fitness: 40,
-            fatigue: 35,
-            form: 5,
-            readiness: 70,
-            coverage: { status: "complete", contributingActivityCount: 1, omittedActivityCount: 0 },
-            calculationVersion: "v1",
-            sourceRevision: 3,
-          },
-        ],
       }).success,
     ).toBe(false);
   });

@@ -68,13 +68,6 @@ function isLocalLink(target) {
   return !/^(?:[a-z][a-z\d+.-]*:|#|\/)/i.test(target);
 }
 
-function hasDeprecatedCaveat(lines, line) {
-  return lines.slice(Math.max(0, line - 2), line + 1).some((candidate) => {
-    const match = candidate.match(/<!--\s*guidance:\s*allow-deprecated\s+([\s\S]*?)-->/i);
-    return Boolean(match?.[1].trim());
-  });
-}
-
 function collectFiles(root, name, directory = root, files = []) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (entry.name === ".git" || entry.name === "node_modules") continue;
@@ -142,33 +135,9 @@ function pnpmScriptReferences(value) {
     .filter(Boolean);
 }
 
-export function validateGuidance(root, { catalogPath = "docs/agent-exemplars.md" } = {}) {
+export function validateGuidance(root) {
   /** @type {string[]} */
   const errors = [];
-  const catalog = resolve(root, catalogPath);
-  if (!existsSync(catalog))
-    return [
-      `Guidance catalog is missing: ${catalogPath}. Create the checked exemplar catalog before running this gate.`,
-    ];
-
-  const catalogLines = readFileSync(catalog, "utf8").split("\n");
-  for (const { line, target } of markdownLinks(catalogLines.join("\n"))) {
-    if (!isLocalLink(target)) continue;
-    const targetPath = resolve(dirname(catalog), decodeURIComponent(target.split("#", 1)[0]));
-    if (!targetPath.startsWith(`${resolve(root)}/`) || !existsSync(targetPath)) {
-      errors.push(`${catalogPath}:${line}: linked exemplar target is missing: ${target}`);
-      continue;
-    }
-    if (
-      /@deprecated\b/i.test(readFileSync(targetPath, "utf8")) &&
-      !hasDeprecatedCaveat(catalogLines, line)
-    ) {
-      errors.push(
-        `${catalogPath}:${line}: linked exemplar ${target} contains @deprecated; add <!-- guidance: allow-deprecated reason --> with a documented caveat or choose an active exemplar.`,
-      );
-    }
-  }
-
   const manifests = workspaceManifests(root);
   for (const agentsPath of collectFiles(root, "AGENTS.md").filter(
     (path) => !relativePath(root, path).includes("/fixtures/"),

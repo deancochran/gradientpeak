@@ -2,7 +2,6 @@ import React from "react";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
-const startProviderProcessing = jest.fn(async () => undefined);
 const handleComplete = jest.fn(async () => undefined);
 const restartProviderSelection = jest.fn(async () => undefined);
 let progress: Record<string, unknown> | undefined;
@@ -43,10 +42,7 @@ jest.mock("@/components/shared/AppFormModal", () => ({
 }));
 jest.mock("@/components/onboarding/steps", () => ({
   __esModule: true,
-  ProfileAndIntentStep: () => React.createElement("View", { testID: "profile-form" }),
-  TrainingBaselineStep: () => React.createElement("View", { testID: "baseline-form" }),
-  GoalsPreferencesStep: () => React.createElement("View", { testID: "goal-form" }),
-  GroupsAndPeopleStep: () => React.createElement("View", { testID: "social-form" }),
+  IdentityStep: () => React.createElement("View", { testID: "identity-form" }),
 }));
 jest.mock("@/components/onboarding/ProviderSelectionStep", () => ({
   ProviderSelectionStep: () =>
@@ -75,7 +71,6 @@ jest.mock("@/components/onboarding/useOnboardingFlow", () => ({
     refreshIntegrationState: jest.fn(),
     retryProviderProcessing: jest.fn(),
     setStatusModal: jest.fn(),
-    startProviderProcessing,
     restartProviderSelection,
     statusModal: null,
     updateData: jest.fn(),
@@ -86,7 +81,7 @@ jest.mock("@/components/onboarding/useOnboardingFlow", () => ({
 
 const OnboardingScreen = require("../onboarding").default;
 
-describe("provider-first onboarding lifecycle", () => {
+describe("simplified onboarding lifecycle", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     lifecycleStatus = "provider_selection";
@@ -95,14 +90,17 @@ describe("provider-first onboarding lifecycle", () => {
     progressError = null;
   });
 
-  it("shows only provider selection first and starts directly without a profile draft", () => {
+  it("shows identity with an optional provider and finishes without starting provider processing", () => {
     renderNative(<OnboardingScreen />);
     expect(screen.getByTestId("onboarding-provider-selection")).toBeTruthy();
     expect(screen.getByTestId("provider-selection-controls")).toBeTruthy();
-    expect(screen.queryByTestId("profile-form")).toBeNull();
-    expect(screen.getByText("Continue")).toBeTruthy();
-    fireEvent.press(screen.getByTestId("onboarding-continue-provider-button"));
-    expect(startProviderProcessing).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("identity-form")).toBeTruthy();
+    expect(screen.getByText("Finish setup")).toBeTruthy();
+    expect(screen.queryByText("Training baseline")).toBeNull();
+    expect(screen.queryByText("Initial goal")).toBeNull();
+    expect(screen.queryByText("Groups and people")).toBeNull();
+    fireEvent.press(screen.getByTestId("onboarding-finish-button"));
+    expect(handleComplete).toHaveBeenCalledTimes(1);
   });
 
   it("shows provider selection after restart even if stale processing progress remains cached", () => {
@@ -136,8 +134,8 @@ describe("provider-first onboarding lifecycle", () => {
     expect(screen.getByTestId("onboarding-processing")).toBeTruthy();
     expect(screen.getByTestId("provider-processing-evidence")).toBeTruthy();
     expect(screen.queryByTestId("provider-selection-controls")).toBeNull();
-    expect(screen.queryByTestId("profile-form")).toBeNull();
-    expect(screen.queryByTestId("onboarding-continue-provider-button")).toBeNull();
+    expect(screen.queryByTestId("identity-form")).toBeNull();
+    expect(screen.queryByTestId("onboarding-finish-button")).toBeNull();
   });
 
   it("retains processing progress while showing a recoverable transient error", () => {
@@ -163,15 +161,14 @@ describe("provider-first onboarding lifecycle", () => {
     expect(screen.getByText("Loading preparation progress")).toBeTruthy();
   });
 
-  it("renders all forms only in review and finalizes with one action", () => {
+  it("renders only identity in review and finalizes with one action", () => {
     lifecycleStatus = "review";
     renderNative(<OnboardingScreen />);
-    expect(screen.getByTestId("onboarding-review")).toBeTruthy();
-    expect(screen.getByTestId("profile-form")).toBeTruthy();
-    expect(screen.getByTestId("baseline-form")).toBeTruthy();
-    expect(screen.getByTestId("goal-form")).toBeTruthy();
-    expect(screen.getByText("Review your setup")).toBeTruthy();
-    expect(screen.getByTestId("social-form")).toBeTruthy();
+    expect(screen.getByTestId("onboarding-identity")).toBeTruthy();
+    expect(screen.getByTestId("identity-form")).toBeTruthy();
+    expect(screen.queryByTestId("baseline-form")).toBeNull();
+    expect(screen.queryByTestId("goal-form")).toBeNull();
+    expect(screen.queryByTestId("social-form")).toBeNull();
     expect(screen.queryByTestId("provider-selection-controls")).toBeNull();
     expect(screen.queryByTestId("provider-processing-evidence")).toBeNull();
     fireEvent.press(screen.getByTestId("onboarding-finish-button"));

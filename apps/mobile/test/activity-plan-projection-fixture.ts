@@ -45,8 +45,8 @@ export function createScheduledActivityPlanSummary(
     schedule?: Partial<ScheduledActivityPlanSummary["schedule"]>;
   } = {},
 ): ScheduledActivityPlanSummary {
-  const summary = createActivityPlanSummary();
-  const { schedule, ...summaryOverrides } = overrides;
+  const { contractVersion: _contractVersion, schedule, ...summaryOverrides } = overrides;
+  const summary = createActivityPlanSummary(summaryOverrides);
   return scheduledActivityPlanSummarySchema.parse({
     ...summary,
     contractVersion: "scheduled-activity-plan-summary-v1",
@@ -60,13 +60,30 @@ export function createScheduledActivityPlanSummary(
       trainingPlanId: null,
       ...schedule,
     },
-    ...summaryOverrides,
   });
 }
 
 export function createActivityPlanSummary(
   overrides: Omit<Partial<ActivityPlanSummary>, "structure"> & { structure?: unknown } = {},
 ): ActivityPlanSummary {
+  const {
+    capabilities: capabilityOverrides,
+    metrics: metricOverrides,
+    prescriptionQuantification,
+    structure: structureOverride,
+    ...publicOverrides
+  } = overrides;
+  const structure = structureOverride ?? createActivityPlanStructure();
+  const hasAuthoringAccess = capabilityOverrides?.canEdit ?? true;
+  const capabilities = {
+    canLike: true,
+    canEdit: hasAuthoringAccess,
+    canDelete: hasAuthoringAccess,
+    canDuplicate: true,
+    canSchedule: true,
+    canRecord: hasAuthoringAccess,
+    ...capabilityOverrides,
+  };
   return activityPlanSummarySchema.parse({
     contractVersion: "activity-plan-summary-v1",
     id: "plan-1",
@@ -78,34 +95,41 @@ export function createActivityPlanSummary(
     owner: null,
     activityCategory: "run",
     activityPlanRevision: 3,
-    structure: createActivityPlanStructure(),
-    prescriptionQuantification: null,
-    metrics: [],
+    structure,
+    ...(hasAuthoringAccess
+      ? {
+          prescriptionQuantification: prescriptionQuantification ?? null,
+        }
+      : {}),
+    metrics: hasAuthoringAccess ? (metricOverrides ?? []) : [],
     visibility: "private",
     isSystemTemplate: false,
     engagement: { likes: 0, viewerHasLiked: false },
-    capabilities: {
-      canLike: true,
-      canEdit: true,
-      canDelete: true,
-      canDuplicate: true,
-      canSchedule: true,
-      canRecord: true,
-    },
-    ...overrides,
+    capabilities,
+    ...publicOverrides,
   });
 }
 
 export function createActivityPlanDetail(
   overrides: Omit<Partial<ActivityPlanDetail>, "structure"> & { structure?: unknown } = {},
 ): ActivityPlanDetail {
-  const summary = createActivityPlanSummary();
+  const {
+    contractVersion: _contractVersion,
+    gpsRecordingEnabled,
+    notes,
+    structureHash,
+    ...summaryOverrides
+  } = overrides;
+  const summary = createActivityPlanSummary(summaryOverrides);
   return activityPlanDetailSchema.parse({
     ...summary,
     contractVersion: "activity-plan-detail-v1",
-    notes: null,
-    structureHash: "test-structure-hash",
-    gpsRecordingEnabled: true,
-    ...overrides,
+    ...(summary.capabilities.canEdit
+      ? {
+          notes: notes ?? null,
+          structureHash: structureHash ?? "test-structure-hash",
+          gpsRecordingEnabled: gpsRecordingEnabled ?? true,
+        }
+      : {}),
   });
 }

@@ -270,16 +270,6 @@ describe("ProfileTabScreen", () => {
     authState = defaultAuthState;
   });
 
-  it("renders metric surfaces without embedding analytics trends", () => {
-    renderNative(<ProfileTabScreen />);
-
-    expect(screen.queryByTestId("profile-trends-section")).toBeNull();
-    expect(screen.queryByText("Analytics & Trends")).toBeNull();
-    expect(screen.getByTestId("profile-tab-profile-metrics")).toBeTruthy();
-    fireEvent.press(screen.getByTestId("profile-tab-trends"));
-    expect(navigateToMock).toHaveBeenCalledWith("/trends");
-  });
-
   it("routes content library entry points from the profile hub", () => {
     renderNative(<ProfileTabScreen />);
 

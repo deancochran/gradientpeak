@@ -1,30 +1,5 @@
 import { canonicalTrainingPlanStructureSchema } from "@repo/core";
 
-export type TrainingPlanVisualPhase =
-  | "foundation"
-  | "build"
-  | "specific"
-  | "peak"
-  | "recover"
-  | "maintain";
-
-export type TrainingPlanVisualSegment = {
-  index: number;
-  relativeLoad: number;
-  relativeRecovery: number;
-  relativeSpecificity: number;
-  activityCategoryMix: Record<string, number>;
-  phase: TrainingPlanVisualPhase;
-  isGoalSegment?: boolean;
-};
-
-export type TrainingPlanVisualModel = {
-  labels: string[];
-  planType: "template";
-  totalSegments: number;
-  segments: TrainingPlanVisualSegment[];
-};
-
 type UnknownRecord = Record<string, unknown>;
 
 function asRecord(value: unknown): UnknownRecord | null {
@@ -35,63 +10,66 @@ function asRecord(value: unknown): UnknownRecord | null {
   return value as UnknownRecord;
 }
 
-function clampUnit(value: number) {
-  return Math.max(0, Math.min(1, value));
+function asPositiveNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
 
-export function deriveTrainingPlanVisual(plan: unknown): TrainingPlanVisualModel | null {
-  const parsed = canonicalTrainingPlanStructureSchema.safeParse(asRecord(plan)?.structure);
-  if (!parsed.success) {
-    return null;
-  }
-
-  const structure = parsed.data;
-  const totalSegments = Math.max(
-    1,
-    structure.durationWeeks?.recommended ??
-      Math.ceil((Math.max(...structure.sessions.map((session) => session.offset_days)) + 1) / 7),
-  );
-  const activityCategories = structure.activity_category ?? ["mixed"];
-  const activityCategoryMix = Object.fromEntries(
-    activityCategories.map((activityCategory) => [activityCategory, 1 / activityCategories.length]),
-  );
-  const sessionsBySegment = Array.from({ length: totalSegments }, () => 0);
-  structure.sessions.forEach((session) => {
-    const segment = Math.min(totalSegments - 1, Math.floor(session.offset_days / 7));
-    sessionsBySegment[segment] = (sessionsBySegment[segment] ?? 0) + 1;
-  });
-  const maxSessions = Math.max(...sessionsBySegment, 1);
-
-  return {
-    labels: ["Structured"],
-    planType: "template",
-    segments: sessionsBySegment.map((sessionCount, index) => ({
-      index,
-      phase: "specific",
-      relativeLoad: clampUnit(sessionCount / maxSessions),
-      relativeRecovery: sessionCount === 0 ? 1 : 0,
-      relativeSpecificity: 0.5,
-      activityCategoryMix,
-    })),
-    totalSegments,
-  };
+function asStringArray(value: unknown) {
+  if (typeof value === "string" && value.length > 0) return [value];
+  return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : [];
 }
 
 export function deriveTrainingPlanSummaryMetrics(plan: unknown) {
-  const structure = canonicalTrainingPlanStructureSchema.safeParse(asRecord(plan)?.structure);
-  if (!structure.success) {
+  const planRecord = asRecord(plan);
+  const sessionsPerWeekTarget = asPositiveNumber(planRecord?.sessions_per_week_target);
+  const nestedStructure = canonicalTrainingPlanStructureSchema.safeParse(planRecord?.structure);
+  const flattenedStructure = nestedStructure.success
+    ? nestedStructure
+    : canonicalTrainingPlanStructureSchema.safeParse({
+        version: 1,
+        activity_category: asStringArray(planRecord?.activity_category),
+        experienceLevel: asStringArray(planRecord?.experienceLevel),
+        durationWeeks:
+          asRecord(planRecord?.durationWeeks) ??
+          (asPositiveNumber(planRecord?.durationWeeks) === null
+            ? undefined
+            : { recommended: asPositiveNumber(planRecord?.durationWeeks) }),
+        sessions: Array.isArray(planRecord?.sessions) ? planRecord.sessions : undefined,
+      });
+
+  if (!flattenedStructure.success) {
+    const flatDuration = asRecord(planRecord?.durationWeeks);
+    const flatDurationWeeks =
+      asPositiveNumber(flatDuration?.recommended) ?? asPositiveNumber(planRecord?.durationWeeks);
+    const flatActivityCategories = asStringArray(planRecord?.activity_category);
+    const flatExperienceLevels = asStringArray(planRecord?.experienceLevel);
+    const flatSessionsPerWeek = asPositiveNumber(planRecord?.sessionsPerWeek);
+
     return {
-      durationLabel: "--",
-      experienceLabel: "All levels",
-      activityCategoryLabel: "Mixed",
-      sessionsLabel: "--",
+      durationLabel:
+        flatDurationWeeks === null
+          ? "--"
+          : `${flatDurationWeeks} week${flatDurationWeeks === 1 ? "" : "s"}`,
+      experienceLabel: flatExperienceLevels[0] ?? "All levels",
+      activityCategoryLabel:
+        flatActivityCategories.length > 0
+          ? flatActivityCategories.slice(0, 2).join(" / ")
+          : "Mixed",
+      sessionsLabel:
+        sessionsPerWeekTarget === null
+          ? flatSessionsPerWeek === null
+            ? "--"
+            : `Authored avg: ${flatSessionsPerWeek}/week`
+          : `Target: ${sessionsPerWeekTarget}/week`,
     };
   }
 
-  const durationWeeks = structure.data.durationWeeks?.recommended ?? null;
-  const sessionsPerWeek = durationWeeks ? structure.data.sessions.length / durationWeeks : null;
-  const activityCategories = structure.data.activity_category ?? [];
-  const experienceLevels = structure.data.experienceLevel ?? [];
+  const durationWeeks = flattenedStructure.data.durationWeeks?.recommended ?? null;
+  const sessionsPerWeek =
+    asPositiveNumber(planRecord?.sessionsPerWeek) ??
+    (durationWeeks ? flattenedStructure.data.sessions.length / durationWeeks : null);
+  const activityCategories = flattenedStructure.data.activity_category ?? [];
+  const experienceLevels = flattenedStructure.data.experienceLevel ?? [];
 
   return {
     durationLabel:
@@ -102,6 +80,10 @@ export function deriveTrainingPlanSummaryMetrics(plan: unknown) {
     activityCategoryLabel:
       activityCategories.length > 0 ? activityCategories.slice(0, 2).join(" / ") : "Mixed",
     sessionsLabel:
-      sessionsPerWeek !== null && sessionsPerWeek > 0 ? `${sessionsPerWeek}/week` : "--",
+      sessionsPerWeekTarget !== null
+        ? `Target: ${sessionsPerWeekTarget}/week`
+        : sessionsPerWeek !== null && sessionsPerWeek > 0
+          ? `Authored avg: ${sessionsPerWeek}/week`
+          : "--",
   };
 }

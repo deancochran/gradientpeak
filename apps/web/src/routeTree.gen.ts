@@ -23,7 +23,6 @@ import { Route as ProtectedRecordRouteImport } from './routes/_protected/record'
 import { Route as ProtectedSearchRouteImport } from './routes/_protected/search'
 import { Route as ProtectedSettingsRouteImport } from './routes/_protected/settings'
 import { Route as ProtectedTrainingPreferencesRouteImport } from './routes/_protected/training-preferences'
-import { Route as ProtectedTrendsRouteImport } from './routes/_protected/trends'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiReadyRouteImport } from './routes/api/ready'
 import { Route as AuthConfirmRouteImport } from './routes/auth/confirm'
@@ -47,8 +46,6 @@ import { Route as ProtectedGoalsIndexRouteImport } from './routes/_protected/goa
 import { Route as ProtectedGoalsNewRouteImport } from './routes/_protected/goals/new'
 import { Route as ProtectedGroupsIndexRouteImport } from './routes/_protected/groups/index'
 import { Route as ProtectedGroupsNewRouteImport } from './routes/_protected/groups/new'
-import { Route as ProtectedProfileMetricsIndexRouteImport } from './routes/_protected/profile-metrics/index'
-import { Route as ProtectedProfileMetricsMetricIdRouteImport } from './routes/_protected/profile-metrics/$metricId'
 import { Route as ProtectedRecordIndexRouteImport } from './routes/_protected/record/index'
 import { Route as ProtectedRecordPlanRouteImport } from './routes/_protected/record/plan'
 import { Route as ProtectedRecordSessionRouteImport } from './routes/_protected/record/session'
@@ -159,11 +156,6 @@ const ProtectedTrainingPreferencesRoute =
     path: '/training-preferences',
     getParentRoute: () => ProtectedRoute,
   } as any)
-const ProtectedTrendsRoute = ProtectedTrendsRouteImport.update({
-  id: '/trends',
-  path: '/trends',
-  getParentRoute: () => ProtectedRoute,
-} as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
@@ -285,18 +277,6 @@ const ProtectedGroupsNewRoute = ProtectedGroupsNewRouteImport.update({
   path: '/groups/new',
   getParentRoute: () => ProtectedRoute,
 } as any)
-const ProtectedProfileMetricsIndexRoute =
-  ProtectedProfileMetricsIndexRouteImport.update({
-    id: '/profile-metrics/',
-    path: '/profile-metrics/',
-    getParentRoute: () => ProtectedRoute,
-  } as any)
-const ProtectedProfileMetricsMetricIdRoute =
-  ProtectedProfileMetricsMetricIdRouteImport.update({
-    id: '/profile-metrics/$metricId',
-    path: '/profile-metrics/$metricId',
-    getParentRoute: () => ProtectedRoute,
-  } as any)
 const ProtectedRecordIndexRoute = ProtectedRecordIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -543,7 +523,6 @@ export interface FileRoutesByFullPath {
   '/search': typeof ProtectedSearchRoute
   '/settings': typeof ProtectedSettingsRoute
   '/training-preferences': typeof ProtectedTrainingPreferencesRoute
-  '/trends': typeof ProtectedTrendsRoute
   '/api/health': typeof ApiHealthRoute
   '/api/ready': typeof ApiReadyRoute
   '/auth/confirm': typeof AuthConfirmRoute
@@ -561,7 +540,6 @@ export interface FileRoutesByFullPath {
   '/calendar/new': typeof ProtectedCalendarNewRoute
   '/goals/new': typeof ProtectedGoalsNewRoute
   '/groups/new': typeof ProtectedGroupsNewRoute
-  '/profile-metrics/$metricId': typeof ProtectedProfileMetricsMetricIdRoute
   '/record/plan': typeof ProtectedRecordPlanRoute
   '/record/session': typeof ProtectedRecordSessionRoute
   '/routes/upload': typeof ProtectedRoutesUploadRoute
@@ -578,7 +556,6 @@ export interface FileRoutesByFullPath {
   '/calendar/': typeof ProtectedCalendarIndexRoute
   '/goals/': typeof ProtectedGoalsIndexRoute
   '/groups/': typeof ProtectedGroupsIndexRoute
-  '/profile-metrics/': typeof ProtectedProfileMetricsIndexRoute
   '/record/': typeof ProtectedRecordIndexRoute
   '/routes/': typeof ProtectedRoutesIndexRoute
   '/training-plans/': typeof ProtectedTrainingPlansIndexRoute
@@ -620,7 +597,6 @@ export interface FileRoutesByTo {
   '/search': typeof ProtectedSearchRoute
   '/settings': typeof ProtectedSettingsRoute
   '/training-preferences': typeof ProtectedTrainingPreferencesRoute
-  '/trends': typeof ProtectedTrendsRoute
   '/api/health': typeof ApiHealthRoute
   '/api/ready': typeof ApiReadyRoute
   '/auth/confirm': typeof AuthConfirmRoute
@@ -637,7 +613,6 @@ export interface FileRoutesByTo {
   '/calendar/new': typeof ProtectedCalendarNewRoute
   '/goals/new': typeof ProtectedGoalsNewRoute
   '/groups/new': typeof ProtectedGroupsNewRoute
-  '/profile-metrics/$metricId': typeof ProtectedProfileMetricsMetricIdRoute
   '/record/plan': typeof ProtectedRecordPlanRoute
   '/record/session': typeof ProtectedRecordSessionRoute
   '/routes/upload': typeof ProtectedRoutesUploadRoute
@@ -654,7 +629,6 @@ export interface FileRoutesByTo {
   '/calendar': typeof ProtectedCalendarIndexRoute
   '/goals': typeof ProtectedGoalsIndexRoute
   '/groups': typeof ProtectedGroupsIndexRoute
-  '/profile-metrics': typeof ProtectedProfileMetricsIndexRoute
   '/record': typeof ProtectedRecordIndexRoute
   '/routes': typeof ProtectedRoutesIndexRoute
   '/training-plans': typeof ProtectedTrainingPlansIndexRoute
@@ -701,7 +675,6 @@ export interface FileRoutesById {
   '/_protected/search': typeof ProtectedSearchRoute
   '/_protected/settings': typeof ProtectedSettingsRoute
   '/_protected/training-preferences': typeof ProtectedTrainingPreferencesRoute
-  '/_protected/trends': typeof ProtectedTrendsRoute
   '/api/health': typeof ApiHealthRoute
   '/api/ready': typeof ApiReadyRoute
   '/auth/confirm': typeof AuthConfirmRoute
@@ -720,7 +693,6 @@ export interface FileRoutesById {
   '/_protected/calendar/new': typeof ProtectedCalendarNewRoute
   '/_protected/goals/new': typeof ProtectedGoalsNewRoute
   '/_protected/groups/new': typeof ProtectedGroupsNewRoute
-  '/_protected/profile-metrics/$metricId': typeof ProtectedProfileMetricsMetricIdRoute
   '/_protected/record/plan': typeof ProtectedRecordPlanRoute
   '/_protected/record/session': typeof ProtectedRecordSessionRoute
   '/_protected/routes/upload': typeof ProtectedRoutesUploadRoute
@@ -737,7 +709,6 @@ export interface FileRoutesById {
   '/_protected/calendar/': typeof ProtectedCalendarIndexRoute
   '/_protected/goals/': typeof ProtectedGoalsIndexRoute
   '/_protected/groups/': typeof ProtectedGroupsIndexRoute
-  '/_protected/profile-metrics/': typeof ProtectedProfileMetricsIndexRoute
   '/_protected/record/': typeof ProtectedRecordIndexRoute
   '/_protected/routes/': typeof ProtectedRoutesIndexRoute
   '/_protected/training-plans/': typeof ProtectedTrainingPlansIndexRoute
@@ -784,7 +755,6 @@ export interface FileRouteTypes {
     | '/search'
     | '/settings'
     | '/training-preferences'
-    | '/trends'
     | '/api/health'
     | '/api/ready'
     | '/auth/confirm'
@@ -802,7 +772,6 @@ export interface FileRouteTypes {
     | '/calendar/new'
     | '/goals/new'
     | '/groups/new'
-    | '/profile-metrics/$metricId'
     | '/record/plan'
     | '/record/session'
     | '/routes/upload'
@@ -819,7 +788,6 @@ export interface FileRouteTypes {
     | '/calendar/'
     | '/goals/'
     | '/groups/'
-    | '/profile-metrics/'
     | '/record/'
     | '/routes/'
     | '/training-plans/'
@@ -861,7 +829,6 @@ export interface FileRouteTypes {
     | '/search'
     | '/settings'
     | '/training-preferences'
-    | '/trends'
     | '/api/health'
     | '/api/ready'
     | '/auth/confirm'
@@ -878,7 +845,6 @@ export interface FileRouteTypes {
     | '/calendar/new'
     | '/goals/new'
     | '/groups/new'
-    | '/profile-metrics/$metricId'
     | '/record/plan'
     | '/record/session'
     | '/routes/upload'
@@ -895,7 +861,6 @@ export interface FileRouteTypes {
     | '/calendar'
     | '/goals'
     | '/groups'
-    | '/profile-metrics'
     | '/record'
     | '/routes'
     | '/training-plans'
@@ -941,7 +906,6 @@ export interface FileRouteTypes {
     | '/_protected/search'
     | '/_protected/settings'
     | '/_protected/training-preferences'
-    | '/_protected/trends'
     | '/api/health'
     | '/api/ready'
     | '/auth/confirm'
@@ -960,7 +924,6 @@ export interface FileRouteTypes {
     | '/_protected/calendar/new'
     | '/_protected/goals/new'
     | '/_protected/groups/new'
-    | '/_protected/profile-metrics/$metricId'
     | '/_protected/record/plan'
     | '/_protected/record/session'
     | '/_protected/routes/upload'
@@ -977,7 +940,6 @@ export interface FileRouteTypes {
     | '/_protected/calendar/'
     | '/_protected/goals/'
     | '/_protected/groups/'
-    | '/_protected/profile-metrics/'
     | '/_protected/record/'
     | '/_protected/routes/'
     | '/_protected/training-plans/'
@@ -1135,13 +1097,6 @@ declare module '@tanstack/react-router' {
       path: '/training-preferences'
       fullPath: '/training-preferences'
       preLoaderRoute: typeof ProtectedTrainingPreferencesRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/trends': {
-      id: '/_protected/trends'
-      path: '/trends'
-      fullPath: '/trends'
-      preLoaderRoute: typeof ProtectedTrendsRouteImport
       parentRoute: typeof ProtectedRoute
     }
     '/api/health': {
@@ -1303,20 +1258,6 @@ declare module '@tanstack/react-router' {
       path: '/groups/new'
       fullPath: '/groups/new'
       preLoaderRoute: typeof ProtectedGroupsNewRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/profile-metrics/': {
-      id: '/_protected/profile-metrics/'
-      path: '/profile-metrics'
-      fullPath: '/profile-metrics/'
-      preLoaderRoute: typeof ProtectedProfileMetricsIndexRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/profile-metrics/$metricId': {
-      id: '/_protected/profile-metrics/$metricId'
-      path: '/profile-metrics/$metricId'
-      fullPath: '/profile-metrics/$metricId'
-      preLoaderRoute: typeof ProtectedProfileMetricsMetricIdRouteImport
       parentRoute: typeof ProtectedRoute
     }
     '/_protected/record/': {
@@ -1706,18 +1647,15 @@ interface ProtectedRouteChildren {
   ProtectedSearchRoute: typeof ProtectedSearchRoute
   ProtectedSettingsRoute: typeof ProtectedSettingsRoute
   ProtectedTrainingPreferencesRoute: typeof ProtectedTrainingPreferencesRoute
-  ProtectedTrendsRoute: typeof ProtectedTrendsRoute
   ProtectedIndexRoute: typeof ProtectedIndexRoute
   ProtectedActivitiesImportRoute: typeof ProtectedActivitiesImportRoute
   ProtectedActivityPlansActivityPlanIdRoute: typeof ProtectedActivityPlansActivityPlanIdRoute
   ProtectedGroupsNewRoute: typeof ProtectedGroupsNewRoute
-  ProtectedProfileMetricsMetricIdRoute: typeof ProtectedProfileMetricsMetricIdRoute
   ProtectedRoutesUploadRoute: typeof ProtectedRoutesUploadRoute
   ProtectedTrainingPlansCreateRoute: typeof ProtectedTrainingPlansCreateRoute
   ProtectedActivitiesIndexRoute: typeof ProtectedActivitiesIndexRoute
   ProtectedActivityPlansIndexRoute: typeof ProtectedActivityPlansIndexRoute
   ProtectedGroupsIndexRoute: typeof ProtectedGroupsIndexRoute
-  ProtectedProfileMetricsIndexRoute: typeof ProtectedProfileMetricsIndexRoute
   ProtectedRoutesIndexRoute: typeof ProtectedRoutesIndexRoute
   ProtectedTrainingPlansIndexRoute: typeof ProtectedTrainingPlansIndexRoute
   ProtectedGroupsGroupIdEditRoute: typeof ProtectedGroupsGroupIdEditRoute
@@ -1747,19 +1685,16 @@ const ProtectedRouteChildren: ProtectedRouteChildren = {
   ProtectedSearchRoute: ProtectedSearchRoute,
   ProtectedSettingsRoute: ProtectedSettingsRoute,
   ProtectedTrainingPreferencesRoute: ProtectedTrainingPreferencesRoute,
-  ProtectedTrendsRoute: ProtectedTrendsRoute,
   ProtectedIndexRoute: ProtectedIndexRoute,
   ProtectedActivitiesImportRoute: ProtectedActivitiesImportRoute,
   ProtectedActivityPlansActivityPlanIdRoute:
     ProtectedActivityPlansActivityPlanIdRoute,
   ProtectedGroupsNewRoute: ProtectedGroupsNewRoute,
-  ProtectedProfileMetricsMetricIdRoute: ProtectedProfileMetricsMetricIdRoute,
   ProtectedRoutesUploadRoute: ProtectedRoutesUploadRoute,
   ProtectedTrainingPlansCreateRoute: ProtectedTrainingPlansCreateRoute,
   ProtectedActivitiesIndexRoute: ProtectedActivitiesIndexRoute,
   ProtectedActivityPlansIndexRoute: ProtectedActivityPlansIndexRoute,
   ProtectedGroupsIndexRoute: ProtectedGroupsIndexRoute,
-  ProtectedProfileMetricsIndexRoute: ProtectedProfileMetricsIndexRoute,
   ProtectedRoutesIndexRoute: ProtectedRoutesIndexRoute,
   ProtectedTrainingPlansIndexRoute: ProtectedTrainingPlansIndexRoute,
   ProtectedGroupsGroupIdEditRoute: ProtectedGroupsGroupIdEditRoute,

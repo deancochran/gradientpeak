@@ -2,7 +2,7 @@ import { render } from "@testing-library/react-native";
 import { ConstraintIndicator } from "./ConstraintIndicator";
 
 describe("ConstraintIndicator", () => {
-  it("explains fail-closed weekly Load instead of describing it as over the limit", () => {
+  it("normalizes missing planned Load to a satisfied zero state", () => {
     const view = render(
       <ConstraintIndicator
         label="Weekly Load"
@@ -14,10 +14,8 @@ describe("ConstraintIndicator", () => {
       />,
     );
 
-    expect(view.getAllByText("Unavailable")).toHaveLength(2);
-    expect(
-      view.getByText("❌ Common Load unavailable; this constraint cannot be evaluated"),
-    ).toBeTruthy();
+    expect(view.getAllByText("0")).toHaveLength(2);
+    expect(view.queryByText(/unavailable|partial|incomplete/i)).toBeNull();
     expect(view.queryByText("❌ Exceeds recommended limit")).toBeNull();
   });
 });

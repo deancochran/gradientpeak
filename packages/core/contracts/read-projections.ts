@@ -3,6 +3,7 @@ import { z } from "zod";
 import { activityPlanStructureSchema } from "../activity-plan/structure-schema";
 import { activityPrescriptionQuantificationBundleSchema } from "../activity-quantification/bundle";
 import { completedSegmentSummarySchema } from "../activity-segments/completed-segment-schema";
+import { groupEventRsvpStatusSchema } from "../groups/schemas";
 import { activityLapRecordListSchema } from "../schemas/activity_streams";
 import { canonicalActivityCategorySchema } from "../schemas/activity-category";
 
@@ -10,6 +11,23 @@ const identifierSchema = z.string().trim().min(1).max(128);
 const hrefSchema = z.string().trim().startsWith("/").max(512);
 const instantSchema = z.iso.datetime({ offset: true });
 const calendarDateSchema = z.iso.date();
+
+/** The source a plan viewer may rely on when interpreting an estimate-row value. */
+export const activityPlanMetricProvenanceSchema = z.enum([
+  "authored",
+  "estimated",
+  "plan_intent",
+  "personalized",
+]);
+export type ActivityPlanMetricProvenance = z.infer<typeof activityPlanMetricProvenanceSchema>;
+
+export const ACTIVITY_PLAN_METRIC_PROVENANCE_LABELS: Record<ActivityPlanMetricProvenance, string> =
+  {
+    authored: "Authored",
+    estimated: "Estimated",
+    plan_intent: "Plan intent",
+    personalized: "Personalized",
+  };
 
 export const projectionOwnerSchema = z.strictObject({
   id: identifierSchema,
@@ -35,6 +53,8 @@ const semanticMetricBaseShape = {
   label: z.string().trim().min(1).max(80),
   value: z.number().finite(),
   unit: z.string().trim().min(1).max(48),
+  /** Present on plan estimate rows; omitted by unrelated metric projections. */
+  provenance: activityPlanMetricProvenanceSchema.nullable().optional(),
 };
 
 const semanticMetricAvailableSchema = z.strictObject({
@@ -56,6 +76,7 @@ const semanticMetricUnavailableSchema = z.strictObject({
   value: z.null(),
   unit: z.string().trim().min(1).max(48).nullable(),
   reason: z.string().trim().min(1).max(160),
+  provenance: activityPlanMetricProvenanceSchema.nullable().optional(),
 });
 
 /** A locale-neutral quantity. Surfaces choose formatting and preferred display units. */
@@ -66,8 +87,92 @@ export const semanticMetricSchema = z.discriminatedUnion("status", [
 ]);
 export type SemanticMetric = z.infer<typeof semanticMetricSchema>;
 
+function semanticMetricListSchema(maximum: number) {
+  return z
+    .array(semanticMetricSchema)
+    .max(maximum)
+    .superRefine((metrics, context) => {
+      const seen = new Set<string>();
+      metrics.forEach((metric, index) => {
+        if (seen.has(metric.key)) {
+          context.addIssue({
+            code: "custom",
+            path: [index, "key"],
+            message: `Duplicate semantic metric key: ${metric.key}`,
+          });
+        }
+        seen.add(metric.key);
+      });
+    });
+}
+
 export function createSemanticMetric(value: unknown): SemanticMetric {
   return semanticMetricSchema.parse(value);
+}
+
+export const ACTIVITY_CARD_EFFORT_PROFILE_MAX_SAMPLES = 64;
+export const ACTIVITY_CARD_EFFORT_PROFILE_MAX_ELAPSED_SECONDS = 31_536_000;
+export const activityCardEffortLevelSchema = z.enum([
+  "lowest",
+  "lower",
+  "steady",
+  "higher",
+  "highest",
+]);
+export type ActivityCardEffortLevel = z.infer<typeof activityCardEffortLevelSchema>;
+
+/**
+ * One threshold-free, ordinal point in a completed activity. Every point in a
+ * profile uses one recorded signal and one activity-wide scale; it is not an
+ * athlete zone, target ratio, or comparison between unrelated segment signals.
+ */
+export const activityCardEffortSampleSchema = z.strictObject({
+  elapsedSeconds: z
+    .number()
+    .finite()
+    .nonnegative()
+    .max(ACTIVITY_CARD_EFFORT_PROFILE_MAX_ELAPSED_SECONDS),
+  effortLevel: activityCardEffortLevelSchema,
+});
+export type ActivityCardEffortSample = z.infer<typeof activityCardEffortSampleSchema>;
+
+export const activityCardEffortProfileSchema = z
+  .strictObject({
+    basis: z.literal("activity_wide_signal_ordinal"),
+    samples: z
+      .array(activityCardEffortSampleSchema)
+      .min(2)
+      .max(ACTIVITY_CARD_EFFORT_PROFILE_MAX_SAMPLES),
+  })
+  .superRefine((profile, context) => {
+    for (let index = 1; index < profile.samples.length; index += 1) {
+      const previous = profile.samples[index - 1];
+      const current = profile.samples[index];
+      if (previous && current && current.elapsedSeconds <= previous.elapsedSeconds) {
+        context.addIssue({
+          code: "custom",
+          path: ["samples", index, "elapsedSeconds"],
+          message: "Elapsed time must be strictly increasing",
+        });
+      }
+    }
+  });
+export type ActivityCardEffortProfile = z.infer<typeof activityCardEffortProfileSchema>;
+
+/** Presentation-only ordering. No raw measurement or personal calibration is encoded. */
+export function activityCardEffortLevelChartValue(level: ActivityCardEffortLevel): number {
+  switch (level) {
+    case "lowest":
+      return 0;
+    case "lower":
+      return 1;
+    case "steady":
+      return 2;
+    case "higher":
+      return 3;
+    case "highest":
+      return 4;
+  }
 }
 
 export const activityDisplayModelSchema = z.strictObject({
@@ -85,7 +190,8 @@ export const activityDisplayModelSchema = z.strictObject({
   }),
   title: z.string().trim().min(1).max(200),
   notes: z.string().max(5_000).nullable(),
-  metrics: z.array(semanticMetricSchema).max(16),
+  metrics: semanticMetricListSchema(16),
+  effortProfile: activityCardEffortProfileSchema.nullable().optional(),
   visibility: z.enum(["private", "followers", "public"]),
   engagement: z.strictObject({
     likes: z.number().int().nonnegative(),
@@ -212,9 +318,11 @@ const activityPlanSummaryShape = {
   owner: projectionOwnerSchema.nullable(),
   activityCategory: canonicalActivityCategorySchema,
   activityPlanRevision: z.number().int().positive(),
+  /** Authored prescription data used by every plan presentation surface. */
   structure: activityPlanStructureSchema,
-  prescriptionQuantification: activityPrescriptionQuantificationBundleSchema.nullable(),
-  metrics: z.array(semanticMetricSchema).max(8),
+  /** Owner-only prescription detail. Non-owner projections omit this key entirely. */
+  prescriptionQuantification: activityPrescriptionQuantificationBundleSchema.nullable().optional(),
+  metrics: semanticMetricListSchema(8),
   visibility: z.enum(["private", "followers", "public"]),
   isSystemTemplate: z.boolean(),
   engagement: z.strictObject({
@@ -224,31 +332,112 @@ const activityPlanSummaryShape = {
   capabilities: activityPlanCapabilitiesSchema,
 };
 
-export const activityPlanSummarySchema = z.strictObject(activityPlanSummaryShape);
+type ActivityPlanProjectionPrivacyValue = {
+  capabilities: {
+    canEdit: boolean;
+    canRecord: boolean;
+    canSchedule: boolean;
+  };
+  metrics: readonly unknown[];
+  prescriptionQuantification?: unknown;
+  structure: unknown;
+};
+
+function enforceActivityPlanProjectionPrivacy(
+  projection: ActivityPlanProjectionPrivacyValue,
+  context: z.RefinementCtx,
+): void {
+  const hasPrescriptionQuantification = Object.hasOwn(projection, "prescriptionQuantification");
+
+  if (projection.capabilities.canEdit) {
+    if (!hasPrescriptionQuantification) {
+      context.addIssue({
+        code: "custom",
+        path: ["prescriptionQuantification"],
+        message: "Owner projections must include prescription quantification state",
+      });
+    }
+    return;
+  }
+
+  if (hasPrescriptionQuantification) {
+    context.addIssue({
+      code: "custom",
+      path: ["prescriptionQuantification"],
+      message: "Non-owner projections must omit personalized prescription quantification",
+    });
+  }
+  if (
+    projection.metrics.some(
+      (metric) =>
+        typeof metric === "object" &&
+        metric !== null &&
+        "provenance" in metric &&
+        metric.provenance === "personalized",
+    )
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["metrics"],
+      message: "Non-owner projections must not include personalized plan metrics",
+    });
+  }
+  if (projection.capabilities.canRecord) {
+    context.addIssue({
+      code: "custom",
+      path: ["capabilities"],
+      message: "Recording this plan is not available to the current viewer",
+    });
+  }
+}
+
+export const activityPlanSummarySchema = z
+  .strictObject(activityPlanSummaryShape)
+  .superRefine(enforceActivityPlanProjectionPrivacy);
 export type ActivityPlanSummary = z.infer<typeof activityPlanSummarySchema>;
 
-export const scheduledActivityPlanSummarySchema = z.strictObject({
-  ...activityPlanSummaryShape,
-  contractVersion: z.literal("scheduled-activity-plan-summary-v1"),
-  schedule: z.strictObject({
-    eventId: identifierSchema,
-    calendarDate: calendarDateSchema,
-    startsAt: instantSchema.nullable(),
-    endsAt: instantSchema.nullable(),
-    allDay: z.boolean(),
-    status: z.enum(["scheduled", "completed", "cancelled", "expired"]),
-    trainingPlanId: identifierSchema.nullable(),
-  }),
-});
+export const scheduledActivityPlanSummarySchema = z
+  .strictObject({
+    ...activityPlanSummaryShape,
+    contractVersion: z.literal("scheduled-activity-plan-summary-v1"),
+    schedule: z.strictObject({
+      eventId: identifierSchema,
+      calendarDate: calendarDateSchema,
+      startsAt: instantSchema.nullable(),
+      endsAt: instantSchema.nullable(),
+      allDay: z.boolean(),
+      status: z.enum(["scheduled", "completed", "cancelled", "expired"]),
+      trainingPlanId: identifierSchema.nullable(),
+    }),
+  })
+  .superRefine(enforceActivityPlanProjectionPrivacy);
 export type ScheduledActivityPlanSummary = z.infer<typeof scheduledActivityPlanSummarySchema>;
 
-export const activityPlanDetailSchema = z.strictObject({
-  ...activityPlanSummaryShape,
-  contractVersion: z.literal("activity-plan-detail-v1"),
-  notes: z.string().max(1_000).nullable(),
-  structureHash: z.string().trim().min(1).max(128),
-  gpsRecordingEnabled: z.boolean(),
-});
+export const activityPlanDetailSchema = z
+  .strictObject({
+    ...activityPlanSummaryShape,
+    contractVersion: z.literal("activity-plan-detail-v1"),
+    /** These authoring fields are present only for the owner. */
+    notes: z.string().max(1_000).nullable().optional(),
+    structureHash: z.string().trim().min(1).max(128).optional(),
+    gpsRecordingEnabled: z.boolean().optional(),
+  })
+  .superRefine((projection, context) => {
+    enforceActivityPlanProjectionPrivacy(projection, context);
+    const ownerOnlyFields = ["notes", "structureHash", "gpsRecordingEnabled"] as const;
+    for (const key of ownerOnlyFields) {
+      const hasField = Object.hasOwn(projection, key);
+      if (projection.capabilities.canEdit !== hasField) {
+        context.addIssue({
+          code: "custom",
+          path: [key],
+          message: projection.capabilities.canEdit
+            ? "Owner detail projections must include authoring fields"
+            : "Non-owner detail projections must omit authoring fields",
+        });
+      }
+    }
+  });
 export type ActivityPlanDetail = z.infer<typeof activityPlanDetailSchema>;
 
 /**
@@ -273,7 +462,7 @@ export const calendarProjectionItemSchema = z
       target: z.enum(["activity", "event", "group_event", "goal", "activity_plan"]),
       href: hrefSchema,
     }),
-    metrics: z.array(semanticMetricSchema).max(8),
+    metrics: semanticMetricListSchema(16),
     estimated: z.boolean(),
     partial: z.boolean(),
     plan: scheduledActivityPlanSummarySchema.nullable(),
@@ -287,7 +476,7 @@ export const calendarProjectionItemSchema = z
     groupEvent: z
       .strictObject({
         group: z.strictObject({ id: identifierSchema, name: z.string().trim().min(1).max(200) }),
-        viewerRsvpStatus: z.literal("declined").nullable(),
+        viewerRsvpStatus: groupEventRsvpStatusSchema.nullable(),
       })
       .nullable(),
     goal: z
@@ -301,7 +490,13 @@ export const calendarProjectionItemSchema = z
     const checks = [
       {
         field: "activity",
-        valid: (item.activity !== null) === (item.kind === "completed_activity"),
+        valid:
+          item.kind === "completed_activity"
+            ? item.activity !== null
+            : (item.kind === "planned_activity" || item.kind === "event") &&
+                item.status === "completed"
+              ? true
+              : item.activity === null,
       },
       {
         field: "event",

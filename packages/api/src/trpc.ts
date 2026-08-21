@@ -11,7 +11,6 @@ const TELEMETRY_PROCEDURE_GROUPS = new Set([
   "profiles",
   "athleteIntelligence",
   "onboarding",
-  "profileMetrics",
   "activities",
   "activityEfforts",
   "activityPlans",

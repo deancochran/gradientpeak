@@ -12,10 +12,12 @@ export function FeedEmptyState() {
       <View className="bg-muted rounded-full p-6 mb-4">
         <Users size={48} className="text-muted-foreground" />
       </View>
-      <Text className="text-xl font-bold text-foreground text-center mb-2">Your feed is empty</Text>
+      <Text className="text-xl font-bold text-foreground text-center mb-2">
+        No activity in your feed yet
+      </Text>
       <Text className="text-sm text-muted-foreground text-center mb-6">
-        Follow other athletes to see their activities here, or complete your first activity to get
-        started!
+        Follow athletes to see their latest activities here, or record one of your own to get
+        started.
       </Text>
       <View className="flex-row gap-4">
         <Pressable

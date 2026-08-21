@@ -168,14 +168,19 @@ describe("deriveOnboardingProgress", () => {
     });
   });
 
-  it("reports terminal limitations without inventing counts", () => {
-    const input = readiness(["complete_with_limitations"], "review");
+  it("keeps individual import outcomes out of onboarding copy", () => {
+    const input = readiness(["complete"], "review");
     const provider = input.providers[0];
     if (!provider) throw new Error("Expected provider fixture");
-    provider.progress.imported_count = 0;
-    expect(deriveOnboardingProgress(input).detail).toBe(
-      "Preparation completed with limited activity evidence.",
-    );
+    provider.progress.imported_count = 3;
+    provider.progress.skipped_count = 2;
+    provider.progress.failed_count = 1;
+    const progress = deriveOnboardingProgress(input);
+    expect(progress.detail).toBe("3 activities imported.");
+    expect(progress.provider_summary).toEqual([
+      { provider: "wahoo", label: "Wahoo", state: "complete" },
+    ]);
+    expect(progress.recovery).toBeNull();
   });
 
   it("fails closed when processing has no durable provider anchor", () => {

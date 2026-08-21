@@ -366,6 +366,7 @@ function mergeContextEvidence(
 async function loadBatchedContextEvidence(input: {
   load: NonNullable<ActivityAnalysisStore["loadContextEvidence"]>;
   requests: ActivityAnalysisContextEvidenceRequest[];
+  evidenceScope?: "thresholds";
 }): Promise<Map<string, ActivityAnalysisContextSnapshot>> {
   const evidenceByProfileId = new Map<string, ActivityAnalysisContextSnapshot>();
   for (
@@ -377,7 +378,10 @@ async function loadBatchedContextEvidence(input: {
       offset,
       offset + ACTIVITY_ANALYSIS_CONTEXT_EVIDENCE_QUERY_WINDOW_LIMIT,
     );
-    const batch = await input.load({ requests });
+    const batch = await input.load({
+      requests,
+      ...(input.evidenceScope === undefined ? {} : { evidenceScope: input.evidenceScope }),
+    });
     const profileIds = new Set(requests.map((request) => request.profileId));
     for (const profileId of profileIds) {
       const evidence = batch.get(profileId);
@@ -686,6 +690,8 @@ export async function buildActivitySegmentDerivedSummaries(input: {
   computedAsOf?: Date;
   /** Explicit current-source snapshots used by the manual historical reprocessor. */
   performanceTargetsByActivityId?: ReadonlyMap<string, AthletePerformanceTargetFacts>;
+  /** Restricts historical reprocessing to context used by canonical target-based load. */
+  contextEvidenceScope?: "thresholds";
 }): Promise<SegmentDerivedSummary[]> {
   const { store, profileId, activities } = input;
   const computedAsOf = (input.computedAsOf ?? new Date()).toISOString();
@@ -779,10 +785,20 @@ export async function buildActivitySegmentDerivedSummaries(input: {
     evidenceByProfileId = await loadBatchedContextEvidence({
       load: store.loadContextEvidence,
       requests,
+      ...(input.contextEvidenceScope === undefined
+        ? {}
+        : { evidenceScope: input.contextEvidenceScope }),
     });
   } else {
     const snapshots = await Promise.all(
-      requests.map((request) => store.getContextSnapshot(request)),
+      requests.map((request) =>
+        store.getContextSnapshot({
+          ...request,
+          ...(input.contextEvidenceScope === undefined
+            ? {}
+            : { evidenceScope: input.contextEvidenceScope }),
+        }),
+      ),
     );
     requests.forEach((request, index) => {
       const snapshot = snapshots[index];

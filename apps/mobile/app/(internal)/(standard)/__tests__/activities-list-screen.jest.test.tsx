@@ -170,7 +170,7 @@ describe("activities list screen filters", () => {
     localSearchParamsMock = {};
   });
 
-  it("opts list cards into likes without requesting an alternate layout", () => {
+  it("opts list cards into the canonical social actions without requesting an alternate layout", () => {
     activityItems = [
       {
         id: "activity-1",
@@ -189,8 +189,10 @@ describe("activities list screen filters", () => {
     expect(activityCard.props).toMatchObject({
       dateMode: "absolute",
       showLike: true,
+      showShare: true,
       testID: "activities-list-item-activity-1",
     });
+    expect(activityCard.props.onCommentPress).toEqual(expect.any(Function));
     expect(activityCard.props).not.toHaveProperty("variant");
   });
 

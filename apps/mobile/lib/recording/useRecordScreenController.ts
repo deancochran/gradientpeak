@@ -1,5 +1,6 @@
 import {
   type ActivityPayload,
+  activityPlanStructureSchema,
   createUnavailableAthletePerformanceTargetFacts,
   type RecordingActivityCategory,
   type RecordingServiceActivityPlan,
@@ -14,7 +15,6 @@ import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { useRecordingCommands } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useRecordingConfig } from "@/lib/hooks/useRecordingConfig";
-import { useAllPermissionsGranted } from "@/lib/hooks/useStandalonePermissions";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
 import type { ActivityRecorderService, RecordingLifecycle } from "@/lib/services/ActivityRecorder";
@@ -48,10 +48,7 @@ export function useRecordScreenController() {
   const sensorCount = sensors.length;
   const plan = sessionView?.plan;
   const activityCategory = sessionView?.recordingConfiguration.input.activityCategory ?? "bike";
-  const gpsRecordingEnabled = sessionView?.recordingConfiguration.input.gpsRecordingEnabled ?? true;
   const { start, pause, resume, finish } = useRecordingCommands(service);
-  const { allGranted: allPermissionsGranted, isLoading: permissionsLoading } =
-    useAllPermissionsGranted();
 
   const { data: publishedAthleteState } = api.athleteIntelligence.getReadModel.useQuery(
     {
@@ -87,10 +84,16 @@ export function useRecordScreenController() {
 
     try {
       const planDetail = pendingPlanQuery.data.detail;
+      const structure = activityPlanStructureSchema.safeParse(planDetail.structure);
+      if (!planDetail.capabilities.canRecord || !structure.success) {
+        throw new Error(
+          "Duplicate this plan into your library before attaching it to a recording.",
+        );
+      }
       const pendingPlan: RecordingServiceActivityPlan = {
         id: planDetail.id,
         name: planDetail.name,
-        structure: planDetail.structure,
+        structure: structure.data,
       };
       service.selectPlan(pendingPlan);
       setPendingPlanId(null);
@@ -132,13 +135,6 @@ export function useRecordScreenController() {
       });
     }
   }, [publishedAthleteState?.currentBaseline, service]);
-
-  React.useEffect(() => {
-    console.log("[RecordModal] Permission status changed:", {
-      allPermissionsGranted,
-      permissionsLoading,
-    });
-  }, [allPermissionsGranted, permissionsLoading]);
 
   React.useEffect(() => {
     if (!service || isInitialized) return;
@@ -203,16 +199,14 @@ export function useRecordScreenController() {
   }, [service, isInitialized, router, recordingLifecycle]);
 
   const handleActivityQuickEdit = React.useCallback(
-    (activity_category: RecordingActivityCategory, nextGpsRecordingEnabled: boolean) => {
+    (activity_category: RecordingActivityCategory, _nextGpsRecordingEnabled: boolean) => {
       if (!service) {
         Alert.alert("Error", "Service not initialized");
         return;
       }
 
       const canEditActivity = sessionContract?.editing.canEditActivity ?? true;
-      const canEditGps = sessionContract?.editing.canEditGps ?? true;
       const categoryChanged = activity_category !== activityCategory;
-      const gpsChanged = nextGpsRecordingEnabled !== gpsRecordingEnabled;
 
       if (categoryChanged && !canEditActivity) {
         Alert.alert(
@@ -222,36 +216,25 @@ export function useRecordScreenController() {
         return;
       }
 
-      if (gpsChanged && !canEditGps) {
-        Alert.alert("GPS Locked", "GPS recording cannot be changed for this session.");
-        return;
-      }
-
       console.log("[RecordModal] Activity quick edit selected:", {
         activity_category,
-        gpsRecordingEnabled: nextGpsRecordingEnabled,
+        gpsRecordingEnabled: false,
       });
 
       const payload: ActivityPayload = {
         activity_category: canEditActivity ? activity_category : activityCategory,
-        gpsRecordingEnabled: nextGpsRecordingEnabled,
+        gpsRecordingEnabled: false,
       };
 
       console.log("[RecordModal] Updating activity configuration:", {
         activity_category,
-        gpsRecordingEnabled: nextGpsRecordingEnabled,
+        gpsRecordingEnabled: false,
         hasPlan: !!service.plan,
       });
 
       service.selectActivityFromPayload(payload);
     },
-    [
-      activityCategory,
-      gpsRecordingEnabled,
-      service,
-      sessionContract?.editing.canEditActivity,
-      sessionContract?.editing.canEditGps,
-    ],
+    [activityCategory, service, sessionContract?.editing.canEditActivity],
   );
 
   const fetchStartPerformanceTargets = React.useCallback(async () => {
@@ -279,41 +262,31 @@ export function useRecordScreenController() {
 
   const handleStart = React.useCallback(async () => {
     console.log("[RecordModal] Start clicked, checking permissions");
-    console.log("[RecordModal] allPermissionsGranted:", allPermissionsGranted);
 
     if (!service) {
       Alert.alert("Error", "Service not initialized");
       return;
     }
 
-    const hasRequiredPermissions = gpsRecordingEnabled
-      ? allPermissionsGranted
-      : await service.refreshAndCheckRecordingPermissions(false);
+    const hasRequiredPermissions = await service.refreshAndCheckRecordingPermissions(false);
 
     if (!hasRequiredPermissions) {
       console.log("[RecordModal] Permissions not granted, requesting permissions");
 
       try {
-        const granted = await service.refreshAndCheckRecordingPermissions(gpsRecordingEnabled);
+        const granted = await service.refreshAndCheckRecordingPermissions(false);
 
         if (!granted) {
           const { requestPermission } = await import("@/lib/services/permissions-check");
 
           await requestPermission("bluetooth");
 
-          if (gpsRecordingEnabled) {
-            await requestPermission("location");
-            await requestPermission("location-background");
-          }
-
-          const finalCheck = await service.refreshAndCheckRecordingPermissions(gpsRecordingEnabled);
+          const finalCheck = await service.refreshAndCheckRecordingPermissions(false);
 
           if (!finalCheck) {
             Alert.alert(
               "Permissions Required",
-              gpsRecordingEnabled
-                ? "This app requires Bluetooth, Location, and Background Location permissions to record GPS activities. Please enable them in your device settings."
-                : "This app requires Bluetooth permission to record indoor activities. Please enable it in your device settings.",
+              "This app requires Bluetooth permission to record connected sensors. Please enable it in your device settings.",
               [{ text: "OK", style: "cancel" }],
             );
             return;
@@ -378,14 +351,7 @@ export function useRecordScreenController() {
       console.error("[RecordModal] Error starting recording:", error);
       Alert.alert("Error", "Failed to start recording. Please try again.");
     }
-  }, [
-    allPermissionsGranted,
-    fetchStartPerformanceTargets,
-    gpsRecordingEnabled,
-    navigateTo,
-    start,
-    service,
-  ]);
+  }, [fetchStartPerformanceTargets, navigateTo, start, service]);
 
   const handleFinish = React.useCallback(async () => {
     if (isFinishing) return;
@@ -423,18 +389,8 @@ export function useRecordScreenController() {
   }, [router]);
 
   const onGpsPress = React.useCallback(() => {
-    if (!service) return;
-
-    if (sessionContract && !sessionContract.editing.canEditGps) {
-      Alert.alert("GPS Locked", "GPS recording cannot be changed for this session.");
-      return;
-    }
-
-    service.selectActivityFromPayload({
-      activity_category: activityCategory,
-      gpsRecordingEnabled: !gpsRecordingEnabled,
-    });
-  }, [activityCategory, gpsRecordingEnabled, service, sessionContract]);
+    Alert.alert("GPS Unavailable", "New live recordings no longer capture location.");
+  }, []);
 
   const onOpenActivity = React.useCallback(() => {
     navigateTo("/record/activity");
@@ -497,10 +453,10 @@ export function useRecordScreenController() {
 
   React.useEffect(() => {
     console.log("[RecordModal] Activity status changed:", {
-      gpsRecordingEnabled,
+      gpsRecordingEnabled: false,
       hasPlan: plan?.hasPlan ?? false,
     });
-  }, [gpsRecordingEnabled, plan?.hasPlan]);
+  }, [plan?.hasPlan]);
 
   return React.useMemo(
     () => ({
@@ -508,7 +464,7 @@ export function useRecordScreenController() {
       activityQuickEditVisible,
       closeActivityQuickEdit,
       disconnectedSensors,
-      gpsRecordingEnabled,
+      gpsRecordingEnabled: false,
       handleActivityQuickEdit,
       handleFinish,
       handleLap,
@@ -541,7 +497,6 @@ export function useRecordScreenController() {
       activityQuickEditVisible,
       closeActivityQuickEdit,
       disconnectedSensors,
-      gpsRecordingEnabled,
       handleActivityQuickEdit,
       handleFinish,
       handleLap,

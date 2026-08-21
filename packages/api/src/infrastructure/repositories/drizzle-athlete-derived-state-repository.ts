@@ -400,6 +400,19 @@ export function createDrizzleAthleteDerivedStateRepository(
         : { status: "identity_conflict" };
     },
 
+    async deleteActivityTrainingEffects(input) {
+      const rows = await db
+        .delete(activityTrainingEffects)
+        .where(
+          and(
+            eq(activityTrainingEffects.profile_id, input.profileId),
+            eq(activityTrainingEffects.activity_id, input.activityId),
+          ),
+        )
+        .returning({ activityId: activityTrainingEffects.activity_id });
+      return rows.length;
+    },
+
     async listActivityTrainingEffects(input) {
       const rows = await db
         .select()

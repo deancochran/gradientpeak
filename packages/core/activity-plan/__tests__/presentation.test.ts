@@ -138,6 +138,54 @@ describe("deriveActivityPlanPresentation", () => {
     });
   });
 
+  it("does not let conflicting same-priority target order change presentation", () => {
+    const structure = (targets: Array<{ intensity: number; type: "speed" }>) => ({
+      version: 3,
+      activity_category: "run",
+      segments: [
+        {
+          id: id(30),
+          role: "activity",
+          name: "Work",
+          intervals: [
+            {
+              id: id(31),
+              name: "Run",
+              repetitions: 1,
+              steps: [
+                {
+                  id: id(32),
+                  name: "Steady",
+                  duration: { type: "time", seconds: 600 },
+                  targets,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const first = deriveActivityPlanPresentation(
+      structure([
+        { type: "speed", intensity: 18 },
+        { type: "speed", intensity: 14.4 },
+      ]),
+    );
+    const second = deriveActivityPlanPresentation(
+      structure([
+        { type: "speed", intensity: 14.4 },
+        { type: "speed", intensity: 18 },
+      ]),
+    );
+
+    expect(first?.occurrences).toEqual(second?.occurrences);
+    expect(first?.occurrences[0]).toMatchObject({
+      intensityBasis: "unavailable",
+      intensityLabel: null,
+      visualIntensity: null,
+    });
+  });
+
   it("returns null for invalid structures", () => {
     expect(
       deriveActivityPlanPresentation({ version: 3, activity_category: "run", segments: [] }),

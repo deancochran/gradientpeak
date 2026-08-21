@@ -19,6 +19,7 @@ export function FeedList({ onCommentPress }: FeedListProps) {
     isFetchingNextPage,
     isLoading,
     isLoadingError,
+    isRetrying,
     refreshing,
   } = useFeedListController();
 
@@ -32,23 +33,31 @@ export function FeedList({ onCommentPress }: FeedListProps) {
       isError={isLoadingError}
       isFetchingNextPage={isFetchingNextPage}
       isLoading={isLoading}
+      isRetrying={isRetrying}
       keyExtractor={(item) => item.id}
       ListHeaderComponent={
-        <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Feed
-        </Text>
+        <>
+          <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Latest activity
+          </Text>
+          <Text className="text-sm text-muted-foreground">
+            Catch up on the athletes you follow.
+          </Text>
+        </>
       }
       loadingSkeletonCount={3}
       onLoadMore={handleLoadMore}
       onRefresh={handleRefresh}
+      onRetry={handleRefresh}
       refreshing={refreshing}
       renderItem={(item) => (
         <ActivityCard
           activity={item}
           dateMode="absolute"
-          onCommentPress={onCommentPress ? () => onCommentPress(item.id) : undefined}
+          onCommentPress={() =>
+            onCommentPress ? onCommentPress(item.id) : navigateTo(`/activity-detail?id=${item.id}`)
+          }
           onPress={() => navigateTo(`/activity-detail?id=${item.id}`)}
-          showLike
         />
       )}
     />

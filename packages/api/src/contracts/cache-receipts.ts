@@ -5,8 +5,6 @@ export const apiCacheTagSchema = z.enum([
   "activities.listPaginated",
   "activityFiles.getIngestionStatus",
   "activityPlans.getById",
-  "athleteIntelligence.getCurrentState",
-  "athleteIntelligence.getLoadRange",
   "athleteIntelligence.getThresholdEvidence",
   "athleteIntelligence.getTrainingEffects",
   "calendar.day",
@@ -22,8 +20,6 @@ export const apiCacheTagSchema = z.enum([
 export type ApiCacheTag = z.infer<typeof apiCacheTagSchema>;
 
 export const ATHLETE_STATE_CACHE_TAGS = [
-  "athleteIntelligence.getCurrentState",
-  "athleteIntelligence.getLoadRange",
   "athleteIntelligence.getThresholdEvidence",
   "athleteIntelligence.getTrainingEffects",
   "home.getDashboard",
@@ -48,8 +44,6 @@ export const athleteStateCacheTagsSchema = z.tuple(
     z.ZodLiteral<(typeof ATHLETE_STATE_CACHE_TAGS)[0]>,
     z.ZodLiteral<(typeof ATHLETE_STATE_CACHE_TAGS)[1]>,
     z.ZodLiteral<(typeof ATHLETE_STATE_CACHE_TAGS)[2]>,
-    z.ZodLiteral<(typeof ATHLETE_STATE_CACHE_TAGS)[3]>,
-    z.ZodLiteral<(typeof ATHLETE_STATE_CACHE_TAGS)[4]>,
   ],
 );
 

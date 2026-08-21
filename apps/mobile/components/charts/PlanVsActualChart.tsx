@@ -75,8 +75,8 @@ type ChartYKey = SeriesKey | "goal";
 
 type ChartDatum = Record<string, unknown> & {
   index: number;
-  projection: number;
-  planned: number;
+  projection: number | null;
+  planned: number | null;
   actual: number | null;
   goal: number;
 };
@@ -254,20 +254,6 @@ function computeYAxisDomain(values: number[]) {
   const max = Math.ceil((maxObserved + padding) / 10) * 10;
 
   return [Math.min(0, min), Math.max(50, max)] as [number, number];
-}
-
-function fillSeries(values: Array<number | null>) {
-  const firstKnown = values.find((value): value is number => typeof value === "number");
-  const seed = firstKnown ?? 0;
-  let previous = seed;
-
-  return values.map((value) => {
-    if (typeof value === "number") {
-      previous = value;
-      return value;
-    }
-    return previous;
-  });
 }
 
 function buildFallbackPoints({
@@ -508,15 +494,11 @@ export function PlanVsActualChart({
   }, [normalizedGoalMarkers]);
 
   const chartData = useMemo<ChartDatum[]>(() => {
-    const projectionValues = fillSeries(framedPoints.map((point) => point.projection));
-    const plannedValues = fillSeries(framedPoints.map((point) => point.planned));
-    const actualValues = framedPoints.map((point) => point.actual ?? 0);
-
-    return framedPoints.map((_point, index) => ({
+    return framedPoints.map((point, index) => ({
       index,
-      projection: projectionValues[index] ?? 0,
-      planned: plannedValues[index] ?? 0,
-      actual: actualValues[index] ?? 0,
+      projection: point.projection,
+      planned: point.planned,
+      actual: point.actual,
       goal: goalLineValue ?? 0,
     }));
   }, [goalLineValue, framedPoints]);

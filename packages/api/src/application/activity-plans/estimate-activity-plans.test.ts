@@ -68,7 +68,10 @@ describe("estimateActivityPlans", () => {
       targets,
     });
 
-    const [estimated] = await estimateActivityPlans([plan], {} as never, plan.profile_id, { asOf });
+    const [estimated] = await estimateActivityPlans([plan], {} as never, plan.profile_id, {
+      asOf,
+      personalize: true,
+    });
 
     expect(publishedState.readPublishedAthletePerformanceTargets).toHaveBeenCalledWith({
       db: {},
@@ -83,7 +86,7 @@ describe("estimateActivityPlans", () => {
     expect(estimated?.prescriptionQuantification.members).toHaveLength(1);
   });
 
-  it("does not invent a threshold when a stale projection contains unavailable facts", async () => {
+  it("keeps unanchored relative plan intent when athlete facts are unavailable", async () => {
     publishedState.readPublishedAthletePerformanceTargets.mockResolvedValue({
       status: "stale",
       targets: createUnavailableAthletePerformanceTargetFacts(asOf.toISOString(), plan.profile_id),
@@ -91,15 +94,22 @@ describe("estimateActivityPlans", () => {
 
     const [estimated] = await estimateActivityPlans([plan], {} as never, plan.profile_id, { asOf });
 
-    expect(estimated?.prescriptionQuantification.summary.commonLoad.status).toBe("unavailable");
+    expect(estimated?.prescriptionQuantification.summary.commonLoad).toMatchObject({
+      status: "complete",
+      intensity: 0.75,
+    });
+    expect(
+      estimated?.prescriptionQuantification.members[0]?.commonLoad.thresholdEvidence,
+    ).toBeNull();
     expect(estimated).not.toHaveProperty("estimation_warnings");
+    expect(publishedState.readPublishedAthletePerformanceTargets).not.toHaveBeenCalled();
   });
 
   it.each([
     ["confirmed", "complete"],
     ["provisional", "complete"],
     ["stale", "complete"],
-    ["unavailable", "unavailable"],
+    ["unavailable", "complete"],
   ] as const)("applies %s calibration-state planning behavior", async (state, expectedStatus) => {
     const confirmed = buildPerformanceTargetFactsFixture({
       asOf: asOf.toISOString(),
@@ -127,7 +137,10 @@ describe("estimateActivityPlans", () => {
       targets,
     });
 
-    const [estimated] = await estimateActivityPlans([plan], {} as never, plan.profile_id, { asOf });
+    const [estimated] = await estimateActivityPlans([plan], {} as never, plan.profile_id, {
+      asOf,
+      personalize: true,
+    });
     expect(estimated?.prescriptionQuantification.summary.commonLoad.status).toBe(expectedStatus);
   });
 
@@ -136,5 +149,75 @@ describe("estimateActivityPlans", () => {
       estimateActivityPlans([], {} as never, plan.profile_id, { asOf }),
     ).resolves.toEqual([]);
     expect(publishedState.readPublishedAthletePerformanceTargets).not.toHaveBeenCalled();
+  });
+
+  it("reads personalization facts for the authenticated viewer, never the plan author", async () => {
+    const viewerId = "viewer-profile-1";
+    const absoluteStructure = structuredClone(structure);
+    const segment = absoluteStructure.segments[0];
+    if (!segment || segment.role !== "activity") throw new Error("Expected activity segment");
+    const step = segment.intervals[0]?.steps[0];
+    if (!step) throw new Error("Expected activity step");
+    step.targets = [{ type: "watts", intensity: 150 }];
+    const authoredBySomeoneElse = {
+      ...plan,
+      profile_id: "author-profile-1",
+      structure: absoluteStructure,
+    };
+    const viewerTargets = buildPerformanceTargetFactsFixture({
+      asOf: asOf.toISOString(),
+      athleteId: viewerId,
+      bikeThresholdWatts: 300,
+    });
+    publishedState.readPublishedAthletePerformanceTargets.mockResolvedValue({
+      status: "available",
+      targets: viewerTargets,
+      publishedRevision: 1,
+    });
+
+    const [estimated] = await estimateActivityPlans(
+      [authoredBySomeoneElse],
+      {} as never,
+      viewerId,
+      { asOf, personalize: true },
+    );
+
+    expect(publishedState.readPublishedAthletePerformanceTargets).toHaveBeenCalledWith({
+      db: {},
+      profileId: viewerId,
+      now: asOf,
+    });
+    expect(publishedState.readPublishedAthletePerformanceTargets).not.toHaveBeenCalledWith(
+      expect.objectContaining({ profileId: authoredBySomeoneElse.profile_id }),
+    );
+    expect(estimated?.prescriptionQuantification.summary.commonLoad).toMatchObject({
+      status: "complete",
+      intensity: 0.5,
+    });
+    expect(
+      estimated?.prescriptionQuantification.members[0]?.commonLoad.thresholdEvidence,
+    ).toMatchObject({ value: 300 });
+  });
+
+  it("keeps viewer-derived absolute-target metrics unavailable and skips fact I/O by default", async () => {
+    const absoluteStructure = structuredClone(structure);
+    const segment = absoluteStructure.segments[0];
+    if (!segment || segment.role !== "activity") throw new Error("Expected activity segment");
+    const step = segment.intervals[0]?.steps[0];
+    if (!step) throw new Error("Expected activity step");
+    step.targets = [{ type: "watts", intensity: 150 }];
+
+    const [estimated] = await estimateActivityPlans(
+      [{ ...plan, structure: absoluteStructure }],
+      {} as never,
+      "viewer-profile-1",
+      { asOf },
+    );
+
+    expect(publishedState.readPublishedAthletePerformanceTargets).not.toHaveBeenCalled();
+    expect(estimated?.prescriptionQuantification.summary.commonLoad).toMatchObject({
+      status: "unavailable",
+      reason: "no_load_data",
+    });
   });
 });

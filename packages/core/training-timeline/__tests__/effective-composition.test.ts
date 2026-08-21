@@ -432,7 +432,7 @@ describe("effective Plan Load composition", () => {
     expect(tokyo.items).toHaveLength(0);
   });
 
-  it("reports known zero only when the bounded completed source is complete", () => {
+  it("reports known zero only when both bounded sources establish no work", () => {
     const complete = composed(composeEffectivePlanLoad(input()));
     const incomplete = composed(
       composeEffectivePlanLoad(
@@ -455,7 +455,7 @@ describe("effective Plan Load composition", () => {
     });
   });
 
-  it("does not report complete or known-zero Load from an incomplete scheduled source", () => {
+  it("keeps an incomplete scheduled source unavailable instead of inventing a rest day", () => {
     const result = composed(
       composeEffectivePlanLoad(
         input({
@@ -472,6 +472,60 @@ describe("effective Plan Load composition", () => {
     expect(result.aggregate).toMatchObject({
       status: "unavailable",
       reason: "scheduled_source_incomplete",
+      commonLoad: { status: "unavailable", totalActivityCount: 0 },
+    });
+  });
+
+  it("preserves unavailable scheduled work and makes mixed known work partial", () => {
+    const plannedOnly = composed(
+      composeEffectivePlanLoad(
+        input({ scheduledItems: [scheduled("missing-plan", "2026-07-22", unavailable())] }),
+      ),
+    );
+    const withCompleted = composed(
+      composeEffectivePlanLoad(
+        input({
+          scheduledItems: [scheduled("missing-plan", "2026-07-22", unavailable())],
+          completedActivities: [
+            {
+              completedActivityId: "completed-known",
+              completedDate: "2026-07-21",
+              commonLoad: available(1800, 1),
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(plannedOnly.items).toEqual([
+      expect.objectContaining({ kind: "scheduled", loadStatus: "unavailable" }),
+    ]);
+    expect(plannedOnly.aggregate).toMatchObject({
+      status: "unavailable",
+      reason: "common_load_unavailable",
+      commonLoad: { status: "unavailable", totalActivityCount: 1 },
+    });
+    expect(withCompleted.aggregate).toMatchObject({
+      status: "partial",
+      commonLoad: { status: "partial", load: 50, totalActivityCount: 2 },
+    });
+    expect(withCompleted.items).toHaveLength(2);
+  });
+
+  it("retains a partial scheduled subtotal and marks the composition partial", () => {
+    const partial = aggregateCommonLoad([available(1800, 1), unavailable()]);
+    const result = composed(
+      composeEffectivePlanLoad(
+        input({ scheduledItems: [scheduled("partial-plan", "2026-07-22", partial)] }),
+      ),
+    );
+
+    expect(result.items).toEqual([
+      expect.objectContaining({ kind: "scheduled", loadStatus: "partial", commonLoad: partial }),
+    ]);
+    expect(result.aggregate).toMatchObject({
+      status: "partial",
+      commonLoad: { status: "partial", load: 50 },
     });
   });
 

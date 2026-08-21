@@ -1,6 +1,12 @@
 import {
+  ACTIVITY_CARD_EFFORT_PROFILE_MAX_SAMPLES,
+  type ActivityCardEffortProfile,
+  type ActivityCardEffortSample,
   type ActivityDetailDisplay,
   type ActivityDisplayModel,
+  activityCardEffortLevelChartValue,
+  activityCardEffortProfileSchema,
+  activityCardEffortSampleSchema,
   activityDetailDisplaySchema,
   activityDisplayModelSchema,
   activityObservationQuantificationBundleSchema,
@@ -8,6 +14,7 @@ import {
   getNormalizedIntensity,
   type SemanticMetric,
 } from "@repo/core";
+import { z } from "zod";
 
 type ActivityDetailSegmentSource = {
   id: string;
@@ -88,7 +95,90 @@ type ActivityDisplaySource = {
   has_liked?: boolean | null;
   profile?: { username?: string | null; avatar_url?: string | null } | null;
   derived?: { observationQuantification?: unknown } | null;
+  /** Explicit threshold-free ordinal samples only. Scalar summary intensity is not a source. */
+  effort_profile?: readonly ActivityCardEffortSample[] | null;
 };
+
+const activityCardEffortSourceMaximumSamples = 100_000;
+const activityCardEffortSourceSchema = z
+  .array(activityCardEffortSampleSchema)
+  .min(2)
+  .max(activityCardEffortSourceMaximumSamples)
+  .superRefine((samples, context) => {
+    for (let index = 1; index < samples.length; index += 1) {
+      const previous = samples[index - 1];
+      const current = samples[index];
+      if (previous && current && current.elapsedSeconds <= previous.elapsedSeconds) {
+        context.addIssue({
+          code: "custom",
+          path: [index, "elapsedSeconds"],
+          message: "Elapsed time must be strictly increasing",
+        });
+      }
+    }
+  });
+
+/**
+ * Bounds a threshold-free ordinal series for card transport while retaining each
+ * time bucket's lowest/highest shape. Numeric measurements are never accepted.
+ */
+export function toActivityCardEffortProfile(
+  samples: readonly ActivityCardEffortSample[] | null | undefined,
+): ActivityCardEffortProfile | null {
+  const source = activityCardEffortSourceSchema.safeParse(samples);
+  if (!source.success) return null;
+  if (source.data.length <= ACTIVITY_CARD_EFFORT_PROFILE_MAX_SAMPLES) {
+    return activityCardEffortProfileSchema.parse({
+      basis: "activity_wide_signal_ordinal",
+      samples: source.data,
+    });
+  }
+
+  const interiorLength = source.data.length - 2;
+  const bucketCount = Math.floor((ACTIVITY_CARD_EFFORT_PROFILE_MAX_SAMPLES - 2) / 2);
+  const first = source.data[0];
+  if (!first) return null;
+  const selected: ActivityCardEffortSample[] = [first];
+  for (let bucket = 0; bucket < bucketCount; bucket += 1) {
+    const start = 1 + Math.floor((bucket * interiorLength) / bucketCount);
+    const end = 1 + Math.floor(((bucket + 1) * interiorLength) / bucketCount);
+    let minimumIndex = start;
+    let maximumIndex = start;
+    for (let index = start + 1; index < end; index += 1) {
+      const sample = source.data[index];
+      const minimum = source.data[minimumIndex];
+      const maximum = source.data[maximumIndex];
+      if (
+        sample &&
+        minimum &&
+        activityCardEffortLevelChartValue(sample.effortLevel) <
+          activityCardEffortLevelChartValue(minimum.effortLevel)
+      ) {
+        minimumIndex = index;
+      }
+      if (
+        sample &&
+        maximum &&
+        activityCardEffortLevelChartValue(sample.effortLevel) >
+          activityCardEffortLevelChartValue(maximum.effortLevel)
+      ) {
+        maximumIndex = index;
+      }
+    }
+    for (const index of [minimumIndex, maximumIndex].sort((left, right) => left - right)) {
+      const sample = source.data[index];
+      if (sample && selected.at(-1)?.elapsedSeconds !== sample.elapsedSeconds) {
+        selected.push(sample);
+      }
+    }
+  }
+  const last = source.data.at(-1);
+  if (last) selected.push(last);
+  return activityCardEffortProfileSchema.parse({
+    basis: "activity_wide_signal_ordinal",
+    samples: selected,
+  });
+}
 
 function toIso(value: Date | string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
@@ -131,7 +221,8 @@ function quantificationMetrics(value: unknown): SemanticMetric[] {
     ];
   }
   const commonLoad = parsed.data.summary.commonLoad;
-  if (commonLoad.status === "unavailable") {
+  if (commonLoad.status === "unavailable" || commonLoad.load === null) {
+    const reason = "reason" in commonLoad ? commonLoad.reason : "quantification_unavailable";
     return [
       {
         key: "common_load",
@@ -139,7 +230,7 @@ function quantificationMetrics(value: unknown): SemanticMetric[] {
         status: "unavailable",
         value: null,
         unit: "score",
-        reason: commonLoad.reason,
+        reason,
       },
       {
         key: "normalized_intensity",
@@ -147,12 +238,13 @@ function quantificationMetrics(value: unknown): SemanticMetric[] {
         status: "unavailable",
         value: null,
         unit: "ratio",
-        reason: commonLoad.reason,
+        reason,
       },
     ];
   }
   const status = commonLoad.status === "partial" ? "partial" : "available";
   const reason = status === "partial" ? "quantification_partial" : null;
+  const normalizedIntensity = getNormalizedIntensity(commonLoad);
   return [
     createSemanticMetric({
       key: "common_load",
@@ -162,14 +254,23 @@ function quantificationMetrics(value: unknown): SemanticMetric[] {
       unit: "score",
       reason,
     }),
-    createSemanticMetric({
-      key: "normalized_intensity",
-      label: "Intensity",
-      status,
-      value: getNormalizedIntensity(commonLoad) ?? 0,
-      unit: "ratio",
-      reason,
-    }),
+    normalizedIntensity === null
+      ? createSemanticMetric({
+          key: "normalized_intensity",
+          label: "Intensity",
+          status: "unavailable",
+          value: null,
+          unit: "ratio",
+          reason: reason ?? "quantification_unavailable",
+        })
+      : createSemanticMetric({
+          key: "normalized_intensity",
+          label: "Intensity",
+          status,
+          value: normalizedIntensity,
+          unit: "ratio",
+          reason,
+        }),
   ];
 }
 
@@ -190,6 +291,8 @@ export function toActivityDisplayModel(input: {
     activity.moving_seconds ??
     (typeof activity.moving_ms === "number" ? activity.moving_ms / 1_000 : null);
   const categories = activity.activity_categories ?? (activity.type ? [activity.type] : []);
+  const avatarUrl = z.string().url().safeParse(activity.profile?.avatar_url);
+  const effortProfile = toActivityCardEffortProfile(activity.effort_profile);
   const metrics = [
     ...quantificationMetrics(activity.derived?.observationQuantification),
     availableMetric("distance", "Distance", activity.distance_meters, "meters"),
@@ -209,7 +312,7 @@ export function toActivityDisplayModel(input: {
     owner: {
       id: activity.profile_id,
       username: activity.profile?.username ?? null,
-      avatarUrl: activity.profile?.avatar_url ?? null,
+      avatarUrl: avatarUrl.success ? avatarUrl.data : null,
     },
     time: { startedAt: toIso(activity.started_at), finishedAt: toIso(activity.finished_at) },
     activityComposition: {
@@ -221,6 +324,7 @@ export function toActivityDisplayModel(input: {
     title: activity.name?.trim() || "Activity",
     notes: activity.notes ?? null,
     metrics,
+    ...(effortProfile === null ? {} : { effortProfile }),
     visibility: activity.content_visibility,
     engagement: {
       likes: activity.likes_count ?? 0,

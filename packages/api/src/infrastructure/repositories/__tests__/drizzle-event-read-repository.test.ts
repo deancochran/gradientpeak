@@ -363,6 +363,12 @@ describe("drizzle-event-read-repository", () => {
           id: "declined-group-event",
           viewer_occurrence_rsvp_status: "declined",
         },
+        {
+          ...groupEvent,
+          id: "going-occurrence-overrides-declined-series",
+          viewer_occurrence_rsvp_status: "going",
+          viewer_series_rsvp_status: "declined",
+        },
       ],
       activities: [],
     });
@@ -376,6 +382,9 @@ describe("drizzle-event-read-repository", () => {
 
     expect(result.events).toMatchObject([
       {
+        id: "going-occurrence-overrides-declined-series",
+      },
+      {
         id: "group-event-1",
         profile_id: "profile-1",
         event_type: "planned",
@@ -387,17 +396,15 @@ describe("drizzle-event-read-repository", () => {
         activity_plan: null,
       },
     ]);
-    expect(result.sourceCounts.events).toBe(1);
+    expect(result.sourceCounts.events).toBe(2);
     const groupEventQuery = selects.find((select) => select.table === "group_memberships");
     const query = toQuery(groupEventQuery?.whereArg);
     expect(query.sql).toContain('"group_memberships"."profile_id" =');
     expect(query.sql).toContain('"group_memberships"."status" =');
     expect(query.sql).toContain('"groups"."deleted_at" is null');
     expect(query.sql).toContain('"group_events"."cancelled_at" is null');
-    expect(query.sql).toContain('"group_event_rsvps"."status" <>');
-    expect(query.sql).toContain('"group_event_series_rsvps"."status" <>');
-    expect(query.sql).toContain('"group_event_rsvps"."profile_id" is not null');
-    expect(query.sql).toContain('"group_event_rsvps"."profile_id" is null');
+    expect(query.sql).toContain('coalesce("group_event_rsvps"."status"');
+    expect(query.sql).toContain('"group_event_series_rsvps"."status"');
     expect(query.sql).toContain("at time zone");
     expect(query.params).toEqual(
       expect.arrayContaining([
@@ -407,7 +414,6 @@ describe("drizzle-event-read-repository", () => {
         "America/Los_Angeles",
         "2026-07-20",
         "2026-07-26",
-        "declined",
       ]),
     );
     const activityPlanJoin = groupEventQuery?.leftJoinArgs.at(-1);
@@ -438,7 +444,7 @@ describe("drizzle-event-read-repository", () => {
           created_at: new Date("2026-07-01T00:00:00.000Z"),
           updated_at: new Date("2026-07-01T00:00:00.000Z"),
           activity_plan: activityPlan,
-          viewer_occurrence_rsvp_status: "accepted",
+          viewer_occurrence_rsvp_status: null,
           viewer_series_rsvp_status: null,
         },
       ],

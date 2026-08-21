@@ -59,6 +59,12 @@ export function getCommonLoadDiagnostic(
   const threshold = thresholdLabel(result.method);
 
   switch (result.reason) {
+    case "ambiguous_target":
+      return {
+        summary: "Multiple authored targets imply different normalized intensities.",
+        action: "Keep one load-driving target for this step or make the competing targets agree.",
+        coveragePercent: null,
+      };
     case "threshold_missing":
       return {
         summary: `${threshold} is missing for this activity.`,

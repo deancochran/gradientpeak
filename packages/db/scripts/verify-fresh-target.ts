@@ -11,7 +11,7 @@ import {
 import { dbPackageRoot, runSupabaseCli } from "./_helpers";
 import { requireFreshBaseline } from "./baseline-workflow";
 
-const canonicalCategories = ["bike", "other", "run", "strength", "swim"] as const;
+const activityCategoryValues = ["run", "bike", "swim", "strength", "other"] as const;
 
 async function assertCanonicalActivityCategories(target: {
   query: <Row extends Record<string, unknown>>(
@@ -19,13 +19,19 @@ async function assertCanonicalActivityCategories(target: {
     values?: unknown[],
   ) => Promise<{ rows: Row[] }>;
 }) {
-  const categories = await target.query<{ code: string }>(
-    "select code from public.canonical_activity_categories order by code",
+  const categories = await target.query<{ enumlabel: string }>(
+    `select enum_value.enumlabel
+     from pg_catalog.pg_type enum_type
+     join pg_catalog.pg_namespace namespace on namespace.oid = enum_type.typnamespace
+     join pg_catalog.pg_enum enum_value on enum_value.enumtypid = enum_type.oid
+     where namespace.nspname = 'public' and enum_type.typname = 'activity_category'
+     order by enum_value.enumsortorder`,
   );
   if (
-    JSON.stringify(categories.rows.map(({ code }) => code)) !== JSON.stringify(canonicalCategories)
+    JSON.stringify(categories.rows.map(({ enumlabel }) => enumlabel)) !==
+    JSON.stringify(activityCategoryValues)
   ) {
-    throw new Error("fresh baseline is missing the exact canonical activity-category rows");
+    throw new Error("fresh baseline is missing the exact activity_category enum values");
   }
   await target.query(`
     insert into auth.users (id, email, raw_user_meta_data)
@@ -1279,7 +1285,7 @@ async function assertProfileGoalConstraints(target: {
       await insertProfileGoalConstraintFixture(target, index + 100, invalid);
     } catch (error) {
       const code = error && typeof error === "object" && "code" in error ? error.code : null;
-      if (code === "23502" || code === "23514") continue;
+      if (code === "22P02" || code === "23502" || code === "23514") continue;
       throw error;
     }
     throw new Error(`profile_goals accepted invalid constraint fixture ${index + 1}`);
@@ -1572,7 +1578,56 @@ async function assertLegacyThresholdObjectsAbsent(target: {
   }
 }
 
-async function assertDeclineOnlyGroupEventRsvps(target: {
+async function assertBoundedTextValues(target: {
+  query: <Row extends Record<string, unknown>>(
+    text: string,
+    values?: unknown[],
+  ) => Promise<{ rows: Row[] }>;
+}) {
+  const profileId = "11111111-1111-4111-8111-111111111111";
+  const invalidFixtures = [
+    {
+      constraint: "content_access_grants_content_type_check",
+      statement: `insert into public.content_access_grants (
+        content_type, content_id, grantee_profile_id, access_level, source_type, source_id
+      ) values ('document', gen_random_uuid(), '${profileId}', 'read', 'event', gen_random_uuid())`,
+    },
+    {
+      constraint: "content_access_grants_access_level_check",
+      statement: `insert into public.content_access_grants (
+        content_type, content_id, grantee_profile_id, access_level, source_type, source_id
+      ) values ('profile', gen_random_uuid(), '${profileId}', 'write', 'event', gen_random_uuid())`,
+    },
+    {
+      constraint: "content_access_grants_source_type_check",
+      statement: `insert into public.content_access_grants (
+        content_type, content_id, grantee_profile_id, access_level, source_type, source_id
+      ) values ('profile', gen_random_uuid(), '${profileId}', 'read', 'group', gen_random_uuid())`,
+    },
+    {
+      constraint: "follows_status_check",
+      statement: `insert into public.follows (
+        follower_id, following_id, status, created_at, updated_at
+      ) values ('${profileId}', '${profileId}', 'blocked', now(), now())`,
+    },
+    {
+      constraint: "comments_entity_type_check",
+      statement: `insert into public.comments (
+        id, profile_id, entity_type, entity_id, content, created_at, updated_at
+      ) values (gen_random_uuid(), '${profileId}', 'post', gen_random_uuid(), 'invalid', now(), now())`,
+    },
+  ] as const;
+
+  for (const fixture of invalidFixtures) {
+    await expectConstraintViolation(target, fixture.statement, {
+      code: "23514",
+      constraint: fixture.constraint,
+    });
+  }
+  console.log("[db:bounded-text-values] grant, follow, and comment checks rejected invalid values");
+}
+
+async function assertGroupEventRsvpResponses(target: {
   query: <Row extends Record<string, unknown>>(
     text: string,
     values?: unknown[],
@@ -1593,44 +1648,46 @@ async function assertDeclineOnlyGroupEventRsvps(target: {
     [eventId, groupId, profileId],
   );
 
+  const deadIndexes = await target.query<{ name: string }>(`
+    select indexname as name
+    from pg_catalog.pg_indexes
+    where schemaname = 'public'
+      and indexname in (
+        'group_event_rsvps_profile_status_idx',
+        'group_event_series_rsvps_profile_status_idx'
+      )
+  `);
+  if (deadIndexes.rows.length > 0) {
+    throw new Error(
+      `group-event RSVP tables retained redundant status indexes: ${deadIndexes.rows
+        .map(({ name }) => name)
+        .join(", ")}`,
+    );
+  }
+
   for (const [tableName, eventColumn] of [
     ["group_event_rsvps", "group_event_id"],
     ["group_event_series_rsvps", "group_event_series_id"],
   ] as const) {
-    for (const status of ["accepted", "tentative"]) {
-      try {
-        await target.query(
-          `insert into public.${tableName} (${eventColumn}, profile_id, status)
-           values ($1::uuid, $2::uuid, $3)`,
-          [eventId, profileId, status],
-        );
-      } catch (error) {
-        const code = error && typeof error === "object" && "code" in error ? error.code : null;
-        if (code === "23514") continue;
-        throw error;
-      }
-      throw new Error(`${tableName} accepted forbidden ${status} status`);
-    }
-    try {
-      await target.query(
-        `insert into public.${tableName} (${eventColumn}, profile_id)
-         values ($1::uuid, $2::uuid)`,
-        [eventId, profileId],
-      );
-    } catch (error) {
-      const code = error && typeof error === "object" && "code" in error ? error.code : null;
-      if (code !== "23502") throw error;
-    }
-    const inserted = await target.query<{ status: string }>(
+    const inserted = await target.query<{ profile_id: string; status: string }>(
       `insert into public.${tableName} (${eventColumn}, profile_id, status)
-       values ($1::uuid, $2::uuid, 'declined') returning status`,
+       values ($1::uuid, $2::uuid, 'going') returning profile_id, status`,
       [eventId, profileId],
     );
-    if (inserted.rows[0]?.status !== "declined") {
-      throw new Error(`${tableName} did not persist the decline exception`);
+    if (inserted.rows[0]?.profile_id !== profileId || inserted.rows[0]?.status !== "going") {
+      throw new Error(`${tableName} did not persist an explicit going response`);
     }
+    await target.query(
+      `update public.${tableName} set status = 'declined' where ${eventColumn} = $1::uuid and profile_id = $2::uuid`,
+      [eventId, profileId],
+    );
+    await expectConstraintViolation(
+      target,
+      `update public.${tableName} set status = 'accepted' where ${eventColumn} = '${eventId}'::uuid and profile_id = '${profileId}'::uuid`,
+      { code: "23514", constraint: `${tableName}_status_check` },
+    );
   }
-  console.log("[db:group-event-rsvps] decline-only constraints and absent default passed");
+  console.log("[db:group-event-rsvps] going and declined persist; invalid responses are rejected");
 }
 
 async function assertPrelaunchSchemaHardening(target: VerificationTarget) {
@@ -1968,10 +2025,11 @@ async function main() {
     await assertThresholdTruthContract(target, targetUrl);
     await assertProfileGoalConstraints(target);
     await assertArtifactLifecycleFunctionPrivileges(target);
+    await assertBoundedTextValues(target);
     await assertRouteStorageLifecycle(target);
     await assertProfileObservationsDoNotInvalidateAthleteState(target);
     await assertLegacyThresholdObjectsAbsent(target);
-    await assertDeclineOnlyGroupEventRsvps(target);
+    await assertGroupEventRsvpResponses(target);
     await assertPrelaunchSchemaHardening(target);
 
     const env = {

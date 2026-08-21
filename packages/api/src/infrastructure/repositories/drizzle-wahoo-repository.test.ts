@@ -278,9 +278,9 @@ describe("Wahoo repository activity persistence boundary", () => {
     const query = new PgDialect().sqlToQuery(whereCondition as never);
     expect(query.sql).toContain('"group_events"."id" = $1');
     expect(query.sql).toContain('"group_events"."cancelled_at" is null');
-    expect(query.sql).toContain('coalesce("group_event_rsvps"."status" <>');
-    expect(query.sql).toContain('case when "group_event_rsvps"."profile_id" is not null');
-    expect(query.sql).toContain('"group_event_series_rsvps"."status" <>');
+    expect(query.sql).toContain(
+      'coalesce("group_event_rsvps"."status", "group_event_series_rsvps"."status", \'going\') = \'going\'',
+    );
     expect(query.sql).toContain('"group_events"."starts_at" > $2');
     expect(query.sql).toContain("wahooEventRouteDeliveryEnabled");
     expect(query.sql).toContain('"activity_routes"."is_public" = $');
@@ -338,9 +338,9 @@ describe("Wahoo repository activity persistence boundary", () => {
     const query = new PgDialect().sqlToQuery(whereCondition as never);
     expect(query.sql).toContain('"group_events"."series_id" is null');
     expect(query.sql).toContain('"group_events"."recurrence_rule" is null');
-    expect(query.sql).toContain('coalesce("group_event_rsvps"."status" <>');
-    expect(query.sql).toContain('case when "group_event_rsvps"."profile_id" is not null');
-    expect(query.sql).toContain('"group_event_series_rsvps"."status" <>');
+    expect(query.sql).toContain(
+      'coalesce("group_event_rsvps"."status", "group_event_series_rsvps"."status", \'going\') = \'going\'',
+    );
     expect(query.sql).toContain("wahooEventRouteDeliveryEnabled");
   });
 

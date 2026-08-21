@@ -16,19 +16,20 @@ export const API_CACHE_TAG_QUERY_KEYS = {
   "activities.listPaginated": [["activities", "listPaginated"]],
   "activityFiles.getIngestionStatus": [["activityFiles", "getIngestionStatus"]],
   "activityPlans.getById": [["activityPlans", "getById"]],
-  "athleteIntelligence.getCurrentState": [["athleteIntelligence", "getCurrentState"]],
-  "athleteIntelligence.getLoadRange": [["athleteIntelligence", "getLoadRange"]],
   "athleteIntelligence.getThresholdEvidence": [["athleteIntelligence", "getThresholdEvidence"]],
   "athleteIntelligence.getTrainingEffects": [["athleteIntelligence", "getTrainingEffects"]],
   "calendar.day": [["calendar", "day"]],
-  "calendar.range": [["calendar", "range"]],
+  "calendar.range": [
+    ["calendar", "range"],
+    ["calendar", "page"],
+  ],
   "home.getDashboard": [["home", "getDashboard"]],
   "plannedSessions.range": [["plannedSessions", "range"]],
   "trainingPlans.get": [["trainingPlans", "get"]],
   "trainingPlans.getPlanTabProjection": [["trainingPlans", "getPlanTabProjection"]],
   "trainingPlans.getPlanningLedger": [["trainingPlans", "getPlanningLedger"]],
   "trainingPlans.list": [["trainingPlans", "list"]],
-} as const satisfies Record<ApiCacheTag, TrpcQueryKeyPrefix>;
+} as const satisfies Record<ApiCacheTag, readonly (readonly string[])[]>;
 
 export const IDEMPOTENT_INGESTION_MUTATION_RETRY_OPTIONS = {
   retry: 1,
@@ -38,7 +39,15 @@ export const IDEMPOTENT_INGESTION_MUTATION_RETRY_OPTIONS = {
 export function queryKeysForCacheTags(
   cacheTags: readonly ApiCacheTag[],
 ): readonly TrpcQueryKeyPrefix[] {
-  return [...new Set(cacheTags)].map((tag) => API_CACHE_TAG_QUERY_KEYS[tag]);
+  const seen = new Set<string>();
+  return cacheTags
+    .flatMap((tag) => API_CACHE_TAG_QUERY_KEYS[tag].map((path) => [path] as TrpcQueryKeyPrefix))
+    .filter((queryKey) => {
+      const key = queryKey[0].join(".");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 /** Invalidates every tRPC query named by a server mutation receipt. */
@@ -56,6 +65,7 @@ export async function invalidateReceiptCacheTags(
 export const SCHEDULING_REFRESH_CONTRACT = {
   eventMutation: [
     ["calendar", "range"],
+    ["calendar", "page"],
     ["calendar", "day"],
     ["events", "getById"],
     ["trainingPlans", "list"],
@@ -66,6 +76,7 @@ export const SCHEDULING_REFRESH_CONTRACT = {
   ],
   eventDeletionMutation: [
     ["calendar", "range"],
+    ["calendar", "page"],
     ["calendar", "day"],
     ["trainingPlans", "list"],
     ["trainingPlans", "getPlanTabProjection"],
@@ -75,6 +86,7 @@ export const SCHEDULING_REFRESH_CONTRACT = {
   ],
   trainingPlanSchedulingMutation: [
     ["calendar", "range"],
+    ["calendar", "page"],
     ["calendar", "day"],
     ["events", "getById"],
     ["trainingPlans", "list"],
@@ -140,10 +152,9 @@ export async function invalidatePostActivityIngestionQueries(queryClient: QueryC
   const paths = [
     ["activities", "listPaginated"],
     ["calendar", "range"],
+    ["calendar", "page"],
     ["calendar", "day"],
     ["events", "getById"],
-    ["athleteIntelligence", "getCurrentState"],
-    ["athleteIntelligence", "getLoadRange"],
     // Activity analytics still have no API v1 replacement; preserve that bounded legacy cache.
     ["athleteIntelligence", "getReadModel"],
     ["trainingPlans", "getPlanTabProjection"],

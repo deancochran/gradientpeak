@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { WahooIntegrationError } from "../integrations/wahoo/client";
 import {
   WAHOO_AUTHORIZATION_RESET_REQUIRED_MESSAGE,
   WahooAuthorizationResetRequiredError,
+  WahooReconnectRequiredError,
 } from "../integrations/wahoo/credentials";
 import { WahooActivityHistoryJobService } from "./wahoo-activity-history-job-service";
 
@@ -314,10 +316,11 @@ describe("WahooActivityHistoryJobService", () => {
       endDate: "2026-04-03T12:00:00.000Z",
       page: 1,
       perPage: 30,
-      startDate: "1900-01-01T00:00:00.000Z",
+      signal: expect.any(AbortSignal),
+      startDate: "2026-01-03T12:00:00.000Z",
     });
     expect(deps.wahooClient.listWorkoutSummaries).toHaveBeenCalledTimes(2);
-    expect(deps.wahooClient.getWorkoutSummary).toHaveBeenCalledWith("456");
+    expect(deps.wahooClient.getWorkoutSummary).toHaveBeenCalledWith("456", expect.any(AbortSignal));
     expect(deps.wahooRepository.updateWahooIntegrationTokens).toHaveBeenCalledWith({
       accessToken: "access-2",
       credentialGeneration: 1,
@@ -350,9 +353,9 @@ describe("WahooActivityHistoryJobService", () => {
         activityHistoryCoverage: {
           end: "2026-04-03T12:00:00.000Z",
           highWatermark: "2026-04-03T12:00:00.000Z",
-          itemCount: 50,
+          itemCount: 1,
           pageCount: 2,
-          start: "1900-01-01T00:00:00.000Z",
+          start: "2026-01-03T12:00:00.000Z",
           importRunId: "import-run-1",
           version: 3,
         },
@@ -363,13 +366,14 @@ describe("WahooActivityHistoryJobService", () => {
     });
   });
 
-  it("uses the persisted full-history import window", async () => {
+  it.each([
+    "scheduled",
+    "manual",
+  ] as const)("uses a captured recent-only window for %s sync without full-history fallback", async (trigger) => {
     const deps = createDeps();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-31T12:00:00.000Z"));
-    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
-      historyJob({ trigger: "scheduled" }),
-    ]);
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([historyJob({ trigger })]);
     deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
     deps.wahooClient.listWorkoutSummaries.mockResolvedValue({ sourceCount: 0, summaries: [] });
     const service = new WahooActivityHistoryJobService({
@@ -390,13 +394,84 @@ describe("WahooActivityHistoryJobService", () => {
       endDate: "2026-03-31T12:00:00.000Z",
       page: 1,
       perPage: 30,
-      startDate: "1900-01-01T00:00:00.000Z",
+      signal: expect.any(AbortSignal),
+      startDate: "2025-12-31T12:00:00.000Z",
     });
     expect(deps.providerSyncRepository.completeJobWithSyncState).toHaveBeenCalledWith(
       expect.objectContaining({
         metadata: {
           activityHistoryCoverage: expect.objectContaining({
-            start: "1900-01-01T00:00:00.000Z",
+            start: "2025-12-31T12:00:00.000Z",
+          }),
+        },
+      }),
+    );
+  });
+
+  it("considers exactly 100 newest summaries from a deterministic 600-summary onboarding fixture", async () => {
+    const deps = createDeps();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
+    const summaries = Array.from({ length: 600 }, (_, index) => createSummary(index + 1));
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
+      historyJob({ trigger: "onboarding" }),
+    ]);
+    deps.providerSyncRepository.isIntegrationGenerationActive.mockResolvedValue(true);
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
+    deps.wahooClient.listWorkoutSummaries.mockImplementation(({ page = 1 }) => {
+      const offset = (page - 1) * 30;
+      return Promise.resolve({
+        page,
+        sourceCount: 30,
+        summaries: summaries.slice(offset, offset + 30),
+        total: summaries.length,
+      });
+    });
+    deps.importer.importWorkoutSummary.mockResolvedValue({
+      success: true,
+      activityId: "activity",
+    });
+    const service = new WahooActivityHistoryJobService({
+      importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
+      providerSyncRepository: deps.providerSyncRepository as never,
+      wahooClientFactory: () => deps.wahooClient,
+      wahooRepository: deps.wahooRepository,
+    });
+
+    await expect(service.processDueJobs({ workerId: "worker-1" })).resolves.toEqual({
+      completed: 1,
+      failed: 0,
+      processed: 1,
+    });
+
+    expect(deps.importRuns.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "onboarding",
+        windowStartAt: new Date("2026-01-03T12:00:00.000Z"),
+        windowEndAt: new Date("2026-04-03T12:00:00.000Z"),
+      }),
+    );
+    expect(deps.wahooClient.listWorkoutSummaries.mock.calls.map(([input]) => input.page)).toEqual([
+      1, 2, 3, 4,
+    ]);
+    expect(deps.importer.importWorkoutSummary).toHaveBeenCalledTimes(100);
+    expect(deps.importRuns.recordPageCommitted).toHaveBeenLastCalledWith(
+      expect.objectContaining({ discovered: 10, imported: 10, nextPage: null }),
+    );
+    expect(deps.getImportRun()).toMatchObject({
+      discovered_count: 100,
+      imported_count: 100,
+      status: "completed",
+    });
+    expect(deps.providerSyncRepository.continueJob).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepository.completeJobWithSyncState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: {
+          activityHistoryCoverage: expect.objectContaining({
+            itemCount: 100,
+            pageCount: 4,
+            start: "2026-01-03T12:00:00.000Z",
           }),
         },
       }),
@@ -725,6 +800,41 @@ describe("WahooActivityHistoryJobService", () => {
     expect(deps.providerSyncRepository.updateSyncStateAfterFailure).not.toHaveBeenCalled();
   });
 
+  it("aborts a hung Wahoo list request when the job lease is lost", async () => {
+    const deps = createDeps();
+    vi.useFakeTimers();
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([historyJob()]);
+    deps.providerSyncRepository.isIntegrationGenerationActive.mockResolvedValue(true);
+    deps.providerSyncRepository.renewJobLease.mockResolvedValue(false);
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
+    let requestSignal: AbortSignal | undefined;
+    deps.wahooClient.listWorkoutSummaries.mockImplementation(
+      ({ signal }: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          requestSignal = signal;
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+    );
+    const service = new WahooActivityHistoryJobService({
+      importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
+      providerSyncRepository: deps.providerSyncRepository as never,
+      wahooClientFactory: () => deps.wahooClient,
+      wahooRepository: deps.wahooRepository,
+    });
+
+    const processing = service.processDueJobs({ leaseMs: 3_000, workerId: "worker-1" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(deps.wahooClient.listWorkoutSummaries).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    await expect(processing).resolves.toEqual({ completed: 0, failed: 1, processed: 1 });
+    expect(requestSignal?.aborted).toBe(true);
+    expect(deps.importRuns.recordPageCommitted).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepository.completeJobWithSyncState).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepository.failJobWithSyncState).not.toHaveBeenCalled();
+  });
+
   it("dead-letters token-limit refresh failures with actionable reset guidance", async () => {
     const deps = createDeps();
     vi.useFakeTimers();
@@ -802,6 +912,7 @@ describe("WahooActivityHistoryJobService", () => {
         success: false,
         error: "storage offline",
         errorCode: "activity_import_failed",
+        failureScope: "activity",
       })
       .mockResolvedValueOnce({ success: true, skipped: true, reason: "Activity already imported" });
 
@@ -825,7 +936,10 @@ describe("WahooActivityHistoryJobService", () => {
         failed: 1,
         lastErrorCode: "activity_import_failed",
         skipped: 1,
-        skippedDiagnostics: [{ providerExternalId: "124", reason: "already_imported" }],
+        skippedDiagnostics: [
+          { providerExternalId: "123", reason: "activity_import_failed" },
+          { providerExternalId: "124", reason: "already_imported" },
+        ],
       }),
     );
     expect(deps.getImportRun()).toMatchObject({
@@ -835,6 +949,126 @@ describe("WahooActivityHistoryJobService", () => {
       status: "completed",
     });
     expect(deps.providerSyncRepository.completeJobWithSyncState).toHaveBeenCalled();
+    expect(deps.providerSyncRepository.failJobWithSyncState).not.toHaveBeenCalled();
+    expect(deps.importRuns.fail).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["401 authorization", new WahooReconnectRequiredError()],
+    [
+      "403 authorization",
+      new WahooIntegrationError({ kind: "authorization", scope: "job" }, { status: 403 }),
+    ],
+    [
+      "429 throttling",
+      new WahooIntegrationError({ kind: "rate_limited", scope: "job" }, { status: 429 }),
+    ],
+    [
+      "provider 5xx",
+      new WahooIntegrationError({ kind: "provider_unavailable", scope: "job" }, { status: 503 }),
+    ],
+    [
+      "network availability",
+      new WahooIntegrationError({ kind: "network_unavailable", scope: "job" }),
+    ],
+    ["request timeout", new WahooIntegrationError({ kind: "request_timeout", scope: "job" })],
+  ] as const)("fails the provider job for a detail-level %s failure", async (_label, error) => {
+    const deps = createDeps();
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([historyJob()]);
+    deps.providerSyncRepository.isIntegrationGenerationActive.mockResolvedValue(true);
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
+    deps.wahooClient.listWorkoutSummaries.mockResolvedValue({
+      page: 1,
+      sourceCount: 1,
+      summaries: [{ ...createSummary(123), file: undefined }],
+      total: 1,
+    });
+    deps.wahooClient.getWorkoutSummary.mockRejectedValue(error);
+    const service = new WahooActivityHistoryJobService({
+      importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
+      providerSyncRepository: deps.providerSyncRepository as never,
+      wahooClientFactory: () => deps.wahooClient,
+      wahooRepository: deps.wahooRepository,
+    });
+
+    await expect(service.processDueJobs({ workerId: "worker-1" })).resolves.toEqual({
+      completed: 0,
+      failed: 1,
+      processed: 1,
+    });
+    expect(deps.importRuns.recordPageCommitted).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepository.completeJobWithSyncState).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepository.failJobWithSyncState).toHaveBeenCalledWith(
+      expect.objectContaining({ lastError: "activity_history_failed", status: "failed" }),
+    );
+  });
+
+  it("continues after generic activity-scoped detail and import failures", async () => {
+    const deps = createDeps();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
+      historyJob({ trigger: "onboarding" }),
+    ]);
+    deps.providerSyncRepository.isIntegrationGenerationActive.mockResolvedValue(true);
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
+    deps.wahooClient.listWorkoutSummaries.mockResolvedValue({
+      page: 1,
+      sourceCount: 5,
+      summaries: [
+        { ...createSummary(1), started_at: undefined },
+        { ...createSummary(2), file: undefined },
+        createSummary(3),
+        createSummary(4),
+        createSummary(5),
+      ],
+      total: 5,
+    });
+    deps.wahooClient.getWorkoutSummary.mockRejectedValueOnce(
+      new WahooIntegrationError({ kind: "activity_invalid", scope: "activity" }),
+    );
+    deps.importer.importWorkoutSummary
+      .mockRejectedValueOnce(
+        new WahooIntegrationError({ kind: "activity_invalid", scope: "activity" }),
+      )
+      .mockResolvedValueOnce({ success: true, skipped: true, reason: "Activity already imported" })
+      .mockResolvedValueOnce({ success: true, activityId: "activity-5" });
+    const service = new WahooActivityHistoryJobService({
+      importer: deps.importer as never,
+      importRuns: deps.importRuns as never,
+      providerSyncRepository: deps.providerSyncRepository as never,
+      wahooClientFactory: () => deps.wahooClient,
+      wahooRepository: deps.wahooRepository,
+    });
+
+    await expect(service.processDueJobs({ workerId: "worker-1" })).resolves.toEqual({
+      completed: 1,
+      failed: 0,
+      processed: 1,
+    });
+
+    expect(deps.importer.importWorkoutSummary).toHaveBeenCalledTimes(3);
+    expect(deps.getImportRun()).toMatchObject({
+      discovered_count: 5,
+      failed_count: 3,
+      imported_count: 1,
+      skipped_count: 1,
+      status: "completed",
+    });
+    expect(deps.importRuns.recordPageCommitted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        failed: 3,
+        imported: 1,
+        skipped: 1,
+        skippedDiagnostics: [
+          { providerExternalId: "1", reason: "activity_import_failed" },
+          { providerExternalId: "2", reason: "activity_import_failed" },
+          { providerExternalId: "3", reason: "activity_import_failed" },
+          { providerExternalId: "4", reason: "already_imported" },
+        ],
+      }),
+    );
+    expect(deps.providerSyncRepository.completeJobWithSyncState).toHaveBeenCalledOnce();
     expect(deps.providerSyncRepository.failJobWithSyncState).not.toHaveBeenCalled();
     expect(deps.importRuns.fail).not.toHaveBeenCalled();
   });
@@ -912,12 +1146,11 @@ describe("WahooActivityHistoryJobService", () => {
   it.each([
     ["missing", undefined, "missing_started_at"],
     ["invalid", "not-a-date", "invalid_started_at"],
-  ] as const)("dead-letters %s imported started_at without a wall-clock fallback", async (_, startedAt, lastError) => {
+  ] as const)("records and continues past %s imported started_at", async (_, startedAt, lastError) => {
     const deps = createDeps();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
     deps.providerSyncRepository.claimDueJobs.mockResolvedValue([historyJob()]);
-    deps.providerSyncRepository.markJobFailed.mockResolvedValue(true);
     deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
     deps.wahooClient.listWorkoutSummaries.mockResolvedValue({
       sourceCount: 1,
@@ -933,22 +1166,24 @@ describe("WahooActivityHistoryJobService", () => {
     });
 
     await expect(service.processDueJobs({ workerId: "worker-1" })).resolves.toEqual({
-      completed: 0,
-      failed: 1,
+      completed: 1,
+      failed: 0,
       processed: 1,
     });
     expect(deps.importer.importWorkoutSummary).not.toHaveBeenCalled();
     expect(deps.wahooClient.getWorkoutSummary).not.toHaveBeenCalled();
-    expect(deps.importRuns.recordPageCommitted).not.toHaveBeenCalled();
-    expect(deps.providerSyncRepository.completeJobWithSyncState).not.toHaveBeenCalled();
+    expect(deps.importRuns.recordPageCommitted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        discovered: 1,
+        failed: 1,
+        lastErrorCode: lastError,
+        skippedDiagnostics: [{ providerExternalId: "123", reason: "activity_import_failed" }],
+      }),
+    );
+    expect(deps.providerSyncRepository.completeJobWithSyncState).toHaveBeenCalledOnce();
     expect(deps.providerSyncRepository.failJobWithSyncState).not.toHaveBeenCalled();
-    expect(deps.providerSyncRepository.markJobFailed).toHaveBeenCalledWith({
-      id: "job-1",
-      lastError,
-      status: "dead_lettered",
-      workerId: expect.stringMatching(/^worker-1:/),
-    });
-    expect(deps.importRuns.fail).toHaveBeenCalledWith("import-run-1", lastError);
+    expect(deps.providerSyncRepository.markJobFailed).not.toHaveBeenCalled();
+    expect(deps.importRuns.fail).not.toHaveBeenCalled();
   });
 
   it("no-ops safely when the integration was disconnected before processing", async () => {
@@ -1066,7 +1301,7 @@ describe("WahooActivityHistoryJobService", () => {
       expect.objectContaining({
         metadata: {
           activityHistoryCoverage: expect.objectContaining({
-            itemCount: 31,
+            itemCount: 0,
             pageCount: 2,
             importRunId: "import-run-1",
             version: 3,
@@ -1243,8 +1478,8 @@ describe("WahooActivityHistoryJobService", () => {
     ["credential refresh", 3, 0, 0, 1, 0],
     ["the history list", 5, 1, 0, 1, 0],
     ["the detail lookup", 7, 1, 1, 1, 0],
-    ["the post-import authority check", 6, 1, 0, 1, 1],
-    ["finalization", 7, 1, 0, 1, 1],
+    ["the post-import authority check", 7, 1, 0, 1, 1],
+    ["finalization", 8, 1, 0, 1, 1],
   ])("stops all subsequent work when disconnect linearizes after %s", async (_boundary, falseOnGuard, expectedLists, expectedDetails, expectedRefreshes, expectedImports) => {
     const deps = createDeps();
     const summary = expectedDetails

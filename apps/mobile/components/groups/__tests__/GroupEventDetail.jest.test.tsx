@@ -11,18 +11,6 @@ const rsvpSeriesMock = jest.fn();
 
 type GroupEventFixture = NonNullable<ComponentProps<typeof GroupEventDetailScreen>["event"]>;
 type ActivityPlanFixture = { id: string; name: string };
-function createViewerRsvp(
-  status: NonNullable<GroupEventFixture["viewerRsvp"]>["status"],
-): NonNullable<GroupEventFixture["viewerRsvp"]> {
-  return {
-    group_event_id: "group-event-1",
-    profile_id: "viewer-1",
-    status,
-    created_at: "2026-05-20T12:00:00.000Z",
-    updated_at: "2026-05-20T12:00:00.000Z",
-  };
-}
-
 function createViewerSeriesRsvp(
   status: NonNullable<GroupEventFixture["viewerSeriesRsvp"]>["status"],
 ): NonNullable<GroupEventFixture["viewerSeriesRsvp"]> {
@@ -217,11 +205,21 @@ describe("GroupEventDetailScreen", () => {
     expect(screen.queryByText("Created by creator-1")).toBeNull();
   });
 
-  it("allows a declined occurrence to return to default Going", () => {
+  it("labels an absent RSVP as no response rather than the default eligibility", () => {
+    renderNative(<GroupEventDetailScreen event={createGroupEvent()} />);
+
+    expect(screen.getByText("No response")).toBeTruthy();
+  });
+
+  it("saves an explicit Going occurrence override for a declined series", () => {
     renderNative(
       <GroupEventDetailScreen
         event={createGroupEvent({
-          viewerRsvp: createViewerRsvp("declined"),
+          id: "occurrence-1",
+          series_id: "series-1",
+          occurrence_key: "2026-05-21",
+          is_recurring_occurrence: true,
+          viewerSeriesRsvp: createViewerSeriesRsvp("declined"),
         })}
         onRsvp={rsvpMock}
       />,
@@ -229,7 +227,7 @@ describe("GroupEventDetailScreen", () => {
 
     fireEvent.press(screen.getByText("Restore Going"));
 
-    expect(rsvpMock).toHaveBeenCalledWith(null);
+    expect(rsvpMock).toHaveBeenCalledWith("going");
   });
 
   it("shows accepted RSVP counts and renders future dates from passed occurrences", () => {

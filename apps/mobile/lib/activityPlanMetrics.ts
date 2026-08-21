@@ -18,7 +18,7 @@ export function getActivityPlanQuantitySummary(value: unknown) {
       key: "common_load" | "distance" | "elapsed_duration" | "normalized_intensity",
     ) => {
       const metric = projection.data.metrics.find((item) => item.key === key);
-      return metric && metric.status !== "unavailable" ? metric.value : null;
+      return metric?.status === "available" ? metric.value : 0;
     };
     return {
       commonIntensity: metricValue("normalized_intensity"),
@@ -34,21 +34,21 @@ export function getActivityPlanQuantitySummary(value: unknown) {
   const parsed = activityPrescriptionQuantificationBundleSchema.safeParse(candidate);
   if (!parsed.success) {
     return {
-      commonIntensity: null,
-      commonLoad: null,
+      commonIntensity: 0,
+      commonLoad: 0,
       distanceMeters: null,
-      durationSeconds: null,
+      durationSeconds: 0,
     };
   }
   const summary = parsed.data.summary;
   return {
-    commonIntensity: summary.commonLoad.status === "complete" ? summary.commonLoad.intensity : null,
+    commonIntensity: summary.commonLoad.status === "complete" ? summary.commonLoad.intensity : 0,
     commonLoad:
       summary.commonLoad.status === "complete" && summary.commonLoad.load !== null
         ? summary.commonLoad.load
-        : null,
+        : 0,
     distanceMeters: summary.distance.status === "unavailable" ? null : summary.distance.value,
     durationSeconds:
-      summary.duration.elapsed.status === "unavailable" ? null : summary.duration.elapsed.value,
+      summary.duration.elapsed.status === "complete" ? summary.duration.elapsed.value : 0,
   };
 }

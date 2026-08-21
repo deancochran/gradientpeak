@@ -132,7 +132,6 @@ function ScheduledRecordPlanCard({
 
       <ActivityPlanSummary
         description={activity.description || activity.notes || null}
-        estimatedDuration={activity.estimatedDuration}
         owner={activity.owner}
         presentation={presentation}
         prescriptionQuantification={activity.prescriptionQuantification}
@@ -293,8 +292,12 @@ export function TrainingPathWeekSummaryCard({
     effectiveLoadStatus: summary.effectiveLoadStatus,
     effectiveLoad: summary.effectiveLoad,
     effectiveIntensity: summary.effectiveIntensity,
+    effectiveCompletedLoadStatus: summary.completedLoadStatus,
     effectiveCompletedLoad: summary.effectiveCompletedLoad,
+    effectiveRemainingLoadStatus: summary.effectiveRemainingLoadStatus,
     effectiveRemainingLoad: summary.effectiveRemainingLoad,
+    plannedLoad: summary.plannedLoad,
+    plannedLoadStatus: summary.plannedLoadStatus,
     hasCompletedActivityWithoutLoad: summary.completedLoadUnavailable ?? false,
   });
 
@@ -434,7 +437,6 @@ export function TrainingPathWeekSummaryCard({
                 activity={activity.activity}
                 dateMode="absolute"
                 onPress={() => onOpenActivity(activity.id)}
-                showLike
                 testID={`training-path-week-activity-${activity.id}`}
               />
             ) : (
@@ -598,7 +600,6 @@ export function TrainingPathSelectedDaySummaryCard({
                 activity={activity.activity}
                 dateMode="absolute"
                 onPress={() => onOpenActivity(activity.id)}
-                showLike
                 testID={`training-path-day-activity-${activity.id}`}
               />
             ) : (

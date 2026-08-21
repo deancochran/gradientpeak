@@ -9,28 +9,20 @@ import {
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 
-import {
-  AgendaCreateForm,
-  type AgendaCreateType,
-} from "../../../components/planning/agenda-create-form";
+import { AgendaCreateForm } from "../../../components/planning/agenda-create-form";
 import { getMonthKey, getTodayDateKey, isValidDateKey } from "../../../lib/planning";
 
 export const Route = createFileRoute("/_protected/calendar/new")({
-  validateSearch: (
-    search: Record<string, unknown>,
-  ): { date?: string; type?: AgendaCreateType } => ({
+  validateSearch: (search: Record<string, unknown>): { date?: string } => ({
     ...(typeof search.date === "string" && isValidDateKey(search.date)
       ? { date: search.date }
-      : {}),
-    ...(search.type === "planned" || search.type === "race_target" || search.type === "custom"
-      ? { type: search.type }
       : {}),
   }),
   component: AgendaCreatePage,
 });
 
 function AgendaCreatePage() {
-  const search = Route.useSearch() as { date?: string; type?: AgendaCreateType };
+  const search = Route.useSearch() as { date?: string };
 
   return (
     <div className="space-y-6">
@@ -43,16 +35,10 @@ function AgendaCreatePage() {
       <Card>
         <CardHeader>
           <CardTitle>Create from agenda</CardTitle>
-          <CardDescription>
-            Schedule a personal planned session from a saved activity plan. Event and goal creation
-            remain available as separate choices.
-          </CardDescription>
+          <CardDescription>Create an event for this day, or add a goal instead.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <AgendaCreateForm
-            initialDate={search.date ?? getTodayDateKey()}
-            initialType={search.type ?? "planned"}
-          />
+          <AgendaCreateForm initialDate={search.date ?? getTodayDateKey()} />
           <div className="border-t pt-4">
             <Button asChild variant="outline">
               <Link to="/goals/new" search={{ date: search.date ?? getTodayDateKey() }}>

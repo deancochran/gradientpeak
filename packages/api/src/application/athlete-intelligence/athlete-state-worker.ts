@@ -172,6 +172,23 @@ export class AthleteDerivedStateWorkerService {
           profileId: item.request.profileId,
         });
         if (!publication) throw new Error("Athlete publication state disappeared");
+        if (item.request.sourceRevision < publication.sourceRevision) {
+          const completed = await repository.transitionRecalculation({
+            profileId: item.request.profileId,
+            transition: {
+              action: "complete",
+              claimToken,
+              completedAt: now.toISOString(),
+              resultingPublishedRevision: publication.publishedRevision,
+            },
+          });
+          if (completed.status !== "completed") throw new AthleteStateLeaseLostError();
+          result.completed += 1;
+          continue;
+        }
+        if (item.request.sourceRevision > publication.sourceRevision) {
+          throw new Error("Athlete recalculation revision is ahead of publication state");
+        }
         if (publication.publishedRevision === item.request.sourceRevision) {
           const completed = await repository.transitionRecalculation({
             profileId: item.request.profileId,
@@ -550,7 +567,7 @@ export class AthleteStateWorkerService {
   async processDueJobs(input: { limit?: number; now?: Date } = {}) {
     const limit = Math.max(1, Math.min(input.limit ?? 5, 50));
     const result = { completed: 0, failed: 0, processed: 0 };
-    for (let index = 0; index < limit; index += 1) {
+    claimSlots: for (let index = 0; index < limit; index += 1) {
       const now = input.now ?? new Date();
       if ("$client" in this.input.db) {
         const derived = await new AthleteDerivedStateWorkerService(this.input).processDueJobs({
@@ -564,56 +581,69 @@ export class AthleteStateWorkerService {
           continue;
         }
       }
-      const claim = await claimNextAthleteState(this.input.db, {
-        now,
-        leaseMilliseconds: ATHLETE_STATE_LEASE_MILLISECONDS,
-      });
-      if (!claim) break;
-      result.processed += 1;
-      try {
-        if (claim.dirtyFromAt !== null && claim.dirtyFromAt.getTime() <= now.getTime()) {
-          await renewClaimOrThrow(
-            this.input.db,
-            claim,
-            ACTIVITY_ANALYSIS_REFRESH_LEASE_MILLISECONDS,
-          );
-          const refresh = await reprocessProfileActivityAnalysis(this.input.db, {
-            profileId: claim.profileId,
-            apply: true,
-            confirmProfileId: claim.profileId,
-            from: claim.dirtyFromAt,
-            now,
-            claimedAthleteState: claim,
-          });
-          if (refresh.durableRefresh === "continued") continue;
-          await renewClaimOrThrow(this.input.db, claim, ATHLETE_STATE_LEASE_MILLISECONDS);
-        }
-        const published = await rebuildClaimedAthleteState({
-          db: this.input.db,
-          claim,
+      let continuationProfileId: string | undefined;
+      for (;;) {
+        const claim = await claimNextAthleteState(this.input.db, {
           now,
+          leaseMilliseconds: ATHLETE_STATE_LEASE_MILLISECONDS,
+          ...(continuationProfileId === undefined ? {} : { profileId: continuationProfileId }),
         });
-        if (published) {
-          result.completed += 1;
-          await reconcileOnboardingStatus({
+        if (!claim) {
+          if (continuationProfileId === undefined) break claimSlots;
+          break;
+        }
+        result.processed += 1;
+        try {
+          if (claim.dirtyFromAt !== null && claim.dirtyFromAt.getTime() <= now.getTime()) {
+            await renewClaimOrThrow(
+              this.input.db,
+              claim,
+              ACTIVITY_ANALYSIS_REFRESH_LEASE_MILLISECONDS,
+            );
+            const refresh = await reprocessProfileActivityAnalysis(this.input.db, {
+              profileId: claim.profileId,
+              apply: true,
+              confirmProfileId: claim.profileId,
+              from: claim.dirtyFromAt,
+              now,
+              claimedAthleteState: claim,
+            });
+            if (refresh.durableRefresh === "continued") {
+              // The batch transaction released this claim and persisted its cursor. Reclaim the
+              // same profile now rather than waiting for the scheduler's next polling interval.
+              continuationProfileId = claim.profileId;
+              continue;
+            }
+            await renewClaimOrThrow(this.input.db, claim, ATHLETE_STATE_LEASE_MILLISECONDS);
+          }
+          const published = await rebuildClaimedAthleteState({
             db: this.input.db,
-            profileId: claim.profileId,
-          }).catch(() => undefined);
-        } else result.failed += 1;
-      } catch (error) {
-        result.failed += 1;
-        if (
-          error instanceof AthleteStateLeaseLostError ||
-          error instanceof AnalysisRefreshFenceError
-        ) {
-          await releaseAthleteStateClaim(this.input.db, { claim, now }).catch(() => false);
-        } else {
-          await failAthleteStateClaim(this.input.db, {
             claim,
             now,
-            failureCode: error instanceof Error ? error.name : "athlete_state_failed",
           });
+          if (published) {
+            result.completed += 1;
+            await reconcileOnboardingStatus({
+              db: this.input.db,
+              profileId: claim.profileId,
+            }).catch(() => undefined);
+          } else result.failed += 1;
+        } catch (error) {
+          result.failed += 1;
+          if (
+            error instanceof AthleteStateLeaseLostError ||
+            error instanceof AnalysisRefreshFenceError
+          ) {
+            await releaseAthleteStateClaim(this.input.db, { claim, now }).catch(() => false);
+          } else {
+            await failAthleteStateClaim(this.input.db, {
+              claim,
+              now,
+              failureCode: error instanceof Error ? error.name : "athlete_state_failed",
+            });
+          }
         }
+        break;
       }
     }
     return result;

@@ -1,4 +1,4 @@
-import { ALL_SAMPLE_PLANS } from "@repo/core";
+import { ALL_SAMPLE_PLANS, deriveTrainingPlanPlannedSchedulePreview } from "@repo/core";
 import { describe, expect, it } from "vitest";
 import { createQueryMapDbMock } from "../../test/mock-query-db";
 import { trainingPlansRouter } from "../planning/training-plans";
@@ -54,6 +54,7 @@ function toExpectedTemplateResponse(
           updated_at: "2026-03-13T00:00:00.000Z",
         }
       : {}),
+    plannedSchedulePreview: deriveTrainingPlanPlannedSchedulePreview(plan.structure),
     ...plan.structure,
   };
 }

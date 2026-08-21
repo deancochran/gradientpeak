@@ -152,7 +152,10 @@ export async function invalidateActivityPlanQueries(
   const refreshTasks: Promise<unknown>[] = [utils.activityPlans.list.invalidate()];
 
   if (options.includeDetail && options.planId) {
-    refreshTasks.push(utils.activityPlans.getById.invalidate({ id: options.planId }));
+    refreshTasks.push(
+      utils.activityPlans.getById.invalidate({ id: options.planId, personalize: false }),
+      utils.activityPlans.getById.invalidate({ id: options.planId, personalize: true }),
+    );
   }
 
   await Promise.all(refreshTasks);

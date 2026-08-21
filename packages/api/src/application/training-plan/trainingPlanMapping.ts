@@ -1,4 +1,7 @@
-import { persistedTrainingPlanStructureSchema } from "@repo/core";
+import {
+  deriveTrainingPlanPlannedSchedulePreview,
+  persistedTrainingPlanStructureSchema,
+} from "@repo/core";
 import type { TrainingPlanRow } from "@repo/db";
 import type { DrizzleDbClient } from "@repo/db/client";
 import type { z } from "zod";
@@ -23,6 +26,13 @@ export function mapTrainingPlanContentIdentity<T extends TrainingPlanWithIdentit
     content_id: plan.id,
     owner_profile_id: plan.profile_id,
     visibility: plan.content_visibility,
+  };
+}
+
+export function mapTrainingPlanPlannedSchedulePreview<T extends { structure: unknown }>(plan: T) {
+  return {
+    ...plan,
+    plannedSchedulePreview: deriveTrainingPlanPlannedSchedulePreview(plan.structure),
   };
 }
 
@@ -104,7 +114,9 @@ export async function serializeTrainingPlanForViewer(input: {
 
   return {
     ...mapTrainingPlanOwnerIdentity(
-      sanitizeTrainingPlanForViewer(input.plan, input.profileId),
+      mapTrainingPlanPlannedSchedulePreview(
+        sanitizeTrainingPlanForViewer(input.plan, input.profileId),
+      ),
       profileIdentityMap,
     ),
     ...getLikeStats(likeStats, input.plan.id),

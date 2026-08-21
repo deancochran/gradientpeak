@@ -253,7 +253,7 @@ describe("planningSessions", () => {
                     id: "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff",
                     name: "Steady",
                     duration: { type: "time", seconds: 3_600 },
-                    targets: [{ type: "%FTP", intensity: 80 }],
+                    targets: [{ type: "watts", intensity: 200 }],
                   },
                 ],
               },

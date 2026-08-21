@@ -1,6 +1,10 @@
 {
   "enums": [
     {
+      "name": "activity_category",
+      "values": ["run", "bike", "swim", "strength", "other"]
+    },
+    {
       "name": "activity_effort_source_series",
       "values": ["power", "grade_adjusted_speed", "raw_speed", "swim_speed", "heart_rate"]
     },
@@ -165,10 +169,6 @@
     {
       "name": "threshold_metric",
       "values": ["power", "speed"]
-    },
-    {
-      "name": "training_effect_label",
-      "values": ["recovery", "base", "tempo", "threshold", "vo2max"]
     }
   ],
   "tables": [
@@ -284,12 +284,6 @@
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
       "name": "athlete_recalculation_queue",
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
-      "rls": true,
-      "name": "canonical_activity_categories",
       "forceRls": false
     },
     {
@@ -1142,7 +1136,7 @@
     },
     {
       "name": "athlete_state_activity_category",
-      "type": "text",
+      "type": "activity_category",
       "table": "activities",
       "default": "",
       "notNull": false,
@@ -1632,7 +1626,7 @@
     },
     {
       "name": "activity_category",
-      "type": "text",
+      "type": "activity_category",
       "table": "activity_efforts",
       "default": "",
       "notNull": true,
@@ -2772,7 +2766,7 @@
     },
     {
       "name": "activity_category",
-      "type": "text",
+      "type": "activity_category",
       "table": "activity_segments",
       "default": "",
       "notNull": false,
@@ -3352,7 +3346,7 @@
     },
     {
       "name": "activity_category",
-      "type": "text",
+      "type": "activity_category",
       "table": "activity_training_effects",
       "default": "",
       "notNull": true,
@@ -3718,36 +3712,6 @@
       "notNull": true,
       "identity": "",
       "position": 9,
-      "generated": ""
-    },
-    {
-      "name": "code",
-      "type": "text",
-      "table": "canonical_activity_categories",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "display_name",
-      "type": "text",
-      "table": "canonical_activity_categories",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
-      "generated": ""
-    },
-    {
-      "name": "enabled",
-      "type": "boolean",
-      "table": "canonical_activity_categories",
-      "default": "true",
-      "notNull": true,
-      "identity": "",
-      "position": 3,
       "generated": ""
     },
     {
@@ -6692,7 +6656,7 @@
     },
     {
       "name": "activity_category",
-      "type": "text",
+      "type": "activity_category",
       "table": "profile_goals",
       "default": "",
       "notNull": true,
@@ -6912,7 +6876,7 @@
     },
     {
       "name": "activity_category",
-      "type": "text",
+      "type": "activity_category",
       "table": "profile_performance_estimates",
       "default": "",
       "notNull": true,
@@ -7982,7 +7946,7 @@
     },
     {
       "name": "activity_category",
-      "type": "text",
+      "type": "activity_category",
       "table": "threshold_evaluation_efforts",
       "default": "",
       "notNull": true,
@@ -8082,7 +8046,7 @@
     },
     {
       "name": "activity_category",
-      "type": "text",
+      "type": "activity_category",
       "table": "threshold_evaluations",
       "default": "",
       "notNull": true,
@@ -8262,7 +8226,7 @@
     },
     {
       "name": "activity_category",
-      "type": "text",
+      "type": "activity_category",
       "table": "threshold_evidence",
       "default": "",
       "notNull": true,
@@ -8472,7 +8436,7 @@
     },
     {
       "name": "activity_category",
-      "type": "text",
+      "type": "activity_category",
       "table": "thresholds",
       "default": "",
       "notNull": true,
@@ -9383,11 +9347,6 @@
       "definition": "CREATE UNIQUE INDEX athlete_recalculation_queue_pkey ON public.athlete_recalculation_queue USING btree (profile_id)"
     },
     {
-      "name": "canonical_activity_categories_pkey",
-      "table": "canonical_activity_categories",
-      "definition": "CREATE UNIQUE INDEX canonical_activity_categories_pkey ON public.canonical_activity_categories USING btree (code)"
-    },
-    {
       "name": "coaching_assignments_active_coach_membership_idx",
       "table": "coaching_assignments",
       "definition": "CREATE INDEX coaching_assignments_active_coach_membership_idx ON public.coaching_assignments USING btree (organization_id, coach_membership_id) WHERE (ended_at IS NULL)"
@@ -9593,19 +9552,9 @@
       "definition": "CREATE UNIQUE INDEX group_event_rsvps_group_event_id_profile_id_pk ON public.group_event_rsvps USING btree (group_event_id, profile_id)"
     },
     {
-      "name": "group_event_rsvps_profile_status_idx",
-      "table": "group_event_rsvps",
-      "definition": "CREATE INDEX group_event_rsvps_profile_status_idx ON public.group_event_rsvps USING btree (profile_id, status)"
-    },
-    {
       "name": "group_event_series_rsvps_group_event_series_id_profile_id_pk",
       "table": "group_event_series_rsvps",
       "definition": "CREATE UNIQUE INDEX group_event_series_rsvps_group_event_series_id_profile_id_pk ON public.group_event_series_rsvps USING btree (group_event_series_id, profile_id)"
-    },
-    {
-      "name": "group_event_series_rsvps_profile_status_idx",
-      "table": "group_event_series_rsvps",
-      "definition": "CREATE INDEX group_event_series_rsvps_profile_status_idx ON public.group_event_series_rsvps USING btree (profile_id, status)"
     },
     {
       "name": "group_events_group_cancelled_starts_at_idx",
@@ -11112,7 +11061,7 @@
       "name": "activities_athlete_state_evidence_check",
       "table": "activities",
       "validated": true,
-      "definition": "CHECK (athlete_state_common_load IS NULL AND athlete_state_activity_category IS NULL AND athlete_state_evidence_confidence IS NULL AND athlete_state_input_version IS NULL AND athlete_state_computed_at IS NULL OR athlete_state_common_load >= 0::numeric AND (athlete_state_activity_category = ANY (ARRAY['run'::text, 'bike'::text, 'swim'::text, 'strength'::text, 'other'::text])) AND athlete_state_evidence_confidence >= 0::numeric AND athlete_state_evidence_confidence <= 1::numeric AND btrim(athlete_state_input_version) <> ''::text AND athlete_state_computed_at IS NOT NULL)"
+      "definition": "CHECK (athlete_state_common_load IS NULL AND athlete_state_activity_category IS NULL AND athlete_state_evidence_confidence IS NULL AND athlete_state_input_version IS NULL AND athlete_state_computed_at IS NULL OR athlete_state_common_load >= 0::numeric AND (athlete_state_activity_category = ANY (ARRAY['run'::activity_category, 'bike'::activity_category, 'swim'::activity_category, 'strength'::activity_category, 'other'::activity_category])) AND athlete_state_evidence_confidence >= 0::numeric AND athlete_state_evidence_confidence <= 1::numeric AND btrim(athlete_state_input_version) <> ''::text AND athlete_state_computed_at IS NOT NULL)"
     },
     {
       "kind": "c",
@@ -11424,13 +11373,6 @@
     },
     {
       "kind": "f",
-      "name": "activity_efforts_activity_category_canonical_activity_categorie",
-      "table": "activity_efforts",
-      "validated": true,
-      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
-    },
-    {
-      "kind": "f",
       "name": "activity_efforts_activity_id_activities_id_fk",
       "table": "activity_efforts",
       "validated": true,
@@ -11441,7 +11383,7 @@
       "name": "activity_efforts_bike_power_max_check",
       "table": "activity_efforts",
       "validated": true,
-      "definition": "CHECK (activity_category <> 'bike'::text OR effort_type <> 'power'::effort_type OR value <= 3000::double precision)"
+      "definition": "CHECK (activity_category <> 'bike'::activity_category OR effort_type <> 'power'::effort_type OR value <= 3000::double precision)"
     },
     {
       "kind": "c",
@@ -11546,7 +11488,7 @@
       "name": "activity_efforts_run_speed_bounds_check",
       "table": "activity_efforts",
       "validated": true,
-      "definition": "CHECK (activity_category <> 'run'::text OR effort_type <> 'speed'::effort_type OR value >= 0.3::double precision AND value <= 13::double precision)"
+      "definition": "CHECK (activity_category <> 'run'::activity_category OR effort_type <> 'speed'::effort_type OR value >= 0.3::double precision AND value <= 13::double precision)"
     },
     {
       "kind": "c",
@@ -11560,21 +11502,21 @@
       "name": "activity_efforts_supported_combination_check",
       "table": "activity_efforts",
       "validated": true,
-      "definition": "CHECK (activity_category = 'bike'::text AND effort_type = 'power'::effort_type AND source_series = 'power'::activity_effort_source_series OR activity_category = 'run'::text AND effort_type = 'speed'::effort_type AND (source_series = ANY (ARRAY['grade_adjusted_speed'::activity_effort_source_series, 'raw_speed'::activity_effort_source_series])) OR activity_category = 'swim'::text AND effort_type = 'speed'::effort_type AND source_series = 'swim_speed'::activity_effort_source_series OR (activity_category = ANY (ARRAY['bike'::text, 'run'::text, 'swim'::text])) AND effort_type::text = 'heart_rate'::text AND source_series = 'heart_rate'::activity_effort_source_series)"
+      "definition": "CHECK (activity_category = 'bike'::activity_category AND effort_type = 'power'::effort_type AND source_series = 'power'::activity_effort_source_series OR activity_category = 'run'::activity_category AND effort_type = 'speed'::effort_type AND (source_series = ANY (ARRAY['grade_adjusted_speed'::activity_effort_source_series, 'raw_speed'::activity_effort_source_series])) OR activity_category = 'swim'::activity_category AND effort_type = 'speed'::effort_type AND source_series = 'swim_speed'::activity_effort_source_series OR (activity_category = ANY (ARRAY['bike'::activity_category, 'run'::activity_category, 'swim'::activity_category])) AND effort_type::text = 'heart_rate'::text AND source_series = 'heart_rate'::activity_effort_source_series)"
     },
     {
       "kind": "c",
       "name": "activity_efforts_swim_speed_bounds_check",
       "table": "activity_efforts",
       "validated": true,
-      "definition": "CHECK (activity_category <> 'swim'::text OR effort_type <> 'speed'::effort_type OR value >= 0.1::double precision AND value <= 3::double precision)"
+      "definition": "CHECK (activity_category <> 'swim'::activity_category OR effort_type <> 'speed'::effort_type OR value >= 0.1::double precision AND value <= 3::double precision)"
     },
     {
       "kind": "c",
       "name": "activity_efforts_unit_compatibility_check",
       "table": "activity_efforts",
       "validated": true,
-      "definition": "CHECK (activity_category = 'bike'::text AND effort_type = 'power'::effort_type AND unit = 'watts'::text OR (activity_category = ANY (ARRAY['run'::text, 'swim'::text])) AND effort_type = 'speed'::effort_type AND unit = 'meters_per_second'::text OR effort_type::text = 'heart_rate'::text AND unit = 'bpm'::text)"
+      "definition": "CHECK (activity_category = 'bike'::activity_category AND effort_type = 'power'::effort_type AND unit = 'watts'::text OR (activity_category = ANY (ARRAY['run'::activity_category, 'swim'::activity_category])) AND effort_type = 'speed'::effort_type AND unit = 'meters_per_second'::text OR effort_type::text = 'heart_rate'::text AND unit = 'bpm'::text)"
     },
     {
       "kind": "c",
@@ -11934,13 +11876,6 @@
       "definition": "CHECK (total_distance >= 0)"
     },
     {
-      "kind": "f",
-      "name": "activity_segments_activity_category_canonical_activity_categori",
-      "table": "activity_segments",
-      "validated": true,
-      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
-    },
-    {
       "kind": "u",
       "name": "activity_segments_activity_ordinal_unique",
       "table": "activity_segments",
@@ -12228,13 +12163,6 @@
       "definition": "FOREIGN KEY (last_material_import_run_id, profile_id) REFERENCES activity_import_runs(id, profile_id) ON DELETE SET NULL (last_material_import_run_id)"
     },
     {
-      "kind": "f",
-      "name": "activity_training_effects_activity_category_canonical_activity_",
-      "table": "activity_training_effects",
-      "validated": true,
-      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
-    },
-    {
       "kind": "p",
       "name": "activity_training_effects_activity_id_activity_analysis_revisio",
       "table": "activity_training_effects",
@@ -12481,20 +12409,6 @@
     },
     {
       "kind": "c",
-      "name": "canonical_activity_categories_code_check",
-      "table": "canonical_activity_categories",
-      "validated": true,
-      "definition": "CHECK (code = ANY (ARRAY['run'::text, 'bike'::text, 'swim'::text, 'strength'::text, 'other'::text]))"
-    },
-    {
-      "kind": "p",
-      "name": "canonical_activity_categories_pkey",
-      "table": "canonical_activity_categories",
-      "validated": true,
-      "definition": "PRIMARY KEY (code)"
-    },
-    {
-      "kind": "c",
       "name": "coaching_assignments_chronology_check",
       "table": "coaching_assignments",
       "validated": true,
@@ -12571,6 +12485,13 @@
       "definition": "PRIMARY KEY (id)"
     },
     {
+      "kind": "c",
+      "name": "comments_entity_type_check",
+      "table": "comments",
+      "validated": true,
+      "definition": "CHECK (entity_type = ANY (ARRAY['activity'::text, 'training_plan'::text, 'activity_plan'::text, 'route'::text, 'event'::text]))"
+    },
+    {
       "kind": "p",
       "name": "comments_pkey",
       "table": "comments",
@@ -12585,11 +12506,25 @@
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id)"
     },
     {
+      "kind": "c",
+      "name": "content_access_grants_access_level_check",
+      "table": "content_access_grants",
+      "validated": true,
+      "definition": "CHECK (access_level = ANY (ARRAY['read'::text, 'read_geometry'::text]))"
+    },
+    {
       "kind": "f",
       "name": "content_access_grants_actor_profile_id_profiles_id_fk",
       "table": "content_access_grants",
       "validated": true,
       "definition": "FOREIGN KEY (actor_profile_id) REFERENCES profiles(id) ON DELETE SET NULL"
+    },
+    {
+      "kind": "c",
+      "name": "content_access_grants_content_type_check",
+      "table": "content_access_grants",
+      "validated": true,
+      "definition": "CHECK (content_type = ANY (ARRAY['profile'::text, 'event'::text, 'activity_plan'::text, 'activity_route'::text, 'training_plan'::text]))"
     },
     {
       "kind": "f",
@@ -12604,6 +12539,13 @@
       "table": "content_access_grants",
       "validated": true,
       "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "c",
+      "name": "content_access_grants_source_type_check",
+      "table": "content_access_grants",
+      "validated": true,
+      "definition": "CHECK (source_type = ANY (ARRAY['event'::text, 'training_plan'::text]))"
     },
     {
       "kind": "f",
@@ -12837,6 +12779,13 @@
       "definition": "FOREIGN KEY (following_id) REFERENCES profiles(id)"
     },
     {
+      "kind": "c",
+      "name": "follows_status_check",
+      "table": "follows",
+      "validated": true,
+      "definition": "CHECK (status = ANY (ARRAY['pending'::text, 'accepted'::text]))"
+    },
+    {
       "kind": "f",
       "name": "group_event_rsvps_group_event_id_group_events_id_fk",
       "table": "group_event_rsvps",
@@ -12862,7 +12811,7 @@
       "name": "group_event_rsvps_status_check",
       "table": "group_event_rsvps",
       "validated": true,
-      "definition": "CHECK (status = 'declined'::text)"
+      "definition": "CHECK (status = ANY (ARRAY['going'::text, 'declined'::text]))"
     },
     {
       "kind": "f",
@@ -12890,7 +12839,7 @@
       "name": "group_event_series_rsvps_status_check",
       "table": "group_event_series_rsvps",
       "validated": true,
-      "definition": "CHECK (status = 'declined'::text)"
+      "definition": "CHECK (status = ANY (ARRAY['going'::text, 'declined'::text]))"
     },
     {
       "kind": "f",
@@ -13699,13 +13648,6 @@
     },
     {
       "kind": "c",
-      "name": "profile_goals_activity_category_check",
-      "table": "profile_goals",
-      "validated": true,
-      "definition": "CHECK (activity_category = ANY (ARRAY['run'::text, 'bike'::text, 'swim'::text, 'strength'::text, 'other'::text]))"
-    },
-    {
-      "kind": "c",
       "name": "profile_goals_completion_payload_check",
       "table": "profile_goals",
       "validated": true,
@@ -13751,7 +13693,7 @@
       "name": "profile_goals_target_payload_shape_check",
       "table": "profile_goals",
       "validated": true,
-      "definition": "CHECK (jsonb_typeof(target_payload) = 'object'::text AND target_payload ? 'type'::text AND jsonb_typeof(target_payload -> 'type'::text) = 'string'::text AND ((target_payload ->> 'type'::text) = ANY (ARRAY['event_performance'::text, 'threshold'::text, 'completion'::text, 'consistency'::text])) AND (NOT target_payload ? 'activity_category'::text OR jsonb_typeof(target_payload -> 'activity_category'::text) = 'string'::text AND (target_payload ->> 'activity_category'::text) = activity_category))"
+      "definition": "CHECK (jsonb_typeof(target_payload) = 'object'::text AND target_payload ? 'type'::text AND jsonb_typeof(target_payload -> 'type'::text) = 'string'::text AND ((target_payload ->> 'type'::text) = ANY (ARRAY['event_performance'::text, 'threshold'::text, 'completion'::text, 'consistency'::text])) AND (NOT target_payload ? 'activity_category'::text OR jsonb_typeof(target_payload -> 'activity_category'::text) = 'string'::text AND (target_payload ->> 'activity_category'::text) = activity_category::text))"
     },
     {
       "kind": "c",
@@ -13829,13 +13771,6 @@
       "table": "profile_performance_estimates",
       "validated": true,
       "definition": "CHECK (btrim(algorithm_version) <> ''::text)"
-    },
-    {
-      "kind": "c",
-      "name": "profile_performance_estimates_category_check",
-      "table": "profile_performance_estimates",
-      "validated": true,
-      "definition": "CHECK (activity_category = ANY (ARRAY['run'::text, 'bike'::text, 'swim'::text, 'strength'::text, 'other'::text]))"
     },
     {
       "kind": "c",
@@ -14056,13 +13991,6 @@
     },
     {
       "kind": "f",
-      "name": "threshold_evaluation_efforts_activity_category_canonical_activi",
-      "table": "threshold_evaluation_efforts",
-      "validated": true,
-      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
-    },
-    {
-      "kind": "f",
       "name": "threshold_evaluation_efforts_effort_ownership_fkey",
       "table": "threshold_evaluation_efforts",
       "validated": true,
@@ -14087,7 +14015,7 @@
       "name": "threshold_evaluation_efforts_metric_check",
       "table": "threshold_evaluation_efforts",
       "validated": true,
-      "definition": "CHECK (metric = 'power'::threshold_metric AND activity_category = 'bike'::text AND effort_type = 'power'::effort_type AND source_series = 'power'::activity_effort_source_series OR metric = 'speed'::threshold_metric AND activity_category = 'run'::text AND effort_type = 'speed'::effort_type AND (source_series = ANY (ARRAY['grade_adjusted_speed'::activity_effort_source_series, 'raw_speed'::activity_effort_source_series])) OR metric = 'speed'::threshold_metric AND activity_category = 'swim'::text AND effort_type = 'speed'::effort_type AND source_series = 'swim_speed'::activity_effort_source_series)"
+      "definition": "CHECK (metric = 'power'::threshold_metric AND activity_category = 'bike'::activity_category AND effort_type = 'power'::effort_type AND source_series = 'power'::activity_effort_source_series OR metric = 'speed'::threshold_metric AND activity_category = 'run'::activity_category AND effort_type = 'speed'::effort_type AND (source_series = ANY (ARRAY['grade_adjusted_speed'::activity_effort_source_series, 'raw_speed'::activity_effort_source_series])) OR metric = 'speed'::threshold_metric AND activity_category = 'swim'::activity_category AND effort_type = 'speed'::effort_type AND source_series = 'swim_speed'::activity_effort_source_series)"
     },
     {
       "kind": "c",
@@ -14109,13 +14037,6 @@
       "table": "threshold_evaluation_efforts",
       "validated": true,
       "definition": "UNIQUE (evaluation_id, role, ordinal)"
-    },
-    {
-      "kind": "f",
-      "name": "threshold_evaluations_activity_category_canonical_activity_cate",
-      "table": "threshold_evaluations",
-      "validated": true,
-      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
     },
     {
       "kind": "c",
@@ -14150,7 +14071,7 @@
       "name": "threshold_evaluations_identity_check",
       "table": "threshold_evaluations",
       "validated": true,
-      "definition": "CHECK (activity_category = 'bike'::text AND metric = 'power'::threshold_metric AND method = 'bike_power_30m'::text AND unit = 'watts'::text OR activity_category = 'run'::text AND metric = 'speed'::threshold_metric AND method = 'run_speed_30m'::text AND unit = 'meters_per_second'::text OR activity_category = 'swim'::text AND metric = 'speed'::threshold_metric AND method = 'swim_speed_15m'::text AND unit = 'meters_per_second'::text)"
+      "definition": "CHECK (activity_category = 'bike'::activity_category AND metric = 'power'::threshold_metric AND method = 'bike_power_30m'::text AND unit = 'watts'::text OR activity_category = 'run'::activity_category AND metric = 'speed'::threshold_metric AND method = 'run_speed_30m'::text AND unit = 'meters_per_second'::text OR activity_category = 'swim'::activity_category AND metric = 'speed'::threshold_metric AND method = 'swim_speed_15m'::text AND unit = 'meters_per_second'::text)"
     },
     {
       "kind": "c",
@@ -14262,7 +14183,7 @@
       "name": "threshold_evidence_identity_check",
       "table": "threshold_evidence",
       "validated": true,
-      "definition": "CHECK (activity_category = 'bike'::text AND metric = 'power'::threshold_metric AND unit = 'watts'::text AND method = 'bike_power_30m'::text AND source_series_metric = 'power'::text OR activity_category = 'run'::text AND metric = 'speed'::threshold_metric AND unit = 'meters_per_second'::text AND method = 'run_speed_30m'::text AND (source_series_metric = ANY (ARRAY['speed'::text, 'grade_adjusted_speed'::text])) OR activity_category = 'swim'::text AND metric = 'speed'::threshold_metric AND unit = 'meters_per_second'::text AND method = 'swim_speed_15m'::text AND source_series_metric = 'speed'::text)"
+      "definition": "CHECK (activity_category = 'bike'::activity_category AND metric = 'power'::threshold_metric AND unit = 'watts'::text AND method = 'bike_power_30m'::text AND source_series_metric = 'power'::text OR activity_category = 'run'::activity_category AND metric = 'speed'::threshold_metric AND unit = 'meters_per_second'::text AND method = 'run_speed_30m'::text AND (source_series_metric = ANY (ARRAY['speed'::text, 'grade_adjusted_speed'::text])) OR activity_category = 'swim'::activity_category AND metric = 'speed'::threshold_metric AND unit = 'meters_per_second'::text AND method = 'swim_speed_15m'::text AND source_series_metric = 'speed'::text)"
     },
     {
       "kind": "c",
@@ -14321,13 +14242,6 @@
       "definition": "CHECK (exact_window_seconds > 0 AND end_timestamp_seconds = (start_timestamp_seconds + exact_window_seconds::numeric) AND (start_timestamp_seconds <> ALL (ARRAY['NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric])) AND (end_timestamp_seconds <> ALL (ARRAY['NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric])))"
     },
     {
-      "kind": "f",
-      "name": "thresholds_activity_category_canonical_activity_categories_code",
-      "table": "thresholds",
-      "validated": true,
-      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
-    },
-    {
       "kind": "c",
       "name": "thresholds_confidence_finite_range_check",
       "table": "thresholds",
@@ -14353,7 +14267,7 @@
       "name": "thresholds_identity_check",
       "table": "thresholds",
       "validated": true,
-      "definition": "CHECK (activity_category = 'bike'::text AND metric = 'power'::threshold_metric AND method = 'bike_power_30m'::text AND unit = 'watts'::text OR activity_category = 'run'::text AND metric = 'speed'::threshold_metric AND method = 'run_speed_30m'::text AND unit = 'meters_per_second'::text OR activity_category = 'swim'::text AND metric = 'speed'::threshold_metric AND method = 'swim_speed_15m'::text AND unit = 'meters_per_second'::text)"
+      "definition": "CHECK (activity_category = 'bike'::activity_category AND metric = 'power'::threshold_metric AND method = 'bike_power_30m'::text AND unit = 'watts'::text OR activity_category = 'run'::activity_category AND metric = 'speed'::threshold_metric AND method = 'run_speed_30m'::text AND unit = 'meters_per_second'::text OR activity_category = 'swim'::activity_category AND metric = 'speed'::threshold_metric AND method = 'swim_speed_15m'::text AND unit = 'meters_per_second'::text)"
     },
     {
       "kind": "u",
@@ -14717,14 +14631,6 @@
       "rls": true,
       "kind": "r",
       "name": "athlete_recalculation_queue",
-      "managed": true,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
-      "rls": true,
-      "kind": "r",
-      "name": "canonical_activity_categories",
       "managed": true,
       "forceRls": false
     },

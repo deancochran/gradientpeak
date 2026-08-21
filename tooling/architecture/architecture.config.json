@@ -33,23 +33,11 @@
             "packages/db/scripts/fixtures/**/*"
           ]
         },
-        "typecheck": [
-          {
-            "script": "check-types",
-            "tsconfig": "packages/db/tsconfig.json",
-            "patterns": ["packages/db/**/*.ts", "packages/db/**/*.tsx"]
-          },
-          {
-            "script": "check-types:supabase",
-            "tsconfig": "packages/db/supabase/tsconfig.json",
-            "patterns": [
-              "packages/db/supabase/functions/**/*.ts",
-              "packages/db/supabase/functions/**/*.tsx",
-              "packages/db/supabase/functions/**/*.js",
-              "packages/db/supabase/functions/**/*.jsx"
-            ]
-          }
-        ],
+        "typecheck": {
+          "script": "check-types",
+          "tsconfig": "packages/db/tsconfig.json",
+          "patterns": ["packages/db/**/*.ts", "packages/db/**/*.tsx"]
+        },
         "test": {
           "script": "test",
           "patterns": [

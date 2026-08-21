@@ -66,8 +66,13 @@ test("owner creates, edits, RSVPs to, cancels an event, and archives its group",
       await expect(athletePage.getByText("Updated browser group description.")).toBeVisible();
 
       await createOneOffEvent(athletePage, eventTitle);
-      await athletePage.getByRole("button", { name: "Going", exact: true }).click();
-      await expect(athletePage.getByText(/Effective response: accepted/)).toBeVisible();
+      await expect(
+        athletePage.getByText("Effective response: no response (defaults to going)"),
+      ).toBeVisible();
+      await athletePage.getByRole("button", { name: "Decline", exact: true }).click();
+      await expect(athletePage.getByText(/Effective response: declined/)).toBeVisible();
+      await athletePage.getByRole("button", { name: "Restore Going", exact: true }).click();
+      await expect(athletePage.getByText(/Effective response: going/)).toBeVisible();
 
       await athletePage.getByRole("button", { name: "Edit event", exact: true }).click();
       await athletePage.getByLabel("Location").fill("Updated browser clubhouse");
@@ -152,8 +157,13 @@ test("a member discovers, joins, reloads, RSVPs, and cannot manage the owner's g
         await expect(member.page.getByRole("heading", { name: eventTitle })).toBeVisible();
         await expect(member.page.getByRole("button", { name: "Edit event" })).toHaveCount(0);
         await expect(member.page.getByRole("button", { name: "Cancel event" })).toHaveCount(0);
-        await member.page.getByRole("button", { name: "Going", exact: true }).click();
-        await expect(member.page.getByText(/Effective response: accepted/)).toBeVisible();
+        await expect(
+          member.page.getByText("Effective response: no response (defaults to going)"),
+        ).toBeVisible();
+        await member.page.getByRole("button", { name: "Decline", exact: true }).click();
+        await expect(member.page.getByText(/Effective response: declined/)).toBeVisible();
+        await member.page.getByRole("button", { name: "Restore Going", exact: true }).click();
+        await expect(member.page.getByText(/Effective response: going/)).toBeVisible();
       },
     );
   } finally {

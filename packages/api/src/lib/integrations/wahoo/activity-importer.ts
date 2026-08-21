@@ -31,7 +31,7 @@ import {
 } from "../../provider-sync/imported-activity";
 import type { WahooStagingCleanupReservation } from "../../provider-sync/wahoo-staging-cleanup";
 import type { WahooActivityType } from "./activity-type-utils";
-import type { WahooWorkoutSummary } from "./client";
+import { WahooIntegrationError, type WahooWorkoutSummary } from "./client";
 
 interface WahooRepository {
   findImportedActivityByProviderExternalId(input: {
@@ -131,6 +131,24 @@ const SAFE_ERROR_NAMES = new Set([
 const LIMITED_ACTIVITY_PERSISTENCE_ERROR_CODES = new Set<WahooActivityImportErrorCode>([
   "activity_laps_invalid",
   "activity_segments_invalid",
+]);
+const ACTIVITY_SCOPED_IMPORT_ERROR_CODES = new Set<WahooActivityImportErrorCode>([
+  "activity_analysis_initial_segments_invalid",
+  "activity_analysis_failed",
+  "activity_analysis_persisted_segments_invalid",
+  "activity_analysis_segments_invalid",
+  "activity_athlete_state_evidence_invalid",
+  "activity_calibration_evidence_invalid",
+  "activity_effort_segment_mismatch",
+  "activity_effort_reconciliation_invalid",
+  "activity_laps_invalid",
+  "activity_performance_snapshot_invalid",
+  "activity_persistence_invariant_failed",
+  "activity_segments_invalid",
+  "activity_validation_failed",
+  "invalid_started_at",
+  "missing_started_at",
+  "unsupported_persisted_version",
 ]);
 
 const MAX_ACTIVITY_FILE_BYTES = 50 * 1024 * 1024;
@@ -329,17 +347,21 @@ function validateActivityFileUrl(url: string, allowedHosts: readonly string[]): 
 function parseContentLength(response: Response): number | null {
   const value = response.headers.get("content-length");
   if (value === null) return null;
-  if (!/^\d+$/.test(value)) throw new Error("Invalid Wahoo activity file Content-Length");
+  if (!/^\d+$/.test(value)) {
+    throw new WahooIntegrationError({ kind: "activity_invalid", scope: "activity" });
+  }
   const size = Number(value);
   if (!Number.isSafeInteger(size) || size > MAX_ACTIVITY_FILE_BYTES) {
-    throw new Error("Wahoo activity file exceeds the 50 MiB limit");
+    throw new WahooIntegrationError({ kind: "activity_unsupported", scope: "activity" });
   }
   return size;
 }
 
 async function readBoundedBody(response: Response): Promise<Uint8Array> {
   parseContentLength(response);
-  if (!response.body) throw new Error("Wahoo activity file response has no body");
+  if (!response.body) {
+    throw new WahooIntegrationError({ kind: "activity_invalid", scope: "activity" });
+  }
 
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -350,7 +372,7 @@ async function readBoundedBody(response: Response): Promise<Uint8Array> {
       if (done) break;
       size += value.byteLength;
       if (size > MAX_ACTIVITY_FILE_BYTES) {
-        throw new Error("Wahoo activity file exceeds the 50 MiB limit");
+        throw new WahooIntegrationError({ kind: "activity_unsupported", scope: "activity" });
       }
       chunks.push(value);
     }
@@ -376,7 +398,9 @@ function providerRevision(summary: WahooWorkoutSummary): string | null {
   const value = summary.updated_at ?? summary.created_at ?? null;
   if (value === null) return null;
   const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) throw new Error("Wahoo activity revision is invalid");
+  if (!Number.isFinite(timestamp)) {
+    throw new WahooIntegrationError({ kind: "activity_invalid", scope: "activity" });
+  }
   return new Date(timestamp).toISOString();
 }
 
@@ -427,6 +451,7 @@ export interface ImportResult {
   activityId?: string;
   error?: string;
   errorCode?: WahooActivityImportErrorCode;
+  failureScope?: "activity" | "job";
   failureReason?:
     | "missing_started_at"
     | "invalid_started_at"
@@ -435,6 +460,15 @@ export interface ImportResult {
   skipped?: boolean;
   reason?: string;
 }
+
+type WahooActivityImportOptions = {
+  integrationGeneration: number;
+  integrationId: string;
+  signal?: AbortSignal;
+  importRunId?: string;
+  deferAthleteStateRefresh?: boolean;
+  deferPerformanceCalibration?: boolean;
+};
 
 export function getWahooActivityStartedAtFailureReason(
   value: unknown,
@@ -494,14 +528,22 @@ export class WahooActivityImporter {
   async importWorkoutSummary(
     wahooUserId: number,
     summary: WahooWorkoutSummary,
-    options: {
-      integrationGeneration: number;
-      integrationId: string;
-      signal?: AbortSignal;
-      importRunId?: string;
-      deferAthleteStateRefresh?: boolean;
-      deferPerformanceCalibration?: boolean;
-    },
+    options: WahooActivityImportOptions,
+  ): Promise<ImportResult> {
+    const result = await this.importWorkoutSummaryInternal(wahooUserId, summary, options);
+    if (!result.success && result.failureScope) {
+      Object.defineProperty(result, "failureScope", {
+        enumerable: false,
+        value: result.failureScope,
+      });
+    }
+    return result;
+  }
+
+  private async importWorkoutSummaryInternal(
+    wahooUserId: number,
+    summary: WahooWorkoutSummary,
+    options: WahooActivityImportOptions,
   ): Promise<ImportResult> {
     let ownedStagePath: string | null = null;
     let completed = false;
@@ -517,6 +559,7 @@ export class WahooActivityImporter {
         });
         return {
           success: false,
+          failureScope: "activity",
           error:
             startedAtFailureReason === "missing_started_at"
               ? "Wahoo workout summary is missing its start time"
@@ -539,13 +582,18 @@ export class WahooActivityImporter {
         return {
           success: false,
           error: "Wahoo integration is unavailable",
+          failureScope: "job",
         };
       }
       if (
         integration.integrationId !== options.integrationId ||
         integration.integrationGeneration !== options.integrationGeneration
       ) {
-        return { success: false, error: "Wahoo integration generation is inactive" };
+        return {
+          success: false,
+          error: "Wahoo integration generation is inactive",
+          failureScope: "job",
+        };
       }
       const incomingProviderRevision = providerRevision(summary);
       const beforePersist = (tx: ActivitySubmissionTransaction) =>
@@ -580,6 +628,7 @@ export class WahooActivityImporter {
           return {
             success: false,
             error: "Provider activity identity is owned by another profile",
+            failureScope: "activity",
           };
         }
 
@@ -588,6 +637,7 @@ export class WahooActivityImporter {
             success: false,
             error: "Wahoo activity has a non-current materializer version",
             errorCode: "unsupported_persisted_version",
+            failureScope: "activity",
             failureReason: "unsupported_persisted_version",
           };
         }
@@ -597,6 +647,7 @@ export class WahooActivityImporter {
         return {
           success: false,
           error: "Provider activity identity is owned by another profile",
+          failureScope: "activity",
         };
       }
       // 3. Find linked planned activity event (if any)
@@ -646,6 +697,7 @@ export class WahooActivityImporter {
         return {
           success: false,
           error: "Wahoo activity file could not be imported",
+          failureScope: "activity",
         };
       }
 
@@ -801,6 +853,7 @@ export class WahooActivityImporter {
             success: false,
             error: "Wahoo activity has non-current persisted versions",
             errorCode: "unsupported_persisted_version",
+            failureScope: "activity",
             failureReason: "unsupported_persisted_version",
           };
         }
@@ -829,6 +882,7 @@ export class WahooActivityImporter {
             success: false,
             error: "Wahoo activity persistence failed",
             errorCode,
+            failureScope: ACTIVITY_SCOPED_IMPORT_ERROR_CODES.has(errorCode) ? "activity" : "job",
           };
         }
         // The provider/external-id constraint is the race-safe idempotency authority.
@@ -876,12 +930,14 @@ export class WahooActivityImporter {
             success: false,
             error: "Wahoo activity persistence failed",
             errorCode: "activity_persistence_failed",
+            failureScope: "job",
           };
         }
         if (concurrentImport) {
           return {
             success: false,
             error: "Provider activity identity is owned by another profile",
+            failureScope: "activity",
           };
         }
         logger.warn(WAHOO_ACTIVITY_IMPORT_FAILURE_MESSAGES.persist_activity, {
@@ -890,10 +946,12 @@ export class WahooActivityImporter {
           provider: "wahoo",
           ...safeWahooImportErrorDetails(insertError, classifyWahooPersistenceError(insertError)),
         });
+        const errorCode = classifyWahooPersistenceError(insertError);
         return {
           success: false,
           error: "Wahoo activity persistence failed",
-          errorCode: classifyWahooPersistenceError(insertError),
+          errorCode,
+          failureScope: ACTIVITY_SCOPED_IMPORT_ERROR_CODES.has(errorCode) ? "activity" : "job",
         };
       }
 
@@ -933,10 +991,28 @@ export class WahooActivityImporter {
           failureReason: "unsupported_activity_file",
         };
       }
+      if (options.signal?.aborted) throw error;
+      if (
+        stage === "load_artifact" &&
+        error instanceof WahooIntegrationError &&
+        error.failure.scope === "job"
+      ) {
+        return {
+          success: false,
+          error: "Wahoo activity file could not be imported",
+          failureScope: "job",
+        };
+      }
       return {
         success: false,
         error: "Wahoo activity import failed",
         errorCode: "activity_import_failed",
+        failureScope:
+          error instanceof WahooIntegrationError && error.failure.scope === "activity"
+            ? "activity"
+            : stage === "build_activity"
+              ? "activity"
+              : "job",
       };
     } finally {
       if (!completed && ownedStagePath && this.deps.activityFileStorage.removeOwnedActivityFile) {
@@ -1035,7 +1111,8 @@ export class WahooActivityImporter {
       const abortFromCaller = () => controller.abort(signal?.reason);
       signal?.addEventListener("abort", abortFromCaller, { once: true });
       const timeout = setTimeout(
-        () => controller.abort(new Error("Download timed out")),
+        () =>
+          controller.abort(new WahooIntegrationError({ kind: "request_timeout", scope: "job" })),
         ACTIVITY_FILE_DOWNLOAD_TIMEOUT_MS,
       );
       let bytes: Uint8Array;
@@ -1060,6 +1137,24 @@ export class WahooActivityImporter {
             provider: "wahoo",
             status: response.status,
           });
+          if (response.status === 401 || response.status === 403) {
+            throw new WahooIntegrationError(
+              { kind: "authorization", scope: "job" },
+              { status: response.status },
+            );
+          }
+          if (response.status === 429) {
+            throw new WahooIntegrationError(
+              { kind: "rate_limited", scope: "job" },
+              { status: response.status },
+            );
+          }
+          if (response.status >= 500) {
+            throw new WahooIntegrationError(
+              { kind: "provider_unavailable", scope: "job" },
+              { status: response.status },
+            );
+          }
           return null;
         }
         bytes = await readBoundedBody(response);
@@ -1097,7 +1192,7 @@ export class WahooActivityImporter {
           outcome: "failure",
           provider: "wahoo",
         });
-        return null;
+        throw new WahooIntegrationError({ kind: "import_unavailable", scope: "job" });
       }
       if (!(await stagingReservation.recordOutcome("committed"))) {
         logger.warn("Wahoo activity file outcome is uncertain", {
@@ -1105,7 +1200,7 @@ export class WahooActivityImporter {
           outcome: "uncertain",
           provider: "wahoo",
         });
-        return null;
+        throw new WahooIntegrationError({ kind: "import_unavailable", scope: "job" });
       }
 
       return {
@@ -1121,7 +1216,11 @@ export class WahooActivityImporter {
         outcome: "failure",
         provider: "wahoo",
       });
-      return null;
+      if (error instanceof WahooIntegrationError) {
+        if (error.failure.scope === "activity") return null;
+        throw error;
+      }
+      throw new WahooIntegrationError({ kind: "import_unavailable", scope: "job" });
     }
   }
 

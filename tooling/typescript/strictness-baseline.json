@@ -7,7 +7,6 @@
     "packages/api/tsconfig.json",
     "packages/auth/tsconfig.json",
     "packages/core/tsconfig.json",
-    "packages/db/supabase/tsconfig.json",
     "packages/db/tsconfig.json",
     "packages/ui/tsconfig.json",
     "tooling/tailwindcss/tsconfig.json"
@@ -32,10 +31,6 @@
     {
       "flag": "exactOptionalPropertyTypes",
       "project": "packages/core/tsconfig.json"
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "packages/db/supabase/tsconfig.json"
     },
     {
       "flag": "exactOptionalPropertyTypes",

@@ -2,7 +2,7 @@ import { CURRENT_CONTRACT_EPOCH } from "@repo/api/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  CONTRACT_EPOCH_DATABASE_DELETE_TIMEOUT_MS,
+  CONTRACT_EPOCH_RECORDING_RECOVERY_KEY,
   CONTRACT_EPOCH_RESET_TIMEOUT_MS,
   CONTRACT_EPOCH_STORAGE_KEY,
   ensureCurrentBrowserContractEpoch,
@@ -47,7 +47,7 @@ describe("ensureCurrentContractEpoch", () => {
     expect(sessionStorage.removeItem).not.toHaveBeenCalled();
   });
 
-  it("hard-resets known product persistence and records the epoch last", async () => {
+  it("resets safe browser state without deleting recorder databases or tab ownership", async () => {
     const localStorage = createStorage({
       [CONTRACT_EPOCH_STORAGE_KEY]: "0",
       "gradientpeak-theme-store": "dark",
@@ -57,30 +57,45 @@ describe("ensureCurrentContractEpoch", () => {
       "gradientpeak.recording.instance-id": "tab-1",
       auth_session: "preserved",
     });
-    const calls: string[] = [];
-    const deleteDatabase = vi.fn(async (name: string) => {
-      calls.push(`delete:${name}`);
-    });
-    localStorage.setItem.mockImplementation((key: string, _value: string) => {
-      calls.push(`set:${key}`);
-      return undefined;
-    });
+    const deleteDatabase = vi.fn(async () => undefined);
 
     await expect(
-      ensureCurrentContractEpoch({ localStorage, sessionStorage, deleteDatabase }),
+      ensureCurrentContractEpoch({
+        localStorage,
+        sessionStorage,
+        deleteDatabase,
+        listDatabaseNames: async () => [
+          LEGACY_WEB_RECORDING_DATABASE_NAME,
+          `${WEB_RECORDING_DATABASE_PREFIX}0`,
+          WEB_RECORDING_DATABASE_NAME,
+        ],
+      }),
     ).resolves.toBe(true);
 
-    expect(deleteDatabase).toHaveBeenCalledWith(LEGACY_WEB_RECORDING_DATABASE_NAME);
-    expect(deleteDatabase).toHaveBeenCalledWith(`${WEB_RECORDING_DATABASE_PREFIX}0`);
-    expect(deleteDatabase).toHaveBeenCalledWith(WEB_RECORDING_DATABASE_NAME);
+    expect(deleteDatabase).not.toHaveBeenCalled();
     expect(localStorage.removeItem).toHaveBeenCalledWith("gradientpeak-theme-store");
+    expect(sessionStorage.removeItem).not.toHaveBeenCalledWith(
+      "gradientpeak.recording.instance-id",
+    );
+    expect(sessionStorage.getItem("gradientpeak.recording.instance-id")).toBe("tab-1");
     expect(localStorage.getItem("auth_session")).toBe("preserved");
     expect(sessionStorage.getItem("auth_session")).toBe("preserved");
-    expect(calls.at(-1)).toBe(`set:${CONTRACT_EPOCH_STORAGE_KEY}`);
+    expect(
+      JSON.parse(localStorage.getItem(CONTRACT_EPOCH_RECORDING_RECOVERY_KEY) ?? "null"),
+    ).toEqual({
+      previousEpoch: "0",
+      detection: "detected",
+      detectedDatabaseNames: [
+        LEGACY_WEB_RECORDING_DATABASE_NAME,
+        `${WEB_RECORDING_DATABASE_PREFIX}0`,
+        WEB_RECORDING_DATABASE_NAME,
+      ],
+    });
+    expect(localStorage.setItem.mock.calls.at(-1)?.[0]).toBe(CONTRACT_EPOCH_STORAGE_KEY);
   });
 
-  it("deletes numeric prior-epoch databases when enumeration is unavailable", async () => {
-    const localStorage = createStorage();
+  it("preserves possible prior-epoch recording data when enumeration is unavailable", async () => {
+    const localStorage = createStorage({ [CONTRACT_EPOCH_STORAGE_KEY]: "0" });
     const sessionStorage = createStorage();
     const deleteDatabase = vi.fn(async () => undefined);
 
@@ -88,10 +103,17 @@ describe("ensureCurrentContractEpoch", () => {
       ensureCurrentContractEpoch({ localStorage, sessionStorage, deleteDatabase }),
     ).resolves.toBe(true);
 
-    expect(deleteDatabase).toHaveBeenCalledWith(`${WEB_RECORDING_DATABASE_PREFIX}0`);
+    expect(deleteDatabase).not.toHaveBeenCalled();
+    expect(
+      JSON.parse(localStorage.getItem(CONTRACT_EPOCH_RECORDING_RECOVERY_KEY) ?? "null"),
+    ).toEqual({
+      previousEpoch: "0",
+      detection: "unknown",
+      detectedDatabaseNames: [],
+    });
   });
 
-  it("deletes enumerated preview-epoch databases without touching unrelated storage", async () => {
+  it("preserves enumerated preview-epoch databases and ignores unrelated storage", async () => {
     const localStorage = createStorage();
     const sessionStorage = createStorage();
     const deleteDatabase = vi.fn(async () => undefined);
@@ -110,23 +132,31 @@ describe("ensureCurrentContractEpoch", () => {
       }),
     ).resolves.toBe(true);
 
-    expect(deleteDatabase).toHaveBeenCalledWith(`${WEB_RECORDING_DATABASE_PREFIX}previous-preview`);
+    expect(deleteDatabase).not.toHaveBeenCalled();
     expect(deleteDatabase).not.toHaveBeenCalledWith("unrelated-database");
+    expect(localStorage.getItem(CONTRACT_EPOCH_RECORDING_RECOVERY_KEY)).toContain(
+      `${WEB_RECORDING_DATABASE_PREFIX}previous-preview`,
+    );
   });
 
-  it("does not write the marker when a database deletion is blocked", async () => {
-    const localStorage = createStorage();
+  it("preserves queued saves in the current recorder database on epoch mismatch", async () => {
+    const localStorage = createStorage({ [CONTRACT_EPOCH_STORAGE_KEY]: "0" });
     const sessionStorage = createStorage();
+    const deleteDatabase = vi.fn();
 
     await expect(
       ensureCurrentContractEpoch({
         localStorage,
         sessionStorage,
-        deleteDatabase: vi.fn().mockRejectedValue(new Error("blocked")),
+        deleteDatabase,
+        listDatabaseNames: async () => [WEB_RECORDING_DATABASE_NAME],
       }),
-    ).rejects.toThrow("blocked");
+    ).resolves.toBe(true);
 
-    expect(localStorage.setItem).not.toHaveBeenCalled();
+    expect(deleteDatabase).not.toHaveBeenCalled();
+    expect(localStorage.getItem(CONTRACT_EPOCH_RECORDING_RECOVERY_KEY)).toContain(
+      WEB_RECORDING_DATABASE_NAME,
+    );
   });
 
   it("turns unavailable browser storage into a rejected bootstrap promise", async () => {
@@ -144,26 +174,6 @@ describe("ensureCurrentContractEpoch", () => {
       bootstrap = ensureCurrentBrowserContractEpoch();
     }).not.toThrow();
     await expect(bootstrap).rejects.toBe(storageError);
-  });
-
-  it("rejects when the browser never completes a database deletion", async () => {
-    vi.useFakeTimers();
-    const localStorage = createStorage();
-    const sessionStorage = createStorage();
-    const request = {} as IDBOpenDBRequest;
-    vi.stubGlobal("window", { localStorage, sessionStorage });
-    vi.stubGlobal("indexedDB", {
-      deleteDatabase: vi.fn(() => request),
-    });
-
-    const bootstrap = ensureCurrentBrowserContractEpoch();
-    const rejection = expect(bootstrap).rejects.toThrow(
-      `Timed out deleting ${LEGACY_WEB_RECORDING_DATABASE_NAME}`,
-    );
-    await vi.advanceTimersByTimeAsync(CONTRACT_EPOCH_DATABASE_DELETE_TIMEOUT_MS);
-    await rejection;
-
-    expect(localStorage.setItem).not.toHaveBeenCalled();
   });
 
   it("bounds the entire reset when listing browser databases never completes", async () => {

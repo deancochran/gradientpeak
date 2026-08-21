@@ -127,7 +127,7 @@ describe("calendar event presentation", () => {
     expect(getEventStatusLabel(event)).toBeNull();
   });
 
-  it("omits missing canonical load instead of exposing legacy metrics", () => {
+  it("normalizes missing planned metrics to zero instead of exposing legacy metrics", () => {
     const event = {
       id: "planned-external-load",
       event_type: "planned",
@@ -137,7 +137,12 @@ describe("calendar event presentation", () => {
       },
     };
 
-    expect(getEventPrimaryMeta(event)).toEqual(["Run"]);
+    expect(getEventPrimaryMeta(event)).toEqual([
+      "Run",
+      "0m",
+      "Common Load 0",
+      "Normalized intensity 0.00",
+    ]);
     expect(getEventPrimaryMeta(event).join(" ")).not.toMatch(/TSS|\bIF\b/);
   });
 

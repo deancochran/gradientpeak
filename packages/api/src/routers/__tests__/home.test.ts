@@ -457,7 +457,16 @@ describe("homeRouter", () => {
       asOf: "2026-04-03T12:00:00.000Z",
       publishedRevision: 1,
       algorithmVersion: "athlete-state-projection-v1",
-      currentBaseline: { currentPlanningDate: "2026-04-03", planningTimezone: "UTC" },
+      currentBaseline: {
+        baseline: {
+          asOf: "2026-04-03T00:00:00.000Z",
+          loadBalance: -4,
+          longTermLoad: 40,
+          recentLoad: 44,
+        },
+        currentPlanningDate: "2026-04-03",
+        planningTimezone: "UTC",
+      },
       activityAnalytics: { status: "unavailable", reason: "row_limit_exceeded" },
       loadHistory: {
         publishedRevision: 1,
@@ -477,6 +486,7 @@ describe("homeRouter", () => {
       version: "1",
       sourceCounts: { activities: 0, events: 0 },
     });
+    homeMocks.getLoadBalanceStatus.mockReturnValue("negative_balance");
   });
 
   afterEach(() => {
@@ -524,6 +534,12 @@ describe("homeRouter", () => {
       publishedRevision: 1,
       algorithmVersion: "athlete-state-projection-v1",
       currentBaseline: {
+        baseline: {
+          asOf: "2026-04-03T00:00:00.000Z",
+          loadBalance: -4,
+          longTermLoad: 40,
+          recentLoad: 44,
+        },
         currentPlanningDate: "2026-04-03",
         planningTimezone: "UTC",
         planningContext: {
@@ -763,24 +779,21 @@ describe("homeRouter", () => {
       id: "plan-1",
       name: "Build Block",
     });
+    expect(result.currentLoadStatus).toEqual({
+      coverageStatus: "partial",
+      loadBalance: -4,
+      loadBalanceStatus: "negative_balance",
+      longTermLoad: 40,
+      maturity: "provisional",
+      recentLoad: 44,
+    });
     expect(result).not.toHaveProperty("currentStatus");
     expect(result.consistency).toEqual({ streak: 2, weeklyCount: 2 });
     expect(result.weeklySummary).toMatchObject({
       actual: { distance: 25, duration: 5400, load: 80, loadComplete: true, count: 2 },
       planned: { distance: 32, duration: 6000, load: 150, loadComplete: true, count: 2 },
       adherence: 53,
-      commonLoad: {
-        actual: {
-          status: "complete",
-          load: 80,
-          totalActivityCount: 3,
-          contributingActivityCount: 3,
-          activityCountCoverage: 1,
-        },
-        planned: { status: "complete", load: 150 },
-      },
       observationQuantification: { summary: { kind: "aggregate" } },
-      prescriptionQuantification: { summary: { kind: "aggregate" } },
     });
     expect(result.weeklySummary.actual).not.toHaveProperty("tss");
     expect(result.weeklySummary.actual).not.toHaveProperty("tssComplete");

@@ -3,6 +3,7 @@ import { createActivityQuantificationBundle } from "../test-support/activity-qua
 
 import {
   describeTrainingPlanSessions,
+  formatActivityPlanProjectionMetrics,
   getActivityPlanMetricSummary,
 } from "./activity-plan-presentation";
 
@@ -25,13 +26,7 @@ describe("activity plan presentation", () => {
       getActivityPlanMetricSummary({
         prescriptionQuantification: quantification,
       }),
-    ).toEqual([
-      "Common Load 88.2 · Derived",
-      "Normalized intensity 0.84 · Derived from Common Load",
-      "Prescribed intensity 84% FTP · Prescribed",
-      "1h 15m",
-      "12.5 km",
-    ]);
+    ).toEqual(["1h 15m", "12.5 km", "Personalized load 88.2", "Calculated intensity 0.84"]);
   });
 
   it("presents bundle summaries with derived evidence", () => {
@@ -39,16 +34,10 @@ describe("activity plan presentation", () => {
       getActivityPlanMetricSummary({
         prescriptionQuantification: quantification,
       }),
-    ).toEqual([
-      "Common Load 88.2 · Derived",
-      "Normalized intensity 0.84 · Derived from Common Load",
-      "Prescribed intensity 84% FTP · Prescribed",
-      "1h 15m",
-      "12.5 km",
-    ]);
+    ).toEqual(["1h 15m", "12.5 km", "Personalized load 88.2", "Calculated intensity 0.84"]);
   });
 
-  it("keeps unavailable values explicit and preserves native structure targets", () => {
+  it("omits unavailable estimates and never outlines authored step targets", () => {
     expect(
       getActivityPlanMetricSummary({
         structure: {
@@ -78,10 +67,29 @@ describe("activity plan presentation", () => {
           ],
         },
       }),
-    ).toEqual([
-      "Common Load unavailable",
-      "Normalized intensity unavailable",
-      "Prescribed intensity RPE 7 · Prescribed",
-    ]);
+    ).toEqual([]);
+  });
+
+  it("formats card summaries without zero substitution or step-target text", () => {
+    expect(
+      formatActivityPlanProjectionMetrics([
+        {
+          key: "elapsed_duration",
+          label: "Duration",
+          status: "partial",
+          value: 900,
+          unit: "seconds",
+          reason: "incomplete_members",
+        },
+        {
+          key: "common_load",
+          label: "Load",
+          status: "unavailable",
+          value: null,
+          unit: "score",
+          reason: "no_load_data",
+        },
+      ]),
+    ).toEqual(["Duration 15m 0s known (partial)"]);
   });
 });

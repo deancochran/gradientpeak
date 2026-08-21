@@ -1,5 +1,6 @@
 import type {
   GroupAccessLevel,
+  GroupEventRsvpStatus,
   GroupJoinPolicy,
   GroupMembershipRole,
   GroupMembershipStatus,
@@ -20,14 +21,21 @@ import {
   isGroupOwner,
 } from "./permissions";
 
-export function isGroupEventGoing(input: {
-  occurrenceStatus?: string | null;
-  seriesStatus?: string | null;
-}): boolean {
+export function resolveGroupEventRsvpStatus(input: {
+  occurrenceStatus?: GroupEventRsvpStatus | null;
+  seriesStatus?: GroupEventRsvpStatus | null;
+}): GroupEventRsvpStatus | null {
   if (input.occurrenceStatus !== null && input.occurrenceStatus !== undefined) {
-    return input.occurrenceStatus !== "declined";
+    return input.occurrenceStatus;
   }
-  return input.seriesStatus !== "declined";
+  return input.seriesStatus ?? null;
+}
+
+export function isGroupEventGoing(input: {
+  occurrenceStatus?: GroupEventRsvpStatus | null;
+  seriesStatus?: GroupEventRsvpStatus | null;
+}): boolean {
+  return resolveGroupEventRsvpStatus(input) !== "declined";
 }
 
 export type GroupViewerState = {

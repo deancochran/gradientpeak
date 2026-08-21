@@ -25,10 +25,15 @@ const projection = {
         date: "2026-04-13",
         load: {
           plannedLoad: 60,
+          plannedLoadStatus: "complete" as const,
           scheduledLoad: 40,
-          completedLoad: 20,
+          scheduledLoadStatus: "complete" as const,
+          completedLoad: 15,
+          completedLoadStatus: "complete" as const,
           remainingLoad: 25,
+          remainingLoadStatus: "complete" as const,
           recommendedLoad: 60,
+          recommendedLoadStatus: "complete" as const,
           deltaLoad: -25,
         },
         scheduledItems: [
@@ -38,6 +43,7 @@ const projection = {
             date: "2026-04-13",
             title: "Tempo ride",
             plannedLoad: 40,
+            plannedLoadStatus: "complete" as const,
             status: "planned" as const,
           },
         ],
@@ -47,7 +53,8 @@ const projection = {
             source: "completed_activity" as const,
             date: "2026-04-13",
             title: "Morning ride",
-            completedLoad: 20,
+            completedLoad: 15,
+            completedLoadStatus: "complete" as const,
           },
         ],
         annotations: [],
@@ -57,10 +64,15 @@ const projection = {
         date: "2026-04-14",
         load: {
           plannedLoad: 0,
+          plannedLoadStatus: "known_zero" as const,
           scheduledLoad: 0,
+          scheduledLoadStatus: "known_zero" as const,
           completedLoad: 0,
+          completedLoadStatus: "known_zero" as const,
           remainingLoad: 0,
+          remainingLoadStatus: "known_zero" as const,
           recommendedLoad: 0,
+          recommendedLoadStatus: "known_zero" as const,
           deltaLoad: 0,
         },
         scheduledItems: [],
@@ -78,11 +90,11 @@ const projection = {
       intensity: 0.7,
       contributingDurationSeconds: 7200,
       completedLoadStatus: "complete" as const,
-      completedLoad: 20,
+      completedLoad: 15,
       scheduledLoadStatus: "complete" as const,
-      scheduledLoad: 60,
+      scheduledLoad: 40,
       remainingLoadStatus: "complete" as const,
-      remainingLoad: 40,
+      remainingLoad: 25,
       hasUnavailableCompletedLoad: false,
       recommendedLoadStatus: "complete" as const,
       recommendedLoad: 60,
@@ -128,7 +140,7 @@ const projection = {
       kind: "completed" as const,
       title: "Morning ride",
       loadStatus: "complete" as const,
-      load: 20,
+      load: 15,
       intensityStatus: "complete" as const,
       intensity: 0.7,
       contributingDurationStatus: "complete" as const,
@@ -169,14 +181,14 @@ describe("planning ledger", () => {
     });
 
     expect(range.days[0]).toMatchObject({
-      actual: { status: "complete", value: 20 },
-      committed: { status: "complete", value: 40 },
+      actual: { status: "complete", value: 15 },
+      committed: { status: "complete", value: 25 },
       target: { status: "complete", value: 60 },
       effective: { status: "complete", value: 60 },
     });
     expect(range.weeks[0]).toMatchObject({
-      actual: { value: 20 },
-      committed: { value: 40 },
+      actual: { value: 15 },
+      committed: { value: 25 },
       target: { value: 60 },
       effective: { value: 60 },
     });
@@ -290,9 +302,9 @@ describe("planning ledger", () => {
     });
 
     expect(result.load).toMatchObject({
-      completed: { status: "complete", value: 20 },
-      planned: { status: "complete", value: 40 },
-      remaining: { status: "complete", value: 40 },
+      completed: { status: "complete", value: 15 },
+      planned: { status: "complete", value: 25 },
+      remaining: { status: "complete", value: 25 },
       effective: { status: "complete", value: 60 },
     });
     expect(result.contractVersion).toBe("planning-ledger-v3");
@@ -302,9 +314,9 @@ describe("planning ledger", () => {
       completed: { status: "known_zero", value: 0 },
     });
     expect(result.dailyBreakdown[0]).toMatchObject({
-      completed: { status: "complete", value: 20 },
-      planned: { status: "complete", value: 40 },
-      remaining: { status: "complete", value: 40 },
+      completed: { status: "complete", value: 15 },
+      planned: { status: "complete", value: 25 },
+      remaining: { status: "complete", value: 25 },
     });
     expect(result.dailyBreakdown[0]).not.toHaveProperty("tentative");
     expect(result.trainingState.planned.fitness).toEqual({
@@ -328,13 +340,15 @@ describe("planning ledger", () => {
     expect(result.modelContext).toMatchObject({ publishedRevision: 7 });
   });
 
-  it("does not turn missing period data into known zero", () => {
+  it("does not turn a missing period into a known-zero rest day", () => {
     const result = buildPlanningLedger({
       projection: { ...projection, timeline: null, dayLoads: {} },
       request: { period: "day", anchorDate: "2026-04-15" },
     });
 
     expect(result.load.completed).toEqual({ status: "unavailable", value: null });
+    expect(result.load.planned).toEqual({ status: "unavailable", value: null });
+    expect(result.load.remaining).toEqual({ status: "unavailable", value: null });
     expect(result.load.effective).toEqual({ status: "unavailable", value: null });
   });
 
@@ -379,6 +393,7 @@ describe("planning ledger", () => {
     expect(result.entries[0]).toMatchObject({
       id: "planned-first",
       kind: "planned",
+      load: { status: "partial", value: 35 },
       intensity: { status: "partial", value: 0.65 },
     });
     expect(result.entries.at(-1)?.id).toBe("planned-498");
@@ -462,9 +477,9 @@ describe("planning ledger", () => {
 
     const query = new PgDialect().sqlToQuery(whereCondition as never);
     expect(query.sql).toContain('"group_memberships"."status" =');
-    expect(query.sql).toContain('coalesce("group_event_rsvps"."status" <>');
-    expect(query.sql).toContain('case when "group_event_rsvps"."profile_id" is not null');
-    expect(query.sql).toContain('"group_event_series_rsvps"."status" <>');
+    expect(query.sql).toContain('coalesce("group_event_rsvps"."status"');
+    expect(query.sql).toContain('"group_event_series_rsvps"."status"');
+    expect(query.sql).toContain("'going'");
     expect(query.params).toEqual(
       expect.arrayContaining(["profile-1", "active", "2026-04-13", "2026-04-20"]),
     );

@@ -4,6 +4,7 @@ import {
   MAX_TRAINING_STIMULUS_COMMON_LOAD,
 } from "@repo/core/athlete-intelligence";
 import type { PlannedSessionPrescriptionSnapshot } from "@repo/core/calendar";
+import { GROUP_EVENT_RSVP_STATUSES } from "@repo/core/groups";
 import { type PreferredUnitSystem, preferredUnitSystemValues } from "@repo/core/units";
 import { sql } from "drizzle-orm";
 import {
@@ -28,10 +29,10 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { users } from "../auth-schema";
-import { canonicalActivityCategoryDbValues } from "./canonical-activity-categories";
 import { athleteReadScopeDbValues, organizationRoleKeyDbValues } from "./core-enum-parity";
 
 import {
+  activityCategoryEnum,
   activityEffortSourceSeriesEnum,
   activityFileIngestionSourceEnum,
   activityFileIngestionStatusEnum,
@@ -182,9 +183,7 @@ export const profilePerformanceEstimates = pgTable(
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
     capability_kind: text("capability_kind").notNull(),
-    activity_category: text("activity_category", {
-      enum: canonicalActivityCategoryDbValues,
-    }).notNull(),
+    activity_category: activityCategoryEnum("activity_category").notNull(),
     value: numeric("value", { mode: "number" }).notNull(),
     unit: text("unit").notNull(),
     confidence: numeric("confidence", { mode: "number" }).notNull(),
@@ -214,10 +213,6 @@ export const profilePerformanceEstimates = pgTable(
     check(
       "profile_performance_estimates_confidence_check",
       sql`${table.confidence} between 0 and 1`,
-    ),
-    check(
-      "profile_performance_estimates_category_check",
-      sql`${table.activity_category} in ('run', 'bike', 'swim', 'strength', 'other')`,
     ),
     check(
       "profile_performance_estimates_algorithm_check",
@@ -1046,7 +1041,7 @@ export const groupEventRsvps = pgTable(
     profile_id: uuid("profile_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
-    status: text("status", { enum: ["declined"] }).notNull(),
+    status: text("status", { enum: GROUP_EVENT_RSVP_STATUSES }).notNull(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -1056,8 +1051,7 @@ export const groupEventRsvps = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.group_event_id, table.profile_id] }),
-    index("group_event_rsvps_profile_status_idx").on(table.profile_id, table.status),
-    check("group_event_rsvps_status_check", sql`${table.status} = 'declined'`),
+    check("group_event_rsvps_status_check", sql`${table.status} in ('going', 'declined')`),
   ],
 );
 
@@ -1070,7 +1064,7 @@ export const groupEventSeriesRsvps = pgTable(
     profile_id: uuid("profile_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
-    status: text("status", { enum: ["declined"] }).notNull(),
+    status: text("status", { enum: GROUP_EVENT_RSVP_STATUSES }).notNull(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -1080,8 +1074,7 @@ export const groupEventSeriesRsvps = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.group_event_series_id, table.profile_id] }),
-    index("group_event_series_rsvps_profile_status_idx").on(table.profile_id, table.status),
-    check("group_event_series_rsvps_status_check", sql`${table.status} = 'declined'`),
+    check("group_event_series_rsvps_status_check", sql`${table.status} in ('going', 'declined')`),
   ],
 );
 
@@ -1305,6 +1298,18 @@ export const contentAccessGrants = pgTable(
     index("idx_content_access_grants_actor_profile_id")
       .on(table.actor_profile_id)
       .where(sql`${table.actor_profile_id} is not null`),
+    check(
+      "content_access_grants_content_type_check",
+      sql`${table.content_type} in ('profile', 'event', 'activity_plan', 'activity_route', 'training_plan')`,
+    ),
+    check(
+      "content_access_grants_access_level_check",
+      sql`${table.access_level} in ('read', 'read_geometry')`,
+    ),
+    check(
+      "content_access_grants_source_type_check",
+      sql`${table.source_type} in ('event', 'training_plan')`,
+    ),
   ],
 );
 
@@ -1391,9 +1396,7 @@ export const activities = pgTable(
     map_bounds: jsonb("map_bounds"),
     performance_target_snapshot: jsonb("performance_target_snapshot"),
     athlete_state_common_load: numeric("athlete_state_common_load", { mode: "number" }),
-    athlete_state_activity_category: text("athlete_state_activity_category", {
-      enum: canonicalActivityCategoryDbValues,
-    }),
+    athlete_state_activity_category: activityCategoryEnum("athlete_state_activity_category"),
     athlete_state_evidence_confidence: numeric("athlete_state_evidence_confidence", {
       mode: "number",
     }),
@@ -1464,21 +1467,6 @@ export const activities = pgTable(
     check(
       "activities_athlete_state_confidence_check",
       sql`${table.athlete_state_evidence_confidence} is null or ${table.athlete_state_evidence_confidence} between 0 and 1`,
-    ),
-  ],
-);
-
-export const canonicalActivityCategories = pgTable(
-  "canonical_activity_categories",
-  {
-    code: text("code").primaryKey(),
-    display_name: text("display_name").notNull(),
-    enabled: boolean("enabled").notNull().default(true),
-  },
-  (table) => [
-    check(
-      "canonical_activity_categories_code_check",
-      sql`${table.code} in ('run', 'bike', 'swim', 'strength', 'other')`,
     ),
   ],
 );
@@ -1599,11 +1587,7 @@ export const activitySegments = pgTable(
     profile_id: uuid("profile_id").notNull(),
     ordinal: integer("ordinal").notNull(),
     role: text("role", { enum: ["activity", "transition", "rest", "unknown"] }).notNull(),
-    activity_category: text("activity_category", {
-      enum: canonicalActivityCategoryDbValues,
-    }).references(() => canonicalActivityCategories.code, {
-      onDelete: "restrict",
-    }),
+    activity_category: activityCategoryEnum("activity_category"),
     start_offset_ms: bigint("start_offset_ms", { mode: "number" }).notNull(),
     end_offset_ms: bigint("end_offset_ms", { mode: "number" }).notNull(),
     source_artifact_id: uuid("source_artifact_id"),
@@ -1793,9 +1777,7 @@ export const activityTrainingEffects = pgTable(
     source_revision: bigint("source_revision", { mode: "number" }).notNull(),
     calculation_version: text("calculation_version").notNull(),
     input_fingerprint: text("input_fingerprint").notNull(),
-    activity_category: text("activity_category", { enum: canonicalActivityCategoryDbValues })
-      .notNull()
-      .references(() => canonicalActivityCategories.code, { onDelete: "restrict" }),
+    activity_category: activityCategoryEnum("activity_category").notNull(),
     common_load: numeric("common_load", { mode: "number" }).notNull(),
     evidence_confidence: numeric("evidence_confidence", { mode: "number" }).notNull(),
     capability_observation:
@@ -2207,9 +2189,7 @@ export const activityEfforts = pgTable(
       .references(() => activities.id, { onDelete: "cascade" }),
     segment_id: uuid("segment_id").notNull(),
     recorded_at: timestamp("recorded_at", { withTimezone: true, mode: "date" }).notNull(),
-    activity_category: text("activity_category", { enum: canonicalActivityCategoryDbValues })
-      .notNull()
-      .references(() => canonicalActivityCategories.code, { onDelete: "restrict" }),
+    activity_category: activityCategoryEnum("activity_category").notNull(),
     effort_type: effortTypeEnum("effort_type").notNull(),
     source_series: activityEffortSourceSeriesEnum("source_series").notNull(),
     duration_seconds: integer("duration_seconds").notNull(),
@@ -2347,9 +2327,7 @@ export const thresholdEvaluations = pgTable(
     profile_id: uuid("profile_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
-    activity_category: text("activity_category", { enum: canonicalActivityCategoryDbValues })
-      .notNull()
-      .references(() => canonicalActivityCategories.code, { onDelete: "restrict" }),
+    activity_category: activityCategoryEnum("activity_category").notNull(),
     metric: thresholdMetricEnum("metric").notNull(),
     method: text("method").notNull(),
     outcome: thresholdEvaluationOutcomeEnum("outcome").notNull(),
@@ -2442,9 +2420,7 @@ export const thresholdEvaluationEfforts = pgTable(
     evaluation_id: uuid("evaluation_id").notNull(),
     effort_id: uuid("effort_id").notNull(),
     profile_id: uuid("profile_id").notNull(),
-    activity_category: text("activity_category", { enum: canonicalActivityCategoryDbValues })
-      .notNull()
-      .references(() => canonicalActivityCategories.code, { onDelete: "restrict" }),
+    activity_category: activityCategoryEnum("activity_category").notNull(),
     activity_id: uuid("activity_id").notNull(),
     source_revision: integer("source_revision").notNull(),
     metric: thresholdMetricEnum("metric").notNull(),
@@ -2520,9 +2496,7 @@ export const thresholds = pgTable(
     profile_id: uuid("profile_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
-    activity_category: text("activity_category", { enum: canonicalActivityCategoryDbValues })
-      .notNull()
-      .references(() => canonicalActivityCategories.code, { onDelete: "restrict" }),
+    activity_category: activityCategoryEnum("activity_category").notNull(),
     metric: thresholdMetricEnum("metric").notNull(),
     evaluation_id: uuid("evaluation_id").notNull(),
     evaluation_outcome: thresholdEvaluationOutcomeEnum("evaluation_outcome")
@@ -2617,7 +2591,7 @@ export const thresholdEvidence = pgTable(
     contract_version: text("contract_version")
       .notNull()
       .default("athlete-derived-state-persistence-v1"),
-    activity_category: text("activity_category", { enum: ["bike", "run", "swim"] }).notNull(),
+    activity_category: activityCategoryEnum("activity_category").notNull(),
     metric: thresholdMetricEnum("metric").notNull(),
     unit: text("unit", { enum: ["watts", "meters_per_second"] }).notNull(),
     method: text("method", {
@@ -2952,7 +2926,7 @@ export const profileGoals = pgTable(
       .references(() => profiles.id),
     title: text("title").notNull(),
     priority: integer("priority").notNull(),
-    activity_category: text("activity_category").notNull(),
+    activity_category: activityCategoryEnum("activity_category").notNull(),
     target_date: date("target_date").notNull(),
     target_payload: jsonb("target_payload").notNull(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
@@ -2966,10 +2940,6 @@ export const profileGoals = pgTable(
     ),
     check("profile_goals_priority_range", sql`${table.priority} between 0 and 10`),
     check(
-      "profile_goals_activity_category_check",
-      sql`${table.activity_category} in ('run', 'bike', 'swim', 'strength', 'other')`,
-    ),
-    check(
       "profile_goals_target_payload_shape_check",
       sql`jsonb_typeof(${table.target_payload}) = 'object'
         and ${table.target_payload} ? 'type'
@@ -2977,7 +2947,7 @@ export const profileGoals = pgTable(
         and ${table.target_payload}->>'type' in ('event_performance', 'threshold', 'completion', 'consistency')
         and (not (${table.target_payload} ? 'activity_category')
           or (jsonb_typeof(${table.target_payload}->'activity_category') = 'string'
-            and ${table.target_payload}->>'activity_category' = ${table.activity_category}))`,
+            and ${table.target_payload}->>'activity_category' = ${table.activity_category}::text))`,
     ),
     check(
       "profile_goals_event_performance_payload_check",
@@ -3602,6 +3572,7 @@ export const follows = pgTable(
   (table) => [
     primaryKey({ columns: [table.follower_id, table.following_id] }),
     index("idx_follows_following_id").on(table.following_id),
+    check("follows_status_check", sql`${table.status} in ('pending', 'accepted')`),
   ],
 );
 
@@ -3639,5 +3610,9 @@ export const comments = pgTable(
     index("idx_comments_entity").on(table.entity_type, table.entity_id),
     index("idx_comments_profile_id").on(table.profile_id, table.created_at),
     index("idx_comments_created_at").on(table.created_at),
+    check(
+      "comments_entity_type_check",
+      sql`${table.entity_type} in ('activity', 'training_plan', 'activity_plan', 'route', 'event')`,
+    ),
   ],
 );

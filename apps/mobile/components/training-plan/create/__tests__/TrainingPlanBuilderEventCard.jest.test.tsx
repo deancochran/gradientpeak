@@ -32,8 +32,22 @@ jest.mock("@/components/shared/ActivityPlanCard", () => ({
 }));
 jest.mock("@/components/training-plan/TrainingPlanEventCard", () => ({
   __esModule: true,
-  TrainingPlanEventCard: ({ onPress, testID }: { onPress?: () => void; testID: string }) =>
-    React.createElement("Pressable", { onPress, testID }),
+  TrainingPlanEventCard: ({
+    metrics,
+    onPress,
+    testID,
+  }: {
+    metrics: Array<{ label: string; value: string }>;
+    onPress?: () => void;
+    testID: string;
+  }) =>
+    React.createElement(
+      "Pressable",
+      { onPress, testID },
+      metrics.map((metric) =>
+        React.createElement("Text", { key: metric.label }, `${metric.label}: ${metric.value}`),
+      ),
+    ),
 }));
 
 const session = {
@@ -98,5 +112,56 @@ describe("TrainingPlanBuilderEventCard actions", () => {
     expect(screen.getByLabelText("Move earlier").props.accessibilityState).toEqual({
       disabled: true,
     });
+  });
+
+  it("renders partial planned estimates as normal zero metrics", () => {
+    renderNative(
+      <TrainingPlanBuilderEventCard
+        event={{
+          ...session,
+          activityPlan: {
+            ...session.activityPlan,
+            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
+              status: "partial",
+            }),
+          },
+        }}
+        onDuplicate={jest.fn()}
+        onEdit={jest.fn()}
+        onMoveByDays={jest.fn()}
+        onRemove={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Duration: 0m")).toBeTruthy();
+    expect(screen.getByText("Common Load: 0")).toBeTruthy();
+    expect(screen.getByText("Normalized intensity: 0.00")).toBeTruthy();
+    expect(screen.queryByText(/partial|unavailable|incomplete/i)).toBeNull();
+  });
+
+  it("does not revive missing canonical estimates from session intent", () => {
+    renderNative(
+      <TrainingPlanBuilderEventCard
+        event={{
+          ...session,
+          intent: {
+            type: "threshold",
+            driver: "completion-duration",
+            targetDurationSeconds: 3_600,
+            targetLoad: 88,
+          },
+        }}
+        estimate={null}
+        onDuplicate={jest.fn()}
+        onEdit={jest.fn()}
+        onMoveByDays={jest.fn()}
+        onRemove={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Duration: 0m")).toBeTruthy();
+    expect(screen.getByText("Common Load: 0")).toBeTruthy();
+    expect(screen.getByText("Normalized intensity: 0.00")).toBeTruthy();
+    expect(screen.queryByText(/60m|88|0\.90/)).toBeNull();
   });
 });

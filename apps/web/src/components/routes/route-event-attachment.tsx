@@ -35,7 +35,8 @@ export function RouteEventAttachment({ routeId }: { routeId: string }) {
     onSuccess: async (event) => {
       await Promise.all([
         utils.calendar.invalidate(),
-        utils.events.getById.invalidate({ id: event.id }),
+        utils.events.getById.invalidate({ id: event.id, personalize: false }),
+        utils.events.getById.invalidate({ id: event.id, personalize: true }),
       ]);
       toast.success("Route attached to event");
     },

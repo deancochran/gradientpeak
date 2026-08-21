@@ -31,6 +31,10 @@ import {
   getDailyCommonLoadObservations,
 } from "../application/activities/daily-common-load-observations";
 import {
+  getPublicActivityEffortProfile,
+  publicActivityEffortProfileResponseSchema,
+} from "../application/activities/public-effort-profile";
+import {
   recordSessionRpe,
   SessionRpeEvidenceConflictError,
   SessionRpeEvidenceNotFoundError,
@@ -159,6 +163,9 @@ const dailyCommonLoadObservationsOutputSchema = z
   .strict();
 
 const getByIdInputSchema = z.object({ id: z.string().uuid() }).strict();
+const getEffortProfileInputSchema = z
+  .object({ id: z.string().uuid(), viewerId: z.string().uuid() })
+  .strict();
 
 const updateInputSchema = z
   .object({
@@ -351,6 +358,21 @@ export const activitiesRouter = createTRPCRouter({
       }),
     );
   }),
+
+  getEffortProfile: protectedProcedure
+    .input(getEffortProfileInputSchema)
+    .output(publicActivityEffortProfileResponseSchema)
+    .query(({ input, ctx }) => {
+      if (input.viewerId !== ctx.session.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Viewer identity mismatch" });
+      }
+      return getPublicActivityEffortProfile({
+        db: getRequiredDb(ctx),
+        artifactStorage: getActivityArtifactStorageService(),
+        activityId: input.id,
+        viewerId: ctx.session.user.id,
+      });
+    }),
 
   getEfforts: protectedProcedure
     .input(getByIdInputSchema)

@@ -1,6 +1,8 @@
 import { CONTRACT_EPOCH_HEADER, CURRENT_CONTRACT_EPOCH } from "@repo/api/client";
 
 export const CONTRACT_EPOCH_STORAGE_KEY = "gradientpeak:contract-epoch";
+export const CONTRACT_EPOCH_RECORDING_RECOVERY_KEY =
+  "gradientpeak:contract-epoch-recording-recovery";
 export const CONTRACT_EPOCH_DATABASE_DELETE_TIMEOUT_MS = 5_000;
 export const CONTRACT_EPOCH_RESET_TIMEOUT_MS = 10_000;
 export const LEGACY_WEB_RECORDING_DATABASE_NAME = "gradientpeak-web-recording";
@@ -23,10 +25,7 @@ const PRODUCT_LOCAL_STORAGE_KEYS = [
   CONTRACT_EPOCH_STORAGE_KEY,
   "gradientpeak-theme-store",
 ] as const;
-const PRODUCT_SESSION_STORAGE_KEYS = [
-  "gradientpeak:vite-preload-reload",
-  "gradientpeak.recording.instance-id",
-] as const;
+const PRODUCT_SESSION_STORAGE_KEYS = ["gradientpeak:vite-preload-reload"] as const;
 
 type StorageLike = Pick<Storage, "getItem" | "removeItem" | "setItem">;
 
@@ -35,6 +34,12 @@ export type ContractEpochRuntime = {
   sessionStorage: StorageLike;
   deleteDatabase: (name: string) => Promise<void>;
   listDatabaseNames?: () => Promise<readonly string[]>;
+};
+
+export type ContractEpochRecordingRecoveryNotice = {
+  previousEpoch: string | null;
+  detectedDatabaseNames: string[];
+  detection: "detected" | "unknown";
 };
 
 export function createBrowserContractEpochRuntime(): ContractEpochRuntime {
@@ -69,33 +74,17 @@ export async function ensureCurrentContractEpoch(runtime: ContractEpochRuntime):
     return false;
   }
 
-  const recordingDatabaseNames = new Set([
-    LEGACY_WEB_RECORDING_DATABASE_NAME,
-    WEB_RECORDING_DATABASE_NAME,
-  ]);
-  for (let priorEpoch = 0; priorEpoch < CURRENT_CONTRACT_EPOCH; priorEpoch += 1) {
-    recordingDatabaseNames.add(`${WEB_RECORDING_DATABASE_PREFIX}${priorEpoch}`);
-  }
-  if (storedEpoch) {
-    recordingDatabaseNames.add(`${WEB_RECORDING_DATABASE_PREFIX}${storedEpoch}`);
-  }
   const discoveredDatabaseNames = runtime.listDatabaseNames
     ? await beforeDeadline(
         Promise.resolve().then(runtime.listDatabaseNames),
         "Timed out checking local browser data.",
       )
     : [];
-  for (const databaseName of discoveredDatabaseNames) {
-    if (databaseName.startsWith(WEB_RECORDING_DATABASE_PREFIX)) {
-      recordingDatabaseNames.add(databaseName);
-    }
-  }
-  for (const databaseName of recordingDatabaseNames) {
-    await beforeDeadline(
-      runtime.deleteDatabase(databaseName),
-      "Timed out preparing local browser data. Close other GradientPeak tabs and retry.",
-    );
-  }
+  const detectedDatabaseNames = discoveredDatabaseNames.filter(
+    (databaseName) =>
+      databaseName === LEGACY_WEB_RECORDING_DATABASE_NAME ||
+      databaseName.startsWith(WEB_RECORDING_DATABASE_PREFIX),
+  );
 
   for (const key of PRODUCT_LOCAL_STORAGE_KEYS) {
     runtime.localStorage.removeItem(key);
@@ -104,9 +93,52 @@ export async function ensureCurrentContractEpoch(runtime: ContractEpochRuntime):
     runtime.sessionStorage.removeItem(key);
   }
 
+  if (storedEpoch !== null || detectedDatabaseNames.length > 0) {
+    const notice: ContractEpochRecordingRecoveryNotice = {
+      previousEpoch: storedEpoch,
+      detectedDatabaseNames,
+      detection: detectedDatabaseNames.length > 0 ? "detected" : "unknown",
+    };
+    runtime.localStorage.setItem(CONTRACT_EPOCH_RECORDING_RECOVERY_KEY, JSON.stringify(notice));
+  }
+
   // This must remain the final operation: a failed reset is retried on the next bootstrap.
   runtime.localStorage.setItem(CONTRACT_EPOCH_STORAGE_KEY, CURRENT_CONTRACT_EPOCH_VALUE);
   return true;
+}
+
+export function readContractEpochRecordingRecoveryNotice(
+  storage?: Pick<Storage, "getItem">,
+): ContractEpochRecordingRecoveryNotice | null {
+  const target = storage ?? (typeof window === "undefined" ? null : window.localStorage);
+  if (!target) return null;
+  const value = target.getItem(CONTRACT_EPOCH_RECORDING_RECOVERY_KEY);
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as Partial<ContractEpochRecordingRecoveryNotice>;
+    if (
+      (parsed.previousEpoch === null || typeof parsed.previousEpoch === "string") &&
+      (parsed.detection === "detected" || parsed.detection === "unknown") &&
+      Array.isArray(parsed.detectedDatabaseNames) &&
+      parsed.detectedDatabaseNames.every((name) => typeof name === "string")
+    ) {
+      return {
+        previousEpoch: parsed.previousEpoch,
+        detection: parsed.detection,
+        detectedDatabaseNames: parsed.detectedDatabaseNames,
+      };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+export function clearContractEpochRecordingRecoveryNotice(
+  storage?: Pick<Storage, "removeItem">,
+): void {
+  const target = storage ?? (typeof window === "undefined" ? null : window.localStorage);
+  target?.removeItem(CONTRACT_EPOCH_RECORDING_RECOVERY_KEY);
 }
 
 async function listBrowserDatabaseNames(): Promise<readonly string[]> {

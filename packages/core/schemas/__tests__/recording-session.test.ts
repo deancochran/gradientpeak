@@ -170,6 +170,7 @@ describe("recording session schemas", () => {
     });
 
     expect(artifact.success).toBe(true);
+    expect(artifact.data?.finalStats.manualLapsMs).toEqual([]);
   });
 
   it("rejects obsolete recording threshold and default markers", () => {

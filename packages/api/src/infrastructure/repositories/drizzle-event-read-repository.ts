@@ -429,19 +429,7 @@ export function createEventReadRepository(
               ),
               sql`(${schema.groupEvents.starts_at} at time zone ${planningTimezone})::date >= ${startDate}::date`,
               sql`(${schema.groupEvents.starts_at} at time zone ${planningTimezone})::date <= ${endDate}::date`,
-              or(
-                and(
-                  isNotNull(schema.groupEventRsvps.profile_id),
-                  ne(schema.groupEventRsvps.status, "declined"),
-                ),
-                and(
-                  isNull(schema.groupEventRsvps.profile_id),
-                  or(
-                    isNull(schema.groupEventSeriesRsvps.profile_id),
-                    ne(schema.groupEventSeriesRsvps.status, "declined"),
-                  ),
-                ),
-              ),
+              sql`coalesce(${schema.groupEventRsvps.status}, ${schema.groupEventSeriesRsvps.status}, 'going') = 'going'`,
             ),
           )
           .orderBy(asc(schema.groupEvents.starts_at), asc(schema.groupEvents.id))
@@ -627,6 +615,78 @@ export function createEventReadRepository(
         )
         .orderBy(asc(schema.activities.started_at), asc(schema.activities.id))
         .limit(limit);
+
+      return rows.map((row) => ({
+        active_ms: row.active_ms,
+        activity_category: row.activity_category,
+        comments_count: Number(row.comments_count),
+        content_visibility: row.content_visibility,
+        distance_meters: row.distance_meters,
+        elapsed_ms: row.elapsed_ms,
+        finished_at: row.finished_at,
+        has_liked: row.has_liked,
+        id: row.id,
+        likes_count: Number(row.likes_count),
+        name: row.name,
+        notes: row.notes,
+        polyline: row.polyline,
+        profile: { avatar_url: row.profile_avatar_url, username: row.profile_username },
+        profile_id: row.profile_id,
+        started_at: row.started_at.toISOString(),
+      }));
+    },
+
+    async listCalendarCompletedActivitiesByIds({ activityIds, profileId }) {
+      if (activityIds.length === 0) return [];
+      const rows = await db
+        .select({
+          active_ms: schema.activities.active_ms,
+          content_visibility: schema.activities.content_visibility,
+          distance_meters: schema.activities.distance_meters,
+          elapsed_ms: schema.activities.elapsed_ms,
+          finished_at: schema.activities.finished_at,
+          id: schema.activities.id,
+          name: schema.activities.name,
+          notes: schema.activities.notes,
+          polyline: schema.activities.polyline,
+          profile_id: schema.activities.profile_id,
+          activity_category: sql<"run" | "bike" | "swim" | "strength" | "other" | null>`(
+            select activity_category from ${schema.activitySegments}
+            where ${schema.activitySegments.activity_id} = ${schema.activities.id}
+              and ${schema.activitySegments.role} = 'activity'
+            order by ${schema.activitySegments.ordinal}
+            limit 1
+          )`,
+          started_at: schema.activities.started_at,
+          profile_username: schema.profiles.username,
+          profile_avatar_url: schema.profiles.avatar_url,
+          likes_count: sql<number>`(
+            select count(*) from ${schema.likes}
+            where ${schema.likes.entity_type} = 'activity'
+              and ${schema.likes.entity_id} = ${schema.activities.id}
+          )`,
+          comments_count: sql<number>`(
+            select count(*) from ${schema.comments}
+            where ${schema.comments.entity_type} = 'activity'
+              and ${schema.comments.entity_id} = ${schema.activities.id}
+          )`,
+          has_liked: sql<boolean>`exists (
+            select 1 from ${schema.likes}
+            where ${schema.likes.entity_type} = 'activity'
+              and ${schema.likes.entity_id} = ${schema.activities.id}
+              and ${schema.likes.profile_id} = ${profileId}::uuid
+          )`,
+        })
+        .from(schema.activities)
+        .leftJoin(schema.profiles, eq(schema.profiles.id, schema.activities.profile_id))
+        .where(
+          and(
+            eq(schema.activities.profile_id, profileId),
+            inArray(schema.activities.id, activityIds),
+          ),
+        )
+        .orderBy(asc(schema.activities.started_at), asc(schema.activities.id))
+        .limit(activityIds.length);
 
       return rows.map((row) => ({
         active_ms: row.active_ms,

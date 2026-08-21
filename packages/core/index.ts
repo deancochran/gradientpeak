@@ -80,6 +80,7 @@ export * from "./performance-calibration"; // Activity-derived calibration regis
 export * from "./performance-model"; // Canonical as-of category models and narrow target facts
 export * from "./plan"; // Training plan normalization/expansion helpers
 export * from "./profile"; // Shared profile contracts and adapters
+export * from "./profile-previews"; // Privacy-safe effort, structure, and session-count previews
 export type {
   ProvisionalCommonLoadMethod,
   ProvisionalRecordingMetricsAccumulator,

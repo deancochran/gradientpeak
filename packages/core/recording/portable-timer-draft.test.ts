@@ -114,4 +114,24 @@ describe("portable timer recording draft schema", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("accounts for excluded interruption time without breaking older drafts", () => {
+    expect(portableTimerRecordingDraftSchema.parse(validDraft)).toEqual(validDraft);
+    expect(
+      portableTimerRecordingDraftSchema.safeParse({
+        ...validDraft,
+        timing: {
+          ...validDraft.timing,
+          updatedAt: "2026-07-17T12:15:00.000Z",
+          excludedElapsedMs: 600_000,
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      portableTimerRecordingDraftSchema.safeParse({
+        ...validDraft,
+        timing: { ...validDraft.timing, excludedElapsedMs: 1 },
+      }).success,
+    ).toBe(false);
+  });
 });

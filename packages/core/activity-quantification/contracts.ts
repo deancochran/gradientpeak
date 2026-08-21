@@ -23,6 +23,7 @@ export const activityQuantificationEvidenceRoleSchema = z.enum([
 export const activityDurationUnavailableReasonSchema = z.enum([
   "not_applicable",
   "not_prescribed",
+  "ambiguous_target",
   "not_observed",
   "open_ended",
   "source_missing",
@@ -113,6 +114,7 @@ export const activityDurationSchema = z
 export const activityDistanceUnavailableReasonSchema = z.enum([
   "not_applicable",
   "not_prescribed",
+  "ambiguous_target",
   "not_observed",
   "route_missing",
   "gps_unavailable",

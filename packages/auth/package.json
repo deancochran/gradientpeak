@@ -20,7 +20,7 @@
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
-    "generate": "pnpx @better-auth/cli generate --config script/auth-cli.ts --output ../db/src/auth-schema.ts"
+    "generate": "pnpm exec auth generate --config script/auth-cli.ts --output ../db/src/auth-schema.ts"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.6.25",
@@ -34,10 +34,10 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@better-auth/cli": "^1.4.21",
     "@repo/typescript-config": "workspace:*",
     "@types/nodemailer": "^6.4.24",
     "@types/pg": "^8.20.0",
+    "auth": "1.6.25",
     "typescript": "5.9.3",
     "vitest": "^4.1.10"
   }

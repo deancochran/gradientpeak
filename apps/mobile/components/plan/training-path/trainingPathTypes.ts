@@ -25,11 +25,13 @@ export type TrainingPathEmptyState =
   | "noProjection";
 
 export type TrainingPathWeek = {
+  completedLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
   completedLoadUnavailable?: boolean;
   effectiveLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
   effectiveLoad?: number | null;
   effectiveIntensity?: number | null;
   effectiveCompletedLoad?: number | null;
+  effectiveRemainingLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
   effectiveRemainingLoad?: number | null;
   recommendedLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
   recommendedLoad?: number | null;
@@ -38,6 +40,7 @@ export type TrainingPathWeek = {
   label: string;
   completedLoad: number | null;
   plannedLoad: number | null;
+  plannedLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
   targetLoad: number | null;
   fitness: number | null;
   scheduledFitness: number | null;
@@ -57,15 +60,18 @@ export type TrainingPathWeekSummary = {
   headline: string | null;
   body: string | null;
   completedLoad: number | null;
+  completedLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
   completedLoadUnavailable?: boolean;
   effectiveLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
   effectiveLoad?: number | null;
   effectiveIntensity?: number | null;
   effectiveCompletedLoad?: number | null;
+  effectiveRemainingLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
   effectiveRemainingLoad?: number | null;
   recommendedLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
   recommendedLoad?: number | null;
   plannedLoad: number | null;
+  plannedLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
   targetLoad: number | null;
   fitness: number | null;
   targetFitness: number | null;
@@ -102,6 +108,7 @@ export type TrainingPathCompletedActivity = {
   title: string;
   date: string;
   load?: number | null;
+  loadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
   activity?: ActivityDisplayModel;
 };
 
@@ -126,11 +133,13 @@ export type TrainingPathViewModel = {
 
 export type TrainingPathLoadPoint = {
   completed_observation_state?: CompletedObservationState;
+  completed_common_load_status?: "complete" | "partial" | "known_zero" | "unavailable";
   completed_common_load_identity?: CommonLoadIdentity | null;
   has_unavailable_completed_activity?: boolean;
   date: string;
   completed_common_load?: number | null;
   scheduled_common_load?: number | null;
+  scheduled_common_load_status?: "complete" | "partial" | "known_zero" | "unavailable";
   recommended_common_load?: number | null;
 };
 

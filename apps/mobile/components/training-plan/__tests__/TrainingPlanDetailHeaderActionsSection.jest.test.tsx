@@ -50,11 +50,11 @@ describe("TrainingPlanDetailHeaderActionsSection", () => {
     );
 
     expect(screen.getByTestId("training-plan-like-button")).toBeTruthy();
-    expect(screen.getByText("Plan snapshot")).toBeTruthy();
-    expect(screen.getByTestId("training-plan-periodization-preview")).toBeTruthy();
-    expect(screen.getByTestId("training-plan-visual-segment-7")).toBeTruthy();
-    expect(screen.queryByTestId("training-plan-visual-recovery-7")).toBeNull();
-    expect(screen.queryByTestId("training-plan-visual-segment-8")).toBeNull();
+    expect(screen.getByText("Plan schedule")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-planned-preview-detail")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-visual-week-7")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-visual-empty-1")).toBeTruthy();
+    expect(screen.getByLabelText(/not athlete-specific training load/)).toBeTruthy();
   });
 
   it("shows saved state copy when liked with count", async () => {

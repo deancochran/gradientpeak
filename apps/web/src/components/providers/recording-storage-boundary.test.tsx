@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { RecordingStorageBoundary } from "./recording-storage-boundary";
@@ -20,45 +21,46 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("RecordingStorageBoundary", () => {
-  it("limits preparation to recorder content", () => {
-    mocks.ensureCurrentBrowserContractEpoch.mockReturnValue(new Promise(() => undefined));
+  it("keeps its child mounted while storage becomes ready", async () => {
+    let resolvePreparation: (() => void) | undefined;
+    mocks.ensureCurrentBrowserContractEpoch.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePreparation = () => resolve(true);
+      }),
+    );
+
+    function StatefulChild() {
+      const [count, setCount] = useState(0);
+      return (
+        <button onClick={() => setCount((current) => current + 1)} type="button">
+          Count: {count}
+        </button>
+      );
+    }
 
     render(
       <RecordingStorageBoundary>
-        <div>Recorder content</div>
+        <StatefulChild />
       </RecordingStorageBoundary>,
     );
 
-    expect(screen.getByText("Preparing recorder")).toBeTruthy();
-    expect(screen.queryByText("Recorder content")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Count: 0" }));
+    expect(screen.getByRole("button", { name: "Count: 1" })).toBeTruthy();
+
+    resolvePreparation?.();
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Count: 1" })).toBeTruthy());
   });
 
-  it("shows recorder content after storage is ready", async () => {
-    mocks.ensureCurrentBrowserContractEpoch.mockResolvedValue(false);
+  it("continues rendering its child when preparation is blocked", async () => {
+    mocks.ensureCurrentBrowserContractEpoch.mockRejectedValue(new Error("blocked"));
 
     render(
       <RecordingStorageBoundary>
-        <div>Recorder content</div>
+        <div>Protected page content</div>
       </RecordingStorageBoundary>,
     );
 
-    expect(await screen.findByText("Recorder content")).toBeTruthy();
-  });
-
-  it("offers a fresh retry when preparation is blocked", async () => {
-    mocks.ensureCurrentBrowserContractEpoch
-      .mockRejectedValueOnce(new Error("blocked"))
-      .mockResolvedValueOnce(true);
-
-    render(
-      <RecordingStorageBoundary>
-        <div>Recorder content</div>
-      </RecordingStorageBoundary>,
-    );
-
-    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
-
-    await waitFor(() => expect(screen.getByText("Recorder content")).toBeTruthy());
-    expect(mocks.ensureCurrentBrowserContractEpoch).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.getByText("Protected page content")).toBeTruthy());
   });
 });

@@ -2,6 +2,10 @@
 import { Decoder, Profile, Stream, Utils } from "@garmin/fitsdk";
 import { Buffer } from "buffer";
 import { ActivityFileParseError } from "../activity-files/activity-file-errors";
+import {
+  type ActivityFileParseLimits,
+  resolveActivityFileParseLimits,
+} from "../activity-files/activity-file-limits";
 
 import {
   activityArtifactSemanticsSchema,
@@ -31,6 +35,13 @@ export interface FitDecodeResult {
   errors: { type: string; message: string }[];
 }
 
+class FitDecodeLimitError extends Error {
+  constructor(readonly limit: "messages" | "records") {
+    super(`FIT ${limit} limit exceeded`);
+    this.name = "FitDecodeLimitError";
+  }
+}
+
 const toCamelCase = (value: string): string =>
   value.replace(/([-_][a-z])/gi, (match) => match.toUpperCase().replaceAll("-", "").replaceAll("_", ""));
 
@@ -44,8 +55,16 @@ function normalizeKeys(value: unknown): unknown {
   return value;
 }
 
-/** Decodes with raw enum values intact so unknown and future FIT values are not erased. */
-export function safeDecodeFitFile(buffer: Buffer): FitDecodeResult {
+/**
+ * Decodes with raw enum values intact so unknown and future FIT values are not
+ * erased. Listener limits stop the SDK as soon as one bounded extra message is
+ * observed, instead of allowing it to finish allocating every message array.
+ */
+export function safeDecodeFitFile(
+  buffer: Buffer,
+  limitsInput?: ActivityFileParseLimits,
+): FitDecodeResult {
+  const limits = resolveActivityFileParseLimits(limitsInput);
   const result: FitDecodeResult = { messages: null, errors: [] };
   try {
     const stream = Stream.fromBuffer(buffer);
@@ -63,6 +82,8 @@ export function safeDecodeFitFile(buffer: Buffer): FitDecodeResult {
     }
     const sourceOrders = new Map<string, number[]>();
     let sourceOrder = 0;
+    let messageCount = 0;
+    let recordCount = 0;
     const decoded = decoder.read({
       applyScaleAndOffset: true,
       convertDateTimesToDates: true,
@@ -70,6 +91,12 @@ export function safeDecodeFitFile(buffer: Buffer): FitDecodeResult {
       includeUnknownData: true,
       mergeHeartRates: true,
       mesgListener: (mesgNum: number) => {
+        messageCount += 1;
+        if (messageCount > limits.maxMessages) throw new FitDecodeLimitError("messages");
+        if (mesgNum === Profile.MesgNum.RECORD) {
+          recordCount += 1;
+          if (recordCount > limits.maxRecords) throw new FitDecodeLimitError("records");
+        }
         const messagesKey = Profile.messages?.[String(mesgNum)]?.messagesKey;
         if (messagesKey) {
           const orders = sourceOrders.get(messagesKey) ?? [];
@@ -81,8 +108,11 @@ export function safeDecodeFitFile(buffer: Buffer): FitDecodeResult {
     });
     for (const error of decoded.errors) {
       result.errors.push({
-        type: "decode",
-        message: `Error at offset ${String(error.offset)}: ${String(error.message)}`,
+        type: error instanceof FitDecodeLimitError ? "limit" : "decode",
+        message:
+          error instanceof FitDecodeLimitError
+            ? error.message
+            : `Error at offset ${String(error.offset)}: ${String(error.message)}`,
       });
     }
     const normalized = normalizeKeys(decoded.messages) as Record<string, FitMessage[]>;
@@ -294,9 +324,7 @@ const RECORD_EXTENSION_FIELDS = [
   "temperature",
 ] as const;
 
-/** Builds the committed thin decoded-artifact contract from all FIT session/lap/event/record messages. */
-export function decodeFitActivityArtifact(buffer: Buffer | Uint8Array): DecodedActivityArtifact {
-  const decoded = safeDecodeFitFile(Buffer.from(buffer));
+function decodeFitActivityArtifactFromResult(decoded: FitDecodeResult): DecodedActivityArtifact {
   if (!decoded.messages) {
     if (decoded.errors.some((error) => error.type === "system")) {
       throw new Error("FIT parser runtime failed");
@@ -310,6 +338,9 @@ export function decodeFitActivityArtifact(buffer: Buffer | Uint8Array): DecodedA
   if (decoded.errors.length > 0) {
     if (decoded.errors.some((error) => error.type === "system")) {
       throw new Error("FIT parser runtime failed");
+    }
+    if (decoded.errors.some((error) => error.type === "limit")) {
+      throw new ActivityFileParseError("corrupt_artifact", new Error("record_limit_exceeded"));
     }
     throw new ActivityFileParseError("corrupt_artifact");
   }
@@ -483,6 +514,14 @@ export function decodeFitActivityArtifact(buffer: Buffer | Uint8Array): DecodedA
     recordCollections,
     extensions: Object.keys(artifactExtensions).length === 0 ? undefined : artifactExtensions,
   });
+}
+
+/** Builds the committed thin decoded-artifact contract from all FIT session/lap/event/record messages. */
+export function decodeFitActivityArtifact(
+  buffer: Buffer | Uint8Array,
+  limits?: ActivityFileParseLimits,
+): DecodedActivityArtifact {
+  return decodeFitActivityArtifactFromResult(safeDecodeFitFile(Buffer.from(buffer), limits));
 }
 
 function extensionNumber(extensions: DecodedArtifactExtensions | undefined, field: string): number | undefined {
@@ -680,10 +719,14 @@ function sportLabel(rawSport: RawSourceValue | undefined): string {
 }
 
 /** Decodes FIT while retaining legacy aggregate fields and adding ordered sessions/artifact semantics. */
-export function parseFitFileWithSDK(buffer: Buffer | Uint8Array): StandardActivity {
-  const artifact = decodeFitActivityArtifact(buffer);
+export function parseFitFileWithSDK(
+  buffer: Buffer | Uint8Array,
+  limits?: ActivityFileParseLimits,
+): StandardActivity {
+  const decoded = safeDecodeFitFile(Buffer.from(buffer), limits);
+  const artifact = decodeFitActivityArtifactFromResult(decoded);
   const semantics = projectFitArtifactSemantics(artifact);
-  const decodedMessages = safeDecodeFitFile(Buffer.from(buffer)).messages;
+  const decodedMessages = decoded.messages;
   const allRecords = artifact.recordCollections.flatMap((collection) =>
     collection.storage === "inline" ? collection.records.map(normalizedRecord) : [],
   );

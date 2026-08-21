@@ -3,6 +3,11 @@ import {
   IDEMPOTENT_INGESTION_MUTATION_RETRY_OPTIONS,
   ingestionStatusPollingInterval,
 } from "@repo/api/client";
+import {
+  activityPlanStructureSchema,
+  type CompiledActivityPlanOccurrence,
+  compileActivityPlan,
+} from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -15,7 +20,17 @@ import {
 import { Input } from "@repo/ui/components/input";
 import { Textarea } from "@repo/ui/components/textarea";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Pause, Play, Save, Square, Timer, Trash2 } from "lucide-react";
+import {
+  Flag,
+  Pause,
+  Play,
+  Save,
+  SkipForward,
+  Square,
+  StepBack,
+  Timer,
+  Trash2,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { uploadFileToSignedUrl } from "../../../lib/activity-route-upload";
@@ -42,7 +57,7 @@ export function RecordSessionPage() {
   const recordSessionRpe = api.activities.recordSessionRpe.useMutation();
   const [notes, setNotes] = useState("");
   const [perceivedEffort, setPerceivedEffort] = useState("");
-  const [distanceMeters, setDistanceMeters] = useState("0");
+  const [distanceMeters, setDistanceMeters] = useState("");
   const [calories, setCalories] = useState("");
   const [ingestionId, setIngestionId] = useState<string | null>(null);
   const profileQuery = api.profiles.get.useQuery();
@@ -55,12 +70,25 @@ export function RecordSessionPage() {
   );
   const hasSavedActivity = isReviewFrozen(recording.submissionJob);
   const activityPersistenceName = recording.artifact?.review.name ?? "Activity";
+  const planStatus = recording.planStatus;
+  const planSnapshot = snapshot?.planExecution;
+  const currentOccurrence = planStatus?.currentOccurrence ?? null;
+  const currentTargetLabels = currentOccurrence
+    ? (planSnapshot?.targetPresentations.find(
+        (presentation) => presentation.occurrenceId === currentOccurrence.occurrenceId,
+      )?.labels ?? [])
+    : [];
 
   useEffect(() => {
     if (!recording.artifact) return;
     setNotes(recording.artifact.review.notes ?? "");
     setPerceivedEffort(recording.artifact.review.perceivedEffort?.toString() ?? "");
-    setDistanceMeters(recording.artifact.review.distanceMeters.toString());
+    setDistanceMeters(
+      (recording.artifact.review.distanceEnteredManually ??
+        recording.artifact.review.distanceMeters > 0)
+        ? recording.artifact.review.distanceMeters.toString()
+        : "",
+    );
     setCalories(recording.artifact.review.calories?.toString() ?? "");
   }, [recording.artifact]);
 
@@ -195,6 +223,11 @@ export function RecordSessionPage() {
             Keep this page open in the foreground. This browser periodically saves a bounded timer
             draft for paused recovery after an interruption.
           </CardDescription>
+          <p className="text-sm text-muted-foreground">
+            {(snapshot?.activity.activityPlanId ?? configuration.activityPlanId)
+              ? "Planned activity attached"
+              : "Free indoor activity"}
+          </p>
         </CardHeader>
         <CardContent className="space-y-6">
           {recording.hasRecoveredDraft ? (
@@ -206,35 +239,133 @@ export function RecordSessionPage() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-3">
-                <Button disabled={recording.hydrationStatus !== "ready"} onClick={recording.resume}>
+                <Button
+                  disabled={recording.hydrationStatus !== "ready" || recording.durabilityFenced}
+                  onClick={recording.resume}
+                >
                   <Play className="h-4 w-4" /> Resume
                 </Button>
-                <Button variant="outline" onClick={recording.discardRecoveredDraft}>
-                  <Trash2 className="h-4 w-4" /> Discard
+                <Button variant="outline" onClick={() => void recording.cancel()}>
+                  <Trash2 className="h-4 w-4" /> Cancel recording
                 </Button>
               </div>
             </div>
           ) : null}
           <div className="grid grid-cols-2 gap-4 text-center">
             <TimeStat label="Elapsed" seconds={recording.elapsedSeconds} />
-            <TimeStat label="Moving" seconds={recording.movingSeconds} />
+            <TimeStat label="Active time" seconds={recording.activeSeconds} />
+            {planStatus ? (
+              <TimeStat label="Current lap" seconds={planStatus.currentLapElapsedSeconds} />
+            ) : null}
+            {currentOccurrence ? (
+              <TimeStat label="Current step" seconds={planStatus?.currentStepElapsedSeconds ?? 0} />
+            ) : null}
           </div>
+
+          {planSnapshot && planStatus ? (
+            <section className="space-y-4 rounded-xl border p-4 text-left">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm text-muted-foreground">{planSnapshot.name}</p>
+                  <h2 className="text-xl font-semibold">
+                    {currentOccurrence
+                      ? occurrenceLabel(planSnapshot.structure, currentOccurrence)
+                      : "Plan steps complete"}
+                  </h2>
+                </div>
+                <Badge variant="outline">
+                  {currentOccurrence && planStatus.currentOccurrenceIndex !== null
+                    ? `Step ${planStatus.currentOccurrenceIndex + 1} of ${planStatus.totalOccurrences}`
+                    : `${planStatus.processedCount} of ${planStatus.totalOccurrences} processed`}
+                </Badge>
+              </div>
+              {currentOccurrence ? (
+                <div className="space-y-2 text-sm">
+                  <p>{durationGuidance(currentOccurrence.duration)}</p>
+                  {planStatus.currentStepRemainingSeconds !== null ? (
+                    <p>Remaining: {formatTimer(planStatus.currentStepRemainingSeconds)}</p>
+                  ) : (
+                    <p className="text-muted-foreground">
+                      This step waits for you to complete or skip it.
+                    </p>
+                  )}
+                  <p className="font-medium">Target guidance</p>
+                  <p className="text-muted-foreground">
+                    {currentTargetLabels.join(" · ") || "No authored target guidance"}
+                  </p>
+                  <p className="text-muted-foreground">
+                    Next:{" "}
+                    {planStatus.nextOccurrence
+                      ? occurrenceLabel(planSnapshot.structure, planStatus.nextOccurrence)
+                      : "Finish or review"}
+                  </p>
+                </div>
+              ) : null}
+              <div
+                className="h-2 overflow-hidden rounded-full bg-muted"
+                aria-label={`${planStatus.processedCount} of ${planStatus.totalOccurrences} plan steps processed`}
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={planStatus.totalOccurrences}
+                aria-valuenow={planStatus.processedCount}
+              >
+                <div
+                  className="h-full bg-primary"
+                  style={{
+                    width: `${planStatus.totalOccurrences ? (planStatus.processedCount / planStatus.totalOccurrences) * 100 : 100}%`,
+                  }}
+                />
+              </div>
+              {currentOccurrence && (lifecycle === "recording" || lifecycle === "paused") ? (
+                <div className="flex flex-wrap gap-2">
+                  <Button disabled={recording.durabilityFenced} onClick={recording.completeStep}>
+                    <SkipForward className="h-4 w-4" /> Complete / Next
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={
+                      recording.durabilityFenced || (planStatus.currentOccurrenceIndex ?? 0) <= 0
+                    }
+                    onClick={recording.previousStep}
+                  >
+                    <StepBack className="h-4 w-4" /> Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={recording.durabilityFenced}
+                    onClick={recording.skipStep}
+                  >
+                    Skip step
+                  </Button>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
           <div className="flex flex-wrap justify-center gap-3">
             {lifecycle === "pending" ? (
-              <Button size="lg" onClick={recording.start}>
+              <Button
+                size="lg"
+                disabled={recording.savingCommand || recording.durabilityFenced}
+                onClick={recording.start}
+              >
                 <Play className="h-5 w-5" /> Start
               </Button>
             ) : null}
             {lifecycle === "recording" ? (
-              <Button size="lg" variant="outline" onClick={recording.pause}>
+              <Button
+                size="lg"
+                variant="outline"
+                disabled={recording.durabilityFenced}
+                onClick={recording.pause}
+              >
                 <Pause className="h-5 w-5" /> Pause
               </Button>
             ) : null}
             {lifecycle === "paused" && !recording.hasRecoveredDraft ? (
               <Button
                 size="lg"
-                disabled={recording.hydrationStatus !== "ready"}
+                disabled={recording.hydrationStatus !== "ready" || recording.durabilityFenced}
                 onClick={recording.resume}
               >
                 <Play className="h-5 w-5" /> Resume
@@ -243,14 +374,75 @@ export function RecordSessionPage() {
             {lifecycle === "recording" || lifecycle === "paused" ? (
               <Button
                 size="lg"
+                variant="outline"
+                disabled={recording.busy || recording.durabilityFenced}
+                onClick={recording.lap}
+              >
+                <Flag className="h-5 w-5" /> Lap
+              </Button>
+            ) : null}
+            {lifecycle === "recording" || lifecycle === "paused" ? (
+              <Button
+                size="lg"
                 variant="destructive"
-                disabled={recording.busy}
+                disabled={recording.busy || recording.savingCommand || recording.durabilityFenced}
                 onClick={recording.finish}
               >
                 <Square className="h-5 w-5" /> {recording.busy ? "Finishing…" : "Finish"}
               </Button>
             ) : null}
+            {lifecycle === "recording" || lifecycle === "paused" ? (
+              <Button
+                size="lg"
+                variant="ghost"
+                disabled={recording.busy || recording.savingCommand}
+                onClick={() => void recording.cancel()}
+              >
+                Cancel recording
+              </Button>
+            ) : null}
           </div>
+
+          {recording.savingCommand ? (
+            <p className="text-center text-sm text-muted-foreground">
+              Saving recorder command locally…
+            </p>
+          ) : null}
+          {recording.durabilityFenced ? (
+            <div className="space-y-3 rounded-lg border border-destructive/40 p-4 text-left">
+              <div>
+                <p className="font-medium">Local saving needs attention</p>
+                <p className="text-sm text-muted-foreground">
+                  The recorder returned to its last saved checkpoint and stopped progressing. Retry
+                  local saving before you continue.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  disabled={recording.savingCommand}
+                  onClick={() => void recording.retryDurableStorage()}
+                >
+                  Retry local saving
+                </Button>
+                {recording.canTakeOver ? (
+                  <Button variant="destructive" onClick={() => void recording.takeOver()}>
+                    Take over this recording
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+          {recording.backgroundPaused ? (
+            <p className="rounded-lg border border-amber-500/40 p-3 text-sm">
+              This recording paused when the tab moved to the background. Active time and timed
+              steps remain frozen until you explicitly Resume.
+            </p>
+          ) : null}
+          {recording.statusMessage ? (
+            <p className="sr-only" role="status">
+              {recording.statusMessage}
+            </p>
+          ) : null}
 
           {recording.error ? (
             <p className="text-center text-sm text-destructive" role="alert">
@@ -272,6 +464,84 @@ export function RecordSessionPage() {
                   submission.
                 </p>
               </div>
+              <div className="grid gap-3 rounded-lg bg-muted/30 p-3 text-sm sm:grid-cols-2">
+                <p>
+                  Duration:{" "}
+                  <span className="font-medium">
+                    {formatTimer(Math.floor(recording.artifact.elapsedMs / 1_000))}
+                  </span>
+                </p>
+                <p>
+                  Active time:{" "}
+                  <span className="font-medium">
+                    {formatTimer(Math.floor(recording.artifact.movingMs / 1_000))}
+                  </span>
+                </p>
+                <p>
+                  Plan:{" "}
+                  <span className="font-medium">
+                    {recording.artifact.snapshot.planExecution?.name ?? "Free indoor activity"}
+                  </span>
+                </p>
+                <p>
+                  Category:{" "}
+                  <span className="font-medium">
+                    {recording.artifact.snapshot.activity.activity_category}
+                  </span>
+                </p>
+                {recording.artifact.planExecution && recording.artifact.snapshot.planExecution ? (
+                  <>
+                    <p>
+                      Completed steps:{" "}
+                      <span className="font-medium">
+                        {recording.artifact.planExecution.completedOccurrenceIds.length}
+                      </span>
+                    </p>
+                    <p>
+                      Skipped steps:{" "}
+                      <span className="font-medium">
+                        {recording.artifact.planExecution.skippedOccurrenceIds.length}
+                      </span>
+                    </p>
+                    <p>
+                      Remaining steps:{" "}
+                      <span className="font-medium">
+                        {Math.max(
+                          0,
+                          compileOccurrenceCount(
+                            recording.artifact.snapshot.planExecution.structure,
+                          ) -
+                            recording.artifact.planExecution.completedOccurrenceIds.length -
+                            recording.artifact.planExecution.skippedOccurrenceIds.length,
+                        )}
+                      </span>
+                    </p>
+                    <p>
+                      Laps:{" "}
+                      <span className="font-medium">
+                        {recording.artifact.planExecution.laps.length}
+                      </span>
+                    </p>
+                  </>
+                ) : null}
+                <p className="text-muted-foreground sm:col-span-2">
+                  Target adherence is unavailable because a timer does not prove heart rate, power,
+                  pace, cadence, or other target execution.
+                </p>
+              </div>
+              {recording.artifact.planExecution?.laps.length ? (
+                <ol className="space-y-1 text-sm" aria-label="Lap history">
+                  {recording.artifact.planExecution.laps.map((lap, index, laps) => (
+                    <li key={lap.lapNumber}>
+                      Lap {lap.lapNumber}:{" "}
+                      {formatTimer(
+                        Math.floor((lap.elapsedMs - (laps[index - 1]?.elapsedMs ?? 0)) / 1_000),
+                      )}{" "}
+                      elapsed
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
               <label className="grid gap-1 text-sm" htmlFor="recording-notes">
                 <span className="font-medium">Notes</span>
                 <Textarea
@@ -304,7 +574,7 @@ export function RecordSessionPage() {
                   />
                 </label>
                 <label className="grid gap-1 text-sm" htmlFor="recording-distance">
-                  <span className="font-medium">Distance (metres)</span>
+                  <span className="font-medium">Manual distance (metres, optional)</span>
                   <Input
                     id="recording-distance"
                     type="number"
@@ -320,7 +590,7 @@ export function RecordSessionPage() {
                   />
                 </label>
                 <label className="grid gap-1 text-sm" htmlFor="recording-calories">
-                  <span className="font-medium">Calories</span>
+                  <span className="font-medium">Manual calories (optional)</span>
                   <Input
                     id="recording-calories"
                     type="number"
@@ -350,6 +620,8 @@ export function RecordSessionPage() {
                       perceivedEffort: perceivedEffort ? Number(perceivedEffort) : null,
                       distanceMeters: Number(distanceMeters || 0),
                       calories: calories ? Number(calories) : null,
+                      distanceEnteredManually: distanceMeters.trim().length > 0,
+                      caloriesEnteredManually: calories.trim().length > 0,
                     })
                   }
                 >
@@ -405,10 +677,8 @@ export function RecordSessionPage() {
           ) : null}
 
           <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-            Browser recording captures foreground elapsed and moving time without GPS. Local
-            recovery, finalization, and submission are durable. BLE/FTMS is available only through
-            an active platform adapter; this browser workflow does not assume Chrome-only Web
-            Bluetooth.
+            This indoor recorder captures foreground elapsed and active time. It pauses active time
+            and timed steps whenever the tab moves to the background. It does not infer movement.
           </div>
         </CardContent>
       </Card>
@@ -423,6 +693,35 @@ function TimeStat({ label, seconds }: { label: string; seconds: number }) {
       <p className="font-mono text-3xl font-semibold tabular-nums">{formatTimer(seconds)}</p>
     </div>
   );
+}
+
+function compileOccurrenceCount(structure: unknown): number {
+  return compileActivityPlan(structure).occurrences.length;
+}
+
+function occurrenceLabel(structure: unknown, occurrence: CompiledActivityPlanOccurrence): string {
+  const parsed = activityPlanStructureSchema.safeParse(structure);
+  if (!parsed.success) return occurrence.role === "rest" ? "Rest" : "Plan step";
+  if (occurrence.role === "rest") {
+    return (
+      parsed.data.segments.find((segment) => segment.id === occurrence.segmentId)?.name ?? "Rest"
+    );
+  }
+  for (const segment of parsed.data.segments) {
+    if (segment.role !== "activity") continue;
+    for (const interval of segment.intervals) {
+      const step = interval.steps.find((candidate) => candidate.id === occurrence.stepId);
+      if (step) return step.name;
+    }
+  }
+  return "Plan step";
+}
+
+function durationGuidance(duration: CompiledActivityPlanOccurrence["duration"]): string {
+  if (duration.type === "time") return `${duration.seconds} seconds`;
+  if (duration.type === "distance") return `${duration.meters} metres prescribed`;
+  if (duration.type === "repetitions") return `${duration.count} repetitions prescribed`;
+  return "Continue until finished";
 }
 
 function formatTimer(seconds: number): string {

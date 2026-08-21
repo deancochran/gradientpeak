@@ -24,6 +24,7 @@ export {
   isValidIanaTimeZone,
   scheduledDateTimeToIsoInstant,
 } from "../utils/schedule-date";
+export * from "./daily-visual-state";
 export {
   addDeviceCalendarDays,
   addDeviceCalendarMonths,

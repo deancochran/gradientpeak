@@ -2,7 +2,7 @@
 
 `strictness-ratchet.mjs` measures compiler diagnostics caused by enabling one high-impact flag at a time. It uses the installed TypeScript compiler API and never parses `tsc` output.
 
-The ratchet discovers workspace packages by requiring `tsconfig.json` and a non-empty `check-types` script together. Either one without the other fails closed, preventing a TypeScript workspace from bypassing coverage by removing its script; config-only/non-TypeScript workspaces with neither are allowed. It also always includes `packages/db/supabase/tsconfig.json`, whose nested type check is wrapped by the DB package script. A malformed or source-empty workspace config fails closed. The explicitly covered Supabase config may be source-empty so a clean checkout without Edge Functions still preserves coverage when a function is added. For each project, the script compares its normal diagnostics with a separate compiler program in which exactly one currently-disabled flag is enabled:
+The ratchet discovers workspace packages by requiring `tsconfig.json` and a non-empty `check-types` script together. Either one without the other fails closed, preventing a TypeScript workspace from bypassing coverage by removing its script; config-only/non-TypeScript workspaces with neither are allowed. A malformed or source-empty workspace config fails closed. For each project, the script compares its normal diagnostics with a separate compiler program in which exactly one currently-disabled flag is enabled:
 
 - `exactOptionalPropertyTypes`
 - `noImplicitReturns`

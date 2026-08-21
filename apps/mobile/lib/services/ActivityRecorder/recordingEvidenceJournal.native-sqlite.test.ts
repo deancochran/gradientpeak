@@ -35,6 +35,7 @@ import {
   createFinalizedArtifactQueueHandoff,
   createRecordingStreamJournalAdapter,
   discardFinalizedRecordingEvidence,
+  fenceRecordingEvidenceSession,
   garbageCollectExpiredRecordingEvidence,
   hasQuarantinedRecordingEvidence,
   initializeRecordingEvidenceDatabase,
@@ -69,7 +70,7 @@ function unplannedCheckpoint(sessionId: string, profileId: string): UnplannedRec
     start: { startedAt: "2026-01-01T10:00:00.000Z", updatedAt: "2026-01-01T10:00:01.000Z" },
     draft: { activity_category: "run", gpsMode: "off" },
     summary: { elapsedSeconds: 1, movingSeconds: 1, distanceMeters: 0 },
-    executionState: { timerEvents: [] },
+    executionState: { timerEvents: [], manualLapsMs: [] },
     performanceTargets: createUnavailableAthletePerformanceTargetFacts(
       "2026-01-01T10:00:00.000Z",
       profileId,
@@ -393,6 +394,40 @@ describe("recording evidence native SQLite schema", () => {
         "historical",
       ),
     ).toEqual([{ state: "finalized" }]);
+  });
+
+  it("keeps an interrupted finish discoverable after its evidence is fenced", async () => {
+    const native = await nativeExecutor();
+    close = native.close;
+    await initializeRecordingEvidenceDatabase(native.executor);
+    setRecordingEvidenceDatabaseForTests(native.executor);
+    const checkpoint = {
+      ...unplannedCheckpoint("finishing", "profile"),
+      lifecycle: "finishing" as const,
+      start: {
+        startedAt: "2026-01-01T10:00:00.000Z",
+        updatedAt: "2026-01-01T10:00:10.000Z",
+      },
+    };
+    await allocateRecordingEvidenceSession({
+      sessionId: checkpoint.sessionId,
+      profileId: "profile",
+    });
+    await persistRecordingCheckpoint(checkpoint);
+
+    await expect(inspectRecordingCheckpoint("profile")).resolves.toEqual({
+      status: "recovered",
+      checkpoint,
+    });
+    await fenceRecordingEvidenceSession(checkpoint.sessionId);
+    await expect(inspectRecordingCheckpoint("profile")).resolves.toEqual({
+      status: "recovered",
+      checkpoint,
+    });
+    await expect(claimRecordingEvidenceCheckpoint("profile")).resolves.toMatchObject({
+      sessionId: checkpoint.sessionId,
+    });
+    releaseRecordingEvidenceCheckpointClaim(checkpoint.sessionId);
   });
 
   it("claims, clears, and reports quarantine state through SQLite", async () => {

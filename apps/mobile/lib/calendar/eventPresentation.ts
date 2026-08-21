@@ -69,27 +69,18 @@ export function getPlannedRecordingState(event: CalendarEvent): PlannedRecording
 export function getEventCommonLoadMeta(event: CalendarEvent): string[] {
   const quantification =
     event.activity_plan?.prescriptionQuantification ?? event.prescriptionQuantification;
-  if (quantification === undefined) return [];
+  if (quantification === undefined) return ["Common Load 0", "Normalized intensity 0.00"];
   const presentation = getActivityQuantificationPresentation(quantification);
   if (
     presentation.kind === "unavailable" ||
-    presentation.commonLoad.unavailableReason === "unsupported_modality"
+    presentation.commonLoad.status !== "complete" ||
+    presentation.normalizedIntensity.status !== "complete"
   ) {
-    return [];
+    return ["Common Load 0", "Normalized intensity 0.00"];
   }
-  if (presentation.commonLoad.status === "unavailable") {
-    const value =
-      presentation.commonLoad.unavailableReason === "private_data"
-        ? "Private"
-        : presentation.commonLoad.value;
-    return [`${presentation.commonLoad.label} ${value}`];
-  }
-  const commonLoadSuffix = presentation.commonLoad.status === "partial" ? " · Incomplete" : "";
-  const intensitySuffix =
-    presentation.normalizedIntensity.status === "partial" ? " · Incomplete" : "";
   return [
-    `${presentation.commonLoad.label} ${presentation.commonLoad.value}${commonLoadSuffix}`,
-    `${presentation.normalizedIntensity.label} ${presentation.normalizedIntensity.value}${intensitySuffix}`,
+    `${presentation.commonLoad.label} ${presentation.commonLoad.value}`,
+    `${presentation.normalizedIntensity.label} ${presentation.normalizedIntensity.value}`,
   ];
 }
 
@@ -124,7 +115,8 @@ export function getEventTimeLabel(event: CalendarEvent): string {
 export function getEventPrimaryMeta(event: CalendarEvent): string[] {
   if (event.event_type === "planned" && hasActivityPlan(event)) {
     const quantitySummary = getActivityPlanQuantitySummary(event.activity_plan);
-    const duration = formatEstimatedDurationSeconds(readMetric(quantitySummary.durationSeconds));
+    const duration =
+      formatEstimatedDurationSeconds(readMetric(quantitySummary.durationSeconds)) ?? "0m";
     return [
       formatCategoryLabel(event.activity_plan?.activity_category),
       duration,

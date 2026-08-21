@@ -12,6 +12,8 @@ const uploadFlow = vi.hoisted(() => ({
   retryMobileRecordingStagingCleanup: vi.fn(),
 }));
 const ingestionRepository = vi.hoisted(() => ({ getOwnedByOperation: vi.fn() }));
+const activityFileParser = vi.hoisted(() => ({ parseActivityFile: vi.fn() }));
+const fitFileParser = vi.hoisted(() => ({ safeDecodeFitFile: vi.fn() }));
 
 vi.mock("./submit-activity", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./submit-activity")>()),
@@ -27,6 +29,8 @@ vi.mock("../activity-file-ingestion/mobile-recording-upload", async (importOrigi
 vi.mock("../../infrastructure/repositories", () => ({
   createDrizzleActivityIngestionRepository: () => ingestionRepository,
 }));
+vi.mock("@repo/core/server/activity-files", () => activityFileParser);
+vi.mock("@repo/core/server/fit-sdk-parser", () => fitFileParser);
 
 import { recordingSummarySubmissionInputSchema } from "../../contracts/recording-submission";
 import { mobileRecordingOperationId } from "../activity-file-ingestion/mobile-recording-upload";
@@ -179,12 +183,22 @@ function createDb(input: {
 describe("submitMobileRecording", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    activityFileParser.parseActivityFile.mockReturnValue({ records: [] });
+    fitFileParser.safeDecodeFitFile.mockReturnValue({ errors: [], messages: {} });
     activityWriter.submitActivity.mockResolvedValue({ id: "activity-1" });
     uploadFlow.retryMobileRecordingStagingCleanup.mockResolvedValue(true);
     uploadFlow.loadAcceptedArtifactForClaim.mockResolvedValue(acceptedArtifact);
     artifactFinalizer.finalizeActivityArtifactIngestion.mockImplementation(
-      async (_db: unknown, input: { submit: (value: unknown) => Promise<unknown> }) =>
-        input.submit({ parsedData: null, artifact: acceptedArtifact }),
+      async (
+        _db: unknown,
+        input: {
+          parse: () => unknown | Promise<unknown>;
+          submit: (value: unknown) => Promise<unknown>;
+        },
+      ) => {
+        const parsedData = await input.parse();
+        return input.submit({ parsedData, artifact: acceptedArtifact });
+      },
     );
     uploadFlow.prepareMobileRecordingArtifact.mockResolvedValue({
       status: "processing",
@@ -387,6 +401,52 @@ describe("submitMobileRecording", () => {
     );
   });
 
+  it("rejects location-bearing live recording artifacts before activity creation", async () => {
+    const db = createDb({
+      activities: [],
+      ingestions: [undefined],
+    });
+    activityFileParser.parseActivityFile.mockReturnValue({
+      records: [
+        {
+          timestamp: new Date("2026-07-24T08:00:00.000Z"),
+          positionLat: 37.7749,
+          positionLong: -122.4194,
+        },
+      ],
+    });
+
+    await expect(
+      submitMobileRecording(db as never, {} as never, {
+        actorProfileId: PROFILE_ID,
+        submission,
+      }),
+    ).rejects.toMatchObject({
+      code: "artifact_invalid",
+      message: "Live recording artifacts cannot contain location data",
+    });
+    expect(activityWriter.submitActivity).not.toHaveBeenCalled();
+  });
+
+  it("rejects FIT location fields outside track records", async () => {
+    const db = createDb({
+      activities: [],
+      ingestions: [undefined],
+    });
+    fitFileParser.safeDecodeFitFile.mockReturnValue({
+      errors: [],
+      messages: { sessionMesgs: [{ startPositionLat: 37.7749 }] },
+    });
+
+    await expect(
+      submitMobileRecording(db as never, {} as never, {
+        actorProfileId: PROFILE_ID,
+        submission,
+      }),
+    ).rejects.toMatchObject({ code: "artifact_invalid" });
+    expect(activityWriter.submitActivity).not.toHaveBeenCalled();
+  });
+
   it("returns the same accepted result on replay and retries pending cleanup", async () => {
     const readyIngestion = acceptedIngestion("session-1");
     const db = createDb({
@@ -403,6 +463,115 @@ describe("submitMobileRecording", () => {
     expect(uploadFlow.prepareMobileRecordingArtifact).not.toHaveBeenCalled();
     expect(activityWriter.submitActivity).not.toHaveBeenCalled();
     expect(uploadFlow.retryMobileRecordingStagingCleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists manual laps atomically while keeping manual timer coverage partial", async () => {
+    const recordingSessionId = "manual-evidence-session";
+    const manualSubmission = recordingSummarySubmissionInputSchema.parse({
+      ...submission,
+      recordingSessionId,
+      sessionTiming: {
+        source: "manual_timer",
+        coverage: "partial",
+        elapsedMs: 1_200_000,
+        activeMs: 900_000,
+      },
+      laps: [
+        {
+          lapNumber: 1,
+          durationSeconds: 300,
+          totalElapsedTime: 300,
+          totalTimerTime: 240,
+          triggerMethod: "manual",
+          timingSource: "manual_timer",
+        },
+      ],
+      executionManifest: {
+        ...submission.executionManifest,
+        occurrences: [
+          {
+            ...submission.executionManifest.occurrences[0],
+            completedAt: "2026-07-24T08:20:00.000Z",
+            activeSeconds: 900,
+            movingSeconds: 0,
+            completion: { status: "completed", method: "manual" },
+            timingEvidence: {
+              source: "manual_timer",
+              coverage: "partial",
+              startOffsetMs: 0,
+              endOffsetMs: 1_200_000,
+            },
+          },
+          {
+            ...submission.executionManifest.occurrences[0],
+            occurrenceId: "occurrence-skipped",
+            globalOrdinal: 1,
+            startedAt: "2026-07-24T08:20:00.000Z",
+            completedAt: "2026-07-24T08:20:00.000Z",
+            activeSeconds: 0,
+            movingSeconds: 0,
+            distanceMeters: 0,
+            completion: { status: "skipped", method: "manual" },
+            timingEvidence: {
+              source: "manual_timer",
+              coverage: "partial",
+              startOffsetMs: 1_200_000,
+              endOffsetMs: 1_200_000,
+            },
+          },
+        ],
+      },
+    });
+    const db = createDb({
+      activities: [{ id: "activity-1", profile_id: PROFILE_ID }],
+      ingestions: [undefined, acceptedIngestion(recordingSessionId)],
+    });
+
+    await submitMobileRecording(db as never, {} as never, {
+      actorProfileId: PROFILE_ID,
+      submission: manualSubmission,
+    });
+
+    expect(activityWriter.submitActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        requestedActivityId: recordingSessionActivityId(PROFILE_ID, recordingSessionId),
+        timingCoverage: "partial",
+        activeMs: null,
+        movingMs: null,
+        laps: manualSubmission.laps,
+        segmentSet: expect.objectContaining({
+          elapsedMs: 1_200_000,
+          segments: [
+            expect.objectContaining({
+              startOffsetMs: 0,
+              endOffsetMs: 1_200_000,
+              summary: expect.objectContaining({
+                timing: { timingCoverage: "partial", activeMs: 900_000 },
+                recordingExecution: {
+                  version: 1,
+                  source: "recording_execution_manifest",
+                  coverage: "complete",
+                  occurrenceCount: 2,
+                  occurrences: [
+                    {
+                      occurrenceId: "occurrence-1",
+                      globalOrdinal: 0,
+                      completion: { status: "completed", method: "manual" },
+                    },
+                    {
+                      occurrenceId: "occurrence-skipped",
+                      globalOrdinal: 1,
+                      completion: { status: "skipped", method: "manual" },
+                    },
+                  ],
+                },
+              }),
+            }),
+          ],
+        }),
+      }),
+    );
   });
 
   it("keeps an uploaded artifact submission scoped to its explicit recording session", async () => {

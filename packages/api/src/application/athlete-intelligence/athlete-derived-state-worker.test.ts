@@ -47,6 +47,40 @@ function claimedItem() {
 }
 
 describe("AthleteDerivedStateWorkerService", () => {
+  it("removes a superseded queue request without publishing its stale revision", async () => {
+    const transition = vi.fn(async () => ({ status: "completed" as const }));
+    const listEffects = vi.fn();
+    const publish = vi.fn();
+    const repository = {
+      claimNextRecalculation: vi.fn(async () => claimedItem()),
+      lockPublicationState: vi.fn(async () => ({
+        ...publication,
+        sourceRevision: request.sourceRevision + 1,
+      })),
+      listActivityTrainingEffects: listEffects,
+      publishDailyTrainingLoad: publish,
+      transitionRecalculation: transition,
+    } as unknown as AthleteDerivedStateRepositoryPort;
+
+    await expect(
+      new AthleteDerivedStateWorkerService({ db: {} as never, repository }).processDueJobs({
+        limit: 1,
+        now: new Date("2026-08-02T00:00:00.000Z"),
+      }),
+    ).resolves.toEqual({ completed: 1, failed: 0, processed: 1 });
+    expect(transition).toHaveBeenCalledWith({
+      profileId,
+      transition: {
+        action: "complete",
+        claimToken: expect.any(String),
+        completedAt: "2026-08-02T00:00:00.000Z",
+        resultingPublishedRevision: publication.publishedRevision,
+      },
+    });
+    expect(listEffects).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
+  });
+
   it("does not complete stale or lease-lost publication", async () => {
     const transition = vi.fn();
     const repository = {

@@ -146,14 +146,15 @@ export function composeEffectivePlanDto(
     });
   }
   const enrich = (item: (typeof composition.items)[number]) => {
+    const { loadStatus: _loadStatus, ...publicItem } = item;
     if (item.kind === "scheduled") {
       const source = scheduledById.get(item.scheduledItemId);
       if (!source) throw new Error("Effective composition item lost its prescription source");
-      return { ...item, prescriptionQuantification: source.prescriptionQuantification };
+      return { ...publicItem, prescriptionQuantification: source.prescriptionQuantification };
     }
     const source = completedById.get(item.completedActivityId);
     if (!source) throw new Error("Effective composition item lost its observation source");
-    return { ...item, observationQuantification: source.observationQuantification };
+    return { ...publicItem, observationQuantification: source.observationQuantification };
   };
   const lifecycleMembers = (items: typeof composition.items) => {
     const prescriptions: ActivityPrescriptionQuantification[] = [];

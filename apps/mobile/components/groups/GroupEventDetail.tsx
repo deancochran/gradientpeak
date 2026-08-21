@@ -1,4 +1,4 @@
-import type { GroupEventRsvpStatus } from "@repo/core/groups";
+import { type GroupEventRsvpStatus, resolveGroupEventRsvpStatus } from "@repo/core/groups";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { useState } from "react";
@@ -15,6 +15,7 @@ import {
 } from "./GroupEventCards";
 
 function formatRsvpStatus(status: GroupEventRsvpStatus | null) {
+  if (status === null) return "No response";
   if (status === "declined") return "Declined";
   return "Going";
 }
@@ -72,7 +73,10 @@ export function GroupEventRsvpPanel({
   isSubmitting?: boolean;
   onRsvp?: (status: GroupEventRsvpStatus | null) => void;
 }) {
-  const status = event.viewerRsvp?.status ?? null;
+  const status = resolveGroupEventRsvpStatus({
+    occurrenceStatus: event.viewerRsvp?.status,
+    seriesStatus: event.viewerSeriesRsvp?.status,
+  });
 
   return (
     <View className="gap-3 rounded-2xl bg-card p-4">
@@ -84,7 +88,7 @@ export function GroupEventRsvpPanel({
         {status === "declined" ? (
           <Button
             disabled={isSubmitting || Boolean(event.cancelled_at)}
-            onPress={() => onRsvp?.(null)}
+            onPress={() => onRsvp?.("going")}
             size="sm"
             variant="ghost"
           >
@@ -96,12 +100,12 @@ export function GroupEventRsvpPanel({
         <Button
           className="flex-1"
           disabled={isSubmitting || Boolean(event.cancelled_at)}
-          onPress={() => onRsvp?.(null)}
-          variant={status === null ? "default" : "outline"}
+          onPress={() => onRsvp?.("going")}
+          variant={status !== "declined" ? "default" : "outline"}
         >
           <Text
             className={
-              status === null
+              status !== "declined"
                 ? "text-sm font-semibold text-primary-foreground"
                 : "text-sm font-semibold text-foreground"
             }
@@ -141,7 +145,10 @@ export function GroupEventSeriesRsvpPanel({
 }) {
   const [applyOpen, setApplyOpen] = useState(false);
   const status = event.viewerSeriesRsvp?.status ?? null;
-  const eventStatus = event.viewerRsvp?.status ?? null;
+  const eventStatus = resolveGroupEventRsvpStatus({
+    occurrenceStatus: event.viewerRsvp?.status,
+    seriesStatus: event.viewerSeriesRsvp?.status,
+  });
 
   if (!event.is_recurring_series && !event.is_recurring_occurrence) return null;
 
@@ -182,12 +189,12 @@ export function GroupEventSeriesRsvpPanel({
             </Text>
             <Button
               disabled={isSubmitting || Boolean(event.cancelled_at)}
-              onPress={() => handleSeriesRsvp(null)}
-              variant={status === null ? "default" : "outline"}
+              onPress={() => handleSeriesRsvp("going")}
+              variant={status !== "declined" ? "default" : "outline"}
             >
               <Text
                 className={
-                  status === null
+                  status !== "declined"
                     ? "text-sm font-semibold text-primary-foreground"
                     : "text-sm font-semibold text-foreground"
                 }
@@ -213,7 +220,7 @@ export function GroupEventSeriesRsvpPanel({
             {status === "declined" ? (
               <Button
                 disabled={isSubmitting || Boolean(event.cancelled_at)}
-                onPress={() => handleSeriesRsvp(null)}
+                onPress={() => handleSeriesRsvp("going")}
                 variant="ghost"
               >
                 <Text className="text-sm font-semibold text-muted-foreground">

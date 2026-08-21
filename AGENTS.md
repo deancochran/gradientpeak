@@ -38,12 +38,7 @@ Use this file when working anywhere inside the product repo.
 - Use repo-wide validation before final integration unless the task is intentionally scoped narrower.
 - Iteration checks are package-scoped typecheck, lint, and test commands.
 - The current integration gate is `pnpm quality:agent`; it includes format/lint, architecture, type, test, and dependency checks. DB-owned changes also require the relevant DB verification command.
-- Run `pnpm check:guidance` after changing an `AGENTS.md` file or the checked exemplar catalog.
-
-## Canonical examples
-
-- Start with [agent implementation exemplars](docs/agent-exemplars.md) before creating a new contract, procedure, UI pattern, or migration workflow.
-- Exemplar links identify the behavior to copy, not a blanket approval of every line. If none fits, stop for an ownership/design decision.
+- Run `pnpm check:guidance` after changing an `AGENTS.md` file.
 
 ## Avoid
 

@@ -72,6 +72,20 @@ describe("createActivityAnalysisStore", () => {
     expect(select).not.toHaveBeenCalled();
   });
 
+  it("omits historical effort evidence for explicit target-based load analysis", async () => {
+    const { db, executions, limits } = createDbMock();
+
+    const result = await getBulkLoader(createActivityAnalysisStore(db))({
+      requests: [{ profileId: "profile-1", asOf: new Date("2026-01-01T00:00:00.000Z") }],
+      evidenceScope: "thresholds",
+    });
+
+    expect(executions).toHaveLength(2);
+    expect(executions.some((fields) => "distance_meters" in fields)).toBe(false);
+    expect(limits).toEqual([1414, 1]);
+    expect(result.get("profile-1")?.recentEfforts).toEqual([]);
+  });
+
   it("projects reference activity categories from the canonical segment column", async () => {
     const { db, select } = createDbMock();
 

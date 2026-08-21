@@ -56,6 +56,13 @@ jest.mock("@repo/ui/components/avatar", () => ({
 jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: createHost("Icon") }));
 jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
 
+jest.mock("react-native-svg", () => ({
+  __esModule: true,
+  Circle: createHost("Circle"),
+  default: createHost("Svg"),
+  Polyline: createHost("Polyline"),
+}));
+
 jest.mock("@repo/core", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/core"),
@@ -111,12 +118,22 @@ function ActivityPlanCard({
 
 const availableMetrics = [
   {
+    key: "distance" as const,
+    label: "Distance",
+    value: 5_000,
+    unit: "meters",
+    status: "available" as const,
+    reason: null,
+    provenance: "estimated" as const,
+  },
+  {
     key: "elapsed_duration" as const,
     label: "Duration",
     value: 300,
     unit: "seconds",
     status: "available" as const,
     reason: null,
+    provenance: "authored" as const,
   },
   {
     key: "common_load" as const,
@@ -125,6 +142,7 @@ const availableMetrics = [
     unit: "score",
     status: "available" as const,
     reason: null,
+    provenance: "plan_intent" as const,
   },
   {
     key: "normalized_intensity" as const,
@@ -133,6 +151,7 @@ const availableMetrics = [
     unit: "ratio",
     status: "available" as const,
     reason: null,
+    provenance: "plan_intent" as const,
   },
 ];
 
@@ -218,6 +237,7 @@ describe("ActivityPlanCard", () => {
               unit: "score",
               status: "unavailable",
               reason: "unsupported",
+              provenance: null,
             },
             {
               key: "normalized_intensity",
@@ -226,6 +246,7 @@ describe("ActivityPlanCard", () => {
               unit: "ratio",
               status: "unavailable",
               reason: "unsupported",
+              provenance: null,
             },
           ],
         }}
@@ -234,7 +255,8 @@ describe("ActivityPlanCard", () => {
 
     expect(screen.getByText("Load")).toBeTruthy();
     expect(screen.getByText("Intensity")).toBeTruthy();
-    expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Unavailable")).toHaveLength(4);
+    expect(screen.queryByText(/^0(?:\.00|m)?$/)).toBeNull();
     expect(JSON.stringify(rendered.toJSON())).not.toMatch(
       /TSS|\bIF\b|category_load|intensityFactor/,
     );
@@ -257,7 +279,7 @@ describe("ActivityPlanCard", () => {
     expect(screen.getAllByText("64")).toHaveLength(1);
     expect(screen.getAllByText("Intensity")).toHaveLength(1);
     expect(screen.getAllByText("0.80")).toHaveLength(1);
-    expect(screen.getByText("Prescribed intensity: RPE 7 · Prescribed")).toBeTruthy();
+    expect(screen.queryByText(/RPE|Prescribed intensity/)).toBeNull();
   });
 
   it("keeps compact cards visual, focused, and tappable", () => {
@@ -286,15 +308,19 @@ describe("ActivityPlanCard", () => {
     );
 
     expect(screen.getByTestId("activity-plan-compact-card")).toBeTruthy();
-    expect(screen.getByTestId("activity-plan-card-preview-plan-list-1").props.size).toBe("small");
+    expect(screen.getByTestId("activity-plan-card-preview-plan-list-1")).toBeTruthy();
     expect(screen.getByText("Run")).toBeTruthy();
     expect(screen.getByText("Tempo Builder")).toBeTruthy();
     expect(screen.getByText("Duration")).toBeTruthy();
-    expect(screen.getByText("~5 min")).toBeTruthy();
+    expect(screen.getByText("5m")).toBeTruthy();
+    expect(screen.queryByText(/~5m|~5 min/)).toBeNull();
+    expect(screen.getByText("Distance")).toBeTruthy();
+    expect(screen.getByText("5 km")).toBeTruthy();
     expect(screen.getByText("Load")).toBeTruthy();
     expect(screen.getByText("64")).toBeTruthy();
     expect(screen.getByText("Intensity")).toBeTruthy();
     expect(screen.getByText("0.80")).toBeTruthy();
+    expect(screen.queryByText(/RPE|Tempo · 5 min|Steps/)).toBeNull();
     expect(screen.queryByTestId("resource-owner-action-row")).toBeNull();
     expect(screen.queryByText("Coach Kim")).toBeNull();
     expect(screen.queryByText("Like")).toBeNull();
@@ -304,7 +330,7 @@ describe("ActivityPlanCard", () => {
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it("passes only structured activity data to its preview", () => {
+  it("renders the full authored workout timeline through the canonical preview", () => {
     renderNative(
       <ActivityPlanCard
         activityPlan={{
@@ -317,12 +343,12 @@ describe("ActivityPlanCard", () => {
     );
 
     const preview = screen.getByTestId("activity-plan-card-preview-plan-route-preview");
-    expect(preview.props.size).toBe("medium");
-    expect(preview.props.plan).toEqual(
-      expect.objectContaining({ structure: activityPlanStructure }),
-    );
-    expect(preview.props).not.toHaveProperty("route");
-    expect(preview.props).not.toHaveProperty("routeFull");
+    expect(preview).toBeTruthy();
+    expect(preview.props.plan.structure).toEqual(activityPlanStructure);
+    expect(preview.props.presentation.occurrences[0]).toMatchObject({
+      intensityLabel: "RPE 7",
+      duration: { type: "time", seconds: 300 },
+    });
   });
 
   it("keeps navigation and the like action independent", () => {

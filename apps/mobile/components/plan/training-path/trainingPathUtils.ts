@@ -31,12 +31,18 @@ type BuildTrainingPathInput = {
 };
 
 type WeekBucket = {
+  completedAggregateInvalid: boolean;
   completedAggregateUnavailable: boolean;
+  completedHasKnownLoad: boolean;
   completedIdentity: CommonLoadIdentity | null;
+  completedKnownZeroOnly: boolean;
   completedLoad: number;
   hasCompletedObservation: boolean;
   plannedLoad: number;
   plannedLoadUnavailable: boolean;
+  plannedLoadPartial: boolean;
+  plannedHasKnownLoad: boolean;
+  plannedKnownZeroOnly: boolean;
   targetLoad: number | null;
   targetLoadDates: Set<string>;
 };
@@ -147,39 +153,60 @@ function aggregateLoadByWeek(timeline: TrainingPathLoadPoint[]) {
     const weekStart = getWeekStartDateKey(point.date);
     const bucket = buckets.get(weekStart) ?? {
       completedAggregateUnavailable: false,
+      completedAggregateInvalid: false,
+      completedHasKnownLoad: false,
       completedIdentity: null,
+      completedKnownZeroOnly: true,
       completedLoad: 0,
       hasCompletedObservation: false,
       plannedLoad: 0,
       plannedLoadUnavailable: false,
+      plannedLoadPartial: false,
+      plannedHasKnownLoad: false,
+      plannedKnownZeroOnly: true,
       targetLoad: null,
       targetLoadDates: new Set<string>(),
     };
     const completedLoad = point.completed_common_load;
     const completedState = point.completed_observation_state;
+    const completedLoadStatus = point.completed_common_load_status;
     if (completedState === "observed") {
       bucket.hasCompletedObservation = true;
-      if (
-        point.has_unavailable_completed_activity ||
-        !point.completed_common_load_identity ||
-        !isFiniteLoad(completedLoad) ||
-        (bucket.completedIdentity &&
-          !sameCommonLoadIdentity(bucket.completedIdentity, point.completed_common_load_identity))
-      ) {
+      if (!point.completed_common_load_identity) {
+        bucket.completedAggregateInvalid = true;
+      } else if (!isFiniteLoad(completedLoad)) {
         bucket.completedAggregateUnavailable = true;
+      } else if (
+        bucket.completedIdentity &&
+        !sameCommonLoadIdentity(bucket.completedIdentity, point.completed_common_load_identity)
+      ) {
+        bucket.completedAggregateInvalid = true;
       } else {
         bucket.completedIdentity ??= point.completed_common_load_identity;
         bucket.completedLoad += completedLoad;
+        bucket.completedHasKnownLoad = true;
+        bucket.completedKnownZeroOnly = false;
+        if (completedLoadStatus === "partial" || point.has_unavailable_completed_activity) {
+          bucket.completedAggregateUnavailable = true;
+        }
       }
     } else if (completedState === "known_zero") {
       bucket.hasCompletedObservation = true;
+      bucket.completedHasKnownLoad = true;
     } else if (completedState === "unavailable" || completedState === "uncovered") {
+      bucket.hasCompletedObservation = true;
       bucket.completedAggregateUnavailable = true;
     } else if (isFiniteLoad(completedLoad) && completedLoad > 0) {
       bucket.completedAggregateUnavailable = true;
     }
-    if (isFiniteLoad(point.scheduled_common_load)) {
+    if (
+      isFiniteLoad(point.scheduled_common_load) &&
+      point.scheduled_common_load_status !== "unavailable"
+    ) {
       bucket.plannedLoad += point.scheduled_common_load;
+      bucket.plannedHasKnownLoad = true;
+      if (point.scheduled_common_load_status === "partial") bucket.plannedLoadPartial = true;
+      if (point.scheduled_common_load_status !== "known_zero") bucket.plannedKnownZeroOnly = false;
     } else {
       bucket.plannedLoadUnavailable = true;
     }
@@ -345,13 +372,15 @@ export function buildTrainingPathWeekSummary(input: {
           : `${absDelta} Common Load above target`;
   const body = input.week.completedLoadUnavailable
     ? "Completed Common Load is unavailable for this week."
-    : absDelta == null || loadDelta == null
-      ? null
-      : absDelta < 10
-        ? "This week is aligned with the target path."
-        : loadDelta < 0
-          ? ""
-          : "This week is above the target path, so watch freshness before adding more load.";
+    : input.week.completedLoadStatus === "partial"
+      ? "Completed Common Load is partial for this week."
+      : absDelta == null || loadDelta == null
+        ? null
+        : absDelta < 10
+          ? "This week is aligned with the target path."
+          : loadDelta < 0
+            ? ""
+            : "This week is above the target path, so watch freshness before adding more load.";
   const nextGoal = input.goalMarkers.find((goal) => goal.weekStart >= input.week.weekStart);
   const projectedFitnessAtGoal = nextGoal
     ? (input.projectedFitnessByWeek.get(nextGoal.weekStart)?.longTermLoad ?? null)
@@ -368,8 +397,10 @@ export function buildTrainingPathWeekSummary(input: {
     headline,
     body,
     completedLoad,
+    completedLoadStatus: input.week.completedLoadStatus,
     completedLoadUnavailable: input.week.completedLoadUnavailable,
     plannedLoad,
+    plannedLoadStatus: input.week.plannedLoadStatus,
     targetLoad,
     fitness: input.week.fitness,
     targetFitness: input.week.targetFitness,
@@ -510,16 +541,40 @@ function buildWeeks(input: NormalizedTrainingPathInput, sources: TrainingPathSou
       load?.targetLoadDates.has(addDays(weekStart, index)),
     ).every(Boolean);
     const form = fitnessPoint?.loadBalance ?? null;
+    const completedLoadStatus = !load?.hasCompletedObservation
+      ? undefined
+      : load.completedAggregateInvalid
+        ? ("unavailable" as const)
+        : load.completedHasKnownLoad
+          ? load.completedAggregateUnavailable
+            ? ("partial" as const)
+            : load.completedKnownZeroOnly
+              ? ("known_zero" as const)
+              : ("complete" as const)
+          : ("unavailable" as const);
+    const plannedLoadStatus = !load
+      ? undefined
+      : !load.plannedHasKnownLoad
+        ? ("unavailable" as const)
+        : load.plannedLoadUnavailable || load.plannedLoadPartial
+          ? ("partial" as const)
+          : load.plannedKnownZeroOnly
+            ? ("known_zero" as const)
+            : ("complete" as const);
     return {
       weekStart,
       weekEnd,
       label: compactDateLabel(weekStart),
       completedLoad:
-        load?.hasCompletedObservation && !load.completedAggregateUnavailable
+        load?.hasCompletedObservation &&
+        load.completedHasKnownLoad &&
+        !load.completedAggregateInvalid
           ? Math.round(load.completedLoad)
           : null,
-      completedLoadUnavailable: load?.completedAggregateUnavailable === true,
-      plannedLoad: load && !load.plannedLoadUnavailable ? Math.round(load.plannedLoad) : null,
+      completedLoadStatus,
+      completedLoadUnavailable: completedLoadStatus === "unavailable",
+      plannedLoad: load?.plannedHasKnownLoad ? Math.round(load.plannedLoad) : null,
+      plannedLoadStatus,
       targetLoad:
         hasCompleteTargetCoverage && typeof load?.targetLoad === "number"
           ? Math.round(load.targetLoad)

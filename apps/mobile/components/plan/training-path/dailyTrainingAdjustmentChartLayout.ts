@@ -7,6 +7,7 @@ export type DailyTrainingAdjustmentChartLayout = {
   labelBandHeight: number;
   labelFontSize: number;
   labelLineHeight: number;
+  labelEvery: number;
   markerLabelWidth: number;
   sideInset: number;
   slotWidth: number;
@@ -15,11 +16,15 @@ export type DailyTrainingAdjustmentChartLayout = {
   completedBarOffset: number;
   plannedBarOffset: number;
   touchTargetWidth: number;
+  selectionHighlightWidth: number;
 };
 
 const MIN_TOUCH_TARGET = 44;
 const DEFAULT_FONT_SCALE = 1;
-const BAR_GAP = 2;
+const BAR_GAP_RATIO = 0.06;
+const BAR_GROUP_WIDTH_RATIO = 0.62;
+const MAX_BAR_GROUP_WIDTH = 36;
+const MAX_SELECTION_WIDTH_RATIO = 0.74;
 
 const rangeMinimumSlot = {
   daily: 44,
@@ -51,14 +56,21 @@ export function buildDailyTrainingAdjustmentChartLayout({
   const scaledLabelWidth = Math.ceil(
     rangeMaximumLabelCharacters[range] * 5.2 * Math.max(1, fontScale),
   );
-  const densityMinimum = density === "compact" ? 44 : density === "detail" ? 56 : 48;
-  const labelFontSize = 8 * Math.max(1, fontScale);
+  const densityMinimum = density === "detail" ? 56 : MIN_TOUCH_TARGET;
+  const densityFontScale = density === "compact" ? 0.875 : 1;
+  const labelFontSize = 8 * densityFontScale * Math.max(1, fontScale);
   const labelLineHeight = Math.ceil(labelFontSize * 1.35);
   const labelBandHeight = labelLineHeight + 8;
-  const slotWidth = Math.max(rangeMinimumSlot[range], densityMinimum, scaledLabelWidth + 8);
-  const sideInset = Math.max(0, safeViewportWidth / 2 - slotWidth / 2);
-  const visualBarWidth = Math.max(6, Math.min(30, (slotWidth - BAR_GAP - 8) / 2));
-  const pairWidth = visualBarWidth * 2 + BAR_GAP;
+  const minimumSlotWidth = Math.max(rangeMinimumSlot[range], densityMinimum, scaledLabelWidth + 8);
+  // Spread a short time window across the chart instead of reserving large
+  // centering gutters at both ends. Once the window needs to scroll, retain
+  // the minimum readable/tappable bucket width.
+  const slotWidth = Math.max(minimumSlotWidth, safeViewportWidth / safeBucketCount);
+  const sideInset = 0;
+  const barGap = Math.max(2, Math.round(slotWidth * BAR_GAP_RATIO));
+  const barGroupWidth = Math.min(MAX_BAR_GROUP_WIDTH, slotWidth * BAR_GROUP_WIDTH_RATIO);
+  const visualBarWidth = Math.max(4, (barGroupWidth - barGap) / 2);
+  const pairWidth = visualBarWidth * 2 + barGap;
   const firstCenter = sideInset + slotWidth / 2;
   const bucketCenters = Array.from(
     { length: safeBucketCount },
@@ -67,21 +79,26 @@ export function buildDailyTrainingAdjustmentChartLayout({
 
   return {
     bucketCenters,
-    chartContentWidth: sideInset * 2 + safeBucketCount * slotWidth,
+    chartContentWidth: safeBucketCount * slotWidth,
     firstCenter,
     lastCenter: bucketCenters[bucketCenters.length - 1] ?? firstCenter,
     labelWidth: Math.min(slotWidth - 4, scaledLabelWidth),
     labelBandHeight,
     labelFontSize,
     labelLineHeight,
+    labelEvery: Math.max(1, Math.ceil(safeBucketCount / 7)),
     markerLabelWidth: Math.ceil(30 * Math.max(1, fontScale)),
     sideInset,
     slotWidth,
     visualBarWidth,
-    barGap: BAR_GAP,
+    barGap,
     completedBarOffset: -pairWidth / 2,
-    plannedBarOffset: BAR_GAP / 2,
+    plannedBarOffset: barGap / 2,
     touchTargetWidth: Math.max(MIN_TOUCH_TARGET, slotWidth),
+    selectionHighlightWidth: Math.min(
+      slotWidth * MAX_SELECTION_WIDTH_RATIO,
+      pairWidth + barGap * 2,
+    ),
   };
 }
 
@@ -133,6 +150,10 @@ export function buildDailyTrainingAdjustmentRendererGeometry(
       left: center - layout.touchTargetWidth / 2,
       width: layout.touchTargetWidth,
     },
+    selectionHighlight: {
+      left: center - layout.selectionHighlightWidth / 2,
+      width: layout.selectionHighlightWidth,
+    },
     completedBar: {
       left: center + layout.completedBarOffset,
       width: layout.visualBarWidth,
@@ -142,4 +163,19 @@ export function buildDailyTrainingAdjustmentRendererGeometry(
       width: layout.visualBarWidth,
     },
   }));
+}
+
+export function getDailyTrainingAdjustmentRendererPointLimit({
+  maxPhysicalWidth,
+  pixelRatio,
+  sideInset,
+  slotWidth,
+}: {
+  maxPhysicalWidth: number;
+  pixelRatio: number;
+  sideInset: number;
+  slotWidth: number;
+}) {
+  const logicalWidthBudget = Math.max(1, maxPhysicalWidth) / Math.max(1, pixelRatio);
+  return Math.max(1, Math.floor((logicalWidthBudget - sideInset * 2) / slotWidth));
 }

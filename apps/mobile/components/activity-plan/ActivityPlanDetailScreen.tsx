@@ -1,5 +1,8 @@
 import { invalidateActivityPlanQueries } from "@repo/api/react";
-import { deriveActivityPlanPresentation } from "@repo/core/activity-plan";
+import {
+  deriveActivityPlanPresentation,
+  resolveActivityPlanSessionFlow,
+} from "@repo/core/activity-plan";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useQueryClient } from "@tanstack/react-query";
@@ -18,7 +21,6 @@ import {
   ResourceOwnerActionRow,
 } from "@/components/shared/ResourceCardPrimitives";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
-import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import { api } from "@/lib/api";
 import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
 import { ROUTES } from "@/lib/constants/routes";
@@ -64,6 +66,7 @@ export function ActivityPlanDetailScreen({
   const sessionView = useSessionView(recorderService);
   const recordingLifecycle = recorderService?.recordingLifecycle ?? (sessionView ? "idle" : "idle");
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
+  const [personalizationChoice, setPersonalizationChoice] = React.useState<boolean | null>(null);
 
   const utils = api.useUtils();
   const { beginRedirect, isRedirecting, redirectOnNotFound } = useDeletedDetailRedirect({
@@ -71,7 +74,7 @@ export function ActivityPlanDetailScreen({
   });
 
   const { data: fetchedPlan, isLoading: loadingPlan } = api.activityPlans.getById.useQuery(
-    { id: planId ?? "" },
+    { id: planId ?? "", personalize: false },
     { enabled: !!planId },
   );
 
@@ -79,8 +82,10 @@ export function ActivityPlanDetailScreen({
     data: plannedActivity,
     error: plannedActivityError,
     isLoading: loadingPlannedActivity,
-  } = api.events.getById.useQuery({ id: eventId ?? "" }, { enabled: !!eventId && !isRedirecting });
-
+  } = api.events.getById.useQuery(
+    { id: eventId ?? "", personalize: false },
+    { enabled: !!eventId && !isRedirecting },
+  );
   React.useEffect(() => {
     redirectOnNotFound(plannedActivityError);
   }, [plannedActivityError, redirectOnNotFound]);
@@ -106,14 +111,35 @@ export function ActivityPlanDetailScreen({
     profile,
     template,
   });
+  const { data: viewerReadModel, isLoading: viewerReadModelLoading } =
+    api.athleteIntelligence.getReadModel.useQuery(
+      { sections: { publishedState: true } },
+      { enabled: vm.isOwnedByUser, refetchOnWindowFocus: false },
+    );
 
   const activityPlan = vm.activityPlan;
+  const performanceTargets = viewerReadModel?.publishedState?.performanceTargets;
+  const personalizationEligibility = React.useMemo(
+    () =>
+      resolveActivityPlanSessionFlow({
+        structure: activityPlan?.structure,
+        ...(performanceTargets ? { performanceTargets } : {}),
+        personalize: false,
+      }).eligibility,
+    [activityPlan?.structure, performanceTargets],
+  );
+  const personalizeTargets = Boolean(
+    vm.isOwnedByUser && personalizationEligibility.eligible && (personalizationChoice ?? true),
+  );
+  React.useEffect(() => {
+    setPersonalizationChoice(null);
+  }, [eventId, planId]);
+
   const presentation = React.useMemo(
     () => deriveActivityPlanPresentation(activityPlan?.structure),
     [activityPlan?.structure],
   );
   const planCategory = activityPlan?.activityCategory ?? "other";
-  const quantitySummary = getActivityPlanQuantitySummary(activityPlan);
   const categoryItems = getUniqueActivityCategoryConfigs([
     presentation?.activity_category ?? planCategory,
   ]).map((activity_category) => ({
@@ -123,7 +149,9 @@ export function ActivityPlanDetailScreen({
   }));
 
   const recordingCandidate = React.useMemo<RecordingObjectActionCandidate | null>(() => {
-    if (!activityPlan) return null;
+    if (!activityPlan || !presentation?.structure || !activityPlan.capabilities.canRecord) {
+      return null;
+    }
     return {
       objectKind: "activity_plan",
       objectId: activityPlan.id,
@@ -133,10 +161,10 @@ export function ActivityPlanDetailScreen({
         id: activityPlan.id,
         name: activityPlan.name,
         activity_category: activityPlan.activityCategory,
-        structure: activityPlan.structure,
+        structure: presentation.structure,
       },
     };
-  }, [activityPlan, planCategory]);
+  }, [activityPlan, planCategory, presentation]);
 
   const recordingAction = recordingCandidate
     ? resolveRecordingObjectAction({
@@ -165,7 +193,8 @@ export function ActivityPlanDetailScreen({
     queryClient,
     router,
     utils,
-    canCreateNewPlanWork: Boolean(activityPlan),
+    canDuplicatePlan: Boolean(activityPlan?.capabilities.canDuplicate),
+    canSchedulePlan: Boolean(activityPlan?.capabilities.canSchedule),
   });
 
   const handleEdit = () => {
@@ -257,7 +286,7 @@ export function ActivityPlanDetailScreen({
   const renderOptionsMenu = () => {
     const actions: DetailOverflowMenuAction[] = [];
 
-    if (activityPlan) {
+    if (recordingCandidate) {
       actions.push({
         disabled: recordingAction?.primaryAction === "disabled" || !recordingAction?.command,
         label: recordingAction?.label ?? "Start Activity",
@@ -266,7 +295,7 @@ export function ActivityPlanDetailScreen({
       });
     }
 
-    if (!isEventContext) {
+    if (!isEventContext && activityPlan.capabilities.canSchedule) {
       actions.push({
         label: primaryScheduleLabel,
         onPress: scheduling.isScheduled ? scheduling.handleReschedule : scheduling.handleSchedule,
@@ -282,7 +311,7 @@ export function ActivityPlanDetailScreen({
       });
     }
 
-    if (activityPlan) {
+    if (activityPlan.capabilities.canDuplicate) {
       actions.push({
         disabled: scheduling.duplicatePending,
         label: scheduling.duplicatePending ? "Duplicating..." : "Duplicate",
@@ -345,7 +374,6 @@ export function ActivityPlanDetailScreen({
 
             <ActivityPlanSummary
               description={activityPlan.description}
-              estimatedDuration={quantitySummary.durationSeconds}
               presentation={presentation}
               projectionMetrics={activityPlan.metrics}
               structure={activityPlan.structure}
@@ -396,12 +424,19 @@ export function ActivityPlanDetailScreen({
               </View>
             ) : null}
           </View>
-          <ActivityPlanContentPreview
-            size="large"
-            plan={activityPlan}
-            presentation={presentation}
-            testIDPrefix="activity-plan-content-preview"
-          />
+          {presentation?.structure ? (
+            <ActivityPlanContentPreview
+              personalizeTargets={personalizeTargets}
+              personalizationFactsLoading={viewerReadModelLoading}
+              performanceTargets={performanceTargets ?? null}
+              onPersonalizeTargetsChange={setPersonalizationChoice}
+              showPersonalizationControl={vm.isOwnedByUser}
+              size="large"
+              plan={activityPlan}
+              presentation={presentation}
+              testIDPrefix="activity-plan-content-preview"
+            />
+          ) : null}
           <EntityCommentsSection
             addCommentPending={social.addCommentPending}
             commentCount={social.commentCount}

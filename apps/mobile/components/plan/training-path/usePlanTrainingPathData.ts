@@ -1,4 +1,3 @@
-import { COMMON_RELATIVE_LOAD_MODEL, COMMON_RELATIVE_LOAD_VERSION } from "@repo/core/load";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
@@ -6,21 +5,29 @@ import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { addDaysToDateKey } from "@/lib/calendar/dateMath";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { normalizeDailyTrainingAdjustmentPoints } from "@/lib/training-path/dailyTrainingPathModel";
+import { buildPlanTabProjectionPresentation } from "./planTabProjectionPresentation";
 import {
   getTrainingPathTodayKey,
   millisecondsUntilNextTrainingPathDay,
 } from "./trainingPathPlanningTime";
-import type {
-  TrainingPathCompletedActivity,
-  TrainingPathScheduledItem,
-  TrainingPathSelectedGoal,
-} from "./trainingPathTypes";
-import { buildTrainingPathViewModel, getWeekStartDateKey } from "./trainingPathUtils";
-import { useScrollableTrainingPathWindow } from "./useScrollableTrainingPathWindow";
+import { getWeekStartDateKey } from "./trainingPathUtils";
 
 const DORMANT_DATE_KEY = "1970-01-01";
-const PLAN_TAB_DAY_RADIUS = 28;
+const PLAN_TAB_PAST_DAYS = 42;
+const PLAN_TAB_FUTURE_DAYS = 41;
+
+function resolveProjectionSelectedDate(input: {
+  selectedDate: string | null;
+  timeline: { startDate: string; endDate: string } | null | undefined;
+  todayKey: string;
+}) {
+  const timeline = input.timeline;
+  if (!timeline) return input.selectedDate ?? input.todayKey;
+  const inRange = (date: string) => date >= timeline.startDate && date <= timeline.endDate;
+  if (input.selectedDate && inRange(input.selectedDate)) return input.selectedDate;
+  if (input.todayKey && inRange(input.todayKey)) return input.todayKey;
+  return timeline.startDate;
+}
 
 function useTrainingPathTodayKey(planningTimezone: string | null) {
   const [todayState, setTodayState] = useState(() => {
@@ -78,7 +85,6 @@ function useTrainingPathTodayKey(planningTimezone: string | null) {
 export function usePlanTrainingPathData() {
   const { profile, profileLoading, refreshProfile } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedWeekStart, setSelectedWeekStart] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [pendingSelectedWeekStart, setPendingSelectedWeekStart] = useState<string | null>(null);
   // A legacy or partially completed profile can lack a timezone. Do not turn
@@ -91,15 +97,16 @@ export function usePlanTrainingPathData() {
   const queryEnabled = useAuthStore(
     (state) => state.ready && !!state.session && hasSessionAuthCredentials() && !!planningTodayKey,
   );
-  // Selection is presentation state. Keep one stable server window around the
-  // planning date so scrubbing or choosing a week does not recompute an 89-day
-  // projection with a new query key.
+  // Selection is presentation state. One 84-day server projection is the
+  // complete authoritative source for every chart mode; chart gestures only
+  // move through or locally slice this result.
   const dataAnchor = planningTodayKey ?? DORMANT_DATE_KEY;
+  const dataAnchorWeekStart = getWeekStartDateKey(dataAnchor);
   const queryStartDate = queryEnabled
-    ? addDaysToDateKey(dataAnchor, -PLAN_TAB_DAY_RADIUS)
+    ? addDaysToDateKey(dataAnchorWeekStart, -PLAN_TAB_PAST_DAYS)
     : DORMANT_DATE_KEY;
   const queryEndDate = queryEnabled
-    ? addDaysToDateKey(dataAnchor, PLAN_TAB_DAY_RADIUS)
+    ? addDaysToDateKey(dataAnchorWeekStart, PLAN_TAB_FUTURE_DAYS)
     : DORMANT_DATE_KEY;
   const projectionQuery = api.trainingPlans.getPlanTabProjection.useQuery(
     { startDate: queryStartDate, endDate: queryEndDate },
@@ -112,178 +119,40 @@ export function usePlanTrainingPathData() {
     },
   );
   const projection = planningTodayKey ? projectionQuery.data : undefined;
-  const goalMarkers = projection?.goalMarkers ?? [];
-  const trainingPathWindow = useScrollableTrainingPathWindow({ goalMarkers, todayKey });
-  const timelineLoadPoints = useMemo(
+  const resolvedSelectedDate = resolveProjectionSelectedDate({
+    selectedDate,
+    timeline: projection?.timeline,
+    todayKey,
+  });
+  const resolvedSelectedWeekStart = resolvedSelectedDate
+    ? getWeekStartDateKey(resolvedSelectedDate)
+    : null;
+  const authoritativeWeekWindow = useMemo(
     () =>
-      (projection?.timeline?.days ?? []).map((day) => ({
-        date: day.date,
-        completed_common_load: day.load.completedLoad,
-        scheduled_common_load: day.load.scheduledLoad,
-        completed_observation_state:
-          day.completedItems.length > 0
-            ? ("observed" as const)
-            : day.load.completedLoad === 0
-              ? ("known_zero" as const)
-              : ("unavailable" as const),
-        completed_common_load_identity:
-          day.load.completedLoad === null
-            ? null
-            : {
-                model: COMMON_RELATIVE_LOAD_MODEL,
-                version: COMMON_RELATIVE_LOAD_VERSION,
-              },
-        has_unavailable_completed_activity:
-          projection?.dayLoads[day.date]?.hasUnavailableCompletedLoad === true,
-      })),
-    [projection?.dayLoads, projection?.timeline?.days],
+      projection?.timeline
+        ? { start: projection.timeline.startDate, end: projection.timeline.endDate }
+        : { start: dataAnchorWeekStart, end: dataAnchorWeekStart },
+    [dataAnchorWeekStart, projection?.timeline],
   );
-  const trainingPath = useMemo(
+  const presentation = useMemo(
     () =>
-      buildTrainingPathViewModel({
-        timeline: timelineLoadPoints,
-        fitnessHistory: projection?.fitness.actual ?? [],
-        projectedFitness: projection?.fitness.scheduled ?? [],
-        idealFitnessCurve: [],
-        goalMarkers,
-        selectedWeekStart,
-        range: "season",
-        weekWindow: trainingPathWindow.resolvedWeekWindow,
+      buildPlanTabProjectionPresentation({
+        projection,
+        selectedWeekStart: resolvedSelectedWeekStart,
+        weekWindow: authoritativeWeekWindow,
         todayKey,
       }),
-    [
-      goalMarkers,
-      projection?.fitness.actual,
-      projection?.fitness.scheduled,
-      selectedWeekStart,
-      timelineLoadPoints,
-      todayKey,
-      trainingPathWindow.resolvedWeekWindow,
-    ],
+    [authoritativeWeekWindow, projection, resolvedSelectedWeekStart, todayKey],
   );
-  const dailyTrainingPathPoints = useMemo(() => {
-    const actualByDate = new Map(projection?.fitness.actual.map((point) => [point.date, point]));
-    const scheduledByDate = new Map(
-      projection?.fitness.scheduled.map((point) => [point.date, point]),
-    );
-    const timeline = projection?.timeline;
-    if (!timeline) return [];
-    const normalized = normalizeDailyTrainingAdjustmentPoints({
-      startDate: timeline.startDate,
-      endDate: timeline.endDate,
-      points: timeline.days.map((day) => {
-        const load = projection.dayLoads[day.date];
-        const actual = actualByDate.get(day.date);
-        const scheduled = scheduledByDate.get(day.date);
-        return {
-          date: day.date,
-          plannedLoad: day.load.scheduledLoad,
-          completedLoad: day.load.completedLoad,
-          remainingScheduledLoad: day.load.remainingLoad,
-          completedObservationState:
-            day.completedItems.length > 0
-              ? ("observed" as const)
-              : day.load.completedLoad === 0
-                ? ("known_zero" as const)
-                : ("unavailable" as const),
-          completedCommonLoadIdentity:
-            day.load.completedLoad === null
-              ? null
-              : {
-                  model: COMMON_RELATIVE_LOAD_MODEL,
-                  version: COMMON_RELATIVE_LOAD_VERSION,
-                },
-          hasCompletedActivityWithoutLoad: load?.hasUnavailableCompletedLoad === true,
-          hasTargetLoad: false,
-          fitnessCtl: actual?.longTermLoad ?? null,
-          scheduledFitnessCtl: scheduled?.longTermLoad ?? null,
-          actualFatigueAtl: actual?.recentLoad ?? null,
-          scheduledFatigueAtl: scheduled?.recentLoad ?? null,
-          formTsb: scheduled?.loadBalance ?? actual?.loadBalance ?? null,
-        };
-      }),
-    });
-    return normalized.map((point) => {
-      const load = projection.dayLoads[point.date];
-      return {
-        ...point,
-        effectiveLoadStatus: load?.status ?? "unavailable",
-        effectiveLoad: load?.commonLoad ?? null,
-        effectiveCompletedLoad: load?.completedLoad ?? null,
-        effectiveRemainingLoad: load?.remainingLoad ?? null,
-      };
-    });
-  }, [projection]);
-  const selectedWeekRangeStart = trainingPath.selectedWeekSummary?.weekStart ?? null;
-  const selectedWeekRangeEnd = trainingPath.selectedWeekSummary?.weekEnd ?? null;
-  const selectedDays = useMemo(
-    () =>
-      selectedWeekRangeStart && selectedWeekRangeEnd
-        ? (projection?.timeline?.days ?? []).filter(
-            (day) => day.date >= selectedWeekRangeStart && day.date <= selectedWeekRangeEnd,
-          )
-        : [],
-    [projection?.timeline?.days, selectedWeekRangeEnd, selectedWeekRangeStart],
-  );
-  const selectedWeekGoals = useMemo<TrainingPathSelectedGoal[]>(
-    () =>
-      selectedWeekRangeStart && selectedWeekRangeEnd
-        ? goalMarkers
-            .filter(
-              (goal) =>
-                goal.targetDate >= selectedWeekRangeStart &&
-                goal.targetDate <= selectedWeekRangeEnd,
-            )
-            .map((goal) => ({
-              id: goal.id,
-              label: goal.label,
-              targetDate: goal.targetDate,
-              activityCategory: goal.activityCategory,
-              status: "Goal due",
-            }))
-        : [],
-    [goalMarkers, selectedWeekRangeEnd, selectedWeekRangeStart],
-  );
-  const selectedWeekEvents = useMemo<TrainingPathScheduledItem[]>(
-    () =>
-      selectedDays.flatMap((day) =>
-        day.scheduledItems
-          .filter((item) => item.source !== "group_event")
-          .map((item) => ({
-            id: item.id,
-            title: item.title,
-            date: item.date,
-            estimatedLoad: item.plannedLoad ?? null,
-          })),
-      ),
-    [selectedDays],
-  );
-  const selectedWeekGroupEvents = useMemo<TrainingPathScheduledItem[]>(
-    () =>
-      selectedDays.flatMap((day) =>
-        day.scheduledItems
-          .filter((item) => item.source === "group_event")
-          .map((item) => ({
-            id: item.id,
-            title: item.title,
-            date: item.date,
-            estimatedLoad: item.plannedLoad ?? null,
-          })),
-      ),
-    [selectedDays],
-  );
-  const selectedWeekCompletedActivities = useMemo<TrainingPathCompletedActivity[]>(
-    () =>
-      selectedDays.flatMap((day) =>
-        day.completedItems.map((item) => ({
-          id: item.id,
-          title: item.title,
-          date: item.date,
-          load: item.completedLoad ?? null,
-        })),
-      ),
-    [selectedDays],
-  );
+  const {
+    trainingPath,
+    dailyTrainingPathPoints,
+    selectedWeekGoals,
+    selectedWeekEvents,
+    selectedWeekGroupEvents,
+    selectedWeekCompletedActivities,
+    hasUsableData,
+  } = presentation;
   const selectedWeekLoading =
     projectionQuery.isFetching ||
     (!!pendingSelectedWeekStart &&
@@ -294,41 +163,27 @@ export function usePlanTrainingPathData() {
   const chartUnavailable =
     planningTimezoneState === "ready" && !projectionQuery.isLoading && !projection?.timeline;
   const queryFailureCount = projectionQuery.isError ? 1 : 0;
-  const hasUsableData = Boolean(
-    projection?.currentScheduledPlan ||
-      goalMarkers.length ||
-      projection?.fitness.actual.length ||
-      projection?.timeline?.days.some(
-        (day) =>
-          day.scheduledItems.length > 0 ||
-          day.completedItems.length > 0 ||
-          day.load.completedLoad !== null,
-      ),
-  );
 
-  const resetTrainingPathChart = useCallback(() => {
-    trainingPathWindow.resetWindow();
-    startTransition(() => {
-      setSelectedDate(null);
-      setSelectedWeekStart(null);
-      setPendingSelectedWeekStart(null);
-    });
-  }, [trainingPathWindow.resetWindow]);
   const handleSelectedWeekChange = useCallback((weekStart: string) => {
     setPendingSelectedWeekStart(weekStart);
     startTransition(() => {
-      setSelectedWeekStart(weekStart);
+      setSelectedDate(weekStart);
     });
   }, []);
   const handleSelectedDateChange = useCallback((date: string) => {
     setSelectedDate(date);
     const weekStart = getWeekStartDateKey(date);
     setPendingSelectedWeekStart(weekStart);
-    startTransition(() => {
-      setSelectedWeekStart(weekStart);
-    });
   }, []);
   const handleWeekScrollStart = useCallback(() => setPendingSelectedWeekStart(null), []);
+
+  useEffect(() => {
+    if (!projection?.timeline || selectedDate === null || selectedDate === resolvedSelectedDate) {
+      return;
+    }
+    setSelectedDate(resolvedSelectedDate);
+    setPendingSelectedWeekStart(null);
+  }, [projection?.timeline, resolvedSelectedDate, selectedDate]);
 
   useEffect(() => {
     if (!pendingSelectedWeekStart) return;
@@ -337,7 +192,6 @@ export function usePlanTrainingPathData() {
   }, [pendingSelectedWeekStart, trainingPath.selectedWeekSummary?.weekStart]);
 
   const handleRefresh = useCallback(async () => {
-    resetTrainingPathChart();
     setRefreshing(true);
     try {
       await Promise.all([
@@ -347,7 +201,7 @@ export function usePlanTrainingPathData() {
     } finally {
       setRefreshing(false);
     }
-  }, [projectionQuery.refetch, queryEnabled, refreshProfile, resetTrainingPathChart]);
+  }, [projectionQuery.refetch, queryEnabled, refreshProfile]);
 
   return {
     refreshing,
@@ -357,14 +211,12 @@ export function usePlanTrainingPathData() {
     chartLoading,
     chartUnavailable,
     planningTimezoneState,
-    selectedDate: selectedDate ?? todayKey,
+    selectedDate: resolvedSelectedDate,
     selectedWeekGoals,
     selectedWeekEvents,
     selectedWeekGroupEvents,
     selectedWeekCompletedActivities,
     selectedWeekLoading,
-    extendTrainingPathWindowEnd: trainingPathWindow.extendWindowEnd,
-    extendTrainingPathWindowStart: trainingPathWindow.extendWindowStart,
     handleSelectedWeekChange,
     handleSelectedDateChange,
     handleWeekScrollStart,

@@ -12,7 +12,7 @@ import { Text } from "@repo/ui/components/text";
 import { getNormalizedPowerPresentation } from "@repo/ui/lib/normalized-power-presentation";
 import { skipToken, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Activity, Lock, MessageCircle, Share2, Waves } from "lucide-react-native";
+import { Activity, Lock, Waves } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -36,10 +36,6 @@ import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ActivityCard } from "@/components/shared/ActivityCard";
 import { APP_BOTTOM_SHEET_PRESENTATIONS, AppBottomSheet } from "@/components/shared/AppBottomSheet";
 import { DetailDeleteConfirmModal, DetailOverflowMenu } from "@/components/shared/detail";
-import {
-  ResourceCardActionButton,
-  ResourceLikeButton,
-} from "@/components/shared/ResourceCardPrimitives";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import { getCommonLoadPresentation } from "@/lib/activity-load-presentation";
 import {
@@ -590,48 +586,13 @@ function ActivityDetailScreen() {
             <ActivityCard
               activity={activity}
               commentCount={comments.commentCount}
-              belowMetricsActions={
-                <View
-                  className="flex-row items-center gap-2"
-                  testID="activity-detail-social-actions"
-                >
-                  <ResourceLikeButton
-                    disabled={activityLike.isPending}
-                    isLiked={activityLike.isLiked}
-                    likeCount={activityLike.likeCount}
-                    onPress={handleLikeToggle}
-                    testID={`activity-card-like-button-${activity.id}`}
-                  />
-                  <ResourceCardActionButton
-                    accessibilityLabel={`Comment, ${comments.commentCount} comments`}
-                    onPress={() => setShowComments(true)}
-                    testID="activity-detail-comment-button"
-                  >
-                    <View className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5">
-                      <Icon as={MessageCircle} size={14} className="text-muted-foreground" />
-                      <Text className="ml-1 text-xs font-medium text-muted-foreground">
-                        {comments.commentCount > 0
-                          ? `Comments ${comments.commentCount}`
-                          : "Comments"}
-                      </Text>
-                    </View>
-                  </ResourceCardActionButton>
-                </View>
-              }
-              showLike={false}
+              isLiked={activityLike.isLiked}
+              likeCount={activityLike.likeCount}
+              likePending={activityLike.isPending}
+              onCommentPress={() => setShowComments(true)}
+              onLikePress={handleLikeToggle}
+              onSharePress={handleShare}
               testID="activity-detail-summary"
-              topRightAction={
-                <ResourceCardActionButton
-                  accessibilityLabel="Share activity"
-                  onPress={handleShare}
-                  testID="activity-detail-share-button"
-                >
-                  <View className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5">
-                    <Icon as={Share2} size={14} className="text-muted-foreground" />
-                    <Text className="ml-1 text-xs font-medium text-muted-foreground">Share</Text>
-                  </View>
-                </ResourceCardActionButton>
-              }
             />
           </View>
 

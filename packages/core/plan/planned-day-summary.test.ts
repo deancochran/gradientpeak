@@ -25,4 +25,12 @@ describe("summarizePlannedDay", () => {
     });
     expect(result.prescriptionQuantification.members).toHaveLength(3);
   });
+
+  it("keeps an empty day unavailable rather than inventing zero work", () => {
+    expect(summarizePlannedDay([])).toMatchObject({
+      eventCount: 0,
+      totalDurationSeconds: null,
+      totalLoad: null,
+    });
+  });
 });

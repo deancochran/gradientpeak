@@ -13,8 +13,6 @@ type TrainingPathReviewChartSectionProps = {
   onOpenSettings?: () => void;
   onScrollInteractionSettled?: () => void;
   onScrollInteractionStart?: () => void;
-  onScrollNearEnd?: () => void;
-  onScrollNearStart?: () => void;
   onSelectedWeekChange: (weekStart: string) => void;
   selectedDate?: string | null;
   showHeader?: boolean;
@@ -32,8 +30,6 @@ export function TrainingPathReviewChartSection({
   onSelectedDateChange,
   onScrollInteractionSettled,
   onScrollInteractionStart,
-  onScrollNearEnd,
-  onScrollNearStart,
   onSelectedWeekChange,
   selectedDate,
   showHeader = true,
@@ -52,8 +48,6 @@ export function TrainingPathReviewChartSection({
       onOpenSettings={onOpenSettings}
       onScrollInteractionSettled={onScrollInteractionSettled}
       onScrollInteractionStart={onScrollInteractionStart}
-      onScrollNearEnd={onScrollNearEnd}
-      onScrollNearStart={onScrollNearStart}
       onSelectedDateChange={onSelectedDateChange}
       onSelectedWeekChange={onSelectedWeekChange}
       selectedDate={selectedDate}

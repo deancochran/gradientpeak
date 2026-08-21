@@ -54,11 +54,19 @@ function clampUnitInterval(value: number): number {
 }
 
 function selectEffortTarget(targets: readonly ActivityTarget[]): ActivityTarget | null {
-  return (
-    [...targets]
-      .filter((target) => target.type !== "cadence")
-      .sort((left, right) => targetPriority[left.type] - targetPriority[right.type])[0] ?? null
+  const candidates = targets.filter((target) => target.type !== "cadence");
+  const highestPriority = candidates.reduce(
+    (highest, target) => Math.min(highest, targetPriority[target.type]),
+    Number.POSITIVE_INFINITY,
   );
+  const finalists = candidates.filter((target) => targetPriority[target.type] === highestPriority);
+  const first = finalists[0];
+  if (!first) return null;
+  return finalists.every(
+    (target) => target.type === first.type && target.intensity === first.intensity,
+  )
+    ? first
+    : null;
 }
 
 function formatTarget(target: ActivityTarget): string {

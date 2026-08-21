@@ -11,14 +11,18 @@ type SelectableChartPoint = {
 };
 
 const DRAG_SETTLE_DELAY_MS = 32;
+const MOMENTUM_SETTLE_FALLBACK_DELAY_MS = 500;
 
 type InstantChartSelectionInput<Point extends SelectableChartPoint> = {
+  onInteractionSettled?: (date: string) => void;
+  onInteractionStart?: () => void;
   onPreviewSelectedDateChange?: (date: string) => void;
   onSelectedDateChange?: (date: string) => void;
   points: Point[];
   isScrollReady?: boolean;
   selectedDate?: string | null;
   slotWidth: number;
+  suppressSelectionScroll?: boolean;
   offsetForIndex?: (index: number) => number;
   indexForOffset?: (offsetX: number) => number;
 };
@@ -30,12 +34,15 @@ function boundedIndex(index: number, length: number) {
 }
 
 export function useInstantChartSelection<Point extends SelectableChartPoint>({
+  onInteractionSettled,
+  onInteractionStart,
   onPreviewSelectedDateChange,
   onSelectedDateChange,
   points,
   isScrollReady = true,
   selectedDate,
   slotWidth,
+  suppressSelectionScroll = false,
   offsetForIndex,
   indexForOffset,
 }: InstantChartSelectionInput<Point>) {
@@ -49,7 +56,9 @@ export function useInstantChartSelection<Point extends SelectableChartPoint>({
   const mountedRef = useRef(false);
   const pendingControlledBaseDateRef = useRef<string | null>(null);
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const velocityFallbackIndexRef = useRef<number | null>(null);
   const interactionSettledRef = useRef(false);
+  const interactionActiveRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
 
   const isSelectionControlled = selectedDate !== undefined;
@@ -69,6 +78,7 @@ export function useInstantChartSelection<Point extends SelectableChartPoint>({
     return () => {
       mountedRef.current = false;
       if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+      settleTimerRef.current = null;
     };
   }, []);
 
@@ -162,12 +172,12 @@ export function useInstantChartSelection<Point extends SelectableChartPoint>({
 
   useEffect(() => {
     if (!committedDate || !isScrollReady) return;
-    if (phase === "previewing") return;
+    if (phase === "previewing" || interactionActiveRef.current || suppressSelectionScroll) return;
     lastPreviewDateRef.current = committedDate;
     setPreviewDate(committedDate);
     if (lastProgrammaticScrollDateRef.current === committedDate) return;
     scrollToDate(committedDate, false);
-  }, [committedDate, isScrollReady, phase, scrollToDate]);
+  }, [committedDate, isScrollReady, phase, scrollToDate, suppressSelectionScroll]);
 
   const previewNearestFromScrollEvent = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -179,32 +189,63 @@ export function useInstantChartSelection<Point extends SelectableChartPoint>({
   const settleIndex = useCallback(
     (index: number) => {
       if (interactionSettledRef.current) return;
+      const point = points[boundedIndex(index, points.length)];
+      if (!point) return;
       interactionSettledRef.current = true;
+      interactionActiveRef.current = false;
+      // The native scroll gesture already placed this date. Treat it as the
+      // last positioned date so controlled-selection synchronization cannot
+      // issue a second, delayed scroll after drag settlement.
+      lastProgrammaticScrollDateRef.current = point.date;
       commitIndex(index);
+      onInteractionSettled?.(point.date);
     },
-    [commitIndex],
+    [commitIndex, onInteractionSettled, points],
   );
 
   const beginPreview = useCallback(() => {
     if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
     settleTimerRef.current = null;
+    velocityFallbackIndexRef.current = null;
     interactionSettledRef.current = false;
+    interactionActiveRef.current = true;
+    onInteractionStart?.();
     setPhase("previewing");
-  }, []);
+  }, [onInteractionStart]);
 
   const beginMomentum = useCallback(() => {
     if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
     settleTimerRef.current = null;
+    if (interactionSettledRef.current) return;
+    const fallbackIndex = velocityFallbackIndexRef.current;
+    if (fallbackIndex !== null) {
+      settleTimerRef.current = setTimeout(() => {
+        settleTimerRef.current = null;
+        velocityFallbackIndexRef.current = null;
+        settleIndex(fallbackIndex);
+      }, MOMENTUM_SETTLE_FALLBACK_DELAY_MS);
+    }
     interactionSettledRef.current = false;
+    interactionActiveRef.current = true;
+    onInteractionStart?.();
     setPhase("previewing");
-  }, []);
+  }, [onInteractionStart, settleIndex]);
 
   const endDrag = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
       const index = getNearestIndex(event);
       const velocityX = event.nativeEvent.velocity?.x ?? 0;
-      if (Math.abs(velocityX) > 0.01) return;
+      if (Math.abs(velocityX) > 0.01) {
+        velocityFallbackIndexRef.current = index;
+        settleTimerRef.current = setTimeout(() => {
+          settleTimerRef.current = null;
+          velocityFallbackIndexRef.current = null;
+          settleIndex(index);
+        }, MOMENTUM_SETTLE_FALLBACK_DELAY_MS);
+        return;
+      }
+      velocityFallbackIndexRef.current = null;
       settleTimerRef.current = setTimeout(() => {
         settleTimerRef.current = null;
         settleIndex(index);
@@ -217,6 +258,7 @@ export function useInstantChartSelection<Point extends SelectableChartPoint>({
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
       settleTimerRef.current = null;
+      velocityFallbackIndexRef.current = null;
       settleIndex(getNearestIndex(event));
     },
     [getNearestIndex, settleIndex],

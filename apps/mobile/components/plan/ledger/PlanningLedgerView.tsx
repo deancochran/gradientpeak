@@ -11,6 +11,11 @@ function formatLoad(item: PlanningLedger["load"]["completed"]) {
   return item.value.toLocaleString(undefined, { maximumFractionDigits: 1 });
 }
 
+function formatPlannedLoad(item: PlanningLedger["load"]["planned"]) {
+  if (item.status === "unavailable" || item.value === null) return "Unavailable";
+  return item.value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+}
+
 function formatState(item: PlanningLedger["trainingState"]["actual"]["fitness"]) {
   if (item.status === "unavailable" || item.value === null) return "Unavailable";
   return item.value.toLocaleString(undefined, { maximumFractionDigits: 1 });
@@ -68,35 +73,205 @@ function Section({
   );
 }
 
-function FactGrid({ facts }: { facts: Array<{ label: string; value: string; detail?: string }> }) {
+type InsightFact = {
+  available: boolean;
+  detail?: string;
+  label: string;
+  value: string;
+};
+
+function FactGrid({ emptyMessage, facts }: { emptyMessage: string; facts: InsightFact[] }) {
+  const availableFacts = facts.filter((item) => item.available);
+  const unavailableCount = facts.length - availableFacts.length;
+
   return (
-    <View className="flex-row flex-wrap gap-2">
-      {facts.map((fact) => (
-        <View
-          accessible
-          accessibilityLabel={`${fact.label}: ${fact.value}${fact.detail ? `. ${fact.detail}` : ""}`}
-          className="min-w-[30%] flex-1 rounded-xl bg-muted/30 p-3"
-          key={fact.label}
-        >
-          <Text className="text-xs text-muted-foreground">{fact.label}</Text>
-          <Text className="mt-1 text-base font-semibold text-foreground">{fact.value}</Text>
-          {fact.detail ? (
-            <Text className="mt-1 text-[10px] text-muted-foreground">{fact.detail}</Text>
-          ) : null}
+    <View className="gap-2">
+      {availableFacts.length ? (
+        <View className="flex-row flex-wrap rounded-2xl border border-border bg-card px-2 py-2">
+          {availableFacts.map((fact) => (
+            <View
+              accessible
+              accessibilityLabel={`${fact.label}: ${fact.value}${fact.detail ? `. ${fact.detail}` : ""}`}
+              className="w-1/2 px-2 py-2.5"
+              key={fact.label}
+            >
+              <Text className="text-xs text-muted-foreground">{fact.label}</Text>
+              <Text className="mt-0.5 text-lg font-semibold text-foreground">{fact.value}</Text>
+              {fact.detail ? (
+                <Text className="mt-0.5 text-[10px] text-muted-foreground">{fact.detail}</Text>
+              ) : null}
+            </View>
+          ))}
         </View>
-      ))}
+      ) : (
+        <Text className="rounded-xl bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
+          {emptyMessage}
+        </Text>
+      )}
+      {unavailableCount > 0 && availableFacts.length > 0 ? (
+        <Text className="text-xs text-muted-foreground">
+          {unavailableCount} additional {unavailableCount === 1 ? "metric is" : "metrics are"} not
+          available for this period.
+        </Text>
+      ) : null}
     </View>
   );
 }
 
-function fact(label: string, value: string, detail?: string) {
-  return { label, value, ...(detail !== undefined ? { detail } : {}) };
+function fact(label: string, value: string, available: boolean, detail?: string): InsightFact {
+  return { available, label, value, ...(detail !== undefined ? { detail } : {}) };
+}
+
+function InsightSection({
+  children,
+  description,
+  testID,
+  title,
+}: React.PropsWithChildren<{ description: string; testID: string; title: string }>) {
+  return (
+    <View className="gap-3" testID={testID}>
+      <View className="gap-0.5">
+        <Text accessibilityRole="header" className="text-base font-semibold text-foreground">
+          {title}
+        </Text>
+        <Text className="text-xs leading-4 text-muted-foreground">{description}</Text>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+export function PlanningLedgerPerformanceInsights({
+  ledger,
+  showDataWarning = true,
+}: {
+  ledger: PlanningLedger;
+  showDataWarning?: boolean;
+}) {
+  const dataDetailsFlag = getDataDetailsFlag(ledger);
+
+  return (
+    <View className="gap-5" testID="planning-ledger-performance-insights">
+      {showDataWarning && dataDetailsFlag ? (
+        <View
+          accessibilityRole="alert"
+          className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2"
+          testID="planning-ledger-sheet-data-warning"
+        >
+          <Text className="text-sm font-medium text-foreground">{dataDetailsFlag}</Text>
+          <Text className="mt-1 text-xs text-muted-foreground">
+            Some values for this period may be incomplete.
+          </Text>
+        </View>
+      ) : null}
+
+      <InsightSection
+        description="How completed and scheduled work affects this period."
+        title="Training load"
+        testID="planning-ledger-load"
+      >
+        <FactGrid
+          emptyMessage="Training-load metrics are not available for this period."
+          facts={[
+            fact(
+              "Completed",
+              formatLoad(ledger.load.completed),
+              ledger.load.completed.status !== "unavailable" &&
+                ledger.load.completed.value !== null,
+            ),
+            fact(
+              "Planned",
+              formatPlannedLoad(ledger.load.planned),
+              ledger.load.planned.status !== "unavailable" && ledger.load.planned.value !== null,
+              statusDetail(ledger.load.planned.status),
+            ),
+            fact(
+              "Remaining",
+              formatPlannedLoad(ledger.load.remaining),
+              ledger.load.remaining.status !== "unavailable" &&
+                ledger.load.remaining.value !== null,
+              statusDetail(ledger.load.remaining.status),
+            ),
+            fact(
+              "Effective",
+              formatLoad(ledger.load.effective),
+              ledger.load.effective.status !== "unavailable" &&
+                ledger.load.effective.value !== null,
+            ),
+            fact(
+              "Intensity",
+              formatIntensity(ledger.intensity),
+              ledger.intensity.status !== "unavailable" && ledger.intensity.value !== null,
+              statusDetail(ledger.intensity.status),
+            ),
+            fact(
+              "Duration",
+              formatDuration(ledger.contributingDurationSeconds),
+              ledger.contributingDurationSeconds.status !== "unavailable" &&
+                ledger.contributingDurationSeconds.value !== null,
+              statusDetail(ledger.contributingDurationSeconds.status),
+            ),
+          ]}
+        />
+      </InsightSection>
+
+      <InsightSection
+        description="Actual state and the projected effect of scheduled work."
+        title="Training state"
+        testID="planning-ledger-training-state"
+      >
+        <FactGrid
+          emptyMessage="Fitness and fatigue estimates are not available for this date."
+          facts={[
+            fact(
+              "Actual fitness",
+              formatState(ledger.trainingState.actual.fitness),
+              ledger.trainingState.actual.fitness.status !== "unavailable" &&
+                ledger.trainingState.actual.fitness.value !== null,
+              ledger.trainingState.actual.fitness.observedOn
+                ? `Actual · ${formatDate(ledger.trainingState.actual.fitness.observedOn)}`
+                : undefined,
+            ),
+            fact(
+              "Planned fitness projection",
+              formatState(ledger.trainingState.planned.fitness),
+              ledger.trainingState.planned.fitness.status !== "unavailable" &&
+                ledger.trainingState.planned.fitness.value !== null,
+              ledger.trainingState.planned.fitness.observedOn
+                ? `Scheduled projection · ${formatDate(ledger.trainingState.planned.fitness.observedOn)}`
+                : undefined,
+            ),
+            fact(
+              "Actual fatigue",
+              formatState(ledger.trainingState.actual.fatigue),
+              ledger.trainingState.actual.fatigue.status !== "unavailable" &&
+                ledger.trainingState.actual.fatigue.value !== null,
+              ledger.trainingState.actual.fatigue.observedOn
+                ? `Actual · ${formatDate(ledger.trainingState.actual.fatigue.observedOn)}`
+                : undefined,
+            ),
+            fact(
+              "Planned fatigue projection",
+              formatState(ledger.trainingState.planned.fatigue),
+              ledger.trainingState.planned.fatigue.status !== "unavailable" &&
+                ledger.trainingState.planned.fatigue.value !== null,
+              ledger.trainingState.planned.fatigue.observedOn
+                ? `Scheduled projection · ${formatDate(ledger.trainingState.planned.fatigue.observedOn)}`
+                : undefined,
+            ),
+          ]}
+        />
+      </InsightSection>
+    </View>
+  );
 }
 
 export function PlanningLedgerView({
+  compact = false,
   ledger,
   onOpenEntry,
 }: {
+  compact?: boolean;
   ledger: PlanningLedger;
   onOpenEntry: (target: NavigationTarget) => void;
 }) {
@@ -121,76 +296,27 @@ export function PlanningLedgerView({
       : "Unavailable";
 
   return (
-    <View className="gap-5 px-4 pb-8 pt-4" testID="planning-ledger-content">
-      <View className="gap-1">
-        <Text accessibilityRole="header" className="text-2xl font-bold text-foreground">
-          Planning ledger
-        </Text>
-        <Text className="text-sm font-medium text-foreground">{periodLabel}</Text>
-        <Text className="text-xs text-muted-foreground">
-          Timezone: {ledger.planningTimezone ?? "Unavailable"}
-        </Text>
-        <Text className="text-xs text-muted-foreground">
-          As of {formatAsOf(ledger.asOf, ledger.planningTimezone)}
-        </Text>
-        <Text className="text-xs text-muted-foreground">Read-only period record</Text>
-      </View>
+    <View
+      className={compact ? "gap-5 pb-4" : "gap-5 px-4 pb-8 pt-4"}
+      testID="planning-ledger-content"
+    >
+      {!compact ? (
+        <View className="gap-1">
+          <Text accessibilityRole="header" className="text-2xl font-bold text-foreground">
+            Planning ledger
+          </Text>
+          <Text className="text-sm font-medium text-foreground">{periodLabel}</Text>
+          <Text className="text-xs text-muted-foreground">
+            Timezone: {ledger.planningTimezone ?? "Unavailable"}
+          </Text>
+          <Text className="text-xs text-muted-foreground">
+            As of {formatAsOf(ledger.asOf, ledger.planningTimezone)}
+          </Text>
+          <Text className="text-xs text-muted-foreground">Read-only period record</Text>
+        </View>
+      ) : null}
 
-      <Section title="Load accounting" testID="planning-ledger-load">
-        <FactGrid
-          facts={[
-            fact("Completed", formatLoad(ledger.load.completed)),
-            fact("Planned", formatLoad(ledger.load.planned)),
-            fact("Remaining", formatLoad(ledger.load.remaining)),
-            fact("Effective", formatLoad(ledger.load.effective)),
-            fact(
-              "Intensity",
-              formatIntensity(ledger.intensity),
-              statusDetail(ledger.intensity.status),
-            ),
-            fact(
-              "Contributing duration",
-              formatDuration(ledger.contributingDurationSeconds),
-              statusDetail(ledger.contributingDurationSeconds.status),
-            ),
-          ]}
-        />
-      </Section>
-
-      <Section title="Training state" testID="planning-ledger-training-state">
-        <FactGrid
-          facts={[
-            fact(
-              "Actual fitness",
-              formatState(ledger.trainingState.actual.fitness),
-              ledger.trainingState.actual.fitness.observedOn
-                ? `Actual · ${formatDate(ledger.trainingState.actual.fitness.observedOn)}`
-                : undefined,
-            ),
-            fact(
-              "Planned fitness projection",
-              formatState(ledger.trainingState.planned.fitness),
-              ledger.trainingState.planned.fitness.observedOn
-                ? `Scheduled projection · ${formatDate(ledger.trainingState.planned.fitness.observedOn)}`
-                : undefined,
-            ),
-            fact(
-              "Actual fatigue",
-              formatState(ledger.trainingState.actual.fatigue),
-              ledger.trainingState.actual.fatigue.observedOn
-                ? `Actual · ${formatDate(ledger.trainingState.actual.fatigue.observedOn)}`
-                : undefined,
-            ),
-            fact(
-              "Planned fatigue projection",
-              formatState(ledger.trainingState.planned.fatigue),
-              ledger.trainingState.planned.fatigue.observedOn
-                ? `Scheduled projection · ${formatDate(ledger.trainingState.planned.fatigue.observedOn)}`
-                : undefined,
-            ),
-          ]}
-        />
-      </Section>
+      <PlanningLedgerPerformanceInsights ledger={ledger} showDataWarning={compact} />
 
       {ledger.period !== "day" ? (
         <Section title="Daily breakdown" testID="planning-ledger-daily-breakdown">
@@ -199,11 +325,11 @@ export function PlanningLedgerView({
               <View className="gap-1 rounded-xl bg-muted/20 p-3" key={day.date}>
                 <Text className="font-medium text-foreground">{formatDate(day.date)}</Text>
                 <Text className="text-xs text-muted-foreground">
-                  Completed {formatLoad(day.completed)} · Planned {formatLoad(day.planned)}
+                  Completed {formatLoad(day.completed)} · Planned {formatPlannedLoad(day.planned)}
                 </Text>
                 <Text className="text-xs text-muted-foreground">
-                  Remaining {formatLoad(day.remaining)} · Effective {formatLoad(day.effective)} ·
-                  Intensity {formatIntensity(day.intensity)}
+                  Remaining {formatPlannedLoad(day.remaining)} · Effective{" "}
+                  {formatLoad(day.effective)} · Intensity {formatIntensity(day.intensity)}
                 </Text>
               </View>
             ))
@@ -217,17 +343,23 @@ export function PlanningLedgerView({
         {ledger.entries.length ? (
           ledger.entries.map((entry) => {
             const loadLabel =
-              entry.load.status === "unavailable"
-                ? ""
-                : ` · Load ${formatLoad(entry.load)}${entry.load.status === "partial" ? " (partial)" : ""}`;
+              entry.kind === "planned"
+                ? ` · Load ${formatPlannedLoad(entry.load)}`
+                : entry.load.status === "unavailable"
+                  ? ""
+                  : ` · Load ${formatLoad(entry.load)}${entry.load.status === "partial" ? " (partial)" : ""}`;
             const intensityLabel =
-              entry.intensity.status === "unavailable"
-                ? ""
-                : ` · Intensity ${formatIntensity(entry.intensity)}${entry.intensity.status === "partial" ? " (partial)" : ""}`;
+              entry.kind === "planned"
+                ? ` · Intensity ${entry.intensity.status === "complete" && entry.intensity.value !== null ? formatIntensity(entry.intensity) : "0.00"}`
+                : entry.intensity.status === "unavailable"
+                  ? ""
+                  : ` · Intensity ${formatIntensity(entry.intensity)}${entry.intensity.status === "partial" ? " (partial)" : ""}`;
             const durationLabel =
-              entry.contributingDurationSeconds.status === "unavailable"
-                ? ""
-                : ` · ${formatDuration(entry.contributingDurationSeconds)}${entry.contributingDurationSeconds.status === "partial" ? " (partial)" : ""}`;
+              entry.kind === "planned"
+                ? ` · ${entry.contributingDurationSeconds.status === "complete" && entry.contributingDurationSeconds.value !== null ? formatDuration(entry.contributingDurationSeconds) : "0 min"}`
+                : entry.contributingDurationSeconds.status === "unavailable"
+                  ? ""
+                  : ` · ${formatDuration(entry.contributingDurationSeconds)}${entry.contributingDurationSeconds.status === "partial" ? " (partial)" : ""}`;
             const content = (
               <>
                 <Text className="font-medium text-foreground">{entry.title}</Text>
@@ -289,61 +421,63 @@ export function PlanningLedgerView({
         )}
       </Section>
 
-      <View className="gap-3 border-t border-border pt-4">
-        <TouchableOpacity
-          accessibilityLabel={`Data details${dataDetailsFlag ? `, ${dataDetailsFlag}` : ""}`}
-          accessibilityRole="button"
-          accessibilityState={{ expanded: dataDetailsOpen }}
-          className="min-h-11 flex-row items-center justify-between rounded-xl border border-border px-3"
-          onPress={() => setDataDetailsOpen((open) => !open)}
-          testID="planning-ledger-data-details-trigger"
-        >
-          <View className="flex-1">
-            <Text accessibilityRole="header" className="text-base font-semibold text-foreground">
-              Data details
-            </Text>
-            {dataDetailsFlag ? (
-              <Text className="text-xs font-medium text-destructive">{dataDetailsFlag}</Text>
-            ) : null}
-          </View>
-          {dataDetailsOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-        </TouchableOpacity>
-        {dataDetailsOpen ? (
-          <View className="gap-5" testID="planning-ledger-data-details">
-            <Section title="Source coverage" testID="planning-ledger-source-coverage">
-              {[
-                ["Completed activities", ledger.sourceCoverage.activities],
-                ["Scheduled items", ledger.sourceCoverage.scheduledItems],
-                ["Calendar events", ledger.sourceCoverage.calendarEvents],
-                ["Group events", ledger.sourceCoverage.groupEvents],
-              ].map(([label, source]) => (
-                <Text
-                  accessible
-                  accessibilityLabel={`${label}: ${sourceLabel(source as PlanningLedger["sourceCoverage"]["activities"])}`}
-                  className="text-sm text-foreground"
-                  key={label as string}
-                >
-                  {label as string}:{" "}
-                  {sourceLabel(source as PlanningLedger["sourceCoverage"]["activities"])}
-                </Text>
-              ))}
-            </Section>
+      {!compact ? (
+        <View className="gap-3 border-t border-border pt-4">
+          <TouchableOpacity
+            accessibilityLabel={`Data details${dataDetailsFlag ? `, ${dataDetailsFlag}` : ""}`}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: dataDetailsOpen }}
+            className="min-h-11 flex-row items-center justify-between rounded-xl border border-border px-3"
+            onPress={() => setDataDetailsOpen((open) => !open)}
+            testID="planning-ledger-data-details-trigger"
+          >
+            <View className="flex-1">
+              <Text accessibilityRole="header" className="text-base font-semibold text-foreground">
+                Data details
+              </Text>
+              {dataDetailsFlag ? (
+                <Text className="text-xs font-medium text-destructive">{dataDetailsFlag}</Text>
+              ) : null}
+            </View>
+            {dataDetailsOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+          </TouchableOpacity>
+          {dataDetailsOpen ? (
+            <View className="gap-5" testID="planning-ledger-data-details">
+              <Section title="Source coverage" testID="planning-ledger-source-coverage">
+                {[
+                  ["Completed activities", ledger.sourceCoverage.activities],
+                  ["Scheduled items", ledger.sourceCoverage.scheduledItems],
+                  ["Calendar events", ledger.sourceCoverage.calendarEvents],
+                  ["Group events", ledger.sourceCoverage.groupEvents],
+                ].map(([label, source]) => (
+                  <Text
+                    accessible
+                    accessibilityLabel={`${label}: ${sourceLabel(source as PlanningLedger["sourceCoverage"]["activities"])}`}
+                    className="text-sm text-foreground"
+                    key={label as string}
+                  >
+                    {label as string}:{" "}
+                    {sourceLabel(source as PlanningLedger["sourceCoverage"]["activities"])}
+                  </Text>
+                ))}
+              </Section>
 
-            <Section title="Model context" testID="planning-ledger-model-context">
-              <Text className="text-sm text-foreground">
-                Common load: {ledger.modelContext.commonLoadModel} v
-                {ledger.modelContext.commonLoadVersion}
-              </Text>
-              <Text className="text-sm text-foreground">
-                Published revision: {ledger.modelContext.publishedRevision ?? "Unavailable"}
-              </Text>
-              <Text className="text-sm text-foreground">
-                Algorithm: {ledger.modelContext.algorithmVersion ?? "Unavailable"}
-              </Text>
-            </Section>
-          </View>
-        ) : null}
-      </View>
+              <Section title="Model context" testID="planning-ledger-model-context">
+                <Text className="text-sm text-foreground">
+                  Common load: {ledger.modelContext.commonLoadModel} v
+                  {ledger.modelContext.commonLoadVersion}
+                </Text>
+                <Text className="text-sm text-foreground">
+                  Published revision: {ledger.modelContext.publishedRevision ?? "Unavailable"}
+                </Text>
+                <Text className="text-sm text-foreground">
+                  Algorithm: {ledger.modelContext.algorithmVersion ?? "Unavailable"}
+                </Text>
+              </Section>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }

@@ -1,8 +1,6 @@
 import {
   ACTIVITY_INGESTION_STATUS_V1_FIXTURES,
   API_CLIENT_CONTRACT_V1_RESPONSE_FIXTURES,
-  ATHLETE_CURRENT_STATE_V1_FIXTURES,
-  ATHLETE_LOAD_RANGE_V1_FIXTURES,
   ATHLETE_RECALCULATION_REPAIR_RECEIPT_V1_FIXTURE,
   PLANNED_SESSION_MUTATION_RECEIPT_V1_FIXTURES,
   PLANNED_SESSION_RANGE_V1_FIXTURE,
@@ -16,11 +14,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { appRouter } from "../routers";
 import { activityIngestionSafeStatusDtoSchema } from "./activity-ingestion";
-import {
-  athleteCurrentStateDtoSchema,
-  athleteLoadRangeDtoSchema,
-  athleteRecalculationRepairReceiptSchema,
-} from "./athlete-load-range";
+import { athleteRecalculationRepairReceiptSchema } from "./athlete-load-range";
 import {
   plannedSessionDtoSchema,
   plannedSessionMutationReceiptSchema,
@@ -33,8 +27,6 @@ import {
 import { trainingEffectsPageDtoSchema, trainingEffectsRequestSchema } from "./training-effects";
 
 const RESPONSE_SCHEMA_BY_PROCEDURE = {
-  "athleteIntelligence.getCurrentState": athleteCurrentStateDtoSchema,
-  "athleteIntelligence.getLoadRange": athleteLoadRangeDtoSchema,
   "athleteIntelligence.getTrainingEffects": trainingEffectsPageDtoSchema,
   "athleteIntelligence.getThresholdEvidence": thresholdEvidencePageDtoSchema,
   "athleteIntelligence.requestRecalculationRepair": athleteRecalculationRepairReceiptSchema,
@@ -50,12 +42,6 @@ const RESPONSE_SCHEMA_BY_PROCEDURE = {
 
 describe("API client contract v1 fixtures", () => {
   it("parses every response fixture through its public DTO", () => {
-    for (const fixture of ATHLETE_CURRENT_STATE_V1_FIXTURES) {
-      expect(athleteCurrentStateDtoSchema.parse(fixture)).toEqual(fixture);
-    }
-    for (const fixture of ATHLETE_LOAD_RANGE_V1_FIXTURES) {
-      expect(athleteLoadRangeDtoSchema.parse(fixture)).toEqual(fixture);
-    }
     expect(trainingEffectsPageDtoSchema.parse(TRAINING_EFFECTS_PAGE_V1_FIXTURE)).toEqual(
       TRAINING_EFFECTS_PAGE_V1_FIXTURE,
     );
@@ -147,28 +133,6 @@ describe("API client contract v1 fixtures", () => {
     );
   });
 
-  it("covers every public athlete-state and daily-load lifecycle value", () => {
-    expect(new Set(ATHLETE_CURRENT_STATE_V1_FIXTURES.map(({ freshness }) => freshness))).toEqual(
-      new Set(["fresh", "stale", "unavailable"]),
-    );
-    expect(
-      new Set(ATHLETE_CURRENT_STATE_V1_FIXTURES.map(({ rebuildStatus }) => rebuildStatus)),
-    ).toEqual(new Set(["fresh", "pending", "rebuilding", "failed", "unavailable"]));
-    expect(
-      new Set(ATHLETE_CURRENT_STATE_V1_FIXTURES.map(({ importStatus }) => importStatus)),
-    ).toEqual(new Set(["complete", "active", "failed"]));
-    expect(new Set(ATHLETE_LOAD_RANGE_V1_FIXTURES.map(({ freshness }) => freshness))).toEqual(
-      new Set(["fresh", "stale", "unavailable"]),
-    );
-    expect(
-      new Set(
-        ATHLETE_LOAD_RANGE_V1_FIXTURES.flatMap(({ days }) =>
-          days.map(({ coverage }) => coverage.status),
-        ),
-      ),
-    ).toEqual(new Set(["complete", "partial"]));
-  });
-
   it("covers every public ingestion state and exposes retry only for retryable failure", () => {
     expect(new Set(ACTIVITY_INGESTION_STATUS_V1_FIXTURES.map(({ status }) => status))).toEqual(
       new Set([
@@ -213,23 +177,6 @@ describe("API client contract v1 fixtures", () => {
   });
 
   it("rejects worker, storage, provider, and persistence-only fields", () => {
-    expect(
-      athleteCurrentStateDtoSchema.safeParse({
-        ...ATHLETE_CURRENT_STATE_V1_FIXTURES[0],
-        leaseToken: "worker-private",
-      }).success,
-    ).toBe(false);
-    expect(
-      athleteLoadRangeDtoSchema.safeParse({
-        ...ATHLETE_LOAD_RANGE_V1_FIXTURES[0],
-        days: [
-          {
-            ...ATHLETE_LOAD_RANGE_V1_FIXTURES[0].days[0],
-            sourceRevision: 7,
-          },
-        ],
-      }).success,
-    ).toBe(false);
     expect(
       trainingEffectsPageDtoSchema.safeParse({
         ...TRAINING_EFFECTS_PAGE_V1_FIXTURE,

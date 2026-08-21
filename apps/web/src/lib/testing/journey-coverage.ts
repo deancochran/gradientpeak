@@ -222,12 +222,6 @@ export const webJourneyCoverageManifest = {
   ),
   "routes.record-entry": entry(direct("record.session")),
 
-  // Metrics and trends
-  "metrics.library-crud": entry(direct("profile.metrics_list"), direct("profile.metric_detail")),
-  "metrics.override": entry(direct("profile.metrics_list"), direct("profile.metric_detail")),
-  "trends.analytics": entry(direct("profile.trends")),
-  "trends.partial-retry": entry(direct("profile.trends")),
-
   // Profile and settings
   "profile.hub": entry(
     umbrella("profile.settings", "The profile hub is the account-owned resource summary surface."),

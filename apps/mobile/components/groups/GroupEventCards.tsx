@@ -1,3 +1,4 @@
+import { resolveGroupEventRsvpStatus } from "@repo/core/groups";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
@@ -118,9 +119,13 @@ export function GroupEventCard({
   testID,
   variant = "default",
 }: GroupEventCardProps) {
+  const effectiveRsvpStatus = resolveGroupEventRsvpStatus({
+    occurrenceStatus: event.viewerRsvp?.status,
+    seriesStatus: event.viewerSeriesRsvp?.status,
+  });
   const status = event.cancelled_at
     ? "Cancelled"
-    : event.viewerRsvp?.status === "declined" || event.viewerSeriesRsvp?.status === "declined"
+    : effectiveRsvpStatus === "declined"
       ? "Declined"
       : "Going";
 

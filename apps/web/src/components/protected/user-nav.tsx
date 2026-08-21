@@ -16,7 +16,6 @@ import {
   Building2,
   CalendarDays,
   ClipboardList,
-  Gauge,
   Home,
   LogOut,
   MessageSquare,
@@ -24,7 +23,6 @@ import {
   Settings,
   SlidersHorizontal,
   Target,
-  TrendingUp,
   UserRound,
   Users,
 } from "lucide-react";
@@ -56,11 +54,9 @@ export function UserNav() {
       | "/messages"
       | "/notifications"
       | "/organizations"
-      | "/profile-metrics"
       | "/calendar"
       | "/training-plans"
       | "/training-preferences"
-      | "/trends"
       | "/settings";
   };
   const accountLinks: AccountLink[] = [
@@ -73,8 +69,6 @@ export function UserNav() {
     { to: "/calendar", label: "Calendar", icon: CalendarDays },
     { to: "/goals", label: "Goals", icon: Target },
     { to: "/groups", label: "Groups", icon: Users },
-    { to: "/trends", label: "Trends", icon: TrendingUp },
-    { to: "/profile-metrics", label: "Profile metrics", icon: Gauge },
     { to: "/training-preferences", label: "Training preferences", icon: SlidersHorizontal },
     { to: "/integrations", label: "Integrations", icon: Plug },
     { to: "/settings", label: "Settings", icon: Settings },

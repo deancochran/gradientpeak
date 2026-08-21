@@ -206,7 +206,7 @@ function activityInsights(analytics: Analytics, load: LoadHistory) {
       })),
       series: [
         ["Daily Load", "orange", "dailyLoad"],
-        ["Long-term Load", "blue", "longTermLoad"],
+        ["Fitness", "blue", "longTermLoad"],
         ["Recent Load", "green", "recentLoad"],
         ["Load Balance", "purple", "loadBalance"],
       ].map(([label, tone, key]) => ({
@@ -220,7 +220,7 @@ function activityInsights(analytics: Analytics, load: LoadHistory) {
       })),
       rows: [
         { label: "Daily Load", value: latestLoad ? number(latestLoad.dailyLoad, 1) : "--" },
-        { label: "Long-term Load", value: latestLoad ? number(latestLoad.longTermLoad, 1) : "--" },
+        { label: "Fitness", value: latestLoad ? number(latestLoad.longTermLoad, 1) : "--" },
         { label: "Recent Load", value: latestLoad ? number(latestLoad.recentLoad, 1) : "--" },
         { label: "Load Balance", value: latestLoad ? number(latestLoad.loadBalance, 1) : "--" },
       ],

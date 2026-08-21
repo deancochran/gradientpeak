@@ -70,7 +70,6 @@ Use this file when working in `apps/mobile`.
 
 - Prefer the narrowest relevant mobile checks first.
 - Common commands from the repo root are `pnpm --filter mobile check-types`, `pnpm --filter mobile lint`, `pnpm --filter mobile test`, and `pnpm --filter mobile test:e2e` when needed.
-- Begin UI/data-flow work with the [mobile exemplars](../../docs/agent-exemplars.md). Reuse their state and accessibility behavior, not their feature-specific copy.
 - Pair relevant automated checks with runtime validation when static checks cannot prove the changed behavior. Maestro/manual video is optional supporting evidence, not a completion or release requirement.
 
 ## References

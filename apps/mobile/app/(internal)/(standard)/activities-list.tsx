@@ -167,8 +167,8 @@ function ActivitiesScreen() {
             <ActivityCard
               activity={activity}
               dateMode="absolute"
+              onCommentPress={() => handleActivityPress(activity.id)}
               onPress={() => handleActivityPress(activity.id)}
-              showLike
               testID={`activities-list-item-${activity.id}`}
             />
           );

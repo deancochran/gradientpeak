@@ -1,8 +1,6 @@
 import {
   activityObservationQuantificationBundleSchema,
-  activityPlanPrescriptionQuantificationBundleSchema,
   activityPlanStructureSchema,
-  activityPrescriptionQuantificationBundleSchema,
   bindPrescriptionQuantificationToScheduledEvent,
   calculateRollingTrainingQuality,
   canonicalActivityCategorySchema,
@@ -11,6 +9,7 @@ import {
   createPrescriptionQuantificationBundle,
   createUnavailableActivityPlanPlanningEstimate,
   getLoadBalanceStatus,
+  getPlannedEstimate,
   loadCoverageSchema,
   loadSeriesIdentitySchema,
 } from "@repo/core";
@@ -19,11 +18,7 @@ import {
   getCalendarDateInIanaZone,
   isValidIanaTimeZone,
 } from "@repo/core/calendar";
-import {
-  commonLoadAggregateSchema,
-  commonLoadHistoryResultSchema,
-  commonLoadResultSchema,
-} from "@repo/core/load";
+import { commonLoadHistoryResultSchema } from "@repo/core/load";
 import {
   activityArtifactLinks,
   activityArtifacts,
@@ -131,12 +126,10 @@ const scheduleItemSchema = z
     isCompleted: z.boolean(),
     activityName: z.string(),
     activity_category: canonicalActivityCategorySchema.nullable(),
-    estimatedDuration: z.number().nullable(),
+    estimatedDuration: z.number().nonnegative().nullable(),
     estimatedDistance: z.number().nullable(),
-    prescriptionQuantification: activityPlanPrescriptionQuantificationBundleSchema,
-    commonLoad: z.union([commonLoadResultSchema, commonLoadAggregateSchema]),
-    load: z.number().nullable(),
-    intensity: z.number().nullable(),
+    load: z.number().nonnegative().nullable(),
+    intensity: z.number().nonnegative().nullable(),
   })
   .strict();
 
@@ -181,14 +174,7 @@ const dashboardResponseSchema = z
       .strict(),
     weeklySummary: z
       .object({
-        commonLoad: z
-          .object({
-            actual: commonLoadAggregateSchema,
-            planned: commonLoadAggregateSchema,
-          })
-          .strict(),
         observationQuantification: activityObservationQuantificationBundleSchema,
-        prescriptionQuantification: activityPrescriptionQuantificationBundleSchema,
         actual: z
           .object({
             distance: z.number().nullable(),
@@ -201,8 +187,8 @@ const dashboardResponseSchema = z
         planned: z
           .object({
             distance: z.number().nullable(),
-            duration: z.number().nullable(),
-            load: z.number().nullable(),
+            duration: z.number().nonnegative().nullable(),
+            load: z.number().nonnegative().nullable(),
             loadComplete: z.boolean(),
             count: z.number(),
           })
@@ -254,8 +240,7 @@ const dashboardResponseSchema = z
 
 /**
  * Projects the common Load state from the server-owned effective plan composition.
- * This deliberately has no estimated-load fallback: an unavailable plan composition
- * means that the dashboard must abstain instead of inventing zero load.
+ * Missing or partial planned load cannot be projected as if it were a rest day.
  */
 export function projectCommonLoad(input: {
   current: { longTermLoad: number; recentLoad: number };
@@ -268,7 +253,9 @@ export function projectCommonLoad(input: {
   let complete = input.sourceComplete ?? true;
   for (const item of input.items) {
     if (item.commonLoad.status === "unavailable" || item.commonLoad.load === null) return null;
-    if (typeof item.commonLoad.load !== "number") return null;
+    if (typeof item.commonLoad.load !== "number" || !Number.isFinite(item.commonLoad.load)) {
+      return null;
+    }
     if (item.commonLoad.status !== "complete") complete = false;
     plannedByDate.set(item.date, (plannedByDate.get(item.date) ?? 0) + item.commonLoad.load);
   }
@@ -372,6 +359,7 @@ export const homeRouter = createTRPCRouter({
       const availableCommonLoadHistory =
         commonLoadHistory.status === "available" ? commonLoadHistory : null;
       const latestCommonLoadPoint = availableCommonLoadHistory?.points.at(-1) ?? null;
+      const publishedBaseline = athleteReadModel.currentBaseline?.baseline ?? null;
       const profileTimezone = athleteReadModel.currentBaseline?.planningTimezone.trim();
       const planningTimezone =
         profileTimezone && isValidIanaTimeZone(profileTimezone) ? profileTimezone : "UTC";
@@ -554,9 +542,11 @@ export const homeRouter = createTRPCRouter({
           weeklyPlannedSummary.distance.value === null
             ? null
             : weeklyPlannedSummary.distance.value / 1000,
-        duration: weeklyPlannedSummary.duration.elapsed.value,
-        load:
-          weeklyPlannedLoad.status === "unavailable" ? null : Math.round(weeklyPlannedLoad.load),
+        duration:
+          weeklyPlannedSummary.duration.elapsed.status === "complete"
+            ? weeklyPlannedSummary.duration.elapsed.value
+            : null,
+        load: weeklyPlannedLoad.status === "complete" ? Math.round(weeklyPlannedLoad.load) : null,
         loadComplete: weeklyPlannedLoad.status === "complete",
         count: weeklyPlanned.length,
       };
@@ -666,9 +656,9 @@ export const homeRouter = createTRPCRouter({
         .map((plannedActivity) => {
           const prescriptionQuantification = scheduledQuantification(plannedActivity, now);
           const quantification = prescriptionQuantification.summary;
-          const commonLoad = quantification.commonLoad;
-          const commonValue =
-            commonLoad.status === "complete" || commonLoad.status === "partial" ? commonLoad : null;
+          const plannedEstimate = getPlannedEstimate(prescriptionQuantification);
+          const completeValue = (quantity: { status: string; value: number | null }) =>
+            quantity.status === "known" || quantity.status === "estimated" ? quantity.value : null;
           const execution = plannedActivity.activity_plan
             ? { activity_category: plannedActivity.activity_plan.activity_category }
             : null;
@@ -680,12 +670,10 @@ export const homeRouter = createTRPCRouter({
               Boolean(plannedActivity.linked_activity_id) || plannedActivity.status === "completed",
             activityName: plannedActivity.activity_plan?.name || "Activity",
             ...getScheduleExecutionPresentation(execution),
-            estimatedDuration: quantification.duration.elapsed.value,
+            estimatedDuration: completeValue(plannedEstimate.durationSeconds),
             estimatedDistance: quantification.distance.value,
-            prescriptionQuantification,
-            commonLoad,
-            load: commonValue && "load" in commonValue ? commonValue.load : null,
-            intensity: commonValue && "intensity" in commonValue ? commonValue.intensity : null,
+            load: completeValue(plannedEstimate.load),
+            intensity: completeValue(plannedEstimate.normalizedIntensity),
           };
         });
 
@@ -734,9 +722,6 @@ export const homeRouter = createTRPCRouter({
         weeklyPlannedStats.load > 0
           ? Math.round((weeklyActualStats.load / weeklyPlannedStats.load) * 100)
           : null;
-      const weeklyActualCommonLoad = weeklyActualSummary.commonLoad;
-      const weeklyPlannedCommonLoad = weeklyPlannedSummary.commonLoad;
-
       return dashboardResponseSchema.parse({
         activePlan: plan
           ? {
@@ -746,16 +731,25 @@ export const homeRouter = createTRPCRouter({
           : null,
         commonLoadHistory,
         currentLoadStatus:
-          latestCommonLoadPoint === null || availableCommonLoadHistory === null
-            ? null
-            : {
+          latestCommonLoadPoint && availableCommonLoadHistory
+            ? {
                 longTermLoad: latestCommonLoadPoint.longTermLoad,
                 recentLoad: latestCommonLoadPoint.recentLoad,
                 loadBalance: latestCommonLoadPoint.loadBalance,
                 loadBalanceStatus: getLoadBalanceStatus(latestCommonLoadPoint.loadBalance),
                 maturity: availableCommonLoadHistory.maturity.status,
                 coverageStatus: availableCommonLoadHistory.coverageStatus,
-              },
+              }
+            : publishedBaseline
+              ? {
+                  longTermLoad: publishedBaseline.longTermLoad,
+                  recentLoad: publishedBaseline.recentLoad,
+                  loadBalance: publishedBaseline.loadBalance,
+                  loadBalanceStatus: getLoadBalanceStatus(publishedBaseline.loadBalance),
+                  maturity: "provisional",
+                  coverageStatus: "partial",
+                }
+              : null,
         trainingLoadState: {
           status: availableCommonLoadHistory ? "available" : "unavailable",
           reason: availableCommonLoadHistory
@@ -768,12 +762,7 @@ export const homeRouter = createTRPCRouter({
           weeklyCount: weeklyActualStats.count,
         },
         weeklySummary: {
-          commonLoad: {
-            actual: weeklyActualCommonLoad,
-            planned: weeklyPlannedCommonLoad,
-          },
           observationQuantification: weeklyActualQuantification,
-          prescriptionQuantification: weeklyPlannedQuantification,
           actual: weeklyActualStats,
           planned: weeklyPlannedStats,
           adherence, // Percentage

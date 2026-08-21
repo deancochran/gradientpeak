@@ -223,7 +223,7 @@ export async function handleRecordingObjectAction({
       const payload: RecordingLaunchPayload = {
         launchSource: "activity_plan",
         activity_category: support.activity_category,
-        gpsRecordingEnabled: true,
+        gpsRecordingEnabled: false,
         plan,
       };
       activitySelectionStore.setSelection(payload);
@@ -236,7 +236,7 @@ export async function handleRecordingObjectAction({
       const payload: RecordingLaunchPayload = {
         launchSource: "route",
         activity_category,
-        gpsRecordingEnabled: activity_category === "run" || activity_category === "bike",
+        gpsRecordingEnabled: false,
         routeId: candidate.objectId,
       };
       activitySelectionStore.setSelection(payload);

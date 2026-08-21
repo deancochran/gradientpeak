@@ -227,7 +227,7 @@ export function ScheduleActivityModal({
 
   // Use template if provided, otherwise use fetched plan.
   const displayPlan = isTemplate ? activityPlan : planDetails?.detail;
-  const selectedPlanIsExecutable = Boolean(displayPlan);
+  const selectedPlanIsExecutable = Boolean(displayPlan?.capabilities.canSchedule);
   const preservesExistingPlan =
     isEditMode && existingActivity?.activityPlanSummary?.id === currentActivityPlanId;
   const existingPlanReadOnly = isEditMode && !isExistingEventActivityPlanEditable(existingActivity);

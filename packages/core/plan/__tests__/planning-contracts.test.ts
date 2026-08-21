@@ -40,6 +40,20 @@ describe("planning contracts", () => {
     expect(input.planned_sessions?.[0]?.date).toBe("2026-01-07");
   });
 
+  it("normalizes missing planned load and duration estimates to zero", () => {
+    expect(plannedTrainingSessionSchema.parse({ date: "2026-01-05" })).toMatchObject({
+      estimatedCommonLoad: 0,
+      estimatedDurationMinutes: 0,
+    });
+    expect(
+      plannedTrainingSessionSchema.parse({
+        date: "2026-01-06",
+        estimatedCommonLoad: null,
+        estimatedDurationMinutes: null,
+      }),
+    ).toMatchObject({ estimatedCommonLoad: 0, estimatedDurationMinutes: 0 });
+  });
+
   it("builds canonical prescription points and compact diagnostics from daily recommendations", () => {
     const points = [
       {

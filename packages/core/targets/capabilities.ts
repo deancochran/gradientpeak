@@ -3,41 +3,26 @@ import type { ActivityTargetType } from "./schema";
 
 export type ActivityTargetCategory = CanonicalActivityCategory;
 
-export type ActivityTargetCapability = {
-  allowed: readonly ActivityTargetType[];
-  preferred: readonly ActivityTargetType[];
-};
+export type ActivityTargetCapability = readonly ActivityTargetType[];
 
 export const activityTargetCapabilityConfig = {
-  run: {
-    allowed: ["bpm", "%MaxHR", "%ThresholdHR", "speed", "cadence", "RPE"],
-    preferred: ["speed", "%ThresholdHR", "bpm", "%MaxHR", "cadence", "RPE"],
-  },
-  bike: {
-    allowed: ["%FTP", "watts", "bpm", "%MaxHR", "%ThresholdHR", "cadence", "RPE"],
-    preferred: ["%FTP", "watts", "cadence", "%ThresholdHR", "bpm", "%MaxHR", "RPE"],
-  },
-  swim: {
-    allowed: ["speed", "bpm", "%MaxHR", "%ThresholdHR", "RPE"],
-    preferred: ["speed", "RPE", "%ThresholdHR", "bpm", "%MaxHR"],
-  },
-  strength: { allowed: ["RPE"], preferred: ["RPE"] },
-  other: {
-    allowed: ["RPE", "bpm", "%MaxHR"],
-    preferred: ["RPE", "bpm", "%MaxHR"],
-  },
+  run: ["speed", "%ThresholdHR", "bpm", "%MaxHR", "cadence", "RPE"],
+  bike: ["%FTP", "watts", "cadence", "%ThresholdHR", "bpm", "%MaxHR", "RPE"],
+  swim: ["speed", "RPE", "%ThresholdHR", "bpm", "%MaxHR"],
+  strength: ["RPE"],
+  other: ["RPE", "bpm", "%MaxHR"],
 } as const satisfies Record<ActivityTargetCategory, ActivityTargetCapability>;
 
 export function getPermissibleTargetTypes(
   activityCategory: ActivityTargetCategory,
 ): readonly ActivityTargetType[] {
-  return activityTargetCapabilityConfig[activityCategory].allowed;
+  return activityTargetCapabilityConfig[activityCategory];
 }
 
 export function getPreferredTargetTypes(
   activityCategory: ActivityTargetCategory,
 ): readonly ActivityTargetType[] {
-  return activityTargetCapabilityConfig[activityCategory].preferred;
+  return activityTargetCapabilityConfig[activityCategory];
 }
 
 export function isTargetTypePermittedForActivity(input: {

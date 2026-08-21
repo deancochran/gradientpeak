@@ -11,6 +11,7 @@ vi.mock("@repo/db", async (importOriginal) => ({
     name: "activities.name",
     type: "activities.type",
     started_at: "activities.started_at",
+    segments_revision: "activities.segments_revision",
     finished_at: "activities.finished_at",
     activity_file_path: "activities.activity_file_path",
   },
@@ -77,7 +78,7 @@ const mocks = vi.hoisted(() => ({
   calculateNormalizedSpeed: vi.fn(),
   estimateVO2Max: vi.fn(),
   createActivityAnalysisStore: vi.fn(),
-  getPerformanceTargetsAsOf: vi.fn(),
+  getPerformanceTargetSelectionsForActivities: vi.fn(),
   fetchActivityTemperature: vi.fn(),
   storage: {
     createBucket: vi.fn(),
@@ -398,21 +399,32 @@ beforeEach(() => {
   mocks.calculateNormalizedSpeed.mockReturnValue(11.1);
   mocks.estimateVO2Max.mockReturnValue(52);
   mocks.fetchActivityTemperature.mockResolvedValue(null);
-  mocks.getPerformanceTargetsAsOf.mockImplementation(
-    ({ asOf, profileId }: { asOf: Date; profileId: string }) =>
+  mocks.getPerformanceTargetSelectionsForActivities.mockImplementation(
+    ({ activities, profileId }: { activities: Array<{ activityId: string }>; profileId: string }) =>
       Promise.resolve(
-        buildPerformanceTargetFactsFixture({
-          asOf: asOf.toISOString(),
-          athleteId: profileId,
-          heartRateObservedAt: "2026-02-20T00:00:00.000Z",
-          lthrBpm: { bike: 180 },
-          bikeThresholdWatts: 300,
-        }),
+        new Map(
+          activities.map((activity) => [
+            activity.activityId,
+            {
+              activityId: activity.activityId,
+              source: "original_snapshot" as const,
+              sourceSegmentsRevision: 1,
+              revision: null,
+              performanceTargets: buildPerformanceTargetFactsFixture({
+                asOf: "2026-03-01T10:00:00.000Z",
+                athleteId: profileId,
+                heartRateObservedAt: "2026-02-20T00:00:00.000Z",
+                lthrBpm: { bike: 180 },
+                bikeThresholdWatts: 300,
+              }),
+            },
+          ]),
+        ),
       ),
   );
   mocks.createActivityAnalysisStore.mockImplementation((db) => ({
     db,
-    getPerformanceTargetsAsOf: mocks.getPerformanceTargetsAsOf,
+    getPerformanceTargetSelectionsForActivities: mocks.getPerformanceTargetSelectionsForActivities,
   }));
 });
 
@@ -816,6 +828,7 @@ describe("activityFilesRouter", () => {
             profile_id: "11111111-1111-4111-8111-111111111111",
             activityCategory: "bike",
             parentStartedAt: new Date("2026-03-01T10:00:00.000Z"),
+            segmentsRevision: 1,
             startOffsetMs: 0,
             endOffsetMs: 20_000,
             sourceSessionIndex: 0,
@@ -945,10 +958,9 @@ describe("activityFilesRouter", () => {
         },
       },
     });
-    expect(mocks.getPerformanceTargetsAsOf).toHaveBeenCalledWith({
+    expect(mocks.getPerformanceTargetSelectionsForActivities).toHaveBeenCalledWith({
       profileId: "11111111-1111-4111-8111-111111111111",
-      asOf: new Date("2026-03-01T10:00:00.000Z"),
-      activityIdToExclude: activityId,
+      activities: [{ activityId, segmentsRevision: 1 }],
     });
   });
 
@@ -1020,6 +1032,7 @@ describe("activityFilesRouter", () => {
       ],
       summary: { totalTime: 1200, totalDistance: 5000 },
     });
+    mocks.getPerformanceTargetSelectionsForActivities.mockResolvedValueOnce(new Map());
 
     const result = await createCaller({ db }).getStreams({
       activityId,

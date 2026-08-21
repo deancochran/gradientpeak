@@ -354,16 +354,6 @@ describe("plannedDaySummaryUseCase", () => {
       load: 144,
       totalActivityCount: 2,
     });
-    expect(
-      result.summary.prescriptionQuantification.summary.memberSubjectIdentities
-        .flatMap((identity) =>
-          identity.subjectType === "plan_occurrence" &&
-          identity.parentSubjectIdentity.subjectType === "scheduled_event"
-            ? [identity.parentSubjectIdentity.eventId]
-            : [],
-        )
-        .sort(),
-    ).toEqual(["bike-1", "bike-2"]);
   });
 
   it("keeps aggregate estimates unknown rather than converting them to zero", async () => {

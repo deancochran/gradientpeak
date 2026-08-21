@@ -39,7 +39,6 @@ export type PlannedDaySummaryResult = {
     activity_categories: CanonicalActivityCategory[];
     totalDurationSeconds: number | null;
     prescriptionQuantification: ActivityPrescriptionQuantificationBundle;
-    /** Thin transport projection; always identical to prescriptionQuantification.summary.commonLoad. */
     commonLoad: CommonLoadAggregate;
   };
 };
@@ -156,7 +155,6 @@ export function summarizePlannedDayEvents(input: {
     })),
   );
   const prescriptionQuantification = plannedDay.prescriptionQuantification;
-
   return {
     summary: {
       eventCount: events.length,

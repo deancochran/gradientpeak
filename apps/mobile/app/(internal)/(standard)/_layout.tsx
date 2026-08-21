@@ -309,12 +309,6 @@ export default function StandardLayout() {
 
       {/* SETTINGS */}
       <Stack.Screen
-        name="trends"
-        options={{
-          title: "Trends",
-        }}
-      />
-      <Stack.Screen
         name="search"
         options={{
           title: "Search",
@@ -352,18 +346,6 @@ export default function StandardLayout() {
         name="profile-edit"
         options={{
           title: "Edit Profile",
-        }}
-      />
-      <Stack.Screen
-        name="profile-metrics-list"
-        options={{
-          title: "My Profile Metrics",
-        }}
-      />
-      <Stack.Screen
-        name="profile-metric-detail"
-        options={{
-          title: "Profile Metric",
         }}
       />
       <Stack.Screen

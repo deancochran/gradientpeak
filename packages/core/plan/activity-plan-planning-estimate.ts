@@ -115,6 +115,7 @@ export type PrescriptionSpeedResolution =
       reason:
         | "not_authored"
         | "invalid_target"
+        | "ambiguous_target"
         | "range_requires_policy"
         | "category_calibration_required"
         | "unsupported_relative_reference";
@@ -150,6 +151,16 @@ function durationFingerprint(duration: CompiledActivityStepOccurrence["duration"
 
 function targetFingerprint(target: ActivityPlanTarget): { type: string; intensity: number } {
   return { type: target.type, intensity: target.intensity };
+}
+
+function targetFingerprints(targets: readonly ActivityPlanTarget[]) {
+  return targets
+    .map(targetFingerprint)
+    .sort((left, right) =>
+      left.type === right.type
+        ? left.intensity - right.intensity
+        : left.type.localeCompare(right.type),
+    );
 }
 
 export type ActivityPlanQuantificationIdentities = {
@@ -189,7 +200,7 @@ function compiledPlanIdentities(
       role: occurrence.role,
       activityCategory: occurrence.activity_category,
       duration: durationFingerprint(occurrence.duration),
-      targets: occurrence.targets.map(targetFingerprint),
+      targets: targetFingerprints(occurrence.targets),
     })),
   };
   const revisionFingerprint = fingerprintActivityQuantification(revisionEvidence);
@@ -291,11 +302,11 @@ export function resolvePrescriptionSpeedMetersPerSecond(input: {
     };
   }
 
-  const absolute = input.prescribedIntensity.values.find(
+  const absoluteTargets = input.prescribedIntensity.values.filter(
     (value) => value.metric === "speed" || value.metric === "pace",
   );
-  if (absolute) {
-    if (absolute.magnitude.kind === "range") {
+  if (absoluteTargets.length > 0) {
+    if (absoluteTargets.some((target) => target.magnitude.kind === "range")) {
       return {
         status: "unavailable",
         value: null,
@@ -303,27 +314,39 @@ export function resolvePrescriptionSpeedMetersPerSecond(input: {
         reason: "range_requires_policy",
       };
     }
-    const value = absoluteSpeed(absolute);
-    return value === null || !Number.isFinite(value) || value <= 0
+    const values = absoluteTargets.map(absoluteSpeed);
+    if (values.some((value) => value === null || !Number.isFinite(value) || value <= 0)) {
+      return {
+        status: "unavailable",
+        value: null,
+        unit: "meters_per_second",
+        reason: "invalid_target",
+      };
+    }
+    const first = values[0] as number;
+    const ambiguous = values.some(
+      (value) => Math.abs((value as number) - first) > Math.max(1e-9, first * 1e-9),
+    );
+    return ambiguous
       ? {
           status: "unavailable",
           value: null,
           unit: "meters_per_second",
-          reason: "invalid_target",
+          reason: "ambiguous_target",
         }
       : {
           status: "available",
-          value,
+          value: first,
           unit: "meters_per_second",
           source: "authored_absolute",
         };
   }
 
-  const relative = input.prescribedIntensity.values.find(
+  const relativeTargets = input.prescribedIntensity.values.filter(
     (value): value is RelativeThresholdIntensity =>
       value.metric === "relative_threshold" && value.reference === "threshold_speed",
   );
-  if (!relative) {
+  if (relativeTargets.length === 0) {
     return {
       status: "unavailable",
       value: null,
@@ -331,7 +354,7 @@ export function resolvePrescriptionSpeedMetersPerSecond(input: {
       reason: "not_authored",
     };
   }
-  if (relative.magnitude.kind === "range") {
+  if (relativeTargets.some((target) => target.magnitude.kind === "range")) {
     return {
       status: "unavailable",
       value: null,
@@ -339,9 +362,7 @@ export function resolvePrescriptionSpeedMetersPerSecond(input: {
       reason: "range_requires_policy",
     };
   }
-  const compatible =
-    (input.activityCategory === "run" || input.activityCategory === "swim") &&
-    relative.reference === "threshold_speed";
+  const compatible = input.activityCategory === "run" || input.activityCategory === "swim";
   if (!compatible) {
     return {
       status: "unavailable",
@@ -350,21 +371,35 @@ export function resolvePrescriptionSpeedMetersPerSecond(input: {
       reason: "unsupported_relative_reference",
     };
   }
-  const value = relativeSpeedCalibration({
-    activityCategory: input.activityCategory,
-    performanceTargets: input.performanceTargets ?? null,
-    value: relative,
-  });
-  return value === null || !Number.isFinite(value) || value <= 0
+  const values = relativeTargets.map((target) =>
+    relativeSpeedCalibration({
+      activityCategory: input.activityCategory,
+      performanceTargets: input.performanceTargets ?? null,
+      value: target,
+    }),
+  );
+  if (values.some((value) => value === null || !Number.isFinite(value) || value <= 0)) {
+    return {
+      status: "unavailable",
+      value: null,
+      unit: "meters_per_second",
+      reason: "category_calibration_required",
+    };
+  }
+  const first = values[0] as number;
+  const ambiguous = values.some(
+    (value) => Math.abs((value as number) - first) > Math.max(1e-9, first * 1e-9),
+  );
+  return ambiguous
     ? {
         status: "unavailable",
         value: null,
         unit: "meters_per_second",
-        reason: "category_calibration_required",
+        reason: "ambiguous_target",
       }
     : {
         status: "available",
-        value,
+        value: first,
         unit: "meters_per_second",
         source: "relative_category_calibration",
       };
@@ -464,7 +499,12 @@ function resolveOccurrence(
               evidenceRole: "prescribed",
               value: null,
               unit: "meters",
-              reason: speed.reason === "invalid_target" ? "invalid_data" : "not_prescribed",
+              reason:
+                speed.reason === "invalid_target"
+                  ? "invalid_data"
+                  : speed.reason === "ambiguous_target"
+                    ? "ambiguous_target"
+                    : "not_prescribed",
             },
       ),
     };
@@ -538,7 +578,67 @@ type CommonLoadSelection = {
   fact: SelectedPerformanceFact | null;
   thresholdType: CommonThresholdEvidence["type"] | null;
   thresholdValue: number | null;
+  unavailableReason: "ambiguous_target" | "threshold_missing" | null;
+  normalizationBasis?: {
+    type: "max_hr_to_lthr";
+    authoredPercent: number;
+    maxHeartRateBpm: number;
+    maxHeartRateCalculationVersion: string | null;
+    maxHeartRateEvidenceIds: string[];
+    maxHeartRateObservedAt: string | null;
+  };
 };
+
+type LoadDrivingTarget = {
+  target: ActivityPlanTarget;
+  domain: "heart_rate" | "power" | "speed";
+  priority: number;
+};
+
+function loadDrivingCandidates(occurrence: CompiledActivityStepOccurrence): LoadDrivingTarget[] {
+  const category = occurrence.activity_category;
+  const domainPriority =
+    category === "bike"
+      ? { power: 30, heart_rate: 20, speed: 0 }
+      : category === "run" || category === "swim"
+        ? { speed: 30, heart_rate: 20, power: 0 }
+        : { heart_rate: category === "other" ? 20 : 0, power: 0, speed: 0 };
+
+  return occurrence.targets.flatMap((target): LoadDrivingTarget[] => {
+    const domain =
+      target.type === "%FTP" || target.type === "watts"
+        ? "power"
+        : target.type === "%ThresholdHR" || target.type === "%MaxHR" || target.type === "bpm"
+          ? "heart_rate"
+          : target.type === "speed"
+            ? "speed"
+            : null;
+    if (domain === null || domainPriority[domain] === 0) return [];
+    const relative =
+      target.type === "%FTP" || target.type === "%ThresholdHR" || target.type === "%MaxHR";
+    return [{ target, domain, priority: domainPriority[domain] + (relative ? 2 : 1) }];
+  });
+}
+
+function selectLoadDrivingTarget(
+  occurrence: CompiledActivityStepOccurrence,
+): { status: "selected"; target: ActivityPlanTarget } | { status: "none" | "ambiguous" } {
+  const candidates = loadDrivingCandidates(occurrence);
+  const highestPriority = candidates.reduce(
+    (highest, candidate) => Math.max(highest, candidate.priority),
+    Number.NEGATIVE_INFINITY,
+  );
+  const finalists = candidates.filter((candidate) => candidate.priority === highestPriority);
+  const first = finalists[0];
+  if (!first) return { status: "none" };
+  const equivalent = finalists.every(
+    (candidate) =>
+      candidate.domain === first.domain &&
+      candidate.target.type === first.target.type &&
+      candidate.target.intensity === first.target.intensity,
+  );
+  return equivalent ? { status: "selected", target: first.target } : { status: "ambiguous" };
+}
 
 function selectedTargetFact(
   fact: PerformanceThresholdFact,
@@ -597,26 +697,18 @@ function commonLoadSelection(
   occurrence: CompiledActivityStepOccurrence,
   performanceTargets: AthletePerformanceTargetFacts,
 ): CommonLoadSelection {
-  const target = occurrence.targets.find((candidate) => {
-    if (occurrence.activity_category === "bike") {
-      return (
-        candidate.type === "%FTP" || candidate.type === "watts" || candidate.type === "%ThresholdHR"
-      );
-    }
-    if (occurrence.activity_category === "run" || occurrence.activity_category === "swim") {
-      return candidate.type === "speed" || candidate.type === "%ThresholdHR";
-    }
-    return false;
-  });
-  if (!target) {
+  const resolvedTarget = selectLoadDrivingTarget(occurrence);
+  if (resolvedTarget.status !== "selected") {
     return {
       target: null,
       method: null,
       fact: null,
       thresholdType: null,
       thresholdValue: null,
+      unavailableReason: resolvedTarget.status === "ambiguous" ? "ambiguous_target" : null,
     };
   }
+  const target = resolvedTarget.target;
   if (
     occurrence.activity_category !== "bike" &&
     occurrence.activity_category !== "run" &&
@@ -628,34 +720,99 @@ function commonLoadSelection(
       fact: null,
       thresholdType: null,
       thresholdValue: null,
+      unavailableReason: null,
     };
   }
 
   if (target.type === "%ThresholdHR") {
+    return {
+      target: { type: "percent_threshold", thresholdRatio: target.intensity / 100 },
+      method: "heart_rate_zones",
+      fact: null,
+      thresholdType: null,
+      thresholdValue: null,
+      unavailableReason: null,
+    };
+  }
+
+  if (target.type === "%MaxHR") {
+    const lthr = selectedHeartRateFact(
+      performanceTargets.heartRate[occurrence.activity_category].lthr,
+      performanceTargets.asOf,
+    );
+    const maxHeartRate = selectedHeartRateFact(
+      performanceTargets.heartRate[occurrence.activity_category].maxHr,
+      performanceTargets.asOf,
+    );
+    if (
+      lthr.status !== "available" ||
+      lthr.value === null ||
+      lthr.value <= 0 ||
+      maxHeartRate.status !== "available" ||
+      maxHeartRate.value === null ||
+      maxHeartRate.value <= 0
+    ) {
+      return {
+        target: null,
+        method: "heart_rate_zones",
+        fact: lthr.status === "available" ? maxHeartRate : lthr,
+        thresholdType: null,
+        thresholdValue: null,
+        unavailableReason: "threshold_missing",
+      };
+    }
+    return {
+      target: { type: "heart_rate_bpm", value: maxHeartRate.value * (target.intensity / 100) },
+      method: "heart_rate_zones",
+      fact: lthr,
+      thresholdType: "lthr_bpm",
+      thresholdValue: lthr.value,
+      unavailableReason: null,
+      normalizationBasis: {
+        type: "max_hr_to_lthr",
+        authoredPercent: target.intensity,
+        maxHeartRateBpm: maxHeartRate.value,
+        maxHeartRateCalculationVersion: maxHeartRate.calculationVersion,
+        maxHeartRateEvidenceIds: maxHeartRate.sourceEvidenceIds,
+        maxHeartRateObservedAt: maxHeartRate.observedAt,
+      },
+    };
+  }
+
+  if (target.type === "bpm") {
     const lthr = selectedHeartRateFact(
       performanceTargets.heartRate[occurrence.activity_category].lthr,
       performanceTargets.asOf,
     );
     return {
-      target: { type: "percent_threshold", thresholdRatio: target.intensity / 100 },
+      target: { type: "heart_rate_bpm", value: target.intensity },
       method: "heart_rate_zones",
       fact: lthr,
       thresholdType: "lthr_bpm",
       thresholdValue: lthr.value,
+      unavailableReason: null,
     };
   }
 
   if (occurrence.activity_category === "bike") {
+    if (target.type === "%FTP") {
+      return {
+        target: { type: "percent_threshold", thresholdRatio: target.intensity / 100 },
+        method: "power_threshold",
+        fact: null,
+        thresholdType: null,
+        thresholdValue: null,
+        unavailableReason: null,
+      };
+    }
     const fact = selectedTargetFact(performanceTargets.thresholds.bike, performanceTargets.asOf);
     return {
-      target:
-        target.type === "%FTP"
-          ? { type: "percent_threshold", thresholdRatio: target.intensity / 100 }
-          : { type: "power_watts", value: target.intensity },
+      target: { type: "power_watts", value: target.intensity },
       method: "power_threshold",
       fact,
       thresholdType: "ftp_watts",
       thresholdValue: fact.status === "available" ? fact.value : null,
+      unavailableReason: null,
     };
   }
 
@@ -670,6 +827,7 @@ function commonLoadSelection(
     thresholdType:
       occurrence.activity_category === "run" ? "threshold_speed_mps" : "swim_threshold_speed_mps",
     thresholdValue: fact.status === "available" ? fact.value : null,
+    unavailableReason: null,
   };
 }
 
@@ -691,7 +849,7 @@ function buildPlannedDose(input: {
 }): PlannedCommonLoadDose {
   const selection = commonLoadSelection(input.resolution.occurrence, input.performanceTargets);
   const fact = selection.fact;
-  const sourceFingerprint =
+  const calibratedSourceFingerprint =
     fact !== null && selection.thresholdValue !== null && fact.observedAt !== null
       ? fingerprintActivityQuantification({
           purpose: "planned-common-load-performance-target",
@@ -704,8 +862,20 @@ function buildPlannedDose(input: {
           observedAt: fact.observedAt,
           calculationVersion: fact.calculationVersion,
           sourceEvidenceIds: fact.sourceEvidenceIds,
+          normalizationBasis: selection.normalizationBasis ?? null,
         })
       : null;
+  const planIntentFingerprint =
+    selection.target?.type === "percent_threshold" && selection.fact === null
+      ? fingerprintActivityQuantification({
+          purpose: "planned-common-load-plan-intent",
+          sourceFingerprint: input.sourceIdentity.fingerprint,
+          occurrenceId: input.resolution.occurrence.occurrenceId,
+          thresholdRatio: selection.target.thresholdRatio,
+          method: selection.method,
+        })
+      : null;
+  const sourceFingerprint = calibratedSourceFingerprint ?? planIntentFingerprint;
   const thresholdEvidence =
     fact !== null &&
     fact.status === "available" &&
@@ -756,7 +926,11 @@ function buildPlannedDose(input: {
           method: selection.method,
           thresholdFingerprint: sourceFingerprint,
         });
-  const unavailableReason = performanceTargetUnavailableReason(fact);
+  const unavailableReason =
+    selection.unavailableReason ??
+    (selection.target?.type === "percent_threshold" && selection.fact === null
+      ? undefined
+      : performanceTargetUnavailableReason(fact));
 
   return {
     activity_category: input.resolution.occurrence.activity_category,
@@ -765,24 +939,36 @@ function buildPlannedDose(input: {
     method: selection.method,
     thresholdEvidence,
     quality:
-      thresholdEvidence === null
+      thresholdEvidence === null && planIntentFingerprint === null
         ? null
-        : {
-            source: thresholdEvidence.source,
-            observed_at: thresholdEvidence.observedAt,
-            valid_at: thresholdEvidence.validAt,
-            confidence:
-              thresholdEvidence.source === "manual" || thresholdEvidence.source === "validated_test"
-                ? "high"
-                : thresholdEvidence.source === "unknown"
-                  ? "low"
-                  : "medium",
-            stale: thresholdEvidence.freshness === "stale",
-            estimate:
-              thresholdEvidence.source === "estimated" || thresholdEvidence.source === "modeled",
-            calculation_version: thresholdEvidence.calculationVersion,
-            evidence_fingerprint: sourceFingerprint,
-          },
+        : thresholdEvidence === null
+          ? {
+              source: "unknown",
+              observed_at: null,
+              valid_at: input.performanceTargets.asOf,
+              confidence: "unknown",
+              stale: false,
+              estimate: true,
+              calculation_version: COMMON_RELATIVE_LOAD_VERSION,
+              evidence_fingerprint: planIntentFingerprint,
+            }
+          : {
+              source: thresholdEvidence.source,
+              observed_at: thresholdEvidence.observedAt,
+              valid_at: thresholdEvidence.validAt,
+              confidence:
+                thresholdEvidence.source === "manual" ||
+                thresholdEvidence.source === "validated_test"
+                  ? "high"
+                  : thresholdEvidence.source === "unknown"
+                    ? "low"
+                    : "medium",
+              stale: thresholdEvidence.freshness === "stale",
+              estimate:
+                thresholdEvidence.source === "estimated" || thresholdEvidence.source === "modeled",
+              calculation_version: thresholdEvidence.calculationVersion,
+              evidence_fingerprint: sourceFingerprint,
+            },
     evidenceFingerprint,
     ...(unavailableReason === undefined ? {} : { calibrationUnavailableReason: unavailableReason }),
   };
@@ -790,7 +976,11 @@ function buildPlannedDose(input: {
 
 function occurrenceDuration(resolution: OccurrenceResolution, assignedRestSeconds: number) {
   const open = resolution.occurrence.duration.type === "untilFinished";
-  const unavailableReason = open ? "open_ended" : "source_missing";
+  const unavailableReason = open
+    ? "open_ended"
+    : resolution.speed.status === "unavailable" && resolution.speed.reason === "ambiguous_target"
+      ? "ambiguous_target"
+      : "source_missing";
   const active =
     resolution.activeSeconds === null
       ? {
@@ -1163,7 +1353,7 @@ export function estimateActivityPlanForTrainingContext(
       planRevisionFingerprint: identities.evidenceIdentity.revisionFingerprint,
       occurrenceId: resolution.occurrence.occurrenceId,
       duration: durationFingerprint(resolution.occurrence.duration),
-      targets: resolution.occurrence.targets.map(targetFingerprint),
+      targets: targetFingerprints(resolution.occurrence.targets),
     };
     const evidenceIdentity = createActivityQuantificationEvidenceIdentity({
       evidenceType: "plan_revision",

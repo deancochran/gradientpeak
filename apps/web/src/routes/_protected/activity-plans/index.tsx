@@ -12,6 +12,7 @@ import { ClipboardList, Loader2, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { ActivityPlanCard } from "../../../components/activity-plan/activity-plan-card";
 import { ActivityPlanComposer } from "../../../components/activity-plan/activity-plan-composer";
 import { DetailPageIntro } from "../../../components/protected/activity-route-primitives";
 import { api } from "../../../lib/api/client";
@@ -161,43 +162,18 @@ function ActivityPlansPage() {
                 </div>
               </div>
             ) : (
-              plans.map((plan) => {
-                const summary = plan;
-                const metrics = summary.metrics.map((metric) =>
-                  metric.status === "unavailable"
-                    ? `${metric.label} unavailable`
-                    : `${metric.label} ${metric.unit === "ratio" ? metric.value.toFixed(2) : Math.round(metric.value)}`,
-                );
-                return (
-                  <button
-                    className="w-full rounded-2xl border bg-card p-5 text-left transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    data-testid={`activity-plan-card-${plan.id}`}
-                    key={plan.id}
-                    onClick={() =>
-                      void navigate({
-                        to: "/activity-plans/$activityPlanId",
-                        params: { activityPlanId: plan.id },
-                      } as never)
-                    }
-                    type="button"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <h2 className="text-lg font-semibold">{summary.name}</h2>
-                        <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                          {summary.description || "No description provided."}
-                        </p>
-                      </div>
-                      <span className="rounded-full border px-2 py-0.5 text-xs font-medium capitalize">
-                        {summary.activityCategory}
-                      </span>
-                    </div>
-                    {metrics.length ? (
-                      <p className="mt-4 text-sm text-muted-foreground">{metrics.join(" · ")}</p>
-                    ) : null}
-                  </button>
-                );
-              })
+              plans.map((plan) => (
+                <ActivityPlanCard
+                  key={plan.id}
+                  onOpen={() =>
+                    void navigate({
+                      to: "/activity-plans/$activityPlanId",
+                      params: { activityPlanId: plan.id },
+                    } as never)
+                  }
+                  plan={plan}
+                />
+              ))
             )}
             {plansQuery.hasNextPage ? (
               <div className="flex justify-center">

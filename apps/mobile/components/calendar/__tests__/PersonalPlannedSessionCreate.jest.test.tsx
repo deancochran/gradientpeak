@@ -1,14 +1,19 @@
 import { fireEvent, renderNative, screen, waitFor } from "../../../test/render-native";
 
 const createMock = jest.fn(async () => undefined);
+const invalidateCalendarPageMock = jest.fn(async () => undefined);
 const replaceMock = jest.fn();
+let plannedSessionMutationOptions: { onConflict: () => Promise<unknown> } | null = null;
 
 jest.mock("expo-crypto", () => ({ randomUUID: () => "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }));
 jest.mock("expo-router", () => ({ useRouter: () => ({ replace: replaceMock }) }));
 jest.mock("@repo/api/react", () => ({
-  usePlannedSessionMutations: () => ({
-    create: { isPending: false, mutateAsync: createMock },
-  }),
+  usePlannedSessionMutations: (options: { onConflict: () => Promise<unknown> }) => {
+    plannedSessionMutationOptions = options;
+    return {
+      create: { isPending: false, mutateAsync: createMock },
+    };
+  },
 }));
 jest.mock("@/lib/stores/auth-store", () => ({
   useAuthStore: (selector: (state: { profile: { id: string } }) => unknown) =>
@@ -16,7 +21,7 @@ jest.mock("@/lib/stores/auth-store", () => ({
 }));
 jest.mock("@/lib/api", () => ({
   api: {
-    useUtils: () => ({ plannedSessions: { range: { fetch: jest.fn() } } }),
+    useUtils: () => ({ calendar: { page: { invalidate: invalidateCalendarPageMock } } }),
     activityPlans: {
       list: {
         useQuery: () => ({
@@ -69,6 +74,12 @@ jest.mock("@/lib/api", () => ({
 const { PersonalPlannedSessionCreate } = require("../PersonalPlannedSessionCreate");
 
 describe("PersonalPlannedSessionCreate", () => {
+  beforeEach(() => {
+    createMock.mockClear();
+    invalidateCalendarPageMock.mockClear();
+    plannedSessionMutationOptions = null;
+  });
+
   it("sends the selected plan identity so the server creates the snapshot", async () => {
     renderNative(<PersonalPlannedSessionCreate planningDate="2026-08-16" />);
 
@@ -83,5 +94,13 @@ describe("PersonalPlannedSessionCreate", () => {
       },
     });
     expect((createMock as jest.Mock).mock.calls[0]?.[0].session).not.toHaveProperty("prescription");
+  });
+
+  it("refreshes calendar pages after a scheduling conflict without reading a per-day session range", async () => {
+    renderNative(<PersonalPlannedSessionCreate planningDate="2026-08-16" />);
+
+    await plannedSessionMutationOptions?.onConflict();
+
+    expect(invalidateCalendarPageMock).toHaveBeenCalledTimes(1);
   });
 });

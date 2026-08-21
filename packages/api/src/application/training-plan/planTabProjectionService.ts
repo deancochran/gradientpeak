@@ -1,9 +1,11 @@
 import {
   addDaysDateKey,
-  buildTrainingTimelineWindowFromLoadTimeline,
+  buildTrainingTimelineWindow,
   type CompletedTrainingItem,
+  compareTrainingLoad,
   dateOnlySchema,
   type ScheduledTrainingItem,
+  type TrainingLoadTimelineInputPoint,
   trainingTimelineWindowSchema,
 } from "@repo/core";
 import { diffDateOnlyUtcDays } from "@repo/core/calendar";
@@ -14,6 +16,7 @@ import {
   type CommonLoadRecommendation,
   type CommonLoadTrendProjectionDay,
   projectCommonLoadTrend,
+  reconstructCommonLoadTrendHistory,
 } from "@repo/core/load";
 import { activities, activityPlans, events, profileGoals, trainingPlans } from "@repo/db";
 import { and, asc, eq, gte, inArray, isNotNull } from "drizzle-orm";
@@ -215,6 +218,7 @@ const defaultDependencies: PlanTabProjectionDependencies = {
       now,
       sections: {
         currentBaseline: { includePlanningContext: false },
+        loadHistory: true,
       },
     }),
   readEffectiveLoad: ({ db, profileId, request, asOf }) =>
@@ -323,7 +327,15 @@ type EffectiveItem = Extract<
   { status: "available" }
 >["firmItems"][number];
 
-function aggregateValue(items: EffectiveItem[]) {
+function envelopeLoad(envelope: EffectiveItem["commonLoad"]): number | null {
+  return envelope.status === "unavailable" ? null : envelope.load;
+}
+
+function envelopeIntensity(envelope: EffectiveItem["commonLoad"]): number | null {
+  return envelope.status === "unavailable" ? null : envelope.intensity;
+}
+
+function aggregateValue(items: EffectiveItem[], preservePartial: boolean) {
   if (items.length === 0) {
     return {
       status: "known_zero" as const,
@@ -341,9 +353,10 @@ function aggregateValue(items: EffectiveItem[]) {
         contributingDurationSeconds: null,
       }
     : {
-        // A finite Common Load is the current authoritative load even when its
-        // source evidence may later be enriched or replaced.
-        status: "complete" as const,
+        status:
+          preservePartial && aggregate.status === "partial"
+            ? ("partial" as const)
+            : ("complete" as const),
         load: aggregate.load,
         intensity: aggregate.intensity,
         contributingDurationSeconds: aggregate.contributingDurationSeconds,
@@ -359,6 +372,7 @@ function recommendationForDate(
   }
   const point = recommendation.points.find((candidate) => candidate.date === date);
   if (!point || point.state === "unavailable") return { status: "unavailable", load: null };
+  if (point.state === "partial") return { status: "partial", load: point.load };
   if (point.state === "known_zero") return { status: "known_zero", load: 0 };
   return { status: point.state, load: point.load };
 }
@@ -406,9 +420,32 @@ function summarizeDate(response: EffectivePlanLoadDto, date: string) {
   ) {
     return unavailableLoadSummary(recommendation);
   }
-  const completed = aggregateValue(items.filter((item) => item.kind === "completed"));
-  const scheduled = aggregateValue(items.filter((item) => item.kind === "scheduled"));
-  const effective = aggregateValue(items);
+  const completedAggregate = aggregateValue(
+    items.filter((item) => item.kind === "completed"),
+    true,
+  );
+  const completed =
+    response.sourceCoverage.activities?.status === "complete"
+      ? completedAggregate
+      : completedAggregate.status === "complete" || completedAggregate.status === "partial"
+        ? { ...completedAggregate, status: "partial" as const }
+        : {
+            status: "unavailable" as const,
+            load: null,
+            intensity: null,
+            contributingDurationSeconds: null,
+          };
+  const scheduledItems = items.filter((item) => item.kind === "scheduled");
+  const scheduled = aggregateValue(scheduledItems, true);
+  const scheduledLoadStatus = scheduled.status;
+  const scheduledLoad = scheduled.load;
+  const effective = aggregateValue(items, scheduledItems.length > 0);
+  const loadComparison = compareTrainingLoad({
+    scheduledLoad,
+    scheduledLoadStatus,
+    completedLoad: completed.load,
+    completedLoadStatus: completed.status,
+  });
   return planTabLoadSummarySchema.parse({
     status: effective.status,
     commonLoad: effective.load,
@@ -416,10 +453,10 @@ function summarizeDate(response: EffectivePlanLoadDto, date: string) {
     contributingDurationSeconds: effective.contributingDurationSeconds,
     completedLoadStatus: completed.status,
     completedLoad: completed.load,
-    scheduledLoadStatus: scheduled.status,
-    scheduledLoad: scheduled.load,
-    remainingLoadStatus: scheduled.status,
-    remainingLoad: scheduled.load,
+    scheduledLoadStatus,
+    scheduledLoad,
+    remainingLoadStatus: loadComparison.remainingLoadStatus,
+    remainingLoad: loadComparison.remainingLoad,
     hasUnavailableCompletedLoad:
       items.some((item) => item.kind === "completed") && completed.status === "unavailable",
     recommendedLoadStatus: recommendation.status,
@@ -438,33 +475,31 @@ function dateKeys(startDate: string, endDate: string) {
 }
 
 function toProjectionDay(summary: z.infer<typeof planTabLoadSummarySchema>, date: string) {
-  if (summary.status === "known_zero") {
-    return { date, state: "known_zero" as const };
+  if (summary.remainingLoadStatus === "complete" && summary.remainingLoad !== null) {
+    return { date, state: "available" as const, load: summary.remainingLoad };
   }
-  if (
-    (summary.status === "complete" || summary.status === "partial") &&
-    summary.commonLoad !== null
-  ) {
-    return { date, state: "available" as const, load: summary.commonLoad };
+  if (summary.remainingLoadStatus === "known_zero") {
+    return { date, state: "known_zero" as const };
   }
   return {
     date,
     state: "unavailable" as const,
-    reason: summary.status === "partial" ? "partial" : "unavailable",
-  } satisfies CommonLoadTrendProjectionDay;
+    reason:
+      summary.remainingLoadStatus === "partial" ? ("partial" as const) : ("unavailable" as const),
+  };
 }
 
 function recommendationProjectionDays(recommendation: CommonLoadRecommendation | undefined) {
   if (!recommendation || recommendation.status === "unavailable") return [];
   return recommendation.points.map<CommonLoadTrendProjectionDay>((point) => {
     if (point.state === "known_zero") return { date: point.date, state: "known_zero" };
-    if (point.state === "complete" || point.state === "partial") {
+    if (point.state === "complete") {
       return { date: point.date, state: "available", load: point.load };
     }
     return {
       date: point.date,
       state: "unavailable",
-      reason: "unavailable",
+      reason: point.state === "partial" ? "partial" : "unavailable",
     };
   });
 }
@@ -478,27 +513,96 @@ function buildFitness(input: {
   const historyPoints = history?.status === "available" ? history.points : [];
   const publishedBaseline = input.readModel.currentBaseline?.baseline;
   const currentPlanningDate = input.readModel.currentBaseline?.currentPlanningDate;
-  const actual = historyPoints.map((point) => ({
-    date: point.date,
-    longTermLoad: point.longTermLoad,
-    recentLoad: point.recentLoad,
-    loadBalance: point.loadBalance,
-  }));
-  if (actual.length === 0 && publishedBaseline && currentPlanningDate) {
-    actual.push({
-      date: currentPlanningDate,
-      longTermLoad: publishedBaseline.longTermLoad,
-      recentLoad: publishedBaseline.recentLoad,
-      loadBalance: publishedBaseline.loadBalance,
-    });
+  const currentBaselinePoint =
+    publishedBaseline && currentPlanningDate
+      ? {
+          date: currentPlanningDate,
+          longTermLoad: publishedBaseline.longTermLoad,
+          recentLoad: publishedBaseline.recentLoad,
+          loadBalance: publishedBaseline.loadBalance,
+        }
+      : null;
+  let actual = historyPoints
+    .map((point) => ({
+      date: point.date,
+      longTermLoad: point.longTermLoad,
+      recentLoad: point.recentLoad,
+      loadBalance: point.loadBalance,
+    }))
+    .sort((left, right) => left.date.localeCompare(right.date));
+
+  if (actual.length > 0 && currentBaselinePoint) {
+    if (!actual.some((point) => point.date === currentBaselinePoint.date)) {
+      actual = [...actual, currentBaselinePoint].sort((left, right) =>
+        left.date.localeCompare(right.date),
+      );
+    }
+  } else if (
+    actual.length === 0 &&
+    currentBaselinePoint &&
+    // A past-only prefetched segment does not contain the intervening loads
+    // needed to invert today's state accurately. Never present that synthetic
+    // decline as observed fitness history.
+    Object.hasOwn(input.dayLoads, currentBaselinePoint.date)
+  ) {
+    const requestedPastDates = Object.keys(input.dayLoads)
+      .filter((date) => date <= currentBaselinePoint.date)
+      .sort();
+    const oldestBoundedDate = addDaysDateKey(
+      currentBaselinePoint.date,
+      -(MAX_PLANNING_RANGE_DAYS - 1),
+    );
+    const requestedStart = requestedPastDates[0] ?? currentBaselinePoint.date;
+    let reconstructionStart =
+      requestedStart < oldestBoundedDate ? oldestBoundedDate : requestedStart;
+    if (reconstructionStart >= currentBaselinePoint.date) {
+      reconstructionStart = addDaysDateKey(currentBaselinePoint.date, -1);
+    }
+    const reconstructionDays = dateKeys(reconstructionStart, currentBaselinePoint.date).map(
+      (date) => {
+        const load = input.dayLoads[date]?.completedLoad;
+        return load === null || load === undefined ? null : { date, load };
+      },
+    );
+    const reconstruction = reconstructionDays.some((day) => day === null)
+      ? null
+      : reconstructCommonLoadTrendHistory({
+          baseline: currentBaselinePoint,
+          days: reconstructionDays.filter((day) => day !== null),
+        });
+    actual =
+      reconstruction?.status === "complete"
+        ? reconstruction.points
+        : [
+            {
+              ...currentBaselinePoint,
+              date: addDaysDateKey(currentBaselinePoint.date, -1),
+            },
+            currentBaselinePoint,
+          ];
+  } else if (actual.length === 0 && currentBaselinePoint) {
+    actual = [currentBaselinePoint];
   }
-  const baseline = actual.at(-1);
+
+  const baseline =
+    (currentPlanningDate
+      ? actual.find((point) => point.date === currentPlanningDate)
+      : undefined) ?? actual.at(-1);
   if (!baseline) return { actual, scheduled: [], recommended: [] };
+  const futureDates = Object.keys(input.dayLoads)
+    .filter((date) => date > baseline.date)
+    .sort();
+  const lastFutureDate = futureDates.at(-1);
   const scheduledProjection = projectCommonLoadTrend({
     baseline,
-    days: Object.entries(input.dayLoads)
-      .filter(([date]) => date > baseline.date)
-      .map(([date, summary]) => toProjectionDay(summary, date)),
+    days: lastFutureDate
+      ? dateKeys(addDaysDateKey(baseline.date, 1), lastFutureDate).map((date) => {
+          const summary = input.dayLoads[date];
+          return summary
+            ? toProjectionDay(summary, date)
+            : { date, state: "unavailable" as const, reason: "unavailable" as const };
+        })
+      : [],
   });
   const recommendedProjection = projectCommonLoadTrend({
     baseline,
@@ -529,8 +633,27 @@ function recommendationPoints(response: EffectivePlanLoadDto) {
   return response.recommendation.points.map((point) => ({
     date: point.date,
     status: point.state,
-    load: point.state === "complete" || point.state === "partial" ? point.load : 0,
+    load:
+      point.state === "complete" || point.state === "partial"
+        ? point.load
+        : point.state === "known_zero"
+          ? 0
+          : null,
   }));
+}
+
+type PlanTabLoadStatus = z.infer<typeof loadStatusSchema>;
+
+function plannedItemLoadStatus(envelope: EffectiveItem["commonLoad"]): PlanTabLoadStatus {
+  if (envelope.status === "unavailable") return "unavailable";
+  if (envelope.status === "partial") return "partial";
+  return "complete";
+}
+
+function completedItemLoadStatus(envelope: EffectiveItem["commonLoad"]): PlanTabLoadStatus {
+  if (envelope.status === "unavailable") return "unavailable";
+  if (envelope.status === "partial") return "partial";
+  return envelope.load === 0 ? "known_zero" : "complete";
 }
 
 export async function readPlanTabProjectionSnapshot(input: {
@@ -597,7 +720,8 @@ export async function readPlanTabProjectionSnapshot(input: {
         date: item.date,
         title: itemMetadata?.title ?? "Scheduled session",
         activityCategory: itemMetadata?.activityCategory ?? null,
-        plannedLoad: item.commonLoad.status === "unavailable" ? null : item.commonLoad.load,
+        plannedLoad: envelopeLoad(item.commonLoad),
+        plannedLoadStatus: plannedItemLoadStatus(item.commonLoad),
         status: "planned",
       },
     ];
@@ -612,27 +736,32 @@ export async function readPlanTabProjectionSnapshot(input: {
         date: item.date,
         title: itemMetadata?.title ?? "Completed activity",
         activityCategory: itemMetadata?.activityCategory ?? null,
-        completedLoad: item.commonLoad.status === "unavailable" ? null : item.commonLoad.load,
+        completedLoad: envelopeLoad(item.commonLoad),
+        completedLoadStatus: completedItemLoadStatus(item.commonLoad),
       },
     ];
   });
   const timeline = today
-    ? buildTrainingTimelineWindowFromLoadTimeline({
+    ? buildTrainingTimelineWindow({
         today,
         startDate: input.request.startDate,
         endDate: input.request.endDate,
-        timeline: dates.map((date) => {
+        loadPoints: dates.map((date) => {
           const load = dayLoads[date];
           if (!load) throw new Error("Plan-tab day load was not assembled");
-          return {
+          const point: TrainingLoadTimelineInputPoint = {
             date,
             recommended_common_load: load.recommendedLoad,
-            scheduled_common_load: load.remainingLoad,
-            completed_common_load: load.completedLoad,
+            recommended_common_load_status: load.recommendedLoadStatus,
+            scheduled_common_load: load.scheduledLoad,
+            scheduled_common_load_status: load.scheduledLoadStatus,
           };
+          return point;
         }),
         scheduledItems,
+        scheduledSourceStatus: effectiveLoad.sourceCoverage.scheduledItems?.status ?? "unavailable",
         completedItems,
+        completedSourceStatus: effectiveLoad.sourceCoverage.activities?.status ?? "unavailable",
       })
     : null;
   const recommendation =
@@ -654,13 +783,18 @@ export async function readPlanTabProjectionSnapshot(input: {
     ledgerItems: effectiveItems.map((item) => {
       const envelope = item.commonLoad;
       const unavailable = envelope.status === "unavailable";
-      const loadStatus = unavailable
-        ? ("unavailable" as const)
-        : envelope.status === "partial"
-          ? ("partial" as const)
-          : envelope.load === 0
-            ? ("known_zero" as const)
-            : ("complete" as const);
+      const isPlanned = item.kind === "scheduled";
+      const knownLoad = envelopeLoad(envelope);
+      const knownIntensity = envelopeIntensity(envelope);
+      const loadStatus = isPlanned
+        ? plannedItemLoadStatus(envelope)
+        : unavailable
+          ? ("unavailable" as const)
+          : envelope.status === "partial"
+            ? ("partial" as const)
+            : knownLoad === 0
+              ? ("known_zero" as const)
+              : ("complete" as const);
       const metadataItem =
         item.kind === "scheduled"
           ? metadata.scheduled.get(item.scheduledItemId)
@@ -673,9 +807,9 @@ export async function readPlanTabProjectionSnapshot(input: {
           metadataItem?.title ??
           (item.kind === "completed" ? "Completed activity" : "Scheduled session"),
         loadStatus,
-        load: unavailable ? null : envelope.load,
+        load: knownLoad,
         intensityStatus: loadStatus,
-        intensity: unavailable ? null : envelope.intensity,
+        intensity: knownIntensity,
         contributingDurationStatus: loadStatus,
         contributingDurationSeconds: unavailable ? null : envelope.contributingDurationSeconds,
       };

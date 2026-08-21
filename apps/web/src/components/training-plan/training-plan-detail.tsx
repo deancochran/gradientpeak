@@ -8,6 +8,7 @@ import { useMemo, useState } from "react";
 
 import { api } from "../../lib/api/client";
 import { summarizeTrainingPlan, toTrainingPlanSessionDrafts } from "./training-plan-model";
+import { TrainingPlanPlannedPreview } from "./training-plan-planned-preview";
 
 type TrainingPlanDetailProps = {
   onDeleted: () => void;
@@ -189,6 +190,16 @@ export function TrainingPlanDetail({
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardContent className="pt-6">
+          <TrainingPlanPlannedPreview
+            planId={plan.id}
+            preview={plan.plannedSchedulePreview}
+            structure={plan.structure}
+          />
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="structure">
         <TabsList aria-label="Training plan detail sections">

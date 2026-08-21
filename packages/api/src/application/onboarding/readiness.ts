@@ -72,11 +72,10 @@ export function deriveOnboardingProviderState(
   });
   if (!provider.active) return "recovery_required";
   if (jobs.length === 0) return "connected";
-  if (provider.importRun?.failed_count && provider.importRun.failed_count > 0) {
-    return "recovery_required";
-  }
   // A failed queue job still has a scheduled retry. Reserve recovery for work that has exhausted
-  // its retry budget, or for an import run whose durable result cannot progress safely.
+  // its retry budget, or for an import run whose durable result cannot progress safely. Individual
+  // activity outcomes are intentionally non-blocking; completed imports may contain unsupported,
+  // duplicate, or otherwise unusable provider activities.
   if (
     jobs.some((job) => job.status === "dead_lettered") ||
     provider.importRun?.status === "failed" ||
@@ -111,7 +110,6 @@ export function deriveOnboardingProviderState(
   if (provider.importRun.material_change_count > 0 && unpublishedCurrentState) {
     return "deriving";
   }
-  if (provider.importRun.skipped_count > 0) return "complete_with_limitations";
   if (provider.importRun.imported_count === 0) return "complete_no_data";
   return "complete";
 }

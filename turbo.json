@@ -28,9 +28,6 @@
       "dependsOn": ["^build"],
       "outputs": [".output/**", ".nitro/**", ".tanstack/**", "dist/**"]
     },
-    "check": {
-      "outputs": []
-    },
     "check-types": {
       "dependsOn": ["^check-types"],
       "outputs": []
@@ -65,25 +62,6 @@
       "dependsOn": ["^build"],
       "outputs": ["coverage/**"],
       "cache": true
-    },
-    "verify:api": {
-      "outputs": [],
-      "cache": true
-    },
-    "test:e2e:web": {
-      "dependsOn": ["build"],
-      "outputs": [],
-      "cache": false
-    },
-    "test:e2e:mobile": {
-      "dependsOn": [],
-      "outputs": [],
-      "cache": false
-    },
-    "test:all": {
-      "dependsOn": ["test", "test:e2e:web", "test:e2e:mobile"],
-      "outputs": [],
-      "cache": false
     }
   }
 }

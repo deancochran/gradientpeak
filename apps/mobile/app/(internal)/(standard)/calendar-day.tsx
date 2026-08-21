@@ -12,8 +12,8 @@ import { announcePlannedDaySummaryRetryStatus } from "@/components/calendar/plan
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
+import { buildCalendarItemRoute } from "@/lib/calendar/calendarItemRouting";
 import { parseDateKey, toDateKeyInTimeZone } from "@/lib/calendar/dateMath";
-import { buildOpenEventRoute } from "@/lib/calendar/eventRouting";
 import { resolvePlanningDayQueryRange } from "@/lib/calendar/planningQueryRange";
 import { ROUTES } from "@/lib/constants/routes";
 import { markEstimated } from "@/lib/estimatedMetrics";
@@ -137,23 +137,7 @@ export default function CalendarDayScreen() {
   );
 
   const handleOpenItem = (item: CalendarProjectionItem) => {
-    if (item.kind === "completed_activity") {
-      navigateTo(`/activity-detail?id=${item.id}` as never);
-      return;
-    }
-    if (item.kind === "goal") {
-      navigateTo(ROUTES.PLAN.GOAL_DETAIL(item.id) as never);
-      return;
-    }
-    if (item.kind === "group_event") {
-      navigateTo({ pathname: "/group-event-detail", params: { groupEventId: item.id } } as never);
-      return;
-    }
-    const eventType = item.event?.type;
-    const route = buildOpenEventRoute({
-      id: item.id,
-      ...(eventType === undefined ? {} : { event_type: eventType }),
-    });
+    const route = buildCalendarItemRoute(item);
     if (route) navigateTo(route as never);
   };
 

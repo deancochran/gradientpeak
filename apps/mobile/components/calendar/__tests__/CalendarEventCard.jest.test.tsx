@@ -59,24 +59,29 @@ describe("CalendarEventCard common Load", () => {
     expect(screen.queryByText(/TSS|\bIF\b|88|0\.9/)).toBeNull();
   });
 
-  it("marks partial canonical metrics incomplete", () => {
+  it("normalizes partial planned metrics to zero", () => {
     renderCard(createPrescriptionQuantificationBundleFixture({ status: "partial" }));
 
-    expect(screen.getAllByText("Common Load 32 · Incomplete").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Normalized intensity 0.80 · Incomplete").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Common Load 0").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Normalized intensity 0.00").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/partial|unavailable|incomplete/i)).toBeNull();
   });
 
-  it("renders private canonical Load explicitly", () => {
+  it("normalizes unavailable planned Load to zero", () => {
     renderCard(createPrescriptionQuantificationBundleFixture({ status: "private" }));
 
-    expect(screen.getAllByText("Common Load Private").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Common Load 0").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/private|unavailable|incomplete/i)).toBeNull();
   });
 
-  it("omits unsupported and noncanonical load instead of falling back to legacy estimates", () => {
+  it("uses zero for unsupported planned load instead of legacy estimates", () => {
     const rendered = renderCard(
       createPrescriptionQuantificationBundleFixture({ status: "unsupported" }),
     );
 
-    expect(JSON.stringify(rendered.toJSON())).not.toMatch(/Load|Intensity|TSS|\bIF\b|88|0\.9/);
+    expect(JSON.stringify(rendered.toJSON())).toMatch(/Common Load 0/);
+    expect(JSON.stringify(rendered.toJSON())).not.toMatch(
+      /TSS|\bIF\b|88|0\.9|unavailable|incomplete/i,
+    );
   });
 });

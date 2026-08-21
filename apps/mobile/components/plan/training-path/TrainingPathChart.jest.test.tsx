@@ -178,6 +178,9 @@ const model: TrainingPathViewModel = {
 };
 const firstModelWeek = model.weeks[0];
 if (!firstModelWeek) throw new Error("Expected the training-path fixture to include a first week");
+const secondModelWeek = model.weeks[1];
+if (!secondModelWeek)
+  throw new Error("Expected the training-path fixture to include a second week");
 
 describe("TrainingPathChart interactions", () => {
   beforeEach(() => {
@@ -337,7 +340,7 @@ describe("TrainingPathChart interactions", () => {
     expect(screen.getByText("Planned fitness projection")).toBeTruthy();
     expect(screen.queryByText("Recommended projection")).toBeNull();
     expect(screen.queryByText("Recommended")).toBeNull();
-    expect(screen.getByTestId("training-path-today-boundary")).toBeTruthy();
+    expect(screen.UNSAFE_root.findByProps({ testID: "training-path-today-boundary" })).toBeTruthy();
     expect(screen.getByLabelText("Left axis: Load, Common Load")).toBeTruthy();
     expect(screen.getByLabelText("Right axis: Fitness")).toBeTruthy();
   });
@@ -425,7 +428,13 @@ describe("TrainingPathChart interactions", () => {
       ],
     };
 
-    renderNative(<TrainingPathChart model={unavailablePlannedModel} range="season" />);
+    renderNative(
+      <TrainingPathChart
+        model={unavailablePlannedModel}
+        onSelectedWeekChange={jest.fn()}
+        range="season"
+      />,
+    );
 
     expect(getHostNode("CartesianChart").props.data[0]).toEqual(
       expect.objectContaining({
@@ -433,6 +442,88 @@ describe("TrainingPathChart interactions", () => {
         targetFitness: null,
       }),
     );
+    expect(
+      screen.getByLabelText("Weekly training path chart").props.accessibilityValue.text,
+    ).toContain("Planned Common Load unavailable");
+  });
+
+  it("keeps weekly fitness gaps and exposes horizontal exploration", () => {
+    const sparseFitnessModel: TrainingPathViewModel = {
+      ...model,
+      weeks: [
+        { ...firstModelWeek, fitness: 40 },
+        { ...secondModelWeek, fitness: null },
+        {
+          ...secondModelWeek,
+          weekStart: "2026-04-20",
+          weekEnd: "2026-04-26",
+          label: "Apr 20",
+          fitness: 44,
+        },
+      ],
+    };
+
+    renderNative(
+      <TrainingPathChart
+        model={sparseFitnessModel}
+        range="season"
+        scrollX
+        onSelectedWeekChange={jest.fn()}
+      />,
+    );
+
+    const fitnessLine = getHostNodes("Line").find(
+      (line: ReactTestInstance) => line.props.color === "rgba(22, 163, 74, 0.95)",
+    );
+    expect(fitnessLine?.props.connectMissingData).toBe(false);
+    expect(
+      fitnessLine?.props.points.map((point: { yValue: number | null }) => point.yValue),
+    ).toEqual([40, null, 44]);
+    const scrollView = getHostNode("AnimatedScrollView");
+    expect(scrollView.props.showsHorizontalScrollIndicator).toBe(true);
+    expect(scrollView.props.persistentScrollbar).toBe(true);
+  });
+
+  it("keeps unavailable-load markers visible for selected and unselected weeks", () => {
+    const unavailableModel: TrainingPathViewModel = {
+      ...model,
+      weeks: model.weeks.map((week) => ({ ...week, completedLoadUnavailable: true })),
+    };
+
+    renderNative(
+      <TrainingPathChart
+        model={unavailableModel}
+        range="season"
+        scrollX
+        onSelectedWeekChange={jest.fn()}
+      />,
+    );
+
+    expect(
+      screen.UNSAFE_root.findByProps({
+        testID: "completed-activity-without-load-highlight-2026-04-06",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.UNSAFE_root.findByProps({
+        testID: "completed-activity-without-load-highlight-2026-04-13",
+      }),
+    ).toBeTruthy();
+    const bottomMarkers = getHostNodes("SkiaRect").filter(
+      (rect: ReactTestInstance) => rect.props.height === 3 && rect.props.y === 117,
+    );
+    expect(bottomMarkers).toHaveLength(2);
+  });
+
+  it("describes only the layers rendered by the weekly fallback chart", () => {
+    renderNative(<TrainingPathLegend mode="weekly" range="season" />);
+
+    expect(screen.getByText("Completed")).toBeTruthy();
+    expect(screen.getByText("Planned")).toBeTruthy();
+    expect(screen.getByText("Current fitness")).toBeTruthy();
+    expect(screen.getByText("Planned fitness projection")).toBeTruthy();
+    expect(screen.queryByText("Actual fatigue")).toBeNull();
+    expect(screen.queryByText("Form (zero centered)")).toBeNull();
   });
 
   it("renders sparse two-week common Load bars without completed load anchors", () => {

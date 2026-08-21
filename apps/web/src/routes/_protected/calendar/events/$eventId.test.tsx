@@ -9,6 +9,8 @@ const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padSta
 const mocks = vi.hoisted(() => ({
   deleteAction: vi.fn(),
   event: undefined as unknown,
+  eventInputs: [] as unknown[],
+  readModelOptions: [] as unknown[],
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -30,7 +32,20 @@ vi.mock("../../../../lib/planning/server-actions", () => ({
 vi.mock("../../../../lib/api/client", () => ({
   api: {
     events: {
-      getById: { useQuery: () => ({ data: mocks.event, isError: false, isLoading: false }) },
+      getById: {
+        useQuery: (input: unknown) => {
+          mocks.eventInputs.push(input);
+          return { data: mocks.event, isError: false, isLoading: false };
+        },
+      },
+    },
+    athleteIntelligence: {
+      getReadModel: {
+        useQuery: (_input: unknown, options: unknown) => {
+          mocks.readModelOptions.push(options);
+          return { data: null };
+        },
+      },
     },
     trainingPlans: {
       get: { useQuery: () => ({ data: null }) },
@@ -41,11 +56,14 @@ vi.mock("../../../../lib/api/client", () => ({
 afterEach(cleanup);
 
 describe("EventDetailPage", () => {
-  it("renders the activity plan's compiled canonical activity_category as one badge", () => {
+  it("keeps an RPE event authored and explains why session-flow personalization is off", () => {
+    mocks.eventInputs = [];
+    mocks.readModelOptions = [];
     mocks.event = {
       activityPlanSummary: {
         name: "Tempo run",
         activityCategory: "run",
+        capabilities: { canEdit: true },
         structure: {
           activity_category: "run",
           segments: [
@@ -85,8 +103,76 @@ describe("EventDetailPage", () => {
 
     render(<EventDetailPage />);
 
-    expect(screen.getByText("Run")).toBeTruthy();
+    expect(screen.getAllByText("Run").length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("Bike")).toBeNull();
+    expect(screen.getByTestId("activity-plan-structure")).toBeTruthy();
+    const personalization = screen.getByRole("switch", { name: "Personalize targets" });
+    expect(personalization.getAttribute("aria-checked")).toBe("false");
+    expect(personalization.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText(/RPE targets cannot be represented as physical values/)).toBeTruthy();
+    expect(screen.getAllByText(/5 RPE/).length).toBeGreaterThan(0);
+    expect(mocks.eventInputs).toContainEqual({ id: "event-1", personalize: false });
+    expect(mocks.readModelOptions).toContainEqual({ enabled: true });
+    expect(mocks.eventInputs).not.toContainEqual({ id: "event-1", personalize: true });
+  });
+
+  it("renders the full authored plan timeline when the event viewer is not the plan owner", () => {
+    mocks.eventInputs = [];
+    mocks.readModelOptions = [];
+    mocks.event = {
+      activityPlanSummary: {
+        id: "plan-1",
+        name: "Shared tempo",
+        activityCategory: "run",
+        capabilities: { canEdit: false },
+        structure: {
+          activity_category: "run",
+          segments: [
+            {
+              id: id(11),
+              intervals: [
+                {
+                  id: id(12),
+                  name: "Tempo",
+                  repetitions: 1,
+                  steps: [
+                    {
+                      duration: { seconds: 600, type: "time" },
+                      id: id(13),
+                      name: "Work",
+                      targets: [{ intensity: 7, type: "RPE" }],
+                    },
+                  ],
+                },
+              ],
+              name: "Run",
+              role: "activity",
+            },
+          ],
+          version: 3,
+        },
+      },
+      all_day: true,
+      event_type: "planned",
+      id: "event-1",
+      scheduled_date: "2026-07-28",
+      status: "scheduled",
+      title: "Shared tempo",
+      training_plan_id: null,
+    };
+    const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+
+    render(<EventDetailPage />);
+
+    expect(screen.getByRole("img", { name: /Session flow.*authored duration/i })).toBeTruthy();
+    expect(
+      screen
+        .getByTestId("activity-plan-session-flow-timeline-bar-0")
+        .getAttribute("data-intensity"),
+    ).toBe("RPE 7");
+    expect(screen.getByTestId("activity-plan-structure")).toBeTruthy();
+    expect(screen.getAllByText(/7 RPE/).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("switch", { name: "Personalize targets" })).toBeNull();
   });
 
   it("keeps a rejected delete dialog form open with its selected scope available for retry", async () => {

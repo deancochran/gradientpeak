@@ -91,7 +91,6 @@ describe("UI ownership guardrails", () => {
       "protected/notifications-button.tsx",
       "protected/performance-model-summary.tsx",
       "protected/plan-goal-form.tsx",
-      "protected/profile-metric-form.tsx",
       "protected/protected-header.tsx",
       "protected/relationship-list.tsx",
       "protected/route-upload-form.tsx",
@@ -113,7 +112,6 @@ describe("UI ownership guardrails", () => {
       "training-plan/training-plan-model.ts",
       "training-plan/training-preferences-editor.tsx",
       "training-plan/training-preferences-form.ts",
-      "trends/trends-dashboard.tsx",
       "update-password-form.tsx",
     ]);
   });

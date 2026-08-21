@@ -141,6 +141,7 @@ export type DailyTrainingAdjustmentAnnotation = {
 type DailyTrainingAdjustmentPresentation = {
   completedObservationState?: CompletedObservationState;
   completedCommonLoadIdentity?: CommonLoadIdentity | null;
+  effectiveCompletedLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
   hasCompletedActivityWithoutLoad?: boolean;
   hasTargetLoad?: boolean;
   fitnessCtl?: number | null;
@@ -214,6 +215,7 @@ export function normalizeDailyTrainingAdjustmentPoints(input: {
       ...point,
       completedObservationState: raw?.completedObservationState,
       completedCommonLoadIdentity: raw?.completedCommonLoadIdentity ?? null,
+      effectiveCompletedLoadStatus: raw?.effectiveCompletedLoadStatus,
       hasCompletedActivityWithoutLoad: raw?.hasCompletedActivityWithoutLoad === true,
       hasTargetLoad: raw?.hasTargetLoad !== false,
       fitnessCtl: raw?.fitnessCtl ?? null,

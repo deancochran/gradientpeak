@@ -3,24 +3,19 @@ import {
   type ActivityPlanStructure,
   type ActivityPrescriptionQuantificationBundle,
   deriveActivityPlanPresentation,
+  getPlannedEstimate,
+  type PlannedEstimate,
   type SemanticMetric,
 } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
-import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
-import { type ReactNode, useMemo } from "react";
+import type { ReactNode } from "react";
 import { View } from "react-native";
-import {
-  formatEstimatedDurationMinutes,
-  formatEstimatedDurationSeconds,
-} from "@/lib/estimatedMetrics";
 import { ActivityPlanAttributionRow } from "./ActivityPlanAttributionRow";
 import type { EntityOwner } from "./EntityOwnerRow";
 import { ResourceMetricsRow } from "./ResourceCardPrimitives";
 
 type ActivityPlanSummaryProps = {
   description?: string | null;
-  estimatedDuration?: number | null;
-  estimatedDurationMinutes?: number | null;
   headerAccessory?: ReactNode;
   owner?: EntityOwner | null;
   presentation?: ActivityPlanPresentationModel | null;
@@ -50,134 +45,145 @@ export function countActivityPlanSteps(structure: ActivityPlanStructure | unknow
   return deriveActivityPlanPresentation(structure)?.stepCount ?? 0;
 }
 
-export function formatActivityPlanDuration(params: {
-  estimatedDuration?: number | null;
-  estimatedDurationMinutes?: number | null;
-}): string | null {
-  const { estimatedDuration, estimatedDurationMinutes } = params;
-
-  if (typeof estimatedDuration === "number" && estimatedDuration > 0) {
-    return formatEstimatedDurationSeconds(estimatedDuration);
-  }
-
-  if (typeof estimatedDurationMinutes === "number" && estimatedDurationMinutes > 0) {
-    return formatEstimatedDurationMinutes(estimatedDurationMinutes);
-  }
-
-  return null;
-}
-
-export function ActivityPlanMetricsRow({
-  estimatedDuration,
-  estimatedDurationMinutes,
-  presentation,
-  projectionMetrics,
-  prescriptionQuantification,
-  structure,
-}: Pick<
-  ActivityPlanSummaryProps,
-  | "estimatedDuration"
-  | "estimatedDurationMinutes"
-  | "presentation"
-  | "projectionMetrics"
-  | "prescriptionQuantification"
-  | "structure"
->) {
-  const presentationModel = useMemo(
-    () => presentation ?? deriveActivityPlanPresentation(structure),
-    [presentation, structure],
-  );
-  const stepCount = presentationModel?.stepCount ?? 0;
-  const durationLabel = formatActivityPlanDuration({ estimatedDuration, estimatedDurationMinutes });
-  const quantified = getActivityQuantificationPresentation(prescriptionQuantification);
-  const formatProjectionMetric = (metric: SemanticMetric | undefined, fallbackLabel: string) => ({
-    label: metric?.label ?? fallbackLabel,
-    value:
-      !metric || metric.status === "unavailable"
-        ? "Unavailable"
+function formatMetricValue(metric: SemanticMetric): string | null {
+  if (metric.status === "unavailable") return null;
+  const formatted =
+    metric.unit === "seconds"
+      ? formatDurationSeconds(metric.value)
+      : metric.unit === "meters"
+        ? metric.value >= 1_000
+          ? `${Math.round((metric.value / 1_000) * 10) / 10} km`
+          : `${Math.round(metric.value)} m`
         : metric.unit === "ratio"
           ? metric.value.toFixed(2)
-          : Number.isInteger(metric.value)
-            ? String(metric.value)
-            : metric.value.toFixed(1),
-  });
-  const commonLoad = projectionMetrics
-    ? formatProjectionMetric(
-        projectionMetrics.find((metric) => metric.key === "common_load"),
-        "Load",
-      )
-    : quantified.commonLoad;
-  const normalizedIntensity = projectionMetrics
-    ? formatProjectionMetric(
-        projectionMetrics.find((metric) => metric.key === "normalized_intensity"),
-        "Intensity",
-      )
-    : quantified.normalizedIntensity;
-  const structureAuthoredValues = [
-    ...new Set(
-      (presentationModel?.occurrences ?? []).flatMap((occurrence) =>
-        occurrence.intensityLabel ? [occurrence.intensityLabel] : [],
-      ),
+          : String(Math.round(metric.value * 10) / 10);
+  if (formatted === null) return null;
+  return metric.status === "partial" ? `${formatted} known (partial)` : formatted;
+}
+
+function formatDurationSeconds(seconds: number): string {
+  const roundedSeconds = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(roundedSeconds / 3_600);
+  const minutes = Math.floor((roundedSeconds % 3_600) / 60);
+  const remainder = roundedSeconds % 60;
+  if (hours > 0) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  if (minutes > 0) return remainder > 0 ? `${minutes}m ${remainder}s` : `${minutes}m`;
+  return `${remainder}s`;
+}
+
+function metricsFromEstimate(estimate: PlannedEstimate): SemanticMetric[] {
+  const metric = (
+    key: SemanticMetric["key"],
+    label: string,
+    unit: string,
+    quantity: PlannedEstimate["durationSeconds"] | PlannedEstimate["load"],
+    provenance: SemanticMetric["provenance"],
+  ): SemanticMetric => {
+    if (quantity.status === "unavailable" || quantity.value === null) {
+      return {
+        key,
+        label,
+        status: "unavailable",
+        value: null,
+        unit,
+        reason: quantity.reason,
+        provenance: null,
+      };
+    }
+    return quantity.status === "partial"
+      ? {
+          key,
+          label,
+          status: "partial",
+          value: quantity.value,
+          unit,
+          reason: quantity.reason,
+          provenance,
+        }
+      : { key, label, status: "available", value: quantity.value, unit, reason: null, provenance };
+  };
+  const authoredProvenance = (
+    quantity: PlannedEstimate["distanceMeters"] | PlannedEstimate["durationSeconds"],
+  ): SemanticMetric["provenance"] =>
+    quantity.status === "unavailable"
+      ? null
+      : quantity.status === "estimated"
+        ? "estimated"
+        : "authored";
+  const calculatedProvenance = (quantity: PlannedEstimate["load"]): SemanticMetric["provenance"] =>
+    quantity.status === "unavailable" || quantity.basis === null
+      ? null
+      : quantity.basis === "plan_intent"
+        ? "plan_intent"
+        : "personalized";
+  return [
+    metric(
+      "distance",
+      "Distance",
+      "meters",
+      estimate.distanceMeters,
+      authoredProvenance(estimate.distanceMeters),
+    ),
+    metric(
+      "elapsed_duration",
+      "Duration",
+      "seconds",
+      estimate.durationSeconds,
+      authoredProvenance(estimate.durationSeconds),
+    ),
+    metric("common_load", "Load", "score", estimate.load, calculatedProvenance(estimate.load)),
+    metric(
+      "normalized_intensity",
+      "Intensity",
+      "ratio",
+      estimate.normalizedIntensity,
+      calculatedProvenance(estimate.normalizedIntensity),
     ),
   ];
-  const prescribedIntensity =
-    quantified.nativeIntensity.status !== "unavailable"
-      ? quantified.nativeIntensity
-      : quantified.kind === "unavailable" && structureAuthoredValues.length > 0
-        ? {
-            evidence: "Prescribed",
-            label: "Prescribed intensity",
-            value: structureAuthoredValues.join(" · "),
-          }
-        : null;
+}
 
-  return (
-    <View className="gap-2">
-      <ResourceMetricsRow
-        metrics={[
-          { label: "Duration", value: durationLabel || "Unavailable" },
-          {
-            label: commonLoad.label,
-            value: commonLoad.value,
-            tone: "primary",
-          },
-          {
-            label: normalizedIntensity.label,
-            value: normalizedIntensity.value,
-            tone: "primary",
-          },
-          { label: "Steps", value: `${stepCount}` },
-        ]}
-      />
-      {!projectionMetrics ? (
-        <Text className="px-1 text-[10px] text-muted-foreground">
-          {quantified.commonLoad.evidence}. {quantified.commonLoad.explanation}
-        </Text>
-      ) : null}
-      {!projectionMetrics && quantified.commonLoad.diagnostic ? (
-        <Text className="px-1 text-[10px] text-muted-foreground">
-          {quantified.commonLoad.diagnostic.summary} {quantified.commonLoad.diagnostic.action}
-        </Text>
-      ) : null}
-      {prescribedIntensity ? (
-        <Text className="px-1 text-[10px] text-muted-foreground">
-          {prescribedIntensity.label}: {prescribedIntensity.value} · {prescribedIntensity.evidence}
-        </Text>
-      ) : null}
-    </View>
-  );
+const estimateOrder = [
+  "distance",
+  "elapsed_duration",
+  "common_load",
+  "normalized_intensity",
+] as const;
+const estimateLabels: Record<(typeof estimateOrder)[number], string> = {
+  distance: "Distance",
+  elapsed_duration: "Duration",
+  common_load: "Load",
+  normalized_intensity: "Intensity",
+};
+
+export function ActivityPlanMetricsRow({
+  projectionMetrics,
+  prescriptionQuantification,
+}: Pick<ActivityPlanSummaryProps, "projectionMetrics" | "prescriptionQuantification">) {
+  const availableMetrics =
+    projectionMetrics ??
+    (prescriptionQuantification
+      ? metricsFromEstimate(getPlannedEstimate(prescriptionQuantification))
+      : []);
+  const byKey = new Map(availableMetrics.map((metric) => [metric.key, metric]));
+  const metrics = estimateOrder.map((key) => {
+    const metric = byKey.get(key);
+    return {
+      label: estimateLabels[key],
+      value: metric ? (formatMetricValue(metric) ?? "Unavailable") : "Unavailable",
+      tone:
+        key === "common_load" || key === "normalized_intensity" ? ("primary" as const) : undefined,
+    };
+  });
+
+  return <ResourceMetricsRow maxItems={4} metrics={metrics} testID="activity-plan-estimates" />;
 }
 
 export function ActivityPlanSummary({
   description,
-  estimatedDuration,
-  estimatedDurationMinutes,
   headerAccessory,
   owner,
-  presentation,
   projectionMetrics,
   prescriptionQuantification,
-  structure,
   subtitle,
   testID,
   title,
@@ -212,12 +218,8 @@ export function ActivityPlanSummary({
       </View>
 
       <ActivityPlanMetricsRow
-        estimatedDuration={estimatedDuration}
-        estimatedDurationMinutes={estimatedDurationMinutes}
-        presentation={presentation}
         projectionMetrics={projectionMetrics}
         prescriptionQuantification={prescriptionQuantification}
-        structure={structure}
       />
 
       {showAttribution ? (

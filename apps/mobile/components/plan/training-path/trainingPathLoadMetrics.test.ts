@@ -60,6 +60,7 @@ describe("buildTrainingPathLoadMetrics", () => {
     ).toEqual([
       { label: "Common Load", value: "0" },
       { label: "Normalized intensity", value: "—" },
+      { label: "Remaining", value: "0" },
     ]);
   });
 
@@ -93,6 +94,7 @@ describe("buildTrainingPathLoadMetrics", () => {
       { label: "Common Load", value: "42 incomplete" },
       { label: "Normalized intensity", value: "Moderate · 0.70 incomplete" },
       { label: "Completed", value: "Unavailable" },
+      { label: "Remaining", value: "Unavailable" },
     ]);
     expect(
       buildTrainingPathLoadMetrics({
@@ -103,6 +105,43 @@ describe("buildTrainingPathLoadMetrics", () => {
     ).toEqual([
       { label: "Common Load", value: "Unavailable" },
       { label: "Normalized intensity", value: "Unavailable" },
+      { label: "Remaining", value: "Unavailable" },
     ]);
+  });
+
+  it("keeps unavailable and partial planned values distinct from known zero", () => {
+    expect(
+      buildTrainingPathLoadMetrics({
+        effectiveLoadStatus: "complete",
+        effectiveLoad: 0,
+        effectiveIntensity: 0,
+        effectiveRemainingLoad: null,
+        recommendedLoadStatus: "partial",
+        recommendedLoad: 30,
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        { label: "Remaining", value: "Unavailable" },
+        { label: "Target", value: "30 incomplete" },
+      ]),
+    );
+    expect(
+      buildTrainingPathLoadMetrics({
+        effectiveLoadStatus: "partial",
+        effectiveLoad: 20,
+        effectiveIntensity: 0.5,
+        effectiveRemainingLoad: 20,
+        effectiveRemainingLoadStatus: "partial",
+      }),
+    ).toContainEqual({ label: "Remaining", value: "20 incomplete" });
+    expect(
+      buildTrainingPathLoadMetrics({
+        effectiveLoadStatus: "complete",
+        effectiveLoad: 0,
+        effectiveIntensity: 0,
+        effectiveRemainingLoad: 0,
+        effectiveRemainingLoadStatus: "known_zero",
+      }),
+    ).toContainEqual({ label: "Remaining", value: "0" });
   });
 });

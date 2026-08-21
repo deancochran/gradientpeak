@@ -3,11 +3,12 @@ import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { Search } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../lib/api/client";
+import { ActivityPlanCard } from "../activity-plan/activity-plan-card";
 
 export type WebDiscoverScope = "activityPlans" | "trainingPlans" | "routes" | "users" | "groups";
 
@@ -44,6 +45,7 @@ type QueryState = {
 };
 
 export function DiscoveryExplorer({ initialQuery = "" }: { initialQuery?: string }) {
+  const navigate = useNavigate();
   const [scope, setScope] = useState<WebDiscoverScope>("activityPlans");
   const [draftSearch, setDraftSearch] = useState(initialQuery);
   const [search, setSearch] = useState(initialQuery.trim());
@@ -119,6 +121,7 @@ export function DiscoveryExplorer({ initialQuery = "" }: { initialQuery?: string
     scope === "users" ? (page.users ?? []) : (page.items ?? []),
   );
   const noun = SCOPES.find((item) => item.id === scope)?.label.toLowerCase() ?? "results";
+  const activityPlanItems = activityPlans.data?.pages.flatMap((page) => page.items) ?? [];
 
   const resetScopeFilters = () => {
     setActivityPlanCategory("");
@@ -303,9 +306,20 @@ export function DiscoveryExplorer({ initialQuery = "" }: { initialQuery?: string
           className="grid gap-4 md:grid-cols-2"
           aria-busy={activeQuery.isFetching && !activeQuery.isFetchingNextPage}
         >
-          {items.map((item) => (
-            <DiscoveryCard key={item.id} scope={scope} item={item} />
-          ))}
+          {scope === "activityPlans"
+            ? activityPlanItems.map((plan) => (
+                <ActivityPlanCard
+                  key={plan.id}
+                  onOpen={() =>
+                    void navigate({
+                      to: "/activity-plans/$activityPlanId",
+                      params: { activityPlanId: plan.id },
+                    } as never)
+                  }
+                  plan={plan}
+                />
+              ))
+            : items.map((item) => <DiscoveryCard key={item.id} scope={scope} item={item} />)}
         </div>
       ) : null}
 
@@ -451,6 +465,13 @@ function DiscoveryCard({ scope, item }: { scope: WebDiscoverScope; item: Discove
               search={{ flash: undefined, flashType: undefined }}
             >
               View profile
+            </Link>
+          </Button>
+        ) : null}
+        {scope === "groups" ? (
+          <Button asChild size="sm" variant="outline">
+            <Link to="/groups/$groupId" params={{ groupId: item.id }}>
+              View group
             </Link>
           </Button>
         ) : null}

@@ -90,6 +90,41 @@ describe("CalendarScheduleObjectCard", () => {
     expect(screen.getByLabelText(/^Done, Auto-generated morning ride/)).toBeTruthy();
   });
 
+  it("emphasizes useful metrics without unavailable placeholders", () => {
+    renderNative(
+      <CalendarScheduleObjectCard
+        object={createCalendarProjectionItem({
+          id: "activity-partial",
+          kind: "completed_activity",
+          title: "Partially quantified run",
+          metrics: [
+            {
+              key: "common_load",
+              label: "Load",
+              status: "partial",
+              value: 42,
+              unit: "score",
+              reason: "quantification_partial",
+            },
+            {
+              key: "normalized_intensity",
+              label: "Intensity",
+              status: "unavailable",
+              value: null,
+              unit: "ratio",
+              reason: "quantification_unavailable",
+            },
+          ],
+          partial: true,
+        })}
+      />,
+    );
+
+    expect(screen.getByText(/Load 42 · Incomplete/)).toBeTruthy();
+    expect(screen.queryByText(/Intensity unavailable/)).toBeNull();
+    expect(screen.queryByText(/Load 0|Intensity 0\.00/)).toBeNull();
+  });
+
   it("renders a cross-date group event in its event timezone", () => {
     renderNative(
       <CalendarScheduleObjectCard

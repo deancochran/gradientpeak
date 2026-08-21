@@ -32,6 +32,14 @@ describe("modern target authority", () => {
   });
 
   it("owns category compatibility without depending on V2", () => {
+    expect(activityTargetCapabilityConfig.run).toEqual([
+      "speed",
+      "%ThresholdHR",
+      "bpm",
+      "%MaxHR",
+      "cadence",
+      "RPE",
+    ]);
     expect(isTargetTypePermittedForActivity({ activityCategory: "run", targetType: "speed" })).toBe(
       true,
     );

@@ -1,7 +1,11 @@
 import { Text } from "@repo/ui/components/text";
 import { act, render, screen, waitFor } from "@testing-library/react-native";
 
-const checkpoint = { sessionId: "profile-1:session", profileId: "profile-1" };
+const checkpoint = {
+  sessionId: "profile-1:session",
+  profileId: "profile-1",
+  lifecycle: "recording",
+};
 
 jest.mock("react-native", () => ({
   ...jest.requireActual("@repo/ui/test/react-native"),
@@ -12,7 +16,11 @@ jest.mock("../services/mobileRecordingStartup", () => ({
   prepareMobileRecordingStartup: jest.fn(async () => ({
     checkpoint: {
       status: "recovered",
-      checkpoint: { sessionId: "profile-1:session", profileId: "profile-1" },
+      checkpoint: {
+        sessionId: "profile-1:session",
+        profileId: "profile-1",
+        lifecycle: "recording",
+      },
     },
     queueJobs: [],
     hasQuarantinedEvidence: false,
@@ -21,7 +29,7 @@ jest.mock("../services/mobileRecordingStartup", () => ({
 jest.mock("../services/ActivityRecorder/checkpointStorage", () => ({
   loadAndClaimRecordingCheckpoint: jest.fn(async () => ({
     status: "recovered",
-    checkpoint: { sessionId: "profile-1:session", profileId: "profile-1" },
+    checkpoint: { sessionId: "profile-1:session", profileId: "profile-1", lifecycle: "recording" },
   })),
   quarantineActiveRecordingCheckpoint: jest.fn(async () => undefined),
   releaseRecordingCheckpointClaim: jest.fn(),
@@ -30,6 +38,7 @@ jest.mock("../services/ActivityRecorder", () => {
   const service = {
     hasConfiguredRecordingSetup: false,
     stageRecoveredCheckpoint: jest.fn(async () => undefined),
+    retryRecoveredFinalization: jest.fn(async () => undefined),
     resumeRecoveredRecording: jest.fn(async () => undefined),
     discardRecoveredRecording: jest.fn(async () => undefined),
     cleanup: jest.fn(async () => undefined),
@@ -48,6 +57,7 @@ const serviceMock = (
       cleanup: jest.Mock;
       stageRecoveredCheckpoint: jest.Mock;
       resumeRecoveredRecording: jest.Mock;
+      retryRecoveredFinalization: jest.Mock;
       discardRecoveredRecording: jest.Mock;
     };
   }
@@ -113,6 +123,46 @@ describe("ActivityRecorderProvider recovery prompt", () => {
     await act(async () => buttons.find((button) => button.text === "Resume")?.onPress());
     await waitFor(() => expect(serviceMock.resumeRecoveredRecording).toHaveBeenCalledTimes(1));
     expect(replaceMock).toHaveBeenCalledWith("/record");
+  });
+
+  it("retries an interrupted finish without resuming live recording", async () => {
+    startupMocks.prepareMobileRecordingStartup.mockResolvedValueOnce({
+      checkpoint: { status: "recovered", checkpoint: { ...checkpoint, lifecycle: "finishing" } },
+      queueJobs: [],
+      hasQuarantinedEvidence: false,
+    });
+    (
+      jest.requireMock("../services/ActivityRecorder/checkpointStorage") as {
+        loadAndClaimRecordingCheckpoint: jest.Mock;
+      }
+    ).loadAndClaimRecordingCheckpoint.mockResolvedValueOnce({
+      status: "recovered",
+      checkpoint: { ...checkpoint, lifecycle: "finishing" },
+    });
+
+    render(
+      <ActivityRecorderProvider profile={{ id: "profile-1" }}>
+        <Text>child</Text>
+      </ActivityRecorderProvider>,
+    );
+
+    await waitFor(() =>
+      expect(alertMock).toHaveBeenCalledWith(
+        "Finish saved activity?",
+        expect.stringContaining("without resuming recording"),
+        expect.any(Array),
+        { cancelable: false },
+      ),
+    );
+    const buttons = alertMock.mock.calls.at(-1)?.[2] as Array<{
+      text: string;
+      onPress: () => void;
+    }>;
+    await act(async () => buttons.find((button) => button.text === "Finish")?.onPress());
+
+    await waitFor(() => expect(serviceMock.retryRecoveredFinalization).toHaveBeenCalledTimes(1));
+    expect(serviceMock.resumeRecoveredRecording).not.toHaveBeenCalled();
+    expect(replaceMock).toHaveBeenCalledWith("/record/submit");
   });
 
   it("requires a second confirmation before discard", async () => {
@@ -188,6 +238,9 @@ describe("ActivityRecorderProvider recovery prompt", () => {
     expect(alertMock).toHaveBeenCalledWith(
       "Recording recovery unavailable",
       "Corrupt stream chunk",
+    );
+    expect(checkpointMocks.releaseRecordingCheckpointClaim).toHaveBeenCalledWith(
+      checkpoint.sessionId,
     );
     expect(serviceMock.resumeRecoveredRecording).not.toHaveBeenCalled();
   });

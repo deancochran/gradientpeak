@@ -266,7 +266,11 @@ export async function readAthleteReadModel(input: {
   }
 
   if (input.sections.currentBaseline) {
-    const contextAsOf = published.computedAt ?? now.toISOString();
+    // Planning context combines the published load baseline with the current
+    // performance-target projection, so its cutoff must be the targets' cutoff.
+    // The snapshot contract intentionally rejects mixed cutoffs.
+    const contextAsOf =
+      published.performanceTargets?.asOf ?? published.computedAt ?? now.toISOString();
     const currentBaseline =
       published.baseline && Date.parse(published.baseline.asOf) < now.getTime()
         ? advanceAthleteStateTo(published.baseline, now.toISOString(), {

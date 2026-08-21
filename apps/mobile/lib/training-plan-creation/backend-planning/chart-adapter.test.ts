@@ -45,15 +45,15 @@ describe("deriveTrainingPathChartFromBackendProjection", () => {
     expect(result.chart.dailyPoints).toEqual([
       expect.objectContaining({
         date: "2026-08-02",
-        plannedLoad: null,
-        targetLoad: null,
+        plannedLoad: 0,
+        targetLoad: 0,
         fitnessCtl: simulation.projectedState.longTermLoad,
         fatigueAtl: simulation.projectedState.recentLoad,
         formTsb: simulation.projectedState.loadBalance,
       }),
     ]);
     expect(result.chart.weeks[0]).toEqual(
-      expect.objectContaining({ plannedLoad: null, targetLoad: null }),
+      expect.objectContaining({ plannedLoad: 0, targetLoad: 0 }),
     );
   });
 });

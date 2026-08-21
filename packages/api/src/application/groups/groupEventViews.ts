@@ -24,7 +24,7 @@ function toIsoString(value: Date | string): string {
 }
 
 export function serializeRsvp(rsvp: GroupEventRsvpRow | null) {
-  if (!rsvp || rsvp.status !== "declined") return null;
+  if (!rsvp) return null;
 
   return {
     group_event_id: rsvp.group_event_id,
@@ -36,7 +36,7 @@ export function serializeRsvp(rsvp: GroupEventRsvpRow | null) {
 }
 
 export function serializeSeriesRsvp(rsvp: GroupEventSeriesRsvpRow | null) {
-  if (!rsvp || rsvp.status !== "declined") return null;
+  if (!rsvp) return null;
 
   return {
     group_event_series_id: rsvp.group_event_series_id,
@@ -174,18 +174,16 @@ export async function serializeGroupEventsForViewer(
         .map((rsvp) => [rsvp.profile_id, rsvp] as const),
     );
     const goingCount = [...activeMembers].filter((memberId) => {
-      const occurrenceStatus = occurrenceRsvpByProfileId.get(memberId)?.status;
-      const seriesStatus = seriesRsvpByProfileId.get(memberId)?.status;
       return isGroupEventGoing({
-        ...(occurrenceStatus !== undefined ? { occurrenceStatus } : {}),
-        ...(seriesStatus !== undefined ? { seriesStatus } : {}),
+        occurrenceStatus: occurrenceRsvpByProfileId.get(memberId)?.status,
+        seriesStatus: seriesRsvpByProfileId.get(memberId)?.status,
       });
     }).length;
     return serializeGroupEvent(event, {
       acceptedRsvpCount: goingCount,
       group: input.groupById?.get(event.group_id) ?? null,
       viewerRsvp: occurrenceRsvp,
-      viewerSeriesRsvp: occurrenceRsvp === null ? seriesRsvp : null,
+      viewerSeriesRsvp: seriesRsvp,
     });
   });
 }
@@ -226,8 +224,7 @@ export async function readSelectedGroupEventsForCalendar(input: {
         isNull(groups.deleted_at),
         isNull(groupEvents.cancelled_at),
         or(isNull(groupEvents.recurrence_rule), isNotNull(groupEvents.series_id)),
-        sql`coalesce(${groupEventRsvps.status} <> 'declined', true)`,
-        sql`case when ${groupEventRsvps.profile_id} is not null then true else coalesce(${groupEventSeriesRsvps.status} <> 'declined', true) end`,
+        sql`coalesce(${groupEventRsvps.status}, ${groupEventSeriesRsvps.status}, 'going') = 'going'`,
         sql`(${groupEvents.starts_at} at time zone ${groupEvents.timezone})::date >= ${input.startDate}::date`,
         sql`(${groupEvents.starts_at} at time zone ${groupEvents.timezone})::date < ${input.endDateExclusive}::date`,
       ),

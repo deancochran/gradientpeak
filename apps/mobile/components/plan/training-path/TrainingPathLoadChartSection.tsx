@@ -15,6 +15,8 @@ import { DailyTrainingAdjustmentChart } from "./DailyTrainingAdjustmentChart";
 import {
   aggregateDailyTrainingAdjustmentPoints,
   formatPlanChartDateLabel,
+  getDailyTrainingAdjustmentPlannedLoad,
+  getDailyTrainingAdjustmentPlannedLoadStatus,
   getPlanChartBucketDate,
   hasRenderableDailyTrainingAdjustmentData,
 } from "./dailyTrainingAdjustmentChartPresentation";
@@ -53,6 +55,7 @@ type TrainingPathLoadChartSectionProps = {
   dailyPoints?: ComponentProps<typeof DailyTrainingAdjustmentChart>["points"];
   dailyTestID?: string;
   dailyDateLabelFormatter?: ComponentProps<typeof DailyTrainingAdjustmentChart>["formatDateLabel"];
+  fillAvailableHeight?: boolean;
   preferDailyChart?: boolean;
   renderBelowChart?: (context: TrainingPathChartSectionContext) => ReactNode;
   selectionMode?: TrainingPathSelectionMode;
@@ -69,8 +72,6 @@ type TrainingPathLoadChartSectionProps = {
   onViewDetails?: (selection: TrainingPathLedgerSelection) => void;
   onScrollInteractionSettled?: () => void;
   onScrollInteractionStart?: () => void;
-  onScrollNearEnd?: () => void;
-  onScrollNearStart?: () => void;
   onSelectedDateChange?: (date: string) => void;
   onSelectedWeekChange?: (weekStart: string) => void;
   selectedDate?: string | null;
@@ -79,6 +80,7 @@ type TrainingPathLoadChartSectionProps = {
   showInlineLegend?: boolean;
   showLegendButton?: boolean;
   showSelectedPointTray?: boolean;
+  showSelectedPeriodSummary?: boolean;
   testID?: string;
   title?: string;
 };
@@ -122,6 +124,7 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
   dailyPoints,
   dailyTestID = "training-path-daily-adjustment-chart",
   emptyState,
+  fillAvailableHeight = false,
   model,
   loading = false,
   onCreateGoal,
@@ -131,8 +134,6 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
   onViewDetails,
   onScrollInteractionSettled,
   onScrollInteractionStart,
-  onScrollNearEnd,
-  onScrollNearStart,
   onSelectedDateChange,
   onSelectedWeekChange,
   preferDailyChart = true,
@@ -144,6 +145,7 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
   showInlineLegend = true,
   showLegendButton = true,
   showSelectedPointTray = true,
+  showSelectedPeriodSummary = true,
   testID = "training-path-load-chart-section",
   title = "Training Analysis",
 }: TrainingPathLoadChartSectionProps) {
@@ -167,6 +169,10 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
     preferDailyChart && hasRenderableDailyTrainingAdjustmentData(displayedDailyPoints);
   const canRenderWeeklyChart =
     !!model && !!onSelectedWeekChange && hasRenderableWeeklyTrainingPathData(model);
+  const renderedChartMode = canRenderDailyChart ? "daily" : "weekly";
+  const showUnavailableLoad = canRenderDailyChart
+    ? displayedDailyPoints.some((point) => point.hasCompletedActivityWithoutLoad === true)
+    : (model?.weeks.some((week) => week.completedLoadUnavailable === true) ?? false);
   const hasRenderableChart = canRenderDailyChart || canRenderWeeklyChart;
   const modelEmptyState = loading || hasRenderableChart ? null : (model?.emptyState ?? null);
   const resolvedEmptyState =
@@ -222,7 +228,7 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
   }, [contextSelectedDate, dailyPoints, model, selectionMode]);
 
   return (
-    <View className="gap-4" testID={testID}>
+    <View className={fillAvailableHeight ? "min-h-0 flex-1 gap-4" : "gap-4"} testID={testID}>
       {showHeader ? (
         <View className="gap-3">
           <View className="flex-row items-center justify-between gap-2">
@@ -267,19 +273,20 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
           </View>
           {analysisControlsVisible && chartRange === "monthly" ? (
             <Text
-              accessibilityLabel="Monthly view uses only the loaded bounded Plan window"
+              accessibilityLabel="Monthly view uses the authoritative 84-day Plan range; edge months may be partial"
               className="px-1 text-[10px] text-muted-foreground"
             >
-              Monthly totals use the loaded, bounded Plan window.
+              Monthly totals use the 84-day Plan range; edge months may be partial.
             </Text>
           ) : null}
         </View>
       ) : null}
 
-      <View className="gap-3">
+      <View className={fillAvailableHeight ? "min-h-0 flex-1 gap-3" : "gap-3"}>
         {resolvedEmptyState ? (
           <ChartEmptyState
             body={resolvedEmptyState.body}
+            fillHeight={fillAvailableHeight}
             minHeight={chartHeight}
             onCreateGoal={!emptyState && modelEmptyState === "noGoal" ? onCreateGoal : undefined}
             testID="training-path-empty-state"
@@ -289,6 +296,7 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
         ) : canRenderDailyChart ? (
           <DailyTrainingAdjustmentChart
             density={dailyDensity}
+            fillHeight={fillAvailableHeight}
             height={chartHeight}
             formatDateLabel={chartRange === "daily" ? dailyDateLabelFormatter : undefined}
             points={displayedDailyPoints}
@@ -297,20 +305,17 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
             showSelectedPointTray={showSelectedPointTray}
             todayDate={chartTodayDate}
             onPreviewSelectedDateChange={setPreviewSelectedDate}
-            onScrollNearEnd={onScrollNearEnd}
-            onScrollNearStart={onScrollNearStart}
             onSelectedDateChange={onSelectedDateChange}
             testID={dailyTestID}
           />
         ) : canRenderWeeklyChart ? (
           <TrainingPathChart
+            fillHeight={fillAvailableHeight}
             model={model}
             range="season"
             height={chartHeight}
             scrollX
             reviewWeeks
-            onScrollNearEnd={onScrollNearEnd}
-            onScrollNearStart={onScrollNearStart}
             onScrollInteractionSettled={onScrollInteractionSettled}
             onScrollInteractionStart={onScrollInteractionStart}
             onDisplayedWeekChange={onDisplayedWeekChange}
@@ -319,6 +324,7 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
         ) : (
           <ChartEmptyState
             minHeight={chartHeight}
+            fillHeight={fillAvailableHeight}
             testID="training-path-empty-state"
             title="Training path is still being calculated."
             tone="empty"
@@ -328,15 +334,13 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
         !resolvedEmptyState &&
         (canRenderDailyChart || canRenderWeeklyChart) ? (
           <TrainingPathLegend
-            mode={canRenderDailyChart ? "daily" : "weekly"}
+            mode={renderedChartMode}
             range="season"
-            showUnavailableLoad={
-              dailyPoints?.some((point) => point.hasCompletedActivityWithoutLoad === true) ?? false
-            }
+            showUnavailableLoad={showUnavailableLoad}
             variant="primary"
           />
         ) : null}
-        {canRenderDailyChart ? (
+        {canRenderDailyChart && showSelectedPeriodSummary ? (
           <SelectedPeriodSummary
             point={
               displayedDailyPoints.find((point) => point.date === summarySelectedDate) ??
@@ -369,13 +373,17 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
 
       {legendOpen ? (
         <AppFormModal
-          description="How to read the daily training path chart."
+          description={`How to read the ${renderedChartMode} training path chart.`}
           onClose={() => setLegendOpen(false)}
           testID="training-path-legend-modal"
           title="Chart Legend"
         >
           <View className="gap-4 px-1 py-2">
-            <TrainingPathLegend mode={canRenderDailyChart ? "daily" : "weekly"} range="season" />
+            <TrainingPathLegend
+              mode={renderedChartMode}
+              range="season"
+              showUnavailableLoad={showUnavailableLoad}
+            />
           </View>
         </AppFormModal>
       ) : null}
@@ -389,6 +397,40 @@ function formatSummaryValue(value: number | null | undefined) {
     : "Unavailable";
 }
 
+function formatCompletedSummaryValue(point: DailyPoint) {
+  const value = formatSummaryValue(point.effectiveCompletedLoad);
+  if (point.effectiveCompletedLoadStatus === "unavailable") return "Unavailable";
+  if (point.effectiveCompletedLoadStatus === "known_zero") return "0 · No completed load";
+  if (point.effectiveCompletedLoadStatus === "partial" && value !== "Unavailable") {
+    return `${value} incomplete`;
+  }
+  return point.hasCompletedActivityWithoutLoad && value !== "Unavailable"
+    ? `${value} + unavailable`
+    : value;
+}
+
+function formatPlannedSummaryValue(point: DailyPoint) {
+  const value = getDailyTrainingAdjustmentPlannedLoad(point);
+  const status = getDailyTrainingAdjustmentPlannedLoadStatus(point);
+  if (status === "unavailable" || value === null) return "Not available";
+  if (status === "known_zero") return "0 · No planned load";
+  const formatted = formatSummaryValue(value);
+  return status === "partial" ? `${formatted} incomplete` : formatted;
+}
+
+function getTrainingStateSummary(point: DailyPoint): readonly [string, string] | null {
+  if (typeof point.formTsb === "number" && Number.isFinite(point.formTsb)) {
+    return ["Form", formatSummaryValue(point.formTsb)];
+  }
+  if (typeof point.fitnessCtl === "number" && Number.isFinite(point.fitnessCtl)) {
+    return ["Fitness", formatSummaryValue(point.fitnessCtl)];
+  }
+  if (typeof point.scheduledFitnessCtl === "number" && Number.isFinite(point.scheduledFitnessCtl)) {
+    return ["Planned fitness", formatSummaryValue(point.scheduledFitnessCtl)];
+  }
+  return null;
+}
+
 function SelectedPeriodSummary({
   period,
   point,
@@ -399,30 +441,19 @@ function SelectedPeriodSummary({
   if (!point) return null;
   const periodName = period === "day" ? "Day" : period === "week" ? "Week" : "Month";
   const range = period === "day" ? "daily" : period === "week" ? "weekly" : "monthly";
-  const status =
-    point.effectiveLoadStatus === "unavailable"
-      ? "Load unavailable"
-      : point.hasCompletedActivityWithoutLoad
-        ? "Completed activity load unavailable"
-        : null;
+  const trainingState = getTrainingStateSummary(point);
   const facts = [
-    ["Completed load", formatSummaryValue(point.effectiveCompletedLoad)],
-    ["Planned load", formatSummaryValue(point.plannedLoad ?? point.effectiveRemainingLoad)],
-    ["Actual fitness", formatSummaryValue(point.fitnessCtl)],
-    ["Planned fitness", formatSummaryValue(point.scheduledFitnessCtl)],
-    ["Actual fatigue", formatSummaryValue(point.actualFatigueAtl)],
-    ["Planned fatigue", formatSummaryValue(point.scheduledFatigueAtl)],
-  ] as const;
+    ["Completed load", formatCompletedSummaryValue(point)] as const,
+    ["Planned load", formatPlannedSummaryValue(point)] as const,
+    ...(trainingState ? [trainingState] : []),
+  ];
 
   return (
     <View className="gap-2 border-t border-border px-1 pt-3" testID="training-path-period-summary">
-      <View className="flex-row flex-wrap items-baseline justify-between gap-2">
+      <View className="flex-row flex-wrap items-baseline gap-2">
         <Text accessibilityRole="header" className="text-sm font-semibold text-foreground">
           {periodName} · {formatPlanChartDateLabel(point.date, range)}
         </Text>
-        {status ? (
-          <Text className="text-xs font-medium text-muted-foreground">{status}</Text>
-        ) : null}
       </View>
       <View className="flex-row flex-wrap gap-x-4 gap-y-2">
         {facts.map(([label, value]) => (
@@ -490,6 +521,7 @@ function ChartDropdown<T extends string>({
 
 function ChartEmptyState({
   body,
+  fillHeight = false,
   minHeight,
   onCreateGoal,
   testID,
@@ -497,6 +529,7 @@ function ChartEmptyState({
   tone = "empty",
 }: {
   body?: string;
+  fillHeight?: boolean;
   minHeight: number;
   onCreateGoal?: () => void;
   testID: string;
@@ -506,7 +539,7 @@ function ChartEmptyState({
   return (
     <View
       className="items-center justify-center rounded-2xl bg-muted/20 px-4"
-      style={{ minHeight }}
+      style={fillHeight ? { flex: 1 } : { minHeight }}
       testID={testID}
     >
       {tone === "loading" ? <ActivityIndicator size="small" /> : null}

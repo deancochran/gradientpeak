@@ -75,8 +75,18 @@ export const plannedTrainingSessionSchema = z
   .object({
     date: z.string().nullable().optional(),
     offsetDays: z.number().int().nullable().optional(),
-    estimatedCommonLoad: z.number().nonnegative().nullable().optional(),
-    estimatedDurationMinutes: z.number().nonnegative().nullable().optional(),
+    estimatedCommonLoad: z
+      .number()
+      .finite()
+      .nonnegative()
+      .nullish()
+      .transform((value) => value ?? 0),
+    estimatedDurationMinutes: z
+      .number()
+      .finite()
+      .nonnegative()
+      .nullish()
+      .transform((value) => value ?? 0),
     estimatedFatigueCost: z.number().nonnegative().nullable().optional(),
     estimatedStrengthSets: z.number().nonnegative().nullable().optional(),
     intentType: z.string().nullable().optional(),

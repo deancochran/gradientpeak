@@ -1,7 +1,9 @@
+import { getWahooSyncRequestTimeoutMs } from "./wahoo-sync-config.mjs";
+
 const drainUrl =
   process.env.WAHOO_PROVIDER_SYNC_DRAIN_URL ??
   "http://127.0.0.1:3000/api/internal/provider-sync/wahoo/drain";
-const intervalMs = Number(process.env.WAHOO_PROVIDER_SYNC_DRAIN_INTERVAL_MS ?? "60000");
+const intervalMs = Number(process.env.WAHOO_PROVIDER_SYNC_DRAIN_INTERVAL_MS ?? "5000");
 const startupRetryMs = Number(process.env.WAHOO_PROVIDER_SYNC_STARTUP_RETRY_MS ?? "2000");
 const requestTimeoutMs = getWahooSyncRequestTimeoutMs();
 const once = process.argv.includes("--once");
@@ -51,5 +53,3 @@ async function run() {
 }
 
 await run();
-
-import { getWahooSyncRequestTimeoutMs } from "./wahoo-sync-config.mjs";

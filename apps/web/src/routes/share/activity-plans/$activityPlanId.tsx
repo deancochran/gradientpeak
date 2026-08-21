@@ -3,6 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/ca
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { Dumbbell } from "lucide-react";
 
+import { ActivityPlanEstimateRow } from "../../../components/activity-plan/activity-plan-estimates";
+import { ActivityPlanSessionFlow } from "../../../components/activity-plan/activity-plan-session-flow";
+import { ActivityPlanStructure } from "../../../components/activity-plan/activity-plan-structure";
 import { getActivityBadgeLabel, getActivityEmoji } from "../../../lib/activity-route-helpers";
 import { loadPublicActivityPlan } from "../../../lib/public-share";
 
@@ -68,6 +71,7 @@ function PublicActivityPlanPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <ActivityPlanEstimateRow metrics={activityPlan.metrics} />
           <div className="grid gap-3 sm:grid-cols-2">
             <Detail
               label="Activity category"
@@ -80,13 +84,10 @@ function PublicActivityPlanPage() {
               value={activityPlan.is_system_template ? "System" : "Athlete"}
             />
           </div>
-          {activityPlan.notes ? (
-            <p className="rounded-lg border p-4 text-sm text-muted-foreground">
-              {activityPlan.notes}
-            </p>
-          ) : null}
         </CardContent>
       </Card>
+      <ActivityPlanSessionFlow structure={activityPlan.structure} />
+      <ActivityPlanStructure structure={activityPlan.structure} />
     </main>
   );
 }

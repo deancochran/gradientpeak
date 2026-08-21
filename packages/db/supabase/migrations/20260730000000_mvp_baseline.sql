@@ -20,6 +20,7 @@ CREATE FUNCTION public.activity_plan_duration_is_canonical(input jsonb, rest_onl
 CREATE FUNCTION public.activity_plan_segment_is_canonical(input jsonb) RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$ SELECT true $$;
 
 CREATE TYPE "public"."activity_file_ingestion_source" AS ENUM('mobile_recording', 'manual_import', 'provider_sync');
+CREATE TYPE "public"."activity_category" AS ENUM('run', 'bike', 'swim', 'strength', 'other');
 CREATE TYPE "public"."activity_file_ingestion_status" AS ENUM('awaiting_upload', 'processing', 'failed_retryable', 'succeeded', 'failed_terminal');
 CREATE TYPE "public"."activity_ingestion_failure_code" AS ENUM('artifact_missing', 'hash_mismatch', 'unsupported_format', 'invalid_activity', 'promotion_failed', 'dependency_unavailable', 'internal');
 CREATE TYPE "public"."activity_session_rpe_source" AS ENUM('user', 'provider', 'manual');
@@ -45,7 +46,6 @@ CREATE TYPE "public"."planned_session_source_kind" AS ENUM('direct', 'training_p
 CREATE TYPE "public"."planned_session_status" AS ENUM('scheduled', 'cancelled', 'completed');
 CREATE TYPE "public"."profile_metric_type" AS ENUM('weight_kg', 'resting_hr', 'sleep_hours', 'hrv_rmssd', 'vo2_max', 'body_fat_percentage', 'hydration_level', 'stress_score', 'soreness_level', 'wellness_score', 'max_hr');
 CREATE TYPE "public"."threshold_evidence_status" AS ENUM('active', 'superseded', 'deleted');
-CREATE TYPE "public"."training_effect_label" AS ENUM('recovery', 'base', 'tempo', 'threshold', 'vo2max');
 CREATE TABLE "accounts" (
 	"id" text PRIMARY KEY NOT NULL,
 	"account_id" text NOT NULL,
@@ -147,7 +147,7 @@ CREATE TABLE "activities" (
 	"map_bounds" jsonb,
 	"performance_target_snapshot" jsonb,
 	"athlete_state_common_load" numeric,
-	"athlete_state_activity_category" text,
+	"athlete_state_activity_category" "activity_category",
 	"athlete_state_evidence_confidence" numeric,
 	"athlete_state_capability_distance_meters" numeric,
 	"athlete_state_capability_duration_minutes" numeric,
@@ -221,7 +221,7 @@ CREATE TABLE "activity_efforts" (
 	"activity_id" uuid NOT NULL,
 	"segment_id" uuid NOT NULL,
 	"recorded_at" timestamp with time zone NOT NULL,
-	"activity_category" text NOT NULL,
+	"activity_category" "activity_category" NOT NULL,
 	"effort_type" "effort_type" NOT NULL,
 	"source_series" "activity_effort_source_series" NOT NULL,
 	"duration_seconds" integer NOT NULL,
@@ -385,7 +385,7 @@ CREATE TABLE "activity_segments" (
 	"profile_id" uuid NOT NULL,
 	"ordinal" integer NOT NULL,
 	"role" text NOT NULL,
-	"activity_category" text,
+	"activity_category" "activity_category",
 	"start_offset_ms" bigint NOT NULL,
 	"end_offset_ms" bigint NOT NULL,
 	"source_artifact_id" uuid,
@@ -515,20 +515,6 @@ CREATE TABLE "athlete_data_sharing_consents" (
 	CONSTRAINT "athlete_data_sharing_consents_successor_not_self_check" CHECK ("athlete_data_sharing_consents"."superseded_by_consent_id" is null or "athlete_data_sharing_consents"."superseded_by_consent_id" <> "athlete_data_sharing_consents"."id")
 );
 
-CREATE TABLE "canonical_activity_categories" (
-	"code" text PRIMARY KEY NOT NULL,
-	"display_name" text NOT NULL,
-	"enabled" boolean DEFAULT true NOT NULL,
-	CONSTRAINT "canonical_activity_categories_code_check" CHECK ("canonical_activity_categories"."code" in ('run', 'bike', 'swim', 'strength', 'other'))
-);
-
-INSERT INTO "canonical_activity_categories" ("code", "display_name", "enabled") VALUES
-  ('run', 'Run', true),
-  ('bike', 'Bike', true),
-  ('swim', 'Swim', true),
-  ('strength', 'Strength', true),
-  ('other', 'Other', true);
-
 CREATE TABLE "coaching_assignments" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" uuid NOT NULL,
@@ -561,7 +547,8 @@ CREATE TABLE "comments" (
 	"entity_id" uuid NOT NULL,
 	"content" text NOT NULL,
 	"created_at" timestamp with time zone NOT NULL,
-	"updated_at" timestamp with time zone NOT NULL
+	"updated_at" timestamp with time zone NOT NULL,
+	CONSTRAINT "comments_entity_type_check" CHECK ("comments"."entity_type" in ('activity', 'training_plan', 'activity_plan', 'route', 'event'))
 );
 
 CREATE TABLE "content_access_grants" (
@@ -575,7 +562,10 @@ CREATE TABLE "content_access_grants" (
 	"source_id" uuid NOT NULL,
 	"expires_at" timestamp with time zone,
 	"revoked_at" timestamp with time zone,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "content_access_grants_content_type_check" CHECK ("content_access_grants"."content_type" in ('profile', 'event', 'activity_plan', 'activity_route', 'training_plan')),
+	CONSTRAINT "content_access_grants_access_level_check" CHECK ("content_access_grants"."access_level" in ('read', 'read_geometry')),
+	CONSTRAINT "content_access_grants_source_type_check" CHECK ("content_access_grants"."source_type" in ('event', 'training_plan'))
 );
 
 CREATE TABLE "conversation_participants" (
@@ -638,7 +628,8 @@ CREATE TABLE "follows" (
 	"status" text NOT NULL,
 	"created_at" timestamp with time zone NOT NULL,
 	"updated_at" timestamp with time zone NOT NULL,
-	CONSTRAINT "follows_follower_id_following_id_pk" PRIMARY KEY("follower_id","following_id")
+	CONSTRAINT "follows_follower_id_following_id_pk" PRIMARY KEY("follower_id","following_id"),
+	CONSTRAINT "follows_status_check" CHECK ("follows"."status" in ('pending', 'accepted'))
 );
 
 CREATE TABLE "group_event_rsvps" (
@@ -648,7 +639,7 @@ CREATE TABLE "group_event_rsvps" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "group_event_rsvps_group_event_id_profile_id_pk" PRIMARY KEY("group_event_id","profile_id"),
-	CONSTRAINT "group_event_rsvps_status_check" CHECK ("group_event_rsvps"."status" = 'declined')
+	CONSTRAINT "group_event_rsvps_status_check" CHECK ("group_event_rsvps"."status" in ('going', 'declined'))
 );
 
 CREATE TABLE "group_event_series_rsvps" (
@@ -658,7 +649,7 @@ CREATE TABLE "group_event_series_rsvps" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "group_event_series_rsvps_group_event_series_id_profile_id_pk" PRIMARY KEY("group_event_series_id","profile_id"),
-	CONSTRAINT "group_event_series_rsvps_status_check" CHECK ("group_event_series_rsvps"."status" = 'declined')
+	CONSTRAINT "group_event_series_rsvps_status_check" CHECK ("group_event_series_rsvps"."status" in ('going', 'declined'))
 );
 
 CREATE TABLE "group_events" (
@@ -902,21 +893,20 @@ CREATE TABLE "profile_goals" (
 	"profile_id" uuid NOT NULL,
 	"title" text NOT NULL,
 	"priority" integer NOT NULL,
-	"activity_category" text NOT NULL,
+	"activity_category" "activity_category" NOT NULL,
 	"target_date" date NOT NULL,
 	"target_payload" jsonb NOT NULL,
 	"created_at" timestamp with time zone NOT NULL,
 	"updated_at" timestamp with time zone NOT NULL,
 	CONSTRAINT "profile_goals_title_length_check" CHECK (char_length(btrim("profile_goals"."title")) between 1 and 100),
 	CONSTRAINT "profile_goals_priority_range" CHECK ("profile_goals"."priority" between 0 and 10),
-	CONSTRAINT "profile_goals_activity_category_check" CHECK ("profile_goals"."activity_category" in ('run', 'bike', 'swim', 'strength', 'other')),
 	CONSTRAINT "profile_goals_target_payload_shape_check" CHECK (jsonb_typeof("profile_goals"."target_payload") = 'object'
 		and "profile_goals"."target_payload" ? 'type'
 		and jsonb_typeof("profile_goals"."target_payload"->'type') = 'string'
 		and "profile_goals"."target_payload"->>'type' in ('event_performance', 'threshold', 'completion', 'consistency')
 		and (not ("profile_goals"."target_payload" ? 'activity_category')
 			or (jsonb_typeof("profile_goals"."target_payload"->'activity_category') = 'string'
-				and "profile_goals"."target_payload"->>'activity_category' = "profile_goals"."activity_category"))),
+				and "profile_goals"."target_payload"->>'activity_category' = "profile_goals"."activity_category"::text))),
 	CONSTRAINT "profile_goals_event_performance_payload_check" CHECK ("profile_goals"."target_payload"->>'type' <> 'event_performance' or (
 		"profile_goals"."target_payload" - array['type', 'activity_category', 'distance_m', 'target_time_s', 'target_speed_mps', 'environment', 'tolerance_pct']::text[] = '{}'::jsonb
 		and "profile_goals"."target_payload" ? 'activity_category'
@@ -1041,7 +1031,7 @@ CREATE TABLE "profile_athlete_state" (
 CREATE TABLE "profile_performance_estimates" (
 	"profile_id" uuid NOT NULL,
 	"capability_kind" text NOT NULL,
-	"activity_category" text NOT NULL,
+	"activity_category" "activity_category" NOT NULL,
 	"value" numeric NOT NULL,
 	"unit" text NOT NULL,
 	"confidence" numeric NOT NULL,
@@ -1057,7 +1047,6 @@ CREATE TABLE "profile_performance_estimates" (
 	CONSTRAINT "profile_performance_estimates_unit_check" CHECK (btrim("profile_performance_estimates"."unit") <> ''),
 	CONSTRAINT "profile_performance_estimates_value_check" CHECK ("profile_performance_estimates"."value" >= 0),
 	CONSTRAINT "profile_performance_estimates_confidence_check" CHECK ("profile_performance_estimates"."confidence" between 0 and 1),
-	CONSTRAINT "profile_performance_estimates_category_check" CHECK ("profile_performance_estimates"."activity_category" in ('run', 'bike', 'swim', 'strength', 'other')),
 	CONSTRAINT "profile_performance_estimates_algorithm_check" CHECK (btrim("profile_performance_estimates"."algorithm_version") <> ''),
 	CONSTRAINT "profile_performance_estimates_revision_check" CHECK ("profile_performance_estimates"."source_revision" >= 0)
 );
@@ -1260,7 +1249,7 @@ CREATE TABLE "training_plans" (
 CREATE TABLE "threshold_evaluations" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"profile_id" uuid NOT NULL,
-	"activity_category" text NOT NULL,
+	"activity_category" "activity_category" NOT NULL,
 	"metric" "threshold_metric" NOT NULL,
 	"method" text NOT NULL,
 	"outcome" "threshold_evaluation_outcome" NOT NULL,
@@ -1291,7 +1280,7 @@ CREATE TABLE "threshold_evaluation_efforts" (
 	"evaluation_id" uuid NOT NULL,
 	"effort_id" uuid NOT NULL,
 	"profile_id" uuid NOT NULL,
-	"activity_category" text NOT NULL,
+	"activity_category" "activity_category" NOT NULL,
 	"activity_id" uuid NOT NULL,
 	"source_revision" integer NOT NULL,
 	"metric" "threshold_metric" NOT NULL,
@@ -1309,7 +1298,7 @@ CREATE TABLE "threshold_evaluation_efforts" (
 CREATE TABLE "thresholds" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"profile_id" uuid NOT NULL,
-	"activity_category" text NOT NULL,
+	"activity_category" "activity_category" NOT NULL,
 	"metric" "threshold_metric" NOT NULL,
 	"evaluation_id" uuid NOT NULL,
 	"evaluation_outcome" "threshold_evaluation_outcome" DEFAULT 'qualified' NOT NULL,
@@ -1343,7 +1332,7 @@ CREATE TABLE "activity_training_effects" (
 	"source_revision" bigint NOT NULL,
 	"calculation_version" text NOT NULL,
 	"input_fingerprint" text NOT NULL,
-	"activity_category" text NOT NULL,
+	"activity_category" "activity_category" NOT NULL,
 	"common_load" numeric NOT NULL,
 	"evidence_confidence" numeric NOT NULL,
 	"capability_observation" jsonb,
@@ -1406,7 +1395,7 @@ CREATE TABLE "threshold_evidence" (
 	"profile_id" uuid NOT NULL,
 	"activity_id" uuid NOT NULL,
 	"contract_version" text DEFAULT 'athlete-derived-state-persistence-v1' NOT NULL,
-	"activity_category" text NOT NULL,
+	"activity_category" "activity_category" NOT NULL,
 	"metric" "threshold_metric" NOT NULL,
 	"unit" text NOT NULL,
 	"method" text NOT NULL,
@@ -1491,23 +1480,18 @@ ALTER TABLE "activity_artifact_links" ADD CONSTRAINT "activity_artifact_links_ar
 ALTER TABLE "activity_artifacts" ADD CONSTRAINT "activity_artifacts_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE restrict ON UPDATE no action;
 ALTER TABLE "activity_efforts" ADD CONSTRAINT "activity_efforts_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE no action ON UPDATE no action;
 ALTER TABLE "activity_efforts" ADD CONSTRAINT "activity_efforts_activity_id_activities_id_fk" FOREIGN KEY ("activity_id") REFERENCES "public"."activities"("id") ON DELETE cascade ON UPDATE no action;
-ALTER TABLE "activity_efforts" ADD CONSTRAINT "activity_efforts_activity_category_canonical_activity_categories_code_fk" FOREIGN KEY ("activity_category") REFERENCES "public"."canonical_activity_categories"("code") ON DELETE restrict ON UPDATE no action;
 ALTER TABLE "activity_efforts" ADD CONSTRAINT "activity_efforts_exact_source_fkey" FOREIGN KEY ("segment_id","activity_id","profile_id","activity_category","source_artifact_id","source_revision") REFERENCES "public"."activity_segments"("id","activity_id","profile_id","activity_category","source_artifact_id","segment_revision") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "threshold_evaluations" ADD CONSTRAINT "threshold_evaluations_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
-ALTER TABLE "threshold_evaluations" ADD CONSTRAINT "threshold_evaluations_activity_category_canonical_activity_categories_code_fk" FOREIGN KEY ("activity_category") REFERENCES "public"."canonical_activity_categories"("code") ON DELETE restrict ON UPDATE no action;
 ALTER TABLE "threshold_evaluations" ADD CONSTRAINT "threshold_evaluations_source_activity_profile_fkey" FOREIGN KEY ("source_activity_id","profile_id") REFERENCES "public"."activities"("id","profile_id") ON DELETE cascade ON UPDATE no action;
-ALTER TABLE "threshold_evaluation_efforts" ADD CONSTRAINT "threshold_evaluation_efforts_activity_category_canonical_activity_categories_code_fk" FOREIGN KEY ("activity_category") REFERENCES "public"."canonical_activity_categories"("code") ON DELETE restrict ON UPDATE no action;
 ALTER TABLE "threshold_evaluation_efforts" ADD CONSTRAINT "threshold_evaluation_efforts_evaluation_ownership_fkey" FOREIGN KEY ("evaluation_id","profile_id","activity_category","metric") REFERENCES "public"."threshold_evaluations"("id","profile_id","activity_category","metric") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "threshold_evaluation_efforts" ADD CONSTRAINT "threshold_evaluation_efforts_effort_ownership_fkey" FOREIGN KEY ("effort_id","profile_id","activity_id","activity_category","effort_type","source_series","source_revision") REFERENCES "public"."activity_efforts"("id","profile_id","activity_id","activity_category","effort_type","source_series","source_revision") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "thresholds" ADD CONSTRAINT "thresholds_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
-ALTER TABLE "thresholds" ADD CONSTRAINT "thresholds_activity_category_canonical_activity_categories_code_fk" FOREIGN KEY ("activity_category") REFERENCES "public"."canonical_activity_categories"("code") ON DELETE restrict ON UPDATE no action;
 ALTER TABLE "thresholds" ADD CONSTRAINT "thresholds_qualified_evaluation_ownership_fkey" FOREIGN KEY ("evaluation_id","profile_id","activity_category","metric","evaluation_outcome") REFERENCES "public"."threshold_evaluations"("id","profile_id","activity_category","metric","outcome") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "thresholds" ADD CONSTRAINT "thresholds_supersedes_fkey" FOREIGN KEY ("supersedes_id") REFERENCES "public"."thresholds"("id") ON DELETE no action ON UPDATE no action DEFERRABLE INITIALLY DEFERRED;
 ALTER TABLE "activity_file_ingestions" ADD CONSTRAINT "activity_file_ingestions_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "activity_file_ingestions" ADD CONSTRAINT "activity_file_ingestions_activity_profile_fkey" FOREIGN KEY ("activity_id","profile_id") REFERENCES "public"."activities"("id","profile_id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "activity_file_ingestions" ADD CONSTRAINT "activity_file_ingestions_artifact_profile_fkey" FOREIGN KEY ("artifact_id","profile_id") REFERENCES "public"."activity_artifacts"("id","profile_id") ON DELETE restrict ON UPDATE no action;
 ALTER TABLE "activity_file_ingestions" ADD CONSTRAINT "activity_file_ingestions_integration_profile_fkey" FOREIGN KEY ("integration_id","profile_id") REFERENCES "public"."integrations"("id","profile_id") ON DELETE restrict ON UPDATE no action;
-ALTER TABLE "activity_training_effects" ADD CONSTRAINT "activity_training_effects_activity_category_canonical_activity_categories_code_fk" FOREIGN KEY ("activity_category") REFERENCES "public"."canonical_activity_categories"("code") ON DELETE restrict ON UPDATE no action;
 ALTER TABLE "activity_training_effects" ADD CONSTRAINT "activity_training_effects_analysis_revision_fkey" FOREIGN KEY ("activity_id","profile_id","activity_analysis_revision") REFERENCES "public"."activity_analysis_revisions"("activity_id","profile_id","revision") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "daily_training_load" ADD CONSTRAINT "daily_training_load_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "athlete_recalculation_queue" ADD CONSTRAINT "athlete_recalculation_queue_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
@@ -1521,7 +1505,6 @@ ALTER TABLE "planned_sessions" ADD CONSTRAINT "planned_sessions_group_event_fkey
 ALTER TABLE "activity_plans" ADD CONSTRAINT "activity_plans_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "activity_routes" ADD CONSTRAINT "activity_routes_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "activity_route_deletion_receipts" ADD CONSTRAINT "activity_route_deletion_receipts_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
-ALTER TABLE "activity_segments" ADD CONSTRAINT "activity_segments_activity_category_canonical_activity_categories_code_fk" FOREIGN KEY ("activity_category") REFERENCES "public"."canonical_activity_categories"("code") ON DELETE restrict ON UPDATE no action;
 ALTER TABLE "activity_segments" ADD CONSTRAINT "activity_segments_activity_profile_fkey" FOREIGN KEY ("activity_id","profile_id") REFERENCES "public"."activities"("id","profile_id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "activity_segments" ADD CONSTRAINT "activity_segments_source_link_fkey" FOREIGN KEY ("activity_id","source_artifact_id","profile_id") REFERENCES "public"."activity_artifact_links"("activity_id","artifact_id","profile_id") ON DELETE restrict ON UPDATE no action;
 ALTER TABLE "activity_session_rpe_evidence" ADD CONSTRAINT "activity_session_rpe_evidence_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
@@ -1693,8 +1676,6 @@ CREATE INDEX "idx_events_profile_starts_at" ON "events" USING btree ("profile_id
 CREATE INDEX "idx_events_profile_status_starts_at" ON "events" USING btree ("profile_id","status","starts_at");
 CREATE INDEX "idx_events_planned_day_summary" ON "events" USING btree ("profile_id","scheduled_date","starts_at","id","activity_plan_id") WHERE "events"."event_type" = 'planned' and "events"."status" in ('scheduled', 'completed');
 CREATE INDEX "idx_follows_following_id" ON "follows" USING btree ("following_id");
-CREATE INDEX "group_event_rsvps_profile_status_idx" ON "group_event_rsvps" USING btree ("profile_id","status");
-CREATE INDEX "group_event_series_rsvps_profile_status_idx" ON "group_event_series_rsvps" USING btree ("profile_id","status");
 CREATE INDEX "group_events_group_starts_at_idx" ON "group_events" USING btree ("group_id","starts_at");
 CREATE INDEX "group_events_group_cancelled_starts_at_idx" ON "group_events" USING btree ("group_id","cancelled_at","starts_at");
 CREATE UNIQUE INDEX "group_events_series_occurrence_unique_idx" ON "group_events" USING btree ("series_id","occurrence_key") WHERE "group_events"."series_id" is not null;
@@ -3746,8 +3727,6 @@ ALTER TABLE "public"."athlete_consent_policy_versions" ENABLE ROW LEVEL SECURITY
 ALTER TABLE "public"."athlete_data_sharing_consents" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."athlete_recalculation_queue" ENABLE ROW LEVEL SECURITY;
-
-ALTER TABLE "public"."canonical_activity_categories" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."coaching_assignments" ENABLE ROW LEVEL SECURITY;
 

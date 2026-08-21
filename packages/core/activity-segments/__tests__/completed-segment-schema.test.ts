@@ -221,6 +221,47 @@ describe("completed activity segment contract", () => {
     ).toBe(true);
   });
 
+  it("preserves bounded recording completion and skip evidence without overstating coverage", () => {
+    const parsed = completedSegmentSummarySchema.parse({
+      version: 1,
+      timing: { timingCoverage: "partial", activeMs: 30_000 },
+      normalizedPowerResult: unavailableNormalizedPowerResult,
+      recordingExecution: {
+        version: 1,
+        source: "recording_execution_manifest",
+        coverage: "complete",
+        occurrenceCount: 2,
+        occurrences: [
+          {
+            occurrenceId: "step-1:1",
+            globalOrdinal: 0,
+            completion: { status: "completed", method: "automatic" },
+          },
+          {
+            occurrenceId: "step-2:1",
+            globalOrdinal: 1,
+            completion: { status: "skipped", method: "manual" },
+          },
+        ],
+      },
+    });
+
+    expect(parsed.recordingExecution?.occurrences).toEqual([
+      expect.objectContaining({ completion: { status: "completed", method: "automatic" } }),
+      expect.objectContaining({ completion: { status: "skipped", method: "manual" } }),
+    ]);
+    expect(
+      completedSegmentSummarySchema.safeParse({
+        ...parsed,
+        recordingExecution: {
+          ...parsed.recordingExecution,
+          coverage: "complete",
+          occurrenceCount: 3,
+        },
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts canonical cadence, speed, and bounded swim metrics", () => {
     const normalizedPowerResult = calculateCyclingNormalizedPower({
       samples: Array.from({ length: 61 }, (_, timestampSeconds) => ({

@@ -117,14 +117,14 @@ jest.mock("@/components/groups", () => ({
       React.createElement(
         "Button",
         {
-          onPress: () => onRsvp("accepted", "44444444-4444-4444-8444-444444444444"),
+          onPress: () => onRsvp("going", "44444444-4444-4444-8444-444444444444"),
           testID: "mock-rsvp-occurrence",
         },
         "Going",
       ),
       React.createElement(
         "Button",
-        { onPress: () => onRsvpSeries("accepted"), testID: "mock-rsvp-series" },
+        { onPress: () => onRsvpSeries("going"), testID: "mock-rsvp-series" },
         "Going to series",
       ),
       React.createElement(
@@ -232,10 +232,10 @@ describe("group event detail route", () => {
     fireEvent.press(screen.getByTestId("mock-rsvp-series"));
 
     await waitFor(() => {
-      expect(rsvpMock).toHaveBeenCalledWith("99999999-9999-4999-8999-999999999999", "accepted");
+      expect(rsvpMock).toHaveBeenCalledWith("99999999-9999-4999-8999-999999999999", "going");
       expect(rsvpEventSeriesMock).toHaveBeenCalledWith({
         groupEventSeriesId: "88888888-8888-4888-8888-888888888888",
-        status: "accepted",
+        status: "going",
       });
     });
   });

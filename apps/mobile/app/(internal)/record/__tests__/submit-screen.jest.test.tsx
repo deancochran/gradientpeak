@@ -71,6 +71,31 @@ beforeEach(() => {
   };
 });
 
+it("shows a recorded indoor session summary and its laps before saving", () => {
+  submissionState = {
+    ...submissionState,
+    activity: {
+      name: "Private stored recording name",
+      activityCategory: "bike",
+      durationSeconds: 1200,
+      movingSeconds: 1180,
+      distanceMeters: 10200,
+      calories: 420,
+      notes: null,
+      content_visibility: "private",
+    },
+    artifact: { sessionId: "artifact-1", finalStats: { manualLapsMs: [300000, 620000] } },
+  };
+
+  renderNative(<Submit />);
+
+  expect(screen.getByTestId("recording-review-summary")).toBeTruthy();
+  expect(screen.getByText("Review your bike")).toBeTruthy();
+  expect(screen.getByText("10.20 km")).toBeTruthy();
+  expect(screen.getByTestId("recording-review-laps")).toBeTruthy();
+  expect(screen.getByText("Laps · 2")).toBeTruthy();
+});
+
 it("never renders the stored recorded activity name in submission review", () => {
   submissionState = {
     ...submissionState,

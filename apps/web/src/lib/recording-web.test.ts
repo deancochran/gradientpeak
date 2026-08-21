@@ -1,50 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { formatDistance, projectRoutePreview, validateRecordingSearch } from "./recording-web";
-
-describe("recording route unit presentation", () => {
-  it("formats canonical route distance in metric and imperial", () => {
-    expect(formatDistance(5_000, "metric")).toBe("5.0 km");
-    expect(formatDistance(5_000, "imperial")).toBe("3.1 mi");
-  });
-});
+import { validateRecordingSearch } from "./recording-web";
 
 describe("validateRecordingSearch", () => {
-  it("defaults to a run launcher state", () => {
+  it("defaults to an indoor run launcher", () => {
     expect(validateRecordingSearch({})).toEqual({
       activity_category: "run",
-      gps: "on",
+      gps: "off",
       eventId: undefined,
-      routeId: undefined,
+      activityPlanId: undefined,
     });
   });
 
-  it("keeps an explicit indoor gps override", () => {
+  it("forces indoor authored mode and disregards legacy route and personalization values", () => {
     expect(
       validateRecordingSearch({
         activity_category: "bike",
-        gps: "off",
+        gps: "on",
         routeId: "11111111-1111-4111-8111-111111111111",
+        personalize: true,
       }),
     ).toEqual({
       activity_category: "bike",
       gps: "off",
       eventId: undefined,
-      routeId: "11111111-1111-4111-8111-111111111111",
+      activityPlanId: undefined,
     });
-  });
-});
-
-describe("projectRoutePreview", () => {
-  it("returns svg-safe points for a route line", () => {
-    const projection = projectRoutePreview([
-      { latitude: 40, longitude: -105 },
-      { latitude: 40.01, longitude: -105.02 },
-      { latitude: 40.02, longitude: -105.01 },
-    ]);
-
-    expect(projection).not.toBeNull();
-    expect(projection?.points).toContain(",");
-    expect(projection?.start.x).toBeGreaterThan(0);
-    expect(projection?.finish.y).toBeGreaterThan(0);
   });
 });

@@ -243,6 +243,15 @@ export async function getEffectivePlanLoad(input: {
   if (!startDate || !endDate) {
     return unavailable("planning_timezone_invalid");
   }
+  const recommendationEvents = facts.recommendationEvents.filter((event) => {
+    if (!event.original_starts_at) {
+      return event.scheduled_date >= startDate && event.scheduled_date <= endDate;
+    }
+    const originalInstant = new Date(event.original_starts_at);
+    if (Number.isNaN(originalInstant.getTime())) return false;
+    const recommendationDate = localDate(originalInstant, planningTimezone);
+    return recommendationDate >= startDate && recommendationDate <= endDate;
+  });
 
   const segments = await loadActivitySegmentsByActivityId(
     input.db,
@@ -270,7 +279,7 @@ export async function getEffectivePlanLoad(input: {
     completedQuantificationById.set(activityId, parsed.value);
   }
   const activityPlansById = new Map(
-    [...facts.events, ...facts.recommendationEvents].flatMap((event) =>
+    [...facts.events, ...recommendationEvents].flatMap((event) =>
       event.activity_plan ? [[event.activity_plan.id, event.activity_plan] as const] : [],
     ),
   );
@@ -416,7 +425,7 @@ export async function getEffectivePlanLoad(input: {
     sourceStatus: facts.recommendationSource.status,
     trainingPlanId: facts.recommendationSource.trainingPlanId,
     scheduleBatchId: facts.recommendationSource.scheduleBatchId,
-    items: facts.recommendationEvents.map((event) => ({
+    items: recommendationEvents.map((event) => ({
       scheduledItemId: event.id,
       recommendationDate: event.original_starts_at
         ? localDate(new Date(event.original_starts_at), planningTimezone)

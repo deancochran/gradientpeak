@@ -2,6 +2,7 @@ import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader } from "@repo/ui/components/card";
 import { createFileRoute } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
 import {
   GroupEventCard,
   type GroupEventSummary,
@@ -19,10 +20,19 @@ function RouteComponent() {
   const { groupId } = Route.useParams();
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
+  const [eventTimeframe, setEventTimeframe] = useState<"upcoming" | "past">("upcoming");
+  const now = useMemo(() => new Date().toISOString(), []);
   const detail = api.groups.detail.useQuery({ groupId });
   const viewer = detail.data?.viewer;
-  const events = api.groups.events.list.useInfiniteQuery(
-    { groupId, limit: 20, startsAfter: new Date().toISOString() },
+  const upcomingEvents = api.groups.events.list.useInfiniteQuery(
+    { groupId, limit: 20, startsAfter: now },
+    {
+      enabled: Boolean(viewer?.canViewGroupEvents),
+      getNextPageParam: (page) => page.nextCursor,
+    },
+  );
+  const pastEvents = api.groups.events.list.useInfiniteQuery(
+    { groupId, limit: 20, startsBefore: now },
     {
       enabled: Boolean(viewer?.canViewGroupEvents),
       getNextPageParam: (page) => page.nextCursor,
@@ -42,7 +52,13 @@ function RouteComponent() {
   });
   const mutationError = joinMutation.error ?? leaveMutation.error ?? deleteMutation.error;
   const group = detail.data?.group as WebGroupSummary | undefined;
-  const eventItems = events.data?.pages.flatMap((page) => page.items) ?? [];
+  const events = eventTimeframe === "upcoming" ? upcomingEvents : pastEvents;
+  const eventItems = (events.data?.pages.flatMap((page) => page.items) ?? []).filter(
+    (event) => !event.is_recurring_series,
+  );
+  const eventHeading = eventTimeframe === "upcoming" ? "Upcoming events" : "Past events";
+  const emptyEventMessage =
+    eventTimeframe === "upcoming" ? "No upcoming events." : "No past events.";
 
   return (
     <main className="container mx-auto max-w-5xl space-y-6 py-4">
@@ -163,32 +179,64 @@ function RouteComponent() {
             <MutationError error={mutationError} />
             {viewer.canViewGroupEvents ? (
               <section className="space-y-4" aria-labelledby="group-events-heading">
-                <h2 className="text-2xl font-semibold" id="group-events-heading">
-                  Upcoming events
-                </h2>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-2xl font-semibold" id="group-events-heading">
+                    {eventHeading}
+                  </h2>
+                  <div className="flex gap-2">
+                    <Button
+                      aria-pressed={eventTimeframe === "upcoming"}
+                      onClick={() => setEventTimeframe("upcoming")}
+                      type="button"
+                      variant={eventTimeframe === "upcoming" ? "default" : "outline"}
+                    >
+                      Upcoming
+                    </Button>
+                    <Button
+                      aria-pressed={eventTimeframe === "past"}
+                      onClick={() => setEventTimeframe("past")}
+                      type="button"
+                      variant={eventTimeframe === "past" ? "default" : "outline"}
+                    >
+                      Past
+                    </Button>
+                  </div>
+                </div>
                 <QueryState
                   error={events.error}
                   isLoading={events.isLoading}
                   onRetry={() => void events.refetch()}
                 >
                   {eventItems.length ? (
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {eventItems.map((event) => (
-                        <GroupEventCard
-                          event={event as GroupEventSummary}
-                          key={event.id}
-                          onOpen={() =>
-                            void navigate({
-                              // biome-ignore lint/security/noSecrets: Typed route template, not a secret.
-                              to: "/groups/events/$groupEventId",
-                              params: { groupEventId: event.id },
-                            })
-                          }
-                        />
-                      ))}
+                    <div className="space-y-4">
+                      <div className="grid gap-4 md:grid-cols-2">
+                        {eventItems.map((event) => (
+                          <GroupEventCard
+                            event={event as GroupEventSummary}
+                            key={event.id}
+                            onOpen={() =>
+                              void navigate({
+                                // biome-ignore lint/security/noSecrets: Typed route template, not a secret.
+                                to: "/groups/events/$groupEventId",
+                                params: { groupEventId: event.id },
+                              })
+                            }
+                          />
+                        ))}
+                      </div>
+                      {events.hasNextPage ? (
+                        <Button
+                          disabled={events.isFetchingNextPage}
+                          onClick={() => void events.fetchNextPage()}
+                          type="button"
+                          variant="outline"
+                        >
+                          {events.isFetchingNextPage ? "Loading more events…" : "Load more events"}
+                        </Button>
+                      ) : null}
                     </div>
                   ) : (
-                    <p className="text-muted-foreground">No upcoming events.</p>
+                    <p className="text-muted-foreground">{emptyEventMessage}</p>
                   )}
                 </QueryState>
               </section>

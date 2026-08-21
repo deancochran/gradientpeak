@@ -75,6 +75,7 @@ function createDbMock(plan: DbPlan = {}) {
   const insertReturningQueue = [...(plan.insertReturning ?? [])];
   const updateReturningQueue = [...(plan.updateReturning ?? [])];
   const insertCalls: Array<{ table: unknown; values: unknown }> = [];
+  const conflictUpdateCalls: unknown[] = [];
   const updateCalls: Array<{ table: unknown; values: unknown }> = [];
   const deleteCalls: Array<{ table: unknown }> = [];
   let transactionCount = 0;
@@ -103,7 +104,10 @@ function createDbMock(plan: DbPlan = {}) {
           onConflictDoNothing: () => ({
             returning: async () => insertReturningQueue.shift() ?? [],
           }),
-          onConflictDoUpdate: () => ({ returning: async () => insertReturningQueue.shift() ?? [] }),
+          onConflictDoUpdate: (config: unknown) => {
+            conflictUpdateCalls.push(config);
+            return { returning: async () => insertReturningQueue.shift() ?? [] };
+          },
         };
       },
     }),
@@ -127,6 +131,7 @@ function createDbMock(plan: DbPlan = {}) {
 
   return {
     db,
+    conflictUpdateCalls,
     insertCalls,
     updateCalls,
     deleteCalls,
@@ -178,10 +183,10 @@ describe("groups.events router", () => {
       select: [
         [{ id: VIEWER_ID }],
         [{ event: buildGroupEventRow(), group: buildGroupRow() }],
-        [buildGroupEventRsvpRow({ status: "declined" })],
+        [buildGroupEventRsvpRow()],
         [],
         [{ group_id: GROUP_ID, profile_id: VIEWER_ID }],
-        [buildGroupEventRsvpRow({ status: "declined" })],
+        [buildGroupEventRsvpRow()],
         [],
       ],
     });
@@ -190,6 +195,43 @@ describe("groups.events router", () => {
     const result = await caller.events.myUpcomingGroupEvents({ startsAfter: NOW.toISOString() });
 
     expect(result.items).toEqual([]);
+  });
+
+  it("keeps an occurrence with an explicit going response when its series is declined", async () => {
+    const seriesId = "88888888-8888-4888-8888-888888888888";
+    const occurrence = buildGroupEventRow({
+      series_id: seriesId,
+      occurrence_key: "2026-05-28",
+    });
+    const occurrenceRsvp = buildGroupEventRsvpRow({ status: "going" });
+    const seriesRsvp = {
+      group_event_series_id: seriesId,
+      profile_id: VIEWER_ID,
+      status: "declined" as const,
+      created_at: NOW,
+      updated_at: NOW,
+    };
+    const mock = createDbMock({
+      select: [
+        [{ id: VIEWER_ID }],
+        [{ event: occurrence, group: buildGroupRow() }],
+        [occurrenceRsvp],
+        [seriesRsvp],
+        [{ group_id: GROUP_ID, profile_id: VIEWER_ID }],
+        [occurrenceRsvp],
+        [seriesRsvp],
+      ],
+    });
+    const caller = createCaller(mock.db);
+
+    const result = await caller.events.myUpcomingGroupEvents({ startsAfter: NOW.toISOString() });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      viewerRsvp: { status: "going" },
+      viewerSeriesRsvp: { status: "declined" },
+      acceptedRsvpCount: 1,
+    });
   });
 
   it("blocks members-only event detail for non-members", async () => {
@@ -605,16 +647,62 @@ describe("groups.events router", () => {
     expect(mock.insertCalls).toHaveLength(0);
   });
 
+  it("rejects occurrence RSVP changes after cancellation", async () => {
+    const mock = createDbMock({
+      select: [
+        [{ id: VIEWER_ID }],
+        [{ event: buildGroupEventRow({ cancelled_at: NOW }), group: buildGroupRow() }],
+      ],
+    });
+    const caller = createCaller(mock.db);
+
+    await expect(
+      caller.events.rsvp({ groupEventId: EVENT_ID, status: "going" }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Cannot RSVP to a cancelled group event",
+    } satisfies Partial<TRPCError>);
+    expect(mock.insertCalls).toHaveLength(0);
+    expect(mock.deleteCalls).toHaveLength(0);
+  });
+
+  it("rejects series RSVP changes after cancellation", async () => {
+    const mock = createDbMock({
+      select: [
+        [{ id: VIEWER_ID }],
+        [
+          {
+            event: buildGroupEventRow({
+              cancelled_at: NOW,
+              recurrence_rule: "FREQ=WEEKLY;COUNT=3",
+            }),
+            group: buildGroupRow(),
+          },
+        ],
+      ],
+    });
+    const caller = createCaller(mock.db);
+
+    await expect(
+      caller.events.rsvpEventSeries({ groupEventSeriesId: EVENT_ID, status: "going" }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Cannot RSVP to a cancelled group event",
+    } satisfies Partial<TRPCError>);
+    expect(mock.insertCalls).toHaveLength(0);
+    expect(mock.deleteCalls).toHaveLength(0);
+  });
+
   it("stores a decline without selected activity plan handling", async () => {
-    const acceptedRsvp = buildGroupEventRsvpRow({ status: "declined" });
+    const storedRsvp = buildGroupEventRsvpRow();
     const mock = createDbMock({
       select: [
         [{ id: VIEWER_ID }],
         [{ event: buildGroupEventRow(), group: buildGroupRow() }],
         [{ role: "member", status: "active" }],
-        [acceptedRsvp],
+        [storedRsvp],
       ],
-      insertReturning: [[acceptedRsvp]],
+      insertReturning: [[storedRsvp]],
     });
     const caller = createCaller(mock.db);
 
@@ -631,6 +719,7 @@ describe("groups.events router", () => {
       profile_id: VIEWER_ID,
       status: "declined",
     });
+    expect(mock.conflictUpdateCalls[0]).toMatchObject({ set: { status: "declined" } });
   });
 
   it("denies private group event detail to non-members", async () => {
@@ -660,7 +749,13 @@ describe("groups.events router", () => {
       series_id: seriesId,
       occurrence_key: "2026-05-28",
     });
-    const seriesRsvp = { ...buildGroupEventRsvpRow(), group_event_series_id: seriesId };
+    const seriesRsvp = {
+      group_event_series_id: seriesId,
+      profile_id: VIEWER_ID,
+      status: "declined" as const,
+      created_at: NOW,
+      updated_at: NOW,
+    };
     const mock = createDbMock({
       select: [
         [{ id: VIEWER_ID }],
@@ -683,12 +778,12 @@ describe("groups.events router", () => {
       route_id: "99999999-9999-4999-8999-999999999999",
       is_recurring_occurrence: true,
       activity_plan_id: ACTIVITY_PLAN_ID,
-      viewerSeriesRsvp: null,
+      viewerSeriesRsvp: { status: "declined" },
     });
   });
 
   it("stores declined event RSVPs without selected activity plan handling", async () => {
-    const declinedRsvp = buildGroupEventRsvpRow({ status: "declined" });
+    const declinedRsvp = buildGroupEventRsvpRow();
     const mock = createDbMock({
       select: [
         [{ id: VIEWER_ID }],
@@ -750,6 +845,66 @@ describe("groups.events router", () => {
     expect(result.event?.viewerSeriesRsvp).toBeNull();
     expect(mock.deleteCalls[0]).toMatchObject({ table: groupEventSeriesRsvps });
     expect(mock.insertCalls).toHaveLength(0);
+  });
+
+  it("stores and returns a series decline response", async () => {
+    const series = buildGroupEventRow({ recurrence_rule: "FREQ=WEEKLY;COUNT=3" });
+    const storedRsvp = {
+      group_event_series_id: EVENT_ID,
+      profile_id: VIEWER_ID,
+      status: "declined" as const,
+      created_at: NOW,
+      updated_at: NOW,
+    };
+    const mock = createDbMock({
+      select: [
+        [{ id: VIEWER_ID }],
+        [{ event: series, group: buildGroupRow() }],
+        [{ role: "member", status: "active" }],
+        [],
+        [storedRsvp],
+        [{ group_id: GROUP_ID, profile_id: VIEWER_ID }],
+        [],
+        [storedRsvp],
+      ],
+      insertReturning: [[storedRsvp]],
+    });
+    const caller = createCaller(mock.db);
+
+    const result = await caller.events.rsvpEventSeries({
+      groupEventSeriesId: EVENT_ID,
+      status: "declined",
+    });
+
+    expect(result.rsvp).toMatchObject({
+      group_event_series_id: EVENT_ID,
+      profile_id: VIEWER_ID,
+      status: "declined",
+    });
+    expect(mock.insertCalls[0]).toMatchObject({ table: groupEventSeriesRsvps });
+    expect(mock.insertCalls[0]?.values).toMatchObject({ status: "declined" });
+    expect(mock.conflictUpdateCalls[0]).toMatchObject({ set: { status: "declined" } });
+  });
+
+  it("stores going as an occurrence override instead of deleting the response", async () => {
+    const goingRsvp = buildGroupEventRsvpRow({ status: "going" });
+    const mock = createDbMock({
+      select: [
+        [{ id: VIEWER_ID }],
+        [{ event: buildGroupEventRow(), group: buildGroupRow() }],
+        [{ role: "member", status: "active" }],
+        [goingRsvp],
+      ],
+      insertReturning: [[goingRsvp]],
+    });
+    const caller = createCaller(mock.db);
+
+    const result = await caller.events.rsvp({ groupEventId: EVENT_ID, status: "going" });
+
+    expect(result.rsvp).toMatchObject({ status: "going" });
+    expect(mock.insertCalls[0]?.values).toMatchObject({ status: "going" });
+    expect(mock.conflictUpdateCalls[0]).toMatchObject({ set: { status: "going" } });
+    expect(mock.deleteCalls).toHaveLength(0);
   });
 
   it("rejects series RSVP attempts against concrete occurrences", async () => {

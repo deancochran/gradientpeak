@@ -8,7 +8,6 @@ describe("onboarding schema composition", () => {
       completeOnboardingSchema.parse({
         full_name: "Athlete Example",
         username: "athlete",
-        baseline_field_sources: {},
       }),
     ).toMatchObject({
       full_name: "Athlete Example",
@@ -85,18 +84,18 @@ describe("onboarding schema composition", () => {
     );
   });
 
-  it("requires strict baseline field sources on current completion payloads", () => {
+  it("defaults strict baseline field sources for identity-only completion payloads", () => {
     expect(
-      completeOnboardingSchema.safeParse({
+      completeOnboardingSchema.parse({
         full_name: "Metadata Athlete",
-        username: "metadata-athlete",
-      }).success,
-    ).toBe(false);
+        username: "metadata_athlete",
+      }).baseline_field_sources,
+    ).toEqual({});
 
     expect(
       completeOnboardingSchema.parse({
         full_name: "Metadata Athlete",
-        username: "metadata-athlete",
+        username: "metadata_athlete",
         baseline_field_sources: {},
       }).baseline_field_sources,
     ).toEqual({});
@@ -104,7 +103,7 @@ describe("onboarding schema composition", () => {
     expect(
       completeOnboardingSchema.parse({
         full_name: "Metadata Athlete",
-        username: "metadata-athlete",
+        username: "metadata_athlete",
         baseline_field_sources: {
           dob: "cleared",
           gender: "imported",
@@ -124,14 +123,14 @@ describe("onboarding schema composition", () => {
     expect(
       completeOnboardingSchema.safeParse({
         full_name: "Metadata Athlete",
-        username: "metadata-athlete",
+        username: "metadata_athlete",
         baseline_field_sources: { ftp: "imported" },
       }).success,
     ).toBe(false);
     expect(
       completeOnboardingSchema.safeParse({
         full_name: "Metadata Athlete",
-        username: "metadata-athlete",
+        username: "metadata_athlete",
         baseline_field_sources: { vo2max: "manual" },
       }).success,
     ).toBe(false);
@@ -145,7 +144,7 @@ describe("onboarding schema composition", () => {
     expect(
       completeOnboardingSchema.safeParse({
         full_name: "Current Athlete",
-        username: "current-athlete",
+        username: "current_athlete",
         [field]: 200,
       }).success,
     ).toBe(false);
@@ -155,7 +154,7 @@ describe("onboarding schema composition", () => {
     expect(
       completeOnboardingSchema.safeParse({
         full_name: "Weighted Athlete",
-        username: "weighted-athlete",
+        username: "weighted_athlete",
         weight_kg,
         baseline_field_sources: {},
       }).success,
@@ -166,7 +165,7 @@ describe("onboarding schema composition", () => {
     expect(
       completeOnboardingSchema.safeParse({
         full_name: "Weighted Athlete",
-        username: "weighted-athlete",
+        username: "weighted_athlete",
         weight_kg,
         baseline_field_sources: {},
       }).success,

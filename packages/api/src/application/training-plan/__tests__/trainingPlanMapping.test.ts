@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   mapTrainingPlanContentIdentity,
   mapTrainingPlanOwnerIdentity,
+  mapTrainingPlanPlannedSchedulePreview,
   sanitizeTrainingPlanForViewer,
 } from "../trainingPlanMapping";
 
@@ -86,5 +87,35 @@ describe("training plan response mapping", () => {
     };
 
     expect(sanitizeTrainingPlanForViewer(plan, "owner-1")).toBe(plan);
+  });
+
+  it("adds only a schedule-level planned preview", () => {
+    const result = mapTrainingPlanPlannedSchedulePreview({
+      structure: {
+        version: 1,
+        durationWeeks: { recommended: 2 },
+        sessions: [
+          {
+            offset_days: 0,
+            activity_plan_id: "11111111-1111-4111-8111-111111111111",
+          },
+          {
+            offset_days: 8,
+            activity_plan_id: "22222222-2222-4222-8222-222222222222",
+          },
+        ],
+      },
+    });
+
+    expect(result.plannedSchedulePreview).toEqual({
+      scope: "weekly_session_count",
+      weeks: [
+        { weekIndex: 0, plannedSessionCount: 1 },
+        { weekIndex: 1, plannedSessionCount: 1 },
+      ],
+    });
+    expect(JSON.stringify(result.plannedSchedulePreview)).not.toMatch(
+      /load|target|threshold|intensity|provenance|raw|stream/i,
+    );
   });
 });

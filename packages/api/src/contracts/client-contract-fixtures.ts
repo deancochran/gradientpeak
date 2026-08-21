@@ -1,10 +1,6 @@
 import type { z } from "zod";
 import type { activityIngestionSafeStatusDtoSchema } from "./activity-ingestion";
-import type {
-  athleteCurrentStateDtoSchema,
-  athleteLoadRangeDtoSchema,
-  athleteRecalculationRepairReceiptSchema,
-} from "./athlete-load-range";
+import type { athleteRecalculationRepairReceiptSchema } from "./athlete-load-range";
 import type {
   plannedSessionDtoSchema,
   plannedSessionMutationReceiptSchema,
@@ -22,7 +18,6 @@ import type {
 const PROFILE_ID = "00000000-0000-4000-8000-000000000001";
 const NOW = "2026-08-10T08:00:00.000Z";
 
-type AthleteCurrentStateFixture = z.input<typeof athleteCurrentStateDtoSchema>;
 type PlannedSessionFixture = z.input<typeof plannedSessionDtoSchema>;
 type TrainingEffectsRequestFixture = z.input<typeof trainingEffectsRequestSchema>;
 type TrainingEffectsPageFixture = z.input<typeof trainingEffectsPageDtoSchema>;
@@ -39,132 +34,6 @@ type CursorContinuationFixture<TRequest, TPage> = {
 function tuple<const T extends readonly unknown[]>(values: T): T {
   return values;
 }
-
-function athleteCurrentStateFixture(input: {
-  freshness: AthleteCurrentStateFixture["freshness"];
-  rebuildStatus: AthleteCurrentStateFixture["rebuildStatus"];
-  importStatus: AthleteCurrentStateFixture["importStatus"];
-  available: boolean;
-}): AthleteCurrentStateFixture {
-  const publishedRevision = input.available ? 7 : null;
-  return {
-    profileId: PROFILE_ID,
-    planningTimezone: "UTC",
-    currentPlanningDate: "2026-08-10",
-    freshness: input.freshness,
-    rebuildStatus: input.rebuildStatus,
-    importStatus: input.importStatus,
-    revisions: { source: input.available ? 8 : null, published: publishedRevision },
-    coverage: {
-      startAt: input.available ? "2026-08-01T08:00:00.000Z" : null,
-      endAt: input.available ? NOW : null,
-      lastActivityAt: input.available ? NOW : null,
-    },
-    computedAt: input.available ? NOW : null,
-    algorithmVersion: input.available ? "athlete-state-projection-v1" : null,
-    baseline: input.available
-      ? {
-          contractVersion: "athlete-state-projection-v1",
-          athleteId: PROFILE_ID,
-          stateRevision: 7,
-          asOf: NOW,
-          longTermLoad: 42,
-          recentLoad: 36,
-          loadBalance: 6,
-          evidenceConfidence: 0.9,
-          capabilities: [],
-          athleteAgeYears: null,
-        }
-      : null,
-  };
-}
-
-/** Every public current-state lifecycle value appears at least once. */
-export const ATHLETE_CURRENT_STATE_V1_FIXTURES = [
-  athleteCurrentStateFixture({
-    freshness: "fresh",
-    rebuildStatus: "fresh",
-    importStatus: "complete",
-    available: true,
-  }),
-  athleteCurrentStateFixture({
-    freshness: "stale",
-    rebuildStatus: "pending",
-    importStatus: "active",
-    available: true,
-  }),
-  athleteCurrentStateFixture({
-    freshness: "stale",
-    rebuildStatus: "rebuilding",
-    importStatus: "active",
-    available: true,
-  }),
-  athleteCurrentStateFixture({
-    freshness: "stale",
-    rebuildStatus: "failed",
-    importStatus: "failed",
-    available: true,
-  }),
-  athleteCurrentStateFixture({
-    freshness: "unavailable",
-    rebuildStatus: "unavailable",
-    importStatus: "complete",
-    available: false,
-  }),
-] satisfies AthleteCurrentStateFixture[];
-
-/** Freshness and daily coverage variants for athleteIntelligence.getLoadRange. */
-export const ATHLETE_LOAD_RANGE_V1_FIXTURES = tuple([
-  {
-    profileId: PROFILE_ID,
-    range: { startDate: "2026-08-09", endDate: "2026-08-10" },
-    publishedRevision: 7,
-    freshness: "fresh",
-    coverage: {
-      startAt: "2026-08-01T08:00:00.000Z",
-      endAt: NOW,
-      lastActivityAt: NOW,
-    },
-    days: [
-      {
-        planningDate: "2026-08-09",
-        commonLoad: 50,
-        fitness: 42,
-        fatigue: 38,
-        form: 4,
-        readiness: 72,
-        coverage: { status: "complete", contributingActivityCount: 1, omittedActivityCount: 0 },
-        calculationVersion: "daily-load-v1",
-      },
-      {
-        planningDate: "2026-08-10",
-        commonLoad: 25,
-        fitness: 43,
-        fatigue: 40,
-        form: 3,
-        readiness: null,
-        coverage: { status: "partial", contributingActivityCount: 1, omittedActivityCount: 1 },
-        calculationVersion: "daily-load-v1",
-      },
-    ],
-  },
-  {
-    profileId: PROFILE_ID,
-    range: { startDate: "2026-08-10", endDate: "2026-08-10" },
-    publishedRevision: 7,
-    freshness: "stale",
-    coverage: { startAt: null, endAt: null, lastActivityAt: null },
-    days: [],
-  },
-  {
-    profileId: PROFILE_ID,
-    range: { startDate: "2026-08-10", endDate: "2026-08-10" },
-    publishedRevision: 0,
-    freshness: "unavailable",
-    coverage: { startAt: null, endAt: null, lastActivityAt: null },
-    days: [],
-  },
-]) satisfies readonly z.input<typeof athleteLoadRangeDtoSchema>[];
 
 export const TRAINING_EFFECTS_CURSOR_CONTINUATION_V1_FIXTURE = {
   initialRequest: {
@@ -282,8 +151,6 @@ export const ATHLETE_RECALCULATION_REPAIR_RECEIPT_V1_FIXTURE = {
   status: "accepted",
   profileId: PROFILE_ID,
   cache_tags: [
-    "athleteIntelligence.getCurrentState",
-    "athleteIntelligence.getLoadRange",
     "athleteIntelligence.getThresholdEvidence",
     "athleteIntelligence.getTrainingEffects",
     "home.getDashboard",
@@ -531,8 +398,6 @@ export const PLANNED_SESSION_MUTATION_RECEIPT_V1_FIXTURES = tuple([
 
 /** Procedure-to-response fixtures used by clients during the v1 migration. */
 export const API_CLIENT_CONTRACT_V1_RESPONSE_FIXTURES = {
-  "athleteIntelligence.getCurrentState": ATHLETE_CURRENT_STATE_V1_FIXTURES,
-  "athleteIntelligence.getLoadRange": ATHLETE_LOAD_RANGE_V1_FIXTURES,
   "athleteIntelligence.getTrainingEffects": [
     TRAINING_EFFECTS_CURSOR_CONTINUATION_V1_FIXTURE.firstPage,
     TRAINING_EFFECTS_CURSOR_CONTINUATION_V1_FIXTURE.continuationPage,

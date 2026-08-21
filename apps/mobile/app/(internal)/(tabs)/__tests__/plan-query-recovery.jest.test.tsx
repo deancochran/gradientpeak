@@ -18,6 +18,12 @@ jest.mock("@/components/ErrorBoundary", () => ({
   ScreenErrorFallback: createHost("Fallback"),
 }));
 jest.mock("@/components/shared", () => ({ AppHeader: createHost("AppHeader") }));
+jest.mock("@/components/calendar/CalendarAgendaSheet", () => ({
+  CalendarAgendaSheet: createHost("CalendarAgendaSheet"),
+}));
+jest.mock("@/components/plan/ledger/PlanningLedgerSheet", () => ({
+  PlanningLedgerSheet: createHost("PlanningLedgerSheet"),
+}));
 jest.mock("@/components/plan/training-path/TrainingPathSection", () => ({
   TrainingPathSection: (props: Record<string, unknown>) =>
     React.createElement("View", { testID: "training-path", ...props }),
@@ -37,8 +43,6 @@ jest.mock("@/components/plan/training-path/usePlanTrainingPathData", () => ({
     selectedWeekGroupEvents: [],
     selectedWeekCompletedActivities: [],
     selectedWeekLoading: false,
-    extendTrainingPathWindowEnd: jest.fn(),
-    extendTrainingPathWindowStart: jest.fn(),
     handleWeekScrollStart: jest.fn(),
     handleSelectedDateChange: jest.fn(),
     handleSelectedWeekChange: jest.fn(),

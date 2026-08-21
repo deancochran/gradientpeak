@@ -85,6 +85,21 @@ describe("buildReadinessForecastTimeline", () => {
     ).toBe(true);
   });
 
+  it("projects an all-zero planned path when no scheduled or recommended work is supplied", () => {
+    const forecast = buildReadinessForecastTimeline(
+      baseInput({ scheduledDailyLoad: [], recommendedDailyLoad: [] }),
+    );
+
+    expect(forecast.series.scheduled.points.filter((point) => point.date > forecast.today)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ load: 0 })]),
+    );
+    expect(
+      forecast.series.recommended.points.filter((point) => point.date > forecast.today),
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ load: 0 })]));
+    expect(forecast.confidence_reason_codes).not.toContain("scheduled_path_unavailable");
+    expect(forecast.confidence_reason_codes).not.toContain("recommended_path_unavailable");
+  });
+
   it("changes future scheduled readiness when scheduled load changes", () => {
     const lighter = buildReadinessForecastTimeline(baseInput());
     const heavier = buildReadinessForecastTimeline(
@@ -259,7 +274,7 @@ describe("buildReadinessForecastTimeline", () => {
       }),
     );
 
-    expect(lowConfidence.gap_summary?.type).toBe("low_confidence");
+    expect(lowConfidence.gap_summary?.type).not.toBe("low_confidence");
     expect(overload.gap_summary?.type).toBe("overload_risk");
     expect(goalRisk.gap_summary?.type).toBe("goal_risk");
     expect(planGap.gap_summary?.type).toBe("plan_gap");

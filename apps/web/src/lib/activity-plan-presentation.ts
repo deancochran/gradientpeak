@@ -1,8 +1,8 @@
 import {
   activityPrescriptionQuantificationBundleSchema,
-  deriveActivityPlanPresentation,
+  getPlannedEstimate,
+  type SemanticMetric,
 } from "@repo/core";
-import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
 import { formatDuration } from "./activity-route-helpers";
 
 export function describeTrainingPlanSessions(structure: unknown) {
@@ -20,59 +20,50 @@ type ActivityPlanMetricSummaryInput = {
 
 export function getActivityPlanMetricSummary({
   prescriptionQuantification,
-  structure,
 }: ActivityPlanMetricSummaryInput) {
   const summary: string[] = [];
-  const presented = getActivityQuantificationPresentation(prescriptionQuantification);
-  summary.push(formatQuantificationMetric(presented.commonLoad));
-  summary.push(formatQuantificationMetric(presented.normalizedIntensity));
-
-  if (presented.nativeIntensity.status !== "unavailable") {
-    summary.push(
-      `${presented.nativeIntensity.label} ${presented.nativeIntensity.value} · ${presented.nativeIntensity.evidence}`,
-    );
-  } else if (presented.kind === "unavailable") {
-    const authoredTargets = [
-      ...new Set(
-        (deriveActivityPlanPresentation(structure)?.occurrences ?? []).flatMap((occurrence) =>
-          occurrence.intensityLabel ? [occurrence.intensityLabel] : [],
-        ),
-      ),
-    ];
-    if (authoredTargets.length > 0) {
-      summary.push(`Prescribed intensity ${authoredTargets.join(" · ")} · Prescribed`);
-    }
+  const parsed = activityPrescriptionQuantificationBundleSchema.safeParse(
+    prescriptionQuantification,
+  );
+  if (!parsed.success) return summary;
+  const estimate = getPlannedEstimate(parsed.data);
+  if (
+    estimate.durationSeconds.status === "known" ||
+    estimate.durationSeconds.status === "estimated"
+  ) {
+    summary.push(formatDuration(estimate.durationSeconds.value));
   }
-  appendPlanDimensions(summary, prescriptionQuantification);
+  if (
+    estimate.distanceMeters.status === "known" ||
+    estimate.distanceMeters.status === "estimated"
+  ) {
+    summary.push(`${(estimate.distanceMeters.value / 1_000).toFixed(1)} km`);
+  }
+  if (estimate.load.status === "estimated") {
+    summary.push(
+      `${estimate.load.basis === "plan_intent" ? "Plan-intent load" : "Personalized load"} ${Math.round(estimate.load.value * 10) / 10}`,
+    );
+  }
+  if (estimate.normalizedIntensity.status === "estimated") {
+    summary.push(`Calculated intensity ${estimate.normalizedIntensity.value.toFixed(2)}`);
+  }
   return summary;
 }
 
-function formatQuantificationMetric(metric: {
-  evidence: string;
-  label: string;
-  status: string;
-  value: string;
-}) {
-  const value = metric.status === "unavailable" ? "unavailable" : metric.value;
-  const evidence = metric.evidence === "Unavailable" ? "" : ` · ${metric.evidence}`;
-  return `${metric.label} ${value}${evidence}`;
-}
-
-function appendPlanDimensions(summary: string[], value: unknown) {
-  const parsed = activityPrescriptionQuantificationBundleSchema.safeParse(value);
-  if (!parsed.success) return;
-  const elapsed = parsed.data.summary.duration.elapsed;
-  const distance = parsed.data.summary.distance;
-  if (elapsed.status !== "unavailable" && isPositiveFinite(elapsed.value)) {
-    summary.push(formatDuration(elapsed.value));
-  }
-  if (distance.status !== "unavailable" && isPositiveFinite(distance.value)) {
-    summary.push(`${(distance.value / 1_000).toFixed(1)} km`);
-  }
-}
-
-function isPositiveFinite(value: number | null | undefined): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0;
+/** Card/detail summary formatting never substitutes missing or partial values with zero. */
+export function formatActivityPlanProjectionMetrics(metrics: readonly SemanticMetric[]): string[] {
+  return metrics.flatMap((metric) => {
+    if (metric.status === "unavailable") return [];
+    const value =
+      metric.unit === "seconds"
+        ? formatDuration(metric.value)
+        : metric.unit === "meters"
+          ? `${Math.round((metric.value / 1_000) * 10) / 10} km`
+          : metric.unit === "ratio"
+            ? metric.value.toFixed(2)
+            : String(Math.round(metric.value * 10) / 10);
+    return [`${metric.label} ${value}${metric.status === "partial" ? " known (partial)" : ""}`];
+  });
 }
 
 function collectTrainingPlanSessions(value: unknown): unknown[] {

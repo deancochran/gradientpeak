@@ -3,7 +3,6 @@ import { createTRPCRouter } from "../trpc";
 import {
   onboardingRouter,
   profileAccessRouter,
-  profileMetricsRouter,
   profileSettingsRouter,
   profilesRouter,
 } from "./account";
@@ -29,7 +28,6 @@ export const appRouter = createTRPCRouter({
   athleteIntelligence: athleteIntelligenceRouter,
 
   onboarding: onboardingRouter,
-  profileMetrics: profileMetricsRouter,
   profileAccess: profileAccessRouter,
   activities: activitiesRouter,
   activityPlans: activityPlansRouter,

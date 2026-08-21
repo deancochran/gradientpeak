@@ -61,6 +61,7 @@ export interface AthleteDerivedStateRepositoryPort {
     profileId: string;
     effect: ActivityTrainingEffect;
   }): Promise<ActivityTrainingEffectWriteResult>;
+  deleteActivityTrainingEffects(input: { profileId: string; activityId: string }): Promise<number>;
   listActivityTrainingEffects(input: {
     profileId: string;
     fromEffectiveAt: string;

@@ -368,6 +368,7 @@ async function canAccessActivityStreams(
   activityFileType: ActivityFileType | null;
   activityCategory: string;
   parentStartedAt: Date;
+  segmentsRevision: number;
   startOffsetMs: number;
   endOffsetMs: number;
   sourceSessionIndex: number | null;
@@ -382,6 +383,7 @@ async function canAccessActivityStreams(
       activityFileType: activityArtifacts.format,
       profile_id: activities.profile_id,
       parentStartedAt: activities.started_at,
+      segmentsRevision: activities.segments_revision,
       activityCategory: activitySegments.activity_category,
       startOffsetMs: activitySegments.start_offset_ms,
       endOffsetMs: activitySegments.end_offset_ms,
@@ -430,6 +432,7 @@ async function canAccessActivityStreams(
         : null,
       activityCategory: activity.activityCategory ?? "other",
       parentStartedAt: activity.parentStartedAt,
+      segmentsRevision: activity.segmentsRevision,
       startOffsetMs: activity.startOffsetMs,
       endOffsetMs: activity.endOffsetMs,
       sourceSessionIndex: activity.sourceSessionIndex,
@@ -990,35 +993,34 @@ export const activityFilesRouter = createTRPCRouter({
         }
 
         const activity_category = canonicalActivityCategorySchema.parse(access.activityCategory);
-        const activityStart = access.parentStartedAt;
         const store = createActivityAnalysisStore(db);
-        if (!store.getPerformanceTargetsAsOf) {
-          throw new Error("Canonical performance-model reader is unavailable");
-        }
-        const performanceTargets = await store.getPerformanceTargetsAsOf({
-          profileId: userId,
-          asOf: activityStart,
-          activityIdToExclude: activityId,
-        });
+        const performanceTargetSelections = store.getPerformanceTargetSelectionsForActivities
+          ? await store.getPerformanceTargetSelectionsForActivities({
+              profileId: userId,
+              activities: [{ activityId, segmentsRevision: access.segmentsRevision }],
+            })
+          : undefined;
+        const performanceTargetSelection = performanceTargetSelections?.get(activityId);
+        const performanceTargets = performanceTargetSelection?.performanceTargets;
         const activityCategoryHeartRate =
           activity_category === "bike" ||
           activity_category === "run" ||
           activity_category === "swim"
-            ? performanceTargets.heartRate[activity_category]
+            ? (performanceTargets?.heartRate[activity_category] ?? null)
             : null;
         const activityCategoryLthr =
           activityCategoryHeartRate?.lthr.status === "available"
             ? activityCategoryHeartRate.lthr.valueBpm
             : null;
-        const bikeThreshold = performanceTargets.thresholds.bike;
-        const runThreshold = performanceTargets.thresholds.run;
-        const swimThreshold = performanceTargets.thresholds.swim;
+        const bikeThreshold = performanceTargets?.thresholds.bike;
+        const runThreshold = performanceTargets?.thresholds.run;
+        const swimThreshold = performanceTargets?.thresholds.swim;
         const planningThresholdPower =
-          bikeThreshold.status === "available" ? bikeThreshold.value : null;
+          bikeThreshold?.status === "available" ? bikeThreshold.value : null;
         const runThresholdSpeedMps =
-          runThreshold.status === "available" ? runThreshold.value : null;
+          runThreshold?.status === "available" ? runThreshold.value : null;
         const swimThresholdSpeedMps =
-          swimThreshold.status === "available" ? swimThreshold.value : null;
+          swimThreshold?.status === "available" ? swimThreshold.value : null;
         const analysis = analyzeActivityStreams({
           records: scopedRecords,
           activity_category,
@@ -1036,9 +1038,9 @@ export const activityFilesRouter = createTRPCRouter({
                     ? null
                     : toStreamHeartRateIdentity(activityCategoryHeartRate.lthr),
               },
-              ftpWatts: toStreamTargetIdentity(bikeThreshold),
-              runThresholdSpeedMps: toStreamTargetIdentity(runThreshold),
-              swimThresholdSpeedMps: toStreamTargetIdentity(swimThreshold),
+              ftpWatts: bikeThreshold ? toStreamTargetIdentity(bikeThreshold) : null,
+              runThresholdSpeedMps: runThreshold ? toStreamTargetIdentity(runThreshold) : null,
+              swimThresholdSpeedMps: swimThreshold ? toStreamTargetIdentity(swimThreshold) : null,
             },
           },
         });

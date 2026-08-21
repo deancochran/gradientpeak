@@ -58,6 +58,35 @@ describe("trainingPathUtils", () => {
     });
   });
 
+  it("keeps a finite partial scheduled weekly Load visible as incomplete", () => {
+    const model = buildTrainingPathViewModel({
+      timeline: [
+        {
+          date: "2026-05-18",
+          scheduled_common_load: 40,
+          scheduled_common_load_status: "partial",
+        },
+        {
+          date: "2026-05-19",
+          scheduled_common_load: null,
+          scheduled_common_load_status: "unavailable",
+        },
+      ],
+      goalMarkers: [],
+      range: "all",
+      todayKey: "2026-05-20",
+    });
+
+    expect(model.weeks.find((week) => week.weekStart === "2026-05-18")).toMatchObject({
+      plannedLoad: 40,
+      plannedLoadStatus: "partial",
+    });
+    expect(model.selectedWeekSummary).toMatchObject({
+      plannedLoad: 40,
+      plannedLoadStatus: "partial",
+    });
+  });
+
   it("discards malformed and impossible source date keys", () => {
     const model = buildTrainingPathViewModel({
       timeline: [
@@ -365,6 +394,16 @@ describe("trainingPathUtils", () => {
           version: "2" as const,
         },
       },
+      expectedWeek: {
+        completedLoad: null,
+        completedLoadStatus: "unavailable",
+        completedLoadUnavailable: true,
+      },
+      expectedSummary: {
+        completedLoad: null,
+        loadDelta: null,
+        body: "Completed Common Load is unavailable for this week.",
+      },
     },
     {
       label: "an unavailable completed activity",
@@ -374,8 +413,21 @@ describe("trainingPathUtils", () => {
         completed_common_load_identity: null,
         has_unavailable_completed_activity: true,
       },
+      expectedWeek: {
+        completedLoad: 50,
+        completedLoadStatus: "partial",
+        completedLoadUnavailable: false,
+      },
+      expectedSummary: {
+        completedLoad: 50,
+        body: "Completed Common Load is partial for this week.",
+      },
     },
-  ])("keeps weekly completed load null for $label", ({ secondPoint }) => {
+  ])("keeps weekly completed load truthful for $label", ({
+    expectedSummary,
+    expectedWeek,
+    secondPoint,
+  }) => {
     const model = buildTrainingPathViewModel({
       timeline: [
         {
@@ -391,15 +443,8 @@ describe("trainingPathUtils", () => {
       todayKey: "2026-05-20",
     });
 
-    expect(model.weeks.find((week) => week.weekStart === "2026-05-18")).toMatchObject({
-      completedLoad: null,
-      completedLoadUnavailable: true,
-    });
-    expect(model.selectedWeekSummary).toMatchObject({
-      completedLoad: null,
-      loadDelta: null,
-      body: "Completed Common Load is unavailable for this week.",
-    });
+    expect(model.weeks.find((week) => week.weekStart === "2026-05-18")).toMatchObject(expectedWeek);
+    expect(model.selectedWeekSummary).toMatchObject(expectedSummary);
   });
 
   it("places goal markers on their target week", () => {

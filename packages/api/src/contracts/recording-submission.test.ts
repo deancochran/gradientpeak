@@ -67,6 +67,39 @@ describe("recording submission contract", () => {
     expect(parsed).not.toHaveProperty("stagingPath");
   });
 
+  it("accepts bounded manual laps only with honest partial timer timing", () => {
+    const parsed = recordingSummarySubmissionInputSchema.parse({
+      ...baseSubmission,
+      uploadedArtifact: { ingestionId: "33333333-3333-4333-8333-333333333333" },
+      sessionTiming: {
+        source: "manual_timer",
+        coverage: "partial",
+        elapsedMs: 3_600_000,
+        activeMs: 3_000_000,
+      },
+      laps: [{ lapNumber: 1, durationSeconds: 600, timingSource: "manual_timer" }],
+    });
+    expect(parsed.sessionTiming).toEqual({
+      source: "manual_timer",
+      coverage: "partial",
+      elapsedMs: 3_600_000,
+      activeMs: 3_000_000,
+    });
+    expect(parsed.laps).toHaveLength(1);
+    expect(
+      recordingSummarySubmissionInputSchema.safeParse({
+        ...baseSubmission,
+        uploadedArtifact: { ingestionId: "33333333-3333-4333-8333-333333333333" },
+        sessionTiming: {
+          source: "manual_timer",
+          coverage: "partial",
+          elapsedMs: 1_000,
+          activeMs: 2_000,
+        },
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects missing, ambiguous, and client-path artifact sources", () => {
     expect(recordingSummarySubmissionInputSchema.safeParse(baseSubmission).success).toBe(false);
     expect(

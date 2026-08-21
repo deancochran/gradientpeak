@@ -151,6 +151,29 @@ describe("AthleteReadModel", () => {
     expect(result.currentBaseline?.planningContext?.efforts).toEqual([]);
   });
 
+  it("uses the performance-target cutoff when building a current planning context", async () => {
+    const targetAsOf = "2026-08-01T14:00:00.000Z";
+    const published = snapshot();
+    published.performanceTargets = createUnavailableAthletePerformanceTargetFacts(
+      targetAsOf,
+      profileId,
+    );
+    vi.mocked(readPublishedAthleteStateSnapshot).mockResolvedValue(published);
+
+    const result = await readAthleteReadModel({
+      db: {} as never,
+      profileId,
+      now: new Date(targetAsOf),
+      sections: { currentBaseline: { includePlanningContext: true } },
+    });
+
+    expect(result.currentBaseline?.planningContext?.evidence.asOf).toBe(targetAsOf);
+    expect(readAthleteReadModelContextSources).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ profileId, asOf: new Date(targetAsOf) }),
+    );
+  });
+
   it("rejects unbounded timelines and analytics ranges", () => {
     const startAt = "2025-01-01T00:00:00.000Z";
     const endAt = "2026-08-01T00:00:00.000Z";

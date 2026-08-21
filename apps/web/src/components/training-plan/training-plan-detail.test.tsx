@@ -13,7 +13,29 @@ const mocks = vi.hoisted(() => ({
     name: "Base plan",
     description: null,
     structure_hash: "hash",
-    structure: { version: 1, sessions: [] },
+    structure: {
+      version: 1,
+      activity_category: ["bike"],
+      durationWeeks: { recommended: 2 },
+      goal_blueprints: [
+        {
+          title: "Goal day",
+          priority: 10,
+          activity_category: "bike",
+          target_offset_days: 8,
+        },
+      ],
+      sessions: [
+        {
+          offset_days: 0,
+          activity_plan_id: "11111111-1111-4111-8111-111111111111",
+        },
+        {
+          offset_days: 8,
+          activity_plan_id: "22222222-2222-4222-8222-222222222222",
+        },
+      ],
+    },
     is_system_template: false,
     content_visibility: "private",
     editor: {
@@ -65,6 +87,15 @@ describe("TrainingPlanDetail", () => {
     );
     expect(screen.getByText("Projection status")).toBeTruthy();
     expect(screen.getByText("current")).toBeTruthy();
+    expect(screen.getByText("Plan schedule")).toBeTruthy();
+    expect(
+      screen.getByRole("img", {
+        name: /empty weeks have a baseline only.*not athlete-specific training load/,
+      }),
+    ).toBeTruthy();
+    expect(screen.getByTestId("training-plan-visual-week-1")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-visual-goal-1")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-visual-bar-0")).toBeTruthy();
   });
 
   it("removes the active schedule with the displayed plan and active batch IDs", async () => {

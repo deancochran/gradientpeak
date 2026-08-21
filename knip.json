@@ -12,21 +12,11 @@
     "apps/mobile": {
       "ignoreDependencies": [
         "@react-native-community/netinfo",
-        "@react-navigation/.+",
-        "@rn-primitives/.+",
-        "@supabase/supabase-js",
         "buffer",
-        "class-variance-authority",
         "expo-blur",
         "expo-font",
         "expo-image",
-        "expo-symbols",
         "expo-updates",
-        "lucide-react",
-        "react-native-calendars",
-        "react-native-url-polyfill",
-        "superjson",
-        "tailwindcss-animate",
         "dotenv-cli",
         "eas-build-cache-provider"
       ],
@@ -43,16 +33,7 @@
       }
     },
     "apps/web": {
-      "ignoreDependencies": [
-        "@opentelemetry/core",
-        "@tanstack/react-router-ssr-query",
-        "@tanstack/router-plugin",
-        "tailwindcss",
-        "@tailwindcss/typography"
-      ]
-    },
-    "packages/ui": {
-      "ignoreDependencies": ["@radix-ui/.+"]
+      "ignoreDependencies": ["@tanstack/router-plugin", "tailwindcss"]
     }
   }
 }

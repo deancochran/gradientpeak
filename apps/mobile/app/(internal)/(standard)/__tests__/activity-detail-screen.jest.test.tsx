@@ -781,7 +781,7 @@ describe("activity detail screen", () => {
     expect(screen.getByTestId("activity-detail-loading")).toBeTruthy();
   });
 
-  it("keeps social controls below metrics and the route in Overview", () => {
+  it("uses the canonical card actions in the activity header and keeps the route in Overview", () => {
     const rendered = renderNative(<ActivityDetailScreen />);
     const unsafeRendered = rendered as unknown as UnsafeTypeQuery;
     const activityHeader = screen.getByTestId("activity-detail-header");
@@ -790,14 +790,14 @@ describe("activity detail screen", () => {
     const likeButton = screen.getByTestId(
       "activity-card-like-button-11111111-1111-4111-8111-111111111111",
     );
-    const commentButton = screen.getByTestId("activity-detail-comment-button");
+    const commentButton = screen.getByTestId(
+      "activity-card-comment-button-11111111-1111-4111-8111-111111111111",
+    );
 
     expect(screen.getByTestId("activity-detail-options-delete")).toBeTruthy();
     expect(screen.getByText("runner")).toBeTruthy();
     expect(screen.getByText("Run")).toBeTruthy();
-    expect(screen.getByText("Morning Threshold").props.className).toBe(
-      "text-base font-semibold text-foreground",
-    );
+    expect(screen.queryByText("Morning Threshold")).toBeNull();
     expect(screen.getByText("Steady through the middle block.")).toBeTruthy();
     expect(
       activityHeader.children.map((child) =>
@@ -806,29 +806,30 @@ describe("activity detail screen", () => {
     ).toEqual(["activity-detail-summary"]);
     expect(screen.queryByTestId("activity-detail-action-row")).toBeNull();
     expect(
-      summaryActionRegion.findAllByProps({ testID: "activity-detail-share-button" }).length,
+      summaryActionRegion.findAllByProps({
+        testID: "activity-card-share-button-11111111-1111-4111-8111-111111111111",
+      }).length,
     ).toBeGreaterThan(0);
-    expect(summary.findAllByProps({ testID: "activity-detail-share-button" })).toHaveLength(0);
+    expect(
+      summary.findAllByProps({
+        testID: "activity-card-share-button-11111111-1111-4111-8111-111111111111",
+      }),
+    ).toHaveLength(0);
     expect(summary.findAllByProps({ testID: "activity-card-metrics" }).length).toBeGreaterThan(0);
-    const belowMetricsActions = summary.findAllByProps({
-      testID: "activity-card-below-metrics-actions",
-    })[0];
-    expect(belowMetricsActions).toBeTruthy();
     expect(
-      summary.findAllByProps({ testID: "activity-detail-social-actions" }).length,
-    ).toBeGreaterThan(0);
-    expect(
-      belowMetricsActions?.findAllByProps({ testID: "activity-detail-social-actions" }).length,
+      summary.findAllByProps({ testID: "activity-card-social-actions" }).length,
     ).toBeGreaterThan(0);
     expect(summary.findAll((node) => String(node.type) === "StaticRouteMapPreview")).toHaveLength(
       0,
     );
     expect(
-      screen
-        .getByTestId("activity-detail-navigation-header")
-        .findAllByProps({ testID: "activity-detail-share-button" }),
+      screen.getByTestId("activity-detail-navigation-header").findAllByProps({
+        testID: "activity-card-share-button-11111111-1111-4111-8111-111111111111",
+      }),
     ).toHaveLength(0);
-    const shareButton = screen.getByTestId("activity-detail-share-button");
+    const shareButton = screen.getByTestId(
+      "activity-card-share-button-11111111-1111-4111-8111-111111111111",
+    );
     expect(shareButton.props).toMatchObject({
       accessibilityLabel: "Share activity",
       accessibilityRole: "button",
@@ -998,7 +999,9 @@ describe("activity detail screen", () => {
     renderNative(<ActivityDetailScreen />);
 
     expect(screen.queryByTestId("activity-detail-comments-section")).toBeNull();
-    fireEvent.press(screen.getByTestId("activity-detail-comment-button"));
+    fireEvent.press(
+      screen.getByTestId("activity-card-comment-button-11111111-1111-4111-8111-111111111111"),
+    );
 
     expect(screen.getByTestId("activity-detail-comments-sheet")).toBeTruthy();
     expect(screen.getByTestId("activity-detail-comments-sheet").props).toMatchObject({
@@ -1013,7 +1016,9 @@ describe("activity detail screen", () => {
   it("keeps Share top-right and preserves its public-visibility guard", () => {
     renderNative(<ActivityDetailScreen />);
 
-    fireEvent.press(screen.getByTestId("activity-detail-share-button"));
+    fireEvent.press(
+      screen.getByTestId("activity-card-share-button-11111111-1111-4111-8111-111111111111"),
+    );
 
     expect(ReactNative.Alert.alert).toHaveBeenCalledWith(
       "Not public",
@@ -1028,7 +1033,9 @@ describe("activity detail screen", () => {
     ).content_visibility = "public";
     renderNative(<ActivityDetailScreen />);
 
-    fireEvent.press(screen.getByTestId("activity-detail-share-button"));
+    fireEvent.press(
+      screen.getByTestId("activity-card-share-button-11111111-1111-4111-8111-111111111111"),
+    );
 
     expect(shareMock).toHaveBeenCalledWith({
       message: expect.stringContaining("/share/activities/11111111-1111-4111-8111-111111111111"),
@@ -1071,7 +1078,9 @@ describe("activity detail screen", () => {
     renderNative(<ActivityDetailScreen />);
 
     expect(screen.queryByTestId("activity-detail-options-trigger")).toBeNull();
-    expect(screen.getByTestId("activity-detail-share-button")).toBeTruthy();
+    expect(
+      screen.getByTestId("activity-card-share-button-11111111-1111-4111-8111-111111111111"),
+    ).toBeTruthy();
   });
 
   it("uses a confirm modal before deleting an activity", () => {

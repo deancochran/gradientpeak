@@ -2,7 +2,6 @@
   "name": "gradientpeak",
   "devDependencies": {
     "@biomejs/biome": "2.4.8",
-    "concurrently": "^9.2.4",
     "kill-port": "^2.0.1",
     "knip": "^6.29.0",
     "lefthook": "^2.1.10",
@@ -39,7 +38,6 @@
     "watch": "turbo run watch",
     "knip": "POSTGRES_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres knip --dependencies && pnpm knip:api",
     "knip:api": "POSTGRES_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres knip --workspace packages/api --include files,dependencies --no-progress",
-    "knip:full": "POSTGRES_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres knip",
     "lint": "biome lint apps packages tooling tests docs .github README.md CONTRIBUTING.md package.json pnpm-workspace.yaml turbo.json biome.json vitest.parity.config.ts",
     "lint:fix": "biome lint --write apps packages tooling tests docs .github README.md CONTRIBUTING.md package.json pnpm-workspace.yaml turbo.json biome.json vitest.parity.config.ts",
     "format": "biome format --write apps packages tooling tests docs .github README.md CONTRIBUTING.md package.json pnpm-workspace.yaml turbo.json biome.json vitest.parity.config.ts",
@@ -68,7 +66,6 @@
     "verify:static": "pnpm check && pnpm check-types",
     "verify:db": "pnpm --filter @repo/db db:verify",
     "verify": "pnpm verify:static && pnpm test",
-    "verify:full": "pnpm verify && pnpm knip",
     "quality:agent": "pnpm check:generated && pnpm check && pnpm check-types && pnpm test && pnpm knip",
     "quality:agent:db": "pnpm quality:agent && pnpm verify:db",
     "qa:plan": "node tooling/qa/cli.mjs --plan",

@@ -23,6 +23,8 @@ let mockNewUserNoActivities = false;
 const readinessChartPropsMock = jest.fn();
 const projectionChartPropsMock = jest.fn();
 const mockTrainingPathSectionProps = jest.fn();
+const planningLedgerSheetPropsMock = jest.fn();
+const calendarAgendaSheetPropsMock = jest.fn();
 const defaultMockGoals = [
   {
     id: "goal-1",
@@ -101,6 +103,30 @@ jest.mock("expo-router", () => ({
   useRouter: () => ({ push: pushMock, navigate: navigateMock }),
 }));
 
+jest.mock("@/components/plan/ledger/PlanningLedgerSheet", () => ({
+  __esModule: true,
+  PlanningLedgerSheet: (props: { selection: { anchorDate: string; period: string } | null }) => {
+    planningLedgerSheetPropsMock(props);
+    return props.selection
+      ? React.createElement("PlanningLedgerSheet", {
+          selection: props.selection,
+          testID: "planning-ledger-sheet",
+        })
+      : null;
+  },
+}));
+
+jest.mock("@/components/calendar/CalendarAgendaSheet", () => ({
+  __esModule: true,
+  CalendarAgendaSheet: (props: { dateKey: string; visible: boolean }) => {
+    calendarAgendaSheetPropsMock(props);
+    return React.createElement("CalendarAgendaSheet", {
+      ...props,
+      testID: "calendar-agenda-sheet",
+    });
+  },
+}));
+
 jest.mock("@react-navigation/native", () => ({
   __esModule: true,
   ...jest.requireActual("@react-navigation/native"),
@@ -172,6 +198,15 @@ jest.mock("@/components/plan/training-path/TrainingPathSection", () => ({
           testID: "training-path-view-details",
         },
         React.createElement("Text", null, "View details"),
+      ),
+      React.createElement(
+        "TouchableOpacity",
+        {
+          key: "day-details",
+          onPress: () => props.onViewDetails({ anchorDate: "2026-04-15", period: "day" }),
+          testID: "training-path-view-day-details",
+        },
+        React.createElement("Text", null, "View day details"),
       ),
       React.createElement(
         "TouchableOpacity",
@@ -909,6 +944,8 @@ describe("plan dashboard navigation", () => {
     readinessChartPropsMock.mockClear();
     projectionChartPropsMock.mockClear();
     mockTrainingPathSectionProps.mockClear();
+    planningLedgerSheetPropsMock.mockClear();
+    calendarAgendaSheetPropsMock.mockClear();
     mockDetailDateRange = "90d";
     mockNewUserNoActivities = false;
     mockGoals = defaultMockGoals;
@@ -935,23 +972,34 @@ describe("plan dashboard navigation", () => {
     expect(screen.getByText("Weekly Training Path")).toBeTruthy();
     expect(mockTrainingPathSectionProps).toHaveBeenCalledWith(
       expect.objectContaining({
-        chartHeight: expect.any(Number),
+        chartRange: "daily",
         onViewDetails: expect.any(Function),
         onSelectedWeekChange: expect.any(Function),
       }),
     );
   });
 
-  it("opens the read-only ledger for the chart selection only from View details", () => {
+  it("opens point-in-time planning details over the Plan tab", () => {
     renderNative(<PlanScreenWithErrorBoundary />);
 
     expect(navigateMock).not.toHaveBeenCalled();
     fireEvent.press(screen.getByTestId("training-path-view-details"));
 
-    expect(navigateMock).toHaveBeenCalledWith({
-      pathname: "/planning-ledger",
-      params: { anchorDate: "2026-04-13", period: "week" },
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("planning-ledger-sheet").props.selection).toEqual({
+      anchorDate: "2026-04-13",
+      period: "week",
     });
+  });
+
+  it("uses the calendar day sheet for a daily Plan selection", () => {
+    renderNative(<PlanScreenWithErrorBoundary />);
+
+    fireEvent.press(screen.getByTestId("training-path-view-day-details"));
+
+    expect(screen.getByTestId("calendar-agenda-sheet").props.dateKey).toBe("2026-04-15");
+    expect(screen.queryByTestId("planning-ledger-sheet")).toBeNull();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it("keeps removed legacy plan-tab panels out of the current training path flow", () => {

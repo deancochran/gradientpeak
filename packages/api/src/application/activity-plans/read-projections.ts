@@ -2,16 +2,18 @@ import {
   type ActivityPlanDetail,
   type ActivityPlanSummary,
   activityPlanDetailSchema,
+  activityPlanPrescriptionQuantificationBundleSchema,
   activityPlanStructureSchema,
   activityPlanSummarySchema,
-  compileValidatedActivityPlan,
   createSemanticMetric,
-  getNormalizedIntensity,
+  createUnavailableAthletePerformanceTargetFacts,
+  estimateActivityPlanForTrainingContext,
+  getPlannedEstimate,
+  type PlannedEstimate,
   type ScheduledActivityPlanSummary,
   type SemanticMetric,
   scheduledActivityPlanSummarySchema,
 } from "@repo/core";
-import { commonLoadAggregateSchema, commonLoadResultSchema } from "@repo/core/load";
 import { z } from "zod";
 
 const planProjectionSourceSchema = z.looseObject({
@@ -42,88 +44,135 @@ const planProjectionSourceSchema = z.looseObject({
 });
 type PlanProjectionSource = z.infer<typeof planProjectionSourceSchema>;
 
+export function canDuplicateFullActivityPlan(
+  plan: Pick<PlanProjectionSource, "profile_id" | "is_system_template">,
+  viewerId: string,
+) {
+  return plan.profile_id === viewerId || plan.is_system_template;
+}
+
 function planMetrics(
   plan: PlanProjectionSource,
   structure: ReturnType<typeof activityPlanStructureSchema.parse>,
-) {
-  const compiled = compileValidatedActivityPlan(structure);
-  const distanceMeters = compiled.occurrences.reduce(
-    (total, occurrence) =>
-      total + (occurrence.duration.type === "distance" ? occurrence.duration.meters : 0),
-    0,
+  includePersonalizedQuantification: boolean,
+): SemanticMetric[] {
+  // Non-owner projections are recalculated from authored structure with an
+  // intentionally empty, synthetic athlete context. The incoming bundle is
+  // never inspected, so private thresholds and calibration evidence cannot
+  // influence or cross this boundary.
+  const quantification = activityPlanPrescriptionQuantificationBundleSchema.safeParse(
+    includePersonalizedQuantification ? plan.prescriptionQuantification : null,
   );
-  const repetitions = compiled.occurrences.reduce(
-    (total, occurrence) =>
-      total + (occurrence.duration.type === "repetitions" ? occurrence.duration.count : 0),
-    0,
-  );
-  const metrics: SemanticMetric[] = [];
-  if (compiled.explicitTimedDurationSeconds > 0) {
-    metrics.push({
-      key: "elapsed_duration",
-      label: "Duration",
-      status: "available",
-      value: compiled.explicitTimedDurationSeconds,
-      unit: "seconds",
-      reason: null,
-    });
-  }
-  if (distanceMeters > 0) {
-    metrics.push({
-      key: "distance",
-      label: "Distance",
-      status: "available",
-      value: distanceMeters,
-      unit: "meters",
-      reason: null,
-    });
-  }
-  if (repetitions > 0) {
-    metrics.push({
-      key: "repetitions",
-      label: "Repetitions",
-      status: "available",
-      value: repetitions,
-      unit: "count",
-      reason: null,
-    });
-  }
-  const quantification = z
-    .looseObject({ summary: z.looseObject({ commonLoad: z.unknown() }) })
-    .safeParse(plan.prescriptionQuantification);
-  const commonLoad = z
-    .union([commonLoadResultSchema, commonLoadAggregateSchema])
-    .safeParse(quantification.success ? quantification.data.summary.commonLoad : undefined);
-  if (
-    commonLoad.success &&
-    commonLoad.data.status !== "unavailable" &&
-    typeof commonLoad.data.load === "number"
-  ) {
-    const partial = commonLoad.data.status === "partial";
-    metrics.push(
-      createSemanticMetric({
-        key: "common_load",
-        label: "Load",
-        status: partial ? "partial" : "available",
-        value: commonLoad.data.load,
-        unit: "score",
-        reason: partial ? "quantification_partial" : null,
-      }),
-    );
-    const intensity = getNormalizedIntensity(commonLoad.data);
-    if (intensity !== null)
-      metrics.push(
-        createSemanticMetric({
-          key: "normalized_intensity",
-          label: "Intensity",
-          status: partial ? "partial" : "available",
-          value: intensity,
-          unit: "ratio",
-          reason: partial ? "quantification_partial" : null,
-        }),
+  const estimate = quantification.success
+    ? getPlannedEstimate(quantification.data)
+    : getPlannedEstimate(
+        estimateActivityPlanForTrainingContext({
+          asOf: new Date(plan.updated_at).toISOString(),
+          planId: plan.id,
+          performanceTargets: createUnavailableAthletePerformanceTargetFacts(
+            new Date(plan.updated_at).toISOString(),
+            `authored-plan-projection:${plan.id}`,
+          ),
+          stage: "plan",
+          structure,
+        }).prescriptionQuantification,
       );
-  }
-  return metrics;
+
+  const metric = (
+    key: SemanticMetric["key"],
+    label: string,
+    unit: string,
+    quantity:
+      | PlannedEstimate["distanceMeters"]
+      | PlannedEstimate["durationSeconds"]
+      | PlannedEstimate["load"],
+    provenance: SemanticMetric["provenance"],
+  ): SemanticMetric =>
+    quantity.status === "unavailable" || quantity.value === null
+      ? createSemanticMetric({
+          key,
+          label,
+          status: "unavailable",
+          value: null,
+          unit,
+          reason: quantity.reason,
+          provenance: null,
+        })
+      : createSemanticMetric({
+          key,
+          label,
+          status: quantity.status === "partial" ? "partial" : "available",
+          value: quantity.value,
+          unit,
+          reason: quantity.status === "partial" ? quantity.reason : null,
+          provenance,
+        });
+  const authoredProvenance = (
+    quantity: PlannedEstimate["distanceMeters"] | PlannedEstimate["durationSeconds"],
+  ): SemanticMetric["provenance"] =>
+    quantity.status === "unavailable"
+      ? null
+      : quantity.status === "estimated"
+        ? "estimated"
+        : "authored";
+  const calculatedProvenance = (quantity: PlannedEstimate["load"]): SemanticMetric["provenance"] =>
+    quantity.status === "unavailable" || quantity.basis === null
+      ? null
+      : quantity.basis === "plan_intent"
+        ? "plan_intent"
+        : "personalized";
+
+  return [
+    metric(
+      "distance",
+      "Distance",
+      "meters",
+      estimate.distanceMeters,
+      authoredProvenance(estimate.distanceMeters),
+    ),
+    metric(
+      "elapsed_duration",
+      "Duration",
+      "seconds",
+      estimate.durationSeconds,
+      authoredProvenance(estimate.durationSeconds),
+    ),
+    metric("common_load", "Load", "score", estimate.load, calculatedProvenance(estimate.load)),
+    metric(
+      "normalized_intensity",
+      "Intensity",
+      "ratio",
+      estimate.normalizedIntensity,
+      calculatedProvenance(estimate.normalizedIntensity),
+    ),
+  ];
+}
+
+export function createActivityPlanProjectionMetrics(input: {
+  id: string;
+  structure: unknown;
+  updatedAt: Date | string;
+}): SemanticMetric[] {
+  const structure = activityPlanStructureSchema.parse(input.structure);
+  return planMetrics(
+    planProjectionSourceSchema.parse({
+      id: input.id,
+      profile_id: null,
+      name: "Authored plan projection",
+      description: null,
+      structure,
+      structure_hash: "public-projection",
+      revision: 1,
+      gps_recording_enabled: false,
+      content_visibility: "public",
+      is_system_template: false,
+      created_at: input.updatedAt,
+      updated_at: input.updatedAt,
+      prescriptionQuantification: null,
+    }),
+    structure,
+    false,
+  );
 }
 
 function projectionOwner(plan: PlanProjectionSource) {
@@ -151,8 +200,12 @@ function summaryValue(plan: PlanProjectionSource, viewerId: string) {
     activityCategory: structure.activity_category,
     activityPlanRevision: plan.revision,
     structure,
-    prescriptionQuantification: plan.prescriptionQuantification ?? null,
-    metrics: planMetrics(plan, structure),
+    ...(isOwner
+      ? {
+          prescriptionQuantification: plan.prescriptionQuantification ?? null,
+        }
+      : {}),
+    metrics: planMetrics(plan, structure, isOwner),
     visibility: plan.content_visibility,
     isSystemTemplate: plan.is_system_template,
     engagement: { likes: plan.likes_count ?? 0, viewerHasLiked: plan.has_liked ?? false },
@@ -160,9 +213,9 @@ function summaryValue(plan: PlanProjectionSource, viewerId: string) {
       canLike: true,
       canEdit: isOwner,
       canDelete: isOwner,
-      canDuplicate: true,
+      canDuplicate: canDuplicateFullActivityPlan(plan, viewerId),
       canSchedule: true,
-      canRecord: true,
+      canRecord: isOwner,
     },
   };
 }
@@ -176,12 +229,17 @@ export function toActivityPlanSummary(plan: unknown, viewerId: string): Activity
 export function toActivityPlanDetail(plan: unknown, viewerId: string): ActivityPlanDetail {
   const parsedPlan = planProjectionSourceSchema.parse(plan);
   const summary = summaryValue(parsedPlan, viewerId);
+  const isOwner = parsedPlan.profile_id === viewerId;
   return activityPlanDetailSchema.parse({
     ...summary,
     contractVersion: "activity-plan-detail-v1",
-    notes: parsedPlan.notes ?? null,
-    structureHash: parsedPlan.structure_hash,
-    gpsRecordingEnabled: parsedPlan.gps_recording_enabled,
+    ...(isOwner
+      ? {
+          notes: parsedPlan.notes ?? null,
+          structureHash: parsedPlan.structure_hash,
+          gpsRecordingEnabled: parsedPlan.gps_recording_enabled,
+        }
+      : {}),
   });
 }
 

@@ -26,6 +26,7 @@ import {
   estimateActivityPlans,
 } from "../application/activity-plans/estimate-activity-plans";
 import {
+  canDuplicateFullActivityPlan,
   toActivityPlanDetail,
   toActivityPlanSummary,
 } from "../application/activity-plans/read-projections";
@@ -86,6 +87,9 @@ const getManyActivityPlansByIdsSchema = z
   .strict();
 
 const activityPlanIdInputSchema = z.object({ id: uuidSchema }).strict();
+const activityPlanDetailInputSchema = z
+  .object({ id: uuidSchema, personalize: z.boolean().default(false) })
+  .strict();
 
 const duplicateActivityPlanInputSchema = z
   .object({
@@ -492,7 +496,7 @@ export const activityPlansRouter = createTRPCRouter({
     };
   }),
 
-  getById: protectedProcedure.input(activityPlanIdInputSchema).query(async ({ ctx, input }) => {
+  getById: protectedProcedure.input(activityPlanDetailInputSchema).query(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
     const userId = ctx.session.user.id;
 
@@ -528,7 +532,9 @@ export const activityPlansRouter = createTRPCRouter({
       });
     }
 
-    const planWithEstimation = await estimateActivityPlan(plan, db, userId);
+    const planWithEstimation = await estimateActivityPlan(plan, db, userId, {
+      personalize: input.personalize && plan.profile_id === userId,
+    });
 
     const [likeStats, profileIdentityMap] = await Promise.all([
       loadLikeStats(db, {
@@ -853,6 +859,13 @@ export const activityPlansRouter = createTRPCRouter({
       }
 
       await requireActivityPlanReadForRow({ db, plan: originalRow, userId: ctx.session.user.id });
+
+      if (!canDuplicateFullActivityPlan(originalRow, ctx.session.user.id)) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Only the plan owner can duplicate this activity plan",
+        });
+      }
 
       const originalPlan = serializeActivityPlanRow(originalRow);
 

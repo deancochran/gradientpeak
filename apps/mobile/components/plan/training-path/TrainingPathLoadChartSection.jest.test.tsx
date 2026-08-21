@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react-native";
 import type React from "react";
 import { createElement } from "react";
 import { TrainingPathLoadChartSection } from "./TrainingPathLoadChartSection";
+import { TrainingPathSection } from "./TrainingPathSection";
 
 const mockDailyChartProps: Array<Record<string, unknown>> = [];
 
@@ -200,7 +201,7 @@ describe("TrainingPathLoadChartSection", () => {
 
     fireEvent.press(helpButton);
     expect(screen.getByTestId("training-path-legend-modal")).toBeTruthy();
-    expect(screen.getAllByText("Actual fitness")).toHaveLength(3);
+    expect(screen.getAllByText("Actual fitness")).toHaveLength(2);
     expect(screen.getAllByText("Planned fitness projection")).toHaveLength(2);
     expect(screen.queryByText("Recommended projection")).toBeNull();
   });
@@ -242,7 +243,9 @@ describe("TrainingPathLoadChartSection", () => {
         expect.objectContaining({ date: "2026-07-01", effectiveCompletedLoad: 5 }),
       ],
     });
-    expect(screen.getByText("Monthly totals use the loaded, bounded Plan window.")).toBeTruthy();
+    expect(
+      screen.getByText("Monthly totals use the 84-day Plan range; edge months may be partial."),
+    ).toBeTruthy();
     fireEvent.press(screen.getByTestId("training-path-view-details"));
     expect(onViewDetails).toHaveBeenCalledWith({ period: "month", anchorDate: "2026-06-01" });
   });
@@ -277,8 +280,11 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.getByTestId("training-path-period-summary")).toBeTruthy();
     expect(screen.getByText("Week · Jun 29")).toBeTruthy();
     expect(screen.queryByText("Partial data")).toBeNull();
-    expect(screen.getByLabelText("Completed load: 10")).toBeTruthy();
-    expect(screen.getByLabelText("Planned load: 30")).toBeTruthy();
+    expect(screen.getByLabelText("Completed load: 10 incomplete")).toBeTruthy();
+    expect(screen.getByLabelText("Planned load: 30 incomplete")).toBeTruthy();
+    expect(screen.getByLabelText("Fitness: 40")).toBeTruthy();
+    expect(screen.queryByLabelText("Actual fatigue: 44")).toBeNull();
+    expect(screen.queryByLabelText("Planned fatigue: 46")).toBeNull();
     fireEvent.press(screen.getByTestId("training-path-view-details"));
     expect(onViewDetails).toHaveBeenCalledWith({ period: "week", anchorDate: "2026-06-29" });
     fireEvent.press(screen.getByTestId("training-path-range-dropdown-monthly"));
@@ -307,6 +313,124 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.getByTestId("training-path-view-details")).toBeTruthy();
   });
 
+  it("keeps unavailable and known-zero workload distinct in the compact summary", () => {
+    const { rerender } = render(
+      <TrainingPathLoadChartSection
+        dailyPoints={[
+          {
+            date: "2026-06-29",
+            effectiveCompletedLoad: 0,
+            fitnessCtl: 40,
+            plannedLoad: 0,
+            plannedLoadStatus: "known_zero",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByLabelText("Completed load: 0")).toBeTruthy();
+    expect(screen.getByLabelText("Planned load: 0 · No planned load")).toBeTruthy();
+
+    rerender(
+      <TrainingPathLoadChartSection
+        dailyPoints={[
+          {
+            date: "2026-06-29",
+            effectiveCompletedLoad: null,
+            fitnessCtl: 40,
+            plannedLoad: null,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByLabelText("Completed load: Unavailable")).toBeTruthy();
+    expect(screen.getByLabelText("Planned load: Not available")).toBeTruthy();
+
+    rerender(
+      <TrainingPathLoadChartSection
+        dailyPoints={[
+          {
+            date: "2026-06-29",
+            effectiveCompletedLoad: 0,
+            effectiveCompletedLoadStatus: "known_zero",
+            fitnessCtl: 40,
+            plannedLoad: null,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByLabelText("Completed load: 0 · No completed load")).toBeTruthy();
+    expect(screen.getByLabelText("Planned load: Not available")).toBeTruthy();
+  });
+
+  it("labels a finite partial planned Load as incomplete", () => {
+    render(
+      <TrainingPathLoadChartSection
+        dailyPoints={[
+          {
+            date: "2026-06-29",
+            effectiveCompletedLoad: 10,
+            plannedLoad: 30,
+            plannedLoadStatus: "partial",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByLabelText("Planned load: 30 incomplete")).toBeTruthy();
+  });
+
+  it("restores the compact selected-period summary in the Plan chart section", () => {
+    const model = {
+      domains: { fitness: [0, 100] as [number, number], load: [0, 100] as [number, number] },
+      emptyState: null,
+      goalMarkers: [],
+      selectedWeekSummary: null,
+      todayKey: "2026-06-29",
+      weeks: [],
+    };
+
+    render(
+      <TrainingPathSection
+        dailyPoints={[
+          {
+            date: "2026-06-29",
+            effectiveCompletedLoad: 10,
+            plannedLoad: 20,
+          },
+        ]}
+        model={model}
+        onSelectedWeekChange={jest.fn()}
+        onViewDetails={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("training-path-period-summary")).toBeTruthy();
+    expect(screen.getByText("Day · 06/29")).toBeTruthy();
+    expect(screen.getByLabelText("Completed load: 10")).toBeTruthy();
+    expect(screen.getByLabelText("Planned load: 20")).toBeTruthy();
+  });
+
+  it("uses the available tab height with only View details below the chart", () => {
+    render(
+      <TrainingPathLoadChartSection
+        dailyPoints={[{ date: "2026-06-29", effectiveCompletedLoad: 10 }]}
+        fillAvailableHeight
+        onViewDetails={jest.fn()}
+        showSelectedPeriodSummary={false}
+      />,
+    );
+
+    expect(screen.getByTestId("training-path-load-chart-section").props.className).toContain(
+      "flex-1",
+    );
+    expect(mockDailyChartProps.at(-1)).toMatchObject({ fillHeight: true });
+    expect(screen.queryByTestId("training-path-period-summary")).toBeNull();
+    expect(screen.getByTestId("training-path-view-details")).toBeTruthy();
+  });
+
   it("keeps the legend behind the Help button when inline legend space is disabled", () => {
     render(
       <TrainingPathLoadChartSection
@@ -318,6 +442,63 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.queryByTestId("training-path-primary-legend")).toBeNull();
     fireEvent.press(screen.getByTestId("training-path-legend-button"));
     expect(screen.getByTestId("training-path-legend-modal")).toBeTruthy();
+  });
+
+  it("explains the unavailable completed-load marker only when it is rendered", () => {
+    const { rerender } = render(
+      <TrainingPathLoadChartSection
+        dailyPoints={[
+          { date: "2026-06-29", fitnessCtl: 40, hasCompletedActivityWithoutLoad: true },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Completed load unavailable")).toBeTruthy();
+
+    rerender(
+      <TrainingPathLoadChartSection
+        dailyPoints={[{ date: "2026-06-29", fitnessCtl: 40, plannedLoad: 0 }]}
+      />,
+    );
+
+    expect(screen.queryByText("Completed load unavailable")).toBeNull();
+  });
+
+  it("uses the weekly fallback legend when daily layers cannot render", () => {
+    const weeklyModel = {
+      domains: { fitness: [0, 100] as [number, number], load: [0, 100] as [number, number] },
+      emptyState: null,
+      goalMarkers: [],
+      selectedWeekSummary: null,
+      todayKey: "2026-06-29",
+      weeks: [
+        {
+          weekStart: "2026-06-29",
+          weekEnd: "2026-07-05",
+          label: "Jun 29",
+          completedLoad: 10,
+          plannedLoad: 20,
+          targetLoad: null,
+          effectiveCompletedLoad: 10,
+          effectiveRemainingLoad: 20,
+          fitness: 40,
+          scheduledFitness: 42,
+          targetFitness: null,
+          fatigue: null,
+          form: null,
+          riskZone: null,
+          isCurrent: true,
+          isSelected: true,
+        },
+      ],
+    };
+
+    render(<TrainingPathLoadChartSection model={weeklyModel} onSelectedWeekChange={jest.fn()} />);
+
+    expect(screen.getByTestId("weekly-training-path-chart")).toBeTruthy();
+    expect(screen.getByText("Current fitness")).toBeTruthy();
+    expect(screen.queryByText("Actual fatigue")).toBeNull();
+    expect(screen.queryByText("Form (zero centered)")).toBeNull();
   });
 
   it("does not render the Plan activity/event feed beneath the analytical chart", () => {

@@ -168,6 +168,7 @@ const commonLoadUnavailableSchema = z
     reason: z.enum([
       "threshold_missing",
       "activity_data_missing",
+      "ambiguous_target",
       "duration_missing",
       "invalid_data",
       "private_data",
@@ -307,15 +308,22 @@ export const commonLoadResultSchema = z
         message: "Common Load method is not compatible with the activity category",
       });
     }
+    const isUnanchoredPlanIntent =
+      result.status === "available" &&
+      result.estimated &&
+      result.thresholdEvidence === null &&
+      result.quality.source === "unknown" &&
+      result.quality.estimate;
     if (
       result.method !== null &&
       result.status !== "unavailable" &&
-      result.thresholdEvidence === null
+      result.thresholdEvidence === null &&
+      !isUnanchoredPlanIntent
     ) {
       context.addIssue({
         code: "custom",
         path: ["thresholdEvidence"],
-        message: "Direct common Load methods require threshold evidence",
+        message: "Direct common Load methods require threshold evidence or explicit plan intent",
       });
     }
     if (

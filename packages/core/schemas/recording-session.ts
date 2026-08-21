@@ -240,12 +240,37 @@ export const recordingSessionActivitySchema = z
   })
   .strict();
 
+export const recordingPlanTargetPresentationEvidenceSchema = z
+  .object({
+    occurrenceId: z.string().min(1),
+    labels: z.array(z.string().trim().min(1).max(160)).max(3),
+  })
+  .strict();
+
+/** Immutable, browser-portable plan input locked when a recording starts. */
+export const recordingPlanExecutionSnapshotSchema = z
+  .object({
+    manifestVersion: z.literal(1),
+    compilerVersion: z.literal(1),
+    activityPlanId: z.string().uuid(),
+    scheduledEventId: nullableUuidSchema,
+    name: z.string().trim().min(1).max(200),
+    description: z.string().trim().max(500).nullable(),
+    activityPlanRevision: z.number().int().positive(),
+    structureHash: z.string().regex(/^v1:sha256:[0-9a-f]{64}$/),
+    structure: activityPlanStructureSchema,
+    personalizationEnabled: z.boolean(),
+    targetPresentations: z.array(recordingPlanTargetPresentationEvidenceSchema).max(2_000),
+  })
+  .strict();
+
 export const recordingSessionSnapshotSchema = z
   .object({
     identity: recordingSessionIdentitySchema,
     activity: recordingSessionActivitySchema,
     profileSnapshot: recordingProfileSnapshotSchema,
     performanceTargets: athletePerformanceTargetFactsSchema,
+    planExecution: recordingPlanExecutionSnapshotSchema.optional(),
     devices: z
       .object({
         connected: z.array(recordingConnectedDeviceSchema).default([]),
@@ -270,6 +295,20 @@ export const recordingSessionSnapshotSchema = z
         message: "Recording performance targets cannot be observed after session start",
         path: ["performanceTargets", "asOf"],
       });
+    }
+    const plan = snapshot.planExecution;
+    if (plan) {
+      if (
+        snapshot.activity.activityPlanId !== plan.activityPlanId ||
+        snapshot.activity.eventId !== plan.scheduledEventId ||
+        snapshot.activity.activity_category !== plan.structure.activity_category
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Locked plan identity and category must match the recording activity",
+          path: ["planExecution"],
+        });
+      }
     }
   });
 
@@ -315,6 +354,9 @@ export const recordingSessionFinalStatsSchema = z
     movingSeconds: z.number().int().min(0),
     distanceMeters: z.number().min(0),
     calories: z.number().min(0).optional(),
+    // Individual manual laps are moving-time durations in milliseconds.
+    // A default keeps older finalized recordings readable during review/retry.
+    manualLapsMs: z.array(z.number().int().min(0)).max(10_000).default([]),
   })
   .strict();
 
@@ -383,6 +425,7 @@ export const recordingCheckpointSchema = z
       )
       .optional(),
     eventJournal: z.array(recordingTimerEventSchema),
+    manualLapsMs: z.array(z.number().int().min(0)).max(10_000).default([]),
     timing: z
       .object({
         startedAt: isoTimestampSchema,
@@ -418,6 +461,25 @@ export const recordingCheckpointSchema = z
   });
 
 export const recordingExecutionManifestEntrySchema = recordingOccurrenceResultSchema.extend({
+  completion: z
+    .object({
+      status: z.enum(["completed", "skipped"]),
+      method: z.enum(["automatic", "manual"]),
+    })
+    .strict()
+    .optional(),
+  timingEvidence: z
+    .object({
+      source: z.enum(["manual_timer", "sensor_samples"]),
+      coverage: z.enum(["complete", "partial"]),
+      startOffsetMs: z.number().int().nonnegative(),
+      endOffsetMs: z.number().int().nonnegative(),
+    })
+    .strict()
+    .refine((timing) => timing.endOffsetMs >= timing.startOffsetMs, {
+      message: "Execution timing end must not precede its start.",
+    })
+    .optional(),
   timerEvents: z.array(recordingTimerEventSchema),
   laps: z.array(
     z
@@ -511,6 +573,7 @@ export type RecordingLaunchIntent = z.infer<typeof recordingLaunchIntentSchema>;
 export type RecordingSessionIdentity = z.infer<typeof recordingSessionIdentitySchema>;
 export type RecordingSessionActivity = z.infer<typeof recordingSessionActivitySchema>;
 export type RecordingSessionSnapshot = z.infer<typeof recordingSessionSnapshotSchema>;
+export type RecordingPlanExecutionSnapshot = z.infer<typeof recordingPlanExecutionSnapshotSchema>;
 export type RecordingSessionOverride = z.infer<typeof recordingSessionOverrideSchema>;
 export type RecordingSessionFinalStats = z.infer<typeof recordingSessionFinalStatsSchema>;
 export type RecordingOccurrenceResult = z.infer<typeof recordingOccurrenceResultSchema>;

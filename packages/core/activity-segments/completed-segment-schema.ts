@@ -103,6 +103,71 @@ const segmentTimingSchema = z.union([
   unavailableTimingSchema,
 ]);
 
+export const segmentRecordingExecutionEvidenceSchema = z
+  .object({
+    version: z.literal(1),
+    source: z.literal("recording_execution_manifest"),
+    coverage: z.enum(["complete", "partial"]),
+    occurrenceCount: z.number().int().positive().max(5_000),
+    occurrences: z
+      .array(
+        z
+          .object({
+            occurrenceId: z.string().min(1),
+            globalOrdinal: z.number().int().nonnegative(),
+            completion: z
+              .object({
+                status: z.enum(["completed", "skipped"]),
+                method: z.enum(["automatic", "manual"]),
+              })
+              .strict(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(5_000),
+  })
+  .strict()
+  .superRefine((execution, ctx) => {
+    if (execution.occurrences.length > execution.occurrenceCount) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["occurrences"],
+        message: "Execution evidence cannot exceed the manifest occurrence count.",
+      });
+    }
+    if (
+      execution.coverage === "complete" &&
+      execution.occurrences.length !== execution.occurrenceCount
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["coverage"],
+        message: "Complete execution evidence must classify every manifest occurrence.",
+      });
+    }
+    const occurrenceIds = execution.occurrences.map((occurrence) => occurrence.occurrenceId);
+    const globalOrdinals = execution.occurrences.map((occurrence) => occurrence.globalOrdinal);
+    if (new Set(occurrenceIds).size !== occurrenceIds.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["occurrences"],
+        message: "Execution evidence occurrence IDs must be unique within a segment.",
+      });
+    }
+    if (new Set(globalOrdinals).size !== globalOrdinals.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["occurrences"],
+        message: "Execution evidence global ordinals must be unique within a segment.",
+      });
+    }
+  });
+
+export type SegmentRecordingExecutionEvidence = z.infer<
+  typeof segmentRecordingExecutionEvidenceSchema
+>;
+
 export const SEGMENT_SUMMARY_LIMITS = {
   maxCadenceRpm: 500,
   maxSpeedMetersPerSecond: 100,
@@ -168,6 +233,7 @@ export const completedSegmentSummarySchema = z
     aerobicDecouplingResult: aerobicDecouplingResultSchema.optional(),
     bestEffortExtractions: z.array(bestEffortExtractionResultSchema).max(4).optional(),
     swim: swimSegmentSummarySchema.optional(),
+    recordingExecution: segmentRecordingExecutionEvidenceSchema.optional(),
   })
   .strict()
   .superRefine((summary, ctx) => {

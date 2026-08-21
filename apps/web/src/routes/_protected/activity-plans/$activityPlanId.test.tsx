@@ -11,30 +11,23 @@ const mocks = vi.hoisted(() => ({
   eventListInput: undefined as unknown,
   performanceTargets: undefined as AthletePerformanceTargetFacts | undefined,
   plan: undefined as unknown,
+  planInputs: [] as unknown[],
+  readModelOptions: [] as unknown[],
+  activityPlanId: "invalid-plan",
 }));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
     useNavigate: () => vi.fn(),
-    useParams: () => ({ activityPlanId: "invalid-plan" }),
+    useParams: () => ({ activityPlanId: mocks.activityPlanId }),
   }),
 }));
 vi.mock("../../../components/activity-plan/activity-plan-comments", () => ({
   ActivityPlanComments: () => null,
 }));
 vi.mock("../../../components/activity-plan/activity-plan-structure", () => ({
-  ActivityPlanStructure: ({
-    performanceTargets,
-  }: {
-    performanceTargets?: AthletePerformanceTargetFacts;
-  }) => (
-    <p>
-      {performanceTargets?.thresholds.bike.value
-        ? `${performanceTargets.thresholds.bike.value * 0.8} W (80% FTP)`
-        : "Read-only structure"}
-    </p>
-  ),
+  ActivityPlanStructure: () => <div>Read-only structure</div>,
 }));
 vi.mock("../../../components/protected/activity-route-primitives", () => ({
   DetailPageIntro: ({ actions, title }: { actions: React.ReactNode; title: string }) => (
@@ -52,16 +45,27 @@ vi.mock("../../../components/providers/auth-provider", () => ({
 vi.mock("../../../lib/api/client", () => ({
   api: {
     activityPlans: {
-      getById: { useQuery: () => ({ data: mocks.plan, isLoading: false }) },
+      getById: {
+        useQuery: (input: unknown) => {
+          mocks.planInputs.push(input);
+          return { data: mocks.plan, isLoading: false };
+        },
+      },
       update: { useMutation: () => ({ isPending: false, mutateAsync: vi.fn() }) },
       duplicate: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
       delete: { useMutation: () => ({ isPending: false, mutate: vi.fn(), mutateAsync: vi.fn() }) },
     },
     athleteIntelligence: {
       getReadModel: {
-        useQuery: () => ({
-          data: { publishedState: { performanceTargets: mocks.performanceTargets } },
-        }),
+        useQuery: (_input: unknown, options: unknown) => {
+          mocks.readModelOptions.push(options);
+          return {
+            data:
+              (options as { enabled?: boolean }).enabled === true
+                ? { publishedState: { performanceTargets: mocks.performanceTargets } }
+                : undefined,
+          };
+        },
       },
     },
     calendar: {
@@ -106,6 +110,9 @@ vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 beforeEach(() => {
   mocks.createEvent.mockReset();
   mocks.eventListInput = undefined;
+  mocks.planInputs = [];
+  mocks.readModelOptions = [];
+  mocks.activityPlanId = "invalid-plan";
   mocks.performanceTargets = buildPerformanceTargetFactsFixture({
     asOf: "2026-07-01T00:00:00.000Z",
     bikeThresholdWatts: 300,
@@ -147,7 +154,7 @@ describe("ActivityPlanDetailPage invalid plan", () => {
 });
 
 describe("ActivityPlanDetailPage print", () => {
-  it("prints a valid protected plan and passes available personalized targets to its structure", () => {
+  it("automatically personalizes an eligible owner session flow and prints the selected structure", () => {
     mocks.plan = {
       detail: {
         id: "invalid-plan",
@@ -159,9 +166,46 @@ describe("ActivityPlanDetailPage print", () => {
         createdAt: "2026-07-01T00:00:00.000Z",
         gpsRecordingEnabled: true,
         owner: null,
-        capabilities: { canEdit: true },
+        capabilities: { canDuplicate: true, canEdit: true, canSchedule: true },
         engagement: { likes: 0, viewerHasLiked: false },
-        metrics: [],
+        metrics: [
+          {
+            key: "distance",
+            label: "Distance",
+            status: "available",
+            value: 10_000,
+            unit: "meters",
+            reason: null,
+            provenance: "authored",
+          },
+          {
+            key: "elapsed_duration",
+            label: "Duration",
+            status: "available",
+            value: 3_600,
+            unit: "seconds",
+            reason: null,
+            provenance: "authored",
+          },
+          {
+            key: "common_load",
+            label: "Personalized load",
+            status: "available",
+            value: 72,
+            unit: "score",
+            reason: null,
+            provenance: "personalized",
+          },
+          {
+            key: "normalized_intensity",
+            label: "Personalized intensity",
+            status: "available",
+            value: 0.8,
+            unit: "ratio",
+            reason: null,
+            provenance: "personalized",
+          },
+        ],
         structure: {
           version: 3,
           activity_category: "bike",
@@ -194,11 +238,55 @@ describe("ActivityPlanDetailPage print", () => {
     const print = vi.spyOn(window, "print").mockImplementation(() => undefined);
     const ActivityPlanDetailPage = (Route as unknown as { component: React.ComponentType })
       .component;
-    render(<ActivityPlanDetailPage />);
+    const view = render(<ActivityPlanDetailPage />);
+
+    expect(mocks.planInputs).toContainEqual({ id: "invalid-plan", personalize: false });
+    expect(mocks.readModelOptions).toContainEqual({ enabled: true });
+    expect(screen.getByText("Session Flow")).toBeTruthy();
+    expect(screen.getByRole("img", { name: /Session flow with 1 work block/ })).toBeTruthy();
+    expect(
+      screen.getByTestId("activity-plan-session-flow-timeline-bar-0").getAttribute("data-kind"),
+    ).toBe("work");
+    expect(screen.getByText("Work · 1×")).toBeTruthy();
+    expect(screen.getByText(/Tempo · 1m/)).toBeTruthy();
+    expect(screen.getByText(/240 W \(80% FTP\)/)).toBeTruthy();
+    expect(
+      screen.getByRole("switch", { name: "Personalize targets" }).getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(screen.getByText("Distance")).toBeTruthy();
+    expect(screen.getByText("Duration")).toBeTruthy();
+    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
+    expect(screen.getAllByText("Authored")).toHaveLength(2);
+    expect(screen.getAllByText("Personalized")).toHaveLength(2);
+    expect(screen.queryByText(/~1h|approximately 1h/i)).toBeNull();
+    expect(screen.queryByText(/recorded signal pattern|effort profile/i)).toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: "Personalize targets" }));
+    expect(
+      screen.getByRole("switch", { name: "Personalize targets" }).getAttribute("aria-checked"),
+    ).toBe("false");
+    expect(screen.queryByText(/240 W \(80% FTP\)/)).toBeNull();
+    expect(screen.getByText(/80% FTP/)).toBeTruthy();
+    expect(mocks.planInputs).not.toContainEqual({ id: "invalid-plan", personalize: true });
+
+    fireEvent.click(screen.getByRole("switch", { name: "Personalize targets" }));
+    expect(screen.getByText(/240 W \(80% FTP\)/)).toBeTruthy();
+
+    mocks.activityPlanId = "another-plan";
+    view.rerender(<ActivityPlanDetailPage />);
+    expect(
+      screen.getByRole("switch", { name: "Personalize targets" }).getAttribute("aria-checked"),
+    ).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: "Print / Save as PDF" }));
     expect(print).toHaveBeenCalledOnce();
-    expect(screen.getByText("240 W (80% FTP)")).toBeTruthy();
+    expect(screen.getByText("Read-only structure")).toBeTruthy();
+    expect(screen.getByText("Read-only structure").parentElement?.className).toContain(
+      "print:hidden",
+    );
+    expect(screen.getByTestId("activity-plan-session-flow").className).not.toContain(
+      "print:hidden",
+    );
   });
 
   it("creates a linked planned event when scheduling an unscheduled plan", () => {
@@ -213,9 +301,46 @@ describe("ActivityPlanDetailPage print", () => {
         createdAt: "2026-07-01T00:00:00.000Z",
         gpsRecordingEnabled: true,
         owner: null,
-        capabilities: { canEdit: true },
+        capabilities: { canDuplicate: true, canEdit: true, canSchedule: true },
         engagement: { likes: 0, viewerHasLiked: false },
-        metrics: [],
+        metrics: [
+          {
+            key: "distance",
+            label: "Distance",
+            status: "unavailable",
+            value: null,
+            unit: "meters",
+            reason: "not_prescribed",
+            provenance: null,
+          },
+          {
+            key: "elapsed_duration",
+            label: "Duration",
+            status: "available",
+            value: 300,
+            unit: "seconds",
+            reason: null,
+            provenance: "authored",
+          },
+          {
+            key: "common_load",
+            label: "Load",
+            status: "available",
+            value: 40.5,
+            unit: "score",
+            reason: null,
+            provenance: "plan_intent",
+          },
+          {
+            key: "normalized_intensity",
+            label: "Intensity",
+            status: "available",
+            value: 0.9,
+            unit: "ratio",
+            reason: null,
+            provenance: "plan_intent",
+          },
+        ],
         structure: {
           version: 3,
           activity_category: "bike",
@@ -258,5 +383,106 @@ describe("ActivityPlanDetailPage print", () => {
       scheduled_date: "2026-10-26",
       title: "Tempo bike",
     });
+  });
+
+  it("renders the full authored timeline and read-only structure for a non-owner plan", () => {
+    mocks.plan = {
+      detail: {
+        id: "invalid-plan",
+        name: "Shared bike plan",
+        description: "Steady work",
+        activityCategory: "bike",
+        visibility: "public",
+        createdAt: "2026-07-01T00:00:00.000Z",
+        owner: null,
+        capabilities: { canDuplicate: false, canEdit: false, canSchedule: true },
+        engagement: { likes: 0, viewerHasLiked: false },
+        metrics: [
+          {
+            key: "distance",
+            label: "Distance",
+            status: "unavailable",
+            value: null,
+            unit: "meters",
+            reason: "not_prescribed",
+            provenance: null,
+          },
+          {
+            key: "elapsed_duration",
+            label: "Duration",
+            status: "available",
+            value: 300,
+            unit: "seconds",
+            reason: null,
+            provenance: "authored",
+          },
+          {
+            key: "common_load",
+            label: "Load",
+            status: "available",
+            value: 40.5,
+            unit: "score",
+            reason: null,
+            provenance: "plan_intent",
+          },
+          {
+            key: "normalized_intensity",
+            label: "Intensity",
+            status: "available",
+            value: 0.9,
+            unit: "ratio",
+            reason: null,
+            provenance: "plan_intent",
+          },
+        ],
+        structure: {
+          version: 3,
+          activity_category: "bike",
+          segments: [
+            {
+              id: "00000000-0000-4000-8000-000000000011",
+              role: "activity",
+              name: "Ride",
+              intervals: [
+                {
+                  id: "00000000-0000-4000-8000-000000000012",
+                  name: "Threshold",
+                  repetitions: 1,
+                  steps: [
+                    {
+                      id: "00000000-0000-4000-8000-000000000013",
+                      name: "Work",
+                      duration: { type: "time", seconds: 300 },
+                      targets: [{ type: "%FTP", intensity: 90 }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+      edit: null,
+    };
+    const ActivityPlanDetailPage = (Route as unknown as { component: React.ComponentType })
+      .component;
+    render(<ActivityPlanDetailPage />);
+
+    expect(screen.getByText("Session Flow")).toBeTruthy();
+    expect(screen.getByTestId("activity-plan-session-flow")).toBeTruthy();
+    expect(
+      screen
+        .getByTestId("activity-plan-session-flow-timeline-bar-0")
+        .getAttribute("data-intensity"),
+    ).toBe("%FTP 90");
+    expect(screen.getByText("Read-only structure")).toBeTruthy();
+    expect(screen.queryByRole("switch", { name: "Personalize targets" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Duplicate" })).toBeNull();
+    expect(screen.queryByText(/Duplicate .* editable copy/)).toBeNull();
+    expect(screen.getByTestId("activity-plan-schedule")).toBeTruthy();
+    expect(screen.getByTestId("activity-plan-estimates")).toBeTruthy();
+    expect(screen.getAllByText("Plan intent")).toHaveLength(2);
+    expect(screen.queryByText("Personalized")).toBeNull();
+    expect(mocks.readModelOptions).toContainEqual({ enabled: false });
   });
 });

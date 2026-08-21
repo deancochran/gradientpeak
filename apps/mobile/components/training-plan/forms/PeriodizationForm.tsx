@@ -6,7 +6,7 @@ import { IntegerStepper } from "@repo/ui/components/integer-stepper";
 import { Label } from "@repo/ui/components/label";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
-import { AlertCircle, CheckCircle, Lock, TrendingUp } from "lucide-react-native";
+import { AlertCircle, Lock, TrendingUp } from "lucide-react-native";
 import React from "react";
 import { View } from "react-native";
 import { parseDateKey, toDateKey } from "@/lib/calendar/dateMath";
@@ -72,7 +72,6 @@ export function PeriodizationForm({
       weeksNeeded,
       achievable: weeksNeeded <= weeksToTarget,
       ctlIncrease: targetCtl - startCtl,
-      weeklyGain: weeksToTarget > 0 ? (targetCtl - startCtl) / weeksToTarget : 0,
     };
   }, [startingLongTermLoad, targetCtlText, rampRateText, targetDate]);
 
@@ -118,28 +117,14 @@ export function PeriodizationForm({
 
   return (
     <View className="gap-6">
-      {/* Header */}
       <View className="gap-2">
         <Text className="text-2xl font-bold">Periodization Planning</Text>
-        <Text className="text-muted-foreground">
-          Use periodization to build Long-term Load progressively toward a dated planning target.
-        </Text>
       </View>
 
-      {/* Enable/Disable Toggle */}
-      <Card>
-        <CardContent className="p-4">
-          <View className="flex-row items-center justify-between">
-            <View className="flex-1 pr-4">
-              <Text className="font-semibold mb-1">Enable Periodization Planning</Text>
-              <Text className="text-sm text-muted-foreground">
-                Plan a Long-term Load target for a selected date
-              </Text>
-            </View>
-            <Switch checked={isEnabled} onCheckedChange={handleToggle} />
-          </View>
-        </CardContent>
-      </Card>
+      <View className="flex-row items-center justify-between">
+        <Text className="font-semibold">Enable periodization</Text>
+        <Switch checked={isEnabled} onCheckedChange={handleToggle} />
+      </View>
 
       {/* Periodization Form (only shown when enabled) */}
       {isEnabled && (
@@ -178,16 +163,13 @@ export function PeriodizationForm({
           {/* Target Long-term Load */}
           <View className="gap-3">
             <Label className="text-base font-semibold">Target Long-term Load</Label>
-            <Text className="text-sm text-muted-foreground">
-              The Long-term Load value selected for your target date
-            </Text>
             <IntegerStepper
               id="periodization-target-ctl"
               value={parseInt(targetCtlText, 10) || 85}
               min={0}
               max={250}
               onChange={(nextCtl) => handleTargetCtlChange(String(nextCtl))}
-              helperText="Set your Long-term Load target by your target date"
+              helperText=""
               error={errors.target_longTermLoad}
             />
           </View>
@@ -195,16 +177,13 @@ export function PeriodizationForm({
           {/* Ramp Rate */}
           <View className="gap-3">
             <Label className="text-base font-semibold">Weekly Ramp Rate (%)</Label>
-            <Text className="text-sm text-muted-foreground">
-              How much Long-term Load increases each week
-            </Text>
             <IntegerStepper
               id="periodization-ramp-rate"
               value={parseInt(rampRateText, 10) || 5}
               min={1}
               max={20}
               onChange={(nextRate) => handleRampRateChange(String(nextRate))}
-              helperText="Set weekly Long-term Load increase percentage"
+              helperText=""
               error={errors.ramp_rate}
             />
           </View>
@@ -212,13 +191,10 @@ export function PeriodizationForm({
           {/* Target Date */}
           <View className="gap-3">
             <Label className="text-base font-semibold">Target Date</Label>
-            <Text className="text-sm text-muted-foreground">
-              Your goal date for this Long-term Load target
-            </Text>
             <DateInput
               accessibilityHint="Choose the goal date for this target"
               id="periodization-target-date"
-              label="Target Date"
+              label=""
               minimumDate={new Date()}
               onChange={(value) => {
                 if (!value) {
@@ -269,27 +245,8 @@ export function PeriodizationForm({
                         days)
                       </Text>
                     </View>
-                    <View className="flex-row justify-between">
-                      <Text className="text-muted-foreground">Avg weekly gain:</Text>
-                      <Text className="font-semibold">
-                        +{progressionPreview.weeklyGain.toFixed(1)} Long-term Load/week
-                      </Text>
-                    </View>
-                    <View className="flex-row justify-between">
-                      <Text className="text-muted-foreground">Weeks needed:</Text>
-                      <Text className="font-semibold">{progressionPreview.weeksNeeded} weeks</Text>
-                    </View>
                   </View>
-
-                  {/* Achievability indicator */}
-                  {progressionPreview.achievable ? (
-                    <View className="flex-row items-center gap-2 bg-success/10 p-2 rounded-md mt-2">
-                      <Icon as={CheckCircle} size={16} className="text-success" />
-                      <Text className="text-success text-sm font-medium">
-                        Goal is achievable with this plan
-                      </Text>
-                    </View>
-                  ) : (
+                  {!progressionPreview.achievable ? (
                     <View className="flex-row items-center gap-2 bg-destructive/10 p-2 rounded-md mt-2">
                       <Icon as={AlertCircle} size={16} className="text-destructive" />
                       <Text className="text-destructive text-sm font-medium">
@@ -297,29 +254,10 @@ export function PeriodizationForm({
                         only have {progressionPreview.weeksToTarget}
                       </Text>
                     </View>
-                  )}
+                  ) : null}
                 </CardContent>
               </Card>
             )}
-
-          {/* Tips Card */}
-          <Card className="bg-muted/50">
-            <CardContent className="p-4 gap-2">
-              <Text className="font-semibold mb-1">💡 Periodization Tips</Text>
-              <Text className="text-sm text-muted-foreground">
-                • Long-term Load summarizes recorded load with a 42-day weighting
-              </Text>
-              <Text className="text-sm text-muted-foreground">
-                • The target is a planning input, not a predicted outcome
-              </Text>
-              <Text className="text-sm text-muted-foreground">
-                • The ramp rate changes the projected week-to-week Long-term Load values
-              </Text>
-              <Text className="text-sm text-muted-foreground">
-                • Review the projection when dates or weekly values change
-              </Text>
-            </CardContent>
-          </Card>
 
           {/* Warning for aggressive ramp rate */}
           {parseInt(rampRateText, 10) > 10 && (
@@ -332,36 +270,6 @@ export function PeriodizationForm({
             </Alert>
           )}
         </>
-      )}
-
-      {/* Info card when disabled */}
-      {!isEnabled && (
-        <Card className="bg-muted/50">
-          <CardContent className="p-4 gap-3">
-            <Text className="font-semibold">What is Periodization?</Text>
-            <Text className="text-sm text-muted-foreground">
-              Periodization organizes planned training into phases toward a target date. This
-              planner can:
-            </Text>
-            <View className="gap-1 ml-2">
-              <Text className="text-sm text-muted-foreground">
-                • Set a target Long-term Load and date
-              </Text>
-              <Text className="text-sm text-muted-foreground">
-                • Show projected week-to-week Long-term Load changes
-              </Text>
-              <Text className="text-sm text-muted-foreground">
-                • Compare the projection with your selected target
-              </Text>
-              <Text className="text-sm text-muted-foreground">
-                • Track progress toward your goals
-              </Text>
-            </View>
-            <Text className="text-sm text-muted-foreground mt-2">
-              Enable periodization to add a dated Long-term Load projection to the plan.
-            </Text>
-          </CardContent>
-        </Card>
       )}
     </View>
   );

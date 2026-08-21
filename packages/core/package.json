@@ -98,7 +98,7 @@
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
-    "test": "vitest",
+    "test": "vitest run",
     "check-types": "tsc --noEmit",
     "watch": "pnpm exec concurrently \"tsc --noEmit --watch --preserveWatchOutput\" \"pnpm exec chokidar '**/*.{ts,tsx,js,jsx,json}' -c 'biome lint .'\""
   },
@@ -111,7 +111,6 @@
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
-    "@types/jest": "^29.5.14",
     "@types/mapbox__polyline": "^1.0.5",
     "chokidar-cli": "^3.0.0",
     "concurrently": "^9.2.4",

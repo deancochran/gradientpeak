@@ -106,6 +106,40 @@ describe("handleRecordingObjectAction", () => {
     expect(navigateToRecord).toHaveBeenCalledTimes(1);
   });
 
+  it("starts plan and route recordings with GPS capture disabled", async () => {
+    const navigateToRecord = jest.fn();
+
+    await handleRecordingObjectAction({
+      candidate: {
+        objectKind: "activity_plan",
+        objectId: "plan-1",
+        plan: singleActivityCategoryPlan(),
+      },
+      command: "start_with_plan",
+      navigateToRecord,
+      service: null,
+    });
+    await handleRecordingObjectAction({
+      candidate: {
+        objectKind: "route",
+        objectId: "route-1",
+        activity_category: "run",
+      },
+      command: "start_with_route",
+      navigateToRecord,
+      service: null,
+    });
+
+    expect(activitySelectionStore.setSelection).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ launchSource: "activity_plan", gpsRecordingEnabled: false }),
+    );
+    expect(activitySelectionStore.setSelection).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ launchSource: "route", gpsRecordingEnabled: false }),
+    );
+  });
+
   it("disables a malformed plan while idle", () => {
     const resolution = resolveRecordingObjectAction({
       candidate: { objectKind: "activity_plan", objectId: "plan-1", plan: multisportPlan() },

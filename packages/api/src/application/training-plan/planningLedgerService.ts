@@ -166,16 +166,28 @@ function aggregate(values: Array<{ status: LoadStatus; value: number | null }>) 
   const value = Math.round(known.reduce((sum, item) => sum + item.value, 0) * 10) / 10;
   const status = values.some((item) => item.status === "partial")
     ? "partial"
-    : value === 0
+    : values.every((item) => item.status === "known_zero")
       ? "known_zero"
       : "complete";
   return { status, value };
 }
 
 function value(status: LoadStatus, amount: number | null) {
-  if (amount === null) return { status: "unavailable" as const, value: null };
+  if (status === "unavailable" || amount === null) {
+    return { status: "unavailable" as const, value: null };
+  }
   if (status === "partial") return { status, value: amount };
-  return { status: amount === 0 ? ("known_zero" as const) : ("complete" as const), value: amount };
+  if (status === "known_zero") return { status: "known_zero" as const, value: 0 };
+  return { status: "complete" as const, value: amount };
+}
+
+function plannedValue(status: LoadStatus, amount: number | null) {
+  if (status === "unavailable" || amount === null || !Number.isFinite(amount)) {
+    return { status: "unavailable" as const, value: null };
+  }
+  if (status === "partial") return { status: "partial" as const, value: amount };
+  if (status === "known_zero") return { status: "known_zero" as const, value: 0 };
+  return { status: "complete" as const, value: amount };
 }
 
 function aggregateIntensity(input: {
@@ -241,8 +253,12 @@ export function buildPlanningLedger(input: {
     return {
       date: day.date,
       completed: summary ? value(summary.completedLoadStatus, summary.completedLoad) : unavailable,
-      planned: summary ? value(summary.remainingLoadStatus, summary.remainingLoad) : unavailable,
-      remaining: summary ? value(summary.remainingLoadStatus, summary.remainingLoad) : unavailable,
+      planned: summary
+        ? plannedValue(summary.remainingLoadStatus, summary.remainingLoad)
+        : plannedValue("unavailable", null),
+      remaining: summary
+        ? plannedValue(summary.remainingLoadStatus, summary.remainingLoad)
+        : plannedValue("unavailable", null),
       effective: summary ? value(summary.status, summary.commonLoad) : unavailable,
       intensity: summary ? value(summary.status, summary.intensity) : unavailable,
       contributingDurationSeconds: summary
@@ -252,6 +268,10 @@ export function buildPlanningLedger(input: {
   });
   const aggregateField = (field: keyof Omit<(typeof breakdown)[number], "date">) =>
     aggregate(breakdown.map((day) => day[field]));
+  const aggregatePlannedField = (field: "planned" | "remaining") =>
+    breakdown.length === 0
+      ? plannedValue("unavailable", null)
+      : aggregate(breakdown.map((day) => day[field]));
   const entries: PlanningLedger["entries"] = input.projection.ledgerItems.map((item) => ({
     id: item.id,
     date: item.date,
@@ -259,19 +279,29 @@ export function buildPlanningLedger(input: {
     kind: item.kind,
     title: item.title,
     status: item.kind === "completed" ? "Completed" : "Planned",
-    load: value(item.loadStatus, item.load),
-    intensity: value(item.intensityStatus, item.intensity),
-    contributingDurationSeconds: value(
-      item.contributingDurationStatus,
-      item.contributingDurationSeconds,
-    ),
+    load:
+      item.kind === "planned"
+        ? plannedValue(item.loadStatus, item.load)
+        : value(item.loadStatus, item.load),
+    intensity:
+      item.kind === "planned"
+        ? plannedValue(item.intensityStatus, item.intensity)
+        : value(item.intensityStatus, item.intensity),
+    contributingDurationSeconds:
+      item.kind === "planned"
+        ? plannedValue(item.contributingDurationStatus, item.contributingDurationSeconds)
+        : value(item.contributingDurationStatus, item.contributingDurationSeconds),
     navigation: {
       target: item.kind === "completed" ? ("activity" as const) : ("event" as const),
       id: item.id,
     },
   }));
   const dayScheduledLoadById = new Map(
-    days.flatMap((day) => day.scheduledItems.map((item) => [item.id, item.plannedLoad] as const)),
+    days.flatMap((day) =>
+      day.scheduledItems.map(
+        (item) => [item.id, { load: item.plannedLoad, status: item.plannedLoadStatus }] as const,
+      ),
+    ),
   );
   entries.push(
     ...(input.calendarFacts?.entries ?? [])
@@ -280,9 +310,9 @@ export function buildPlanningLedger(input: {
         ...entry,
         load:
           entry.kind === "planned"
-            ? value(
-                dayScheduledLoadById.get(entry.id) == null ? "unavailable" : "complete",
-                dayScheduledLoadById.get(entry.id) ?? null,
+            ? plannedValue(
+                dayScheduledLoadById.get(entry.id)?.status ?? "unavailable",
+                dayScheduledLoadById.get(entry.id)?.load ?? null,
               )
             : value("unavailable", null),
         intensity: value("unavailable", null),
@@ -339,8 +369,8 @@ export function buildPlanningLedger(input: {
     asOf: input.projection.asOf,
     load: {
       completed: aggregateField("completed"),
-      planned: aggregateField("planned"),
-      remaining: aggregateField("remaining"),
+      planned: aggregatePlannedField("planned"),
+      remaining: aggregatePlannedField("remaining"),
       effective: effectiveLoad,
     },
     intensity: aggregateIntensity({ load: effectiveLoad, duration: contributingDurationSeconds }),
@@ -437,11 +467,11 @@ export function buildPlanningRange(input: {
         ? planningRangeValue(summary.completedLoadStatus, summary.completedLoad)
         : planningRangeValue("unavailable", null),
       committed: summary
-        ? planningRangeValue(summary.remainingLoadStatus, summary.remainingLoad)
-        : planningRangeValue("unavailable", null),
+        ? plannedValue(summary.remainingLoadStatus, summary.remainingLoad)
+        : plannedValue("unavailable", null),
       target: summary
-        ? planningRangeValue(summary.recommendedLoadStatus, summary.recommendedLoad)
-        : planningRangeValue("unavailable", null),
+        ? plannedValue(summary.recommendedLoadStatus, summary.recommendedLoad)
+        : plannedValue("unavailable", null),
       effective: summary
         ? planningRangeValue(summary.status, summary.commonLoad)
         : planningRangeValue("unavailable", null),

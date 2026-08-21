@@ -43,7 +43,6 @@ Use this file when working in `packages/api`.
 
 - Prefer package-scoped checks while iterating.
 - Main commands are `pnpm --filter @repo/api check-types` and `pnpm --filter @repo/api test`.
-- For a new procedure or transaction, begin with the [thin router and transactional write exemplars](../../docs/agent-exemplars.md).
 
 ## References
 

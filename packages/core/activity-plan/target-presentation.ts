@@ -1,11 +1,34 @@
 import type { AthletePerformanceTargetFacts } from "../performance-model";
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
+import { resolvePerformanceTargetValue } from "../utils/recording-plan-target-resolver";
 import type { ActivityPlanTarget } from "./structure-schema";
 
 export type ActivityPlanTargetPresentation =
   | { kind: "exact_authored"; label: string; sourceLabel: string }
   | { kind: "exact_personalized"; label: string; sourceLabel: string }
   | { kind: "abstract"; label: string; sourceLabel: string };
+
+const presentationTargetOrder: Record<ActivityPlanTarget["type"], number> = {
+  RPE: 0,
+  "%FTP": 1,
+  "%ThresholdHR": 2,
+  "%MaxHR": 3,
+  watts: 4,
+  bpm: 5,
+  speed: 6,
+  cadence: 7,
+};
+
+/** Returns a copy in stable semantic order so authored array permutations render identically. */
+export function orderActivityPlanTargetsForPresentation(
+  targets: readonly ActivityPlanTarget[],
+): ActivityPlanTarget[] {
+  return [...targets].sort(
+    (left, right) =>
+      presentationTargetOrder[left.type] - presentationTargetOrder[right.type] ||
+      left.intensity - right.intensity,
+  );
+}
 
 function formatNumber(value: number): string {
   return Number.isInteger(value) ? String(value) : String(value);
@@ -32,24 +55,9 @@ function abstractLabel(target: ActivityPlanTarget): string {
   }
 }
 
-function isConfirmedHeartRate(
-  fact: { status: string; calibrationState: string; expiresAt: string | null },
-  asOf: string,
-): boolean {
-  return (
-    fact.status === "available" &&
-    fact.calibrationState === "confirmed" &&
-    (fact.expiresAt === null || Date.parse(fact.expiresAt) >= Date.parse(asOf))
-  );
-}
-
-function isConfirmedThreshold(fact: AthletePerformanceTargetFacts["thresholds"]["bike"]): boolean {
-  return fact.status === "available" && fact.state === "confirmed" && fact.freshness === "fresh";
-}
-
 /**
- * Presents authored plan targets without exposing a personalized conversion until
- * its underlying calibration is confirmed and current at the supplied instant.
+ * Presents every authored target and optionally adds a viewer-specific physical
+ * value. The authored source label is never discarded when conversion is unavailable.
  */
 export function resolveActivityPlanTargetPresentation(input: {
   target: ActivityPlanTarget;
@@ -60,37 +68,27 @@ export function resolveActivityPlanTargetPresentation(input: {
   const sourceLabel = abstractLabel(input.target);
   const { performanceTargets, target } = input;
 
-  if (target.type === "%FTP" && input.activityCategory === "bike") {
-    const fact = performanceTargets?.thresholds.bike;
-    if (fact && isConfirmedThreshold(fact) && typeof fact.value === "number") {
-      return {
-        kind: "exact_personalized",
-        label: `${formatNumber((fact.value * target.intensity) / 100)} W (${sourceLabel})`,
-        sourceLabel,
-      };
-    }
-  }
-
-  if (target.type === "%ThresholdHR" || target.type === "%MaxHR") {
-    const category =
-      input.activityCategory === "bike" ||
-      input.activityCategory === "run" ||
-      input.activityCategory === "swim"
-        ? input.activityCategory
-        : null;
-    const fact = category
-      ? performanceTargets?.heartRate[category][target.type === "%ThresholdHR" ? "lthr" : "maxHr"]
-      : undefined;
-    if (fact && isConfirmedHeartRate(fact, input.asOf) && typeof fact.valueBpm === "number") {
-      return {
-        kind: "exact_personalized",
-        label: `${formatNumber((fact.valueBpm * target.intensity) / 100)} bpm (${sourceLabel})`,
-        sourceLabel,
-      };
-    }
-  }
-
   if (target.type === "%FTP" || target.type === "%ThresholdHR" || target.type === "%MaxHR") {
+    const resolved = resolvePerformanceTargetValue({
+      target,
+      activityCategory: input.activityCategory,
+      ...(performanceTargets ? { performanceTargets } : {}),
+    });
+    if (resolved) {
+      return {
+        kind: "exact_personalized",
+        label: `${formatNumber(resolved.value)} ${resolved.unit === "watts" ? "W" : "bpm"} (${sourceLabel})`,
+        sourceLabel,
+      };
+    }
+  }
+
+  if (
+    target.type === "%FTP" ||
+    target.type === "%ThresholdHR" ||
+    target.type === "%MaxHR" ||
+    target.type === "RPE"
+  ) {
     return { kind: "abstract", label: sourceLabel, sourceLabel };
   }
   return { kind: "exact_authored", label: sourceLabel, sourceLabel };

@@ -45,15 +45,15 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 const completeLifecycleSetupInputSchema = z
   .object({
     profile: completeOnboardingSchema,
-    goal: profileGoalWriteDataSchema,
+    goal: profileGoalWriteDataSchema.optional(),
     settings_patch: lifecycleSettingsPatchSchema.optional(),
   })
   .strict();
 const completeLifecycleSetupOutputSchema = z
   .object({
     status: z.enum(["completed", "already_completed"]),
-    goal: z.object({ status: z.enum(["saved", "unchanged"]) }).strict(),
-    settings: z.object({ status: z.enum(["saved", "unchanged"]) }).strict(),
+    goal: z.object({ status: z.enum(["saved", "unchanged", "skipped"]) }).strict(),
+    settings: z.object({ status: z.enum(["saved", "unchanged", "skipped"]) }).strict(),
     created: z.object({ profile_metrics: z.number().int().nonnegative() }).strict(),
   })
   .strict();

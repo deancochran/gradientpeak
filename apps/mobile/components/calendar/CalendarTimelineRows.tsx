@@ -2,41 +2,21 @@ import type { CalendarProjectionItem, SemanticMetric } from "@repo/core";
 import type { PreferredUnitSystem } from "@repo/core/units";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { differenceInCalendarDays, format } from "date-fns";
+import { format } from "date-fns";
 import { CalendarDays, Check, Target, Users } from "lucide-react-native";
 import { memo } from "react";
 import { TouchableOpacity, View } from "react-native";
-import { parseDateKey } from "@/lib/calendar/dateMath";
 import { getActivityCategoryConfig } from "@/lib/constants/activities";
 import { formatDistanceMeters } from "@/lib/display/formatters";
 import { formatEstimatedDurationSeconds } from "@/lib/estimatedMetrics";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
-import type { DayRow } from "./CalendarTimelineModel";
-
-type DayHeaderRowProps = {
-  row: DayRow;
-  onPressDay: (dateKey: string) => void;
-  selectedDateKey: string;
-  todayKey: string;
-};
 
 export type CalendarScheduleObjectCardProps = {
+  inset?: boolean;
   object: CalendarProjectionItem;
   onPress?: (item: CalendarProjectionItem) => void;
   testIDPrefix?: string;
 };
-
-function formatDayDateLabel(dateKey: string) {
-  return format(parseDateKey(dateKey), "MMM d");
-}
-
-function formatDayRelativeLabel(dateKey: string, todayKey: string) {
-  const difference = differenceInCalendarDays(parseDateKey(dateKey), parseDateKey(todayKey));
-  if (difference === 0) return "Today";
-  if (difference === 1) return "Tomorrow";
-  if (difference === -1) return "Yesterday";
-  return format(parseDateKey(dateKey), "EEEE");
-}
 
 function formatTime(item: CalendarProjectionItem) {
   if (item.timing.allDay) return "All day";
@@ -59,7 +39,7 @@ function formatMetric(
   preferredUnitSystem: PreferredUnitSystem,
   estimated: boolean,
 ) {
-  if (metric.status === "unavailable") return `${metric.label} unavailable`;
+  if (metric.value === null) return "";
   let value: string;
   if (metric.unit === "meters") {
     value = formatDistanceMeters(metric.value, { preferredUnitSystem, fallback: "" });
@@ -103,52 +83,14 @@ function itemSubtitle(item: CalendarProjectionItem, preferredUnitSystem: Preferr
         ? item.groupEvent?.group.name
         : item.subtitle;
   const metrics = item.metrics
+    .filter((metric) => metric.status !== "unavailable")
     .slice(0, 3)
     .map((metric) => formatMetric(metric, preferredUnitSystem, item.estimated));
   return [context, ...metrics].filter((part): part is string => Boolean(part)).join(" · ");
 }
 
-export const CalendarDayHeaderRow = memo(
-  function CalendarDayHeaderRow({ row, onPressDay, selectedDateKey, todayKey }: DayHeaderRowProps) {
-    const isSelected = selectedDateKey === row.dateKey;
-    return (
-      <TouchableOpacity
-        onPress={() => onPressDay(row.dateKey)}
-        className="bg-background px-5 pb-3 pt-6"
-        activeOpacity={0.85}
-        testID={`calendar-day-row-${row.dateKey}`}
-        accessibilityRole="button"
-        accessibilityLabel={`${formatDayDateLabel(row.dateKey)}, ${formatDayRelativeLabel(row.dateKey, todayKey)}`}
-      >
-        <View className="gap-4">
-          <View className="flex-row items-baseline gap-3">
-            <Text
-              className={`text-2xl font-bold tracking-tight ${isSelected ? "text-primary" : "text-foreground"}`}
-            >
-              {formatDayDateLabel(row.dateKey)}
-            </Text>
-            <Text
-              className={`text-xl font-medium ${isSelected ? "text-primary" : "text-muted-foreground"}`}
-            >
-              {formatDayRelativeLabel(row.dateKey, todayKey)}
-            </Text>
-          </View>
-          {row.itemCount === 0 ? (
-            <Text className="text-sm text-muted-foreground">No scheduled activity</Text>
-          ) : null}
-        </View>
-      </TouchableOpacity>
-    );
-  },
-  (previous, next) =>
-    previous.row === next.row &&
-    previous.onPressDay === next.onPressDay &&
-    previous.todayKey === next.todayKey &&
-    (previous.selectedDateKey === previous.row.dateKey) ===
-      (next.selectedDateKey === next.row.dateKey),
-);
-
 export const CalendarScheduleObjectCard = memo(function CalendarScheduleObjectCard({
+  inset = true,
   object,
   onPress,
   testIDPrefix = "calendar",
@@ -165,12 +107,17 @@ export const CalendarScheduleObjectCard = memo(function CalendarScheduleObjectCa
   return (
     <TouchableOpacity
       onPress={() => onPress?.(object)}
-      className="mx-5 mb-2 flex-row items-center gap-3 rounded-lg bg-muted/30 px-3 py-3"
+      className={
+        inset
+          ? "mx-5 mb-2 flex-row items-center gap-3 rounded-xl border border-border bg-card px-3 py-3"
+          : "mb-2 flex-row items-center gap-3 rounded-xl border border-border bg-card px-3 py-3"
+      }
       activeOpacity={0.85}
       disabled={!onPress}
       testID={`${testIDPrefix}-${testKind}-row-${object.id}`}
       accessible
       accessibilityLabel={`${itemLabel(object)}, ${object.title}${subtitle ? `, ${subtitle}` : ""}`}
+      accessibilityRole={onPress ? "button" : undefined}
     >
       <Icon as={IconComponent} size={14} className="text-muted-foreground" />
       <View className="min-w-0 flex-1">

@@ -1,8 +1,16 @@
-import { activityPlanStructureSchema, trainingPlanSchema } from "@repo/core";
+import {
+  activityPlanDurationSchema,
+  activityPlanStructureSchema,
+  activityPlanTargetSchema,
+  canonicalActivityCategorySchema,
+  semanticMetricSchema,
+  trainingPlanSchema,
+} from "@repo/core";
 import { compileActivityPlan } from "@repo/core/activity-plan";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 
+import { createActivityPlanProjectionMetrics } from "../application/activity-plans/read-projections";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, publicProcedure } from "../trpc";
 
@@ -11,6 +19,42 @@ const uuidInputSchema = z.object({ id: z.string().uuid() }).strict();
 const profileSummarySchema = z.strictObject({
   name: z.string().nullable(),
   username: z.string().nullable(),
+});
+
+const publicActivityPlanDisplayStepSchema = z.strictObject({
+  name: z.string(),
+  description: z.string().optional(),
+  notes: z.string().optional(),
+  duration: activityPlanDurationSchema,
+  targets: z.array(activityPlanTargetSchema),
+});
+
+const publicActivityPlanDisplaySegmentSchema = z.discriminatedUnion("role", [
+  z.strictObject({
+    role: z.literal("activity"),
+    name: z.string(),
+    notes: z.string().optional(),
+    intervals: z.array(
+      z.strictObject({
+        name: z.string(),
+        notes: z.string().optional(),
+        repetitions: z.number().int().positive(),
+        steps: z.array(publicActivityPlanDisplayStepSchema),
+      }),
+    ),
+  }),
+  z.strictObject({
+    role: z.literal("rest"),
+    name: z.string(),
+    notes: z.string().optional(),
+    duration: activityPlanDurationSchema,
+  }),
+]);
+
+export const publicActivityPlanDisplayStructureSchema = z.strictObject({
+  version: z.literal(3),
+  activity_category: canonicalActivityCategorySchema,
+  segments: z.array(publicActivityPlanDisplaySegmentSchema),
 });
 
 const publicActivityArtifactRowSchema = z.looseObject({
@@ -51,10 +95,11 @@ export const publicActivityPlanShareSchema = z.strictObject({
   id: z.string().uuid(),
   name: z.string(),
   description: z.string().nullable(),
-  notes: z.string().nullable(),
   activity_category: z.enum(["run", "bike", "swim", "strength", "other"]),
   structure_version: z.number().int().positive(),
   structure_summary: z.string(),
+  structure: publicActivityPlanDisplayStructureSchema,
+  metrics: z.array(semanticMetricSchema).length(4),
   is_system_template: z.boolean(),
   owner: profileSummarySchema,
 });
@@ -87,6 +132,40 @@ function ownerFromRow(row: { owner_name: string | null; owner_username: string |
   };
 }
 
+function toPublicActivityPlanDisplayStructure(structure: unknown) {
+  const parsed = activityPlanStructureSchema.parse(structure);
+  return publicActivityPlanDisplayStructureSchema.parse({
+    version: parsed.version,
+    activity_category: parsed.activity_category,
+    segments: parsed.segments.map((segment) =>
+      segment.role === "rest"
+        ? {
+            role: segment.role,
+            name: segment.name,
+            ...(segment.notes ? { notes: segment.notes } : {}),
+            duration: segment.duration,
+          }
+        : {
+            role: segment.role,
+            name: segment.name,
+            ...(segment.notes ? { notes: segment.notes } : {}),
+            intervals: segment.intervals.map((interval) => ({
+              name: interval.name,
+              ...(interval.notes ? { notes: interval.notes } : {}),
+              repetitions: interval.repetitions,
+              steps: interval.steps.map((step) => ({
+                name: step.name,
+                ...(step.description ? { description: step.description } : {}),
+                ...(step.notes ? { notes: step.notes } : {}),
+                duration: step.duration,
+                targets: step.targets,
+              })),
+            })),
+          },
+    ),
+  });
+}
+
 type PublicActivityRow = {
   id: string;
   notes: string | null;
@@ -112,8 +191,8 @@ type PublicActivityPlanRow = {
   id: string;
   name: string;
   description: string | null;
-  notes: string | null;
   structure: unknown;
+  updated_at: Date | string;
   is_system_template: boolean;
   owner_name: string | null;
   owner_username: string | null;
@@ -206,7 +285,7 @@ export const publicShareRouter = createTRPCRouter({
     .output(publicActivityPlanShareSchema.nullable())
     .query(async ({ ctx, input }) => {
       const result = await getRequiredDb(ctx).execute(sql<PublicActivityPlanRow>`
-        select ap.id, ap.name, ap.description, ap.notes, ap.structure, ap.is_system_template,
+        select ap.id, ap.name, ap.description, ap.structure, ap.updated_at, ap.is_system_template,
           p.full_name as owner_name, p.username as owner_username
         from activity_plans ap
         left join profiles p on p.id = ap.profile_id
@@ -221,10 +300,15 @@ export const publicShareRouter = createTRPCRouter({
         id: row.id,
         name: row.name,
         description: row.description,
-        notes: row.notes,
         activity_category: compiled.activity_category,
         structure_version: compiled.structureVersion,
         structure_summary: "Structured plan details",
+        structure: toPublicActivityPlanDisplayStructure(structure),
+        metrics: createActivityPlanProjectionMetrics({
+          id: row.id,
+          structure,
+          updatedAt: row.updated_at,
+        }),
         is_system_template: row.is_system_template,
         owner: ownerFromRow(row),
       });

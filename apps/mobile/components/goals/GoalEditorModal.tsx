@@ -470,7 +470,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
           className={contentSizing === "intrinsic" ? "gap-3" : "flex-1 gap-3"}
           testID="goal-editor-form"
         >
-          <GoalSection icon={Trophy} title="Choose a template">
+          <GoalSection icon={Trophy} title="Templates">
             <View className="flex-row flex-wrap gap-1.5">
               {GOAL_PRESETS.map((preset) => (
                 <Pressable
@@ -487,17 +487,15 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
             </View>
           </GoalSection>
 
-          <View
-            className={`rounded-2xl border px-3 py-2 ${
-              qualityFeedback.canGuidePlan
-                ? "border-primary/50 bg-primary/10"
-                : "border-border bg-muted/20"
-            }`}
-            testID="goal-quality-feedback"
-          >
-            <Text className="text-sm font-semibold text-foreground">{qualityFeedback.label}</Text>
-            <Text className="text-xs text-muted-foreground">{qualityFeedback.message}</Text>
-          </View>
+          {!qualityFeedback.canGuidePlan ? (
+            <View
+              className="rounded-2xl border border-border bg-muted/20 px-3 py-2"
+              testID="goal-quality-feedback"
+            >
+              <Text className="text-sm font-semibold text-foreground">{qualityFeedback.label}</Text>
+              <Text className="text-xs text-muted-foreground">{qualityFeedback.message}</Text>
+            </View>
+          ) : null}
 
           <GoalSection icon={Flag} title="Goal basics">
             <FormTextField
@@ -548,7 +546,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
 
               {supportsActivityChoice(draft.goalType) ? (
                 <View className="flex-1 gap-2">
-                  <Text className="text-sm font-medium text-foreground">ActivityCategory</Text>
+                  <Text className="text-sm font-medium text-foreground">Activity</Text>
                   <Select
                     value={
                       activityOption
@@ -564,10 +562,10 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                     }}
                   >
                     <SelectTrigger
-                      accessibilityLabel="ActivityCategory"
+                      accessibilityLabel="Activity"
                       testID="goal-activity-select-trigger"
                     >
-                      <SelectValue placeholder="ActivityCategory" />
+                      <SelectValue placeholder="Activity" />
                     </SelectTrigger>
                     <SelectContent>
                       <NativeSelectScrollView>

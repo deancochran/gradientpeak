@@ -41,7 +41,6 @@ Use this file when working in `packages/core`.
 ## Validation
 
 - Use `pnpm --filter @repo/core check-types` and `pnpm --filter @repo/core test` for package-scoped verification.
-- For a new shared concept, begin with the [Core contract exemplar](../../docs/agent-exemplars.md) and add behavior tests before migrating consumers.
 
 ## References
 

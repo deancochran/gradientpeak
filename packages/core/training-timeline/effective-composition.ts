@@ -133,6 +133,7 @@ const composedScheduledItemSchema = z
     kind: z.literal("scheduled"),
     scheduledItemId: identitySchema,
     date: calendarDateSchema,
+    loadStatus: z.enum(["complete", "partial", "unavailable"]),
     commonLoad: commonLoadEnvelopeSchema,
   })
   .strict();
@@ -143,6 +144,7 @@ const composedCompletedItemSchema = z
     completedActivityId: identitySchema,
     date: calendarDateSchema,
     replacedScheduledItemId: identitySchema.nullable(),
+    loadStatus: z.enum(["complete", "partial", "unavailable"]),
     commonLoad: commonLoadEnvelopeSchema,
   })
   .strict();
@@ -281,6 +283,12 @@ function effectiveAggregate(
   };
 }
 
+function envelopeLoadStatus(envelope: CommonLoadEnvelope): "complete" | "partial" | "unavailable" {
+  if (envelope.status === "unavailable") return "unavailable";
+  if (envelope.status === "partial") return "partial";
+  return "complete";
+}
+
 /**
  * Composes effective common Load for one bounded calendar-date period. Scheduled dates and the
  * as-of instant are interpreted in the explicit planning timezone; no ambient clock is consulted.
@@ -338,6 +346,7 @@ export function composeEffectivePlanLoad(
       kind: "scheduled" as const,
       scheduledItemId: scheduled.scheduledItemId,
       date: scheduled.scheduledDate,
+      loadStatus: envelopeLoadStatus(scheduled.commonLoad),
       commonLoad: scheduled.commonLoad,
     };
     items.push(composed);
@@ -355,6 +364,7 @@ export function composeEffectivePlanLoad(
       completedActivityId: completed.completedActivityId,
       date: completed.completedDate,
       replacedScheduledItemId,
+      loadStatus: envelopeLoadStatus(completed.commonLoad),
       commonLoad: completed.commonLoad,
     });
   }

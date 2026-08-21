@@ -1,48 +1,66 @@
 // @vitest-environment jsdom
-
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
 import { RecordPlanPage } from "./plan";
 
-const mocks = vi.hoisted(() => ({ getToday: vi.fn(), navigate: vi.fn() }));
-
-const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
-
-function structure(activity_category: "run" | "bike" | "swim") {
-  return {
-    version: 3,
-    activity_category,
-    segments: [
-      {
-        activity_category,
-        id: id(1),
-        intervals: [
-          {
-            id: id(2),
-            name: "Work",
-            repetitions: 1,
-            steps: [
-              {
-                duration: { seconds: 60, type: "time" },
-                id: id(3),
-                name: "Step",
-                targets: [{ intensity: 5, type: "RPE" }],
-              },
-            ],
-          },
-        ],
-        name: activity_category,
-        role: "activity",
-      },
-    ],
-  };
-}
+const mocks = vi.hoisted(() => ({ navigate: vi.fn() }));
+const PLAN_ID = "00000000-0000-4000-8000-000000000010";
+const EVENT_ID = "00000000-0000-4000-8000-000000000020";
+const structure = {
+  version: 3,
+  activity_category: "run",
+  segments: [
+    {
+      id: "00000000-0000-4000-8000-000000000101",
+      name: "Main",
+      role: "activity",
+      intervals: [
+        {
+          id: "00000000-0000-4000-8000-000000000102",
+          name: "Set",
+          repetitions: 1,
+          steps: [
+            {
+              id: "00000000-0000-4000-8000-000000000103",
+              name: "Tempo",
+              duration: { type: "time", seconds: 60 },
+              targets: [{ type: "%ThresholdHR", intensity: 80 }],
+            },
+            {
+              id: "00000000-0000-4000-8000-000000000104",
+              name: "Perceived effort",
+              duration: { type: "time", seconds: 60 },
+              targets: [{ type: "RPE", intensity: 7 }],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+} as const;
+const plans = [
+  {
+    id: PLAN_ID,
+    name: "Tempo run",
+    description: "Steady work",
+    activityCategory: "run",
+    capabilities: { canRecord: true },
+  },
+  {
+    id: "00000000-0000-4000-8000-000000000011",
+    name: "Recovery ride",
+    description: "Easy spin",
+    activityCategory: "bike",
+    capabilities: { canRecord: true },
+  },
+];
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
     useNavigate: () => mocks.navigate,
-    useSearch: () => ({ activity_category: "run" }),
+    useSearch: () => ({ activity_category: "run", gps: "off" }),
   }),
   Link: ({ children }: { children: React.ReactNode }) => <a href="/record">{children}</a>,
 }));
@@ -51,10 +69,71 @@ vi.mock("../../../lib/api/client", () => ({
   api: {
     calendar: {
       day: {
-        useQuery: () => {
-          const result = mocks.getToday();
-          return { ...result, data: { projection: { items: result.data ?? [] } } };
-        },
+        useQuery: () => ({
+          data: {
+            projection: {
+              items: [
+                {
+                  id: EVENT_ID,
+                  kind: "planned_activity",
+                  status: "scheduled",
+                  calendarDate: "2026-08-19",
+                  timing: { startsAt: null },
+                  plan: plans[0],
+                },
+              ],
+            },
+          },
+          isLoading: false,
+        }),
+      },
+    },
+    activityPlans: {
+      list: {
+        useInfiniteQuery: (input: { search?: string }) => ({
+          data: {
+            pages: [
+              {
+                items: input.search
+                  ? plans.filter((plan) =>
+                      plan.name.toLowerCase().includes((input.search ?? "").toLowerCase()),
+                    )
+                  : plans,
+                nextCursor: undefined,
+              },
+            ],
+          },
+          isFetching: false,
+          isFetchingNextPage: false,
+          hasNextPage: false,
+          fetchNextPage: vi.fn(),
+        }),
+      },
+      getById: {
+        useQuery: (input: { id: string }) => ({
+          data:
+            input.id === PLAN_ID
+              ? {
+                  detail: {
+                    ...plans[0],
+                    activityPlanRevision: 2,
+                    structure,
+                    structureHash: `v1:sha256:${"a".repeat(64)}`,
+                    metrics: [
+                      {
+                        key: "elapsed_duration",
+                        label: "Duration",
+                        status: "available",
+                        value: 60,
+                        unit: "seconds",
+                      },
+                    ],
+                  },
+                }
+              : undefined,
+          isLoading: false,
+          isError: false,
+        }),
       },
     },
   },
@@ -69,85 +148,33 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("RecordPlanPage search", () => {
-  it("keeps local filtering and shared search clear semantics", () => {
-    mocks.getToday.mockReturnValue({
-      data: [
-        {
-          plan: {
-            description: "Steady aerobic work",
-            name: "Tempo run",
-            activityCategory: "run",
-            structure: structure("run"),
-          },
-          id: "event-1",
-          kind: "planned_activity",
-          calendarDate: "2026-07-14",
-        },
-        {
-          plan: {
-            description: "Easy spin",
-            name: "Recovery ride",
-            activityCategory: "bike",
-            structure: structure("bike"),
-          },
-          id: "event-2",
-          kind: "planned_activity",
-          calendarDate: "2026-07-14",
-        },
-      ],
-      error: null,
-      isLoading: false,
-    });
+describe("RecordPlanPage", () => {
+  it("searches all visible recordable plans", () => {
     render(<RecordPlanPage />);
-
-    const search = screen.getByRole("searchbox", { name: "Search today's plans" });
-    expect(search.getAttribute("name")).toBe("planSearch");
+    const search = screen.getByRole("searchbox", { name: "Search all activity plans" });
     fireEvent.change(search, { target: { value: "tempo" } });
-    expect(screen.getByText("Tempo run")).toBeTruthy();
+    expect(screen.getAllByText("Tempo run").length).toBeGreaterThan(0);
     expect(screen.queryByText("Recovery ride")).toBeNull();
-
-    fireEvent.click(screen.getByTestId("record-plan-search-clear"));
-    expect(screen.getByText("Recovery ride")).toBeTruthy();
   });
 
-  it("shows canonical plans and excludes malformed route-state data from the picker", () => {
-    mocks.getToday.mockReturnValue({
-      data: [
-        {
-          plan: {
-            description: "Repeat run",
-            name: "Double run",
-            activityCategory: "run",
-            structure: structure("run"),
-          },
-          id: "event-1",
-          kind: "planned_activity",
-          calendarDate: "2026-07-14",
-        },
-        {
-          plan: {
-            name: "Malformed plan",
-            activityCategory: null,
-            structure: { version: 3, segments: [] },
-          },
-          id: "event-invalid",
-          kind: "planned_activity",
-          calendarDate: "2026-07-14",
-        },
-      ],
-      error: null,
-      isLoading: false,
-    });
+  it("records missing-fact and RPE targets as authored without an independent personalization choice", () => {
     render(<RecordPlanPage />);
+    fireEvent.click(screen.getByRole("button", { name: /Tempo run.*Scheduled instance/i }));
 
-    expect(screen.getByText("Double run")).toBeTruthy();
-    expect(screen.queryByText("Malformed plan")).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Personalize targets" })).toBeNull();
+    expect(screen.getByText("80% Threshold HR")).toBeTruthy();
+    expect(screen.getByText("7 RPE")).toBeTruthy();
+    expect(screen.getByText(/Recording uses the plan's authored targets/i)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Attach plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use this plan" }));
     expect(mocks.navigate).toHaveBeenCalledWith({
-      search: { activity_category: "run", eventId: "event-1" },
       to: "/record",
+      search: {
+        activity_category: "run",
+        gps: "off",
+        activityPlanId: PLAN_ID,
+        eventId: EVENT_ID,
+      },
     });
   });
 });

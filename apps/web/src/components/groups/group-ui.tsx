@@ -64,8 +64,8 @@ export type GroupEventSummary = {
   is_recurring_occurrence: boolean;
   is_recurring_series: boolean;
   acceptedRsvpCount: number;
-  viewerRsvp: { status: "declined" } | null;
-  viewerSeriesRsvp: { status: "declined" } | null;
+  viewerRsvp: { status: "going" | "declined" } | null;
+  viewerSeriesRsvp: { status: "going" | "declined" } | null;
   group?: Pick<WebGroupSummary, "id" | "name" | "slug" | "avatar_url"> | null;
 };
 

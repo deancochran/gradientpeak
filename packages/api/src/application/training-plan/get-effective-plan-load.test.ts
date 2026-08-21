@@ -208,6 +208,7 @@ function effectivePlanRepository(
     getOwnedEventById: unexpectedCall,
     listCompletedActivitiesInRange: unexpectedCall,
     listCalendarCompletedActivities: unexpectedCall,
+    listCalendarCompletedActivitiesByIds: unexpectedCall,
     listCalendarGoals: unexpectedCall,
     listCalendarGroupActivityPlans: unexpectedCall,
     listPlannedEventDatesInRange: unexpectedCall,
@@ -762,5 +763,145 @@ describe("getEffectivePlanLoad", () => {
         ],
       },
     });
+  });
+
+  it("ignores an out-of-range recommendation before estimating its malformed plan", async () => {
+    const activityPlanId = "22222222-2222-4222-8222-222222222222";
+    const getEffectivePlanLoadInputs = vi.fn().mockResolvedValue({
+      activities: [],
+      events: [],
+      recommendationEvents: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          activity_plan: { id: activityPlanId, structure: { malformed: true } },
+          activity_plan_id: activityPlanId,
+          linked_activity_id: null,
+          original_starts_at: "2026-09-01T07:00:00.000Z",
+          scheduled_date: "2026-09-01",
+          starts_at: "2026-09-01T07:00:00.000Z",
+          status: "scheduled",
+          training_plan_id: "33333333-3333-4333-8333-333333333333",
+        },
+      ],
+      recommendationSource: {
+        scheduleBatchId: null,
+        status: "complete",
+        trainingPlanId: "33333333-3333-4333-8333-333333333333",
+      },
+      planningTimezone: "UTC",
+      resolvedRange: { startDate: "2026-07-20", endDate: "2026-07-26" },
+      sourceCounts: { activities: 0, events: 0 },
+      sourceCoverage: {
+        activities: { startDate: "2026-07-20", endDate: "2026-07-26", status: "complete" },
+        scheduledItems: {
+          startDate: "2026-07-20",
+          endDate: "2026-07-26",
+          status: "complete",
+        },
+      },
+    });
+    activityAnalysis.loadActivitySegmentsByActivityId.mockResolvedValue(new Map());
+    activityAnalysis.buildActivityDerivedSummaries.mockResolvedValue({
+      parent: new Map(),
+      segments: [],
+    });
+    activityPlanMetrics.estimateActivityPlans.mockImplementation(async (...args: unknown[]) => {
+      const plans = (args[0] ?? []) as Array<{ id: string }>;
+      if (plans.some((plan: { id: string }) => plan.id === activityPlanId)) {
+        throw new Error("Out-of-range malformed plan must not be estimated");
+      }
+      return [];
+    });
+
+    const result = await getEffectivePlanLoad({
+      asOf: new Date("2026-07-20T12:00:00.000Z"),
+      db: {} as never,
+      profileId: "profile-1",
+      repository: { getEffectivePlanLoadInputs } as never,
+      request: { startDate: "2026-07-20", endDate: "2026-07-26" },
+    });
+
+    expect(result).toMatchObject({
+      status: "available",
+      resolvedRange: { startDate: "2026-07-20", endDate: "2026-07-26" },
+    });
+    expect(activityPlanMetrics.estimateActivityPlans).toHaveBeenCalledWith(
+      [],
+      expect.anything(),
+      "profile-1",
+      expect.objectContaining({ asOf: expect.any(Date) }),
+    );
+  });
+
+  it("filters recommendation dates across a non-UTC planning-day boundary", async () => {
+    const outsidePlan = { id: "22222222-2222-4222-8222-222222222222" };
+    const insidePlan = { id: "33333333-3333-4333-8333-333333333333" };
+    const event = (input: { id: string; originalStartsAt: string; plan: { id: string } }) => ({
+      id: input.id,
+      activity_plan: input.plan,
+      activity_plan_id: input.plan.id,
+      linked_activity_id: null,
+      original_starts_at: input.originalStartsAt,
+      scheduled_date: "2026-07-20",
+      starts_at: "2026-07-20T18:00:00.000Z",
+      status: "scheduled",
+      training_plan_id: "44444444-4444-4444-8444-444444444444",
+    });
+    const getEffectivePlanLoadInputs = vi.fn().mockResolvedValue({
+      activities: [],
+      events: [],
+      recommendationEvents: [
+        event({
+          id: "55555555-5555-4555-8555-555555555555",
+          // 23:59 on July 19 in America/Los_Angeles.
+          originalStartsAt: "2026-07-20T06:59:00.000Z",
+          plan: outsidePlan,
+        }),
+        event({
+          id: "66666666-6666-4666-8666-666666666666",
+          // 00:00 on July 20 in America/Los_Angeles.
+          originalStartsAt: "2026-07-20T07:00:00.000Z",
+          plan: insidePlan,
+        }),
+      ],
+      recommendationSource: {
+        scheduleBatchId: null,
+        status: "complete",
+        trainingPlanId: "44444444-4444-4444-8444-444444444444",
+      },
+      planningTimezone: "America/Los_Angeles",
+      resolvedRange: { startDate: "2026-07-20", endDate: "2026-07-20" },
+      sourceCounts: { activities: 0, events: 0 },
+      sourceCoverage: {
+        activities: { startDate: "2026-07-20", endDate: "2026-07-20", status: "complete" },
+        scheduledItems: {
+          startDate: "2026-07-20",
+          endDate: "2026-07-20",
+          status: "complete",
+        },
+      },
+    });
+    activityAnalysis.loadActivitySegmentsByActivityId.mockResolvedValue(new Map());
+    activityAnalysis.buildActivityDerivedSummaries.mockResolvedValue({
+      parent: new Map(),
+      segments: [],
+    });
+    activityPlanMetrics.estimateActivityPlans.mockResolvedValue([]);
+
+    const result = await getEffectivePlanLoad({
+      asOf: new Date("2026-07-20T12:00:00.000Z"),
+      db: {} as never,
+      profileId: "profile-1",
+      repository: { getEffectivePlanLoadInputs } as never,
+      request: { startDate: "2026-07-20", endDate: "2026-07-20" },
+    });
+
+    expect(result.status).toBe("available");
+    expect(activityPlanMetrics.estimateActivityPlans).toHaveBeenCalledWith(
+      [insidePlan],
+      expect.anything(),
+      "profile-1",
+      expect.objectContaining({ asOf: expect.any(Date) }),
+    );
   });
 });

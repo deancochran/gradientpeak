@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   fetchNextPage: vi.fn(),
   refetch: vi.fn(),
   navigate: vi.fn(),
+  toggleLike: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -20,7 +21,14 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("../../lib/api/client", () => ({
-  api: { feed: { getFeed: { useInfiniteQuery: mocks.query } } },
+  api: {
+    feed: { getFeed: { useInfiniteQuery: mocks.query } },
+    social: {
+      toggleLike: {
+        useMutation: () => ({ isPending: false, mutate: mocks.toggleLike }),
+      },
+    },
+  },
 }));
 
 vi.mock("../../hooks/use-viewing-user-preferred-unit-system", () => ({
@@ -86,6 +94,11 @@ describe("ActivityFeed", () => {
     });
     render(<ActivityFeed />);
     expect(screen.getByText("Morning Run")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Like activity Morning Run/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Comment on activity Morning Run/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Share activity Morning Run" })).toBeTruthy();
+    expect(screen.getByText("@runner")).toBeTruthy();
+    expect(screen.getByText("Run")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Load more activities" }));
     expect(mocks.fetchNextPage).toHaveBeenCalledOnce();
     expect(mocks.query).toHaveBeenCalledWith(

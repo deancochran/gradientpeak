@@ -160,7 +160,6 @@ describe("mobile-to-web parity registry", () => {
       "planning.plan_tab": "implemented-unverified",
       "profile.settings": "implemented-unverified",
       "profile.training_preferences": "implemented-unverified",
-      "profile.trends": "implemented",
       "record.launcher": "implemented",
       "record.session": "implemented-unverified",
       "record.sensors": "missing",

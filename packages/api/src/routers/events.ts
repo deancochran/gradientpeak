@@ -291,6 +291,22 @@ const calendarRangeInputSchema = z
       });
   });
 
+const calendarPageInputSchema = z
+  .object({
+    pageStartDate: calendarDateKeySchema,
+    pageSizeDays: z.number().int().min(7).max(62).default(42),
+    eventTypes: z
+      .array(z.enum(["custom", "planned", "race_target"]))
+      .min(1)
+      .optional(),
+    activityCategory: z.enum(["run", "bike", "swim", "strength", "other"]).optional(),
+    activityPlanId: z.string().uuid().optional(),
+    trainingPlanId: z.string().uuid().optional(),
+    includeAdhoc: z.boolean().default(true),
+    limit: z.number().int().min(1).max(500).default(500),
+  })
+  .strict();
+
 const calendarDayInputSchema = z
   .object({
     date: calendarDateKeySchema,
@@ -780,6 +796,21 @@ async function readPersonalCalendarRange(
   const linkedActivityIds = new Set(
     items.map((event) => event.linked_activity_id).filter((id): id is string => Boolean(id)),
   );
+  const rangeActivityIds = new Set(activityRows.map((activity) => activity.id));
+  const missingLinkedActivityIds = [...linkedActivityIds].filter((id) => !rangeActivityIds.has(id));
+  const linkedActivityRows = await repository.listCalendarCompletedActivitiesByIds({
+    activityIds: missingLinkedActivityIds,
+    profileId,
+  });
+  const activityDisplayById = new Map(
+    [...activityRows, ...linkedActivityRows].map((activity) => [
+      activity.id,
+      toActivityDisplayModel({
+        activity: { ...activity, type: activity.activity_category },
+        viewerId: profileId,
+      }),
+    ]),
+  );
   const visibleActivityRows = activityRows
     .filter((activity) => !linkedActivityIds.has(activity.id))
     .slice(0, CALENDAR_PROJECTION_SOURCE_LIMIT);
@@ -788,12 +819,7 @@ async function readPersonalCalendarRange(
     name: activity.name,
     started_at: activity.started_at,
     scheduled_date: getCalendarDateInIanaZone(activity.started_at, planningTimezone),
-    distance_meters: activity.distance_meters,
-    duration_seconds: Math.round((activity.active_ms ?? activity.elapsed_ms) / 1000),
-    display: toActivityDisplayModel({
-      activity: { ...activity, type: activity.activity_category },
-      viewerId: profileId,
-    }),
+    display: activityDisplayById.get(activity.id),
   }));
   const goals = profileGoalRecordSchema
     .array()
@@ -842,7 +868,12 @@ async function readPersonalCalendarRange(
     startDate: input.startDate,
     endDateExclusive: input.endDateExclusive,
     timezone: planningTimezone,
-    events: items,
+    events: items.map((event) => ({
+      ...event,
+      linkedActivityDisplay: event.linked_activity_id
+        ? (activityDisplayById.get(event.linked_activity_id) ?? null)
+        : null,
+    })),
     completedActivities,
     goals,
     groupEvents,
@@ -882,7 +913,7 @@ async function readPersonalCalendarDaySummary(
 
 export const eventsRouter = createTRPCRouter({
   getById: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.string().uuid(), personalize: z.boolean().default(false) }).strict())
     .query(async ({ ctx, input }) => {
       const eventReadRepository = getEventReadRepository(ctx);
       let data;
@@ -909,6 +940,10 @@ export const eventsRouter = createTRPCRouter({
           event.activity_plan,
           getRequiredDb(ctx),
           ctx.session.user.id,
+          {
+            personalize:
+              input.personalize && event.activity_plan.profile_id === ctx.session.user.id,
+          },
         );
         const [eventWithOwner] = await enrichEventsWithActivityPlanIdentity(getRequiredDb(ctx), [
           {
@@ -1356,6 +1391,18 @@ export const calendarRouter = createTRPCRouter({
   range: protectedProcedure
     .input(calendarRangeInputSchema)
     .query(({ ctx, input }) => readPersonalCalendarRange(ctx, ctx.session.user.id, input)),
+  page: protectedProcedure.input(calendarPageInputSchema).query(async ({ ctx, input }) => {
+    return readPersonalCalendarRange(ctx, ctx.session.user.id, {
+      startDate: input.pageStartDate,
+      endDateExclusive: addDaysDateOnlyUtc(input.pageStartDate, input.pageSizeDays),
+      eventTypes: input.eventTypes,
+      activityCategory: input.activityCategory,
+      activityPlanId: input.activityPlanId,
+      trainingPlanId: input.trainingPlanId,
+      includeAdhoc: input.includeAdhoc,
+      limit: input.limit,
+    });
+  }),
   day: protectedProcedure.input(calendarDayInputSchema).query(async ({ ctx, input }) => {
     const result = await readPersonalCalendarRange(ctx, ctx.session.user.id, {
       startDate: input.date,

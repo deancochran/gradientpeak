@@ -1,4 +1,7 @@
-import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import {
+  activityPlanStructureSchema,
+  resolveActivityPlanSessionFlow,
+} from "@repo/core/activity-plan";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,6 +29,8 @@ import { toast } from "sonner";
 
 import { ActivityPlanComments } from "../../../components/activity-plan/activity-plan-comments";
 import { ActivityPlanComposer } from "../../../components/activity-plan/activity-plan-composer";
+import { ActivityPlanEstimateRow } from "../../../components/activity-plan/activity-plan-estimates";
+import { ActivityPlanSessionFlow } from "../../../components/activity-plan/activity-plan-session-flow";
 import { ActivityPlanStructure } from "../../../components/activity-plan/activity-plan-structure";
 import {
   DetailPageIntro,
@@ -44,10 +49,17 @@ function ActivityPlanDetailPage() {
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
   const { activityPlanId } = Route.useParams();
-  const planQuery = api.activityPlans.getById.useQuery({ id: activityPlanId }, { retry: false });
-  const performanceTargetsQuery = api.athleteIntelligence.getReadModel.useQuery({
-    sections: { publishedState: true },
-  });
+  const [personalizationChoice, setPersonalizationChoice] = useState<boolean | null>(null);
+  const planQuery = api.activityPlans.getById.useQuery(
+    { id: activityPlanId, personalize: false },
+    { retry: false },
+  );
+  const performanceTargetsQuery = api.athleteIntelligence.getReadModel.useQuery(
+    { sections: { publishedState: true } },
+    {
+      enabled: Boolean(planQuery.data?.detail?.capabilities.canEdit),
+    },
+  );
   const today = getTodayDateKey();
   const scheduleQuery = api.calendar.range.useQuery({
     startDate: today,
@@ -70,7 +82,21 @@ function ActivityPlanDetailPage() {
   );
   const scheduledEvent = scheduledEvents[0];
   const isOwner = detail?.capabilities.canEdit ?? false;
-  const hasCanonicalStructure = activityPlanStructureSchema.safeParse(detail?.structure).success;
+  const parsedStructure = activityPlanStructureSchema.safeParse(detail?.structure);
+  const displayStructure = parsedStructure.success ? parsedStructure.data : null;
+  const performanceTargets = performanceTargetsQuery.data?.publishedState?.performanceTargets;
+  const personalizationEligibility = resolveActivityPlanSessionFlow({
+    structure: displayStructure,
+    ...(performanceTargets ? { performanceTargets } : {}),
+    personalize: false,
+  }).eligibility;
+  const personalizeTargets = Boolean(
+    isOwner && personalizationEligibility.eligible && (personalizationChoice ?? true),
+  );
+
+  useEffect(() => {
+    setPersonalizationChoice(null);
+  }, [activityPlanId]);
 
   useEffect(() => {
     setLiked(detail?.engagement.viewerHasLiked ?? false);
@@ -127,7 +153,8 @@ function ActivityPlanDetailPage() {
     onSuccess: async (event) => {
       await Promise.all([
         utils.calendar.invalidate(),
-        utils.events.getById.invalidate({ id: event.id }),
+        utils.events.getById.invalidate({ id: event.id, personalize: false }),
+        utils.events.getById.invalidate({ id: event.id, personalize: true }),
       ]);
       toast.success("Activity plan rescheduled");
     },
@@ -157,7 +184,7 @@ function ActivityPlanDetailPage() {
     );
   }
 
-  if (planQuery.isError || !planQuery.data || !detail || !hasCanonicalStructure) {
+  if (planQuery.isError || !planQuery.data || !detail) {
     return (
       <Card className="mx-auto max-w-2xl border-destructive/30">
         <CardHeader>
@@ -211,12 +238,6 @@ function ActivityPlanDetailPage() {
   }
 
   if (!detail) return null;
-  const metrics = detail.metrics.map((metric) =>
-    metric.status === "unavailable"
-      ? `${metric.label} unavailable`
-      : `${metric.label} ${metric.unit === "ratio" ? metric.value.toFixed(2) : Math.round(metric.value)}`,
-  );
-
   return (
     <div className="container mx-auto max-w-5xl space-y-6 py-4 print:max-w-none print:py-0">
       <Button asChild className="print:hidden" size="sm" variant="ghost">
@@ -243,17 +264,19 @@ function ActivityPlanDetailPage() {
               }}
               pending={toggleLike.isPending}
             />
-            <Button
-              disabled={duplicatePlan.isPending}
-              onClick={() =>
-                duplicatePlan.mutate({ id: detail.id, newName: `${detail.name} (Copy)` })
-              }
-              type="button"
-              variant="outline"
-            >
-              <Copy className="mr-2 h-4 w-4" />
-              {duplicatePlan.isPending ? "Duplicating..." : "Duplicate"}
-            </Button>
+            {detail.capabilities.canDuplicate ? (
+              <Button
+                disabled={duplicatePlan.isPending}
+                onClick={() =>
+                  duplicatePlan.mutate({ id: detail.id, newName: `${detail.name} (Copy)` })
+                }
+                type="button"
+                variant="outline"
+              >
+                <Copy className="mr-2 h-4 w-4" />
+                {duplicatePlan.isPending ? "Duplicating..." : "Duplicate"}
+              </Button>
+            ) : null}
             {isOwner ? (
               <Button onClick={() => setEditing(true)} type="button" variant="outline">
                 <Pencil className="mr-2 h-4 w-4" /> Edit
@@ -300,12 +323,10 @@ function ActivityPlanDetailPage() {
       />
 
       <div className="grid gap-6 lg:grid-cols-[2fr_1fr] print:block">
-        <Card className="print:hidden">
+        <Card>
           <CardHeader>
             <CardTitle>Plan summary</CardTitle>
-            <CardDescription>
-              Training intent with common Load and Intensity availability.
-            </CardDescription>
+            <CardDescription>Independently known and estimated plan quantities.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="flex flex-wrap gap-2">
@@ -316,20 +337,7 @@ function ActivityPlanDetailPage() {
                 {detail.visibility}
               </span>
             </div>
-            {metrics.length ? (
-              <dl className="grid gap-3 sm:grid-cols-2">
-                {metrics.map((metric) => (
-                  <div className="rounded-xl bg-muted/40 px-4 py-3" key={metric}>
-                    <dt className="text-xs uppercase text-muted-foreground">Estimate</dt>
-                    <dd className="font-medium">{metric}</dd>
-                  </div>
-                ))}
-              </dl>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Duration, common Load, and Intensity are unavailable for this plan.
-              </p>
-            )}
+            <ActivityPlanEstimateRow metrics={detail.metrics} />
             {detail.notes ? (
               <div>
                 <h2 className="font-semibold">Notes</h2>
@@ -354,7 +362,13 @@ function ActivityPlanDetailPage() {
               <div>
                 <dt className="text-muted-foreground">Recording</dt>
                 <dd className="font-medium">
-                  {detail.gpsRecordingEnabled ? "GPS-capable on supported devices" : "Timer only"}
+                  {detail.gpsRecordingEnabled === undefined
+                    ? detail.capabilities.canDuplicate
+                      ? "Available after duplicating this system template"
+                      : "Available only to the plan owner"
+                    : detail.gpsRecordingEnabled
+                      ? "GPS-capable on supported devices"
+                      : "Timer only"}
                 </dd>
               </div>
             </dl>
@@ -366,68 +380,85 @@ function ActivityPlanDetailPage() {
         </div>
       </div>
 
-      <ActivityPlanStructure
-        {...(performanceTargetsQuery.data?.publishedState?.performanceTargets
-          ? {
-              asOf: performanceTargetsQuery.data.publishedState.performanceTargets.asOf,
-              performanceTargets: performanceTargetsQuery.data.publishedState.performanceTargets,
-            }
-          : {})}
-        structure={detail.structure}
-      />
-
-      <Card className="print:hidden" data-testid="activity-plan-schedule">
-        <CardHeader>
-          <CardTitle>{scheduledEvent ? "Reschedule activity" : "Schedule activity"}</CardTitle>
-          <CardDescription>
-            {scheduledEvent
-              ? `Currently scheduled for ${scheduledEvent.calendarDate}.`
-              : "Add this reusable plan to your calendar."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-end gap-3">
-          <div className="min-w-56">
-            <DateInput
-              id="activity-plan-schedule-date"
-              label="Schedule date"
-              onChange={(value) => setScheduleDate(value ?? "")}
-              value={scheduleDate}
-            />
+      {displayStructure ? (
+        <>
+          <ActivityPlanSessionFlow
+            structure={displayStructure}
+            {...(performanceTargets ? { performanceTargets } : {})}
+            personalizeTargets={personalizeTargets}
+            onPersonalizeTargetsChange={setPersonalizationChoice}
+            showPersonalizationControl={isOwner}
+            personalizationFactsLoading={performanceTargetsQuery.isLoading}
+          />
+          <div className="print:hidden">
+            <ActivityPlanStructure structure={displayStructure} />
           </div>
-          <Button
-            disabled={!scheduleDate || createSchedule.isPending || updateSchedule.isPending}
-            onClick={() => {
-              if (scheduledEvent) {
-                updateSchedule.mutate({
-                  id: scheduledEvent.id,
-                  patch: { scheduled_date: scheduleDate },
-                });
-              } else {
-                createSchedule.mutate({
-                  activity_plan_id: detail.id,
-                  event_type: "planned",
-                  scheduled_date: scheduleDate,
-                  title: detail.name,
-                });
-              }
-            }}
-            type="button"
-          >
-            <CalendarDays className="mr-2 h-4 w-4" />
-            {scheduledEvent ? "Reschedule" : "Schedule"}
-          </Button>
-          {scheduledEvent ? (
+        </>
+      ) : (
+        <Card data-testid="activity-plan-unavailable-structure">
+          <CardHeader>
+            <CardTitle>Workout prescription unavailable</CardTitle>
+            <CardDescription>
+              This plan does not contain a valid structure that can be displayed.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      )}
+
+      {detail.capabilities.canSchedule ? (
+        <Card className="print:hidden" data-testid="activity-plan-schedule">
+          <CardHeader>
+            <CardTitle>{scheduledEvent ? "Reschedule activity" : "Schedule activity"}</CardTitle>
+            <CardDescription>
+              {scheduledEvent
+                ? `Currently scheduled for ${scheduledEvent.calendarDate}.`
+                : "Add this reusable plan to your calendar."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-end gap-3">
+            <div className="min-w-56">
+              <DateInput
+                id="activity-plan-schedule-date"
+                label="Schedule date"
+                onChange={(value) => setScheduleDate(value ?? "")}
+                value={scheduleDate}
+              />
+            </div>
             <Button
-              disabled={removeSchedule.isPending}
-              onClick={() => removeSchedule.mutate({ id: scheduledEvent.id })}
+              disabled={!scheduleDate || createSchedule.isPending || updateSchedule.isPending}
+              onClick={() => {
+                if (scheduledEvent) {
+                  updateSchedule.mutate({
+                    id: scheduledEvent.id,
+                    patch: { scheduled_date: scheduleDate },
+                  });
+                } else {
+                  createSchedule.mutate({
+                    activity_plan_id: detail.id,
+                    event_type: "planned",
+                    scheduled_date: scheduleDate,
+                    title: detail.name,
+                  });
+                }
+              }}
               type="button"
-              variant="outline"
             >
-              Remove from schedule
+              <CalendarDays className="mr-2 h-4 w-4" />
+              {scheduledEvent ? "Reschedule" : "Schedule"}
             </Button>
-          ) : null}
-        </CardContent>
-      </Card>
+            {scheduledEvent ? (
+              <Button
+                disabled={removeSchedule.isPending}
+                onClick={() => removeSchedule.mutate({ id: scheduledEvent.id })}
+                type="button"
+                variant="outline"
+              >
+                Remove from schedule
+              </Button>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="print:hidden">
         <ActivityPlanComments planId={detail.id} />

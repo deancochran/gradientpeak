@@ -1,3 +1,4 @@
+import { compileActivityPlan } from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -7,494 +8,246 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { Separator } from "@repo/ui/components/separator";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import {
-  Bluetooth,
-  Circle,
-  FileUp,
-  LocateFixed,
-  Map as MapIcon,
-  Play,
-  Route as RouteIcon,
-  ShieldAlert,
-} from "lucide-react";
+import { Play } from "lucide-react";
+import { useEffect, useState } from "react";
+
 import { api } from "../../../lib/api/client";
-import { useTimerOnlyRecording } from "../../../lib/recording/provider";
-import { useBrowserRecordingAdapters } from "../../../lib/recording/use-browser-recording-adapters";
 import {
-  recordingActivityOptions,
-  recordingGpsOptions,
-  validateRecordingSearch,
-} from "../../../lib/recording-web";
+  clearContractEpochRecordingRecoveryNotice,
+  readContractEpochRecordingRecoveryNotice,
+} from "../../../lib/contract-epoch";
+import { useTimerOnlyRecording } from "../../../lib/recording/provider";
+import { recordingActivityOptions, validateRecordingSearch } from "../../../lib/recording-web";
 
 export const Route = createFileRoute("/_protected/record/")({
   validateSearch: (search: Record<string, unknown>) => validateRecordingSearch(search),
   component: RecordPage,
 });
 
-function RecordPage() {
+export function RecordPage() {
   const navigate = Route.useNavigate();
   const launcher = Route.useSearch();
   const recording = useTimerOnlyRecording();
-  const lockedSnapshot = recording.state.reducer.snapshot;
-  const effectiveLauncher = lockedSnapshot
-    ? {
-        activity_category: lockedSnapshot.activity.activity_category,
-        gps: launcher.gps,
-        ...(lockedSnapshot.activity.eventId != null
-          ? { eventId: lockedSnapshot.activity.eventId }
-          : {}),
-        ...(lockedSnapshot.activity.routeId != null
-          ? { routeId: lockedSnapshot.activity.routeId }
-          : {}),
-      }
-    : launcher;
-  const adapters = useBrowserRecordingAdapters();
-  const browserBle = adapters.find((adapter) => adapter.id === "browser-ble");
-  const desktopBridge = adapters.find((adapter) => adapter.id === "desktop-bridge");
-  const selectedEventQuery = api.events.getById.useQuery(
-    { id: effectiveLauncher.eventId ?? "" },
-    { enabled: Boolean(effectiveLauncher.eventId) },
+  const [epochRecoveryNotice, setEpochRecoveryNotice] =
+    useState<ReturnType<typeof readContractEpochRecordingRecoveryNotice>>(null);
+  useEffect(() => {
+    setEpochRecoveryNotice(readContractEpochRecordingRecoveryNotice());
+  }, []);
+  const snapshot = recording.state.reducer.snapshot;
+  const eventId = snapshot?.activity.eventId ?? launcher.eventId;
+  const selectedEvent = api.events.getById.useQuery(
+    { id: eventId ?? "", personalize: false },
+    { enabled: Boolean(eventId) },
   );
-  const selectedRouteQuery = api.routes.get.useQuery(
-    { id: effectiveLauncher.routeId ?? "" },
-    { enabled: Boolean(effectiveLauncher.routeId) },
+  const activityPlanId =
+    snapshot?.activity.activityPlanId ??
+    launcher.activityPlanId ??
+    selectedEvent.data?.activityPlanSummary?.id;
+  const selectedPlanQuery = api.activityPlans.getById.useQuery(
+    { id: activityPlanId ?? "", personalize: false },
+    { enabled: Boolean(activityPlanId), retry: false },
   );
-  const selectedActivityPlanId = selectedEventQuery.data?.activityPlanSummary?.id;
-  const selectedPlan = selectedEventQuery.data?.activityPlanSummary;
-  const selectedPlanIsCanonical = Boolean(selectedPlan?.activityCategory);
-  const selectedPlanActivityCategory = selectedPlan?.activityCategory ?? null;
-  const selectedPlanQueryFailed = Boolean(effectiveLauncher.eventId) && selectedEventQuery.isError;
-  const selectedPlanUnavailable =
-    Boolean(effectiveLauncher.eventId) && selectedEventQuery.isSuccess && !selectedPlanIsCanonical;
-  const hasActiveTimerSession =
+  const selectedPlan = selectedPlanQuery.data?.detail;
+  const activityCategory =
+    snapshot?.activity.activity_category ??
+    selectedPlan?.activityCategory ??
+    launcher.activity_category;
+  const active =
     recording.state.reducer.lifecycle === "recording" ||
     recording.state.reducer.lifecycle === "paused";
-  const canOpenTimerSession =
-    recording.hydrationStatus === "ready" &&
-    (hasActiveTimerSession || !effectiveLauncher.eventId || selectedPlanIsCanonical);
+  const planUnavailable = Boolean(
+    activityPlanId &&
+      !selectedPlanQuery.isLoading &&
+      (selectedPlanQuery.isError ||
+        !selectedPlan?.capabilities.canRecord ||
+        !selectedPlan.structure),
+  );
 
-  const updateLauncher = (updates: Partial<typeof launcher>) => {
-    if (lockedSnapshot) return;
+  const chooseActivity = (category: typeof launcher.activity_category) => {
+    if (snapshot || activityPlanId) return;
     void navigate({
       to: "/record",
-      search: {
-        ...launcher,
-        ...updates,
-      },
+      search: { ...launcher, activity_category: category, gps: "off" },
       replace: true,
     });
   };
 
-  const openTimerSession = () => {
-    if (!canOpenTimerSession) return;
-
-    if (!hasActiveTimerSession) {
+  const openSession = () => {
+    if (!active) {
       const configured = recording.configure({
-        activity_category: selectedPlanActivityCategory ?? effectiveLauncher.activity_category,
-        eventId: effectiveLauncher.eventId,
-        activityPlanId: selectedActivityPlanId,
-        routeId: effectiveLauncher.routeId,
+        activity_category: activityCategory,
+        ...(eventId ? { eventId } : {}),
+        ...(activityPlanId ? { activityPlanId } : {}),
+        ...(selectedPlan?.capabilities.canRecord &&
+        selectedPlan.structure &&
+        selectedPlan.structureHash
+          ? {
+              plan: {
+                activityPlanId: selectedPlan.id,
+                scheduledEventId: eventId ?? null,
+                name: selectedPlan.name,
+                description: selectedPlan.description,
+                activityPlanRevision: selectedPlan.activityPlanRevision,
+                structureHash: selectedPlan.structureHash,
+                structure: selectedPlan.structure,
+              },
+            }
+          : {}),
       });
       if (!configured) return;
     }
     void navigate({ to: "/record/session" });
   };
 
-  const resumeRecoveredTimer = () => {
-    recording.resume();
-    void navigate({ to: "/record/session" });
-  };
+  const occurrenceCount = selectedPlan?.structure
+    ? compileActivityPlan(selectedPlan.structure).occurrences.length
+    : 0;
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 py-4">
-      <section className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
-        <Card>
-          <CardHeader className="space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">Recording</Badge>
-              <Badge>Tier 1 Web Parity</Badge>
-            </div>
-            <div className="space-y-2">
-              <CardTitle aria-level={1} className="flex items-center gap-2 text-3xl" role="heading">
-                <Circle className="h-6 w-6 text-muted-foreground" />
-                Web recording launcher
-              </CardTitle>
-              <CardDescription>
-                Attach plan and route context, record a foreground timer, recover after refresh,
-                then review and queue the finished activity durably.
-              </CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-3">
-                <p className="text-sm font-medium">Activity</p>
-                <div className="flex flex-wrap gap-2">
-                  {recordingActivityOptions.map((option) => (
-                    <Button
-                      key={option.value}
-                      disabled={Boolean(lockedSnapshot)}
-                      variant={
-                        effectiveLauncher.activity_category === option.value ? "default" : "outline"
-                      }
-                      onClick={() => updateLauncher({ activity_category: option.value })}
-                    >
-                      {option.label}
-                    </Button>
-                  ))}
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {
-                    recordingActivityOptions.find(
-                      (option) => option.value === effectiveLauncher.activity_category,
-                    )?.description
-                  }
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                <p className="text-sm font-medium">Session mode</p>
-                <div className="flex flex-wrap gap-2">
-                  {recordingGpsOptions.map((option) => (
-                    <Button
-                      key={option.value}
-                      variant={launcher.gps === option.value ? "default" : "outline"}
-                      disabled={Boolean(lockedSnapshot)}
-                      onClick={() => updateLauncher({ gps: option.value })}
-                    >
-                      {option.label}
-                    </Button>
-                  ))}
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {recordingGpsOptions.find((option) => option.value === launcher.gps)?.description}
-                </p>
-              </div>
-            </div>
-
-            <Separator />
-
-            <div className="grid gap-4 md:grid-cols-3">
-              <LauncherActionCard
-                title="Plan"
-                description={
-                  selectedEventQuery.data?.activityPlanSummary?.name ??
-                  "Attach one of today's scheduled activities."
-                }
-                icon={MapIcon}
-                actionLabel={effectiveLauncher.eventId ? "Change plan" : "Choose plan"}
-                to="/record/plan"
-                search={effectiveLauncher}
-                locked={Boolean(lockedSnapshot)}
-              />
-              <LauncherActionCard
-                title="Route"
-                description={
-                  selectedRouteQuery.data?.name ?? "Attach a saved route for preview and guidance."
-                }
-                icon={RouteIcon}
-                actionLabel={effectiveLauncher.routeId ? "Change route" : "Choose route"}
-                to="/record/route"
-                search={effectiveLauncher}
-                locked={Boolean(lockedSnapshot)}
-              />
-              <ImportActionCard search={launcher} />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Current launch state</CardTitle>
-            <CardDescription>
-              URL-backed setup so plan and route choices survive refreshes and shared links.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {recording.hydrationStatus === "hydrating" ? (
-              <p className="rounded-lg border p-3 text-muted-foreground" role="status">
-                Checking this browser for a saved timer…
+    <div className="mx-auto flex max-w-2xl flex-col gap-6 py-4">
+      <Card>
+        <CardHeader>
+          <div className="flex gap-2">
+            <Badge>Indoor recording</Badge>
+            <Badge variant="outline">Foreground only</Badge>
+          </div>
+          <CardTitle className="text-3xl">Start an indoor activity</CardTitle>
+          <CardDescription>
+            Keep this tab open. The recorder tracks time and plan progress, not GPS or sensor data.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {epochRecoveryNotice ? (
+            <div className="space-y-2 rounded-lg border border-amber-500/40 p-4" role="alert">
+              <p className="font-medium">Older recorder data was preserved</p>
+              <p className="text-sm text-muted-foreground">
+                A browser contract update was detected. Current recorder data will recover normally.
+                Older recorder databases were left intact and may require a compatible app version
+                or manual support to inspect safely.
               </p>
-            ) : null}
-            {recording.hydrationStatus === "error" && recording.error ? (
-              <div className="space-y-2 rounded-lg border border-destructive/40 p-3">
-                <p className="text-destructive" role="alert">
-                  {recording.error}
-                </p>
-                {recording.canTakeOver ? (
-                  <Button variant="destructive" onClick={() => void recording.takeOver()}>
-                    Take over recording
-                  </Button>
-                ) : null}
-              </div>
-            ) : null}
-            {recording.hasRecoveredDraft ? (
-              <div className="space-y-3 rounded-lg border border-primary/40 p-3">
-                <div>
-                  <p className="font-medium">Paused timer recovered</p>
-                  <p className="text-xs text-muted-foreground">
-                    Elapsed and moving time were restored. It will stay paused until you resume it.
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <Button className="flex-1" onClick={resumeRecoveredTimer}>
-                    <Play className="h-4 w-4" /> Resume
-                  </Button>
-                  <Button variant="outline" onClick={recording.discardRecoveredDraft}>
-                    Discard
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-            <StateRow label="Activity" value={effectiveLauncher.activity_category} />
-            <StateRow label="GPS" value="disabled" />
-            <StateRow
-              label="Plan"
-              value={
-                selectedPlanQueryFailed
-                  ? "Unable to load plan"
-                  : selectedPlanUnavailable
-                    ? "Unavailable plan"
-                    : (selectedEventQuery.data?.activityPlanSummary?.name ?? "No plan attached")
-              }
-            />
-            {selectedPlanQueryFailed ? (
-              <div className="space-y-2 rounded-lg border border-destructive/40 p-3" role="alert">
-                <p className="font-medium">Unable to load the selected plan</p>
-                <p className="text-muted-foreground">
-                  Check your connection and retry without detaching the scheduled activity.
-                </p>
+              <Button
+                onClick={() => {
+                  clearContractEpochRecordingRecoveryNotice();
+                  setEpochRecoveryNotice(null);
+                }}
+                size="sm"
+                variant="outline"
+              >
+                Dismiss notice
+              </Button>
+            </div>
+          ) : null}
+          {recording.hydrationStatus === "hydrating" ? (
+            <p role="status">Checking for a saved recording…</p>
+          ) : null}
+          {recording.error ? (
+            <p className="text-sm text-destructive" role="alert">
+              {recording.error}
+            </p>
+          ) : null}
+          {recording.canTakeOver ? (
+            <Button variant="destructive" onClick={() => void recording.takeOver()}>
+              Take over recording
+            </Button>
+          ) : null}
+
+          <div className="space-y-3">
+            <p className="text-sm font-medium">Activity</p>
+            <div className="flex flex-wrap gap-2">
+              {recordingActivityOptions.map((option) => (
                 <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void selectedEventQuery.refetch()}
+                  key={option.value}
+                  disabled={Boolean(snapshot || activityPlanId)}
+                  variant={activityCategory === option.value ? "default" : "outline"}
+                  onClick={() => chooseActivity(option.value)}
                 >
-                  Retry
+                  {option.label}
                 </Button>
-              </div>
-            ) : null}
-            {selectedPlanUnavailable ? (
-              <div className="space-y-2 rounded-lg border border-destructive/40 p-3" role="alert">
-                <p className="font-medium">Selected plan unavailable for recording</p>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3 rounded-lg border p-4 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="font-medium">Activity plan</p>
                 <p className="text-muted-foreground">
-                  This link points to an unavailable or invalid plan. Choose another plan or detach
-                  it before recording.
+                  {selectedPlan?.name ??
+                    (activityPlanId ? "Loading selected plan…" : "No plan attached")}
                 </p>
-                {!lockedSnapshot ? (
-                  <Button asChild variant="outline">
-                    <Link to="/record/plan" search={effectiveLauncher}>
-                      Change or detach plan
-                    </Link>
-                  </Button>
-                ) : null}
+              </div>
+              {!snapshot ? (
+                <Button asChild variant="outline">
+                  <Link to="/record/plan" search={launcher}>
+                    {activityPlanId ? "Change plan" : "Choose plan"}
+                  </Link>
+                </Button>
+              ) : (
+                <Button disabled variant="outline">
+                  Plan locked
+                </Button>
+              )}
+            </div>
+            {selectedPlan ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <p>
+                  Category: <span className="font-medium">{selectedPlan.activityCategory}</span>
+                </p>
+                <p>
+                  Steps: <span className="font-medium">{occurrenceCount}</span>
+                </p>
+                <p className="sm:col-span-2">Target display: authored values</p>
               </div>
             ) : null}
-            <StateRow label="Route" value={selectedRouteQuery.data?.name ?? "No route attached"} />
-            {effectiveLauncher.routeId ? (
-              <Button asChild variant="outline" className="w-full">
-                <Link
-                  to="/record/route-preview/$routeId"
-                  params={{ routeId: effectiveLauncher.routeId }}
-                  search={effectiveLauncher}
-                >
-                  Preview attached route
-                </Link>
+            {activityPlanId && !snapshot ? (
+              <Button
+                variant="ghost"
+                className="px-0 text-destructive"
+                onClick={() =>
+                  void navigate({
+                    to: "/record",
+                    search: {
+                      activity_category: launcher.activity_category,
+                      gps: "off",
+                    },
+                    replace: true,
+                  })
+                }
+              >
+                Remove activity plan
               </Button>
             ) : null}
-            <Separator />
-            <Button
-              className="w-full"
-              disabled={!canOpenTimerSession || recording.hasRecoveredDraft}
-              onClick={openTimerSession}
-            >
-              <Play className="h-4 w-4" />
-              {recording.hydrationStatus === "hydrating"
-                ? "Checking for saved timer…"
-                : hasActiveTimerSession
-                  ? "Return to timer session"
-                  : selectedPlanQueryFailed
-                    ? "Unable to load selected plan"
-                    : selectedPlanUnavailable
-                      ? "Selected plan unavailable"
-                      : effectiveLauncher.eventId && !selectedActivityPlanId
-                        ? "Loading selected plan…"
-                        : "Configure timer session"}
-            </Button>
-          </CardContent>
-        </Card>
-      </section>
+          </div>
 
-      <section className="grid gap-6 lg:grid-cols-[1fr_1fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <ShieldAlert className="h-5 w-5 text-muted-foreground" />
-              Browser-safe limits
-            </CardTitle>
-            <CardDescription>
-              The core workflow is equal across supported browsers. Hardware capability remains
-              explicit and adapter-owned.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm">
-            <CapabilityRow
-              icon={LocateFixed}
-              label="GPS live capture"
-              status="Not required"
-              detail="Browser recording deliberately does not capture GPS. Native mobile remains the background GPS authority."
-            />
-            <CapabilityRow
-              icon={Bluetooth}
-              label="BLE sensors"
-              status={
-                browserBle?.status === "experimental"
-                  ? "Optional transport only"
-                  : "Unavailable in this browser"
-              }
-              detail="Web Bluetooth detection never implies sensor-complete parity. This browser adapter exposes no FTMS measurement or control claim."
-            />
-            <CapabilityRow
-              icon={RouteIcon}
-              label="FTMS trainer control"
-              status={desktopBridge?.statusLabel ?? "Desktop adapter required"}
-              detail="BLE scanning, FTMS measurement, and trainer control belong to the explicit desktop bridge adapter and are unavailable in the browser timer adapter."
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">What ships in this stage</CardTitle>
-            <CardDescription>
-              Browser-equal recording with desktop-ready adapter boundaries.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p>Choose today&apos;s planned activity and preserve it in the launcher URL.</p>
-            <p>Browse saved routes, preview the route shape, and attach it before recording.</p>
-            <p>
-              Finish into a durable local review artifact and queue an idempotent server submission.
+          {planUnavailable ? (
+            <p className="rounded-lg border border-destructive/40 p-3 text-sm" role="alert">
+              This plan cannot be recorded because its private step structure is unavailable. Choose
+              one of your own plans or record without a plan.
             </p>
-            <p>
-              Recover active timers paused after refresh and fence ownership across tabs with an
-              explicit takeover action.
-            </p>
-            {recording.history.length > 0 ? (
-              <div className="space-y-2 border-t pt-3">
-                <p className="font-medium text-foreground">Local recording history</p>
-                {recording.history.slice(0, 5).map((artifact) => (
-                  <div key={artifact.recordingSessionId} className="flex justify-between gap-3">
-                    <span>{artifact.snapshot.activity.activity_category} activity</span>
-                    <span>{new Date(artifact.finishedAt).toLocaleDateString()}</span>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-      </section>
-    </div>
-  );
-}
-
-function LauncherActionCard({
-  actionLabel,
-  description,
-  icon: Icon,
-  search,
-  locked,
-  title,
-  to,
-}: {
-  actionLabel: string;
-  description: string;
-  icon: typeof Circle;
-  search: ReturnType<typeof Route.useSearch>;
-  locked: boolean;
-  title: string;
-  to: "/record/plan" | "/record/route";
-}) {
-  return (
-    <Card className="border-dashed">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Icon className="h-4 w-4 text-muted-foreground" />
-          {title}
-        </CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {locked ? (
-          <Button className="w-full" disabled>
-            Locked for this session
+          ) : null}
+          {recording.hasRecoveredDraft ? (
+            <div className="rounded-lg border border-primary/40 p-4">
+              <p className="font-medium">Paused recording recovered</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Time, steps, transitions, and laps were restored.
+              </p>
+            </div>
+          ) : null}
+          <Button
+            className="w-full"
+            disabled={
+              recording.hydrationStatus !== "ready" ||
+              planUnavailable ||
+              Boolean(activityPlanId && selectedPlanQuery.isLoading)
+            }
+            onClick={openSession}
+          >
+            <Play className="h-4 w-4" />
+            {active || recording.hasRecoveredDraft ? "Return to recorder" : "Open recorder"}
           </Button>
-        ) : (
-          <Button asChild className="w-full">
-            <Link to={to} search={search}>
-              {actionLabel}
-            </Link>
-          </Button>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function ImportActionCard({ search }: { search: ReturnType<typeof Route.useSearch> }) {
-  return (
-    <Card className="border-dashed">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <FileUp className="h-4 w-4 text-muted-foreground" />
-          Submit or import
-        </CardTitle>
-        <CardDescription>
-          Upload a completed activity file through the existing ingestion pipeline.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Button asChild className="w-full">
-          <Link search={{ ...search, from: "record" }} to="/activities/import">
-            Open activity import
-          </Link>
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-function CapabilityRow({
-  detail,
-  icon: Icon,
-  label,
-  status,
-}: {
-  detail: string;
-  icon: typeof Circle;
-  label: string;
-  status: string;
-}) {
-  return (
-    <div className="rounded-xl border border-border p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 font-medium text-foreground">
-          <Icon className="h-4 w-4 text-muted-foreground" />
-          {label}
-        </div>
-        <Badge variant="outline">{status}</Badge>
-      </div>
-      <p className="mt-2 text-muted-foreground">{detail}</p>
-    </div>
-  );
-}
-
-function StateRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-right font-medium text-foreground">{value}</span>
+        </CardContent>
+      </Card>
     </div>
   );
 }

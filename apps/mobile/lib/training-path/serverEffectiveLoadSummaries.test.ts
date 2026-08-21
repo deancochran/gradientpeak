@@ -53,13 +53,19 @@ describe("buildServerEffectiveLoadSummaries", () => {
     });
   });
 
-  it("does not turn an unavailable server composition into zero Load", () => {
+  it("keeps unavailable completed and planned composition unavailable", () => {
     const summaries = buildServerEffectiveLoadSummaries({
       periods: [{ key: "day", startDate: "2026-07-23", endDate: "2026-07-23" }],
       response: { status: "unavailable" },
     });
 
-    expect(summaries.get("day")).toMatchObject({ status: "unavailable", commonLoad: null });
+    expect(summaries.get("day")).toMatchObject({
+      status: "unavailable",
+      commonLoad: null,
+      remainingLoad: null,
+      recommendedLoadStatus: "unavailable",
+      recommendedLoad: null,
+    });
   });
 
   it("keeps an empty day unavailable when the server reports a partial source", () => {
@@ -194,7 +200,7 @@ describe("buildServerEffectiveLoadSummaries", () => {
     });
   });
 
-  it("does not convert an unavailable recommendation point to rest", () => {
+  it("does not convert an unavailable recommendation point to zero", () => {
     const recommendation = {
       status: "partial",
       coverage: { startDate: "2026-07-20", endDate: "2026-07-20" },

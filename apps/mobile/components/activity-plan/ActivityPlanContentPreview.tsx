@@ -4,9 +4,18 @@ import type {
   ActivityPlanPresentationModel,
   ActivityPlanStructure,
   ActivityPlanTarget,
+  AthletePerformanceTargetFacts,
+  CanonicalActivityCategory,
 } from "@repo/core";
-import { deriveActivityPlanPresentation } from "@repo/core";
+import {
+  deriveActivityPlanPresentation,
+  getActivityPlanSessionFlowTargetPresentations,
+  orderActivityPlanTargetsForPresentation,
+  resolveActivityPlanSessionFlow,
+  resolveActivityPlanTargetPresentation,
+} from "@repo/core";
 import { formatDurationSec } from "@repo/core/utils/dates";
+import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
 import { View } from "react-native";
@@ -20,6 +29,11 @@ type ActivityPlanContentPreviewProps = {
   compact?: boolean;
   plan: ActivityPlanPreviewLike | null | undefined;
   presentation?: ActivityPlanPresentationModel | null;
+  personalizeTargets?: boolean;
+  personalizationFactsLoading?: boolean;
+  performanceTargets?: AthletePerformanceTargetFacts | null;
+  onPersonalizeTargetsChange?: (enabled: boolean) => void;
+  showPersonalizationControl?: boolean;
   size?: "small" | "medium" | "large";
   testIDPrefix?: string;
 };
@@ -58,25 +72,19 @@ function formatStepDuration(duration: ActivityPlanDuration): string | null {
   return null;
 }
 
-function formatTarget(target: ActivityPlanTarget): string {
-  switch (target.type) {
-    case "RPE":
-      return `RPE ${target.intensity}`;
-    case "%FTP":
-      return `${target.intensity}% FTP`;
-    case "%MaxHR":
-      return `${target.intensity}% max HR`;
-    case "%ThresholdHR":
-      return `${target.intensity}% threshold HR`;
-    case "watts":
-      return `${target.intensity} W`;
-    case "cadence":
-      return `${target.intensity} rpm`;
-    case "speed":
-      return `${target.intensity} km/h`;
-    default:
-      return `${target.intensity} ${target.type}`;
-  }
+function formatTarget(input: {
+  target: ActivityPlanTarget;
+  activityCategory: CanonicalActivityCategory;
+  personalizeTargets: boolean;
+  performanceTargets?: AthletePerformanceTargetFacts | null;
+  asOf: string;
+}): string {
+  return resolveActivityPlanTargetPresentation({
+    target: input.target,
+    activityCategory: input.activityCategory,
+    ...(input.personalizeTargets ? { performanceTargets: input.performanceTargets } : {}),
+    asOf: input.asOf,
+  }).label;
 }
 
 function normalizeLabel(value: string | null | undefined): string {
@@ -115,14 +123,31 @@ function formatSemanticLabel(value: string): string {
 export function ActivityPlanContentPreview({
   compact = false,
   plan,
+  personalizeTargets = false,
+  personalizationFactsLoading = false,
+  performanceTargets,
+  onPersonalizeTargetsChange,
   presentation,
+  showPersonalizationControl = false,
   size,
   testIDPrefix,
 }: ActivityPlanContentPreviewProps) {
   const resolvedSize = size ?? (compact ? "small" : "large");
+  const sessionFlowResolution = useMemo(
+    () =>
+      resolveActivityPlanSessionFlow({
+        structure: plan?.structure,
+        ...(performanceTargets ? { performanceTargets } : {}),
+        personalize: personalizeTargets,
+      }),
+    [performanceTargets, personalizeTargets, plan?.structure],
+  );
   const presentationModel = useMemo(
-    () => presentation ?? deriveActivityPlanPresentation(plan?.structure),
-    [plan?.structure, presentation],
+    () =>
+      sessionFlowResolution.structure
+        ? deriveActivityPlanPresentation(sessionFlowResolution.structure)
+        : (presentation ?? deriveActivityPlanPresentation(plan?.structure)),
+    [plan?.structure, presentation, sessionFlowResolution.structure],
   );
   const structure = presentationModel?.structure ?? null;
   const steps = useMemo(() => flattenSteps(structure), [structure]);
@@ -130,6 +155,12 @@ export function ActivityPlanContentPreview({
   const maxVisibleSteps = resolvedSize === "small" ? 2 : resolvedSize === "medium" ? 3 : 4;
   const visibleSteps = steps.slice(0, maxVisibleSteps);
   const hasSessionFlow = visibleSteps.length > 0 && resolvedSize === "large";
+  const asOf = performanceTargets?.asOf ?? new Date().toISOString();
+  const factsPending = personalizationFactsLoading && !sessionFlowResolution.eligibility.eligible;
+  const personalizationDisabled = factsPending || !sessionFlowResolution.eligibility.eligible;
+  const personalizationReason = factsPending
+    ? "Checking whether every target can use your current physical values."
+    : sessionFlowResolution.eligibility.reason;
 
   if (!plan || (!hasTimeline && !hasSessionFlow)) {
     return null;
@@ -154,9 +185,33 @@ export function ActivityPlanContentPreview({
 
       {hasSessionFlow ? (
         <View className="rounded-2xl bg-muted/30 px-3 py-3">
-          <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Session Flow
-          </Text>
+          <View className="flex-row items-start justify-between gap-3">
+            <View className="min-w-0 flex-1 gap-1">
+              <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Session Flow
+              </Text>
+              {showPersonalizationControl && onPersonalizeTargetsChange ? (
+                <Text className="text-xs leading-4 text-muted-foreground">
+                  {personalizationReason ??
+                    "All targets have physical values. Turn this off to see the authored targets."}
+                </Text>
+              ) : null}
+            </View>
+            {showPersonalizationControl && onPersonalizeTargetsChange ? (
+              <View className="items-end gap-1">
+                <Text className="text-xs font-medium text-foreground">
+                  {personalizeTargets && !personalizationDisabled ? "On" : "Off"}
+                </Text>
+                <Switch
+                  accessibilityLabel="Personalize targets"
+                  checked={personalizeTargets && !personalizationDisabled}
+                  disabled={personalizationDisabled}
+                  onCheckedChange={onPersonalizeTargetsChange}
+                  testID="activity-plan-personalize-targets"
+                />
+              </View>
+            ) : null}
+          </View>
           <View className="mt-2">
             {structure?.segments.map((segment, index) => {
               const segmentTitle = segment.name?.trim() || `Segment ${index + 1}`;
@@ -204,13 +259,35 @@ export function ActivityPlanContentPreview({
                                 {interval.repetitions > 1 ? ` · ${interval.repetitions}x` : ""}
                               </Text>
                             ) : null}
+                            {interval.notes ? (
+                              <Text className="text-xs leading-4 text-muted-foreground">
+                                {interval.notes}
+                              </Text>
+                            ) : null}
                             {interval.steps.map((step, stepIndex) => {
                               const stepLabel = getDistinctLabel(step.name, [
                                 segmentTitle,
                                 interval.name,
                               ]);
                               const detailSummary = [
-                                ...(step.targets?.map((target) => formatTarget(target)) ?? []),
+                                ...(getActivityPlanSessionFlowTargetPresentations(
+                                  sessionFlowResolution,
+                                  step.id,
+                                ).length > 0
+                                  ? getActivityPlanSessionFlowTargetPresentations(
+                                      sessionFlowResolution,
+                                      step.id,
+                                    ).map((target) => target.label)
+                                  : orderActivityPlanTargetsForPresentation(step.targets ?? []).map(
+                                      (target) =>
+                                        formatTarget({
+                                          target,
+                                          activityCategory: structure?.activity_category ?? "other",
+                                          personalizeTargets,
+                                          performanceTargets,
+                                          asOf,
+                                        }),
+                                    )),
                                 formatStepDuration(step.duration),
                               ]
                                 .filter((value): value is string => Boolean(value))

@@ -26,7 +26,6 @@ overrides:
   tar@<7.5.21: 7.5.21
   minimatch@<3.1.4: 3.1.4
   minimatch@>=9.0.0 <9.0.7: 9.0.7
-  '@better-auth/cli>better-auth': 1.6.25
   shell-quote@<=1.8.4: 1.9.0
   drizzle-orm@<0.45.2: 0.45.2
   kysely@>=0.26.0 <0.28.17: 0.28.17

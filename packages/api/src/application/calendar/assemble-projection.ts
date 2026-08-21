@@ -6,6 +6,7 @@ import {
   compareCalendarProjectionItems,
   type SemanticMetric,
 } from "@repo/core";
+import { groupEventRsvpStatusSchema, resolveGroupEventRsvpStatus } from "@repo/core/groups";
 import { z } from "zod";
 
 import { toScheduledActivityPlanSummary } from "../activity-plans/read-projections";
@@ -22,6 +23,7 @@ const eventSourceSchema = z.looseObject({
   all_day: z.boolean(),
   status: z.enum(["scheduled", "completed", "cancelled", "expired"]),
   linked_activity_id: z.string().nullable(),
+  linkedActivityDisplay: activityDisplayModelSchema.nullable().optional(),
   training_plan_id: z.string().nullable().optional(),
   activity_plan: z.unknown().nullable(),
 });
@@ -31,8 +33,6 @@ const completedActivitySourceSchema = z.looseObject({
   name: z.string().nullable().optional(),
   scheduled_date: z.string(),
   started_at: z.string(),
-  distance_meters: z.number().nullable(),
-  duration_seconds: z.number().nullable(),
   display: activityDisplayModelSchema,
 });
 
@@ -46,7 +46,8 @@ const groupEventSourceSchema = z.looseObject({
   timezone: z.string(),
   selectedActivityPlan: z.unknown().nullable(),
   group: z.strictObject({ id: z.string(), name: z.string() }),
-  viewerRsvp: z.looseObject({ status: z.string() }).nullable(),
+  viewerRsvp: z.looseObject({ status: groupEventRsvpStatusSchema }).nullable(),
+  viewerSeriesRsvp: z.looseObject({ status: groupEventRsvpStatusSchema }).nullable(),
 });
 
 const goalSourceSchema = z.looseObject({
@@ -121,6 +122,11 @@ export function assembleCalendarProjectionRange(input: {
       "seconds",
       isPlanned,
     );
+    const isCompleted = event.status === "completed";
+    const completionMetrics = event.linkedActivityDisplay?.metrics ?? [];
+    const projectedMetrics = isCompleted
+      ? completionMetrics
+      : (plan?.metrics ?? (duration ? [duration] : []));
     items.push({
       id: event.id,
       calendarDate: event.scheduled_date,
@@ -135,11 +141,15 @@ export function assembleCalendarProjectionRange(input: {
       subtitle: event.description?.trim() || event.notes?.trim() || null,
       status: event.status,
       navigation: { target: "event", href: `/calendar/events/${event.id}` },
-      metrics: plan?.metrics ?? (duration ? [duration] : []),
-      estimated: isPlanned,
-      partial: plan?.metrics.some((item) => item.status !== "available") ?? false,
+      metrics: projectedMetrics,
+      // A linked completion carries observations. If its activity projection is
+      // unavailable, leave metrics unknown rather than rebranding the plan estimate.
+      estimated: isPlanned && !isCompleted,
+      partial:
+        (isCompleted && !event.linkedActivityDisplay) ||
+        projectedMetrics.some((item) => item.status !== "available"),
       plan,
-      activity: null,
+      activity: isCompleted ? (event.linkedActivityDisplay ?? null) : null,
       event: {
         type: z.enum(["planned", "race_target", "custom"]).parse(event.event_type),
         trainingPlanId: event.training_plan_id ?? null,
@@ -153,10 +163,7 @@ export function assembleCalendarProjectionRange(input: {
     .array()
     .parse(input.completedActivities)
     .filter((item) => isInRange(item.scheduled_date))) {
-    const metrics = [
-      metric("distance", "Distance", activity.distance_meters, "meters"),
-      metric("elapsed_duration", "Duration", activity.duration_seconds, "seconds"),
-    ].filter((item): item is SemanticMetric => item !== null);
+    const metrics = activity.display.metrics;
     items.push({
       id: activity.id,
       calendarDate: activity.scheduled_date,
@@ -173,7 +180,7 @@ export function assembleCalendarProjectionRange(input: {
       navigation: { target: "activity", href: `/activities/${activity.id}` },
       metrics,
       estimated: false,
-      partial: false,
+      partial: metrics.some((item) => item.status !== "available"),
       plan: null,
       activity: activity.display,
       event: null,
@@ -221,7 +228,10 @@ export function assembleCalendarProjectionRange(input: {
       event: null,
       groupEvent: {
         group: event.group,
-        viewerRsvpStatus: event.viewerRsvp?.status === "declined" ? "declined" : null,
+        viewerRsvpStatus: resolveGroupEventRsvpStatus({
+          occurrenceStatus: event.viewerRsvp?.status,
+          seriesStatus: event.viewerSeriesRsvp?.status,
+        }),
       },
       goal: null,
     });

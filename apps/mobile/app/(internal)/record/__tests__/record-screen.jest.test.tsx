@@ -1,6 +1,7 @@
 import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import React from "react";
 import { Alert } from "react-native";
+import { createActivityPlanDetail } from "../../../../test/activity-plan-projection-fixture";
 import { createButtonComponent, createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 
@@ -30,6 +31,8 @@ const mockFetchPublishedState = jest.fn(
 );
 const mockGetProfileQuery = jest.fn(() => ({ data: { weight_kg: 72 } }));
 let mockRecordingLifecycle: "idle" | "setup" | "active" = "idle";
+let mockActivityPlanQueryData: { detail: ReturnType<typeof createActivityPlanDetail> } | null =
+  null;
 
 type PlanValidation = {
   isValid: boolean;
@@ -49,6 +52,13 @@ type CockpitProps = {
   onResume: () => void;
   onLap: () => void;
   onFinish: () => void;
+  onOpenPlan: () => void;
+};
+type ResourcePickerNode = {
+  props: { onSelect: (item: { id: string }) => void };
+};
+type UnsafeTypeQuery = {
+  UNSAFE_getByType: (type: "ResourcePickerModal") => ResourcePickerNode;
 };
 type AlertButtonFixture = { text?: string; onPress?: () => void | Promise<void> };
 
@@ -58,6 +68,7 @@ const service = {
   attachRoute: jest.fn(async () => undefined),
   prepareRouteAttachment: jest.fn(),
   selectActivityFromPayload: jest.fn(),
+  selectPlan: jest.fn(),
   updateMetrics: jest.fn(),
   updatePerformanceTargets: jest.fn(),
   refreshAndCheckAllPermissions: jest.fn(async () => true),
@@ -120,7 +131,14 @@ jest.mock("@/components/ErrorBoundary", () => ({
 
 jest.mock("@/components/recording/cockpit", () => ({
   __esModule: true,
-  RecordingLiveCockpit: ({ onStart, onPause, onResume, onLap, onFinish }: CockpitProps) =>
+  RecordingLiveCockpit: ({
+    onStart,
+    onPause,
+    onResume,
+    onLap,
+    onFinish,
+    onOpenPlan,
+  }: CockpitProps) =>
     React.createElement(
       "View",
       null,
@@ -144,6 +162,11 @@ jest.mock("@/components/recording/cockpit", () => ({
         ButtonHost,
         { onPress: onFinish },
         React.createElement("Text", null, "Finish"),
+      ),
+      React.createElement(
+        ButtonHost,
+        { onPress: onOpenPlan },
+        React.createElement("Text", null, "Open plan"),
       ),
     ),
 }));
@@ -241,7 +264,7 @@ jest.mock("@/lib/api", () => ({
     }),
     activityPlans: {
       getById: {
-        useQuery: () => ({ data: null }),
+        useQuery: () => ({ data: mockActivityPlanQueryData, error: null }),
       },
     },
     athleteIntelligence: {
@@ -295,6 +318,7 @@ describe("record screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockRecordingLifecycle = "idle";
+    mockActivityPlanQueryData = null;
     service.attachRoute.mockResolvedValue(undefined);
     service.refreshAndCheckAllPermissions.mockResolvedValue(true);
     service.refreshAndCheckRecordingPermissions.mockResolvedValue(true);
@@ -317,6 +341,37 @@ describe("record screen", () => {
       );
     });
     expect(activitySelectionStoreMock.consumeSelection).toHaveBeenCalled();
+  });
+
+  it("does not attach preview-only shared plans to a recording", async () => {
+    mockActivityPlanQueryData = {
+      detail: createActivityPlanDetail({
+        id: "shared-plan-1",
+        name: "Shared plan",
+        visibility: "public",
+        capabilities: {
+          canLike: true,
+          canEdit: false,
+          canDelete: false,
+          canDuplicate: true,
+          canSchedule: true,
+          canRecord: false,
+        },
+      }),
+    };
+    const rendered = renderNative(<RecordScreen />);
+
+    fireEvent.press(screen.getByText("Open plan"));
+    const picker = (rendered as unknown as UnsafeTypeQuery).UNSAFE_getByType("ResourcePickerModal");
+    fireEvent(picker as never, "select", { id: "shared-plan-1" });
+
+    await waitFor(() => {
+      expect(Alert.alert).toHaveBeenCalledWith(
+        "Plan Attachment Failed",
+        "Duplicate this plan into your library before attaching it to a recording.",
+      );
+    });
+    expect(service.selectPlan).not.toHaveBeenCalled();
   });
 
   it("hydrates owner-only performance targets at one explicit recording operation timestamp", async () => {

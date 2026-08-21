@@ -23,6 +23,8 @@ describe("Plan scheduling cache contract", () => {
   it("includes the planning ledger in every scheduling mutation scope", () => {
     for (const paths of Object.values(SCHEDULING_REFRESH_CONTRACT)) {
       expect(paths).toContainEqual(["trainingPlans", "getPlanningLedger"]);
+      expect(paths).toContainEqual(["calendar", "range"]);
+      expect(paths).toContainEqual(["calendar", "page"]);
     }
     expect(isSchedulingSensitiveQueryKey(ledgerKey)).toBe(true);
   });
@@ -39,12 +41,6 @@ describe("Plan scheduling cache contract", () => {
     await invalidatePostActivityIngestionQueries(queryClient);
     const ledgerQuery = { queryKey: ledgerKey } as unknown as Query;
     expect(predicates.filter((predicate) => predicate(ledgerQuery))).toHaveLength(2);
-    for (const procedure of ["getCurrentState", "getLoadRange"]) {
-      const query = {
-        queryKey: [["athleteIntelligence", procedure]],
-      } as unknown as Query;
-      expect(predicates.some((predicate) => predicate(query))).toBe(true);
-    }
   });
 
   it("applies the short stale window and always-on mount/reconnect policy to ledgers", () => {
@@ -81,12 +77,13 @@ describe("Server cache-tag client contract", () => {
       "activities.listPaginated": [["activities", "listPaginated"]],
       "activityFiles.getIngestionStatus": [["activityFiles", "getIngestionStatus"]],
       "activityPlans.getById": [["activityPlans", "getById"]],
-      "athleteIntelligence.getCurrentState": [["athleteIntelligence", "getCurrentState"]],
-      "athleteIntelligence.getLoadRange": [["athleteIntelligence", "getLoadRange"]],
       "athleteIntelligence.getThresholdEvidence": [["athleteIntelligence", "getThresholdEvidence"]],
       "athleteIntelligence.getTrainingEffects": [["athleteIntelligence", "getTrainingEffects"]],
       "calendar.day": [["calendar", "day"]],
-      "calendar.range": [["calendar", "range"]],
+      "calendar.range": [
+        ["calendar", "range"],
+        ["calendar", "page"],
+      ],
       "home.getDashboard": [["home", "getDashboard"]],
       "plannedSessions.range": [["plannedSessions", "range"]],
       "trainingPlans.get": [["trainingPlans", "get"]],
@@ -131,6 +128,7 @@ describe("Server cache-tag client contract", () => {
   it("deduplicates repeated receipt tags before invalidation", () => {
     expect(queryKeysForCacheTags(["calendar.range", "calendar.range"])).toEqual([
       [["calendar", "range"]],
+      [["calendar", "page"]],
     ]);
   });
 });

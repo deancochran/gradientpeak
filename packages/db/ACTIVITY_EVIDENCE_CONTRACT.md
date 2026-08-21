@@ -46,7 +46,6 @@ Every consumer must preserve these dimensions:
 
 Canonical writers include:
 
-- profile metric CRUD in `packages/api/src/routers/profile-metrics.ts`;
 - profile-setting weight observation synchronization in `packages/api/src/repositories/profile-update-repository.ts`;
 - activity-file evidence reconciliation in `packages/api/src/application/activities/reconcile-activity-evidence.ts`;
 - onboarding/provider adapters for non-threshold profile observations, which must preserve source observation time and provenance.

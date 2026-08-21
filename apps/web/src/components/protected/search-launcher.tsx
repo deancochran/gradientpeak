@@ -19,7 +19,6 @@ import {
   Search,
   Settings,
   Target,
-  TrendingUp,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -38,7 +37,6 @@ type SearchDestination = {
     | "/calendar"
     | "/messages"
     | "/plan"
-    | "/profile-metrics"
     | "/record"
     | "/routes"
     | "/settings";
@@ -47,7 +45,6 @@ type SearchDestination = {
 const SEARCH_DESTINATIONS: SearchDestination[] = [
   { icon: Home, label: "Home", to: "/" },
   { icon: Activity, label: "Activities", to: "/activities" },
-  { icon: TrendingUp, label: "Profile Metrics", to: "/profile-metrics" },
   { icon: Map, label: "Routes", to: "/routes" },
   { icon: Circle, label: "Record", to: "/record" },
   { icon: Target, label: "Plan", to: "/plan" },

@@ -216,25 +216,46 @@ describe("athlete-state worker lease fencing", () => {
     );
   });
 
-  it("commits one bounded continuation without publishing athlete state", async () => {
+  it("reclaims a successful bounded continuation immediately and publishes in the same drain", async () => {
     const now = new Date("2026-08-10T12:00:00.000Z");
     const changedFromAt = new Date("2026-05-01T08:00:00.000Z");
-    vi.mocked(claimNextAthleteState).mockResolvedValue({
+    const firstClaim = {
       ...claim,
       dirtyFromAt: changedFromAt,
-    });
+    };
+    const continuedClaim = {
+      ...firstClaim,
+      activityAnalysisCursor: {
+        startedAt: new Date("2026-05-02T08:00:00.000Z"),
+        activityId: "33333333-3333-4333-8333-333333333333",
+      },
+    };
+    vi.mocked(claimNextAthleteState)
+      .mockResolvedValueOnce(firstClaim)
+      .mockResolvedValueOnce(continuedClaim);
     vi.mocked(renewAthleteStateClaim).mockResolvedValue(true);
-    dependencies.reprocessProfileActivityAnalysis.mockResolvedValueOnce({
-      durableRefresh: "continued",
-    });
+    vi.mocked(readAthleteStateEvidencePage).mockResolvedValue([]);
+    vi.mocked(publishAthleteState).mockResolvedValue(true);
+    dependencies.reprocessProfileActivityAnalysis
+      .mockResolvedValueOnce({ durableRefresh: "continued" })
+      .mockResolvedValueOnce({ durableRefresh: "completed" });
 
     await expect(
       new AthleteStateWorkerService({ db: {} as never }).processDueJobs({ limit: 1, now }),
-    ).resolves.toEqual({ completed: 0, failed: 0, processed: 1 });
+    ).resolves.toEqual({ completed: 1, failed: 0, processed: 2 });
 
-    expect(renewAthleteStateClaim).toHaveBeenCalledOnce();
-    expect(readAthleteStateEvidencePage).not.toHaveBeenCalled();
-    expect(publishAthleteState).not.toHaveBeenCalled();
+    expect(claimNextAthleteState).toHaveBeenNthCalledWith(
+      2,
+      {},
+      {
+        leaseMilliseconds: 300_000,
+        now,
+        profileId: claim.profileId,
+      },
+    );
+    expect(dependencies.reprocessProfileActivityAnalysis).toHaveBeenCalledTimes(2);
+    expect(readAthleteStateEvidencePage).toHaveBeenCalled();
+    expect(publishAthleteState).toHaveBeenCalled();
     expect(failAthleteStateClaim).not.toHaveBeenCalled();
   });
 

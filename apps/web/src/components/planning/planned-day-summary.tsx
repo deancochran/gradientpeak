@@ -1,7 +1,5 @@
-import type {
-  ActivityPrescriptionQuantificationBundle,
-  CanonicalActivityCategory,
-} from "@repo/core";
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
+import type { CanonicalActivityCategory } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardDescription, CardHeader } from "@repo/ui/components/card";
 import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
@@ -9,21 +7,10 @@ import { useRef, useState } from "react";
 
 import { formatDuration } from "../../lib/activity-route-helpers";
 
-export type WebPlannedDaySummaryData = {
-  summary: {
-    eventCount: number;
-    activity_categories: CanonicalActivityCategory[];
-    totalDurationSeconds: number | null;
-    prescriptionQuantification: ActivityPrescriptionQuantificationBundle;
-  };
-  source: {
-    complete: true;
-    eventCount: number;
-    unavailableEstimateCount: number;
-    unavailablePlanCount: number;
-    unlinkedPlanCount: number;
-  };
-};
+export type WebPlannedDaySummaryData = Pick<
+  inferRouterOutputs<AppRouter>["calendar"]["day"]["plannedLoadSummary"],
+  "source" | "summary"
+>;
 
 function formatActivityCategory(activity_category: CanonicalActivityCategory) {
   return activity_category.charAt(0).toUpperCase() + activity_category.slice(1);
@@ -153,11 +140,6 @@ function PlannedDaySummaryDetails({ data }: { data: WebPlannedDaySummaryData }) 
           <dd className="font-medium">{quantification.normalizedIntensity.value}</dd>
         </div>
       </dl>
-
-      <p className="text-sm text-muted-foreground">
-        {quantification.commonLoad.evidence}. {quantification.commonLoad.explanation}
-      </p>
-
       {hasPartialInformation ? (
         <p className="rounded-lg border p-3 text-sm" role="status">
           Partial information:{" "}

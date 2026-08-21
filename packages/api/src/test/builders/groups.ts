@@ -67,7 +67,7 @@ export function buildGroupEventRsvpRow(
   return {
     group_event_id: GROUP_TEST_IDS.eventId,
     profile_id: GROUP_TEST_IDS.viewerId,
-    status: "accepted",
+    status: "declined",
     created_at: GROUP_TEST_NOW,
     updated_at: GROUP_TEST_NOW,
     ...overrides,

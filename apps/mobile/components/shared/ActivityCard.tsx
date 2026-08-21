@@ -2,14 +2,16 @@ import type { ActivityDisplayModel, SemanticMetric } from "@repo/core";
 import { formatDurationSec } from "@repo/core/utils/dates";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { MessageCircle } from "lucide-react-native";
-import { Pressable, View } from "react-native";
+import { MessageCircle, Share2 } from "lucide-react-native";
+import { Alert, Share, View } from "react-native";
 import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
 import { formatDistanceMeters } from "@/lib/display/formatters";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import {
   type ResourceCardAccessory,
+  ResourceCardActionButton,
   ResourceCardHeader,
   ResourceCardShell,
   ResourceLikeButton,
@@ -31,8 +33,8 @@ type ActivityCardProps = {
   onLikePress?: () => void;
   onOwnerPress?: () => void;
   onPress?: () => void;
+  onSharePress?: () => void;
   showNotes?: boolean;
-  showLike?: boolean;
   testID?: string;
   /** Context action rendered at the top-right of the owner/category row. */
   topRightAction?: ResourceCardAccessory;
@@ -43,21 +45,32 @@ function formatMetric(
   preferredUnitSystem: ReturnType<typeof usePreferredUnitSystem>,
 ) {
   if (metric.status === "unavailable") return "Unavailable";
+  const approximationPrefix =
+    metric.status === "partial" &&
+    (metric.key === "common_load" || metric.key === "normalized_intensity")
+      ? "~"
+      : "";
   if (metric.unit === "meters") {
-    return formatDistanceMeters(metric.value, { preferredUnitSystem });
+    return `${approximationPrefix}${formatDistanceMeters(metric.value, { preferredUnitSystem })}`;
   }
-  if (metric.unit === "seconds") return formatDurationSec(metric.value);
-  if (metric.unit === "ratio") return metric.value.toFixed(2);
-  if (metric.unit === "bpm") return `${Math.round(metric.value)} bpm`;
-  if (metric.unit === "watts") return `${Math.round(metric.value)} W`;
-  if (metric.unit === "kilocalories") return `${Math.round(metric.value)} kcal`;
-  return Number.isInteger(metric.value) ? String(metric.value) : metric.value.toFixed(1);
+  if (metric.unit === "seconds") return `${approximationPrefix}${formatDurationSec(metric.value)}`;
+  if (metric.unit === "ratio") return `${approximationPrefix}${metric.value.toFixed(2)}`;
+  if (metric.unit === "bpm") return `${approximationPrefix}${Math.round(metric.value)} bpm`;
+  if (metric.unit === "watts") return `${approximationPrefix}${Math.round(metric.value)} W`;
+  if (metric.unit === "kilocalories")
+    return `${approximationPrefix}${Math.round(metric.value)} kcal`;
+  return `${approximationPrefix}${Number.isInteger(metric.value) ? String(metric.value) : metric.value.toFixed(1)}`;
 }
 
 function ActivityMetricsRow({ activity }: { activity: ActivityDisplayModel }) {
   const preferredUnitSystem = usePreferredUnitSystem();
   const metrics: ResourceMetric[] = activity.metrics.slice(0, 4).map((metric) => ({
-    label: metric.status === "partial" ? `${metric.label} (partial)` : metric.label,
+    label:
+      metric.status === "partial" &&
+      metric.key !== "common_load" &&
+      metric.key !== "normalized_intensity"
+        ? `${metric.label} (partial)`
+        : metric.label,
     value: formatMetric(metric, preferredUnitSystem),
     tone:
       metric.key === "common_load" || metric.key === "normalized_intensity" ? "primary" : undefined,
@@ -82,11 +95,12 @@ export function ActivityCard({
   onLikePress,
   onOwnerPress,
   onPress,
-  showLike = false,
+  onSharePress,
   showNotes = true,
   testID,
   topRightAction,
 }: ActivityCardProps) {
+  const navigateTo = useAppNavigate();
   const categoryItems = getUniqueActivityCategoryConfigs(
     activity.activityComposition.categories.length > 0
       ? activity.activityComposition.categories
@@ -117,45 +131,58 @@ export function ActivityCard({
     id: activity.owner.id,
     username: activity.owner.username,
   };
-  const hasCommentAction = Boolean(onCommentPress);
+  const handleComment = onCommentPress ?? onPress ?? (() => navigateTo(activity.href as never));
   const hasBelowMetricsActions =
     belowMetricsActions !== undefined &&
     belowMetricsActions !== null &&
     belowMetricsActions !== false;
-  const hasTopRightAction =
-    topRightAction !== undefined && topRightAction !== null && topRightAction !== false;
+  const handleShare = async () => {
+    if (onSharePress) {
+      try {
+        await onSharePress();
+      } catch {
+        Alert.alert("Unable to share", "The activity could not be shared. Try again.");
+      }
+      return;
+    }
+    if (activity.visibility !== "public") {
+      Alert.alert(
+        "Not public",
+        "Only public activities have a share link. Change visibility to Public first.",
+      );
+      return;
+    }
+    const origin = (process.env.EXPO_PUBLIC_API_URL ?? "https://gradientpeak.app").replace(
+      /\/$/,
+      "",
+    );
+    const url = `${origin}/share/activities/${activity.id}`;
+    try {
+      await Share.share({ message: url, url });
+    } catch {
+      Alert.alert("Unable to share", "The activity could not be shared. Try again.");
+    }
+  };
 
   return (
     <ResourceCardShell
-      accessibilityLabel={onPress ? "Open activity" : undefined}
+      accessibilityLabel={onPress ? `Open activity ${activity.title}` : undefined}
       actionRegion={
         <ResourceOwnerActionRow
           actions={
-            hasCommentAction || showLike || hasTopRightAction ? (
-              <>
-                {onCommentPress ? (
-                  <Pressable
-                    accessibilityLabel={`Comment, ${resolvedCommentCount} comments`}
-                    accessibilityRole="button"
-                    className="min-h-11 min-w-11 flex-row items-center justify-center gap-1.5 px-1"
-                    onPress={onCommentPress}
-                  >
-                    <Icon as={MessageCircle} size={18} className="text-muted-foreground" />
-                    <Text className="text-sm text-muted-foreground">{resolvedCommentCount}</Text>
-                  </Pressable>
-                ) : null}
-                {showLike ? (
-                  <ResourceLikeButton
-                    disabled={displayLikePending}
-                    isLiked={displayLiked}
-                    likeCount={displayLikeCount}
-                    onPress={onLikePress ?? toggleLike}
-                    testID={`activity-card-like-button-${activity.id}`}
-                  />
-                ) : null}
-                {topRightAction}
-              </>
-            ) : null
+            <>
+              <ResourceCardActionButton
+                accessibilityLabel="Share activity"
+                onPress={() => void handleShare()}
+                testID={`activity-card-share-button-${activity.id}`}
+              >
+                <View className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5">
+                  <Icon as={Share2} size={14} className="text-muted-foreground" />
+                  <Text className="ml-1 text-xs font-medium text-muted-foreground">Share</Text>
+                </View>
+              </ResourceCardActionButton>
+              {topRightAction}
+            </>
           }
           categoryItems={categoryItems}
           fallbackLabel="GradientPeak"
@@ -172,11 +199,31 @@ export function ActivityCard({
         description={showNotes ? activity.notes : null}
         descriptionNumberOfLines={2}
         title={activity.title}
-        titleClassName="text-base font-semibold text-foreground"
-        titleFallback="Activity"
       />
 
       <ActivityMetricsRow activity={activity} />
+
+      <View className="flex-row items-center gap-2" testID="activity-card-social-actions">
+        <ResourceLikeButton
+          disabled={displayLikePending || activity.capabilities?.canLike === false}
+          isLiked={displayLiked}
+          likeCount={displayLikeCount}
+          onPress={onLikePress ?? toggleLike}
+          testID={`activity-card-like-button-${activity.id}`}
+        />
+        <ResourceCardActionButton
+          accessibilityLabel={`Comment, ${resolvedCommentCount} comments`}
+          onPress={handleComment}
+          testID={`activity-card-comment-button-${activity.id}`}
+        >
+          <View className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5">
+            <Icon as={MessageCircle} size={14} className="text-muted-foreground" />
+            <Text className="ml-1 text-xs font-medium text-muted-foreground">
+              {resolvedCommentCount > 0 ? `Comments ${resolvedCommentCount}` : "Comments"}
+            </Text>
+          </View>
+        </ResourceCardActionButton>
+      </View>
 
       {hasBelowMetricsActions ? (
         <View testID="activity-card-below-metrics-actions">{belowMetricsActions}</View>

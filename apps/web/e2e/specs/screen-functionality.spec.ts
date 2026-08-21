@@ -12,8 +12,6 @@ const topLevelScreens = [
   { path: "/activities", name: /^activities$/i },
   { path: "/routes", name: /^routes$/i },
   { path: "/groups", name: /^groups$/i },
-  { path: "/profile-metrics", name: /^profile metrics$/i },
-  { path: "/trends", name: /^trends$/i },
   { path: "/plan", name: /^plan$/i },
   { path: "/calendar", name: /^calendar$/i },
   { path: "/goals", name: /^goals$/i },
@@ -68,11 +66,6 @@ test("primary empty-state and navigation actions remain usable", async ({ athlet
   await athletePage.getByRole("link", { name: /^unread$/i }).click();
   await expect(athletePage).toHaveURL(/\/notifications\?view=unread$/);
   await expect(athletePage.getByText(/no unread notifications/i)).toBeVisible();
-
-  await openAppPage(athletePage, "/profile-metrics");
-  await athletePage.getByRole("button", { name: /^Weight/ }).click();
-  await athletePage.getByRole("button", { name: /add measurement/i }).click();
-  await expect(athletePage.getByRole("dialog")).toBeVisible();
 });
 
 test("message composer opens from the empty inbox", async ({ athletePage }) => {
@@ -94,9 +87,7 @@ test("responsive account navigation exposes every extended product area", async 
     "Scheduled activities",
     "Goals",
     "Groups",
-    "Trends",
     "Activity efforts",
-    "Profile metrics",
     "Training preferences",
     "Integrations",
   ]) {

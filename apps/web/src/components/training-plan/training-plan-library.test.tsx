@@ -16,7 +16,30 @@ const mocks = vi.hoisted(() => ({
               description: "Build durable fitness.",
               is_system_template: false,
               content_visibility: "private",
-              structure: { sessions: [] },
+              structure: {
+                version: 1,
+                activity_category: ["run", "strength"],
+                durationWeeks: { recommended: 2 },
+                sessions: [
+                  {
+                    offset_days: 0,
+                    activity_plan_id: "11111111-1111-4111-8111-111111111111",
+                  },
+                  {
+                    offset_days: 2,
+                    activity_plan_id: "22222222-2222-4222-8222-222222222222",
+                  },
+                ],
+              },
+            },
+            {
+              id: "plan-2",
+              name: "Unstructured plan",
+              description: null,
+              is_system_template: false,
+              content_visibility: "private",
+              structure: null,
+              plannedSchedulePreview: null,
             },
           ],
         },
@@ -61,6 +84,16 @@ describe("TrainingPlanLibrary", () => {
     fireEvent.click(screen.getByTestId("training-plan-card-plan-1-open"));
 
     expect(screen.getByTestId("training-plan-card-plan-1")).toBeTruthy();
+    expect(screen.getByText("Plan schedule")).toBeTruthy();
+    expect(
+      screen.getByRole("img", {
+        name: /empty weeks have a baseline only.*not athlete-specific training load/,
+      }),
+    ).toBeTruthy();
+    expect(screen.getByTestId("training-plan-visual-week-1")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-visual-bar-0")).toBeTruthy();
+    expect(screen.queryByTestId("training-plan-visual-bar-1")).toBeNull();
+    expect(screen.queryByTestId("training-plan-planned-preview-plan-2")).toBeNull();
     expect(onCreate).toHaveBeenCalledOnce();
     expect(onOpen).toHaveBeenCalledWith("plan-1");
   });

@@ -14,6 +14,7 @@ import { Save, Trash2 } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { RecordingReviewSummary } from "@/components/recording/RecordingReviewSummary";
 import { useActivitySubmission } from "@/lib/hooks/useActivitySubmission";
 import { useActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
 
@@ -129,6 +130,16 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
         {submission.activity ? (
           <Form {...form}>
             <View className="px-6 pt-6 space-y-6">
+              {submission.artifact ? (
+                <RecordingReviewSummary
+                  activityCategory={submission.activity.activityCategory}
+                  calories={submission.activity.calories}
+                  distanceMeters={submission.activity.distanceMeters}
+                  durationSeconds={submission.activity.durationSeconds}
+                  laps={submission.artifact.finalStats?.manualLapsMs ?? []}
+                  movingSeconds={submission.activity.movingSeconds}
+                />
+              ) : null}
               {discardError || submission.statusMessage ? (
                 <Text
                   className={

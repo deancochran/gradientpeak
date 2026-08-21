@@ -15,6 +15,7 @@ import {
 export type PlannedCommonLoadTarget =
   // Authored percentage points are converted to this ratio at the API boundary.
   | { type: "percent_threshold"; thresholdRatio: number }
+  | { type: "heart_rate_bpm"; value: number }
   | { type: "power_watts"; value: number }
   | { type: "speed_mps"; value: number };
 
@@ -26,7 +27,11 @@ export type PlannedCommonLoadDose = {
   quality: ActivityCalibrationQuality | null;
   thresholdEvidence: CommonThresholdEvidence | null;
   evidenceFingerprint: string | null;
-  calibrationUnavailableReason?: "threshold_missing" | "stale_threshold" | "evidence_truncated";
+  calibrationUnavailableReason?:
+    | "threshold_missing"
+    | "stale_threshold"
+    | "evidence_truncated"
+    | "ambiguous_target";
 };
 
 export type PlannedCommonLoadEnvelope = {
@@ -65,8 +70,14 @@ function unavailable(
 }
 
 function intensityForDose(dose: PlannedCommonLoadDose): number | null {
-  if (dose.target === null || dose.thresholdEvidence === null || dose.method === null) return null;
+  if (dose.target === null || dose.method === null) return null;
   if (dose.target.type === "percent_threshold") return dose.target.thresholdRatio;
+  if (dose.thresholdEvidence === null) return null;
+  if (dose.target.type === "heart_rate_bpm") {
+    return dose.thresholdEvidence.unit === "beats_per_minute"
+      ? dose.target.value / dose.thresholdEvidence.value
+      : null;
+  }
   if (dose.target.type === "power_watts") {
     return dose.thresholdEvidence.unit === "watts"
       ? dose.target.value / dose.thresholdEvidence.value
@@ -100,10 +111,13 @@ export function adaptPlannedCommonLoadDoses(input: {
     ) {
       return unavailable(dose, input.computedAsOf, "duration_missing");
     }
-    if (dose.target === null) return unavailable(dose, input.computedAsOf, "activity_data_missing");
     if (dose.calibrationUnavailableReason)
       return unavailable(dose, input.computedAsOf, dose.calibrationUnavailableReason);
-    if (dose.method === null || dose.thresholdEvidence === null) {
+    if (dose.target === null) return unavailable(dose, input.computedAsOf, "activity_data_missing");
+    if (dose.method === null) {
+      return unavailable(dose, input.computedAsOf, "threshold_missing");
+    }
+    if (dose.target.type !== "percent_threshold" && dose.thresholdEvidence === null) {
       return unavailable(dose, input.computedAsOf, "threshold_missing");
     }
     if (dose.quality === null || dose.evidenceFingerprint === null) {

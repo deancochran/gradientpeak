@@ -3,6 +3,7 @@ import { activityPlanStructureSchema, materializeRecurrenceOccurrences } from "@
 import {
   createOneOffGroupEventInputSchema,
   createRecurringEventSeriesInputSchema,
+  isGroupEventGoing,
   listOneOffGroupEventsInputSchema,
   rsvpEventSeriesInputSchema,
   rsvpOneOffGroupEventInputSchema,
@@ -412,9 +413,11 @@ export const groupEventsRouter = createTRPCRouter({
       .orderBy(asc(groupEvents.starts_at), asc(groupEvents.id))
       .limit(input.limit + 1);
 
-    const items = (await serializeGroupEventsForViewer(db, rows, profileId)).filter(
-      (event) =>
-        event.viewerRsvp?.status !== "declined" && event.viewerSeriesRsvp?.status !== "declined",
+    const items = (await serializeGroupEventsForViewer(db, rows, profileId)).filter((event) =>
+      isGroupEventGoing({
+        occurrenceStatus: event.viewerRsvp?.status,
+        seriesStatus: event.viewerSeriesRsvp?.status,
+      }),
     );
     return pageResult(items, input.limit, (event) => event.id);
   }),
@@ -463,9 +466,11 @@ export const groupEventsRouter = createTRPCRouter({
           profileId,
           { groupById },
         )
-      ).filter(
-        (event) =>
-          event.viewerRsvp?.status !== "declined" && event.viewerSeriesRsvp?.status !== "declined",
+      ).filter((event) =>
+        isGroupEventGoing({
+          occurrenceStatus: event.viewerRsvp?.status,
+          seriesStatus: event.viewerSeriesRsvp?.status,
+        }),
       );
       return pageResult(items, input.limit, (event) => event.id);
     }),
@@ -636,9 +641,11 @@ export const groupEventsRouter = createTRPCRouter({
         .orderBy(asc(groupEvents.starts_at), asc(groupEvents.id))
         .limit(input.limit + 1);
 
-      const items = (await serializeGroupEventsForViewer(db, rows, profileId)).filter(
-        (item) =>
-          item.viewerRsvp?.status !== "declined" && item.viewerSeriesRsvp?.status !== "declined",
+      const items = (await serializeGroupEventsForViewer(db, rows, profileId)).filter((item) =>
+        isGroupEventGoing({
+          occurrenceStatus: item.viewerRsvp?.status,
+          seriesStatus: item.viewerSeriesRsvp?.status,
+        }),
       );
       return pageResult(items, input.limit, (event) => event.id);
     }),
@@ -803,6 +810,12 @@ export const groupEventsRouter = createTRPCRouter({
       const db = getRequiredDb(ctx);
       const profileId = await getCurrentProfileId(db, ctx.session.user.id);
       const { event, group } = await getGroupEventWithActiveGroup(db, input.groupEventId);
+      if (event.cancelled_at) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cannot RSVP to a cancelled group event",
+        });
+      }
       await requireGroupEventRsvpAccess(db, group.id, profileId);
 
       if (input.status === null) {
@@ -823,20 +836,19 @@ export const groupEventsRouter = createTRPCRouter({
           rsvp: null,
         };
       }
-      const rsvpStatus = input.status;
-
+      const status = input.status;
       const [rsvp] = await db.transaction(async (tx) => {
         const [storedRsvp] = await tx
           .insert(groupEventRsvps)
           .values({
             group_event_id: input.groupEventId,
             profile_id: profileId,
-            status: rsvpStatus,
+            status,
           })
           .onConflictDoUpdate({
             target: [groupEventRsvps.group_event_id, groupEventRsvps.profile_id],
             set: {
-              status: rsvpStatus,
+              status,
               updated_at: new Date(),
             },
           })
@@ -859,6 +871,12 @@ export const groupEventsRouter = createTRPCRouter({
       const profileId = await getCurrentProfileId(db, ctx.session.user.id);
       const { event, group } = await getGroupEventWithActiveGroup(db, input.groupEventSeriesId);
       assertSeriesRoot(event);
+      if (event.cancelled_at) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cannot RSVP to a cancelled group event",
+        });
+      }
       await requireGroupEventRsvpAccess(db, group.id, profileId);
 
       if (input.status === null) {

@@ -675,6 +675,25 @@ describe("segment-derived activity analysis", () => {
     });
   });
 
+  it("forwards the threshold-only evidence scope for historical load reprocessing", async () => {
+    const input = activity([
+      segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000),
+    ]);
+    const analysisStore = store();
+
+    await buildActivitySegmentDerivedSummaries({
+      store: analysisStore,
+      profileId: PROFILE_ID,
+      activities: [input],
+      contextEvidenceScope: "thresholds",
+    });
+
+    expect(analysisStore.loadContextEvidence).toHaveBeenCalledWith({
+      requests: expect.any(Array),
+      evidenceScope: "thresholds",
+    });
+  });
+
   it("loads canonical performance targets once for a segment batch", async () => {
     const first = activity([
       segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000),

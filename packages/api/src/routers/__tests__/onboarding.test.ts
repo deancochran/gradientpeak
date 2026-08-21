@@ -1,6 +1,5 @@
 import type { CompleteOnboarding } from "@repo/core/schemas/onboarding";
 import {
-  integrationCredentials,
   integrations,
   oauthStates,
   profileAthleteState,
@@ -40,7 +39,7 @@ const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 const INTEGRATION_ID = "22222222-2222-4222-8222-222222222222";
 const profileInput: CompleteOnboarding = {
   full_name: "Lifecycle Athlete",
-  username: "lifecycle-athlete",
+  username: "lifecycle_athlete",
   experience_level: "skip",
   intents: ["train_event"],
   baseline_field_sources: {},
@@ -65,6 +64,8 @@ function createCaller(input?: {
 }) {
   let status = input?.status ?? "provider_selection";
   const providers = input?.providers ?? false;
+  const insertedTables: unknown[] = [];
+  let storedGoal: Record<string, unknown> | null = null;
   const db = {
     execute: vi.fn(async () => ({ rows: [] })),
     transaction: async (operation: (tx: unknown) => Promise<unknown>) => operation(db),
@@ -155,7 +156,15 @@ function createCaller(input?: {
             }),
           };
         }
-        if (table === profileGoals) return { where: () => ({ limit: async () => [] }) };
+        if (table === profileGoals) {
+          const projectedGoal =
+            storedGoal && selection
+              ? Object.fromEntries(Object.keys(selection).map((key) => [key, storedGoal?.[key]]))
+              : storedGoal;
+          return {
+            where: () => ({ limit: async () => (projectedGoal ? [projectedGoal] : []) }),
+          };
+        }
         if (table === profileMetrics)
           return { where: () => ({ orderBy: () => ({ limit: async () => [] }) }) };
         throw new Error(`Unexpected table ${String(table)}`);
@@ -173,13 +182,19 @@ function createCaller(input?: {
         }),
       }),
     }),
-    insert: (table: unknown) => ({
-      values: (values: unknown) => ({
-        onConflictDoNothing: async () => [],
-        onConflictDoUpdate: async () => [],
-        then: (resolve: (rows: unknown[]) => void) => resolve([]),
-      }),
-    }),
+    insert: (table: unknown) => {
+      insertedTables.push(table);
+      return {
+        values: (values: unknown) => ({
+          onConflictDoNothing: async () => {
+            if (table === profileGoals) storedGoal = values as Record<string, unknown>;
+            return [];
+          },
+          onConflictDoUpdate: async () => [],
+          then: (resolve: (rows: unknown[]) => void) => resolve([]),
+        }),
+      };
+    },
   };
   return {
     caller: onboardingRouter.createCaller({
@@ -190,6 +205,7 @@ function createCaller(input?: {
       trpcSource: "vitest",
     } as never),
     getStatus: () => status,
+    insertedTables,
   };
 }
 
@@ -221,6 +237,43 @@ describe("onboarding lifecycle", () => {
     await expect(caller.startProcessing()).rejects.toMatchObject({ code: "CONFLICT" });
     expect(getStatus()).toBe("provider_selection");
     expect(queueMock).not.toHaveBeenCalled();
+  });
+
+  it("completes from provider selection with identity only and no optional writes", async () => {
+    const identityOnlyProfile = { ...profileInput, intents: [] };
+    const { caller, getStatus, insertedTables } = createCaller();
+    await expect(caller.completeLifecycleSetup({ profile: identityOnlyProfile })).resolves.toEqual({
+      status: "completed",
+      goal: { status: "skipped" },
+      settings: { status: "skipped" },
+      created: { profile_metrics: 0 },
+    });
+    expect(getStatus()).toBe("completed");
+    expect(insertedTables).toEqual([]);
+    expect(queueMock).not.toHaveBeenCalled();
+  });
+
+  it("persists an optional goal when the client supplies one", async () => {
+    const { caller, insertedTables } = createCaller();
+    await expect(
+      caller.completeLifecycleSetup({
+        profile: { ...profileInput, intents: [] },
+        goal: goalInput,
+      }),
+    ).resolves.toMatchObject({
+      status: "completed",
+      goal: { status: "saved" },
+      settings: { status: "skipped" },
+    });
+    expect(insertedTables).toEqual([profileGoals]);
+  });
+
+  it("does not bypass a pending provider authorization during identity-only completion", async () => {
+    const { caller, getStatus } = createCaller({ pendingOAuth: true });
+    await expect(
+      caller.completeLifecycleSetup({ profile: { ...profileInput, intents: [] } }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(getStatus()).toBe("provider_selection");
   });
 
   it("queues both required initial Wahoo jobs and closes provider selection", async () => {
@@ -280,8 +333,8 @@ describe("onboarding lifecycle", () => {
     await expect(caller.getProgress()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });
 
-  it("requires review before finalization", async () => {
-    const { caller } = createCaller({ status: "provider_selection" });
+  it("does not bypass provider work that is already processing", async () => {
+    const { caller } = createCaller({ status: "processing" });
     await expect(
       caller.completeLifecycleSetup({ profile: profileInput, goal: goalInput }),
     ).rejects.toMatchObject({ code: "CONFLICT" });

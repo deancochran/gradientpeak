@@ -19,8 +19,7 @@ Use this file when working in `packages/db`.
 ## Source Of Truth
 
 - `src/schema/**` is the relational source of truth.
-- `supabase/migrations/` has exactly one fresh-only transactional MVP baseline. Archives are inert evidence and are never read by active tooling.
-- `supabase/migrations-archive/` and the migration lock preserve pre-baseline history and must not be edited.
+- `supabase/migrations/` has exactly one fresh-only transactional MVP baseline.
 - `supabase/` contains DB-owned local workflow assets.
 
 ## Rules
@@ -47,7 +46,7 @@ Use this file when working in `packages/db`.
 ## Validation
 
 - Use package or repo DB commands relevant to the change, including migration and local DB workflows.
-- A schema or migration change requires `pnpm --filter @repo/db db:verify`; start from the [migration safety exemplar](../../docs/agent-exemplars.md).
+- A schema or migration change requires `pnpm --filter @repo/db db:verify`.
 
 ## References
 

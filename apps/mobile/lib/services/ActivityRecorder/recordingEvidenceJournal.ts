@@ -362,7 +362,7 @@ async function quarantineEvidence(
 }
 
 /**
- * Releases only the identified active owner.  This deliberately retains stream
+ * Releases only the identified recoverable owner. This deliberately retains stream
  * and GPS rows: a recovery decision is not permission to erase committed
  * evidence.  The profile predicate prevents a stale/cross-profile checkpoint
  * from changing another owner's session.
@@ -377,7 +377,7 @@ export async function quarantineRecordingEvidenceSession(input: {
   let quarantined = false;
   await db.withExclusiveTransactionAsync(async (tx) => {
     const result = await tx.runAsync(
-      "UPDATE recording_evidence_sessions SET state = 'quarantined' WHERE session_id = ? AND profile_id = ? AND state = 'active'",
+      "UPDATE recording_evidence_sessions SET state = 'quarantined' WHERE session_id = ? AND profile_id = ? AND state IN ('active', 'fenced')",
       input.sessionId,
       input.profileId,
     );
@@ -397,7 +397,7 @@ export async function quarantineRecordingEvidenceSession(input: {
   return quarantined;
 }
 
-/** Quarantine active SQLite rows whose stored checkpoint fails strict validation. */
+/** Quarantine recoverable SQLite rows whose stored checkpoint fails strict validation. */
 export async function quarantineOrphanedActiveRecordingEvidenceSessions(
   profileId: string,
   validateCheckpoint: RecordingEvidenceCheckpointValidator,
@@ -410,7 +410,7 @@ export async function quarantineOrphanedActiveRecordingEvidenceSessions(
       checkpoint_json: string | null;
       checkpoint_digest: string | null;
     }>(
-      "SELECT session_id, checkpoint_json, checkpoint_digest FROM recording_evidence_sessions WHERE profile_id = ? AND state = 'active'",
+      "SELECT session_id, checkpoint_json, checkpoint_digest FROM recording_evidence_sessions WHERE profile_id = ? AND state IN ('active', 'fenced')",
       profileId,
     );
     for (const session of sessions) {
@@ -433,7 +433,7 @@ export async function quarantineOrphanedActiveRecordingEvidenceSessions(
       }
       if (!valid) {
         const result = await tx.runAsync(
-          "UPDATE recording_evidence_sessions SET state = 'quarantined' WHERE session_id = ? AND profile_id = ? AND state = 'active'",
+          "UPDATE recording_evidence_sessions SET state = 'quarantined' WHERE session_id = ? AND profile_id = ? AND state IN ('active', 'fenced')",
           session.session_id,
           profileId,
         );
@@ -544,9 +544,10 @@ export async function persistRecordingEvidenceCheckpoint(input: {
 }
 
 /**
- * SQLite is the recovery authority.  A finalized session has already handed its
- * artifact to the queue and must never compete with a new active session for a
- * checkpoint. This ordering deliberately does not depend on wall-clock ordering.
+ * SQLite is the recovery authority. Active and fenced sessions remain recoverable:
+ * fencing closes producers, but does not mean the final artifact was committed.
+ * A finalized session has already handed its artifact to the queue and must never
+ * compete with a new active session for a checkpoint.
  */
 export type RecordingEvidenceCheckpointRow = {
   sessionId: string;
@@ -565,7 +566,7 @@ export async function readRecordingEvidenceCheckpoint(
   }>(
     `SELECT s.session_id, s.checkpoint_json, s.checkpoint_digest
        FROM recording_evidence_sessions s
-       WHERE s.profile_id = ? AND s.checkpoint_json IS NOT NULL AND s.state = 'active'
+       WHERE s.profile_id = ? AND s.checkpoint_json IS NOT NULL AND s.state IN ('active', 'fenced')
        ORDER BY s.created_at DESC`,
     profileId,
   );

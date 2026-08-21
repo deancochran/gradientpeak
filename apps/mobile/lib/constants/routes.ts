@@ -48,13 +48,6 @@ export const ROUTES = {
     DETAIL: (activityId: string) => `/activity-detail?id=${activityId}` as const,
   },
 
-  PROFILE_METRICS: {
-    LIST: "/profile-metrics-list" as const,
-    CREATE: "/profile-metric-edit" as const,
-    DETAIL: (metricId: string) => `/profile-metric-detail?id=${metricId}` as const,
-    EDIT: (metricId: string) => `/profile-metric-edit?id=${metricId}` as const,
-  },
-
   GOALS: {
     LIST: "/goals-list" as const,
     CREATE: "/goal-create" as const,
@@ -77,7 +70,6 @@ export const ROUTES = {
 
   // Profile
   PROFILE_TAB: "/(internal)/(tabs)/profile" as const,
-  TRENDS: "/trends" as const,
   USER_DETAIL: (userId: string) => `/user/${userId}` as const,
   PROFILE_EDIT: "/profile-edit" as const,
   INTEGRATIONS: "/integrations" as const,

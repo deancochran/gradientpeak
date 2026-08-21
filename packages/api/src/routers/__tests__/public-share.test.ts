@@ -133,21 +133,32 @@ describe("publicShareRouter", () => {
           id: "00000000-0000-4000-8000-000000000011",
           role: "activity",
           name: "Run",
+          notes: "Ease into the first interval.",
           intervals: [
             {
               id: "00000000-0000-4000-8000-000000000012",
               name: "Run interval",
+              notes: "Walk between rounds.",
               repetitions: 1,
               steps: [
                 {
                   id: "00000000-0000-4000-8000-000000000013",
                   name: "Easy run",
+                  description: "Keep the effort conversational.",
+                  notes: "Relax your shoulders.",
                   duration: { type: "time", seconds: 1800 },
                   targets: [{ type: "RPE", intensity: 5 }],
                 },
               ],
             },
           ],
+        },
+        {
+          id: "00000000-0000-4000-8000-000000000014",
+          role: "rest",
+          name: "Cool down",
+          notes: "Walk until your breathing settles.",
+          duration: { type: "time", seconds: 300 },
         },
       ],
     });
@@ -156,7 +167,7 @@ describe("publicShareRouter", () => {
         id,
         name: "Public brick",
         description: null,
-        notes: null,
+        notes: "Private instruction: hold RPE 8 for 20 minutes",
         structure,
         structure_hash: `v1:sha256:${"a".repeat(64)}`,
         gps_recording_enabled: true,
@@ -180,19 +191,52 @@ describe("publicShareRouter", () => {
       activity_category: "run",
       structure_version: 3,
       structure_summary: "Structured plan details",
+      structure: {
+        version: 3,
+        activity_category: "run",
+        segments: [
+          {
+            role: "activity",
+            name: "Run",
+            notes: "Ease into the first interval.",
+            intervals: [
+              {
+                name: "Run interval",
+                notes: "Walk between rounds.",
+                repetitions: 1,
+                steps: [
+                  {
+                    name: "Easy run",
+                    description: "Keep the effort conversational.",
+                    notes: "Relax your shoulders.",
+                    duration: { type: "time", seconds: 1800 },
+                    targets: [{ type: "RPE", intensity: 5 }],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            role: "rest",
+            name: "Cool down",
+            notes: "Walk until your breathing settles.",
+            duration: { type: "time", seconds: 300 },
+          },
+        ],
+      },
     });
     expect(Object.keys(activityPlan ?? {}).sort()).toEqual([
       "activity_category",
       "description",
       "id",
       "is_system_template",
+      "metrics",
       "name",
-      "notes",
       "owner",
+      "structure",
       "structure_summary",
       "structure_version",
     ]);
-    expect(activityPlan).not.toHaveProperty("structure");
     expect(activityPlan).not.toHaveProperty("structure_hash");
     expect(activityPlan).not.toHaveProperty("gps_recording_enabled");
     expect(activityPlan).not.toHaveProperty("content_visibility");
@@ -200,6 +244,38 @@ describe("publicShareRouter", () => {
     expect(activityPlan).not.toHaveProperty("updated_at");
     expect(activityPlan?.owner).not.toHaveProperty("id");
     expect(activityPlan?.owner).not.toHaveProperty("avatar_url");
+    expect(JSON.stringify(activityPlan)).toMatch(/RPE|targets|duration|seconds/i);
+    expect(activityPlan?.metrics).toEqual([
+      expect.objectContaining({ key: "distance", status: "unavailable", provenance: null }),
+      expect.objectContaining({
+        key: "elapsed_duration",
+        status: "available",
+        value: 2_100,
+        provenance: "authored",
+      }),
+      expect.objectContaining({ key: "common_load", status: "unavailable", provenance: null }),
+      expect.objectContaining({
+        key: "normalized_intensity",
+        status: "unavailable",
+        provenance: null,
+      }),
+    ]);
+    expect(JSON.stringify(activityPlan?.metrics)).not.toMatch(
+      /athlete|threshold|calibration|evidence/i,
+    );
+    const firstSegment = activityPlan?.structure.segments[0];
+    expect(firstSegment).toMatchObject({ role: "activity" });
+    if (!firstSegment || firstSegment.role !== "activity")
+      throw new Error("Expected activity segment");
+    const firstInterval = firstSegment.intervals[0];
+    const firstStep = firstInterval?.steps[0];
+    expect(firstSegment).not.toHaveProperty("id");
+    expect(firstInterval).not.toHaveProperty("id");
+    expect(firstStep).not.toHaveProperty("id");
+    expect(activityPlan?.structure.segments[1]).not.toHaveProperty("id");
+    expect(JSON.stringify(activityPlan?.structure)).not.toMatch(
+      /00000000-0000-4000-8000-00000000001[1234]/,
+    );
   });
 
   it("redacts builder snapshots, arbitrary goal objectives, and internal IDs at direct public tRPC", async () => {

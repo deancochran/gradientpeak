@@ -78,6 +78,39 @@ describe("adaptPlannedCommonLoadDoses", () => {
     expect(result.aggregate).toMatchObject({ status: "unavailable", reason: "no_load_data" });
   });
 
+  it("calculates relative plan intent without a numeric athlete threshold", () => {
+    const input = dose("bike", "power_threshold", "ftp_watts", {
+      type: "percent_threshold",
+      thresholdRatio: 0.8,
+    });
+    const result = adaptPlannedCommonLoadDoses({
+      computedAsOf,
+      doses: [
+        {
+          ...input,
+          thresholdEvidence: null,
+          quality: {
+            source: "unknown",
+            observed_at: null,
+            valid_at: computedAsOf,
+            confidence: "unknown",
+            stale: false,
+            estimate: true,
+            calculation_version: "1",
+            evidence_fingerprint: "authored-relative-target",
+          },
+        },
+      ],
+    });
+
+    expect(result.doses[0]).toMatchObject({
+      status: "available",
+      intensity: 0.8,
+      load: expect.closeTo((1_200 / 3_600) * 0.8 ** 2 * 100),
+      thresholdEvidence: null,
+    });
+  });
+
   it.each([
     [0.75, "available", 0.75],
     [1.5, "available", 1.5],

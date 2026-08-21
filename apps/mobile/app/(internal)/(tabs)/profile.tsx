@@ -228,31 +228,6 @@ export default function ProfileTabScreen() {
         {user?.id ? <ProfileGroupsSection profileId={user.id} testID="profile-tab-groups" /> : null}
 
         <SettingsGroup
-          title="Metric Surfaces"
-          description="Open measurements grouped by profile metric type or activity effort type."
-          testID="profile-tab-metric-entries"
-        >
-          <SettingItem
-            type="button"
-            label="Trends"
-            description="Training load, consistency, volume, and performance insight cards."
-            buttonLabel="Open"
-            variant="outline"
-            onPress={() => navigateTo(ROUTES.TRENDS)}
-            testID="profile-tab-trends"
-          />
-          <SettingItem
-            type="button"
-            label="Profile Metrics"
-            description="Weight, HRV, sleep, threshold, and other profile measurements by type."
-            buttonLabel="Manage"
-            variant="outline"
-            onPress={() => navigateTo(ROUTES.PROFILE_METRICS.LIST)}
-            testID="profile-tab-profile-metrics"
-          />
-        </SettingsGroup>
-
-        <SettingsGroup
           title="Training Library"
           description="Open saved plans, routes, activities, and completed activity history."
           testID="profile-tab-library"

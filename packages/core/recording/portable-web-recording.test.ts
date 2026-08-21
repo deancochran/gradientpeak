@@ -85,6 +85,56 @@ const artifact = {
 } as const;
 
 describe("portable web recording contracts", () => {
+  it("rejects exports that claim recording-owned target personalization", () => {
+    const structure = {
+      version: 3,
+      activity_category: "bike",
+      segments: [
+        {
+          id: "66666666-6666-4666-8666-666666666661",
+          role: "activity",
+          name: "Ride",
+          intervals: [
+            {
+              id: "66666666-6666-4666-8666-666666666662",
+              name: "Work",
+              repetitions: 1,
+              steps: [
+                {
+                  id: "66666666-6666-4666-8666-666666666663",
+                  name: "Tempo",
+                  duration: { type: "time", seconds: 600 },
+                  targets: [{ type: "%FTP", intensity: 80 }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    expect(
+      portableWebRecordingArtifactSchema.safeParse({
+        ...artifact,
+        snapshot: {
+          ...snapshot,
+          planExecution: {
+            manifestVersion: 1,
+            compilerVersion: 1,
+            activityPlanId: snapshot.activity.activityPlanId,
+            scheduledEventId: snapshot.activity.eventId,
+            name: "Tempo ride",
+            description: null,
+            activityPlanRevision: 1,
+            structureHash: `v1:sha256:${"b".repeat(64)}`,
+            structure,
+            personalizationEnabled: true,
+            targetPresentations: [{ occurrenceId: "tempo", labels: ["240 W (80% FTP)"] }],
+          },
+        },
+      }).success,
+    ).toBe(false);
+  });
+
   it("locks artifact identity and validates bounded review metadata", () => {
     expect(portableWebRecordingArtifactSchema.parse(artifact)).toEqual(artifact);
     expect(
@@ -99,6 +149,17 @@ describe("portable web recording contracts", () => {
         movingMs: artifact.elapsedMs + 1,
       }).success,
     ).toBe(false);
+  });
+
+  it("retains excluded interruption time without counting it as recorded elapsed time", () => {
+    expect(
+      portableWebRecordingArtifactSchema.parse({
+        ...artifact,
+        elapsedMs: 1_200_000,
+        movingMs: 1_000_000,
+        excludedElapsedMs: 600_000,
+      }),
+    ).toMatchObject({ elapsedMs: 1_200_000, movingMs: 1_000_000, excludedElapsedMs: 600_000 });
   });
 
   it("requires an explicit null RPE operation ID and rejects malformed IDs", () => {

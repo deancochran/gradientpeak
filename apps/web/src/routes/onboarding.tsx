@@ -4,7 +4,7 @@ import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   ProviderProcessingState,
@@ -16,7 +16,6 @@ import { getSafeAppRedirectTarget } from "../lib/app-url";
 import { authSessionMiddleware, resolveRouteAuthSession } from "../lib/auth/route-guards";
 import { contractEpochFormInputProps } from "../lib/contract-epoch";
 import { resolveLoadedOnboardingStatus } from "../lib/onboarding/lifecycle-load-state";
-import { retainSnapshotOnRefresh } from "../lib/onboarding/manual-refresh";
 import {
   getOnboardingOAuthErrorMessage,
   parseOnboardingOAuthError,
@@ -30,8 +29,6 @@ import {
   loadOnboardingProgress,
   restartOnboardingProviderSelectionAction,
   retryOnboardingProviderAction,
-  saveOnboardingDraftAction,
-  startOnboardingProcessingAction,
 } from "../lib/onboarding/server-actions";
 
 export const Route = createFileRoute("/onboarding")({
@@ -71,150 +68,37 @@ export const Route = createFileRoute("/onboarding")({
   component: OnboardingPage,
 });
 
-const intents = [
-  ["train_event", "Train for an event"],
-  ["improve_fitness", "Improve fitness"],
-  ["track_activities", "Track activities"],
-  ["groups", "Train with groups"],
-  ["follow_people", "Follow athletes"],
-  ["coach_group", "Coach or manage"],
-  ["explore", "Just exploring"],
-] as const;
-function SourceSelect({ field, defaultValue }: { field: string; defaultValue?: string }) {
-  return (
-    <select
-      aria-label={`${field} source`}
-      className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-      defaultValue={defaultValue ?? "manual"}
-      name={`${field}_source`}
-    >
-      <option value="manual">Entered manually</option>
-      <option value="estimated">Estimated</option>
-      <option value="imported">Imported from provider</option>
-    </select>
-  );
-}
-
-function BaselineField({
-  field,
-  label,
-  defaultValue,
-  source,
-  type = "number",
-  min,
-  max,
-  step,
-}: {
-  field: string;
-  label: string;
-  defaultValue?: string | number;
-  source?: string;
-  type?: string;
-  min?: number;
-  max?: number;
-  step?: string;
-}) {
-  return (
-    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)] sm:items-end">
-      <div className="space-y-2">
-        <Label htmlFor={field}>{label}</Label>
-        <Input
-          defaultValue={defaultValue}
-          id={field}
-          max={max}
-          min={min}
-          name={field}
-          step={step}
-          type={type}
-        />
-      </div>
-      <SourceSelect {...(source ? { defaultValue: "imported" } : {})} field={field} />
-      {source ? (
-        <p className="text-xs text-muted-foreground sm:col-span-2">Imported from {source}</p>
-      ) : null}
-    </div>
-  );
-}
-
-function CheckboxChoice({
-  name,
-  value,
-  label,
-  description,
-  defaultChecked = false,
-}: {
-  name: string;
-  value: string;
-  label: string;
-  description?: string;
-  defaultChecked?: boolean;
-}) {
-  return (
-    <label className="flex min-w-0 items-start gap-3 rounded-md border p-3">
-      <input
-        className="mt-1 size-4"
-        defaultChecked={defaultChecked}
-        name={name}
-        type="checkbox"
-        value={value}
-      />
-      <span className="min-w-0">
-        <span className="block font-medium">{label}</span>
-        {description ? (
-          <span className="block text-sm text-muted-foreground">{description}</span>
-        ) : null}
-      </span>
-    </label>
-  );
-}
-
-function OnboardingPage() {
+export function OnboardingPage() {
   const initialData = Route.useLoaderData() as Awaited<ReturnType<typeof loadOnboardingOptions>>;
-  const [data, setData] = useState(initialData);
   const navigate = Route.useNavigate();
-  const completeOnboarding = useServerFn(completeOnboardingIdentityAction);
-  const saveDraft = useServerFn(saveOnboardingDraftAction);
-  const startProcessing = useServerFn(startOnboardingProcessingAction);
-  const retryProvider = useServerFn(retryOnboardingProviderAction);
-  const restartProviderSelection = useServerFn(restartOnboardingProviderSelectionAction);
-  const loadProgress = useServerFn(loadOnboardingProgress);
-  const cancelPendingOAuth = useServerFn(cancelPendingOnboardingOAuthAction);
-  const getAuthUrlMutation = api.integrations.getAuthUrl.useMutation();
-  const [status, setStatus] = useState(() =>
-    resolveLoadedOnboardingStatus({
-      ...(data.progress?.status !== undefined ? { readinessStatus: data.progress.status } : {}),
-      ...(data.profile?.onboarding_status !== undefined
-        ? { profileStatus: data.profile.onboarding_status }
-        : {}),
-    }),
-  );
-  const [progress, setProgress] = useState(data.progress);
-  const [progressError, setProgressError] = useState<string | null>(data.progressError);
-  const [setupStatusError, setSetupStatusError] = useState<string | null>(null);
-  const [integrations, setIntegrations] = useState(data.integrations);
-  const [integrationsError, setIntegrationsError] = useState(data.integrationsError);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submissionError, setSubmissionError] = useState<string | null>(null);
-  const [pendingOAuthBlocked, setPendingOAuthBlocked] = useState(false);
-  const reviewHydrationStartedRef = useRef(false);
-  const {
-    error: oauthError,
-    flash,
-    flashType,
-    redirect: redirectTo,
-  } = Route.useSearch() as {
+  const search = Route.useSearch() as {
     error?: string;
     flash?: string;
     flashType?: RouteFlashType;
     redirect?: string;
   };
-  const setupData = data.setupData;
-  const draft = data.draft;
-  const importedSource = (field: keyof NonNullable<typeof setupData>["sources"]) =>
-    setupData?.sources[field]?.label;
-  const dobSource = importedSource("dob");
-  const genderSource = importedSource("gender");
-  const weightSource = importedSource("weight_kg");
+  const completeOnboarding = useServerFn(completeOnboardingIdentityAction);
+  const loadProgress = useServerFn(loadOnboardingProgress);
+  const retryProvider = useServerFn(retryOnboardingProviderAction);
+  const restartProviderSelection = useServerFn(restartOnboardingProviderSelectionAction);
+  const cancelPendingOAuth = useServerFn(cancelPendingOnboardingOAuthAction);
+  const getAuthUrlMutation = api.integrations.getAuthUrl.useMutation();
+  const [data, setData] = useState(initialData);
+  const [status, setStatus] = useState(() =>
+    resolveLoadedOnboardingStatus({
+      ...(initialData.progress?.status !== undefined
+        ? { readinessStatus: initialData.progress.status }
+        : {}),
+      ...(initialData.profile?.onboarding_status !== undefined
+        ? { profileStatus: initialData.profile.onboarding_status }
+        : {}),
+    }),
+  );
+  const [progress, setProgress] = useState(initialData.progress);
+  const [progressError, setProgressError] = useState<string | null>(initialData.progressError);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [pendingOAuthBlocked, setPendingOAuthBlocked] = useState(false);
 
   useEffect(() => {
     if (status !== "processing") return;
@@ -225,27 +109,24 @@ function OnboardingPage() {
         const next = await pollOnboardingProgress({
           loadProgress,
           loadReview: loadOnboardingOptions,
-          shouldLoadReview: !reviewHydrationStartedRef.current,
+          shouldLoadReview: true,
         });
         if (!active) return;
         if (next.kind === "error") {
           setProgressError(next.message);
+        } else if (next.kind === "review") {
+          setData(next.review);
+          setProgress(next.progress);
+          setStatus("review");
+          setProgressError(null);
+          return;
         } else {
           setProgress(next.progress);
           setProgressError(null);
-          if (next.kind === "review") {
-            reviewHydrationStartedRef.current = true;
-            setData(next.review);
-            setStatus("review");
-            return;
-          }
-          const nextStatus = next.progress.status;
-          if (nextStatus && nextStatus !== "processing") setStatus(nextStatus);
+          if (next.progress.status !== "processing") setStatus(next.progress.status);
         }
       } catch {
-        setProgressError(
-          "Preparation progress could not be refreshed. Your work is still saved; try again.",
-        );
+        setProgressError("Preparation progress could not be refreshed. Try again.");
       } finally {
         if (active) timer = window.setTimeout(poll, 2000);
       }
@@ -255,7 +136,22 @@ function OnboardingPage() {
       active = false;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [status, loadProgress]);
+  }, [loadProgress, status]);
+
+  const refreshProviderState = async () => {
+    try {
+      const next = await loadOnboardingOptions();
+      setData(next);
+      if (next.progress) {
+        setProgress(next.progress);
+        setStatus(next.progress.status);
+      }
+      return true;
+    } catch {
+      setSubmissionError("Connected accounts could not be refreshed. You can still finish setup.");
+      return false;
+    }
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -264,81 +160,31 @@ function OnboardingPage() {
     setIsSubmitting(true);
     try {
       const result = await completeOnboarding({ data: new FormData(event.currentTarget) });
-      if ("status" in result && result.status === "error") setSubmissionError(result.message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDraft = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setSubmissionError(null);
-    setIsSubmitting(true);
-    try {
-      const result = await saveDraft({ data: new FormData(event.currentTarget) });
-      if ("status" in result && result.status === "error") setSubmissionError(result.message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleStartProcessing = async () => {
-    setSubmissionError(null);
-    setIsSubmitting(true);
-    try {
-      const result = await startProcessing();
       if ("status" in result && result.status === "error") {
-        setPendingOAuthBlocked(result.code === "pending_oauth");
-        setSubmissionError(
-          result.code === "pending_oauth"
-            ? "A provider connection is still pending. Finish it, or explicitly cancel it before continuing."
-            : result.message,
-        );
-        return;
+        setPendingOAuthBlocked("code" in result && result.code === "pending_oauth");
+        setSubmissionError(result.message);
       }
-      setStatus(result.status);
-      if (result.status === "processing") {
-        const next = await loadProgress();
-        if (next.progress) setProgress(next.progress);
-        setProgressError(next.error);
-      } else {
-        await refreshProviderState();
-      }
-    } catch {
-      setSubmissionError("Processing could not be started. Try again.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleRestartProviderSelection = async () => {
-    setIsSubmitting(true);
+  const connectProvider = async (provider: (typeof data.integrations)[number]["provider"]) => {
     setSubmissionError(null);
-    try {
-      const result = await restartProviderSelection();
-      if ("message" in result) setSubmissionError(result.message);
-      else {
-        setStatus(result.status);
-        setProgress(null);
-        const refreshed = await refreshProviderState();
-        if (!refreshed) {
-          setSetupStatusError(
-            "Account selection reopened, but connected accounts could not be refreshed. Try again.",
-          );
-        }
-      }
-    } catch {
-      setSubmissionError("Account selection could not be reopened. Try again.");
-    } finally {
-      setIsSubmitting(false);
-    }
+    await startOnboardingProviderConnection({
+      provider,
+      redirectUri: `${window.location.origin}/onboarding`,
+      getAuthUrl: (request) => getAuthUrlMutation.mutateAsync(request),
+      navigate: (url) => window.location.assign(url),
+      onError: setSubmissionError,
+    });
   };
 
   const handleCancelPendingOAuth = async () => {
     setIsSubmitting(true);
     setSubmissionError(null);
     try {
-      for (const integration of integrations) {
+      for (const integration of data.integrations) {
         const result = await cancelPendingOAuth({ data: { provider: integration.provider } });
         if ("status" in result && result.status === "error") {
           setSubmissionError(result.message);
@@ -347,180 +193,147 @@ function OnboardingPage() {
       }
       setPendingOAuthBlocked(false);
       await refreshProviderState();
-    } catch {
-      setSubmissionError("The pending connection could not be cancelled. Try again.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const refreshProviderState = async () => {
-    try {
-      const next = await loadOnboardingOptions();
-      setData(next);
-      setProgressError(next.progressError);
-      setSetupStatusError(null);
-      if (!next.integrationsError) setIntegrations(next.integrations);
-      setIntegrationsError(next.integrationsError);
-      if (next.progress) {
-        setProgress(next.progress);
-        setStatus(next.progress.status);
-      } else {
-        const nextStatus = resolveLoadedOnboardingStatus({
-          readinessStatus: null,
-          ...(next.profile?.onboarding_status !== undefined
-            ? { profileStatus: next.profile.onboarding_status }
-            : {}),
-        });
-        if (nextStatus) setStatus(nextStatus);
-      }
-      return true;
-    } catch {
-      setSetupStatusError("Setup status could not be refreshed. Your saved setup was retained.");
-      return false;
-    }
-  };
-
-  const refreshProgress = async () => {
-    await retainSnapshotOnRefresh({
-      load: loadProgress,
-      onSuccess: (next) => {
-        if (next.progress) {
-          setProgress(next.progress);
-          setStatus(next.progress.status);
-          setProgressError(null);
-        } else {
-          setProgressError(next.error);
-        }
-      },
-      onError: setProgressError,
-      errorMessage:
-        "Preparation progress could not be refreshed. Your last saved progress is still shown.",
-    });
-  };
-
-  const handleRetryProvider = async (provider: (typeof integrations)[number]["provider"]) => {
+  const handleRetryProvider = async (provider: (typeof data.integrations)[number]["provider"]) => {
     setIsSubmitting(true);
-    setSubmissionError(null);
     try {
       const result = await retryProvider({ data: { provider } });
       if (result.status === "error") setSubmissionError(result.message);
-      else await refreshProgress();
-    } catch {
-      setSubmissionError("Preparation could not be retried. Try again.");
+      else {
+        const next = await loadProgress();
+        if (next.progress) setProgress(next.progress);
+        setProgressError(next.error);
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const connectProvider = async (provider: (typeof integrations)[number]["provider"]) => {
-    const redirectUri = `${window.location.origin}/onboarding`;
-    setSubmissionError(null);
-    await startOnboardingProviderConnection({
-      provider,
-      redirectUri,
-      getAuthUrl: (request) => getAuthUrlMutation.mutateAsync(request),
-      navigate: (url) => window.location.assign(url),
-      onError: setSubmissionError,
-    });
+  const handleRestartProviderSelection = async () => {
+    setIsSubmitting(true);
+    try {
+      const result = await restartProviderSelection();
+      if ("message" in result) setSubmissionError(result.message);
+      else {
+        setStatus(result.status);
+        setProgress(null);
+        await refreshProviderState();
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
+  const showIdentity = status === "provider_selection" || status === "review";
   return (
-    <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 lg:py-12">
-      <Card className="w-full overflow-hidden">
-        {status === "review" ? (
-          <CardHeader>
-            <p className="text-sm font-medium text-primary">Welcome to GradientPeak</p>
-            <h1 className="text-3xl font-semibold tracking-tight">Review your setup</h1>
-            <CardDescription>
-              Your starting point is ready. Review your answers before finalizing setup.
-            </CardDescription>
-          </CardHeader>
-        ) : null}
-        <CardContent>
+    <main className="mx-auto w-full max-w-2xl px-4 py-8 sm:px-6 lg:py-12">
+      <Card>
+        <CardHeader>
+          <p className="text-sm font-medium text-primary">Welcome to GradientPeak</p>
+          <h1 className="text-3xl font-semibold tracking-tight">Finish your profile</h1>
+          <CardDescription>
+            Add your name and username. A training account is optional and can be connected later.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
           <RouteFlashToast
-            {...(flash !== undefined ? { message: flash } : {})}
-            {...(flashType !== undefined ? { type: flashType } : {})}
-            clear={() =>
-              void navigate({
-                href: redirectTo
-                  ? `/onboarding?redirect=${encodeURIComponent(redirectTo)}`
-                  : "/onboarding",
-                replace: true,
-              } as never)
-            }
+            {...(search.flash !== undefined ? { message: search.flash } : {})}
+            {...(search.flashType !== undefined ? { type: search.flashType } : {})}
+            clear={() => void navigate({ href: "/onboarding", replace: true } as never)}
           />
           {submissionError ? (
             <p
-              className="mb-6 rounded-md border border-destructive/40 p-3 text-sm text-destructive"
+              className="rounded-md border border-destructive/40 p-3 text-sm text-destructive"
               role="alert"
             >
               {submissionError}
             </p>
           ) : null}
-          {oauthError ? (
+          {search.error ? (
             <p
-              className="mb-6 rounded-md border border-destructive/40 p-3 text-sm text-destructive"
+              className="rounded-md border border-destructive/40 p-3 text-sm text-destructive"
               role="alert"
             >
-              {getOnboardingOAuthErrorMessage(oauthError)}
+              {getOnboardingOAuthErrorMessage(search.error)}
             </p>
           ) : null}
 
-          {setupStatusError ? (
-            <p
-              className="mb-6 rounded-md border border-destructive/40 p-3 text-sm text-destructive"
-              role="alert"
+          {showIdentity ? (
+            <form
+              action={completeOnboardingIdentityAction.url}
+              className="space-y-8"
+              method="post"
+              onSubmit={handleSubmit}
             >
-              {setupStatusError}
-            </p>
-          ) : null}
+              <input {...contractEpochFormInputProps} />
+              <input name="redirect" type="hidden" value={search.redirect ?? "/"} />
+              <section aria-labelledby="identity-heading" className="space-y-4">
+                <div>
+                  <h2 className="text-xl font-semibold" id="identity-heading">
+                    Your identity
+                  </h2>
+                  <p className="text-sm text-muted-foreground">Both fields are required.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="full_name">Full name</Label>
+                  <Input
+                    autoComplete="name"
+                    defaultValue={data.draft?.full_name}
+                    id="full_name"
+                    maxLength={120}
+                    name="full_name"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="username">Username</Label>
+                  <Input
+                    autoCapitalize="none"
+                    autoComplete="username"
+                    defaultValue={data.draft?.username}
+                    id="username"
+                    maxLength={30}
+                    minLength={3}
+                    name="username"
+                    pattern="[A-Za-z0-9_]+"
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    3–30 letters, numbers, or underscores.
+                  </p>
+                </div>
+              </section>
 
-          {progressError && status !== "provider_selection" && status !== "processing" ? (
-            <div
-              className="mb-6 space-y-3 rounded-md border border-destructive/40 p-3"
-              role="alert"
-            >
-              <p className="text-sm text-destructive">{progressError}</p>
-              <Button onClick={() => void refreshProgress()} type="button" variant="outline">
-                Retry progress
-              </Button>
-            </div>
-          ) : null}
+              {status === "provider_selection" ? (
+                <section aria-labelledby="provider-heading" className="space-y-4 border-t pt-6">
+                  <h2 className="sr-only" id="provider-heading">
+                    Optional training account
+                  </h2>
+                  <ProviderSelectionStep
+                    integrations={data.integrations}
+                    error={data.integrationsError}
+                    isBusy={isSubmitting || getAuthUrlMutation.isPending}
+                    onConnect={(provider) => void connectProvider(provider)}
+                    onRetry={() => void refreshProviderState()}
+                  />
+                </section>
+              ) : null}
 
-          {status === null ? (
-            <div className="space-y-3" role="status">
-              <h1 className="text-3xl font-semibold tracking-tight">Loading your setup</h1>
-              <p className="text-sm text-muted-foreground">
-                We couldn’t confirm your current setup stage yet. Retry without changing your
-                connected accounts.
-              </p>
-              <Button onClick={() => void refreshProviderState()} type="button" variant="outline">
-                Retry setup status
-              </Button>
-            </div>
-          ) : null}
-
-          {status === "provider_selection" ? (
-            <div className="space-y-6">
-              <ProviderSelectionStep
-                integrations={integrations}
-                error={integrationsError}
-                isBusy={isSubmitting || getAuthUrlMutation.isPending}
-                onConnect={(provider) => void connectProvider(provider)}
-                onRetry={() => void refreshProviderState()}
-              />
-              <div className="space-y-2 border-t pt-5">
+              <div className="space-y-3 border-t pt-6">
                 <Button
-                  className="w-full sm:w-auto"
+                  aria-busy={isSubmitting}
+                  className="w-full sm:w-auto sm:min-w-48"
                   disabled={isSubmitting}
-                  onClick={() => void handleStartProcessing()}
-                  type="button"
+                  type="submit"
                 >
-                  Continue
+                  {isSubmitting ? "Finishing…" : "Finish setup"}
                 </Button>
                 <p className="text-sm text-muted-foreground">
-                  You can add or manage accounts later.
+                  You can set goals, preferences, metrics, and social choices after setup.
                 </p>
                 {pendingOAuthBlocked ? (
                   <Button
@@ -533,7 +346,7 @@ function OnboardingPage() {
                   </Button>
                 ) : null}
               </div>
-            </div>
+            </form>
           ) : null}
 
           {status === "processing" ? (
@@ -545,370 +358,20 @@ function OnboardingPage() {
                   ? void handleRetryProvider(recovery.provider)
                   : void handleRestartProviderSelection()
               }
-              onRetryProgress={() => void refreshProgress()}
+              onRetryProgress={() =>
+                void loadProgress().then((next) => {
+                  if (next.progress) setProgress(next.progress);
+                  setProgressError(next.error);
+                })
+              }
               progress={progress}
             />
           ) : null}
 
-          {status === "review" ? (
-            <form
-              action={completeOnboardingIdentityAction.url}
-              className="space-y-10"
-              method="post"
-              onSubmit={status === "review" ? handleSubmit : handleDraft}
-            >
-              <input {...contractEpochFormInputProps} />
-              <input name="redirect" type="hidden" value={redirectTo ?? "/"} />
-              <section aria-labelledby="identity-heading" className="space-y-5">
-                <div>
-                  <h2 className="text-xl font-semibold" id="identity-heading">
-                    Profile and intent
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    Identity is required. Personalization choices are optional.
-                  </p>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="full_name">Full name</Label>
-                    <Input
-                      autoComplete="name"
-                      defaultValue={draft?.full_name}
-                      id="full_name"
-                      maxLength={120}
-                      name="full_name"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="username">Username</Label>
-                    <Input
-                      autoCapitalize="none"
-                      autoComplete="username"
-                      defaultValue={draft?.username}
-                      id="username"
-                      maxLength={50}
-                      name="username"
-                      pattern="[A-Za-z0-9_]+"
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="experience_level">Experience level</Label>
-                  <select
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    defaultValue="skip"
-                    id="experience_level"
-                    name="experience_level"
-                  >
-                    <option value="beginner">Beginner</option>
-                    <option value="intermediate">Intermediate</option>
-                    <option value="advanced">Advanced</option>
-                    <option value="skip">Set up later</option>
-                  </select>
-                </div>
-                <fieldset className="space-y-3">
-                  <legend className="font-medium">What brings you here?</legend>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {intents.map(([value, label]) => (
-                      <CheckboxChoice
-                        {...(draft !== null && draft !== undefined
-                          ? { defaultChecked: draft.intents.includes(value) }
-                          : {})}
-                        key={value}
-                        label={label}
-                        name="intents"
-                        value={value}
-                      />
-                    ))}
-                  </div>
-                </fieldset>
-              </section>
-
-              <section aria-labelledby="baseline-heading" className="space-y-5 border-t pt-8">
-                <div>
-                  <h2 className="text-xl font-semibold" id="baseline-heading">
-                    Training baseline
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    Imported values retain provenance. Every baseline field is optional.
-                  </p>
-                </div>
-                <BaselineField
-                  {...(setupData?.values.dob !== undefined
-                    ? { defaultValue: draft?.dob ?? setupData.values.dob }
-                    : draft?.dob
-                      ? { defaultValue: draft.dob }
-                      : {})}
-                  field="dob"
-                  label="Date of birth"
-                  {...(dobSource !== undefined ? { source: dobSource } : {})}
-                  type="date"
-                />
-                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)] sm:items-end">
-                  <div className="space-y-2">
-                    <Label htmlFor="gender">Gender</Label>
-                    <select
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      defaultValue={draft?.gender ?? setupData?.values.gender ?? ""}
-                      id="gender"
-                      name="gender"
-                    >
-                      <option value="">Not set</option>
-                      <option value="female">Female</option>
-                      <option value="male">Male</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-                  <SourceSelect
-                    {...(genderSource ? { defaultValue: "imported" } : {})}
-                    field="gender"
-                  />
-                </div>
-                <BaselineField
-                  {...(setupData?.values.weight_kg !== undefined
-                    ? { defaultValue: draft?.weight_kg ?? setupData.values.weight_kg }
-                    : draft?.weight_kg !== undefined
-                      ? { defaultValue: draft.weight_kg }
-                      : {})}
-                  field="weight_kg"
-                  label="Weight (kg)"
-                  max={300}
-                  min={30}
-                  {...(weightSource !== undefined ? { source: weightSource } : {})}
-                  step="0.1"
-                />
-                <BaselineField
-                  {...(draft?.max_hr !== undefined ? { defaultValue: draft.max_hr } : {})}
-                  field="max_hr"
-                  label="Maximum heart rate (bpm)"
-                  max={250}
-                  min={100}
-                />
-                <BaselineField
-                  {...(draft?.resting_hr !== undefined ? { defaultValue: draft.resting_hr } : {})}
-                  field="resting_hr"
-                  label="Resting heart rate (bpm)"
-                  max={120}
-                  min={30}
-                />
-              </section>
-
-              <section aria-labelledby="preferences-heading" className="space-y-5 border-t pt-8">
-                <div>
-                  <h2 className="text-xl font-semibold" id="preferences-heading">
-                    Training preferences
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    Choose a starting approach and weekly dose.
-                  </p>
-                </div>
-                <CheckboxChoice
-                  defaultChecked={Boolean(draft?.settings)}
-                  label="Save these preferences"
-                  name="save_preferences"
-                  value="on"
-                />
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="preference_preset">Progression approach</Label>
-                    <select
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      defaultValue={draft?.settings?.preset ?? "balanced"}
-                      id="preference_preset"
-                      name="preference_preset"
-                    >
-                      <option value="safer">Safer</option>
-                      <option value="balanced">Balanced</option>
-                      <option value="push_harder">Push harder</option>
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="min_sessions_per_week">Minimum sessions/week</Label>
-                    <Input
-                      defaultValue={draft?.settings?.minSessionsPerWeek ?? 3}
-                      id="min_sessions_per_week"
-                      max={21}
-                      min={0}
-                      name="min_sessions_per_week"
-                      type="number"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="max_sessions_per_week">Maximum sessions/week</Label>
-                    <Input
-                      defaultValue={draft?.settings?.maxSessionsPerWeek ?? 5}
-                      id="max_sessions_per_week"
-                      max={21}
-                      min={0}
-                      name="max_sessions_per_week"
-                      type="number"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="max_single_session_minutes">Maximum session minutes</Label>
-                    <Input
-                      defaultValue={draft?.settings?.maxSingleSessionMinutes ?? 90}
-                      id="max_single_session_minutes"
-                      max={600}
-                      min={20}
-                      name="max_single_session_minutes"
-                      type="number"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="max_weekly_minutes">Maximum weekly minutes</Label>
-                    <Input
-                      defaultValue={draft?.settings?.maxWeeklyMinutes ?? 360}
-                      id="max_weekly_minutes"
-                      max={10080}
-                      min={30}
-                      name="max_weekly_minutes"
-                      type="number"
-                    />
-                  </div>
-                </div>
-              </section>
-
-              <section aria-labelledby="goal-heading" className="space-y-5 border-t pt-8">
-                <div>
-                  <h2 className="text-xl font-semibold" id="goal-heading">
-                    Initial goal (required to finalize)
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    Add a plan-ready goal before finalizing. You can leave it blank while saving a
-                    draft.
-                  </p>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="goal_title">Goal title</Label>
-                    <Input
-                      defaultValue={draft?.goal?.title}
-                      id="goal_title"
-                      maxLength={100}
-                      name="goal_title"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="goal_target_date">Target date</Label>
-                    <Input
-                      defaultValue={draft?.goal?.target_date}
-                      id="goal_target_date"
-                      name="goal_target_date"
-                      type="date"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="goal_activity_category">Activity</Label>
-                    <select
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      defaultValue={draft?.goal?.activity_category ?? "run"}
-                      id="goal_activity_category"
-                      name="goal_activity_category"
-                    >
-                      <option value="bike">Cycling</option>
-                      <option value="run">Running</option>
-                      <option value="swim">Swimming</option>
-                      <option value="strength">Strength</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="goal_target_sessions_per_week">Sessions/week</Label>
-                    <Input
-                      defaultValue={draft?.goal?.target_sessions_per_week ?? 3}
-                      id="goal_target_sessions_per_week"
-                      max={21}
-                      min={1}
-                      name="goal_target_sessions_per_week"
-                      type="number"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="goal_target_weeks">Duration (weeks)</Label>
-                    <Input
-                      defaultValue={draft?.goal?.target_weeks ?? 12}
-                      id="goal_target_weeks"
-                      max={260}
-                      min={1}
-                      name="goal_target_weeks"
-                      type="number"
-                    />
-                  </div>
-                </div>
-              </section>
-
-              <section aria-labelledby="community-heading" className="space-y-5 border-t pt-8">
-                <div>
-                  <h2 className="text-xl font-semibold" id="community-heading">
-                    Groups and people
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    Nothing is sent until you finish setup.
-                  </p>
-                </div>
-                <div className="grid gap-6 lg:grid-cols-3">
-                  <fieldset className="space-y-3">
-                    <legend className="font-medium">Invitations</legend>
-                    {data.invitations.length ? (
-                      data.invitations.map((item) => (
-                        <CheckboxChoice
-                          key={item.id}
-                          label={item.name}
-                          name="invitation_ids"
-                          value={item.id}
-                        />
-                      ))
-                    ) : (
-                      <p className="text-sm text-muted-foreground">No pending invitations.</p>
-                    )}
-                  </fieldset>
-                  <fieldset className="space-y-3">
-                    <legend className="font-medium">Groups</legend>
-                    {data.groups.length ? (
-                      data.groups.map((item) => (
-                        <CheckboxChoice
-                          description={item.action}
-                          key={item.id}
-                          label={item.name}
-                          name="group_ids"
-                          value={item.id}
-                        />
-                      ))
-                    ) : (
-                      <p className="text-sm text-muted-foreground">No group suggestions.</p>
-                    )}
-                  </fieldset>
-                  <fieldset className="space-y-3">
-                    <legend className="font-medium">People</legend>
-                    {data.people.length ? (
-                      data.people.map((item) => (
-                        <CheckboxChoice
-                          description={`@${item.username}`}
-                          key={item.id}
-                          label={item.name}
-                          name="follow_profile_ids"
-                          value={item.id}
-                        />
-                      ))
-                    ) : (
-                      <p className="text-sm text-muted-foreground">No people suggestions.</p>
-                    )}
-                  </fieldset>
-                </div>
-              </section>
-
-              <Button
-                aria-busy={isSubmitting}
-                className="w-full sm:w-auto sm:min-w-48"
-                disabled={isSubmitting}
-                type="submit"
-              >
-                {isSubmitting ? "Saving…" : status === "review" ? "Finalize setup" : "Save draft"}
-              </Button>
-            </form>
+          {status === null ? (
+            <Button onClick={() => void refreshProviderState()} type="button" variant="outline">
+              Retry setup status
+            </Button>
           ) : null}
         </CardContent>
       </Card>

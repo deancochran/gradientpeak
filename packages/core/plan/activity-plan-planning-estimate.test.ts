@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activityPlanStructureSchema } from "../activity-plan";
+import { type ActivityPlanTarget, activityPlanStructureSchema } from "../activity-plan";
 import {
   aggregatePrescriptions,
   prescribedActivityIntensitySchema,
@@ -10,6 +10,7 @@ import {
   createUnavailableAthletePerformanceTargetFacts,
   materializeAthletePerformanceTargetFacts,
 } from "../performance-model";
+import { buildPerformanceTargetFactsFixture } from "../testing/performance-model";
 import {
   type ActivityPlanPlanningEstimate,
   bindPrescriptionQuantificationToScheduledEvent,
@@ -17,6 +18,7 @@ import {
   estimateActivityPlanForTrainingContext,
   resolvePrescriptionSpeedMetersPerSecond,
 } from "./activity-plan-planning-estimate";
+import { getPlannedEstimate } from "./planned-estimate";
 
 const id = (value: number) => `20000000-0000-4000-8000-${String(value).padStart(12, "0")}`;
 const singleBike = activityPlanStructureSchema.parse({
@@ -93,6 +95,25 @@ const runPerformanceTargets = materializeAthletePerformanceTargetFacts({
   ],
 });
 
+function singleBikeWithTargets(
+  targets: readonly { type: "%FTP" | "watts" | "cadence" | "RPE"; intensity: number }[],
+) {
+  const segment = singleBike.segments[0];
+  if (!segment || segment.role !== "activity") throw new Error("Expected activity segment");
+  const interval = segment.intervals[0];
+  const step = interval?.steps[0];
+  if (!interval || !step) throw new Error("Expected one interval step");
+  return activityPlanStructureSchema.parse({
+    ...singleBike,
+    segments: [
+      {
+        ...segment,
+        intervals: [{ ...interval, steps: [{ ...step, targets: [...targets] }] }],
+      },
+    ],
+  });
+}
+
 function onlyPrescription(estimate: ActivityPlanPlanningEstimate) {
   const member = estimate.prescriptionQuantification.members[0];
   if (!member || estimate.prescriptionQuantification.members.length !== 1) {
@@ -121,6 +142,35 @@ function distanceRun(target: { type: "speed" | "RPE"; intensity: number }) {
                 name: "5K",
                 duration: { type: "distance", meters: 5_000 },
                 targets: [target],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+}
+
+function timedPlan(activity_category: "bike" | "run" | "swim", targets: ActivityPlanTarget[]) {
+  return activityPlanStructureSchema.parse({
+    version: 3,
+    activity_category,
+    segments: [
+      {
+        role: "activity",
+        id: id(40),
+        name: "Work",
+        intervals: [
+          {
+            id: id(41),
+            name: "Main",
+            repetitions: 1,
+            steps: [
+              {
+                id: id(42),
+                name: "Steady",
+                duration: { type: "time", seconds: 3_600 },
+                targets,
               },
             ],
           },
@@ -174,6 +224,11 @@ describe("estimateActivityPlanForTrainingContext", () => {
     const commonLoad = estimate.prescriptionQuantification.summary.commonLoad;
     if (commonLoad.status === "unavailable") throw new Error("Expected quantified Load");
     expect(commonLoad.load).toBeCloseTo(64);
+    expect(getPlannedEstimate(estimate.prescriptionQuantification)).toMatchObject({
+      durationSeconds: { status: "known", value: 3600 },
+      normalizedIntensity: { status: "estimated", value: 0.8, basis: "plan_intent" },
+      load: { status: "estimated", value: expect.closeTo(64), basis: "plan_intent" },
+    });
   });
 
   it("keeps two scheduled events of one plan distinct without changing plan or calculation identity", () => {
@@ -339,17 +394,13 @@ describe("estimateActivityPlanForTrainingContext", () => {
     expect(recomputedPrescription.calculationIdentity.fingerprint).not.toBe(
       firstPrescription.calculationIdentity.fingerprint,
     );
-    expect(recomputedPrescription.commonLoad.thresholdEvidence).toMatchObject({
-      observedAt: "2026-05-30T00:00:00.000Z",
-      validAt: "2026-06-02T00:00:00.000Z",
-      sourceFingerprint: firstPrescription.commonLoad.thresholdEvidence?.sourceFingerprint,
-    });
+    expect(recomputedPrescription.commonLoad.thresholdEvidence).toBeNull();
     expect(recomputedPrescription.commonLoad.evidenceFingerprint).toBe(
       firstPrescription.commonLoad.evidenceFingerprint,
     );
     expect(revisedPrescription.subjectIdentity).toEqual(firstPrescription.subjectIdentity);
     expect(revisedPrescription.evidenceIdentity).toEqual(firstPrescription.evidenceIdentity);
-    expect(revisedPrescription.calculationIdentity.fingerprint).not.toBe(
+    expect(revisedPrescription.calculationIdentity.fingerprint).toBe(
       firstPrescription.calculationIdentity.fingerprint,
     );
     expect(recomputedPrescription.commonLoad.status).toBe(firstPrescription.commonLoad.status);
@@ -423,6 +474,11 @@ describe("estimateActivityPlanForTrainingContext", () => {
         },
       },
     });
+    expect(getPlannedEstimate(estimate.prescriptionQuantification)).toMatchObject({
+      durationSeconds: { status: "unavailable", value: null },
+      normalizedIntensity: { status: "unavailable", value: null },
+      load: { status: "unavailable", value: null },
+    });
   });
 
   it("requires category calibration before resolving a future relative pace target", () => {
@@ -456,6 +512,149 @@ describe("estimateActivityPlanForTrainingContext", () => {
       value: 3.2,
       unit: "meters_per_second",
       source: "relative_category_calibration",
+    });
+  });
+
+  it("normalizes %MaxHR through recorded MaxHR and LTHR instead of treating it as %ThresholdHR", () => {
+    const facts = buildPerformanceTargetFactsFixture({
+      lthrBpm: { run: 160 },
+      maxHrBpm: { run: 200 },
+    });
+    const estimate = estimateActivityPlanForTrainingContext({
+      structure: timedPlan("run", [{ type: "%MaxHR", intensity: 80 }]),
+      performanceTargets: facts,
+      asOf: facts.asOf,
+    });
+
+    expect(estimate.prescriptionQuantification.summary.commonLoad).toMatchObject({
+      status: "complete",
+      intensity: 1,
+      load: 100,
+    });
+    expect(onlyPrescription(estimate).commonLoad).toMatchObject({
+      status: "available",
+      thresholdEvidence: { type: "lthr_bpm", value: 160, unit: "beats_per_minute" },
+    });
+  });
+
+  it("keeps %MaxHR load unavailable unless both MaxHR and LTHR are usable", () => {
+    const missingMax = buildPerformanceTargetFactsFixture({ lthrBpm: { run: 160 } });
+    const missingLthr = buildPerformanceTargetFactsFixture({ maxHrBpm: { run: 200 } });
+
+    for (const facts of [missingMax, missingLthr]) {
+      const estimate = estimateActivityPlanForTrainingContext({
+        structure: timedPlan("run", [{ type: "%MaxHR", intensity: 80 }]),
+        performanceTargets: facts,
+        asOf: facts.asOf,
+      });
+      expect(onlyPrescription(estimate).commonLoad).toMatchObject({
+        status: "unavailable",
+        reason: "threshold_missing",
+      });
+      expect(estimate.prescriptionQuantification.summary.commonLoad).toMatchObject({
+        status: "unavailable",
+        reason: "no_load_data",
+      });
+    }
+  });
+
+  it("keeps %ThresholdHR as explicit plan intent without relabeling %MaxHR", () => {
+    const estimate = estimateActivityPlanForTrainingContext({
+      structure: timedPlan("run", [{ type: "%ThresholdHR", intensity: 80 }]),
+      performanceTargets: unavailableTargets,
+      asOf: unavailableTargets.asOf,
+    });
+
+    expect(estimate.prescriptionQuantification.summary.commonLoad).toMatchObject({
+      status: "complete",
+      intensity: 0.8,
+    });
+  });
+
+  it("resolves equivalent speed targets deterministically and rejects conflicting permutations", () => {
+    const speed = {
+      metric: "speed" as const,
+      unit: "kilometers_per_hour" as const,
+      magnitude: { kind: "point" as const, value: 18 },
+    };
+    const equivalentPace = {
+      metric: "pace" as const,
+      unit: "seconds_per_kilometer" as const,
+      magnitude: { kind: "point" as const, value: 200 },
+    };
+    const conflictingPace = {
+      ...equivalentPace,
+      magnitude: { kind: "point" as const, value: 240 },
+    };
+    const resolve = (values: Array<typeof speed | typeof equivalentPace>) =>
+      resolvePrescriptionSpeedMetersPerSecond({
+        activityCategory: "run",
+        prescribedIntensity: prescribedActivityIntensitySchema.parse({
+          status: "available",
+          evidenceRole: "prescribed",
+          values,
+        }),
+      });
+
+    expect(resolve([speed, equivalentPace])).toEqual(resolve([equivalentPace, speed]));
+    expect(resolve([speed, equivalentPace])).toMatchObject({ status: "available", value: 5 });
+    expect(resolve([speed, conflictingPace])).toEqual(resolve([conflictingPace, speed]));
+    expect(resolve([speed, conflictingPace])).toMatchObject({
+      status: "unavailable",
+      reason: "ambiguous_target",
+    });
+  });
+
+  it("keeps duration, derived distance, and load stable across conflicting speed permutations", () => {
+    const first = estimateActivityPlanForTrainingContext({
+      structure: timedPlan("run", [
+        { type: "speed", intensity: 18 },
+        { type: "speed", intensity: 14.4 },
+      ]),
+      performanceTargets: runPerformanceTargets,
+      asOf: runPerformanceTargets.asOf,
+    });
+    const second = estimateActivityPlanForTrainingContext({
+      structure: timedPlan("run", [
+        { type: "speed", intensity: 14.4 },
+        { type: "speed", intensity: 18 },
+      ]),
+      performanceTargets: runPerformanceTargets,
+      asOf: runPerformanceTargets.asOf,
+    });
+
+    expect(first.durationEstimate).toEqual(second.durationEstimate);
+    expect(onlyPrescription(first).distance).toEqual(onlyPrescription(second).distance);
+    expect(onlyPrescription(first).distance).toMatchObject({
+      status: "unavailable",
+      reason: "ambiguous_target",
+    });
+    expect(onlyPrescription(first).commonLoad).toEqual(onlyPrescription(second).commonLoad);
+    expect(onlyPrescription(first).commonLoad).toMatchObject({
+      status: "unavailable",
+      reason: "ambiguous_target",
+    });
+
+    const distanceStructure = (targets: ActivityPlanTarget[]) => {
+      const plan = structuredClone(timedPlan("run", targets));
+      const segment = plan.segments[0];
+      if (!segment || segment.role !== "activity") throw new Error("Expected activity segment");
+      const step = segment.intervals[0]?.steps[0];
+      if (!step) throw new Error("Expected activity step");
+      step.duration = { type: "distance", meters: 5_000 };
+      return plan;
+    };
+    const distanceEstimate = estimateActivityPlanForTrainingContext({
+      structure: distanceStructure([
+        { type: "speed", intensity: 18 },
+        { type: "speed", intensity: 14.4 },
+      ]),
+      performanceTargets: runPerformanceTargets,
+      asOf: runPerformanceTargets.asOf,
+    });
+    expect(onlyPrescription(distanceEstimate).duration.active).toMatchObject({
+      status: "unavailable",
+      reason: "ambiguous_target",
     });
   });
 
@@ -613,5 +812,77 @@ describe("estimateActivityPlanForTrainingContext", () => {
     if (commonLoad.status !== "partial") throw new Error("Expected partial Load");
     expect(commonLoad.load).toBeCloseTo(32, 12);
     expect(commonLoad.load).toBeGreaterThan(0);
+    expect(getPlannedEstimate(estimate.prescriptionQuantification)).toMatchObject({
+      durationSeconds: { status: "known", value: 3600 },
+      normalizedIntensity: { status: "partial", value: 0.8 },
+      load: { status: "partial", value: expect.closeTo(32) },
+    });
+  });
+
+  it("uses unanchored relative intent without inventing personalized physical output", () => {
+    const estimate = estimateActivityPlanForTrainingContext({
+      structure: singleBike,
+      performanceTargets: unavailableTargets,
+      asOf: unavailableTargets.asOf,
+    });
+
+    expect(estimate.prescriptionQuantification.summary.commonLoad).toMatchObject({
+      status: "complete",
+      intensity: 0.8,
+      load: expect.closeTo(64),
+    });
+    expect(onlyPrescription(estimate).commonLoad.thresholdEvidence).toBeNull();
+    expect(getPlannedEstimate(estimate.prescriptionQuantification).load).toMatchObject({
+      status: "estimated",
+      basis: "plan_intent",
+    });
+  });
+
+  it("resolves mixed targets by explicit priority and is invariant to target ordering", () => {
+    const targets = [
+      { type: "%FTP" as const, intensity: 80 },
+      { type: "watts" as const, intensity: 125 },
+      { type: "cadence" as const, intensity: 90 },
+    ] as const;
+    const results = [targets, [...targets].reverse(), [targets[1], targets[2], targets[0]]].map(
+      (orderedTargets) =>
+        estimateActivityPlanForTrainingContext({
+          structure: singleBikeWithTargets(orderedTargets),
+          performanceTargets: unavailableTargets,
+          asOf: unavailableTargets.asOf,
+        }).prescriptionQuantification.summary.commonLoad,
+    );
+
+    expect(results).toHaveLength(3);
+    for (const result of results) {
+      expect(result).toMatchObject({
+        status: "complete",
+        intensity: 0.8,
+        load: expect.closeTo(64),
+      });
+    }
+  });
+
+  it("marks competing targets in one priority and domain ambiguous", () => {
+    const structure = singleBikeWithTargets([
+      { type: "%FTP", intensity: 80 },
+      { type: "%FTP", intensity: 90 },
+      { type: "RPE", intensity: 6 },
+    ]);
+    const estimate = estimateActivityPlanForTrainingContext({
+      structure,
+      performanceTargets,
+      asOf: performanceTargets.asOf,
+    });
+
+    expect(onlyPrescription(estimate).intensity.prescribed.values).toHaveLength(3);
+    expect(onlyPrescription(estimate).commonLoad).toMatchObject({
+      status: "unavailable",
+      reason: "ambiguous_target",
+    });
+    expect(getPlannedEstimate(estimate.prescriptionQuantification).load).toMatchObject({
+      status: "unavailable",
+      value: null,
+    });
   });
 });

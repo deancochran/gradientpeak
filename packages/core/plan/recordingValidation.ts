@@ -10,7 +10,6 @@ export interface PlanValidationMetrics {
 export interface MissingMetric {
   name: string;
   description: string;
-  settingPath: string;
 }
 
 export interface PlanValidationResult {
@@ -71,7 +70,6 @@ export function validatePlanRequirements(
         missingMetrics.set(`${occurrence.activity_category}:${target.type}`, {
           name,
           description: `A current ${name} performance-model fact is required for ${target.type} targets.`,
-          settingPath: "/profile-metrics",
         });
       }
     }

@@ -342,8 +342,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
                   and ${schema.groups.deleted_at} is null
               )`,
               isNull(schema.groupEvents.cancelled_at),
-              sql<boolean>`coalesce(${schema.groupEventRsvps.status} <> 'declined', true)`,
-              sql<boolean>`case when ${schema.groupEventRsvps.profile_id} is not null then true else coalesce(${schema.groupEventSeriesRsvps.status} <> 'declined', true) end`,
+              sql<boolean>`coalesce(${schema.groupEventRsvps.status}, ${schema.groupEventSeriesRsvps.status}, 'going') = 'going'`,
               gt(schema.groupEvents.starts_at, new Date()),
               sql<boolean>`coalesce(${schema.profileTrainingSettings.settings}->>'wahooEventRouteDeliveryEnabled', 'false') = 'true'`,
               or(
@@ -780,8 +779,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
                 and ${schema.groups.deleted_at} is null
             )`,
             isNull(schema.groupEvents.cancelled_at),
-            sql<boolean>`coalesce(${schema.groupEventRsvps.status} <> 'declined', true)`,
-            sql<boolean>`case when ${schema.groupEventRsvps.profile_id} is not null then true else coalesce(${schema.groupEventSeriesRsvps.status} <> 'declined', true) end`,
+            sql<boolean>`coalesce(${schema.groupEventRsvps.status}, ${schema.groupEventSeriesRsvps.status}, 'going') = 'going'`,
             gt(schema.groupEvents.starts_at, new Date()),
             sql<boolean>`coalesce(${schema.profileTrainingSettings.settings}->>'wahooEventRouteDeliveryEnabled', 'false') = 'true'`,
             or(
@@ -850,8 +848,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
                 and ${schema.groups.deleted_at} is null
             )`,
             isNull(schema.groupEvents.cancelled_at),
-            sql<boolean>`coalesce(${schema.groupEventRsvps.status} <> 'declined', true)`,
-            sql<boolean>`case when ${schema.groupEventRsvps.profile_id} is not null then true else coalesce(${schema.groupEventSeriesRsvps.status} <> 'declined', true) end`,
+            sql<boolean>`coalesce(${schema.groupEventRsvps.status}, ${schema.groupEventSeriesRsvps.status}, 'going') = 'going'`,
             gt(schema.groupEvents.starts_at, new Date()),
             after
               ? or(

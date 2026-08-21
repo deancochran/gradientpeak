@@ -65,8 +65,7 @@
     "test:live-db": "vitest run --config vitest.live-db.config.ts",
     "test:activity-ingestion:disposable": "tsx scripts/activity-ingestion.disposable.test.ts --disposable --local",
     "test:planned-sessions:disposable": "tsx scripts/planned-sessions.disposable.test.ts --disposable --local",
-    "test:calibration-history:disposable": "tsx scripts/completed-activity-calibration-history.disposable.test.ts --disposable --local",
-    "verify:api": "pnpm check-types && pnpm test"
+    "test:calibration-history:disposable": "tsx scripts/completed-activity-calibration-history.disposable.test.ts --disposable --local"
   },
   "dependencies": {
     "@repo/auth": "workspace:*",

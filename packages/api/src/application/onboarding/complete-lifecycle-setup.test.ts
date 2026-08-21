@@ -22,7 +22,7 @@ vi.mock("../wahoo-profile-setup-service", () => ({
 const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 const profile: CompleteOnboarding = {
   full_name: "Lifecycle Athlete",
-  username: "lifecycle-athlete",
+  username: "lifecycle_athlete",
   experience_level: "skip",
   intents: ["train_event"],
   baseline_field_sources: {},
@@ -39,7 +39,12 @@ const goal = {
   },
 };
 
-function createCompletedDb(overrides?: { fullName?: string; goalTitle?: string }) {
+function createCompletedDb(overrides?: {
+  fullName?: string;
+  goalTitle?: string;
+  hasGoal?: boolean;
+  hasSettings?: boolean;
+}) {
   const inserts = vi.fn();
   const updates = vi.fn();
   const desiredSettings = {
@@ -66,17 +71,24 @@ function createCompletedDb(overrides?: { fullName?: string; goalTitle?: string }
                 return { for: async () => [row] };
               }
               if ("target_payload" in selection) {
-                return Promise.resolve([
-                  {
-                    id: getOnboardingGoalId(PROFILE_ID),
-                    profile_id: PROFILE_ID,
-                    ...goal,
-                    title: overrides?.goalTitle ?? goal.title,
-                  },
-                ]);
+                return Promise.resolve(
+                  overrides?.hasGoal === false
+                    ? []
+                    : [
+                        {
+                          id: getOnboardingGoalId(PROFILE_ID),
+                          profile_id: PROFILE_ID,
+                          ...goal,
+                          title: overrides?.goalTitle ?? goal.title,
+                        },
+                      ],
+                );
               }
               if ("settings" in selection) {
-                return { for: async () => [{ settings: desiredSettings }] };
+                return {
+                  for: async () =>
+                    overrides?.hasSettings === false ? [] : [{ settings: desiredSettings }],
+                };
               }
               return Promise.resolve([]);
             },
@@ -102,6 +114,25 @@ describe("completeLifecycleSetup completed replay", () => {
       status: "already_completed",
       goal: { status: "unchanged" },
       settings: { status: "unchanged" },
+      created: { profile_metrics: 0 },
+    });
+    expect(inserts).not.toHaveBeenCalled();
+    expect(updates).not.toHaveBeenCalled();
+  });
+
+  it("replays identity-only completion without requiring a stored goal or settings", async () => {
+    const identityOnlyProfile = { ...profile, intents: [] };
+    const { db, inserts, updates } = createCompletedDb({ hasGoal: false, hasSettings: false });
+    await expect(
+      completeLifecycleSetup({
+        db: db as never,
+        profileId: PROFILE_ID,
+        profile: identityOnlyProfile,
+      }),
+    ).resolves.toEqual({
+      status: "already_completed",
+      goal: { status: "skipped" },
+      settings: { status: "skipped" },
       created: { profile_metrics: 0 },
     });
     expect(inserts).not.toHaveBeenCalled();

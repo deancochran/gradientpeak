@@ -130,6 +130,10 @@ function configureQueries(
                       activityCategory: "bike",
                       load: 50,
                     }),
+                    commonLoad: createPrescriptionQuantificationBundleFixture({
+                      activityCategory: "bike",
+                      load: 50,
+                    }).summary.commonLoad,
                   },
                 },
           },
@@ -228,6 +232,10 @@ describe("calendar day planned summary boundary", () => {
               activityCategory: "bike",
               load: 50,
             }),
+            commonLoad: createPrescriptionQuantificationBundleFixture({
+              activityCategory: "bike",
+              load: 50,
+            }).summary.commonLoad,
           },
         },
       },
@@ -262,9 +270,9 @@ describe("calendar day planned summary boundary", () => {
             eventCount: 1,
             activity_categories: ["run"],
             totalDurationSeconds: 1_800,
-            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({
-              load: 75,
-            }),
+            prescriptionQuantification: createPrescriptionQuantificationBundleFixture({ load: 75 }),
+            commonLoad: createPrescriptionQuantificationBundleFixture({ load: 75 }).summary
+              .commonLoad,
           },
         },
       },

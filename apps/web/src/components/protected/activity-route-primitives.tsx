@@ -1,4 +1,4 @@
-import { Avatar, AvatarFallback } from "@repo/ui/components/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -9,8 +9,8 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { cn } from "@repo/ui/lib/cn";
-import { Heart, MapPin } from "lucide-react";
-import type { ReactNode } from "react";
+import { Heart, MapPin, MessageCircle, Share2 } from "lucide-react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useViewingUserPreferredUnitSystem } from "../../hooks/use-viewing-user-preferred-unit-system";
 import {
   buildElevationPolylinePoints,
@@ -21,9 +21,10 @@ import {
   formatDistance,
   formatDuration,
   formatElevation,
-  getActivityBadgeLabel,
   type RouteCoordinate,
 } from "../../lib/activity-route-helpers";
+import { api } from "../../lib/api/client";
+import { CanonicalMetricsRow } from "../activity/canonical-metrics-row";
 import { ActivityCategoryBadges } from "../activity-category-presentation";
 
 type DetailMetricItem = {
@@ -216,30 +217,83 @@ export function LikeToggleButton({
   );
 }
 
-function deriveCategoryLabel(categories: string[]) {
-  if (!categories || categories.length === 0) return null;
-  return [...new Set(categories)].map(getActivityBadgeLabel).join(" • ");
-}
-
 function formatDisplayMetric(metric: SemanticMetric, unitSystem: "metric" | "imperial") {
   if (metric.status === "unavailable") return "Unavailable";
-  if (metric.unit === "meters") return formatDistance(metric.value, unitSystem);
-  if (metric.unit === "seconds") return formatDuration(metric.value);
-  if (metric.unit === "ratio") return metric.value.toFixed(2);
-  if (metric.unit === "bpm") return `${Math.round(metric.value)} bpm`;
-  if (metric.unit === "watts") return `${Math.round(metric.value)} W`;
-  if (metric.unit === "kilocalories") return `${Math.round(metric.value)} kcal`;
-  return Number.isInteger(metric.value) ? String(metric.value) : metric.value.toFixed(1);
+  const approximationPrefix =
+    metric.status === "partial" &&
+    (metric.key === "common_load" || metric.key === "normalized_intensity")
+      ? "~"
+      : "";
+  if (metric.unit === "meters")
+    return `${approximationPrefix}${formatDistance(metric.value, unitSystem)}`;
+  if (metric.unit === "seconds") return `${approximationPrefix}${formatDuration(metric.value)}`;
+  if (metric.unit === "ratio") return `${approximationPrefix}${metric.value.toFixed(2)}`;
+  if (metric.unit === "bpm") return `${approximationPrefix}${Math.round(metric.value)} bpm`;
+  if (metric.unit === "watts") return `${approximationPrefix}${Math.round(metric.value)} W`;
+  if (metric.unit === "kilocalories")
+    return `${approximationPrefix}${Math.round(metric.value)} kcal`;
+  return `${approximationPrefix}${Number.isInteger(metric.value) ? String(metric.value) : metric.value.toFixed(1)}`;
 }
 
 export function ActivityListCard({
   activity,
+  href,
   onOpen,
 }: {
   activity: ActivityDisplayModel;
+  href?: string;
   onOpen?: () => void;
 }) {
   const { unitSystem } = useViewingUserPreferredUnitSystem();
+  const [liked, setLiked] = useState(activity.engagement.viewerHasLiked);
+  const [likes, setLikes] = useState(activity.engagement.likes);
+  const likeMutation = api.social.toggleLike.useMutation({ retry: false });
+  const activityHref = href ?? activity.href;
+
+  useEffect(() => {
+    setLiked(activity.engagement.viewerHasLiked);
+    setLikes(activity.engagement.likes);
+  }, [activity.engagement.likes, activity.engagement.viewerHasLiked]);
+
+  const handleLike = () => {
+    if (likeMutation.isPending) return;
+    const previousLiked = liked;
+    const previousLikes = likes;
+    const nextLiked = !liked;
+    setLiked(nextLiked);
+    setLikes(nextLiked ? likes + 1 : Math.max(0, likes - 1));
+    likeMutation.mutate(
+      { entity_id: activity.id, entity_type: "activity" },
+      {
+        onError: () => {
+          setLiked(previousLiked);
+          setLikes(previousLikes);
+        },
+      },
+    );
+  };
+
+  const handleShare = async () => {
+    if (activity.visibility !== "public") {
+      window.alert("Only public activities can be shared.");
+      return;
+    }
+    const shareUrl = `${window.location.origin}/share/activities/${activity.id}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: activity.title, url: shareUrl });
+        return;
+      }
+      if (!navigator.clipboard) {
+        window.alert("Sharing is unavailable in this browser.");
+        return;
+      }
+      await navigator.clipboard.writeText(shareUrl);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      window.alert("The activity could not be shared. Try again.");
+    }
+  };
   return (
     <Card
       className="transition-colors hover:border-primary/30"
@@ -247,14 +301,20 @@ export function ActivityListCard({
     >
       <CardContent className="space-y-4 p-4">
         <div className="flex items-start gap-3">
+          <Avatar className="h-10 w-10 shrink-0">
+            {activity.owner.avatarUrl ? <AvatarImage src={activity.owner.avatarUrl} /> : null}
+            <AvatarFallback>
+              {(activity.owner.username ?? "GP").slice(0, 2).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
           <div className="min-w-0 flex-1 space-y-1">
-            <p className="text-xs text-muted-foreground">@{activity.owner.username ?? "athlete"}</p>
-            <h3 className="text-lg font-semibold text-foreground">{activity.title}</h3>
-            {deriveCategoryLabel(activity.activityComposition.categories) ? (
-              <Badge variant="secondary">
-                {deriveCategoryLabel(activity.activityComposition.categories)}
-              </Badge>
-            ) : null}
+            <h3 className="font-semibold text-foreground">{activity.title}</h3>
+            <p className="text-sm font-medium text-foreground">
+              @{activity.owner.username ?? "athlete"}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <ActivityCategoryBadges categories={activity.activityComposition.categories} />
+            </div>
             <p className="text-sm text-muted-foreground">
               {formatDateTime(activity.time.startedAt)}
             </p>
@@ -262,7 +322,17 @@ export function ActivityListCard({
               <p className="line-clamp-2 text-sm text-muted-foreground">{activity.notes}</p>
             ) : null}
           </div>
-          {onOpen ? (
+          {href ? (
+            <Button asChild variant="ghost">
+              <a
+                aria-label={`Open activity ${activity.title}`}
+                data-testid={`activity-card-${activity.id}-open`}
+                href={href}
+              >
+                Open
+              </a>
+            </Button>
+          ) : onOpen ? (
             <Button
               data-testid={`activity-card-${activity.id}-open`}
               onClick={onOpen}
@@ -273,14 +343,57 @@ export function ActivityListCard({
             </Button>
           ) : null}
         </div>
-        <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
-          {activity.metrics.slice(0, 4).map((metric) => (
-            <MetricPill
-              key={metric.key}
-              label={metric.status === "partial" ? `${metric.label} (partial)` : metric.label}
-              value={formatDisplayMetric(metric, unitSystem)}
-            />
-          ))}
+        <CanonicalMetricsRow
+          items={activity.metrics.map((metric) => ({
+            key: metric.key,
+            label:
+              metric.status === "partial" &&
+              metric.key !== "common_load" &&
+              metric.key !== "normalized_intensity"
+                ? `${metric.label} (partial)`
+                : metric.label,
+            tone:
+              metric.key === "common_load" || metric.key === "normalized_intensity"
+                ? "primary"
+                : undefined,
+            value: formatDisplayMetric(metric, unitSystem),
+          }))}
+          testID="activity-card-metrics"
+        />
+        <div
+          className="flex flex-wrap items-center gap-2"
+          data-testid="activity-card-social-actions"
+        >
+          <Button
+            aria-label={`${liked ? "Unlike" : "Like"} activity ${activity.title}, ${likes} likes`}
+            disabled={likeMutation.isPending || activity.capabilities.canLike === false}
+            onClick={handleLike}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            <Heart aria-hidden="true" className={cn("mr-1 size-4", liked && "fill-current")} />
+            {likes}
+          </Button>
+          <Button asChild size="sm" variant="ghost">
+            <a
+              aria-label={`Comment on activity ${activity.title}, ${activity.engagement.comments} comments`}
+              href={activityHref}
+            >
+              <MessageCircle aria-hidden="true" className="mr-1 size-4" />
+              {activity.engagement.comments}
+            </a>
+          </Button>
+          <Button
+            aria-label={`Share activity ${activity.title}`}
+            onClick={() => void handleShare()}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            <Share2 aria-hidden="true" className="mr-1 size-4" />
+            Share
+          </Button>
         </div>
       </CardContent>
     </Card>
@@ -403,11 +516,20 @@ export function OwnerSummary({
   );
 }
 
-function MetricPill({ label, value }: { label: string; value: string }) {
+function MetricPill({ label, tone, value }: { label: string; tone?: "primary"; value: string }) {
   return (
-    <div className="rounded-xl border border-border bg-muted/20 px-3 py-2">
-      <p className="text-xs uppercase tracking-wide">{label}</p>
-      <p className="mt-1 font-medium text-foreground">{value}</p>
+    <div
+      className={cn(
+        "rounded-xl border border-border bg-muted/20 px-3 py-2",
+        tone === "primary" && "border-primary/30 bg-primary/5",
+      )}
+    >
+      <p className={cn("text-xs uppercase tracking-wide", tone === "primary" && "text-primary")}>
+        {label}
+      </p>
+      <p className={cn("mt-1 font-medium text-foreground", tone === "primary" && "text-primary")}>
+        {value}
+      </p>
     </div>
   );
 }
