@@ -133,6 +133,7 @@ const activityData = {
 };
 const toggleLikeMutateMock = jest.fn();
 const deleteMutateMock = jest.fn();
+const updatePrivacyMutateMock = jest.fn();
 const invalidatePostActivityIngestionQueriesMock = jest.fn();
 let deleteMutationOptions: { onSuccess?: () => void } = {};
 
@@ -637,7 +638,7 @@ jest.mock("@/lib/api", () => ({
         },
       },
       update: {
-        useMutation: () => ({ mutate: jest.fn(), isPending: false }),
+        useMutation: () => ({ mutate: updatePrivacyMutateMock, isPending: false }),
       },
     },
     activityPlans: {
@@ -749,6 +750,7 @@ describe("activity detail screen", () => {
     deleteMutateMock.mockReset();
     getStreamsUseQueryMock.mockReset();
     toggleLikeMutateMock.mockReset();
+    updatePrivacyMutateMock.mockReset();
     shareMock.mockReset();
     (ReactNative.Alert.alert as jest.Mock).mockClear();
     authState.user.id = "profile-1";
@@ -1040,6 +1042,28 @@ describe("activity detail screen", () => {
     expect(shareMock).toHaveBeenCalledWith({
       message: expect.stringContaining("/share/activities/11111111-1111-4111-8111-111111111111"),
       url: expect.stringContaining("/share/activities/11111111-1111-4111-8111-111111111111"),
+    });
+  });
+
+  it("changes completed activity visibility through the confirmation action", () => {
+    renderNative(<ActivityDetailScreen />);
+
+    fireEvent.press(screen.getByTestId("activity-detail-options-visibility"));
+
+    expect(ReactNative.Alert.alert).toHaveBeenCalledWith(
+      "Change visibility",
+      "Current visibility is Private.",
+      expect.any(Array),
+    );
+    const actions = (ReactNative.Alert.alert as jest.Mock).mock.calls.at(-1)?.[2] as Array<{
+      text: string;
+      onPress?: () => void;
+    }>;
+    actions.find((action) => action.text === "Public")?.onPress?.();
+
+    expect(updatePrivacyMutateMock).toHaveBeenCalledWith({
+      id: activityData.activity.id,
+      content_visibility: "public",
     });
   });
 

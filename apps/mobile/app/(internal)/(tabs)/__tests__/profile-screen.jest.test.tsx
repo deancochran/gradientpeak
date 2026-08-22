@@ -452,4 +452,23 @@ describe("ProfileTabScreen", () => {
 
     expect(setThemeMock).toHaveBeenCalledWith("dark");
   });
+
+  it("signs out after the confirmation action is selected", () => {
+    renderNative(<ProfileTabScreen />);
+
+    fireEvent.press(screen.getByTestId("profile-tab-sign-out"));
+
+    expect(Alert.alert).toHaveBeenCalledWith(
+      "Sign Out",
+      "Are you sure you want to sign out?",
+      expect.any(Array),
+    );
+    const actions = (Alert.alert as jest.Mock).mock.calls.at(-1)?.[2] as Array<{
+      text: string;
+      onPress?: () => void;
+    }>;
+    actions.find((action) => action.text === "Sign Out")?.onPress?.();
+
+    expect(clearSessionMock).toHaveBeenCalledTimes(1);
+  });
 });

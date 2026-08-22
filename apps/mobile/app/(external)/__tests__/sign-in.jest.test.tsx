@@ -3,6 +3,7 @@ import type { ZodFormSubmitProps } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen, waitFor } from "../../../test/render-native";
 
 const replaceMock = jest.fn();
+const navigateToMock = jest.fn();
 const signInMock = jest.fn();
 const refreshSessionMock = jest.fn(async () => undefined);
 
@@ -15,7 +16,7 @@ jest.mock("expo-router", () => ({
 
 jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,
-  useAppNavigate: () => jest.fn(),
+  useAppNavigate: () => navigateToMock,
 }));
 
 jest.mock("@/components/auth/ServerUrlOverride", () => ({
@@ -172,6 +173,14 @@ describe("sign-in screen", () => {
     renderNative(<SignInScreen />);
 
     expect(screen.getByTestId("password-input").props.autoComplete).toBe("current-password");
+  });
+
+  it("navigates to the real forgot-password screen", () => {
+    renderNative(<SignInScreen />);
+
+    fireEvent.press(screen.getByTestId("forgot-password-button"));
+
+    expect(navigateToMock).toHaveBeenCalledWith("/(external)/forgot-password");
   });
 
   it("maps invalid credentials to the root form error", async () => {

@@ -5,12 +5,12 @@ test("public activity-plan and training-plan links render anonymous readers", as
   page,
   athletePage,
 }, testInfo) => {
-  await page.goto("/share/activity-plans/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
-  await expect(page.getByRole("heading", { name: "Playwright Tempo Builder" })).toBeVisible();
-  await expect(page.getByText("Activity plan overview")).toBeVisible();
-  await expect(page.getByText("Activity structure")).toBeVisible();
-
   await withTrainingPlanLibraryFixture(testInfo, async ({ templateName }) => {
+    await page.goto("/share/activity-plans/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
+    await expect(page.getByRole("heading", { name: "Playwright Tempo Builder" })).toBeVisible();
+    await expect(page.getByText("Activity plan overview")).toBeVisible();
+    await expect(page.getByText("Activity structure")).toBeVisible();
+
     await athletePage.goto("/training-plans");
     await athletePage.getByRole("searchbox", { name: /search training plans/i }).fill(templateName);
     const template = athletePage.getByText(templateName, { exact: true }).first();
