@@ -9177,11 +9177,6 @@
       "definition": "CREATE UNIQUE INDEX activity_segments_pkey ON public.activity_segments USING btree (id)"
     },
     {
-      "name": "idx_activity_segments_activity",
-      "table": "activity_segments",
-      "definition": "CREATE INDEX idx_activity_segments_activity ON public.activity_segments USING btree (activity_id, ordinal)"
-    },
-    {
       "name": "idx_activity_segments_category",
       "table": "activity_segments",
       "definition": "CREATE INDEX idx_activity_segments_category ON public.activity_segments USING btree (activity_category) WHERE (activity_category IS NOT NULL)"
@@ -11380,13 +11375,6 @@
     },
     {
       "kind": "c",
-      "name": "activity_efforts_bike_power_max_check",
-      "table": "activity_efforts",
-      "validated": true,
-      "definition": "CHECK (activity_category <> 'bike'::activity_category OR effort_type <> 'power'::effort_type OR value <= 3000::double precision)"
-    },
-    {
-      "kind": "c",
       "name": "activity_efforts_calculation_version_not_blank_check",
       "table": "activity_efforts",
       "validated": true,
@@ -11426,13 +11414,6 @@
       "table": "activity_efforts",
       "validated": true,
       "definition": "FOREIGN KEY (segment_id, activity_id, profile_id, activity_category, source_artifact_id, source_revision) REFERENCES activity_segments(id, activity_id, profile_id, activity_category, source_artifact_id, segment_revision) ON DELETE CASCADE"
-    },
-    {
-      "kind": "c",
-      "name": "activity_efforts_heart_rate_bounds_check",
-      "table": "activity_efforts",
-      "validated": true,
-      "definition": "CHECK (effort_type::text <> 'heart_rate'::text OR value >= 30::double precision AND value <= 240::double precision)"
     },
     {
       "kind": "c",
@@ -11485,38 +11466,10 @@
     },
     {
       "kind": "c",
-      "name": "activity_efforts_run_speed_bounds_check",
-      "table": "activity_efforts",
-      "validated": true,
-      "definition": "CHECK (activity_category <> 'run'::activity_category OR effort_type <> 'speed'::effort_type OR value >= 0.3::double precision AND value <= 13::double precision)"
-    },
-    {
-      "kind": "c",
       "name": "activity_efforts_source_revision_check",
       "table": "activity_efforts",
       "validated": true,
       "definition": "CHECK (source_revision > 0)"
-    },
-    {
-      "kind": "c",
-      "name": "activity_efforts_supported_combination_check",
-      "table": "activity_efforts",
-      "validated": true,
-      "definition": "CHECK (activity_category = 'bike'::activity_category AND effort_type = 'power'::effort_type AND source_series = 'power'::activity_effort_source_series OR activity_category = 'run'::activity_category AND effort_type = 'speed'::effort_type AND (source_series = ANY (ARRAY['grade_adjusted_speed'::activity_effort_source_series, 'raw_speed'::activity_effort_source_series])) OR activity_category = 'swim'::activity_category AND effort_type = 'speed'::effort_type AND source_series = 'swim_speed'::activity_effort_source_series OR (activity_category = ANY (ARRAY['bike'::activity_category, 'run'::activity_category, 'swim'::activity_category])) AND effort_type::text = 'heart_rate'::text AND source_series = 'heart_rate'::activity_effort_source_series)"
-    },
-    {
-      "kind": "c",
-      "name": "activity_efforts_swim_speed_bounds_check",
-      "table": "activity_efforts",
-      "validated": true,
-      "definition": "CHECK (activity_category <> 'swim'::activity_category OR effort_type <> 'speed'::effort_type OR value >= 0.1::double precision AND value <= 3::double precision)"
-    },
-    {
-      "kind": "c",
-      "name": "activity_efforts_unit_compatibility_check",
-      "table": "activity_efforts",
-      "validated": true,
-      "definition": "CHECK (activity_category = 'bike'::activity_category AND effort_type = 'power'::effort_type AND unit = 'watts'::text OR (activity_category = ANY (ARRAY['run'::activity_category, 'swim'::activity_category])) AND effort_type = 'speed'::effort_type AND unit = 'meters_per_second'::text OR effort_type::text = 'heart_rate'::text AND unit = 'bpm'::text)"
     },
     {
       "kind": "c",
@@ -11552,13 +11505,6 @@
       "table": "activity_file_ingestions",
       "validated": true,
       "definition": "CHECK ((NOT staging_cleanup_pending OR status = 'succeeded'::activity_file_ingestion_status AND staging_path IS NOT NULL AND artifact_id IS NOT NULL) AND (staging_cleaned_at IS NULL OR NOT staging_cleanup_pending AND staging_path IS NOT NULL) AND (staging_cleanup_error IS NULL OR staging_cleanup_pending) AND NOT (staging_cleaned_at IS NOT NULL AND staging_cleanup_error IS NOT NULL))"
-    },
-    {
-      "kind": "c",
-      "name": "activity_file_ingestions_contract_version_check",
-      "table": "activity_file_ingestions",
-      "validated": true,
-      "definition": "CHECK (contract_version = 'activity-intake-v1'::text)"
     },
     {
       "kind": "c",
@@ -12202,7 +12148,7 @@
       "name": "activity_training_effects_common_load_check",
       "table": "activity_training_effects",
       "validated": true,
-      "definition": "CHECK (common_load >= 0::numeric AND common_load <= 10000::numeric AND (common_load <> ALL (ARRAY['NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric])))"
+      "definition": "CHECK (common_load >= 0::numeric AND (common_load <> ALL (ARRAY['NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric])))"
     },
     {
       "kind": "c",
@@ -12210,13 +12156,6 @@
       "table": "activity_training_effects",
       "validated": true,
       "definition": "CHECK (evidence_confidence >= 0::numeric AND evidence_confidence <= 1::numeric AND (evidence_confidence <> ALL (ARRAY['NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric])))"
-    },
-    {
-      "kind": "c",
-      "name": "activity_training_effects_contract_version_check",
-      "table": "activity_training_effects",
-      "validated": true,
-      "definition": "CHECK (contract_version = 'athlete-derived-state-persistence-v1'::text)"
     },
     {
       "kind": "c",
@@ -12360,13 +12299,6 @@
     },
     {
       "kind": "c",
-      "name": "athlete_recalculation_queue_contract_version_check",
-      "table": "athlete_recalculation_queue",
-      "validated": true,
-      "definition": "CHECK (contract_version = 'athlete-derived-state-persistence-v1'::text)"
-    },
-    {
-      "kind": "c",
       "name": "athlete_recalculation_queue_idempotency_check",
       "table": "athlete_recalculation_queue",
       "validated": true,
@@ -12392,13 +12324,6 @@
       "table": "athlete_recalculation_queue",
       "validated": true,
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
-    },
-    {
-      "kind": "c",
-      "name": "athlete_recalculation_queue_reasons_check",
-      "table": "athlete_recalculation_queue",
-      "validated": true,
-      "definition": "CHECK (cardinality(reasons) >= 1 AND cardinality(reasons) <= 9 AND reasons = array_remove(ARRAY[\nCASE\n    WHEN 'activity_created'::athlete_recalculation_reason = ANY (reasons) THEN 'activity_created'::athlete_recalculation_reason\n    ELSE NULL::athlete_recalculation_reason\nEND,\nCASE\n    WHEN 'activity_changed'::athlete_recalculation_reason = ANY (reasons) THEN 'activity_changed'::athlete_recalculation_reason\n    ELSE NULL::athlete_recalculation_reason\nEND,\nCASE\n    WHEN 'activity_deleted'::athlete_recalculation_reason = ANY (reasons) THEN 'activity_deleted'::athlete_recalculation_reason\n    ELSE NULL::athlete_recalculation_reason\nEND,\nCASE\n    WHEN 'analysis_replaced'::athlete_recalculation_reason = ANY (reasons) THEN 'analysis_replaced'::athlete_recalculation_reason\n    ELSE NULL::athlete_recalculation_reason\nEND,\nCASE\n    WHEN 'threshold_changed'::athlete_recalculation_reason = ANY (reasons) THEN 'threshold_changed'::athlete_recalculation_reason\n    ELSE NULL::athlete_recalculation_reason\nEND,\nCASE\n    WHEN 'import_completed'::athlete_recalculation_reason = ANY (reasons) THEN 'import_completed'::athlete_recalculation_reason\n    ELSE NULL::athlete_recalculation_reason\nEND,\nCASE\n    WHEN 'algorithm_changed'::athlete_recalculation_reason = ANY (reasons) THEN 'algorithm_changed'::athlete_recalculation_reason\n    ELSE NULL::athlete_recalculation_reason\nEND,\nCASE\n    WHEN 'timezone_changed'::athlete_recalculation_reason = ANY (reasons) THEN 'timezone_changed'::athlete_recalculation_reason\n    ELSE NULL::athlete_recalculation_reason\nEND,\nCASE\n    WHEN 'explicit_repair'::athlete_recalculation_reason = ANY (reasons) THEN 'explicit_repair'::athlete_recalculation_reason\n    ELSE NULL::athlete_recalculation_reason\nEND], NULL::athlete_recalculation_reason))"
     },
     {
       "kind": "c",
@@ -12594,14 +12519,7 @@
       "name": "daily_training_load_common_load_check",
       "table": "daily_training_load",
       "validated": true,
-      "definition": "CHECK (common_load >= 0::numeric AND common_load <= 3660000::numeric AND (common_load <> ALL (ARRAY['NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric])))"
-    },
-    {
-      "kind": "c",
-      "name": "daily_training_load_contract_version_check",
-      "table": "daily_training_load",
-      "validated": true,
-      "definition": "CHECK (contract_version = 'athlete-derived-state-persistence-v1'::text)"
+      "definition": "CHECK (common_load >= 0::numeric AND (common_load <> ALL (ARRAY['NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric])))"
     },
     {
       "kind": "c",
@@ -13479,13 +13397,6 @@
       "definition": "FOREIGN KEY (completed_activity_id, profile_id) REFERENCES activities(id, profile_id) ON DELETE RESTRICT"
     },
     {
-      "kind": "c",
-      "name": "planned_sessions_contract_version_check",
-      "table": "planned_sessions",
-      "validated": true,
-      "definition": "CHECK (contract_version = 'planned-session-v1'::text)"
-    },
-    {
       "kind": "f",
       "name": "planned_sessions_group_event_fkey",
       "table": "planned_sessions",
@@ -13647,27 +13558,6 @@
       "definition": "CHECK (source_revision >= 0 AND published_revision >= 0 AND published_revision <= source_revision)"
     },
     {
-      "kind": "c",
-      "name": "profile_goals_completion_payload_check",
-      "table": "profile_goals",
-      "validated": true,
-      "definition": "CHECK ((target_payload ->> 'type'::text) <> 'completion'::text OR (target_payload - ARRAY['type'::text, 'activity_category'::text, 'distance_m'::text, 'duration_s'::text]) = '{}'::jsonb AND (target_payload ? 'distance_m'::text OR target_payload ? 'duration_s'::text) AND (NOT target_payload ? 'distance_m'::text OR\nCASE\n    WHEN jsonb_typeof(target_payload -> 'distance_m'::text) = 'number'::text THEN ((target_payload ->> 'distance_m'::text)::numeric) > 0::numeric\n    ELSE false\nEND) AND (NOT target_payload ? 'duration_s'::text OR\nCASE\n    WHEN jsonb_typeof(target_payload -> 'duration_s'::text) = 'number'::text THEN ((target_payload ->> 'duration_s'::text)::numeric) > 0::numeric AND trunc((target_payload ->> 'duration_s'::text)::numeric) = ((target_payload ->> 'duration_s'::text)::numeric)\n    ELSE false\nEND))"
-    },
-    {
-      "kind": "c",
-      "name": "profile_goals_consistency_payload_check",
-      "table": "profile_goals",
-      "validated": true,
-      "definition": "CHECK ((target_payload ->> 'type'::text) <> 'consistency'::text OR (target_payload - ARRAY['type'::text, 'target_sessions_per_week'::text, 'target_weeks'::text]) = '{}'::jsonb AND (target_payload ? 'target_sessions_per_week'::text OR target_payload ? 'target_weeks'::text) AND (NOT target_payload ? 'target_sessions_per_week'::text OR\nCASE\n    WHEN jsonb_typeof(target_payload -> 'target_sessions_per_week'::text) = 'number'::text THEN ((target_payload ->> 'target_sessions_per_week'::text)::numeric) > 0::numeric AND trunc((target_payload ->> 'target_sessions_per_week'::text)::numeric) = ((target_payload ->> 'target_sessions_per_week'::text)::numeric)\n    ELSE false\nEND) AND (NOT target_payload ? 'target_weeks'::text OR\nCASE\n    WHEN jsonb_typeof(target_payload -> 'target_weeks'::text) = 'number'::text THEN ((target_payload ->> 'target_weeks'::text)::numeric) > 0::numeric AND trunc((target_payload ->> 'target_weeks'::text)::numeric) = ((target_payload ->> 'target_weeks'::text)::numeric)\n    ELSE false\nEND))"
-    },
-    {
-      "kind": "c",
-      "name": "profile_goals_event_performance_payload_check",
-      "table": "profile_goals",
-      "validated": true,
-      "definition": "CHECK ((target_payload ->> 'type'::text) <> 'event_performance'::text OR (target_payload - ARRAY['type'::text, 'activity_category'::text, 'distance_m'::text, 'target_time_s'::text, 'target_speed_mps'::text, 'environment'::text, 'tolerance_pct'::text]) = '{}'::jsonb AND target_payload ? 'activity_category'::text AND target_payload ? 'distance_m'::text AND\nCASE\n    WHEN jsonb_typeof(target_payload -> 'distance_m'::text) = 'number'::text THEN ((target_payload ->> 'distance_m'::text)::numeric) > 0::numeric\n    ELSE false\nEND AND (target_payload ? 'target_time_s'::text OR target_payload ? 'target_speed_mps'::text) AND (NOT target_payload ? 'target_time_s'::text OR\nCASE\n    WHEN jsonb_typeof(target_payload -> 'target_time_s'::text) = 'number'::text THEN ((target_payload ->> 'target_time_s'::text)::numeric) > 0::numeric AND trunc((target_payload ->> 'target_time_s'::text)::numeric) = ((target_payload ->> 'target_time_s'::text)::numeric)\n    ELSE false\nEND) AND (NOT target_payload ? 'target_speed_mps'::text OR\nCASE\n    WHEN jsonb_typeof(target_payload -> 'target_speed_mps'::text) = 'number'::text THEN ((target_payload ->> 'target_speed_mps'::text)::numeric) > 0::numeric\n    ELSE false\nEND) AND (NOT target_payload ? 'environment'::text OR jsonb_typeof(target_payload -> 'environment'::text) = 'string'::text AND char_length(btrim(target_payload ->> 'environment'::text)) >= 1 AND char_length(btrim(target_payload ->> 'environment'::text)) <= 80) AND (NOT target_payload ? 'tolerance_pct'::text OR\nCASE\n    WHEN jsonb_typeof(target_payload -> 'tolerance_pct'::text) = 'number'::text THEN ((target_payload ->> 'tolerance_pct'::text)::numeric) >= 0::numeric AND ((target_payload ->> 'tolerance_pct'::text)::numeric) <= 1::numeric\n    ELSE false\nEND))"
-    },
-    {
       "kind": "p",
       "name": "profile_goals_pkey",
       "table": "profile_goals",
@@ -13694,13 +13584,6 @@
       "table": "profile_goals",
       "validated": true,
       "definition": "CHECK (jsonb_typeof(target_payload) = 'object'::text AND target_payload ? 'type'::text AND jsonb_typeof(target_payload -> 'type'::text) = 'string'::text AND ((target_payload ->> 'type'::text) = ANY (ARRAY['event_performance'::text, 'threshold'::text, 'completion'::text, 'consistency'::text])) AND (NOT target_payload ? 'activity_category'::text OR jsonb_typeof(target_payload -> 'activity_category'::text) = 'string'::text AND (target_payload ->> 'activity_category'::text) = activity_category::text))"
-    },
-    {
-      "kind": "c",
-      "name": "profile_goals_threshold_payload_check",
-      "table": "profile_goals",
-      "validated": true,
-      "definition": "CHECK ((target_payload ->> 'type'::text) <> 'threshold'::text OR (target_payload - ARRAY['type'::text, 'metric'::text, 'activity_category'::text, 'value'::text, 'test_duration_s'::text, 'tolerance_pct'::text]) = '{}'::jsonb AND target_payload ? 'metric'::text AND jsonb_typeof(target_payload -> 'metric'::text) = 'string'::text AND ((target_payload ->> 'metric'::text) = ANY (ARRAY['pace'::text, 'power'::text, 'hr'::text])) AND target_payload ? 'value'::text AND\nCASE\n    WHEN jsonb_typeof(target_payload -> 'value'::text) = 'number'::text THEN ((target_payload ->> 'value'::text)::numeric) > 0::numeric\n    ELSE false\nEND AND (NOT target_payload ? 'test_duration_s'::text OR\nCASE\n    WHEN jsonb_typeof(target_payload -> 'test_duration_s'::text) = 'number'::text THEN ((target_payload ->> 'test_duration_s'::text)::numeric) > 0::numeric AND trunc((target_payload ->> 'test_duration_s'::text)::numeric) = ((target_payload ->> 'test_duration_s'::text)::numeric)\n    ELSE false\nEND) AND (NOT target_payload ? 'tolerance_pct'::text OR\nCASE\n    WHEN jsonb_typeof(target_payload -> 'tolerance_pct'::text) = 'number'::text THEN ((target_payload ->> 'tolerance_pct'::text)::numeric) >= 0::numeric AND ((target_payload ->> 'tolerance_pct'::text)::numeric) <= 1::numeric\n    ELSE false\nEND))"
     },
     {
       "kind": "c",
@@ -14012,13 +13895,6 @@
     },
     {
       "kind": "c",
-      "name": "threshold_evaluation_efforts_metric_check",
-      "table": "threshold_evaluation_efforts",
-      "validated": true,
-      "definition": "CHECK (metric = 'power'::threshold_metric AND activity_category = 'bike'::activity_category AND effort_type = 'power'::effort_type AND source_series = 'power'::activity_effort_source_series OR metric = 'speed'::threshold_metric AND activity_category = 'run'::activity_category AND effort_type = 'speed'::effort_type AND (source_series = ANY (ARRAY['grade_adjusted_speed'::activity_effort_source_series, 'raw_speed'::activity_effort_source_series])) OR metric = 'speed'::threshold_metric AND activity_category = 'swim'::activity_category AND effort_type = 'speed'::effort_type AND source_series = 'swim_speed'::activity_effort_source_series)"
-    },
-    {
-      "kind": "c",
       "name": "threshold_evaluation_efforts_ordinal_check",
       "table": "threshold_evaluation_efforts",
       "validated": true,
@@ -14065,13 +13941,6 @@
       "table": "threshold_evaluations",
       "validated": true,
       "definition": "UNIQUE (profile_id, source_activity_id, source_revision, activity_category, metric, method, policy_version)"
-    },
-    {
-      "kind": "c",
-      "name": "threshold_evaluations_identity_check",
-      "table": "threshold_evaluations",
-      "validated": true,
-      "definition": "CHECK (activity_category = 'bike'::activity_category AND metric = 'power'::threshold_metric AND method = 'bike_power_30m'::text AND unit = 'watts'::text OR activity_category = 'run'::activity_category AND metric = 'speed'::threshold_metric AND method = 'run_speed_30m'::text AND unit = 'meters_per_second'::text OR activity_category = 'swim'::activity_category AND metric = 'speed'::threshold_metric AND method = 'swim_speed_15m'::text AND unit = 'meters_per_second'::text)"
     },
     {
       "kind": "c",
@@ -14159,13 +14028,6 @@
     },
     {
       "kind": "c",
-      "name": "threshold_evidence_contract_version_check",
-      "table": "threshold_evidence",
-      "validated": true,
-      "definition": "CHECK (contract_version = 'athlete-derived-state-persistence-v1'::text)"
-    },
-    {
-      "kind": "c",
       "name": "threshold_evidence_conversion_factor_check",
       "table": "threshold_evidence",
       "validated": true,
@@ -14180,13 +14042,6 @@
     },
     {
       "kind": "c",
-      "name": "threshold_evidence_identity_check",
-      "table": "threshold_evidence",
-      "validated": true,
-      "definition": "CHECK (activity_category = 'bike'::activity_category AND metric = 'power'::threshold_metric AND unit = 'watts'::text AND method = 'bike_power_30m'::text AND source_series_metric = 'power'::text OR activity_category = 'run'::activity_category AND metric = 'speed'::threshold_metric AND unit = 'meters_per_second'::text AND method = 'run_speed_30m'::text AND (source_series_metric = ANY (ARRAY['speed'::text, 'grade_adjusted_speed'::text])) OR activity_category = 'swim'::activity_category AND metric = 'speed'::threshold_metric AND unit = 'meters_per_second'::text AND method = 'swim_speed_15m'::text AND source_series_metric = 'speed'::text)"
-    },
-    {
-      "kind": "c",
       "name": "threshold_evidence_lifecycle_check",
       "table": "threshold_evidence",
       "validated": true,
@@ -14198,20 +14053,6 @@
       "table": "threshold_evidence",
       "validated": true,
       "definition": "PRIMARY KEY (id)"
-    },
-    {
-      "kind": "c",
-      "name": "threshold_evidence_plausibility_check",
-      "table": "threshold_evidence",
-      "validated": true,
-      "definition": "CHECK (plausibility_version = 'threshold-plausibility-v1'::text)"
-    },
-    {
-      "kind": "c",
-      "name": "threshold_evidence_policy_check",
-      "table": "threshold_evidence",
-      "validated": true,
-      "definition": "CHECK (policy_version = 'threshold-policy-v1'::text)"
     },
     {
       "kind": "u",
@@ -14261,13 +14102,6 @@
       "table": "thresholds",
       "validated": true,
       "definition": "UNIQUE (evaluation_id)"
-    },
-    {
-      "kind": "c",
-      "name": "thresholds_identity_check",
-      "table": "thresholds",
-      "validated": true,
-      "definition": "CHECK (activity_category = 'bike'::activity_category AND metric = 'power'::threshold_metric AND method = 'bike_power_30m'::text AND unit = 'watts'::text OR activity_category = 'run'::activity_category AND metric = 'speed'::threshold_metric AND method = 'run_speed_30m'::text AND unit = 'meters_per_second'::text OR activity_category = 'swim'::activity_category AND metric = 'speed'::threshold_metric AND method = 'swim_speed_15m'::text AND unit = 'meters_per_second'::text)"
     },
     {
       "kind": "u",

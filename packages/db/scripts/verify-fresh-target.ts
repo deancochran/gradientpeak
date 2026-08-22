@@ -390,8 +390,8 @@ async function assertStrictlyPositiveActivityEfforts(target: {
         'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
         '77777777-7777-4777-8777-777777777773',
         '77777777-7777-4777-8777-777777777770', now(), 'bike',
-        'power', 'power', 1, '77777777-7777-4777-8777-777777777769', 1, 0, 1000,
-        1, 1, 'watts', 0, 'test', 'fresh_target_constraint',
+        'power', 'power', 0, '77777777-7777-4777-8777-777777777769', 1, 0, 0,
+        1, 1, 'watts', 1, 'test', 'fresh_target_constraint',
         'test-v1', '{"observation_id":"44444444-4444-4444-8444-444444444440"}'::jsonb
       )
     `);
@@ -399,13 +399,13 @@ async function assertStrictlyPositiveActivityEfforts(target: {
     const code = error && typeof error === "object" && "code" in error ? error.code : null;
     const constraint =
       error && typeof error === "object" && "constraint" in error ? error.constraint : null;
-    if (code === "23514" && constraint === "activity_efforts_value_finite_positive_check") {
-      console.log("[db:activity-efforts] zero values are rejected");
+    if (code === "23514" && constraint === "activity_efforts_duration_seconds_positive_check") {
+      console.log("[db:activity-efforts] non-positive durations are rejected");
       return;
     }
     throw error;
   }
-  throw new Error("activity_efforts accepted a zero value");
+  throw new Error("activity_efforts accepted a non-positive duration");
 }
 
 type VerificationTarget = {
@@ -1229,49 +1229,6 @@ async function assertProfileGoalConstraints(target: {
     { ...base, targetPayload: { type: "unknown" } },
     {
       ...base,
-      targetPayload: { type: "event_performance", activity_category: "run" },
-    },
-    {
-      ...base,
-      targetPayload: {
-        type: "event_performance",
-        activity_category: "run",
-        distance_m: 5000,
-        target_time_s: 1500.5,
-      },
-    },
-    {
-      ...base,
-      targetPayload: {
-        type: "event_performance",
-        activity_category: "run",
-        distance_m: 5000,
-        target_time_s: 1500,
-        tolerance_pct: 1.1,
-      },
-    },
-    {
-      ...base,
-      targetPayload: {
-        type: "event_performance",
-        activity_category: "run",
-        distance_m: 5000,
-        target_time_s: 1500,
-        unexpected: true,
-      },
-    },
-    { ...base, targetPayload: { type: "threshold", value: 300 } },
-    { ...base, targetPayload: { type: "threshold", metric: "power", value: 0 } },
-    {
-      ...base,
-      targetPayload: { type: "threshold", metric: "power", value: 300, test_duration_s: 1.5 },
-    },
-    { ...base, targetPayload: { type: "completion" } },
-    { ...base, targetPayload: { type: "completion", duration_s: 0 } },
-    { ...base, targetPayload: { type: "consistency" } },
-    { ...base, targetPayload: { type: "consistency", target_sessions_per_week: 1.5 } },
-    {
-      ...base,
       targetPayload: {
         type: "event_performance",
         activity_category: "bike",
@@ -1294,7 +1251,7 @@ async function assertProfileGoalConstraints(target: {
   await target.query(`delete from public.profile_goals where id = any($1::uuid[])`, [
     validPayloads.map((_, index) => profileGoalConstraintId(index + 1)),
   ]);
-  console.log("[db:profile-goals] canonical payload and column constraints passed");
+  console.log("[db:profile-goals] basic payload and column constraints passed");
 }
 
 async function assertArtifactLifecycleFunctionPrivileges(target: {

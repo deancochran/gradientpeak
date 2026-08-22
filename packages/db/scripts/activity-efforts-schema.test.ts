@@ -56,15 +56,25 @@ assert.equal(publicActivityEffortsUpdateSchema.safeParse({}).success, false);
 
 const checkNames = new Set(config.checks.map((constraint) => constraint.name));
 assert.ok(checkNames.has("activity_efforts_distance_meters_bounds_check"));
-assert.ok(checkNames.has("activity_efforts_supported_combination_check"));
-assert.ok(checkNames.has("activity_efforts_unit_compatibility_check"));
-assert.ok(checkNames.has("activity_efforts_heart_rate_bounds_check"));
 assert.ok(checkNames.has("activity_efforts_value_finite_positive_check"));
 assert.ok(checkNames.has("activity_efforts_source_revision_check"));
 assert.ok(checkNames.has("activity_efforts_window_check"));
 assert.ok(checkNames.has("activity_efforts_coverage_finite_range_check"));
 assert.ok(checkNames.has("activity_efforts_max_gap_finite_check"));
 assert.ok(!checkNames.has("activity_efforts_duration_seconds_bounds_check"));
+for (const policyCheckName of [
+  "activity_efforts_supported_combination_check",
+  "activity_efforts_unit_compatibility_check",
+  "activity_efforts_bike_power_max_check",
+  "activity_efforts_run_speed_bounds_check",
+  "activity_efforts_swim_speed_bounds_check",
+  "activity_efforts_heart_rate_bounds_check",
+] as const) {
+  assert.ok(
+    !checkNames.has(policyCheckName),
+    `${policyCheckName} belongs to the shared activity-effort policy, not the database`,
+  );
+}
 
 assert.ok(
   config.uniqueConstraints.some(

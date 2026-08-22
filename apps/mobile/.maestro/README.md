@@ -43,7 +43,7 @@ Performance flows read app-side `perf-metric-*` beacons that are enabled only wh
 ## Expected runtime
 
 - Metro/dev client should already be running. `pnpm --filter mobile test:e2e` does not start Expo.
-- `pnpm --filter mobile dev:e2e` remains available for pipeline-style runs and loads `apps/mobile/.env.e2e` when that file exists.
+- `pnpm --filter mobile dev:e2e` remains available for pipeline-style runs and uses the same `apps/mobile/.env.local` values as normal development.
 - Maestro prepares the emulator, reverses local ports, and then runs against the existing dev client session.
 - The default server row is `http://10.0.2.2:8081` on Android emulators. Override it with `EXPO_DEV_SERVER_LABEL` or `MAESTRO_EXPO_DEV_SERVER_LABEL` when reusing a LAN dev server.
 

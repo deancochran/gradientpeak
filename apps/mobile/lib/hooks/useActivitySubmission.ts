@@ -181,9 +181,7 @@ function submissionReducer(state: SubmissionState, action: Action): SubmissionSt
 
 function buildDefaultActivityName(artifact: RecordingSessionArtifact): string {
   const activity_category = artifact.snapshot.activity.activity_category;
-  const gpsLabel = artifact.snapshot.activity.gpsMode === "on" ? "GPS ON" : "GPS OFF";
-
-  return `${activity_category} (${gpsLabel}) - ${new Date(
+  return `${activity_category} - ${new Date(
     artifact.snapshot.identity.startedAt,
   ).toLocaleDateString()}`;
 }

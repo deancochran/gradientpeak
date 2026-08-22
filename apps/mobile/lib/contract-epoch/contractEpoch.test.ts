@@ -46,9 +46,6 @@ function dependencies(marker: string | null) {
       cleanupFitFiles: vi.fn(async () => {
         calls.push("fit");
       }),
-      cleanupLocation: vi.fn(async () => {
-        calls.push("location");
-      }),
     },
   };
 }
@@ -66,7 +63,6 @@ describe("contract epoch initialization", () => {
       `storage:${CONTRACT_EPOCH_RESET_STORAGE_KEYS.join(",")}`,
       "streams",
       "fit",
-      "location",
       `marker:${CURRENT_CONTRACT_EPOCH}`,
     ]);
     for (const key of SECURE_AUTH_KEYS) {

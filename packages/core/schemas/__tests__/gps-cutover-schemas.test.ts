@@ -3,13 +3,20 @@ import { ActivityPayloadSchema, ActivityUploadSchema } from "../activity_payload
 import { activityPlanCreateSchema } from "../index";
 
 describe("GPS cutover schemas", () => {
-  it("accepts gpsRecordingEnabled and rejects legacy location in ActivityPayloadSchema", () => {
+  it("requires GPS-off launch payloads and rejects legacy location aliases", () => {
+    expect(
+      ActivityPayloadSchema.safeParse({
+        activity_category: "run",
+        gpsRecordingEnabled: false,
+      }).success,
+    ).toBe(true);
+
     expect(
       ActivityPayloadSchema.safeParse({
         activity_category: "run",
         gpsRecordingEnabled: true,
       }).success,
-    ).toBe(true);
+    ).toBe(false);
 
     expect(
       ActivityPayloadSchema.safeParse({

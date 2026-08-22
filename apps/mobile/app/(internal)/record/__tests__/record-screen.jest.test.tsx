@@ -551,12 +551,9 @@ describe("record screen", () => {
     expect(backMock).toHaveBeenCalled();
   });
 
-  it("requests missing permissions before starting the recorder", async () => {
+  it("starts timer recording without treating Bluetooth as a prerequisite", async () => {
     useAllPermissionsGranted.mockReturnValue({ allGranted: false, isLoading: false });
-    service.refreshAndCheckRecordingPermissions
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true);
+    service.refreshAndCheckRecordingPermissions.mockResolvedValue(false);
 
     renderNative(<RecordScreen />);
 
@@ -567,9 +564,9 @@ describe("record screen", () => {
     fireEvent.press(screen.getByText("Start"));
 
     await waitFor(() => {
-      expect(requestPermissionMock).toHaveBeenNthCalledWith(1, "bluetooth");
       expect(startMock).toHaveBeenCalled();
     });
+    expect(requestPermissionMock).not.toHaveBeenCalled();
   });
 
   it("offers a profile redirect when required plan metrics are missing", async () => {

@@ -171,9 +171,6 @@ importers:
       expo-localization:
         specifier: ~17.0.9
         version: 17.0.9(expo@54.0.36)(react@19.1.0)
-      expo-location:
-        specifier: ~19.0.8
-        version: 19.0.8(expo@54.0.36)
       expo-network:
         specifier: ~8.0.8
         version: 8.0.8(expo@54.0.36)(react@19.1.0)
@@ -198,9 +195,6 @@ importers:
       expo-system-ui:
         specifier: ~6.0.9
         version: 6.0.9(expo@54.0.36)(react-native-web@0.21.2(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(bufferutil@4.1.0)(react@19.1.0))
-      expo-task-manager:
-        specifier: ~14.0.9
-        version: 14.0.9(expo@54.0.36)(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(bufferutil@4.1.0)(react@19.1.0))
       expo-updates:
         specifier: ~29.0.19
         version: 29.0.19(expo@54.0.36)(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(bufferutil@4.1.0)(react@19.1.0))(react@19.1.0)
@@ -7953,11 +7947,6 @@ packages:
       expo: '*'
       react: 19.1.0
 
-  expo-location@19.0.8:
-    resolution: {integrity: sha512-H/FI75VuJ1coodJbbMu82pf+Zjess8X8Xkiv9Bv58ZgPKS/2ztjC1YO1/XMcGz7+s9DrbLuMIw22dFuP4HqneA==}
-    peerDependencies:
-      expo: '*'
-
   expo-manifests@1.0.11:
     resolution: {integrity: sha512-6zItytTewN37Cjhp3glUg0ozrgW2GwB8x9wtfzUNoJIMmxO38nnGdTLMaotYhRqdf5PP2Dzdmej1HDHXVNUpRw==}
     peerDependencies:
@@ -8059,12 +8048,6 @@ packages:
     peerDependenciesMeta:
       react-native-web:
         optional: true
-
-  expo-task-manager@14.0.9:
-    resolution: {integrity: sha512-GKWtXrkedr4XChHfTm5IyTcSfMtCPxzx89y4CMVqKfyfROATibrE/8UI5j7UC/pUOfFoYlQvulQEvECMreYuUA==}
-    peerDependencies:
-      expo: '*'
-      react-native: '*'
 
   expo-updates-interface@2.0.0:
     resolution: {integrity: sha512-pTzAIufEZdVPKql6iMi5ylVSPqV1qbEopz9G6TSECQmnNde2nwq42PxdFBaUEd8IZJ/fdJLQnOT3m6+XJ5s7jg==}
@@ -11303,9 +11286,6 @@ packages:
   unicode-property-aliases-ecmascript@2.2.0:
     resolution: {integrity: sha512-hpbDzxUY9BFwX+UeBnxv3Sh1q7HFxj48DTmXchNgRa46lO8uj3/1iEn3MiNUYTg1g9ctIqXCCERn8gYZhHC5lQ==}
     engines: {node: '>=4'}
-
-  unimodules-app-loader@6.0.8:
-    resolution: {integrity: sha512-fqS8QwT/MC/HAmw1NKCHdzsPA6WaLm0dNmoC5Pz6lL+cDGYeYCNdHMO9fy08aL2ZD7cVkNM0pSR/AoNRe+rslA==}
 
   universalify@2.0.1:
     resolution: {integrity: sha512-gptHNQghINnc/vTGIk0SOFGFNXw7JVrlRUtConJRlvaw6DuX0wO5Jeko9sWrMBhh+PsYAZ7oXAiOnf/UKogyiw==}
@@ -19959,10 +19939,6 @@ snapshots:
       react: 19.1.0
       rtl-detect: 1.1.2
 
-  expo-location@19.0.8(expo@54.0.36):
-    dependencies:
-      expo: 54.0.36(@babel/core@7.29.7)(@expo/metro-runtime@6.1.2)(bufferutil@4.1.0)(expo-router@6.0.24)(graphql@16.14.2)(react-native-webview@13.15.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(bufferutil@4.1.0)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(bufferutil@4.1.0)(react@19.1.0))(react@19.1.0)(typescript@5.9.3)
-
   expo-manifests@1.0.11(expo@54.0.36):
     dependencies:
       '@expo/config': 12.0.14
@@ -20149,12 +20125,6 @@ snapshots:
       react-native-web: 0.21.2(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
     transitivePeerDependencies:
       - supports-color
-
-  expo-task-manager@14.0.9(expo@54.0.36)(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(bufferutil@4.1.0)(react@19.1.0)):
-    dependencies:
-      expo: 54.0.36(@babel/core@7.29.7)(@expo/metro-runtime@6.1.2)(bufferutil@4.1.0)(expo-router@6.0.24)(graphql@16.14.2)(react-native-webview@13.15.0(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(bufferutil@4.1.0)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(bufferutil@4.1.0)(react@19.1.0))(react@19.1.0)(typescript@5.9.3)
-      react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(bufferutil@4.1.0)(react@19.1.0)
-      unimodules-app-loader: 6.0.8
 
   expo-updates-interface@2.0.0(expo@54.0.36):
     dependencies:
@@ -24548,8 +24518,6 @@ snapshots:
   unicode-match-property-value-ecmascript@2.2.1: {}
 
   unicode-property-aliases-ecmascript@2.2.0: {}
-
-  unimodules-app-loader@6.0.8: {}
 
   universalify@2.0.1: {}
 

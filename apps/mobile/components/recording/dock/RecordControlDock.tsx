@@ -9,7 +9,6 @@ import { RecordingControls } from "@/components/recording/footer";
 export interface RecordControlDockProps {
   activeSurface: RecordingPrimarySurface | null;
   onChangeSurface: (surface: RecordingPrimarySurface) => void;
-  onGpsPress: () => void;
   onOpenActivity: () => void;
   onOpenFtms: () => void;
   onOpenPlan: () => void;
@@ -27,7 +26,6 @@ export interface RecordControlDockProps {
 export function RecordControlDock({
   activeSurface,
   onChangeSurface,
-  onGpsPress,
   onOpenActivity,
   onOpenFtms,
   onOpenPlan,
@@ -58,16 +56,6 @@ export function RecordControlDock({
               ? "Open activity settings"
               : "View locked activity settings",
             onPress: onOpenActivity,
-          };
-        case "gps":
-          return {
-            action,
-            label: sessionContract.guidance.routeMode === "live_navigation" ? "GPS on" : "GPS",
-            accessibilityLabel:
-              sessionContract.guidance.routeMode === "live_navigation"
-                ? "Open GPS settings, GPS is on"
-                : "Open GPS settings",
-            onPress: onGpsPress,
           };
         case "plan":
           return {
@@ -105,15 +93,7 @@ export function RecordControlDock({
           };
       }
     });
-  }, [
-    onGpsPress,
-    onOpenActivity,
-    onOpenFtms,
-    onOpenPlan,
-    onOpenRoute,
-    onOpenSensors,
-    sessionContract,
-  ]);
+  }, [onOpenActivity, onOpenFtms, onOpenPlan, onOpenRoute, onOpenSensors, sessionContract]);
 
   return (
     <View

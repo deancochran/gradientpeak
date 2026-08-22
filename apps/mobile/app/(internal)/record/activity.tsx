@@ -45,7 +45,6 @@ export default function ActivitySelectionScreen() {
   const { service } = useActivityRecorderService();
   const { sessionContract, sessionView } = useRecordingConfig(service);
   const activityCategory = sessionView?.recordingConfiguration.input.activityCategory ?? "bike";
-  const gpsRecordingEnabled = sessionView?.recordingConfiguration.input.gpsRecordingEnabled ?? true;
   const recordingState = service?.state ?? "pending";
   const { selectActivityFromPayload } = useRecordingCommands(service);
 
@@ -53,27 +52,23 @@ export default function ActivitySelectionScreen() {
   const hasPlan = sessionContract?.guidance.hasPlan ?? sessionView?.plan.hasPlan ?? false;
   const isSetupLocked = recordingState !== "pending" && recordingState !== "ready";
   const canEditActivity = sessionContract?.editing.canEditActivity ?? (!hasPlan && !isSetupLocked);
-  const canEditGps = sessionContract?.editing.canEditGps ?? !isSetupLocked;
 
   const [selectedCategory, setSelectedCategory] =
     useState<RecordingActivityCategory>(activityCategory);
-  const [selectedGpsRecordingEnabled, setSelectedGpsRecordingEnabled] =
-    useState(gpsRecordingEnabled);
   const handleSave = () => {
-    if (!service || (!canEditActivity && !canEditGps)) return;
+    if (!service || !canEditActivity) return;
 
     // The service will preserve any existing plan automatically.
     selectActivityFromPayload({
       activity_category: canEditActivity ? selectedCategory : activityCategory,
-      gpsRecordingEnabled: canEditGps ? selectedGpsRecordingEnabled : gpsRecordingEnabled,
+      gpsRecordingEnabled: false,
     });
 
     router.back();
   };
 
   const activityChanged = selectedCategory !== activityCategory;
-  const gpsChanged = selectedGpsRecordingEnabled !== gpsRecordingEnabled;
-  const hasChanges = (activityChanged && canEditActivity) || (gpsChanged && canEditGps);
+  const hasChanges = activityChanged && canEditActivity;
 
   return (
     <View className="flex-1 bg-background" testID="record-activity-screen">
@@ -96,43 +91,6 @@ export default function ActivitySelectionScreen() {
             </Text>
           </View>
         )}
-
-        <View className="mb-6">
-          <Text className="mb-3 text-sm font-medium text-muted-foreground">GPS Recording</Text>
-          {!canEditGps ? (
-            <Text className="mb-2 text-xs text-muted-foreground">
-              GPS recording is locked for the active session.
-            </Text>
-          ) : null}
-          <View className="flex-row gap-3">
-            <Pressable
-              onPress={() => canEditGps && setSelectedGpsRecordingEnabled(true)}
-              disabled={!canEditGps}
-              testID="record-gps-option-on"
-              className="flex-1 rounded-lg border border-border bg-card p-4"
-              style={{
-                borderColor: selectedGpsRecordingEnabled ? "rgb(34, 197, 94)" : undefined,
-                borderWidth: selectedGpsRecordingEnabled ? 2 : 1,
-                opacity: canEditGps ? 1 : 0.5,
-              }}
-            >
-              <Text className="text-center text-base font-medium text-foreground">GPS On</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => canEditGps && setSelectedGpsRecordingEnabled(false)}
-              disabled={!canEditGps}
-              testID="record-gps-option-off"
-              className="flex-1 rounded-lg border border-border bg-card p-4"
-              style={{
-                borderColor: !selectedGpsRecordingEnabled ? "rgb(34, 197, 94)" : undefined,
-                borderWidth: !selectedGpsRecordingEnabled ? 2 : 1,
-                opacity: canEditGps ? 1 : 0.5,
-              }}
-            >
-              <Text className="text-center text-base font-medium text-foreground">GPS Off</Text>
-            </Pressable>
-          </View>
-        </View>
 
         {/* Category Section */}
         <View className="mb-6">

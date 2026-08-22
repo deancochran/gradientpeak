@@ -1,6 +1,5 @@
 import { type BrowserContext, test as base, type Page } from "@playwright/test";
 
-import { getWebParityReport } from "../src/lib/parity-report";
 import { openAppPage } from "./utils/navigation";
 import {
   acquireTestActorLock,
@@ -16,7 +15,6 @@ type WebStartFixtures = {
   coachPage: Page;
   messagingNotificationsPage: Page;
   onboardingPage: Page;
-  parityReview: undefined;
   profilePage: Page;
   unverifiedPage: Page;
 };
@@ -61,21 +59,6 @@ export const test = base.extend<WebStartFixtures>({
   onboardingPage: async ({ context }, use) => {
     await useActorPage(context, "onboarding", use);
   },
-  parityReview: [
-    async ({ browser: _browser }, use, testInfo) => {
-      await use(undefined);
-      const report = getWebParityReport();
-      testInfo.annotations.push({
-        type: "declared-web-parity",
-        description: `${report.percentage}% (${report.implemented}/${report.denominator} implemented; ${report.partial.length} partial)`,
-      });
-      await testInfo.attach("declared-web-parity.json", {
-        body: Buffer.from(JSON.stringify(report, null, 2)),
-        contentType: "application/json",
-      });
-    },
-    { auto: true },
-  ],
   profilePage: async ({ context }, use) => {
     await useActorPage(context, "profile", use);
   },

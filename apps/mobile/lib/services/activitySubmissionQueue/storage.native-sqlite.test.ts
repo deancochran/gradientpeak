@@ -137,7 +137,7 @@ describe("activity submission queue native SQLite storage", () => {
     const first = await open();
     expect(
       await first.executor.getAllAsync<{ user_version: number }>("PRAGMA user_version"),
-    ).toEqual([{ user_version: 5 }]);
+    ).toEqual([{ user_version: 6 }]);
     await expect(
       first.executor.withExclusiveTransactionAsync(async (tx) => {
         await tx.runAsync(
@@ -168,12 +168,11 @@ describe("activity submission queue native SQLite storage", () => {
     expect(
       await current.executor.getAllAsync<{ foreign_keys: number }>("PRAGMA foreign_keys"),
     ).toEqual([{ foreign_keys: 1 }]);
-    await expect(
-      current.executor.runAsync(
-        "INSERT INTO recording_gps_envelopes (session_id, sequence, timestamp, payload, byte_size, sha256, commit_marker) VALUES (?, 0, 1, '{}', 2, 'digest', 'committed-v1')",
-        "orphan",
+    expect(
+      await current.executor.getAllAsync(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recording_gps_envelopes'",
       ),
-    ).rejects.toThrow();
+    ).toEqual([]);
     await expect(
       current.executor.runAsync(
         "INSERT INTO recording_stream_envelopes (session_id, stream_kind, sequence, stream_order, timestamp, payload, byte_size, sha256, commit_marker, version) VALUES (?, 'power', 0, 0, 1, '{}', 2, 'digest', 'stream-committed-v1', 1)",
@@ -187,12 +186,6 @@ describe("activity submission queue native SQLite storage", () => {
       "profile",
       baseTime,
     );
-    await expect(
-      current.executor.runAsync(
-        "INSERT INTO recording_gps_envelopes (session_id, sequence, timestamp, payload, byte_size, sha256, commit_marker) VALUES (?, 0, 1, '{}', 2, 'digest', 'committed-v1')",
-        "valid-session",
-      ),
-    ).resolves.toMatchObject({ changes: 1 });
     await expect(upsertActivitySubmissionQueueJob(job("valid"))).resolves.toBeUndefined();
     await expect(loadActivitySubmissionQueueJobs()).resolves.toEqual([job("valid")]);
   });

@@ -79,26 +79,6 @@ jest.mock("expo-image-picker", () => ({
   requestMediaLibraryPermissionsAsync: jest.fn(async () => ({ granted: true, status: "granted" })),
 }));
 
-jest.mock("expo-location", () => ({
-  __esModule: true,
-  Accuracy: { Balanced: 3, BestForNavigation: 6, High: 4 },
-  PermissionStatus: { GRANTED: "granted", DENIED: "denied", UNDETERMINED: "undetermined" },
-  getCurrentPositionAsync: jest.fn(async () => null),
-  requestBackgroundPermissionsAsync: jest.fn(async () => ({ granted: true, status: "granted" })),
-  requestForegroundPermissionsAsync: jest.fn(async () => ({ granted: true, status: "granted" })),
-  startLocationUpdatesAsync: jest.fn(async () => undefined),
-  stopLocationUpdatesAsync: jest.fn(async () => undefined),
-  watchPositionAsync: jest.fn(async () => ({ remove: jest.fn() })),
-}));
-
-jest.mock("expo-task-manager", () => ({
-  __esModule: true,
-  defineTask: jest.fn(),
-  isTaskDefined: jest.fn(() => false),
-  isTaskRegisteredAsync: jest.fn(async () => false),
-  unregisterTaskAsync: jest.fn(async () => undefined),
-}));
-
 jest.mock(
   "app.config",
   () => ({

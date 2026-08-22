@@ -8,7 +8,7 @@ const service = {
   selectActivityFromPayload: jest.fn(),
 };
 
-let activityStatusMock = { activityCategory: "run", gpsRecordingEnabled: true };
+let activityStatusMock = { activityCategory: "run", gpsRecordingEnabled: false };
 let sessionContractMock: {
   editing: { canEditActivity: boolean; canEditGps: boolean };
   guidance: { hasPlan: boolean };
@@ -89,27 +89,29 @@ const ActivitySelectionScreen = require("../activity").default;
 describe("record activity screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    activityStatusMock = { activityCategory: "run", gpsRecordingEnabled: true };
+    activityStatusMock = { activityCategory: "run", gpsRecordingEnabled: false };
     sessionContractMock = {
       editing: { canEditActivity: true, canEditGps: true },
       guidance: { hasPlan: false },
     };
   });
 
-  it("saves GPS changes from the activity screen", () => {
+  it("omits GPS controls and saves category changes as GPS-free", () => {
     renderNative(<ActivitySelectionScreen />);
 
-    fireEvent.press(screen.getByTestId("record-gps-option-off"));
+    expect(screen.queryByTestId("record-gps-option-on")).toBeNull();
+    expect(screen.queryByTestId("record-gps-option-off")).toBeNull();
+    fireEvent.press(screen.getByTestId("record-activity-option-bike"));
     fireEvent.press(screen.getByTestId("record-activity-save-button"));
 
     expect(service.selectActivityFromPayload).toHaveBeenCalledWith({
-      activity_category: "run",
+      activity_category: "bike",
       gpsRecordingEnabled: false,
     });
     expect(backMock).toHaveBeenCalled();
   });
 
-  it("allows GPS changes when plan locks activity category", () => {
+  it("does not offer a save path when a plan locks activity category", () => {
     sessionContractMock = {
       editing: { canEditActivity: false, canEditGps: true },
       guidance: { hasPlan: true },
@@ -117,12 +119,8 @@ describe("record activity screen", () => {
 
     renderNative(<ActivitySelectionScreen />);
 
-    fireEvent.press(screen.getByTestId("record-gps-option-off"));
-    fireEvent.press(screen.getByTestId("record-activity-save-button"));
-
-    expect(service.selectActivityFromPayload).toHaveBeenCalledWith({
-      activity_category: "run",
-      gpsRecordingEnabled: false,
-    });
+    expect(screen.queryByTestId("record-gps-option-on")).toBeNull();
+    expect(screen.getByTestId("record-activity-save-button").props.disabled).toBe(true);
+    expect(service.selectActivityFromPayload).not.toHaveBeenCalled();
   });
 });

@@ -24,7 +24,6 @@ import { PerformanceBeacon } from "@/lib/performance";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { TelemetryProvider } from "@/lib/providers/TelemetryProvider";
 import { initializeServerConfig, useServerConfig } from "@/lib/server-config";
-import { LocationManager } from "@/lib/services/ActivityRecorder/location";
 import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
 import { incompleteQueueJobReferencesLocalFiles } from "@/lib/services/activitySubmissionQueue";
 import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
@@ -168,9 +167,6 @@ function RootLayout() {
 
         GarminFitEncoder.cleanupOrphanedRecordings().catch((error) => {
           console.warn("Failed to cleanup orphaned FIT recordings:", error);
-        });
-        LocationManager.cleanupOrphanedBackgroundTracking().catch((error) => {
-          console.warn("Failed to cleanup orphaned background location tracking:", error);
         });
       })
       .catch((error) => {

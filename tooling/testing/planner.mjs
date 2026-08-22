@@ -516,7 +516,7 @@ function ownerFor(relativePath) {
 function commandIdentity(test) {
   const owner = ownerFor(test.path);
   if (
-    /^tooling\/(?:architecture|testing)\/[^/]+\.test\.mjs$/.test(test.path) ||
+    /^tooling\/(?:architecture|qa|testing)\/[^/]+\.test\.mjs$/.test(test.path) ||
     /^tooling\/[^/]+\/[^/]+\.self-test\.mjs$/.test(test.path)
   ) {
     return { owner, script: "node:test", runner: "node:test" };

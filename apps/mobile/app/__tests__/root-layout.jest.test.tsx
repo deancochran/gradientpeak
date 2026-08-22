@@ -6,7 +6,6 @@ import { renderNative, screen } from "../../test/render-native";
 const replaceMock = jest.fn();
 const cleanupStreamRecordingsMock = jest.fn(async () => undefined);
 const cleanupFitRecordingsMock = jest.fn(async () => undefined);
-const cleanupLocationTrackingMock = jest.fn(async () => undefined);
 type AuthStoreState = {
   clearSession: () => Promise<void>;
   initialize: () => Promise<void>;
@@ -145,11 +144,6 @@ jest.mock("@/lib/server-config", () => ({
 jest.mock("@/lib/services/ActivityRecorder/StreamBuffer", () => ({
   __esModule: true,
   StreamBuffer: { cleanupOrphanedRecordings: cleanupStreamRecordingsMock },
-}));
-
-jest.mock("@/lib/services/ActivityRecorder/location", () => ({
-  __esModule: true,
-  LocationManager: { cleanupOrphanedBackgroundTracking: cleanupLocationTrackingMock },
 }));
 
 jest.mock("@/lib/services/activitySubmissionQueue", () => ({

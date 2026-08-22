@@ -2,7 +2,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { clearMobileAuthSessionCacheForContractEpoch } from "@/lib/auth/client";
 import { clearSecureAuthStateForContractEpoch } from "@/lib/auth/secure-session-cache";
 import { clearAllOnboardingRecoveryForContractEpoch } from "@/lib/onboarding/onboarding-recovery";
-import { LocationManager } from "@/lib/services/ActivityRecorder/location";
 import { resetRecordingEvidenceJournal } from "@/lib/services/ActivityRecorder/recordingEvidenceJournal";
 import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
 import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
@@ -26,7 +25,6 @@ const initialize = createContractEpochInitializer({
   resetRecordingEvidence: resetRecordingEvidenceJournal,
   cleanupStreamFiles: () => StreamBuffer.cleanupOrphanedRecordings(),
   cleanupFitFiles: () => GarminFitEncoder.cleanupOrphanedRecordings(),
-  cleanupLocation: () => LocationManager.cleanupOrphanedBackgroundTracking(),
 });
 
 let initialization: Promise<"current" | "reset"> | undefined;

@@ -1,8 +1,4 @@
 import type { ActivityTrainingEffect } from "@repo/core/athlete-derived-state";
-import {
-  MAX_DAILY_AGGREGATE_COMMON_LOAD,
-  MAX_TRAINING_STIMULUS_COMMON_LOAD,
-} from "@repo/core/athlete-intelligence";
 import type { PlannedSessionPrescriptionSnapshot } from "@repo/core/calendar";
 import { GROUP_EVENT_RSVP_STATUSES } from "@repo/core/groups";
 import { type PreferredUnitSystem, preferredUnitSystemValues } from "@repo/core/units";
@@ -29,7 +25,11 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { users } from "../auth-schema";
-import { athleteReadScopeDbValues, organizationRoleKeyDbValues } from "./core-enum-parity";
+import {
+  athleteReadScopeDbValues,
+  commentsEntityTypeDbValues,
+  organizationRoleKeyDbValues,
+} from "./core-enum-parity";
 
 import {
   activityCategoryEnum,
@@ -63,8 +63,6 @@ import {
 
 const preferredUnitSystemDbValues =
   preferredUnitSystemValues satisfies readonly PreferredUnitSystem[];
-const maxTrainingStimulusCommonLoadSql = sql.raw(String(MAX_TRAINING_STIMULUS_COMMON_LOAD));
-const maxDailyAggregateCommonLoadSql = sql.raw(String(MAX_DAILY_AGGREGATE_COMMON_LOAD));
 
 export const profiles = pgTable(
   "profiles",
@@ -1689,7 +1687,6 @@ export const activitySegments = pgTable(
       "activity_segments_timing_coverage_values_check",
       sql`(${table.timing_coverage} = 'complete' and ${table.active_ms} is not null and ${table.moving_ms} is not null) or (${table.timing_coverage} = 'partial' and num_nonnulls(${table.active_ms}, ${table.moving_ms}) > 0) or (${table.timing_coverage} = 'unavailable' and ${table.active_ms} is null and ${table.moving_ms} is null)`,
     ),
-    index("idx_activity_segments_activity").on(table.activity_id, table.ordinal),
     index("idx_activity_segments_category")
       .on(table.activity_category)
       .where(sql`${table.activity_category} is not null`),
@@ -1800,10 +1797,6 @@ export const activityTrainingEffects = pgTable(
       name: "activity_training_effects_analysis_revision_fkey",
     }).onDelete("cascade"),
     check(
-      "activity_training_effects_contract_version_check",
-      sql`${table.contract_version} = 'athlete-derived-state-persistence-v1'`,
-    ),
-    check(
       "activity_training_effects_analysis_revision_check",
       sql`${table.activity_analysis_revision} > 0`,
     ),
@@ -1818,7 +1811,7 @@ export const activityTrainingEffects = pgTable(
     ),
     check(
       "activity_training_effects_common_load_check",
-      sql`${table.common_load} between 0 and ${maxTrainingStimulusCommonLoadSql} and ${table.common_load} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
+      sql`${table.common_load} >= 0 and ${table.common_load} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
     ),
     check(
       "activity_training_effects_confidence_check",
@@ -1868,12 +1861,8 @@ export const dailyTrainingLoad = pgTable(
   (table) => [
     primaryKey({ columns: [table.profile_id, table.planning_date, table.source_revision] }),
     check(
-      "daily_training_load_contract_version_check",
-      sql`${table.contract_version} = 'athlete-derived-state-persistence-v1'`,
-    ),
-    check(
       "daily_training_load_common_load_check",
-      sql`${table.common_load} between 0 and ${maxDailyAggregateCommonLoadSql} and ${table.common_load} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
+      sql`${table.common_load} >= 0 and ${table.common_load} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
     ),
     check(
       "daily_training_load_state_check",
@@ -1925,18 +1914,10 @@ export const athleteRecalculationQueue = pgTable(
   (table) => [
     unique("athlete_recalculation_queue_idempotency_unique").on(table.idempotency_key),
     check(
-      "athlete_recalculation_queue_contract_version_check",
-      sql`${table.contract_version} = 'athlete-derived-state-persistence-v1'`,
-    ),
-    check(
       "athlete_recalculation_queue_idempotency_check",
       sql`${table.idempotency_key} = 'athlete-recalculation:' || ${table.profile_id}::text`,
     ),
     check("athlete_recalculation_queue_source_revision_check", sql`${table.source_revision} >= 0`),
-    check(
-      "athlete_recalculation_queue_reasons_check",
-      sql`cardinality(${table.reasons}) between 1 and 9 and ${table.reasons} = array_remove(array[case when 'activity_created' = any(${table.reasons}) then 'activity_created'::athlete_recalculation_reason end, case when 'activity_changed' = any(${table.reasons}) then 'activity_changed'::athlete_recalculation_reason end, case when 'activity_deleted' = any(${table.reasons}) then 'activity_deleted'::athlete_recalculation_reason end, case when 'analysis_replaced' = any(${table.reasons}) then 'analysis_replaced'::athlete_recalculation_reason end, case when 'threshold_changed' = any(${table.reasons}) then 'threshold_changed'::athlete_recalculation_reason end, case when 'import_completed' = any(${table.reasons}) then 'import_completed'::athlete_recalculation_reason end, case when 'algorithm_changed' = any(${table.reasons}) then 'algorithm_changed'::athlete_recalculation_reason end, case when 'timezone_changed' = any(${table.reasons}) then 'timezone_changed'::athlete_recalculation_reason end, case when 'explicit_repair' = any(${table.reasons}) then 'explicit_repair'::athlete_recalculation_reason end], null)`,
-    ),
     index("athlete_recalculation_queue_pending_idx").on(table.requested_at, table.profile_id),
   ],
 );
@@ -2000,10 +1981,6 @@ export const activityFileIngestions = pgTable(
       foreignColumns: [integrations.id, integrations.profile_id],
       name: "activity_file_ingestions_integration_profile_fkey",
     }).onDelete("restrict"),
-    check(
-      "activity_file_ingestions_contract_version_check",
-      sql`${table.contract_version} = 'activity-intake-v1'`,
-    ),
     check(
       "activity_file_ingestions_operation_id_check",
       sql`${table.operation_id} ~ '^[A-Za-z0-9_-]{32,128}$'`,
@@ -2128,10 +2105,6 @@ export const plannedSessions = pgTable(
       foreignColumns: [groupEvents.id],
       name: "planned_sessions_group_event_fkey",
     }).onDelete("set null"),
-    check(
-      "planned_sessions_contract_version_check",
-      sql`${table.contract_version} = 'planned-session-v1'`,
-    ),
     check("planned_sessions_revision_check", sql`${table.session_revision} > 0`),
     check(
       "planned_sessions_idempotency_length_check",
@@ -2279,30 +2252,6 @@ export const activityEfforts = pgTable(
       "activity_efforts_value_finite_positive_check",
       sql`${table.value} > 0 and ${table.value} not in ('NaN'::real, 'Infinity'::real, '-Infinity'::real)`,
     ),
-    check(
-      "activity_efforts_supported_combination_check",
-      sql`(${table.activity_category} = 'bike' and ${table.effort_type} = 'power' and ${table.source_series} = 'power') or (${table.activity_category} = 'run' and ${table.effort_type} = 'speed' and ${table.source_series} in ('grade_adjusted_speed', 'raw_speed')) or (${table.activity_category} = 'swim' and ${table.effort_type} = 'speed' and ${table.source_series} = 'swim_speed') or (${table.activity_category} in ('bike', 'run', 'swim') and ${table.effort_type}::text = 'heart_rate' and ${table.source_series} = 'heart_rate')`,
-    ),
-    check(
-      "activity_efforts_unit_compatibility_check",
-      sql`(${table.activity_category} = 'bike' and ${table.effort_type} = 'power' and ${table.unit} = 'watts') or (${table.activity_category} in ('run', 'swim') and ${table.effort_type} = 'speed' and ${table.unit} = 'meters_per_second') or (${table.effort_type}::text = 'heart_rate' and ${table.unit} = 'bpm')`,
-    ),
-    check(
-      "activity_efforts_bike_power_max_check",
-      sql`${table.activity_category} <> 'bike' or ${table.effort_type} <> 'power' or ${table.value} <= 3000`,
-    ),
-    check(
-      "activity_efforts_run_speed_bounds_check",
-      sql`${table.activity_category} <> 'run' or ${table.effort_type} <> 'speed' or (${table.value} >= 0.3 and ${table.value} <= 13)`,
-    ),
-    check(
-      "activity_efforts_swim_speed_bounds_check",
-      sql`${table.activity_category} <> 'swim' or ${table.effort_type} <> 'speed' or (${table.value} >= 0.1 and ${table.value} <= 3)`,
-    ),
-    check(
-      "activity_efforts_heart_rate_bounds_check",
-      sql`${table.effort_type}::text <> 'heart_rate' or ${table.value} between 30 and 240`,
-    ),
     check("activity_efforts_method_not_blank_check", sql`btrim(${table.method}) <> ''`),
     check(
       "activity_efforts_calculation_version_not_blank_check",
@@ -2375,10 +2324,6 @@ export const thresholdEvaluations = pgTable(
     check(
       "threshold_evaluations_outcome_check",
       sql`(${table.outcome} = 'qualified' and ${table.value} is not null and ${table.confidence} is not null and ${table.rejection_reason} is null) or (${table.outcome} = 'rejected' and ${table.value} is null and ${table.confidence} is null and ${table.rejection_reason} is not null)`,
-    ),
-    check(
-      "threshold_evaluations_identity_check",
-      sql`(${table.activity_category} = 'bike' and ${table.metric} = 'power' and ${table.method} = 'bike_power_30m' and ${table.unit} = 'watts') or (${table.activity_category} = 'run' and ${table.metric} = 'speed' and ${table.method} = 'run_speed_30m' and ${table.unit} = 'meters_per_second') or (${table.activity_category} = 'swim' and ${table.metric} = 'speed' and ${table.method} = 'swim_speed_15m' and ${table.unit} = 'meters_per_second')`,
     ),
     check(
       "threshold_evaluations_value_finite_positive_check",
@@ -2467,10 +2412,6 @@ export const thresholdEvaluationEfforts = pgTable(
       ],
       name: "threshold_evaluation_efforts_effort_ownership_fkey",
     }).onDelete("cascade"),
-    check(
-      "threshold_evaluation_efforts_metric_check",
-      sql`(${table.metric} = 'power' and ${table.activity_category} = 'bike' and ${table.effort_type} = 'power' and ${table.source_series} = 'power') or (${table.metric} = 'speed' and ${table.activity_category} = 'run' and ${table.effort_type} = 'speed' and ${table.source_series} in ('grade_adjusted_speed', 'raw_speed')) or (${table.metric} = 'speed' and ${table.activity_category} = 'swim' and ${table.effort_type} = 'speed' and ${table.source_series} = 'swim_speed')`,
-    ),
     check("threshold_evaluation_efforts_ordinal_check", sql`${table.ordinal} between 0 and 63`),
     check(
       "threshold_evaluation_efforts_primary_ordinal_check",
@@ -2545,10 +2486,6 @@ export const thresholds = pgTable(
       name: "thresholds_supersedes_fkey",
     }).onDelete("no action"),
     check("thresholds_qualified_evaluation_check", sql`${table.evaluation_outcome} = 'qualified'`),
-    check(
-      "thresholds_identity_check",
-      sql`(${table.activity_category} = 'bike' and ${table.metric} = 'power' and ${table.method} = 'bike_power_30m' and ${table.unit} = 'watts') or (${table.activity_category} = 'run' and ${table.metric} = 'speed' and ${table.method} = 'run_speed_30m' and ${table.unit} = 'meters_per_second') or (${table.activity_category} = 'swim' and ${table.metric} = 'speed' and ${table.method} = 'swim_speed_15m' and ${table.unit} = 'meters_per_second')`,
-    ),
     check(
       "thresholds_value_finite_positive_check",
       sql`${table.value} > 0 and ${table.value} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
@@ -2634,14 +2571,6 @@ export const thresholdEvidence = pgTable(
       name: "threshold_evidence_activity_owner_fkey",
     }).onDelete("cascade"),
     check(
-      "threshold_evidence_contract_version_check",
-      sql`${table.contract_version} = 'athlete-derived-state-persistence-v1'`,
-    ),
-    check(
-      "threshold_evidence_identity_check",
-      sql`(${table.activity_category} = 'bike' and ${table.metric} = 'power' and ${table.unit} = 'watts' and ${table.method} = 'bike_power_30m' and ${table.source_series_metric} = 'power') or (${table.activity_category} = 'run' and ${table.metric} = 'speed' and ${table.unit} = 'meters_per_second' and ${table.method} = 'run_speed_30m' and ${table.source_series_metric} in ('speed', 'grade_adjusted_speed')) or (${table.activity_category} = 'swim' and ${table.metric} = 'speed' and ${table.unit} = 'meters_per_second' and ${table.method} = 'swim_speed_15m' and ${table.source_series_metric} = 'speed')`,
-    ),
-    check(
       "threshold_evidence_value_check",
       sql`${table.value} > 0 and ${table.value} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
     ),
@@ -2656,11 +2585,6 @@ export const thresholdEvidence = pgTable(
     check(
       "threshold_evidence_conversion_factor_check",
       sql`${table.conversion_factor} > 0 and ${table.conversion_factor} not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)`,
-    ),
-    check("threshold_evidence_policy_check", sql`${table.policy_version} = 'threshold-policy-v1'`),
-    check(
-      "threshold_evidence_plausibility_check",
-      sql`${table.plausibility_version} = 'threshold-plausibility-v1'`,
     ),
     check(
       "threshold_evidence_calculation_version_check",
@@ -2948,83 +2872,6 @@ export const profileGoals = pgTable(
         and (not (${table.target_payload} ? 'activity_category')
           or (jsonb_typeof(${table.target_payload}->'activity_category') = 'string'
             and ${table.target_payload}->>'activity_category' = ${table.activity_category}::text))`,
-    ),
-    check(
-      "profile_goals_event_performance_payload_check",
-      sql`${table.target_payload}->>'type' <> 'event_performance' or (
-        ${table.target_payload} - array['type', 'activity_category', 'distance_m', 'target_time_s', 'target_speed_mps', 'environment', 'tolerance_pct']::text[] = '{}'::jsonb
-        and ${table.target_payload} ? 'activity_category'
-        and ${table.target_payload} ? 'distance_m'
-        and case when jsonb_typeof(${table.target_payload}->'distance_m') = 'number'
-          then (${table.target_payload}->>'distance_m')::numeric > 0 else false end
-        and (${table.target_payload} ? 'target_time_s' or ${table.target_payload} ? 'target_speed_mps')
-        and (not (${table.target_payload} ? 'target_time_s') or case
-          when jsonb_typeof(${table.target_payload}->'target_time_s') = 'number'
-          then (${table.target_payload}->>'target_time_s')::numeric > 0
-            and trunc((${table.target_payload}->>'target_time_s')::numeric) = (${table.target_payload}->>'target_time_s')::numeric
-          else false end)
-        and (not (${table.target_payload} ? 'target_speed_mps') or case
-          when jsonb_typeof(${table.target_payload}->'target_speed_mps') = 'number'
-          then (${table.target_payload}->>'target_speed_mps')::numeric > 0 else false end)
-        and (not (${table.target_payload} ? 'environment') or (
-          jsonb_typeof(${table.target_payload}->'environment') = 'string'
-          and char_length(btrim(${table.target_payload}->>'environment')) between 1 and 80))
-        and (not (${table.target_payload} ? 'tolerance_pct') or case
-          when jsonb_typeof(${table.target_payload}->'tolerance_pct') = 'number'
-          then (${table.target_payload}->>'tolerance_pct')::numeric between 0 and 1 else false end)
-      )`,
-    ),
-    check(
-      "profile_goals_threshold_payload_check",
-      sql`${table.target_payload}->>'type' <> 'threshold' or (
-        ${table.target_payload} - array['type', 'metric', 'activity_category', 'value', 'test_duration_s', 'tolerance_pct']::text[] = '{}'::jsonb
-        and ${table.target_payload} ? 'metric'
-        and jsonb_typeof(${table.target_payload}->'metric') = 'string'
-        and ${table.target_payload}->>'metric' in ('pace', 'power', 'hr')
-        and ${table.target_payload} ? 'value'
-        and case when jsonb_typeof(${table.target_payload}->'value') = 'number'
-          then (${table.target_payload}->>'value')::numeric > 0 else false end
-        and (not (${table.target_payload} ? 'test_duration_s') or case
-          when jsonb_typeof(${table.target_payload}->'test_duration_s') = 'number'
-          then (${table.target_payload}->>'test_duration_s')::numeric > 0
-            and trunc((${table.target_payload}->>'test_duration_s')::numeric) = (${table.target_payload}->>'test_duration_s')::numeric
-          else false end)
-        and (not (${table.target_payload} ? 'tolerance_pct') or case
-          when jsonb_typeof(${table.target_payload}->'tolerance_pct') = 'number'
-          then (${table.target_payload}->>'tolerance_pct')::numeric between 0 and 1 else false end)
-      )`,
-    ),
-    check(
-      "profile_goals_completion_payload_check",
-      sql`${table.target_payload}->>'type' <> 'completion' or (
-        ${table.target_payload} - array['type', 'activity_category', 'distance_m', 'duration_s']::text[] = '{}'::jsonb
-        and (${table.target_payload} ? 'distance_m' or ${table.target_payload} ? 'duration_s')
-        and (not (${table.target_payload} ? 'distance_m') or case
-          when jsonb_typeof(${table.target_payload}->'distance_m') = 'number'
-          then (${table.target_payload}->>'distance_m')::numeric > 0 else false end)
-        and (not (${table.target_payload} ? 'duration_s') or case
-          when jsonb_typeof(${table.target_payload}->'duration_s') = 'number'
-          then (${table.target_payload}->>'duration_s')::numeric > 0
-            and trunc((${table.target_payload}->>'duration_s')::numeric) = (${table.target_payload}->>'duration_s')::numeric
-          else false end)
-      )`,
-    ),
-    check(
-      "profile_goals_consistency_payload_check",
-      sql`${table.target_payload}->>'type' <> 'consistency' or (
-        ${table.target_payload} - array['type', 'target_sessions_per_week', 'target_weeks']::text[] = '{}'::jsonb
-        and (${table.target_payload} ? 'target_sessions_per_week' or ${table.target_payload} ? 'target_weeks')
-        and (not (${table.target_payload} ? 'target_sessions_per_week') or case
-          when jsonb_typeof(${table.target_payload}->'target_sessions_per_week') = 'number'
-          then (${table.target_payload}->>'target_sessions_per_week')::numeric > 0
-            and trunc((${table.target_payload}->>'target_sessions_per_week')::numeric) = (${table.target_payload}->>'target_sessions_per_week')::numeric
-          else false end)
-        and (not (${table.target_payload} ? 'target_weeks') or case
-          when jsonb_typeof(${table.target_payload}->'target_weeks') = 'number'
-          then (${table.target_payload}->>'target_weeks')::numeric > 0
-            and trunc((${table.target_payload}->>'target_weeks')::numeric) = (${table.target_payload}->>'target_weeks')::numeric
-          else false end)
-      )`,
     ),
   ],
 );
@@ -3593,14 +3440,16 @@ export const likes = pgTable(
   ],
 );
 
+const commentsEntityTypeCheckValues = sql.raw(
+  commentsEntityTypeDbValues.map((value) => `'${value}'`).join(", "),
+);
+
 export const comments = pgTable(
   "comments",
   {
     id: uuid("id").primaryKey(),
     profile_id: uuid("profile_id").references(() => profiles.id),
-    entity_type: text("entity_type", {
-      enum: ["activity", "training_plan", "activity_plan", "route", "event"],
-    }).notNull(),
+    entity_type: text("entity_type", { enum: commentsEntityTypeDbValues }).notNull(),
     entity_id: uuid("entity_id").notNull(),
     content: text("content").notNull(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
@@ -3612,7 +3461,7 @@ export const comments = pgTable(
     index("idx_comments_created_at").on(table.created_at),
     check(
       "comments_entity_type_check",
-      sql`${table.entity_type} in ('activity', 'training_plan', 'activity_plan', 'route', 'event')`,
+      sql`${table.entity_type} in (${commentsEntityTypeCheckValues})`,
     ),
   ],
 );

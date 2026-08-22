@@ -40,16 +40,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       supportsTablet: true,
       infoPlist: {
         UIBackgroundModes: [
-          "location",
           "fetch",
           "background-processing",
           "bluetooth-central",
           "remote-notification", // needed for background notifications
         ],
         NSBluetoothAlwaysUsageDescription: "This app needs Bluetooth to connect to your devices.",
-        NSLocationAlwaysAndWhenInUseUsageDescription:
-          "This app needs location access to track activities even when the app is in the background.",
-        NSLocationWhenInUseUsageDescription: "This app needs your location to track activities.",
         NSMotionUsageDescription: "This app needs motion access to track your activity.",
         NSHealthShareUsageDescription:
           "This app needs access to your health data to sync your activities and biometrics.",
@@ -69,11 +65,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       permissions: [
         "android.permission.BLUETOOTH_SCAN",
         "android.permission.BLUETOOTH_CONNECT",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_BACKGROUND_LOCATION",
         "android.permission.ACTIVITY_RECOGNITION",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_LOCATION",
         "android.permission.WAKE_LOCK",
         "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
         "android.permission.POST_NOTIFICATIONS",
@@ -131,19 +124,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           imageWidth: 200,
           resizeMode: "contain",
           backgroundColor: "#ffffff",
-        },
-      ],
-      [
-        "expo-location",
-        {
-          locationAlwaysAndWhenInUsePermission:
-            "Allow $(PRODUCT_NAME) to use your location to track activities.",
-          locationAlwaysPermission:
-            "Allow $(PRODUCT_NAME) to track your location even when the app is in the background.",
-          locationWhenInUsePermission:
-            "Allow $(PRODUCT_NAME) to use your location to track activities.",
-          isAndroidBackgroundLocationEnabled: true,
-          isAndroidForegroundServiceEnabled: true,
         },
       ],
       [

@@ -435,6 +435,7 @@ test("command mapping uses package scripts and only enables runtime explicitly",
     { kind: "unit", path: "packages/core/src/features/x/a.test.ts" },
     { kind: "native", path: "apps/mobile/features/x/a.native.test.tsx" },
     { kind: "playwright", path: "apps/web/e2e/features/x.spec.ts" },
+    { kind: "unit", path: "tooling/qa/profiles.test.mjs" },
     { kind: "unit", path: "tooling/testing/planner.test.mjs" },
   ];
 
@@ -451,8 +452,8 @@ test("command mapping uses package scripts and only enables runtime explicitly",
     },
     {
       command: "node",
-      args: ["--test", "tooling/testing/planner.test.mjs"],
-      tests: ["tooling/testing/planner.test.mjs"],
+      args: ["--test", "tooling/qa/profiles.test.mjs", "tooling/testing/planner.test.mjs"],
+      tests: ["tooling/qa/profiles.test.mjs", "tooling/testing/planner.test.mjs"],
     },
   ]);
   assert.equal(commandsForTests(tests, { runtime: true }).length, 4);
@@ -488,9 +489,10 @@ test("Auth uses Vitest, DB self-running tests use one safe tsx command each", ()
   );
 });
 
-test("architecture and testing mjs tests use node:test while tooling fixtures are ignored", async () => {
+test("architecture, QA, and testing mjs tests use node:test while tooling fixtures are ignored", async () => {
   const root = await fixture([
     "tooling/architecture/check-architecture.test.mjs",
+    "tooling/qa/profiles.test.mjs",
     "tooling/testing/planner.test.mjs",
     "tooling/architecture/fixtures/example/missing.test.ts",
   ]);
@@ -498,7 +500,11 @@ test("architecture and testing mjs tests use node:test while tooling fixtures ar
 
   assert.deepEqual(
     plan.tests.map((entry) => entry.path),
-    ["tooling/architecture/check-architecture.test.mjs", "tooling/testing/planner.test.mjs"],
+    [
+      "tooling/architecture/check-architecture.test.mjs",
+      "tooling/qa/profiles.test.mjs",
+      "tooling/testing/planner.test.mjs",
+    ],
   );
   assert.deepEqual(plan.commands, [
     {
@@ -506,10 +512,12 @@ test("architecture and testing mjs tests use node:test while tooling fixtures ar
       args: [
         "--test",
         "tooling/architecture/check-architecture.test.mjs",
+        "tooling/qa/profiles.test.mjs",
         "tooling/testing/planner.test.mjs",
       ],
       tests: [
         "tooling/architecture/check-architecture.test.mjs",
+        "tooling/qa/profiles.test.mjs",
         "tooling/testing/planner.test.mjs",
       ],
     },

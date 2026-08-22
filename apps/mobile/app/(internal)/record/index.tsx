@@ -56,9 +56,7 @@ function RecordScreen() {
         onClose={controller.closeActivityQuickEdit}
         onActivitySelect={controller.handleActivityQuickEdit}
         currentCategory={controller.activityCategory || "run"}
-        currentGpsRecordingEnabled={controller.gpsRecordingEnabled}
         canEditActivity={controller.sessionContract?.editing.canEditActivity ?? true}
-        canEditGps={controller.sessionContract?.editing.canEditGps ?? true}
       />
 
       <ResourcePickerModal
@@ -114,12 +112,10 @@ function RecordScreen() {
 
       <RecordingLiveCockpit
         activityCategory={controller.activityCategory}
-        gpsRecordingEnabled={controller.gpsRecordingEnabled}
         hasPlan={controller.hasPlan}
         sensorCount={controller.sensorCount}
         service={controller.service}
         serviceState={controller.serviceState}
-        onGpsPress={controller.onGpsPress}
         onOpenActivity={controller.onOpenActivity}
         onOpenFtms={controller.onOpenFtms}
         onOpenPlan={controller.onOpenPlan}

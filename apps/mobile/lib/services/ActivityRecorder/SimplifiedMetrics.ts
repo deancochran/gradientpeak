@@ -35,12 +35,6 @@ export interface SimplifiedMetrics {
     cadence?: number;
     speed?: number; // m/s
     temperature?: number;
-    position?: {
-      lat: number;
-      lng: number;
-      alt?: number;
-      heading?: number;
-    };
   };
 
   /** Display format recommendation for speed/pace */
@@ -239,20 +233,6 @@ export function convertToSimplifiedMetrics(
       ...(currentReadings.temperature === undefined
         ? {}
         : { temperature: currentReadings.temperature }),
-      ...(currentReadings.position === undefined
-        ? {}
-        : {
-            position: {
-              lat: currentReadings.position.lat,
-              lng: currentReadings.position.lng,
-              ...(currentReadings.position.altitude === undefined
-                ? {}
-                : { alt: currentReadings.position.altitude }),
-              ...(currentReadings.position.heading === undefined
-                ? {}
-                : { heading: currentReadings.position.heading }),
-            },
-          }),
     },
     display: speedDisplay,
     totals: {

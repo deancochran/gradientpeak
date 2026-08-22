@@ -40,7 +40,6 @@ describe("StreamBuffer SQLite recovery", () => {
     const evidence = journal();
     const buffer = new StreamBuffer("file:///lost-document-stream", evidence);
     buffer.add({ metric: "heart_rate", dataType: "float", value: 140, timestamp: 1000 });
-    buffer.addLocation({ latitude: 10, longitude: 20, altitude: 50, timestamp: 2000 });
     await buffer.flushToFiles();
 
     const { replay, streamBuffer } = await StreamBuffer.reopenForRecovery(
@@ -50,12 +49,7 @@ describe("StreamBuffer SQLite recovery", () => {
     expect(replay.sensorReadings).toEqual([
       expect.objectContaining({ metric: "heart_rate", value: 140 }),
     ]);
-    expect(replay.locations).toEqual([
-      { latitude: 10, longitude: 20, altitude: 50, timestamp: 2000 },
-    ]);
-    // Stream order is envelope-granular: this flush produced sensor, lat/lng,
-    // and altitude envelopes, so recovery advances past all three allocations.
-    expect(streamBuffer.getBufferStatus().chunkIndex).toBe(3);
+    expect(streamBuffer.getBufferStatus().chunkIndex).toBe(1);
     expect(await streamBuffer.aggregateAllChunks()).toEqual(expect.any(Map));
   });
 

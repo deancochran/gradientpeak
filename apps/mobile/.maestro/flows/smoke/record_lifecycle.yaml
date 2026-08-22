@@ -1,4 +1,8 @@
 appId: ${MAESTRO_APP_ID}
+name: Recording lifecycle
+properties:
+  junitId: record.quick_start
+  junitClassname: parity.mobile
 ---
 - runFlow:
     file: ../reusable/authenticated_home.yaml

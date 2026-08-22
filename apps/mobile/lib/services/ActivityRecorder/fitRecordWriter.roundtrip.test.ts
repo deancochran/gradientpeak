@@ -51,6 +51,32 @@ import {
 describe("ActivityRecorder FIT rest round trip", () => {
   beforeEach(() => files.clear());
 
+  it("never writes coordinates from a new in-app recording record", async () => {
+    const records: FitRecord[] = [];
+    await appendActivityRecorderFitRecord({
+      encoder: {
+        addRecord: async (record) => {
+          records.push(record);
+        },
+      },
+      hasPlan: false,
+      currentOccurrence: undefined,
+      timestamp: 1_000,
+      distance: 42,
+      readings: {
+        speed: 3,
+        position: { lat: 40.1, lng: -74.1, altitude: 12 },
+      } as never,
+    });
+
+    expect(records).toEqual([
+      expect.objectContaining({ timestamp: 1_000, distance: 42, speed: 3 }),
+    ]);
+    expect(records[0]).not.toHaveProperty("latitude");
+    expect(records[0]).not.toHaveProperty("longitude");
+    expect(records[0]).not.toHaveProperty("altitude");
+  });
+
   it("round-trips a rewound activity/rest attempt without superseded or rest records", async () => {
     const origin = Date.parse("2026-01-01T10:00:00.000Z");
     const encoder = new GarminFitEncoder("activity-recorder-rest", "profile-1");

@@ -40,7 +40,6 @@ jest.mock("./recordingEvidenceJournal", () => ({
     mockDiscardFinalizedRecordingEvidence(input),
   rollbackRecordingEvidenceSession: jest.fn(async () => undefined),
   quarantineRecordingEvidenceSession: jest.fn(async () => true),
-  recoverHeadlessGpsLocations: jest.fn(async () => []),
 }));
 
 jest.mock("./finalizedArtifactStorage", () => ({
@@ -70,7 +69,6 @@ jest.mock("./checkpointStorage", () => ({
 jest.mock("./StreamBuffer", () => {
   const replay = {
     sensorReadings: [{ metric: "distance", dataType: "float", value: 100, timestamp: 1 }],
-    locations: [],
     fitRecords: [{ timestamp: 1, distance: 100 }],
   };
   return {
@@ -117,7 +115,6 @@ jest.mock("./notification", () => ({
 }));
 
 jest.mock("./LiveMetricsManager", () => ({ LiveMetricsManager: jest.fn() }));
-jest.mock("./location", () => ({ LocationManager: jest.fn() }));
 jest.mock("./sensors", () => ({ SensorsManager: jest.fn() }));
 jest.mock("./trainerControl", () => ({
   TrainerControl: jest.fn(),
@@ -183,6 +180,7 @@ const checkpointStorageMocks = jest.requireMock("./checkpointStorage") as {
   persistRecordingCheckpoint: jest.Mock;
 };
 const evidenceJournalMocks = jest.requireMock("./recordingEvidenceJournal") as {
+  allocateRecordingEvidenceSession: jest.Mock;
   rollbackRecordingEvidenceSession: jest.Mock;
   quarantineRecordingEvidenceSession: jest.Mock;
 };
@@ -473,7 +471,6 @@ describe("ActivityRecorderService lifecycle", () => {
       value: 100,
       timestamp: 1,
     });
-    streamBufferMocks.__replay.locations.splice(0);
     streamBufferMocks.__replay.fitRecords.splice(0, Infinity, { timestamp: 1, distance: 100 });
   });
 
@@ -518,11 +515,11 @@ describe("ActivityRecorderService lifecycle", () => {
       runLthr: 190,
       runPace: 280,
     });
-    let resolvePermission: ((granted: boolean) => void) | undefined;
-    mockPermissionCheck.mockImplementationOnce(
+    let releaseAllocation: (() => void) | undefined;
+    evidenceJournalMocks.allocateRecordingEvidenceSession.mockImplementationOnce(
       () =>
-        new Promise<boolean>((resolve) => {
-          resolvePermission = resolve;
+        new Promise<void>((resolve) => {
+          releaseAllocation = resolve;
         }),
     );
     mutable.getSessionSnapshot.mockReturnValue(null);
@@ -534,9 +531,10 @@ describe("ActivityRecorderService lifecycle", () => {
 
     const startPromise = service.startRecording(startPerformanceTargets);
     await Promise.resolve();
+    await Promise.resolve();
     service.updatePerformanceTargets(delayedPreview);
-    if (!resolvePermission) throw new Error("Recording permission check did not start");
-    resolvePermission(true);
+    if (!releaseAllocation) throw new Error("Recording evidence allocation did not start");
+    releaseAllocation();
     await startPromise;
 
     expect(mutable.sessionController.resetForNewSession).toHaveBeenCalledWith(
@@ -604,7 +602,6 @@ describe("ActivityRecorderService lifecycle", () => {
     const recoveredPlan = recovered.mutable._plan;
     const recoveredCategory = recovered.mutable.selectedActivityCategory;
     recovered.mutable.planExecution.loadPlan = jest.fn();
-    recovered.mutable.syncGpsTrackingForCurrentState = jest.fn(async () => undefined);
     recovered.mutable.persistCurrentCheckpoint = jest.fn();
     checkpointStorageMocks.persistRecordingCheckpoint.mockClear();
     recovered.mutable.emit.mockClear();
@@ -645,7 +642,6 @@ describe("ActivityRecorderService lifecycle", () => {
     expect(recovered.mutable._plan).toBe(recoveredPlan);
     expect(recovered.mutable.selectedActivityCategory).toBe(recoveredCategory);
     expect(recovered.mutable.planExecution.loadPlan).not.toHaveBeenCalled();
-    expect(recovered.mutable.syncGpsTrackingForCurrentState).not.toHaveBeenCalled();
     expect(recovered.mutable.emit).not.toHaveBeenCalled();
     expect(recovered.mutable.persistCurrentCheckpoint).not.toHaveBeenCalled();
     expect(checkpointStorageMocks.persistRecordingCheckpoint).not.toHaveBeenCalled();
@@ -655,7 +651,6 @@ describe("ActivityRecorderService lifecycle", () => {
     expect(recovered.mutable._plan).toBe(newPlan);
     expect(recovered.mutable.selectedActivityCategory).toBe("run");
     expect(recovered.mutable.planExecution.loadPlan).toHaveBeenCalledWith(newPlan);
-    expect(recovered.mutable.syncGpsTrackingForCurrentState).toHaveBeenCalledTimes(1);
     expect(recovered.mutable.emit).toHaveBeenCalledWith("planSelected", {
       plan: newPlan,
       eventId: "event-new",
@@ -707,21 +702,18 @@ describe("ActivityRecorderService lifecycle", () => {
     expect(mutable.liveMetricsManager.startRecording).toHaveBeenCalledTimes(1);
   });
 
-  it("forces requested GPS capture off and starts no location producer", async () => {
+  it("starts GPS-free without consulting operating-system location permission", async () => {
     const { service, mutable } = createService();
     mutable.syncGpsTrackingForCurrentState = jest.fn(async () => undefined);
 
     service.selectActivityFromPayload({
       activity_category: "run",
-      gpsRecordingEnabled: true,
+      gpsRecordingEnabled: false,
     });
     await service.startRecording();
 
     expect(mutable._gpsRecordingEnabled).toBe(false);
-    expect(mockPermissionCheck).toHaveBeenLastCalledWith(false);
-    expect(mutable.locationManager.startForegroundTracking).not.toHaveBeenCalled();
-    expect(mutable.locationManager.startBackgroundTracking).not.toHaveBeenCalled();
-    expect(mutable.locationManager.startHeadingTracking).not.toHaveBeenCalled();
+    expect(mockPermissionCheck).not.toHaveBeenCalled();
   });
 
   it("rolls back every acquired resource when required FIT setup fails", async () => {
@@ -922,11 +914,9 @@ describe("ActivityRecorderService lifecycle", () => {
     expect(mutable.boundaryJournal).toHaveLength(1);
   });
 
-  it("neutralizes trainer load and stops every GPS layer in order before entering rest", async () => {
+  it("neutralizes trainer load before entering rest", async () => {
     const { service, mutable } = createService();
     configureDistancePlan(mutable, true);
-    mutable._gpsRecordingEnabled = true;
-    mutable._gpsAvailable = true;
     mutable.getMovingTime = jest.fn(() => 5_000);
     mutable.getSessionStats = jest.fn(() => ({ movingTime: 5, distance: 50 }));
     mutable.persistCurrentCheckpoint = jest.fn(async () => undefined);
@@ -935,15 +925,6 @@ describe("ActivityRecorderService lifecycle", () => {
     await mutable.planBoundaryTransition;
 
     expect(mutable.trainerControl.neutralizeForBoundary).toHaveBeenCalledTimes(1);
-    expect(mutable.locationManager.stopHeadingTracking).toHaveBeenCalledTimes(1);
-    expect(mutable.locationManager.stopBackgroundTracking).toHaveBeenCalledTimes(1);
-    expect(mutable.locationManager.stopForegroundTracking).toHaveBeenCalledTimes(1);
-    expect(mutable.locationManager.stopHeadingTracking.mock.invocationCallOrder[0]).toBeLessThan(
-      mutable.locationManager.stopBackgroundTracking.mock.invocationCallOrder[0],
-    );
-    expect(mutable.locationManager.stopBackgroundTracking.mock.invocationCallOrder[0]).toBeLessThan(
-      mutable.locationManager.stopForegroundTracking.mock.invocationCallOrder[0],
-    );
     expect(mutable._gpsRecordingEnabled).toBe(false);
     expect(service.currentStep?.role).toBe("rest");
   });
@@ -1738,6 +1719,35 @@ describe("ActivityRecorderService lifecycle", () => {
     expect(service.stepProgress.progress).toBe(0.5);
   });
 
+  it("rejects coordinate-bearing recorder recovery before staging runtime state", async () => {
+    const { service, mutable } = createService();
+    const startedAt = "2026-01-01T10:00:00.000Z";
+    streamBufferMocks.__replay.fitRecords.splice(0, Infinity, {
+      timestamp: Date.parse(startedAt),
+      latitude: 40,
+      longitude: -75,
+    });
+
+    await expect(
+      service.stageRecoveredCheckpoint({
+        schemaVersion: 5,
+        variant: "unplanned",
+        sessionId: "profile-1:coordinate-recovery",
+        profileId: "profile-1",
+        lifecycle: "recording",
+        revision: 1,
+        start: { startedAt, updatedAt: startedAt },
+        draft: { activity_category: "run", gpsMode: "off" },
+        summary: { elapsedSeconds: 0, movingSeconds: 0, distanceMeters: 0 },
+        executionState: { timerEvents: [], manualLapsMs: [] },
+        performanceTargets: createUnavailableAthletePerformanceTargetFacts(startedAt, "profile-1"),
+        streamArtifactPaths: ["/streams"],
+      } as never),
+    ).rejects.toThrow("Coordinate-bearing in-app recording recovery is not supported");
+
+    expect(mutable.liveMetricsManager.stageRecoveredRecording).not.toHaveBeenCalled();
+  });
+
   it("recovers an interrupted finish without resuming and excludes all post-finish evidence", async () => {
     const { service, mutable } = createService();
     const startedAt = Date.parse("2026-01-01T10:00:00.000Z");
@@ -1769,12 +1779,6 @@ describe("ActivityRecorderService lifecycle", () => {
       { metric: "distance", dataType: "float", value: 100, timestamp: finishedAt },
       { metric: "distance", dataType: "float", value: 999, timestamp: finishedAt + 1 },
     );
-    streamBufferMocks.__replay.locations.splice(
-      0,
-      Infinity,
-      { timestamp: finishedAt },
-      { timestamp: finishedAt + 1 },
-    );
     streamBufferMocks.__replay.fitRecords.splice(
       0,
       Infinity,
@@ -1796,7 +1800,6 @@ describe("ActivityRecorderService lifecycle", () => {
       expect.objectContaining({
         replay: {
           sensorReadings: [expect.objectContaining({ value: 100, timestamp: finishedAt })],
-          locations: [{ timestamp: finishedAt }],
           fitRecords: [{ timestamp: finishedAt, distance: 100 }],
         },
         recoveryPausedAt: finishedAt,

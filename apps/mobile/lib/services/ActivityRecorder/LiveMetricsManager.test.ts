@@ -3,7 +3,6 @@ import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performan
 import { RUNNING_NUMERICAL_TRUST_FIXTURES_V1 } from "@repo/core/testing/running-numerical-trust";
 import { SWIMMING_HEART_RATE_NUMERICAL_TRUST_FIXTURES_V1 } from "@repo/core/testing/swimming-heart-rate-numerical-trust";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MOVEMENT_THRESHOLDS } from "./config";
 import { LiveMetricsManager } from "./LiveMetricsManager";
 
 vi.mock("expo-file-system", () => {
@@ -136,8 +135,7 @@ describe("LiveMetricsManager", () => {
     const manager = new LiveMetricsManager({ id: "profile-1" });
 
     await manager.startRecording();
-    manager.ingestLocationData({ latitude: 40, longitude: -75, accuracy: 5, timestamp: 1_000 });
-    manager.ingestLocationData({ latitude: 40.001, longitude: -75, accuracy: 5, timestamp: 2_000 });
+    manager.ingestSensorData({ metric: "power", dataType: "float", value: 200, timestamp: 1_000 });
     manager.ingestSensorData({ metric: "power", dataType: "float", value: 300, timestamp: 2_000 });
 
     expect(manager.getSessionStats().distance).toBeGreaterThan(0);
@@ -148,26 +146,6 @@ describe("LiveMetricsManager", () => {
 
     expect(manager.getSessionStats().distance).toBe(0);
     expect(manager.getSessionStats().maxPower).toBe(0);
-
-    await manager.cleanup();
-  });
-
-  it("ignores poor accuracy GPS fixes for live distance and route buffers", async () => {
-    const manager = new LiveMetricsManager({ id: "profile-1" });
-
-    await manager.startRecording();
-    manager.ingestLocationData({ latitude: 40, longitude: -75, accuracy: 5, timestamp: 1_000 });
-    manager.ingestLocationData({
-      latitude: 40.001,
-      longitude: -75,
-      accuracy: MOVEMENT_THRESHOLDS.GPS_ACCURACY_THRESHOLD_M + 1,
-      timestamp: 2_000,
-    });
-
-    expect(manager.getSessionStats().distance).toBe(0);
-    expect(manager.getCurrentReadings().speed).toBeUndefined();
-    expect(manager.getCurrentReadings().position).toMatchObject({ lat: 40, lng: -75 });
-    expect(manager.getCurrentReadings().lastUpdated).toMatchObject({ position: 1_000 });
 
     await manager.cleanup();
   });
@@ -370,11 +348,10 @@ describe("LiveMetricsManager", () => {
     manager.updatePerformanceTargets(runPerformanceTargets(fixture.thresholdSpeedMetersPerSecond));
 
     await manager.startRecording();
-    manager.ingestLocationData({
-      latitude: 40,
-      longitude: -75,
-      altitude: 100,
-      accuracy: 5,
+    manager.ingestSensorData({
+      metric: "altitude",
+      dataType: "float",
+      value: 100,
       timestamp: Date.now(),
     });
     manager.ingestSensorData({

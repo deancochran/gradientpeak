@@ -207,6 +207,10 @@ function buildMaestroArgs(flowArgs) {
     );
   }
 
+  if (process.env.MAESTRO_JUNIT_OUTPUT) {
+    maestroArgs.push("--format", "JUNIT", "--output", process.env.MAESTRO_JUNIT_OUTPUT);
+  }
+
   maestroArgs.push(...flows);
   return maestroArgs;
 }
@@ -243,7 +247,10 @@ switch (command) {
       console.log([process.env.MAESTRO_BIN || "maestro", ...buildMaestroArgs(args)].join(" "));
       break;
     }
-    run(process.env.MAESTRO_BIN || "maestro", buildMaestroArgs(args));
+  run(process.env.MAESTRO_BIN || "maestro", buildMaestroArgs(args));
+  if (process.env.MAESTRO_JUNIT_OUTPUT) {
+    process.stdout.write(readFileSync(resolve(root, process.env.MAESTRO_JUNIT_OUTPUT), "utf8"));
+  }
     break;
   default:
     console.error(`Unknown Maestro command: ${command}`);

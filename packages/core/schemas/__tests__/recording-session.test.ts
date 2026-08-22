@@ -35,7 +35,7 @@ describe("recording session schemas", () => {
     const result = recordingLaunchIntentSchema.safeParse({
       activityCategory: "bike",
       mode: "planned",
-      gpsMode: "on",
+      gpsMode: "off",
       eventId: null,
       activityPlanId: "550e8400-e29b-41d4-a716-446655440000",
       routeId: "550e8400-e29b-41d4-a716-446655440001",
@@ -65,7 +65,7 @@ describe("recording session schemas", () => {
       activity: {
         activity_category: "bike",
         mode: "planned",
-        gpsMode: "on",
+        gpsMode: "off",
         eventId: "550e8400-e29b-41d4-a716-446655440000",
         activityPlanId: "550e8400-e29b-41d4-a716-446655440001",
         routeId: "550e8400-e29b-41d4-a716-446655440002",

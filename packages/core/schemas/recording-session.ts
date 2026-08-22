@@ -11,7 +11,7 @@ const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 
 export const recordingActivityCategorySchema = canonicalActivityCategorySchema;
 
-export const recordingGpsModeSchema = z.enum(["on", "off"]);
+export const recordingGpsModeSchema = z.literal("off");
 
 export const recordingSessionModeSchema = z.enum(["free", "planned"]);
 
@@ -141,6 +141,7 @@ export const recordingConnectedDeviceSchema = z
       "cadence_sensor",
       "speed_sensor",
       "gps",
+      "generic_sensor",
       "trainer",
     ]),
     sourceTypes: z.array(metricSourceTypeSchema).default([]),

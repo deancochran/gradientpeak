@@ -53,14 +53,14 @@ const sessionContract = {
     category: "plan",
     structure: "plan",
     spatial: "route",
-    locationCapture: "gps",
+    locationCapture: "none",
     trainerExecution: "trainer",
   },
   guidance: {
     hasPlan: true,
     hasStructuredSteps: true,
     hasRoute: true,
-    routeMode: "live_navigation",
+    routeMode: "virtual",
   },
   devices: {
     hasTrainer: true,
@@ -74,7 +74,7 @@ const sessionContract = {
     canEditActivity: false,
     canEditPlan: true,
     canEditRoute: true,
-    canEditGps: true,
+    canEditGps: false,
     locksIdentityAfterStart: true,
   },
   metrics: {
@@ -84,7 +84,7 @@ const sessionContract = {
   surfaces: {
     defaultPrimarySurface: "route",
     availablePrimarySurfaces: ["route", "activity", "trainer", "metrics"],
-    quickActions: ["activity", "gps", "plan", "route", "trainer", "sensors"],
+    quickActions: ["activity", "plan", "route", "trainer", "sensors"],
   },
   validation: {
     consequences: [],
@@ -96,7 +96,6 @@ function renderDock(overrides: Partial<React.ComponentProps<typeof RecordControl
     <RecordControlDock
       activeSurface="route"
       onChangeSurface={jest.fn()}
-      onGpsPress={jest.fn()}
       onOpenActivity={jest.fn()}
       onOpenFtms={jest.fn()}
       onOpenPlan={jest.fn()}
@@ -117,7 +116,6 @@ function renderDock(overrides: Partial<React.ComponentProps<typeof RecordControl
 describe("RecordControlDock", () => {
   it("renders contract quick actions and routes presses to the matching handlers", () => {
     const onOpenActivity = jest.fn();
-    const onGpsPress = jest.fn();
     const onOpenPlan = jest.fn();
     const onOpenRoute = jest.fn();
     const onOpenFtms = jest.fn();
@@ -125,7 +123,6 @@ describe("RecordControlDock", () => {
 
     renderDock({
       onOpenActivity,
-      onGpsPress,
       onOpenPlan,
       onOpenRoute,
       onOpenFtms,
@@ -133,14 +130,12 @@ describe("RecordControlDock", () => {
     });
 
     fireEvent.press(screen.getByTestId("record-dock-quick-action-activity"));
-    fireEvent.press(screen.getByTestId("record-dock-quick-action-gps"));
     fireEvent.press(screen.getByTestId("record-dock-quick-action-plan"));
     fireEvent.press(screen.getByTestId("record-dock-quick-action-route"));
     fireEvent.press(screen.getByTestId("record-dock-quick-action-trainer"));
     fireEvent.press(screen.getByTestId("record-dock-quick-action-sensors"));
 
     expect(onOpenActivity).toHaveBeenCalledTimes(1);
-    expect(onGpsPress).toHaveBeenCalledTimes(1);
     expect(onOpenPlan).toHaveBeenCalledTimes(1);
     expect(onOpenRoute).toHaveBeenCalledTimes(1);
     expect(onOpenFtms).toHaveBeenCalledTimes(1);
@@ -163,7 +158,6 @@ describe("RecordControlDock", () => {
     renderDock();
 
     const activity = screen.getByTestId("record-dock-quick-action-activity");
-    const gps = screen.getByTestId("record-dock-quick-action-gps");
     const route = screen.getByTestId("record-dock-surface-route");
     const metrics = screen.getByTestId("record-dock-surface-metrics");
 
@@ -171,10 +165,7 @@ describe("RecordControlDock", () => {
       accessibilityLabel: "View locked activity settings",
       accessibilityRole: "button",
     });
-    expect(gps.props).toMatchObject({
-      accessibilityLabel: "Open GPS settings, GPS is on",
-      accessibilityRole: "button",
-    });
+    expect(screen.queryByTestId("record-dock-quick-action-gps")).toBeNull();
     expect(activity.props.className).toContain("h-11");
     expect(activity.props.className).toContain("active:opacity-80");
     expect(route.props).toMatchObject({

@@ -190,7 +190,7 @@ export type ActivityCategory = CanonicalActivityCategory;
 export const ActivityPayloadSchema = z
   .object({
     activity_category: canonicalActivityCategorySchema,
-    gpsRecordingEnabled: z.boolean(),
+    gpsRecordingEnabled: z.literal(false),
     eventId: z.string().optional(),
     plan: recordingServiceActivityPlanSchema.optional(),
   })

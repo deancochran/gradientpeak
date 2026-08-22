@@ -75,7 +75,6 @@ export async function appendActivityRecorderFitRecord(input: {
     cadence?: number;
     power?: number;
     temperature?: number;
-    position?: { lat: number; lng: number; altitude?: number };
   };
 }): Promise<boolean> {
   if (input.hasPlan && (!input.currentOccurrence || input.currentOccurrence.role === "rest")) {
@@ -90,11 +89,6 @@ export async function appendActivityRecorderFitRecord(input: {
     power: input.readings.power,
     temperature: input.readings.temperature,
   };
-  if (input.readings.position) {
-    record.latitude = input.readings.position.lat;
-    record.longitude = input.readings.position.lng;
-    record.altitude = input.readings.position.altitude;
-  }
   await input.encoder.addRecord(record);
   return true;
 }

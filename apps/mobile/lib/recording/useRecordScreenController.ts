@@ -199,7 +199,7 @@ export function useRecordScreenController() {
   }, [service, isInitialized, router, recordingLifecycle]);
 
   const handleActivityQuickEdit = React.useCallback(
-    (activity_category: RecordingActivityCategory, _nextGpsRecordingEnabled: boolean) => {
+    (activity_category: RecordingActivityCategory) => {
       if (!service) {
         Alert.alert("Error", "Service not initialized");
         return;
@@ -216,10 +216,7 @@ export function useRecordScreenController() {
         return;
       }
 
-      console.log("[RecordModal] Activity quick edit selected:", {
-        activity_category,
-        gpsRecordingEnabled: false,
-      });
+      console.log("[RecordModal] Activity quick edit selected:", { activity_category });
 
       const payload: ActivityPayload = {
         activity_category: canEditActivity ? activity_category : activityCategory,
@@ -228,7 +225,6 @@ export function useRecordScreenController() {
 
       console.log("[RecordModal] Updating activity configuration:", {
         activity_category,
-        gpsRecordingEnabled: false,
         hasPlan: !!service.plan,
       });
 
@@ -261,42 +257,11 @@ export function useRecordScreenController() {
   }, [apiUtils, user?.id]);
 
   const handleStart = React.useCallback(async () => {
-    console.log("[RecordModal] Start clicked, checking permissions");
+    console.log("[RecordModal] Start clicked");
 
     if (!service) {
       Alert.alert("Error", "Service not initialized");
       return;
-    }
-
-    const hasRequiredPermissions = await service.refreshAndCheckRecordingPermissions(false);
-
-    if (!hasRequiredPermissions) {
-      console.log("[RecordModal] Permissions not granted, requesting permissions");
-
-      try {
-        const granted = await service.refreshAndCheckRecordingPermissions(false);
-
-        if (!granted) {
-          const { requestPermission } = await import("@/lib/services/permissions-check");
-
-          await requestPermission("bluetooth");
-
-          const finalCheck = await service.refreshAndCheckRecordingPermissions(false);
-
-          if (!finalCheck) {
-            Alert.alert(
-              "Permissions Required",
-              "This app requires Bluetooth permission to record connected sensors. Please enable it in your device settings.",
-              [{ text: "OK", style: "cancel" }],
-            );
-            return;
-          }
-        }
-      } catch (error) {
-        console.error("[RecordModal] Error requesting permissions:", error);
-        Alert.alert("Error", "Failed to request permissions. Please try again.");
-        return;
-      }
     }
 
     const startPerformanceTargets = await fetchStartPerformanceTargets();
@@ -343,7 +308,7 @@ export function useRecordScreenController() {
       console.log("[RecordModal] Plan validation warnings:", validation.warnings);
     }
 
-    console.log("[RecordModal] Permissions granted, starting recording");
+    console.log("[RecordModal] Starting recording");
     try {
       await start(startPerformanceTargets);
       console.log("[RecordModal] Recording started successfully");
@@ -387,10 +352,6 @@ export function useRecordScreenController() {
   const onBack = React.useCallback(() => {
     router.back();
   }, [router]);
-
-  const onGpsPress = React.useCallback(() => {
-    Alert.alert("GPS Unavailable", "New live recordings no longer capture location.");
-  }, []);
 
   const onOpenActivity = React.useCallback(() => {
     navigateTo("/record/activity");
@@ -453,7 +414,6 @@ export function useRecordScreenController() {
 
   React.useEffect(() => {
     console.log("[RecordModal] Activity status changed:", {
-      gpsRecordingEnabled: false,
       hasPlan: plan?.hasPlan ?? false,
     });
   }, [plan?.hasPlan]);
@@ -464,7 +424,6 @@ export function useRecordScreenController() {
       activityQuickEditVisible,
       closeActivityQuickEdit,
       disconnectedSensors,
-      gpsRecordingEnabled: false,
       handleActivityQuickEdit,
       handleFinish,
       handleLap,
@@ -473,7 +432,6 @@ export function useRecordScreenController() {
       isFinishing,
       isInitialized,
       onBack,
-      onGpsPress,
       onOpenActivity,
       onOpenFtms,
       onOpenPlan,
@@ -504,7 +462,6 @@ export function useRecordScreenController() {
       isFinishing,
       isInitialized,
       onBack,
-      onGpsPress,
       onOpenActivity,
       onOpenFtms,
       onOpenPlan,

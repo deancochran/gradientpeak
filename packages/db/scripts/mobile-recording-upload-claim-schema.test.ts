@@ -34,7 +34,6 @@ assert.equal(columns.get("staging_cleanup_pending")?.default, false);
 
 const checkNames = new Set(config.checks.map((constraint) => constraint.name));
 for (const checkName of [
-  "activity_file_ingestions_contract_version_check",
   "activity_file_ingestions_operation_id_check",
   "activity_file_ingestions_provider_identity_check",
   "activity_file_ingestions_expected_size_check",

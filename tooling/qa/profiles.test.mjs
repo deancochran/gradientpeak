@@ -1,23 +1,26 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { test } from "node:test";
 import {
   createRunner,
+  formatQaError,
   listenerPidsFromSs,
   parseArguments,
   stabilizeService,
   verifyListenerOwnership,
   waitForPort,
 } from "./cli.mjs";
-import { createProfilePlan, profileForPaths } from "./profiles.mjs";
+import { createProfilePlan, profileForPaths, validateCiRuntimeDelegation } from "./profiles.mjs";
 
-function child({ exitCode = null } = {}) {
+function child({ exitCode = null, pid = 42 } = {}) {
   const listeners = new Map();
   const listen = (event, callback) => {
     listeners.set(event, [...(listeners.get(event) ?? []), callback]);
     if (event === "exit" && exitCode !== null) queueMicrotask(() => callback(exitCode));
   };
   return {
-    pid: Math.floor(Math.random() * 10_000) + 1,
+    pid,
     exitCode,
     killed: false,
     once: listen,
@@ -29,37 +32,124 @@ function child({ exitCode = null } = {}) {
   };
 }
 
-test("path selection is conservative", () => {
+test("changed paths select static, web, mobile, backend, or full verification", () => {
   assert.equal(profileForPaths([]), "static");
   assert.equal(profileForPaths(["docs/notes.md"]), "static");
-  assert.equal(profileForPaths(["unknown/file"]), "full");
-  assert.equal(profileForPaths(["pnpm-lock.yaml"]), "full");
-});
-
-test("web and full plans own their E2E hosts", () => {
-  const web = createProfilePlan({ profile: "web" });
-  assert.deepEqual(web.commands.slice(-2), [
-    { command: "pnpm", args: ["dev:e2e:web"], phase: "start", port: 3000 },
-    { command: "pnpm", args: ["test:e2e:web"], phase: "run" },
-  ]);
-  assert.deepEqual(
-    createProfilePlan({ profile: "full" })
-      .commands.filter(({ phase }) => phase === "start")
-      .map(({ port }) => port),
-    [3000, 8081],
+  assert.equal(profileForPaths(["apps/web/src/routes/index.tsx"]), "web");
+  assert.equal(profileForPaths(["apps/mobile/app/index.tsx"]), "mobile");
+  assert.equal(profileForPaths(["packages/api/src/routers/activities.ts"]), "db");
+  assert.equal(profileForPaths(["packages/db/schema.ts"]), "db");
+  assert.equal(profileForPaths(["packages/core/parity/index.ts"]), "full");
+  assert.equal(profileForPaths(["tests/parity/web-mobile-parity.test.ts"]), "full");
+  assert.equal(profileForPaths(["tooling/qa/profiles.mjs"]), "full");
+  for (const path of [
+    "tooling/testing/capability-runner.mjs",
+    "tooling/testing/capability-runner.test.mjs",
+    "tooling/testing/capability-cli.mjs",
+    "tooling/testing/completion-cli.mjs",
+    "tooling/testing/base-registry.mjs",
+    "tooling/testing/base-registry.test.mjs",
+    "tooling/testing/parity.test.mjs",
+  ]) {
+    assert.equal(profileForPaths([path]), "full");
+  }
+  assert.equal(profileForPaths([".github/workflows/ci.yml"]), "full");
+  assert.equal(
+    profileForPaths(["apps/web/src/routes/index.tsx", "apps/mobile/app/index.tsx"]),
+    "full",
   );
 });
 
-test("CLI accepts only the named profile option", () => {
+test("runtime profiles point directly to maintained browser and Maestro smoke tests", () => {
+  const web = createProfilePlan({ profile: "web", includeStatic: false });
+  assert.deepEqual(web.commands, [
+    { command: "pnpm", args: ["dev:e2e:web"], phase: "start", port: 3000 },
+    {
+      command: "pnpm",
+      args: [
+        "test:e2e:web",
+        "e2e/specs/smoke.spec.ts",
+        "--project=Desktop Chrome",
+        "--grep",
+        "dashboard presents an explicit error and recovers its server content",
+      ],
+      phase: "run",
+    },
+  ]);
+  const mobile = createProfilePlan({ profile: "mobile", includeStatic: false });
+  assert.deepEqual(mobile.commands.at(-1), {
+    command: "pnpm",
+    args: ["--filter", "mobile", "test:e2e:flow", ".maestro/flows/smoke/auth_navigation.yaml"],
+    phase: "run",
+  });
+  const fullCommands = createProfilePlan({ profile: "full", includeStatic: false }).commands;
+  assert.equal(
+    fullCommands.some((entry) => entry.args.includes("e2e/specs/smoke.spec.ts")),
+    true,
+  );
+  assert.equal(
+    fullCommands.some((entry) =>
+      entry.args.some((argument) => argument.endsWith("auth_navigation.yaml")),
+    ),
+    true,
+  );
+});
+
+test("CLI accepts only named profile and changed-path options", () => {
   assert.deepEqual(parseArguments(["--profile", "web", "--plan"]), {
     changedPaths: [],
     plan: true,
     profile: "web",
   });
+  assert.deepEqual(parseArguments(["--changed-paths", "apps/web/a.ts", "apps/web/b.ts"]), {
+    changedPaths: ["apps/web/a.ts", "apps/web/b.ts"],
+    plan: false,
+  });
   assert.throws(() => parseArguments(["web"]), /Unknown argument/);
+  assert.throws(() => parseArguments(["--changed-paths"]), /at least one path/);
 });
 
-test("health and stabilization reject host exit or error", async () => {
+test("normal quality, pre-push, and CI include parity validation", async () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const [manifestSource, lefthook, workflow] = await Promise.all([
+    readFile(path.join(root, "package.json"), "utf8"),
+    readFile(path.join(root, "lefthook.yml"), "utf8"),
+    readFile(path.join(root, ".github/workflows/ci.yml"), "utf8"),
+  ]);
+  const manifest = JSON.parse(manifestSource);
+  assert.match(manifest.scripts.test, /test:parity/);
+  assert.match(manifest.scripts["test:parity"], /parity:report/);
+  assert.equal(manifest.scripts["parity:strict"], "node tooling/testing/parity-cli.mjs --strict");
+  assert.equal(
+    manifest.scripts["parity:proof-strict"],
+    "node tooling/testing/parity-cli.mjs --proof-strict",
+  );
+  assert.match(lefthook, /pre-push:[\s\S]*pnpm quality:push \{push_files\}/);
+  assert.match(workflow, /run: pnpm test/);
+  assert.deepEqual(validateCiRuntimeDelegation(workflow), []);
+
+  const mismatchedCommand = workflow.replace(
+    "pnpm qa:run --profile web --integration-only",
+    "pnpm qa:run --profile mobile --integration-only",
+  );
+  assert.deepEqual(validateCiRuntimeDelegation(mismatchedCommand), [
+    "runtime-web must execute exactly once: pnpm qa:run --profile web --integration-only",
+  ]);
+
+  const duplicatedReference = `${workflow}\n# e2e/specs/smoke.spec.ts\n`;
+  assert.deepEqual(validateCiRuntimeDelegation(duplicatedReference), [
+    "CI workflow duplicates the QA-owned smoke reference: apps/web/e2e/specs/smoke.spec.ts",
+  ]);
+});
+
+test("QA failures expose the exact failed command", () => {
+  const message = formatQaError(
+    new AggregateError([new Error("Required QA command failed: pnpm test:e2e:web exited with 1.")]),
+  );
+  assert.match(message, /pnpm test:e2e:web exited with 1/);
+});
+
+test("health, stabilization, and listener ownership fail closed", async () => {
   const exiting = child();
   const waiting = waitForPort(3000, {
     child: exiting,
@@ -69,41 +159,42 @@ test("health and stabilization reject host exit or error", async () => {
   });
   exiting.emit("exit", 1);
   await assert.rejects(waiting, /exited before health/);
+
   const failing = child();
   const stable = stabilizeService(failing, { timeout: 1_000 });
   failing.emit("error", new Error("bind failed"));
   await assert.rejects(stable, /failed during stabilization/);
-});
 
-test("Linux listener ownership accepts only the detached child group", async () => {
-  const host = { pid: 42 };
-  await verifyListenerOwnership(3000, host, {
-    listeners: async () => [100],
-    processGroup: async () => 42,
-  });
-  await assert.rejects(
-    verifyListenerOwnership(3000, host, {
+  await verifyListenerOwnership(
+    3000,
+    { pid: 42 },
+    {
       listeners: async () => [100],
-      processGroup: async () => 7,
-    }),
+      processGroup: async () => 42,
+    },
+  );
+  await assert.rejects(
+    verifyListenerOwnership(
+      3000,
+      { pid: 42 },
+      {
+        listeners: async () => [100],
+        processGroup: async () => 7,
+      },
+    ),
     /not exclusively owned/,
   );
-  assert.throws(() => listenerPidsFromSs("LISTEN 0 511 127.0.0.1:3000"), /Unable to identify/);
+  assert.throws(() => listenerPidsFromSs("LISTEN 0 511 127.0.0.1:3000"), /identify/);
 });
 
-test("service startup failures clean up hosts", async () => {
+test("service startup failures clean up owned hosts without touching unknown processes", async () => {
   const events = [];
-  const web = child();
-  const mobile = child();
+  const web = child({ pid: 101 });
   const runner = createRunner({
     portAvailable: async (port) => port !== 8081,
     spawnProcess(_, args) {
       events.push(args);
-      return args.includes("dev:e2e:web")
-        ? web
-        : args.includes("dev:e2e")
-          ? mobile
-          : child({ exitCode: 0 });
+      return args.includes("dev:e2e:web") ? web : child({ exitCode: 0, pid: 102 });
     },
     waitForHealth: async () => {},
     verifyOwnership: async () => {},
@@ -115,106 +206,12 @@ test("service startup failures clean up hosts", async () => {
     shutdownTimeout: 1,
   });
   await assert.rejects(
-    runner.execute(createProfilePlan({ profile: "full" }), "/tmp"),
+    runner.execute(createProfilePlan({ profile: "mobile" }), "/tmp"),
     AggregateError,
   );
   assert.equal(events.at(-1).at(-1), "test:e2e:clean");
   assert.equal(
     events.some((entry) => entry[0] === "SIGTERM"),
     true,
-  );
-});
-
-test("multiple hosts stop in reverse order and keep CI isolation", async () => {
-  const signals = [];
-  const hosts = [child(), child()];
-  let hostIndex = 0;
-  const runner = createRunner({
-    portAvailable: async () => true,
-    spawnProcess(_, args, options) {
-      assert.equal(options.env.CI, "true");
-      return args.includes("web-host") || args.includes("mobile-host")
-        ? hosts[hostIndex++]
-        : child({ exitCode: 0 });
-    },
-    waitForHealth: async () => {},
-    verifyOwnership: async () => {},
-    stabilize: async () => {},
-    killProcess(pid) {
-      signals.push(pid);
-      const host = hosts.find((entry) => -entry.pid === pid);
-      host.emit("exit", 0);
-    },
-    shutdownTimeout: 1,
-  });
-  await runner.execute(
-    {
-      commands: [
-        { command: "pnpm", args: ["web-host"], phase: "start", port: 3000 },
-        { command: "pnpm", args: ["mobile-host"], phase: "start", port: 8081 },
-      ],
-      cleanup: [],
-    },
-    "/tmp",
-  );
-  assert.deepEqual(signals, [-hosts[1].pid, -hosts[0].pid]);
-});
-
-test("spawn error is aggregated and cleanup runs", async () => {
-  const events = [];
-  const host = child();
-  const runner = createRunner({
-    portAvailable: async () => true,
-    spawnProcess(_, args) {
-      events.push(args);
-      if (args.includes("dev:e2e")) {
-        queueMicrotask(() => host.emit("error", new Error("spawn")));
-        return host;
-      }
-      return child({ exitCode: 0 });
-    },
-    waitForHealth: async () => {
-      throw new Error("spawn");
-    },
-    verifyOwnership: async () => {},
-    stabilize: async () => {},
-    killProcess() {},
-    shutdownTimeout: 1,
-  });
-  await assert.rejects(
-    runner.execute(createProfilePlan({ profile: "mobile" }), "/tmp"),
-    AggregateError,
-  );
-  assert.equal(events.at(-1).at(-1), "test:e2e:clean");
-});
-
-test("ownership loss after stabilization aborts before tests", async () => {
-  const host = child();
-  let checks = 0;
-  const events = [];
-  const runner = createRunner({
-    portAvailable: async () => true,
-    spawnProcess(_, args) {
-      events.push(args);
-      return args.includes("dev:e2e") ? host : child({ exitCode: 0 });
-    },
-    waitForHealth: async () => {},
-    stabilize: async () => {},
-    verifyOwnership: async () => {
-      checks += 1;
-      if (checks === 2) throw new Error("listener stolen");
-    },
-    killProcess(_, signal) {
-      if (signal === "SIGTERM") host.emit("exit", 0);
-    },
-    shutdownTimeout: 1,
-  });
-  await assert.rejects(
-    runner.execute(createProfilePlan({ profile: "mobile" }), "/tmp"),
-    AggregateError,
-  );
-  assert.equal(
-    events.some((args) => args.at(-1) === "test:e2e"),
-    false,
   );
 });

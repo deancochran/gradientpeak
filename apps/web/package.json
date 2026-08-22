@@ -6,7 +6,7 @@
     "dev": "pnpm run dev:tunnel",
     "dev:local": "concurrently --names app,wahoo-worker --kill-others-on-fail \"pnpm run dev:app\" \"pnpm run dev:wahoo-drain\"",
     "dev:tunnel": "concurrently --names app,wahoo-worker,cloudflared --kill-others-on-fail \"pnpm run dev:app:tunnel\" \"pnpm run dev:wahoo-drain:tunnel\" \"pnpm run dev:webhooks\"",
-    "dev:e2e": "pnpm --filter @repo/db dev:setup && pnpm run test:serve",
+    "dev:e2e": "pnpm --filter @repo/db dev:setup && pnpm run dev:app",
     "dev:app": "pnpm exec dotenv -o -e .env.local -- sh -c 'NODE_OPTIONS=\"--import ./instrument.server.mjs\" vite dev --host 127.0.0.1 --port 3000 --strictPort'",
     "dev:app:tunnel": "pnpm exec dotenv -o -e .env.local -e .env.tunnel -- sh -c 'NODE_OPTIONS=\"--import ./instrument.server.mjs\" vite dev --host 127.0.0.1 --port 3000 --strictPort'",
     "dev:wahoo-drain": "pnpm exec dotenv -o -e .env.local -- node scripts/drain-wahoo-provider-sync.mjs",

@@ -23,7 +23,7 @@ function buildInput(overrides: Partial<RecordingConfigInput> = {}): RecordingCon
 }
 
 describe("RecordingConfigResolver", () => {
-  it("tracks location only when GPS intent and availability are true", () => {
+  it("normalizes every recording configuration to GPS-free", () => {
     const enabledAndAvailable = RecordingConfigResolver.resolve(
       buildInput({ gpsRecordingEnabled: true, gpsAvailable: true }),
     );
@@ -34,24 +34,30 @@ describe("RecordingConfigResolver", () => {
       buildInput({ gpsRecordingEnabled: false, gpsAvailable: true }),
     );
 
-    expect(enabledAndAvailable.capabilities.canTrackLocation).toBe(true);
+    expect(enabledAndAvailable.capabilities.canTrackLocation).toBe(false);
     expect(enabledButUnavailable.capabilities.canTrackLocation).toBe(false);
     expect(disabledAndAvailable.capabilities.canTrackLocation).toBe(false);
+    expect(enabledAndAvailable.input).toMatchObject({
+      gpsRecordingEnabled: false,
+      gpsAvailable: false,
+    });
+    expect(enabledAndAvailable.session.authority.locationCapture).toBe("none");
+    expect(enabledAndAvailable.session.ui.controls.quickActions).not.toContain("gps");
   });
 
-  it("degrades when GPS recording is enabled but unavailable", () => {
+  it("does not create location warnings or controls from legacy GPS input", () => {
     const config = RecordingConfigResolver.resolve(
       buildInput({ gpsRecordingEnabled: true, gpsAvailable: false }),
     );
 
     expect(config.capabilities.isValid).toBe(true);
     expect(config.capabilities.errors).toHaveLength(0);
-    expect(config.capabilities.warnings).toContain(
-      "GPS recording is enabled, but GPS is unavailable. Please enable location services.",
+    expect(config.capabilities.warnings).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/GPS|location/i)]),
     );
-    expect(config.session.devices.gpsIntent).toBe("on");
-    expect(config.session.degraded.gps).toBe("location_unavailable");
-    expect(config.session.ui.backdropMode).toBe("gps_unavailable");
+    expect(config.session.devices.gpsIntent).toBe("off");
+    expect(config.session.degraded.gps).toBeUndefined();
+    expect(config.session.ui.backdropMode).toBe("ambient");
   });
 
   it("does not require GPS when GPS recording is disabled", () => {
@@ -63,7 +69,7 @@ describe("RecordingConfigResolver", () => {
     expect(config.capabilities.errors).toHaveLength(0);
   });
 
-  it("gates route overlay and turn-by-turn by GPS tracking and route", () => {
+  it("never enables route overlay or turn-by-turn location guidance", () => {
     const withGpsAndRoute = RecordingConfigResolver.resolve(
       buildInput({
         gpsRecordingEnabled: true,
@@ -89,8 +95,8 @@ describe("RecordingConfigResolver", () => {
       }),
     );
 
-    expect(withGpsAndRoute.capabilities.shouldShowRouteOverlay).toBe(true);
-    expect(withGpsAndRoute.capabilities.shouldShowTurnByTurn).toBe(true);
+    expect(withGpsAndRoute.capabilities.shouldShowRouteOverlay).toBe(false);
+    expect(withGpsAndRoute.capabilities.shouldShowTurnByTurn).toBe(false);
     expect(withoutGpsTracking.capabilities.shouldShowRouteOverlay).toBe(false);
     expect(withoutGpsTracking.capabilities.shouldShowTurnByTurn).toBe(false);
     expect(withoutGpsTracking.session.guidance.routeMode).toBe("virtual");
@@ -182,26 +188,26 @@ describe("RecordingConfigResolver", () => {
     expect(none.session.surfaces.availablePrimarySurfaces).not.toContain("route");
     expect(none.session.surfaces.defaultPrimarySurface).toBe("metrics");
 
-    expect(live.session.guidance.routeMode).toBe("live_navigation");
+    expect(live.session.guidance.routeMode).toBe("virtual");
     expect(live.session.guidance.hasRouteGeometry).toBe(true);
     expect(live.session.surfaces.availablePrimarySurfaces).toContain("route");
     expect(live.session.surfaces.defaultPrimarySurface).toBe("route");
     expect(live.session.validation.consequences).toContain(
-      "Attached route can provide live route guidance during recording.",
+      "Attached route will use sensor or manual distance without capturing location.",
     );
 
     expect(virtual.session.guidance.routeMode).toBe("virtual");
     expect(virtual.session.surfaces.availablePrimarySurfaces).toContain("route");
     expect(virtual.session.surfaces.defaultPrimarySurface).toBe("route");
     expect(virtual.session.validation.consequences).toContain(
-      "Attached route will be used for virtual guidance only while GPS stays off.",
+      "Attached route will use sensor or manual distance without capturing location.",
     );
 
-    expect(preview.session.guidance.routeMode).toBe("preview");
+    expect(preview.session.guidance.routeMode).toBe("virtual");
     expect(preview.session.surfaces.availablePrimarySurfaces).toContain("route");
     expect(preview.session.surfaces.defaultPrimarySurface).toBe("route");
     expect(preview.session.validation.consequences).toContain(
-      "Attached route is available for preview, but live navigation needs GPS.",
+      "Attached route will use sensor or manual distance without capturing location.",
     );
   });
 
@@ -226,18 +232,18 @@ describe("RecordingConfigResolver", () => {
     expect(ambient.session.ui.floatingPanel.forcedExpanded).toBe(true);
     expect(ambient.session.ui.floatingPanel.canMinimize).toBe(false);
 
-    expect(gpsMap.session.ui.backdropMode).toBe("gps_map");
-    expect(gpsMap.session.ui.floatingPanel.forcedExpanded).toBe(false);
-    expect(gpsMap.session.ui.floatingPanel.canMinimize).toBe(true);
+    expect(gpsMap.session.ui.backdropMode).toBe("ambient");
+    expect(gpsMap.session.ui.floatingPanel.forcedExpanded).toBe(true);
+    expect(gpsMap.session.ui.floatingPanel.canMinimize).toBe(false);
 
-    expect(liveRoute.session.ui.backdropMode).toBe("live_navigation");
-    expect(liveRoute.session.ui.floatingPanel.canMinimize).toBe(true);
+    expect(liveRoute.session.ui.backdropMode).toBe("virtual_route");
+    expect(liveRoute.session.ui.floatingPanel.canMinimize).toBe(false);
 
-    expect(virtualRoute.session.ui.backdropMode).toBe("ambient");
+    expect(virtualRoute.session.ui.backdropMode).toBe("virtual_route");
     expect(virtualRoute.session.ui.floatingPanel.forcedExpanded).toBe(true);
     expect(virtualRoute.session.ui.floatingPanel.canMinimize).toBe(false);
 
-    expect(routePreview.session.ui.backdropMode).toBe("route_preview");
+    expect(routePreview.session.ui.backdropMode).toBe("virtual_route");
     expect(routePreview.session.ui.floatingPanel.forcedExpanded).toBe(true);
     expect(routePreview.session.ui.floatingPanel.canMinimize).toBe(false);
   });
@@ -261,7 +267,7 @@ describe("RecordingConfigResolver", () => {
     expect(config.session.surfaces.availablePrimarySurfaces).not.toContain("route");
   });
 
-  it("keeps route preview valid when GPS is unavailable but geometry exists", () => {
+  it("keeps a static virtual route valid without location availability", () => {
     const config = RecordingConfigResolver.resolve(
       buildInput({
         routeId: "route-1",
@@ -272,12 +278,12 @@ describe("RecordingConfigResolver", () => {
     );
 
     expect(config.capabilities.isValid).toBe(true);
-    expect(config.session.guidance.routeMode).toBe("preview");
-    expect(config.session.ui.backdropMode).toBe("route_preview");
-    expect(config.session.degraded.gps).toBe("location_unavailable");
+    expect(config.session.guidance.routeMode).toBe("virtual");
+    expect(config.session.ui.backdropMode).toBe("virtual_route");
+    expect(config.session.degraded.gps).toBeUndefined();
   });
 
-  it("transitions route and GPS modes without losing unrelated session capability", () => {
+  it("ignores legacy GPS mode input without losing unrelated route capability", () => {
     const routeGpsOn = RecordingConfigResolver.resolve(
       buildInput({
         routeId: "route-1",
@@ -315,26 +321,26 @@ describe("RecordingConfigResolver", () => {
       }),
     );
 
-    expect(routeGpsOn.session.guidance.routeMode).toBe("live_navigation");
-    expect(routeGpsOn.session.ui.backdropMode).toBe("live_navigation");
+    expect(routeGpsOn.session.guidance.routeMode).toBe("virtual");
+    expect(routeGpsOn.session.ui.backdropMode).toBe("virtual_route");
     expect(routeGpsOn.session.ui.floatingPanel.availableCards).toContain("route_progress");
 
     expect(routeGpsOff.session.guidance.routeMode).toBe("virtual");
-    expect(routeGpsOff.session.ui.backdropMode).toBe("ambient");
+    expect(routeGpsOff.session.ui.backdropMode).toBe("virtual_route");
     expect(routeGpsOff.session.devices.gpsIntent).toBe("off");
     expect(routeGpsOff.session.ui.floatingPanel.availableCards).toContain("route_progress");
     expect(routeGpsOff.session.ui.floatingPanel.forcedExpanded).toBe(true);
     expect(routeGpsOff.session.ui.floatingPanel.canMinimize).toBe(false);
 
-    expect(routeGpsDenied.session.guidance.routeMode).toBe("preview");
-    expect(routeGpsDenied.session.ui.backdropMode).toBe("route_preview");
-    expect(routeGpsDenied.session.degraded.gps).toBe("location_unavailable");
+    expect(routeGpsDenied.session.guidance.routeMode).toBe("virtual");
+    expect(routeGpsDenied.session.ui.backdropMode).toBe("virtual_route");
+    expect(routeGpsDenied.session.degraded.gps).toBeUndefined();
     expect(routeGpsDenied.session.ui.floatingPanel.availableCards).toContain("route_progress");
     expect(routeGpsDenied.session.ui.floatingPanel.forcedExpanded).toBe(true);
     expect(routeGpsDenied.session.ui.floatingPanel.canMinimize).toBe(false);
 
     expect(routeDetachedGpsOn.session.guidance.routeMode).toBe("none");
-    expect(routeDetachedGpsOn.session.ui.backdropMode).toBe("gps_map");
+    expect(routeDetachedGpsOn.session.ui.backdropMode).toBe("ambient");
     expect(routeDetachedGpsOn.session.ui.floatingPanel.availableCards).toEqual(["metrics"]);
 
     expect(routeDetachedGpsOff.session.guidance.routeMode).toBe("none");
@@ -387,7 +393,7 @@ describe("RecordingConfigResolver", () => {
       }),
     );
 
-    expect(config.session.guidance.routeMode).toBe("live_navigation");
+    expect(config.session.guidance.routeMode).toBe("virtual");
     expect(config.session.surfaces.defaultPrimarySurface).toBe("route");
     expect(config.session.surfaces.availablePrimarySurfaces).toContain("route");
   });
@@ -573,16 +579,16 @@ describe("RecordingConfigResolver", () => {
 
     expect(config.session.guidance.routeMode).toBe("virtual");
     expect(config.session.validation.consequences).toContain(
-      "Attached route will be used for virtual guidance only while GPS stays off.",
+      "Attached route will use sensor or manual distance without capturing location.",
     );
   });
 
-  it("uses distance as primary metric when GPS tracking is active", () => {
+  it("keeps time primary when legacy GPS input is supplied", () => {
     const config = RecordingConfigResolver.resolve(
       buildInput({ gpsRecordingEnabled: true, gpsAvailable: true }),
     );
 
-    expect(config.capabilities.primaryMetric).toBe("distance");
+    expect(config.capabilities.primaryMetric).toBe("time");
   });
 
   it("prioritizes power metric when power is available", () => {
@@ -600,7 +606,7 @@ describe("RecordingConfigResolver", () => {
     expect(config.capabilities.primaryMetric).toBe("power");
   });
 
-  it("suppresses trainer metrics, control, cards, and quick actions while GPS is enabled", () => {
+  it("keeps trainer support independent from rejected GPS input", () => {
     const config = RecordingConfigResolver.resolve(
       buildInput({
         activityCategory: "bike",
@@ -619,14 +625,14 @@ describe("RecordingConfigResolver", () => {
       }),
     );
 
-    expect(config.capabilities.canTrackPower).toBe(false);
-    expect(config.capabilities.shouldShowTrainerControl).toBe(false);
+    expect(config.capabilities.canTrackPower).toBe(true);
+    expect(config.capabilities.shouldShowTrainerControl).toBe(true);
     expect(config.capabilities.shouldAutoFollowTargets).toBe(false);
-    expect(config.capabilities.primaryMetric).toBe("distance");
-    expect(config.session.devices.hasTrainer).toBe(false);
-    expect(config.session.devices.trainerControllable).toBe(false);
-    expect(config.session.ui.floatingPanel.availableCards).not.toContain("trainer");
-    expect(config.session.surfaces.quickActions).not.toContain("trainer");
+    expect(config.capabilities.primaryMetric).toBe("power");
+    expect(config.session.devices.hasTrainer).toBe(true);
+    expect(config.session.devices.trainerControllable).toBe(true);
+    expect(config.session.ui.floatingPanel.availableCards).toContain("trainer");
+    expect(config.session.surfaces.quickActions).toContain("trainer");
   });
 
   it("uses reps as primary metric for strength", () => {
@@ -650,7 +656,7 @@ describe("RecordingConfigResolver", () => {
     const intent: RecordingLaunchIntent = {
       activityCategory: "bike",
       mode: "planned",
-      gpsMode: "on",
+      gpsMode: "off",
       eventId: null,
       activityPlanId: "550e8400-e29b-41d4-a716-446655440000",
       routeId: "550e8400-e29b-41d4-a716-446655440001",
@@ -683,8 +689,8 @@ describe("RecordingConfigResolver", () => {
 
     expect(config.input.mode).toBe("planned");
     expect(config.input.launchSource).toBe("activity_plan");
-    expect(config.capabilities.shouldShowTrainerControl).toBe(false);
-    expect(config.capabilities.shouldAutoFollowTargets).toBe(false);
+    expect(config.capabilities.shouldShowTrainerControl).toBe(true);
+    expect(config.capabilities.shouldAutoFollowTargets).toBe(true);
     expect(config.session.surfaces.defaultPrimarySurface).toBe("activity");
   });
 

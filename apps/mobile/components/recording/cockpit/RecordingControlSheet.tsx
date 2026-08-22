@@ -6,7 +6,7 @@ import type {
   RecordingState,
 } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
-import { Activity, Bike, CalendarDays, MapPin, Route, Trash2, Watch } from "lucide-react-native";
+import { Activity, Bike, CalendarDays, Route, Trash2, Watch } from "lucide-react-native";
 import React from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,8 +24,6 @@ import {
 
 export interface RecordingControlSheetProps {
   activityCategory: RecordingActivityCategory;
-  gpsRecordingEnabled: boolean;
-  onGpsPress: () => void;
   onOpenActivity: () => void;
   onOpenFtms: () => void;
   onOpenPlan: () => void;
@@ -59,8 +57,6 @@ function getNativeVisualTokens(mode: ResolvedThemeMode) {
 
 export function RecordingControlSheet({
   activityCategory,
-  gpsRecordingEnabled,
-  onGpsPress,
   onOpenActivity,
   onOpenFtms,
   onOpenPlan,
@@ -83,7 +79,6 @@ export function RecordingControlSheet({
   const nativeVisualTokens = getNativeVisualTokens(resolvedTheme);
   const actionHandlers = React.useMemo(
     () => ({
-      onGpsPress,
       onOpenActivity,
       onOpenFtms,
       onOpenPlan,
@@ -91,15 +86,7 @@ export function RecordingControlSheet({
       onOpenSensors,
       sessionContract,
     }),
-    [
-      onGpsPress,
-      onOpenActivity,
-      onOpenFtms,
-      onOpenPlan,
-      onOpenRoute,
-      onOpenSensors,
-      sessionContract,
-    ],
+    [onOpenActivity, onOpenFtms, onOpenPlan, onOpenRoute, onOpenSensors, sessionContract],
   );
   const model = React.useMemo(
     () =>
@@ -185,7 +172,6 @@ export function RecordingControlSheet({
                   item={item}
                   iconColors={nativeVisualTokens.icon}
                   statusLabel={getSetupStatusLabel(item.id, {
-                    gpsRecordingEnabled,
                     sensorCount,
                     sessionContract,
                   })}
@@ -272,7 +258,7 @@ function SetupActionRow({
         className={`flex-1 flex-row items-center gap-3 px-3 py-2 ${
           item.disabled ? "opacity-50" : "active:opacity-80"
         }`}
-        testID={item.id === "gps" ? "recording-gps-toggle" : `recording-setup-action-${item.id}`}
+        testID={`recording-setup-action-${item.id}`}
       >
         <View
           className={`h-9 w-9 items-center justify-center rounded-full ${
@@ -333,8 +319,6 @@ function SetupActionRow({
 
 function getSetupIcon(id: RecordingQuickAction) {
   switch (id) {
-    case "gps":
-      return MapPin;
     case "plan":
       return CalendarDays;
     case "route":
@@ -349,14 +333,11 @@ function getSetupIcon(id: RecordingQuickAction) {
 function getSetupStatusLabel(
   id: RecordingQuickAction,
   params: {
-    gpsRecordingEnabled: boolean;
     sensorCount: number;
     sessionContract: RecordingSessionContract | null;
   },
 ) {
   switch (id) {
-    case "gps":
-      return params.gpsRecordingEnabled ? "On" : "Off";
     case "plan":
       return params.sessionContract?.guidance.hasPlan ? "Attached" : "Add";
     case "route":

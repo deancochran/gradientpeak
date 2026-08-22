@@ -1,15 +1,46 @@
 name: CI
 
 on:
+  merge_group:
   pull_request:
   push:
     branches:
       - dev
       - main
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  ci:
-    name: Basic checks
+  classify:
+    name: Select required runtime checks
+    runs-on: ubuntu-latest
+    outputs:
+      profile: ${{ steps.profile.outputs.profile }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select profile from committed changes
+        id: profile
+        env:
+          QA_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: |
+          if [[ -z "$QA_BASE" || "$QA_BASE" =~ ^0+$ ]]; then
+            QA_BASE="$(git rev-list --max-parents=0 HEAD)"
+          fi
+          profile="$(node tooling/qa/cli.mjs --profile-only --changed --base "$QA_BASE")"
+          echo "profile=$profile" >> "$GITHUB_OUTPUT"
+          echo "Required runtime QA profile: $profile"
+
+  static:
+    name: Static checks
     runs-on: ubuntu-latest
     env:
       CI: true
@@ -29,7 +60,7 @@ jobs:
           node-version: 24.11.1
           cache: pnpm
 
-      - name: Setup Java for Maestro
+      - name: Setup Java for Maestro syntax checks
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -78,3 +109,151 @@ jobs:
 
       - name: Production build
         run: pnpm build
+
+  runtime-db:
+    name: Required database runtime check
+    if: needs.classify.outputs.profile == 'db' || needs.classify.outputs.profile == 'full'
+    needs: classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Enable pnpm from packageManager
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.11.1
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Start required local database
+        run: pnpm --filter @repo/db self-host:up
+      - name: Run required database check
+        run: pnpm qa:run --profile db --integration-only
+      - name: Stop local database
+        if: always()
+        run: pnpm --filter @repo/db self-host:down
+
+  runtime-web:
+    name: Required browser smoke
+    if: needs.classify.outputs.profile == 'web' || needs.classify.outputs.profile == 'full'
+    needs: classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Enable pnpm from packageManager
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.11.1
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run required browser profile
+        run: pnpm qa:run --profile web --integration-only
+      - name: Stop local database
+        if: always()
+        run: pnpm --filter @repo/db self-host:down
+
+  runtime-mobile:
+    name: Required mobile smoke
+    if: needs.classify.outputs.profile == 'mobile' || needs.classify.outputs.profile == 'full'
+    needs: classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: true
+      MAESTRO_DEVICE_ID: emulator-5554
+      MAESTRO_PLATFORM: android
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Enable pnpm from packageManager
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.11.1
+          cache: pnpm
+      - name: Setup Java and Gradle cache
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+      - name: Install Maestro CLI
+        env:
+          MAESTRO_VERSION: 2.3.0
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Enable KVM for the required Android runner
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Build, install, and run required mobile profile
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          script: |
+            command -v maestro >/dev/null || { echo 'Required mobile prerequisite unavailable: Maestro CLI is not installed.' >&2; exit 1; }
+            pnpm --filter mobile exec expo prebuild --platform android --no-install
+            pnpm --filter mobile exec expo run:android --no-bundler
+            pnpm qa:run --profile mobile --integration-only
+      - name: Stop local database
+        if: always()
+        run: pnpm --filter @repo/db self-host:down
+
+  ci:
+    name: Basic checks
+    if: always()
+    needs:
+      - classify
+      - static
+      - runtime-db
+      - runtime-web
+      - runtime-mobile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require static checks and the selected runtime checks
+        env:
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
+          DB_RESULT: ${{ needs.runtime-db.result }}
+          MOBILE_RESULT: ${{ needs.runtime-mobile.result }}
+          PROFILE: ${{ needs.classify.outputs.profile }}
+          STATIC_RESULT: ${{ needs.static.result }}
+          WEB_RESULT: ${{ needs.runtime-web.result }}
+        run: |
+          if [[ "$CLASSIFY_RESULT" != success || "$STATIC_RESULT" != success ]]; then
+            echo "Required static/classification checks did not pass." >&2
+            exit 1
+          fi
+          case "$PROFILE" in
+            static) ;;
+            db) [[ "$DB_RESULT" == success ]] || { echo "Required database runtime check did not pass." >&2; exit 1; } ;;
+            web) [[ "$WEB_RESULT" == success ]] || { echo "Required browser smoke did not pass." >&2; exit 1; } ;;
+            mobile) [[ "$MOBILE_RESULT" == success ]] || { echo "Required mobile smoke did not pass." >&2; exit 1; } ;;
+            full)
+              [[ "$DB_RESULT" == success && "$WEB_RESULT" == success && "$MOBILE_RESULT" == success ]] || {
+                echo "One or more required database/browser/mobile runtime checks did not pass." >&2
+                exit 1
+              }
+              ;;
+            *) echo "Required runtime profile was not produced." >&2; exit 1 ;;
+          esac

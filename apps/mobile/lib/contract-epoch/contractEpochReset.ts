@@ -24,7 +24,6 @@ export type ContractEpochDependencies = {
   resetRecordingEvidence: () => Promise<void>;
   cleanupStreamFiles: () => Promise<void>;
   cleanupFitFiles: () => Promise<void>;
-  cleanupLocation: () => Promise<void>;
 };
 
 export function createContractEpochInitializer(dependencies: ContractEpochDependencies) {
@@ -39,7 +38,6 @@ export function createContractEpochInitializer(dependencies: ContractEpochDepend
     await dependencies.clearAppStorage(CONTRACT_EPOCH_RESET_STORAGE_KEYS);
     await dependencies.cleanupStreamFiles();
     await dependencies.cleanupFitFiles();
-    await dependencies.cleanupLocation();
     await dependencies.setMarker(String(CURRENT_CONTRACT_EPOCH));
     return "reset";
   };

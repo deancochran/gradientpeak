@@ -33,8 +33,6 @@ interface RenderedChartPoint {
 interface RouteSnapshot {
   currentDistance: number;
   grade: number;
-  isGpsEnabled: boolean;
-  isOnRoute: boolean;
   profile: Array<{ distance: number; elevation: number }>;
   progress: number;
   routeDistance: number;
@@ -106,8 +104,6 @@ export function RouteElevationProfile({
     [
       snapshot.currentDistance,
       snapshot.grade,
-      snapshot.isGpsEnabled,
-      snapshot.isOnRoute,
       snapshot.profile,
       snapshot.progress,
       snapshot.routeDistance,
@@ -346,8 +342,6 @@ function readRouteSnapshot(service: ActivityRecorderService | null): RouteSnapsh
   return {
     currentDistance: Math.max(0, service?.currentRouteDistance ?? 0),
     grade: service?.currentRouteGrade ?? 0,
-    isGpsEnabled: service?.isGpsRecordingEnabled?.() ?? true,
-    isOnRoute: service?.isOnRoute ?? false,
     profile: service?.currentRoute?.elevation_profile ?? [],
     progress: clamp(service?.routeProgress ?? 0, 0, 100),
     routeDistance: Math.max(0, service?.routeDistance ?? 0),
@@ -368,7 +362,6 @@ function buildRouteBackdropViewModel(snapshot: RouteSnapshot): RouteBackdropView
       ? clamp(clampedDistanceMeters / routeDistanceMeters, 0, 1)
       : clamp(snapshot.progress / 100, 0, 1);
   const currentProfilePoint = interpolateProfilePoint(profilePoints, clampedDistanceMeters);
-  const shouldShowPosition = !snapshot.isGpsEnabled || snapshot.isOnRoute;
   const completedProfilePoints = currentProfilePoint
     ? [
         ...profilePoints.filter((point) => point.distanceMeters <= clampedDistanceMeters),
@@ -383,7 +376,7 @@ function buildRouteBackdropViewModel(snapshot: RouteSnapshot): RouteBackdropView
     currentProfilePoint,
     gradeLabel: formatGrade(snapshot.grade),
     isRouteComplete: routeDistanceMeters > 0 && currentDistanceMeters >= routeDistanceMeters,
-    shouldShowPosition,
+    shouldShowPosition: true,
     profilePoints,
     progressLabel:
       routeDistanceMeters > 0

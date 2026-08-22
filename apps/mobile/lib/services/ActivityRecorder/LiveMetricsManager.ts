@@ -32,7 +32,7 @@ import {
 } from "@repo/core/calculations";
 import { EventEmitter } from "expo";
 import { DEFAULT_RECORDING_WEIGHT_KG, MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
-import { DataBuffer, type LatLngBufferedReading } from "./DataBuffer";
+import { DataBuffer } from "./DataBuffer";
 import { createRecordingStreamJournalAdapter } from "./recordingEvidenceJournal";
 import {
   convertToSimplifiedMetrics,
@@ -43,7 +43,6 @@ import { type DurableStreamReplay, StreamBuffer } from "./StreamBuffer";
 import type {
   CurrentReadings,
   LiveMetricsState,
-  LocationReading,
   ProfileMetrics,
   RecorderProfileRef,
   SensorReading,
@@ -72,8 +71,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private activePerformanceTargets: AthletePerformanceTargetFacts | null = null;
   private recordingSessionId: string | null = null;
   private isActive = false;
-  private gpsRecordingEnabled = true;
-  private gpsSpeedFallbackEnabled = true;
   private activityCategory?: RecordingActivityCategory; // Track activity category for calorie calculation
 
   // === Core Components ===
@@ -96,7 +93,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private startTime?: number;
   private pauseStartTime?: number;
   private totalPauseTime = 0;
-  private lastLocation?: LocationReading;
 
   // === Cumulative Metrics (not in buffer) ===
   private totalDistance = 0;
@@ -147,10 +143,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
   // ==================== PUBLIC API ====================
 
-  public setGpsRecordingEnabled(enabled: boolean): void {
-    this.gpsRecordingEnabled = enabled;
-  }
-
   /** Must run before recording starts; foreground streams never discover a global active session. */
   public bindEvidenceSession(sessionId: string, profileId: string): void {
     if (this.isActive) throw new Error("Cannot rebind recording evidence while active");
@@ -160,13 +152,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       createRecordingStreamJournalAdapter({ sessionId, profileId }),
     );
     this.resetRecordingMetricsAccumulator();
-  }
-
-  public setGpsSpeedFallbackEnabled(enabled: boolean): void {
-    if (enabled && !this.gpsSpeedFallbackEnabled) {
-      this.buffer.clearMetric("speed");
-    }
-    this.gpsSpeedFallbackEnabled = enabled;
   }
 
   public clearBufferedSensorMetric(metric: SensorReading["metric"]): void {
@@ -288,9 +273,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.isActive = false;
 
     for (const reading of input.replay.sensorReadings) this.ingestSensorData({ ...reading });
-    for (const location of input.replay.locations) {
-      this.ingestLocationData(location, { updateDistance: false });
-    }
     const latestDistance = input.replay.sensorReadings
       .filter((reading) => reading.metric === "distance" && typeof reading.value === "number")
       .at(-1);
@@ -376,141 +358,36 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    */
   public ingestSensorData(reading: SensorReading): void {
     const timestamp = reading.timestamp || Date.now();
-
-    // Add to buffer for real-time calculations (always, for display)
-    // Type narrowing: check if numeric or tuple
-    if (typeof reading.value === "number") {
-      // Validate sensor data using sensor models
-      const model = getSensorModel(reading.metric);
-      if (model) {
-        const validated = model.validate(reading.value);
-        if (validated === null) {
-          // Invalid reading, skip it
-          return;
-        }
-        // Use validated value
-        reading.value = validated;
-      }
-
-      // Numeric reading (power, HR, cadence, etc.)
-      this.buffer.add({
-        metric: reading.metric,
-        value: reading.value,
-        timestamp,
-      });
-
-      // Update max values only when recording is active
-      if (this.isActive) {
-        this.updateMaxValues(reading.metric, reading.value);
-      }
-
-      // Calculate virtual distance when GPS recording is disabled
-      if (
-        this.isActive &&
-        !this.gpsRecordingEnabled &&
-        reading.metric === "power" &&
-        typeof reading.value === "number"
-      ) {
-        this.updateVirtualDistance(reading.value, timestamp);
-      }
-
-      // Batch sensor updates for UI (max 10Hz)
-      this.pendingSensorUpdates.set(reading.metric, reading.value);
-
-      if (!this.sensorUpdateTimer) {
-        this.sensorUpdateTimer = setTimeout(() => {
-          this.flushSensorUpdates();
-          this.sensorUpdateTimer = undefined;
-        }, 100); // 100ms = 10Hz max update rate
-      }
-    } else {
-      // Tuple reading (latlng)
-      this.buffer.add({
-        metric: reading.metric,
-        value: reading.value as [number, number],
-        timestamp,
-      });
-    }
-
-    // Add to streamBuffer for eventual persistence (only when active)
-    if (this.isActive) {
-      this.streamBuffer.add(reading);
-    }
-  }
-
-  /**
-   * Ingest location data
-   */
-  public ingestLocationData(
-    location: LocationReading,
-    options: { updateDistance?: boolean } = {},
-  ): void {
-    const updateDistance = options.updateDistance ?? true;
-    const isReliableLocation = this.isLocationReliable(location);
-    // Keep current position tied to reliable fixes so FIT/location artifacts do not drift on bad GPS.
-    const previousLocation = this.lastLocation;
-    if (isReliableLocation) {
-      this.lastLocation = location;
-    }
-
-    // Add to streamBuffer for persistence (only when active)
-    if (this.isActive && isReliableLocation) {
-      this.streamBuffer.addLocation(location);
-    }
-
-    // Add lat/lng to buffer for route tracking (always, for display)
-    if (isReliableLocation) {
-      this.buffer.add({
-        metric: "latlng",
-        value: [location.latitude, location.longitude],
-        timestamp: location.timestamp,
-      });
-    }
-
-    // Emit sensor update immediately so UI reflects GPS acquisition
-    this.emit("sensorUpdate", {
-      readings: this.getCurrentReadings(),
-      timestamp: Date.now(),
-    });
-
-    // Calculate distance if we have a previous location (only when active)
-    // Skip GPS distance when GPS recording is disabled
+    const untrusted = reading as { dataType?: string; metric?: string; value?: unknown };
     if (
-      this.isActive &&
-      previousLocation &&
-      this.gpsRecordingEnabled &&
-      updateDistance &&
-      isReliableLocation
+      untrusted.metric === "latlng" ||
+      untrusted.dataType === "latlng" ||
+      typeof untrusted.value !== "number"
     ) {
-      const distance = this.calculateDistance(previousLocation, location);
-
-      // Filter GPS noise
-      if (distance > MOVEMENT_THRESHOLDS.DISTANCE_MIN_DELTA_M && distance < 1000) {
-        this.totalDistance += distance;
-
-        // Calculate speed
-        const timeDelta = (location.timestamp - previousLocation.timestamp) / 1000; // seconds
-        if (timeDelta > 0) {
-          const speed = distance / timeDelta; // m/s
-          this.maxSpeed = Math.max(this.maxSpeed, speed);
-          this.updateTerrainIntensity(previousLocation, location, distance, timeDelta);
-        }
-      }
+      throw new Error("coordinate-metric-ingestion-forbidden");
     }
 
-    // Track elevation (always, for display)
-    if (location.altitude !== undefined) {
-      this.buffer.add({
-        metric: "altitude",
-        value: location.altitude,
-        timestamp: location.timestamp,
-      });
-
-      // Update elevation metrics only when active
-      if (this.isActive) {
-        this.updateElevation(location.altitude);
-      }
+    const model = getSensorModel(reading.metric);
+    if (model) {
+      const validated = model.validate(reading.value);
+      if (validated === null) return;
+      reading.value = validated;
     }
+
+    this.buffer.add({ metric: reading.metric, value: reading.value, timestamp });
+    if (this.isActive) {
+      this.updateMaxValues(reading.metric, reading.value);
+      if (reading.metric === "power") this.updateVirtualDistance(reading.value, timestamp);
+      if (reading.metric === "altitude") this.updateElevation(reading.value);
+    }
+    this.pendingSensorUpdates.set(reading.metric, reading.value);
+    if (!this.sensorUpdateTimer) {
+      this.sensorUpdateTimer = setTimeout(() => {
+        this.flushSensorUpdates();
+        this.sensorUpdateTimer = undefined;
+      }, 100);
+    }
+    if (this.isActive) this.streamBuffer.add(reading);
   }
 
   /**
@@ -574,18 +451,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       ...(temperature === undefined ? {} : { temperature }),
     };
 
-    // Add position if available
-    if (this.lastLocation) {
-      readings.position = {
-        lat: this.lastLocation.latitude,
-        lng: this.lastLocation.longitude,
-        ...(this.lastLocation.altitude === undefined
-          ? {}
-          : { altitude: this.lastLocation.altitude }),
-        ...(this.lastLocation.heading === undefined ? {} : { heading: this.lastLocation.heading }),
-      };
-    }
-
     // Track freshness
     const lastUpdated: NonNullable<CurrentReadings["lastUpdated"]> = {};
     readings.lastUpdated = lastUpdated;
@@ -596,10 +461,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
         const key = metric === "heartrate" ? "heartRate" : metric;
         lastUpdated[key as keyof typeof lastUpdated] = reading.timestamp;
       }
-    }
-
-    if (this.lastLocation) {
-      lastUpdated.position = this.lastLocation.timestamp;
     }
 
     return readings as CurrentReadings & {
@@ -807,35 +668,12 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.pendingSensorUpdates.clear();
   }
 
-  /**
-   * Calculate current speed from buffer or recent GPS data
-   * Returns speed in m/s
-   *
-   * Priority: Sensor Speed > GPS Speed (if available) > Indoor estimation from power
-   */
+  /** Sensor speed takes priority, with an indoor power estimate as fallback. */
   private calculateCurrentSpeed(): number | undefined {
-    // First try to get speed from power meter or sensor (trainer)
     const sensorSpeed = this.buffer.getLatest("speed");
-    if (sensorSpeed !== undefined) {
-      return sensorSpeed;
-    }
+    if (sensorSpeed !== undefined) return sensorSpeed;
 
-    // Fallback to GPS speed calculation when GPS recording is enabled
-    // This ensures we always have speed/pace data even without sensors
-    if (this.gpsRecordingEnabled && this.gpsSpeedFallbackEnabled && this.lastLocation) {
-      // Calculate speed from recent GPS positions
-      const gpsSpeed = this.calculateGPSSpeed();
-      if (gpsSpeed !== undefined) {
-        // Update max speed from GPS when recording is active
-        if (this.isActive) {
-          this.maxSpeed = Math.max(this.maxSpeed, gpsSpeed);
-        }
-        return gpsSpeed;
-      }
-    }
-
-    // When GPS recording is disabled, calculate from power if available
-    if (!this.gpsRecordingEnabled && this.lastPowerValue > 0) {
+    if (this.lastPowerValue > 0) {
       // Estimate speed from power using the same physics model
       const powerWatts = this.lastPowerValue;
       const CRR = 0.005;
@@ -865,119 +703,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     }
 
     return undefined;
-  }
-
-  private isLocationReliable(location: LocationReading): boolean {
-    return (
-      location.accuracy === undefined ||
-      location.accuracy <= MOVEMENT_THRESHOLDS.GPS_ACCURACY_THRESHOLD_M
-    );
-  }
-
-  /**
-   * Calculate instantaneous speed from recent GPS positions
-   * Uses the last 3-5 seconds of GPS data to smooth out GPS noise
-   * Returns speed in m/s, or undefined if insufficient data
-   */
-  private calculateGPSSpeed(): number | undefined {
-    if (!this.lastLocation) return undefined;
-
-    // Get recent location readings (last 5 seconds)
-    const recentReadings = this.buffer.getRecentReadings("latlng", 5);
-
-    // Need at least 2 points to calculate speed
-    if (recentReadings.length < 2) {
-      return undefined;
-    }
-
-    // Calculate speed using last 3 seconds of movement
-    // This smooths GPS noise while being responsive
-    const cutoffTime = Date.now() - 3000; // 3 seconds ago
-    const recentPoints = recentReadings.filter(
-      (r) => r.timestamp >= cutoffTime,
-    ) as LatLngBufferedReading[];
-
-    if (recentPoints.length < 2) {
-      // Fall back to using all recent points if not enough in last 3s
-      if (recentReadings.length >= 2) {
-        return this.computeSpeedFromPoints(recentReadings as LatLngBufferedReading[]);
-      }
-      return undefined;
-    }
-
-    return this.computeSpeedFromPoints(recentPoints);
-  }
-
-  /**
-   * Compute speed from a series of GPS points
-   * Returns speed in m/s
-   */
-  private computeSpeedFromPoints(
-    points: Array<{ value: [number, number]; timestamp: number }>,
-  ): number | undefined {
-    if (points.length < 2) return undefined;
-
-    // Calculate total distance and time between first and last point
-    let totalDistance = 0;
-
-    for (let i = 1; i < points.length; i++) {
-      const [lat1, lon1] = points[i - 1].value;
-      const [lat2, lon2] = points[i].value;
-
-      const distance = this.calculateDistanceFromCoords(lat1, lon1, lat2, lon2);
-
-      // Filter out unreasonable jumps (GPS noise/errors)
-      // Max reasonable speed: 20 m/s (72 km/h) for cycling
-      const timeDelta = (points[i].timestamp - points[i - 1].timestamp) / 1000;
-      if (timeDelta > 0) {
-        const segmentSpeed = distance / timeDelta;
-        if (segmentSpeed < 20) {
-          totalDistance += distance;
-        }
-      }
-    }
-
-    // Calculate time span
-    const totalTime = (points[points.length - 1].timestamp - points[0].timestamp) / 1000;
-
-    // Avoid division by zero and require reasonable time span
-    if (totalTime < 0.5) {
-      return undefined;
-    }
-
-    // Calculate average speed (m/s)
-    const speed = totalDistance / totalTime;
-
-    // Filter out unreasonable speeds
-    if (speed < 0 || speed > 20) {
-      return undefined;
-    }
-
-    return speed;
-  }
-
-  /**
-   * Calculate distance between two GPS coordinates using Haversine formula
-   * Returns distance in meters
-   */
-  private calculateDistanceFromCoords(
-    lat1: number,
-    lon1: number,
-    lat2: number,
-    lon2: number,
-  ): number {
-    const R = 6371e3; // Earth's radius in meters
-    const φ1 = (lat1 * Math.PI) / 180;
-    const φ2 = (lat2 * Math.PI) / 180;
-    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
-
-    const a =
-      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c;
   }
 
   /**
@@ -1018,7 +743,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       const status = this.streamBuffer.getBufferStatus();
       console.log("[LiveMetricsManager] Persisted and cleaned up:", {
         readingsWritten: status.readingCount,
-        locationsWritten: status.locationCount,
         bufferStats: this.buffer.getStats(),
       });
     } catch (error) {
@@ -1336,7 +1060,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.startTime = undefined;
     this.pauseStartTime = undefined;
     this.totalPauseTime = 0;
-    this.lastLocation = undefined;
     this.totalDistance = 0;
     this.totalWork = 0;
     this.totalAscent = 0;
@@ -1373,7 +1096,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       cadenceRpm: this.buffer.getLatest("cadence") ?? null,
       speedMps: this.buffer.getLatest("speed") ?? null,
       distanceMeters: this.totalDistance,
-      altitudeMeters: this.lastLocation?.altitude ?? null,
+      altitudeMeters: this.buffer.getLatest("altitude") ?? null,
     });
     this.provisionalMetricsSnapshot = this.provisionalMetricsAccumulator.getSnapshot();
   }
@@ -1443,38 +1166,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
     this.metrics.totalAscent = Math.round(this.totalAscent);
     this.metrics.totalDescent = Math.round(this.totalDescent);
-  }
-
-  private updateTerrainIntensity(
-    previousLocation: LocationReading,
-    location: LocationReading,
-    distanceMeters: number,
-    seconds: number,
-  ): void {
-    if (
-      previousLocation.altitude === undefined ||
-      location.altitude === undefined ||
-      distanceMeters <= 0 ||
-      seconds <= 0
-    ) {
-      return;
-    }
-
-    const altitudeDelta = location.altitude - previousLocation.altitude;
-    const grade = clamp((altitudeDelta / distanceMeters) * 100, -30, 30);
-    const speedMps = distanceMeters / seconds;
-    const gradeAdjustedSpeed = speedMps * (minettiCost(grade / 100) / minettiCost(0));
-
-    this.metrics.currentGrade = grade;
-    this.metrics.verticalSpeedMetersPerHour = (altitudeDelta / seconds) * 3600;
-
-    if (Number.isFinite(gradeAdjustedSpeed) && gradeAdjustedSpeed > 0) {
-      this.metrics.gradeAdjustedPaceSecondsPerKm = 1000 / gradeAdjustedSpeed;
-    }
-
-    if (this.totalDistance > 0) {
-      this.metrics.avgGrade = ((this.totalAscent - this.totalDescent) / this.totalDistance) * 100;
-    }
   }
 
   /**
@@ -1590,24 +1281,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   }
 
   /**
-   * Calculate distance between two locations (Haversine formula)
-   */
-  private calculateDistance(loc1: LocationReading, loc2: LocationReading): number {
-    const R = 6371e3; // Earth radius in meters
-    const φ1 = (loc1.latitude * Math.PI) / 180;
-    const φ2 = (loc2.latitude * Math.PI) / 180;
-    const Δφ = ((loc2.latitude - loc1.latitude) * Math.PI) / 180;
-    const Δλ = ((loc2.longitude - loc1.longitude) * Math.PI) / 180;
-
-    const a =
-      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c;
-  }
-
-  /**
    * Get heart rate zone (0-4)
    */
   private getHeartRateZone(hr: number): number | undefined {
@@ -1719,19 +1392,4 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       adherenceCurrentStep: 0,
     };
   }
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function minettiCost(grade: number): number {
-  return (
-    155.4 * grade ** 5 -
-    30.4 * grade ** 4 -
-    43.3 * grade ** 3 +
-    46.3 * grade ** 2 +
-    19.5 * grade +
-    3.6
-  );
 }

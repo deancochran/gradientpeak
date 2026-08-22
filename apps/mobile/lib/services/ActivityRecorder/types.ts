@@ -74,13 +74,13 @@ export interface RecorderProfileRef {
 // ================================
 
 /**
- * Canonical SensorReading interface
- * Used across all sensor-related code (BLE, GPS, manual input)
+ * Canonical numeric sensor reading. Coordinate tuples are deliberately excluded
+ * from the in-app recording boundary.
  */
 export interface SensorReading {
-  metric: PublicActivityMetric;
-  dataType: PublicActivityMetricDataType;
-  value: number | [number, number];
+  metric: Exclude<PublicActivityMetric, "latlng">;
+  dataType: Exclude<PublicActivityMetricDataType, "latlng">;
+  value: number;
   timestamp: number;
   metadata?: {
     deviceId?: string;
@@ -89,18 +89,6 @@ export interface SensorReading {
     batteryLevel?: number;
     signalStrength?: number;
   };
-}
-
-/**
- * Location reading from GPS
- */
-export interface LocationReading {
-  latitude: number;
-  longitude: number;
-  altitude?: number;
-  accuracy?: number;
-  heading?: number;
-  timestamp: number;
 }
 
 // ================================
@@ -235,7 +223,6 @@ export interface MemoryUsageStats {
   totalBufferSize: number; // bytes
   powerBufferSize: number;
   hrBufferSize: number;
-  locationBufferSize: number;
   utilizationPercent: number;
 }
 
@@ -320,7 +307,6 @@ export interface LiveRecordingStatus {
   movingTime: number;
   isPaused: boolean;
   sensorCount: number;
-  gpsAccuracy?: number;
   batteryOptimized: boolean;
 }
 
@@ -607,12 +593,6 @@ export interface CurrentReadings {
   cadence?: number; // rpm
   speed?: number; // m/s
   temperature?: number; // celsius
-  position?: {
-    lat: number;
-    lng: number;
-    altitude?: number; // meters
-    heading?: number; // degrees
-  };
 
   // Track freshness of each reading
   lastUpdated?: {
@@ -621,7 +601,6 @@ export interface CurrentReadings {
     cadence?: number;
     speed?: number;
     temperature?: number;
-    position?: number;
   };
 }
 

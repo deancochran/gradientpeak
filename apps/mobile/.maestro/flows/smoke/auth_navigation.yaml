@@ -1,4 +1,8 @@
 appId: ${MAESTRO_APP_ID}
+name: Authentication navigation
+properties:
+  junitId: auth.sign_in
+  junitClassname: parity.mobile
 ---
 - runFlow:
     file: ../reusable/ensure_signed_out.yaml

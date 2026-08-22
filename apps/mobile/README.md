@@ -12,7 +12,7 @@ pnpm install
 
 Keep mobile env files under `apps/mobile/`.
 
-Use `apps/mobile/.env.example` for normal local development and `apps/mobile/.env.e2e.example` for Maestro/E2E setup. Common variables used by the app include:
+Use `apps/mobile/.env.example` to create `apps/mobile/.env.local` for both normal development and Maestro/E2E. Common variables used by the app include:
 
 - `EXPO_PUBLIC_API_URL`
 - `EXPO_PUBLIC_SUPABASE_URL`
@@ -20,7 +20,7 @@ Use `apps/mobile/.env.example` for normal local development and `apps/mobile/.en
 - `EXPO_PUBLIC_REDIRECT_URI`
 - `EXPO_PUBLIC_GOOGLE_API_KEY`
 
-For E2E runs, `pnpm --filter mobile dev:e2e` loads `apps/mobile/.env.e2e` automatically.
+For E2E runs, `pnpm --filter mobile dev:e2e` uses the same `.env.local` values as normal development and adds only the E2E feature flag.
 
 ## Common commands
 
@@ -51,10 +51,9 @@ the separate `test:e2e` command and requires an E2E-enabled dev client plus a pr
 The runner defaults to the development app ID and scheme; set both `MAESTRO_APP_ID` and
 `MAESTRO_APP_SCHEME` when targeting preview or production builds.
 
-Journey coverage in `lib/testing/journey-coverage.ts` records implementation maturity separately
-from evidence verification. A present flow or `status: validated` does not mean it ran: maintained
-flows are at most `syntax_checked` until machine-produced execution metadata supports a
-`runtime_verified` claim. Manual `main/` and `journeys/` flows remain declared scaffolds.
+The shared parity registry records whether a user outcome is tested, implemented but unverified,
+missing, or intentionally platform-specific. A successful Maestro command is direct proof for that
+run; the wrapper keeps its ordinary JUnit and debug artifacts without writing repository proof files.
 
 ## Related docs
 

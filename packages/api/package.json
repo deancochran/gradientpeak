@@ -13,6 +13,10 @@
       "types": "./src/client.ts",
       "default": "./src/client.ts"
     },
+    "./capabilities": {
+      "types": "./src/capabilities/catalog.ts",
+      "default": "./src/capabilities/catalog.ts"
+    },
     "./contract-epoch": {
       "types": "./src/contract-epoch.ts",
       "default": "./src/contract-epoch.ts"

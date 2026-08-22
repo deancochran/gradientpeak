@@ -2,7 +2,8 @@
  * DataBuffer - Simple Time-Based Rolling Window
  *
  * Maintains a 60-second window of sensor readings for real-time metric calculations.
- * Supports both numeric values (power, HR, etc.) and tuple values (lat/lng coordinates).
+ * Stores numeric sensor values only. Coordinate tuples are not part of the
+ * live-recording contract.
  * Automatically removes old data during periodic cleanup.
  */
 
@@ -17,33 +18,7 @@ export interface NumericBufferedReading {
   timestamp: number;
 }
 
-/**
- * Reading with a tuple value (latitude/longitude)
- */
-export interface LatLngBufferedReading {
-  metric: string;
-  value: [number, number];
-  timestamp: number;
-}
-
-/**
- * Union type for all buffer readings
- */
-export type BufferedReading = NumericBufferedReading | LatLngBufferedReading;
-
-/**
- * Type guard to check if a reading is numeric
- */
-function isNumericReading(reading: BufferedReading): reading is NumericBufferedReading {
-  return typeof reading.value === "number";
-}
-
-/**
- * Type guard to check if a reading is lat/lng
- */
-function isLatLngReading(reading: BufferedReading): reading is LatLngBufferedReading {
-  return Array.isArray(reading.value);
-}
+export type BufferedReading = NumericBufferedReading;
 
 export class DataBuffer {
   // Store readings by metric for O(1) access to specific streams
@@ -115,25 +90,7 @@ export class DataBuffer {
     const cutoff = Date.now() - seconds * 1000;
     // Optimization: Binary search for start index could be added here if arrays get very large
     // For now, filter is O(M) where M is readings for this metric, much better than O(N)
-    return readings
-      .filter((d): d is NumericBufferedReading => d.timestamp > cutoff && isNumericReading(d))
-      .map((d) => d.value);
-  }
-
-  /**
-   * Get recent lat/lng readings for a specific metric
-   * @param metric - The metric name (should be "latlng")
-   * @param seconds - How many seconds back to retrieve (default: 30)
-   * @returns Array of [lat, lng] tuples
-   */
-  getRecentLatLng(metric: string, seconds: number = 30): [number, number][] {
-    const readings = this.stores.get(metric);
-    if (!readings) return [];
-
-    const cutoff = Date.now() - seconds * 1000;
-    return readings
-      .filter((d): d is LatLngBufferedReading => d.timestamp > cutoff && isLatLngReading(d))
-      .map((d) => d.value);
+    return readings.filter((d) => d.timestamp > cutoff).map((d) => d.value);
   }
 
   /**
@@ -157,21 +114,7 @@ export class DataBuffer {
     const readings = this.stores.get(metric);
     if (!readings) return [];
 
-    return readings
-      .filter((d): d is NumericBufferedReading => isNumericReading(d))
-      .map((d) => d.value);
-  }
-
-  /**
-   * Get all lat/lng readings for a specific metric in the entire window
-   */
-  getAllLatLng(metric: string): [number, number][] {
-    const readings = this.stores.get(metric);
-    if (!readings) return [];
-
-    return readings
-      .filter((d): d is LatLngBufferedReading => isLatLngReading(d))
-      .map((d) => d.value);
+    return readings.map((d) => d.value);
   }
 
   /**
@@ -182,31 +125,7 @@ export class DataBuffer {
     const readings = this.stores.get(metric);
     if (!readings || readings.length === 0) return undefined;
 
-    // Iterate backwards to find last numeric reading
-    for (let i = readings.length - 1; i >= 0; i--) {
-      const reading = readings[i];
-      if (isNumericReading(reading)) {
-        return reading.value;
-      }
-    }
-    return undefined;
-  }
-
-  /**
-   * Get the most recent lat/lng value for a metric
-   * Returns [lat, lng] tuple or undefined
-   */
-  getLatestLatLng(metric: string): [number, number] | undefined {
-    const readings = this.stores.get(metric);
-    if (!readings || readings.length === 0) return undefined;
-
-    for (let i = readings.length - 1; i >= 0; i--) {
-      const reading = readings[i];
-      if (isLatLngReading(reading)) {
-        return reading.value;
-      }
-    }
-    return undefined;
+    return readings.at(-1)?.value;
   }
 
   /**
@@ -247,7 +166,7 @@ export class DataBuffer {
   }
 
   /**
-   * Count readings for a metric (both numeric and lat/lng)
+   * Count readings for a metric
    */
   getCount(metric: string): number {
     return this.stores.get(metric)?.length || 0;
@@ -327,8 +246,6 @@ export class DataBuffer {
    */
   getStats(): {
     totalReadings: number;
-    numericReadings: number;
-    latLngReadings: number;
     oldestTimestamp: number | null;
     newestTimestamp: number | null;
     memoryEstimateMB: number;
@@ -336,8 +253,6 @@ export class DataBuffer {
   } {
     const metricCounts: Record<string, number> = {};
     let totalReadings = 0;
-    let numericCount = 0;
-    let latLngCount = 0;
     let oldestTimestamp: number | null = null;
     let newestTimestamp: number | null = null;
 
@@ -355,20 +270,11 @@ export class DataBuffer {
         if (newestTimestamp === null || last.timestamp > newestTimestamp) {
           newestTimestamp = last.timestamp;
         }
-
-        // Rough count of types (checking first one is approximation but fast)
-        if (isNumericReading(first)) {
-          numericCount += readings.length;
-        } else {
-          latLngCount += readings.length;
-        }
       }
     }
 
     return {
       totalReadings,
-      numericReadings: numericCount,
-      latLngReadings: latLngCount,
       oldestTimestamp,
       newestTimestamp,
       memoryEstimateMB: (totalReadings * 32) / (1024 * 1024), // Rough estimate: 32 bytes per reading

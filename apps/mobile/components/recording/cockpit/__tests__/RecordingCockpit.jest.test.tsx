@@ -9,7 +9,7 @@ import React, { type ComponentProps } from "react";
 import type { ReactTestInstance } from "react-test-renderer";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { createHost, type HostProps } from "../../../../test/mock-components";
-import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
+import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 import type { TrainerInsightCard as TrainerInsightCardComponent } from "../cards/TrainerInsightCard";
 
 jest.mock("@/lib/services/ActivityRecorder", () => ({
@@ -26,7 +26,7 @@ const baseContract = {
     activity_category: "user",
     structure: "none",
     spatial: "none",
-    locationCapture: "gps",
+    locationCapture: "none",
     trainerExecution: "none",
   },
   guidance: {
@@ -50,7 +50,7 @@ const baseContract = {
     canEditActivity: true,
     canEditPlan: true,
     canEditRoute: true,
-    canEditGps: true,
+    canEditGps: false,
     locksIdentityAfterStart: true,
   },
   metrics: { primaryMetric: "time", emphasizedMetrics: ["time"] },
@@ -114,7 +114,7 @@ function buildContract(
         ...uiOverrides.floatingPanel,
       },
       controls: {
-        quickActions: ["gps", "plan", "route", "sensors"],
+        quickActions: ["plan", "route", "sensors"],
         ...uiOverrides.controls,
       },
     },
@@ -549,7 +549,7 @@ describe("recording cockpit", () => {
     expect(findHostNodes(result, "MapView")[0] ?? null).toBeNull();
   });
 
-  it("previews route elevation without a progress marker when GPS is off course", () => {
+  it("shows sensor-derived virtual route progress without live location", () => {
     renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
@@ -565,7 +565,6 @@ describe("recording cockpit", () => {
           },
           currentRouteDistance: 3000,
           currentRouteGrade: 4.2,
-          isGpsRecordingEnabled: () => true,
           isOnRoute: false,
           routeDistance: 6000,
           routeProgress: 50,
@@ -585,14 +584,16 @@ describe("recording cockpit", () => {
     );
 
     expect(screen.getByTestId("route-elevation-chart")).toBeTruthy();
-    expect(screen.queryByTestId("route-profile-current-dot")).toBeNull();
+    expect(screen.getByTestId("route-profile-current-dot")).toBeTruthy();
     expect(screen.getAllByText("Distance").length).toBeGreaterThan(0);
     expect(screen.getByText("Remaining")).toBeTruthy();
     expect(screen.getByText("Grade")).toBeTruthy();
-    expect(screen.getAllByText("--").length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByText("3.00 km")).toBeTruthy();
+    expect(screen.getByText("3.0 km")).toBeTruthy();
+    expect(screen.getByText("+4.2%")).toBeTruthy();
   });
 
-  it("does not show a fake map when GPS mode has no live location yet", () => {
+  it("renders a GPS-free recording focus when legacy GPS backdrop input is supplied", () => {
     const result = renderNative(
       <RecordingBackdrop
         recordingState="pending"
@@ -603,30 +604,36 @@ describe("recording cockpit", () => {
 
     expect(findHostNodes(result, "MapView")[0] ?? null).toBeNull();
     expect(screen.queryByText("GPS map")).toBeNull();
-    expect(screen.getByTestId("recording-map-pending-backdrop")).toBeTruthy();
-    expect(screen.getByText("Acquiring GPS")).toBeTruthy();
-    expect(addCallbackMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("recording-map-pending-backdrop")).toBeNull();
+    expect(screen.queryByText("Acquiring GPS")).toBeNull();
+    expect(screen.getByText("Recording focus")).toBeTruthy();
+    expect(screen.getByText(/connected sensor metrics without location/i)).toBeTruthy();
+    expect(addCallbackMock).not.toHaveBeenCalled();
   });
 
-  it("uses a valid last-known location to render the GPS map immediately", async () => {
-    getLastKnownLocationMock.mockResolvedValueOnce({
-      coords: { latitude: 39.75, longitude: -104.99 },
-      timestamp: Date.now(),
-    });
-
+  it("renders an attached route as a static preview without user location", () => {
     const result = renderNative(
       <RecordingBackdrop
         recordingState="pending"
-        service={buildService()}
-        sessionContract={buildContract({ ui: { backdropMode: "gps_map" } })}
+        service={buildService({
+          currentRoute: {
+            coordinates: [
+              { latitude: 39.75, longitude: -104.99 },
+              { latitude: 39.76, longitude: -104.98 },
+            ],
+          },
+        })}
+        sessionContract={buildContract({
+          guidance: { hasRoute: true, hasRouteGeometry: true, routeMode: "preview" },
+          ui: { backdropMode: "route_preview" },
+        })}
       />,
     );
 
-    await waitFor(() => {
-      expect(findHostNodes(result, "MapView")[0] ?? null).toBeTruthy();
-    });
-
-    expect(screen.queryByTestId("recording-map-pending-backdrop")).toBeNull();
+    const map = findHostNodes(result, "MapView")[0];
+    expect(map).toBeTruthy();
+    expect(map?.props.showsUserLocation).toBe(false);
+    expect(screen.getByTestId("recording-backdrop-map")).toBeTruthy();
   });
 
   it("renders route unavailable copy without a map when route geometry is missing", () => {
@@ -1344,8 +1351,6 @@ describe("recording cockpit", () => {
     const result = renderNative(
       <RecordingControlSheet
         activityCategory="bike"
-        gpsRecordingEnabled={false}
-        onGpsPress={jest.fn()}
         onOpenActivity={jest.fn()}
         onOpenFtms={jest.fn()}
         onOpenPlan={jest.fn()}
@@ -1362,16 +1367,15 @@ describe("recording cockpit", () => {
         sensorCount={0}
         sessionContract={buildContract({
           editing: { canEditGps: false, canEditPlan: false, canEditRoute: false },
-          ui: { controls: { quickActions: ["gps", "plan", "route", "sensors"] } },
+          ui: { controls: { quickActions: ["plan", "route", "sensors"] } },
         })}
       />,
     );
 
     expect(screen.getByTestId("recording-activity-control-button")).toBeTruthy();
     expect(screen.getByTestId("recording-setup-action-rail")).toBeTruthy();
-    expect(screen.getByTestId("recording-gps-toggle")).toBeTruthy();
-    expect(screen.getByText("GPS")).toBeTruthy();
-    expect(screen.getByText("Off")).toBeTruthy();
+    expect(screen.queryByTestId("recording-gps-toggle")).toBeNull();
+    expect(screen.queryByText("GPS")).toBeNull();
     expect(screen.queryByTestId("recording-session-mode-button")).toBeNull();
     expect(screen.queryByText("Guidance")).toBeNull();
 
@@ -1382,15 +1386,13 @@ describe("recording cockpit", () => {
       (node: ReactTestInstance) => node.props.accessibilityState?.disabled === true,
     );
 
-    expect(disabledActions).toHaveLength(3);
+    expect(disabledActions).toHaveLength(2);
   });
 
   it("resolves native control-sheet colors from semantic theme tokens", () => {
     const result = renderNative(
       <RecordingControlSheet
         activityCategory="bike"
-        gpsRecordingEnabled
-        onGpsPress={jest.fn()}
         onOpenActivity={jest.fn()}
         onOpenFtms={jest.fn()}
         onOpenPlan={jest.fn()}
@@ -1407,7 +1409,7 @@ describe("recording cockpit", () => {
         sensorCount={0}
         sessionContract={buildContract({
           guidance: { hasPlan: true },
-          ui: { controls: { quickActions: ["gps", "plan"] } },
+          ui: { controls: { quickActions: ["plan", "route"] } },
         })}
       />,
     );
@@ -1424,7 +1426,7 @@ describe("recording cockpit", () => {
       backgroundColor: THEME.light.popover,
     });
     expect(getHostProps("Activity").color).toBe(THEME.light.foreground);
-    expect(getHostProps("MapPin").color).toBe(THEME.light.foreground);
+    expect(getHostProps("Route").color).toBe(THEME.light.foreground);
     expect(getHostProps("CalendarDays").color).toBe(THEME.light.chart2);
     expect(getHostProps("Trash2").color).toBe(THEME.light.destructive);
   });

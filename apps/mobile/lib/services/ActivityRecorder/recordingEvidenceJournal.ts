@@ -1,17 +1,13 @@
 import { type RecordingSessionArtifact, recordingSessionArtifactSchema } from "@repo/core";
-import type * as Location from "expo-location";
 import type { ActivitySubmissionQueueJob } from "../activitySubmissionQueue/types";
 import { activitySubmissionQueueJobSchema } from "../activitySubmissionQueue/types";
 
 const DATABASE_NAME = "gradientpeak-recording-evidence.db";
-const COMMIT_MARKER = "committed-v1";
-const MAX_HEADLESS_ENVELOPES = 100;
-const MAX_INVALID_HEADLESS_ENVELOPES = 20;
-const MAX_ENVELOPE_BYTES = 8_192;
-const CURRENT_SCHEMA_VERSION = 5;
+const CURRENT_SCHEMA_VERSION = 6;
 const STREAM_COMMIT_MARKER = "stream-committed-v1";
 const STREAM_VERSION = 1;
 const MAX_STREAM_ENVELOPE_BYTES = 1_048_576;
+const COORDINATE_EVIDENCE_QUARANTINE_REASON = "gps-policy-coordinate-evidence-rejected";
 /** Retention is deliberately finite and applies only to terminal evidence. */
 export const QUARANTINED_EVIDENCE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
 export const RAW_TERMINAL_EVIDENCE_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000;
@@ -102,9 +98,7 @@ export async function getRecordingEvidenceDatabase(): Promise<RecordingEvidenceS
 async function createCurrentRecordingEvidenceSchema(
   tx: RecordingEvidenceSqlExecutor,
 ): Promise<void> {
-  await tx.execAsync(`CREATE TABLE recording_evidence_sessions (session_id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('active', 'fenced', 'finalized', 'accepted', 'quarantined')), next_sequence INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, finalized_path TEXT, finalized_size INTEGER, finalized_sha256 TEXT, finalized_artifact_json TEXT, finalized_artifact_digest TEXT, next_stream_order INTEGER NOT NULL DEFAULT 0, checkpoint_json TEXT, checkpoint_digest TEXT, cleanup_pending INTEGER NOT NULL DEFAULT 0, cleanup_error TEXT, cleanup_attempts INTEGER NOT NULL DEFAULT 0, next_cleanup_at INTEGER);
-    CREATE TABLE recording_gps_envelopes (session_id TEXT NOT NULL REFERENCES recording_evidence_sessions(session_id), sequence INTEGER NOT NULL, timestamp INTEGER NOT NULL, payload TEXT NOT NULL, byte_size INTEGER NOT NULL, sha256 TEXT NOT NULL, commit_marker TEXT NOT NULL, PRIMARY KEY (session_id, sequence));
-    CREATE INDEX recording_gps_envelopes_session_sequence ON recording_gps_envelopes(session_id, sequence);
+  await tx.execAsync(`CREATE TABLE recording_evidence_sessions (session_id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('active', 'fenced', 'finalized', 'accepted', 'quarantined')), created_at INTEGER NOT NULL, finalized_path TEXT, finalized_size INTEGER, finalized_sha256 TEXT, finalized_artifact_json TEXT, finalized_artifact_digest TEXT, next_stream_order INTEGER NOT NULL DEFAULT 0, checkpoint_json TEXT, checkpoint_digest TEXT, cleanup_pending INTEGER NOT NULL DEFAULT 0, cleanup_error TEXT, cleanup_attempts INTEGER NOT NULL DEFAULT 0, next_cleanup_at INTEGER);
     CREATE TABLE recording_evidence_meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
     CREATE TABLE recording_evidence_quarantine (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, reason TEXT NOT NULL, payload TEXT, quarantined_at INTEGER NOT NULL);
     CREATE UNIQUE INDEX one_active_recording_evidence_per_profile ON recording_evidence_sessions(profile_id) WHERE state = 'active';
@@ -118,19 +112,73 @@ async function createCurrentRecordingEvidenceSchema(
     CREATE INDEX recording_evidence_accepted_cleanup_due ON recording_evidence_sessions(state, cleanup_pending, next_cleanup_at);`);
 }
 
+async function quarantineCoordinateEvidenceRows(
+  tx: RecordingEvidenceSqlExecutor,
+  options: { includeLegacyGpsTable: boolean; profileId?: string },
+): Promise<number> {
+  const profilePredicate = options.profileId ? "AND s.profile_id = ?" : "";
+  const params = options.profileId ? [options.profileId] : [];
+  const legacyGpsPredicate = options.includeLegacyGpsTable
+    ? "OR EXISTS (SELECT 1 FROM recording_gps_envelopes gps WHERE gps.session_id = s.session_id)"
+    : "";
+  const sessions = await tx.getAllAsync<{ session_id: string }>(
+    `SELECT DISTINCT s.session_id
+       FROM recording_evidence_sessions s
+      WHERE s.state IN ('active', 'fenced', 'finalized') ${profilePredicate}
+        AND (EXISTS (SELECT 1 FROM recording_stream_envelopes stream WHERE stream.session_id = s.session_id AND stream.stream_kind = 'latlng') ${legacyGpsPredicate})`,
+    ...params,
+  );
+  for (const session of sessions) {
+    await tx.runAsync(
+      "UPDATE recording_evidence_sessions SET state = 'quarantined', checkpoint_json = NULL, checkpoint_digest = NULL WHERE session_id = ? AND state IN ('active', 'fenced', 'finalized')",
+      session.session_id,
+    );
+    await tx.runAsync(
+      "UPDATE activity_submission_queue_jobs SET status = 'failed', retry_class = 'permanent', next_attempt_at = NULL, error_category = ?, lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL, updated_at = ? WHERE session_id = ? AND status != 'complete'",
+      COORDINATE_EVIDENCE_QUARANTINE_REASON,
+      Date.now(),
+      session.session_id,
+    );
+    await tx.runAsync(
+      "INSERT INTO recording_evidence_quarantine (session_id, reason, payload, quarantined_at) VALUES (?, ?, NULL, ?)",
+      session.session_id,
+      COORDINATE_EVIDENCE_QUARANTINE_REASON,
+      Date.now(),
+    );
+    if (claimedCheckpointSessionId === session.session_id) claimedCheckpointSessionId = null;
+  }
+  await tx.runAsync("DELETE FROM recording_stream_envelopes WHERE stream_kind = 'latlng'");
+  return sessions.length;
+}
+
+async function migrateSchemaVersionFive(tx: RecordingEvidenceSqlExecutor): Promise<void> {
+  await quarantineCoordinateEvidenceRows(tx, { includeLegacyGpsTable: true });
+  await tx.execAsync(`DROP INDEX IF EXISTS recording_gps_envelopes_session_sequence;
+    DROP TABLE IF EXISTS recording_gps_envelopes;`);
+}
+
 /** Public initializer so adapter-level tests exercise the production protocol. */
 export async function initializeRecordingEvidenceDatabase(
   db: RecordingEvidenceSqlExecutor,
 ): Promise<void> {
   const pragma = await db.getAllAsync<{ user_version?: number }>("PRAGMA user_version");
   const version = pragma[0]?.user_version ?? 0;
-  if (version !== 0 && version !== CURRENT_SCHEMA_VERSION)
+  if (version !== 0 && version !== 5 && version !== CURRENT_SCHEMA_VERSION)
     throw new Error("unsupported-recording-evidence-schema");
   if (version === 0) {
     await db.withExclusiveTransactionAsync(async (tx) => {
       await createCurrentRecordingEvidenceSchema(tx);
       await tx.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
     });
+  } else if (version === 5) {
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      await migrateSchemaVersionFive(tx);
+      await tx.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
+    });
+  } else {
+    await db.withExclusiveTransactionAsync((tx) =>
+      quarantineCoordinateEvidenceRows(tx, { includeLegacyGpsTable: false }).then(() => undefined),
+    );
   }
   await db.execAsync("PRAGMA foreign_keys = ON");
 }
@@ -151,7 +199,18 @@ function byteSize(value: string): number {
   return new TextEncoder().encode(value).byteLength;
 }
 
+function isCoordinateStreamEnvelope(input: { streamKind: string; payload: string }): boolean {
+  if (input.streamKind === "latlng") return true;
+  try {
+    const payload = JSON.parse(input.payload) as { dataType?: unknown; metric?: unknown };
+    return payload.metric === "latlng" || payload.dataType === "latlng";
+  } catch {
+    return false;
+  }
+}
+
 function assertStreamEnvelope(input: Omit<RecordingStreamEnvelope, "sequence" | "order">): void {
+  if (isCoordinateStreamEnvelope(input)) throw new Error("coordinate-stream-ingestion-forbidden");
   if (
     !input.streamKind ||
     !Number.isFinite(input.timestamp) ||
@@ -262,6 +321,9 @@ async function recoverStreamEnvelopes(
     let previousTimestamp = -Infinity;
     try {
       for (const row of rows) {
+        if (isCoordinateStreamEnvelope(row)) {
+          throw new Error("stream-coordinate-evidence-forbidden");
+        }
         const order = row.streamOrder;
         const next = expected.get(row.streamKind) ?? 0;
         if (
@@ -293,7 +355,9 @@ async function recoverStreamEnvelopes(
     } catch (error) {
       const reason =
         error instanceof Error &&
-        /^stream-(?:order-or-marker-invalid|digest-invalid)$/.test(error.message)
+        /^stream-(?:order-or-marker-invalid|digest-invalid|coordinate-evidence-forbidden)$/.test(
+          error.message,
+        )
           ? error.message
           : "stream-payload-invalid";
       await quarantineEvidence(tx, sessionId, reason);
@@ -362,9 +426,9 @@ async function quarantineEvidence(
 }
 
 /**
- * Releases only the identified recoverable owner. This deliberately retains stream
- * and GPS rows: a recovery decision is not permission to erase committed
- * evidence.  The profile predicate prevents a stale/cross-profile checkpoint
+ * Releases only the identified recoverable owner. This deliberately retains numeric
+ * stream rows: a recovery decision is not permission to erase committed evidence.
+ * The profile predicate prevents a stale/cross-profile checkpoint
  * from changing another owner's session.
  */
 export async function quarantineRecordingEvidenceSession(input: {
@@ -452,32 +516,19 @@ export async function quarantineOrphanedActiveRecordingEvidenceSessions(
   return count;
 }
 
-function validLocation(location: Location.LocationObject): boolean {
-  const { coords } = location;
-  return Boolean(
-    coords &&
-      Number.isFinite(coords.latitude) &&
-      Number.isFinite(coords.longitude) &&
-      Number.isFinite(location.timestamp) &&
-      coords.latitude >= -90 &&
-      coords.latitude <= 90 &&
-      coords.longitude >= -180 &&
-      coords.longitude <= 180 &&
-      coords.accuracy !== null &&
-      coords.accuracy >= 0 &&
-      coords.accuracy <= 50,
-  );
-}
-
-function envelope(location: Location.LocationObject) {
-  return {
-    timestamp: location.timestamp,
-    latitude: location.coords.latitude,
-    longitude: location.coords.longitude,
-    accuracy: location.coords.accuracy,
-    altitude: location.coords.altitude,
-    speed: location.coords.speed,
-  };
+/** Removes forbidden coordinate rows and makes every affected local session non-recoverable. */
+export async function quarantineForbiddenCoordinateRecordingEvidence(
+  profileId?: string,
+): Promise<number> {
+  const db = await getRecordingEvidenceDatabase();
+  let count = 0;
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    count = await quarantineCoordinateEvidenceRows(tx, {
+      includeLegacyGpsTable: false,
+      ...(profileId ? { profileId } : {}),
+    });
+  });
+  return count;
 }
 
 export async function allocateRecordingEvidenceSession(input: {
@@ -558,6 +609,7 @@ export type RecordingEvidenceCheckpointRow = {
 export async function readRecordingEvidenceCheckpoint(
   profileId: string,
 ): Promise<RecordingEvidenceCheckpointRow | null> {
+  await quarantineForbiddenCoordinateRecordingEvidence(profileId);
   const db = await getRecordingEvidenceDatabase();
   const rows = await db.getAllAsync<{
     session_id: string;
@@ -658,132 +710,6 @@ export async function rollbackRecordingEvidenceSession(
       sessionId,
     );
   });
-}
-
-/** Headless-safe: selects exactly one active session and never consults React callbacks. */
-export async function appendHeadlessGpsLocations(
-  locations: readonly Location.LocationObject[],
-): Promise<number> {
-  const valid = locations.filter(validLocation);
-  if (!valid.length) return 0;
-  const db = await getRecordingEvidenceDatabase();
-  const invalidCount = Math.min(MAX_INVALID_HEADLESS_ENVELOPES, locations.length - valid.length);
-  if (invalidCount)
-    await db.withExclusiveTransactionAsync(async (tx) => {
-      for (let index = 0; index < invalidCount; index += 1)
-        await quarantineEvidence(tx, null, "invalid-headless-location");
-    });
-  for (let offset = 0; offset < valid.length; offset += MAX_HEADLESS_ENVELOPES)
-    await db.withExclusiveTransactionAsync(async (tx) => {
-      const active = await tx.getAllAsync<{ session_id: string; next_sequence: number }>(
-        "SELECT session_id, next_sequence FROM recording_evidence_sessions WHERE state = 'active' ORDER BY created_at",
-      );
-      if (active.length !== 1) {
-        for (const candidate of active)
-          await quarantineEvidence(tx, candidate.session_id, "ambiguous-active-session");
-        if (active.length === 0) throw new RecordingEvidenceClosedError();
-        throw new Error("Recording evidence active session is ambiguous");
-      }
-      const session = active[0];
-      if (!session) throw new Error("Recording evidence has no active session");
-      let sequence = session.next_sequence;
-      for (const location of valid.slice(offset, offset + MAX_HEADLESS_ENVELOPES)) {
-        const payload = canonicalJson(envelope(location));
-        if (payload.length > MAX_ENVELOPE_BYTES)
-          throw new Error("GPS evidence envelope exceeds bound");
-        await tx.runAsync(
-          "INSERT INTO recording_gps_envelopes (session_id, sequence, timestamp, payload, byte_size, sha256, commit_marker) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          session.session_id,
-          sequence++,
-          location.timestamp,
-          payload,
-          payload.length,
-          await sha256(payload),
-          COMMIT_MARKER,
-        );
-      }
-      await tx.runAsync(
-        "UPDATE recording_evidence_sessions SET next_sequence = ? WHERE session_id = ? AND state = 'active'",
-        sequence,
-        session.session_id,
-      );
-    });
-  return valid.length;
-}
-
-/** Explicit fenced-session recovery path for headless GPS evidence. */
-export async function recoverHeadlessGpsLocations(
-  sessionId: string,
-  profileId: string,
-): Promise<
-  Array<{
-    timestamp: number;
-    latitude: number;
-    longitude: number;
-    altitude?: number;
-    accuracy?: number;
-  }>
-> {
-  const db = await getRecordingEvidenceDatabase();
-  const session = (
-    await db.getAllAsync<{ profile_id: string }>(
-      "SELECT profile_id FROM recording_evidence_sessions WHERE session_id = ?",
-      sessionId,
-    )
-  )[0];
-  if (!session || session.profile_id !== profileId) throw new Error("profile-session-mismatch");
-  const rows = await db.getAllAsync<{
-    sequence: number;
-    timestamp: number;
-    payload: string;
-    byte_size: number;
-    sha256: string;
-    commit_marker: string;
-  }>(
-    "SELECT sequence, timestamp, payload, byte_size, sha256, commit_marker FROM recording_gps_envelopes WHERE session_id = ? ORDER BY sequence",
-    sessionId,
-  );
-  const result: Array<{
-    timestamp: number;
-    latitude: number;
-    longitude: number;
-    altitude?: number;
-    accuracy?: number;
-  }> = [];
-  let previous = -1;
-  for (const [sequence, row] of rows.entries()) {
-    if (
-      row.sequence !== sequence ||
-      row.commit_marker !== COMMIT_MARKER ||
-      row.byte_size !== byteSize(row.payload) ||
-      (await sha256(row.payload)) !== row.sha256
-    )
-      throw new Error("headless-gps-evidence-invalid");
-    const value = JSON.parse(row.payload) as {
-      timestamp: number;
-      latitude: number;
-      longitude: number;
-      altitude?: number | null;
-      accuracy?: number;
-    };
-    if (
-      !Number.isFinite(value.timestamp) ||
-      value.timestamp < previous ||
-      !Number.isFinite(value.latitude) ||
-      !Number.isFinite(value.longitude)
-    ) {
-      throw new Error("headless-gps-evidence-invalid");
-    }
-    previous = value.timestamp;
-    result.push({
-      timestamp: value.timestamp,
-      latitude: value.latitude,
-      longitude: value.longitude,
-      ...(typeof value.altitude === "number" ? { altitude: value.altitude } : {}),
-      ...(typeof value.accuracy === "number" ? { accuracy: value.accuracy } : {}),
-    });
-  }
-  return result;
 }
 
 export type RecordingEvidenceRecovery =
@@ -913,18 +839,18 @@ export async function inspectRecordingEvidenceSession(
   sessionId: string,
   profileId: string,
 ): Promise<RecordingEvidenceRecovery> {
+  await quarantineForbiddenCoordinateRecordingEvidence(profileId);
   const db = await getRecordingEvidenceDatabase();
   let recovery: RecordingEvidenceRecovery = { status: "none" };
   await db.withExclusiveTransactionAsync(async (tx) => {
     const sessions = await tx.getAllAsync<{
       profile_id: string;
       state: string;
-      next_sequence: number;
       finalized_path: string | null;
       finalized_size: number | null;
       finalized_sha256: string | null;
     }>(
-      "SELECT profile_id, state, next_sequence, finalized_path, finalized_size, finalized_sha256 FROM recording_evidence_sessions WHERE session_id = ?",
+      "SELECT profile_id, state, finalized_path, finalized_size, finalized_sha256 FROM recording_evidence_sessions WHERE session_id = ?",
       sessionId,
     );
     const session = sessions[0];
@@ -932,6 +858,10 @@ export async function inspectRecordingEvidenceSession(
     if (session.profile_id !== profileId) {
       await quarantineEvidence(tx, sessionId, "profile-session-mismatch");
       recovery = { status: "quarantined", reason: "profile-session-mismatch" };
+      return;
+    }
+    if (session.state === "quarantined") {
+      recovery = { status: "quarantined", reason: COORDINATE_EVIDENCE_QUARANTINE_REASON };
       return;
     }
     if (session.state === "finalized" && !(await finalizedArtifactMatches(session))) {
@@ -943,51 +873,16 @@ export async function inspectRecordingEvidenceSession(
       recovery = { status: "quarantined", reason: "finalized-artifact-mismatch" };
       return;
     }
-    const rows = await tx.getAllAsync<{
-      sequence: number;
-      timestamp: number;
-      payload: string;
-      byte_size: number;
-      sha256: string;
-      commit_marker: string;
-    }>(
-      "SELECT sequence, timestamp, payload, byte_size, sha256, commit_marker FROM recording_gps_envelopes WHERE session_id = ? ORDER BY sequence",
+    const rows = await tx.getAllAsync<{ count: number }>(
+      "SELECT COUNT(*) AS count FROM recording_stream_envelopes WHERE session_id = ?",
       sessionId,
     );
-    try {
-      let previousTimestamp = -1;
-      for (const [expectedSequence, row] of rows.entries()) {
-        if (
-          row.sequence !== expectedSequence ||
-          row.commit_marker !== COMMIT_MARKER ||
-          row.byte_size !== row.payload.length
-        ) {
-          throw new Error("sequence-or-commit-marker-invalid");
-        }
-        if ((await sha256(row.payload)) !== row.sha256) throw new Error("digest-invalid");
-        const parsed = JSON.parse(row.payload) as { timestamp?: number };
-        const timestamp = parsed.timestamp;
-        if (
-          !Number.isFinite(timestamp) ||
-          timestamp === undefined ||
-          timestamp < previousTimestamp ||
-          timestamp !== row.timestamp
-        )
-          throw new Error("timestamp-order-invalid");
-        previousTimestamp = timestamp;
-      }
-      if (session.next_sequence !== rows.length) throw new Error("sequence-cursor-invalid");
-      recovery = { status: "recovered", sessionId, profileId, envelopeCount: rows.length };
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : "unreadable-evidence";
-      await quarantineEvidence(tx, sessionId, reason);
-      recovery = { status: "quarantined", reason };
-    }
+    recovery = { status: "recovered", sessionId, profileId, envelopeCount: rows[0]?.count ?? 0 };
   });
   return recovery;
 }
 
-/** The finalization fence makes all later headless/foreground writes fail. */
+/** The finalization fence makes all later sensor writes fail. */
 export async function fenceRecordingEvidenceSession(sessionId: string): Promise<void> {
   const db = await getRecordingEvidenceDatabase();
   await db.withExclusiveTransactionAsync(async (tx) => {
@@ -1488,7 +1383,6 @@ export async function completeAcceptedRecordingEvidenceCleanup(sessionId: string
       "UPDATE recording_evidence_sessions SET cleanup_pending = 0, cleanup_error = NULL, next_cleanup_at = NULL, finalized_path = NULL, finalized_size = NULL, finalized_sha256 = NULL, finalized_artifact_json = NULL, finalized_artifact_digest = NULL WHERE session_id = ? AND state = 'accepted'",
       sessionId,
     );
-    await tx.runAsync("DELETE FROM recording_gps_envelopes WHERE session_id = ?", sessionId);
     await tx.runAsync("DELETE FROM recording_stream_envelopes WHERE session_id = ?", sessionId);
   });
 }
@@ -1541,7 +1435,6 @@ export async function garbageCollectExpiredRecordingEvidence(
       limit,
     );
     for (const row of terminal) {
-      await tx.runAsync("DELETE FROM recording_gps_envelopes WHERE session_id = ?", row.session_id);
       await tx.runAsync(
         "DELETE FROM recording_stream_envelopes WHERE session_id = ?",
         row.session_id,

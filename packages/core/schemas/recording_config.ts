@@ -49,7 +49,7 @@ export type RecordingInsightCard =
   | "route_progress"
   | "climb";
 
-export type RecordingQuickAction = "activity" | "gps" | "plan" | "route" | "sensors" | "trainer";
+export type RecordingQuickAction = "activity" | "plan" | "route" | "sensors" | "trainer";
 
 export const recordingCapabilitiesSchema = z
   .object({
@@ -160,7 +160,7 @@ export interface RecordingSessionAuthority {
   activity_category: "user" | "plan";
   structure: "none" | "plan";
   spatial: "none" | "route";
-  locationCapture: "gps";
+  locationCapture: "none";
   trainerExecution: "none" | "trainer";
 }
 

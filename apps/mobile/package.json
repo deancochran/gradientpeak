@@ -11,7 +11,7 @@
   },
   "scripts": {
     "dev": "pnpm exec expo start --dev-client -c --lan",
-    "dev:e2e": "EXPO_NO_DOTENV=1 EXPO_PUBLIC_MAESTRO_E2E=1 sh -c 'if [ -f .env.e2e ]; then pnpm exec dotenv -e .env.e2e -- pnpm exec expo start -c --localhost --dev-client --port ${EXPO_PORT:-8081}; else pnpm exec expo start -c --localhost --dev-client --port ${EXPO_PORT:-8081}; fi'",
+    "dev:e2e": "EXPO_PUBLIC_MAESTRO_E2E=1 pnpm exec expo start -c --localhost --dev-client --port ${EXPO_PORT:-8081}",
     "dev:e2e:perf": "EXPO_PUBLIC_PERF_TEST=1 pnpm run dev:e2e",
     "storybook:start": "EXPO_PUBLIC_STORYBOOK_ENABLED=1 pnpm exec expo start -c --lan",
     "storybook:generate": "EXPO_PUBLIC_STORYBOOK_ENABLED=1 pnpm exec sb-rn-get-stories --config-path ./.rnstorybook",
@@ -37,7 +37,8 @@
     "test:e2e": "node ./scripts/maestro.mjs test .maestro/flows/smoke",
     "test:e2e:perf": "EXPO_PUBLIC_PERF_TEST=1 node ./scripts/maestro.mjs test .maestro/flows/performance",
     "test:e2e:flow": "node ./scripts/maestro.mjs test",
-    "test:e2e:clean": "node ./scripts/maestro.mjs clean"
+    "test:e2e:clean": "node ./scripts/maestro.mjs clean",
+    "android": "expo run:android"
   },
   "dependencies": {
     "@deancochran/ftms": "0.2.0",
@@ -74,7 +75,6 @@
     "expo-image-picker": "~17.0.11",
     "expo-linking": "~8.0.12",
     "expo-localization": "~17.0.9",
-    "expo-location": "~19.0.8",
     "expo-network": "~8.0.8",
     "expo-notifications": "~0.32.17",
     "expo-router": "~6.0.24",
@@ -83,7 +83,6 @@
     "expo-sqlite": "~16.0.10",
     "expo-status-bar": "~3.0.9",
     "expo-system-ui": "~6.0.9",
-    "expo-task-manager": "~14.0.9",
     "expo-updates": "~29.0.19",
     "expo-web-browser": "~15.0.11",
     "immer": "^10.2.0",

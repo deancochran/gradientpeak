@@ -25,6 +25,7 @@ describe("activity-file-parser", () => {
     expect(activity.summary.avgHeartRate).toBe(155);
     expect(activity.summary.avgPower).toBe(230);
     expect(activity.records).toHaveLength(2);
+    expect(activity.records[0]).toMatchObject({ positionLat: 40.1, positionLong: -74.1 });
     expect(activity.records.map((record) => record.sessionMessageIndex)).toEqual([0, 0]);
     expect(activity.segments).toEqual([
       {
@@ -51,6 +52,7 @@ describe("activity-file-parser", () => {
     expect(activity.summary.totalDistance).toBe(12000);
     expect(activity.summary.calories).toBe(500);
     expect(activity.summary.avgCadence).toBe(85);
+    expect(activity.records[0]).toMatchObject({ positionLat: 40.1, positionLong: -74.1 });
     expect(activity.segments?.[0]).toMatchObject({
       sessionMessageIndex: 0,
       role: "activity",

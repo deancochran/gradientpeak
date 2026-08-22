@@ -248,12 +248,6 @@ CREATE TABLE "activity_efforts" (
 	CONSTRAINT "activity_efforts_coverage_finite_range_check" CHECK ("activity_efforts"."window_coverage" between 0 and 1 and "activity_efforts"."window_coverage" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
 	CONSTRAINT "activity_efforts_max_gap_finite_check" CHECK ("activity_efforts"."max_gap_seconds" > 0 and "activity_efforts"."max_gap_seconds" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
 	CONSTRAINT "activity_efforts_value_finite_positive_check" CHECK ("activity_efforts"."value" > 0 and "activity_efforts"."value" not in ('NaN'::real, 'Infinity'::real, '-Infinity'::real)),
-	CONSTRAINT "activity_efforts_supported_combination_check" CHECK (("activity_efforts"."activity_category" = 'bike' and "activity_efforts"."effort_type" = 'power' and "activity_efforts"."source_series" = 'power') or ("activity_efforts"."activity_category" = 'run' and "activity_efforts"."effort_type" = 'speed' and "activity_efforts"."source_series" in ('grade_adjusted_speed', 'raw_speed')) or ("activity_efforts"."activity_category" = 'swim' and "activity_efforts"."effort_type" = 'speed' and "activity_efforts"."source_series" = 'swim_speed') or ("activity_efforts"."activity_category" in ('bike', 'run', 'swim') and "activity_efforts"."effort_type"::text = 'heart_rate' and "activity_efforts"."source_series" = 'heart_rate')),
-	CONSTRAINT "activity_efforts_unit_compatibility_check" CHECK (("activity_efforts"."activity_category" = 'bike' and "activity_efforts"."effort_type" = 'power' and "activity_efforts"."unit" = 'watts') or ("activity_efforts"."activity_category" in ('run', 'swim') and "activity_efforts"."effort_type" = 'speed' and "activity_efforts"."unit" = 'meters_per_second') or ("activity_efforts"."effort_type"::text = 'heart_rate' and "activity_efforts"."unit" = 'bpm')),
-	CONSTRAINT "activity_efforts_bike_power_max_check" CHECK ("activity_efforts"."activity_category" <> 'bike' or "activity_efforts"."effort_type" <> 'power' or "activity_efforts"."value" <= 3000),
-	CONSTRAINT "activity_efforts_run_speed_bounds_check" CHECK ("activity_efforts"."activity_category" <> 'run' or "activity_efforts"."effort_type" <> 'speed' or ("activity_efforts"."value" >= 0.3 and "activity_efforts"."value" <= 13)),
-	CONSTRAINT "activity_efforts_swim_speed_bounds_check" CHECK ("activity_efforts"."activity_category" <> 'swim' or "activity_efforts"."effort_type" <> 'speed' or ("activity_efforts"."value" >= 0.1 and "activity_efforts"."value" <= 3)),
-	CONSTRAINT "activity_efforts_heart_rate_bounds_check" CHECK ("activity_efforts"."effort_type"::text <> 'heart_rate' or "activity_efforts"."value" between 30 and 240),
 	CONSTRAINT "activity_efforts_method_not_blank_check" CHECK (btrim("activity_efforts"."method") <> ''),
 	CONSTRAINT "activity_efforts_calculation_version_not_blank_check" CHECK (btrim("activity_efforts"."calculation_version") <> ''),
 	CONSTRAINT "activity_efforts_quality_score_range_check" CHECK ("activity_efforts"."quality_score" is null or ("activity_efforts"."quality_score" >= 0 and "activity_efforts"."quality_score" <= 1)),
@@ -290,7 +284,6 @@ CREATE TABLE "activity_file_ingestions" (
 	"failed_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "activity_file_ingestions_contract_version_check" CHECK ("activity_file_ingestions"."contract_version" = 'activity-intake-v1'),
 	CONSTRAINT "activity_file_ingestions_operation_id_check" CHECK ("activity_file_ingestions"."operation_id" ~ '^[A-Za-z0-9_-]{32,128}$'),
 	CONSTRAINT "activity_file_ingestions_provider_identity_check" CHECK (("activity_file_ingestions"."source" = 'provider_sync' and num_nonnulls("activity_file_ingestions"."provider", "activity_file_ingestions"."external_id", "activity_file_ingestions"."integration_id") = 3 and btrim("activity_file_ingestions"."external_id") <> '') or ("activity_file_ingestions"."source" <> 'provider_sync' and num_nonnulls("activity_file_ingestions"."provider", "activity_file_ingestions"."external_id", "activity_file_ingestions"."integration_id") = 0)),
 	CONSTRAINT "activity_file_ingestions_expected_size_check" CHECK ("activity_file_ingestions"."expected_byte_size" is null or "activity_file_ingestions"."expected_byte_size" > 0),
@@ -906,72 +899,7 @@ CREATE TABLE "profile_goals" (
 		and "profile_goals"."target_payload"->>'type' in ('event_performance', 'threshold', 'completion', 'consistency')
 		and (not ("profile_goals"."target_payload" ? 'activity_category')
 			or (jsonb_typeof("profile_goals"."target_payload"->'activity_category') = 'string'
-				and "profile_goals"."target_payload"->>'activity_category' = "profile_goals"."activity_category"::text))),
-	CONSTRAINT "profile_goals_event_performance_payload_check" CHECK ("profile_goals"."target_payload"->>'type' <> 'event_performance' or (
-		"profile_goals"."target_payload" - array['type', 'activity_category', 'distance_m', 'target_time_s', 'target_speed_mps', 'environment', 'tolerance_pct']::text[] = '{}'::jsonb
-		and "profile_goals"."target_payload" ? 'activity_category'
-		and "profile_goals"."target_payload" ? 'distance_m'
-		and case when jsonb_typeof("profile_goals"."target_payload"->'distance_m') = 'number'
-			then ("profile_goals"."target_payload"->>'distance_m')::numeric > 0 else false end
-		and ("profile_goals"."target_payload" ? 'target_time_s' or "profile_goals"."target_payload" ? 'target_speed_mps')
-		and (not ("profile_goals"."target_payload" ? 'target_time_s') or case
-			when jsonb_typeof("profile_goals"."target_payload"->'target_time_s') = 'number'
-			then ("profile_goals"."target_payload"->>'target_time_s')::numeric > 0
-				and trunc(("profile_goals"."target_payload"->>'target_time_s')::numeric) = ("profile_goals"."target_payload"->>'target_time_s')::numeric
-			else false end)
-		and (not ("profile_goals"."target_payload" ? 'target_speed_mps') or case
-			when jsonb_typeof("profile_goals"."target_payload"->'target_speed_mps') = 'number'
-			then ("profile_goals"."target_payload"->>'target_speed_mps')::numeric > 0 else false end)
-		and (not ("profile_goals"."target_payload" ? 'environment') or (
-			jsonb_typeof("profile_goals"."target_payload"->'environment') = 'string'
-			and char_length(btrim("profile_goals"."target_payload"->>'environment')) between 1 and 80))
-		and (not ("profile_goals"."target_payload" ? 'tolerance_pct') or case
-			when jsonb_typeof("profile_goals"."target_payload"->'tolerance_pct') = 'number'
-			then ("profile_goals"."target_payload"->>'tolerance_pct')::numeric between 0 and 1 else false end)
-	)),
-	CONSTRAINT "profile_goals_threshold_payload_check" CHECK ("profile_goals"."target_payload"->>'type' <> 'threshold' or (
-		"profile_goals"."target_payload" - array['type', 'metric', 'activity_category', 'value', 'test_duration_s', 'tolerance_pct']::text[] = '{}'::jsonb
-		and "profile_goals"."target_payload" ? 'metric'
-		and jsonb_typeof("profile_goals"."target_payload"->'metric') = 'string'
-		and "profile_goals"."target_payload"->>'metric' in ('pace', 'power', 'hr')
-		and "profile_goals"."target_payload" ? 'value'
-		and case when jsonb_typeof("profile_goals"."target_payload"->'value') = 'number'
-			then ("profile_goals"."target_payload"->>'value')::numeric > 0 else false end
-		and (not ("profile_goals"."target_payload" ? 'test_duration_s') or case
-			when jsonb_typeof("profile_goals"."target_payload"->'test_duration_s') = 'number'
-			then ("profile_goals"."target_payload"->>'test_duration_s')::numeric > 0
-				and trunc(("profile_goals"."target_payload"->>'test_duration_s')::numeric) = ("profile_goals"."target_payload"->>'test_duration_s')::numeric
-			else false end)
-		and (not ("profile_goals"."target_payload" ? 'tolerance_pct') or case
-			when jsonb_typeof("profile_goals"."target_payload"->'tolerance_pct') = 'number'
-			then ("profile_goals"."target_payload"->>'tolerance_pct')::numeric between 0 and 1 else false end)
-	)),
-	CONSTRAINT "profile_goals_completion_payload_check" CHECK ("profile_goals"."target_payload"->>'type' <> 'completion' or (
-		"profile_goals"."target_payload" - array['type', 'activity_category', 'distance_m', 'duration_s']::text[] = '{}'::jsonb
-		and ("profile_goals"."target_payload" ? 'distance_m' or "profile_goals"."target_payload" ? 'duration_s')
-		and (not ("profile_goals"."target_payload" ? 'distance_m') or case
-			when jsonb_typeof("profile_goals"."target_payload"->'distance_m') = 'number'
-			then ("profile_goals"."target_payload"->>'distance_m')::numeric > 0 else false end)
-		and (not ("profile_goals"."target_payload" ? 'duration_s') or case
-			when jsonb_typeof("profile_goals"."target_payload"->'duration_s') = 'number'
-			then ("profile_goals"."target_payload"->>'duration_s')::numeric > 0
-				and trunc(("profile_goals"."target_payload"->>'duration_s')::numeric) = ("profile_goals"."target_payload"->>'duration_s')::numeric
-			else false end)
-	)),
-	CONSTRAINT "profile_goals_consistency_payload_check" CHECK ("profile_goals"."target_payload"->>'type' <> 'consistency' or (
-		"profile_goals"."target_payload" - array['type', 'target_sessions_per_week', 'target_weeks']::text[] = '{}'::jsonb
-		and ("profile_goals"."target_payload" ? 'target_sessions_per_week' or "profile_goals"."target_payload" ? 'target_weeks')
-		and (not ("profile_goals"."target_payload" ? 'target_sessions_per_week') or case
-			when jsonb_typeof("profile_goals"."target_payload"->'target_sessions_per_week') = 'number'
-			then ("profile_goals"."target_payload"->>'target_sessions_per_week')::numeric > 0
-				and trunc(("profile_goals"."target_payload"->>'target_sessions_per_week')::numeric) = ("profile_goals"."target_payload"->>'target_sessions_per_week')::numeric
-			else false end)
-		and (not ("profile_goals"."target_payload" ? 'target_weeks') or case
-			when jsonb_typeof("profile_goals"."target_payload"->'target_weeks') = 'number'
-			then ("profile_goals"."target_payload"->>'target_weeks')::numeric > 0
-				and trunc(("profile_goals"."target_payload"->>'target_weeks')::numeric) = ("profile_goals"."target_payload"->>'target_weeks')::numeric
-			else false end)
-	))
+				and "profile_goals"."target_payload"->>'activity_category' = "profile_goals"."activity_category"::text)))
 );
 
 CREATE TABLE "profile_metrics" (
@@ -1267,7 +1195,6 @@ CREATE TABLE "threshold_evaluations" (
 	CONSTRAINT "threshold_evaluations_ownership_unique" UNIQUE("id","profile_id","activity_category","metric"),
 	CONSTRAINT "threshold_evaluations_qualified_identity_unique" UNIQUE("id","profile_id","activity_category","metric","outcome"),
 	CONSTRAINT "threshold_evaluations_outcome_check" CHECK (("threshold_evaluations"."outcome" = 'qualified' and "threshold_evaluations"."value" is not null and "threshold_evaluations"."confidence" is not null and "threshold_evaluations"."rejection_reason" is null) or ("threshold_evaluations"."outcome" = 'rejected' and "threshold_evaluations"."value" is null and "threshold_evaluations"."confidence" is null and "threshold_evaluations"."rejection_reason" is not null)),
-	CONSTRAINT "threshold_evaluations_identity_check" CHECK (("threshold_evaluations"."activity_category" = 'bike' and "threshold_evaluations"."metric" = 'power' and "threshold_evaluations"."method" = 'bike_power_30m' and "threshold_evaluations"."unit" = 'watts') or ("threshold_evaluations"."activity_category" = 'run' and "threshold_evaluations"."metric" = 'speed' and "threshold_evaluations"."method" = 'run_speed_30m' and "threshold_evaluations"."unit" = 'meters_per_second') or ("threshold_evaluations"."activity_category" = 'swim' and "threshold_evaluations"."metric" = 'speed' and "threshold_evaluations"."method" = 'swim_speed_15m' and "threshold_evaluations"."unit" = 'meters_per_second')),
 	CONSTRAINT "threshold_evaluations_value_finite_positive_check" CHECK ("threshold_evaluations"."value" is null or ("threshold_evaluations"."value" > 0 and "threshold_evaluations"."value" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric))),
 	CONSTRAINT "threshold_evaluations_confidence_finite_range_check" CHECK ("threshold_evaluations"."confidence" is null or ("threshold_evaluations"."confidence" between 0 and 1 and "threshold_evaluations"."confidence" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric))),
 	CONSTRAINT "threshold_evaluations_source_revision_check" CHECK ("threshold_evaluations"."source_revision" > 0),
@@ -1290,7 +1217,6 @@ CREATE TABLE "threshold_evaluation_efforts" (
 	"ordinal" integer NOT NULL,
 	CONSTRAINT "threshold_evaluation_efforts_evaluation_id_effort_id_pk" PRIMARY KEY("evaluation_id","effort_id"),
 	CONSTRAINT "threshold_evaluation_efforts_role_ordinal_unique" UNIQUE("evaluation_id","role","ordinal"),
-	CONSTRAINT "threshold_evaluation_efforts_metric_check" CHECK (("threshold_evaluation_efforts"."metric" = 'power' and "threshold_evaluation_efforts"."activity_category" = 'bike' and "threshold_evaluation_efforts"."effort_type" = 'power' and "threshold_evaluation_efforts"."source_series" = 'power') or ("threshold_evaluation_efforts"."metric" = 'speed' and "threshold_evaluation_efforts"."activity_category" = 'run' and "threshold_evaluation_efforts"."effort_type" = 'speed' and "threshold_evaluation_efforts"."source_series" in ('grade_adjusted_speed', 'raw_speed')) or ("threshold_evaluation_efforts"."metric" = 'speed' and "threshold_evaluation_efforts"."activity_category" = 'swim' and "threshold_evaluation_efforts"."effort_type" = 'speed' and "threshold_evaluation_efforts"."source_series" = 'swim_speed')),
 	CONSTRAINT "threshold_evaluation_efforts_ordinal_check" CHECK ("threshold_evaluation_efforts"."ordinal" between 0 and 63),
 	CONSTRAINT "threshold_evaluation_efforts_primary_ordinal_check" CHECK ("threshold_evaluation_efforts"."role" <> 'primary' or "threshold_evaluation_efforts"."ordinal" = 0)
 );
@@ -1314,7 +1240,6 @@ CREATE TABLE "thresholds" (
 	CONSTRAINT "thresholds_evaluation_unique" UNIQUE("evaluation_id"),
 	CONSTRAINT "thresholds_supersedes_unique" UNIQUE("supersedes_id"),
 	CONSTRAINT "thresholds_qualified_evaluation_check" CHECK ("thresholds"."evaluation_outcome" = 'qualified'),
-	CONSTRAINT "thresholds_identity_check" CHECK (("thresholds"."activity_category" = 'bike' and "thresholds"."metric" = 'power' and "thresholds"."method" = 'bike_power_30m' and "thresholds"."unit" = 'watts') or ("thresholds"."activity_category" = 'run' and "thresholds"."metric" = 'speed' and "thresholds"."method" = 'run_speed_30m' and "thresholds"."unit" = 'meters_per_second') or ("thresholds"."activity_category" = 'swim' and "thresholds"."metric" = 'speed' and "thresholds"."method" = 'swim_speed_15m' and "thresholds"."unit" = 'meters_per_second')),
 	CONSTRAINT "thresholds_value_finite_positive_check" CHECK ("thresholds"."value" > 0 and "thresholds"."value" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
 	CONSTRAINT "thresholds_confidence_finite_range_check" CHECK ("thresholds"."confidence" between 0 and 1 and "thresholds"."confidence" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
 	CONSTRAINT "thresholds_created_after_effective_check" CHECK ("thresholds"."created_at" >= "thresholds"."effective_at"),
@@ -1338,12 +1263,11 @@ CREATE TABLE "activity_training_effects" (
 	"capability_observation" jsonb,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "activity_training_effects_activity_id_activity_analysis_revision_pk" PRIMARY KEY("activity_id","activity_analysis_revision"),
-	CONSTRAINT "activity_training_effects_contract_version_check" CHECK ("activity_training_effects"."contract_version" = 'athlete-derived-state-persistence-v1'),
 	CONSTRAINT "activity_training_effects_analysis_revision_check" CHECK ("activity_training_effects"."activity_analysis_revision" > 0),
 	CONSTRAINT "activity_training_effects_source_revision_check" CHECK ("activity_training_effects"."source_revision" >= 0),
 	CONSTRAINT "activity_training_effects_calculation_version_check" CHECK ("activity_training_effects"."calculation_version" ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
 	CONSTRAINT "activity_training_effects_input_fingerprint_check" CHECK ("activity_training_effects"."input_fingerprint" ~ '^[a-f0-9]{64}$'),
-	CONSTRAINT "activity_training_effects_common_load_check" CHECK ("activity_training_effects"."common_load" between 0 and 10000 and "activity_training_effects"."common_load" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
+	CONSTRAINT "activity_training_effects_common_load_check" CHECK ("activity_training_effects"."common_load" >= 0 and "activity_training_effects"."common_load" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
 	CONSTRAINT "activity_training_effects_confidence_check" CHECK ("activity_training_effects"."evidence_confidence" between 0 and 1 and "activity_training_effects"."evidence_confidence" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
 	CONSTRAINT "activity_training_effects_capability_check" CHECK ("activity_training_effects"."capability_observation" is null or (jsonb_typeof("activity_training_effects"."capability_observation") = 'object' and pg_column_size("activity_training_effects"."capability_observation") <= 4096 and (("activity_training_effects"."capability_observation"->>'distanceMeters') is not null or ("activity_training_effects"."capability_observation"->>'durationMinutes') is not null)))
 );
@@ -1364,8 +1288,7 @@ CREATE TABLE "daily_training_load" (
 	"calculation_version" text NOT NULL,
 	"published_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "daily_training_load_profile_id_planning_date_source_revision_pk" PRIMARY KEY("profile_id","planning_date","source_revision"),
-	CONSTRAINT "daily_training_load_contract_version_check" CHECK ("daily_training_load"."contract_version" = 'athlete-derived-state-persistence-v1'),
-	CONSTRAINT "daily_training_load_common_load_check" CHECK ("daily_training_load"."common_load" between 0 and 3660000 and "daily_training_load"."common_load" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
+	CONSTRAINT "daily_training_load_common_load_check" CHECK ("daily_training_load"."common_load" >= 0 and "daily_training_load"."common_load" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
 	CONSTRAINT "daily_training_load_state_check" CHECK ("daily_training_load"."fitness" >= 0 and "daily_training_load"."fatigue" >= 0 and abs("daily_training_load"."form" - ("daily_training_load"."fitness" - "daily_training_load"."fatigue")) <= 0.000000001 and "daily_training_load"."fitness" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) and "daily_training_load"."fatigue" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) and "daily_training_load"."form" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
 	CONSTRAINT "daily_training_load_readiness_check" CHECK ("daily_training_load"."readiness" is null or ("daily_training_load"."readiness" between 0 and 100 and "daily_training_load"."readiness" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric))),
 	CONSTRAINT "daily_training_load_coverage_check" CHECK ("daily_training_load"."contributing_activity_count" >= 0 and (("daily_training_load"."coverage_status" = 'complete' and "daily_training_load"."omitted_activity_count" = 0) or ("daily_training_load"."coverage_status" = 'partial' and "daily_training_load"."omitted_activity_count" > 0))),
@@ -1384,10 +1307,8 @@ CREATE TABLE "athlete_recalculation_queue" (
 	"requested_at" timestamp with time zone NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "athlete_recalculation_queue_idempotency_unique" UNIQUE("idempotency_key"),
-	CONSTRAINT "athlete_recalculation_queue_contract_version_check" CHECK ("athlete_recalculation_queue"."contract_version" = 'athlete-derived-state-persistence-v1'),
 	CONSTRAINT "athlete_recalculation_queue_idempotency_check" CHECK ("athlete_recalculation_queue"."idempotency_key" = 'athlete-recalculation:' || "athlete_recalculation_queue"."profile_id"::text),
-	CONSTRAINT "athlete_recalculation_queue_source_revision_check" CHECK ("athlete_recalculation_queue"."source_revision" >= 0),
-	CONSTRAINT "athlete_recalculation_queue_reasons_check" CHECK (cardinality("athlete_recalculation_queue"."reasons") between 1 and 9 and "athlete_recalculation_queue"."reasons" = array_remove(array[case when 'activity_created' = any("athlete_recalculation_queue"."reasons") then 'activity_created'::athlete_recalculation_reason end, case when 'activity_changed' = any("athlete_recalculation_queue"."reasons") then 'activity_changed'::athlete_recalculation_reason end, case when 'activity_deleted' = any("athlete_recalculation_queue"."reasons") then 'activity_deleted'::athlete_recalculation_reason end, case when 'analysis_replaced' = any("athlete_recalculation_queue"."reasons") then 'analysis_replaced'::athlete_recalculation_reason end, case when 'threshold_changed' = any("athlete_recalculation_queue"."reasons") then 'threshold_changed'::athlete_recalculation_reason end, case when 'import_completed' = any("athlete_recalculation_queue"."reasons") then 'import_completed'::athlete_recalculation_reason end, case when 'algorithm_changed' = any("athlete_recalculation_queue"."reasons") then 'algorithm_changed'::athlete_recalculation_reason end, case when 'timezone_changed' = any("athlete_recalculation_queue"."reasons") then 'timezone_changed'::athlete_recalculation_reason end, case when 'explicit_repair' = any("athlete_recalculation_queue"."reasons") then 'explicit_repair'::athlete_recalculation_reason end], null))
+	CONSTRAINT "athlete_recalculation_queue_source_revision_check" CHECK ("athlete_recalculation_queue"."source_revision" >= 0)
 );
 
 CREATE TABLE "threshold_evidence" (
@@ -1416,14 +1337,10 @@ CREATE TABLE "threshold_evidence" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "threshold_evidence_id_profile_activity_unique" UNIQUE("id","profile_id","activity_id"),
 	CONSTRAINT "threshold_evidence_profile_category_activity_unique" UNIQUE("profile_id","activity_category","activity_id"),
-	CONSTRAINT "threshold_evidence_contract_version_check" CHECK ("threshold_evidence"."contract_version" = 'athlete-derived-state-persistence-v1'),
-	CONSTRAINT "threshold_evidence_identity_check" CHECK (("threshold_evidence"."activity_category" = 'bike' and "threshold_evidence"."metric" = 'power' and "threshold_evidence"."unit" = 'watts' and "threshold_evidence"."method" = 'bike_power_30m' and "threshold_evidence"."source_series_metric" = 'power') or ("threshold_evidence"."activity_category" = 'run' and "threshold_evidence"."metric" = 'speed' and "threshold_evidence"."unit" = 'meters_per_second' and "threshold_evidence"."method" = 'run_speed_30m' and "threshold_evidence"."source_series_metric" in ('speed', 'grade_adjusted_speed')) or ("threshold_evidence"."activity_category" = 'swim' and "threshold_evidence"."metric" = 'speed' and "threshold_evidence"."unit" = 'meters_per_second' and "threshold_evidence"."method" = 'swim_speed_15m' and "threshold_evidence"."source_series_metric" = 'speed')),
 	CONSTRAINT "threshold_evidence_value_check" CHECK ("threshold_evidence"."value" > 0 and "threshold_evidence"."value" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
 	CONSTRAINT "threshold_evidence_source_series_id_check" CHECK (char_length(btrim("threshold_evidence"."source_series_id")) between 1 and 256),
 	CONSTRAINT "threshold_evidence_window_check" CHECK ("threshold_evidence"."exact_window_seconds" > 0 and "threshold_evidence"."end_timestamp_seconds" = "threshold_evidence"."start_timestamp_seconds" + "threshold_evidence"."exact_window_seconds" and "threshold_evidence"."start_timestamp_seconds" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) and "threshold_evidence"."end_timestamp_seconds" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
 	CONSTRAINT "threshold_evidence_conversion_factor_check" CHECK ("threshold_evidence"."conversion_factor" > 0 and "threshold_evidence"."conversion_factor" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
-	CONSTRAINT "threshold_evidence_policy_check" CHECK ("threshold_evidence"."policy_version" = 'threshold-policy-v1'),
-	CONSTRAINT "threshold_evidence_plausibility_check" CHECK ("threshold_evidence"."plausibility_version" = 'threshold-plausibility-v1'),
 	CONSTRAINT "threshold_evidence_calculation_version_check" CHECK ("threshold_evidence"."calculation_version" ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
 	CONSTRAINT "threshold_evidence_confidence_check" CHECK ("threshold_evidence"."confidence" between 0 and 1 and "threshold_evidence"."confidence" not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
 	CONSTRAINT "threshold_evidence_lifecycle_check" CHECK (("threshold_evidence"."status" = 'active' and "threshold_evidence"."invalidated_at" is null) or ("threshold_evidence"."status" in ('superseded', 'deleted') and "threshold_evidence"."invalidated_at" >= "threshold_evidence"."observed_at"))
@@ -1461,7 +1378,6 @@ CREATE TABLE "planned_sessions" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "planned_sessions_id_profile_unique" UNIQUE("id","profile_id"),
 	CONSTRAINT "planned_sessions_profile_idempotency_unique" UNIQUE("profile_id","idempotency_key"),
-	CONSTRAINT "planned_sessions_contract_version_check" CHECK ("planned_sessions"."contract_version" = 'planned-session-v1'),
 	CONSTRAINT "planned_sessions_revision_check" CHECK ("planned_sessions"."session_revision" > 0),
 	CONSTRAINT "planned_sessions_idempotency_length_check" CHECK (char_length("planned_sessions"."idempotency_key") between 1 and 512),
 	CONSTRAINT "planned_sessions_source_check" CHECK (("planned_sessions"."source_kind" = 'direct' and "planned_sessions"."direct_operation_id" ~ '^[A-Za-z0-9_-]{32,128}$' and "planned_sessions"."idempotency_key" = 'direct:' || "planned_sessions"."direct_operation_id" and num_nonnulls("planned_sessions"."training_plan_id", "planned_sessions"."training_plan_revision", "planned_sessions"."source_session_key", "planned_sessions"."series_id", "planned_sessions"."occurrence_key") = 0) or ("planned_sessions"."source_kind" = 'training_plan' and "planned_sessions"."training_plan_id" is not null and "planned_sessions"."training_plan_revision" > 0 and "planned_sessions"."source_session_key" is not null and char_length(btrim("planned_sessions"."source_session_key")) between 1 and 128 and "planned_sessions"."idempotency_key" = 'training-plan:' || "planned_sessions"."training_plan_id"::text || ':' || "planned_sessions"."training_plan_revision"::text || ':' || "planned_sessions"."source_session_key" and num_nonnulls("planned_sessions"."direct_operation_id", "planned_sessions"."series_id", "planned_sessions"."occurrence_key") = 0) or ("planned_sessions"."source_kind" = 'recurrence' and "planned_sessions"."series_id" is not null and "planned_sessions"."occurrence_key" is not null and "planned_sessions"."occurrence_key" = "planned_sessions"."original_target_date" and "planned_sessions"."idempotency_key" = 'recurrence:' || "planned_sessions"."series_id"::text || ':' || "planned_sessions"."occurrence_key"::text and num_nonnulls("planned_sessions"."direct_operation_id", "planned_sessions"."training_plan_id", "planned_sessions"."training_plan_revision", "planned_sessions"."source_session_key") = 0)),
@@ -1636,7 +1552,6 @@ CREATE INDEX "idx_routes_created_at" ON "activity_routes" USING btree ("created_
 CREATE INDEX "idx_routes_profile_storage_state" ON "activity_routes" USING btree ("profile_id","storage_state");
 CREATE INDEX "idx_activity_route_deletion_receipts_profile" ON "activity_route_deletion_receipts" USING btree ("profile_id");
 CREATE INDEX "idx_routes_is_system_template" ON "activity_routes" USING btree ("is_system_template") WHERE "activity_routes"."is_system_template" = true;
-CREATE INDEX "idx_activity_segments_activity" ON "activity_segments" USING btree ("activity_id","ordinal");
 CREATE INDEX "idx_activity_segments_category" ON "activity_segments" USING btree ("activity_category") WHERE "activity_segments"."activity_category" is not null;
 CREATE UNIQUE INDEX "activity_session_rpe_evidence_profile_operation_unique" ON "activity_session_rpe_evidence" USING btree ("profile_id","operation_id");
 CREATE UNIQUE INDEX "activity_session_rpe_evidence_one_replacement_per_evidence_unique" ON "activity_session_rpe_evidence" USING btree ("correction_of_id") WHERE "activity_session_rpe_evidence"."correction_of_id" is not null;

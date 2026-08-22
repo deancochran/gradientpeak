@@ -139,8 +139,8 @@ async function checkpoint(): Promise<ActivityRecorderCheckpoint> {
     },
     policy: {
       activity_category: "run",
-      gpsMode: "on",
-      activityGpsMode: "on",
+      gpsMode: "off",
+      activityGpsMode: "off",
       selectedSources: [],
       trainerMode: "auto",
     },

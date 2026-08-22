@@ -59,13 +59,16 @@ const evaluationConfig = getTableConfig(thresholdEvaluations);
 const evaluationChecks = new Set(evaluationConfig.checks.map((constraint) => constraint.name));
 for (const checkName of [
   "threshold_evaluations_outcome_check",
-  "threshold_evaluations_identity_check",
   "threshold_evaluations_value_finite_positive_check",
   "threshold_evaluations_confidence_finite_range_check",
   "threshold_evaluations_source_revision_check",
 ]) {
   assert.ok(evaluationChecks.has(checkName), `Missing evaluation check ${checkName}`);
 }
+assert.ok(
+  !evaluationChecks.has("threshold_evaluations_identity_check"),
+  "Threshold identity policy belongs to @repo/core, not the database",
+);
 assert.ok(
   evaluationConfig.uniqueConstraints.some(
     (constraint) => constraint.name === "threshold_evaluations_idempotency_unique",

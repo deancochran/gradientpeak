@@ -37,7 +37,7 @@ const unplannedRecordingCheckpointSchema = z
     draft: z
       .object({
         activity_category: canonicalActivityCategorySchema,
-        gpsMode: z.enum(["on", "off"]),
+        gpsMode: z.literal("off"),
       })
       .strict(),
     summary: z

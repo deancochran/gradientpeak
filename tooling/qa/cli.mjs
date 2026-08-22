@@ -71,8 +71,15 @@ export function parseArguments(argv) {
     const argument = argv[index];
     if (argument === "--") continue;
     if (argument === "--plan") options.plan = true;
+    else if (argument === "--profile-only") options.profileOnly = true;
+    else if (argument === "--integration-only") options.integrationOnly = true;
     else if (argument === "--changed") options.changed = true;
-    else if (["--profile", "--changed-path", "--base"].includes(argument)) {
+    else if (argument === "--changed-paths") {
+      const paths = argv.slice(index + 1);
+      if (paths.length === 0) throw new Error("--changed-paths requires at least one path.");
+      options.changedPaths.push(...paths);
+      break;
+    } else if (["--profile", "--changed-path", "--base"].includes(argument)) {
       const value = argv[index + 1];
       if (!value || value.startsWith("--")) throw new Error(`${argument} requires a value.`);
       if (argument === "--profile") options.profile = value;
@@ -193,23 +200,37 @@ export function createRunner({
   killProcess = process.kill,
   shutdownTimeout = SHUTDOWN_TIMEOUT,
 } = {}) {
-  const spawnOptions = (root) => ({
+  const spawnOptions = (root, environment = {}) => ({
     cwd: root,
     detached: process.platform !== "win32",
     shell: false,
     stdio: "inherit",
-    env: { ...process.env, CI: "true" },
+    env: { ...process.env, CI: "true", ...environment },
   });
-  const run = (entry, root) =>
-    new Promise((resolve, reject) => {
+  const run = async (entry, root) => {
+    await new Promise((resolve, reject) => {
       const child = spawnProcess(entry.command, entry.args, spawnOptions(root));
-      child.once("error", reject);
-      child.once("exit", (code, signal) =>
-        code === 0
-          ? resolve()
-          : reject(new Error(`${entry.command} exited with ${code ?? signal}`)),
-      );
+      let settled = false;
+      child.once("error", (error) => {
+        if (!settled) {
+          settled = true;
+          reject(error);
+        }
+      });
+      child.once("exit", (code, signal) => {
+        if (settled) return;
+        settled = true;
+        if (code === 0) resolve();
+        else {
+          reject(
+            new Error(
+              `Required QA command failed: ${[entry.command, ...entry.args].join(" ")} exited with ${code ?? signal}.`,
+            ),
+          );
+        }
+      });
     });
+  };
   const signal = (child, value) => {
     try {
       if (process.platform !== "win32" && child.pid) killProcess(-child.pid, value);
@@ -238,7 +259,9 @@ export function createRunner({
             continue;
           }
           if (!(await portAvailable(entry.port)))
-            throw new Error(`QA host port ${entry.port} is already occupied.`);
+            throw new Error(
+              `Required QA prerequisite unavailable: host port ${entry.port} is already occupied.`,
+            );
           const child = spawnProcess(entry.command, entry.args, spawnOptions(root));
           const service = { child, errors: [] };
           child.on("error", (error) => service.errors.push(error));
@@ -275,19 +298,36 @@ async function main() {
   const options = parseArguments(process.argv.slice(2));
   if (options.help)
     return process.stdout.write(
-      `Usage: pnpm qa:run --profile <${QA_PROFILES.join("|")}> [--changed | --changed-path <path>] [--plan]\n`,
+      `Usage: pnpm qa:run --profile <${QA_PROFILES.join("|")}> [--changed | --changed-path <path> | --changed-paths <paths...>] [--integration-only] [--profile-only] [--plan]\n`,
     );
   const root = process.cwd();
   const changedPaths = options.changed
     ? [...options.changedPaths, ...(await getChangedFiles(root, options.base))]
     : options.changedPaths;
-  const plan = createProfilePlan({ profile: options.profile, changedPaths });
+  const plan = createProfilePlan({
+    profile: options.profile,
+    changedPaths,
+    includeStatic: !options.integrationOnly,
+  });
+  if (options.profileOnly) {
+    process.stdout.write(`${plan.profile}\n`);
+    return;
+  }
   process.stdout.write(formatProfilePlan(plan));
-  if (!options.plan) await createRunner().execute(plan, root);
+  if (!options.plan) {
+    await createRunner().execute(plan, root);
+  }
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url)
   main().catch((error) => {
-    process.stderr.write(`qa: ${error.message}\n`);
+    process.stderr.write(`qa: ${formatQaError(error)}\n`);
     process.exitCode = 1;
   });
+
+export function formatQaError(error) {
+  if (error instanceof AggregateError) {
+    return error.errors.map((item) => formatQaError(item)).join("\n");
+  }
+  return error instanceof Error ? error.message : String(error);
+}

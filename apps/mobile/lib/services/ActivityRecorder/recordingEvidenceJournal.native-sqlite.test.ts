@@ -138,7 +138,7 @@ describe("recording evidence native SQLite schema", () => {
     sqliteMocks.openDatabaseAsync.mockReset();
   });
 
-  it("hard-resets epoch-1 v4 evidence before epoch-2 startup and preserves a new v5 recording on repeat startup", async () => {
+  it("hard-resets epoch-1 v4 evidence before epoch-2 startup and preserves a new recording on repeat startup", async () => {
     expect(CURRENT_CONTRACT_EPOCH).toBe(2);
     const transitionOrder: string[] = [];
     const legacy = await nativeExecutor();
@@ -243,7 +243,7 @@ describe("recording evidence native SQLite schema", () => {
       transitionOrder.push("delete-v4");
     });
     sqliteMocks.openDatabaseAsync.mockImplementation(async () => {
-      transitionOrder.push("open-v5");
+      transitionOrder.push("open-v6");
       return currentHandle;
     });
     let marker: string | null = "1";
@@ -264,7 +264,6 @@ describe("recording evidence native SQLite schema", () => {
       clearAppStorage: async () => undefined,
       cleanupStreamFiles: async () => undefined,
       cleanupFitFiles: async () => undefined,
-      cleanupLocation: async () => undefined,
     });
 
     await expect(initializeEpoch()).resolves.toBe("reset");
@@ -273,13 +272,13 @@ describe("recording evidence native SQLite schema", () => {
       "reset-start",
       "close-v4",
       "delete-v4",
-      "open-v5",
+      "open-v6",
       "reset-complete",
       "marker-2",
     ]);
     expect(
       await current.executor.getAllAsync<{ user_version: number }>("PRAGMA user_version"),
-    ).toEqual([{ user_version: 5 }]);
+    ).toEqual([{ user_version: 6 }]);
     expect(
       await current.executor.getAllAsync("SELECT session_id FROM recording_evidence_sessions"),
     ).toEqual([]);
@@ -317,7 +316,7 @@ describe("recording evidence native SQLite schema", () => {
 
     expect(
       await native.executor.getAllAsync<{ user_version: number }>("PRAGMA user_version"),
-    ).toEqual([{ user_version: 5 }]);
+    ).toEqual([{ user_version: 6 }]);
     await initializeRecordingEvidenceDatabase(native.executor);
     expect(
       await native.executor.getAllAsync<{ foreign_keys: number }>("PRAGMA foreign_keys"),
@@ -341,12 +340,11 @@ describe("recording evidence native SQLite schema", () => {
         2,
       ),
     ).rejects.toThrow();
-    await expect(
-      native.executor.runAsync(
-        "INSERT INTO recording_gps_envelopes (session_id, sequence, timestamp, payload, byte_size, sha256, commit_marker) VALUES (?, 0, 1, '{}', 2, 'x', 'committed-v1')",
-        "missing-session",
+    expect(
+      await native.executor.getAllAsync(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recording_gps_envelopes'",
       ),
-    ).rejects.toThrow();
+    ).toEqual([]);
 
     await expect(
       native.executor.withExclusiveTransactionAsync(async (tx) => {
@@ -365,6 +363,117 @@ describe("recording evidence native SQLite schema", () => {
         "rolled-back",
       ),
     ).toEqual([]);
+  });
+
+  it("migrates v5 coordinate evidence into quarantine before recovery or submission", async () => {
+    const native = await nativeExecutor();
+    close = native.close;
+    await initializeRecordingEvidenceDatabase(native.executor);
+    await native.executor.execAsync(`CREATE TABLE recording_gps_envelopes (
+      session_id TEXT NOT NULL REFERENCES recording_evidence_sessions(session_id),
+      sequence INTEGER NOT NULL,
+      timestamp INTEGER NOT NULL,
+      payload TEXT NOT NULL,
+      byte_size INTEGER NOT NULL,
+      sha256 TEXT NOT NULL,
+      commit_marker TEXT NOT NULL,
+      PRIMARY KEY (session_id, sequence)
+    );
+    CREATE INDEX recording_gps_envelopes_session_sequence
+      ON recording_gps_envelopes(session_id, sequence);
+    PRAGMA user_version = 5;`);
+    for (const [sessionId, profileId] of [
+      ["legacy-gps", "profile-gps"],
+      ["legacy-latlng", "profile-latlng"],
+    ] as const) {
+      await native.executor.runAsync(
+        "INSERT INTO recording_evidence_sessions (session_id, profile_id, state, created_at, checkpoint_json, checkpoint_digest) VALUES (?, ?, 'active', 1, '{}', ?)",
+        sessionId,
+        profileId,
+        createHash("sha256").update("{}").digest("hex"),
+      );
+      await native.executor.runAsync(
+        "INSERT INTO activity_submission_queue_jobs (id, operation_id, profile_id, session_id, artifact_id, status, attempts, retry_class, next_attempt_at, created_at, updated_at, job_json, schema_version) VALUES (?, ?, ?, ?, ?, 'queued', 0, 'transient', 1, 1, 1, '{}', 3)",
+        sessionId,
+        `operation-${sessionId}`,
+        profileId,
+        sessionId,
+        sessionId,
+      );
+    }
+    await native.executor.runAsync(
+      "INSERT INTO recording_gps_envelopes (session_id, sequence, timestamp, payload, byte_size, sha256, commit_marker) VALUES ('legacy-gps', 0, 1, ?, ?, ?, 'committed-v1')",
+      '{"latitude":40,"longitude":-75}',
+      31,
+      "digest",
+    );
+    const coordinatePayload = '{"metric":"latlng","values":[[40,-75]]}';
+    await native.executor.runAsync(
+      "INSERT INTO recording_stream_envelopes (session_id, stream_kind, sequence, stream_order, timestamp, payload, byte_size, sha256, commit_marker, version) VALUES ('legacy-latlng', 'latlng', 0, 0, 1, ?, ?, ?, 'stream-committed-v1', 1)",
+      coordinatePayload,
+      Buffer.byteLength(coordinatePayload),
+      createHash("sha256").update(coordinatePayload).digest("hex"),
+    );
+
+    await initializeRecordingEvidenceDatabase(native.executor);
+    setRecordingEvidenceDatabaseForTests(native.executor);
+
+    expect(
+      await native.executor.getAllAsync<{ user_version: number }>("PRAGMA user_version"),
+    ).toEqual([{ user_version: 6 }]);
+    expect(
+      await native.executor.getAllAsync(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recording_gps_envelopes'",
+      ),
+    ).toEqual([]);
+    expect(
+      await native.executor.getAllAsync(
+        "SELECT session_id FROM recording_stream_envelopes WHERE stream_kind = 'latlng'",
+      ),
+    ).toEqual([]);
+    expect(
+      await native.executor.getAllAsync<{
+        session_id: string;
+        state: string;
+        checkpoint_json: string | null;
+      }>(
+        "SELECT session_id, state, checkpoint_json FROM recording_evidence_sessions ORDER BY session_id",
+      ),
+    ).toEqual([
+      { session_id: "legacy-gps", state: "quarantined", checkpoint_json: null },
+      { session_id: "legacy-latlng", state: "quarantined", checkpoint_json: null },
+    ]);
+    expect(
+      await native.executor.getAllAsync<{
+        session_id: string;
+        status: string;
+        retry_class: string;
+        error_category: string;
+      }>(
+        "SELECT session_id, status, retry_class, error_category FROM activity_submission_queue_jobs ORDER BY session_id",
+      ),
+    ).toEqual([
+      {
+        session_id: "legacy-gps",
+        status: "failed",
+        retry_class: "permanent",
+        error_category: "gps-policy-coordinate-evidence-rejected",
+      },
+      {
+        session_id: "legacy-latlng",
+        status: "failed",
+        retry_class: "permanent",
+        error_category: "gps-policy-coordinate-evidence-rejected",
+      },
+    ]);
+    await expect(loadRecordingEvidenceCheckpoint("profile-gps")).resolves.toBeNull();
+    await expect(loadRecordingEvidenceCheckpoint("profile-latlng")).resolves.toBeNull();
+    await expect(loadDueActivitySubmissionQueueJobs("profile-gps", Date.now())).resolves.toEqual(
+      [],
+    );
+    await expect(loadDueActivitySubmissionQueueJobs("profile-latlng", Date.now())).resolves.toEqual(
+      [],
+    );
   });
 
   it("selects the sole active checkpoint over historical finalized state", async () => {
@@ -537,10 +646,6 @@ describe("recording evidence native SQLite schema", () => {
       now - 31 * 24 * 60 * 60 * 1000,
       "file:///discard.fit",
     );
-    await native.executor.runAsync(
-      "INSERT INTO recording_gps_envelopes (session_id, sequence, timestamp, payload, byte_size, sha256, commit_marker) VALUES (?, 0, 1, '{}', 2, 'digest', 'committed-v1')",
-      sessionId,
-    );
     const job = activitySubmissionQueueJobSchema.parse({
       schemaVersion: 3,
       id: sessionId,
@@ -615,12 +720,6 @@ describe("recording evidence native SQLite schema", () => {
         sessionId,
       ),
     ).toEqual([]);
-    expect(
-      await native.executor.getAllAsync(
-        "SELECT session_id FROM recording_gps_envelopes WHERE session_id = ?",
-        sessionId,
-      ),
-    ).toEqual([]);
   });
 
   it.each([
@@ -653,10 +752,6 @@ describe("recording evidence native SQLite schema", () => {
       profileId,
       now - 31 * 24 * 60 * 60 * 1000,
       `file:///${sessionId}.fit`,
-    );
-    await native.executor.runAsync(
-      "INSERT INTO recording_gps_envelopes (session_id, sequence, timestamp, payload, byte_size, sha256, commit_marker) VALUES (?, 0, 1, '{}', 2, 'digest', 'committed-v1')",
-      sessionId,
     );
     await native.executor.runAsync(
       "INSERT INTO recording_stream_envelopes (session_id, stream_kind, sequence, stream_order, timestamp, payload, byte_size, sha256, commit_marker, version) VALUES (?, 'power', 0, 0, 1, '{}', 2, 'digest', 'stream-committed-v1', 1)",
@@ -722,12 +817,6 @@ describe("recording evidence native SQLite schema", () => {
     expect(
       await native.executor.getAllAsync(
         "SELECT session_id FROM recording_evidence_sessions WHERE session_id = ?",
-        sessionId,
-      ),
-    ).toEqual([]);
-    expect(
-      await native.executor.getAllAsync(
-        "SELECT session_id FROM recording_gps_envelopes WHERE session_id = ?",
         sessionId,
       ),
     ).toEqual([]);
@@ -860,7 +949,7 @@ describe("recording evidence native SQLite schema", () => {
     const failing: RecordingEvidenceSqlExecutor = {
       ...native.executor,
       async execAsync(source) {
-        if (fail && source.includes("PRAGMA user_version = 5")) {
+        if (fail && source.includes("PRAGMA user_version = 6")) {
           fail = false;
           throw new Error("injected-create-failure");
         }
@@ -884,10 +973,10 @@ describe("recording evidence native SQLite schema", () => {
     await initializeRecordingEvidenceDatabase(native.executor);
     expect(
       await native.executor.getAllAsync<{ user_version: number }>("PRAGMA user_version"),
-    ).toEqual([{ user_version: 5 }]);
+    ).toEqual([{ user_version: 6 }]);
   });
 
-  it.each([1, 6])("rejects schema version %i without mutating its database", async (version) => {
+  it.each([1, 7])("rejects schema version %i without mutating its database", async (version) => {
     const native = await nativeExecutor();
     close = native.close;
     await native.executor.execAsync(

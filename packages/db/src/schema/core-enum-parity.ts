@@ -28,11 +28,17 @@ export const athleteReadScopeDbValues = [
   "goals",
   "calendar",
 ] as const satisfies readonly AthleteReadScope[];
+export const commentsEntityTypeDbValues = [
+  "activity",
+  "training_plan",
+  "activity_plan",
+  "route",
+  "event",
+] as const;
 
 /**
- * Explicit ownership boundary for database enum parity. Comments intentionally
- * retain a text column for historical rows; repository validation maps it to
- * the narrower Core comment taxonomy.
+ * Explicit ownership boundary for database enum parity. Comments retain a text
+ * column, while this DB-owned list drives both its schema constraint and parity.
  */
 export const coreEnumParityManifest = {
   organization_role_key: {
@@ -66,8 +72,8 @@ export const coreEnumParityManifest = {
     strategy: "exact" as const,
   },
   comments_entity_type: {
-    coreValues: socialCommentEntityTypeValues,
-    databaseValues: "text" as const,
-    strategy: "repository-validates-core-values" as const,
+    coreValues: [...socialCommentEntityTypeValues].sort(),
+    databaseValues: [...commentsEntityTypeDbValues].sort(),
+    strategy: "exact" as const,
   },
 } as const;

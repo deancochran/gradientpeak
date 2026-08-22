@@ -23,7 +23,7 @@ env:
       id: "activity-import-screen"
     timeout: 10000
 - assertVisible:
-    id: "activity-import-pick-fit-file-button"
+    id: "activity-import-file-input"
 - assertNotVisible:
     id: "activity-import-name-input"
 - assertVisible:

@@ -19,8 +19,6 @@ import {
 export function useStandalonePermissions() {
   const [permissions, setPermissions] = useState<AllPermissionsStatus>({
     bluetooth: null,
-    location: null,
-    locationBackground: null,
   });
   const [allGranted, setAllGranted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -82,15 +80,7 @@ export function useStandalonePermissions() {
     try {
       setIsLoading(true);
 
-      // Request in order: bluetooth, location, then background location
       await requestPermission("bluetooth");
-      await requestPermission("location");
-
-      // Only request background location if foreground location is granted
-      const currentStatus = await checkAllPermissions();
-      if (currentStatus.location?.granted) {
-        await requestPermission("location-background");
-      }
 
       // Check final status
       const granted = await areAllPermissionsGranted();

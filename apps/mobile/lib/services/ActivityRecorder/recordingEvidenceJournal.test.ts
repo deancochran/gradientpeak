@@ -42,7 +42,6 @@ vi.mock("expo-crypto", () => ({
 
 import {
   allocateRecordingEvidenceSession,
-  appendHeadlessGpsLocations,
   createRecordingStreamJournalAdapter,
   fenceRecordingEvidenceSession,
   initializeRecordingEvidenceDatabase,
@@ -56,7 +55,6 @@ import {
 type Session = {
   profile_id: string;
   state: string;
-  next_sequence: number;
   next_stream_order?: number;
   finalized_path?: string | null;
   finalized_size?: number | null;
@@ -143,9 +141,8 @@ function memoryDatabase() {
       if (sql.includes("WHERE state = 'active'")) {
         return [...sessions.entries()]
           .filter(([, session]) => session.state === "active")
-          .map(([session_id, session]) => ({
+          .map(([session_id]) => ({
             session_id,
-            next_sequence: session.next_sequence,
           })) as T[];
       }
       return [] as T[];
@@ -155,14 +152,7 @@ function memoryDatabase() {
         sessions.set(params[0] as string, {
           profile_id: params[1] as string,
           state: "active",
-          next_sequence: 0,
           next_stream_order: 0,
-        });
-      } else if (sql.startsWith("INSERT INTO recording_gps")) {
-        rows.push({
-          sessionId: params[0] as string,
-          sequence: params[1] as number,
-          marker: params[6] as string,
         });
       } else if (sql.startsWith("INSERT INTO recording_stream_envelopes")) {
         rows.push({
@@ -177,9 +167,6 @@ function memoryDatabase() {
           marker: params[8] as string,
           version: params[9] as number,
         });
-      } else if (sql.includes("SET next_sequence")) {
-        const session = sessions.get(params[1] as string);
-        if (session) session.next_sequence = params[0] as number;
       } else if (sql.includes("SET next_stream_order")) {
         const session = sessions.get(params[1] as string);
         if (session) session.next_stream_order = params[0] as number;
@@ -204,11 +191,6 @@ function memoryDatabase() {
   };
   return { db, rows, sessions };
 }
-
-const location = {
-  timestamp: 1_000,
-  coords: { latitude: 40, longitude: -75, accuracy: 5, altitude: null, speed: null },
-} as never;
 
 describe("recording evidence journal", () => {
   beforeEach(() => {
@@ -262,13 +244,13 @@ describe("recording evidence journal", () => {
 
     const fresh = schemaDatabase(0);
     await initializeRecordingEvidenceDatabase(fresh.db);
-    expect(fresh.version()).toBe(5);
-    expect(fresh.statements).toEqual([
-      "PRAGMA user_version",
+    expect(fresh.version()).toBe(6);
+    expect(fresh.statements).toContain("PRAGMA user_version");
+    expect(fresh.statements).toContainEqual(
       expect.stringContaining("CREATE TABLE recording_evidence_sessions"),
-      "PRAGMA user_version = 5",
-      "PRAGMA foreign_keys = ON",
-    ]);
+    );
+    expect(fresh.statements).toContain("PRAGMA user_version = 6");
+    expect(fresh.statements.join("\n")).not.toContain("CREATE TABLE recording_gps_envelopes");
 
     const interrupted = schemaDatabase(0, true);
     await expect(initializeRecordingEvidenceDatabase(interrupted.db)).rejects.toThrow(
@@ -276,41 +258,18 @@ describe("recording evidence journal", () => {
     );
     expect(interrupted.version()).toBe(0);
     await initializeRecordingEvidenceDatabase(interrupted.db);
-    expect(interrupted.version()).toBe(5);
+    expect(interrupted.version()).toBe(6);
 
-    const current = schemaDatabase(5);
+    const current = schemaDatabase(6);
     await initializeRecordingEvidenceDatabase(current.db);
-    expect(current.statements).toEqual(["PRAGMA user_version", "PRAGMA foreign_keys = ON"]);
-    for (const unsupportedVersion of [1, 6]) {
+    expect(current.statements).toContain("PRAGMA foreign_keys = ON");
+    for (const unsupportedVersion of [1, 7]) {
       const unsupported = schemaDatabase(unsupportedVersion);
       await expect(initializeRecordingEvidenceDatabase(unsupported.db)).rejects.toThrow(
         "unsupported-recording-evidence-schema",
       );
       expect(unsupported.statements).toEqual(["PRAGMA user_version"]);
     }
-  });
-
-  it("writes headless GPS without a provider and rejects ambiguous sessions", async () => {
-    const memory = memoryDatabase();
-    setRecordingEvidenceDatabaseForTests(memory.db);
-    await allocateRecordingEvidenceSession({ sessionId: "profile:a", profileId: "profile" });
-    await expect(appendHeadlessGpsLocations([location])).resolves.toBe(1);
-    expect(memory.rows).toEqual([{ sessionId: "profile:a", sequence: 0, marker: "committed-v1" }]);
-    memory.sessions.set("profile:b", { profile_id: "profile", state: "active", next_sequence: 0 });
-    await expect(appendHeadlessGpsLocations([location])).rejects.toThrow("ambiguous");
-  });
-
-  it("commits every valid headless location in bounded chunks", async () => {
-    const memory = memoryDatabase();
-    setRecordingEvidenceDatabaseForTests(memory.db);
-    await allocateRecordingEvidenceSession({ sessionId: "profile:a", profileId: "profile" });
-    const batch = Array.from({ length: 201 }, (_, index) => ({
-      timestamp: index + 1,
-      coords: { latitude: 40, longitude: -75, accuracy: 5, altitude: null, speed: null },
-    })) as never;
-    await expect(appendHeadlessGpsLocations(batch)).resolves.toBe(201);
-    expect(memory.rows.filter((row) => row.sessionId === "profile:a")).toHaveLength(201);
-    expect(memory.sessions.get("profile:a")?.next_sequence).toBe(201);
   });
 
   it("rejects a cross-profile session claim and post-fence writes", async () => {
@@ -320,10 +279,43 @@ describe("recording evidence journal", () => {
     await expect(
       allocateRecordingEvidenceSession({ sessionId: "profile:a", profileId: "other" }),
     ).rejects.toThrow("owner");
+    const stream = createRecordingStreamJournalAdapter({
+      sessionId: "profile:a",
+      profileId: "profile",
+    });
     await fenceRecordingEvidenceSession("profile:a");
-    await expect(appendHeadlessGpsLocations([location])).rejects.toBeInstanceOf(
-      RecordingEvidenceClosedError,
-    );
+    await expect(
+      stream.append([{ streamKind: "power", timestamp: 1, payload: '{"value":1}' }]),
+    ).rejects.toBeInstanceOf(RecordingEvidenceClosedError);
+  });
+
+  it("rejects coordinate stream kinds and payload aliases before persistence", async () => {
+    const memory = memoryDatabase();
+    setRecordingEvidenceDatabaseForTests(memory.db);
+    await allocateRecordingEvidenceSession({ sessionId: "profile:a", profileId: "profile" });
+    const stream = createRecordingStreamJournalAdapter({
+      sessionId: "profile:a",
+      profileId: "profile",
+    });
+    await expect(
+      stream.append([
+        {
+          streamKind: "latlng",
+          timestamp: 1,
+          payload: '{"metric":"latlng","dataType":"latlng","values":[[40,-75]]}',
+        },
+      ]),
+    ).rejects.toThrow("coordinate-stream-ingestion-forbidden");
+    await expect(
+      stream.append([
+        {
+          streamKind: "position",
+          timestamp: 1,
+          payload: '{"metric":"latlng","values":[[40,-75]]}',
+        },
+      ]),
+    ).rejects.toThrow("coordinate-stream-ingestion-forbidden");
+    expect(memory.rows).toEqual([]);
   });
 
   it("rebuilds committed stream rows and quarantines only the corrupt session", async () => {
@@ -386,7 +378,6 @@ describe("recording evidence journal", () => {
     memory.sessions.set("profile:a", {
       profile_id: "profile",
       state: "finalized",
-      next_sequence: 0,
       finalized_path: "file:///artifact.fit",
       finalized_size: 3,
       finalized_sha256: "0".repeat(64),
@@ -411,7 +402,6 @@ describe("recording evidence journal", () => {
     memory.sessions.set("legacy", {
       profile_id: "profile",
       state: "finalized",
-      next_sequence: 0,
       finalized_path: "file:///legacy.fit",
       finalized_size: 3,
       finalized_sha256: "06".repeat(32),
@@ -447,7 +437,7 @@ describe("recording evidence journal", () => {
         activity: {
           activity_category: "bike",
           mode: "planned",
-          gpsMode: "on",
+          gpsMode: "off",
           eventId: "550e8400-e29b-41d4-a716-446655440000",
           activityPlanId: "550e8400-e29b-41d4-a716-446655440001",
           routeId: "550e8400-e29b-41d4-a716-446655440002",
@@ -456,14 +446,14 @@ describe("recording evidence journal", () => {
         performanceTargets: createUnavailableAthletePerformanceTargetFacts("2026-03-20T10:00:00Z"),
         devices: { connected: [], controllableTrainer: null, selectedSources: [] },
         capabilities: {
-          canTrackLocation: true,
+          canTrackLocation: false,
           canTrackPower: true,
           canTrackHeartRate: true,
           canTrackCadence: true,
-          shouldShowMap: true,
+          shouldShowMap: false,
           shouldShowSteps: true,
           shouldShowRouteOverlay: true,
-          shouldShowTurnByTurn: true,
+          shouldShowTurnByTurn: false,
           shouldShowFollowAlong: false,
           shouldShowTrainerControl: true,
           canAutoAdvanceSteps: true,
@@ -517,7 +507,6 @@ describe("recording evidence journal", () => {
     memory.sessions.set("current", {
       profile_id: "profile",
       state: "finalized",
-      next_sequence: 0,
       finalized_path: "file:///current.fit",
       finalized_size: 3,
       finalized_sha256: "06".repeat(32),

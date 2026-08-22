@@ -26,22 +26,12 @@ jest.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
 }));
 
-jest.mock("@repo/ui/components/toggle-group", () => ({
-  __esModule: true,
-  ToggleGroup: ({ children, ...props }: HostProps) =>
-    React.createElement("ToggleGroup", props, children),
-  ToggleGroupIcon: createHost("ToggleGroupIcon"),
-  ToggleGroupItem: ({ children, ...props }: HostProps) =>
-    React.createElement("Pressable", props, children),
-}));
-
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
   Activity: createHost("Activity"),
   Bike: createHost("Bike"),
   Dumbbell: createHost("Dumbbell"),
   Footprints: createHost("Footprints"),
-  MapPin: createHost("MapPin"),
   Waves: createHost("Waves"),
   X: createHost("X"),
 }));
@@ -59,9 +49,7 @@ describe("RecordingActivityQuickEdit", () => {
         onClose={onClose}
         onActivitySelect={onActivitySelect}
         currentCategory="bike"
-        currentGpsRecordingEnabled={false}
         canEditActivity={false}
-        canEditGps={true}
       />,
     );
 
@@ -71,21 +59,20 @@ describe("RecordingActivityQuickEdit", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("marks GPS options disabled when GPS editing is locked", () => {
+  it("does not render GPS controls", () => {
     renderNative(
       <RecordingActivityQuickEdit
         visible
         onClose={jest.fn()}
         onActivitySelect={jest.fn()}
         currentCategory="bike"
-        currentGpsRecordingEnabled={false}
         canEditActivity={true}
-        canEditGps={false}
       />,
     );
 
-    expect(screen.getByTestId("gps-on-option").props.disabled).toBe(true);
-    expect(screen.getByTestId("gps-off-option").props.disabled).toBe(true);
+    expect(screen.queryByTestId("gps-on-option")).toBeNull();
+    expect(screen.queryByTestId("gps-off-option")).toBeNull();
+    expect(screen.queryByText(/GPS/i)).toBeNull();
   });
 
   it("provides accessible controls and hides the visual dismissal backdrop", () => {
@@ -95,23 +82,13 @@ describe("RecordingActivityQuickEdit", () => {
         onClose={jest.fn()}
         onActivitySelect={jest.fn()}
         currentCategory="bike"
-        currentGpsRecordingEnabled={true}
         canEditActivity={true}
-        canEditGps={true}
       />,
     );
 
-    expect(screen.getByLabelText("Close activity and GPS quick edit").props).toMatchObject({
+    expect(screen.getByLabelText("Close activity quick edit").props).toMatchObject({
       accessibilityRole: "button",
       accessibilityHint: "Dismisses this quick edit panel.",
-    });
-    expect(screen.getByTestId("gps-on-option").props).toMatchObject({
-      accessibilityRole: "button",
-      accessibilityState: { disabled: false, selected: true },
-    });
-    expect(screen.getByTestId("gps-off-option").props.accessibilityState).toEqual({
-      disabled: false,
-      selected: false,
     });
     expect(screen.getByTestId("activity-select-bike").props).toMatchObject({
       accessibilityRole: "button",

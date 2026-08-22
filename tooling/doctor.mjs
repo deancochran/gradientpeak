@@ -178,8 +178,7 @@ if (requiresPublicTunnel) {
 
 const envPairs = [
   ["apps/web/.env.local", "apps/web/.env.example", requiresWebEnv],
-  ["apps/mobile/.env", "apps/mobile/.env.example", requiresMobileEnv],
-  ["apps/mobile/.env.e2e", "apps/mobile/.env.e2e.example", lane === "e2e"],
+  ["apps/mobile/.env.local", "apps/mobile/.env.example", requiresMobileEnv],
   ["packages/db/.env", "packages/db/.env.example", false],
 ];
 
