@@ -7,7 +7,7 @@ test("recording publicly pauses, resumes, and finishes from the current session"
 }) => {
   await openRecordingPage(athletePage, "/record");
   await athletePage.getByRole("button", { name: /^bike$/i }).click();
-  await athletePage.getByRole("button", { name: /configure timer session/i }).click();
+  await athletePage.getByRole("button", { name: /^open recorder$/i }).click();
   await athletePage.getByRole("button", { name: /^start$/i }).click();
   await expect(athletePage.getByText(/^recording$/i)).toBeVisible();
   await waitForActiveRecordingDraft(athletePage);
