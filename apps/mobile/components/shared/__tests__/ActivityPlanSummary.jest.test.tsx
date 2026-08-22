@@ -54,14 +54,15 @@ const structure = {
 };
 
 describe("ActivityPlanSummary", () => {
-  it("omits steps, authored targets, and unavailable summary quantities", () => {
+  it("shows unavailable summary quantities without inventing authored values", () => {
     renderNative(
       <ActivityPlanSummary showAttribution={false} structure={structure} title="Tempo repeats" />,
     );
 
-    expect(screen.queryByText("Duration")).toBeNull();
+    expect(screen.getByText("Duration")).toBeTruthy();
     expect(screen.queryByText("Steps")).toBeNull();
     expect(screen.queryByText(/RPE 6|Prescribed intensity/)).toBeNull();
+    expect(screen.getAllByText("Unavailable")).toHaveLength(4);
     expect(screen.queryByText(/^0(?:\.00|m)?$/)).toBeNull();
   });
 
@@ -145,7 +146,7 @@ describe("ActivityPlanSummary", () => {
       />,
     );
 
-    expect(screen.getByText(/15 min known \(partial\)/)).toBeTruthy();
+    expect(screen.getByText(/15m known \(partial\)/)).toBeTruthy();
     expect(screen.getByText(/88 known \(partial\)/)).toBeTruthy();
     expect(screen.getByText(/0\.90 known \(partial\)/)).toBeTruthy();
   });
@@ -161,8 +162,11 @@ describe("ActivityPlanSummary", () => {
       />,
     );
 
-    expect(screen.queryByText("Load")).toBeNull();
-    expect(screen.queryByText("Intensity")).toBeNull();
+    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
+    expect(screen.getByText("Duration")).toBeTruthy();
+    expect(screen.getByText("1h")).toBeTruthy();
+    expect(screen.getAllByText("Unavailable")).toHaveLength(3);
     expect(screen.queryByText(/^0(?:\.00|m)?$/)).toBeNull();
     expect(JSON.stringify(rendered.toJSON())).not.toMatch(
       /TSS|\bIF\b|intensityFactor|category_load/,

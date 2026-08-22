@@ -114,7 +114,7 @@ describe("TrainingPlanBuilderEventCard actions", () => {
     });
   });
 
-  it("renders partial planned estimates as normal zero metrics", () => {
+  it("renders partial planned estimates without substituting zero metrics", () => {
     renderNative(
       <TrainingPlanBuilderEventCard
         event={{
@@ -133,10 +133,12 @@ describe("TrainingPlanBuilderEventCard actions", () => {
       />,
     );
 
-    expect(screen.getByText("Duration: 0m")).toBeTruthy();
-    expect(screen.getByText("Common Load: 0")).toBeTruthy();
-    expect(screen.getByText("Normalized intensity: 0.00")).toBeTruthy();
-    expect(screen.queryByText(/partial|unavailable|incomplete/i)).toBeNull();
+    expect(screen.getByText("Duration: 1h")).toBeTruthy();
+    expect(screen.getByText("Common Load: Partial")).toBeTruthy();
+    expect(screen.getByText("Normalized intensity: Partial")).toBeTruthy();
+    expect(screen.queryByText(/^Duration: 0m$/)).toBeNull();
+    expect(screen.queryByText(/^Common Load: 0$/)).toBeNull();
+    expect(screen.queryByText(/^Normalized intensity: 0\.00$/)).toBeNull();
   });
 
   it("does not revive missing canonical estimates from session intent", () => {
@@ -159,9 +161,12 @@ describe("TrainingPlanBuilderEventCard actions", () => {
       />,
     );
 
-    expect(screen.getByText("Duration: 0m")).toBeTruthy();
-    expect(screen.getByText("Common Load: 0")).toBeTruthy();
-    expect(screen.getByText("Normalized intensity: 0.00")).toBeTruthy();
+    expect(screen.getByText("Duration: Unavailable")).toBeTruthy();
+    expect(screen.getByText("Common Load: Unavailable")).toBeTruthy();
+    expect(screen.getByText("Normalized intensity: Unavailable")).toBeTruthy();
+    expect(screen.queryByText(/^Duration: 0m$/)).toBeNull();
+    expect(screen.queryByText(/^Common Load: 0$/)).toBeNull();
+    expect(screen.queryByText(/^Normalized intensity: 0\.00$/)).toBeNull();
     expect(screen.queryByText(/60m|88|0\.90/)).toBeNull();
   });
 });
