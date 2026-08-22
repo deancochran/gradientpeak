@@ -16,12 +16,14 @@ function localDatabaseUrl() {
   return value;
 }
 
-async function withDashboardFixture(run: () => Promise<void>) {
+async function withDashboardFixture(run: (dashboardTitle: string) => Promise<void>) {
   const pool = new Pool({ connectionString: localDatabaseUrl(), max: 1 });
   const client = await pool.connect();
   const eventId = randomUUID();
+  const dashboardTitle = `Playwright Dashboard ${randomUUID()}`;
   let profileId: string | undefined;
   let previousTimezone: string | null | undefined;
+  let previousPlanName: string | undefined;
   let setupTransactionOpen = false;
   try {
     const profile = await client.query<{ id: string }>(
@@ -33,10 +35,12 @@ async function withDashboardFixture(run: () => Promise<void>) {
     profileId = profile.rows[0]?.id;
     if (!profileId) throw new Error("The dashboard E2E profile is missing.");
 
-    const plan = await client.query('select "id" from "activity_plans" where "id" = $1', [
-      TEST_ACTIVITY_PLAN_ID,
-    ]);
+    const plan = await client.query<{ id: string; name: string }>(
+      'select "id", "name" from "activity_plans" where "id" = $1',
+      [TEST_ACTIVITY_PLAN_ID],
+    );
     if (!plan.rows[0]) throw new Error("The dashboard E2E activity plan is missing.");
+    previousPlanName = plan.rows[0].name;
 
     previousTimezone = (
       await client.query<{ planning_timezone: string | null }>(
@@ -60,11 +64,15 @@ async function withDashboardFixture(run: () => Promise<void>) {
       profileId,
       "UTC",
     ]);
+    await client.query('update "activity_plans" set "name" = $2 where "id" = $1', [
+      TEST_ACTIVITY_PLAN_ID,
+      dashboardTitle,
+    ]);
     await client.query(
       `insert into "events"
         ("id", "profile_id", "event_type", "status", "title", "all_day", "timezone",
          "starts_at", "ends_at", "scheduled_date", "activity_plan_id")
-       values ($1, $2, 'planned', 'scheduled', 'Playwright Tempo Builder', false, 'UTC',
+       values ($1, $2, 'planned', 'scheduled', $7, false, 'UTC',
          $3::timestamptz, $4::timestamptz, $5, $6)`,
       [
         eventId,
@@ -73,12 +81,13 @@ async function withDashboardFixture(run: () => Promise<void>) {
         `${date}T12:30:00.000Z`,
         date,
         TEST_ACTIVITY_PLAN_ID,
+        dashboardTitle,
       ],
     );
     await client.query("commit");
     setupTransactionOpen = false;
 
-    await run();
+    await run(dashboardTitle);
   } finally {
     if (setupTransactionOpen) await client.query("rollback").catch(() => undefined);
     await client.query("begin").catch(() => undefined);
@@ -92,6 +101,14 @@ async function withDashboardFixture(run: () => Promise<void>) {
           previousTimezone ?? null,
         ])
         .catch(() => undefined);
+      if (previousPlanName !== undefined) {
+        await client
+          .query('update "activity_plans" set "name" = $2 where "id" = $1', [
+            TEST_ACTIVITY_PLAN_ID,
+            previousPlanName,
+          ])
+          .catch(() => undefined);
+      }
     }
     await client.query("commit").catch(() => undefined);
     client.release();
@@ -100,14 +117,14 @@ async function withDashboardFixture(run: () => Promise<void>) {
 }
 
 test("home.view-dashboard shows seeded plan data", async ({ athletePage }) => {
-  await withDashboardFixture(async () => {
+  await withDashboardFixture(async (dashboardTitle) => {
     await expect(athletePage.getByRole("heading", { name: /welcome back/i })).toBeVisible();
 
     for (const title of ["Fitness", "Fatigue", "Form", "Consistency", "Active Plan"]) {
       await expect(athletePage.getByText(title, { exact: true })).toBeVisible();
     }
 
-    await expect(athletePage.getByText("Playwright Tempo Builder", { exact: true })).toHaveCount(1);
+    await expect(athletePage.getByText(dashboardTitle, { exact: true })).toHaveCount(1);
     await expect(athletePage.getByText("Upcoming Schedule", { exact: true })).toBeVisible();
     await expect(athletePage.getByText("Current Focus", { exact: true })).toBeVisible();
   });
