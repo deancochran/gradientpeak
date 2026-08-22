@@ -199,7 +199,7 @@ describe("P2 group event capabilities", () => {
     );
   });
 
-  it("group-event.delete cancels an event through the management menu", async () => {
+  it("group-event.delete exposes one-off cancellation as a destructive menu action", () => {
     renderNative(<GroupEventDetailRoute />);
 
     expect(overflowActions).toEqual(
