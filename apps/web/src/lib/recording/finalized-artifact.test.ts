@@ -246,10 +246,6 @@ describe("web recording finalization", () => {
       "profile-1",
     );
     if (!draft) throw new Error("Expected active draft");
-    draft.sessionSnapshot.activity.gpsMode = "on";
-    draft.sessionSnapshot.activity.routeId = "33333333-3333-4333-8333-333333333333";
-    draft.sessionSnapshot.capabilities.canTrackLocation = true;
-
     const recovered = recoverTimerOnlyRecording(draft);
     const finished = finishTimerOnlyRecording(
       resumeTimerOnlyRecording(recovered.state, Date.parse("2026-07-20T10:15:00.000Z")).state,

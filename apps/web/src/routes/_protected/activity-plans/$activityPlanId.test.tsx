@@ -257,8 +257,10 @@ describe("ActivityPlanDetailPage print", () => {
     expect(screen.getByText("Duration")).toBeTruthy();
     expect(screen.getByText("Load")).toBeTruthy();
     expect(screen.getByText("Intensity")).toBeTruthy();
-    expect(screen.getAllByText("Authored")).toHaveLength(2);
-    expect(screen.getAllByText("Personalized")).toHaveLength(2);
+    expect(screen.getByLabelText("Distance, 10 km, Authored")).toBeTruthy();
+    expect(screen.getByLabelText("Duration, 1h 0m, Authored")).toBeTruthy();
+    expect(screen.getByLabelText("Load, 72, Personalized")).toBeTruthy();
+    expect(screen.getByLabelText("Intensity, 0.80, Personalized")).toBeTruthy();
     expect(screen.queryByText(/~1h|approximately 1h/i)).toBeNull();
     expect(screen.queryByText(/recorded signal pattern|effort profile/i)).toBeNull();
     fireEvent.click(screen.getByRole("switch", { name: "Personalize targets" }));
@@ -419,20 +421,20 @@ describe("ActivityPlanDetailPage print", () => {
           {
             key: "common_load",
             label: "Load",
-            status: "available",
-            value: 40.5,
+            status: "unavailable",
+            value: null,
             unit: "score",
-            reason: null,
-            provenance: "plan_intent",
+            reason: "activity_data_missing",
+            provenance: null,
           },
           {
             key: "normalized_intensity",
             label: "Intensity",
-            status: "available",
-            value: 0.9,
+            status: "unavailable",
+            value: null,
             unit: "ratio",
-            reason: null,
-            provenance: "plan_intent",
+            reason: "activity_data_missing",
+            provenance: null,
           },
         ],
         structure: {
@@ -481,7 +483,11 @@ describe("ActivityPlanDetailPage print", () => {
     expect(screen.queryByText(/Duplicate .* editable copy/)).toBeNull();
     expect(screen.getByTestId("activity-plan-schedule")).toBeTruthy();
     expect(screen.getByTestId("activity-plan-estimates")).toBeTruthy();
-    expect(screen.getAllByText("Plan intent")).toHaveLength(2);
+    expect(screen.getByLabelText("Distance, Unavailable, Unavailable")).toBeTruthy();
+    expect(screen.getByLabelText("Duration, 5m 0s, Authored")).toBeTruthy();
+    expect(screen.getAllByLabelText("Load, Unavailable, Unavailable")).toHaveLength(1);
+    expect(screen.getAllByLabelText("Intensity, Unavailable, Unavailable")).toHaveLength(1);
+    expect(screen.queryByText("Plan intent")).toBeNull();
     expect(screen.queryByText("Personalized")).toBeNull();
     expect(mocks.readModelOptions).toContainEqual({ enabled: false });
   });

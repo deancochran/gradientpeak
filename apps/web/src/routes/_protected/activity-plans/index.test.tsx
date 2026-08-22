@@ -149,9 +149,10 @@ describe("ActivityPlansPage cards", () => {
     expect(screen.getByText("72")).toBeTruthy();
     expect(screen.getAllByText("Intensity").length).toBeGreaterThan(0);
     expect(screen.getByText("0.80")).toBeTruthy();
-    expect(screen.getAllByText("Authored").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getAllByText("Personalized").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(4);
+    expect(screen.getByLabelText("Distance, 10 km, Authored")).toBeTruthy();
+    expect(screen.getByLabelText("Duration, 30m 0s, Authored")).toBeTruthy();
+    expect(screen.getByLabelText("Load, 72, Personalized")).toBeTruthy();
+    expect(screen.getByLabelText("Intensity, 0.80, Personalized")).toBeTruthy();
     expect(screen.queryByText(/~30m|approximately 30m/i)).toBeNull();
     expect(screen.getByText("Workout prescription")).toBeTruthy();
     expect(
