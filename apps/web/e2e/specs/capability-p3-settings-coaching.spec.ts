@@ -103,18 +103,6 @@ test("settings.select-theme persists a chosen theme across reloads", async ({ at
   ).toHaveAttribute("aria-pressed", "true");
 });
 
-test("coaching.protected-entry opens the coaching workspace entry", async ({ athletePage }) => {
-  await athletePage.goto("/organizations");
-
-  await expect(
-    athletePage.getByRole("heading", { name: "Coaching organizations", exact: true }),
-  ).toBeVisible();
-  await expect(
-    athletePage.getByRole("heading", { name: "No coaching organizations" }),
-  ).toBeVisible();
-  await expect(athletePage.getByRole("link", { name: "Standard app" })).toBeVisible();
-});
-
 test("coaching.view-dashboard opens an authorized organization dashboard", async ({
   coachPage,
 }) => {

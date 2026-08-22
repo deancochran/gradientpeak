@@ -1,3 +1,5 @@
+import { ActivityPayloadSchema } from "@repo/core";
+
 const mockCheckpoint = jest.fn(async () => undefined);
 
 jest.mock("expo", () => ({
@@ -166,35 +168,39 @@ describe("record start capability", () => {
 
   it("loads an activity plan through the payload boundary before starting", async () => {
     const { service, mutable } = createService();
-    const plan = {
-      name: "Intervals",
-      structure: {
-        version: 3,
-        activity_category: "run",
-        segments: [
-          {
-            id: "10000000-0000-4000-8000-000000000001",
-            role: "activity",
-            name: "Run",
-            intervals: [
-              {
-                id: "10000000-0000-4000-8000-000000000002",
-                name: "Main",
-                repetitions: 1,
-                steps: [
-                  {
-                    id: "10000000-0000-4000-8000-000000000003",
-                    name: "Steady",
-                    duration: { type: "time", seconds: 60 },
-                    targets: [{ type: "RPE", intensity: 4 }],
-                  },
-                ],
-              },
-            ],
-          },
-        ],
+    const plan = ActivityPayloadSchema.parse({
+      activity_category: "run",
+      gpsRecordingEnabled: false,
+      plan: {
+        name: "Intervals",
+        structure: {
+          version: 3,
+          activity_category: "run",
+          segments: [
+            {
+              id: "10000000-0000-4000-8000-000000000001",
+              role: "activity",
+              name: "Run",
+              intervals: [
+                {
+                  id: "10000000-0000-4000-8000-000000000002",
+                  name: "Main",
+                  repetitions: 1,
+                  steps: [
+                    {
+                      id: "10000000-0000-4000-8000-000000000003",
+                      name: "Steady",
+                      duration: { type: "time", seconds: 60 },
+                      targets: [{ type: "RPE", intensity: 4 }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
       },
-    } as const;
+    }).plan;
 
     service.selectActivityFromPayload({
       activity_category: "run",

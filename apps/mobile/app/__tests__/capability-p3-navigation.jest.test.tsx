@@ -175,7 +175,7 @@ describe("navigation capabilities", () => {
       ["record-launcher", "tab-button-record"],
       ["calendar", "tab-button-calendar"],
       ["profile", "tab-button-profile"],
-    ]) {
+    ] as const) {
       fireEvent.press(screen.getByTestId(testID));
       if (routeName !== "record-launcher") {
         expect(tabPressMocks.get(routeName)).toHaveBeenCalledTimes(1);

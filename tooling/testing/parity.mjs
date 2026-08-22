@@ -379,8 +379,7 @@ export function formatParityReport(classification) {
       count +
       platforms.filter(
         (platform) => intended(record, platform) && record[platform].evidenceStrength === "runtime",
-      )
-        .length,
+      ).length,
     0,
   );
   const requiredCount = classification.all.reduce(
@@ -460,12 +459,12 @@ export function formatParityReport(classification) {
           ? evidence.status === "decision_pending"
             ? "decision-pending"
             : !implementationComplete(record, platform)
-            ? "implementation-gap"
-            : parityComplete(record, platform)
-              ? "runtime-proven"
-              : evidence.evidenceStrength === "runtime"
-                ? "declared-runtime"
-              : "proof-gap"
+              ? "implementation-gap"
+              : parityComplete(record, platform)
+                ? "runtime-proven"
+                : evidence.evidenceStrength === "runtime"
+                  ? "declared-runtime"
+                  : "proof-gap"
           : "not-required";
         return `${platform}=${evidence.implementation}/${evidence.evidenceStrength}/${proof}`;
       });
@@ -482,7 +481,11 @@ export function formatParityReport(classification) {
 
 export function parityExitCode({ classification, issues, proofStrict = false, strict = false }) {
   if (issues.length > 0) return 1;
-  if (strict && (classification.implementationGaps.length > 0 || classification.decisionPending.length > 0)) return 1;
+  if (
+    strict &&
+    (classification.implementationGaps.length > 0 || classification.decisionPending.length > 0)
+  )
+    return 1;
   if (proofStrict && classification.proofGaps.length > 0) return 1;
   return 0;
 }
@@ -491,8 +494,12 @@ export function evaluateCompletion({ validation, records, journeyResults = [] })
   const structuralIssues = validation.issues;
   const implementation = classifyParity(validation.records);
   const implementationIssues = [
-    ...implementation.implementationGaps.map(({ platform, record }) => `${record.id} (${platform}): implementation gap`),
-    ...implementation.decisionPending.map(({ platform, record }) => `${record.id} (${platform}): decision pending`),
+    ...implementation.implementationGaps.map(
+      ({ platform, record }) => `${record.id} (${platform}): implementation gap`,
+    ),
+    ...implementation.decisionPending.map(
+      ({ platform, record }) => `${record.id} (${platform}): decision pending`,
+    ),
   ];
   const runtimeReceipts = new Set(
     journeyResults
@@ -503,9 +510,15 @@ export function evaluateCompletion({ validation, records, journeyResults = [] })
     .filter((result) => result.status !== "passed")
     .map((result) => `${result.capabilityId} (${result.platform}): journey ${result.status}`);
   const proof = classifyParity(records, [], [], runtimeReceipts);
-  const proofIssues = proof.proofGaps.map(({ platform, record }) => `${record.id} (${platform}): runtime proof gap`);
+  const proofIssues = proof.proofGaps.map(
+    ({ platform, record }) => `${record.id} (${platform}): runtime proof gap`,
+  );
   return {
-    ok: structuralIssues.length === 0 && implementationIssues.length === 0 && journeyIssues.length === 0 && proofIssues.length === 0,
+    ok:
+      structuralIssues.length === 0 &&
+      implementationIssues.length === 0 &&
+      journeyIssues.length === 0 &&
+      proofIssues.length === 0,
     structuralIssues,
     implementationIssues,
     journeyIssues,

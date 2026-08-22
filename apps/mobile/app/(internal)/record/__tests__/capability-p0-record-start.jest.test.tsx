@@ -5,6 +5,8 @@ import { fireEvent, renderNative, screen, waitFor } from "../../../../test/rende
 const start = jest.fn(async () => undefined);
 const recordLap = jest.fn(() => 12_000);
 const selectActivityFromPayload = jest.fn();
+const mockButtonComponent = createButtonComponent();
+const mockButtonHost = createHost("Button");
 const service = {
   state: "pending",
   plan: null,
@@ -72,7 +74,7 @@ jest.mock("@/lib/api", () => ({
     activityPlans: { getById: { useQuery: () => ({ data: null, error: null }) } },
   },
 }));
-jest.mock("@repo/ui/components/button", () => ({ Button: createButtonComponent() }));
+jest.mock("@repo/ui/components/button", () => ({ Button: mockButtonComponent }));
 jest.mock("@repo/ui/components/icon", () => ({ Icon: createHost("Icon") }));
 jest.mock("@repo/ui/components/text", () => ({ Text: createHost("Text") }));
 jest.mock(
@@ -84,8 +86,8 @@ jest.mock("@/components/recording/cockpit", () => ({
     React.createElement(
       "View",
       null,
-      React.createElement("Button", { onPress: onStart }, "Start"),
-      React.createElement("Button", { onPress: onLap }, "Lap"),
+      React.createElement(mockButtonHost, { onPress: onStart }, "Start"),
+      React.createElement(mockButtonHost, { onPress: onLap }, "Lap"),
     ),
 }));
 
@@ -97,8 +99,11 @@ describe("record screen start controls", () => {
   it("exposes manual start and lap actions to the live recording surface", async () => {
     renderNative(<RecordScreen />);
 
-    await waitFor(() => expect(screen.UNSAFE_getAllByType("Button")).toHaveLength(2));
-    const [startButton, lapButton] = screen.UNSAFE_getAllByType("Button");
+    await waitFor(() => expect(screen.UNSAFE_getAllByType(mockButtonHost)).toHaveLength(2));
+    const [startButton, lapButton] = screen.UNSAFE_getAllByType(mockButtonHost);
+    if (!startButton || !lapButton) {
+      throw new Error("Recording cockpit must expose start and lap buttons");
+    }
     fireEvent.press(startButton);
     fireEvent.press(lapButton);
 

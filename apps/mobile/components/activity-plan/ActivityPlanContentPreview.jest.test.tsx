@@ -167,7 +167,13 @@ describe("ActivityPlanContentPreview", () => {
   it("shows authored fallback by default and viewer-personalized output only when enabled", () => {
     const bikeStructure = structuredClone(structure);
     bikeStructure.activity_category = "bike";
-    bikeStructure.segments[0].intervals[0].steps[0].targets = [{ type: "%FTP", intensity: 80 }];
+    const bikeSegment = bikeStructure.segments[0];
+    const bikeInterval = bikeSegment?.intervals[0];
+    const bikeStep = bikeInterval?.steps[0];
+    if (!bikeSegment || !bikeInterval || !bikeStep) {
+      throw new Error("Bike fixture must contain one segment, interval, and step");
+    }
+    bikeStep.targets = [{ type: "%FTP", intensity: 80 }];
     const performanceTargets = buildPerformanceTargetFactsFixture({
       asOf: "2026-08-18T12:00:00.000Z",
       athleteId: "viewer-1",

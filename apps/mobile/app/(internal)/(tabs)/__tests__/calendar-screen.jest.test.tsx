@@ -115,7 +115,13 @@ jest.mock("@/lib/calendar/dateMath", () => ({
   __esModule: true,
   addDaysToDateKey: addDays,
   addMonthsToDateKey: (key: string, months: number) => {
-    const [year, month, day] = key.split("-").map(Number);
+    const [yearPart, monthPart, dayPart] = key.split("-");
+    if (!yearPart || !monthPart || !dayPart) {
+      throw new Error(`Invalid date key: ${key}`);
+    }
+    const year = Number(yearPart);
+    const month = Number(monthPart);
+    const day = Number(dayPart);
     const target = new Date(Date.UTC(year, month - 1 + months + 1, 0));
     target.setUTCDate(Math.min(day, target.getUTCDate()));
     return target.toISOString().slice(0, 10);

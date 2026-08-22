@@ -94,7 +94,11 @@ jest.mock("@/components/shared/detail", () => ({
       ...actions.map((action) =>
         React.createElement(
           MenuButton,
-          { key: action.testID, onPress: action.onPress, testID: action.testID },
+          {
+            key: action.testID,
+            testID: action.testID,
+            ...(action.onPress ? { onPress: action.onPress } : {}),
+          },
           action.label,
         ),
       ),

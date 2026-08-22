@@ -2,10 +2,13 @@ import {
   handleRecordingObjectAction,
   resolveRecordingObjectAction,
 } from "../../../../lib/recording/recordingObjectActions";
+import type { ActivityRecorderService } from "../../../../lib/services/ActivityRecorder";
 
 describe("P0 route attachment boundary", () => {
   it("selects attach when setup is idle and invokes the recorder service with the route ID", async () => {
-    const service = { attachRoute: jest.fn(async () => undefined) };
+    const service = {
+      attachRoute: jest.fn(async () => undefined),
+    } as unknown as ActivityRecorderService;
     const candidate = { objectKind: "route" as const, objectId: "route-1", label: "River Loop" };
     const action = resolveRecordingObjectAction({ candidate, lifecycle: "setup", service });
 

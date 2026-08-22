@@ -1,7 +1,7 @@
 import { expect, test } from "../fixtures";
 import { openRecordingPage } from "../recording/navigation";
 
-test("manual recording exposes laps through review", async ({ athletePage }) => {
+test("record.manual-lap exposes laps through review", async ({ athletePage }) => {
   await openRecordingPage(athletePage, "/record");
   await athletePage.getByRole("button", { name: /^bike$/i }).click();
   await athletePage.getByRole("button", { name: /^open recorder$/i }).click();

@@ -41,8 +41,12 @@ describe("activity-plan.edit-structured-steps", () => {
 
     const parsed = activityPlanStructureSchema.parse(structure);
     const compiled = compileActivityPlan(parsed);
+    const segment = parsed.segments[0];
 
-    expect(parsed.segments[0]?.intervals[0]?.steps.map((step) => step.name)).toEqual([
+    expect(segment?.role).toBe("activity");
+    if (!segment || segment.role !== "activity") throw new Error("Expected an activity segment");
+
+    expect(segment.intervals[0]?.steps.map((step) => step.name)).toEqual([
       "Controlled threshold",
       "Easy recovery",
     ]);
