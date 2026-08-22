@@ -74,12 +74,12 @@ async function seedCoachOrganization() {
            where "organization_id" = $1`,
           [organizationId],
         );
-        await cleanupPool.query(`delete from "organizations" where "id" = $1`, [organizationId]);
         await cleanupPool.query(
           `delete from "organization_memberships"
            where "organization_id" = $1 and "id" = $2`,
           [organizationId, membershipId],
         );
+        await cleanupPool.query(`delete from "organizations" where "id" = $1`, [organizationId]);
         await cleanupPool.query("commit");
       } catch (error) {
         await cleanupPool.query("rollback").catch(() => undefined);
