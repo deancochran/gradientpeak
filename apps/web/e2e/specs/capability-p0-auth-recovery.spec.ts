@@ -1,10 +1,5 @@
-import { expect, test } from "../lane-support/auth/lane-test";
-import {
-  authLaneRequestHeaders,
-  login,
-  signUp,
-  uniqueAuthActor,
-} from "../lane-support/auth/mailbox";
+import { authLaneRequestHeaders, expect, test } from "../lane-support/auth/lane-test";
+import { login, signUp, uniqueAuthActor } from "../lane-support/auth/mailbox";
 
 test("sign out ends the current web session and returns to public access", async ({
   laneServer,
