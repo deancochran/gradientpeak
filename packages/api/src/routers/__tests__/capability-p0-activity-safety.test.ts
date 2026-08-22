@@ -5,8 +5,18 @@ import { profilesRouter } from "../profiles";
 const ACTIVITY_ID = "11111111-1111-4111-8111-111111111111";
 const PROFILE_ID = "22222222-2222-4222-8222-222222222222";
 
-function unauthenticatedCaller(router: typeof activitiesRouter | typeof profilesRouter) {
-  return router.createCaller({
+function unauthenticatedActivitiesCaller() {
+  return activitiesRouter.createCaller({
+    db: undefined,
+    session: null,
+    headers: new Headers(),
+    clientType: "test",
+    trpcSource: "vitest",
+  } as never);
+}
+
+function unauthenticatedProfilesCaller() {
+  return profilesRouter.createCaller({
     db: undefined,
     session: null,
     headers: new Headers(),
@@ -20,14 +30,14 @@ describe("P0 activity and profile safety capabilities", () => {
     [
       "activity.change-visibility",
       () =>
-        unauthenticatedCaller(activitiesRouter).update({
+        unauthenticatedActivitiesCaller().update({
           id: ACTIVITY_ID,
           content_visibility: "private",
         }),
     ],
-    ["activity.delete", () => unauthenticatedCaller(activitiesRouter).delete({ id: ACTIVITY_ID })],
-    ["profile.view", () => unauthenticatedCaller(profilesRouter).getPublicById({ id: PROFILE_ID })],
-    ["profile.edit", () => unauthenticatedCaller(profilesRouter).update({ full_name: "Blocked" })],
+    ["activity.delete", () => unauthenticatedActivitiesCaller().delete({ id: ACTIVITY_ID })],
+    ["profile.view", () => unauthenticatedProfilesCaller().getPublicById({ id: PROFILE_ID })],
+    ["profile.edit", () => unauthenticatedProfilesCaller().update({ full_name: "Blocked" })],
   ] as const)("rejects unauthenticated access for %s", async (_capability, call) => {
     await expect(call()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });
