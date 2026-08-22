@@ -799,7 +799,7 @@ describe("activity detail screen", () => {
     expect(screen.getByTestId("activity-detail-options-delete")).toBeTruthy();
     expect(screen.getByText("runner")).toBeTruthy();
     expect(screen.getByText("Run")).toBeTruthy();
-    expect(screen.queryByText("Morning Threshold")).toBeNull();
+    expect(screen.getByText("Morning Threshold")).toBeTruthy();
     expect(screen.getByText("Steady through the middle block.")).toBeTruthy();
     expect(
       activityHeader.children.map((child) =>

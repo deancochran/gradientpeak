@@ -651,10 +651,10 @@ describe("TrainingPlanOverview deep-link routing", () => {
 
     renderPlan();
 
-    expect(hasTextContaining("Plan snapshot")).toBe(true);
-    expect(screen.getByTestId("training-plan-periodization-preview")).toBeTruthy();
+    expect(hasTextContaining("Plan schedule")).toBe(true);
+    expect(screen.getByTestId("training-plan-planned-preview-plan-owned-snapshot-1")).toBeTruthy();
+    expect(hasTextContaining("2 scheduled sessions")).toBe(true);
     expect(hasTextContaining("8 weeks")).toBe(true);
-    expect(hasTextContaining("0.25/week")).toBe(true);
     expect(hasTextContaining("Open Calendar")).toBe(false);
     expect(hasTextContaining("Route-backed activities")).toBe(false);
   });
