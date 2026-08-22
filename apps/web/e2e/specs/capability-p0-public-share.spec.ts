@@ -4,6 +4,10 @@ import { Pool, type PoolClient } from "pg";
 import { expect, test } from "../fixtures";
 import { TEST_USERS } from "../utils/testData";
 
+// The auth lane clears PORT for its private Vite server. Restore the shared
+// Playwright server port before this spec creates its browser pages.
+process.env.PORT ??= "3102";
+
 function localDatabaseUrl() {
   const value =
     process.env.DATABASE_URL ??
@@ -163,17 +167,22 @@ async function withPublicShareFixture(
 test("public activity-plan and training-plan links render anonymous readers", async ({
   page,
 }, testInfo) => {
-  await withPublicShareFixture(
-    testInfo,
-    async ({ activityPlanId, trainingPlanId, trainingPlanName }) => {
-      await page.goto(`/share/activity-plans/${activityPlanId}`);
-      await expect(page.getByRole("heading", { name: "Playwright Tempo Builder" })).toBeVisible();
-      await expect(page.getByText("Activity plan overview")).toBeVisible();
-      await expect(page.getByText("Activity structure")).toBeVisible();
+  const trainingPage = await page.context().newPage();
+  try {
+    await withPublicShareFixture(
+      testInfo,
+      async ({ activityPlanId, trainingPlanId, trainingPlanName }) => {
+        await page.goto(`/share/activity-plans/${activityPlanId}`);
+        await expect(page.getByRole("heading", { name: "Playwright Tempo Builder" })).toBeVisible();
+        await expect(page.getByText("Activity plan overview")).toBeVisible();
+        await expect(page.getByText("Activity structure")).toBeVisible();
 
-      await page.goto(`/share/training-plans/${trainingPlanId}`);
-      await expect(page.getByRole("heading", { name: trainingPlanName })).toBeVisible();
-      await expect(page.getByText("Plan overview")).toBeVisible();
-    },
-  );
+        await trainingPage.goto(`/share/training-plans/${trainingPlanId}`);
+        await expect(trainingPage.getByRole("heading", { name: trainingPlanName })).toBeVisible();
+        await expect(trainingPage.getByText("Plan overview")).toBeVisible();
+      },
+    );
+  } finally {
+    await trainingPage.close();
+  }
 });
