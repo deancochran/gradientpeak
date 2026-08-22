@@ -4,10 +4,6 @@ import { Pool, type PoolClient } from "pg";
 import { expect, test } from "../fixtures";
 import { TEST_USERS } from "../utils/testData";
 
-// The auth lane clears PORT for its private Vite server. Restore the shared
-// Playwright server port before this spec creates its browser pages.
-process.env.PORT ??= "3102";
-
 function localDatabaseUrl() {
   const value =
     process.env.DATABASE_URL ??

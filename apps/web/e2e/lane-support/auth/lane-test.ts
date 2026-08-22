@@ -140,6 +140,8 @@ export const test = sharedTest.extend<AuthLaneFixtures, AuthLaneWorkerFixtures>(
       const baseURL = `http://127.0.0.1:${port}`;
       const capturePath = `/tmp/gradientpeak-auth-mail-${process.pid}-${workerInfo.workerIndex}.jsonl`;
       const secret = "gradientpeak-playwright-lane-secret-that-is-long-and-test-only";
+      const childEnv = { ...process.env };
+      delete childEnv.PORT;
       await rm(capturePath, { force: true });
       process.env.AUTH_EMAIL_CAPTURE_PATH = capturePath;
       process.env.BETTER_AUTH_SECRET = secret;
@@ -150,7 +152,7 @@ export const test = sharedTest.extend<AuthLaneFixtures, AuthLaneWorkerFixtures>(
           cwd: fileURLToPath(new URL("../../..", import.meta.url)),
           detached: process.platform !== "win32",
           env: {
-            ...process.env,
+            ...childEnv,
             NODE_ENV: "test",
             AUTH_EMAIL_MODE: "capture",
             AUTH_EMAIL_CAPTURE_PATH: capturePath,

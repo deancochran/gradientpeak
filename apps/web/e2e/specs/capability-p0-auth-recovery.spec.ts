@@ -1,19 +1,6 @@
 import { authLaneRequestHeaders, expect, test } from "../lane-support/auth/lane-test";
 import { login, signUp, uniqueAuthActor } from "../lane-support/auth/mailbox";
 
-// The lane Vite process must use its fixture-assigned port. PORT is reserved
-// for Playwright's shared web server and otherwise overrides Vite's CLI port.
-const sharedPort = process.env.PORT;
-delete process.env.PORT;
-
-test.afterAll(() => {
-  if (sharedPort === undefined) {
-    delete process.env.PORT;
-  } else {
-    process.env.PORT = sharedPort;
-  }
-});
-
 test("sign out ends the current web session and returns to public access", async ({
   laneServer,
   page,
