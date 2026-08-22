@@ -99,14 +99,13 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@repo/core", async () => ({
-  ...(await vi.importActual<typeof import("@repo/core")>("@repo/core")),
+vi.mock("@repo/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/core")>()),
   calculateBounds: mocks.calculateBounds,
   encodePolyline: mocks.encodePolyline,
   inferActivityFileType: mocks.inferActivityFileType,
   simplifyCoordinates: vi.fn((coords) => coords),
   canTransitionActivityFileIngestionStatus: vi.fn(() => true),
-  activityLapRecordListSchema: { parse: vi.fn((value) => value) },
 }));
 
 vi.mock("@repo/core/server/activity-files", () => ({
