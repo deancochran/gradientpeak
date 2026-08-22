@@ -3,6 +3,9 @@ import { createButtonComponent, createHost } from "../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../test/render-native";
 
 const replaceMock = jest.fn();
+const navigateToMock = jest.fn();
+const guardNavigationMock = jest.fn((navigate: () => void) => navigate());
+const setSelectionMock = jest.fn();
 const tabPressMocks = new Map<string, jest.Mock>();
 let authenticated = true;
 
@@ -100,12 +103,12 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
 
 jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,
-  useAppNavigate: () => jest.fn(),
+  useAppNavigate: () => navigateToMock,
 }));
 
 jest.mock("@/lib/navigation/useNavigationActionGuard", () => ({
   __esModule: true,
-  useNavigationActionGuard: () => jest.fn((navigate: () => void) => navigate()),
+  useNavigationActionGuard: () => guardNavigationMock,
 }));
 
 jest.mock("@/lib/performance", () => ({
@@ -125,7 +128,7 @@ jest.mock("@/lib/server-config", () => ({
 
 jest.mock("@/lib/stores/activitySelectionStore", () => ({
   __esModule: true,
-  activitySelectionStore: { setSelection: jest.fn() },
+  activitySelectionStore: { setSelection: setSelectionMock },
   defaultRecordLaunchPayload: () => ({}),
 }));
 
@@ -158,6 +161,9 @@ describe("navigation capabilities", () => {
     jest.clearAllMocks();
     tabPressMocks.clear();
     authenticated = true;
+    navigateToMock.mockReset();
+    guardNavigationMock.mockClear();
+    setSelectionMock.mockReset();
   });
 
   it("keeps every primary destination reachable from its tab button", () => {
@@ -166,12 +172,19 @@ describe("navigation capabilities", () => {
     for (const [routeName, testID] of [
       ["index", "tab-button-home"],
       ["plan", "tab-button-plan"],
+      ["record-launcher", "tab-button-record"],
       ["calendar", "tab-button-calendar"],
       ["profile", "tab-button-profile"],
     ]) {
       fireEvent.press(screen.getByTestId(testID));
-      expect(tabPressMocks.get(routeName)).toHaveBeenCalledTimes(1);
+      if (routeName !== "record-launcher") {
+        expect(tabPressMocks.get(routeName)).toHaveBeenCalledTimes(1);
+      }
     }
+
+    expect(guardNavigationMock).toHaveBeenCalledTimes(1);
+    expect(setSelectionMock).toHaveBeenCalledTimes(1);
+    expect(navigateToMock).toHaveBeenCalledWith("/record");
   });
 
   it("recovers an authenticated missing route to the internal home", () => {

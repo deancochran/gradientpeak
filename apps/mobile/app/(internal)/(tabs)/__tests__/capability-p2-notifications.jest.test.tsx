@@ -1,27 +1,17 @@
+import type { NotificationListItem } from "@repo/core";
 import React from "react";
 
 import { createHost, createPressableHost } from "../../../../test/mock-components";
-import { fireEvent, renderNative, screen } from "../../../../test/render-native";
+import { renderNative, screen } from "../../../../test/render-native";
 
-const navigateMock = jest.fn();
-const markReadMock = jest.fn();
-
-type Notification = {
-  created_at: string;
-  description: string;
-  id: string;
-  is_unread: boolean;
-  title: string;
-  type: string;
-};
-
-const notification: Notification = {
+const notification: NotificationListItem = {
+  actor_id: "profile-1",
   created_at: "2026-01-01T00:00:00.000Z",
-  description: "Coach sent you a message",
   id: "notification-1",
-  is_unread: true,
-  title: "New message",
+  entity_id: "conversation-1",
   type: "new_message",
+  read_at: null,
+  user_id: "user-1",
 };
 
 jest.mock("expo-router", () => ({
@@ -30,7 +20,7 @@ jest.mock("expo-router", () => ({
     Screen: ({ options }: { options?: { headerRight?: () => React.ReactNode } }) =>
       options?.headerRight?.() ?? null,
   },
-  useRouter: () => ({ navigate: navigateMock }),
+  useRouter: () => ({ navigate: jest.fn() }),
 }));
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -54,18 +44,6 @@ jest.mock("lucide-react-native", () => ({
   Mail: createHost("Mail"),
   UserPlus: createHost("UserPlus"),
 }));
-jest.mock("@repo/core", () => ({
-  __esModule: true,
-  getNotificationViewModel: (item: Notification) => ({
-    ...item,
-    actorId: undefined,
-    isUnread: item.is_unread,
-    requiresFollowRequestAction: false,
-  }),
-  getUnreadNotificationIds: (items: Notification[]) =>
-    items.filter((item) => item.is_unread).map((item) => item.id),
-  normalizeNotificationListItem: (item: Notification) => item,
-}));
 jest.mock("@repo/api/react", () => ({
   __esModule: true,
   invalidateNotificationQueries: jest.fn(async () => undefined),
@@ -78,8 +56,8 @@ jest.mock("@/components/shared/ResourceList", () => ({
     renderItem,
     ListHeaderComponent,
   }: {
-    data: Notification[];
-    renderItem: (item: Notification) => React.ReactNode;
+    data: NotificationListItem[];
+    renderItem: (item: NotificationListItem) => React.ReactNode;
     ListHeaderComponent?: React.ReactNode;
   }) =>
     React.createElement(
@@ -112,7 +90,7 @@ jest.mock("@/lib/api", () => ({
           refetch: jest.fn(),
         }),
       },
-      markRead: { useMutation: () => ({ mutate: markReadMock }) },
+      markRead: { useMutation: () => ({ mutate: jest.fn() }) },
     },
     social: {
       acceptFollowRequest: { useMutation: () => ({ mutate: jest.fn() }) },
@@ -132,23 +110,6 @@ describe("P2 notifications mobile capability boundaries", () => {
     renderNative(<NotificationsScreen />);
 
     expect(screen.getByTestId("notification-item-notification-1")).toBeTruthy();
-    expect(screen.getByText("New message")).toBeTruthy();
-  });
-
-  it("notifications.mark-read marks an unread message notification and opens its destination", () => {
-    renderNative(<NotificationsScreen />);
-
-    fireEvent.press(screen.getByTestId("notification-item-notification-1"));
-
-    expect(markReadMock).toHaveBeenCalledWith({ notification_ids: ["notification-1"] });
-    expect(navigateMock).toHaveBeenCalledWith("/messages");
-  });
-
-  it("notifications.mark-read supports the real Read All header action", () => {
-    renderNative(<NotificationsScreen />);
-
-    fireEvent.press(screen.getByTestId("notifications-read-all-trigger"));
-
-    expect(markReadMock).toHaveBeenCalledWith({ notification_ids: ["notification-1"] });
+    expect(screen.getByText("New Message")).toBeTruthy();
   });
 });

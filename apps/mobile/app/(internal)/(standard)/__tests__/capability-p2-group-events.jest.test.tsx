@@ -202,15 +202,38 @@ describe("P2 group event capabilities", () => {
   it("group-event.delete exposes one-off cancellation as a destructive menu action", () => {
     renderNative(<GroupEventDetailRoute />);
 
-    expect(overflowActions).toEqual(
+    const cancelAction = overflowActions.find(
+      (action) => action.testID === "group-event-detail-cancel",
+    );
+    expect(cancelAction).toEqual(
+      expect.objectContaining({
+        label: "Cancel event",
+        variant: "destructive",
+      }),
+    );
+
+    fireEvent.press(screen.getByTestId("group-event-detail-cancel"));
+
+    const nativeAlertMock = require("react-native").Alert.alert as jest.Mock;
+    expect(nativeAlertMock).toHaveBeenCalledWith(
+      "Cancel event",
+      "Members will see this event as cancelled.",
       expect.arrayContaining([
-        expect.objectContaining({
-          label: "Cancel event",
-          testID: "group-event-detail-cancel",
-          variant: "destructive",
-        }),
+        expect.objectContaining({ text: "Keep event", style: "cancel" }),
+        expect.objectContaining({ text: "Cancel event", style: "destructive" }),
       ]),
     );
+
+    const alertActions = nativeAlertMock.mock.calls[0]?.[2] as Array<{
+      text?: string;
+      onPress?: () => void;
+    }>;
+    alertActions.find((action) => action.text === "Cancel event")?.onPress?.();
+
+    return waitFor(() => {
+      expect(cancelEventMock).toHaveBeenCalledWith(event.id, "single");
+      expect(refetchMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("group-event.rsvp sends the selected status from the real event detail control", async () => {
