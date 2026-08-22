@@ -96,6 +96,7 @@ test("real password reset changes the credential and revokes a second session", 
   let renewedContext: Awaited<ReturnType<typeof browser.newContext>> | undefined;
   const secondSession = await secondContext.newPage();
   const recoveryPage = await recoveryContext.newPage();
+  let primaryError: unknown;
   try {
     await login(page, actor);
     await expect(page).toHaveURL(/\/onboarding/);
@@ -157,9 +158,23 @@ test("real password reset changes the credential and revokes a second session", 
       headers: authLaneRequestHeaders(laneServer, currentContractEpochHeaders),
     });
     expect(replay.status()).toBeGreaterThanOrEqual(400);
-  } finally {
-    await secondContext.close();
-    await recoveryContext.close();
-    await renewedContext?.close();
+  } catch (error) {
+    primaryError = error;
   }
+
+  const cleanupErrors: unknown[] = [];
+  for (const context of [secondContext, recoveryContext, renewedContext]) {
+    if (!context) continue;
+    try {
+      await context.close();
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+  }
+
+  if (cleanupErrors.length > 0) {
+    const errors = primaryError === undefined ? cleanupErrors : [primaryError, ...cleanupErrors];
+    throw new AggregateError(errors, "Failed during auth test journey or context cleanup");
+  }
+  if (primaryError !== undefined) throw primaryError;
 });

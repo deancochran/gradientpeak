@@ -20,33 +20,32 @@ async function deleteOwnedRouteIfPresent(page: import("@playwright/test").Page, 
 }
 
 test.describe("P0 route attachment boundary", () => {
-  test.fail(
-    "recording route preview carries the selected route into recording setup",
-    async ({ athletePage }, testInfo) => {
-      const routeName = e2eArtifactIdentity(testInfo, "route handoff");
+  test("recording route preview carries the selected route into recording setup", async ({
+    athletePage,
+  }, testInfo) => {
+    const routeName = e2eArtifactIdentity(testInfo, "route handoff");
+    await deleteOwnedRouteIfPresent(athletePage, routeName);
+
+    let routeId: string | null = null;
+    try {
+      await athletePage.goto("/routes/upload");
+      await athletePage.getByTestId("route-upload-file-input").setInputFiles({
+        name: "wave-two-route.xml",
+        mimeType: "application/xml",
+        buffer: Buffer.from(validGpx),
+      });
+      await athletePage.getByLabel("Route name").fill(routeName);
+      await athletePage.getByTestId("route-upload-submit").click();
+      await expect(athletePage).toHaveURL(/\/routes\/[0-9a-f-]+\/?$/);
+      routeId = athletePage.url().match(/\/routes\/([0-9a-f-]+)/)?.[1] ?? null;
+      if (!routeId) throw new Error("Created route URL did not include a route ID");
+
+      await athletePage.goto(`/record/route-preview/${routeId}`);
+      const recordingUrl = new URL(athletePage.url());
+      expect(recordingUrl.pathname).toBe("/record");
+      expect(recordingUrl.searchParams.get("routeId")).toBe(routeId);
+    } finally {
       await deleteOwnedRouteIfPresent(athletePage, routeName);
-
-      let routeId: string | null = null;
-      try {
-        await athletePage.goto("/routes/upload");
-        await athletePage.getByTestId("route-upload-file-input").setInputFiles({
-          name: "wave-two-route.xml",
-          mimeType: "application/xml",
-          buffer: Buffer.from(validGpx),
-        });
-        await athletePage.getByLabel("Route name").fill(routeName);
-        await athletePage.getByTestId("route-upload-submit").click();
-        await expect(athletePage).toHaveURL(/\/routes\/[0-9a-f-]+\/?$/);
-        routeId = athletePage.url().match(/\/routes\/([0-9a-f-]+)/)?.[1] ?? null;
-        if (!routeId) throw new Error("Created route URL did not include a route ID");
-
-        await athletePage.goto(`/record/route-preview/${routeId}`);
-        const recordingUrl = new URL(athletePage.url());
-        expect(recordingUrl.pathname).toBe("/record");
-        expect(recordingUrl.searchParams.get("routeId")).toBe(routeId);
-      } finally {
-        await deleteOwnedRouteIfPresent(athletePage, routeName);
-      }
-    },
-  );
+    }
+  });
 });
