@@ -2,7 +2,7 @@ import type { NotificationListItem } from "@repo/core";
 import React from "react";
 
 import { createHost, createPressableHost } from "../../../../test/mock-components";
-import { renderNative, screen } from "../../../../test/render-native";
+import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 
 const notification: NotificationListItem = {
   actor_id: "profile-1",
@@ -12,6 +12,27 @@ const notification: NotificationListItem = {
   type: "new_message",
   read_at: null,
   user_id: "user-1",
+};
+const followRequest: NotificationListItem = {
+  ...notification,
+  actor_id: "follower-1",
+  id: "notification-follow-request",
+  type: "follow_request",
+};
+const cancelMock = jest.fn(async () => undefined);
+const getDataMock = jest.fn(() => [followRequest]);
+const setDataMock = jest.fn();
+const invalidateRecentMock = jest.fn(async () => undefined);
+const invalidateUnreadCountMock = jest.fn(async () => undefined);
+const invalidateProfileMock = jest.fn(async () => undefined);
+const invalidateFollowersMock = jest.fn(async () => undefined);
+const invalidateFollowingMock = jest.fn(async () => undefined);
+
+type FollowMutationOptions = {
+  onMutate: (variables: {
+    follower_id: string;
+  }) => Promise<{ previousNotifications: NotificationListItem[] }>;
+  onSettled: (data: undefined, error: null, variables: { follower_id: string }) => Promise<void>;
 };
 
 jest.mock("expo-router", () => ({
@@ -44,11 +65,6 @@ jest.mock("lucide-react-native", () => ({
   Mail: createHost("Mail"),
   UserPlus: createHost("UserPlus"),
 }));
-jest.mock("@repo/api/react", () => ({
-  __esModule: true,
-  invalidateNotificationQueries: jest.fn(async () => undefined),
-  invalidateRelationshipQueries: jest.fn(async () => undefined),
-}));
 jest.mock("@/components/shared/ResourceList", () => ({
   __esModule: true,
   ResourceList: ({
@@ -77,12 +93,25 @@ jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
     useUtils: () => ({
-      notifications: { getRecent: { cancel: jest.fn(), getData: jest.fn(), setData: jest.fn() } },
+      notifications: {
+        getRecent: {
+          cancel: cancelMock,
+          getData: getDataMock,
+          invalidate: invalidateRecentMock,
+          setData: setDataMock,
+        },
+        getUnreadCount: { invalidate: invalidateUnreadCountMock },
+      },
+      profiles: { getPublicById: { invalidate: invalidateProfileMock } },
+      social: {
+        getFollowers: { invalidate: invalidateFollowersMock },
+        getFollowing: { invalidate: invalidateFollowingMock },
+      },
     }),
     notifications: {
       getRecent: {
         useQuery: () => ({
-          data: [notification],
+          data: [notification, followRequest],
           error: null,
           isError: false,
           isLoading: false,
@@ -93,7 +122,14 @@ jest.mock("@/lib/api", () => ({
       markRead: { useMutation: () => ({ mutate: jest.fn() }) },
     },
     social: {
-      acceptFollowRequest: { useMutation: () => ({ mutate: jest.fn() }) },
+      acceptFollowRequest: {
+        useMutation: (options: FollowMutationOptions) => ({
+          mutate: async (variables: { follower_id: string }) => {
+            await options.onMutate(variables);
+            await options.onSettled(undefined, null, variables);
+          },
+        }),
+      },
       rejectFollowRequest: { useMutation: () => ({ mutate: jest.fn() }) },
     },
   },
@@ -104,6 +140,7 @@ const NotificationsScreen = require("../../(standard)/notifications").default;
 describe("P2 notifications mobile capability boundaries", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    getDataMock.mockReturnValue([followRequest]);
   });
 
   it("notifications.browse renders a notification from the real screen", () => {
@@ -111,5 +148,26 @@ describe("P2 notifications mobile capability boundaries", () => {
 
     expect(screen.getByTestId("notification-item-notification-1")).toBeTruthy();
     expect(screen.getByText("New Message")).toBeTruthy();
+  });
+
+  it("notifications.follow_request runs optimistic removal and refresh callbacks", async () => {
+    renderNative(<NotificationsScreen />);
+
+    fireEvent.press(screen.getByTestId("notification-accept-notification-follow-request"), {
+      stopPropagation: jest.fn(),
+    });
+
+    await waitFor(() => expect(invalidateRecentMock).toHaveBeenCalled());
+
+    expect(cancelMock).toHaveBeenCalledTimes(1);
+    expect(setDataMock).toHaveBeenCalledWith({ limit: 20 }, expect.any(Function));
+    const update = setDataMock.mock.calls[0][1] as (
+      items: NotificationListItem[],
+    ) => NotificationListItem[];
+    expect(update([followRequest, notification])).toEqual([notification]);
+    expect(invalidateUnreadCountMock).toHaveBeenCalledTimes(1);
+    expect(invalidateProfileMock).toHaveBeenCalledWith({ id: "follower-1" });
+    expect(invalidateFollowersMock).toHaveBeenCalledWith({ user_id: "follower-1" });
+    expect(invalidateFollowingMock).toHaveBeenCalledWith({ user_id: "follower-1" });
   });
 });

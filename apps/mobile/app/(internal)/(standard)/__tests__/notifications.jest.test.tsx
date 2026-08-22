@@ -7,14 +7,14 @@ const navigateMock = jest.fn();
 const pushMock = jest.fn();
 const markReadMutateMock = jest.fn();
 
-type NotificationFixture = {
-  actor_id?: string;
-  created_at: string;
-  description: string;
-  id: string;
-  is_unread: boolean;
-  title: string;
-  type: string;
+const notification = {
+  actor_id: "profile-1",
+  created_at: "2026-01-01T00:00:00.000Z",
+  entity_id: "conversation-1",
+  id: "notification-1",
+  read_at: null,
+  type: "new_message",
+  user_id: "user-1",
 };
 type FlatListMockProps = Record<string, unknown> & {
   data: unknown[];
@@ -74,23 +74,6 @@ jest.mock("lucide-react-native", () => ({
   UserPlus: mockCreateHost("UserPlus"),
 }));
 
-jest.mock("@repo/core", () => ({
-  __esModule: true,
-  getNotificationViewModel: (notification: NotificationFixture) => ({
-    actorId: notification.actor_id,
-    createdAt: notification.created_at,
-    description: notification.description,
-    id: notification.id,
-    isUnread: notification.is_unread,
-    requiresFollowRequestAction: false,
-    title: notification.title,
-    type: notification.type,
-  }),
-  getUnreadNotificationIds: (notifications: NotificationFixture[]) =>
-    notifications.filter((item) => item.is_unread).map((item) => item.id),
-  normalizeNotificationListItem: (notification: NotificationFixture) => notification,
-}));
-
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
@@ -102,12 +85,7 @@ jest.mock("@/lib/api", () => ({
         useQuery: () => ({
           data: [
             {
-              id: "notification-1",
-              type: "new_message",
-              title: "New message",
-              description: "Coach sent you a message",
-              created_at: "2026-01-01T00:00:00.000Z",
-              is_unread: true,
+              ...notification,
             },
           ],
           isLoading: false,
