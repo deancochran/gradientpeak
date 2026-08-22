@@ -24,7 +24,7 @@ describe("activity-plan authoring API boundary", () => {
         unauthenticatedCaller().create({
           name: "Boundary plan",
           description: "",
-          structure: { activity_category: "run", segments: [] },
+          structure: { version: 3, activity_category: "run", segments: [] },
         }),
     ],
     [
