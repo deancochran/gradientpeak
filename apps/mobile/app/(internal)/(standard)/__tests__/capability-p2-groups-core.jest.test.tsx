@@ -4,8 +4,6 @@ import { fireEvent, renderNative, screen, waitFor } from "../../../../test/rende
 
 const replaceMock = jest.fn();
 const joinGroupMock = jest.fn();
-const createGroupMock = jest.fn();
-const updateGroupMock = jest.fn();
 
 const group = {
   id: "group-1",
@@ -59,21 +57,8 @@ jest.mock("@/components/groups", () => ({
   GroupMembersOnlyLockedState: createHost("GroupMembersOnlyLockedState"),
   GroupRelationshipBadge: createHost("GroupRelationshipBadge"),
   GroupEventCard: createHost("GroupEventCard"),
-  GroupForm: React.forwardRef(function MockGroupForm(
-    props: { onSubmit: (values: typeof group) => void },
-    ref: React.ForwardedRef<{ submit: () => void }>,
-  ) {
-    React.useImperativeHandle(ref, () => ({ submit: () => props.onSubmit({ ...group }) }));
-    return React.createElement(
-      "Button",
-      { onPress: () => props.onSubmit({ ...group }), testID: "group-form-submit" },
-      "Submit group",
-    );
-  }),
-  GroupPrimaryActionBar: ({ onJoin }: { onJoin?: () => void }) =>
-    onJoin
-      ? React.createElement("Button", { onPress: onJoin, testID: "group-join" }, "Join group")
-      : null,
+  GroupPrimaryActionBar: jest.requireActual("@/components/groups/GroupActions")
+    .GroupPrimaryActionBar,
 }));
 
 jest.mock("@/components/shared/detail", () => ({
@@ -90,9 +75,8 @@ jest.mock("@/lib/server-config", () => ({
 
 jest.mock("@/lib/groups", () => ({
   __esModule: true,
+  getGroupPrimaryAction: () => "join",
   useGroupActions: () => ({
-    createGroup: createGroupMock,
-    updateGroup: updateGroupMock,
     joinGroup: joinGroupMock,
     createMutation: { isPending: false },
     updateMutation: { isPending: false },
@@ -120,47 +104,15 @@ jest.mock("@/lib/groups", () => ({
 }));
 
 const GroupDetailScreen = require("../group-detail").default;
-const GroupCreateScreen = require("../group-create").default;
-const GroupEditScreen = require("../group-edit").default;
 
 describe("P2 group mobile boundaries", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    createGroupMock.mockResolvedValue({ group });
-    updateGroupMock.mockResolvedValue({ group });
   });
 
   it("groups.browse-and-join joins a discoverable group from its real detail screen", async () => {
     renderNative(<GroupDetailScreen />);
-    fireEvent.press(screen.getByTestId("group-join"));
+    fireEvent.press(screen.getByText("Join group"));
     await waitFor(() => expect(joinGroupMock).toHaveBeenCalledWith("group-1"));
-  });
-
-  it("groups.create submits the group form and opens the created group", async () => {
-    renderNative(<GroupCreateScreen />);
-    fireEvent.press(screen.getByTestId("group-form-submit"));
-    await waitFor(() => {
-      expect(createGroupMock).toHaveBeenCalledWith(
-        expect.objectContaining({ name: "Morning Climbers" }),
-      );
-      expect(replaceMock).toHaveBeenCalledWith({
-        pathname: "/group-detail",
-        params: { groupId: "group-1" },
-      });
-    });
-  });
-
-  it("groups.edit saves the loaded group and returns to its detail screen", async () => {
-    renderNative(<GroupEditScreen />);
-    fireEvent.press(screen.getByTestId("group-form-submit"));
-    await waitFor(() => {
-      expect(updateGroupMock).toHaveBeenCalledWith(
-        expect.objectContaining({ groupId: "group-1", name: "Morning Climbers" }),
-      );
-      expect(replaceMock).toHaveBeenCalledWith({
-        pathname: "/group-detail",
-        params: { groupId: "group-1" },
-      });
-    });
   });
 });

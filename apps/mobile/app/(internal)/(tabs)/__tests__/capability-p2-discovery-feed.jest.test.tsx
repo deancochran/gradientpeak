@@ -1,17 +1,43 @@
 import React from "react";
-import { createHost } from "../../../../test/mock-components";
+import type { ProfileCardProps } from "../../../../components/profile/ProfileCard";
+import { createHost, type PressableHostProps } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 
 const navigateTo = jest.fn();
 const feedQueryMock = jest.fn();
 const routeQueryMock = jest.fn();
+const usersQueryMock = jest.fn();
 let routeParams: { q?: string; scope?: string } = {};
+
+type SearchFieldProps = {
+  accessibilityLabel?: string;
+  onValueChange: (value: string) => void;
+  placeholder?: string;
+  testId?: string;
+  value: string;
+};
+type EmptyStateCardProps = { actionLabel?: string; onAction?: () => void; title: string };
+type ResourceListProps<TItem> = {
+  data: TItem[];
+  errorTitle?: string;
+  isError?: boolean;
+  ListHeaderComponent?: React.ReactNode;
+  onRetry?: () => void;
+  renderItem: (item: TItem) => React.ReactNode;
+};
+type CardProps<TItem> = {
+  onPress?: () => void;
+  plan?: TItem;
+  route?: TItem;
+  activity?: TItem;
+  group?: TItem;
+};
 
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
   ScrollView: createHost("ScrollView"),
-  TouchableOpacity: ({ children, onPress, ...props }: any) =>
+  TouchableOpacity: ({ children, onPress, ...props }: PressableHostProps) =>
     React.createElement("Pressable", { onPress, ...props }, children),
   View: createHost("View"),
 }));
@@ -35,7 +61,13 @@ jest.mock("@repo/ui/components/loading", () => ({
   InlineLoadingStatus: () => null,
 }));
 jest.mock("@repo/ui/components/search-field", () => ({
-  SearchField: ({ value, onValueChange, placeholder, testId, accessibilityLabel }: any) =>
+  SearchField: ({
+    value,
+    onValueChange,
+    placeholder,
+    testId,
+    accessibilityLabel,
+  }: SearchFieldProps) =>
     React.createElement("TextInput", {
       accessibilityLabel,
       onChangeText: onValueChange,
@@ -45,7 +77,7 @@ jest.mock("@repo/ui/components/search-field", () => ({
     }),
 }));
 jest.mock("@repo/ui/components/empty-state-card", () => ({
-  EmptyStateCard: ({ title, actionLabel, onAction }: any) =>
+  EmptyStateCard: ({ title, actionLabel, onAction }: EmptyStateCardProps) =>
     React.createElement(
       "View",
       null,
@@ -61,36 +93,42 @@ jest.mock("@repo/ui/components/empty-state-card", () => ({
 }));
 
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
-  ActivityPlanCard: ({ onPress, plan }: any) =>
-    React.createElement(
-      "Pressable",
-      { onPress, testID: `activityPlan-${plan.id}` },
-      React.createElement("Text", null, plan.name),
-    ),
+  ActivityPlanCard: ({ onPress, plan }: CardProps<{ id: string; name: string }>) =>
+    plan
+      ? React.createElement(
+          "Pressable",
+          { onPress, testID: `activityPlan-${plan.id}` },
+          React.createElement("Text", null, plan.name),
+        )
+      : null,
 }));
 jest.mock("@/components/shared/RouteCard", () => ({
-  RouteCard: ({ onPress, route }: any) =>
-    React.createElement(
-      "Pressable",
-      { onPress, testID: `route-${route.id}` },
-      React.createElement("Text", null, route.name),
-    ),
+  RouteCard: ({ onPress, route }: CardProps<{ id: string; name: string }>) =>
+    route
+      ? React.createElement(
+          "Pressable",
+          { onPress, testID: `route-${route.id}` },
+          React.createElement("Text", null, route.name),
+        )
+      : null,
 }));
 jest.mock("@/components/shared/TrainingPlanCard", () => ({
-  TrainingPlanCard: ({ onPress, plan }: any) =>
-    React.createElement(
-      "Pressable",
-      { onPress, testID: `trainingPlan-${plan.id}` },
-      React.createElement("Text", null, plan.name),
-    ),
+  TrainingPlanCard: ({ onPress, plan }: CardProps<{ id: string; name: string }>) =>
+    plan
+      ? React.createElement(
+          "Pressable",
+          { onPress, testID: `trainingPlan-${plan.id}` },
+          React.createElement("Text", null, plan.name),
+        )
+      : null,
 }));
 jest.mock("@/components/groups", () => ({
-  GroupCard: ({ onPress, group }: any) =>
-    React.createElement("Pressable", { onPress, testID: `group-${group.id}` }),
+  GroupCard: ({ onPress, group }: CardProps<{ id: string }>) =>
+    group ? React.createElement("Pressable", { onPress, testID: `group-${group.id}` }) : null,
 }));
 jest.mock("@/components/profile/ProfileCard", () => ({
-  ProfileCard: ({ onPress, user }: any) =>
-    React.createElement("Pressable", { onPress, testID: `profile-${user.id}` }),
+  ProfileCard: ({ onPress, profile, testID }: ProfileCardProps) =>
+    React.createElement("Pressable", { onPress, testID: testID ?? `profile-${profile.id}` }),
 }));
 jest.mock("@/components/discover/DiscoverFilterSheet", () => ({ DiscoverFilterSheet: () => null }));
 
@@ -109,7 +147,7 @@ const route = {
   created_at: "2026-01-01",
 };
 const queryResult = (items: unknown[], overrides = {}) => ({
-  data: { pages: [{ items, nextCursor: undefined }] },
+  data: { pages: [{ items, users: items, nextCursor: undefined }] },
   isLoading: false,
   isFetching: false,
   isRefetching: false,
@@ -127,24 +165,26 @@ jest.mock("@/lib/api", () => ({
     routes: { list: { useInfiniteQuery: (input: unknown) => routeQueryMock(input) } },
     activityPlans: { list: { useInfiniteQuery: () => queryResult([activityPlan]) } },
     trainingPlans: { listTemplates: { useInfiniteQuery: () => queryResult([]) } },
-    social: { searchUsers: { useInfiniteQuery: () => queryResult([]) } },
+    social: { searchUsers: { useInfiniteQuery: (input: unknown) => usersQueryMock(input) } },
     groups: { listDiscoverable: { useInfiniteQuery: () => queryResult([]) } },
   },
 }));
 
 jest.mock("@/components/shared/ActivityCard", () => ({
-  ActivityCard: ({ activity, onPress }: any) =>
-    React.createElement(
-      "Pressable",
-      { onPress, testID: `activity-${activity.id}` },
-      React.createElement("Text", null, activity.name),
-    ),
+  ActivityCard: ({ activity, onPress }: CardProps<{ id: string; name: string }>) =>
+    activity
+      ? React.createElement(
+          "Pressable",
+          { onPress, testID: `activity-${activity.id}` },
+          React.createElement("Text", null, activity.name),
+        )
+      : null,
 }));
 jest.mock("@/components/feed/FeedEmptyState", () => ({
   FeedEmptyState: () => React.createElement("Text", null, "No activity"),
 }));
 jest.mock("@/components/shared/ResourceList", () => ({
-  ResourceList: (props: any) =>
+  ResourceList: (props: ResourceListProps<{ id: string; name?: string }>) =>
     props.isError
       ? React.createElement(
           "View",
@@ -160,7 +200,7 @@ jest.mock("@/components/shared/ResourceList", () => ({
           "View",
           null,
           props.ListHeaderComponent,
-          props.data.map((item: any) =>
+          props.data.map((item) =>
             React.createElement(React.Fragment, { key: item.id }, props.renderItem(item)),
           ),
         ),
@@ -174,6 +214,9 @@ describe("P2 discovery and feed capabilities", () => {
     jest.clearAllMocks();
     routeParams = {};
     routeQueryMock.mockReturnValue(queryResult([route]));
+    usersQueryMock.mockReturnValue(
+      queryResult([{ id: "user-1", full_name: "Alex Runner", username: "alex", is_public: true }]),
+    );
     feedQueryMock.mockReturnValue(queryResult([{ id: "activity-1", name: "Morning Run" }]));
   });
 
@@ -188,12 +231,31 @@ describe("P2 discovery and feed capabilities", () => {
     );
   });
 
-  it("discover.filter-feed keeps the selected scope while browsing results", () => {
+  it("discover.users navigates to a user and loads the next page", () => {
+    const fetchNextPage = jest.fn();
+    usersQueryMock.mockReturnValue(
+      queryResult([{ id: "user-1", full_name: "Alex Runner", username: "alex", is_public: true }], {
+        hasNextPage: true,
+        fetchNextPage,
+      }),
+    );
     renderNative(<DiscoverScreen />);
-    fireEvent.press(screen.getByTestId("discover-scope-routes"));
+    fireEvent.press(screen.getByTestId("discover-scope-users"));
 
-    expect(screen.getByTestId("discover-feed-item-routes-route-1")).toBeTruthy();
-    expect(screen.queryByTestId("discover-feed-item-activityPlans-plan-1")).toBeNull();
+    fireEvent.press(screen.getByTestId("discover-user-user-1"));
+    expect(navigateTo).toHaveBeenCalledWith({
+      pathname: "/(internal)/(standard)/user/[userId]",
+      params: { userId: "user-1" },
+    });
+
+    fireEvent.scroll(screen.getByTestId("discover-results-list"), {
+      nativeEvent: {
+        contentOffset: { y: 800 },
+        contentSize: { height: 1000 },
+        layoutMeasurement: { height: 400 },
+      },
+    });
+    expect(fetchNextPage).toHaveBeenCalledTimes(1);
   });
 
   it("feed.browse opens an activity from the real feed list", () => {
