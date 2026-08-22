@@ -37,11 +37,13 @@ const mocks = vi.hoisted(() => {
     routes: vi.fn(emptyQuery),
     users: vi.fn(emptyQuery),
     groups: vi.fn(emptyQuery),
+    navigate: vi.fn(),
   };
 });
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({ ...options, useSearch: () => mocks.routeSearch }),
+  useNavigate: () => mocks.navigate,
   Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
     <a href={to}>{children}</a>
   ),
@@ -134,9 +136,24 @@ describe("discovery route", () => {
   it.each(SCOPES)("pages API results for the %s scope", (scopeLabel, queryName, noun) => {
     const fetchNextPage = vi.fn();
     const item = { id: `${queryName}-1`, name: `${scopeLabel} result`, username: "athlete" };
+    const activityPlanItem = {
+      ...item,
+      activityCategory: "run",
+      engagement: { likes: 0 },
+      isSystemTemplate: false,
+      metrics: [],
+      structure: { version: 3, activity_category: "run", segments: [] },
+    };
     mocks[queryName].mockReturnValue({
       ...mocks.emptyQuery(),
-      data: { pages: [{ items: [item], users: [item] }] },
+      data: {
+        pages: [
+          {
+            items: [scopeLabel === "Activity plans" ? activityPlanItem : item],
+            users: [item],
+          },
+        ],
+      },
       hasNextPage: true,
       fetchNextPage,
     });
