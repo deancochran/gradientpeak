@@ -11,6 +11,7 @@ async function createGoal(page: Page, fixture: GoalFixture) {
   await form.getByLabel("Priority").fill("6");
   await form.getByLabel("Sessions / week").fill("3");
   await form.getByLabel("Weeks").fill("8");
+  fixture.rememberGoalTitle(title);
   await page.getByTestId("goal-submit").click();
   await expect(page.getByText(title)).toBeVisible();
   const card = page.locator('[data-testid^="goal-card-"]').filter({ hasText: title });
@@ -18,7 +19,6 @@ async function createGoal(page: Page, fixture: GoalFixture) {
   if (!testId) throw new Error("Created goal card did not expose a goal ID.");
   const id = testId.replace("goal-card-", "");
   fixture.rememberGoal(id);
-  fixture.rememberGoalTitle(title);
   return { id, title };
 }
 

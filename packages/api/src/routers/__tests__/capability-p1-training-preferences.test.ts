@@ -10,7 +10,7 @@ const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 describe("training-preferences.edit", () => {
   it("rejects an invalid session range before attempting to save", async () => {
     const caller = createRouterCaller(profileSettingsRouter, {
-      db: {} as never,
+      db: {},
       userId: PROFILE_ID,
     });
 
