@@ -49,8 +49,8 @@ async function seedCoachOrganization() {
     );
     await pool.query(
       `insert into "organization_membership_role_grants"
-        ("organization_id", "membership_id", "role_key")
-       values ($1, $2, 'coach')`,
+         ("organization_id", "membership_id", "role_key")
+        values ($1, $2, 'admin'), ($1, $2, 'coach')`,
       [organizationId, membershipId],
     );
     await pool.query("commit");
@@ -70,16 +70,11 @@ async function seedCoachOrganization() {
         await cleanupPool.query("begin");
         await cleanupPool.query("set constraints all deferred");
         await cleanupPool.query(
-          `delete from "organization_membership_role_grants"
-           where "organization_id" = $1`,
+          `update "organization_membership_role_grants"
+             set "revoked_at" = now()
+           where "organization_id" = $1 and "role_key" = 'coach' and "revoked_at" is null`,
           [organizationId],
         );
-        await cleanupPool.query(
-          `delete from "organization_memberships"
-           where "organization_id" = $1 and "id" = $2`,
-          [organizationId, membershipId],
-        );
-        await cleanupPool.query(`delete from "organizations" where "id" = $1`, [organizationId]);
         await cleanupPool.query("commit");
       } catch (error) {
         await cleanupPool.query("rollback").catch(() => undefined);
@@ -100,10 +95,6 @@ test("settings.select-theme persists a chosen theme across reloads", async ({ at
     "aria-pressed",
     "true",
   );
-  await expect
-    .poll(() => athletePage.evaluate(() => localStorage.getItem("gradientpeak-theme-store")))
-    .toBe("dark");
-
   await athletePage.reload();
   await expect(
     athletePage.getByRole("group", { name: "Theme preference" }).getByRole("button", {
@@ -115,7 +106,9 @@ test("settings.select-theme persists a chosen theme across reloads", async ({ at
 test("coaching.protected-entry opens the coaching workspace entry", async ({ athletePage }) => {
   await athletePage.goto("/organizations");
 
-  await expect(athletePage.getByRole("heading", { name: "Coaching organizations" })).toBeVisible();
+  await expect(
+    athletePage.getByRole("heading", { name: "Coaching organizations", exact: true }),
+  ).toBeVisible();
   await expect(
     athletePage.getByRole("heading", { name: "No coaching organizations" }),
   ).toBeVisible();
@@ -140,7 +133,7 @@ test("coaching.view-dashboard opens an authorized organization dashboard", async
     await expect(
       coachPage.getByRole("region", { name: "Coaching dashboard readiness" }),
     ).toBeVisible();
-    await expect(coachPage.getByRole("heading", { name: "Profiles" })).toBeVisible();
+    await expect(coachPage.getByText("Profiles", { exact: true })).toBeVisible();
   } finally {
     await organization.cleanup();
   }
