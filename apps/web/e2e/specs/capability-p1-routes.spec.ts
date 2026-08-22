@@ -85,7 +85,7 @@ test("routes.attach-to-calendar-event persists the selected route on an event", 
       fixture.rememberSeries(eventId);
       await athletePage.goto(`/routes/${routeId}`);
       await expect(athletePage.getByRole("heading", { name: routeName })).toBeVisible();
-      await athletePage.getByLabel("Event").selectOption(eventId);
+      await athletePage.getByLabel("Event", { exact: true }).selectOption(eventId);
       await athletePage.getByRole("button", { name: "Attach route" }).click();
       await expect(athletePage.getByText("Route attached to event")).toBeVisible();
 
