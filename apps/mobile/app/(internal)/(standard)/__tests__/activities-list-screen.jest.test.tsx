@@ -188,11 +188,11 @@ describe("activities list screen filters", () => {
 
     expect(activityCard.props).toMatchObject({
       dateMode: "absolute",
-      showLike: true,
-      showShare: true,
       testID: "activities-list-item-activity-1",
     });
     expect(activityCard.props.onCommentPress).toEqual(expect.any(Function));
+    expect(activityCard.props).not.toHaveProperty("showLike");
+    expect(activityCard.props).not.toHaveProperty("showShare");
     expect(activityCard.props).not.toHaveProperty("variant");
   });
 
