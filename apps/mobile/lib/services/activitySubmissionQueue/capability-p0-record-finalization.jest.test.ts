@@ -1,7 +1,11 @@
-import { describe, expect, it } from "@jest/globals";
+import { afterEach, describe, expect, it } from "@jest/globals";
 import { loadActivitySubmissionQueueJobs, setActivitySubmissionQueueJobsForTests } from "./storage";
 
 describe("record finalization queue outcomes", () => {
+  afterEach(() => {
+    setActivitySubmissionQueueJobsForTests();
+  });
+
   it("keeps a failed finalized submission retryable without losing its local evidence", async () => {
     setActivitySubmissionQueueJobsForTests(
       new Map([
@@ -50,6 +54,5 @@ describe("record finalization queue outcomes", () => {
         localActivityFilePath: "file:///activity.fit",
       },
     ]);
-    setActivitySubmissionQueueJobsForTests();
   });
 });
